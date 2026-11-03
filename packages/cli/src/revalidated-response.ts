@@ -32,5 +32,11 @@ export function revalidatedResponse(
     'cache-control': REVALIDATE_CACHE_CONTROL,
     etag,
   };
-  return notModified(request, etag, headers) ?? new Response(bytes, { headers });
+  // The length on the 200 only: `compress` reads nothing undeclared, and a 304 has no content.
+  return (
+    notModified(request, etag, headers) ??
+    new Response(bytes, {
+      headers: { ...headers, 'content-length': String(bytes.byteLength) },
+    })
+  );
 }

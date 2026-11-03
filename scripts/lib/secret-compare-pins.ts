@@ -188,6 +188,20 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A Postgres SQLSTATE `state` against `40P01`, deciding whether to retry — a five-character code the server prints in its own error text.',
   },
+  // why: new 2026-11-03 (plan 101 wave 2, pooled Postgres) — the statement-error mapper picks the
+  // pooler's refusal off the same SQLSTATE the retry above reads.
+  'packages/db/src/errors.ts: state === SQLSTATE.protocolViolation': {
+    count: 1,
+    reason:
+      'A Postgres SQLSTATE `state` against `08P01`, deciding whether a pooler refused a startup parameter — a five-character code the server prints in its own error text.',
+  },
+  // why: new 2026-11-03 (plan 101 wave 2, `idleInTransactionMs`) — the same mapper picks the
+  // idle-in-transaction fix line off the server's SQLSTATE.
+  'packages/db/src/errors.ts: state === SQLSTATE.idleInTransactionTimeout': {
+    count: 1,
+    reason:
+      'A Postgres SQLSTATE `state` against `25P03`, choosing the idle-in-transaction fix line — a five-character code the server prints in its own error text.',
+  },
   // why: new 2026-10-17 (a DB blip degrades the limiter) — the rate-limit store reads the same
   // SQLSTATE the retry above does, to tell an unreachable database from a wrong answer.
   "packages/http/src/rate-limit-degrade.ts: [' ', ' ', ' ', ' '].includes(state)": {

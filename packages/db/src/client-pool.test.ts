@@ -5,8 +5,9 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { baseClient, type PostgresClient, postgresClient, setDbClient } from './client';
-import type { DbError } from './errors';
+import { type DbError, dbUnavailable } from './errors';
 import { POOL_MAX_ENV, poolProfileFor } from './pool-profile';
+import { sql } from './sql';
 
 const TEST_URL = 'postgres://app@127.0.0.1:5432/ultimate_test';
 
@@ -134,6 +135,111 @@ describe('acquireTimeoutMs', () => {
     });
     await Bun.sleep(1);
     expect(released).toBe(1);
+  });
+
+  /** A pool whose statements answer only when the test says so. `sent` is what reached it. */
+  function installHeldSql(): { sent: string[]; answer(): void } {
+    const sent: string[] = [];
+    const held: ((value: unknown) => void)[] = [];
+    host.Bun.SQL = class {
+      unsafe(text: string): Promise<unknown> {
+        sent.push(text);
+        return new Promise((resolve) => held.push(resolve));
+      }
+      reserve(): Promise<unknown> {
+        return Promise.resolve({ unsafe: async (): Promise<unknown> => [], release: () => [] });
+      }
+      async close(): Promise<void> {}
+    };
+    return { sent, answer: () => held.shift()?.([]) };
+  }
+
+  test('a plain statement behind a full pool refuses on the same deadline as reserve()', async () => {
+    // Probed on a real pool: `max: 1`, one `pg_sleep(3)` running, `acquireTimeoutMs: 300`. reserve()
+    // answered X_DB_POOL_EXHAUSTED at 304 ms; the plain statement beside it answered `ok` at 2964.
+    const pool = installHeldSql();
+    const client = postgresClient({ url: TEST_URL, profile: { acquireTimeoutMs: 20, max: 1 } });
+
+    const running = client.query(sql`select 1`);
+    const caught = (await client.query(sql`select 2`).catch((error: unknown) => error)) as DbError;
+
+    expect(caught.code).toBe('X_DB_POOL_EXHAUSTED');
+    expect(caught.cause).toContain('20ms');
+    // Never sent: the refusal is the client's, so nothing is left queued in the driver either.
+    expect(pool.sent).toEqual(['select 1']);
+
+    pool.answer();
+    await running;
+    // The refused statement left no slot behind, and the finished one gave its own back.
+    const next = client.query(sql`select 3`);
+    expect(pool.sent).toEqual(['select 1', 'select 3']);
+    pool.answer();
+    await next;
+  });
+
+  test('a pin holds a slot for its whole life, so one number counts both', async () => {
+    const pool = installHeldSql();
+    const client = postgresClient({ url: TEST_URL, profile: { acquireTimeoutMs: 20, max: 1 } });
+
+    const pin = await client.reserve();
+    const caught = (await client.query(sql`select 1`).catch((error: unknown) => error)) as DbError;
+    expect(caught.code).toBe('X_DB_POOL_EXHAUSTED');
+    const second = (await client.reserve().catch((error: unknown) => error)) as DbError;
+    expect(second.code).toBe('X_DB_POOL_EXHAUSTED');
+
+    // A statement ON the pin takes no second slot: it IS the slot.
+    await pin.query(sql`select 'on the pin'`);
+    pin.release();
+    pin.release();
+
+    // A double release frees one slot, never two: the second statement here must wait its turn.
+    const next = client.query(sql`select 2`);
+    expect(pool.sent).toEqual(['select 2']);
+    const refused = (await client.query(sql`select 3`).catch((error: unknown) => error)) as DbError;
+    expect(refused.code).toBe('X_DB_POOL_EXHAUSTED');
+    pool.answer();
+    await next;
+  });
+
+  test('a reserve() the driver refused gives its slot back', async () => {
+    host.Bun.SQL = class {
+      async unsafe(): Promise<unknown> {
+        return [];
+      }
+      reserve(): Promise<unknown> {
+        return Promise.reject(dbUnavailable('the socket closed'));
+      }
+      async close(): Promise<void> {}
+    };
+    const client = postgresClient({ url: TEST_URL, profile: { acquireTimeoutMs: 20, max: 1 } });
+
+    await expect(client.reserve()).rejects.toMatchObject({ code: 'X_DB_UNAVAILABLE' });
+    expect(await client.query(sql`select 1`)).toEqual([]);
+  });
+
+  test('close() refuses who is still queueing, rather than opening a pool for them', async () => {
+    // Only waiting statements: one in flight settles against the pool draining under it.
+    let built = 0;
+    const answers: ((value: unknown) => void)[] = [];
+    host.Bun.SQL = class {
+      constructor() {
+        built += 1;
+      }
+      unsafe(): Promise<unknown> {
+        return new Promise((resolve) => answers.push(resolve));
+      }
+      async close(): Promise<void> {}
+    };
+    const client = postgresClient({ url: TEST_URL, profile: { acquireTimeoutMs: 0, max: 1 } });
+
+    const running = client.query(sql`select 1`);
+    const waiting = client.query(sql`select 2`).catch((error: unknown) => error);
+    await client.close();
+
+    expect(((await waiting) as DbError).code).toBe('X_DB_UNAVAILABLE');
+    answers.shift()?.([]);
+    await running;
+    expect(built).toBe(1);
   });
 
   test('0 waits, which is what a run-once role wants', async () => {

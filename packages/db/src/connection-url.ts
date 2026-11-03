@@ -6,10 +6,13 @@ import { describeValue } from '@ultimat3/core';
 import { DbError, dbUnavailable } from './errors';
 import { declaresLibpqOption, mergeLibpqOptions } from './libpq-options';
 import type { PoolProfile } from './pool-profile';
+import type { PoolerMode } from './pooler';
 
 export interface ConnectionUrlOptions {
   readonly url?: string | undefined;
   readonly applicationName?: string | undefined;
+  /** A pooler in the path: the bounds are the server's (`alter role`), and `options` carries none. */
+  readonly pooler?: PoolerMode | undefined;
 }
 
 /**
@@ -85,9 +88,15 @@ export function connectionUrl(options: ConnectionUrlOptions, profile: PoolProfil
   // is silent. Both spellings count, or the URL parameter and a `-c application_name=` in
   // `options` disagree and which one the backend honours is argument order nobody here measured.
   const named = options.applicationName;
-  const settings: Record<string, string> = {
-    statement_timeout: String(profile.statementTimeoutMs),
-  };
+  // A pooler refuses these at startup or drops them in silence, so with one named neither is sent
+  // and the bound moves to `alter role`, applied at the pooler's own server login.
+  const settings: Record<string, string> =
+    options.pooler === undefined
+      ? {
+          statement_timeout: String(profile.statementTimeoutMs),
+          idle_in_transaction_session_timeout: String(profile.idleInTransactionMs),
+        }
+      : {};
   const inOptions = declaresLibpqOption(url.searchParams.get('options'), 'application_name');
   // An explicit `applicationName` is a deliberate call by the role that opened the pool, so it
   // wins. Only then is the setting named to the merge, and only when the operator wrote the other
@@ -95,7 +104,10 @@ export function connectionUrl(options: ConnectionUrlOptions, profile: PoolProfil
   // disagree — and a URL with no assignment in it keeps the exact `options` it always had.
   if (named !== undefined && inOptions) settings['application_name'] = named;
   const declared = url.searchParams.has('application_name') || inOptions;
-  url.searchParams.set('options', mergeLibpqOptions(url.searchParams.get('options'), settings));
+  const merged = mergeLibpqOptions(url.searchParams.get('options'), settings);
+  // An empty `options` is a parameter all the same, and it is the parameter a pooler is asked about.
+  if (merged === '') url.searchParams.delete('options');
+  else url.searchParams.set('options', merged);
   if (named !== undefined) url.searchParams.set('application_name', named);
   else if (!declared) url.searchParams.set('application_name', 'ultimate');
   return url.toString();

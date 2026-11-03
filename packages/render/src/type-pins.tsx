@@ -8,6 +8,7 @@
 // apps, so the `<ContactSales />` below is checked against the SAME `JSX.Element` a page is —
 // which is the only way a regression to `IslandNode` fails a build rather than a reader's review.
 
+import { Hole } from './hole';
 import type { IslandComponent } from './island';
 import { island } from './island';
 import type { JsonValue } from './island-props';
@@ -126,3 +127,10 @@ type UnprojectedBudgetKey = Exclude<keyof RouteBudget, BudgetKeyOf<keyof RouteDe
 export type _EveryBudgetKeyIsProjected = Assert<
   [UnprojectedBudgetKey] extends [never] ? true : false
 >;
+
+/** `<Hole>` is an ordinary JSX component, and its children are a thunk: `unknown`, as a shell's are. */
+export const _HoleIsJsx = (): unknown => (
+  <Hole fallback={<p>waiting</p>} error={<p>failed</p>}>
+    {async () => <p>filled</p>}
+  </Hole>
+);

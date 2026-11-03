@@ -1757,3 +1757,62 @@ Verbatim from [`packages/db/CLAUDE.md`](../../packages/db/CLAUDE.md), which keep
   statement: a word scan over `sql-scan.ts` finds retyped columns, one catalog round trip, the pair
   filtered in JS (visible tables only), and `X_MIGRATION_VIEW_DEPENDS` carries the `drop view` /
   `create view` from `pg_get_viewdef` (built through `identifier()` inside a `try`).
+
+## The pool gate (2026-11-02)
+
+Why a gate per pool and not per client: `pool-gauge.test.ts`'s rule, a pool draining settles against its own counter and never against its replacement, applied to slots. A pin held on a retired pool would otherwise cost the new pool capacity for as long as the handler holds it.
+
+A pin is counted, not swept (2026-11-03): a gate filled by transactions hung past the bound would refuse every plain statement before it could reach the wire and miss, so nothing would ever retire the pool; reproduced with max 2, two pins hung on `begin`, 40 statements refused, one pool built, none closed. So the acquire refusal asks `pinsWedged` and retires. A pin while the gate still has room keeps no client deadline: `tcp_retries2` bounds it.
+
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/db/CLAUDE.md`](../../packages/db/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### Generation (`x db gen`)
+
+- **The deferred step holds keys too** (`concurrent-plan.ts`, phases in `stepStatements`: index builds, `keys`, `validate`, `contractKeys`, `contract`; `down` reversed: restore old key, drop new key, drop index). `foreignKeyPlan` runs AFTER every table's diff so `targetIndexDeferred` is whole. `deferKey(table, key, recorded, concurrent)` is one atomic `drop constraint if exists k, add constraint k … not valid`, never two statements (each would get its own transaction, a same-name rebuild a window with no key); `contractKey` drops a key under another name last. `DeferredKey` makes the first file's snapshot true while the second is pending. Stay transactional: a new table over an existing index; a retype's re-add. **A CHECK** is `not valid` in the transaction (`checkPlan`'s `concurrent`), validate deferred; rebuilt or moved-aside ones stay plain.
+
+- **`retired.ts`: a retired column** leaves the entity and stays recorded (`retired: true` or absent, `parseSnapshot` keeps it), marker-only: its indexes, keys and own CHECK stay recorded too, because the arms above skip what `drop column` takes. `recordRetired` is `snapshotOf` one step on, read by `x db gen` AND the CLI's `checkSnapshotDrift`. A drop not recorded `retired` is `X_MIGRATION_ROLLING_UNSAFE` BEFORE `X_MIGRATION_IRREVERSIBLE`; `--rolling-unsafe` skips only the first. Declaring it again writes `-- unretires`, or an empty `up` would leave the flag on the record.
+
+- **An index's ACCESS METHOD is carried end to end** (`index-method.ts`): closed at `btree` and `gin`;
+  declared is CLOSED, live is OPEN (`indexMethodOf` passes the catalog through; `declaredMethod`
+  refuses); absent is `btree` through one function; `snapshotOf` records `using` only when declared;
+  `indexMethodSql` re-derives the literal (`X_SQL_UNSAFE` default); a unique or ordered GIN is
+  `X_INVARIANT`. `introspectSchema()` reads `pg_am` (`introspect-embedded.test.ts`).
+
+
+### Connections and transactions
+
+- **A JS array bound as a parameter is rendered here** (`array-parameter.ts`, `bound-parameters.ts`,
+  called only by `sendOn`) — `Bun.SQL` joins elements with commas. `NULL` bare vs `"NULL"`; quoting by
+  content; a `Uint8Array` is BYTEA, in an array too; a ragged nest and an Invalid Date are refused
+  (`X_INVARIANT`), ABOVE the driver's `try` in both funnels. `array-parameter.live.test.ts`;
+  `packages/cli/src/pg-array.live.test.ts` is the composition test.
+
+
+### The schema dump
+
+- **Two readings of one catalog, never mixed.** `introspectSchema()` → `SchemaDescription`, the entity
+  vocabulary a snapshot is diffed in. `introspectCatalog()` (`catalog.ts`; queries: `catalog-relations.ts`,
+  `catalog-objects.ts`; pure fold: `catalog-fold.ts`) → `CatalogDescription`, Postgres' own `pg_get_*def` text, compared only to
+  itself. A catalog spelling on a `SchemaDescription` field is the `checks`/`checkNames` mistake.
+
+
+### Connections and transactions
+
+- **`pglite.ts` is a pool of exactly one**; `reserve()` (`pglite-turns.ts`) serialises `BEGIN`s. Three
+  rules: the plain path takes a turn; a statement inside a LIVE transaction on THIS client
+  (`liveTxConnection()`, never `currentTx() !== undefined`) skips the queue; a reservation runs direct
+  only while its turn is held. `pglite-embedded.test.ts`, `pglite.test.ts`,
+  `pglite-two-clients.test.ts`, `pglite-observer.test.ts`.
+
+
+### Migrations
+
+- **One send is one statement**: `applyScript` sends `statementsOf(script)` one at a time.
+  **`statement-split.ts` is the only splitter** (a left-to-right scan; `$1` is never a `$tag$`; `\`
+  escapes only inside `E''`; comment-only chunks dropped). **`sql-scan.ts` is the one
+  lexer** (`noiseAt`, source order; a `$tag$` needs separating from the identifier before it);
+  `sql-noise.ts` holds `stripSqlNoise`.
+
+- **`migrate-lock-retry.ts` sends again on `X_DB_LOCK_TIMEOUT`** (`lockRetries`, default 5, `finiteCount`), wrapped inside `migration-step.ts`, in both directions: a transactional step whole, a non-transactional one per statement, never from its top (that re-swaps every validated key); the wait is at least one `lockTimeoutMs`, jitter upward only; exhausted keeps the code, its cause stating the attempts.

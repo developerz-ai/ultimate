@@ -96,6 +96,7 @@ describe('postgresClient', () => {
       lockTimeoutMs: 0,
       acquireTimeoutMs: 10_000,
       drainTimeoutMs: 15_000,
+      idleInTransactionMs: 120_000,
     });
     // The RAW query string, not `searchParams.get()`. `.get()` decodes `+` back to a space, so the
     // old assertion passed on the working encoding AND on a broken one — a test that cannot fail.
@@ -103,7 +104,7 @@ describe('postgresClient', () => {
     // 1.3.14 against Postgres 17, `select current_setting('statement_timeout')` answers `120s`.
     // `client.live.test.ts` is that measurement, kept as a test.
     expect(pool.urls[0]).toEndWith(
-      '?options=-c+statement_timeout%3D120000&application_name=ultimate-worker',
+      '?options=-c+statement_timeout%3D120000+-c+idle_in_transaction_session_timeout%3D120000&application_name=ultimate-worker',
     );
   });
 
@@ -170,7 +171,7 @@ describe('postgresClient', () => {
 
         const options = new URL(pool.urls[0] ?? '').searchParams.get('options');
         expect(options).toBe(
-          `-c search_path=app -c timezone=UTC -c statement_timeout=${role === 'web' ? 10_000 : 0}`,
+          `-c search_path=app -c timezone=UTC -c statement_timeout=${role === 'web' ? 10_000 : 0} -c idle_in_transaction_session_timeout=${role === 'web' ? 30_000 : 0}`,
         );
       });
     }
@@ -181,7 +182,9 @@ describe('postgresClient', () => {
       await postgresClient({ url, role: 'web' }).query(sql`select 1`);
 
       const options = new URL(pool.urls[0] ?? '').searchParams.get('options');
-      expect(options).toBe('-c search_path=app -c statement_timeout=10000');
+      expect(options).toBe(
+        '-c search_path=app -c statement_timeout=10000 -c idle_in_transaction_session_timeout=30000',
+      );
     });
   });
 });
@@ -372,6 +375,7 @@ describe('the pool profile is screened where the role default is overridden', ()
     'idleTimeoutMs',
     'lockTimeoutMs',
     'acquireTimeoutMs',
+    'idleInTransactionMs',
   ] as const;
 
   for (const option of NUMBERS) {

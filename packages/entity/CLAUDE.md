@@ -78,7 +78,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `withStatementAttribution(entity.$name, op, send)` via `attributed(op, send)`, `op` declared once per
   method and passed to the plan builders; `writeRows(op, …)` for the three inserts; `aggregate` names
   the function. Never entered with no observer. A preloaded relation is attributed to the related
-  entity. `memoryRepo` sends no statement. `pg-driver-attribution.test.ts` — one case per method.
+  entity. `memoryRepo` sends no statement and reports one event per operation (`memory-observed.ts`), under the pair `postgresRepo` names, no SQL text, and one event for a microtask's point lookups in a request, as `coalesce.ts`. `pg-driver-attribution.test.ts` — one case per method.
 - **The two N+1 codes are owned here** (`X_N_PLUS_ONE_QUERY`, `X_N_PLUS_ONE_WRITE`, `n-plus-one.ts`):
   it detects nothing, takes a `StatementLoop` verdict, and derives the fix from `relationMap()`
   (`preloadsFor()`), falling back to the `in` form. `N_PLUS_ONE_THRESHOLD` (5) is shared by `x dev`'s

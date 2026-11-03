@@ -5,6 +5,10 @@
 
 import { isSelfOrigin, peerAddressClass } from '@ultimat3/core';
 import { NetworkOfflineError, NetworkRaceError, NetworkSealedError } from './errors';
+import type { MockHandler, MockRoute } from './mock-route';
+import { mockRoute, routeMatches } from './mock-route';
+import type { LoggedRequest } from './request-log';
+import { hasStreamBody, headersOf, readBody, requestProbe } from './request-log';
 import { installSocketSeal } from './sealed-sockets';
 
 export type FetchLike = typeof globalThis.fetch;
@@ -15,16 +19,10 @@ export type FetchLike = typeof globalThis.fetch;
  */
 export type NetworkState = 'online' | 'offline' | 'dropped';
 
-export interface MockRoute {
-  /** Exact URL, or a prefix ending in `*`, or a RegExp. */
-  readonly match: string | RegExp;
-  readonly handler: (request: Request) => Response | Promise<Response>;
-}
-
 interface SealState {
   readonly allowed: Set<string>;
   readonly mocks: MockRoute[];
-  readonly seen: string[];
+  readonly log: LoggedRequest[];
   original: FetchLike | undefined;
   /** `installSocketSeal`'s undo, held beside `original` so one unseal restores all three dials. */
   restoreSockets: (() => void) | undefined;
@@ -34,20 +32,10 @@ interface SealState {
 const state: SealState = {
   allowed: new Set(),
   mocks: [],
-  seen: [],
+  log: [],
   original: undefined,
   restoreSockets: undefined,
   network: 'online',
-};
-
-const matches = (route: MockRoute, url: string): boolean => {
-  if (route.match instanceof RegExp) {
-    // A `g`/`y` pattern's `test` resumes at `lastIndex`: without the reset, every other call missed.
-    route.match.lastIndex = 0;
-    return route.match.test(url);
-  }
-  if (route.match.endsWith('*')) return url.startsWith(route.match.slice(0, -1));
-  return route.match === url;
 };
 
 const urlOf = (input: RequestInfo | URL): string => {
@@ -77,7 +65,7 @@ const isThisMachine = (hostname: string): boolean => {
 /** The socket dials' gate: the same allow-list, offline state and record as `fetch`. No mocks — a
  *  socket test injects its transport (`connect`, `client`), it does not intercept the dial. */
 const socketRefusal = (url: string, method: string): Error | undefined => {
-  state.seen.push(url);
+  state.log.push({ method, url, headers: {}, body: null });
   let target: URL;
   try {
     target = new URL(url);
@@ -102,34 +90,46 @@ export function sealNetwork(): void {
   state.restoreSockets = installSocketSeal(socketRefusal);
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = urlOf(input);
-    state.seen.push(url);
+    const method = methodOf(input, init);
+    const probe = requestProbe(input, init);
+    // In the log before the first await, so concurrent calls keep their order; every verdict below
+    // is reached before the body is awaited too, so a call is judged by the state it was made in.
+    const call = { method, url, headers: headersOf(probe), body: null as string | null };
+    state.log.push(call);
     // Ahead of the mocks on purpose: a test that mocked Stripe and then went offline is asserting
     // the offline path, and a mock that still answered would be the one thing that path never sees.
     if (state.network !== 'online') {
-      throw new NetworkOfflineError({
-        url,
-        method: methodOf(input, init),
-        mode: state.network,
-      });
+      const mode = state.network;
+      call.body = await readBody(probe);
+      throw new NetworkOfflineError({ url, method, mode });
     }
-    const mock = state.mocks.find((route) => matches(route, url));
+    const mock = state.mocks.find((route) => routeMatches(route, call));
     if (mock !== undefined) {
-      return mock.handler(input instanceof Request ? input : new Request(url, init));
+      const request =
+        input instanceof Request && init === undefined ? input : new Request(input, init);
+      // The probe left a stream out, and a mock is the one consumer that cannot lose backpressure.
+      const logged = hasStreamBody(init) ? request.clone() : probe;
+      // Asked before the body is awaited: an answer list goes in CALL order, so a slow POST made
+      // first cannot let a later GET take its 503. A thrown answer rejects; it is awaited below.
+      const answered = (async () => mock.handler(request))();
+      answered.catch(() => undefined);
+      call.body = await readBody(logged);
+      return answered;
     }
     // A server this process booted is not egress — the port is one the kernel just handed us, so
     // there is nothing to allowlist ahead of time. Without this, a socket test's only option is to
     // unseal the network wholesale, which then hides the real egress it was meant to catch.
     const host = safeHost(url);
-    if (isSelfOrigin(url) || (host !== undefined && state.allowed.has(host))) {
-      const original = state.original;
+    const passes = isSelfOrigin(url) || (host !== undefined && state.allowed.has(host));
+    const allowed = [...state.allowed];
+    const original = state.original;
+    call.body = await readBody(probe);
+    if (passes) {
       if (original === undefined) throw new NetworkRaceError();
+      // `(input, init)` as handed: `tls`, `unix` and `proxy` are Bun's own and no Request holds them.
       return original(input, init);
     }
-    throw new NetworkSealedError({
-      url,
-      method: methodOf(input, init),
-      allowed: [...state.allowed],
-    });
+    throw new NetworkSealedError({ url, method, allowed });
   }) as FetchLike;
 }
 
@@ -165,11 +165,16 @@ export function allowHost(host: string): void {
   state.allowed.add(host);
 }
 
+/**
+ * `match` is a URL, a prefix ending in `*` or a RegExp, every verb; a string may name one verb first
+ * (`'POST https://…'`). `answer` is a handler, or a list answered in order with the last repeated,
+ * where an `Error` is thrown: a 503-then-200 retry test is one registration and no counter.
+ */
 export function mockFetch(
   match: string | RegExp,
-  handler: (request: Request) => Response | Promise<Response>,
+  answer: MockHandler | readonly (Response | Error)[],
 ): void {
-  state.mocks.unshift({ match, handler });
+  state.mocks.unshift(mockRoute(match, answer));
 }
 
 /** Convenience for the common case: a JSON body and a status. */
@@ -184,13 +189,13 @@ export function mockJson(match: string | RegExp, body: unknown, status = 200): v
   );
 }
 
-/** Every URL a test attempted, in order — the fastest way to see what a failure actually called. */
-export const requestedUrls = (): readonly string[] => [...state.seen];
+/** Every dial a test attempted, in order, refused ones included — what it sent, and to whom. */
+export const requestLog = (): readonly LoggedRequest[] => [...state.log];
 
 export function resetNetwork(): void {
   state.allowed.clear();
   state.mocks.length = 0;
-  state.seen.length = 0;
+  state.log.length = 0;
   state.network = 'online';
 }
 
@@ -198,7 +203,7 @@ export function resetNetwork(): void {
 export interface NetworkSnapshot {
   readonly allowed: readonly string[];
   readonly mocks: readonly MockRoute[];
-  readonly seen: readonly string[];
+  readonly log: readonly LoggedRequest[];
   readonly network: NetworkState;
 }
 
@@ -212,7 +217,7 @@ export interface NetworkSnapshot {
 export const captureNetwork = (): NetworkSnapshot => ({
   allowed: [...state.allowed],
   mocks: [...state.mocks],
-  seen: [...state.seen],
+  log: [...state.log],
   network: state.network,
 });
 
@@ -221,7 +226,7 @@ export function restoreCapturedNetwork(snapshot: NetworkSnapshot): void {
   for (const host of snapshot.allowed) state.allowed.add(host);
   state.mocks.length = 0;
   state.mocks.push(...snapshot.mocks);
-  state.seen.length = 0;
-  state.seen.push(...snapshot.seen);
+  state.log.length = 0;
+  state.log.push(...snapshot.log);
   state.network = snapshot.network;
 }

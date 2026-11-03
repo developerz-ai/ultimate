@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import type { DevServices } from './runtime-bindings';
+import { s3PathStyleOf } from './runtime-s3-path-style';
 import { startStorage } from './runtime-services';
 
 /** Module scope, not per-describe: two suites in this file ask about the same boot's disk. */
@@ -142,6 +143,37 @@ describe('unit · the storage binding a process boots with', () => {
  * `@ultimat3/testing` — whose `env` is not `process.env` got a split verdict, on the decision of
  * whether a disk may be signed with the key published in `@ultimat3/storage`.
  */
+describe('unit · S3_FORCE_PATH_STYLE', () => {
+  const external = (env: Record<string, string>) =>
+    startStorage(servicesAt('/nonexistent', 'http://s3.test:9000', 'external'), {
+      S3_BUCKET: 'b',
+      ...env,
+    });
+
+  test('1 is on; 0, unset and blank are off', () => {
+    expect(s3PathStyleOf({ S3_FORCE_PATH_STYLE: '1' })).toBe(true);
+    expect(s3PathStyleOf({ S3_FORCE_PATH_STYLE: '0' })).toBe(false);
+    expect(s3PathStyleOf({ S3_FORCE_PATH_STYLE: '' })).toBe(false);
+    expect(s3PathStyleOf({})).toBe(false);
+  });
+
+  // `true` silently selected virtual-host style: every request went to `<bucket>.<host>`.
+  test('anything else refuses the boot, with the value to write', () => {
+    for (const value of ['true', 'TRUE', 'yes', '2', ' 1']) {
+      const failure = (() => {
+        try {
+          return external({ S3_FORCE_PATH_STYLE: value });
+        } catch (error) {
+          return error;
+        }
+      })();
+      expect(failure).toBeUltimateError('X_CONFIG_INVALID');
+      expect((failure as UltimateError).fix).toContain('S3_FORCE_PATH_STYLE=1');
+    }
+    expect(external({ S3_FORCE_PATH_STYLE: '1' }).diskNames).toEqual(['object']);
+  });
+});
+
 describe('unit · the local-disk safety guard reads one environment', () => {
   // The precondition that makes the case below mean anything: the SECRET must be absent from the
   // process, so the only place it can be found is the `env` the boot was handed.

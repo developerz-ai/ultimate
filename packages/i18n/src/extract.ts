@@ -39,19 +39,35 @@ export interface LocaleAudit {
 export interface ExtractReport {
   /** Distinct static keys, sorted. */
   used: string[];
+  /** What every locale owes: `used` plus each stem the reference locale defines, sorted. */
+  required: string[];
   usages: KeyUsage[];
   dynamic: DynamicUsage[];
   locales: LocaleAudit[];
   ok: boolean;
 }
 
+/** A property whose value is a catalog key, for an API that takes keys rather than strings. */
+export interface KeyProperty {
+  name: string;
+  /** Only in a file holding this text: a bare `subject:` means nothing on its own. */
+  whenFileContains?: string;
+}
+
 export interface ExtractOptions {
   /** Call names treated as translator calls. */
   callees?: readonly string[];
+  /** Properties whose literal value is a usage and whose any other value is `dynamic`. */
+  properties?: readonly KeyProperty[];
 }
 
 const DEFAULT_CALLEES: readonly string[] = ['t', '$t', 'translate'];
-const STRING_LITERAL = /^(['"`])((?:[^\\]|\\.)*?)\1$/s;
+// The closing quote may not recur inside: `'a' + 'b'` is two literals, not a key spelled `a' + 'b`.
+const STRING_LITERAL = /^(['"`])((?:(?!\1)[^\\]|\\.)*)\1$/s;
+// A value runs to the first comma, closer or line break outside a string. Strings are matched whole
+// so a comma in one does not end it. The trailing `;` is captured because it marks a type member
+// (`titleKey: string;`): an object literal never ends a property with one.
+const PROPERTY_VALUE = String.raw`((?:'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|\`(?:[^\`\\]|\\.)*\`|[^,;})\n'"\`])*)(;?)`;
 
 /**
  * Scan one source file. Deliberately a lexer-free scan: a translator call is a
@@ -72,26 +88,38 @@ export function extractKeys(
 
   const usages: KeyUsage[] = [];
   const dynamic: DynamicUsage[] = [];
+  const record = (rawArgument: string | undefined, index: number): void => {
+    const argument = (rawArgument ?? '').trim();
+    const position = positionOf(source, index);
+    if (argument === '') return;
+    const literal = STRING_LITERAL.exec(argument);
+    const key = literal?.[2];
+    if (key === undefined || key.includes('${')) {
+      dynamic.push({ expression: argument, file, ...position });
+      return;
+    }
+    usages.push({ key, file, ...position });
+  };
 
   // Over the COMMENT-STRIPPED text, never the raw file: a `// … t('…', { … })` in a comment matched
   // the shape above and produced a phantom key that `x i18n sync` would have written into every
   // catalog as `"…": "⟦…⟧"` (measured 2026-09-05). The mask keeps every newline and every string
   // literal in place, so an index into it is an index into `source` and the positions below hold.
-  for (const match of stripComments(source).matchAll(pattern)) {
-    const argument = (match[1] ?? '').trim();
-    const index = match.index ?? 0;
-    const position = positionOf(source, index);
-    if (argument === '') continue;
-    const literal = STRING_LITERAL.exec(argument);
-    const key = literal?.[2];
-    if (key === undefined || key.includes('${')) {
-      dynamic.push({ expression: argument, file, ...position });
-      continue;
+  const stripped = stripComments(source);
+  for (const match of stripped.matchAll(pattern)) record(match[1], match.index ?? 0);
+
+  for (const property of options.properties ?? []) {
+    const marker = property.whenFileContains;
+    if (marker !== undefined && !stripped.includes(marker)) continue;
+    const name = escapeRegExp(property.name);
+    // Not after an identifier char, a `.` or a quote: `subtitleKey`, `a.titleKey`, `'x.titleKey'`.
+    const shape = new RegExp(String.raw`(?<![\w$.'"-])${name}\s*:\s*${PROPERTY_VALUE}`, 'g');
+    for (const match of stripped.matchAll(shape)) {
+      if (match[2] !== ';') record(match[1], match.index ?? 0);
     }
-    usages.push({ key, file, ...position });
   }
 
-  return { usages, dynamic };
+  return { usages: usages.sort(bySourceOrder), dynamic: dynamic.sort(bySourceOrder) };
 }
 
 export interface AuditInput {
@@ -100,22 +128,27 @@ export interface AuditInput {
   catalogs: Readonly<Record<Locale, Catalog>>;
   /** Keys resolved at runtime (e.g. `time.cron.*`) — never reported unused. */
   ignoreUnused?: readonly string[];
+  /** Every locale also owes each key this one defines, compared by plural stem. */
+  reference?: Locale;
 }
 
 /**
  * A used key counts as present when the locale defines it *or* any of its plural
  * variants: `pl` legitimately defines `items_one`/`items_few`/`items_many` and no bare
- * `items`, and that must not read as a missing key.
+ * `items`, and that must not read as a missing key. The same comparison serves `reference`, so
+ * `ja`'s lone `items_other` answers `en`'s `items_one`/`items_other`.
  */
 export function auditCatalogs(input: AuditInput): ExtractReport {
   const used = [...new Set(input.extraction.usages.map((usage) => usage.key))].sort();
   const ignore = input.ignoreUnused ?? [];
+  const referenced = catalogKeys(input.catalogs[input.reference ?? ''] ?? {}).map(stemOf);
+  const required = [...new Set([...used, ...referenced])].sort();
 
   const locales: LocaleAudit[] = Object.keys(input.catalogs)
     .sort()
     .map((locale) => {
       const catalog = input.catalogs[locale] ?? {};
-      const missing = used.filter((key) => !definesKey(catalog, key));
+      const missing = required.filter((key) => !definesKey(catalog, key));
       const usedWithVariants = new Set(used.flatMap(variantsOf));
       const unused = catalogKeys(catalog).filter(
         (key) => !usedWithVariants.has(key) && !isIgnored(key, ignore),
@@ -125,6 +158,7 @@ export function auditCatalogs(input: AuditInput): ExtractReport {
 
   return {
     used,
+    required,
     usages: input.extraction.usages,
     dynamic: input.extraction.dynamic,
     locales,
@@ -166,10 +200,23 @@ function variantsOf(key: string): string[] {
   return [key, `${key}_plural`, ...PLURAL_CATEGORIES.map((category) => `${key}_${category}`)];
 }
 
+/** `items_few` → `items`. Anything else is its own stem: `sort_order` is no plural. */
+function stemOf(key: string): string {
+  const cut = key.lastIndexOf('_');
+  if (cut <= 0) return key;
+  const suffix = key.slice(cut + 1);
+  const plural = suffix === 'plural' || PLURAL_CATEGORIES.some((category) => category === suffix);
+  return plural ? key.slice(0, cut) : key;
+}
+
 function isIgnored(key: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) =>
     pattern.endsWith('*') ? key.startsWith(pattern.slice(0, -1)) : key === pattern,
   );
+}
+
+function bySourceOrder(a: DynamicUsage | KeyUsage, b: DynamicUsage | KeyUsage): number {
+  return a.line - b.line || a.column - b.column;
 }
 
 function positionOf(source: string, index: number): { line: number; column: number } {

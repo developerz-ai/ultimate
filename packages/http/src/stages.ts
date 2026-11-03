@@ -1,7 +1,7 @@
 // One function per stage name: what each stage of the lifecycle DOES. The package's three-way
 // split, each file naming the other two — `pipeline.ts` owns the ORDER the stages run in and the
 // run itself, `finalize.ts` owns the promise that the tail cannot reject, and this file owns the
-// work. The vocabulary (`StageName`, `Stage`) lives here too, beside the fourteen implementations
+// work. The vocabulary (`StageName`, `Stage`) lives here too, beside the fifteen implementations
 // it names, so `Record<StageName, StageRun>` below is the build error that catches a missing one.
 
 import {
@@ -15,6 +15,7 @@ import {
 } from '@ultimat3/core';
 import { signInRedirect } from './auth-redirect';
 import { finalizeCacheHeaders } from './cache-stage';
+import { compressResponse } from './compress';
 import { type HttpConfig, stripBasePath } from './config';
 import { elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
@@ -66,7 +67,8 @@ export type StageName =
   | 'handler'
   | 'cache-headers'
   | 'error-map'
-  | 'response';
+  | 'response'
+  | 'compress';
 
 /**
  * `request`  may short-circuit by returning a Response.
@@ -79,7 +81,7 @@ export type StagePhase = 'request' | 'terminal' | 'recover' | 'finalize';
 export interface StageDoc {
   readonly name: StageName;
   readonly phase: StagePhase;
-  /** Why the stage sits at this index. Rendered verbatim by the dev dashboard. */
+  /** Why the stage sits at this index, read by `pipeline.test.ts` and anyone reading the list. */
   readonly why: string;
 }
 
@@ -270,7 +272,9 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         cors: config.cors,
         config: config.csrf,
       });
-      if (!verdict.ok) throw csrfBlocked(ctx.url.pathname, verdict.reason, ctx.ip);
+      if (!verdict.ok) {
+        throw csrfBlocked(ctx.url.pathname, verdict.reason, ctx.ip, selfOrigin(ctx.url, ctx.https));
+      }
       return undefined;
     },
 
@@ -470,6 +474,14 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       response.headers.set('server-timing', `total;dur=${elapsedMs(ctx)}`);
       return undefined;
     },
+
+    compress: (request, ctx) =>
+      ctx.response === undefined
+        ? undefined
+        : compressResponse(request.raw, ctx.response, {
+            anonymous: isAnonymous(ctx.actor),
+            signal: ctx.signal,
+          }),
   };
   return table;
 };

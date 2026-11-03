@@ -139,7 +139,7 @@ afterEach(() => {
 
 unitTest('the dashboard is gated, renders per request, and hydrates one island', async () => {
   const view = await renderRoute(page, { url, actor: viewer });
-  expect(page.config.render).toBe('ssr');
+  expect(page.config.render).toBe('stream');
   expect(page.config.policy?.permission).toBe('dashboard:read');
   expect(page.config.offline).toBe('runtime');
   expect(page.config.budget.js).toBe('60kb');

@@ -116,6 +116,146 @@ describe('auditCatalogs', () => {
   });
 });
 
+describe('extractKeys \u00B7 declared properties', () => {
+  const options = {
+    properties: [{ name: 'titleKey' }, { name: 'subject', whenFileContains: 'defineThing(' }],
+  };
+
+  test('a literal value of a declared property is a usage, at the position of its name', () => {
+    const extraction = extractKeys("const a = {\n  titleKey: 'a.title',\n};\n", 'a.ts', options);
+    expect(extraction.usages).toEqual([{ key: 'a.title', file: 'a.ts', line: 2, column: 3 }]);
+    expect(extraction.dynamic).toEqual([]);
+  });
+
+  test('a property with whenFileContains counts only in a file that holds the marker', () => {
+    const declared = "defineThing({ subject: 'a.subject' });";
+    expect(extractKeys(declared, 'a.ts', options).usages.map((usage) => usage.key)).toEqual([
+      'a.subject',
+    ]);
+    // The marker alone in a comment is not the declaration, and the marker's absence is not a key.
+    const noted = "// defineThing( is elsewhere\nconst row = { subject: 'Plain words' };";
+    expect(extractKeys(noted, 'a.ts', options).usages).toEqual([]);
+    expect(extractKeys(noted, 'a.ts', options).dynamic).toEqual([]);
+  });
+
+  test('an interpolated key, a concatenation and a variable are dynamic, never a usage', () => {
+    const lines = [
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text \u2014 a literal ${\u2026} is the case under test
+      'const a = { titleKey: `plans.${plan}.title` };',
+      "const b = { titleKey: 'a.' + 'b' };",
+      'const c = { titleKey: someVariable };',
+    ];
+    const extraction = extractKeys(lines.join('\n'), 'a.ts', options);
+    expect(extraction.usages).toEqual([]);
+    expect(extraction.dynamic.map((entry) => entry.expression)).toEqual([
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the expression is source text
+      '`plans.${plan}.title`',
+      "'a.' + 'b'",
+      'someVariable',
+    ]);
+  });
+
+  test('a comma inside the literal does not end the value', () => {
+    const extraction = extractKeys(
+      "const a = { titleKey: 'one, two', other: 1 };",
+      'a.ts',
+      options,
+    );
+    expect(extraction.usages.map((usage) => usage.key)).toEqual(['one, two']);
+  });
+
+  test('a type member is not a value, and neither is a longer name ending in the property', () => {
+    const lines = [
+      'interface A { titleKey: string; readonly other: string }',
+      "const b = { subtitleKey: 'not.this', 'x.titleKey': 1, c: d.titleKey };",
+    ];
+    const extraction = extractKeys(lines.join('\n'), 'a.ts', options);
+    expect(extraction.usages).toEqual([]);
+    expect(extraction.dynamic).toEqual([]);
+  });
+
+  test('a property and a callee in one file come back in source order', () => {
+    const body =
+      "const a = { titleKey: 'a.first' };\nt('a.second');\nconst b = { titleKey: 'a.third' };";
+    const extraction = extractKeys(body, 'a.ts', { callees: ['t'], ...options });
+    expect(extraction.usages.map((usage) => usage.key)).toEqual(['a.first', 'a.second', 'a.third']);
+  });
+
+  test('no properties declared: a titleKey is not a usage', () => {
+    expect(extractKeys("const a = { titleKey: 'a.title' };").usages).toEqual([]);
+  });
+});
+
+describe('extractKeys \u00B7 the literal rule', () => {
+  // One regex read two adjacent strings as one literal: a key spelled "a' + 'b" reached every
+  // catalog through x i18n sync.
+  test('t() over a concatenation is dynamic, not a key with a quote in it', () => {
+    const extraction = extractKeys("t('a.' + 'b');");
+    expect(extraction.usages).toEqual([]);
+    expect(extraction.dynamic.map((entry) => entry.expression)).toEqual(["'a.' + 'b'"]);
+  });
+});
+
+describe('auditCatalogs \u00B7 reference', () => {
+  const none = { usages: [], dynamic: [] };
+
+  test('a key only the reference defines is missing from the other locale, and used stays source', () => {
+    const report = auditCatalogs({
+      extraction: none,
+      catalogs: { en: { 'a.only': 'Only' }, es: {} },
+      reference: 'en',
+    });
+    expect(report.locales.find((audit) => audit.locale === 'es')?.missing).toEqual(['a.only']);
+    expect(report.locales.find((audit) => audit.locale === 'en')?.missing).toEqual([]);
+    expect(report.used).toEqual([]);
+    expect(report.required).toEqual(['a.only']);
+    expect(report.ok).toBe(false);
+  });
+
+  test('plural families compare by stem: ja with _other alone and pl with _few both pass', () => {
+    const report = auditCatalogs({
+      extraction: none,
+      catalogs: {
+        en: {
+          items_one: '{count} item',
+          items_other: '{count} items',
+          pair: 'x',
+          pair_plural: 'y',
+        },
+        ja: { items_other: '{count} \u500B', pair: 'x' },
+        pl: { items_one: 'a', items_few: 'b', items_many: 'c', pair_plural: 'y' },
+      },
+      reference: 'en',
+    });
+    expect(report.locales.flatMap((audit) => audit.missing)).toEqual([]);
+    expect(report.ok).toBe(true);
+  });
+
+  test('a suffix that is no plural category is its own key, not a stem', () => {
+    const report = auditCatalogs({
+      extraction: none,
+      catalogs: { en: { sort_order: 'Order' }, es: { sort: 'Orden' } },
+      reference: 'en',
+    });
+    expect(report.locales.find((audit) => audit.locale === 'es')?.missing).toEqual(['sort_order']);
+  });
+
+  test('a key only another locale holds is not a gap in the reference', () => {
+    const report = auditCatalogs({
+      extraction: none,
+      catalogs: { en: {}, es: { 'a.extra': 'Extra' } },
+      reference: 'en',
+    });
+    expect(report.ok).toBe(true);
+  });
+
+  test('no reference, or a reference no catalog answers: only source is compared', () => {
+    const catalogs = { en: { 'a.only': 'Only' }, es: {} };
+    expect(auditCatalogs({ extraction: none, catalogs }).ok).toBe(true);
+    expect(auditCatalogs({ extraction: none, catalogs, reference: 'de' }).ok).toBe(true);
+  });
+});
+
 describe('mergeExtractions', () => {
   test('concatenates both halves in argument order and keeps them apart', () => {
     const first = extractKeys("t('a.one'); t(props.x)", 'a.tsx');

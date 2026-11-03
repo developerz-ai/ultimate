@@ -393,7 +393,7 @@ Draining a worker mid-job does **not** finish the current step (`As of 2026-09-0
 | `x db backfill --list --json` | the whole ledger: one row per pass, newest first → [CLI reference](CLI-Reference#x-db) |
 | MCP dev tools | `jobs.inspect` (definitions, retry policy, steps) and `queue.depth` (pending/running/failed per queue) — scope `dev:read`, never reachable in `ROLE=web` |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
-| Metrics | `queue_depth{queue}`, `jobs_total{queue,outcome}`, `job_leases_lost_total{queue}` → [Observability](Observability) |
+| Metrics | `queue_depth{queue}`, `queue_demand{queue}` (what the worker HPA reads), `jobs_total{queue,outcome}`, `job_leases_lost_total{queue}` → [Observability](Observability) |
 
 Every command supports `--json`. See [CLI reference](CLI-Reference).
 

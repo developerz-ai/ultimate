@@ -21,6 +21,9 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 /** The header `@ultimat3/action`'s server reads to replay rather than re-run a write. */
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
 
+/** On a keyed answer: `1` when it was replayed from the first response, `0` when this call ran. */
+export const REPLAYED_HEADER = 'x-ultimate-replayed';
+
 /**
  * The build a client was served, on the request, and the build that answered, on the response.
  * `@ultimat3/http` reads it into `ctx.clientBuildId` and stamps it back; `@ultimat3/action`'s typed

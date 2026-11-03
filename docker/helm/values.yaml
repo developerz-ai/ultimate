@@ -196,12 +196,14 @@ roles:
   worker:
     enabled: true
     replicas: 2
-    # The retire, OFF at 0. Set to the longest a held job may run, in seconds, and the worker's
-    # preStop sends its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0
-    # (packages/cli/src/serve-retire.ts) — for a job whose side effect must happen at most once and
-    # may outlast its drain budget (drain.workerDeadlineSeconds, else drain.deadlineSeconds). Added to this role's
-    # terminationGracePeriodSeconds, which the kubelet counts the preStop against.
-    retireSeconds: 0
+    # The retire, ON: a deploy or a scale-down never cuts a job it could wait out. app.config.ts
+    # `drain.workerRetireMs` / 1000, set by x deploy, and 0 turns it off. The worker's preStop sends
+    # its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0
+    # (packages/cli/src/serve-retire.ts). An idle worker exits at once, and a Terminating pod does
+    # not hold a rollout back. Past these seconds the drain budget (drain.workerDeadlineSeconds, else
+    # drain.deadlineSeconds) still applies. Added to this role's terminationGracePeriodSeconds, which
+    # the kubelet counts the preStop against.
+    retireSeconds: 3600
     resources:
       requests: { cpu: 200m, memory: 256Mi }
       limits: { memory: 1Gi }
@@ -209,15 +211,17 @@ roles:
       enabled: true
       minReplicas: 1
       maxReplicas: 50
-      # External, never Pods. `queue_depth` is the QUEUE's fact: every worker pod publishes the
-      # same global number (packages/jobs/src/worker.ts), so a Pods metric averaged it as if each
-      # pod held that backlog alone and asked for N× the workers the queue needed, every sync.
-      # An External metric with an AverageValue target divides the one global value by the
-      # replica count, which is the question an autoscaler is asking. Your metrics adapter must
-      # expose it DEDUPLICATED — `max(queue_depth)` (or `max by (queue)` with a selector), never
-      # `sum`, which would re-multiply it by the pod count.
+      # External, never Pods. `queue_demand` is the FLEET's fact: every serving worker publishes the
+      # same number (packages/jobs/src/worker-queue-demand.ts), so a Pods metric averaged it as if
+      # each pod held all of it and asked for N× the workers the queue needed, every sync. An
+      # External metric with an AverageValue target divides the one value by the replica count,
+      # which is the question an autoscaler is asking. Your metrics adapter must expose it
+      # DEDUPLICATED: `max by (queue) (queue_demand)`, never `sum`, which would re-multiply it by the
+      # pod count. Never `queue_depth` here either: it counts only what waits, so a fleet holding
+      # every job read 0 and this HPA shrank it mid-job.
       type: External
-      metric: queue_depth       # jobs waiting, exported by the worker role
+      metric: queue_demand      # jobs held by serving workers plus jobs due, per queue
+      # Set it to one pod's jobs.maxInFlight; x deploy --method helm sets it when app.config.ts declares it.
       targetAverageValue: "100"
 
   scheduler:

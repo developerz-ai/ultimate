@@ -188,6 +188,29 @@ describe('unit · armWorkerRetire', () => {
     expect(drained).toEqual([RETIRE_SIGNAL]);
   });
 
+  test('a stats() that fails at the signal still retires: the worker is stopped, nothing cut', async () => {
+    const signals = fakeSignals();
+    const events: string[] = [];
+    const retire = armWorkerRetire({
+      platform: 'linux',
+      signals,
+      drain: (signal) => {
+        events.push(`drain:${signal}`);
+        return Promise.resolve();
+      },
+    });
+    retire.adopt({
+      stats: () => Promise.reject(new InternalError({ cause: 'db blip', fix: 'x doctor --json' })),
+      stop: (reason?: string) => {
+        events.push(`stop:${reason ?? ''}`);
+        return Promise.resolve();
+      },
+    });
+    signals.raise(RETIRE_SIGNAL);
+    await tick();
+    expect(events).toEqual([`stop:${RETIRE_SIGNAL}`, `drain:${RETIRE_SIGNAL}`]);
+  });
+
   test('disarm gives the listener back', () => {
     const signals = fakeSignals();
     const retire = armWorkerRetire({ platform: 'linux', signals, drain: () => Promise.resolve() });

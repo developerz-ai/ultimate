@@ -2,6 +2,9 @@
 // repeats past the threshold throws where it happened, so an N+1 fails the test that caused it
 // instead of warning in a dev server nobody is watching.
 //
+// Both drivers report here: Postgres per statement, `memoryRepo` per repository operation, so a
+// loop in a unit test on the in-memory driver is the same verdict under the same `entity.op`.
+//
 // Strict by construction: there is no `strict: true` to remember, because a fixture nobody
 // destructured is a fixture nobody built. Opting in is naming `statements` in the test body.
 
@@ -12,7 +15,7 @@ export interface ObservedStatement {
   /** What it is counted under: `members.findById` when attributed, else its own collapsed text. */
   readonly fingerprint: string;
   readonly kind: 'read' | 'write';
-  /** The statement as sent, parameters still `$1..$n`. */
+  /** The statement as sent, parameters still `$1..$n`. The memory driver sends none: its label. */
   readonly text: string;
   /** The entity and operation that compiled it; absent for hand-written SQL and queue traffic. */
   readonly attribution?: StatementAttribution | undefined;

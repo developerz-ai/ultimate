@@ -13,7 +13,7 @@ export const DEFAULT_ROLE: Role = 'web';
 export type ScalingSignal =
   | 'rps'
   | 'ws-connections'
-  | 'queue-depth'
+  | 'queue-demand'
   | 'singleton'
   | 'run-once'
   | 'per-database';
@@ -29,7 +29,7 @@ export interface RoleInfo {
 export const ROLE_INFO = Object.freeze<Record<Role, RoleInfo>>({
   web: { role: 'web', scalesOn: 'rps', maxReplicas: null, stateful: false },
   sync: { role: 'sync', scalesOn: 'ws-connections', maxReplicas: null, stateful: false },
-  worker: { role: 'worker', scalesOn: 'queue-depth', maxReplicas: null, stateful: false },
+  worker: { role: 'worker', scalesOn: 'queue-demand', maxReplicas: null, stateful: false },
   scheduler: { role: 'scheduler', scalesOn: 'singleton', maxReplicas: 1, stateful: false },
   migrate: { role: 'migrate', scalesOn: 'run-once', maxReplicas: 1, stateful: false },
   replicator: { role: 'replicator', scalesOn: 'per-database', maxReplicas: 1, stateful: true },

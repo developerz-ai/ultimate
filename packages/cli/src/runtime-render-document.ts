@@ -18,6 +18,7 @@ import {
   renderHead,
   seoRenderers,
 } from '@ultimat3/render';
+import type { HoleSink } from '@ultimat3/render/server';
 import { ROOT_ELEMENT_ID, renderComponent } from '@ultimat3/render/server';
 import { loadAppConfig } from './app-config-load';
 import type { DocumentOptions } from './document-options';
@@ -145,6 +146,8 @@ export async function routeBody(
   ctx: DevRouteData,
   data: RouteData,
   islands: IslandCollector,
+  // Only the `stream` branch passes one. Absent, a `<Hole>` is its children, inline.
+  holes?: HoleSink,
 ): Promise<string> {
   if (entry.component === undefined) return `<div id="${ROOT_ELEMENT_ID}"></div>`;
   const url = new URL(ctx.url);
@@ -160,7 +163,7 @@ export async function routeBody(
       query: routeQuery(entry, url),
     },
     entry.file,
-    { islands },
+    holes === undefined ? { islands } : { islands, holes },
   );
   return `<div id="${ROOT_ELEMENT_ID}">${html}</div>`;
 }

@@ -13,6 +13,7 @@ import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
+import { toQueryOpenApiOperation } from './openapi';
 import type { AnyQuery } from './query';
 import { query } from './query';
 import { sourceFor } from './read';
@@ -204,6 +205,19 @@ describe('unit · a sealed column leaves through no projection of a query', () =
         ),
     }).named('sealedAccounts');
     clean(await wire(derived));
+  });
+
+  // The document is a projection too: a sealed member a client is told to expect is the name of a
+  // secret and a promise the row cannot keep.
+  test('the OpenAPI operation: list, page envelope, single and the record envelope name neither', () => {
+    for (const target of [list({ rows: true }), list({ rows: true, single: true })]) {
+      const { responses } = toQueryOpenApiOperation(target) as { responses: { '200': unknown } };
+      // The answer alone: `name` is also an input parameter, which would satisfy this for free.
+      const document = JSON.stringify(responses['200']);
+      expect(document).toContain('"name"');
+      expect(document).not.toContain('credential');
+      expect(document).not.toContain('contact');
+    }
   });
 
   test('the server-side caller of the same read still reads the plaintext', async () => {

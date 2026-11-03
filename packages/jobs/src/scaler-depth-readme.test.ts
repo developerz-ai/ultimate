@@ -3,7 +3,7 @@
 // the unproved one. Compared token for token, with the README's inlined queue list as `$1`.
 
 import { describe, expect, test } from 'bun:test';
-import { SQL_SCALER_DEPTH } from './scaler-depth-fixture';
+import { SQL_SCALER_DEMAND } from './scaler-depth-fixture';
 
 const tokens = (sql: string): string => sql.replace(/\s+/g, ' ').trim();
 
@@ -15,7 +15,7 @@ describe('the README scaler statement', () => {
     )?.[1];
     if (block === undefined) return expect.unreachable('the README has its scaler block');
     expect(tokens(block.replace(/any\('\{[^}]*\}'::text\[\]\)/, 'any($1::text[])'))).toBe(
-      tokens(SQL_SCALER_DEPTH),
+      tokens(SQL_SCALER_DEMAND),
     );
   });
 });

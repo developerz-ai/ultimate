@@ -29,6 +29,7 @@ import {
 // accident one refactor away from compiling every app's `.tsx` to `React.createElement`. The named
 // import is a value import, so the side effect holds without the bare line it replaced.
 import { setStylesheetRoot } from '@ultimat3/render/server';
+import { unresolvedImportFinding } from './app-load-unresolved';
 import {
   evictChanged,
   pinModule,
@@ -215,28 +216,24 @@ export async function scanAppModules(root: string, options: ScanOptions): Promis
       continue;
     }
     if (options.include !== undefined && !(await options.include(absolute))) continue;
-    // The source is read BEFORE the import, on the file's first pass and for every route module —
-    // a rescan of any other registered module reads nothing here. What is recorded is bound to the
-    // bytes the module was evaluated from, and a read AFTER the import cannot know which bytes
-    // those were: a save landing between the two bound V1's component to V2's hash, so the next
-    // scan saw nothing to do and served V1 until the save after. Read first, the worst case is one
-    // re-import the next tick, of a file that did change. An untracked scan reads nothing here:
-    // no save lands in an image, so a route module's text is read after its import, once.
+    // The source is read BEFORE the import, on the file's first pass — a rescan of a registered
+    // module reads nothing here. What is recorded is bound to the bytes the module was evaluated
+    // from, and a read AFTER the import cannot know which bytes those were: a save landing between
+    // the two bound V1's component to V2's hash, so the next scan saw nothing to do and served V1
+    // until the save after. Read first, the worst case is one re-import the next tick, of a file
+    // that did change. An untracked scan reads nothing here: no save lands in an image.
     const first = !registered.has(absolute) && !failures.has(absolute);
-    const snapshot =
-      options.track && (first || routeModules.has(absolute))
-        ? await Bun.file(absolute).text()
-        : undefined;
+    const snapshot = options.track && first ? await Bun.file(absolute).text() : undefined;
     if (first && snapshot !== undefined) await trackModule(absolute, snapshot, root);
     let module: Record<string, unknown>;
     try {
       module = (await import(absolute)) as Record<string, unknown>;
     } catch (error) {
-      findings.push({ ...findingFrom(error), at: file });
+      findings.push(unresolvedImportFinding(error, root) ?? { ...findingFrom(error), at: file });
       continue;
     }
     files.push(file);
-    const finding = await register(absolute, file, module, snapshot, options.track);
+    const finding = await register(absolute, file, module, options.track);
     if (finding !== undefined) findings.push(finding);
   }
 
@@ -303,25 +300,22 @@ const emptyAppFinding = (root: string): Finding => ({
 /**
  * Registers a module once; every later call replays whatever the first one reported — except for
  * a route module, which a later call re-registers when the import handed back a new instance.
- * `snapshot` is the source read before this import: always for a first pass and a route module of
- * a TRACKED scan. An untracked one hands none, and a route module's text is read here instead.
  */
 async function register(
   absolute: string,
   file: string,
   module: Record<string, unknown>,
-  snapshot: string | undefined,
   track: boolean,
 ): Promise<Finding | undefined> {
   const previous = failures.get(absolute);
   if (previous !== undefined) return previous;
-  if (registered.has(absolute)) return reloadRoute(absolute, file, module, snapshot);
+  if (registered.has(absolute)) return track ? reloadRoute(absolute, file, module) : undefined;
   registered.add(absolute);
   try {
     const config = module['config'];
     const route = isRouteConfig(config) ? config : undefined;
     if (route !== undefined) {
-      registerRouteModule(file, module, route, snapshot ?? (await Bun.file(absolute).text()));
+      registerRouteModule(file, module, route);
       routeModules.set(absolute, module);
     }
     // A pin is the reload graph's: it stops an eviction a process that never rescans never runs,
@@ -364,18 +358,11 @@ function definesPrimitive(module: Record<string, unknown>, route: boolean): bool
   });
 }
 
-/**
- * The route half of a registration, and the whole of a re-registration. `source` is the text the
- * module was imported from — read by the caller BEFORE the import, never here after it — and the
- * hash the entry is bound to is that text's. Until 2026-09-07 this read the file again, and a save
- * between the import and that read registered the old component under the new hash: the next
- * scan compared equal, and the page on disk was not served until the save after it.
- */
+/** The route half of a registration, and the whole of a re-registration. */
 function registerRouteModule(
   file: string,
   module: Record<string, unknown>,
   config: RouteConfig,
-  source: string,
 ): void {
   // The page component comes from the same module as its config, resolved by render's own
   // rule — the CLI does not decide which export is a page any more than it decides what a
@@ -384,9 +371,6 @@ function registerRouteModule(
   registerRoute({
     file,
     config,
-    // The build counts boundaries from the compiled JSX; before a build there is only the
-    // source, and `render: 'stream'` is rejected without one — so count them in the text.
-    suspenseBoundaries: countSuspense(source),
     ...(component === undefined ? {} : { component }),
   });
 }
@@ -401,24 +385,21 @@ function reloadRoute(
   absolute: string,
   file: string,
   module: Record<string, unknown>,
-  source: string | undefined,
 ): Finding | undefined {
   const held = routeModules.get(absolute);
-  if (held === undefined || held === module || source === undefined) return undefined;
+  if (held === undefined || held === module) return undefined;
   try {
     const config = module['config'];
     // A file that stopped being a route is not un-registered — the table has no verb for it, and a
     // deleted file needs a restart either way. Its instance is recorded so the same save is not
     // re-registered on every later tick.
-    if (isRouteConfig(config)) registerRouteModule(file, module, config, source);
+    if (isRouteConfig(config)) registerRouteModule(file, module, config);
     routeModules.set(absolute, module);
     return undefined;
   } catch (error) {
     return { ...findingFrom(error), at: file };
   }
 }
-
-const countSuspense = (source: string): number => source.match(/<Suspense[\s/>]/g)?.length ?? 0;
 
 /**
  * `packages/db/src/errors.ts` → `packages/db`; `apps/web/app/posts/errors.ts` → `apps/web` — on

@@ -3,9 +3,24 @@
 // ways it quietly widens: a wildcard standing next to credentials, and preflight answering an
 // origin the allow-list rejects.
 import { describe, expect, test } from 'bun:test';
+import {
+  BUILD_ID_HEADER,
+  clientTransport,
+  ctxOf,
+  DATES_HEADER,
+  type FetchLike,
+  IDEMPOTENCY_HEADER,
+  RECORDS_HEADER,
+  REPLAYED_HEADER,
+  REQUEST_TIMEOUT_HEADER,
+  renderDeprecation,
+  runWithContext,
+  withSpan,
+} from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { assertCorsConfig, corsHeaders, DEFAULT_CORS, originListed, preflight } from './cors';
 import { HttpError } from './errors';
+import { rateLimitHeaders } from './rate-limit-headers';
 
 describe('corsHeaders()', () => {
   // A refusal carries `vary: origin` and nothing else. Without the key, a shared cache files the
@@ -228,12 +243,169 @@ describe('DEFAULT_CORS', () => {
     expect(DEFAULT_CORS.allowHeaders).toEqual([
       'content-type',
       'authorization',
-      'x-ultimate-build',
+      BUILD_ID_HEADER,
       'x-request-id',
+      IDEMPOTENCY_HEADER,
+      REQUEST_TIMEOUT_HEADER,
+      'traceparent',
     ]);
-    expect(DEFAULT_CORS.exposeHeaders).toEqual(['x-request-id', 'x-ultimate-build', 'retry-after']);
-    expect(DEFAULT_CORS.methods.length).toBeGreaterThan(0);
-    expect(DEFAULT_CORS.allowHeaders.length).toBeGreaterThan(0);
-    expect(DEFAULT_CORS.exposeHeaders.length).toBeGreaterThan(0);
+    expect(DEFAULT_CORS.exposeHeaders).toEqual([
+      'x-request-id',
+      BUILD_ID_HEADER,
+      'retry-after',
+      RECORDS_HEADER,
+      DATES_HEADER,
+      REPLAYED_HEADER,
+      'ratelimit-limit',
+      'ratelimit-remaining',
+      'ratelimit-reset',
+      'deprecation',
+      'sunset',
+      'link',
+    ]);
+  });
+
+  test('an app list replaces the default whole, it never merges', () => {
+    const config = defineHttpConfig({
+      dev: false,
+      rateLimit: { scope: 'process' },
+      cors: { allowHeaders: ['x-mine'], exposeHeaders: ['x-yours'] },
+    });
+    expect(config.cors.allowHeaders).toEqual(['x-mine']);
+    expect(config.cors.exposeHeaders).toEqual(['x-yours']);
+  });
+});
+
+/** What a browser never preflights, and what it shows a page cross-origin without being told. */
+const SAFELISTED_REQUEST = new Set(['accept', 'content-language', 'content-type']);
+const SAFELISTED_RESPONSE = new Set(['cache-control', 'content-language', 'content-length']);
+const ALSO_SAFELISTED_RESPONSE = ['content-type', 'expires', 'last-modified', 'pragma'];
+for (const name of ALSO_SAFELISTED_RESPONSE) SAFELISTED_RESPONSE.add(name);
+
+/**
+ * Every header `clientTransport` wrote and read across the paths that differ: a keyed write, a read
+ * under a span with a request budget, and a refusal. Observed, never listed: a header the transport
+ * starts sending or reading tomorrow fails the two tests below without anyone editing them.
+ */
+async function transportTraffic(): Promise<{ sent: Set<string>; read: Set<string> }> {
+  const sent = new Set<string>();
+  const read = new Set<string>();
+  const answering =
+    (status: number): FetchLike =>
+    async (_url, init) => {
+      for (const name of Object.keys(init.headers as Record<string, string>)) {
+        sent.add(name.toLowerCase());
+      }
+      const body = status === 200 ? '{}' : '{"code":"X_RATE_LIMITED","cause":"c","fix":"f"}';
+      const response = new Response(body, { status });
+      const get = response.headers.get.bind(response.headers);
+      response.headers.get = (name: string): string | null => {
+        read.add(name.toLowerCase());
+        return get(name);
+      };
+      return response;
+    };
+  const ok = answering(200);
+  await clientTransport({
+    method: 'POST',
+    url: '/api/things',
+    body: {},
+    idempotencyKey: 'k',
+    fetchImpl: ok,
+  });
+  const budgeted = ctxOf({ deadlineAt: Date.now() + 60_000 });
+  await runWithContext(budgeted, () =>
+    withSpan('cors.test', () => clientTransport({ method: 'GET', url: '/q', fetchImpl: ok })),
+  );
+  await clientTransport({ method: 'GET', url: '/q', fetchImpl: answering(429) }).catch(() => null);
+  return { sent, read };
+}
+
+describe('the default against what the clients do on the wire', () => {
+  test('every header clientTransport sends is allowed', async () => {
+    const { sent } = await transportTraffic();
+    // The walk reached the conditional ones, so this cannot pass by observing nothing.
+    expect([...sent]).toEqual(
+      expect.arrayContaining([IDEMPOTENCY_HEADER, REQUEST_TIMEOUT_HEADER, 'traceparent']),
+    );
+    for (const name of sent) {
+      if (!SAFELISTED_REQUEST.has(name)) expect(DEFAULT_CORS.allowHeaders).toContain(name);
+    }
+  });
+
+  test('the headers only the typed client adds are allowed and exposed', () => {
+    expect(DEFAULT_CORS.allowHeaders).toContain(BUILD_ID_HEADER);
+    expect(DEFAULT_CORS.exposeHeaders).toContain(BUILD_ID_HEADER);
+  });
+
+  test('every header clientTransport reads is exposed', async () => {
+    const { read } = await transportTraffic();
+    expect([...read]).toEqual(
+      expect.arrayContaining([RECORDS_HEADER, DATES_HEADER, 'retry-after']),
+    );
+    // `date` alone is tolerated hidden: it only dates an HTTP-date `Retry-After`, and this server
+    // writes delta-seconds (`retryAfterOf`). `retryAfterSecondsOf` documents the unexposed case.
+    read.delete('date');
+    for (const name of read) {
+      if (!SAFELISTED_RESPONSE.has(name)) expect(DEFAULT_CORS.exposeHeaders).toContain(name);
+    }
+  });
+
+  test('every header the server writes for a client to act on is exposed', () => {
+    const decision = { allowed: true, limit: 1, remaining: 1, resetAtMs: 0, retryAfterSeconds: 0 };
+    const window = { since: '2026-01-01T00:00:00Z', sunset: '2027-01-01T00:00:00Z' };
+    const rendered = renderDeprecation(window, '/api/next');
+    if (!rendered.ok) return expect.unreachable('the fixture window is a real date');
+    for (const name of [
+      ...Object.keys(rateLimitHeaders(decision, 0)),
+      ...Object.keys(rendered.headers),
+      REPLAYED_HEADER,
+    ]) {
+      expect(DEFAULT_CORS.exposeHeaders).toContain(name);
+    }
+  });
+
+  test('a keyed write from a listed origin passes preflight', () => {
+    const origin = 'https://a.test';
+    const response = preflight(
+      new Request('https://app.test/api/things', {
+        method: 'OPTIONS',
+        headers: {
+          origin,
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': IDEMPOTENCY_HEADER,
+        },
+      }),
+      { ...DEFAULT_CORS, origins: [origin] },
+    );
+    expect(response?.status).toBe(204);
+    expect(response?.headers.get('access-control-allow-headers')).toContain(IDEMPOTENCY_HEADER);
+  });
+
+  /** The answer as a browser hands it to a page: only what the CORS reply let through. */
+  const asTheBrowserShows = (expose: readonly string[]): FetchLike => {
+    const config = { ...DEFAULT_CORS, origins: ['https://a.test'], exposeHeaders: [...expose] };
+    const exposed = corsHeaders(config, 'https://a.test')['access-control-expose-headers'];
+    const visible = new Set((exposed ?? '').split(', '));
+    return async () => {
+      const answer: Record<string, string> = { [RECORDS_HEADER]: '1', 'content-type': 'text/json' };
+      const shown = Object.entries(answer).filter(
+        ([name]) => visible.has(name) || SAFELISTED_RESPONSE.has(name),
+      );
+      return new Response('{"data":{"id":1},"records":{}}', {
+        headers: Object.fromEntries(shown),
+      });
+    };
+  };
+
+  test('a typed call from a listed origin answers the output, not the envelope', async () => {
+    const call = (fetchImpl: FetchLike) =>
+      clientTransport({ method: 'POST', url: '/api/things', body: {}, fetchImpl });
+    // The control is the defect: with the records header hidden, the envelope IS the answer.
+    expect(await call(asTheBrowserShows(['retry-after']))).toEqual({
+      data: { id: 1 },
+      records: {},
+    });
+    expect(await call(asTheBrowserShows(DEFAULT_CORS.exposeHeaders))).toEqual({ id: 1 });
   });
 });

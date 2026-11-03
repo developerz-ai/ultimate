@@ -4,7 +4,7 @@
 
 ## The stages
 
-**Fourteen, in this order.** `PIPELINE_STAGES` in [`packages/http/src/pipeline.ts`](../../packages/http/src/pipeline.ts) is the executable copy and the `why` column is quoted from it — a stage's reason for its index is source, rendered verbatim by the dev dashboard, not prose kept beside the code. `As of 2026-08-23`.
+**Fifteen, in this order.** `PIPELINE_STAGES` in [`packages/http/src/pipeline.ts`](../../packages/http/src/pipeline.ts) is the executable copy and the `why` column is quoted from it — a stage's reason for its index is source, rendered verbatim by the dev dashboard, not prose kept beside the code. `As of 2026-08-23`.
 
 | # | Stage | Phase | Does | Why here |
 |---|---|---|---|---|
@@ -21,7 +21,8 @@
 | 11 | `handler` | `terminal` | the matched route's handler, wrapped in the declared middleware | the only stage that is app code |
 | 12 | `cache-headers` | `finalize` | reviews what the handler wrote: a shared answer for an identified actor becomes `PRIVATE_CACHE`, an anonymous one gains `SHARED_CACHE_VARY` — `accept-language`, `cookie`, `x-timezone` | after the handler so a handler can override the route default, and before response so a directive cannot drop a security header |
 | 13 | `error-map` | `recover` | one throw → one status: sign-in redirect, dev overlay, error page or problem+json; reports 5xx; logs the **code** with the cause as a redactable field | the single place a throw becomes a status: problem+json for agents and RPC, the dev overlay for browsers |
-| 14 | `response` | `finalize` | merges `ctx.headers`, CORS, the security headers and `server-timing` onto whatever the stages produced | last: nothing may write a header after it |
+| 14 | `response` | `finalize` | merges `ctx.headers`, CORS, the security headers and `server-timing` onto whatever the stages produced | after every stage that decides a header; only `compress` runs behind it, and it adds no decision |
+| 15 | `compress` | `finalize` | gzip for a public text answer of 1 KiB to 256 KiB with a declared length; `vary: accept-encoding` on every answer of that kind, coded or not. [What it codes](16-build-pipeline.md#what-is-compressed) | last: it reads the final `cache-control`, so a private answer is never coded (BREACH), and rebuilds the response with every header already on it |
 
 Adding a stage is an entry in **both** `PIPELINE_STAGES` and `stages.ts`'s `Record<StageName, StageRun>` — the record type is what makes forgetting one a build error, and `packages/http/CLAUDE.md` requires a `why` and a test with it.
 

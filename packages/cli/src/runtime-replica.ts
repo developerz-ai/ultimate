@@ -17,7 +17,13 @@
 // what a database is.
 
 import type { DbClient, PoolProfile, PostgresClient } from '@ultimat3/db';
-import { postgresClient, REPLICA_URL_ENV, replicatedClient, withReplicaReads } from '@ultimat3/db';
+import {
+  POOLER_ENV,
+  postgresClient,
+  REPLICA_URL_ENV,
+  replicatedClient,
+  withReplicaReads,
+} from '@ultimat3/db';
 import type { Middleware } from '@ultimat3/http';
 import type { ServiceBinding } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
@@ -44,6 +50,9 @@ export interface ReplicaAttachment {
   readonly replica: PostgresClient | undefined;
 }
 
+const isPool = (client: DbClient): client is PostgresClient =>
+  'profile' in client && 'pooler' in client;
+
 /**
  * The primary as it is, or the primary with a standby behind it. Composed here rather than by
  * calling `defaultClient()`, because that function builds its own primary from `DATABASE_URL` and
@@ -57,7 +66,14 @@ export function attachReplica(
   profile: Partial<PoolProfile> = {},
 ): ReplicaAttachment {
   if (replicaUrl === undefined) return { client: primary, replica: undefined };
-  const replica = postgresClient({ url: replicaUrl, applicationName: 'ultimate-replica', profile });
+  const replica = postgresClient({
+    url: replicaUrl,
+    applicationName: 'ultimate-replica',
+    // The primary's answers, never a second read of the environment: one process, one role's
+    // numbers and one pooler mode. An embedded primary has neither, and the defaults stand.
+    profile: isPool(primary) ? { ...primary.profile, ...profile } : profile,
+    env: { [POOLER_ENV]: isPool(primary) ? primary.pooler : undefined },
+  });
   return { client: replicatedClient(primary, replica), replica };
 }
 

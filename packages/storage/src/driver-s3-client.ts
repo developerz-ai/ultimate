@@ -14,6 +14,8 @@ export interface S3FileLike {
   exists(): Promise<boolean>;
   delete(): Promise<void>;
   stream(): ReadableStream<Uint8Array>;
+  /** Bun's `S3File.slice`: `end` exclusive. Its `stream()` sends one `Range:`, measured on 1.4.4. */
+  slice(begin: number, end: number): { stream(): ReadableStream<Uint8Array> };
   stat(): Promise<S3StatLike>;
   presign(options: { method?: string; expiresIn?: number; type?: string }): string;
 }
@@ -92,3 +94,10 @@ export function buildClient(options: S3DriverOptions): S3ClientLike {
     ...clientTarget(options),
   });
 }
+
+/**
+ * A missing `LastModified` is ABSENT, never `new Date(0)`: epoch 0 is older than every window, so
+ * `sweepOrphans` deleted an upload on the strength of a field the provider never sent.
+ */
+export const dated = (value: string | Date | undefined): { readonly lastModified?: Date } =>
+  value === undefined ? {} : { lastModified: value instanceof Date ? value : new Date(value) };

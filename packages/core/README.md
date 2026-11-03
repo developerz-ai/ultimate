@@ -73,7 +73,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | what a health endpoint tells whom — `healthBody(report, role, detailed)`, `healthPeerListed(peers, address)`, `DEFAULT_HEALTH_DETAIL_PEERS`; the one rule `@ultimat3/http` and the sync node's own listener both call | `health-disclosure.ts` |
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
-| the drain budget's default and domain (`drain.deadlineMs`, 25 s, 1–3600000 ms; the worker's optional `drain.workerDeadlineMs`, 1–86400000 ms) — `DRAIN_DEADLINE_DEFAULT_MS`, `DRAIN_DEADLINE_MAX_MS`, `WORKER_DRAIN_DEADLINE_MAX_MS` | `drain-deadline.ts` |
+| the drain budget's default and domain (`drain.deadlineMs`, 25 s, 1–3600000 ms; the worker's optional `drain.workerDeadlineMs`, 1–86400000 ms; its `drain.workerRetireMs`, an hour, 0–86400000 ms) — `DRAIN_DEADLINE_DEFAULT_MS`, `DRAIN_DEADLINE_MAX_MS`, `WORKER_DRAIN_DEADLINE_MAX_MS`, `WORKER_RETIRE_DEFAULT_MS` | `drain-deadline.ts` |
 | `jobs.concurrency`'s default and domain — one slot count for every queue a worker serves, or a table per queue (`{ banks: 4, 'banks-long': 2 }`; a queue the table does not name runs at the default). `JOBS_CONCURRENCY_DEFAULT` (8), `type JobsConcurrency` | `config-jobs.ts` |
 | SIGTERM/SIGINT → the one drain; on Windows also SIGHUP (console close) and SIGBREAK (Ctrl-Break) — `drainSignals(platform)` | `lifecycle-signals.ts` |
 | is this directory inside a `bun build --compile` binary? `isCompiledBundle(import.meta.dir)` — `/$bunfs/` and Windows' `B:\~BUN\` | `bunfs.ts` |
@@ -87,10 +87,10 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the one HTML character table — `escapeHtml`, text and attributes alike (`& < > " '`) | `html-escape.ts` |
 | the one `Cookie:` reader — `readCookie(header, name)`, `null` when absent, never a throw | `cookie.ts` |
 | the one `Set-Cookie` writer — `serializeSetCookie(name, value, options?)`; defaults `Path=/; HttpOnly; Secure; SameSite=Lax`, the value percent-encoded so `readCookie` returns it exactly, `X_COOKIE_INVALID` for a non-token name, a pair over 4096 octets, `SameSite=None`/`Partitioned` without `Secure`, a broken `__Secure-`/`__Host-` prefix rule, or an injectable `Path`/`Domain`. `Expires` is an IMF-fixdate in UTC | `cookie.ts` |
-| the one AWS Signature V4 signer — `signAwsRequest({ method, url, headers?, payload?, credentials, region, service, clock? })` → the URL, every header to send (`authorization`, `x-amz-date`, `x-amz-security-token`, `x-amz-content-sha256` by default on `s3`), the canonical request and string-to-sign. `payload`: `{ body }`, a pre-taken `{ sha256Hex }`, or `UNSIGNED_PAYLOAD`. S3 encodes the path once, every other service twice. Web Crypto, no SDK; proven on the aws-c-auth SigV4 suite and S3's worked examples. Shared by `storage`'s s3 disk and `mail`'s SES driver | `aws-sigv4.ts` |
+| the one AWS Signature V4 signer — `signAwsRequest({ method, url, headers?, payload?, credentials, region, service, clock? })` → the URL, every header to send (`authorization`, `x-amz-date`, `x-amz-security-token`, `x-amz-content-sha256` by default on `s3`), the canonical request and string-to-sign. `payload`: `{ body }`, a pre-taken `{ sha256Hex }`, or `UNSIGNED_PAYLOAD`. S3 encodes the path once, every other service twice. Web Crypto, no SDK; proven on the aws-c-auth SigV4 suite and S3's worked examples. Shared by `storage`'s s3 disk and `mail`'s SES driver. `presignAwsUrl({ method, url, expiresInSeconds, headers?, credentials, region, service, clock? })` is the same signature in the query, for a holder with no credentials: `headers` are signed, so a signed `content-length` binds a browser's PUT to that size. Equal to `Bun.S3Client`'s presign byte for byte where Bun can express it | `aws-sigv4.ts` |
 | 32-bit FNV-1a — a BUCKET (rollouts, factory seeds), never a sharing key (`fingerprint` is) | `fnv1a.ts` |
 | `PgExecutor` — the structural `query(text, values)` seam every Postgres store takes | `pg-executor.ts` |
-| a declared retirement as headers — `renderDeprecation` (RFC 9745 `Deprecation`, RFC 8594 `Sunset`, the `successor-version` link) and `recordDeprecatedCall` on the one `deprecated_calls_total`; `action` and `query` both project through it | `deprecation.ts` |
+| a declared retirement as headers — `renderDeprecation` (RFC 9745 `Deprecation`, RFC 8594 `Sunset`, the `successor-version` link, also `successorLink` / `successorPathOf` for a door that re-serves the route) and `recordDeprecatedCall` on the one `deprecated_calls_total`; `action` and `query` both project through it | `deprecation.ts` |
 
 Each of the five, and `fingerprint`, `storeMode` and render's `contentHash`, has ONE implementation:
 `bun run flight-copies` refuses a second by its shape (`X_HELPER_COPY`), whatever it is named.
@@ -566,7 +566,7 @@ process cannot drift apart:
 |---|---|---|
 | `rps` | `http_requests_total` | counter; `rps` is a **rate** the adapter derives (`rate(http_requests_total[1m])`), never a stored number |
 | `ws-connections` | `connections` | gauge, `+1`/`-1` |
-| `queue-depth` | `queue_depth` | gauge, by `queue` label |
+| `queue-demand` | `queue_demand` | gauge, by `queue` label, `@ultimat3/jobs`'s. `queue_depth` stays, for the backlog alert: it reads 0 while a fleet holds every job it has |
 
 `As of 2026-08` all three are emitted and scraped. One call site per package — `recordRequest`
 from `@ultimat3/http`'s pipeline, `recordConnection` from `@ultimat3/realtime`'s socket table,
@@ -645,7 +645,7 @@ never a silently wrong page.
 | Also keys | `keyedFingerprint(value, purpose)` — `h1:<key id>:<HMAC>` over `canonicalJson`, under a per-purpose key derived from this secret; the fingerprint to PERSIST (`@ultimat3/action`'s idempotency `requestHash`). `compareFingerprint` answers `match` / `mismatch` / `unverifiable` (other key), and still checks a legacy bare `fingerprint()` exactly. Rotating the secret makes in-window stored fingerprints `unverifiable` |
 | Signed, not encrypted | the client already has these rows; what it must not do is *invent* a position |
 | `usesDevCursorSecret({ env? })` | true while the shipped dev key is in use — this process, or the table `env` as signing would read it (empty and the published key count as unset) |
-| `CURSOR_SECRET_KEY` / `CURSOR_SECRET_FIX` | `'ULTIMATE_CURSOR_SECRET'` and the one `fix:` for `X_CURSOR_SECRET_DEV` (`export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"`) — the boot refusal and `@ultimat3/cli`'s deploy contract (`.env.example`, `x env check`, `x doctor`) read both |
+| `CURSOR_SECRET_KEY` / `CURSOR_SECRET_FIX` | `'ULTIMATE_CURSOR_SECRET'` and the one `fix:` for `X_CURSOR_SECRET_DEV` (`openssl rand -hex 32   # put the output in this deploy's secret store as ULTIMATE_CURSOR_SECRET; …`) — the boot refusal and `@ultimat3/cli`'s deploy contract (`.env.example`, `x env check`, `x doctor`) read both |
 | `devSecretsRefused({ env? })` | THE rule for refusing a shipped dev secret: anything but `development`/`test`, and no named environment counts as production. The boot (`assertNoDevSecretsOutsideLocal`), `@ultimat3/storage`'s disk and the CLI's diagnostics all ask it |
 | `resetCursorSigning()` | test seam: forget `configureCursorSigning` and fall back to the environment |
 
@@ -762,6 +762,7 @@ nothing consulted it before deciding to try again. `As of 2026-08-23`.
 | `traceHeaders()`, `problemOf(text)`, `retryForStatus(code, status, retryAfterSeconds?)`, `FRAMEWORK_CODE` | what a typed client puts on the wire and reads back off it | the W3C header (nothing at all when the span context is incomplete), a total `problem+json` read, and the classification a STATUS is allowed to give when nobody declared one for the code — `retry-after` for a 429 or 503 that stated a delay, unless the code is declared `terminal` |
 | `retryAfterSecondsOf(header, date)`, `MAX_RETRY_AFTER_SECONDS` | the one `Retry-After` reader | delta-seconds, or an IMF-fixdate measured against the same response's `Date` header (never the client's clock), capped at a day; `0`, a date already past and anything else `undefined` — only a positive delay is a statement (`retryAfterOf`'s outbound rule), so unstated falls back to the jittered curve. `clientTransport` passes it to `problemError` and to a caller's `decodeError(status, text, retryAfterSeconds)`, which carry it as `meta.retryAfterSeconds` for `statedDelayMs` |
 | `withStatedDelay(meta, retryAfterSeconds)` | a remote error's `meta`, for both decoders (`problemError`, `@ultimat3/action`'s `RemoteActionError`) | the copied wire keys minus any `retryAfterSeconds` — the server never writes one in a body, framework meta being operator-only — plus the header's value when there was one. A body can never drive the wait |
+| `withRequestId(meta, requestId)` | a remote error's `meta`, for both decoders | the copied wire keys minus any `requestId`, plus the document's root member when it is a non-empty string under 128 chars. A server's `meta` key cannot pose as the id |
 | `remoteTitleOf(value)`, `MAX_REMOTE_TITLE_LENGTH` | a problem document's `title`, as untrusted display text | a non-blank string cut at 120 characters, or nothing. Handed to `UltimateError` as `remoteTitle`, used only when this realm registered no title for the code |
 
 `retry`'s `policy.jitter` is **required** where `backoffDelay`'s defaults to `none`: a loop retrying

@@ -5,11 +5,12 @@
 // a global registry. Routes and policies are supplied by the caller: the route table lives
 // in `@ultimat3/render`, which is this same tier.
 
-import { describeActions, jsonSchemaOf } from '@ultimat3/action';
+import { apiDeclaration, describeActions, jsonSchemaOf } from '@ultimat3/action';
 import { describeEntities, registeredEntities, sealedFields } from '@ultimat3/entity';
 import { describeJobs } from '@ultimat3/jobs';
 import { describeQueries, getQuery } from '@ultimat3/query';
 import { describeChannels } from '@ultimat3/realtime/server';
+import { toWireOutputSchema } from '@ultimat3/schema';
 import type { ManifestSources } from './build';
 import type {
   AdminFact,
@@ -53,6 +54,15 @@ const asJson = (value: object): JsonValue => value as JsonValue;
 const queryInput = (name: string): { readonly input?: JsonValue } => {
   const handle = getQuery(name);
   return handle === undefined ? {} : { input: asJson(jsonSchemaOf(handle.input)) };
+};
+
+/**
+ * The row the read's OpenAPI operation and MCP tool publish, through the one narrowing both call.
+ * Absent when none is declared or it cannot be introspected: there is no fact to write.
+ */
+const queryRows = (name: string): { readonly rows?: JsonValue } => {
+  const row = toWireOutputSchema(getQuery(name)?.rows);
+  return row === undefined ? {} : { rows: asJson(row) };
 };
 
 /** Absent stays absent: only a sealed column carries the field. */
@@ -139,6 +149,13 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       cacheTags: query.tags,
       // Written only when true — the reason `mutator` is: absence already means "answers rows".
       ...(query.download ? { download: true as const } : {}),
+      ...queryRows(query.name),
+    })),
+    // The prefix and the cut, field by field: `resolveToken` is a function, and the rest of a mount
+    // decides nothing about whether a held token's call still finds its route.
+    mounts: (apiDeclaration().http?.mounts ?? []).map((mount) => ({
+      prefix: mount.prefix,
+      scopes: mount.scopes,
     })),
     // Already the fact's shape, sorted and flattened by `describeChannels` — projected field by
     // field all the same, for the reason above.

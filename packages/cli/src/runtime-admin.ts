@@ -44,7 +44,6 @@ const entryFor = (route: AdminRouteConfig, body: unknown): RouteEntry => ({
   // An admin screen is behind sign-in: it carries the `app/` surface's stylesheet, never `site/`'s.
   surface: 'app',
   config: route.config,
-  suspenseBoundaries: 0,
   islands: [],
   pattern: compilePattern(route.path),
   component: () => body,

@@ -121,6 +121,10 @@ ENTRYPOINT ["bun", "apps/web/server.ts"]
  * has ever produced ignoring a filename nothing writes, which reads as a rule still in force.
  * `scripts/image-contract.ts` holds every ignore file IN THIS TREE to the same line; a generated
  * app's copy is this template's, and `scaffold-container.test.ts` is where it is judged.
+ *
+ * Tests and the root `docs/` go for a different reason: `COPY . .` sits above the prebuilt step, so
+ * an edit to a file no boot reads reran Babel and Sass. No `*.fixture.ts` line: non-test source can
+ * reach a fixture, and a missing module at boot is a worse failure than a few kilobytes.
  */
 const dockerignore = (): string => `**/.env
 **/.env.*
@@ -143,6 +147,11 @@ node_modules
 coverage
 **/test-results
 **/playwright-report
+# Tests run in CI, never in a container, and an edit to one would rerun every line below COPY . .
+**/*.test.ts
+**/*.test.tsx
+# Anchored: a package may hold a docs/ it reads at run time. See "What the image leaves out" in README.
+docs
 `;
 
 const readme = (app: NameSet): string => `# docker
@@ -174,6 +183,12 @@ The image build runs \`x build --target prebuilt\` after \`COPY . .\`: every isl
 compiled stylesheet is made once, there, by the image's own Bun — so a pod builds nothing at boot.
 Without that line every boot runs Babel and Sass over the whole app and logs
 \`X_IMAGE_NOT_PREBUILT\`, naming it.
+
+### What the image leaves out
+
+\`docker/Dockerfile.dockerignore\` drops \`*.test.ts\`, \`*.test.tsx\` and the root \`docs/\`: no boot
+reads them, and an edit to one leaves the prebuilt layer cached. An app that serves a file from
+\`docs/\` re-includes it with \`!docs/<path>\`, on a line after \`docs\`.
 
 ## One box, every role
 

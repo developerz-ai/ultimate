@@ -124,7 +124,10 @@ export const config = defineRoute({
    * keeping focus, Tab and Escape itself; charged to every `app/` document, as the router is.
    * All of the +3,397 B over main's 69,076 B.
    */
-  budget: { js: '71kb' },
+  // measured: 72807 B (x build --target static) — why: a remote error carries the server's
+  // `requestId` (core's `withRequestId`, in the transport this island sends through) — raised
+  // 71kb → 72kb (30.0.0): settings island + inline runtime +370, the client router −36.
+  budget: { js: '72kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

@@ -28,6 +28,12 @@ compiled stylesheet is made once, there, by the image's own Bun — so a pod bui
 Without that line every boot runs Babel and Sass over the whole app and logs
 `X_IMAGE_NOT_PREBUILT`, naming it.
 
+### What the image leaves out
+
+`docker/Dockerfile.dockerignore` drops `*.test.ts`, `*.test.tsx` and the root `docs/`: no boot
+reads them, and an edit to one leaves the prebuilt layer cached. An app that serves a file from
+`docs/` re-includes it with `!docs/<path>`, on a line after `docs`.
+
 ## One box, every role
 
 ```sh

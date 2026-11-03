@@ -11,6 +11,8 @@ import {
   IslandPropsInvalidError,
   PrerenderFailedError,
 } from './errors';
+import type { HoleNode } from './hole';
+import { isHoleNode } from './hole';
 import { renderAttributes, VOID_ELEMENTS } from './html';
 import { emitIslandAttributes, emitIslandProps } from './hydrate';
 import type { IslandNode } from './island';
@@ -19,6 +21,8 @@ import type { IslandCollector } from './island-collector';
 import { islandWithoutCollector } from './island-collector';
 import type { JsxComponent, JsxProps } from './jsx';
 import { isJsxNode } from './jsx';
+import type { StreamHole } from './render-stream';
+import { holeMarker } from './render-stream';
 
 /**
  * The id of the element every document wraps its route component in — one name, because a service
@@ -50,6 +54,48 @@ function assertDepth(depth: number): void {
  */
 export interface RenderHtmlOptions {
   readonly islands?: IslandCollector;
+  /**
+   * Where a `<Hole>` goes instead of being awaited. Only the `stream` branch passes one: every
+   * other render has one flush, so a hole there is its children, inline, and is weighed.
+   */
+  readonly holes?: HoleSink;
+}
+
+/** One render's holes, and the counter their ids come from. Per render, as the collector is. */
+export interface HoleSink {
+  readonly holes: readonly StreamHole[];
+  /** The next id, taken before the walk awaits anything so ids follow the tree. */
+  nextId(): string;
+  add(hole: StreamHole): void;
+  /** Runs a hole's children under its signal: the host's seam for what is ambient inside one. */
+  readonly enter: HoleEnter;
+}
+
+/**
+ * How a host runs a hole's children: given the hole's signal (aborted at its deadline, a client
+ * disconnect and the document's close), in whatever scope it builds. The CLI makes that signal
+ * the ambient one and refuses response headers after the flush; render knows neither.
+ */
+export type HoleEnter = (signal: AbortSignal, run: () => Promise<string>) => Promise<string>;
+
+export interface HoleSinkOptions {
+  readonly enter?: HoleEnter;
+}
+
+export function holeSink(options: HoleSinkOptions = {}): HoleSink {
+  const holes: StreamHole[] = [];
+  let last = 0;
+  return {
+    holes,
+    enter: options.enter ?? ((_signal, run) => run()),
+    nextId() {
+      last += 1;
+      return String(last);
+    },
+    add(hole) {
+      holes.push(hole);
+    },
+  };
 }
 
 /**
@@ -69,6 +115,7 @@ async function unwrap(value: unknown, depth: number, walk: RenderHtmlOptions): P
   // configured `JSX.Element` admits — so the generic branch would render its empty contents and
   // drop the island, its props script and its budget line without a word.
   if (isIslandNode(value)) return renderIsland(value, depth, walk);
+  if (isHoleNode(value)) return renderHole(value, depth, walk);
   if (Array.isArray(value)) {
     const parts = await Promise.all(value.map((item) => unwrap(item, depth + 1, walk)));
     return parts.join('');
@@ -116,6 +163,35 @@ async function renderIsland(
   const shell = await unwrap((node.props as { children?: unknown }).children, depth + 1, walk);
   const tag = node.spec.tag;
   return `<${tag} ${emitIslandAttributes(directive)}>${shell}${emitIslandProps(directive)}</${tag}>`;
+}
+
+/**
+ * Everything under a hole walks with no sink: a nested hole is inline inside the outer one, since
+ * the set of pending holes is fixed at the first flush (`renderStreamHtml`). `resolve` is a thunk,
+ * so `children` start inside `start()`, in the request's async context, after the shell is out.
+ */
+async function renderHole(node: HoleNode, depth: number, walk: RenderHtmlOptions): Promise<string> {
+  const sink = walk.holes;
+  const inner: RenderHtmlOptions = walk.islands === undefined ? {} : { islands: walk.islands };
+  const { children, error, fallback } = node.props;
+  if (sink === undefined) return unwrap(children, depth + 1, inner);
+  const id = sink.nextId();
+  // A promise already running when the tree was built is awaited only once the stream starts; a
+  // rejection before then would be unhandled. Marked here; the hole still awaits and sees it.
+  for (const child of Array.isArray(children) ? children : [children]) {
+    if (child instanceof Promise) child.catch(() => undefined);
+  }
+  const [shown, failed] = await Promise.all([
+    unwrap(fallback, depth + 1, inner),
+    error === undefined ? undefined : unwrap(error, depth + 1, inner),
+  ]);
+  sink.add({
+    id,
+    fallback: shown,
+    ...(failed === undefined ? {} : { error: failed }),
+    resolve: (signal) => sink.enter(signal, () => unwrap(children, depth + 1, inner)),
+  });
+  return holeMarker(id, shown);
 }
 
 async function renderNode(

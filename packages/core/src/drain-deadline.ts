@@ -26,8 +26,16 @@ export const DRAIN_DEADLINE_MAX_MS = 3_600_000;
  */
 export const WORKER_DRAIN_DEADLINE_MAX_MS = 86_400_000;
 
+/**
+ * An hour: how long a retiring worker (`SIGUSR2`, the chart's `preStop`) may finish what it holds,
+ * aborting nothing, before the SIGTERM. Not a second drain budget: this one cancels nothing. On by
+ * default because an idle worker exits at once, so it costs only while a job really holds a pod.
+ */
+export const WORKER_RETIRE_DEFAULT_MS = 3_600_000;
+
 const DEADLINE_KEY = 'drain.deadlineMs';
 const WORKER_DEADLINE_KEY = 'drain.workerDeadlineMs';
+const WORKER_RETIRE_KEY = 'drain.workerRetireMs';
 
 /**
  * Why a value is not a drain budget, or `undefined` when it is one. A whole number of milliseconds
@@ -55,15 +63,29 @@ export function workerDrainDeadlineIssue(value: unknown): string | undefined {
     : undefined;
 }
 
+/**
+ * Why a value is not the worker's retire, or `undefined` when it is one. A whole number in
+ * `0 ≤ v ≤ 86400000`; unlike a drain budget 0 is a real answer here: no retire, the plain SIGTERM.
+ */
+export function workerRetireIssue(value: unknown): string | undefined {
+  const count = countIssue(WORKER_RETIRE_KEY, value, 0);
+  if (count !== undefined) return count;
+  return (value as number) > WORKER_DRAIN_DEADLINE_MAX_MS
+    ? `${WORKER_RETIRE_KEY} must be at most ${WORKER_DRAIN_DEADLINE_MAX_MS} milliseconds (a day) — a job longer than that belongs in steps, which replay instead of re-running`
+    : undefined;
+}
+
 /** The `drain` section's issues, one per key, for `defineConfig`'s validator. */
 export function drainIssues(drain: {
   readonly readinessGraceMs: unknown;
   readonly deadlineMs: unknown;
   readonly workerDeadlineMs?: unknown;
+  readonly workerRetireMs?: unknown;
 }): readonly (string | undefined)[] {
   return [
     readinessGraceIssue(drain.readinessGraceMs),
     drainDeadlineIssue(drain.deadlineMs),
     workerDrainDeadlineIssue(drain.workerDeadlineMs),
+    workerRetireIssue(drain.workerRetireMs),
   ];
 }

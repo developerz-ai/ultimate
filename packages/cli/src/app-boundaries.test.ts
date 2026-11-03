@@ -54,8 +54,9 @@ describe('unit · app boundaries', () => {
       file('apps/web/app/orders/page.tsx', "import { db } from '@acme/db';"),
     ]);
     expect(findings[0]?.code).toBe('X_BOUNDARY_ROUTE_TO_DB');
-    // Every fix is a line a caller can paste: a command first, the rest behind a `#`.
-    expect(findings[0]?.fix).toStartWith('x g query orders');
+    // Every fix is a line a caller can paste: a command first, the rest behind a `#`. No slice to
+    // read from: a new one is what it costs.
+    expect(findings[0]?.fix).toStartWith('x g resource orders');
   });
 
   // A slice's `repo.ts` is the typed handle one hop away: a page reading it skips the query that
@@ -81,6 +82,31 @@ describe('unit · app boundaries', () => {
         .map((finding) => finding.code);
       expect({ specifier, codes }).toEqual({ specifier, codes: ['X_BOUNDARY_ROUTE_TO_DB'] });
     }
+  });
+
+  // `x g query shoplist` for a route reading `../post/repo`: 14 files, a new entity, a `shoplists`
+  // table. The import already said where the read belongs.
+  test('a route reading a slice is told to write the query in that slice', () => {
+    const fixOf = (route: string, specifier: string): string | undefined =>
+      checkImportRules([file(route, `import * as r from '${specifier}';`)]).find(
+        (finding) => finding.code === 'X_BOUNDARY_ROUTE_TO_DB',
+      )?.fix;
+    expect(fixOf('apps/web/app/shoplist/page.tsx', '../post/repo')).toBe(
+      'x g query shoplist --feature post   # then call it from apps/web/app/shoplist/page.tsx',
+    );
+    // Named for the slice, the query would collide with the entity's own import.
+    expect(fixOf('apps/web/app/post/page.tsx', './repo')).toStartWith(
+      'x g query post-read --feature post ',
+    );
+    expect(fixOf('apps/web/app/posts/page.tsx', '../post/repo')).toStartWith(
+      'x g query post-read --feature post ',
+    );
+    expect(fixOf('apps/web/app/page.tsx', './post/repo')).toStartWith(
+      'x g query <name> --feature post ',
+    );
+    expect(fixOf('apps/web/app/shop/page.tsx', '../po; id/repo')).toStartWith(
+      "x g query shop --feature 'po; id' ",
+    );
   });
 
   test('a repo-like name is not a repo, and a service or query may still read one', () => {
@@ -162,8 +188,12 @@ describe('unit · app boundaries', () => {
       file('apps/web/site/page.tsx', "import { db } from '@acme/db';"),
     ]);
     expect(findings[0]?.code).toBe('X_BOUNDARY_ROUTE_TO_DB');
-    expect(findings[0]?.fix).toBe('x g query <name>   # then call it from apps/web/site/page.tsx');
-    for (const surface of SURFACES) expect(findings[0]?.fix).not.toContain(`x g query ${surface} `);
+    expect(findings[0]?.fix).toBe(
+      'x g resource <name>   # then call it from apps/web/site/page.tsx',
+    );
+    for (const surface of SURFACES) {
+      expect(findings[0]?.fix).not.toContain(`x g resource ${surface} `);
+    }
   });
 
   // The same helper backs the service rule, so it carries the same hole and the same test.
@@ -184,7 +214,7 @@ describe('unit · app boundaries', () => {
     for (const surface of SURFACES) {
       const path = `apps/web/${surface}/page.tsx`;
       const findings = checkImportRules([file(path, "import { db } from '@acme/db';")]);
-      expect(findings[0]?.fix).toBe(`x g query <name>   # then call it from ${path}`);
+      expect(findings[0]?.fix).toBe(`x g resource <name>   # then call it from ${path}`);
     }
   });
 

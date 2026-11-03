@@ -10,5 +10,6 @@ create table "x_job_workers" (
   "heartbeat_at" timestamp with time zone default now() not null,
   "expires_at" timestamp with time zone not null,
   "draining_at" timestamp with time zone,
+  "build" text,
   constraint "x_job_workers_pkey" PRIMARY KEY (id)
 );

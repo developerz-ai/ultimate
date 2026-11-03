@@ -9,7 +9,12 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { DRAIN_DEADLINE_DEFAULT_MS, READINESS_GRACE_DEFAULT_MS } from '@ultimat3/core';
+import {
+  DRAIN_DEADLINE_DEFAULT_MS,
+  READINESS_GRACE_DEFAULT_MS,
+  SCALING_METRICS,
+  WORKER_RETIRE_DEFAULT_MS,
+} from '@ultimat3/core';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -127,8 +132,13 @@ describe('unit · the chart values agree with the framework defaults', () => {
     const values = Bun.YAML.parse(await Bun.file(join(CHART, 'values.yaml')).text()) as {
       drain?: Record<string, unknown>;
       minReadySeconds?: unknown;
+      roles?: {
+        worker?: { retireSeconds?: unknown; autoscaling?: { metric?: unknown } };
+      };
     };
     expect(values.drain?.['deadlineSeconds']).toBe(DRAIN_DEADLINE_DEFAULT_MS / 1000);
+    expect(values.roles?.worker?.retireSeconds).toBe(WORKER_RETIRE_DEFAULT_MS / 1000);
+    expect(values.roles?.worker?.autoscaling?.metric).toBe(SCALING_METRICS['queue-demand']);
     expect(values.drain?.['readinessGraceSeconds']).toBe(READINESS_GRACE_DEFAULT_MS / 1000);
     expect(values.drain?.['teardownMarginSeconds']).toBe(10);
     expect(values.minReadySeconds).toBe(10);
@@ -170,15 +180,16 @@ describe.skipIf(HELM === null)('unit · docker/helm rendered', () => {
       scheduler: 35,
       sync: 45,
       web: 45,
-      worker: 35,
+      // Its 25 + 10, plus the retire a default render now carries.
+      worker: 3635,
     });
     // Below 1.30 no preStop sleep renders, so none is budgeted.
-    expect(graceOf(await render('1.29.0'))).toMatchObject({ web: 40, worker: 35 });
+    expect(graceOf(await render('1.29.0'))).toMatchObject({ web: 40, worker: 3635 });
   });
 
   test('raising the drain budget raises every role’s grace period with it', async () => {
     const raised = graceOf(await render('1.30.0', ['--set', 'drain.deadlineSeconds=600']));
-    expect(raised).toMatchObject({ web: 620, worker: 610, scheduler: 610 });
+    expect(raised).toMatchObject({ web: 620, worker: 3600 + 610, scheduler: 610 });
   });
 
   test('every rolling role keeps maxUnavailable: 0', async () => {

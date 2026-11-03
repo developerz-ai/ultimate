@@ -120,7 +120,7 @@ pays for the control plane.
 | SIGTERM drain on every role | shipped — see [`../architecture/13-topology-runtime.md`](../architecture/13-topology-runtime.md) |
 | OTel-shaped tracing | **shipped, and exportable** — `otlpSpanExporter()` speaks OTLP/HTTP JSON to `OTEL_EXPORTER_OTLP_ENDPOINT`, head-based sampling included. The default stays a no-op, so nothing leaves the process until you wire it. gRPC `:4317` is refused; use the collector's `:4318`. No logs signal |
 | `/metrics` on any role | **shipped** — `METRICS_PATH` on `METRICS_PORT` (default 9090), never the app port. The chart declares the `metrics` containerPort on every role but `migrate`, publishes it on the Service, and ships a ServiceMonitor behind `serviceMonitor.enabled` (off by default: a cluster with no Prometheus operator has no such CRD) |
-| a custom-metrics adapter | **never shipped** — the chart's per-role HPAs target `rps` and `connections` as `Pods` metrics and `queue_depth` as an `External` one (every worker publishes the same global backlog, so it is one series for the fleet — expose it as `max`, never `sum`), and turning scraped series into those is the cluster's job, not the framework's |
+| a custom-metrics adapter | **never shipped** — the chart's per-role HPAs target `rps` and `connections` as `Pods` metrics and `queue_demand` as an `External` one (every serving worker publishes the same number, so it is one series for the fleet — expose it as `max by (queue)`, never `sum`), and turning scraped series into those is the cluster's job, not the framework's |
 | `x logs` | listed as **planned** in `x --help` |
 
 That adapter row is load-bearing for [`03-observability.md`](./03-observability.md): the app emits

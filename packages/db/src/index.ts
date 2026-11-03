@@ -179,7 +179,21 @@ export type { LinkedExtensions, PgliteExtensionLoader } from './pglite-extension
 export { linkPgliteExtensions } from './pglite-extensions';
 export { pgliteVersion } from './pglite-snapshot';
 export type { PoolProfile } from './pool-profile';
-export { POOL_MAX_ENV, POOL_PROFILES, poolMaxFromEnv, poolProfileFor } from './pool-profile';
+export {
+  POOL_MAX_ENV,
+  POOL_PROFILES,
+  poolMaxFromEnv,
+  poolProfileFor,
+} from './pool-profile';
+export type { PoolerMode, StatementBound } from './pooler';
+export {
+  lostStatementBound,
+  POOLER_ENV,
+  POOLER_WAIT_MS,
+  poolerFromEnv,
+  poolerSessionRequired,
+  statementBound,
+} from './pooler';
 export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query';
 export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';

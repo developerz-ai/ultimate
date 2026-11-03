@@ -1,6 +1,6 @@
 # 41 — A read's freshness: conditional answers, a null's lease, a replica that has caught up, a bound per read
 
-> Part of [`overview.md`](overview.md). Depends on: [`28-assets-stored-objects.md`](28-assets-stored-objects.md) (`etagMatches` in `http`), [`02-db-entity-cancellation.md`](02-db-entity-cancellation.md), [`39-core-breaker.md`](39-core-breaker.md) (same routing check). Owns the read-transaction helper and the `set_config` seam; [`41-add-row-security.md`](41-add-row-security.md) and [`41-add-entity-lifecycle.md`](41-add-entity-lifecycle.md) depend on them. Tier: 1 (`db`), 2 (`http`, `entity`), 3 (`query`), 5 (`cli`).
+> Part of [`overview.md`](overview.md). Depends on: [`28-assets-stored-objects.md`](28-assets-stored-objects.md) (`notModified` in `http`), [`02-db-entity-cancellation.md`](02-db-entity-cancellation.md), [`39-core-breaker.md`](39-core-breaker.md) (same routing check). Owns the read-transaction helper and the `set_config` seam; [`41-add-row-security.md`](41-add-row-security.md) and [`41-add-entity-lifecycle.md`](41-add-entity-lifecycle.md) depend on them. Tier: 1 (`db`), 2 (`http`, `entity`), 3 (`query`), 5 (`cli`).
 
 ## Why
 | Gap | Evidence |
@@ -15,7 +15,7 @@ Not here: `If-Match` on actions. `transition({ from })` is optimistic concurrenc
 ## Files to change
 - `packages/query/src/query.ts:30` — `QueryCache.negativeTtlMs?`; `query({ etag?: true, timeoutMs? })`.
 - `packages/query/src/cache.ts:207-225` — pass `negativeTtlMs` through `readThrough`/`fill`.
-- `packages/query/src/http.ts:125` — with `etag: true`: `private, no-cache`, an `ETag`, a bodiless 304.
+- `packages/query/src/http.ts:125` — with `etag: true`: `private, no-cache`, an `ETag`, and the bodiless 304 answered by http's `notModified(request, etag, headers?)`, the one `If-None-Match` reader, never a second comparison.
 - `packages/query/src/openapi.ts` — a 304 response and the `If-None-Match` parameter on a declaring read.
 - `packages/http/src/cache-policy.ts` — a `private, no-cache` hint; `replayableExchange` (`:71`) already admits 304.
 - `packages/db/src/replica-position.ts` (new) — read and compare a WAL position; `replica-client.ts:104` (`nodeIsReplica`) consults it, before the breaker's `admit()`, which stays last ([`39-core-breaker.md`](39-core-breaker.md) step 6): `admit()` consumes the half-open probe, and a read then sent to the primary for being behind would strand it until it lapses.

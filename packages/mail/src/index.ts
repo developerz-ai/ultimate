@@ -63,6 +63,7 @@ export {
   MailError,
   mailCredentialMissing,
   mailDuplicate,
+  mailKeyMissing,
   mailLayoutDuplicate,
   sendFailed,
   templateUnknown,

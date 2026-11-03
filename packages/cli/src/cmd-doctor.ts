@@ -6,6 +6,8 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL } from '@ultimat3/core';
 import { checkDb, PGLITE_FIX, PGLITE_MISSING, PGLITE_PACKAGE, postgresClient } from '@ultimat3/db';
+import { loadApp } from './app-load';
+import { IMPORT_UNRESOLVED } from './app-load-unresolved';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import { doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -16,6 +18,8 @@ import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
 import type { OfflineFallbackFact } from './doctor-offline';
 import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
+import type { PoolerFact } from './doctor-pooler';
+import { NO_POOLER_FACT, poolerFindings, poolerProbe, withPoolerReport } from './doctor-pooler';
 import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeyFindings, sealedKeysProbe } from './doctor-sealed';
@@ -98,6 +102,8 @@ export interface DoctorProbe {
    * secrets, and tables no release reads. Asked of an external database only.
    */
   authStorage(): Promise<AuthStorageFact>;
+  /** The statement bound the session really reads, and what a pooler refused (`doctor-pooler.ts`). */
+  pooler(): Promise<PoolerFact>;
 }
 
 /** What `x doctor` reads about the embedded database, without opening it. */
@@ -251,7 +257,11 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // holds the rule and the reasons.
   const offline = offlineFallbackFinding(await probe.offlineFallback());
   if (offline !== undefined) findings.push(offline);
-  const database = await probe.database();
+  const pooler = await probe.pooler();
+  findings.push(...poolerFindings(pooler));
+  // A pooler's refusal is every other database probe's answer too, and its fix is the true one: this
+  // one's says "set DATABASE_URL" to an operator whose URL is right.
+  const database = pooler.refused === undefined ? await probe.database() : null;
   if (database !== null) findings.push(database);
   // The other half of the same question, and the half a bare VM lands on: `database()` is silent
   // where there is no `DATABASE_URL`, and that silence IS the bare-VM configuration.
@@ -334,9 +344,17 @@ const installedAbove = (dir: string, specifier: string): boolean => {
  * The pool is CLOSED on every path — this command exits, and a held pool is a connection slot the
  * next `x db migrate` cannot have.
  */
-async function probeDatabase(url: string | undefined): Promise<Finding | null> {
+async function probeDatabase(
+  url: string | undefined,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<Finding | null> {
   if (externalUrl(url) === undefined) return null;
-  const client = postgresClient({ url, applicationName: 'x-doctor' });
+  let client: ReturnType<typeof postgresClient>;
+  try {
+    client = postgresClient({ url, env, applicationName: 'x-doctor' });
+  } catch (error) {
+    return findingFrom(error);
+  }
   try {
     const report = await checkDb(client);
     if (report.ok) return null;
@@ -370,7 +388,7 @@ export function probeFor(
     frameworkFindings: machineSecretFindings(env),
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
-    database: () => probeDatabase(process.env['DATABASE_URL']),
+    database: () => probeDatabase(process.env['DATABASE_URL'], env),
     // `root ?? cwd` because the walk needs a directory that exists; outside an app `runDoctor`
     // returns on `X_NOT_IN_APP` before this is ever asked, so the value only has to be honest.
     embeddedDatabase: async () => ({
@@ -378,23 +396,34 @@ export function probeFor(
       resolved: installedAbove(root ?? cwd, PGLITE_PACKAGE),
     }),
     drift: async () => (root === undefined ? [] : checkMigrationDrift(root)),
-    snapshots: async () => (root === undefined ? [] : checkMigrationSnapshots(root)),
+    // The import half too: `X_CLI_UNEXPECTED` used to send a reader here and find this silent.
+    snapshots: async () =>
+      root === undefined
+        ? []
+        : [...(await unresolvedImportFindings(root)), ...(await checkMigrationSnapshots(root))],
     // `routes: undefined` outside an app is "not judged", which is what the caller already is:
     // `runDoctor` returns on `X_NOT_IN_APP` before this can be asked.
     offlineFallback: async () =>
       root === undefined ? { fallback: null, routes: undefined } : offlineFallbackProbe(root),
     sealedKeys: async () =>
       root === undefined ? { columns: undefined, keys: undefined } : sealedKeysProbe(root),
-    authStorage: () => authStorageProbe(process.env['DATABASE_URL']),
+    authStorage: () => authStorageProbe(process.env['DATABASE_URL'], env),
+    pooler: () => poolerProbe(process.env['DATABASE_URL'], env),
   };
 }
+
+/** What a load reports, narrowed to the one failure a doctor can name a repair for. */
+const unresolvedImportFindings = async (root: string): Promise<readonly Finding[]> =>
+  (await loadApp(root)).findings.filter((finding) => finding.code === IMPORT_UNRESOLVED);
 
 export const doctorCommand: CliCommand = {
   spec: doctorSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const port = doctorPort(ctx.args, ctx.env);
     const probe = probeFor(ctx.cwd, ctx.bunVersion, port, ctx.env);
-    const findings = await runDoctor(probe);
+    // Asked once: `runDoctor` reads the verdict and the report beside it reads the numbers.
+    const pooler = probe.root === undefined ? NO_POOLER_FACT : await probe.pooler();
+    const findings = await runDoctor({ ...probe, pooler: async () => pooler });
     const listed = withGuardListing(
       {
         ok: findings.length === 0,
@@ -415,9 +444,12 @@ export const doctorCommand: CliCommand = {
       probe.root === undefined ? [] : await coverageExcludesProbe(probe.root),
     );
     // A reminder, not a finding: the rolling rail is off until this is set (`doctor-rolling.ts`).
-    return withRollingReminder(
-      covered,
-      probe.root === undefined ? undefined : await rollingSinceProbe(probe.root),
+    return withPoolerReport(
+      withRollingReminder(
+        covered,
+        probe.root === undefined ? undefined : await rollingSinceProbe(probe.root),
+      ),
+      pooler,
     );
   },
 };

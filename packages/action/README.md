@@ -886,7 +886,8 @@ The client does the same with the server's: a `problem+json` failure comes back 
 the browser bundle may never have registered it, and linked only to a page that exists — the
 server's own `docs`/`type` when it sent an `http(s)` one, this build's registered link when it
 knows the code, otherwise the error index. A per-code URL is never synthesized for a code
-nothing here declares.
+nothing here declares. The document's root `requestId` lands on `meta.requestId` (core's
+`withRequestId`), so a report names the request support can find.
 
 A document carrying an `issues` member arrives parsed as well: `meta.issues`, read by
 `issuesFromWire` — a wire value, so the list is rebuilt member by member and a list this build

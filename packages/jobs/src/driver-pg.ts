@@ -20,6 +20,7 @@ import type {
   JobDriver,
   JobRecord,
   NackOptions,
+  QueueDemand,
   QueueStats,
 } from './driver';
 import {
@@ -29,6 +30,7 @@ import {
   nackState,
   REQUEUEABLE_STATES,
 } from './driver';
+import { SQL_QUEUE_DEMAND } from './driver-pg-demand-sql';
 import { pgOperator } from './driver-pg-operator';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
@@ -400,6 +402,14 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
       // No row means the job is no longer ours: cancelled from outside, or re-claimed after this
       // lease lapsed. Either way the caller has to stop running it.
       return rows.length > 0;
+    },
+
+    async demand(): Promise<readonly QueueDemand[]> {
+      const rows = await exec().query<{ queue: string; demand: number | string }>(
+        SQL_QUEUE_DEMAND,
+        [],
+      );
+      return rows.map((row) => ({ queue: row.queue, demand: num(row.demand) }));
     },
 
     async stats(): Promise<readonly QueueStats[]> {

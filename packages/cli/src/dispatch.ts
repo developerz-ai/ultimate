@@ -2,7 +2,9 @@
 // whether it is printed as text or JSON and what the process exits with. Errors take the same
 // path as results, so a failure is machine-readable exactly like a success.
 
-import { isAbsolute, resolve } from 'node:path';
+// why: a synchronous bin probe at the one place a result is rendered; Bun has no path helpers.
+import { existsSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { setLogStream } from '@ultimat3/core';
 import { requireAppRoot, requireBunVersion } from './app-root';
 import { createHelpCommand } from './cmd-help';
@@ -13,6 +15,7 @@ import type { Runner } from './exec';
 import { exec } from './exec';
 import type { CommandResult } from './output';
 import { exitCodeFor, findingFrom, render } from './output';
+import type { ReaderOptions } from './output-findings';
 import type { ParsedArgs } from './parse';
 import { parseArgs, wantsJson } from './parse';
 import { commandFor, SPECS } from './registry';
@@ -56,9 +59,27 @@ export const sinkFor = (
 ): ((line: string) => void) =>
   result.stream === 'stderr' ? (options.writeError ?? options.write) : options.write;
 
+/** `x` where Bun links it: on POSIX, and the shim it writes on Windows. */
+const LOCAL_BINS = ['x', 'x.exe'];
+
 const resolveCwd = (cwd: string, flag: string | undefined): string => {
   if (flag === undefined) return cwd;
   return isAbsolute(flag) ? flag : resolve(cwd, flag);
+};
+
+/**
+ * Whether this reader's fixes should name `bunx x`. Only where it resolves to the app's own CLI: with
+ * no local bin, `bunx x` fetches whatever npm calls `x`, and a global `x` is what ran anyway. An
+ * entry point with its own name (`invocation`, `create-ultimate`) already names its runner.
+ */
+const readerFor = (cwd: string, invocation: string | undefined): ReaderOptions => {
+  if (invocation !== undefined) return {};
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    if (LOCAL_BINS.some((bin) => existsSync(join(dir, 'node_modules', '.bin', bin)))) {
+      return { bunxRunner: true };
+    }
+    if (dirname(dir) === dir) return {};
+  }
 };
 
 const errorResult = (command: string, error: unknown): CommandResult => ({
@@ -74,13 +95,14 @@ const errorResult = (command: string, error: unknown): CommandResult => ({
  * end without terminating the test runner.
  */
 export async function dispatch(options: DispatchOptions): Promise<number> {
+  const earlyReader = readerFor(options.cwd, options.invocation);
   // Its own branch, ahead of the parse: an unsupported Bun is a fact about the environment and
   // outranks anything argv says, including the planned pre-empt below.
   try {
     requireBunVersion(options.bunVersion);
   } catch (error) {
     const failure = errorResult('x', error);
-    sinkFor(failure, options)(render(failure, wantsJson(options.argv)));
+    sinkFor(failure, options)(render(failure, wantsJson(options.argv), false, earlyReader));
     return 1;
   }
 
@@ -99,7 +121,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     // `wantsJson`, not `includes('--json')`: a typo'd flag or a typo'd command is exactly the case
     // an agent hits while always passing `-j`, and the short form rendered prose it then parsed.
     const result = errorResult(planned?.name ?? 'x', failure);
-    sinkFor(result, options)(render(result, wantsJson(options.argv)));
+    sinkFor(result, options)(render(result, wantsJson(options.argv), false, earlyReader));
     return 1;
   }
 
@@ -112,7 +134,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
         known: SPECS.map((spec) => spec.name),
       }),
     );
-    sinkFor(result, options)(render(result, args.json));
+    sinkFor(result, options)(render(result, args.json, false, earlyReader));
     return 1;
   }
 
@@ -134,6 +156,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     options.env,
     await rootEnvChanges({ cwd, processCwd: options.cwd, env: options.env }),
   );
+  const reader = readerFor(cwd, options.invocation);
   const ctx: CommandContext = {
     args: helpArgs,
     cwd,
@@ -164,7 +187,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     // command, which declares nothing: usage for a command must be readable from anywhere.
     if (target.spec.requiresApp === true) requireAppRoot(target.spec.name, ctx.cwd);
     const result = await target.run(ctx);
-    sinkFor(result, options)(render(result, args.json, args.flags.get('verbose') === true));
+    sinkFor(result, options)(render(result, args.json, args.flags.get('verbose') === true, reader));
     // `x dev` and `x mcp serve --transport http` are still listening here: report first, so the
     // url is on stdout the moment it is reachable, then stay in the process until the drain that
     // stops them. Without this the exit code below is what takes the server down.
@@ -172,7 +195,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     return exitCodeFor(result);
   } catch (error) {
     const result = errorResult(args.command, error);
-    sinkFor(result, options)(render(result, args.json));
+    sinkFor(result, options)(render(result, args.json, false, reader));
     return 1;
   }
 }

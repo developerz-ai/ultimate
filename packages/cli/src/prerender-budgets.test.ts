@@ -195,7 +195,6 @@ export function mount(): void {
       config: route('stream'),
       component: (): unknown => Live({ children: '…' }),
       // A stream is always scoped (`private, no-store`) — the mode that needs no policy to be.
-      suspenseBoundaries: 1,
     });
 
     await prerenderSite({ root: ROOT, out: join(ROOT, 'static'), origin: 'https://example.test' });

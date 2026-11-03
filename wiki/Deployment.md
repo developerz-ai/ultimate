@@ -52,7 +52,7 @@ The body is `{ state, ready, role }` for everyone, and `{ state, ready, uptimeMs
 
 **A check has three answers: `ok`, `degraded`, `failing`** (`As of 2026-10`). `degraded` is a dependency the role serves without — today, the bus on a role that only publishes to it. It never turns `/readyz` into a 503, in either mode, so a NATS outage cannot pull every web pod from the ingress; `/readyz?deep=1` is strict and answers 503 for it. An app registers its own with `registerReadinessCheck(name, check, { onFailure: 'degraded' })`.
 
-**Which build answers is a header, on every health answer** (`As of 27.2.3`). `/healthz`, `/readyz` and `/readyz?deep=1` send `x-ultimate-build` — the same header every page sends — on the web port, the sync port and the metrics listener alike, whoever asks. The body does not change: a stranger still reads `{ state, ready, role }`. A deploy check that waits for the new build polls `curl -sI https://<host>/readyz | grep -i x-ultimate-build` rather than a page. Two cases send none: a web role whose `buildId` is `null` (no `BUILD_ID` and none from the boot), and the metrics listener in the moments before its boot has computed the id — a container opens it first, so a cold pod's probe gets the status without the header.
+**Which build answers is a header, on every health answer** (`As of 27.2.3`). `/healthz`, `/readyz` and `/readyz?deep=1` send `x-ultimate-build` — the same header every page sends — on the web port, the sync port and the metrics listener alike, whoever asks. The body does not change: a stranger still reads `{ state, ready, role }`. A deploy check that waits for the new build runs [`x deploy verify --url https://<host>`](CLI-Reference#x-deploy-verify) (`As of 30.0.0`): it samples this header until the build holds, then grades the queues. Two cases send none: a web role whose `buildId` is `null` (no `BUILD_ID` and none from the boot), and the metrics listener in the moments before its boot has computed the id — a container opens it first, so a cold pod's probe gets the status without the header.
 
 **`registered: 0` is a real answer, not an error.** An empty registry is still ready, so a 200 means no more than "the socket is bound" — which is what the chart's and compose's healthchecks route traffic on. Read `registered` before you trust `checks: {}`.
 
@@ -95,7 +95,7 @@ A hook or request still running at `drain.deadlineMs` (the worker's: `drain.work
 
 ### Retiring a worker before SIGTERM
 
-The SIGTERM path above already finishes held jobs — inside the worker's drain budget: `drain.deadlineMs` (at most 1 h), or `drain.workerDeadlineMs` (at most a day, the worker alone) when declared. A worker that must outlast it — a job whose side effect may happen at most once, on a pod with a 2 h grace — is **retired** instead: send it **SIGUSR2** (`As of 25.0.0`, `ROLE=worker` only, `packages/cli/src/serve-retire.ts`).
+The SIGTERM path above already finishes held jobs — inside the worker's drain budget: `drain.deadlineMs` (at most 1 h), or `drain.workerDeadlineMs` (at most a day, the worker alone) when declared. A rollout or a scale-down on Kubernetes does not start there: `As of 30.0.0` the worker is **retired** first, for up to `drain.workerRetireMs` (an hour by default, `0` off, at most a day). The signal is **SIGUSR2** (`As of 25.0.0`, `ROLE=worker` only, `packages/cli/src/serve-retire.ts`).
 
 | Step | What the worker does |
 |---|---|
@@ -105,12 +105,16 @@ The SIGTERM path above already finishes held jobs — inside the worker's drain 
 
 It exits rather than holds: the only thing a `preStop` can observe is PID 1 going away, and a worker that claims nothing has nothing left to serve. A second SIGUSR2 joins the first. One during boot waits for the worker, then retires it. A SIGTERM that lands mid-retire is the ordinary drain: the wait is bound to the worker's budget (`drain.workerDeadlineMs`, else `drain.deadlineMs`) and cut off at the margin, as in the table — so a worker whose jobs outlast the hour declares `drain.workerDeadlineMs`. `isDraining()` stays false until that drain; the app's own code (a heartbeat, a status row) reads `isRetiring()` to say "finishing, about to exit" — `x dev`'s restart, which retires the same way, sets it too. Outside a pod deletion an exit 0 is restarted by the Deployment like any other: a fresh worker.
 
-**The Helm chart wires it behind one value**: `roles.worker.retireSeconds` (0, off, by default). Set it to the longest a held job may run, and the worker's `preStop` sends its PID 1 SIGUSR2 and waits for it to exit; the same seconds are added to its `terminationGracePeriodSeconds`, which the kubelet counts the `preStop` against. The hook is `bun -e`, the one binary every app image carries — the image's `ENTRYPOINT ["bun", "apps/web/server.ts"]` is exec form, so bun **is** PID 1. Outside the chart, the target is the same: `kill -USR2 1` inside the container, or `docker kill --signal USR2 <container>`.
+**The Helm chart wires it behind one chart value**, `roles.worker.retireSeconds` in `values.yaml` (3600, on, by default). `x deploy --method helm` derives it from the app's `drain.workerRetireMs`, 0 included. The worker's `preStop` sends its PID 1 SIGUSR2 and waits for it to exit, for at most those seconds; then the SIGTERM lands with the drain budget left, so a job past the retire is cut off and handed back rather than SIGKILLed. The same seconds are added to its `terminationGracePeriodSeconds`, which the kubelet counts the `preStop` against. An idle worker exits at once, so the retire costs only while a job really holds a pod, and a Terminating pod does not count against rollout completion: new pods claim at once, and the rollout shows an old worker Terminating while it holds a job. `drain.workerDeadlineMs` is a different knob: it bounds a SIGTERM drain, then aborts; the retire aborts nothing. The hook is `bun -e`, the one binary every app image carries — the image's `ENTRYPOINT ["bun", "apps/web/server.ts"]` is exec form, so bun **is** PID 1. Outside the chart, the target is the same: `kill -USR2 1` inside the container, or `docker kill --signal USR2 <container>`.
 
 ```bash
 helm upgrade app docker/helm --set roles.worker.retireSeconds=7200 \
-  --set drain.workerDeadlineSeconds=7500   # 2 h worker; x deploy derives the second itself
+  --set drain.workerDeadlineSeconds=7500   # 2 h worker; `x deploy --method helm` sets both itself
 ```
+
+**`x verify` holds the job to it**: a job whose declared `timeout` exceeds the worker's budget (`drain.workerRetireMs` when above 0, else `drain.workerDeadlineMs`, else `drain.deadlineMs`) reds the `manifest` step with `X_JOB_OUTLASTS_DRAIN`, naming the job, its limit and the budget. A job with no `timeout` is not graded.
+
+**Compose stays SIGTERM with `stop_grace_period`**: it has no `preStop`, and a SIGKILL mid-job is worse than a handed-back claim, so size `stop_grace_period` to the drain as below. It is the single-node rung, and makes no such claim → [scale ladder](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md).
 
 **Windows has no SIGUSR2**: there the retire installs nothing and the worker stops only through the drain above (Ctrl-C, Ctrl-Break). A native Windows process is for development and CI.
 
@@ -291,7 +295,7 @@ services:
 | `replicator` | none — `replicas: 1` | 1 | owns the slot; `strategy: Recreate`, because a surged pod can only stand by unready and `maxUnavailable: 0` would never retire the holder |
 | `migrate` | n/a | — | pre-install/pre-upgrade `Job` hook; blocks the release on failure |
 
-CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. The framework **declares** both series — `connections` and `queue_depth`, with `rps` derived from the monotonic `http_requests_total` — and `SCALING_METRICS` maps each role's signal to its series so the chart and the role table cannot drift. `As of 2026-08` every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` call the recorders, so the signals exist. **The chart's half is closed in 2.0.0**: `values.yaml` declares `metricsPort: 9090`, `_helpers.tpl` emits a container port named `metrics` on every role but `migrate`, `service.yaml` publishes it by name and `templates/servicemonitor.yaml` ships the scrape target. Two things remain, and neither is the chart's: `serviceMonitor.enabled` defaults **false**, because a cluster without the Prometheus operator has no such CRD and `helm install` would fail on an unknown kind; and turning scraped series into the `Pods` metrics an HPA reads needs a **custom-metrics adapter**. Do not hand-add a metrics container port — the chart already emits one and a duplicate is rejected by the API server → [Observability](Observability).
+CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. The framework **declares** both series — `connections` and `queue_demand`, with `rps` derived from the monotonic `http_requests_total` — and `SCALING_METRICS` maps each role's signal to its series so the chart and the role table cannot drift. `As of 2026-08` every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` call the recorders, so the signals exist. **The chart's half is closed in 2.0.0**: `values.yaml` declares `metricsPort: 9090`, `_helpers.tpl` emits a container port named `metrics` on every role but `migrate`, `service.yaml` publishes it by name and `templates/servicemonitor.yaml` ships the scrape target. Two things remain, and neither is the chart's: `serviceMonitor.enabled` defaults **false**, because a cluster without the Prometheus operator has no such CRD and `helm install` would fail on an unknown kind; and turning scraped series into the `Pods` metrics an HPA reads needs a **custom-metrics adapter**. Do not hand-add a metrics container port — the chart already emits one and a duplicate is rejected by the API server → [Observability](Observability).
 
 `x deploy --method helm` works in a fresh app `As of 2026-08-19`: the command implements helm
 completely and its `X_NOT_IMPLEMENTED` branch — which claimed the *build* did not implement it, over
@@ -364,6 +368,43 @@ value reaches the app, exactly as it always has with `TRUSTED_PROXY_HOPS=1`. The
 is the one to set it: nginx `proxy_set_header X-Forwarded-Proto $scheme;`. An inner proxy reached
 over plain http must pass the edge's value on rather than writing its own `$scheme` — on
 ingress-nginx, `use-forwarded-headers: "true"`.
+
+## Through a connection pooler
+
+`DATABASE_POOLER=session|transaction` when a pooler sits between the app and Postgres, unset when
+none does. `As of 2026-11-02`. The client then sends neither bound as libpq `options`, and the bounds
+become the server's:
+
+```sql
+-- direct to the server, per database user; numbers per role: docs/ops/04-datastores.md
+alter role <user> set statement_timeout = '10s';
+alter role <user> set idle_in_transaction_session_timeout = '30s';
+```
+
+Then reopen the pooler's server connections: a role setting applies at login.
+
+| Role | Under `DATABASE_POOLER=transaction` |
+|---|---|
+| `web`, `sync`, `scheduler` | runs |
+| `worker` | runs on the poll: no wake, pickup within `idlePollMaxMs`, `jobs.wake.unverified` once. For the wake, a direct or session-pooled `DATABASE_URL` and `DATABASE_POOLER` unset or `session` for that role |
+| `migrate`, `replicator`, `x db migrate` | `X_DB_POOLER_SESSION_REQUIRED`, before a socket: point `DATABASE_URL` at the server's own port and unset the switch for that role |
+
+`x doctor --json` reports the bound as the session reads it (`data.statementBound`). A bound that
+is gone is `X_DB_STATEMENT_BOUND_LOST`, one error line at boot and a finding, never a refusal. The
+table per mode: [`docs/ops/04-datastores.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/04-datastores.md#pooling-and-the-trap-under-it).
+
+## Compression
+
+The container gzips a public text answer of 1 KiB to 256 KiB with a declared length. Nothing to configure, and nothing to add in front.
+
+| Situation | What happens |
+|---|---|
+| a proxy or CDN in front | changes nothing: a coded response is not re-coded, and `vary: accept-encoding` keys its copies |
+| a private answer (`private`, `no-store`, `no-cache`), and any signed-in answer that is not `immutable` | identity, always. BREACH: a coded length would measure a secret beside attacker input |
+| a handler streaming public text it must not buffer | sets `cache-control: no-transform`, or declares no `content-length` |
+| a `stream()` body | never read: it declares no length |
+
+Rule and figures: [`docs/architecture/16-build-pipeline.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/16-build-pipeline.md#what-is-compressed).
 
 ## Static deploys independently
 

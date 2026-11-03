@@ -180,6 +180,51 @@ describe('the file', () => {
     expect(whole.headers.get('content-disposition')).toStartWith('inline;');
   });
 
+  test('the function form receives the window, so a disk reads only those bytes', async () => {
+    const asked: ({ start: number; end: number } | undefined)[] = [];
+    const lazy = recording((bytes) => ({
+      body: async (range) => {
+        asked.push(range === undefined ? undefined : { start: range.start, end: range.end });
+        return range === undefined ? bytes.slice() : bytes.slice(range.start, range.end + 1);
+      },
+      size: bytes.byteLength,
+      contentType: 'video/mp4',
+      filename: 'a.mp4',
+    }));
+    const server = serve(lazy, viewer);
+    const window = await get(server, await mintedPath(server), { range: 'bytes=7-8' });
+    expect([window.status, await window.text()]).toEqual([206, '78']);
+    expect(window.headers.get('content-range')).toBe('bytes 7-8/10');
+    expect(asked).toEqual([{ start: 7, end: 8 }]);
+
+    const whole = await get(server, await mintedPath(server));
+    expect([whole.status, await whole.text()]).toEqual([200, '0123456789']);
+    expect(asked.at(-1)).toBeUndefined();
+    expect(asked).toHaveLength(2);
+
+    // A 416 opens nothing, so the disk is never asked.
+    const beyond = await get(server, await mintedPath(server), { range: 'bytes=10-' });
+    expect(beyond.status).toBe(416);
+    expect(asked).toHaveLength(2);
+  });
+
+  test('a function form with no size has no window to hand it: a type error and a refusal', async () => {
+    const noSize = recording(
+      () =>
+        // @ts-expect-error `size` is required beside a function body.
+        ({
+          body: () => VIDEO,
+          contentType: 'video/mp4',
+          filename: 'a.mp4',
+        }) as DownloadFile,
+    );
+    const server = serve(noSize, viewer);
+    const refused = await get(server, await mintedPath(server));
+    expect(refused.status).toBe(500);
+    const problem = (await refused.json()) as Record<string, unknown>;
+    expect(problem['code']).toBe('X_INVARIANT');
+  });
+
   test('a stream a 416 will never send is cancelled, not left open', async () => {
     let cancelled = false;
     const sized = recording((bytes) => ({

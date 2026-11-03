@@ -3,7 +3,7 @@
 // would be a page that boots in `x dev` and 404s in the image.
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
 import type { IslandBundle } from './island-bundle';
 import { ISLAND_BASE_PATH } from './island-bundle';
 
@@ -51,7 +51,8 @@ export function islandRoutes(source: IslandSource): readonly Route[] {
           return applyCacheHeaders(missing, NO_STORE);
         }
         return applyCacheHeaders(
-          new Response(chunk.code, { headers: { 'content-type': 'text/javascript' } }),
+          // `textResponse` for the length it declares: `compress` reads nothing undeclared.
+          textResponse(chunk.code, { headers: { 'content-type': 'text/javascript' } }),
           { mode: 'immutable' },
         );
       },

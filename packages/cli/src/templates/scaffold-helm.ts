@@ -167,11 +167,12 @@ roles:
   worker:
     enabled: true
     replicas: 2
-    # The retire, OFF at 0. Set to the longest a held job may run, in seconds, and the worker's
-    # preStop sends its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0
-    # — for a job whose side effect must happen at most once and may outlast its drain budget.
-    # Added to this role's terminationGracePeriodSeconds, which the kubelet counts the preStop against.
-    retireSeconds: 0
+    # The retire, ON: a deploy or a scale-down never cuts a job it could wait out. app.config.ts
+    # drain.workerRetireMs / 1000, set by x deploy, and 0 turns it off. The worker's preStop sends
+    # its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0. An idle worker
+    # exits at once, and a Terminating pod does not hold a rollout back. Added to this role's
+    # terminationGracePeriodSeconds, which the kubelet counts the preStop against.
+    retireSeconds: 3600
     resources:
       requests: { cpu: 200m, memory: 256Mi }
       limits: { memory: 1Gi }
@@ -179,11 +180,12 @@ roles:
       enabled: false
       minReplicas: 1
       maxReplicas: 50
-      # External: every worker publishes the SAME global backlog, so averaged as a Pods metric it
+      # External: every serving worker publishes the SAME number, so averaged as a Pods metric it
       # asked for N times the workers the queue needed. Expose it from your adapter deduplicated —
-      # max(queue_depth), never sum, which would multiply it by the pod count again.
+      # max by (queue) (queue_demand), never sum, which would multiply it by the pod count again.
       type: External
-      metric: queue_depth       # jobs waiting, exported by the worker role
+      metric: queue_demand      # jobs held by serving workers plus jobs due, per queue
+      # Set it to one pod's jobs.maxInFlight; x deploy --method helm sets it when app.config.ts declares it.
       targetAverageValue: "100"
 
   scheduler:

@@ -10,6 +10,7 @@ import {
   localeMissing,
   MAIL_ERROR_CODES,
   MAIL_ERROR_RETRY,
+  mailKeyMissing,
   type SendFailure,
   sendFailed,
 } from './errors';
@@ -25,6 +26,37 @@ const failure = (patch: Partial<SendFailure> = {}): SendFailure => ({
 
 // `sendMailJob`'s own policy, copied so the assertions below are about the run an app really gets.
 const POLICY = { attempts: 5, backoff: 'exponential' } as const;
+
+describe('unit · X_MAIL_KEY_MISSING', () => {
+  test('dead-letters at attempt 1: no retry translates a catalog', () => {
+    const decision = nextRetryForError(
+      POLICY,
+      1,
+      mailKeyMissing('receipt', 'es', [{ key: 'mail.receipt.subject' }]),
+    );
+    expect(decision.retry).toBe(false);
+    expect(declaredErrorRetry('X_MAIL_KEY_MISSING')).toBe('terminal');
+  });
+
+  test('a missing key is a sync; the fix names the locale, the file and the key', () => {
+    const error = mailKeyMissing('receipt', 'es', [
+      { key: 'mail.receipt.body', slot: 'name' },
+      { key: 'mail.receipt.subject' },
+    ]);
+    expect(error.fix).toStartWith('x i18n sync es ');
+    expect(error.fix).toContain('packages/i18n/catalogs/es.json');
+    expect(error.fix).toContain('mail.receipt.subject');
+    expect(error.cause).toContain('mail.receipt.body{name}');
+    expect(error.meta?.['keys']).toEqual(['mail.receipt.subject']);
+    expect(error.meta?.['slots']).toEqual(['mail.receipt.body{name}']);
+  });
+
+  test('only a missing slot is the call site, and syncing a catalog would change nothing', () => {
+    const error = mailKeyMissing('receipt', 'es', [{ key: 'mail.receipt.body', slot: 'name' }]);
+    expect(error.fix).toStartWith("blocks.paragraph('mail.receipt.body', { name: value })");
+    expect(error.fix).not.toContain('x i18n sync');
+  });
+});
 
 describe('unit · X_MAIL_SEND_FAILED is classified, not merely described', () => {
   test('the code is REGISTERED — a table entry is not something classifyThrown can read', () => {

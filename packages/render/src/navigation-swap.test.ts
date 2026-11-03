@@ -14,6 +14,7 @@ import {
   swapDocument,
   syncPersisted,
 } from './navigation-swap';
+import { REVEAL_BODY, REVEAL_CALL } from './stream-scripts';
 
 const dom = (doc: FakeDocument) => doc as unknown as Document;
 const el = (node: FakeElement) => node as unknown as Element;
@@ -171,6 +172,29 @@ describe('runScripts', () => {
       'https://app.test/seen.js',
     ]);
     expect(body.querySelector('script[type="module"]')?.nonce).toBe('n0nce');
+  });
+});
+
+describe('runScripts over a streamed document', () => {
+  test('the reveal runs before the runtime, every reveal stays inline, `async` survives', async () => {
+    // What `response.text()` hands the router: every chunk already there, in stream order.
+    const doc = new FakeDocument();
+    const body = h('body', {}, [
+      h('script', {}, REVEAL_BODY),
+      h('x-hole', { id: 'x:1' }, 'wait'),
+      h('script', { type: 'module', async: '' }, 'runtime()'),
+      h('template', { 'data-x-hole': 'x:1' }, 'filled'),
+      h('script', {}, REVEAL_CALL),
+      h('script', { type: 'module' }, 'hole-runtime()'),
+    ]);
+    doc.documentElement.replaceChild(doc.adoptNode(body), doc.body);
+    await runScripts(
+      body.querySelectorAll('script') as unknown as HTMLScriptElement[],
+      new Set(),
+      (fresh, inert) => inert.replaceWith(fresh),
+    );
+    expect(doc.ran).toEqual([REVEAL_BODY, 'runtime()', REVEAL_CALL, 'hole-runtime()']);
+    expect(body.querySelector('script[async]')?.getAttribute('type')).toBe('module');
   });
 });
 

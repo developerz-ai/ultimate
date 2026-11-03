@@ -126,13 +126,20 @@ The one reader the CLI (`loadApp`'s `locales`, the pwa manifest and service work
 
 ## Enforcement
 
-`extractKeys()` scans source for `t('...')` calls; `auditCatalogs()` reports keys used,
-keys missing per locale, and keys defined but never used; `assertCatalogsComplete()` is
+`recordingTranslator(t)` wraps a translator and records each `TranslationMiss` (`{ key, slot? }`) for
+a surface that refuses rather than shows `⟦key⟧`; `selectMessageKey()` is the one key selection it
+and `t()` share.
+
+`extractKeys()` scans source for `t('...')` calls, plus any other `callees` and key-bearing
+`properties` (`{ name, whenFileContains? }`: a literal value is a usage, anything else `dynamic`)
+the caller declares; this package names no API but its own. `auditCatalogs()` reports keys used,
+keys missing per locale (`reference` makes each key that locale defines owed by the rest, by
+plural stem, in `required`), and keys defined but never used; `assertCatalogsComplete()` is
 the `x verify` gate.
 
 ```
 X_CATALOG_MISSING_KEYS: catalog is incomplete
-  cause: packages/i18n/catalogs/es.json is missing 2 key(s) used in source: admin.nav.jobs, common.save
+  cause: packages/i18n/catalogs/es.json is missing 2 key(s) source names or the reference locale defines: admin.nav.jobs, common.save
   fix:   x i18n sync es
 ```
 

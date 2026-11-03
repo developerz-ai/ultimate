@@ -21,6 +21,14 @@ node_modules
 **/playwright-report
 **/coverage
 
+# Tests run in CI, never in a container, and an edit to one would rerun every line below COPY . .
+**/*.test.ts
+**/*.test.tsx
+# Anchored: a package may hold a docs/ it reads at run time. The root is the framework's, the second
+# line this app's: in this context its docs/ does not sit at the root.
+docs
+dummy/social-media-clone/docs
+
 .git
 .github
 

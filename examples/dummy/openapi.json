@@ -561,13 +561,14 @@
           },
           "size": {
             "maximum": 9007199254740991,
-            "minimum": 0,
+            "minimum": 1,
             "type": "integer"
           }
         },
         "required": [
           "filename",
-          "contentType"
+          "contentType",
+          "size"
         ],
         "type": "object"
       },
@@ -1093,6 +1094,14 @@
             "type": "object"
           },
           "requestId": {
+            "type": "string"
+          },
+          "retry": {
+            "enum": [
+              "terminal",
+              "retryable",
+              "retry-after"
+            ],
             "type": "string"
           },
           "status": {
@@ -2721,63 +2730,230 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "items": {},
-                      "type": "array"
-                    },
-                    {
+                  "properties": {
+                    "data": {
                       "oneOf": [
                         {
-                          "properties": {
-                            "hasMore": {
-                              "const": true
+                          "items": {
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "prompt",
+                                  "answered",
+                                  "navigated",
+                                  "extracted",
+                                  "done",
+                                  "failed",
+                                  "usage"
+                                ],
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              },
+                              "orgId": {
+                                "type": "string"
+                              },
+                              "prompt": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "runId": {
+                                "type": "string"
+                              },
+                              "seq": {
+                                "type": "integer"
+                              },
+                              "usage": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
                             },
-                            "nextCursor": {
-                              "type": "string"
-                            }
-                          }
+                            "required": [
+                              "id",
+                              "orgId",
+                              "runId",
+                              "seq",
+                              "kind",
+                              "at",
+                              "message",
+                              "prompt",
+                              "usage"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
                         },
                         {
+                          "oneOf": [
+                            {
+                              "properties": {
+                                "hasMore": {
+                                  "const": true
+                                },
+                                "nextCursor": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "properties": {
+                                "hasMore": {
+                                  "const": false
+                                },
+                                "nextCursor": {
+                                  "type": "null"
+                                }
+                              }
+                            }
+                          ],
                           "properties": {
                             "hasMore": {
-                              "const": false
+                              "description": "whether another page follows",
+                              "type": "boolean"
                             },
                             "nextCursor": {
-                              "type": "null"
+                              "description": "the signed cursor for the next page — send it as _after; null exactly when hasMore is false",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "rows": {
+                              "items": {
+                                "properties": {
+                                  "at": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "prompt",
+                                      "answered",
+                                      "navigated",
+                                      "extracted",
+                                      "done",
+                                      "failed",
+                                      "usage"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "orgId": {
+                                    "type": "string"
+                                  },
+                                  "prompt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "runId": {
+                                    "type": "string"
+                                  },
+                                  "seq": {
+                                    "type": "integer"
+                                  },
+                                  "usage": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "orgId",
+                                  "runId",
+                                  "seq",
+                                  "kind",
+                                  "at",
+                                  "message",
+                                  "prompt",
+                                  "usage"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
                             }
-                          }
+                          },
+                          "required": [
+                            "rows",
+                            "nextCursor",
+                            "hasMore"
+                          ],
+                          "type": "object"
                         }
-                      ],
-                      "properties": {
-                        "hasMore": {
-                          "description": "whether another page follows",
-                          "type": "boolean"
+                      ]
+                    },
+                    "records": {
+                      "additionalProperties": {
+                        "additionalProperties": {
+                          "type": "object"
                         },
-                        "nextCursor": {
-                          "description": "the signed cursor for the next page — send it as _after; null exactly when hasMore is false",
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "rows": {
-                          "items": {},
-                          "type": "array"
-                        }
+                        "type": "object"
                       },
-                      "required": [
-                        "rows",
-                        "nextCursor",
-                        "hasMore"
-                      ],
+                      "description": "Entity rows in `data`, keyed by record type and then by record key, for the client record store. May be empty.",
+                      "type": "object"
+                    },
+                    "removed": {
+                      "additionalProperties": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "description": "Record keys the client store must drop, keyed by record type.",
                       "type": "object"
                     }
-                  ]
+                  },
+                  "required": [
+                    "data",
+                    "records"
+                  ],
+                  "type": "object"
                 }
               }
             },
-            "description": "ok"
+            "description": "ok",
+            "headers": {
+              "x-ultimate-records": {
+                "description": "Always `1`: the body is a record envelope and the operation answer is `data`.",
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "1"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
@@ -2855,7 +3031,84 @@
                     "data": {
                       "oneOf": [
                         {
-                          "items": {},
+                          "items": {
+                            "properties": {
+                              "authorId": {
+                                "type": "string"
+                              },
+                              "body": {
+                                "type": "string"
+                              },
+                              "coverUrl": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "excerpt": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "likeCount": {
+                                "type": "integer"
+                              },
+                              "orgId": {
+                                "type": "string"
+                              },
+                              "publishedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "enum": [
+                                  "draft",
+                                  "scheduled",
+                                  "published"
+                                ],
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "updatedAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "orgId",
+                              "authorId",
+                              "slug",
+                              "title",
+                              "excerpt",
+                              "body",
+                              "coverUrl",
+                              "status",
+                              "likeCount",
+                              "publishedAt",
+                              "createdAt",
+                              "updatedAt"
+                            ],
+                            "type": "object"
+                          },
                           "type": "array"
                         },
                         {
@@ -2894,7 +3147,84 @@
                               ]
                             },
                             "rows": {
-                              "items": {},
+                              "items": {
+                                "properties": {
+                                  "authorId": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  },
+                                  "coverUrl": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "createdAt": {
+                                    "type": "string"
+                                  },
+                                  "excerpt": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "likeCount": {
+                                    "type": "integer"
+                                  },
+                                  "orgId": {
+                                    "type": "string"
+                                  },
+                                  "publishedAt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "slug": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "enum": [
+                                      "draft",
+                                      "scheduled",
+                                      "published"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "updatedAt": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "orgId",
+                                  "authorId",
+                                  "slug",
+                                  "title",
+                                  "excerpt",
+                                  "body",
+                                  "coverUrl",
+                                  "status",
+                                  "likeCount",
+                                  "publishedAt",
+                                  "createdAt",
+                                  "updatedAt"
+                                ],
+                                "type": "object"
+                              },
                               "type": "array"
                             }
                           },
@@ -3318,7 +3648,84 @@
                     "data": {
                       "oneOf": [
                         {
-                          "items": {},
+                          "items": {
+                            "properties": {
+                              "authorId": {
+                                "type": "string"
+                              },
+                              "body": {
+                                "type": "string"
+                              },
+                              "coverUrl": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "excerpt": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "likeCount": {
+                                "type": "integer"
+                              },
+                              "orgId": {
+                                "type": "string"
+                              },
+                              "publishedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "enum": [
+                                  "draft",
+                                  "scheduled",
+                                  "published"
+                                ],
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "updatedAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "orgId",
+                              "authorId",
+                              "slug",
+                              "title",
+                              "excerpt",
+                              "body",
+                              "coverUrl",
+                              "status",
+                              "likeCount",
+                              "publishedAt",
+                              "createdAt",
+                              "updatedAt"
+                            ],
+                            "type": "object"
+                          },
                           "type": "array"
                         },
                         {
@@ -3357,7 +3764,84 @@
                               ]
                             },
                             "rows": {
-                              "items": {},
+                              "items": {
+                                "properties": {
+                                  "authorId": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  },
+                                  "coverUrl": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "createdAt": {
+                                    "type": "string"
+                                  },
+                                  "excerpt": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "likeCount": {
+                                    "type": "integer"
+                                  },
+                                  "orgId": {
+                                    "type": "string"
+                                  },
+                                  "publishedAt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "slug": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "enum": [
+                                      "draft",
+                                      "scheduled",
+                                      "published"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "updatedAt": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "orgId",
+                                  "authorId",
+                                  "slug",
+                                  "title",
+                                  "excerpt",
+                                  "body",
+                                  "coverUrl",
+                                  "status",
+                                  "likeCount",
+                                  "publishedAt",
+                                  "createdAt",
+                                  "updatedAt"
+                                ],
+                                "type": "object"
+                              },
                               "type": "array"
                             }
                           },

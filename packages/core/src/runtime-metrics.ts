@@ -17,7 +17,9 @@ import type { ScalingSignal } from './roles';
 export const SCALING_METRICS = Object.freeze<Record<ScalingSignal, string | null>>({
   rps: 'http_requests_total',
   'ws-connections': 'connections',
-  'queue-depth': 'queue_depth',
+  // Not `queue_depth`, the backlog: ready-only, it reads 0 while a fleet holds every job it has, and
+  // the HPA shrinks the fleet mid-job. `queue_demand` is held plus due (`@ultimat3/jobs`'s gauge).
+  'queue-demand': 'queue_demand',
   singleton: null,
   'run-once': null,
   'per-database': null,

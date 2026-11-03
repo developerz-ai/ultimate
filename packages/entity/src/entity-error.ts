@@ -149,6 +149,22 @@ export const invariantViolated = (
     fix: `x entities show ${entityName} --json   # shows the invariant and its SQL CHECK`,
   });
 
+/**
+ * A `$view` key naming no column. Its own fix, never `describeCommand`: `x entities show` loads the
+ * app, and this throw is what stops the load, so that line re-failed with this finding. The file
+ * is the loader's to name (`Finding.at`): a view is built with no idea where it was called.
+ */
+export const viewKeyUnknown = (
+  entityName: string,
+  key: string,
+  columns: readonly string[],
+): EntityError =>
+  new EntityError({
+    code: 'X_INVARIANT_VIOLATED',
+    cause: `${entityName}.view: $view(['${key}']) names no column — pick from: ${columns.join(', ')}`,
+    fix: `$view(['${columns[0] ?? ''}'])   # edit the call on ${entityName}, in the file this finding names; pick from: ${columns.join(', ')}`,
+  });
+
 export const entityDuplicate = (name: string, existingTable: string): EntityError =>
   new EntityError({
     code: 'X_ENTITY_DUPLICATE',

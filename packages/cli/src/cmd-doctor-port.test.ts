@@ -7,6 +7,7 @@ import type { DoctorProbe } from './cmd-doctor';
 import { doctorCommand, doctorPort, probeFor, runDoctor } from './cmd-doctor';
 import { devPortFor } from './dev-port';
 import { appUrlFindings } from './doctor-app-url';
+import { NO_POOLER_FACT } from './doctor-pooler';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 
@@ -78,6 +79,7 @@ describe('unit · runDoctor asks the APP_URL rule of the port it probed', () => 
     }),
     sealedKeys: async () => ({ columns: [], keys: undefined }),
     authStorage: async () => ({ unsealedMfaSecrets: 0, retiredTables: [] }),
+    pooler: async () => NO_POOLER_FACT,
   });
 
   test('a stale laptop APP_URL is a finding; the matching one is not', async () => {

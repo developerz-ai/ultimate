@@ -1,9 +1,9 @@
 // A draining worker's registry row says so AT ONCE — a retire (`SIGUSR2`), a SIGTERM or a manual
-// `stop()` — while it still holds its jobs. The row is the one place a queue-depth autoscaler can
+// `stop()` — while it still holds its jobs. The row is the one place a queue-demand autoscaler can
 // read it: a pod finishing a 2-hour run after a deploy holds a `running` row its replacement does
 // not own, and counted as load (KEDA, `count(*) where state = 'running'`) it scaled the NEW
 // ReplicaSet up for work nobody there could take — 1.84 pods average where 1 carried the load, in a
-// production app deploying ~50 times a day. `SQL_SCALER_DEPTH` leaves those rows out.
+// production app deploying ~50 times a day. `SQL_SCALER_DEMAND` leaves those rows out.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';

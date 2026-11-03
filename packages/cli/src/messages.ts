@@ -98,7 +98,16 @@ const CATALOG = {
   'cli.dev.manifest': '  manifest {path}',
   'cli.dev.mcp': '  mcp POST {path}',
   'cli.deploy.plan': 'containers only: {images} image, roles {roles}',
+  'cli.deploy.verified':
+    'build {build} held {windowMs} ms over {samples} sample(s); queues: {served} served, {idle} idle',
+  'cli.deploy.verifiedUngraded':
+    'build {build} held {windowMs} ms over {samples} sample(s); queues NOT graded: DATABASE_URL is unset, so no worker row was read',
+  'cli.deploy.unverified': 'build {build} not verified: {count} finding(s)',
   'cli.doctor.clean': 'no findings — environment is shippable',
+  'cli.doctor.poolerBound':
+    'DATABASE_POOLER={pooler}, {role} role: statement_timeout {statement} ms, idle_in_transaction_session_timeout {idle} ms, as the session reads them',
+  'cli.doctor.poolerWakeOff':
+    'wake off, pickup within idlePollMaxMs ({ms} ms by default): a transaction pooler delivers no notification. For the wake, give this role a direct or session-pooled DATABASE_URL and unset DATABASE_POOLER',
   'cli.doctor.findings': '{count} finding(s)',
   'cli.doctor.guards':
     '{count} shipped guard(s) this app does not hold — each line adds one, then x verify reports what it finds:',
@@ -360,6 +369,7 @@ const CATALOG = {
     'would remove {paths} path(s) and {databases} probe database(s) — --dry-run removed nothing',
   'cli.env.checked': '{count} declared variable(s), all present and valid',
   'cli.env.invalid': '{count} of {total} declared variable(s) missing or malformed',
+  'cli.env.checkedAsProduction': 'checked as production: no ULTIMATE_ENV named',
   'cli.env.wrote': 'wrote {path} — {count} declared variable(s)',
   'cli.env.fresh': '{path} already matches the declaration',
   'cli.secrets.init': 'sealed {path} — master key {kid}, and .gitignore now covers the key file',

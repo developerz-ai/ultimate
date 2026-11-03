@@ -298,3 +298,48 @@ run failed `net::ERR_UNSAFE_PORT` (1 of 25). CI's default range starts above eve
 3.3 s of the 5 s budget after a 3.5 s restart, and the next gap is 6.4 s. The test now awaits the
 banner as an event, bounded only by the per-call deadline — which now explains itself.
 
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/testing/CLAUDE.md`](../../packages/testing/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### @ultimat3/testing — boundary
+
+| | |
+|---|---|
+| A `runJobs` pass is a real worker's `tick()` | `fixture-jobs.ts` builds an unstarted `jobWorker` per pass, so admission runs: `concurrency` waits and `whenBusy: 'fail'` refuses (`X_JOB_KEY_BUSY`) exactly as in a fleet. Never `executeJob` on a bare `claim()`. The lease and slot renew every 1 ms of TEST time (`RENEW_MS`, `frozen-scheduler.ts` on `onClockMoved`), never on a wall-clock interval: cancel, `clock.advance(1)`, and the body hears `X_JOB_LEASE_LOST` — no hand-built worker |
+
+### @ultimat3/testing — boundary
+
+| | |
+|---|---|
+| The seal key is a test process's, and nobody's export | `test-seal-key.ts`: installed by the preload only when `NODE_ENV === 'test'` and neither `ULTIMATE_SECRETS_KEY` nor `.secrets.key` exists; `startE2eApp` hands it to the child by VALUE (`testSealKeyEnv`): a spawned server must never install one. The constant is module-private and off the barrel (`test-seal-key.test.ts`). Never loosen the `NODE_ENV` check: the key is public |
+
+### @ultimat3/testing — boundary
+
+| | |
+|---|---|
+| A page test RENDERS, with no cast | `render-view.ts`: `renderRoute(module, { url, actor })` resolves `load` once and hands `meta` and the page that one object, as every render mode does; `renderView(Component, props)` is one component. `@ultimat3/render` is imported inside both, never at module scope: a tier-0 test imports this barrel |
+
+### @ultimat3/testing — boundary
+
+| | |
+|---|---|
+| A matcher that may throw a coded error MUST NOT be `async` | bun REPLACES an `async` matcher's thrown error with `returned a promise that rejected`, so code, cause and fix are gone. A synchronous prologue validates the receiver, then a promise is returned; `matcher-receiver.test.ts` pins all four |
+
+### @ultimat3/testing — boundary
+
+| | |
+|---|---|
+| `toEqualRow` never prints a server-only value | `matcher-row.ts` compares every OWN property (`toEqual` cannot see a `.sealed()` column — empty diff). A non-enumerable property that differs is NAMED; its value and its length stay out of the message, which lands in CI logs |
+
+### @ultimat3/testing — boundary
+
+| | |
+|---|---|
+| `network` is THIS process's fetch, and an e2e page is not in this process | `network.offline()` beside `page` is a no-op on the browser. `E2eFixtures.offline()` is the browser-side spelling and forwards to `E2eBrowserPage.offline()`; a page port with none refuses by name |
+
+### @ultimat3/testing — boundary
+
+| | |
+|---|---|
+| The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. `packages/ui/src/fake-dom-fixture.ts` is a second one for keyboard code, and `ui -> testing` is upward: not a copy to collapse. `bun test` has no DOM and no DOM library may be added |

@@ -50,9 +50,10 @@ import { inboxRetentionOf } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { installRetentionSweep } from './runtime-purge';
 import { installAppWebPush, selectWebPush } from './runtime-push';
-import type { DevDbClient, SchemaMode } from './runtime-queue';
-import { startQueue } from './runtime-queue';
+import { type DevDbClient, type SchemaMode, startQueue } from './runtime-queue';
 import { realtimeConfigOf } from './runtime-realtime';
+import { s3PathStyleOf } from './runtime-s3-path-style';
+import { reportStatementBound } from './runtime-statement-bound';
 
 export interface RunningServices {
   readonly services: DevServices;
@@ -201,9 +202,7 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
           bucket,
           endpoint: binding.url,
           ...(env['S3_REGION'] === undefined ? {} : { region: env['S3_REGION'] }),
-          // A gateway addressed by host and port needs path style; R2 and AWS do not. Declared,
-          // never sniffed from the endpoint.
-          forcePathStyle: env['S3_FORCE_PATH_STYLE'] === '1',
+          forcePathStyle: s3PathStyleOf(env),
         }),
       },
       default: 'object',
@@ -368,6 +367,7 @@ export async function startServices(
   // a different answer than the middleware that routes to it.
   const queue = await startQueue(services, overrides, env, schema);
   const { db, jobs, outbox, events } = queue;
+  await reportStatementBound(db);
   // The same executor the jobs driver, the outbox, the event bus and the idempotency store run
   // on — one pool, one `Bun.sql` that does NOT satisfy `PgExecutor` (`Bun.sql.query` is
   // `undefined`), one wrapper.

@@ -52,6 +52,18 @@ export async function list(limit = 50): Promise<readonly ShortLink[]> {
 `;
 
 /**
+ * A `policy.ts` an author wrote for the `invoice` slice: both names the generated action imports,
+ * and a rule this generator cannot read — so its contract test asserts nothing about an org. The
+ * shape whose unused `id`/`orgId`/`input` were a red `lint` on every such action.
+ */
+export const HANDWRITTEN_POLICY = `import { tag } from '@ultimat3/cache';
+import { can } from '@ultimat3/policy';
+
+export const invoiceTag = tag('invoice');
+export const canInvoiceWrite = can('invoice:write');
+`;
+
+/**
  * The `invoice` resource's own `entity.ts`, as `x g` would read it off disk after the resource
  * below ran — the generators writing INTO that slice are handed it, because a slice with no entity
  * now gets the neutral body and no invented table.
@@ -94,6 +106,21 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
     sliceErrors: HANDWRITTEN_ERRORS,
     sliceEntity: INVOICE_ENTITY,
   },
+  // A slice's policy the author wrote: its contract test holds no constant it does not read.
+  {
+    kind: 'action',
+    name: 'close-invoice',
+    feature: 'invoice',
+    sliceEntity: INVOICE_ENTITY,
+    slicePolicy: HANDWRITTEN_POLICY,
+  },
+  {
+    kind: 'mutator',
+    name: 'reopen-invoice',
+    feature: 'invoice',
+    sliceEntity: INVOICE_ENTITY,
+    slicePolicy: HANDWRITTEN_POLICY,
+  },
   { kind: 'query', name: 'invoice-search', feature: 'invoice' },
   { kind: 'query', name: 'invoice-feed', feature: 'invoice', live: true },
   { kind: 'job', name: 'sweep-invoices', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
@@ -115,6 +142,35 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
     feature: 'short-link',
     sliceEntity: HANDWRITTEN_ENTITY_NO_TENANT,
     sliceRepo: HANDWRITTEN_REPO_NO_TENANT,
+  },
+  // And an action into that same slice: no `orgId` in its input, its tests or the policy it plants.
+  {
+    kind: 'action',
+    name: 'ship-short-link',
+    feature: 'short-link',
+    sliceEntity: HANDWRITTEN_ENTITY_NO_TENANT,
+    sliceRepo: HANDWRITTEN_REPO_NO_TENANT,
+  },
+  {
+    kind: 'mutator',
+    name: 'rename-short-link',
+    feature: 'short-link',
+    sliceEntity: HANDWRITTEN_ENTITY_NO_TENANT,
+    sliceRepo: HANDWRITTEN_REPO_NO_TENANT,
+  },
+  // The same hand-written entity under a slice whose name is not its table's (`shortlink`, the
+  // scaffold being `shortlinks`), and no `repo.ts`: nothing is planted around it.
+  {
+    kind: 'action',
+    name: 'ship-link',
+    feature: 'shortlink',
+    sliceEntity: HANDWRITTEN_ENTITY_NO_TENANT,
+  },
+  {
+    kind: 'mutator',
+    name: 'rename-link',
+    feature: 'shortlink',
+    sliceEntity: HANDWRITTEN_ENTITY_NO_TENANT,
   },
   { kind: 'route', name: 'pricing', surface: 'site' },
   { kind: 'route', name: 'billing', surface: 'app' },

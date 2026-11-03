@@ -245,6 +245,16 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_UPGRADE_VERSION_UNPUBLISHED',
   'X_UPGRADE_INSTALL_FAILED',
   'X_UPGRADE_GATE_UNREADABLE',
+  'X_DEPLOY_BUILD_UNSTAMPED',
+  'X_DEPLOY_UNSTABLE',
+  'X_DEPLOY_QUEUE_UNSERVED',
+  'X_DEPLOY_BUILD_MISMATCH',
+  'X_JOB_OUTLASTS_DRAIN',
+  'X_FEATURE_REQUIRED',
+  'X_BOUNDARY_PACKAGE_TO_APP',
+  'X_APP_IMPORT_UNRESOLVED',
+  'X_STREAM_ALREADY_FLUSHED',
+  'X_QUERY_SLICE_ENTITY',
 ] as const;
 
 /**
@@ -446,6 +456,16 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_UPGRADE_VERSION_UNPUBLISHED: 'x upgrade --to names a version npm does not have',
   X_UPGRADE_INSTALL_FAILED: 'bun install failed after x upgrade wrote the pins',
   X_UPGRADE_GATE_UNREADABLE: 'the installed x verify answered with no JSON report',
+  X_DEPLOY_BUILD_UNSTAMPED: 'the deployment answers with no build header',
+  X_DEPLOY_UNSTABLE: 'the build answered but did not hold',
+  X_DEPLOY_QUEUE_UNSERVED: 'a registered queue has no serving worker of this build',
+  X_DEPLOY_BUILD_MISMATCH: 'production never served this build',
+  X_JOB_OUTLASTS_DRAIN: "a job's declared timeout outlasts the worker's budget",
+  X_FEATURE_REQUIRED: 'x g query or x g backfill named no slice to read',
+  X_BOUNDARY_PACKAGE_TO_APP: 'packages/ imported apps/ at runtime',
+  X_APP_IMPORT_UNRESOLVED: 'an app module imports what does not resolve',
+  X_STREAM_ALREADY_FLUSHED: 'a response header was written after the stream flushed',
+  X_QUERY_SLICE_ENTITY: 'x g query into a slice whose entity is not the one it scaffolds',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

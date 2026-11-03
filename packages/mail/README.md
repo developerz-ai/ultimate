@@ -54,6 +54,7 @@ setMailTransform(async (rendered, meta) =>
 | Rule | Why |
 |---|---|
 | `locale` is required by the **type** | a mail is read hours later; there is no ambient request locale to fall back to. `X_MAIL_LOCALE_MISSING` is the backstop for JS callers |
+| An unresolved key is never sent | `send()` refuses a key the locale lacks, a catalog value still holding `⟦…⟧`, or a `{slot}` with no value (`X_MAIL_KEY_MISSING`, terminal), before the transform and the queue. `renderMessage()` keeps the `⟦…⟧` for a preview, and `renderMail()` reports it as `misses` (`TranslationMiss[]`, recorded by `@ultimat3/i18n`'s `recordingTranslator`). It reads what the renderer resolved, never the bytes: a `⟦` from data sends |
 | Text part is mandatory | HTML-only mail scores as spam and is unreadable to screen readers. Empty text ⇒ `X_MAIL_TEXT_MISSING` |
 | Text is derived from blocks | never scraped out of the HTML, so the two parts cannot drift |
 | Every string is a key | `mail.<id>.<slot>`; English lives in `src/catalog.ts` and app catalogs override it |
@@ -213,6 +214,7 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_LOCALE_MISSING` | `send(mail, data, { to, locale: ctx.locale })` |
 | `X_MAIL_TEMPLATE_UNKNOWN` | export a `defineMail({ id })` and import it (also raised for an unregistered layout) |
 | `X_MAIL_DUPLICATE` | rename one of two `defineMail({ id })` declarations |
+| `X_MAIL_KEY_MISSING` | `x i18n sync <locale>`, then translate `meta.keys`; pass the vars `meta.slots` names |
 | `X_MAIL_TEXT_MISSING` | add a text-bearing block to the template |
 | `X_MAIL_DRIVER_UNAVAILABLE` | `setMailDriver(memoryMailDriver())` at boot — a wiring bug |
 | `X_MAIL_CREDENTIAL_MISSING` | set `SMTP_URL` (or `RESEND_API_KEY`) and `MAIL_FROM` in the deployment — an operations one |

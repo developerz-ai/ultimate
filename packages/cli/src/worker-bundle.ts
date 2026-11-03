@@ -7,7 +7,7 @@
 // why: Bun ships no path API; the entry is resolved to a file and named in the cause.
 import { dirname, join, relative } from 'node:path';
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
 import { FrameworkScriptBuildFailedError, type FrameworkScriptKind } from './errors';
 import { describeBuildError, graphHash, stripDebugId } from './island-identity';
 
@@ -224,7 +224,8 @@ function scriptRoute(
         return applyCacheHeaders(missing, NO_STORE);
       }
       return applyCacheHeaders(
-        new Response(script.code, { headers: { 'content-type': 'text/javascript' } }),
+        // `textResponse` for the length it declares: `compress` reads nothing undeclared.
+        textResponse(script.code, { headers: { 'content-type': 'text/javascript' } }),
         { mode: 'immutable' },
       );
     },

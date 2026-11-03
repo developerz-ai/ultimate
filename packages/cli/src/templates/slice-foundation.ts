@@ -77,13 +77,15 @@ export function sliceFoundation(
   needs: readonly SliceModule[],
   /** Every locale the planted entity's admin labels ship for. Defaults to `['en']`. */
   locales?: readonly string[],
+  /** The slice's entity names no tenant, so a planted policy holds no org rule. */
+  shape: { readonly singleTenant?: boolean } = {},
 ): readonly GeneratedFile[] {
   const feature = names(target.feature);
   const dir = `${target.surfaceDir}/${target.feature}`;
   return [
     ...ifAbsent([
       ...(needs.includes('entity') ? entityFiles(target.feature, target) : []),
-      ...(needs.includes('policy') ? policyFiles(target.feature, target) : []),
+      ...(needs.includes('policy') ? policyFiles(target.feature, target, shape) : []),
       ...(needs.includes('errors')
         ? [{ path: `${dir}/errors.ts`, contents: errorsSource(feature) }]
         : []),
@@ -94,6 +96,61 @@ export function sliceFoundation(
     ...(needs.includes('entity') ? adminCatalogFiles(target.feature, target, locales) : []),
   ];
 }
+
+/** One `export const <binding> = entity('<table>', …)` an `entity.ts` declares. */
+export interface DeclaredEntity {
+  readonly binding: string;
+  readonly table: string;
+}
+
+/** Every entity a slice's `entity.ts` exports, in source order, comments masked. */
+export const declaredEntities = (source: string): readonly DeclaredEntity[] =>
+  [
+    ...stripComments(source).matchAll(
+      /\bexport\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*entity\(\s*['"]([^'"]+)['"]/g,
+    ),
+  ].map((match) => ({ binding: match[1] ?? '', table: match[2] ?? '' }));
+
+/**
+ * The entity a slice's `entity.ts` declares when it is NOT the one this generator would write for
+ * `feature` — `shortLink`/`short_links` in a `shortlink/` slice, whose scaffold is
+ * `shortlink`/`shortlinks`. A foundation planted around it is a `repo.ts` reading a table and a row
+ * type nothing declares. `undefined` when there is no file, the file declares the scaffold's, or it
+ * declares nothing this can read.
+ */
+export function foreignSliceEntity(
+  feature: string,
+  sliceEntity: string | undefined,
+): DeclaredEntity | undefined {
+  if (sliceEntity === undefined) return undefined;
+  const own = names(feature);
+  const declared = declaredEntities(sliceEntity);
+  if (declared.some((one) => one.binding === own.camel && one.table === own.table))
+    return undefined;
+  // Nothing readable is "cannot tell", and a slice is never refused on a guess.
+  return declared[0];
+}
+
+/**
+ * Whether the slice's `entity.ts` is there and names no tenant: no `tenant:` key but `'none'`, no
+ * `.tenant()` column, and no column named `orgId` — the three ways `resolveTenantColumn` turns
+ * tenancy on, inference included, so deleting `tenant: 'orgId'` alone is still a tenant-scoped row.
+ * Absent is NOT this: a slice with no entity has decided nothing, and keeps the default shape.
+ */
+export function sliceHasNoTenant(sliceEntity: string | undefined): boolean {
+  if (sliceEntity === undefined) return false;
+  const code = stripComments(sliceEntity);
+  if (/\btenant\s*:\s*'none'/.test(code)) return true;
+  return !/\btenant\s*:|\.tenant\(|\borgId\s*:/.test(code);
+}
+
+/**
+ * Whether a slice's `policy.ts` decides on an org the input names — `input.orgId`, or the
+ * `<Feature>Scope` a scaffolded `can<…>` types its input with. An action dropping `orgId` from its
+ * input would not compile against that rule, and at runtime the rule could only deny.
+ */
+export const policyReadsOrg = (source: string): boolean =>
+  /\binput\??\.orgId\b|\bcan<\s*\w+Scope\b/.test(stripComments(source));
 
 /** The exported names an `export { a, b as c }` list declares — `c`, never `b`. */
 const listedExports = (code: string): readonly string[] =>

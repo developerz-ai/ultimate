@@ -29,11 +29,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 
 ## Connections and transactions
 
-- **`pglite.ts` is a pool of exactly one**; `reserve()` (`pglite-turns.ts`) serialises `BEGIN`s. Three
-  rules: the plain path takes a turn; a statement inside a LIVE transaction on THIS client
-  (`liveTxConnection()`, never `currentTx() !== undefined`) skips the queue; a reservation runs direct
-  only while its turn is held. `pglite-embedded.test.ts`, `pglite.test.ts`,
-  `pglite-two-clients.test.ts`, `pglite-observer.test.ts`.
+- **`pglite.ts` is a pool of exactly one**; `reserve()` (`pglite-turns.ts`) serialises `BEGIN`s. Full rule: `docs/history/db.md`.
 - **The third rule is both drivers'**: `client.ts`'s pinned handle also runs direct only while held.
   `release()` is idempotent on both; `DbConnection` and `Turn` are `Disposable`.
 - **A pin is held by `using`, never a hand-rolled `try/finally`** (`withTransaction`,
@@ -63,17 +59,19 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   (`Bun.SQL` publishes no occupancy). `client.ts` is the one counter: `run()` from send to settle, a
   pin from ask to release; a statement ON a pin is not counted again. Declared on the first pool.
 - **`client.ts` connects, holds the client and the ambient `db()`**, and opens no socket at import;
-  `pool-profile.ts`, `connection-url.ts`, `bun-sql.ts`, `pool-reserve.ts`, `db-health.ts` (`checkDb`)
-  and `statement-funnel.ts` (`sendOn`/`runOn`) hold the rest.
+  `pool-profile.ts`, `connection-url.ts`, `bun-sql.ts`, `pool-reserve.ts`, `db-health.ts` (`checkDb`),
+  `statement-funnel.ts` (`sendOn`/`runOn`), `pool-gate.ts`, `pool-sweep.ts`, `pool-retire.ts`,
+  `pool-listeners.ts` and `pool-timer.ts` hold the rest.
+- **`pool-gate.ts` is the one count of `max`** (`takeSlot`/`freeSlot`), per pool: a statement holds a slot until it settles, a pin until `release()`, a statement ON a pin none. A wait past `acquireTimeoutMs` is `X_DB_POOL_EXHAUSTED`; `enter` answers `undefined` on a free slot so a send stays in the caller's turn. `reserveWithin` keeps its timer for `Bun.SQL`'s own queue. `close()` refuses who is queued; a retirement hands them to the next pool, unsent.
+- **`pool-sweep.ts`: an unanswered plain statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`; `0` has none; never a pin). One unref'd 1 s timer, armed only while statements are in flight. Age is ticks that FIRED, never a clock (`observe.test.ts`'s no-clock promise), so an answer unread in its socket is never judged late. `retire()` in `client.ts` is read-then-clear; `pool-retire.ts` closes in the background with `{ timeout: 1 }`, SECONDS. A miss only ever retires the pool it ran on. No breaker (`90-deferred.md`).
+- **`pool-pins.ts`: a pin statement is COUNTED by the sweep, never rejected** (`SET LOCAL` may raise its bound); `pinsWedged` on an acquire refusal (every slot a pin, each past the bound) retires the pool. `reserve()` passes `reserveWithin` what the gate left of one budget. **`pool-listeners.ts` holds `client.listen`** and re-dials every session on a retirement, with backoff.
+- **`pooler.ts` owns the pooler**: mode, `poolerFromEnv`, `POOLER_WAIT_MS`, `statementBound`/`lostStatementBound`, both factories. `postgresClient({ env })` is the one reader (`ROLE`, `DATABASE_POOLER`, `DATABASE_URL` from one source); everything after asks `client.pooler` (a replica takes the primary's). Never a detection (one pooler accepts `options` and drops them). Set: `connectionUrl` sends neither bound and no empty `options`; the sweep deadline adds `poolerWaitMs`. `transaction` refuses `migrate`/`replicator` at construction (`X_DB_POOLER_SESSION_REQUIRED`); the CLI's `startQueue` refuses `schema === 'apply'` too. `pooler.live.test.ts`.
+- **`idleInTransactionMs` is sent beside `statement_timeout`.** `25P03` stays `X_DB_STATEMENT_FAILED`, its fix naming the slow await; `08P01` with `unsupported startup parameter` is `X_DB_POOLER_OPTIONS_REFUSED`. `statementBound` reads `pg_settings` (ms), `lostStatementBound` judges: no pooler, any difference; a pooler, only a `0` on a role with a bound. Fix text lives in the leaf `pooler-fix.ts` (no cycle). `client-idle-tx.live.test.ts`.
 - **`libpq-options.ts` merges the framework's `options` into the operator's**: the framework wins
   on the names it sets, the operator keeps the rest; emitted for all six roles.
 - **`DATABASE_URL`'s scheme is screened at boot** (`POSTGRES_SCHEMES`: `postgres:`, `postgresql:`); the
   received scheme is never echoed (it may be a credential).
-- **A JS array bound as a parameter is rendered here** (`array-parameter.ts`, `bound-parameters.ts`,
-  called only by `sendOn`) — `Bun.SQL` joins elements with commas. `NULL` bare vs `"NULL"`; quoting by
-  content; a `Uint8Array` is BYTEA, in an array too; a ragged nest and an Invalid Date are refused
-  (`X_INVARIANT`), ABOVE the driver's `try` in both funnels. `array-parameter.live.test.ts`;
-  `packages/cli/src/pg-array.live.test.ts` is the composition test.
+- **A JS array bound as a parameter is rendered here** (`array-parameter.ts`, `bound-parameters.ts`, called only by `sendOn`) — `Bun.SQL` joins elements with commas. Full rule: `docs/history/db.md`.
 - **Every numeric option is screened** through core's `finiteCount` (`replicaClient`'s breaker,
   `migrate`'s `lockWaitMs`, `readonlyQuery`'s `timeoutMs` — only an explicit `0` disables it — the pool
   profile, `reapBranches`' `maxAgeMs`).
@@ -110,16 +108,12 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   on `up` that governs `down`): a concurrent statement bare and unbounded, any other in its own tx; an
   INVALID index holding a concurrent build's name is dropped first. A concurrent statement in a
   transactional migration is `X_MIGRATION_CONCURRENT_IN_TRANSACTION`, before `BEGIN`.
-- **`migrate-lock-retry.ts` sends again on `X_DB_LOCK_TIMEOUT`** (`lockRetries`, default 5, `finiteCount`), wrapped inside `migration-step.ts`, in both directions: a transactional step whole, a non-transactional one per statement, never from its top (that re-swaps every validated key); the wait is at least one `lockTimeoutMs`, jitter upward only; exhausted keeps the code, its cause stating the attempts.
+- **`migrate-lock-retry.ts` sends again on `X_DB_LOCK_TIMEOUT`**. Full rule: `docs/history/db.md`.
 - **`rolling.ts` decides WHAT a previous release trips over**: a closed list, a token walk that keeps quoted names (`stripSqlNoise` blanks them), per `alter table` subcommand. `markerLines` (`marker-line.ts`) reads `-- retires`/`-- contracts`. A retire in the same file is not earlier. `rolling-errors.ts` holds every `X_MIGRATION_ROLLING_UNSAFE`.
 - **The advisory lock is held by one pinned session, and `migrate()`/`rollback()` run every statement
   on it.** `lock: false` reserves nothing and takes no lock; no shipped path passes it
   (`migrate-pin.test.ts`). `migrate.live.test.ts` pins concurrent and failed-midway runs.
-- **One send is one statement**: `applyScript` sends `statementsOf(script)` one at a time.
-  **`statement-split.ts` is the only splitter** (a left-to-right scan; `$1` is never a `$tag$`; `\`
-  escapes only inside `E''`; comment-only chunks dropped). **`sql-scan.ts` is the one
-  lexer** (`noiseAt`, source order; a `$tag$` needs separating from the identifier before it);
-  `sql-noise.ts` holds `stripSqlNoise`.
+- **One send is one statement**: `applyScript` sends `statementsOf(script)` one at a time. Full rule: `docs/history/db.md`.
 - **`destructive.ts` decides WHAT is destructive**: only `up`, a closed list of four (`drop table`,
   `drop column`, `truncate`, `alter column … type`), decided on blanked text and reported on the
   original; a marker is a top-level line comment (`marker-line.ts`). `X_MIGRATION_DESTRUCTIVE` (ship) and `X_MIGRATION_IRREVERSIBLE` (generate) are
@@ -132,11 +126,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 
 - **`generate.ts` reads an index, never re-derives one** — `IndexDescriptionLike` carries columns,
   unique, `where`, `order`, `using`; an index naming no column is `X_INVARIANT`.
-- **An index's ACCESS METHOD is carried end to end** (`index-method.ts`): closed at `btree` and `gin`;
-  declared is CLOSED, live is OPEN (`indexMethodOf` passes the catalog through; `declaredMethod`
-  refuses); absent is `btree` through one function; `snapshotOf` records `using` only when declared;
-  `indexMethodSql` re-derives the literal (`X_SQL_UNSAFE` default); a unique or ordered GIN is
-  `X_INVARIANT`. `introspectSchema()` reads `pg_am` (`introspect-embedded.test.ts`).
+- **An index's ACCESS METHOD is carried end to end**. Full rule: `docs/history/db.md`.
 - **`index-plan.ts` walks both directions**; a removal and a `concurrently: true` build on a live table go to the non-transactional step (`concurrent-plan.ts`). Full rule: `docs/history/db.md`.
 - **An entity's INVARIANTS reach the DDL** (`invariant-ddl.ts`): `check` a named constraint, `unique` a unique index, `assert` nothing. Full rule: `docs/history/db.md`.
 - **A COLUMN's CHECK is a named constraint too** (`check-ddl.ts`): one list (`declaredChecks` =
@@ -162,8 +152,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   enabled `triggerNames` (`drift-append-only.ts`, `X_APPEND_ONLY_TRIGGER_MISSING`).
 - **A foreign key is `alter table … add constraint`** after every table statement (`foreign-key-plan.ts`); a table drop's bucket runs first, children-first (`drop-order.ts`). Full rule: `docs/history/db.md`.
 - **`same-tenant.ts`**: `sameTenant` is `foreignKeysOf`'s composite; `withSameTenantIndexes` opens `generateMigration` and `snapshotOf`, idempotent. `set null (a)` is the rule's spelling everywhere (`introspectSchema()` off `pg_get_constraintdef`, never `confdelsetcols`). `foreign-key-plan.test.ts`. Why: `docs/history/db.md` (2026-11-02).
-- **The deferred step holds keys too** (`concurrent-plan.ts`, phases in `stepStatements`: index builds, `keys`, `validate`, `contractKeys`, `contract`; `down` reversed: restore old key, drop new key, drop index). `foreignKeyPlan` runs AFTER every table's diff so `targetIndexDeferred` is whole. `deferKey(table, key, recorded, concurrent)` is one atomic `drop constraint if exists k, add constraint k … not valid`, never two statements (each would get its own transaction, a same-name rebuild a window with no key); `contractKey` drops a key under another name last. `DeferredKey` makes the first file's snapshot true while the second is pending. Stay transactional: a new table over an existing index; a retype's re-add. **A CHECK** is `not valid` in the transaction (`checkPlan`'s `concurrent`), validate deferred; rebuilt or moved-aside ones stay plain.
-- **`retired.ts`: a retired column** leaves the entity and stays recorded (`retired: true` or absent, `parseSnapshot` keeps it), marker-only: its indexes, keys and own CHECK stay recorded too, because the arms above skip what `drop column` takes. `recordRetired` is `snapshotOf` one step on, read by `x db gen` AND the CLI's `checkSnapshotDrift`. A drop not recorded `retired` is `X_MIGRATION_ROLLING_UNSAFE` BEFORE `X_MIGRATION_IRREVERSIBLE`; `--rolling-unsafe` skips only the first. Declaring it again writes `-- unretires`, or an empty `up` would leave the flag on the record.
+- **The deferred step holds keys too** (`concurrent-plan.ts`, phases in `stepStatements`: index builds, `keys`, `validate`, `contractKeys`, `contract`; `down` reversed: restore old key, drop new key, drop index). Full rule: `docs/history/db.md`.
+- **`retired.ts`: a retired column**. Full rule: `docs/history/db.md`.
 - **`entity-shape.ts` holds the `*Like` interfaces** (every later field optional).
 - **`snapshot-json.ts` writes a fixed point of Biome** (an array collapses when it fits at `<= 100`
   with its trailing comma); `snapshot-json.test.ts` runs `biome format`.
@@ -204,10 +194,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 
 - **Its own entry: `@ultimat3/db/schema-dump`** (`schema-dump-entry.ts`). The barrel is in every
   role's boot graph and must evaluate none of this family — `schema-dump-entry.test.ts`.
-- **Two readings of one catalog, never mixed.** `introspectSchema()` → `SchemaDescription`, the entity
-  vocabulary a snapshot is diffed in. `introspectCatalog()` (`catalog.ts`; queries: `catalog-relations.ts`,
-  `catalog-objects.ts`; pure fold: `catalog-fold.ts`) → `CatalogDescription`, Postgres' own `pg_get_*def` text, compared only to
-  itself. A catalog spelling on a `SchemaDescription` field is the `checks`/`checkNames` mistake.
+- **Two readings of one catalog, never mixed.** `introspectSchema()` → `SchemaDescription`, the entity vocabulary a snapshot is diffed in. Full rule: `docs/history/db.md`.
 - **Sorted in JS** (`byCodeUnit`), never `order by` and never `localeCompare`: collations differ.
 - **`renderSchemaDump()` is pure**; `schema-dump-table.ts` spells one table. `quoted()` escapes any
   catalog name — `identifier()` refuses whitespace and `"`, which a migration may have created.

@@ -49,6 +49,16 @@ export const queueDeadJobs: Gauge = gauge('queue_dead_jobs', {
   description: 'Jobs sitting in the dead-letter state, by queue',
 });
 
+/** `SCALING_METRICS['queue-demand']`: what the chart's worker HPA divides by a pod's capacity. */
+export const queueDemand: Gauge = gauge('queue_demand', {
+  unit: '{job}',
+  description: 'Jobs a serving worker must hold, by queue: running on one, or due and claimable',
+});
+
+export function recordQueueDemand(queue: string, demand: number): void {
+  queueDemand.record(demand, { queue });
+}
+
 export function recordQueueOldestReady(queue: string, oldestReadyMs: number): void {
   queueOldestReady.record(oldestReadyMs / 1000, { queue });
 }

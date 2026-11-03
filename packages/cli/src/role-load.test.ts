@@ -47,7 +47,7 @@ export const clock = defineService('fixtureClock', () => ({ now: () => 1 }));
 
 const PAGE = `import { defineRoute } from '@ultimat3/render';
 export const config = defineRoute({ render: 'ssr', hydrate: 'visible', offline: 'runtime', budget: { js: '60kb' }, meta: () => ({ title: 'Hello', description: 'x' }) });
-export default function Page() { return <main><Suspense>hello</Suspense></main>; }
+export default function Page() { return <main>hello</main>; }
 `;
 
 const manifest = (jobs: readonly string[]): string =>
@@ -76,7 +76,7 @@ interface Probe {
   readonly findings: readonly string[];
   readonly jobs: readonly string[];
   readonly services: readonly string[];
-  readonly routes: readonly { readonly file: string; readonly suspense: number }[];
+  readonly routes: readonly string[];
   /** App-relative document modules this process evaluated. */
   readonly documents: readonly string[];
   /** Every `X_*` code and `msg` the boot logged. */
@@ -100,7 +100,7 @@ console.log(JSON.stringify({ probe: {
   files: scan.files, findings: scan.findings.map((f) => f.code),
   jobs: registeredJobs().map((j) => j.name).sort(),
   services: [...registeredServiceNames()].sort(),
-  routes: routeEntries().map((r) => ({ file: r.file, suspense: r.suspenseBoundaries })),
+  routes: routeEntries().map((r) => r.file),
   documents: Object.keys(require.cache).filter((p) => p.startsWith(dir + '/apps/') && /\\.(tsx|scss)$/.test(p)).map((p) => p.slice(dir.length + 1)).sort(),
 } }));`;
   const child = Bun.spawn(['bun', '-e', script], {
@@ -170,8 +170,7 @@ describe('unit · what each role imports', () => {
       'apps/web/app/hello/page.tsx',
       'apps/web/shared/ui/card.tsx',
     ]);
-    // An untracked scan reads a route module's text AFTER the import: the boundary count is there.
-    expect(loaded.routes).toEqual([{ file: 'apps/web/app/hello/page.tsx', suspense: 1 }]);
+    expect(loaded.routes).toEqual(['apps/web/app/hello/page.tsx']);
     expect(loaded.jobs).toEqual(['ping']);
   }, 30_000);
 

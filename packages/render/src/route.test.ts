@@ -149,7 +149,6 @@ describe('the descriptor always carries a budget', () => {
         file: 'apps/web/site/pricing/page.tsx',
         path: '/pricing',
         surface: 'site',
-        suspenseBoundaries: 0,
       }),
     ).toThrow(RouteModeInvalidError);
   });
@@ -167,7 +166,6 @@ describe('the descriptor always carries a budget', () => {
         file: 'apps/web/site/pricing/page.tsx',
         path: '/pricing',
         surface: 'site',
-        suspenseBoundaries: 0,
       }),
     ).not.toThrow();
   });

@@ -11,6 +11,7 @@ import {
   IDEMPOTENCY_HEADER,
   isMcpExposed,
   RECORDS_OPENAPI_HEADER,
+  REPLAYED_HEADER,
   recordDeprecatedCall,
   recordEnvelopeSchema,
   renderDeprecation,
@@ -36,8 +37,6 @@ import {
   toOperationId,
 } from './naming';
 import { carriesRecords, recordResponse } from './record-wire';
-
-export const REPLAYED_HEADER = 'x-ultimate-replayed';
 
 /** The digest a request's idempotency key names its write by; none for a missing or blank one. */
 async function writeOriginOf(req: UltimateRequest): Promise<string | undefined> {

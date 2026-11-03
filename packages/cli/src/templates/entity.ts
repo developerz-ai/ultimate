@@ -45,7 +45,8 @@ export const ${name.camel} = entity('${table}', {
   // \`orgId: uuid()\` column below and drop \`'orgId'\` from \`indexes\`. ${stems.repo}.ts needs no edit —
   // it names no org. ${stems.entity}.test.ts then expects \`$tenantColumn\` null and \`orgScoped\` false,
   // its \`row()\` fixture and ${stems.repo}.test.ts's \`draft()\` lose \`orgId\`, and ${stems.repo}.test.ts loses its
-  // last test. Nothing else reads the column.
+  // last test. policy.ts's \`can${name.pascal}Write\` stops reading \`input.orgId\` (\`can('…:write')\`
+  // alone is the rule), and from then on \`x g action\` and \`x g mutator\` input no \`orgId\`.
   tenant: 'orgId',
   columns: {
     id: uuid().primaryKey(),

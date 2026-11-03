@@ -148,8 +148,90 @@ describe('unit · auditApp', () => {
     const es = report.locales.find((audit) => audit.locale === 'es');
     expect(en?.missing).toEqual([]);
     expect(en?.unused).toEqual(['c.d']);
-    expect(es?.missing).toEqual(['a.b']);
+    // `a.b` because source names it, `c.d` because the reference locale defines it.
+    expect(es?.missing).toEqual(['a.b', 'c.d']);
     expect(es?.unused).toEqual([]);
+  });
+});
+
+describe('unit · auditApp over mail and push keys', () => {
+  const MAIL = [
+    "import { blocks, defineMail } from '@ultimat3/mail';",
+    "export const receipt = defineMail({ id: 'receipt', subject: 'mail.r.subject', input,",
+    "  template: () => [blocks.paragraph('mail.r.body')] });",
+    '',
+  ].join('\n');
+
+  test('a mail-only key absent from es is a finding, and is no longer unused in en', async () => {
+    const dir = tempRoot('x-i18n-mail-');
+    await Bun.write(join(dir, 'apps/web/app/mail.ts'), MAIL);
+    await Bun.write(
+      join(dir, 'packages/i18n/catalogs/en.json'),
+      JSON.stringify({ mail: { r: { subject: 'Receipt', body: 'Thanks' } } }),
+    );
+    await Bun.write(join(dir, 'packages/i18n/catalogs/es.json'), JSON.stringify({}));
+
+    const { report } = await auditApp(dir);
+
+    expect(report.ok).toBe(false);
+    const en = report.locales.find((audit) => audit.locale === 'en');
+    const es = report.locales.find((audit) => audit.locale === 'es');
+    expect(en?.unused).toEqual([]);
+    expect(es?.missing).toEqual(['mail.r.body', 'mail.r.subject']);
+  });
+
+  test('the probe: a mail key no catalog holds is missing from every locale', async () => {
+    const dir = tempRoot('x-i18n-mail-probe-');
+    await Bun.write(join(dir, 'apps/web/app/mail.ts'), MAIL);
+    await Bun.write(join(dir, 'packages/i18n/catalogs/es-co.json'), JSON.stringify({}));
+
+    const { report } = await auditApp(dir);
+
+    expect(report.used).toEqual(['mail.r.body', 'mail.r.subject']);
+    expect(report.ok).toBe(false);
+  });
+
+  test('a push key absent from a locale is a finding', async () => {
+    const dir = tempRoot('x-i18n-push-');
+    await Bun.write(
+      join(dir, 'apps/web/app/job.ts'),
+      "await sendPush({ titleKey: 'push.a.title', bodyKey: 'push.a.body' });\n",
+    );
+    await Bun.write(join(dir, 'packages/i18n/catalogs/en.json'), JSON.stringify({}));
+
+    const { report } = await auditApp(dir);
+
+    expect(report.locales[0]?.missing).toEqual(['push.a.body', 'push.a.title']);
+  });
+
+  test('a key only the en catalog holds, named by nothing static, is a gap in es', async () => {
+    const dir = tempRoot('x-i18n-reference-');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    await Bun.write(join(dir, 'apps/web/app/page.tsx'), 't(`plans.${plan}.name`);\n');
+    await Bun.write(
+      join(dir, 'packages/i18n/catalogs/en.json'),
+      JSON.stringify({ plans: { free: { name: 'Free' } } }),
+    );
+    await Bun.write(join(dir, 'packages/i18n/catalogs/es.json'), JSON.stringify({}));
+
+    const { report } = await auditApp(dir);
+
+    expect(report.locales.find((audit) => audit.locale === 'es')?.missing).toEqual([
+      'plans.free.name',
+    ]);
+  });
+
+  test('a seeded marker over a reference-only key stays missing until a human replaces it', async () => {
+    const catalogs = { en: { 'a.only': 'Only' }, es: { 'a.only': '\u27E6Only\u27E7' } };
+    const report = auditCatalogs({
+      extraction: { usages: [], dynamic: [] },
+      catalogs,
+      reference: 'en',
+    });
+    expect(report.ok).toBe(true);
+    const held = withPlaceholdersMissing(report, catalogs);
+    expect(held.locales.find((audit) => audit.locale === 'es')?.missing).toEqual(['a.only']);
+    expect(held.ok).toBe(false);
   });
 });
 

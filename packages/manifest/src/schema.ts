@@ -219,6 +219,23 @@ export interface QueryFact {
    * no fact. A caller built against rows is broken by the flip, and one built against a URL too.
    */
   readonly download?: true;
+  /**
+   * The declared row, as `@ultimat3/schema`'s `toWireOutputSchema` narrows it: the document the
+   * read's OpenAPI operation and MCP tool publish. Written only when declared and introspectable,
+   * like `subscribes`. `diffQueries` compares members, never the whole schema: an entity gaining a
+   * column must not flip every `rows: X.$schema` read. Present before and absent after is breaking.
+   */
+  readonly rows?: JsonValue;
+}
+
+/**
+ * A declared bearer mount's published cut: the prefix a caller dials and, by scope, the names a
+ * token holding it reaches. Sorted at every level. Neither `resolveToken`, nor the mount's rate
+ * limit, nor its document's file name: this is what turns a customer's call into a 404, no more.
+ */
+export interface MountFact {
+  readonly prefix: string;
+  readonly scopes: Readonly<Record<string, readonly string[]>>;
 }
 
 /**
@@ -309,6 +326,12 @@ export interface Manifest {
    * `buildManifest` always writes it — `[]` for an app with no admin.
    */
   readonly admin?: readonly AdminFact[];
+  /**
+   * Absent, to a reader, for a file older than the section AND for an app with no mount:
+   * `buildManifest` writes the key only when there is one, so an app without a mount keeps its
+   * bytes across the upgrade that introduced it.
+   */
+  readonly mounts?: readonly MountFact[];
   readonly jobs: readonly JobFact[];
   readonly tasks: readonly TaskFact[];
   readonly policies: readonly PolicyFact[];
@@ -368,6 +391,7 @@ export function isManifest(value: unknown): value is Manifest {
   // Absent is a pre-channel file and readable; present and not an array is a damaged one.
   if (m['channels'] !== undefined && !Array.isArray(m['channels'])) return false;
   if (m['admin'] !== undefined && !Array.isArray(m['admin'])) return false;
+  if (m['mounts'] !== undefined && !Array.isArray(m['mounts'])) return false;
   return isAppIdentity(m['app']);
 }
 

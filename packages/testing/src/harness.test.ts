@@ -13,7 +13,7 @@ import {
   isNetworkSealed,
   mockJson,
   networkState,
-  requestedUrls,
+  requestLog,
   resetNetwork,
 } from './sealed-network';
 import type { WorkerDatabase } from './template-db';
@@ -210,7 +210,7 @@ describe(testName('unit', 'teardown restores the process state it found'), () =>
     await expect(fetch(`http://127.0.0.1:${CLOSED_PORT}/x`)).rejects.toBeUltimateError(
       'X_TEST_NETWORK_SEALED',
     );
-    expect(requestedUrls()).toContain(`http://127.0.0.1:${CLOSED_PORT}/x`);
+    expect(requestLog().map((call) => call.url)).toContain(`http://127.0.0.1:${CLOSED_PORT}/x`);
   });
 });
 

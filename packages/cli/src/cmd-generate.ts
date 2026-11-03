@@ -14,8 +14,10 @@ import { invocationOf } from './command';
 import { localiseCatalogs } from './generate-catalog-locales';
 import { appDisk, plannedDisk } from './generate-disk';
 import { assertFeatureExists } from './generate-feature';
+import { assertSliceToRead } from './generate-feature-required';
 import { generate, sliceDir } from './generate-files';
 import { followUpEdits } from './generate-follow-ups';
+import { formatWritten } from './generate-format-written';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { refusePluralTable } from './generate-plural';
@@ -89,7 +91,15 @@ export const generateCommand: CliCommand = {
     // Read for the same reason: which errors the slice declares is written on THIS app's disk.
     const slice = sliceDir(surface, kebab(featureFlag ?? name));
     // A named slice that is not there is refused, never invented (X_FEATURE_UNKNOWN).
-    assertFeatureExists(root, kind, featureFlag, slice);
+    assertFeatureExists(root, kind, featureFlag, slice, name);
+    // And a read with no table to read, never handed one (X_FEATURE_REQUIRED).
+    assertSliceToRead(root, {
+      kind,
+      name,
+      feature: featureFlag,
+      slice,
+      flags: reproducedFlags(generateCommand.spec, ctx.args),
+    });
     const sliceErrors = await readSliceErrors(root, kind, slice);
     // And its `policy.ts`, for the same two kinds and the same reason: the action imports from it.
     const slicePolicy = await followReexports(
@@ -162,7 +172,7 @@ export const generateCommand: CliCommand = {
     const force = flagBool(ctx.args, 'force');
     if (flagBool(ctx.args, 'dry-run')) {
       // The write plan, never the bare file list: what the real run would write, skip and refuse.
-      const plan = await planWrites(root, files, force, invocation);
+      const plan = await planWrites(root, files, force, invocation, name);
       const refused = [...plan.conflicts, ...bindings];
       // And the edits OUTSIDE the slice — role map, handle, API index, manifests, catalog index —
       // run for real against the plan held in memory: the same code, so the same list. A dry run
@@ -206,12 +216,15 @@ export const generateCommand: CliCommand = {
     const report =
       bindings.length > 0
         ? { written: [], conflicts: bindings }
-        : await writeFiles(root, files, force, invocation);
+        : await writeFiles(root, files, force, invocation, name);
     // The edits a generated primitive needs outside its own slice, performed rather than left as
     // findings (`generate-follow-ups.ts`). Before the manifest load below, so the projection sees
     // them all — a repo reading a table the handle lacks would not load at all.
     const follow = await followUpEdits(root, report.written, dbModule, appDisk(root));
     const edited = follow.edited;
+    // Before the manifest reads a byte of it. Only what this run created: an edited file is its
+    // author's, and a run that reformatted one would hand them a diff they never asked for.
+    await formatWritten(root, report.written, ctx.runner);
     // Facts, not prose: every `x g` run leaves the route/action/entity/job/policy table current,
     // the same guarantee `x manifest` makes on its own — an agent reading it after `x g` never
     // sees a resource that exists on disk but not in the manifest.

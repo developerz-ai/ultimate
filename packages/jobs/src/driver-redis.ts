@@ -21,6 +21,7 @@ import type {
   EnqueueResult,
   JobDriver,
   JobRecord,
+  QueueDemand,
   QueueStats,
 } from './driver';
 import {
@@ -33,6 +34,7 @@ import {
 import {
   REDIS_ACK,
   REDIS_CLAIM,
+  REDIS_DEMAND,
   REDIS_ENQUEUE,
   REDIS_HEARTBEAT,
   REDIS_NACK,
@@ -272,6 +274,14 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
         };
       });
       // Code units, as `collate "C"` orders `SQL_STATS` — never `localeCompare`.
+      return rows.sort((a, b) => (a.queue < b.queue ? -1 : a.queue > b.queue ? 1 : 0));
+    },
+
+    async demand(): Promise<readonly QueueDemand[]> {
+      const rows = list(await run(REDIS_DEMAND, [nowMs(clock)])).map((row): QueueDemand => {
+        const [queue, demand] = list(row);
+        return { queue: String(queue), demand: Number(demand) };
+      });
       return rows.sort((a, b) => (a.queue < b.queue ? -1 : a.queue > b.queue ? 1 : 0));
     },
   };

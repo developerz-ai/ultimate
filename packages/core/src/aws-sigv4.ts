@@ -6,6 +6,7 @@
 import { assert } from './assert';
 import { type Clock, systemClock } from './clock';
 import { describeValue } from './error-render';
+import { finiteCount } from './finite-option';
 
 export interface AwsCredentials {
   readonly accessKeyId: string;
@@ -62,7 +63,32 @@ export interface SignedAwsRequest {
   readonly signature: string;
 }
 
+/**
+ * A URL whose query carries the signature: a credential-less holder sends it from a browser. What
+ * `headers` names is inside the signature, so the request must carry exactly those values.
+ */
+export interface PresignAwsUrlInput
+  extends Pick<
+    SignAwsRequestInput,
+    'method' | 'url' | 'credentials' | 'region' | 'service' | 'clock' | 'doubleEncodePath'
+  > {
+  /** 1 … 604 800, S3's own limit. */
+  readonly expiresInSeconds: number;
+  /** Signed, and sent by whoever holds the URL. `host` is always signed. */
+  readonly headers?: Readonly<Record<string, string>> | undefined;
+}
+
+export interface PresignedAwsUrl {
+  readonly url: string;
+  /** The two intermediate strings, exposed so a provider's `SignatureDoesNotMatch` can be diffed. */
+  readonly canonicalRequest: string;
+  readonly stringToSign: string;
+  readonly signature: string;
+}
+
 const ALGORITHM = 'AWS4-HMAC-SHA256';
+/** SigV4's own ceiling on `X-Amz-Expires`: seven days. A presigner beside this one refuses past it too. */
+export const MAX_AWS_PRESIGN_SECONDS = 604_800;
 const SCOPE_SEGMENT = /^[a-z0-9-]{1,64}$/;
 const METHOD = /^[A-Z]{1,16}$/;
 /** Headers the signer writes itself; a caller's copy would sign a value the request does not carry. */
@@ -175,7 +201,9 @@ function parseUrl(url: string | URL): URL {
   return new URL(url);
 }
 
-function assertInput(input: SignAwsRequestInput): void {
+function assertInput(
+  input: Pick<SignAwsRequestInput, 'credentials' | 'region' | 'service' | 'method'>,
+): void {
   const { accessKeyId, secretAccessKey } = input.credentials;
   assert(
     accessKeyId !== '' && secretAccessKey !== '',
@@ -213,6 +241,25 @@ const amzDate = (clock: Clock): string =>
     .toISOString()
     .replace(/\.\d{3}Z$/, 'Z')
     .replace(/[-:]/g, '');
+
+/** The scope, the string to sign and the signature over it: one derivation for both forms. */
+async function signatureOver(
+  input: Pick<SignAwsRequestInput, 'credentials' | 'region' | 'service'>,
+  date: string,
+  canonicalRequest: string,
+): Promise<{ readonly stringToSign: string; readonly signature: string }> {
+  const day = date.slice(0, 8);
+  const scope = scopeOf(input, day);
+  const stringToSign = [ALGORITHM, date, scope, await sha256Hex(canonicalRequest)].join('\n');
+  let key = encoder.encode(`AWS4${input.credentials.secretAccessKey}`);
+  for (const part of [day, input.region, input.service, 'aws4_request']) {
+    key = await hmac(key, part);
+  }
+  return { stringToSign, signature: toHex(await hmac(key, stringToSign)) };
+}
+
+const scopeOf = (input: Pick<SignAwsRequestInput, 'region' | 'service'>, day: string): string =>
+  `${day}/${input.region}/${input.service}/aws4_request`;
 
 /**
  * Sign one request with SigV4 in the `Authorization` header. Returns everything to send — the
@@ -253,13 +300,8 @@ export async function signAwsRequest(input: SignAwsRequestInput): Promise<Signed
     hash,
   ].join('\n');
 
-  const day = date.slice(0, 8);
-  const scope = `${day}/${input.region}/${service}/aws4_request`;
-  const stringToSign = [ALGORITHM, date, scope, await sha256Hex(canonicalRequest)].join('\n');
-  let key = encoder.encode(`AWS4${input.credentials.secretAccessKey}`);
-  for (const part of [day, input.region, service, 'aws4_request']) key = await hmac(key, part);
-  const signature = toHex(await hmac(key, stringToSign));
-
+  const { stringToSign, signature } = await signatureOver(input, date, canonicalRequest);
+  const scope = scopeOf(input, date.slice(0, 8));
   const sent = Object.fromEntries(headers);
   sent['authorization'] =
     `${ALGORITHM} Credential=${input.credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
@@ -268,6 +310,60 @@ export async function signAwsRequest(input: SignAwsRequestInput): Promise<Signed
     method: input.method,
     url: `${url.origin}${singlePath}${query === '' ? '' : `?${query}`}`,
     headers: sent,
+    canonicalRequest,
+    stringToSign,
+    signature,
+  };
+}
+
+/**
+ * Sign one request with SigV4 in its query, for a holder with no credentials. The payload is
+ * `UNSIGNED-PAYLOAD`, because the holder's body is not this process's to hash; a signed
+ * `content-length` is what bounds it instead, since the provider recomputes the signature from the
+ * header the request really carries.
+ */
+export async function presignAwsUrl(input: PresignAwsUrlInput): Promise<PresignedAwsUrl> {
+  assertInput(input);
+  const expires = finiteCount('presignAwsUrl', 'expiresInSeconds', input.expiresInSeconds, 1);
+  assert(
+    expires <= MAX_AWS_PRESIGN_SECONDS,
+    `presignAwsUrl was handed expiresInSeconds ${expires}, past SigV4's limit of ${MAX_AWS_PRESIGN_SECONDS}`,
+    `expiresInSeconds: ${MAX_AWS_PRESIGN_SECONDS}   # seven days, the longest a presigned URL can live`,
+  );
+  const url = parseUrl(input.url);
+  const date = amzDate(input.clock ?? systemClock);
+  const caller: Record<string, string> = {};
+  for (const [name, value] of Object.entries(input.headers ?? {})) {
+    if (!SIGNER_OWNED.has(name.trim().toLowerCase())) caller[name] = value;
+  }
+  const hasHost = Object.keys(caller).some((name) => name.trim().toLowerCase() === 'host');
+  const headers = canonicalHeaders({ ...caller, ...(hasHost ? {} : { host: url.host }) });
+  const signedHeaders = [...headers.keys()].join(';');
+  const token = input.credentials.sessionToken;
+  const params = new URLSearchParams(url.search);
+  params.set('X-Amz-Algorithm', ALGORITHM);
+  params.set(
+    'X-Amz-Credential',
+    `${input.credentials.accessKeyId}/${scopeOf(input, date.slice(0, 8))}`,
+  );
+  params.set('X-Amz-Date', date);
+  params.set('X-Amz-Expires', String(expires));
+  params.set('X-Amz-SignedHeaders', signedHeaders);
+  if (token !== undefined && token !== '') params.set('X-Amz-Security-Token', token);
+  const query = canonicalQuery(params.toString().replaceAll('+', '%20'));
+  const doubleEncode = input.doubleEncodePath ?? input.service !== 's3';
+  const canonicalRequest = [
+    input.method,
+    canonicalPath(url.pathname, doubleEncode),
+    query,
+    ...[...headers].map(([name, value]) => `${name}:${value}`),
+    '',
+    signedHeaders,
+    UNSIGNED_PAYLOAD,
+  ].join('\n');
+  const { stringToSign, signature } = await signatureOver(input, date, canonicalRequest);
+  return {
+    url: `${url.origin}${canonicalPath(url.pathname, false)}?${query}&X-Amz-Signature=${signature}`,
     canonicalRequest,
     stringToSign,
     signature,

@@ -175,3 +175,48 @@ a current fact: the rules that still hold are in that file, and where the two di
   hashes it, and `get` is capped at `maxGetBytes`, so promotion would refuse or buffer each large
   object. `sniffText` decodes a head with `stream`: strict decoding gave up on a cut character, and
   `undefined` accepts a text type, so HTML opening a large object passed as plain text.
+
+## Superseded 2026-11-02: the unsigned upload size
+
+The rule `packages/storage/CLAUDE.md` held until `25-pkg-storage-streams` bound a grant's size at the provider, verbatim:
+
+- **`signedUrl({ maxBytes })` is signed on `local` and unenforceable on `s3`, and the s3 driver may
+  NOT refuse it.** `grantUpload` passes `maxBytes: policy.maxBytes` on every grant, so a refusal
+  would break every s3 upload an app mints. S3 has no request header for a size and Bun's `presign`
+  binds method and expiry only (it signs `host` alone; `driver-s3.test.ts` pins it) — so on the
+  production disk the client PUTs straight into the bucket and nothing between the grant and the
+  object holds the ceiling or the type. That belongs to a bucket rule or `promoteAttachment`,
+  neither of which is a driver's; `SignedUrlOptions` says so and `driver-parity.test.ts` pins both
+  halves.
+
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/storage/CLAUDE.md`](../../packages/storage/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### @ultimat3/storage — agent notes
+
+- **The signed base is the disk's REGISTERED name, and it is stated once — on the driver.**
+  `defineStorage` tells each driver its registration key (`StorageDriver.registerAs`), the driver
+  rebases its URLs onto `signedUrlBaseFor(diskName)`, and `accept.ts` reads `disk.signedUrlBase`
+  rather than deriving a second one. Both halves used to derive it from `disk.name` — the DRIVER
+  kind — so they agreed with each other and disagreed with the mounted `/_storage/:disk/*key`
+  route, which resolves the segment through the registry: a disk registered as `uploads` minted
+  `/_storage/local/...` and 404'd its own signatures. Latent only because every disk in this repo
+  happens to be named `local`. An explicit `baseUrl` on `localDriver` outranks the registration
+  (the operator saying where the route is mounted); an unregistered driver still mints under
+  `local`. One driver instance under two disk names is refused at `defineStorage`
+  (`X_CONFIG_INVALID`) — it could only mint under one of them. `@ultimat3/cli`'s
+  `STORAGE_BASE_PATH` is a third statement of the mount prefix and should import
+  `DEFAULT_SIGNED_URL_BASE` instead.
+
+- **`localDriver` refuses to construct outside development without a usable signing secret**
+  (`X_ENV_MISSING`, borrowed from core). Usable means neither the `signingSecret` option nor
+  `STORAGE_SIGNING_SECRET` is missing, empty **or** the published `DEV_SIGNING_SECRET` — pasting
+  the literal into `app.config.ts` configures nothing, so it is refused exactly as its absence is.
+  `DEV_SIGNING_SECRET` is published in this repo, and `acceptSignedUpload` trusts a signed URL's
+  constraints over the app's `uploadPolicy` — so the fallback is a universal grant to mint any
+  `PUT`. Refused at construction, not at the first `signedUrl()`: a process that cannot sign safely
+  must not finish booting. The cause names the environment `resolveEnvironment()` resolved, which
+  may be `NODE_ENV`'s, never a variable the process did not set. `usesDevStorageSecret()` is the
+  `x doctor` predicate, mirroring core's `usesDevCursorSecret()`; it reads the env var, so a disk
+  handed an explicit `signingSecret` is outside its question.

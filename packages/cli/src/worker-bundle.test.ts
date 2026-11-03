@@ -94,6 +94,9 @@ describe('syncWorkerRoutes', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('text/javascript');
     expect(response.headers.get('cache-control')).toContain('immutable');
+    expect(response.headers.get('content-length')).toBe(
+      String(Buffer.byteLength(worker?.code ?? '')),
+    );
     expect(await response.text()).toBe(worker?.code ?? '');
   });
 

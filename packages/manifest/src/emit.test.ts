@@ -36,6 +36,7 @@ const sources: ManifestSources = {
   routes: [{ url: '/', render: 'static' }],
   entities: [{ name: 'post', table: 'posts', columns: [], invariants: [] }],
   actions: [publishPost],
+  mounts: [{ prefix: '/v1', scopes: { 'post:write': ['publishPost'] } }],
   locales: ['en'],
 };
 
@@ -81,6 +82,7 @@ describe('manifestJson', () => {
       'queries',
       'channels',
       'admin',
+      'mounts',
       'jobs',
       'tasks',
       'policies',

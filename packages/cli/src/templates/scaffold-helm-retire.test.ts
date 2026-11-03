@@ -1,8 +1,9 @@
 // The worker retire in both charts — the framework's (`docker/helm/`) and the one `x new` writes:
 // `roles.worker.retireSeconds` > 0 gives the worker a `preStop` that sends PID 1 SIGUSR2 and waits
 // for it to exit (`packages/cli/src/serve-retire.ts`), and adds those seconds to its grace period,
-// which the kubelet counts the `preStop` against. Off (0) by default. Rendered with `helm template`
-// when a helm binary is on PATH (CI's ubuntu runners ship one).
+// which the kubelet counts the `preStop` against. On by default since 30.0.0, 3600 s, core's
+// `WORKER_RETIRE_DEFAULT_MS`; 0 turns it off. Rendered with `helm template` when a helm binary is on
+// PATH (CI's ubuntu runners ship one).
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
@@ -11,6 +12,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { WORKER_RETIRE_DEFAULT_MS } from '@ultimat3/core';
 import { RETIRE_SIGNAL } from '../serve-retire';
 import { names } from './naming';
 import { helmFiles } from './scaffold-helm';
@@ -118,10 +120,24 @@ const preStopOf = (doc: Deployment | undefined): readonly string[] | undefined =
 describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both charts', () => {
   for (const which of ['framework', 'scaffold'] as const) {
     test(
-      `${which}: off by default — no retire preStop, the drain-only grace`,
+      `${which}: on by default — the retire preStop, and a grace above an hour`,
       async () => {
         const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
         const worker = (await render(chart, [])).get('worker');
+        expect(preStopOf(worker)?.join(' ')).toContain(`process.kill(1, '${RETIRE_SIGNAL}')`);
+        expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(
+          WORKER_RETIRE_DEFAULT_MS / 1000 + 35,
+        );
+      },
+      TEST_MS,
+    );
+
+    test(
+      `${which}: 0 turns it off — no retire preStop, the drain-only grace`,
+      async () => {
+        const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
+        const rendered = await render(chart, ['--set', 'roles.worker.retireSeconds=0']);
+        const worker = rendered.get('worker');
         expect(preStopOf(worker)).toBeUndefined();
         expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(35);
       },
@@ -143,6 +159,11 @@ describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both char
           `process.kill(1, n % 5 === 0 ? '${RETIRE_SIGNAL}' : 0)`,
         );
         expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(7200 + 35);
+        // The wait ENDS at the retire, so the SIGTERM lands with the drain budget left: unbounded it
+        // spent the whole grace, and the kubelet's last 2 s SIGKILLed the job instead of handing it
+        // back. Wall time, never a count of turns: each `Bun.sleep(1000)` overruns, 97 s over a day.
+        expect(command?.join(' ')).toContain('const end = Date.now() + 7200 * 1000;');
+        expect(command?.join(' ')).toContain('Date.now() < end;');
         // The other roles are untouched: the retire is the worker's alone.
         expect(preStopOf(rendered.get('scheduler'))).toBeUndefined();
         expect(rendered.get('web')?.spec.template.spec.terminationGracePeriodSeconds).toBe(45);

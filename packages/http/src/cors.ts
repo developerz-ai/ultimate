@@ -1,7 +1,14 @@
 // CORS with a locked default: same-origin only. Cross-origin access is a decision the app makes
 // once, in `configureHttp({ cors })`, never something a route can quietly opt into.
 
-import { BUILD_ID_HEADER } from '@ultimat3/core';
+import {
+  BUILD_ID_HEADER,
+  DATES_HEADER,
+  IDEMPOTENCY_HEADER,
+  RECORDS_HEADER,
+  REPLAYED_HEADER,
+  REQUEST_TIMEOUT_HEADER,
+} from '@ultimat3/core';
 import { corsConfigInvalid } from './errors';
 
 export interface CorsConfig {
@@ -17,8 +24,31 @@ export interface CorsConfig {
 export const DEFAULT_CORS: CorsConfig = {
   origins: [],
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowHeaders: ['content-type', 'authorization', BUILD_ID_HEADER, 'x-request-id'],
-  exposeHeaders: ['x-request-id', BUILD_ID_HEADER, 'retry-after'],
+  // What the typed clients send: a keyed write fails preflight without its idempotency key.
+  allowHeaders: [
+    'content-type',
+    'authorization',
+    BUILD_ID_HEADER,
+    'x-request-id',
+    IDEMPOTENCY_HEADER,
+    REQUEST_TIMEOUT_HEADER,
+    'traceparent',
+  ],
+  // What they read: with the records header hidden, a typed call answers the envelope itself.
+  exposeHeaders: [
+    'x-request-id',
+    BUILD_ID_HEADER,
+    'retry-after',
+    RECORDS_HEADER,
+    DATES_HEADER,
+    REPLAYED_HEADER,
+    'ratelimit-limit',
+    'ratelimit-remaining',
+    'ratelimit-reset',
+    'deprecation',
+    'sunset',
+    'link',
+  ],
   credentials: true,
   maxAgeSeconds: 600,
 };

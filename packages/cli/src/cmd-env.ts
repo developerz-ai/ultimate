@@ -15,7 +15,7 @@ import { appSecretFacts, envExampleFor, loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
 import { envSpec } from './cmd-env-spec';
 import type { CliCommand, CommandContext } from './command';
-import { frameworkSecretFindings } from './framework-env';
+import { frameworkSecretFindings, namesNoEnvironment } from './framework-env';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 
@@ -97,12 +97,17 @@ async function checkProcessEnv(ctx: CommandContext): Promise<CommandResult> {
     ...framework,
   ];
   const ok = findings.length === 0;
+  const verdict = ok
+    ? msg('cli.env.checked', { count: total })
+    : msg('cli.env.invalid', { count: findings.length, total });
   return {
     ok,
     command: 'env',
-    summary: ok
-      ? msg('cli.env.checked', { count: total })
-      : msg('cli.env.invalid', { count: findings.length, total }),
+    // `x doctor` asks about this machine and stays quiet on the same shell, so an exit 1 here over
+    // a table that named nothing reads as a contradiction until this line says which question ran.
+    summary: namesNoEnvironment(ctx.env)
+      ? `${verdict} — ${msg('cli.env.checkedAsProduction')}`
+      : verdict,
     findings,
     data: {
       variables: total,

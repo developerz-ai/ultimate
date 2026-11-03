@@ -106,7 +106,7 @@ HTTP/1.1 200  Transfer-Encoding: chunked  Content-Type: text/html; charset=utf-8
 |---|---|
 | Order | resolution order, not source order. Hole 2 landing before hole 1 is normal |
 | Resolver size | a fixed ~380 byte inline function, the only script a `stream` route needs before islands |
-| No shell hydration | Solid patches streamed HTML into place; the shell costs **zero** hydration work. A `<Suspense>` boundary hydrates only its own island, only when its `hydrate` timing fires |
+| No shell hydration | Solid patches streamed HTML into place; the shell costs **zero** hydration work. A `<Hole>` hydrates only its own island, only when its `hydrate` timing fires |
 | Error in a hole | the hole receives an error boundary's HTML plus the `UltimateError` code; the rest of the page is unaffected |
 | Drain past deadline | a stream cut by `DRAIN_TIMEOUT` gets a typed truncation trailer, not a socket reset ([`13-topology-runtime.md`](./13-topology-runtime.md)) |
 | Crawlers | the full document is emitted; nothing depends on client JS to become visible |

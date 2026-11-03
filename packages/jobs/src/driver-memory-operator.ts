@@ -51,6 +51,8 @@ export interface MemoryOperator {
   readonly counters: MemoryCounters;
   /** The claim scan's question: is this queue held back? */
   isQueuePaused(queue: string): boolean;
+  /** Does a live registry row say this worker drains? `SQL_QUEUE_DEMAND`'s `not exists`. */
+  isWorkerDraining(workerId: string): boolean;
 }
 
 /** Newest first by `(createdAt, id)` — the keyset `SQL_JOB_LIST` orders and seeks by. */
@@ -320,5 +322,13 @@ export function memoryOperator(state: MemoryQueueState): MemoryOperator {
     rollupCounters: () => Promise.resolve(counters.rollup(nowMs(clock))),
   };
 
-  return { members, counters, isQueuePaused: (queue) => queues.has(queue) };
+  return {
+    members,
+    counters,
+    isQueuePaused: (queue) => queues.has(queue),
+    isWorkerDraining: (workerId) => {
+      const worker = workers.get(workerId);
+      return worker?.drainingAt !== undefined && worker.expiresAt > nowMs(clock);
+    },
+  };
 }

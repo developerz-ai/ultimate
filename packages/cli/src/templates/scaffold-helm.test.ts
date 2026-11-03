@@ -5,7 +5,12 @@
 // framework's own chart, and its `deploy-proof` job installs this one.
 
 import { describe, expect, test } from 'bun:test';
-import { DRAIN_DEADLINE_DEFAULT_MS, READINESS_GRACE_DEFAULT_MS } from '@ultimat3/core';
+import {
+  DRAIN_DEADLINE_DEFAULT_MS,
+  READINESS_GRACE_DEFAULT_MS,
+  SCALING_METRICS,
+  WORKER_RETIRE_DEFAULT_MS,
+} from '@ultimat3/core';
 import { names } from './naming';
 import { helmFiles } from './scaffold-helm';
 
@@ -65,10 +70,15 @@ describe('unit · the scaffolded chart boots, drains and scales honestly', () =>
     expect(values()['minReadySeconds']).toBe(10);
   });
 
-  test('the worker scales on an External queue_depth, and a stray type fails the render', () => {
+  test('the retire is on, at core’s default, so a deploy waits out a held job', () => {
+    const roles = values()['roles'] as Record<string, { retireSeconds?: number }>;
+    expect(roles['worker']?.retireSeconds).toBe(WORKER_RETIRE_DEFAULT_MS / 1000);
+  });
+
+  test('the worker scales on an External queue_demand, and a stray type fails the render', () => {
     const roles = values()['roles'] as Record<string, { autoscaling?: Record<string, unknown> }>;
     expect(roles['worker']?.autoscaling?.['type']).toBe('External');
-    expect(roles['worker']?.autoscaling?.['metric']).toBe('queue_depth');
+    expect(roles['worker']?.autoscaling?.['metric']).toBe(SCALING_METRICS['queue-demand']);
     // rps and open sockets are per-pod facts: those two stay Pods (the default).
     expect(roles['web']?.autoscaling?.['type']).toBeUndefined();
     expect(roles['sync']?.autoscaling?.['type']).toBeUndefined();

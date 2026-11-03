@@ -146,8 +146,8 @@ jobs:
             urls: TEST_DATABASE_URL
           - part: live
             only: lint,boundaries,filesize,package-shape,errors,live,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
-            services: postgres postgres-logical postgres-tls redis nats s3
-            urls: TEST_DATABASE_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
+            services: postgres postgres-logical postgres-tls pooler redis nats s3
+            urls: TEST_DATABASE_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
           - part: e2e
             only: typecheck,contract,job,e2e
             services: postgres
@@ -650,8 +650,8 @@ jobs:
       #   - the first install hung: the pre-install migrate Job named the chart's ServiceAccount,
       #     which Helm creates only AFTER pre-install hooks, so admission refused every pod
       #     (`serviceaccount "app-ultimate" not found`) until the timeout;
-      #   - the worker HPA ran away: every pod publishes the one global `queue_depth`, and a
-      #     `Pods` metric averaged it as each pod's own backlog;
+      #   - the worker HPA ran away: every serving pod publishes the one fleet-wide `queue_demand`,
+      #     and a `Pods` metric averaged it as each pod's own;
       #   - a booting pod was restarted by liveness while it built its islands (no startupProbe);
       #   - the grace period must cover preStop + the framework's readiness grace + its drain
       #     deadline (5 + 5 + 25 = 35s), and the preStop sleep may only render where the API
@@ -673,7 +673,7 @@ jobs:
 
           helm template app docker/helm --show-only templates/hpa.yaml > /tmp/hpa.yaml
           case "$(doc_with /tmp/hpa.yaml 'name: app-ultimate-worker')" in *"- type: External"*) ;;
-            *) fail "worker HPA metric type" "the worker HPA does not read queue_depth as an External metric, so each pod's copy of the one global backlog is averaged as its own. fix: roles.worker.autoscaling.type: External in docker/helm/values.yaml." ;;
+            *) fail "worker HPA metric type" "the worker HPA does not read queue_demand as an External metric, so each pod's copy of the one fleet-wide number is averaged as its own. fix: roles.worker.autoscaling.type: External in docker/helm/values.yaml." ;;
           esac
           if helm template app docker/helm --set roles.web.autoscaling.type=Podz >/dev/null 2>&1; then
             fail "autoscaling.type not closed" "an autoscaling.type of 'Podz' rendered. fix: keep the (list \"Pods\" \"External\") check in docker/helm/templates/hpa.yaml."
@@ -684,7 +684,7 @@ jobs:
           deployments="$(grep -c '^kind: Deployment$' /tmp/deploy-130.yaml)"
           startups="$(grep -c '^ *startupProbe:$' /tmp/deploy-130.yaml)"
           prestop_130="$(grep -c '^ *preStop:$' /tmp/deploy-130.yaml || true)"
-          prestop_129="$(grep -c '^ *preStop:$' /tmp/deploy-129.yaml || true)"
+          prestop_129="$(grep -c '^ *sleep:' /tmp/deploy-129.yaml || true)"
           echo "deployments=${deployments} startupProbes=${startups} preStop@1.30=${prestop_130} preStop@1.29=${prestop_129}"
           [ "$startups" = "$deployments" ] || fail "startupProbe missing" "${startups} of ${deployments} Deployments carry a startupProbe. fix: every branch of the probes block in docker/helm/templates/_helpers.tpl declares one."
           # Only a role that serves HTTP has Endpoints to leave, so only web carries the sleep (sync too,

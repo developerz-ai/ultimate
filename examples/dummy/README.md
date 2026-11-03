@@ -64,7 +64,7 @@ before.
 | `route` | [`apps/web/site/blog/page.tsx`](apps/web/site/blog/page.tsx) | `isr` list — no `feed:` key on `defineRoute`; a feed would be its own URL behind an `api/` route, not a flag on the HTML page (no feed route exists yet) |
 | `route` | [`apps/web/app/posts/new/page.tsx`](apps/web/app/posts/new/page.tsx) | `ssr` + `hydrate: 'never'` — a native `<form>` posting to an action, works before hydration and with JS disabled |
 | `route` | [`apps/web/app/posts/[id]/page.tsx`](apps/web/app/posts/%5Bid%5D/page.tsx) | `ssr`, fresh per request |
-| `route` | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | `stream`, `useQuery(liveFeed)` over the page's one socket in `feed.island.tsx` + a `<Suspense>`-streamed activity badge, usable offline |
+| `route` | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | `stream`, `useQuery(liveFeed)` over the page's one socket in `feed.island.tsx` + a `<Hole>`-streamed activity badge, usable offline |
 | `route` | [`apps/web/app/settings/page.tsx`](apps/web/app/settings/page.tsx) | `spa`, locale + timezone + theme pickers |
 | `route` | [`apps/web/app/runs/page.tsx`](apps/web/app/runs/page.tsx) | `ssr` + the run console island: `useQuery(liveRunEvents)` in `AsyncRegion`, the prompt form, a refused run said in words, what an ended run used, every write through the typed browser client |
 

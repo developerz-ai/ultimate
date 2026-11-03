@@ -80,6 +80,82 @@ export const can${feature.pascal}Create = can(
 );
 `;
 
+/** One grant and no predicate: what decides on an org has nothing to decide on in this slice. */
+const grantRule = (feature: NameSet, rule: string, verb: string): string =>
+  wrapList(
+    '',
+    `export const can${feature.pascal}${rule} = can(`,
+    [`'${feature.kebab}:${verb}'`],
+    ');',
+  );
+
+/**
+ * The slice's entity names no tenant (`sliceHasNoTenant`), so there is no org for a rule to compare
+ * and none an orgless actor lacks: the grant is the whole rule. A row-level one is the author's.
+ */
+const singleTenantPolicySource = (
+  feature: NameSet,
+): string => `// Authz for the ${feature.kebab} feature, whose entity names no tenant: the grant is the rule. Every
+// branch here is reachable from every surface, and predicates are synchronous on purpose.
+
+import { tag } from '@ultimat3/cache';
+import { can, definePermissions } from '@ultimat3/policy';
+
+// The permission set, declared rather than assumed. The augmentation narrows \`can()\` to these
+// strings, so a typo is a build error instead of a rule that silently never matches.
+declare module '@ultimat3/policy' {
+  interface PermissionRegistry {
+    '${feature.kebab}:read': true;
+    '${feature.kebab}:write': true;
+  }
+}
+
+${permissionSet(feature)}
+
+/** What a write invalidates and a read depends on — one tag, both directions. */
+export const ${feature.camel}Tag = tag('${feature.kebab}');
+
+${grantRule(feature, 'Read', 'read')}
+
+${grantRule(feature, 'Write', 'write')}
+
+${grantRule(feature, 'Create', 'write')}
+`;
+
+const singleTenantPolicyTest = (
+  feature: NameSet,
+): string => `// The ${feature.kebab} rules, from the DENIAL side: anonymous, and the actor holding only read.
+import { testActor } from '@ultimat3/policy';
+import { expect, unitTest } from '@ultimat3/testing';
+${wrapImport([`can${feature.pascal}Create`, `can${feature.pascal}Read`, `can${feature.pascal}Write`], './policy')}
+
+// Each grant named once, so every assertion below fits the formatter's width at any feature name.
+const read = '${feature.kebab}:read';
+const write = '${feature.kebab}:write';
+const input = {};
+
+const reader = testActor('reader', { permissions: [read] }).actor;
+const writer = testActor('writer', { permissions: [read, write] }).actor;
+
+unitTest('${feature.camel} read denies anonymous', async () => {
+  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: null, input });
+  await expect(can${feature.pascal}Read).not.toDenyPolicy({ actor: reader, input });
+});
+
+unitTest('${feature.camel} write and create deny the read-only actor', async () => {
+  await expect(can${feature.pascal}Write).toDenyPolicy({ actor: reader, input });
+  await expect(can${feature.pascal}Write).not.toDenyPolicy({ actor: writer, input });
+  await expect(can${feature.pascal}Create).toDenyPolicy({ actor: reader, input });
+  await expect(can${feature.pascal}Create).not.toDenyPolicy({ actor: writer, input });
+});
+
+unitTest('${feature.camel} rules name the permission they require', () => {
+  expect(can${feature.pascal}Read.permissions).toEqual(['${feature.kebab}:read']);
+  expect(can${feature.pascal}Write.permissions).toEqual(['${feature.kebab}:write']);
+  expect(can${feature.pascal}Create.permissions).toEqual(['${feature.kebab}:write']);
+});
+`;
+
 const policyTest = (
   feature: NameSet,
 ): string => `// The ${feature.kebab} rules, from the DENIAL side: anonymous, cross-org, and the actor holding
@@ -142,11 +218,18 @@ unitTest('${feature.camel} rules name the permission they require', () => {
 export function policyFiles(
   rawName: string,
   target: { readonly surfaceDir: string; readonly feature: string },
+  shape: { readonly singleTenant?: boolean } = {},
 ): readonly GeneratedFile[] {
   const feature = names(rawName.length > 0 ? rawName : target.feature);
   const dir = `${target.surfaceDir}/${target.feature}`;
   return [
-    { path: `${dir}/policy.ts`, contents: policySource(feature) },
-    { path: `${dir}/policy.test.ts`, contents: policyTest(feature) },
+    {
+      path: `${dir}/policy.ts`,
+      contents: shape.singleTenant ? singleTenantPolicySource(feature) : policySource(feature),
+    },
+    {
+      path: `${dir}/policy.test.ts`,
+      contents: shape.singleTenant ? singleTenantPolicyTest(feature) : policyTest(feature),
+    },
   ];
 }

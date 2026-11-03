@@ -5,6 +5,7 @@
 
 import { renderThrowable } from '@ultimat3/core';
 import { describeValue, type SchemaNode, type StandardSchemaV1 } from '@ultimat3/schema';
+import { viewKeyUnknown } from './entity-error';
 import { invariantViolated } from './errors';
 import type { AnyColumn, ColumnMap } from './types';
 
@@ -104,11 +105,7 @@ export const viewFor = <Row, K extends keyof Row & string>(
   const picked: readonly (readonly [K, AnyColumn])[] = keys.map((key) => {
     const column = columns[key];
     if (column === undefined) {
-      throw invariantViolated(
-        entityName,
-        'view',
-        `$view(['${key}']) names no column — pick from: ${Object.keys(columns).join(', ')}`,
-      );
+      throw viewKeyUnknown(entityName, key, Object.keys(columns));
     }
     return [key, column] as const;
   });

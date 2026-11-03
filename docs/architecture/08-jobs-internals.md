@@ -85,18 +85,27 @@ Because `steps` is a driver member, step persistence works identically on both. 
 
 ## The pg claim loop
 
-`SQL_CLAIM`, [`packages/jobs/src/driver-pg-sql.ts`](../../packages/jobs/src/driver-pg-sql.ts) — one statement, abbreviated:
+`SQL_CLAIM`, [`packages/jobs/src/driver-pg-claim-sql.ts`](../../packages/jobs/src/driver-pg-claim-sql.ts) — one statement, abbreviated:
 
 ```sql
-with picked as (
-  select id, (state = 'running' and attempt >= max_attempts) as exhausted
-    from x_jobs
-   where queue = any($1::text[]) and run_at <= now()
-     and not exists (select 1 from x_job_pauses p where p.kind = 'queue' and p.name = x_jobs.queue)
-     and (state in ('ready', 'delayed', 'suspended')
-          or (state = 'running' and visible_at <= now()))
+with open as (          -- one `not exists` per queue, never per row
+  select distinct q.queue from unnest($1::text[]) as q(queue)
+   where not exists (select 1 from x_job_pauses p where p.kind = 'queue' and p.name = q.queue)
+), picked as (
+  select id, exhausted from (
+    select due.id, due.run_at, due.exhausted from open cross join lateral (
+      select id, run_at, false as exhausted from x_jobs
+       where queue = open.queue and state in ('ready', 'delayed', 'suspended') and run_at <= now()
+       order by run_at limit $2 for update skip locked
+    ) due
+    union all
+    select lapsed.id, lapsed.run_at, lapsed.exhausted from open cross join lateral (
+      select id, run_at, attempt >= max_attempts as exhausted from x_jobs
+       where queue = open.queue and state = 'running' and visible_at <= now() and run_at <= now()
+       order by run_at limit $2 for update skip locked
+    ) lapsed
+  ) candidates
    order by run_at limit $2
-     for update skip locked
 ), buried as (          -- a lease that lapsed on the row's FINAL attempt
   update x_jobs j
      set state = case when j.name = any($5::text[]) then 'failed' else 'dead' end,
@@ -123,7 +132,9 @@ select … from claimed union all select … from buried
 | `claims` incremented at claim, never reset | with `claimed_by` it is the identity every settle, heartbeat, progress write and **step write** is fenced on (`claimOf(claimed)`) |
 | the `buried` arm | a `running` row is picked only with a lapsed lease; one already at `attempt >= max_attempts` is settled in the claim and never handed out, so a job that kills its worker ends after `retry.attempts` claims. `dead`, or `failed` when the caller named the job in `dropExhausted` (`retry.deadLetter: false` — the row carries no policy, the worker holds the registry). Counted in the same statement, reported through `ClaimOptions.onExhausted`; the claim round logs `jobs.claim.exhausted` and runs `onSettled` (`announceExhausted`) |
 | `x_job_pauses` | a pause is a row the claim reads, never a column on `x_jobs` |
-| Index | `x_jobs_claim_idx` — see `SQL_JOBS_TABLE` in `driver-pg-ddl.ts` |
+| One lateral per queue, per kind of row | a claim SEEKS: an `or` over the states under `queue = any(...)` reads and sorts every due row, so its cost grew with the backlog. `driver-pg-claim.live.test.ts` refuses a sort under the lock |
+| Index | `x_jobs_claim_idx` serves the due scan, its predicate spelled word for word; `x_jobs_depth_idx` the lapsed one — see `SQL_JOBS_TABLE` in `driver-pg-ddl.ts` |
+| Locks the outer `limit` dropped | held to the end of the TRANSACTION. A claim autocommits (`exec()` is the pool), so that is the statement; another claimer may skip them for one poll |
 | Wakeup | `LISTEN x_jobs_wake` / `x_outbox_wake` on one session per worker pod (`startQueueWake`); the enqueue and the outbox stage carry the `pg_notify`. Polling is the guarantee underneath — see [Idle cost](#idle-cost) |
 
 ## Visibility timeout

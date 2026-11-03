@@ -24,7 +24,7 @@ describe('SCALING_METRICS', () => {
     expect(SCALING_METRICS).toEqual({
       rps: 'http_requests_total',
       'ws-connections': 'connections',
-      'queue-depth': 'queue_depth',
+      'queue-demand': 'queue_demand',
       singleton: null,
       'run-once': null,
       'per-database': null,

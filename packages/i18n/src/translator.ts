@@ -6,7 +6,7 @@
 
 import { DEFAULT_LOCALE } from '@ultimat3/core';
 import type { Catalog } from './catalog';
-import { type InterpolationVars, interpolate, selectPluralKey } from './interpolate';
+import { type InterpolationVars, interpolate, selectMessageKey } from './interpolate';
 import type { Locale } from './locales';
 
 export interface TranslateVars extends InterpolationVars {
@@ -56,21 +56,13 @@ export interface Translator<TCatalog = Catalog> {
 export function catalogTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOCALE): Translator {
   const hasExact = (key: string): boolean => Object.hasOwn(catalog, key);
 
-  const resolveKey = (key: string, vars?: TranslateVars): string => {
-    const count = vars?.count;
-    if (typeof count === 'number' && Number.isFinite(count)) {
-      return selectPluralKey(key, count, locale, hasExact);
-    }
-    return key;
-  };
-
   const translate = (key: string, vars?: TranslateVars): string => {
     // Through `hasExact`, never a raw index: a key travels as data (`t(row.labelKey)`), and on a
     // `{}`-prototyped catalog `catalog['valueOf']` resolves to the INHERITED function instead of
     // reading as absent — so `interpolate` threw on a non-string, `t('constructor')` returned a
     // function through a signature typed `string`, and `isMiss(t('__proto__'))` threw on an object.
     // Catalogs are null-prototyped now; this guard is what makes that true of any catalog.
-    const resolved = resolveKey(key, vars);
+    const resolved = selectMessageKey(key, vars, locale, hasExact);
     const template = hasExact(resolved) ? catalog[resolved] : undefined;
     if (template === undefined) return `⟦${key}⟧`;
     // Always, never only when `vars` was passed: skipping it made `t('a')` and `t('a', {})` two

@@ -9,6 +9,7 @@ import { siblingModuleFindings } from './app-layout';
 import { appTransportFindings } from './app-transport';
 import { planBoundaryCuts } from './boundary-cuts';
 import type { Finding } from './output';
+import { packageBoundaryFindings } from './package-boundaries';
 
 /** A cut and a finding name one violation when they share its code, its importer and its chain. */
 const keyOf = (code: string, at: string | undefined, cause: string): string =>
@@ -46,5 +47,6 @@ export async function appBoundaryFindings(
     ...withCutEdits(checkImportRules(files), appImportGraph(files)),
     ...(await appTransportFindings(root, files)),
     ...siblingModuleFindings(files),
+    ...(await packageBoundaryFindings(root)),
   ];
 }

@@ -12,14 +12,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Rules — configuration
 
-- **Every numeric knob `defineHttpConfig` resolves is screened** (`port`, `bodyLimitBytes`,
-  `requestTimeoutMs`, `maxInflight`, `trustedProxyHops`) → `X_CONFIG_INVALID`
-  (borrowed). `requestTimeoutMs` tops out at `MAX_TIMER_MS` (2^31−1): past it a timer arms ~1 ms.
-  `buildId: null` is a declaration (`=== undefined`, never `??`); `hostname` never reads `HOSTNAME`. Helpers carry `Finite` (`assertFiniteCount`, `assertFiniteKeyCap`,
-  `assertFiniteBodyLimit`) so `bun run finite-bounds` sees them; `webhook-verify.ts` and
-  `rate-limit.ts` screen their own. **The floor is per option**: `requestTimeoutMs: 0` and
-  `maxInflight: 0` are "off"; `trustedProxyHops` floors at 1. `resolveTrustedProxyHops` owns both
-  refusals (`X_TRUST_PROXY_UNSET`, `X_CONFIG_INVALID`), with no `?? 0` behind it.
+- **Every numeric knob `defineHttpConfig` resolves is screened** (`port`, `bodyLimitBytes`, `requestTimeoutMs`, `maxInflight`, `trustedProxyHops`) → `X_CONFIG_INVALID` (borrowed). Full rule: `docs/history/http.md`.
 - **`MAX_PROXY_HOPS` is exported** — `@ultimat3/cli`'s `trustedHopsFromEnv` imports it; one ceiling.
 - Route `meta.auth` is required. Never default a route to public.
 - **An app declares its half of `HttpConfig` through `configureHttp()`**, and the boot lays its own
@@ -33,6 +26,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   **`ServerOptions.drain`** passes only `readinessGraceMs`, and only when declared.
 - **`cors.origins: ['*']` with `credentials: true`, or `'null'` in the list, is `X_CORS_CONFIG_INVALID`.** A refused origin
   still gets `vary: origin`.
+- **`DEFAULT_CORS` is what `clientTransport` sends and reads**, off core's constants; `cors.test.ts` observes the transport's real traffic, so a new header fails it. `date` alone stays hidden: this server writes delta-seconds. An app's list replaces the default whole.
 - **A `security.csp.extend` entry must emit only the directive it names**
   (`X_CSP_DIRECTIVE_INVALID`); `buildCsp` builds through a `Map`.
 - **The security headers are built once per `(SecurityConfig, https)`** (`responseSecurityHeaders`, a
@@ -52,12 +46,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A request's registered services are LAZY and bound to the authenticated actor**
   (`request-services.ts`, `installServices: false` + `bindRequestServices`): built on first read,
   rebuilt only if actor, locale or tz changed. `request-services.test.ts`.
-- **A shared document renders in `withAnonymousRequest(ctx, url, fn)`** (`context.ts`): `withChildContext`'s
-  rebuilt services under the request's own fields (a service never shadows one), the anonymous actor,
-  the caller's narrowed `url`, the default zone, NO inbound headers (an empty set, never a deny-list),
-  `ip`/`peer`/`clientBuildId`/`authz`/`rateLimit`/`readBody` empty. A new visitor-derived slot on
-  `RequestContext` is cleared there. Not a bare `withChildContext`, where `setRedirect` is `X_NO_REQUEST`;
-  not a spread of `ctx`, whose services know the visitor. The redirect slot is `scope`'s.
+- **A shared document renders in `withAnonymousRequest(ctx, url, fn)`**. Full rule: `docs/history/http.md`.
 - **A member's saved locale and zone apply, re-resolved after `auth`**
   (`resolvePreferences`; cookie beats a saved locale, a saved zone beats the cookie).
   `member-preferences.test.ts`.
@@ -70,7 +59,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A route may
   REPLACE it with `meta.authenticate` (never run beside it): `bearerMount` sets it so a session
   cookie authenticates nothing on `/v1/*`.
-- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage, outside the scopes is `X_ROUTE_NOT_FOUND`, the prefix is opaque, and that 404 spends the token's allowance. Full rule: `docs/history/http.md`.
+- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage, outside the scopes is `X_ROUTE_NOT_FOUND`, the prefix is opaque. The token allowance is spent once, in the authenticator, for every resolved token in scope or not (a 422 or 403 before the handler pays). A declared `rateLimit` REPLACES `default` on the mount's routes (`rateLimitedBy: 'handler'`); a route's own `meta.rateLimit` and the tenant allowance stay. A successor `Link` is rewritten in a `finally` to the mounted path when in the cut under a scope the token holds, else removed (`bearer-mount-wire.test.ts`). Full rule: `docs/history/http.md`.
 - **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
 - **A dev 4xx asks `hooks.errorPage` first; a 5xx is always the overlay** (#492): the app's file
   when it has one, else the overlay. Production asks for every status (`stages-error-page.test.ts`).
@@ -90,12 +79,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **The two inbound ids are read BEFORE the context and the span** (`correlation.ts`, core's
   `parseTraceparent`). `x-request-id` is gated on `trustProxy`; `traceparent` deliberately is not.
 - **Every proxy-supplied header goes through `forwardedElement(header, hops)`**, the entry at `entries.length - hops`, never `[0]`, except `x-forwarded-proto` (`forwardedProto`). `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared, and is never an actor. Full rule: `docs/history/http.md`.
-- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's
-  `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never
-  lengthened. `ctx.signal` is the deadline OR the caller going away (`AbortSignal.any` with
-  `Request.signal`); `expired` is the timer's alone. `deadlineAt` is published as core's
-  `ctx.deadlineAt` (`traceHeaders()` sends it on). `deadline.clear()` in the `finally`. **A handler
-  outliving its 504 is held in core's in-flight count** (`beginWork()`, `pipeline-inflight.test.ts`).
+- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never lengthened. Full rule: `docs/history/http.md`.
 - **`admit` is the second stage and refuses before ANY work**: past `maxInflight` (1000) is
   `X_OVERLOADED` with `retry-after`, counted by core's `inflightCount()`. **A DRAINING process
   serves** with `connection: close`; only `lifecycleState() === 'stopped'` answers `X_DRAINING`
@@ -146,6 +130,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `markReady()`, `drain()`, the payloads) — never a private state or in-flight counter.
 - **`stop()` hands its two hooks back ABOVE its early return** (`packages/http/e2e/server.e2e.test.ts`
   reads `shutdownHookCount()`).
+- **`compress` is the last stage and has no option** (`compress.ts`, its counted read `compress-read.ts`). A signed-in answer is coded only when `immutable` (`compressResponse(..., { anonymous })`, declared, never defaulted). The ceiling is 256 KiB, measured. A response that fails the rule is the SAME object with its body unread. `cache-control` with `private`, `no-store`, `no-cache` or `no-transform` is identity (BREACH); `vary: accept-encoding` goes on every answer past the type and cache conditions, coded or not. `content-length` is the bound: `html`, `textResponse`, `jsonResponse` declare it, `stream` never. A read that overruns, fails or passes `ctx.signal`, and a `gzipSync` throw, log `http.compress_failed` and answer identity, whole: never a request failure.
 
 ## Rules — errors and the problem document
 
@@ -167,13 +152,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A rejected value is a log FIELD, never the message** — the `error-map` line's message is the code alone.
 - **A rejected BODY names only what the framework chose**: `bodyInvalid`'s `issues` are a fixed
   vocabulary; what the caller sent rides in `meta`; the parser's message goes through `renderThrowable`.
-- **A browser failing `auth: 'required'` is redirected; an agent gets the problem document**
-  (`auth-redirect.ts`, in `error-map` before the overlay). `config.signInPath` is `null` until named.
-  `nextAfterSignIn` is the ONE `?next=` reader: same-origin paths only, decoded ONCE (by the
-  caller's parser, never again here — `%26` stays `%26`), any C0/DEL refused, non-ASCII
-  percent-encoded for `Location`, re-parsed against an unreachable origin, never throws. It
-  returns the RESOLVED path (never the raw string) and refuses one starting `//`; `locationFor`
-  never emits a same-origin pathname starting `//` (`/.//…` instead).
+- **A browser failing `auth: 'required'` is redirected; an agent gets the problem document** (`auth-redirect.ts`, in `error-map` before the overlay). Full rule: `docs/history/http.md`.
 - **A pathname in a `fix:` goes through `renderFixShellArg`** (`routeNotFound`). **A `code` is gated by
   core's `FRAMEWORK_CODE`** before `x errors explain <code>`, else `x errors list --json`. **A supplied
   `fix:` is taken only from a branded error** (`isUltimateError`).
@@ -181,6 +160,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `X_UNAUTHENTICATED`, …); `factsOf` reads a borrowed code's title off the error.
 - Never throw a bare `Error` — use a factory from `errors.ts`. No `any`. Validation goes through
   Standard Schema (`validate.ts`).
+- **Every document carries `retry` at its root** (core's `errorRetry`, through the total `retryOf`); a hidden 5xx answers the class and no cause. `finalize.ts`'s `lastResort` literal is pinned against `toProblem`'s answer for `X_INTERNAL`.
 
 ## Rules — rate limiting
 
@@ -193,12 +173,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **The scope is DECLARED, with no default**: an enabled limiter without `scope` is
   `X_RATE_LIMIT_SCOPE_UNSET`; `assertRateLimitScope` (in `httpPipeline`) refuses `'shared'` over a
   per-process store (`X_RATE_LIMIT_NOT_SHARED`). Install through `httpServer({ rateLimitStore })`.
-- **A failed `auth: 'required'` is metered in the `auth` stage** (`spendUnauthenticated`,
-  `rate-limit-stage.ts`): `defaultBucket` under `unauthenticated|ip:<address>`, not route-scoped,
-  spent only on failure — the 401 leaves before `rate-limit`. Covers the bearer mount's bad tokens.
-  Spent, it REFUSES the address before `authenticate()` (`refuseExhaustedAddress`, via the store's
-  read-only `peek` — never a take: that was an upsert per signed-in page),
-  a valid credential included; no `ctx.ip`, no gate. Signed-in callers behind that NAT wait too.
+- **A failed `auth: 'required'` is metered in the `auth` stage**. Full rule: `docs/history/http.md`.
 - **`postgresRateLimitStore({ executor })` is the shared store**, over `@ultimat3/core`'s structural
   `PgExecutor` (re-exported here). The
   refill expression is repeated inside `on conflict do update` on purpose; `spent` is a stored column;
@@ -261,6 +236,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `bearer-mount.ts` | a second door onto existing routes: `Authorization: Bearer` on a prefix, the scope cut, the per-token allowance |
 | `request-facts.ts` | `RequestFacts`, any token resolver's frozen 2nd arg; address = `ctx.ip` |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
+| `compress.ts` | the `compress` stage's rule: which answers leave gzipped |
+| `compress-read.ts` | the one body read that rule does: counted, deadline-bound, replayable |
 
 ## Commands
 

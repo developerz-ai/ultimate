@@ -65,22 +65,6 @@ finding at once rather than stopping at the first.
 
 ---
 
-## `X_ROUTE_MODE_INVALID: declares render: 'stream' but has no <Suspense> boundary`
-
-**Symptom.** A route fails the gate for lacking a Suspense boundary, and adding one does not help.
-
-**Cause.** `stream` requires at least one hole to stream into, and the framework has no hole
-marker yet. Solid's `<Suspense>` is not one and cannot become one: it calls `getContextId()`,
-which throws `cannot be used under non-hydrating context` outside a Solid renderer, and the server
-JSX factory is inert by design. So the suggested fix cannot be applied as written — at any Solid
-version. This is not the old `2.0.0-experimental` pin; repinning to `1.9.14` did not change it.
-
-**Fix.** Use `render: 'ssr'`. Async data needs no boundary at all — `renderToHtml` awaits async
-components and promise children, so `await` the data in the component. Reach for `stream` once the
-framework ships its own hole marker.
-
----
-
 ## A test passes alone and fails in the suite
 
 **Cause.** Shared fixture contention — one database, one port, one directory, several workers.

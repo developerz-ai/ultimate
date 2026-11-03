@@ -40,7 +40,7 @@ async function script(driver: JobDriver, clock: FrozenClock, queue: string): Pro
   said.push(first, await enqueue('a'));
   said.push(await enqueue('later', { runAt: clock.now().getTime() + 60_000, tenantId: 'org-1' }));
   said.push(await enqueue('a', { onConflict: 'error' }).catch(codeOf));
-  said.push(await driver.stats());
+  said.push(await driver.stats(), await driver.demand());
 
   clock.advance(1_000);
   const [claimed] = await driver.claim({
@@ -56,7 +56,7 @@ async function script(driver: JobDriver, clock: FrozenClock, queue: string): Pro
   said.push(
     await driver.nack(first.id, { ...by, delayMs: 5_000, countsAsAttempt: false, park: true }),
   );
-  said.push(await driver.stats());
+  said.push(await driver.stats(), await driver.demand());
 
   clock.advance(5_000);
   const [again] = await driver.claim({
@@ -68,7 +68,7 @@ async function script(driver: JobDriver, clock: FrozenClock, queue: string): Pro
   said.push(again);
   const byAgain = { workerId: 'w', claim: again?.claim ?? -1 };
   said.push(await driver.nack(first.id, { ...byAgain, delayMs: 0, error: 'boom', stack: 'at x' }));
-  said.push(await driver.stats());
+  said.push(await driver.stats(), await driver.demand());
 
   clock.advance(100_000);
   const both = await driver.claim({
@@ -82,6 +82,45 @@ async function script(driver: JobDriver, clock: FrozenClock, queue: string): Pro
     said.push(await driver.ack(row.id, { workerId: 'w', claim: row.claim }));
   }
   said.push(await driver.stats(), await enqueue('a'));
+  return said;
+}
+
+/** `demand()` over every row it counts: running, due waiting, due parked; a future row is out. */
+async function demand(driver: JobDriver, clock: FrozenClock, queue: string): Promise<unknown[]> {
+  const at = clock.now().getTime();
+  for (const [key, runAt] of [
+    ['run', at],
+    ['park', at],
+    ['due', at],
+    ['later', at + 60_000],
+  ] as const) {
+    await driver.enqueue({
+      name: 'demand.job',
+      queue,
+      input: {},
+      idempotencyKey: key,
+      maxAttempts: 3,
+      runAt,
+    });
+  }
+  const claimed = await driver.claim({
+    queues: [queue],
+    limit: 2,
+    visibilityTimeoutMs: 60_000,
+    workerId: 'w',
+  });
+  const parked = claimed[1];
+  if (parked === undefined) return expect.unreachable('two rows were claimed');
+  await driver.nack(parked.id, {
+    workerId: 'w',
+    claim: parked.claim,
+    delayMs: 1_000,
+    countsAsAttempt: false,
+    park: true,
+  });
+  const said: unknown[] = [await driver.demand()];
+  clock.advance(1_000);
+  said.push(await driver.demand());
   return said;
 }
 
@@ -143,6 +182,16 @@ describe.skipIf(url === '')('live · redis · the job driver', () => {
     const expected = await script(memoryJobDriver({ clock: memoryClock }), memoryClock, 'parity');
     const actual = await script(redisOn(redisClock), redisClock, 'parity');
     expect(shapeOf(actual)).toEqual(shapeOf(expected));
+  });
+
+  test('counts demand as the memory driver does: running, due, and a parked run once due', async () => {
+    const at = '2026-10-01T00:00:00.000Z';
+    const memoryClock = frozenClock(at);
+    const redisClock = frozenClock(at);
+    const expected = await demand(memoryJobDriver({ clock: memoryClock }), memoryClock, 'demand');
+    const actual = await demand(redisOn(redisClock), redisClock, 'demand');
+    expect(actual).toEqual(expected);
+    expect(actual).toEqual([[{ queue: 'demand', demand: 2 }], [{ queue: 'demand', demand: 3 }]]);
   });
 
   test('keeps steps as the memory driver does, and fences a write on the claim', async () => {

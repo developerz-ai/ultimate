@@ -931,7 +931,7 @@ export const executor: PgExecutor = dbExecutor(() => client);
 | Not this | Because |
 |---|---|
 | `{ executor: Bun.sql }` | `Bun.sql` is a tagged template with no `.query(text, values)`: the first claim is a `TypeError` |
-| a hand adapter over raw `Bun.SQL`'s `unsafe(text, values)` | observed `As of 2026-10`: a `$n::jsonb` parameter is encoded twice unless the client is built with `prepare: false`, and a JS array is refused where the statement expects `text[]` (`SQL_CLAIM`'s `queue = any($1::text[])`) unless it is written as an array literal. `@ultimat3/db`'s client handles both |
+| a hand adapter over raw `Bun.SQL`'s `unsafe(text, values)` | observed `As of 2026-10`: a `$n::jsonb` parameter is encoded twice unless the client is built with `prepare: false`, and a JS array is refused where the statement expects `text[]` (`SQL_CLAIM`'s `unnest($1::text[])`) unless it is written as an array literal. `@ultimat3/db`'s client handles both |
 
 ## Idle cost and pickup latency
 
@@ -1079,10 +1079,11 @@ queue slots is the bound, as before.
 What a scaler reads, per process: `worker.stats()` → `inFlight` and `maxInFlight` (`null` when
 uncapped); the registry row's `concurrency` is the tighter of the cap and the slot sum; and two
 unlabelled gauges, `job_worker_in_flight` and `job_worker_capacity`, each the SUM over the live workers in the process (a stopped worker leaves both). Pods needed is
-`ceil((queue_depth + Σ job_worker_in_flight) / job_worker_capacity)`. A fleet-wide ceiling is a
+`ceil(queue_demand / job_worker_capacity)`, with the demand deduplicated: `max by (queue) (queue_demand)`. A fleet-wide ceiling is a
 different number: `maxInFlight` × replicas, or `job.concurrency` for one job.
 
-**A scaler reading Postgres** (KEDA's `postgresql` trigger) runs the statement below — the
+**A scaler reading Postgres** (KEDA's `postgresql` trigger) runs the statement below — the rows
+`queue_demand` counts per queue (`driver-pg-demand-sql.ts`), in the
 package's `scaler-depth-fixture.ts`, proved against a real Postgres (`scaler-depth.job.test.ts`)
 and pinned to this block (`scaler-depth-readme.test.ts`); KEDA binds
 nothing, so the queues are inlined as `'{a,b}'::text[]`: running jobs plus due,
@@ -1219,7 +1220,7 @@ the pg and the memory driver alike. `x jobs`, `/_x` and a dashboard read nothing
 | `promote(id)` | a job waiting on its `runAt` — delayed, or backing off — is due now | — |
 | `pauseQueue(q)` / `resumeQueue(q)` / `pausedQueues()` | a paused queue is claimed by no worker; enqueues still land | effective at every worker's next claim |
 | `pauseTask(t)` / `resumeTask(t)` / `pausedTasks()` | a paused task is not dispatched; on resume its own `catchUp` decides what it missed | — |
-| `workers()` | every live worker: id, host, started, queues, slots, in-flight job ids, last heartbeat, `drainingAt` once it drains | rows expire one visibility timeout after the last heartbeat; `MAX_WORKER_IN_FLIGHT` = 100 ids |
+| `workers()` | every live worker: id, host, `build` when `jobWorker({ build })` named one, started, queues, slots, in-flight job ids, last heartbeat, `drainingAt` once it drains | rows expire one visibility timeout after the last heartbeat; `MAX_WORKER_IN_FLIGHT` = 100 ids |
 | `counters({ job, sinceMs })` / `counterTotals(sinceMs)` | per-job history: `done`, `retried`, `failed`, `dead`, `durationMs` per bucket | `COUNTER_TIERS`: 1-minute buckets for 24 h, 5-minute for 7 d, 1-hour for 30 d — 4,176 rows per job name at most |
 | `rollupCounters()` | fold buckets past their tier into the next; the scheduler leader calls it once a minute | idempotent |
 | `recordProgress(id, { workerId, claim }, progress)` | what `run({ progress })` writes | at most one write per `PROGRESS_INTERVAL_MS` (1 s) per run, plus the last before the settle |
@@ -1309,7 +1310,8 @@ aborts the attempt — `steps.ts` then refuses every write. `ack` and `nack` are
 
 | Series | Kind | Answers |
 |---|---|---|
-| `queue_depth{queue}` | gauge | how much work is waiting — the HPA's signal |
+| `queue_depth{queue}` | gauge | how much work is waiting: the backlog alert's series. It reads 0 while a fleet holds every job it has, so nothing scales on it |
+| `queue_demand{queue}` | gauge | what serving workers must hold: running on one, or due and claimable. The chart's worker HPA reads it. `JobDriver.demand()`, asked only when `stats()` shows work, required of every driver; Redis has no worker registry, so it counts every running row. A draining worker publishes 0 |
 | `jobs_total{queue,outcome}` | counter | is any of it succeeding |
 | `queue_oldest_ready_seconds{queue}` | gauge | *"page if the oldest job in `payments` is older than 5 minutes"* |
 | `queue_dead_jobs{queue}` | gauge | a dead-letter queue that filled overnight and stopped growing — a counter's rate is flat there |

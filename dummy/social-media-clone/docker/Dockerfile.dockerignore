@@ -20,3 +20,8 @@ node_modules
 coverage
 **/test-results
 **/playwright-report
+# Tests run in CI, never in a container, and an edit to one would rerun every line below COPY . .
+**/*.test.ts
+**/*.test.tsx
+# Anchored: a package may hold a docs/ it reads at run time. See "What the image leaves out" in README.
+docs

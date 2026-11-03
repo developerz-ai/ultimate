@@ -14,48 +14,14 @@
 // bucket root (`ERR_S3_INVALID_PATH`), so this file cannot make one.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type Clock, isUltimateError, markListening } from '@ultimat3/core';
+import { isUltimateError, markListening } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { sha256Base64 } from './driver';
 import { s3Driver } from './driver-s3';
 import { bytesOf, catchError, codeOf, textOf } from './driver-s3-fixture';
-
-interface Target {
-  readonly endpoint: string;
-  readonly bucket: string;
-  readonly accessKeyId: string;
-  readonly secretAccessKey: string;
-}
-
-/** `http://<key>:<secret>@host:port/<bucket>`, or nothing: a half-configured URL skips, never guesses. */
-const targetOf = (raw: string | undefined): Target | undefined => {
-  if (raw === undefined || raw === '') return undefined;
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return undefined;
-  }
-  const bucket = url.pathname.replace(/^\/+|\/+$/g, '');
-  if (bucket === '' || url.username === '' || url.password === '') return undefined;
-  return {
-    endpoint: url.origin,
-    bucket,
-    accessKeyId: decodeURIComponent(url.username),
-    secretAccessKey: decodeURIComponent(url.password),
-  };
-};
+import { targetOf, wallClock } from './driver-s3-live-fixture';
 
 const target = targetOf(Bun.env['TEST_S3_URL']);
-
-/**
- * The WALL clock. The preload freezes `Date`, and a signed request dated at the frozen instant is
- * `RequestTimeTooSkewed` — the server's clock is real. `performance` is not frozen.
- */
-const wallClock: Clock = {
-  now: () => new Date(performance.timeOrigin + performance.now()),
-  monotonic: () => performance.now(),
-};
 
 /** One namespace per run: a shared bucket survives two runs at once, and a run that died. */
 const PREFIX = `xlive-${crypto.randomUUID()}`;

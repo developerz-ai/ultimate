@@ -133,7 +133,7 @@ adapter, its sync URL and its `LiveClient`: the page's one socket is the framewo
 | Step | Where | What |
 |---|---|---|
 | 1. the dependency | root `package.json` | `bun add @ultimat3/realtime`. `x new` installs `@ultimat3/query` and **not** `@ultimat3/realtime` |
-| 2. the query | `app/<feature>/live.ts` | `query({ …, live: true, subscribes: ['posts'] })`, bounded and ordered; `x g query <name> --live` writes it |
+| 2. the query | `app/<feature>/live.ts` | `query({ …, live: true, subscribes: ['posts'] })`, bounded and ordered; `x g query <name> --feature <slice> --live` writes it |
 | 3. the ref | the island | `{ name: 'liveFeed', live: true }`, the query's registered **name**, never the query value: importing that drags its whole read path into the island. `live` is stated beside the name, not derived (see below) |
 | 4. the install | nothing to write | `x build` builds every island whose own import graph reaches `@ultimat3/realtime` from an entry that calls `installRealtime({ signal: createSignal })` first, for about 100 B. An island not reaching realtime pays nothing. The sync target is read from the document's `<meta name="ultimate-sync">` ([Configuration](Configuration), `SYNC_URL`) |
 | 5. the hook | the component | `useQuery(ref, input)` returns an `AsyncState` accessor. **In an island, never a page body**: a page component never runs in a browser, so the hook answers `pending` there forever |

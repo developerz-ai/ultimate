@@ -3,14 +3,17 @@
 // Split from `migrate.ts`, which keeps the lock, the apply loop and the rollback; `migrate.ts`
 // re-exports every name here, so its public surface is unchanged.
 
+import { isFixShellSafe } from '@ultimat3/core';
 import type { DbClient } from './client';
 import type { SchemaDescription } from './introspect';
 import { migrationConflict } from './migration-errors';
-import { migrationNameArg } from './primary-key';
 import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 
 export const LEDGER_TABLE = 'x_migrations';
+
+/** Where `x new` puts an app's migrations: this package reads rows, the CLI reads the directory. */
+const APP_MIGRATIONS_DIR = 'packages/db/migrations';
 
 export interface Migration {
   /** Sort key and primary key. `20260726120000_add_publish_at`. */
@@ -122,10 +125,20 @@ export function auditLedger(
     if (checksum === row.checksum) continue;
     throw migrationConflict(
       `migration "${row.id}" was applied with checksum ${row.checksum} but now hashes ${checksum}`,
-      `x db gen ${migrationNameArg(`fix ${migration.name}`)}   # never edit an applied migration, add a new one`,
+      editedMigrationFix(row.id),
     );
   }
 }
+
+/**
+ * Restore first. `x db gen` was this line, and it exits 0 and writes the edited SQL into the schema
+ * dump, with `drift` green over it. The id is the name of a file on disk here, so an id the shell
+ * would read restores the whole directory rather than reaching the command.
+ */
+const editedMigrationFix = (id: string): string => {
+  const path = isFixShellSafe(id) ? `${APP_MIGRATIONS_DIR}/${id}.sql` : APP_MIGRATIONS_DIR;
+  return `git checkout -- ${path}   # never edit an applied migration; then x db gen "<change>"`;
+};
 
 /**
  * The migration id is the DATABASE's own text — whoever can write a ledger row picks what lands in

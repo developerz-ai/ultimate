@@ -61,8 +61,12 @@ const commit = async (message: string): Promise<void> => {
   await must(inApp(['git', 'commit', '-qm', message]));
 };
 const pinAll = async (version: string): Promise<void> => {
-  const glob = new Bun.Glob('{package.json,{apps,packages}/*/package.json}');
-  for await (const file of glob.scan({ cwd: app })) {
+  // Two patterns: Bun 1.4's glob matches nothing for a brace whose alternatives hold a `/`
+  // (`{package.json,{apps,packages}/*/package.json}`), so the pins were never walked, and the hop
+  // was taken by an app that never left the old release.
+  const files = ['package.json', ...new Bun.Glob('{apps,packages}/*/package.json').scanSync(app)];
+  expect(files.length).toBeGreaterThan(1);
+  for (const file of files) {
     const text = await Bun.file(join(app, file)).text();
     await Bun.write(
       join(app, file),

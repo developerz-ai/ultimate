@@ -415,3 +415,38 @@ describe('unit · a default JSON cannot write is refused, never hashed apart', (
     expect(zero).not.toBe(nul);
   });
 });
+
+// A file an app with no mount has committed must not move: the key's absence is the whole fact,
+// and writing `mounts: []` would stale every manifest in existence for nothing.
+describe('the mounts section', () => {
+  const app = { name: 'acme', version: '1.0.0' };
+
+  test('prefixes, scopes and names are sets: declaration order moves no byte', () => {
+    const forward = buildManifest({
+      app,
+      mounts: [
+        { prefix: '/a', scopes: { read: ['listA'] } },
+        { prefix: '/v1', scopes: { read: ['listB', 'listA'], audit: ['log'] } },
+      ],
+    });
+    const backward = buildManifest({
+      app,
+      mounts: [
+        { prefix: '/v1', scopes: { audit: ['log'], read: ['listA', 'listB'] } },
+        { prefix: '/a', scopes: { read: ['listA'] } },
+      ],
+    });
+    expect(manifestJson(forward)).toBe(manifestJson(backward));
+    expect(forward.buildId).toBe(backward.buildId);
+    expect(forward.mounts?.map((mount) => mount.prefix)).toEqual(['/a', '/v1']);
+    expect(Object.keys(forward.mounts?.[1]?.scopes ?? {})).toEqual(['audit', 'read']);
+    expect(forward.mounts?.[1]?.scopes['read']).toEqual(['listA', 'listB']);
+  });
+
+  test('no mount writes no key, so an app without one keeps its bytes and its buildId', () => {
+    const none = buildManifest({ app });
+    expect('mounts' in none).toBe(false);
+    expect(manifestJson(none)).not.toContain('mounts');
+    expect(buildManifest({ app, mounts: [] }).buildId).toBe(none.buildId);
+  });
+});

@@ -8,7 +8,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { DRAIN_DEADLINE_DEFAULT_MS, defaultReadinessGraceMs } from '@ultimat3/core';
+import {
+  DRAIN_DEADLINE_DEFAULT_MS,
+  defaultReadinessGraceMs,
+  WORKER_RETIRE_DEFAULT_MS,
+} from '@ultimat3/core';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 
 /** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
@@ -32,7 +36,11 @@ const none = (): string => made(mkdtempSync(join(tmpdir(), 'serve-drain-none-'))
 
 test('the declared readiness grace and drain budget are read off app.config.ts', async () => {
   const root = appWith('{ name: "demo", drain: { readinessGraceMs: 7000, deadlineMs: 120000 } }');
-  expect(await loadDrainConfig(root)).toEqual({ readinessGraceMs: 7000, deadlineMs: 120_000 });
+  expect(await loadDrainConfig(root)).toEqual({
+    readinessGraceMs: 7000,
+    deadlineMs: 120_000,
+    workerRetireMs: WORKER_RETIRE_DEFAULT_MS,
+  });
 });
 
 test('the worker budget is read off app.config.ts beside the one every role drains on', async () => {
@@ -40,10 +48,16 @@ test('the worker budget is read off app.config.ts beside the one every role drai
   expect((await loadDrainConfig(root))?.workerDeadlineMs).toBe(7_500_000);
 });
 
+test('the retire is read off app.config.ts, 0 included', async () => {
+  const root = appWith('{ name: "demo", drain: { workerRetireMs: 0 } }');
+  expect((await loadDrainConfig(root))?.workerRetireMs).toBe(0);
+});
+
 test('no drain section is core default; no config at all leaves the default to core', async () => {
   expect(await loadDrainConfig(appWith('{ name: "demo" }'))).toEqual({
     readinessGraceMs: defaultReadinessGraceMs(),
     deadlineMs: DRAIN_DEADLINE_DEFAULT_MS,
+    workerRetireMs: WORKER_RETIRE_DEFAULT_MS,
   });
   expect(await loadDrainConfig(none())).toBeUndefined();
 });

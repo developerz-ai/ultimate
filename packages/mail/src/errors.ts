@@ -7,8 +7,10 @@ import {
   type ErrorRetry,
   registerErrorCodes,
   registerErrorRetry,
+  renderFixShellArg,
   UltimateError,
 } from '@ultimat3/core';
+import type { TranslationMiss } from '@ultimat3/i18n';
 
 export const MAIL_ERROR_CODES = [
   'X_MAIL_LOCALE_MISSING',
@@ -24,6 +26,7 @@ export const MAIL_ERROR_CODES = [
   'X_MAIL_EVENT_UNVERIFIED',
   'X_MAIL_EVENT_INVALID',
   'X_MAIL_EVENT_PROVIDER_UNREACHABLE',
+  'X_MAIL_KEY_MISSING',
 ] as const;
 
 export type MailErrorCode = (typeof MAIL_ERROR_CODES)[number];
@@ -42,6 +45,7 @@ export const MAIL_ERROR_TITLES: Readonly<Record<MailErrorCode, string>> = {
   X_MAIL_EVENT_UNVERIFIED: 'a delivery notification is not signed by its provider',
   X_MAIL_EVENT_INVALID: 'a delivery notification is not a shape this receiver reads',
   X_MAIL_EVENT_PROVIDER_UNREACHABLE: 'an SNS endpoint the receiver needed did not answer',
+  X_MAIL_KEY_MISSING: 'a mail rendered a key or slot with no value in its locale',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -52,8 +56,9 @@ registerErrorCodes(
 );
 
 /**
- * The one code in this package a queue may retry, and it is registered rather than merely written
- * down: `classifyThrown` reads a per-instance `terminal` only for a code somebody REGISTERED, so a
+ * The one code in this package a queue may retry, plus the one refused content fault listed so a
+ * job around `send()` dead-letters it: no retry can translate a catalog. Registered rather than
+ * merely written down: `classifyThrown` reads a per-instance `terminal` only for a code somebody REGISTERED, so a
  * table with no `registerErrorRetry` call behind it lets `sendMailJob` spend all five attempts on
  * a 401 or a 550 hard bounce — the `cause` saying "permanent, retrying cannot help" while the
  * worker retries it four more times.
@@ -65,6 +70,7 @@ registerErrorCodes(
  */
 export const MAIL_ERROR_RETRY = {
   X_MAIL_SEND_FAILED: 'retryable',
+  X_MAIL_KEY_MISSING: 'terminal',
 } as const satisfies Readonly<Partial<Record<MailErrorCode, ErrorRetry>>>;
 
 registerErrorRetry(MAIL_ERROR_RETRY);
@@ -160,6 +166,35 @@ export const textMissing = (mailId: string): MailError =>
     fix: `add a text block to the "${mailId}" template: blocks.paragraph('mail.${mailId}.body')`,
     meta: { mailId },
   });
+
+/**
+ * `send()` rendered a key or a slot with no value, so nothing left. Two repairs, one code: a key is
+ * a catalog edit, a slot is the call site's. A framework mail's keys live in `mail/src/catalog.ts`,
+ * not in the app's `en` catalog, so `x i18n sync` may seed none of them, and the fix names the file
+ * to add them to. Key names are template constants: no value from `data` reaches this text.
+ */
+export const mailKeyMissing = (
+  mailId: string,
+  locale: string,
+  misses: readonly TranslationMiss[],
+): MailError => {
+  const keys = misses.filter((miss) => miss.slot === undefined).map((miss) => miss.key);
+  const slots = misses.flatMap((miss) =>
+    miss.slot === undefined ? [] : [`${miss.key}{${miss.slot}}`],
+  );
+  const [firstSlot] = misses.filter((miss) => miss.slot !== undefined);
+  // A request can carry the locale, and a fix is pasted from its first character.
+  const shownLocale = renderFixShellArg(locale, '<locale>');
+  return new MailError({
+    code: 'X_MAIL_KEY_MISSING',
+    cause: `mail "${mailId}" has no value in locale "${locale}" for ${[...keys, ...slots].join(', ')}, so it was not sent — its reader would have seen the raw ⟦key⟧`,
+    fix:
+      keys.length > 0 || firstSlot === undefined
+        ? `x i18n sync ${shownLocale}   # then translate these in packages/i18n/catalogs/${shownLocale}.json, adding any it did not seed: ${keys.join(', ')}`
+        : `blocks.paragraph('${firstSlot.key}', { ${firstSlot.slot}: value })   # pass every slot of ${slots.join(', ')} from the "${mailId}" template; a subject reads the input's top-level fields`,
+    meta: { mailId, locale, keys, slots },
+  });
+};
 
 export const driverUnavailable = (what: string): MailError =>
   new MailError({

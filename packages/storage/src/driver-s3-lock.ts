@@ -25,11 +25,18 @@ export function needsSignedPut(options: PutOptions | undefined): boolean {
 
 /** Every header the signed PUT sends beyond the signer's own, screened before a byte moves. */
 export function putHeaders(bytes: Uint8Array, options: PutOptions): Record<string, string> {
-  const headers: Record<string, string> = {
-    'content-type': options.contentType ?? DEFAULT_CONTENT_TYPE,
+  return {
+    ...objectHeaders(options),
     // Required by S3 on any PUT that sets a retention, and an integrity check on every other one:
     // a body that changed in flight is `BadDigest`, never a stored object.
     'content-md5': new Bun.CryptoHasher('md5').update(bytes).digest('base64'),
+  };
+}
+
+/** What describes the object rather than one body: a PUT's headers, and a multipart Create's. */
+export function objectHeaders(options: PutOptions): Record<string, string> {
+  const headers: Record<string, string> = {
+    'content-type': options.contentType ?? DEFAULT_CONTENT_TYPE,
   };
   if (options.cacheControl !== undefined) {
     assert(

@@ -43,7 +43,6 @@ function register(fixture: {
   // `RouteData`, and a `meta` written against `{ url, params }` cannot be handed a bare record.
   const input: RegisterRouteInput<Data> = {
     file: fixture.file,
-    suspenseBoundaries: fixture.render === 'stream' ? 1 : 0,
     config: defineRoute<Data>({
       render: fixture.render,
       offline: 'network-only',

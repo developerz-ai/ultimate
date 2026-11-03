@@ -4,7 +4,7 @@
 // image.
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
 import type { StyleBundle } from './style-bundle';
 import { STYLE_BASE_PATH } from './style-bundle';
 
@@ -49,7 +49,8 @@ export function styleRoutes(source: StyleSource): readonly Route[] {
           return applyCacheHeaders(missing, NO_STORE);
         }
         return applyCacheHeaders(
-          new Response(chunk.css, { headers: { 'content-type': 'text/css; charset=utf-8' } }),
+          // `textResponse` for the length it declares: `compress` reads nothing undeclared.
+          textResponse(chunk.css, { headers: { 'content-type': 'text/css; charset=utf-8' } }),
           { mode: 'immutable' },
         );
       },

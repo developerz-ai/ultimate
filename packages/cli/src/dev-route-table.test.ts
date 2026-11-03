@@ -137,7 +137,6 @@ describe("unit · x dev carries the app's brand", () => {
   beforeEach(() => {
     registerRoute<{ url: string; params: Record<string, string> }>({
       file: 'apps/web/site/page.tsx',
-      suspenseBoundaries: 0,
       config: defineRoute<{ url: string; params: Record<string, string> }>({
         render: 'ssr',
         offline: 'network-only',
@@ -184,7 +183,6 @@ describe("unit · x dev carries the app's own favicon", () => {
     );
     registerRoute<{ url: string; params: Record<string, string> }>({
       file: 'apps/web/site/page.tsx',
-      suspenseBoundaries: 0,
       config: defineRoute<{ url: string; params: Record<string, string> }>({
         render: 'ssr',
         offline: 'network-only',

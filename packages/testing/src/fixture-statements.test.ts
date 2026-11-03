@@ -3,10 +3,17 @@
 // `fixture-statements-funnel.test.ts`'s; this file pins what the fixture counts, what it lets
 // through, and what it hands back on disposal.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import type { StatementAttribution, StatementEvent, StatementObserver } from '@ultimat3/db';
-import { setStatementObserver, statementObserver } from '@ultimat3/db';
-import { N_PLUS_ONE_THRESHOLD } from '@ultimat3/entity';
+import { expectedQueryLoop, setStatementObserver, statementObserver } from '@ultimat3/db';
+import {
+  clearRegistry,
+  entity,
+  memoryRepo,
+  N_PLUS_ONE_THRESHOLD,
+  text,
+  uuid,
+} from '@ultimat3/entity';
 import { testStatements } from './fixture-statements';
 import { runWithFixtures } from './fixtures';
 
@@ -254,5 +261,47 @@ describe('unit · the fixture hands the seam back', () => {
 
     await expect(run).rejects.toMatchObject({ code: 'X_N_PLUS_ONE_QUERY' });
     expect(statementObserver()).toBeUndefined();
+  });
+});
+
+describe('unit · the verdict holds on the memory driver, where generated tests run', () => {
+  const members = entity('fixture_memory_members', {
+    columns: { id: uuid().primaryKey(), name: text({ max: 40 }) },
+  });
+  const IDS = Array.from(
+    { length: N_PLUS_ONE_THRESHOLD + 3 },
+    (_unused, at) => `00000000-0000-4000-8000-${String(at).padStart(12, '0')}`,
+  );
+
+  afterAll(() => {
+    clearRegistry();
+  });
+
+  test('a findById loop throws X_N_PLUS_ONE_QUERY, from the loop own lookup', async () => {
+    using statements = await testStatements();
+    const repo = memoryRepo(members);
+    const refused = await (async () => {
+      for (const id of IDS) await repo.findById(id);
+    })().catch((error: unknown) => error);
+    expect(refused).toBeUltimateError('X_N_PLUS_ONE_QUERY');
+    expect(statements.count('fixture_memory_members.findById')).toBe(N_PLUS_ONE_THRESHOLD);
+  });
+
+  test('a write loop throws X_N_PLUS_ONE_WRITE', async () => {
+    using _statements = await testStatements();
+    const repo = memoryRepo(members);
+    const refused = await (async () => {
+      for (const id of IDS) await repo.insert({ id, name: 'a' });
+    })().catch((error: unknown) => error);
+    expect(refused).toBeUltimateError('X_N_PLUS_ONE_WRITE');
+  });
+
+  test('expectedQueryLoop still suppresses the verdict, and never the measurement', async () => {
+    using statements = await testStatements();
+    const repo = memoryRepo(members);
+    await expectedQueryLoop('a fixed set of lookups a test names on purpose', async () => {
+      for (const id of IDS) await repo.findById(id);
+    });
+    expect(statements.count('fixture_memory_members.findById')).toBe(IDS.length);
   });
 });

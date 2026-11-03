@@ -34,6 +34,8 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_ALREADY_PROMOTED',
   'X_STORAGE_RANGE_UNSATISFIABLE',
   'X_STORAGE_OBJECT_CHANGED',
+  'X_STORAGE_UPLOAD_SIZE_UNDECLARED',
+  'X_STORAGE_WRITE_OUTCOME_UNKNOWN',
 ] as const;
 
 /**
@@ -78,6 +80,9 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_ALREADY_PROMOTED: 'the upload was already promoted onto its row',
   X_STORAGE_RANGE_UNSATISFIABLE: 'the requested byte range starts past the end of the object',
   X_STORAGE_OBJECT_CHANGED: 'the object changed while it was being promoted',
+  X_STORAGE_UPLOAD_SIZE_UNDECLARED: 'an upload grant was asked for without the size of the file',
+  X_STORAGE_WRITE_OUTCOME_UNKNOWN:
+    'a write was sent and its answer lost, and the disk could not say whether it landed',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws

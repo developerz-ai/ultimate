@@ -239,6 +239,7 @@ describe('the cross-process wake', () => {
     const [warning] = logged('jobs.wake.unverified');
     expect(warning?.level).toBe('warn');
     expect(warning?.fix).toContain('pool_mode = session');
+    expect(warning?.fix).toContain('unset DATABASE_POOLER');
     expect(warning?.fix).toContain('idlePollMaxMs');
     expect(wakeIsLive()).toBe(false);
 

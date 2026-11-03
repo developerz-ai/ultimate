@@ -178,6 +178,38 @@ describe('unit · dev storage · the served object', () => {
     expect(new Uint8Array(await window.arrayBuffer())).toEqual(BYTES.subarray(3, 9));
   });
 
+  test('a Range reads through streamRange and never pays for the prefix', async () => {
+    const inner = storage.disk();
+    const windows: (readonly [number, number])[] = [];
+    let wholeReads = 0;
+    resetStorage();
+    const counted = defineStorage({
+      disks: {
+        local: {
+          ...inner,
+          async stream(key: string) {
+            wholeReads += 1;
+            return inner.stream(key);
+          },
+          async streamRange(key: string, range: readonly [number, number]) {
+            windows.push(range);
+            return inner.streamRange(key, range);
+          },
+        },
+      },
+    });
+    const routes = storageRoutes({ storage: counted });
+    const window = await call(routes, { headers: { range: 'bytes=3-8' } });
+    expect(new Uint8Array(await window.arrayBuffer())).toEqual(BYTES.subarray(3, 9));
+    expect(windows).toEqual([[3, 8]]);
+    expect(wholeReads).toBe(0);
+
+    // And the whole object stays one plain stream.
+    expect((await call(routes)).status).toBe(200);
+    expect(wholeReads).toBe(1);
+    expect(windows).toHaveLength(1);
+  });
+
   test('a Range past the end is 416, never a silent full body', async () => {
     const response = await call(storageRoutes({ storage }), { headers: { range: 'bytes=99-' } });
     expect(response.status).toBe(416);

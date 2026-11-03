@@ -191,8 +191,22 @@ for a disk that really does write large objects server-side, and remember S3 cap
 **`get()` buffers too, so it has the same ceiling**: `maxGetBytes`, on all three drivers,
 defaulting to that disk's `maxPutBytes`. An object past it is `X_STORAGE_TOO_LARGE` — decided on
 the disk's own size (a HEAD on s3) before a byte is read — and is read with `stream()`. It exists
-because an object's size is not the server's to choose: a presigned PUT lands in a bucket
-unmeasured, so a later `get()` of it was heap growth the uploader picked.
+because an object's size is not the server's to choose: a URL signed with no `contentLength` lands
+in a bucket unmeasured, so a later `get()` of it was heap growth the uploader picked.
+
+## Large objects — `streamRange(key, [first, last])` and `putStream(key, stream, { maxBytes })`
+
+`streamRange` reads no byte before `first`: s3 and local through `slice(...).stream()`, memory from
+its copy. Inclusive and clamped like `get`'s range, with no ceiling because nothing is buffered;
+past the end is `X_STORAGE_RANGE_UNSATISFIABLE`. `putStream` takes `contentType`, `cacheControl`,
+`metadata` and a REQUIRED `maxBytes` (`PutStreamOptions`). Past it the source is cancelled, nothing
+is stored and the key stays as it was (`X_STORAGE_TOO_LARGE`). `checksum`, `retention`, `legalHold`
+and `serverSideEncryption` need the bytes up front: the type omits them and an untyped caller gets
+`X_INVARIANT`. On s3 a body under one part is one signed PUT and past it a signed multipart upload,
+one part at a time (5 MiB or `maxBytes / 10000`), aborted on every exit but the Complete: Bun's
+`S3File.writer()` completes on `end(error)` and sends no `x-amz-meta-*`. Local stages under
+`.meta/.tmp/`, then runs `put()`'s commit steps. A driver outside this package reuses
+`assertPutStream`, `pumpBounded`, `streamLimit`, `assertStreamRange`, `streamedRange` and `signedByteBound`.
 
 ## Ranged reads — `get(key, { range: [first, last] })`
 
@@ -313,12 +327,12 @@ a test fixture), or the guard answers about one process and the disk signs accor
 Verification is constant-time, checks the signature *before* the expiry (a forged URL never
 learns it was merely late), takes a `Clock` so tests freeze time, and returns
 `{ ok: false, reason }` rather than throwing — `malformed | unsafe-key | signature-mismatch |
-expired`. An S3 presign binds method and expiry only. It signs `host` alone: `contentType` becomes
-`response-content-type`, which governs a GET, so a PUT's `Content-Type` is the uploader's, and S3
-has no header for a size. A bucket-backed disk's ceiling is a bucket rule or `promoteAttachment`'s
-measure, and its type is `promoteAttachment`'s sniff, never the signature. `driver-s3.test.ts` pins
-this. `s3Driver` does not refuse `maxBytes` either — `grantUpload` supplies it on every grant, so
-refusing would break every s3 upload an app mints.
+expired`. An S3 presign binds method and expiry, and `contentLength` where it is given: `s3Driver`
+then signs `content-length` with core's `presignAwsUrl`, so the provider refuses any other length
+(403, `driver-s3.live.test.ts`). Bun's presign, the path without one, signs `host` alone. Either way
+`contentType` is unsigned: it becomes `response-content-type`, which governs a GET, so a PUT's
+`Content-Type` is the uploader's, and the type is `promoteAttachment`'s sniff. `s3Driver` refuses
+`maxBytes` with no `contentLength` (`X_STORAGE_UPLOAD_SIZE_UNDECLARED`): it has no ceiling to sign.
 
 ## Uploads sniff the content type
 
@@ -454,6 +468,7 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_URL_INVALID` | a signed request that does not match what was signed — edited constraint, wrong base, wrong method, contradicting `Content-Type` |
 | `X_STORAGE_URL_EXPIRED` | the grant's window closed; the signature was fine |
 | `X_STORAGE_ORG_MISMATCH` | the key is well-formed and unforged, and belongs to another org |
+| `X_STORAGE_UPLOAD_SIZE_UNDECLARED` | `grantUpload` with no whole `request.size` of at least 1, or `signedUrl({ maxBytes })` on s3 with no `contentLength` |
 | `X_STORAGE_UPLOAD_FAILED` | client half: the presigned `PUT` answered non-2xx or never landed |
 | `X_STORAGE_DELETE_FAILED` | the disk REFUSED a delete — denied `s3:DeleteObject`, a throttle, an expired credential, a read-only mount. An **absent** key is still not an error |
 | `X_STORAGE_LIST_FAILED` | the disk REFUSED a listing — denied `s3:ListBucket`, a throttle, an unreadable root. An **empty** disk is still not an error |

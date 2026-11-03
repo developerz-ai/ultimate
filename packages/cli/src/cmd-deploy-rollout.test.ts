@@ -226,9 +226,12 @@ describe('unit · a helm deploy sizes the grace period from app.config.ts', () =
     );
     expect(result.ok).toBe(true);
     const argv = ran[0] ?? [];
-    expect(argv.slice(-4)).toEqual([
+    // The worker's retire rides with the drain: resolved at core's default when undeclared.
+    expect(argv.slice(-6)).toEqual([
       '--set',
       'drain.deadlineSeconds=600',
+      '--set',
+      'roles.worker.retireSeconds=3600',
       '--set',
       'drain.readinessGraceSeconds=8',
     ]);
@@ -238,9 +241,11 @@ describe('unit · a helm deploy sizes the grace period from app.config.ts', () =
     const root = appRoot("{ name: 'demo-app', drain: { readinessGraceMs: 0 } }");
     const { ran, context } = recording();
     await deployCommand.run(context(['deploy', '--image', 'repo/app:2', '--method', 'helm'], root));
-    expect(ran[0]?.slice(-4)).toEqual([
+    expect(ran[0]?.slice(-6)).toEqual([
       '--set',
       'drain.deadlineSeconds=25',
+      '--set',
+      'roles.worker.retireSeconds=3600',
       '--set',
       'drain.readinessGraceSeconds=5',
     ]);

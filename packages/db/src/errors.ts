@@ -11,7 +11,8 @@ import {
   stringField,
   UltimateError,
 } from '@ultimat3/core';
-import { type DbSqlStateCode, sqlState, sqlStateCode } from './sqlstate';
+import { IDLE_IN_TRANSACTION_FIX, poolerOptionsRefusedFix } from './pooler-fix';
+import { type DbSqlStateCode, SQLSTATE, sqlState, sqlStateCode } from './sqlstate';
 
 /**
  * Codes this package declares and owns. `X_DB_DRIFT` is db's: it is a statement about migrations
@@ -46,6 +47,9 @@ export const DB_OWNED_ERROR_CODES = [
   'X_MIGRATION_CONCURRENT_IN_TRANSACTION',
   'X_DB_TRANSACTION_CLOSED',
   'X_MIGRATION_ROLLING_UNSAFE',
+  'X_DB_POOLER_OPTIONS_REFUSED',
+  'X_DB_POOLER_SESSION_REQUIRED',
+  'X_DB_STATEMENT_BOUND_LOST',
 ] as const;
 
 /**
@@ -102,6 +106,11 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_DB_TRANSACTION_CLOSED: 'statement on a finished transaction',
   X_MIGRATION_ROLLING_UNSAFE:
     'this drop or rename would break the pods still running the old release',
+  X_DB_POOLER_OPTIONS_REFUSED:
+    'the connection pooler refused the libpq options a pool connects with',
+  X_DB_POOLER_SESSION_REQUIRED:
+    'this role needs one backend per session, and a transaction pooler gives it none',
+  X_DB_STATEMENT_BOUND_LOST: "the session's statement bound is not the role's",
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails
@@ -206,6 +215,18 @@ export const dbUnavailable = (detail: string, sourceError?: unknown): DbError =>
   });
 
 /**
+ * No answer past the role's bound plus the grace (`pool-sweep.ts`), so the server's own bound had to
+ * have answered and the path is dead. The same uncertainty as a connection closed mid-statement,
+ * which is why the cause says it. `X_DB_UNAVAILABLE` is deliberately left out of `DB_ERROR_RETRY`
+ * (unclassified, not terminal), so a job worker RE-RUNS the attempt: an autocommit write that landed
+ * runs again. At least once, as every job is: the write must be idempotent or inside a transaction.
+ */
+export const statementUnanswered = (excerpt: string, boundMs: number): DbError =>
+  dbUnavailable(
+    `no answer within ${boundMs}ms to: ${excerpt} — past the statement bound, so the path is dead and this pool is replaced; if this was an autocommit write it may have landed`,
+  );
+
+/**
  * One `fix:` per classified SQLSTATE, written once. Every one names a command that exists or an
  * edit the reader can make — a `23505` telling an operator the database is unreachable is the
  * failure this table exists to end.
@@ -261,6 +282,24 @@ export const driverError = (statement: string, sourceError: unknown): DbError =>
   // `X_DB_UNAVAILABLE` said "set DATABASE_URL" to a developer whose database was fine.
   const code = sqlStateCode(sourceError) ?? 'X_DB_STATEMENT_FAILED';
   const constraint = stringField(sourceError, 'constraint');
+  // `08P01` is the protocol's general complaint, so the pooler's own sentence is what decides, and
+  // this one reached no statement: it is the connection every statement of the role would use.
+  if (
+    state === SQLSTATE.protocolViolation &&
+    renderThrowable(sourceError).includes('unsupported startup parameter')
+  ) {
+    // The identifier characters only: the server's text runs on past the name.
+    const parameter = /unsupported startup parameter(?: in options)?: ([A-Za-z0-9_.]+)/.exec(
+      stringField(sourceError, 'message') ?? renderThrowable(sourceError),
+    )?.[1];
+    return new DbError({
+      code: 'X_DB_POOLER_OPTIONS_REFUSED',
+      cause: `[SQLSTATE ${state}] ${renderThrowable(sourceError)} — statement: ${statement}`,
+      fix: poolerOptionsRefusedFix(parameter),
+      meta: { sqlState: state },
+      sourceError,
+    });
+  }
   return new DbError({
     code,
     // The server's SQLSTATE and message FIRST, the statement after: a cause is rendered on one
@@ -273,9 +312,11 @@ export const driverError = (statement: string, sourceError: unknown): DbError =>
     // ours — `$` is legal in a Postgres identifier, so `posts_$&_key` would splice the matched
     // `{constraint}` back into the fix line an author is meant to paste.
     fix:
-      code === 'X_DB_STATEMENT_FAILED'
-        ? `psql "$DATABASE_URL" -c "<the statement in cause>"   # SQLSTATE ${state} is the server's verdict on it: fix the SQL or the data it names, not the connection`
-        : SQLSTATE_FIXES[code].replace('{constraint}', () => constraint ?? UNNAMED_CONSTRAINT),
+      state === SQLSTATE.idleInTransactionTimeout
+        ? IDLE_IN_TRANSACTION_FIX
+        : code === 'X_DB_STATEMENT_FAILED'
+          ? `psql "$DATABASE_URL" -c "<the statement in cause>"   # SQLSTATE ${state} is the server's verdict on it: fix the SQL or the data it names, not the connection`
+          : SQLSTATE_FIXES[code].replace('{constraint}', () => constraint ?? UNNAMED_CONSTRAINT),
     meta: {
       sqlState: state,
       ...(constraint === undefined ? {} : { constraint }),
@@ -325,9 +366,11 @@ export const poolAcquireTimeout = (waitedMs: number, max: number): DbError =>
 export const poolMaxInvalid = (received: string): DbError =>
   new DbError({
     code: 'X_ENV_MISSING',
-    cause: `DATABASE_POOL_MAX is ${JSON.stringify(received)}, which is not a positive integer`,
+    // `describeValue`, never the value, in the cause AND meta: an operator who pasted a connection
+    // string here would read its password in the boot log and every `--json` payload.
+    cause: `DATABASE_POOL_MAX is ${describeValue(received)}, which is not a positive integer`,
     fix: 'DATABASE_POOL_MAX=20   # a whole number of connections per process, or unset it',
-    meta: { received },
+    meta: { received: describeValue(received) },
   });
 
 /**

@@ -7,6 +7,7 @@
 // it is applied once at boot and never by a driver method. Re-exported from here so the install
 // point keeps the ONE import path every caller already uses.
 
+export { SQL_CLAIM } from './driver-pg-claim-sql';
 export { SQL_JOBS_TABLE } from './driver-pg-ddl';
 // The whole-`x_jobs`-row reads, split off at this file's size ceiling and re-exported for the
 // same reason the DDL is. `JOB_ROW_COLUMNS` is imported as a value because `SQL_CANCEL` also
@@ -20,7 +21,6 @@ export {
   SQL_JOB_LIVE_HOLDER,
   SQL_JOB_REQUEUE,
 } from './driver-pg-jobs-sql';
-
 export {
   SQL_OUTBOX_CLAIM,
   SQL_OUTBOX_MARK_PUBLISHED,
@@ -31,23 +31,8 @@ export {
 } from './driver-pg-outbox-sql';
 export { SQL_ACK, SQL_NACK } from './driver-pg-settle-sql';
 
-import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
 import { JOB_ROW_COLUMNS } from './driver-pg-jobs-sql';
 import { notifyJobReady } from './driver-pg-wake-sql';
-import { COUNTER_BUCKET_MS } from './introspection';
-
-/** What both arms of the claim return: a `JobRow`, read off the updated row `j`. */
-const CLAIM_ROW_COLUMNS = `j.id, j.name, j.queue, j.input, j.idempotency_key, j.run_id, j.attempt,
-          j.max_attempts, j.state, j.tenant_id, j.last_error, j.claimed_by, j.claims,
-          j.traceparent, j.enqueued_by,
-          (extract(epoch from j.run_at)     * 1000)::bigint as run_at,
-          (extract(epoch from j.visible_at) * 1000)::bigint as visible_at,
-          (extract(epoch from j.created_at) * 1000)::bigint as created_at,
-          (extract(epoch from j.updated_at) * 1000)::bigint as updated_at`;
-
-const CLAIM_ROW_NAMES = `id, name, queue, input, idempotency_key, run_id, attempt, max_attempts,
-       state, tenant_id, last_error, claimed_by, claims, traceparent, enqueued_by, run_at,
-       visible_at, created_at, updated_at`;
 
 /**
  * The insert, and its wake: `woke` is the notification's own column, evaluated once per inserted
@@ -92,75 +77,6 @@ select id, run_id from x_jobs
    and coalesce(tenant_id, '') = coalesce($3::text, '')
    and state in ('ready', 'delayed', 'running', 'suspended')
  limit 1
-`.trim();
-
-/**
- * The claim. SKIP LOCKED is the whole design: without it, worker 2 blocks on worker 1's row
- * lock and throughput collapses to one worker. `visible_at` in the predicate reclaims leases
- * abandoned by a crashed worker. `cancelled` is absent from every branch by construction — a
- * cancelled row is terminal, so it is never handed to a worker again.
- *
- * TWO arms over one pick. A `running` row is picked only with a lapsed lease, and one that lapsed
- * on its FINAL attempt (`attempt >= max_attempts` — `isFinalAttempt`, `retry.ts`) is `buried`:
- * settled `dead` here, counted, and answered with its new state so the driver reports it instead
- * of handing it out. Re-claimed, it was an attempt past `max_attempts` every lease, forever — a
- * job that kills its worker took one per visibility timeout and never reached the dead letters.
- * `claimed_by` is cleared with the lease, so the body that stalled rather than died cannot settle
- * the row it lost. A buried row spends a slot of `$2`: the pass after it claims what it displaced.
- * `$5` names the jobs declaring `retry.deadLetter: false`: their rows are buried `failed`.
- */
-export const SQL_CLAIM = `
-with picked as (
-  select id, (state = 'running' and attempt >= max_attempts) as exhausted
-    from x_jobs
-   where queue = any($1::text[])
-     and run_at <= now()
-     and not exists (
-       select 1 from x_job_pauses p where p.kind = 'queue' and p.name = x_jobs.queue
-     )
-     and (
-       state in ('ready', 'delayed', 'suspended')
-       or (state = 'running' and visible_at <= now())
-     )
-   order by run_at
-   limit $2
-     for update skip locked
-), buried as (
-  update x_jobs j
-     set state            = case when j.name = any($5::text[]) then 'failed' else 'dead' end,
-         visible_at       = null,
-         claimed_by       = null,
-         last_error       = '${LEASE_LAPSED_FINAL_ATTEMPT}',
-         last_error_stack = null,
-         updated_at       = now()
-    from picked p
-   where j.id = p.id and p.exhausted
-  returning ${CLAIM_ROW_COLUMNS}
-), counted as (
-  insert into x_job_counters (job, bucket_ms, bucket_start, dead, failed, duration_ms)
-  select name, ${COUNTER_BUCKET_MS}, date_trunc('minute', now()),
-         (count(*) filter (where state = 'dead'))::int,
-         (count(*) filter (where state = 'failed'))::int, 0
-    from buried
-   group by name
-  on conflict (job, bucket_ms, bucket_start) do update
-     set dead   = x_job_counters.dead + excluded.dead,
-         failed = x_job_counters.failed + excluded.failed
-), claimed as (
-  update x_jobs j
-     set state      = 'running',
-         attempt    = j.attempt + 1,
-         claims     = j.claims + 1,
-         claimed_by = $3,
-         visible_at = now() + ($4::bigint * interval '1 millisecond'),
-         updated_at = now()
-    from picked p
-   where j.id = p.id and not p.exhausted
-  returning ${CLAIM_ROW_COLUMNS}
-)
-select ${CLAIM_ROW_NAMES} from claimed
-union all
-select ${CLAIM_ROW_NAMES} from buried
 `.trim();
 
 /**

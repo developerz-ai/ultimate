@@ -37,6 +37,9 @@ export interface FakeLock {
 export const fakeEtagOf = (entry: FakeObject): string =>
   entry.etag ?? `"${new Bun.CryptoHasher('md5').update(entry.bytes).digest('hex')}"`;
 
+const md5Of = (bytes: Uint8Array): string =>
+  new Bun.CryptoHasher('md5').update(bytes).digest('hex');
+
 export const FAKE_ENV = { S3_ACCESS_KEY_ID: 'fake-id', S3_SECRET_ACCESS_KEY: 'fake-secret' };
 
 const xmlError = (code: string, message: string, status: number): Response =>
@@ -111,6 +114,32 @@ export class FakeS3Client implements S3ClientLike {
   /** A refused WRITE — a denied `s3:PutObject`, a throttle. `put()` and `copy()` both write. */
   failWriteWith: Error | undefined;
 
+  /** A refused UploadPart / CreateMultipartUpload, and a Complete refused with 200 and `<Error>`. */
+  failPartWith: Error | undefined;
+  failCreateWith: Error | undefined;
+  failCompleteWith: Error | undefined;
+  /**
+   * The answer to one kind of request lost on the wire: `-before` it reached the provider, `-after`
+   * the provider acted on it. `afterLostAnswer` runs in between, for a write racing the recovery.
+   */
+  loseAnswerOf:
+    | 'complete-before'
+    | 'complete-after'
+    | 'put-before'
+    | 'put-after'
+    | 'write-before'
+    | 'write-after'
+    | undefined;
+  afterLostAnswer: (() => void) | undefined;
+  /** Multipart uploads opened and neither completed nor aborted: what would go on billing. */
+  private readonly uploads = new Map<
+    string,
+    { key: string; type: string | undefined; parts: Map<number, Uint8Array> }
+  >();
+  openUploads(): readonly string[] {
+    return [...this.uploads.keys()];
+  }
+
   /** Every signed request, in order — what `put()` with headers and `retentionOf()` sent. */
   readonly signedCalls: SignedCall[] = [];
   /** Per-key lock, as recorded from the signed PUT's headers. */
@@ -128,6 +157,23 @@ export class FakeS3Client implements S3ClientLike {
    */
   readonly fetch: S3FetchLike = async (url, init) => {
     const parsed = new URL(url);
+    const kind =
+      init.method === 'POST' && parsed.searchParams.has('uploadId')
+        ? 'complete'
+        : init.method === 'PUT' &&
+            parsed.search === '' &&
+            init.headers['x-amz-copy-source'] === undefined
+          ? 'put'
+          : undefined;
+    const lost = this.loseAnswerOf;
+    if (kind !== undefined && lost?.startsWith(kind) === true) {
+      this.loseAnswerOf = undefined;
+      if (lost.endsWith('-after')) {
+        await this.fetch(url, init);
+        this.afterLostAnswer?.();
+      }
+      throw new TypeError('The socket connection was closed unexpectedly');
+    }
     this.signedCalls.push({
       method: init.method,
       url: parsed,
@@ -142,6 +188,8 @@ export class FakeS3Client implements S3ClientLike {
       const fields = error as Error & { code?: string; statusCode?: number };
       return xmlError(fields.code ?? 'InternalError', error.message, fields.statusCode ?? 500);
     };
+    const multipart = this.multipartAnswer(parsed, key, init);
+    if (multipart !== undefined) return multipart;
     if (init.method === 'GET' && parsed.search === '' && init.headers['range'] !== undefined) {
       return this.rangedGet(key, init.headers['range']);
     }
@@ -161,7 +209,12 @@ export class FakeS3Client implements S3ClientLike {
         this.store.set(key, { ...source, bytes: source.bytes.slice() });
         return new Response('<CopyObjectResult></CopyObjectResult>');
       }
-      this.store.set(key, { bytes: init.body ?? new Uint8Array(), type: headers['content-type'] });
+      const stored = init.body ?? new Uint8Array();
+      this.store.set(key, {
+        bytes: stored,
+        type: headers['content-type'],
+        etag: `"${md5Of(stored)}"`,
+      });
       this.headersOf.set(key, headers);
       this.locks.set(key, {
         mode: headers['x-amz-object-lock-mode'],
@@ -191,6 +244,66 @@ export class FakeS3Client implements S3ClientLike {
     if (lock?.legalHold === undefined) return none;
     return new Response(`<LegalHold><Status>${lock.legalHold}</Status></LegalHold>`);
   };
+
+  /** The multipart calls, or `undefined` for a request that is not one. Answers S3's own shapes. */
+  private multipartAnswer(
+    url: URL,
+    key: string,
+    init: Parameters<S3FetchLike>[1],
+  ): Response | undefined {
+    const refusal = (error: Error): Response => {
+      const fields = error as Error & { code?: string; statusCode?: number };
+      return xmlError(fields.code ?? 'InternalError', error.message, fields.statusCode ?? 500);
+    };
+    if (init.method === 'POST' && url.searchParams.has('uploads')) {
+      if (this.failCreateWith !== undefined) return refusal(this.failCreateWith);
+      const uploadId = `upload-${this.uploads.size + 1}`;
+      this.uploads.set(uploadId, { key, type: init.headers['content-type'], parts: new Map() });
+      this.headersOf.set(key, init.headers);
+      return new Response(
+        `<InitiateMultipartUploadResult><UploadId>${uploadId}</UploadId></InitiateMultipartUploadResult>`,
+      );
+    }
+    const uploadId = url.searchParams.get('uploadId');
+    if (uploadId === null) return undefined;
+    const upload = this.uploads.get(uploadId);
+    if (upload === undefined) return xmlError('NoSuchUpload', 'The upload does not exist', 404);
+    if (init.method === 'DELETE') {
+      this.uploads.delete(uploadId);
+      return new Response(null, { status: 204 });
+    }
+    if (init.method === 'PUT') {
+      if (this.failPartWith !== undefined) return refusal(this.failPartWith);
+      const number = Number(url.searchParams.get('partNumber'));
+      upload.parts.set(number, init.body ?? new Uint8Array());
+      return new Response(null, {
+        status: 200,
+        headers: { etag: `"${md5Of(init.body ?? new Uint8Array())}"` },
+      });
+    }
+    if (this.failCompleteWith !== undefined) {
+      // What S3 really does: the 200 is already sent when the Complete fails.
+      return new Response(`<Error><Code>InternalError</Code><Message>failed</Message></Error>`);
+    }
+    const numbers = [...upload.parts.keys()].sort((a, b) => a - b);
+    const bytes = new Uint8Array(
+      numbers.reduce((total, n) => total + (upload.parts.get(n)?.byteLength ?? 0), 0),
+    );
+    let offset = 0;
+    for (const n of numbers) {
+      const part = upload.parts.get(n) ?? new Uint8Array();
+      bytes.set(part, offset);
+      offset += part.byteLength;
+    }
+    // S3's multipart etag: the MD5 of the parts' binary MD5s, then `-<count>`.
+    const digests = numbers.map((n) =>
+      Uint8Array.fromHex(md5Of(upload.parts.get(n) ?? new Uint8Array())),
+    );
+    const etag = `"${md5Of(new Uint8Array(Bun.concatArrayBuffers(digests)))}-${numbers.length}"`;
+    this.store.set(key, { bytes, type: upload.type, etag });
+    this.uploads.delete(uploadId);
+    return new Response('<CompleteMultipartUploadResult></CompleteMultipartUploadResult>');
+  }
 
   /**
    * A GET with `Range: bytes=a-b`, answered as S3 answers one: 206 with `Content-Range` (the window,
@@ -248,6 +361,11 @@ export class FakeS3Client implements S3ClientLike {
         // `copy()` hands the SOURCE S3File to write(), exactly as Bun's own union allows, so the
         // fake has to read one back out of its store rather than assume bytes.
         if (client.failWriteWith !== undefined) throw client.failWriteWith;
+        const lost = client.loseAnswerOf;
+        if (lost === 'write-before') {
+          client.loseAnswerOf = undefined;
+          throw new TypeError('The socket connection was closed unexpectedly');
+        }
         const source = client.sourceOf(data);
         const bytes =
           source !== undefined
@@ -255,7 +373,11 @@ export class FakeS3Client implements S3ClientLike {
             : data instanceof Uint8Array
               ? data
               : new Uint8Array(await (data as Blob).arrayBuffer());
-        store.set(key, { bytes, type: options?.type });
+        store.set(key, { bytes, type: options?.type, etag: `"${md5Of(bytes)}"` });
+        if (lost === 'write-after') {
+          client.loseAnswerOf = undefined;
+          throw new TypeError('The socket connection was closed unexpectedly');
+        }
         return bytes.byteLength;
       },
       async arrayBuffer() {
@@ -288,6 +410,10 @@ export class FakeS3Client implements S3ClientLike {
             controller.close();
           },
         });
+      },
+      slice(begin, end) {
+        const window = store.get(key)?.bytes.slice(begin, end) ?? new Uint8Array();
+        return { stream: () => new Blob([window]).stream() };
       },
       async stat(): Promise<S3StatLike> {
         if (client.failReadWith !== undefined) throw client.failReadWith;

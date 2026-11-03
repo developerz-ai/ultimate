@@ -26,6 +26,7 @@ import type {
   ErrorCodeFact,
   JobFact,
   Manifest,
+  MountFact,
   PolicyFact,
   QueryFact,
   RouteFact,
@@ -41,6 +42,7 @@ export interface ManifestSources {
   readonly queries?: readonly QueryFact[];
   readonly channels?: readonly ChannelFact[];
   readonly admin?: readonly AdminFact[];
+  readonly mounts?: readonly MountFact[];
   readonly jobs?: readonly JobFact[];
   readonly tasks?: readonly TaskFact[];
   readonly policies?: readonly PolicyFact[];
@@ -55,6 +57,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
   const queries = sortBy(sources.queries ?? [], (q) => q.name).map(normalizeQuery);
   const channels = sortBy(sources.channels ?? [], (c) => c.name).map(normalizeChannel);
   const admin = sortBy(sources.admin ?? [], (a) => a.basePath).map(normalizeAdmin);
+  const mounts = sortBy(sources.mounts ?? [], (m) => m.prefix).map(normalizeMount);
   const jobs = sortBy(sources.jobs ?? [], (j) => j.name).map(normalizeJob);
   const tasks = sortBy(sources.tasks ?? [], (t) => t.name).map((t) => ({
     ...t,
@@ -89,6 +92,8 @@ export function buildManifest(sources: ManifestSources): Manifest {
     queries,
     channels,
     admin,
+    // Only when there is one: `[]` would stale the committed file of every app without a mount.
+    ...(mounts.length === 0 ? {} : { mounts }),
     jobs,
     tasks,
     policies,
@@ -170,6 +175,18 @@ const normalizeChannel = (channel: ChannelFact): ChannelFact => ({
   ...channel,
   records: [...channel.records].sort(),
   permissions: [...channel.permissions].sort(),
+});
+
+// A mount is a set of prefixes, each a set of scopes, each a set of names: nothing about the order
+// they were declared in reaches a caller. `Object.fromEntries` defines, so a scope named
+// `__proto__` stays a member rather than re-prototyping the record.
+const normalizeMount = (mount: MountFact): MountFact => ({
+  prefix: mount.prefix,
+  scopes: Object.fromEntries(
+    Object.entries(mount.scopes)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([scope, names]) => [scope, [...names].sort()]),
+  ),
 });
 
 // Job steps keep their DECLARED order — a job's steps are a sequence, not a set, and

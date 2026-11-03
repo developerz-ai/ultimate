@@ -3,14 +3,17 @@
 // which decides WHICH files a generator emits — this file decides what happens to them, and `x new`
 // and the scaffold fixture assemble their own lists and land them through exactly these rules.
 
-// `resolve`/`sep` and not `join`: only resolving the assembled path can prove it stayed inside the
-// app root, and `node:path` is the only API that resolves one. `node:fs` for the exists check.
+// why: `resolve`/`sep` and not `join`: only resolving the assembled path can prove it stayed
+// inside the app root, and `node:path` is the only API that resolves one. `node:fs` for the exists
+// check.
 import { existsSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { commentSafe } from './comment-safe';
 import { GenerateJsonInvalidError, ScaffoldPathEscapeError } from './errors';
 import { mergeJsonDeep, mergeJsonInPlace, sortJsonDeep } from './json-merge';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 
 /** `undefined` when `text` does not parse as a JSON object — the one shape every catalog, whether
@@ -164,11 +167,40 @@ type WritePlan =
   | { readonly kind: 'skip' }
   | { readonly kind: 'conflict'; readonly finding: Finding };
 
+/**
+ * The author's rules live in a slice's `entity.ts` and `policy.ts`: `--force` as the first thing
+ * offered deleted them, when an existing slice almost always means the next primitive belongs in it.
+ */
+const conflictFix = (
+  path: string,
+  absolute: string,
+  invocation: string,
+  name: string | undefined,
+): string => {
+  const [slice, module] = path.split('/').slice(-2);
+  // The caller's own name, never `<name>`: a placeholder pasted into a shell is a redirect. With no
+  // name to hand back, the one line that needs none.
+  if (
+    slice === undefined ||
+    name === undefined ||
+    (module !== 'entity.ts' && module !== 'policy.ts')
+  )
+    return `${invocation} --force   # overwrites ${path}, or pass a different name`;
+  const into = `--feature ${quoteArg(slice)}`;
+  const named = quoteArg(name);
+  // A read needs the slice's table (X_FEATURE_REQUIRED), so it is offered only beside one.
+  const read = existsSync(join(dirname(absolute), 'entity.ts'))
+    ? `or x g query ${named} ${into}`
+    : `a read needs x g entity ${quoteArg(slice)} first`;
+  return `x g action ${named} ${into}   # ${read}: ${commentSafe(path)} is the author's`;
+};
+
 function planFile(
   file: GeneratedFile,
   absolute: string,
   force: boolean,
   invocation: string,
+  name: string | undefined,
 ): WritePlan {
   // A foundation file belongs to the slice, not to the generator that needs it: several generators
   // emit the same `repo.ts`, so an existing one is the author's — never a conflict, and never
@@ -189,7 +221,7 @@ function planFile(
         // The caller's own invocation, not `x g <kind>`: `x g --force` is X_CLI_UNKNOWN_COMMAND
         // when run, and a `fix:` is copied and pasted verbatim. Same construction as
         // `generate-kinds.ts`'s `assertSurfaceSupported`.
-        fix: `${invocation} --force   # overwrites ${file.path}, or pass a different name`,
+        fix: conflictFix(file.path, absolute, invocation, name),
         docs: ERROR_DOCS_URL,
         at: file.path,
       },
@@ -204,6 +236,7 @@ async function planAll(
   files: readonly GeneratedFile[],
   force: boolean,
   invocation: string,
+  name: string | undefined,
 ): Promise<readonly WritePlan[]> {
   const plans: WritePlan[] = [];
   for (const file of files) {
@@ -211,7 +244,7 @@ async function planAll(
     plans.push(
       file.merge === 'json'
         ? await planJsonMerge(file, absolute)
-        : planFile(file, absolute, force, invocation),
+        : planFile(file, absolute, force, invocation, name),
     );
   }
   return plans;
@@ -230,8 +263,10 @@ export async function planWrites(
   files: readonly GeneratedFile[],
   force: boolean,
   invocation = 'x g <kind> <name>',
+  /** The name the caller gave, handed back in a conflict's fix; absent, that fix names none. */
+  name?: string,
 ): Promise<WriteReport> {
-  const plans = await planAll(root, files, force, invocation);
+  const plans = await planAll(root, files, force, invocation, name);
   const conflicts = conflictsOf(plans);
   if (conflicts.length > 0) return { written: [], conflicts };
   return {
@@ -259,8 +294,10 @@ export async function writeFiles(
    * shape, not a runnable line, and every generator path supplies the real one.
    */
   invocation = 'x g <kind> <name>',
+  /** `planWrites`' `name`. */
+  name?: string,
 ): Promise<WriteReport> {
-  const plans = await planAll(root, files, force, invocation);
+  const plans = await planAll(root, files, force, invocation, name);
   const conflicts = conflictsOf(plans);
   if (conflicts.length > 0) return { written: [], conflicts };
 

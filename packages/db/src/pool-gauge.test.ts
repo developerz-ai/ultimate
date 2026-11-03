@@ -50,8 +50,11 @@ const series = (): Series => {
 };
 
 /** A pool whose statements settle only when the test says so, and whose pins count releases. */
-function installGatedSql(): { settle(): void; failNext(): void } {
+function installGatedSql(): { settle(): void; failNext(): void; reached(): Promise<void> } {
   const waiting: (() => void)[] = [];
+  // Resolved by the next statement to reach the driver: a statement handed a slot gets there a few
+  // microtasks after the one before it settles, and a test must wait on that, not guess it.
+  let arrival = Promise.withResolvers<void>();
   let fail = false;
   host.Bun.SQL = class {
     unsafe(): Promise<unknown> {
@@ -59,6 +62,8 @@ function installGatedSql(): { settle(): void; failNext(): void } {
         fail = false;
         return Promise.reject(Object.assign(new Error('connection refused'), { errno: '08006' }));
       }
+      arrival.resolve();
+      arrival = Promise.withResolvers<void>();
       return new Promise((resolve) => waiting.push(() => resolve([])));
     }
     async reserve(): Promise<unknown> {
@@ -73,6 +78,7 @@ function installGatedSql(): { settle(): void; failNext(): void } {
     failNext: () => {
       fail = true;
     },
+    reached: () => arrival.promise,
   };
 }
 
@@ -109,8 +115,14 @@ describe('unit · the pool gauges', () => {
     const first = db.query(sql`select 1`);
     const second = db.query(sql`select 2`);
     expect(series()).toEqual({ db_pool_max: 1, db_pool_in_use: 1, db_pool_waiting: 1 });
+    const arrived = gate.reached();
     gate.settle();
-    await Promise.all([first, second]);
+    await first;
+    await arrived;
+    // The second was waiting in front of the driver, so only now has it reached it.
+    expect(series()).toEqual({ db_pool_max: 1, db_pool_in_use: 1, db_pool_waiting: 0 });
+    gate.settle();
+    await second;
     expect(series()).toEqual({ db_pool_max: 1, db_pool_in_use: 0, db_pool_waiting: 0 });
     gate.failNext();
     await db.query(sql`select 3`).then(

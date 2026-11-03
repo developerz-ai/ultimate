@@ -1,12 +1,13 @@
-// `SQL_SCALER_DEPTH` against a real Postgres: the jobs a fleet must size for — running on a SERVING
+// `SQL_SCALER_DEMAND` against a real Postgres: the jobs a fleet must size for — running on a SERVING
 // worker, or due and claimable — and not the ones a draining worker still holds (its replacement
-// cannot take them), nor a future or paused one. Opt-in (`.job.`): booting Postgres costs seconds.
+// cannot take them), nor a future or paused one, and `driver.demand()` grouped over the same rows.
+// Opt-in (`.job.`): booting Postgres costs seconds.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
-import { SQL_SCALER_DEPTH } from './scaler-depth-fixture';
+import { SQL_SCALER_DEMAND } from './scaler-depth-fixture';
 
 const SEED = `
 insert into x_jobs
@@ -56,17 +57,26 @@ describe('the scaler depth on the pg driver', () => {
     );
 
     const depth = async (): Promise<number> => {
-      const rows = await pg.executor.query<{ depth: number | string }>(SQL_SCALER_DEPTH, [
+      const rows = await pg.executor.query<{ depth: number | string }>(SQL_SCALER_DEMAND, [
         ['banks', 'banks-paused'],
       ]);
       return Number(rows[0]?.depth);
     };
     expect(await depth()).toBe(3);
+    // The gauge's grouped form agrees, queue by queue, and a paused queue lists nothing.
+    expect(await driver.demand?.()).toEqual([
+      { queue: 'banks', demand: 3 },
+      { queue: 'other', demand: 1 },
+    ]);
 
     // The draining worker's row lapses (killed, or its pod gone): its rows count again until the
     // queue takes them back — they are work somebody must pick up.
     await pg.age(31_000);
     await worker('worker-new', false);
     expect(await depth()).toBe(5);
+    expect(await driver.demand?.()).toEqual([
+      { queue: 'banks', demand: 5 },
+      { queue: 'other', demand: 1 },
+    ]);
   });
 });

@@ -8,7 +8,7 @@ import * as repo from '../repo';
 /**
  * The feed's activity badge: how many posts this org has published, not live and not bundled
  * with `liveFeed` — its own read, its own cache tag, so `app/feed/page.tsx` can stream it in a
- * `<Suspense>` boundary independently of the rows, which arrive over the socket and never through
+ * `<Hole>` independently of the rows, which arrive over the socket and never through
  * this client.
  */
 export const feedActivity = query({

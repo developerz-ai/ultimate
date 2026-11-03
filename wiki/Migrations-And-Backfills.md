@@ -376,7 +376,7 @@ All four read `inspectBackfills(driver, filter?)` from `backfill-inspect.ts` —
 
 ### Declared, and never run — the other half of the ledger
 
-`x_backfills` answers "which passes have run". Nothing answered "which passes exist", so a cleanup could be authored with `x g backfill`, merged and deployed, and **never run**, with no surface anywhere saying so. `backfill()` now stamps its own handle — through the same `origin` `WeakMap` `task()` uses, with no `registerBackfill()` call for an app to forget — and the diff between the two halves is a command:
+`x_backfills` answers "which passes have run". Nothing answered "which passes exist", so a cleanup could be authored with `x g backfill <name> --feature <slice>`, merged and deployed, and **never run**, with no surface anywhere saying so. `backfill()` now stamps its own handle — through the same `origin` `WeakMap` `task()` uses, with no `registerBackfill()` call for an app to forget — and the diff between the two halves is a command:
 
 ```
 x db backfill --pending --json
@@ -440,7 +440,7 @@ Position in the plan is **necessary and not sufficient**: `docker compose up -d`
 
 ### `x g backfill` — the generator
 
-Scaffolds a working pair, never a stub: `x g backfill <name>` writes `<feature>/backfills/<name>.ts` — a `backfill()` declaration reading the feature's own table through `tableFor(entity, postgresRepo(entity))`, sweeping with `.where({ orgId })` guarded by an `assert` that the actor carries one, and writing back through `upsertAll` — plus `<name>.test.ts` asserting the declaration (name, retry, idempotency key), the manifest projection, and that the row transform is genuinely idempotent — `expect(<name>Row(once)).toEqual(once)`, deep value equality, since a transform that returns a fresh object every pass is still idempotent and `===` would fail it — and actually enqueues/dedupes against a memory job driver. A generated no-op handler that checkpoints a page it never wrote would report rows swept that nobody touched, which is why the template ships a real (if trivial) row transform rather than a `throw new Error(…)`.
+Scaffolds a working pair, never a stub: `x g backfill <name> --feature <slice>` writes `<slice>/backfills/<name>.ts` — a `backfill()` declaration reading the feature's own table through `tableFor(entity, postgresRepo(entity))`, sweeping with `.where({ orgId })` guarded by an `assert` that the actor carries one, and writing back through `upsertAll` — plus `<name>.test.ts` asserting the declaration (name, retry, idempotency key), the manifest projection, and that the row transform is genuinely idempotent — `expect(<name>Row(once)).toEqual(once)`, deep value equality, since a transform that returns a fresh object every pass is still idempotent and `===` would fail it — and actually enqueues/dedupes against a memory job driver. A generated no-op handler that checkpoints a page it never wrote would report rows swept that nobody touched, which is why the template ships a real (if trivial) row transform rather than a `throw new Error(…)`.
 
 ## Errors
 

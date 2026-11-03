@@ -163,6 +163,18 @@ If it is genuinely down: workloads with `nodeAffinity` pinned to that node **wil
 That is the cost of pinning, and it is the right trade for a database on a node-local volume — and
 the wrong one for a stateless role.
 
+## `db.pool.retired` in the logs
+
+A plain statement had no answer past the role's statement timeout + 5 s, so the client replaced its pool. The app recovers on its own: this line is the evidence of what happened to the path, not a step to take.
+
+| # | Step |
+|---|---|
+| 1 | one line after a node loss or a failover: expected, nothing to do. The statement it names answered `X_DB_UNAVAILABLE`; if it was an autocommit write, read the row before repeating it |
+| 2 | repeating, one per bound: the database is still not answering. `psql "$DATABASE_URL" -c 'select 1'` from the same network; a paused or overloaded server looks the same as a dead path |
+| 3 | requests failing with `X_DB_POOL_EXHAUSTED` and no such line: the pool is full, not gone. `psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity where state <> 'idle'"`, then fix the slow statement or raise `DATABASE_POOL_MAX` |
+| 4 | the line names `a statement on every pinned connection`: every slot was a transaction hung past the bound, and the next statement refused for a slot found it. Recovered the same way, nothing to do. A transaction that never fills the gate has no client deadline: `net.ipv4.tcp_retries2` on the node bounds it ([connection arithmetic](04-datastores.md#connection-arithmetic)) |
+| 5 | a job retried after this code: `X_DB_UNAVAILABLE` is unclassified, so the worker re-runs the attempt, and an autocommit write that landed runs again. Make that write idempotent or put it in a transaction |
+
 ## Jobs are dead-lettered
 
 A job that exhausted its retries is **kept**, never dropped: `queue_dead_jobs` counts them per queue.
@@ -201,4 +213,5 @@ A drain hook — a handler, a job step, a socket teardown — was still running 
 |---|---|
 | A long request is expected | raise `drain: { deadlineMs }` in `app.config.ts` (1–3600000, every role). On Kubernetes `x deploy --method helm` carries it into the chart, which derives each role's `terminationGracePeriodSeconds` from it; on Compose raise `stop_grace_period` by hand to at least readiness grace + that deadline + 10 s |
 | A long job step is expected on the worker | declare `drain: { workerDeadlineMs }` (1–86400000, `ROLE=worker` only, in place of `deadlineMs` there — which stays capped at an hour). `x deploy --method helm` passes it as `drain.workerDeadlineSeconds` and the chart sizes the worker's grace from it; on Compose raise the worker service's `stop_grace_period` to at least that budget + 10 s. A job that must never be cut off at all: the worker's retire ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |
+| A job holds its pod through a rollout | nothing to do: the worker's retire (`drain.workerRetireMs`, an hour by default) waits it out and the pod shows Terminating meanwhile. `X_JOB_OUTLASTS_DRAIN` in `x verify` names a job whose `timeout` is over that budget |
 | It is not expected | the log line names the hook (`the "<name>" shutdown hook`): make it return once it stops accepting work, not once all work is done |

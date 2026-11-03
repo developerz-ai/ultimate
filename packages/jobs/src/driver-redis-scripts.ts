@@ -222,6 +222,25 @@ return out
 `.trim();
 
 /**
+ * `SQL_QUEUE_DEMAND`, one consistent read. `ARGV`: namespace, now. Answers `{ queue, demand }` per
+ * queue with some: every running row plus every due wait or park row. This driver keeps no worker
+ * registry and no pause, so no claimer is known to drain and no queue is paused: the rule
+ * `SQL_QUEUE_DEMAND` applies to a claimer with no live row, which counts.
+ */
+export const REDIS_DEMAND = `
+local P = ARGV[1]
+local now = tonumber(ARGV[2])
+local out = {}
+for _, queue in ipairs(redis.call('SMEMBERS', P .. ':queues')) do
+  local demand = redis.call('ZCARD', P .. ':run:' .. queue)
+    + redis.call('ZCOUNT', P .. ':wait:' .. queue, '-inf', now)
+    + redis.call('ZCOUNT', P .. ':park:' .. queue, '-inf', now)
+  if demand > 0 then table.insert(out, { queue, demand }) end
+end
+return out
+`.trim();
+
+/**
  * `SQL_STEP_PUT` under a claim: the write lands only while that claim still holds the row.
  * `ARGV`: namespace, job id, worker, claim, runId, step name, the record as JSON.
  */

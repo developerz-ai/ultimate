@@ -215,7 +215,6 @@ describe('unit · x routes --json projects every fact the table shows', () => {
     registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',
       config: app,
-      suspenseBoundaries: 1,
     });
 
     const all = await routesCommand.run(contextFor(['routes', '--json']));

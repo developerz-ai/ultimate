@@ -44,6 +44,19 @@ export function recordDeprecatedCall(primitive: 'action' | 'query', name: string
   deprecatedCalls.add(1, { primitive, name });
 }
 
+/** The RFC 8288 link naming a retired declaration's replacement. One spelling, written and read. */
+export function successorLink(path: string): string {
+  return `<${path}>; rel="successor-version"`;
+}
+
+/**
+ * The path `successorLink` wrote, or `undefined` for a link that is not exactly one: another
+ * relation is an app's own header, and whoever re-serves a route has no claim on it.
+ */
+export function successorPathOf(link: string): string | undefined {
+  return /^<([^<>]*)>; rel="successor-version"$/.exec(link)?.[1];
+}
+
 /**
  * `Deprecation` is a structured-field Date (`@` + unix seconds, RFC 9745); `Sunset` is an
  * HTTP-date (IMF-fixdate, RFC 8594). Two spellings of one instant because two RFCs chose
@@ -64,9 +77,7 @@ export function renderDeprecation(
   };
   // The successor's URL, derived by the caller from its own route naming — the one the typed
   // client uses. A link built here from the export name would be a second URL derivation.
-  if (successorPath !== undefined) {
-    headers['link'] = `<${successorPath}>; rel="successor-version"`;
-  }
+  if (successorPath !== undefined) headers['link'] = successorLink(successorPath);
 
   const meta: Record<string, string> = {
     since: new Date(since).toISOString(),

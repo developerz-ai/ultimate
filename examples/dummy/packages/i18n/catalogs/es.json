@@ -243,17 +243,17 @@
       "cta": "Leer el comentario"
     },
     "welcome": {
-      "subject": "Te damos la bienvenida a Postly, {org}",
+      "subject": "Te damos la bienvenida a Postly, {name}",
       "body": "Tu organización está lista. Invita a tu equipo y publica algo pequeño hoy mismo.",
       "cta": "Abrir tu feed"
     },
     "nudge": {
-      "subject": "¿Todavía nada publicado en {org}?",
+      "subject": "¿Todavía nada publicado en {name}?",
       "body": "Han pasado tres días y el feed sigue vacío. El primer artículo es el difícil.",
       "cta": "Escribir el primero"
     },
     "invite": {
-      "subject": "{inviter} te ha invitado a {org} en Postly",
+      "subject": "Te han invitado a Postly",
       "body": "Te han añadido como {role}. Acepta la invitación para empezar a escribir.",
       "cta": "Aceptar la invitación"
     },
@@ -264,7 +264,9 @@
     }
   },
   "digest": {
-    "subject": "Resumen de Postly del {date}",
+    "subject": "Resumen de Postly del {localDate}",
+    "date": "Fecha",
+    "post": "Artículo",
     "greeting": "Buenos días, {name}.",
     "intro_one": "{count} artículo nuevo en {org}.",
     "intro_other": "{count} artículos nuevos en {org}.",

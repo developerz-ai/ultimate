@@ -77,10 +77,17 @@ export {
 export type {
   AwsCredentials,
   AwsPayload,
+  PresignAwsUrlInput,
+  PresignedAwsUrl,
   SignAwsRequestInput,
   SignedAwsRequest,
 } from './aws-sigv4';
-export { signAwsRequest, UNSIGNED_PAYLOAD } from './aws-sigv4';
+export {
+  MAX_AWS_PRESIGN_SECONDS,
+  presignAwsUrl,
+  signAwsRequest,
+  UNSIGNED_PAYLOAD,
+} from './aws-sigv4';
 export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
 export { backoffDelay, jitterStatedDelay } from './backoff';
 export { isCompiledBundle } from './bunfs';
@@ -89,7 +96,7 @@ export { CACHE_TEMP_GRACE_MS, evictCacheFiles } from './cache-eviction';
 export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
 export type { FetchLike, TransportRequest } from './client-dispatch';
-export { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './client-dispatch';
+export { BUILD_ID_HEADER, IDEMPOTENCY_HEADER, REPLAYED_HEADER } from './client-dispatch';
 /**
  * Flight control for a typed client, and OPT-IN by construction: `@ultimat3/action`'s and
  * `@ultimat3/query`'s `client.ts` each name `ClientFlight` as a TYPE only, so a caller that never
@@ -116,7 +123,12 @@ export {
   splitWords,
 } from './client-paths';
 export type { TransportFailure } from './client-problem';
-export { MAX_REMOTE_TITLE_LENGTH, remoteTitleOf, withStatedDelay } from './client-problem';
+export {
+  MAX_REMOTE_TITLE_LENGTH,
+  remoteTitleOf,
+  withRequestId,
+  withStatedDelay,
+} from './client-problem';
 /** What a decoder reads off a refusal: the stated `Retry-After`, and the body's display title. */
 export { MAX_RETRY_AFTER_SECONDS, retryAfterSecondsOf } from './client-retry-after';
 /**
@@ -259,7 +271,12 @@ export { pageOf } from './cursor-page';
 export { compareDecimalText } from './decimal-order';
 export { DEFAULT_LOCALE, DEFAULT_TIME_ZONE } from './default-locale';
 export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
-export { recordDeprecatedCall, renderDeprecation } from './deprecation';
+export {
+  recordDeprecatedCall,
+  renderDeprecation,
+  successorLink,
+  successorPathOf,
+} from './deprecation';
 export type { DevSecretsOptions } from './dev-secrets';
 export {
   assertNoDevSecretsOutsideLocal,
@@ -270,6 +287,7 @@ export {
   DRAIN_DEADLINE_DEFAULT_MS,
   DRAIN_DEADLINE_MAX_MS,
   WORKER_DRAIN_DEADLINE_MAX_MS,
+  WORKER_RETIRE_DEFAULT_MS,
 } from './drain-deadline';
 export type {
   Env,

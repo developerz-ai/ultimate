@@ -175,7 +175,7 @@ Recommendations, not requirements: the framework depends on none of it (axiom 7,
 - `x db gen "<name>" | migrate | reset | seed | studio | branch | backfill`: migrations, seeds and branch databases. Drift is a gate failure.
 - `packages/db/schema/`: the app's whole schema as generated SQL, one file per table, framework tables under `framework/`. Read it instead of replaying migrations in your head; never edit it — `x db gen` rewrites it and `X_SCHEMA_DUMP_DRIFT` refuses a hand edit.
 - `x jobs`, `x tasks`, `x routes`, `x actions`, `x queries`, `x entities`, `x policy`, `x manifest`, `x errors explain <CODE>`, `x docs "<question>"`: introspection, all with `--json`.
-- `x build --target docker|binary|static|prebuilt`, `x deploy --image <ref> [--method compose|helm]`, `x doctor`, `x test`, `x env`, `x secrets`, `x i18n`, `x fix`, `x mcp`.
+- `x build --target docker|binary|static|prebuilt`, `x deploy --image <ref> [--method compose|helm]`, `x deploy verify --url <origin>`, `x doctor`, `x test`, `x env`, `x secrets`, `x i18n`, `x fix`, `x mcp`.
 - Eight commands are registered and labelled planned — [cmd-planned.ts](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/cli/src/cmd-planned.ts). Each exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, never `X_CLI_UNKNOWN_COMMAND`: "not built yet" and "not a command" are different facts. `x upgrade` is shipped, one major per run; the manual edits are what [wiki/Upgrading.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md) names.
 
 ## Error codes

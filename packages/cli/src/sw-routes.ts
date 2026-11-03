@@ -3,7 +3,7 @@
 // both artifacts as files and mounts nothing, and it must not have to import a route table to do it.
 
 import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders } from '@ultimat3/http';
+import { applyCacheHeaders, textResponse } from '@ultimat3/http';
 import { revalidatedResponse } from './revalidated-response';
 import type { ServiceWorkerArtifacts } from './sw-artifacts';
 import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, SW_SCOPE } from './sw-artifacts';
@@ -24,7 +24,7 @@ export const serviceWorkerRoutes = (artifacts: ServiceWorkerArtifacts): readonly
     meta: { name: 'pwa.serviceWorker', auth: 'public' },
     handler: () =>
       applyCacheHeaders(
-        new Response(artifacts.source, {
+        textResponse(artifacts.source, {
           headers: {
             'content-type': 'text/javascript; charset=utf-8',
             // Without it the browser refuses to let a worker served from `/` control `/`, which

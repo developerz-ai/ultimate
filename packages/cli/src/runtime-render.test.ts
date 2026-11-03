@@ -38,7 +38,6 @@ function register(fixture: RouteFixture): void {
   // `RouteData`, and a `meta` written against `{ url, params }` cannot be handed a bare record.
   const input: RegisterRouteInput<Data> = {
     file: fixture.file,
-    suspenseBoundaries: fixture.render === 'stream' ? 1 : 0,
     ...(fixture.component === undefined ? {} : { component: fixture.component }),
     config: defineRoute<Data>({
       render: fixture.render,
@@ -96,7 +95,6 @@ describe('unit · x dev renders the app routes', () => {
       const surface = render === 'static' || render === 'isr' ? 'site' : 'app';
       registerRoute<Data>({
         file: `apps/web/${surface}/${render}/page.tsx`,
-        suspenseBoundaries: render === 'stream' ? 1 : 0,
         config: defineRoute<Data>({
           render,
           offline: 'network-only',

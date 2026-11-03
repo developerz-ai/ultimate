@@ -28,7 +28,7 @@
 - `packages/mail/src/mail.ts:31` — `MailInit.preview?: I | ((locale) => I)`.
 - `packages/admin/src/dev/panel-mail.ts`, `data.ts:56`, `facts.ts:218` — a "templates" list beside caught mail; a render per locale.
 - `packages/cli/src/cmd-mail.ts`, `cmd-mail-spec.ts` (new) — `x mail preview <id> [--locale] [--out] [--json]`.
-- `packages/i18n/src/interpolate.ts:94`, `translator.ts:17-62`, `extract.ts:166`, `subset.ts:35` — `{ ordinal }` and `{ select }` selection.
+- `packages/i18n/src/interpolate.ts` — `{ ordinal }` and `{ select }` selection in `selectMessageKey` only: it is the one key selection, which `t()` and the mail's `recordingTranslator` both call, so a selector added anywhere else is a key `t()` answers and a mail refuses.
 - `packages/money/src/parse-input.ts` (new); `index.ts` — `parseAmount`.
 - `packages/time/src/context.ts:14,21`, `packages/http/src/preferences.ts:32` — `detected` source.
 - `packages/render/src/zone-script.ts` (new); `packages/cli/src/` document assembly — on `app/` documents only, under `time.detect`.

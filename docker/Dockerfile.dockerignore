@@ -28,3 +28,6 @@ wiki
 coverage
 **/test-results
 **/playwright-report
+# Compiled into one binary below, and an edit to one would rerun the compile: tests never reach it.
+**/*.test.ts
+**/*.test.tsx

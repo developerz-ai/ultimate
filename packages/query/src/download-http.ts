@@ -119,9 +119,17 @@ const hasControl = (text: string): boolean =>
 function assertFile(file: DownloadFile): void {
   const { body, contentType, filename, disposition, size } = file;
   assert(
-    body instanceof Uint8Array || body instanceof Blob || body instanceof ReadableStream,
-    'a download handle() answered a body that is not a Uint8Array, a Blob or a ReadableStream',
+    body instanceof Uint8Array ||
+      body instanceof Blob ||
+      body instanceof ReadableStream ||
+      typeof body === 'function',
+    'a download handle() answered a body that is not a Uint8Array, a Blob, a ReadableStream or a function',
     "return { body: bytes, contentType: 'video/mp4', filename: 'run.mp4' }   // bytes, never a base64 string",
+  );
+  assert(
+    typeof body !== 'function' || size !== undefined,
+    'a download handle() answered a function body with no size, so no Range: can be judged',
+    "return { body: (range) => open(range), size: object.size, contentType: 'video/mp4', filename: 'run.mp4' }",
   );
   assert(
     typeof contentType === 'string' && contentType !== '' && !hasControl(contentType),
@@ -179,8 +187,9 @@ function bytesBody(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
     : bytes.slice();
 }
 
-function bodyOf(file: DownloadFile, range?: RequestedRange): BodyInit {
+function bodyOf(file: DownloadFile, range?: RequestedRange): BodyInit | Promise<BodyInit> {
   const { body } = file;
+  if (typeof body === 'function') return body(range);
   if (body instanceof Uint8Array) {
     const whole = bytesBody(body);
     return range === undefined ? whole : whole.subarray(range.start, range.end + 1);
@@ -208,7 +217,7 @@ export async function fileResponse(request: ObjectRequest, file: DownloadFile): 
   };
   const size = sizeOf(file);
   if (size === undefined) {
-    return new Response(bodyOf(file), {
+    return new Response(await bodyOf(file), {
       headers: { 'content-type': file.contentType, 'accept-ranges': 'none', ...own },
     });
   }

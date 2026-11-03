@@ -1,7 +1,8 @@
 # @ultimat3/manifest — boundary
 
 Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity policy http action
-query jobs realtime`. **Never** `render mcp ai pwa ui admin testing cli`.
+query jobs realtime`. **Never** `render mcp ai pwa ui admin testing cli`. `package.json` and
+`tsconfig.json` declare `schema` too (`sources.ts`).
 
 Route, policy, task and locale facts come from tier 4 / per-app code, so they are **injected**
 by the CLI, not imported.
@@ -29,6 +30,8 @@ by the CLI, not imported.
 | `agents-md.ts` | read-only AGENTS.md existence + size check |
 | `docs-scan.ts` | read-only: an installed package tree → `DocEntry[]`. Never writes |
 | `docs-search.ts` | pure ranking of `DocEntry[]` against a question. No I/O, no clock |
+| `diff-rows.ts` | a read's row, member by member: removed, retyped or no longer required is breaking, added is additive. Never `canonicalJson` inequality: an entity gaining a column would flip every `rows: X.$schema` read |
+| `diff-mounts.ts` | a bearer mount's cut, per (scope, name): the one classifier that sees a held token's 404, because the primitive stays registered |
 
 ## Invariants
 
@@ -163,6 +166,7 @@ by the CLI, not imported.
   `before` is a file parsed off disk, so an older or hand-trimmed manifest can carry an absent or
   non-boolean value that `!==` would classify from; and the fact `sources.ts` publishes has to be
   the answer `@ultimat3/mcp`'s catalog gives, or the gate demands a major bump for a tool that never existed.
+- **`mounts` is written only when there is one** (`As of 2026-11`), unlike `channels` and `admin`, so an app without a mount keeps its bytes; `diff.ts` reads `?? []` on BOTH sides because the key is absent after the last mount leaves. **`QueryFact.rows` present before and absent after is breaking** (the 200 turns untyped; `before` carrying it proves its writer knew the field); absent before is additive.
 
 ## Commands
 

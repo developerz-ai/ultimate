@@ -19,6 +19,8 @@ function stubDriver(name: string): StorageDriver {
     get: () => unused('get'),
     stat: () => unused('stat'),
     stream: () => unused('stream'),
+    streamRange: () => unused('streamRange'),
+    putStream: () => unused('putStream'),
     copy: () => unused('copy'),
     delete: () => Promise.resolve(),
     exists: () => Promise.resolve(false),

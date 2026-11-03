@@ -78,6 +78,8 @@ describe('islands over HTTP', () => {
     expect(chunk.headers.get('content-type')).toContain('javascript');
     // Content-addressed, so the bytes behind the URL can never change.
     expect(chunk.headers.get('cache-control')).toContain('immutable');
+    const code = await chunk.clone().arrayBuffer();
+    expect(chunk.headers.get('content-length')).toBe(String(code.byteLength));
     expect(await chunk.text()).toContain('hydrated');
   });
 

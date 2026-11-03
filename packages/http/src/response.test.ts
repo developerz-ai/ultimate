@@ -4,14 +4,53 @@ import { bodyInvalid } from './errors';
 import {
   applyCacheHeaders,
   cacheControl,
+  html,
   jsonResponse,
   noContent,
   problem,
   redirect,
+  stream,
   textResponse,
 } from './response';
 
 describe('constructors', () => {
+  test('html, text and json declare their BYTES, not their characters', () => {
+    // Multi-byte on purpose: `body.length` counts UTF-16 units and would under-declare.
+    const markup = 'héllo€€';
+    const bytes = String(new TextEncoder().encode(markup).byteLength);
+    expect(markup.length).not.toBe(Number(bytes));
+    expect(html(markup).headers.get('content-length')).toBe(bytes);
+    expect(textResponse(markup).headers.get('content-length')).toBe(bytes);
+    const json = JSON.stringify({ name: markup });
+    expect(jsonResponse({ name: markup }).headers.get('content-length')).toBe(
+      String(new TextEncoder().encode(json).byteLength),
+    );
+  });
+
+  test('a length the caller set stands, and a type the caller set stands beside it', () => {
+    const answer = textResponse('body{}', {
+      headers: { 'content-length': '99', 'content-type': 'text/css' },
+    });
+    expect(answer.headers.get('content-length')).toBe('99');
+    expect(answer.headers.get('content-type')).toBe('text/css');
+  });
+
+  test('a status that carries no content declares no length', () => {
+    expect(html('', { status: 304 }).headers.has('content-length')).toBe(false);
+    expect(textResponse('', { status: 204 }).headers.has('content-length')).toBe(false);
+  });
+
+  // `JSON.stringify` answers `undefined` for a value it cannot render, whatever its type says.
+  test('a json body that stringifies to nothing still answers, with no length', () => {
+    const answer = jsonResponse(undefined);
+    expect(answer.status).toBe(200);
+    expect(answer.headers.has('content-length')).toBe(false);
+  });
+
+  test('stream never declares a length', () => {
+    expect(stream(new Blob(['x']).stream()).headers.has('content-length')).toBe(false);
+  });
+
   test('json and text set a charset', async () => {
     const response = jsonResponse({ ok: true });
     expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');

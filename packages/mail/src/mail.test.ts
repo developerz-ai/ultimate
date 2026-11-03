@@ -22,13 +22,16 @@ import {
 import { mailMessageSchema } from './job';
 import {
   defineMail,
+  type MailDefinition,
   mailFor,
   registeredMailIds,
   registeredMails,
+  renderMessage,
   type SendOptions,
   send,
   sendById,
 } from './mail';
+import { setMailTransform } from './transform';
 
 registerCatalog(
   'en',
@@ -354,4 +357,126 @@ test('sendById renders and delivers the mail the id names', async () => {
   // `data` is parsed through the mail's own schema, not trusted — the registry erased `I`.
   const bad = sendById('test-basic', { name: 42 }, { to: 'a@b.test', locale: 'en' });
   expect(codeOf(await caught(bad))).toBe('X_VALIDATION_FAILED');
+});
+
+// The probe that opened this code: a declared mail, a locale with no catalog, and the customer read
+// `⟦mail.r.subject⟧`. A mail is the one surface where a loud miss cannot be taken back.
+describe('a mail with an unresolved key', () => {
+  registerCatalog(
+    'es-co',
+    loadCatalog({
+      test: {
+        partial: {
+          subject: 'Hola',
+          body: 'Hola {name}',
+          fromData: 'Hola {name}',
+          seeded: '\u27E6Your invite is waiting.\u27E7',
+          items_other: '{count} cosas',
+        },
+      },
+    }),
+  );
+  const ES = { to: 'ada@example.test', locale: 'es-co' } as const;
+  const input = t.object({ name: t.string });
+  const mailWith = (
+    id: string,
+    subject: string,
+    keys: readonly string[],
+    vars: boolean,
+  ): MailDefinition<{ name: string }> =>
+    defineMail<{ name: string }>({
+      id,
+      subject,
+      input,
+      template: ({ data }) =>
+        keys.map((key) => blocks.paragraph(key, vars ? { name: data.name } : undefined)),
+    });
+
+  const absent = mailWith('absent', 'test.absent.subject', ['test.absent.body'], false);
+  const noVar = mailWith('no-var', 'test.partial.subject', ['test.partial.body'], false);
+  const seeded = mailWith('seeded', 'test.partial.subject', ['test.partial.seeded'], false);
+  const plural = defineMail<{ name: string }>({
+    id: 'plural',
+    subject: 'test.partial.subject',
+    input,
+    template: () => [blocks.paragraph('test.partial.items')],
+  });
+  const fromData = mailWith('from-data', 'test.partial.subject', ['test.partial.fromData'], true);
+  const inTemplate = defineMail<{ name: string }>({
+    id: 'in-template',
+    subject: 'test.partial.subject',
+    input,
+    template: ({ t: translate }) => [
+      blocks.detail('test.partial.subject', translate('test.absent.value')),
+    ],
+  });
+
+  test('a key the locale lacks refuses, names the keys, and leaves the outbox empty', async () => {
+    const error = await caught(send(absent, { name: 'Ada' }, ES));
+    expect(codeOf(error)).toBe('X_MAIL_KEY_MISSING');
+    expect(memory.sent).toHaveLength(0);
+    const meta = (error as { meta?: Record<string, unknown> }).meta;
+    expect(meta?.['keys']).toEqual(['test.absent.body', 'test.absent.subject']);
+    expect(meta?.['locale']).toBe('es-co');
+    expect((error as { fix?: string }).fix).toStartWith('x i18n sync es-co');
+  });
+
+  test('a slot with no value refuses and names the slot, on a key the locale does hold', async () => {
+    const error = await caught(send(noVar, { name: 'Ada' }, ES));
+    expect(codeOf(error)).toBe('X_MAIL_KEY_MISSING');
+    expect(memory.sent).toHaveLength(0);
+    const meta = (error as { meta?: Record<string, unknown> }).meta;
+    expect(meta?.['keys']).toEqual([]);
+    expect(meta?.['slots']).toEqual(['test.partial.body{name}']);
+  });
+
+  // What `x i18n sync` writes. Green-looking to `has()`, and still brackets in a customer's inbox:
+  // following the refusal's own fix must not be what turns it into a delivery.
+  test('a catalog value still holding the sync marker refuses', async () => {
+    const error = await caught(send(seeded, { name: 'Ada' }, ES));
+    expect(codeOf(error)).toBe('X_MAIL_KEY_MISSING');
+    expect(memory.sent).toHaveLength(0);
+  });
+
+  test('a plural family read without a count refuses: has() says yes, t() renders the miss', async () => {
+    const error = await caught(send(plural, { name: 'Ada' }, ES));
+    expect(codeOf(error)).toBe('X_MAIL_KEY_MISSING');
+    expect(memory.sent).toHaveLength(0);
+  });
+
+  test('a key the template resolves itself counts the same as one in a block', async () => {
+    expect(codeOf(await caught(send(inTemplate, { name: 'Ada' }, ES)))).toBe('X_MAIL_KEY_MISSING');
+    expect(memory.sent).toHaveLength(0);
+  });
+
+  test('a value holding the miss brackets, from data, still sends', async () => {
+    const result = await send(fromData, { name: '\u27E6Ada\u27E7' }, ES);
+    expect(result.driver).toBe('memory');
+    expect(memory.lastTo('ada@example.test')?.message.text).toContain('\u27E6Ada\u27E7');
+  });
+
+  test('the refusal comes before the transform and before the queue', async () => {
+    const queue = memoryJobDriver();
+    setJobDriver(queue);
+    let ran = 0;
+    setMailTransform((message) => {
+      ran += 1;
+      return message;
+    });
+    try {
+      expect(codeOf(await caught(send(absent, { name: 'Ada' }, ES)))).toBe('X_MAIL_KEY_MISSING');
+      expect(ran).toBe(0);
+      expect((await queue.introspect?.list()) ?? []).toEqual([]);
+    } finally {
+      setMailTransform(undefined);
+      resetJobDriver();
+    }
+  });
+
+  test('renderMessage still returns the miss, because a preview should show it', () => {
+    const message = renderMessage(absent, { name: 'Ada' }, ES);
+    expect(message.subject).toBe('\u27E6test.absent.subject\u27E7');
+    expect(message.text).toContain('\u27E6test.absent.body\u27E7');
+    expect(Object.keys(message)).not.toContain('misses');
+  });
 });

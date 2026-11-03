@@ -37,7 +37,7 @@ The compiled CSS is **one content-hashed file per surface**, linked from `<head>
 
 **There is no client bundle `As of 2026-08`.** Nothing calls `Bun.build` anywhere in the framework, so there are no chunks, no code splitting, no `modulepreload`, and nothing to hydrate with. The blocker is **ours, not upstream's**: `solid-js@1.9.14` ships `solid-js/web` with `render`, `hydrate`, `renderToString` and `generateHydrationScript`. What is missing is a compile step. Solid turns JSX into `template()` calls at build time — its `jsx-runtime` subpath carries *types* and no factory — so the client needs a Solid-compiled bundle graph of its own, separate from the inert `h` the server renders through. Islands, `hydrate: 'idle' | 'visible' | 'interaction'` and `renderSpaShell`'s `chunks` are declared and unbacked until that graph exists. Pages render server-side and ship 0 bytes of JS, which is correct for `site/` and incomplete for `app/`.
 
-Async data does **not** wait on any of this: `renderToHtml` awaits async components and promise children, so a page loads its data by `await`ing it. Solid's `<Suspense>` is not the seam and throws outside a Solid renderer.
+Async data does **not** wait on any of this: `renderToHtml` awaits async components and promise children, so a page loads its data by `await`ing it, and a `stream` page moves what should not hold up the first flush into a `<Hole>`.
 
 ## Dev compose
 

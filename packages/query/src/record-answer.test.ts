@@ -130,7 +130,12 @@ describe('the record envelope in the OpenAPI document', () => {
     const ok = okOf(feed(stored, true));
 
     // The envelope IS the body — no `oneOf` over "sometimes" — and it is core's description.
-    expect(bodyOf(ok)).toEqual(recordEnvelopeSchema({ oneOf: armsOf(okOf(feed(stored, false))) }));
+    const body = bodyOf(ok) as { properties: { data: Record<string, unknown> } };
+    const { data } = body.properties;
+    expect(bodyOf(ok)).toEqual(recordEnvelopeSchema(data));
+    // Under `data`, the same two arms a bare read answers, and the row the entity declares.
+    expect(data['oneOf']).toHaveLength(armsOf(okOf(feed(stored, false))).length);
+    expect(JSON.stringify(data)).toContain('"title"');
     expect(ok['headers']).toEqual(RECORDS_OPENAPI_HEADER);
   });
 

@@ -18,6 +18,7 @@ Imported by every package that renders a string.
 | `registration.ts` | are the catalogs an app SHIPS in the registry it READS? No file access. |
 | `extract.ts` | static scan + audit for `x verify`. |
 | `catalogs/en.json` | data, not code. |
+| `recording-translator.ts` | a translator that records what it could not answer: `TranslationMiss` |
 
 ## Rules
 
@@ -123,6 +124,9 @@ Imported by every package that renders a string.
 - A name is a **leaf or a branch, never both** — `parseNestedCatalog` refuses a dot inside a key,
   so `admin.detail.not-found` and `admin.detail.not-found.fix` cannot coexist. Both keys shipped
   and neither was in the catalog; the leaf is now `…not-found.cause`.
+- `extract.ts` names no framework API. A new key-bearing shape goes in `cli/src/i18n-app-key-shapes.ts` as a callee or a `properties` entry, never in `DEFAULT_CALLEES`: the framework's own scan (`scripts/lib/i18n-scan.ts`) shares this function and its `mail.*` keys live outside `catalogs/en.json`.
+- **`selectMessageKey` (`interpolate.ts`) is the one key selection.** `t()` and `recordingTranslator` both call it; a new selecting var goes there, or a mail refuses a key `t()` can answer.
+- `auditCatalogs`'s `required` is `used` plus the `reference` locale's stems. `used` stays what source names; `unused` still compares against `used` alone.
 
 ## Commands
 

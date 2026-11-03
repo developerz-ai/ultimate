@@ -107,6 +107,7 @@ export function workerToJson(worker: WorkerRecord): JsonValue {
   return {
     id: worker.id,
     host: worker.host,
+    build: worker.build ?? null,
     startedAt: worker.startedAt,
     heartbeatAt: worker.heartbeatAt,
     queues: [...worker.queues],

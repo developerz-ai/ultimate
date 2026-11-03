@@ -19,13 +19,15 @@ import {
   missingFrom,
   nestCatalog,
 } from '@ultimat3/i18n';
+import { APP_KEY_SHAPES } from './i18n-app-key-shapes';
 import { isLoudMiss, loudMiss } from './i18n-registration';
 import { posixRelative } from './posix-path';
 import { eachSourceFile, isTest } from './source-files';
 import { CATALOG_ROOT, catalogPath } from './templates/locales';
 
 /**
- * Every `t()` call the app's own source makes. `source-files.ts` (`eachSourceFile`) is the one
+ * Every key the app's own source names: a `t()` call, a mail block or subject, a push payload
+ * (`APP_KEY_SHAPES`). `source-files.ts` (`eachSourceFile`) is the one
  * glob set every text-scanning gate step already shares (`errors`, `filesize`) — a second glob
  * here would mean this command and `x verify` disagree on what "the app's source" is. Test files
  * are excluded: a fixture's `t('fixture.key')` is not a gap the shipped catalogs owe an answer to.
@@ -40,7 +42,10 @@ export async function scanSource(root: string): Promise<Extraction> {
   for await (const file of eachSourceFile(root)) {
     if (!isTest(file) && !isGuard(file)) files.push(file);
   }
-  const extraction = await extractFromFiles(files.map((file) => join(root, file)));
+  const extraction = await extractFromFiles(
+    files.map((file) => join(root, file)),
+    APP_KEY_SHAPES,
+  );
   const toRelative = (file: string): string => posixRelative(root, file);
   return {
     usages: extraction.usages.map((usage) => ({ ...usage, file: toRelative(usage.file) })),
@@ -115,7 +120,9 @@ export async function auditApp(root: string): Promise<AuditFacts> {
   const [extraction, catalogs] = await Promise.all([scanSource(root), loadCatalogs(root)]);
   const ignoreUnused = runtimeKeyPatterns(extraction);
   return {
-    report: auditCatalogs({ extraction, catalogs, ignoreUnused }),
+    // `reference` is what sees a key no static shape names: `t(\`plans.\${x}\`)` reads the same
+    // catalog in every locale, so a key `en` holds alone is a raw key on another locale's page.
+    report: auditCatalogs({ extraction, catalogs, ignoreUnused, reference: DEFAULT_LOCALE }),
     catalogs,
     extraction,
     ignoreUnused,

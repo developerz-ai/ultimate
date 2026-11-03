@@ -52,19 +52,32 @@ That ratio is the point of the table, more than the absolute numbers.
 Ultimate sizes its pool **per role**, because a `worker` draining a queue and a `web` process behind
 a CDN have different failure modes — [`packages/db/src/client.ts`](../../packages/db/src/client.ts):
 
-| Role | Pool max | Statement timeout |
-|---|---|---|
-| `web` | 20 | 10s |
-| `sync` | 10 | 10s |
-| `worker` | 8 | 120s |
-| `scheduler` | 2 | 15s |
-| `migrate` | 1 | none — it takes as long as it takes |
-| `replicator` | 4 | none |
+| Role | Pool max | Statement timeout | Idle in a transaction |
+|---|---|---|---|
+| `web` | 20 | 10s | 30s |
+| `sync` | 10 | 10s | 30s |
+| `worker` | 8 | 120s | 120s |
+| `scheduler` | 2 | 15s | 120s |
+| `migrate` | 1 | none — it takes as long as it takes | none |
+| `replicator` | 4 | none | none |
+
+A transaction idle past its bound is closed by the server, `X_DB_STATEMENT_FAILED` (`25P03`), which
+frees the slot and its row locks past a handler's hung `await`. Do slow outbound work before opening
+one.
 
 So a modest fleet — 3 `web`, 2 `sync`, 2 `worker`, 1 `scheduler` — reserves `60 + 20 + 16 + 2 = 98`
 connections at full saturation, from one app. At `max_connections: 450` that is four such apps
 before the shared server is the constraint. **Do the multiplication before you raise an HPA
 ceiling**, not after: an autoscaler that scales `web` to 30 asks for 600 connections on its own.
+
+`max` is also what the client admits, statements and pins alike. What each bound does, `As of 2026-11-02`:
+
+| Bound | Past it | What happens next |
+|---|---|---|
+| `acquireTimeoutMs` (5 s `web`/`sync`, 10 s `worker`/`scheduler`) | no slot free | `X_DB_POOL_EXHAUSTED`, for a plain statement as for a transaction: raise `DATABASE_POOL_MAX` or fix the slow statement |
+| `statement_timeout` (the table above) | the server stops the statement | `X_DB_STATEMENT_TIMEOUT`; the pool is fine |
+| the role's statement timeout + 5 s, plain statements only | no answer at all: the server or the path is gone | `X_DB_UNAVAILABLE`, `db.pool.retired` at error; **the pool is replaced**, the next statement opens a new one and a `LISTEN` is dialled again. Recovery inside the bound + 7 s, no restart. An autocommit write may have landed |
+| `net.ipv4.tcp_retries2`, a node setting | the kernel gives up on a silent socket | about 15 minutes at the default `15`. Lower it (`8` is about 100 s) to bound what no statement watches: a transaction pinned while the gate still has room (pins that fill it, each past the bound, replace the pool on the next refused acquire). A complement, not the fix: a path that still ACKs never reaches it, and nothing checks the setting |
 
 ### Read replicas
 
@@ -88,21 +101,55 @@ warning. A non-zero `fallbacks` that is not a deploy is the standby telling you 
 
 ### Pooling, and the trap under it
 
-A transaction-mode pooler hands a client a *different backend per transaction*. If the driver uses
-named server-side prepared statements, a `PREPARE` and its `EXECUTE` can land on different backends
-and the query fails with SQLSTATE **`26000` — prepared statement does not exist**. It is
-deterministic once several backends are warm, and it looks like a driver bug until you know.
+**`DATABASE_POOLER=session|transaction` says a pooler is in the path, and unset says none is.**
+`As of 2026-11-02`: a switch and never a detection, because one pooler refuses libpq `options` at
+startup and another accepts and drops them, so nothing fails to retry on. Every process reads it
+once; one image, the URL and the switch change per environment. Another value refuses the boot
+(`X_ENV_MISSING`).
 
-Ultimate queries through `Bun.SQL`'s `unsafe(text, values)` path — parameterised, not a named
-server-side prepare — which is the shape that survives transaction pooling. **Verify it against your
-Bun version before you pool in transaction mode.** If in doubt, session mode is correct and costs
-you only multiplexing.
+| Path | `DATABASE_POOLER` | The bounds | What runs |
+|---|---|---|---|
+| direct | unset | sent as libpq `options` on every connection | every role, the wake |
+| `pool_mode = session` | `session` | `alter role`, below | every role, the wake |
+| `pool_mode = transaction` | `transaction` | `alter role`, below | `web`, `sync`, `scheduler`; `worker` on the poll. `migrate`, `replicator` and any step that applies a migration refuse before a socket: `X_DB_POOLER_SESSION_REQUIRED` |
+| a stock pooler, switch unset | unset | refused: `X_DB_POOLER_OPTIONS_REFUSED`, on the first statement, every role | nothing, until the switch is set |
+| a pooler that ignores `options`, switch unset | unset | **gone**: `statement_timeout = 0`. `X_DB_STATEMENT_BOUND_LOST`, one error line at boot and a `x doctor` finding, never a refusal | everything, unbounded |
+
+Run once, direct to the server, per database user. Per-role bounds mean one database user per role,
+with the numbers from the table under [Connection arithmetic](#connection-arithmetic):
+
+```sql
+alter role <user> set statement_timeout = '10s';
+alter role <user> set idle_in_transaction_session_timeout = '30s';
+```
+
+**Then reopen the pooler's server connections.** A role setting applies at login, and a pooler holds
+logins it opened before the `alter`: probed 2026-11-02, one pooler read back `10s` on a connection
+opened after it, another read `0` on connections from its own boot. `x doctor --json` reads the
+session in force: `data.statementBound`. With a pooler named, only a `0` on a role that has a bound
+is reported, because one user may serve two roles.
+
+**A statement queued in the pooler is not a dead one.** `statement_timeout` starts once the pooler
+assigns a backend, so with a pooler named the client's unanswered-statement deadline (role bound +
+5 s, then `X_DB_UNAVAILABLE` and a new pool) grows by `postgresClient({ poolerWaitMs })`, default
+120 s — PgBouncer's `query_wait_timeout`. Set the two to the same number. A lost bound (`0`) still
+leaves that deadline on the role's number: a healthy statement longer than it fails, and the pool
+it ran on with it, which is one more reason to apply the `alter role` lines.
+
+Both modes survive for the same reason: `prepare: false`
+([`packages/db/src/bun-sql.ts`](../../packages/db/src/bun-sql.ts)) sends unnamed statements, so no
+`PREPARE` is left on a backend the pooler has taken back, and SQLSTATE `26000` cannot occur. Transactions pin one
+connection each, so `BEGIN`, its statements, `SET LOCAL` and `COMMIT` stay on one backend. Scheduler
+leadership is a lease row, never an advisory lock, so it does not care. A session advisory lock
+through a transaction pooler excludes nobody: two migrators both read `true` on one backend, and
+that is why `migrate` is refused rather than warned.
 
 **The job queue's wake does not cross a transaction-mode pooler.** A `worker` pod holds one
 `LISTEN` session so a job another pod commits starts in milliseconds
 ([Jobs and workflows](../../wiki/Jobs-And-Workflows.md#idle-cost-and-pickup-latency)). In
 transaction mode the `LISTEN` lands on a backend the pooler takes back at once and nothing is
-ever delivered.
+ever delivered. Allowed all the same, because refusing would stop a fleet for a latency, and
+`x doctor` says it on a `worker`: "wake off, pickup within `idlePollMaxMs`".
 
 | Through | The wake | Pickup of a job another pod enqueued, worker idle | Idle claims a minute, per loop |
 |---|---|---|---|
@@ -111,7 +158,8 @@ ever delivered.
 
 Nothing is lost either way: the poll is the guarantee and the wake only shortens it. To keep the
 wake behind a transaction pooler, point the `worker` role's `DATABASE_URL` at the primary or at a
-session-mode pool — the session costs one connection per worker pod, outside the role's pool.
+session-mode pool, with `DATABASE_POOLER` unset or `session` for that role — the session costs one
+connection per worker pod, outside the role's pool.
 
 Three more pooler lessons, each paid for:
 

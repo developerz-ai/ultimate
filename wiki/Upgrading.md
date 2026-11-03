@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 29.x → 30.0.0 | **29** so far — the rows below are the plan's first sweeps: a write past its deadline that rolls back, a closed-transaction refusal, a two-release column drop, **same-tenant composite keys that need one `x db gen`**, `upsertAll` overwriting only what it names, every agent and MCP call held by `mcpConfirmations`, `'null'` refused in `cors.origins`, `isr` and `static` that render as nobody, a query-free `isr` key by default, and three required interface changes | `[Unreleased]` in `CHANGELOG.md`, and the walkthrough below in order |
+| 29.x → 30.0.0 | **56** so far — the rows below are the plan's first two waves: a write past its deadline that rolls back, a closed-transaction refusal, a two-release column drop, **same-tenant composite keys that need one `x db gen`**, `upsertAll` overwriting only what it names, every agent and MCP call held by `mcpConfirmations`, `'null'` refused in `cors.origins`, `isr` and `static` that render as nobody, a query-free `isr` key by default, a pool that refuses past `acquireTimeoutMs`, an upload grant bound to its declared size, mail that refuses an unresolved key, a problem document with `retry`, a worker retire on by default, and required `StorageDriver`, `JobDriver` and `PoolProfile` members | `[Unreleased]` in `CHANGELOG.md`, and the walkthrough below in order |
 | 28.x → 29.0.0 | **2** — **Bun 1.4.4 as the floor**; a `WORKER_QUEUES` entry the app does not know refuses the worker's boot | the `29.0.0` section, in order |
 | 27.x → 28.0.0 | **2** — **Bun 1.4.3 as the floor**; `@ultimat3/ui/jsx-probe` and its `probe`/`unprobe` removed | the `28.0.0` section, in order |
 | 26.x → 27.0.0 | **2** — `AsyncContext.exit` required; **`/_storage` and `/media` refuse a key outside every `org/<id>/` prefix unless `defineStorage({ shared })` lists its prefix**, and `Storage.isShared` required | the `27.0.0` section, in order |
@@ -78,17 +78,17 @@ Each entry changes a surface the table below covers.
 
 ## 29.x → 30.0.0, entry by entry
 
-`As of 2026-11-02`, unpublished: `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by package, lowest tier first. No legacy path, no codemod, no shim. A later slice appends its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)` after the dash.
+`As of 2026-11-03`, unpublished: `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by package, lowest tier first. No legacy path, no codemod, no shim. A later slice appends its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)` after the dash.
 
 ### The upgrade, top to bottom
 
 | # | Do | What you see until you do | Entries |
 |---|---|---|---|
 | 1 | commit, then `bunx @ultimat3/cli@latest upgrade --json`: it pins every `@ultimat3/*`, raises the Bun floor, installs and runs the gate | `X_UPGRADE_DIRTY_TREE` on a dirty tree | — |
-| 2 | `x db gen "same-tenant keys"`, commit `packages/db/migrations` and `packages/db/schema/`. A validate failing `X_DB_FOREIGN_KEY_VIOLATION` found rows already pointing across tenants: decide those rows, or state `crossTenant: '<reason>'` on an edge that means it | `X_DB_DRIFT` from `drift`, and `X_SCHEMA_DUMP_DRIFT` for the new framework columns. An entity whose `{ table }` differs from its name moves its keys to the table they always meant in the same migration | 8, 25 |
-| 3 | `x verify --only typecheck` and close every error: a `Date` off a step result, `step.waitForEvent` with no `schema`, a hand-written `TotpReplayGuard` or `DeliveryLedger`, a hand-built `ReferenceDescription` | a compile error at each site | 8, 16, 21, 22, 25 |
+| 2 | `x db gen "same-tenant keys"`, commit `packages/db/migrations` and `packages/db/schema/`. A validate failing `X_DB_FOREIGN_KEY_VIOLATION` found rows already pointing across tenants: decide those rows, or state `crossTenant: '<reason>'` on an edge that means it | `X_DB_DRIFT` from `drift`, and `X_SCHEMA_DUMP_DRIFT` for the new framework columns. An entity whose `{ table }` differs from its name moves its keys to the table they always meant in the same migration. `X_DB_DRIFT` from a dump column no snapshot records is an edited migration: restore it | 8, 25, 46, 53 |
+| 3 | `x verify --only typecheck` and close every error: a `Date` off a step result, `step.waitForEvent` with no `schema`, a hand-written `TotpReplayGuard`, `DeliveryLedger`, `JobDriver` or `StorageDriver`, a hand-built `ReferenceDescription` or `PoolProfile`, a `Record<StageName, …>`, `'queue-depth'`, `REPLAYED_HEADER` from `@ultimat3/action`, `requestedUrls()`, `suspenseBoundaries`, `csrfBlocked` with two arguments, a read of `DownloadFile.body` | a compile error at each site | 8, 16, 21, 22, 25, 30, 32, 35, 39, 40, 43, 44, 45, 47, 50 |
 | 4 | `x verify --only manifest`: correct a misspelt name in `mcpConfirmations({ tools })`, or expose the action, or build a hand-written server at module scope in `apps/<app>/mcp.ts`. For a role load, add the import its fix names to `apps/web/api/index.ts`, or move the declaration into a module that imports no `.tsx` and no stylesheet | `X_MCP_CONFIRMATION_TOOL_UNKNOWN`, `X_ROLE_LOAD_INCOMPLETE` | 18, 27 |
-| 5 | `x verify --only unit,contract,job`: move each fixture the new refusals name | `X_DB_TRANSACTION_CLOSED`, `X_INVARIANT_VIOLATED`, a memory-driver fixture wiring two tenants refused | 3, 4, 8–14, 19, 20 |
+| 5 | `x verify --only unit,contract,job`: move each fixture the new refusals name | `X_DB_TRANSACTION_CLOSED`, `X_INVARIANT_VIOLATED`, a memory-driver fixture wiring two tenants refused, `X_N_PLUS_ONE_QUERY` from a memory-backed loop now counted, `X_MAIL_KEY_MISSING` from a mail test | 3, 4, 8–14, 19, 20, 41, 48 |
 | 6 | `grep -rnE "render: '(isr\|static)'" apps/`: a page varying per visitor becomes `ssr`, and every parameter a `load` or page reads goes in `revalidate: { query: ['<name>'] }` | nothing fails: a signed-in `load` sees nobody, and a query the key dropped serves one document for every value | 23, 24 |
 | 7 | `grep -rnE "upsertAll\|seed\.upsert" apps/ packages/`: name each column a collision must overwrite. A wide `insertAll` that relied on partial progress splits its own batch | nothing fails: a timestamp stops moving on re-upsert, or a failed batch leaves no rows | 11, 12, 13 |
 | 8 | read `mcpConfirmations({ tools })` against every `agent({ tools })` and every MCP server: the agent's `output` reports the pending confirmation id, and a tool that must run unconfirmed leaves `tools` | the write answers `X_MCP_CONFIRMATION_PENDING` and writes nothing | 17, 26 |
@@ -97,10 +97,18 @@ Each entry changes a surface the table below covers.
 | 11 | `grep -rnE "onShutdown\|retry\(" apps/`: reorder a close hook that depends on running first; wrap a retry or a write that must outlive its caller in `runToCompletion(fn)` | nothing fails: a write or a retry stops with its caller | 1, 2, 3 |
 | 12 | `grep -rn "'null'" apps/ packages/`, and read each list built from `URL.parse(…).origin`: list real origins with their scheme | `X_CORS_CONFIG_INVALID` at boot | 28 |
 | 13 | read each `HeadTag` with a non-http(s) `href`: serve an inline SVG favicon from `site.favicon`, or a same-origin path under `assets/` | nothing fails in production; `head.attribute_dropped` once in dev | 29 |
+| 14 | `x manifest`, commit `openapi*.json` and `x.manifest.json`, once, after every other edit | `X_MANIFEST_STALE` from `manifest` | 38, 42, 49 |
+| 15 | `x verify --only manifest` for `X_JOB_OUTLASTS_DRAIN`: raise `drain.workerRetireMs` or lower the job's `timeout` | `X_JOB_OUTLASTS_DRAIN` naming the job, its limit and the budget | 52 |
+| 16 | `x verify --only i18n`, then `x i18n sync <locale>` per locale it names, and translate what it seeds. Add the framework's `mail.*` keys `meta.keys` lists to `packages/i18n/catalogs/<locale>.json` by hand. A subject interpolates only the payload's top-level scalars: put each `{slot}` there | `X_CATALOG_MISSING_KEYS`; `X_MAIL_KEY_MISSING` from `send()` | 33, 34, 48 |
+| 17 | `x verify --only boundaries`: move each `packages/*` file's runtime import of `apps/*` down. A scaffold from before 30.0.0 has two: `packages/mcp/src/index.ts` (`export const appMcp = () => defineAppMcp({ name, include: 'exposed' })`, no import of `apps/web/api/health`) and `packages/db/src/seed.ts` (`const DEMO_ORG_LABEL = 'org:demo';`) | `X_BOUNDARY_PACKAGE_TO_APP` | 55 |
+| 18 | `x g query` / `x g backfill` take `--feature <slice>`; a new table is `x g resource <name>` | `X_FEATURE_REQUIRED`, zero files written | 54 |
+| 19 | every upload action's input carries `size: file.size`; every `disk.signedUrl(key, { method: 'PUT', maxBytes })` on s3 adds `contentLength: file.size`; `S3_FORCE_PATH_STYLE` is `0`, `1` or blank in every environment | `X_STORAGE_UPLOAD_SIZE_UNDECLARED`; `X_CONFIG_INVALID` at boot; a 403 `SignatureDoesNotMatch` for a client PUTting another length | 36, 37, 56 |
+| 20 | **before the deploy:** the autoscaler adapter gains `max by (queue) (queue_demand)` and an app's own chart its worker HPA metric; set `drain.workerRetireMs` (or `0` for the old stop) and re-deploy with `x deploy --method helm`. A scaffolded chart's `preStop` arrives by editing `docker/helm/templates/_helpers.tpl`: `const end = Date.now() + {{ int $cfg.retireSeconds }} * 1000; for (let n = 1; Date.now() < end; n++)` | the HPA reads a metric nothing publishes; an old worker Terminating up to an hour while it holds a job | 30, 51 |
+| 21 | **before the deploy:** a transaction's slow outbound await moves before `withTransaction`; a pod behind a pooler sets `DATABASE_POOLER` and both bounds with `alter role`, as `X_DB_POOLER_OPTIONS_REFUSED` prints; size `DATABASE_POOL_MAX` from the pool gauges | `X_DB_STATEMENT_FAILED` (`25P03`) on an idle transaction; `X_DB_POOL_EXHAUSTED` where a statement used to queue | 31, 32 |
 
 ### Entry by entry
 
-Tier 0 — `@ultimat3/core` (1–2). Tier 1 — `@ultimat3/db` (3–5), `@ultimat3/storage` (6–7). Tier 2 — `@ultimat3/entity` (8–14), `@ultimat3/http` (15), `@ultimat3/auth` (16). Tier 3 — `@ultimat3/action` (17–20), `@ultimat3/jobs` (21–22). Tier 4 — `@ultimat3/render` (23–24), `@ultimat3/notify` (25). Appended after the tier order: `@ultimat3/mcp` (26–27), `@ultimat3/http` (28), `@ultimat3/render` (29).
+Tier 0 — `@ultimat3/core` (1–2). Tier 1 — `@ultimat3/db` (3–5), `@ultimat3/storage` (6–7). Tier 2 — `@ultimat3/entity` (8–14), `@ultimat3/http` (15), `@ultimat3/auth` (16). Tier 3 — `@ultimat3/action` (17–20), `@ultimat3/jobs` (21–22). Tier 4 — `@ultimat3/render` (23–24), `@ultimat3/notify` (25). Appended after the tier order: `@ultimat3/mcp` (26–27), `@ultimat3/http` (28), `@ultimat3/render` (29). Appended by the second wave, by tier: `@ultimat3/core` (30), `@ultimat3/db` (31–32), `@ultimat3/i18n` (33–34), `@ultimat3/storage` (35–37), `@ultimat3/http` (38–40), `@ultimat3/entity` (41), `@ultimat3/query` (42–43), `@ultimat3/action` (44), `@ultimat3/jobs` (45–46), `@ultimat3/render` (47), `@ultimat3/mail` (48), `@ultimat3/manifest` (49), `@ultimat3/testing` (50), `@ultimat3/cli` (51–56).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
@@ -133,6 +141,33 @@ Tier 0 — `@ultimat3/core` (1–2). Tier 1 — `@ultimat3/db` (3–5), `@ultima
 | 27 | a name in `mcpConfirmations({ tools })` | no exposed action, exposed query, MCP tool or in-process tool answers to it: `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at `manifest`. Correct the spelling, or expose the action. A hand-written tool counts once its `defineAppMcp` has run when the app loads, so build that server at module scope in `apps/<app>/mcp.ts` |
 | 28 | `cors.origins` containing `'null'` | you list it, or build the list from `URL.parse('localhost:3000').origin` (no scheme): `X_CORS_CONFIG_INVALID` at boot, with or without credentials. List real origins with their scheme: `configureHttp({ cors: { origins: ['http://localhost:3000'] } })`. A public, credential-free API uses `origins: ['*'], credentials: false` |
 | 29 | a `HeadTag` `href` | a `link` carries `data:image/svg+xml`, any other `data:` type, or a scheme outside `http`, `https`, `mailto`, `tel`, `sms`: it prints no `href` (`android-app:` and `ios-app:` stay on `rel="alternate"`; a raster `data:image/` stays). Serve the file: `site.favicon` for an icon, or a same-origin path under `assets/`. `head.attribute_dropped` names the tag and attribute in dev |
+| 30 | the `ScalingSignal` `'queue-depth'` | you name it, or an adapter rule reads `queue_depth` for the worker HPA: it is `'queue-demand'`, `SCALING_METRICS['queue-demand']` is `queue_demand`. Add the adapter rule `max by (queue) (queue_demand)`. `queue_depth` stays, the ready-only gauge for a backlog alert |
+| 31 | a plain statement behind a full pool | you relied on it queueing past `acquireTimeoutMs`: it answers `X_DB_POOL_EXHAUSTED`. Raise `DATABASE_POOL_MAX` or fix the slow statement. A statement unanswered past the role's bound plus 5 s is `X_DB_UNAVAILABLE` and the pool is replaced; an autocommit write may have landed, and a job worker re-runs that attempt, so make such a write idempotent |
+| 32 | a transaction left idle, `PoolProfile` | a transaction awaits slow outbound work: past 30 s (`web`, `sync`) or 120 s (`worker`, `scheduler`) the server closes it, `X_DB_STATEMENT_FAILED` (`25P03`). Do that work before opening it. A hand-built `PoolProfile` adds `idleInTransactionMs`. Behind a pooler, set `DATABASE_POOLER` and both bounds with `alter role` |
+| 33 | keys only a mail or a push names | `x verify`'s `i18n` step reports them: `x i18n sync <locale>`, then translate |
+| 34 | an `en` key another locale lacks | always, for a key reached only through a template literal: `x i18n sync <locale>`. A `⟦…⟧` marker over such a key stays missing until replaced |
+| 35 | a third-party `StorageDriver` | you wrote one: implement `streamRange(key, [first, last])`, reading no byte before `first`, and `putStream(key, stream, { maxBytes, … })`, storing nothing past `maxBytes` |
+| 36 | `grantUpload` | your own action builds the grant: its input carries `size: file.size` (`uploadFile` already sends it), or `X_STORAGE_UPLOAD_SIZE_UNDECLARED`. `grant.maxBytes` is now that size, not the policy's; an s3 URL accepts exactly that many bytes, so another length is 403 `SignatureDoesNotMatch` |
+| 37 | `disk.signedUrl(key, { method: 'PUT', maxBytes })` on s3 | you call it: refused. Add `contentLength: file.size`, or drop `maxBytes` for a URL that binds nothing |
+| 38 | the problem document's `retry` | a golden test pins a whole body, or a middleware adds `retry: errorRetry(error)`: the member is on every document, 401 and scope 404 included. Add it to the test; delete the middleware. `x manifest` regenerates `openapi.json`'s `Problem` |
+| 39 | `PIPELINE_STAGES`, `StageName` | a `Record<StageName, …>`: add `compress`. A handler whose answer must not be coded sets `no-transform` |
+| 40 | `csrfBlocked(pathname, reason, ip, origin)` | you call it: pass the request's `ip` and `origin` |
+| 41 | `memoryRepo` and the `statements` fixture | a memory-backed test that uses `statements` loops: it now fails `X_N_PLUS_ONE_QUERY` / `X_N_PLUS_ONE_WRITE`. `preload()`, or `expectedQueryLoop('<why>', …)` |
+| 42 | a read's published `rows:` | an app declaring `rows:` finds `openapi*.json` stale: `x manifest`, commit. Later, a member removed, retyped or made optional fails `contract-diff` with `X_MANIFEST_BREAKING` until the app's major moves |
+| 43 | `DownloadFile.body` | code reads the field rather than handing it over: narrow the function form, `(range?) => BodyInit`, whose `size` is required |
+| 44 | `REPLAYED_HEADER` | `import { REPLAYED_HEADER } from '@ultimat3/action'`: import it from `@ultimat3/core` |
+| 45 | a custom `JobDriver` | implement `demand(): Promise<readonly QueueDemand[]>`: per queue, the running rows not held by a worker whose live registry row says it drains, plus the due `ready`/`delayed`/`suspended` rows of an unpaused queue; list only queues above 0, sorted by code unit |
+| 46 | `x_job_workers.build` | always, for the dump: `x db gen`, commit `packages/db/schema/` |
+| 47 | `suspenseBoundaries`, `ModeSpec.needsSuspense` | you pass or read them (TS2353 / TS2339): delete the key or the read. To stream, wrap the slow read: `<Hole fallback={<Skeleton lines={3} />}>{readRows}</Hole>` from `@ultimat3/render` |
+| 48 | `send()` | a mail holds a key the locale lacks, a catalog value still `⟦…⟧`, or a `{slot}` the payload's top-level scalars do not carry: `X_MAIL_KEY_MISSING`, a framework `mail.*` mail included. Add the key, translate it, or put the field at the top level |
+| 49 | `QueryFact.rows`, `Manifest.mounts` | an app declaring `rows:` or a mount: `x manifest`, commit. Later, a name dropped from a mount's `scopes` or a changed `prefix` fails `contract-diff` with `X_MANIFEST_BREAKING` until the app's major moves |
+| 50 | `requestedUrls()` | you call it: `requestLog().map((call) => call.url)` answers the same list. `NetworkSnapshot.seen` is `NetworkSnapshot.log` |
+| 51 | the worker retire | always, on a chart: a rollout leaves an old worker Terminating while it holds a job, for up to `retireSeconds`. `drain.workerRetireMs: 0` keeps the old stop. An app's own chart keeps its values until `x deploy` sets the retire |
+| 52 | a job's `timeout` | it outlasts the worker's budget: `X_JOB_OUTLASTS_DRAIN` at `manifest`. Raise `drain.workerRetireMs`, or lower the `timeout` |
+| 53 | `packages/db/schema/04_tables/` against the newest snapshot | a column one holds and the other does not: an edited migration. Restore the file, then `x db gen` |
+| 54 | `x g query`, `x g backfill` | you named no slice: pass `--feature <slice>`, or `x g resource <name>` for a new table |
+| 55 | a `packages/*` runtime import of `apps/*` | you have one: move the code down. `import type` passes, and `packages/db/src/` may read an entity module |
+| 56 | `S3_FORCE_PATH_STYLE` | it holds anything but `0`, `1` or blank: `X_CONFIG_INVALID` at boot. Write `1` |
 
 ### Entry 25: a hand-written `DeliveryLedger`
 
@@ -157,6 +192,17 @@ A `sending` row is no longer re-claimable at once: it is held for `reclaimAfterM
 | a websocket upgrade from an unlisted origin is refused whatever `sec-fetch-site` it carries | add a sibling host to `allowedOrigins` |
 | stored `isr` entries re-render once, for the new key | nothing |
 | an `isr` route's `isr.query.undeclared` log line is gone | remove an alert keyed on it |
+| a public text answer of 1 KiB to 256 KiB with a declared length leaves as gzip with a weak `etag`; a signed-in one only when `immutable` | a handler that must not be coded sets `no-transform` |
+| `html`, `textResponse` and `jsonResponse` set `content-length` | a handler that rewrites such a body drops the header |
+| a mount declaring `rateLimit` lifts the token's per-route cap of 120 a minute, and a mount's 422s and pipeline 403s spend the allowance | check the mount's number is the ceiling you meant |
+| `Link: rel="successor-version"` on a mount names the mounted path, or is absent when this token cannot follow it | nothing |
+| `rpc` or `queryClient` pointed at a mount's prefix never reached it | call a mount from its own OpenAPI document |
+| `DEFAULT_CORS` allows and exposes more headers | an app with its own `allowHeaders` or `exposeHeaders` adds the new names itself |
+| `RemoteActionError.meta` and a `problemError`'s `meta` gain `requestId` | a `toEqual` on a whole `meta` gains the key |
+| a rendered `fix:` prints `bunx x` where the app's own bin exists | an agent parsing the string for `x ` adjusts |
+| a positional `x deploy <word>` is refused | `x deploy --image <ref>`, or `x deploy verify` |
+| `x deploy verify` with no `DATABASE_URL` passes with `graded: false` and reads no queue | give the step the database credentials to grade the workers |
+| `x new`'s `docker/Dockerfile.dockerignore` drops `**/*.test.ts`, `**/*.test.tsx` and `docs` | optional: append the three lines to your own; `!docs/<path>` re-includes a served file |
 
 ## 28.x → 29.0.0, entry by entry
 

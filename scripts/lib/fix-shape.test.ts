@@ -19,6 +19,7 @@ describe('a runnable command', () => {
     'export DATABASE_URL=postgres://localhost/app',
     '`x verify --json`',
     'curl -sS http://localhost:3000/_x',
+    "printf '%s\\n' '**/*.test.ts' >> Dockerfile.dockerignore && bun run scripts/image-contract.ts",
   ])('%s', (fix) => {
     expect(fixShape(fix)).toBe('command');
   });

@@ -150,33 +150,18 @@ describe('per-mode registration invariants', () => {
     expect(SURFACE_SPECS.site.allowedModes).toEqual(['static', 'isr', 'ssr']);
   });
 
-  test('stream requires at least one suspense boundary', () => {
+  test('a stream route with no hole registers: it pays nothing and streams one flush', () => {
     const config: RouteConfig = defineRoute({
       render: 'stream',
       offline: 'runtime',
       hydrate: 'idle',
       meta,
     });
-
-    let fix = '';
-    try {
-      assertModeInvariants(config, {
-        file: 'apps/web/app/dashboard/page.tsx',
-        path: '/dashboard',
-        surface: 'app',
-        suspenseBoundaries: 0,
-      });
-    } catch (error) {
-      fix = fixOf(error);
-    }
-    expect(fix).toContain('<Suspense');
-
     expect(() =>
       assertModeInvariants(config, {
         file: 'apps/web/app/dashboard/page.tsx',
         path: '/dashboard',
         surface: 'app',
-        suspenseBoundaries: 2,
       }),
     ).not.toThrow();
   });
@@ -195,7 +180,6 @@ describe('surface-level mode rules', () => {
       registerRoute({
         file: 'apps/web/site/pricing/page.tsx',
         config: streamConfig,
-        suspenseBoundaries: 1,
       }),
     ).toThrow(RouteModeInvalidError);
   });
@@ -369,7 +353,6 @@ describe('prerender belongs to a prerenderable mode', () => {
         file: 'apps/web/app/feed/page.tsx',
         path: '/feed',
         surface: 'app',
-        suspenseBoundaries: 1,
       });
     } catch (error) {
       fix = fixOf(error);
@@ -388,7 +371,6 @@ describe('prerender belongs to a prerenderable mode', () => {
           file: 'apps/web/site/posts/page.tsx',
           path: '/posts',
           surface: 'site',
-          suspenseBoundaries: 0,
         }),
       ).not.toThrow();
     }

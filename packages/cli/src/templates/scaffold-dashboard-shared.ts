@@ -5,12 +5,8 @@
 export const DASHBOARD_DIR = 'apps/web/app/dashboard';
 
 export const routeConfig = (load: string): string => `export const config = defineRoute({
-  // 'ssr', not 'stream', and this is not a downgrade: 'stream' needs a boundary to stream into,
-  // and the framework has no hole marker yet. Solid's <Suspense> is not it — it throws outside a
-  // Solid renderer, and the server JSX factory is inert on purpose. A scaffolded 'stream' route
-  // therefore failed x routes with X_ROUTE_MODE_INVALID on the first run, printing a fix nobody
-  // could follow. Ship the mode that works. Async data needs no boundary: await it in the page.
-  render: 'ssr',
+  // The app/ default: the shell flushes first, and a read moved into a <Hole> arrives after it.
+  render: 'stream',
   // 'visible' for the one island on this page, the theme toggle in the header.
   hydrate: 'visible',
   offline: 'runtime',

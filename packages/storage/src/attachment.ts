@@ -127,9 +127,9 @@ export interface PromoteAttachmentInput {
   readonly orgId: string;
   readonly target: AttachmentTarget;
   /**
-   * The policy the upload was GRANTED under — required, never defaulted. On a bucket-backed disk
-   * the presigned PUT carries no size, so `policy.maxBytes` bound nothing until this call measured
-   * the object; a default here would silently replace an app's own ceiling with the framework's.
+   * The policy the upload was GRANTED under — required, never defaulted. A URL an app signed itself
+   * may carry no size, so `policy.maxBytes` binds nothing until this call measures the object; a
+   * default here would silently replace an app's own ceiling with the framework's.
    */
   readonly policy: UploadPolicy;
 }
@@ -191,8 +191,8 @@ async function assertCopyIsWhatWasJudged(
  * object stays under `pending/` for `sweepOrphans` — never at a key a row points to. `stat` and
  * not `get`: this is the call that learns the size, so it cannot be one that buffers it.
  *
- * SNIFFED before it moves, off a head window. A provider's presigned PUT binds method and expiry
- * only, so a bucket holds whatever bytes and whatever type the uploader sent, and this is the first
+ * SNIFFED before it moves, off a head window. A provider's presigned PUT binds method, expiry and at
+ * most a size, so a bucket holds whatever bytes and whatever type the uploader sent, and this is the first
  * code that looks: bytes that contradict the stored type are `X_STORAGE_TYPE_REJECTED`, and stay
  * pending too. A ranged read because `maxGetBytes` bounds the range, never the object. An overwrite
  * after that read is `X_STORAGE_OBJECT_CHANGED`, or the copy itself is judged, and never lands.

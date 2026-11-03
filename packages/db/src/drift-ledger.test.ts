@@ -122,7 +122,7 @@ describe('checkDrift is the post-migrate verification', () => {
         table: 'posts',
         column: 'hotfix',
         cause: 'table "posts" has column "hotfix" not present in any migration',
-        fix: 'x db gen "add hotfix"',
+        fix: 'x db gen "add hotfix"   # declare hotfix on its entity first, or this writes nothing; no entity should hold it: restore the edited migration, then x db reset',
       },
     ]);
   });

@@ -24,14 +24,29 @@ describe('csrfBlocked', () => {
   const hint = "curl -H 'sec-fetch-site: same-origin'";
 
   test.each(['127.0.0.1', '::1', '::ffff:127.0.0.1'])('%s is told the local header', (ip) => {
-    expect(csrfBlocked('/x', 'r', ip).fix).toStartWith(hint);
+    expect(csrfBlocked('/x', 'r', ip, 'http://localhost:3000').fix).toStartWith(hint);
+  });
+
+  // It hardcoded `http://localhost:3000/the-path-above`: under `PORT=4000` nothing listens there.
+  test("the local fix names the request's own origin and path", () => {
+    const fix = csrfBlocked('/api/posts', 'r', '127.0.0.1', 'http://localhost:4000').fix;
+    expect(fix).toContain('-X POST http://localhost:4000/api/posts ');
+    expect(fix).not.toContain('the-path-above');
+    expect(fix).not.toContain(':3000');
+  });
+
+  // A URL's path keeps a quote and a dollar sign, and the Host header is the caller's.
+  test('a path the shell would read never reaches the line', () => {
+    const fix = csrfBlocked("/a'$(id)", 'r', '127.0.0.1', 'http://localhost:4000').fix;
+    expect(fix).toContain("-X POST '<the url of this request>' ");
+    expect(fix).not.toContain('$(id)');
   });
 
   // Telling a remote sender which header passes is the one thing this branch must not do.
   test.each(['64:ff9b::7f00:1', '2002:7f00:1::', '::127.0.0.1', '10.0.0.1'])(
     '%s is not a local client',
     (ip) => {
-      expect(csrfBlocked('/x', 'r', ip).fix).not.toContain('sec-fetch-site');
+      expect(csrfBlocked('/x', 'r', ip, 'https://app.test').fix).not.toContain('sec-fetch-site');
     },
   );
 });

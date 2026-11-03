@@ -9,8 +9,8 @@
 // IMPORTS, and it never completes a module somebody else owns.
 
 import { describe, expect, test } from 'bun:test';
-import { INVOICE_ENTITY } from '../scaffold-fixture';
 import { actionFiles } from './action';
+import { entityFiles } from './entity';
 import { exportsUnknown, inlineReexports, sliceExports } from './slice-foundation';
 
 const HANDWRITTEN_POLICY = `import { can } from '@ultimat3/policy';
@@ -27,6 +27,9 @@ const HANDWRITTEN_REPO = 'export const listNotes = (): readonly string[] => [];\
 const SCAFFOLD_REPO = 'export async function byId(id: string) { return undefined; }\n';
 
 const slice = { surfaceDir: 'apps/web/app', feature: 'blog' } as const;
+const BLOG_ENTITY = String(
+  entityFiles('blog', slice).find((file) => file.path.endsWith('/entity.ts'))?.contents,
+);
 const pathsOf = (files: ReturnType<typeof actionFiles>): readonly string[] =>
   files.map((file) => file.path);
 const sourceOf = (files: ReturnType<typeof actionFiles>, suffix: string): string => {
@@ -74,7 +77,8 @@ describe('unit · x g action into a hand-written slice refuses what it cannot co
 describe('unit · x g action writes only what an action needs', () => {
   const existing = {
     ...slice,
-    sliceEntity: INVOICE_ENTITY,
+    // This slice's own entity: one under another name gets no lookup (`generate-foreign-entity`).
+    sliceEntity: BLOG_ENTITY,
     sliceRepo: SCAFFOLD_REPO,
     slicePolicy: SCAFFOLD_POLICY,
   };

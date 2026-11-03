@@ -305,6 +305,12 @@ export interface QueueStats {
   readonly oldestReadyMs: number;
 }
 
+/** What one queue's fleet must hold: `JobDriver.demand`. */
+export interface QueueDemand {
+  readonly queue: string;
+  readonly demand: number;
+}
+
 export interface HeartbeatOptions {
   readonly visibilityTimeoutMs: number;
   /** Renew only if this worker is still the claimant. Omit and any claimant matches. */
@@ -336,6 +342,14 @@ export interface JobDriver {
    */
   heartbeat(jobId: string, options: HeartbeatOptions): Promise<boolean>;
   stats(): Promise<readonly QueueStats[]>;
+  /**
+   * The jobs a live worker of this fleet must hold, per queue: running on a worker that still
+   * serves, plus every due row of an unpaused queue. Only a queue with some is listed. What
+   * `queue_demand` publishes and an autoscaler sizes by. Required since 30.0.0: `ready + running`
+   * off `stats()` cannot tell a draining worker's runs from a serving one's, and the HPA sized on it.
+   * A claimer no live registry row says drains is counted, so a driver with no registry counts all.
+   */
+  demand(): Promise<readonly QueueDemand[]>;
   /**
    * Optional, like `introspect`: `x_backfills` records what a `backfill()` pass has already swept,
    * and a driver without one runs backfills with no bookkeeping rather than refusing them. It

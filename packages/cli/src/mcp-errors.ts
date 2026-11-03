@@ -125,7 +125,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_CLI_UNEXPECTED: 'x doctor --json',
   // `-p .`: an app root has no `references`, so the gate's own step runs this form (#450).
   X_TYPECHECK_FAILED: 'bunx tsc -p . --pretty false',
-  X_LINT_FAILED: 'bunx biome check --write .',
+  X_LINT_FAILED: 'bunx biome check .',
   X_TEST_FAILED: 'x test --json   # the finding carries the exact bun test invocation that failed',
   // The same two edits `vanishedSuiteFinding` names, verbatim, so both surfaces of this code hand
   // an agent one instruction. Neither edit is scripted here on purpose: a command that rewrites
@@ -325,6 +325,26 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_UPGRADE_INSTALL_FAILED:
     'git restore .   # undoes the pins, since the tree was clean; then fix what the cause names and re-run: x upgrade --json',
   X_UPGRADE_GATE_UNREADABLE: 'bun node_modules/@ultimat3/cli/src/bin.ts verify --json',
+  X_DEPLOY_BUILD_UNSTAMPED:
+    "x build --target docker --json   # stamps BUILD_ID into the image; or set BUILD_ID in the image's environment",
+  X_DEPLOY_UNSTABLE:
+    'x deploy verify --url https://app.example.com --json   # samples.byStatus and samples.byBuild name what interrupted it',
+  X_DEPLOY_QUEUE_UNSERVED:
+    'x jobs list --json   # then WORKER_QUEUES=<queue> on a worker Deployment, or --idle-ok <queue> on x deploy verify for a scale-to-zero pool',
+  X_DEPLOY_BUILD_MISMATCH:
+    'x deploy verify --url https://app.example.com --build "$BUILD_ID" --json   # the id CI stamped; meta.byBuild names what answered',
+  X_JOB_OUTLASTS_DRAIN:
+    "drain: { workerRetireMs: 7200000 },   // at least the job's timeout, in app.config.ts, then x verify --only manifest --json",
+  X_FEATURE_REQUIRED:
+    'x help g --json   # then the query generator with --feature <slice>, or the resource generator for a new table',
+  X_BOUNDARY_PACKAGE_TO_APP:
+    'x verify --only boundaries --json   # after moving the shared code into the package, or importing in the opposite direction',
+  X_APP_IMPORT_UNRESOLVED:
+    'x doctor --json   # names the package to bun add, or the file whose import to edit',
+  X_STREAM_ALREADY_FLUSHED:
+    'load: async () => { setCookie(name, value); return data; },   // in defineRoute, never inside a Hole',
+  X_QUERY_SLICE_ENTITY:
+    'x queries list --json   # then declare the read by hand over the entity the slice declares',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

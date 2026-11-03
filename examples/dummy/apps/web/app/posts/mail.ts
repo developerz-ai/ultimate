@@ -12,7 +12,8 @@ import { MemberView } from '../orgs/entity';
  * `org` is the org's NAME, and it is a top-level string rather than a field reached for through
  * `member`: `{org}` is a name slot, a UUID in it is what this field exists to prevent, and the
  * SUBJECT interpolates from the payload's own top level — `renderMail` reads scalars there and
- * nowhere else, so a name nested one level deeper renders as `⟦org⟧` in the inbox.
+ * nowhere else, so a name nested one level deeper is `X_MAIL_KEY_MISSING` at `send()`. `title` is
+ * top-level for the same reason.
  *
  * `post` is what the template reads: this payload crosses a `step.run`, which answers JSON, and a
  * post row's `Date`s would be strings by the time they got here.
@@ -21,6 +22,7 @@ export const PostPublishedData = t.object({
   post: t.object({ id: t.uuid, authorName: t.string }),
   member: MemberView,
   org: t.string,
+  title: t.string,
 });
 
 export type PostPublishedData = Infer<typeof PostPublishedData>;

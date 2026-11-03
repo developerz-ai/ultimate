@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "9168d4c5a7caa559",
+  "buildId": "d347a81969d31854",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -431,7 +431,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "167.6kb"
+        "js": "168kb"
       }
     },
     {
@@ -492,7 +492,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "181.5kb"
+        "js": "182kb"
       }
     },
     {
@@ -503,7 +503,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "71kb"
+        "js": "72kb"
       }
     }
   ],
@@ -1920,13 +1920,14 @@
           },
           "size": {
             "type": "integer",
-            "minimum": 0,
+            "minimum": 1,
             "maximum": 9007199254740991
           }
         },
         "required": [
           "filename",
-          "contentType"
+          "contentType",
+          "size"
         ],
         "additionalProperties": false
       },
@@ -4054,7 +4055,71 @@
       "subscribes": [
         "run_events"
       ],
-      "cacheTags": []
+      "cacheTags": [],
+      "rows": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "prompt",
+              "answered",
+              "navigated",
+              "extracted",
+              "done",
+              "failed",
+              "usage"
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usage": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "runId",
+          "seq",
+          "kind",
+          "at",
+          "message",
+          "prompt",
+          "usage"
+        ]
+      }
     },
     {
       "name": "orgPosts",
@@ -4077,7 +4142,85 @@
         "feed:read"
       ],
       "live": false,
-      "cacheTags": []
+      "cacheTags": [],
+      "rows": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "coverUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ]
+          },
+          "likeCount": {
+            "type": "integer"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "authorId",
+          "slug",
+          "title",
+          "excerpt",
+          "body",
+          "coverUrl",
+          "status",
+          "likeCount",
+          "publishedAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      }
     },
     {
       "name": "postById",
@@ -4166,7 +4309,85 @@
         "post:read"
       ],
       "live": false,
-      "cacheTags": []
+      "cacheTags": [],
+      "rows": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "coverUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ]
+          },
+          "likeCount": {
+            "type": "integer"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "authorId",
+          "slug",
+          "title",
+          "excerpt",
+          "body",
+          "coverUrl",
+          "status",
+          "likeCount",
+          "publishedAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      }
     },
     {
       "name": "postReview",
@@ -5510,6 +5731,21 @@
           ]
         }
       ]
+    }
+  ],
+  "mounts": [
+    {
+      "prefix": "/v1",
+      "scopes": {
+        "run:read": [
+          "liveRunEvents"
+        ],
+        "run:write": [
+          "answerPrompt",
+          "cancelRun",
+          "startRun"
+        ]
+      }
     }
   ],
   "jobs": [

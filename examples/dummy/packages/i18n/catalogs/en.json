@@ -243,17 +243,17 @@
       "cta": "Read the comment"
     },
     "welcome": {
-      "subject": "Welcome to Postly, {org}",
+      "subject": "Welcome to Postly, {name}",
       "body": "Your organisation is ready. Invite your writers and publish something small today.",
       "cta": "Open your feed"
     },
     "nudge": {
-      "subject": "Still nothing published in {org}?",
+      "subject": "Still nothing published in {name}?",
       "body": "Three days in and the feed is empty. The first post is the hardest one.",
       "cta": "Write the first post"
     },
     "invite": {
-      "subject": "{inviter} invited you to {org} on Postly",
+      "subject": "You have been invited to Postly",
       "body": "You have been added as {role}. Accept the invitation to start writing.",
       "cta": "Accept the invitation"
     },
@@ -264,7 +264,9 @@
     }
   },
   "digest": {
-    "subject": "Postly digest for {date}",
+    "subject": "Postly digest for {localDate}",
+    "date": "Date",
+    "post": "Post",
     "greeting": "Good morning, {name}.",
     "intro_one": "{count} new post in {org}.",
     "intro_other": "{count} new posts in {org}.",

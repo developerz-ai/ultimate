@@ -74,6 +74,7 @@ export { kindsOf } from './column-kinds';
  */
 export type {
   DownloadArgs,
+  DownloadBodyOpener,
   DownloadClientMethod,
   DownloadFile,
   DownloadQuery,

@@ -67,7 +67,6 @@ function page(
 ): void {
   registerRoute({
     file,
-    suspenseBoundaries: options.render === 'stream' ? 1 : 0,
     config: defineRoute({
       render: options.render ?? 'ssr',
       offline: 'network-only',

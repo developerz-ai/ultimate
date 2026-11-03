@@ -1,13 +1,14 @@
-// `x g query <name> [--live]` — a read. Live queries must be deterministic and bounded, so the
+// `x g query <name> --feature <slice> [--live]` — a read. Live queries must be deterministic and bounded, so the
 // generated declaration always carries `orderBy` + `limit` and the generated test pins them:
 // an unbounded live query is a memory leak that only shows up under load.
 
+import { UltimateError } from '@ultimat3/core';
 import type { FeatureTarget } from './entity';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
 import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
-import { sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
+import { foreignSliceEntity, sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
 import { wrapImport } from './wrap';
 
 /** A live read always fans out fresh, so a TTL on it would only ever be dead configuration. */
@@ -249,6 +250,15 @@ unitTest('stored rows read back newest first, bounded, and never another org', a
   const theirs = await target.as(outsider, { limit: 50 });
   expect(theirs.map((row) => row.title)).toEqual(['theirs']);
 });
+
+unitTest('the read is one statement, however many rows it answers', async ({ statements }) => {
+  await store(orgId, 'first');
+  await store(orgId, 'second');
+  const before = statements.count();
+  await target.as(member, { limit: 50 });
+  // On this driver as on Postgres: a read added per row in the handler is a third statement here.
+  expect(statements.count() - before).toBe(1);
+});
 `;
 
 /**
@@ -325,11 +335,30 @@ export interface QueryOptions extends FeatureTarget {
   readonly sliceRepo?: string;
 }
 
+/**
+ * Declared beside its one thrower, as `backfill.ts`'s twin is: the read imports the slice's own row
+ * type and repo, and a slice declaring another table under its name has neither.
+ */
+export class QuerySliceEntityError extends UltimateError {
+  constructor(input: { readonly path: string; readonly binding: string; readonly table: string }) {
+    super({
+      code: 'X_QUERY_SLICE_ENTITY',
+      cause: `x g query reads the slice's own scaffolded table, and its entity.ts declares ${input.binding} (${input.table}) instead — the generated read would import a row type and a repo that do not exist`,
+      fix: `x queries list --json   # then declare query({ sql: … from('${input.table}', …) }) by hand in ${input.path}, over ../entity's ${input.binding}`,
+      meta: { binding: input.binding, table: input.table },
+    });
+  }
+}
+
 export function queryFiles(rawName: string, target: QueryOptions): readonly GeneratedFile[] {
   const name = names(rawName);
   const feature = names(target.feature);
   const live = target.live === true;
   const dir = `${target.surfaceDir}/${target.feature}/${live ? 'live' : 'queries'}`;
+  const foreign = foreignSliceEntity(target.feature, target.sliceEntity);
+  if (foreign !== undefined) {
+    throw new QuerySliceEntityError({ path: `${dir}/${name.kebab}.ts`, ...foreign });
+  }
   const shape: ReadShape = {
     live,
     storesRow: sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo),

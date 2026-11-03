@@ -6,7 +6,6 @@
  */
 
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
-import { finiteCount } from '@ultimat3/core';
 import { byCodeUnit } from './code-unit-order';
 import {
   RouteDuplicateError,
@@ -50,7 +49,6 @@ export interface RouteEntry<TData = RouteData> {
   readonly path: string;
   readonly surface: RouteSurface;
   readonly config: RouteConfig<TData>;
-  readonly suspenseBoundaries: number;
   readonly islands: readonly string[];
   readonly pattern: CompiledPattern;
   /**
@@ -234,8 +232,6 @@ let described: readonly RouteDescriptor[] | undefined;
 export interface RegisterRouteInput<TData = RouteData> {
   readonly file: string;
   readonly config: RouteConfig<TData>;
-  /** Counted from the module's JSX by the build; `stream` requires >= 1. */
-  readonly suspenseBoundaries?: number;
   // No `islands` key: an island is declared by `island()` and reaches the entry through
   // `config.islands`. It was here, undocumented, passed by nothing, and read as
   // `input.islands ?? []` — so the only thing a caller could do with it was un-weigh a
@@ -263,14 +259,6 @@ export function registerRoute<TData = RouteData>(
 
   const derived = routePathFromFile(input.file);
   const path = input.path ?? derived.path;
-  // `ctx.suspenseBoundaries < 1` is the only thing between `render: 'stream'` and a route that
-  // streams nothing, and `NaN < 1` is false — a count that arrived non-finite does not report the
-  // route it counted, it stops reporting any route.
-  const suspenseBoundaries = finiteCount(
-    'registerRoute',
-    'suspenseBoundaries',
-    input.suspenseBoundaries ?? 0,
-  );
   // Explicit `<TData>`: `isRouteConfig` is a guard over the default `RouteData`, so inference off
   // the narrowed argument would resolve the route's own data generic away here.
   const config = withIslandBudget<TData>(input.config, derived.surface);
@@ -279,7 +267,6 @@ export function registerRoute<TData = RouteData>(
     file: input.file,
     path,
     surface: derived.surface,
-    suspenseBoundaries,
   });
 
   assertPurgeableTags(input.file, config.revalidate?.tags);
@@ -301,7 +288,6 @@ export function registerRoute<TData = RouteData>(
     path,
     surface: derived.surface,
     config,
-    suspenseBoundaries,
     // The declaration is the ONLY source. It was `input.islands ?? []`, which nothing ever passed,
     // so the now-deleted `routeJsBytes`'s "what registration declared" half read `[]` on every
     // route in the framework's history — and keeping the input as a fallback would be a second

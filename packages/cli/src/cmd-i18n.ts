@@ -260,7 +260,10 @@ async function untranslatedKeys(
   locale: string,
 ): Promise<readonly string[]> {
   const extraction = await scanSource(root);
-  const report = withPlaceholdersMissing(auditCatalogs({ extraction, catalogs }), catalogs);
+  // `reference` as `auditApp` passes it: an app whose default is not `en` is told to sync its default
+  // over a key `en` holds alone, and this list is all that command can add.
+  const audit = auditCatalogs({ extraction, catalogs, reference: DEFAULT_LOCALE });
+  const report = withPlaceholdersMissing(audit, catalogs);
   return report.locales.find((audit) => audit.locale === locale)?.missing ?? [];
 }
 

@@ -51,6 +51,14 @@ export interface DrainConfig {
    * `deadlineMs`. A whole number, 1–86400000. The chart's worker grace period is derived from it.
    */
   readonly workerDeadlineMs: number | undefined;
+  /**
+   * How long a retiring worker may finish what it holds on a Kubernetes rollout or scale-down:
+   * claim nothing, abort nothing, exit when the last job settles. Not `workerDeadlineMs`, which
+   * bounds a SIGTERM drain and then aborts. An idle worker exits at once, so it costs only while a
+   * job holds the pod. Default 3600000; 0 turns it off. A whole number, 0–86400000. `x deploy
+   * --method helm` hands it to the chart, whose worker `preStop` and grace period are sized from it.
+   */
+  readonly workerRetireMs: number;
 }
 
 /** Why a value is not a readiness mode, or `undefined` when it is one. */

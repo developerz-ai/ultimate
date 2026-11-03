@@ -84,10 +84,11 @@ describe('the autoscaler contract', () => {
     recordQueueDepth('default', 41);
 
     const text = metricsText();
-    // `connections` and `queue_depth` are the chart's own words; `rps` is a rate derived from
-    // the counter, which is why the counter is what the process exposes.
+    // `connections` and `queue_demand` are the chart's own words; `rps` is a rate derived from
+    // the counter, which is why the counter is what the process exposes. `queue_depth` is the
+    // backlog alert's series, no longer what the worker scales on.
     expect(SCALING_METRICS['ws-connections']).toBe('connections');
-    expect(SCALING_METRICS['queue-depth']).toBe('queue_depth');
+    expect(SCALING_METRICS['queue-demand']).toBe('queue_demand');
     expect(SCALING_METRICS.rps).toBe('http_requests_total');
     expect(text).toContain('queue_depth{queue="default"} 41');
     expect(text).toContain('# TYPE connections gauge');

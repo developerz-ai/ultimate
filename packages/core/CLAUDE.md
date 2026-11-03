@@ -59,7 +59,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | Concept | Owner | Note |
 |---|---|---|
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never a second env var |
-| one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`) |
+| one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`). `deprecation` holds `successorLink` and `successorPathOf`, so `rel="successor-version"` is spelt in one file; `aws-sigv4`'s `presignAwsUrl` shares `signAwsRequest`'s derivation (`signatureOver`), held equal to `Bun.S3Client`'s presign by `aws-sigv4-presign.test.ts` |
 | what this process does | `roles.ts` (`ROLE`) | |
 | how a route renders, caches offline and hydrates | `route-vocabulary.ts` (`RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it |
 | which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments. Read by `@ultimat3/render`'s `compilePattern` and `@ultimat3/pwa`'s rule order — both tier 4, so the one copy lives here. `@ultimat3/http`'s trie encodes the same order by its walk, not by this number. Never a sum: 100/10/1 ranked `/:a/b/c` above `/a/:x/:y` |
@@ -75,7 +75,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | which HTTP statuses are worth repeating | `retryable-status.ts` | `>= 500` plus 408, 409, 425, 429 |
 | how long this request has left | `request-budget.ts` (`Ctx.deadlineAt`, `REQUEST_TIMEOUT_HEADER`) | `@ultimat3/http`'s `startDeadline` is the one writer of the instant; `traceHeaders()` the one writer of the header. A spent budget sends nothing, never `0` |
 | the above, composed into one typed-client call | `client-flight.ts` + `client-wire.ts` | shared by `@ultimat3/action` and `@ultimat3/query` (both tier 3), re-exported by both. Declares no code of its own. A gate slot per ATTEMPT; the wait holds none, ends on `bump()` or the caller's abort |
-| the browser's one HTTP function, records envelope, per-tab handle and principal fence | `client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `client-retry-after.ts`, `client-paths.ts`, `record-envelope.ts`, `record-sink.ts`, `client-scope.ts` | `pageClient()` is the ONE `globalThis` write (`Symbol.for('ultimate.client')`); the scope's listeners live ON the handle. `clientTransport` never value-imports `clientFlight` or `traceHeaders()`: trace/budget headers reach it through the page handle's OUTBOUND SLOT (`outbound-headers.ts`). `isSuperseded` answers both `X_SUPERSEDED` and `X_CLIENT_SCOPE_CHANGED`. The fence never `bump()`s a caller's flight. A write never dedupes; a read dedupes only with a caller's `flight`. `pageClient()` reads `<meta name="ultimate-scope">` (`CLIENT_SCOPE_META`) once: content = principal, empty = anonymous (`null`), absent = UNSCOPED (`undefined`, nothing persisted). `actionPath(name)` with no `style` reads the document's `<meta name="ultimate-path-style">` (`renderedActionPathStyle()`; `CLIENT_PATH_STYLE_META` in `page-meta.ts`) and falls back to `'resource'`. A refusal's `Retry-After` and body `title` are read HERE (`client-retry-after.ts`, `remoteTitleOf`). Bytes: `page-bundle.test.ts`; `rpc`'s and `queryClient`'s in `action`'s and `query`'s CLAUDE.md |
+| the browser's one HTTP function, records envelope, per-tab handle and principal fence | `client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `client-retry-after.ts`, `client-paths.ts`, `record-envelope.ts`, `record-sink.ts`, `client-scope.ts` | `pageClient()` is the ONE `globalThis` write (`Symbol.for('ultimate.client')`); the scope's listeners live ON the handle. `clientTransport` never value-imports `clientFlight` or `traceHeaders()`: trace/budget headers reach it through the page handle's OUTBOUND SLOT (`outbound-headers.ts`). `isSuperseded` answers both `X_SUPERSEDED` and `X_CLIENT_SCOPE_CHANGED`. The fence never `bump()`s a caller's flight. A write never dedupes; a read dedupes only with a caller's `flight`. `pageClient()` reads `<meta name="ultimate-scope">` (`CLIENT_SCOPE_META`) once: content = principal, empty = anonymous (`null`), absent = UNSCOPED (`undefined`, nothing persisted). `actionPath(name)` with no `style` reads the document's `<meta name="ultimate-path-style">` (`renderedActionPathStyle()`; `CLIENT_PATH_STYLE_META` in `page-meta.ts`) and falls back to `'resource'`. A refusal's `Retry-After` and body `title` are read HERE (`client-retry-after.ts`, `remoteTitleOf`). Bytes: `page-bundle.test.ts`; `rpc`'s and `queryClient`'s in `action`'s and `query`'s CLAUDE.md `REPLAYED_HEADER` sits beside `IDEMPOTENCY_HEADER` in `client-dispatch.ts`; `withRequestId` and `withStatedDelay` are the one rule per wire key for both decoders |
 | a write's public name | `write-digest.ts` (`writeDigest`, `isWriteDigest`, also on `./page`) + `write-origin.ts` (`withWriteOrigin`, `currentWriteOrigin`, `WRITE_ORIGIN_WAL_PREFIX`, server-only) | SHA-256 of an idempotency key, 32 hex; carried action → entity → WAL → realtime `records` frame. A malformed value runs the work unnamed: a label, never a gate |
 | which row survives a conflict | `conflict-policy.ts` (`ConflictPolicy`, `resolveConflict`, `Row`) | read by `action`'s mutator and `realtime`'s rebase |
 | where a visitor's light/dark choice is stored | `theme-storage.ts` (`THEME_STORAGE_KEY`, also on `./page`) | render's boot script reads it, ui's toggle writes it — both tier 4, so the one literal lives here. Persisted in browsers: never respelled |
@@ -161,21 +161,13 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
   `X_OTLP_PROTOCOL_UNSUPPORTED` names `:4318`; a boot that must not throw asks `tryOtlpEndpoint(signal)`.
 - **Three OTLP variables, three codes** — `X_OTLP_ENDPOINT_INVALID`, `X_OTLP_HEADERS_INVALID`,
   `X_OTLP_PROTOCOL_UNSUPPORTED`. A header KEY is in the cause/fix/meta; its VALUE never is.
-- `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport
-  (`error-reporter-sentry.ts`, optional export). `reportError` never throws, never awaits. Callers:
-  `@ultimat3/http` `stages.ts` (`status >= 500`), `@ultimat3/jobs` `execute.ts`, `@ultimat3/realtime`
-  `sync-node.ts` and `sync-upgrade.ts`, `@ultimat3/flags` `runtime.ts`. `configureErrorReporting({
-  release })` takes the build id `serve.ts` computed. Trace and span resolve as a PAIR.
+- `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`.
 - `METRICS_PATH` is served by `@ultimat3/cli`'s `metrics-endpoint.ts` on `METRICS_PORT` (9090), never
   the role's HTTP port; every role opens it.
 
 ## Lifecycle and readiness
 
-- `markReady()` means **bound**; readiness means **usable** — `registerReadinessCheck(name, check)`.
-  `/readyz` is ready when the state is `ready` AND every check passes. `HealthReport.registered` is
-  the count (an empty registry is still `ready`, deliberately). `readinessChecks()` builds through
-  `Object.fromEntries` (a check named `__proto__`). Checks are **synchronous**; liveness ignores
-  them. The registration returns its unregister; `readinessCheckCount()` is the leak probe.
+- `markReady()` means **bound**; readiness means **usable** — `registerReadinessCheck(name, check)`. Full rule: `docs/history/core.md`.
 - **`drain()`'s memo is published BEFORE the first hook runs** — a hook may re-enter `drain()`
   (`@ultimat3/http`'s `handle.stop()`), and `settleWithin` invokes hooks synchronously.
 - **The drain deadline is enforced** (`lifecycle-deadline.ts`): a hook overrunning the whole drain's budget is abandoned and logged (`X_SHUTDOWN_TIMEOUT`); real monotonic time, never the injected `clock`. Full rule: `docs/history/core.md`.
@@ -193,12 +185,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - **`abandonment()`: a branded abort reason refuses writes** (`@ultimat3/db`); **`runToCompletion(fn)` is the one escape**, built by `derivedContext`. `run-to-completion.test.ts`.
 - `impersonate(actor, reason, fn)` is the ONE door through `withChildContext({ actor })`; it stamps
   `Actor.onBehalfOf` so `actorLabel` renders `service:eng-7→user:cust-99@org-3`. No second path.
-- Every `UltimateError` carries `retry` (`terminal | retryable | retry-after`), **defaulting to
-  `terminal`**. `registerErrorRetry()` is the one registration path and refuses to reclassify a
-  core code. Two readers: `retryFor(code)` (what to do, fails closed) and
-  `declaredErrorRetry(code)` (what was declared, `undefined` otherwise) — a caller deciding whether
-  to STOP work in flight (`@ultimat3/jobs`' executor) reads the second. An instance `retry` on an
-  unregistered code reads as unclassified.
+- Every `UltimateError` carries `retry` (`terminal | retryable | retry-after`), **defaulting to `terminal`**. Full rule: `docs/history/core.md`.
 - `PRIMITIVE_KINDS` is the executable eight-primitive rule; `PrimitiveKind` derives from it and
   `registrar.test.ts` fails on a ninth. `PRIMITIVE_FACTORIES` lists the factories.
 
@@ -232,3 +219,4 @@ Gotchas:
   follow the same call-time rule.
 
 Why each rule above is shaped the way it is: [`docs/history/core.md`](../../docs/history/core.md).
+- `drain-deadline.ts` also owns `WORKER_RETIRE_DEFAULT_MS` and `workerRetireIssue`.

@@ -5,6 +5,7 @@
 
 import { assert } from '@ultimat3/core';
 import { rangeTooLarge, rangeUnsatisfiable } from './errors-range';
+import { streamRangeUnsatisfiable } from './errors-stream';
 
 /**
  * The first and the last byte, BOTH INCLUSIVE — HTTP's `Range: bytes=first-last` and S3's, so a
@@ -39,17 +40,47 @@ const isOffset = (value: unknown): value is number =>
 export function assertGetOptions(driver: string, options: GetOptions | undefined): void {
   const range = options?.range;
   if (range === undefined) return;
+  assertRange(driver, 'get()', 'get(key, { range: ', ' })', range);
+}
+
+/** The same screen for `streamRange`, naming the call that was made. */
+export function assertStreamRange(driver: string, range: ByteRange): void {
+  assertRange(driver, 'streamRange()', 'streamRange(key, ', ')', range);
+}
+
+function assertRange(
+  driver: string,
+  call: string,
+  open: string,
+  close: string,
+  range: ByteRange,
+): void {
   const [first, last] = Array.isArray(range) ? range : [];
   assert(
     Array.isArray(range) && range.length === 2 && isOffset(first) && isOffset(last),
-    `get() on the ${driver} disk was given a range that is not two whole, non-negative byte offsets`,
-    'get(key, { range: [first, last] }) — inclusive offsets: [0, 99] reads the first 100 bytes',
+    `${call} on the ${driver} disk was given a range that is not two whole, non-negative byte offsets`,
+    `${open}[first, last]${close} — inclusive offsets: [0, 99] reads the first 100 bytes`,
   );
   assert(
     first <= last,
-    `get() on the ${driver} disk was given the range [${first}, ${last}], whose first byte is past its last`,
-    `get(key, { range: [${last}, ${first}] }) — first before last, both inclusive`,
+    `${call} on the ${driver} disk was given the range [${first}, ${last}], whose first byte is past its last`,
+    `${open}[${last}, ${first}]${close} — first before last, both inclusive`,
   );
+}
+
+/**
+ * The window `streamRange` serves: clamped as `servedRange` clamps. No ceiling, because nothing is
+ * buffered: the bytes asked for are the bytes pulled, and they flow at the reader's pace.
+ */
+export function streamedRange(
+  disk: string,
+  key: string,
+  range: ByteRange,
+  size: number,
+): ByteRange {
+  const [first, wanted] = range;
+  if (first >= size) throw streamRangeUnsatisfiable(disk, key, range, size);
+  return [first, Math.min(wanted, size - 1)];
 }
 
 /**

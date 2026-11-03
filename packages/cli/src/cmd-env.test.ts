@@ -145,9 +145,12 @@ describe('unit · x env check', () => {
       'X_CURSOR_SECRET_DEV',
       'X_STORAGE_SECRET_DEV',
     ]);
+    // No `export`: it is gone on an agent's next shell call, and it never reaches a deploy.
     expect(result.findings?.[0]?.fix).toBe(
-      'export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"',
+      "openssl rand -hex 32   # put the output in this deploy's secret store as ULTIMATE_CURSOR_SECRET; this machine: ULTIMATE_ENV=development x env check",
     );
+    // This table named its environment: the summary has nothing to add.
+    expect(result.summary).not.toContain('checked as production');
   });
 
   test('staging owes them too: the boot refuses outside development/test, not only production', async () => {
@@ -175,6 +178,37 @@ describe('unit · x env check', () => {
       'X_CURSOR_SECRET_DEV',
       'X_STORAGE_SECRET_DEV',
     ]);
+    // `x doctor` says "shippable" over the same shell, so the difference is stated here.
+    expect(result.summary).toContain('checked as production: no ULTIMATE_ENV named');
+    for (const finding of result.findings ?? []) {
+      expect(finding.fix).not.toContain('export ');
+      expect(finding.fix).toContain('# ');
+      expect(finding.fix).toContain('ULTIMATE_ENV=development x env check');
+    }
+  });
+
+  test('the machine line in that fix is true: the same table goes green', async () => {
+    const root = await appRoot('check-unnamed-then-dev');
+    const table = { DATABASE_URL: 'postgres://db/app' };
+    const named = await envCommand.run(
+      context(['env', 'check'], root, { ...table, ULTIMATE_ENV: 'development' }),
+    );
+    expect(named.ok).toBe(true);
+    expect(named.summary).not.toContain('checked as production');
+  });
+
+  test('a clean unnamed table says how it was read too', async () => {
+    const root = await appRoot('check-unnamed-clean');
+    const result = await envCommand.run(
+      context(['env', 'check'], root, {
+        DATABASE_URL: 'postgres://db/app',
+        ULTIMATE_CURSOR_SECRET: 'c'.repeat(64),
+        S3_ENDPOINT: 'https://s3.example.com',
+        S3_BUCKET: 'b',
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain('checked as production');
   });
 
   test('development owes no framework secret', async () => {

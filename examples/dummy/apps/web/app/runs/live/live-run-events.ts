@@ -8,7 +8,7 @@
 //
 // `t` comes from @ultimat3/query, not @ultimat3/schema: a query file imports one package.
 
-import type { RunEvent } from '@postly/db';
+import { type RunEvent, runEvents } from '@postly/db';
 import { from, query, t } from '@ultimat3/query';
 import { canRunRead } from '../policy';
 import * as repo from '../repo';
@@ -27,6 +27,9 @@ export const liveRunEvents = query({
   // The relation this read is patched from: `x db gen` reads it to emit the replica identity a
   // live query needs, and the first subscribe checks it against the resolved shape.
   subscribes: ['run_events'],
+  // Publishes the row: `openapi.json`'s operation, the `/v1` cut and the MCP tool all print these
+  // members, and `x verify` refuses a release that drops one of them.
+  rows: runEvents.$schema,
   mcp: { expose: true, description: 'One run’s events in order: what it did and what it waits on' },
   sql: ({ orgId, runId, limit }) =>
     from<RunEvent>('run_events', () => repo.eventsOf(runId, limit))

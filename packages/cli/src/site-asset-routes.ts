@@ -35,7 +35,13 @@ function assetResponse(asset: SiteAsset, range: string | null): Response {
     });
   }
   if (wanted === undefined) {
-    return applyCacheHeaders(new Response(file, { headers }), SITE_ASSET_CACHE);
+    return applyCacheHeaders(
+      new Response(file, {
+        // Declared, or `compress` may not read it: a `Bun.file` body states no length of its own.
+        headers: { ...headers, 'content-length': String(asset.bytes) },
+      }),
+      SITE_ASSET_CACHE,
+    );
   }
   return applyCacheHeaders(
     new Response(file.slice(wanted.start, wanted.end + 1), {

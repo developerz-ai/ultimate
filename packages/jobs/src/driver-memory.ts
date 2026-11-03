@@ -19,6 +19,7 @@ import type {
   JobDriver,
   JobRecord,
   NackOptions,
+  QueueDemand,
   QueueStats,
 } from './driver';
 import {
@@ -428,6 +429,28 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       // answers by the runtime's locale and so differently from the database on the same names.
       return Promise.resolve(
         [...byQueue.values()].sort((a, b) => (a.queue < b.queue ? -1 : a.queue > b.queue ? 1 : 0)),
+      );
+    },
+
+    // `SQL_QUEUE_DEMAND` over these rows. A `running` row is never "due": it counts on its claimer.
+    demand(): Promise<readonly QueueDemand[]> {
+      const at = nowMs(clock);
+      const byQueue = new Map<string, number>();
+      for (const record of jobs.values()) {
+        const held =
+          record.state === 'running' && !operator.isWorkerDraining(record.claimedBy ?? '');
+        const due =
+          (record.state === 'ready' ||
+            record.state === 'delayed' ||
+            record.state === 'suspended') &&
+          record.runAt <= at &&
+          !operator.isQueuePaused(record.queue);
+        if (held || due) byQueue.set(record.queue, (byQueue.get(record.queue) ?? 0) + 1);
+      }
+      return Promise.resolve(
+        [...byQueue]
+          .map(([queue, demand]) => ({ queue, demand }))
+          .sort((a, b) => (a.queue < b.queue ? -1 : a.queue > b.queue ? 1 : 0)),
       );
     },
 

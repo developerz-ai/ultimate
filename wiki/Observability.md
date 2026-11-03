@@ -97,10 +97,11 @@ Declared in `runtime-metrics.ts`, so the role table, the Helm chart and the scra
 | `requestDuration` | `http_request_duration_seconds` | histogram | `s` | same three |
 | `connections` | `connections` | gauge | `{connection}` | none |
 | `queueDepth` | `queue_depth` | gauge | `{job}` | `queue` |
+| `queueDemand` | `queue_demand` | gauge | `{job}` | `queue` |
 | `jobs` | `jobs_total` | counter | `{job}` | `queue`, `outcome` (`ok \| failed \| dead`) |
 | `leasesLost` | `job_leases_lost_total` | counter | `{job}` | `queue` |
 
-`SCALING_METRICS` maps each `ScalingSignal` to its series: `rps` → `http_requests_total`, `ws-connections` → `connections`, `queue-depth` → `queue_depth`; `singleton`, `run-once` and `per-database` map to `null`, because a role pinned at one replica has nothing to scale on. **`rps` is derived from the monotonic counter** — a rate is not a series, so nothing exports one.
+`SCALING_METRICS` maps each `ScalingSignal` to its series: `rps` → `http_requests_total`, `ws-connections` → `connections`, `queue-demand` → `queue_demand`; `singleton`, `run-once` and `per-database` map to `null`, because a role pinned at one replica has nothing to scale on. **`rps` is derived from the monotonic counter** — a rate is not a series, so nothing exports one. **`queue_demand` is what the worker must hold**: running on a serving worker, plus due rows on an unpaused queue. `queue_depth` is what waits, and stays for the backlog alert: 10 jobs held read `queue_depth` 0 and `queue_demand` 10, and an HPA on the first shrank the fleet mid-job. Every serving worker publishes the same `queue_demand`, so the adapter rule is `max by (queue) (queue_demand)`, never `sum`; a draining worker publishes 0, since its loop has stopped and a frozen value would win that `max` for its whole retire. `JobDriver.demand()` is required of every driver; Redis keeps no worker registry, so it counts every running row.
 
 Recorders: `recordRequest({ method, route, status, durationMs })`, `recordConnection(delta)`, `recordQueueDepth(queue, depth)`, `recordJob(queue, outcome)`, `recordLeaseLost(queue)`.
 

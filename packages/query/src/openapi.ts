@@ -25,7 +25,7 @@ import {
 import { MAX_PAGE_SIZE } from '@ultimat3/entity';
 import { policyCapability } from '@ultimat3/policy';
 import type { SchemaNode } from '@ultimat3/schema';
-import { nodeToJsonSchema, tryIntrospect } from '@ultimat3/schema';
+import { nodeToJsonSchema, toWireOutputSchema, tryIntrospect } from '@ultimat3/schema';
 import { DOWNLOAD_GRANT_PARAM } from './download-token';
 import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import type { AnyQuery } from './query';
@@ -44,33 +44,53 @@ const QUERY_TAG = 'query';
 
 export type OpenApiPathItem = Record<string, unknown>;
 
+/** Today's answer for a read that publishes no row: any item, any object. */
+const UNTYPED_ITEM: Readonly<Record<string, unknown>> = {};
+const UNTYPED_ROW: Readonly<Record<string, unknown>> = { type: 'object' };
+
+/**
+ * The one row a read declares, or `undefined` when it declares none or none this package can read
+ * — the narrowing `@ultimat3/mcp` publishes as the same read's `outputSchema`, so the two surfaces
+ * cannot disagree. STRUCTURE only: a read's rows are never re-parsed, so a bound or a closed object
+ * is a promise nothing enforces on the way out. Inline, never a component: the CLI merges only
+ * `paths` from this package (`packages/cli/src/app-openapi.ts`).
+ */
+const rowOf = (target: AnyQuery): Readonly<Record<string, unknown>> | undefined => {
+  const row = toWireOutputSchema(target.rows);
+  return row === undefined ? undefined : { ...row };
+};
+
 /**
  * Two shapes, decided by the request: the bare rows every client read before the controls
  * existed, and the page envelope when `_first` is sent. `oneOf` and not a second operation — it is
  * one route, one policy evaluation, one URL prefix.
  */
-const ANSWERS: readonly Record<string, unknown>[] = [
-  { type: 'array', items: {} },
-  {
-    type: 'object',
-    // The one page shape: the `endCursor`/`hasNextPage` alias pair left in 25.0.0 (O-12).
-    required: ['rows', 'nextCursor', 'hasMore'],
-    properties: {
-      rows: { type: 'array', items: {} },
-      nextCursor: {
-        type: ['string', 'null'],
-        description: `the signed cursor for the next page — send it as ${PAGE_AFTER_KEY}; null exactly when hasMore is false`,
+function listAnswers(
+  item: Readonly<Record<string, unknown>> = UNTYPED_ITEM,
+): readonly Record<string, unknown>[] {
+  return [
+    { type: 'array', items: item },
+    {
+      type: 'object',
+      // The one page shape: the `endCursor`/`hasNextPage` alias pair left in 25.0.0 (O-12).
+      required: ['rows', 'nextCursor', 'hasMore'],
+      properties: {
+        rows: { type: 'array', items: item },
+        nextCursor: {
+          type: ['string', 'null'],
+          description: `the signed cursor for the next page — send it as ${PAGE_AFTER_KEY}; null exactly when hasMore is false`,
+        },
+        hasMore: { type: 'boolean', description: 'whether another page follows' },
       },
-      hasMore: { type: 'boolean', description: 'whether another page follows' },
+      // `@ultimat3/core`'s `Page` is a union, and so is its wire shape: the two facts cannot
+      // disagree in a body this document validates (25.0.0 — the last page used to keep a cursor).
+      oneOf: [
+        { properties: { nextCursor: { type: 'string' }, hasMore: { const: true } } },
+        { properties: { nextCursor: { type: 'null' }, hasMore: { const: false } } },
+      ],
     },
-    // `@ultimat3/core`'s `Page` is a union, and so is its wire shape: the two facts cannot
-    // disagree in a body this document validates (25.0.0 — the last page used to keep a cursor).
-    oneOf: [
-      { properties: { nextCursor: { type: 'string' }, hasMore: { const: true } } },
-      { properties: { nextCursor: { type: 'null' }, hasMore: { const: false } } },
-    ],
-  },
-];
+  ];
+}
 
 /** `{ [path]: { get: operation } }` for every registered read, name-sorted like the actions. */
 export function queryOpenApiPaths(
@@ -93,6 +113,7 @@ export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknow
   const name = queryName(target);
   if (target.download === true) return downloadOperation(target, name);
   if (target.single === true) return singleOperation(target, name);
+  const answers = { oneOf: listAnswers(rowOf(target)) };
   return {
     operationId: name,
     tags: [QUERY_TAG],
@@ -109,9 +130,7 @@ export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknow
             // second operation — it is one route, one policy evaluation, one URL prefix.
             // A read declaring an entity's `rows:` ALWAYS answers the envelope, with the same two
             // shapes under `data` — core's one description, shared with the action projection.
-            schema: answersRecords(target.rows)
-              ? recordEnvelopeSchema({ oneOf: ANSWERS })
-              : { oneOf: ANSWERS },
+            schema: answersRecords(target.rows) ? recordEnvelopeSchema(answers) : answers,
           },
         },
         ...(answersRecords(target.rows) ? { headers: RECORDS_OPENAPI_HEADER } : {}),
@@ -140,6 +159,7 @@ export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknow
  */
 function singleOperation(target: AnyQuery, name: string): Record<string, unknown> {
   const records = answersRecords(target.rows);
+  const answer = rowOf(target) ?? UNTYPED_ROW;
   return {
     operationId: name,
     tags: [QUERY_TAG],
@@ -151,7 +171,7 @@ function singleOperation(target: AnyQuery, name: string): Record<string, unknown
         description: 'ok',
         content: {
           'application/json': {
-            schema: records ? recordEnvelopeSchema(SINGLE_ANSWER) : SINGLE_ANSWER,
+            schema: records ? recordEnvelopeSchema(answer) : answer,
           },
         },
         ...(records ? { headers: RECORDS_OPENAPI_HEADER } : {}),
@@ -231,9 +251,6 @@ const MINTED_URL: Readonly<Record<string, unknown>> = {
     expiresAt: { type: 'string', format: 'date-time' },
   },
 };
-
-/** One row. Its members are not published — a query declares no output schema, as `ANSWERS` says. */
-const SINGLE_ANSWER: Readonly<Record<string, unknown>> = { type: 'object' };
 
 /** The two controls, spelled from `page-controls.ts` so the document cannot drift from the route. */
 const PAGE_PARAMETERS: readonly Record<string, unknown>[] = [

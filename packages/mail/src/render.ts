@@ -4,7 +4,13 @@
 // clients drop <style>; the dark-mode block is the one exception, for clients that honour it.
 
 import { directionOf, escapeHtml } from '@ultimat3/core';
-import { type TranslateVars, type Translator, translatorFor } from '@ultimat3/i18n';
+import {
+  recordingTranslator,
+  type TranslateVars,
+  type TranslationMiss,
+  type Translator,
+  translatorFor,
+} from '@ultimat3/i18n';
 import type { CalloutTone, MailBlock, MailTemplate } from './blocks';
 // The renderer depends on the strings it renders. This is the only module that resolves a `mail.*`
 // key, and `catalog.ts` installs them at ITS module scope — so importing it here is what makes
@@ -36,6 +42,11 @@ export interface RenderedMail {
   readonly preheader: string;
   readonly html: string;
   readonly text: string;
+  /**
+   * What this render could not answer. Never on a `MailMessage`: `send()` refuses on it and a
+   * preview shows the `⟦…⟧` the same render left in the parts above.
+   */
+  readonly misses: readonly TranslationMiss[];
 }
 
 export const FOOTER_KEYS = ['mail.footer.legal', 'mail.footer.help'] as const;
@@ -49,7 +60,8 @@ export function renderMail<I>(
   const layout = layoutFor(mail.layout);
   if (layout === undefined) throw layoutUnknown(mail.id, mail.layout, registeredLayouts());
 
-  const t = translatorFor(options.locale);
+  const recorded = recordingTranslator(translatorFor(options.locale));
+  const t = recorded.t;
   const vars = toVars(data);
   const subject = t(mail.subject, vars);
   const preheaderKey = `mail.${mail.id}.preheader`;
@@ -80,7 +92,7 @@ export function renderMail<I>(
     tail.push(`${unsubscribe.label}: ${safeMailHref(unsubscribe.url)}`);
   const text = tail.length === 0 ? bodyText : `${bodyText}\n\n--\n${tail.join('\n')}`;
 
-  return { subject, preheader, html, text };
+  return { subject, preheader, html, text, misses: recorded.misses() };
 }
 
 /** The text part, block by block. Never derived from the HTML. */

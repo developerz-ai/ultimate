@@ -16,8 +16,8 @@ export const grantAvatarUpload = action({
     /** Used for its extension and nothing else — the stored name is opaque. */
     filename: t.string.max(255),
     contentType: t.string.max(255),
-    /** The client's own count, trusted for nothing: it only buys an early refusal. */
-    size: t.number.int().min(0).optional(),
+    /** The file's size: the URL this mints holds the upload to it, at the disk. */
+    size: t.number.int().min(1),
   }),
   output: AvatarUploadGrant,
   policy: memberSelf,

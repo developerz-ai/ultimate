@@ -13,7 +13,7 @@ import {
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import type { RequestContext } from './context';
-import { problemTypeFor } from './error-facts';
+import { problemTypeFor, toProblem } from './error-facts';
 import { recoverWith } from './finalize';
 import type { ServerHooks } from './hooks';
 import { httpPipeline } from './pipeline';
@@ -402,5 +402,8 @@ describe("recoverWith's own fallback is inside the guard", () => {
     // `https://ultimate.dev/errors/X_INTERNAL`, a host that answers 404, until 9.x.
     expect(body['type']).toBe(problemTypeFor('X_INTERNAL'));
     expect(body['type']).not.toContain('ultimate.dev');
+    // The same literal rule for the class: this document is one a client maps too, and what an
+    // unclassified `X_INTERNAL` renders is what it must equal.
+    expect(body['retry']).toBe(toProblem(new TypeError('boom')).retry);
   });
 });

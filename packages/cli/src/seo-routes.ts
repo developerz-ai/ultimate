@@ -11,7 +11,7 @@ import {
   tryResolveEnvironment,
 } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
 import { SITEMAP_PARTS_DIR } from '@ultimat3/seo';
 import { quoteArg } from './shell-quote';
 import { NO_SITE_SETTINGS, publicOrigin, type SiteSettings } from './site-config';
@@ -189,7 +189,7 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
       meta: { name: 'seo.robots', auth: 'public', tags: ['seo'] },
       handler: async (request: UltimateRequest): Promise<Response> =>
         applyCacheHeaders(
-          new Response((await answer(request)).robots, {
+          textResponse((await answer(request)).robots, {
             headers: { 'content-type': 'text/plain; charset=utf-8' },
           }),
           SEO_CACHE,
@@ -202,7 +202,8 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
       // The first file is `/sitemap.xml` in both shapes: the whole urlset, or the index of parts.
       handler: async (request: UltimateRequest): Promise<Response> =>
         applyCacheHeaders(
-          new Response((await answer(request)).sitemaps[0]?.xml ?? '', {
+          // `textResponse` for the length it declares: `compress` reads nothing undeclared.
+          textResponse((await answer(request)).sitemaps[0]?.xml ?? '', {
             headers: { 'content-type': 'application/xml; charset=utf-8' },
           }),
           SEO_CACHE,
@@ -219,7 +220,7 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
         const part = seo.sitemaps.find((file) => file.path === request.pathname);
         if (part !== undefined && part.path !== SITEMAP_PATH) {
           return applyCacheHeaders(
-            new Response(part.xml, {
+            textResponse(part.xml, {
               headers: { 'content-type': 'application/xml; charset=utf-8' },
             }),
             SEO_CACHE,

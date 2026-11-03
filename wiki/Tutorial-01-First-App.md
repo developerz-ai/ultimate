@@ -253,7 +253,7 @@ gate them instead of a file — `defineAdmin() · admin:read + posts:read` — a
 carry `mount`. `--no-example` drops `/posts`. `x routes` is not a gate step either way, so a finding
 here never fails `x verify` — run it after scaffolding and after every `x g route`.
 
-If you do hit `X_ROUTE_MODE_INVALID` on a page you wrote, its `fix:` offers two edits and only the second works: set `render: 'ssr'`. Solid's `<Suspense>` throws under this renderer at any version, and async data needs no boundary — `await` it in the component ([Known gaps](Known-Gaps)).
+A read that should not hold up the page goes in a `<Hole>` on a `stream` page ([Routes and render modes](Routes-And-Render-Modes#what-a-hole-does)).
 
 ## The five commands worth memorising
 

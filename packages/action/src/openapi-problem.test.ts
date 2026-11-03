@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { ERROR_RETRY_KINDS } from '@ultimat3/core';
 import { registerErrorStatus, registerProblemMeta, toProblem } from '@ultimat3/http';
 import { InputInvalidError } from './errors';
 import type { JsonSchemaObject } from './json-schema';
@@ -60,6 +61,31 @@ describe('the published Problem schema against the document @ultimat3/http serve
     expect(served['code']).toBe('E_UPSTREAM');
     const pattern = (problemSchema().properties['code'] as { pattern?: string }).pattern;
     if (pattern !== undefined) expect(new RegExp(pattern).test('E_UPSTREAM')).toBe(true);
+  });
+
+  test('retry is published as the three classes a served document can carry', () => {
+    const retry = problemSchema().properties['retry'] as unknown as {
+      type: string;
+      enum: readonly string[];
+    };
+    expect(retry.type).toBe('string');
+    expect([...retry.enum].sort()).toEqual([...ERROR_RETRY_KINDS].sort());
+    const carried = wire(new TypeError('boom'))['retry'];
+    expect(typeof carried).toBe('string');
+    expect(retry.enum).toContain(carried as string);
+  });
+
+  test('every declared member is one a served document can carry, member for member', () => {
+    // The other half of the first test: a member only the schema has is a promise nothing keeps.
+    registerErrorStatus({ X_APP_OPENAPI_PROBLEM_FULL: 409 });
+    registerProblemMeta({ X_APP_OPENAPI_PROBLEM_FULL: ['sessionId'] });
+    const served = {
+      ...wire(new InputInvalidError('publishPost', 'input.postId: not a uuid', [ISSUE])),
+      ...wire({ code: 'X_APP_OPENAPI_PROBLEM_FULL', meta: { sessionId: 's_1' } }),
+    };
+    expect(Object.keys(problemSchema().properties).sort()).toEqual(
+      [...Object.keys(served), 'issues'].filter((m, i, all) => all.indexOf(m) === i).sort(),
+    );
   });
 
   test('every required member is on every served document', () => {

@@ -82,8 +82,32 @@ Both halves of the config stay as they are, and each now means one thing:
   `hydrate` timing fires; the page shell around it is server HTML and is never hydrated. There is
   still no whole-page client graph, by design (axiom 6: the static path never pays for the app
   path).
-- **No `<Suspense>` holes.** `renderStreamHtml` still splices `<x-hole>` chunks, but nothing marks a subtree as one, so a `stream` route flushes its whole body in the first chunk — correct output, no streaming benefit. Solid's own `<Suspense>` is **not** the missing piece and must not be reached for: it calls `getContextId()`, which throws `cannot be used under non-hydrating context` outside a Solid renderer. Async data needs no boundary here — `renderToHtml` awaits async components and promise children directly.
+- **`<Hole>` splits a `stream` page.** `renderToHtml` with a `holes` sink emits `holeMarker()` and collects the subtree; `renderStreamHtml` splices each `<x-hole>` chunk in completion order. Every other render passes no sink, so a hole is its children, awaited inline: `budgets` weighs a hole's island. Solid's own boundary component must not be reached for: it calls `getContextId()`, which throws `cannot be used under non-hydrating context` outside a Solid renderer.
 - **No per-module CSS graph.** `stylesFor(surface)` filters by the stylesheet's own path, which keeps `site/` and `app/` apart but does not attribute CSS to a single route. So a route links its whole surface's sheet — which is the remaining half of the 2026-09-06 fix: the bytes are now cached rather than re-sent, but a dashboard still downloads the terminal's rules once.
+
+## What is compressed
+
+`As of 2026-11`. The container gzips, because axiom 7 rules out assuming an edge: the `compress` stage ([`packages/http/src/compress.ts`](../../packages/http/src/compress.ts)), last in the pipeline, level 6, no option. The rule is one conjunction, and a response that fails it is handed back as the same object with its body unread.
+
+| Condition | Why |
+|---|---|
+| `GET` or `HEAD`, status `200` | no 206 or 304. A HEAD carries GET's coded headers and no body (RFC 9110 §9.3.2) |
+| `accept-encoding` names `gzip` with q above 0 | RFC 9110. A `*` is not read as gzip |
+| no `content-encoding`, no `content-range` | a handler's own coding stands |
+| `cache-control` has no `private`, `no-store`, `no-cache`, `no-transform` | BREACH: a private document reflects a secret beside attacker input. `stream` mode is always `private, no-store`, so it never buffers. `no-cache` is the one spelling that survives the `cache-headers` review on a signed-in answer |
+| `content-type` essence on the list in `compress.ts` | text, JSON, SVG, XML, VTT. Never `text/event-stream`; images and fonts are already coded |
+| the caller is anonymous, or `cache-control` says `immutable` | BREACH again: `stale-while-revalidate=60` alone offers nothing and withholds nothing, so the `cache-headers` review leaves it, and the body is still the visitor's |
+| `content-length` declared, 1,024 to 262,144 | below, the header overhead wins. Above, `gzipSync` holds the loop: measured 2026-11-03, level 6, high-entropy text, 2.35 ms at 256 KiB against 9.58 ms at 1 MiB (about 29 ms at 1 MiB on the security audit's machine, about 34 anonymous req/s per core). Undeclared is unknown: never read |
+
+| Declares its length | Does not |
+|---|---|
+| `html`, `textResponse`, `jsonResponse`; the stylesheet, island, worker, `sw.js`, register-script, manifest, `robots.txt` and sitemap routes; `revalidatedResponse`; a whole `asset()` file | `stream`, a `new Response(...)` that does not set it. `packages/cli/src/declared-length.test.ts` fails on a public framework route of a coded type that does not declare |
+
+- **Coded answer**: `content-encoding: gzip`, its own `content-length`, no `accept-ranges`, a strong `etag` weakened to `W/`. `notModified` strips the `W/` when it comes back.
+- **`vary: accept-encoding`** on every answer that passes the type and cache rows, coded or not, so a shared cache cannot hand a coded body to a client that refused it.
+- **The read is counted and timed.** A stream past its declared length, a failing one, or one still reading at `ctx.signal` goes out identity and whole, `http.compress_failed` logged with `reason`. So does a `gzipSync` throw. Compression never fails a request.
+- **No brotli**: 5% over gzip on the reference app (183,536 B against 193,291 B) for a `node:zlib` dependency. **No memo**: 1.4–2.9 ms per gzip of the largest stylesheet against nothing measured that asks for a second cache.
+- **`budget.js` is unchanged**: it bounds parse cost, not transfer.
 
 ## What reaches the document, in what order
 

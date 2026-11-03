@@ -10,6 +10,8 @@ import { frozenClock } from '@ultimat3/core';
 import { isPendingKey, isQuarantinedKey } from './attachment';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
+import { s3Driver } from './driver-s3';
+import { FAKE_ENV, FakeS3Client } from './driver-s3-fixture';
 import { isStorageError } from './errors';
 import { grantUpload } from './grant';
 import { SIGNED_URL_PARAMS, verifySignedUrl } from './signed-url';
@@ -50,7 +52,7 @@ describe('grantUpload', () => {
     const grant = await grantUpload({
       disk,
       orgId: 'org-1',
-      request: { filename: 'report.png', contentType: 'image/png' },
+      request: { filename: 'report.png', contentType: 'image/png', size: 1024 },
       policy: IMAGES,
       quarantine: true,
       uploadId: () => 'u-1',
@@ -66,7 +68,7 @@ describe('grantUpload', () => {
     const grant = await grantUpload({
       disk,
       orgId: 'org-1',
-      request: { filename: 'report.png', contentType: 'image/png' },
+      request: { filename: 'report.png', contentType: 'image/png', size: 1024 },
       policy: IMAGES,
       uploadId: () => 'u-1',
       clock,
@@ -82,7 +84,7 @@ describe('grantUpload', () => {
         orgId: 'org-1',
         policy: IMAGES,
         clock,
-        request: { filename: 'x.html', contentType: 'text/html' },
+        request: { filename: 'x.html', contentType: 'text/html', size: 1024 },
       }),
     );
     expect(code).toBe('X_STORAGE_TYPE_REJECTED');
@@ -109,7 +111,11 @@ describe('grantUpload', () => {
       policy: IMAGES,
       clock,
       uploadId: () => 'u-1',
-      request: { filename: '../../etc/passwd.PNG', contentType: 'IMAGE/PNG; charset=binary' },
+      request: {
+        filename: '../../etc/passwd.PNG',
+        contentType: 'IMAGE/PNG; charset=binary',
+        size: 1024,
+      },
     });
     expect(grant.key).toBe('org/org-1/pending/u-1.png');
     expect(grant.contentType).toBe('image/png');
@@ -125,7 +131,7 @@ describe('grantUpload', () => {
       clock,
       uploadId: () => 'u-1',
       target: { entity: 'post', id: 'p-1', field: 'cover' },
-      request: { filename: 'a.png', contentType: 'image/png' },
+      request: { filename: 'a.png', contentType: 'image/png', size: 1024 },
     });
     expect(grant.key).toBe('org/org-1/post/p-1/cover/u-1.png');
   });
@@ -137,7 +143,7 @@ describe('grantUpload', () => {
       policy: IMAGES,
       clock,
       expiresInMs: 60_000,
-      request: { filename: 'a.png', contentType: 'image/png' },
+      request: { filename: 'a.png', contentType: 'image/png', size: 1024 },
     });
     expect(grant.expiresAt).toBe(clock.now().getTime() + 60_000);
 
@@ -157,7 +163,7 @@ describe('grantUpload', () => {
   });
 
   test('two grants for one filename never collide', async () => {
-    const request = { filename: 'a.png', contentType: 'image/png' };
+    const request = { filename: 'a.png', contentType: 'image/png', size: 1024 };
     const first = await grantUpload({ disk, orgId: 'org-1', policy: IMAGES, clock, request });
     const second = await grantUpload({ disk, orgId: 'org-1', policy: IMAGES, clock, request });
     expect(first.key).not.toBe(second.key);
@@ -169,13 +175,59 @@ describe('grantUpload', () => {
  * presigner one call down refuses in terms of `buildSignedUrl`'s own option — so the caller's
  * report named a function they never called. Refused here too, which is the layered form.
  */
+describe('the size a grant binds', () => {
+  const request = { filename: 'a.png', contentType: 'image/png' };
+
+  test('the URL holds the declared size, not the policy ceiling', async () => {
+    const grant = await grantUpload({
+      disk,
+      orgId: 'org-1',
+      policy: IMAGES,
+      clock,
+      request: { ...request, size: 100 },
+    });
+    expect(grant.maxBytes).toBe(100);
+    expect(new URL(grant.url, 'https://x.test').searchParams.get(SIGNED_URL_PARAMS.maxBytes)).toBe(
+      '100',
+    );
+  });
+
+  test('on s3 the declared size is inside the signature', async () => {
+    const fake = new FakeS3Client();
+    const grant = await grantUpload({
+      disk: s3Driver({ bucket: 'b', client: fake, env: FAKE_ENV, clock }),
+      orgId: 'org-1',
+      policy: IMAGES,
+      clock,
+      request: { ...request, size: 100 },
+    });
+    expect(new URL(grant.url).searchParams.get('X-Amz-SignedHeaders')).toBe('content-length;host');
+    expect(grant.maxBytes).toBe(100);
+  });
+
+  test('no whole byte count of at least 1 is refused before anything is signed', async () => {
+    for (const size of [undefined, null, 0, -1, 1.5, Number.NaN, '100']) {
+      const code = await codeOf(() =>
+        grantUpload({
+          disk,
+          orgId: 'org-1',
+          policy: IMAGES,
+          clock,
+          request: { ...request, size: size as number },
+        }),
+      );
+      expect(code).toBe('X_STORAGE_UPLOAD_SIZE_UNDECLARED');
+    }
+  });
+});
+
 describe('the grant TTL is screened where the caller writes it', () => {
   const grantWith = async (expiresInMs: number): Promise<string> =>
     codeOf(async () =>
       grantUpload({
         disk,
         orgId: 'org-1',
-        request: { filename: 'report.png', contentType: 'image/png' },
+        request: { filename: 'report.png', contentType: 'image/png', size: 1024 },
         policy: IMAGES,
         uploadId: () => 'u-1',
         clock,
@@ -197,7 +249,7 @@ describe('the grant TTL is screened where the caller writes it', () => {
     const grant = await grantUpload({
       disk,
       orgId: 'org-1',
-      request: { filename: 'report.png', contentType: 'image/png' },
+      request: { filename: 'report.png', contentType: 'image/png', size: 1024 },
       policy: IMAGES,
       uploadId: () => 'u-1',
       clock,
@@ -222,7 +274,7 @@ describe('an explicitly null grant TTL is refused, never defaulted', () => {
       await grantUpload({
         disk,
         orgId: 'org-1',
-        request: { filename: 'report.png', contentType: 'image/png' },
+        request: { filename: 'report.png', contentType: 'image/png', size: 1024 },
         policy: uploadPolicy({ allowedContentTypes: ['image/png'] }),
         uploadId: () => 'u-1',
         clock: frozenClock(START),

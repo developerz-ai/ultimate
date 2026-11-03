@@ -387,7 +387,6 @@ describe('island · declaring one is the whole declaration', () => {
     const entry = registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',
       config,
-      suspenseBoundaries: 1,
     });
     expect(entry.config.budget.js).toBe(defaultIslandBudget('app'));
     // …and the two surfaces do not share it: the gap IS app/'s baseline. Derived, never restated —
