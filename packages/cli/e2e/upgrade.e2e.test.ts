@@ -60,9 +60,29 @@ const commit = async (message: string): Promise<void> => {
   await must(inApp(['git', 'add', '-A']));
   await must(inApp(['git', 'commit', '-qm', message]));
 };
+/**
+ * Every manifest that carries an `@ultimat3` range: the app's own and each workspace's.
+ *
+ * TWO patterns, never one brace group. Bun's expansion does not mix a literal filename with
+ * patterns, so a group naming the root manifest beside the workspace ones matches NOTHING on
+ * bun 1.4.4 — and a pin that pins nothing leaves the app exactly where it was, which reads as a
+ * passing hop. The recursive spelling is the other one that works and the wrong one: it descends
+ * into `node_modules` and rewrites every published manifest it finds there.
+ */
+const appManifests = async (): Promise<readonly string[]> => {
+  const files = ['package.json'];
+  for await (const file of new Bun.Glob('{apps,packages}/*/package.json').scan({ cwd: app })) {
+    files.push(file);
+  }
+  return files;
+};
+
 const pinAll = async (version: string): Promise<void> => {
-  const glob = new Bun.Glob('{package.json,{apps,packages}/*/package.json}');
-  for await (const file of glob.scan({ cwd: app })) {
+  const files = await appManifests();
+  // A pin that changed nothing is a step that cannot fail: the app would stay where it was and
+  // the hop would prove nothing.
+  expect(files.length).toBeGreaterThan(1);
+  for (const file of files) {
     const text = await Bun.file(join(app, file)).text();
     await Bun.write(
       join(app, file),
