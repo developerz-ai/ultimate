@@ -89,8 +89,8 @@ describe('the reader over a driver', () => {
     expect(grade.unserved).toEqual([{ queue: 'digests', builds: [], depth: 1 }]);
   });
 
-  test('a driver with no registry and no demand lists nothing, so nothing reads served', async () => {
-    const { introspect: _introspect, demand: _demand, ...bare } = memoryJobDriver();
+  test('a driver with no registry lists no worker, so nothing reads served', async () => {
+    const { introspect: _introspect, ...bare } = memoryJobDriver();
     const reader = queueReaderOf(bare, closed);
     expect(await reader.workers()).toEqual([]);
     expect(await reader.demand()).toEqual([]);

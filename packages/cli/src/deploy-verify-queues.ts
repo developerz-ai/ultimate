@@ -38,13 +38,13 @@ export function openQueue(
 }
 
 /**
- * Any driver as the grade's reader. A driver with no registry lists no worker, and one with no
- * `demand()` lists no work: the grade then reads every queue unserved, never served by default.
+ * Any driver as the grade's reader. A driver with no registry lists no worker: the grade then reads
+ * every queue unserved, never served by default.
  */
 export function queueReaderOf(driver: JobDriver, close: () => Promise<void>): QueueReader {
   return {
     workers: async () => (await driver.introspect?.workers()) ?? [],
-    demand: async () => (await driver.demand?.()) ?? [],
+    demand: () => driver.demand(),
     close,
   };
 }
