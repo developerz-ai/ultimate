@@ -14,6 +14,7 @@ One file starts every backing service a suite measures against —
 | no durability | Postgres `fsync`, `synchronous_commit`, `full_page_writes` off; Redis `--save ''`, `--appendonly no` |
 | silent | Postgres `log_min_messages=fatal`, Redis `--loglevel nothing`, NATS `-l /dev/null`, the gateway `VGW_QUIET`; every container's log driver is `none` |
 | one definition | CI's `gate` parts run `docker compose up -d --wait <services>`; the URLs live in `docker/test-services.env` |
+| one supplier | a suite that reads a `TEST_*_URL` is run by the part that starts that server and exports the URL — `scripts/test-services-shape.test.ts` |
 
 Held by `scripts/test-services-shape.test.ts`.
 

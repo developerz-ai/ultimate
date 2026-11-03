@@ -97,6 +97,7 @@ services where it starts any (22 s + 8 s before this change, for two servers by 
 | `deploy-social-demo.yml` reads the demo app's own gate | same test: its `CHECK` is the matrix job's name for that app |
 | every tracked app has a runner | same test: the matrix is `GATED_APPS` |
 | a part starts only the services it exports URLs for | `scripts/test-services-shape.test.ts` |
+| a suite that needs a service URL is run by a part that exports it | `scripts/test-services-shape.test.ts` |
 | `windows` is the one non-Ubuntu runner, pwsh on every step, ≤ 25 min | `scripts/ci-workflow-shape.test.ts` |
 
 ## Trade
