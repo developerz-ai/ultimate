@@ -6,7 +6,12 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { names } from '../packages/cli/src/templates/naming';
 import { docsFiles } from '../packages/cli/src/templates/scaffold-docs';
+import { ownerOf } from '../packages/cli/src/verify-tests';
+import { jobOf, readWorkflow, text } from './lib/ci-workflow-read';
+import { corpus } from './lib/corpus';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import type { ServicePart, ServiceSuite } from './lib/test-service-coverage';
+import { requiredServiceUrls, serviceCoverageGaps } from './lib/test-service-coverage';
 
 // Every case reads the real compose files and workflows, so the file runs on the repo-scan budget.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -45,6 +50,35 @@ const lines = (await Bun.file(`${root}/${ENV_FILE}`).text())
 const urls = new Map(
   lines.filter(([name]) => name.endsWith('_URL')).map(([name, value]) => [name, new URL(value)]),
 );
+
+// The one reader of `.github/workflows/*.yml` the ci-workflow tests share — the same parse and the
+// same schema, so this file and `ci-workflow-shape.test.ts` cannot drift on what a job says.
+const ci = await readWorkflow('ci.yml');
+const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+const record = (value: unknown): Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+
+/**
+ * The gate's parts, as the coverage rule reads them: the steps each one runs, the servers it
+ * starts and the URLs it exports. One read of the matrix for the whole file — the forward check
+ * below and the reverse one beside it must never answer about different parts.
+ */
+const rows = listOf(jobOf(ci, 'gate').strategy?.matrix?.['include']);
+const parts: readonly ServicePart[] = rows.map((raw) => {
+  const row = record(raw);
+  return {
+    part: text(row['part']),
+    only: text(row['only'])
+      .split(',')
+      .filter((name) => name !== ''),
+    services: text(row['services'])
+      .split(' ')
+      .filter((name) => name !== ''),
+    urls: text(row['urls'])
+      .split('|')
+      .filter((name) => name !== ''),
+  };
+});
 
 /**
  * The env lines that are a FILE, not a URL, each with the URL whose server wrote it — exported by
@@ -279,26 +313,13 @@ describe('unit · test services · a suite finds each one where it was started',
     expect(Object.fromEntries(files)).toEqual({ TEST_TLS_ROOT_CERT: 'docker/.tls/ca.crt' });
   });
 
-  test('each CI part exports the URLs of exactly the services it started', async () => {
-    const ci = Bun.YAML.parse(await Bun.file(`${root}/.github/workflows/ci.yml`).text()) as {
-      readonly jobs?: Readonly<
-        Record<
-          string,
-          { readonly services?: unknown; readonly strategy?: { readonly matrix?: unknown } }
-        >
-      >;
-    };
-    const include = (ci.jobs?.['gate']?.strategy?.matrix as { include?: unknown } | undefined)
-      ?.include;
-    const parts = (Array.isArray(include) ? include : []) as readonly Readonly<
-      Record<string, string | undefined>
-    >[];
-    const withServices = parts.filter((part) => part['services'] !== undefined);
+  test('each CI part exports the URLs of exactly the services it started', () => {
+    const withServices = parts.filter((part) => part.services.length > 0);
 
     expect(withServices.length).toBeGreaterThan(0);
     for (const part of parts) {
-      const started = (part['services'] ?? '').split(' ').filter((name) => name !== '');
-      const exported = (part['urls'] ?? '').split('|').filter((name) => name !== '');
+      const started = part.services;
+      const exported = part.urls;
       const served = [...urls]
         .filter(([, url]) => started.includes(serviceAt(url) ?? ''))
         .map(([name]) => name);
@@ -309,16 +330,47 @@ describe('unit · test services · a suite finds each one where it was started',
 
       expect(
         started.filter((name) => compose.services?.[name] === undefined),
-        `${part['part']} starts a service ${COMPOSE} does not define`,
+        `${part.part} starts a service ${COMPOSE} does not define`,
       ).toEqual([]);
       expect(
         [...exported].sort(),
-        `${part['part']} exports URLs for services it did not start`,
+        `${part.part} exports URLs for services it did not start`,
       ).toEqual([...expected].sort());
     }
     // One mechanism: a `services:` block beside the compose file is a second way to start one.
     for (const [name, job] of Object.entries(ci.jobs ?? {})) {
       expect(job.services, `${name} declares a services: block`).toBeUndefined();
     }
+  });
+
+  // The other direction: a part that exports the URLs of the services it started is only half the
+  // rule — a suite that READS a URL needs a part that runs its step to export it, or the suite
+  // skips under a green run and the step is green over nothing. The forward check above cannot
+  // see this: it asks what a part exports, never what a suite needs.
+  test('every suite that reads a service URL is run by a part that exports it', async () => {
+    const files = await corpus(root, 'tests');
+    const suites: readonly ServiceSuite[] = files.map((file) => ({
+      path: file.path,
+      step: ownerOf(file.path),
+      required: requiredServiceUrls(file.source),
+    }));
+    // The scope this rule reads is narrowed: the suites that READ a URL. A rename of the
+    // `TEST_*_URL` convention would empty that scope and leave the rule green over nothing — so
+    // the scope has a floor: at least one suite carries a requirement.
+    expect(
+      suites.filter((suite) => suite.required.length > 0).length,
+      'no suite reads a TEST_*_URL, so this rule watches nothing',
+    ).toBeGreaterThan(0);
+    const serves = new Map<string, string>(
+      [...urls].flatMap(([name, url]) => {
+        const at = serviceAt(url);
+        return at === undefined ? [] : [[name, at] as const];
+      }),
+    );
+    const gaps = serviceCoverageGaps(suites, parts, serves);
+
+    expect(
+      gaps.map((gap) => `${gap.suite} reads ${gap.url}, which no part running its step exports`),
+    ).toEqual([]);
   });
 });
