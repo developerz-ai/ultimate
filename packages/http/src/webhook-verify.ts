@@ -3,11 +3,10 @@
 // a pipeline stage because a receiver is an ordinary `api/` route — the secret is per sender, and
 // only the route knows which one applies.
 //
-// THE FORMAT IS `@ultimat3/core`'s (`webhook-signature.ts`) and is not re-declared here. That
-// module is at the tier both halves can reach: `@ultimat3/jobs` (tier 3) signs a delivery and its
-// boundary forbids this package, and this package (tier 2) may not reach tier 3. What stays here
-// is the POLICY — what counts as fresh, how large a body may be, and which refusal a receiver
-// answers with.
+// THE FORMAT IS `@ultimat3/core`'s (`webhook-signature.ts`) and is not re-declared here: this
+// package (tier 2) may not reach `@ultimat3/jobs` (tier 3), which signs, so the format sits below
+// both. What stays here is the POLICY — what counts as fresh, how large a body may be, and which
+// refusal a receiver answers with.
 
 import type { Clock } from '@ultimat3/core';
 import {
@@ -22,6 +21,7 @@ import {
   WEBHOOK_TOPIC_HEADER,
   webhookMac,
 } from '@ultimat3/core';
+import type { WebhookVerifier } from './errors';
 import {
   bodyInvalid,
   httpCountInvalid,
@@ -91,6 +91,27 @@ const assertWebhookSecret = (secret: unknown): string => {
   throw webhookSecretMissing(
     secret === '' ? 'an empty string' : `a value of type ${typeof secret}`,
   );
+};
+
+/**
+ * The same screen over a rotation list (`verifyBodyHmac`): one entry or several, every one
+ * non-empty, and at least one. One empty entry refuses the list — `[current, process.env.OLD]`
+ * with `OLD` unset would otherwise verify anything under the empty key.
+ */
+export const assertWebhookSecrets = (
+  secret: unknown,
+  via: WebhookVerifier = 'verifyWebhookSignature',
+): readonly string[] => {
+  const list: readonly unknown[] = Array.isArray(secret) ? secret : [secret];
+  if (list.length === 0) throw webhookSecretMissing('an empty list', via);
+  for (const entry of list) {
+    if (typeof entry === 'string' && entry.length > 0) continue;
+    throw webhookSecretMissing(
+      entry === '' ? 'an empty string' : `a value of type ${typeof entry}`,
+      via,
+    );
+  }
+  return list as readonly string[];
 };
 
 export interface WebhookVerifyOptions {

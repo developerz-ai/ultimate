@@ -15,9 +15,29 @@
 
 import { previousDigestAt } from '@postly/core';
 import { SUPPORTED_ZONES, orgId as toOrgId } from '@postly/domain';
+import {
+  assertRateLimitScope,
+  installedRateLimitStore,
+  rateLimiter,
+  resolveRateLimitConfig,
+  toBucket,
+} from '@ultimat3/http';
 import { job, t } from '@ultimat3/jobs';
 import { send } from '@ultimat3/mail';
 import { digestEmail } from '../mail';
+
+/**
+ * The mail vendor's allowance for digest deliveries, FLEET-wide: `'shared'` is counted in the store
+ * the boot installs for every role, so ten workers draining a backlog spend one budget between
+ * them. A delivery past it is `X_RATE_LIMITED`, which the worker defers with the attempt unspent —
+ * a backlog waits for the vendor, it is never dead-lettered for waiting. Postly's number, not the
+ * framework's: the vendor's contract is the app's to know.
+ */
+const MAIL_VENDOR = resolveRateLimitConfig({
+  scope: 'shared',
+  buckets: { 'mail-vendor': toBucket('deliverDigest', { limit: 600, windowMs: 60_000 }) },
+  defaultBucket: 'mail-vendor',
+});
 
 export const deliverDigest = job({
   /**
@@ -44,6 +64,13 @@ export const deliverDigest = job({
   /** One group in flight at a time, so a retry cannot race its own first attempt. */
   concurrency: 1,
   async run({ input, step, ctx }) {
+    // FIRST, ahead of every step: a refusal here replays nothing and spends no attempt. Built per
+    // run, because the store is the one the boot installed, and module scope runs before boot.
+    // `'shared'` is a claim about that store: one process' memory under it is ten budgets behind
+    // ten workers, so it is refused (`X_RATE_LIMIT_NOT_SHARED`) rather than counted.
+    const vendor = rateLimiter({ config: MAIL_VENDOR, store: installedRateLimitStore() });
+    assertRateLimitScope(MAIL_VENDOR, vendor);
+    await vendor.assert('digest', 'mail-vendor');
     const orgId = toOrgId(input.orgId);
 
     // The window ends at the slot, never at execution time: the digest dated `localDate` must

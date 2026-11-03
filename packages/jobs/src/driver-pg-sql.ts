@@ -9,6 +9,7 @@
 
 export { SQL_CLAIM } from './driver-pg-claim-sql';
 export { SQL_JOBS_TABLE } from './driver-pg-ddl';
+export { SQL_ENQUEUE_MANY, SQL_ENQUEUE_MANY_RESOLVE } from './driver-pg-enqueue-many';
 // The whole-`x_jobs`-row reads, split off at this file's size ceiling and re-exported for the
 // same reason the DDL is. `JOB_ROW_COLUMNS` is imported as a value because `SQL_CANCEL` also
 // returns a whole row and must project it identically — two spellings of one row shape is how
@@ -24,10 +25,12 @@ export {
 export {
   SQL_OUTBOX_CLAIM,
   SQL_OUTBOX_MARK_PUBLISHED,
+  SQL_OUTBOX_MARK_PUBLISHED_MANY,
   SQL_OUTBOX_PENDING_COUNT,
   SQL_OUTBOX_PUBLISHED_JOB,
   SQL_OUTBOX_RELEASE,
   SQL_OUTBOX_STAGE,
+  SQL_OUTBOX_STAGE_MANY,
 } from './driver-pg-outbox-sql';
 export { SQL_ACK, SQL_NACK } from './driver-pg-settle-sql';
 
@@ -42,6 +45,10 @@ import { notifyJobReady } from './driver-pg-wake-sql';
  * (`EnqueueRequest.id`), so a publish repeated after a crash meets the job the first one made —
  * in any state — and inserts nothing; the partial index below collapses a repeat only while that
  * job is still live. A select over `values`, so each parameter carries its cast.
+ *
+ * `$8::numeric::bigint`, never `$8::bigint`: a fractional epoch ms — `now + Math.random() * 1000`
+ * — binds as text `1767225660000.5` on some clients, which no `bigint` reads (`22P02`). Through
+ * `numeric` it is rounded to the ms, the instant `SQL_ENQUEUE_MANY` stores for the same request.
  */
 export const SQL_ENQUEUE = `
 with inserted as (
@@ -49,8 +56,8 @@ with inserted as (
     (id, name, queue, input, idempotency_key, run_id, max_attempts, state, run_at, tenant_id,
      traceparent, enqueued_by)
   select $1::uuid, $2::text, $3::text, $4::jsonb, $5::text, $6::uuid, $7::int,
-         case when to_timestamp($8::bigint / 1000.0) > now() then 'delayed' else 'ready' end,
-         to_timestamp($8::bigint / 1000.0), $9::text, $10::text, $11::text
+         case when to_timestamp($8::numeric::bigint / 1000.0) > now() then 'delayed' else 'ready' end,
+         to_timestamp($8::numeric::bigint / 1000.0), $9::text, $10::text, $11::text
    where not exists (select 1 from x_jobs published where published.id = $1::uuid)
   on conflict (name, (coalesce(tenant_id, '')), idempotency_key)
     where state in ('ready', 'delayed', 'running', 'suspended')

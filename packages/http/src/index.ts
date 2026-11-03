@@ -249,6 +249,8 @@ export { deleteCookie, setCookie } from './set-cookie';
 export type { Stage, StageDoc, StageName, StagePhase, StageRun } from './stages';
 export type { InferOutput, Schema, ValidationOutcome } from './validate';
 export { formatIssue, validateBody, validateSync } from './validate';
+export type { BodyHmacOptions, VerifiedBody } from './webhook-hmac';
+export { verifyBodyHmac } from './webhook-hmac';
 export type { VerifiedWebhook, WebhookVerifyOptions } from './webhook-verify';
 export {
   DEFAULT_WEBHOOK_BODY_LIMIT,

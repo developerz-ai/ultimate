@@ -8,6 +8,7 @@ import { expect } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 // why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
 import { tmpdir } from 'node:os';
+import { UNDECIDED_FILE } from './lib/error-map-undecided';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { STATUS_BACKLOG, STATUS_TABLE, STATUS_TABLE_SLICES, WIKI_PAGE } from './new-error-code';
@@ -41,7 +42,8 @@ export async function fixtureRoot(): Promise<string> {
   await mkdir(`${dir}/wiki`, { recursive: true });
   await Bun.write(`${dir}/${WIKI_PAGE}`, Bun.file(`${ROOT}/${WIKI_PAGE}`));
   // The files that decide a code's HTTP status, real copies: a row in a slice or a pin there.
-  for (const file of [STATUS_TABLE, ...STATUS_TABLE_SLICES, STATUS_BACKLOG]) {
+  // `UNDECIDED_FILE` because the backlog imports it: a copy without it would not load.
+  for (const file of [STATUS_TABLE, ...STATUS_TABLE_SLICES, STATUS_BACKLOG, UNDECIDED_FILE]) {
     await Bun.write(`${dir}/${file}`, Bun.file(`${ROOT}/${file}`));
   }
   return dir;

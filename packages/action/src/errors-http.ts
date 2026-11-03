@@ -13,7 +13,7 @@ export class ActionHttpPathInvalidError extends UltimateError {
     super({
       code: 'X_ACTION_HTTP_PATH_INVALID',
       cause: `action "${input.name}" pins http.path ${renderCauseValue(input.path)}, which ${input.reason}`,
-      fix: "pin a static lowercase path: http: { path: '/api/webhooks/wompi' } — a leading slash, segments of a-z 0-9 . _ ~ -, no :param or *wildcard, no trailing slash, never under /_x",
+      fix: "pin a static lowercase path: http: { path: '/api/uploads/signed' } — a leading slash, segments of a-z 0-9 . _ ~ -, no :param or *wildcard, no trailing slash, never under /_x",
       meta: { action: input.name },
     });
   }

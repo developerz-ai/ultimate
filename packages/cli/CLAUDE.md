@@ -71,7 +71,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `job-budget.ts` | `X_JOB_OUTLASTS_DRAIN`, the `manifest` step: a job's `timeout` against `workerBudgetMs(drain)`, read from the registry after `loadApp`, never from `x.manifest.json`, which carries no `timeoutMs` |
 | `output-findings.ts` | render layer only: `runnableFix` (`bunx x`, decided by `dispatch.ts`'s `readerFor`) and `collapseFindings`. Throw sites keep `x …` |
 | `app-load-unresolved.ts` | `X_APP_IMPORT_UNRESOLVED`, read by the scan, `findingFrom` and `x doctor`'s `snapshots` probe |
-| `fix-truth.test.ts` / `fix-truth-fixture.ts` / `db-fix-truth.job.test.ts` | a printed fix, executed: each row breaks a scaffold, asserts the code and runs the line. A false fix found later adds a row in the same diff |
+| `fix-truth.test.ts` / `fix-truth-fixture.ts` / `db-fix-truth.job.test.ts` | a printed fix, executed: each row breaks a scaffold, asserts the code and runs the line |
 
 ### Generators (`x g`, `x new`)
 
@@ -117,7 +117,8 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `role-wake.ts` | the worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role only, only over a client that `canListen` — and `queue_wake_live` |
 | `role-sync.ts` / `role-replicator.ts` / `runtime-live-feed.ts` | the sync node, the change feed |
 | `runtime-render.ts` / `runtime-render-document.ts` / `runtime-isr-outcome.ts` / `route-islands.ts` / `runtime-assets.ts` / `runtime-storage.ts` / `runtime-hooks.ts` / `api-routes.ts` | the HTTP surface: pages, `/icons` + `/media`, `/_storage` (http's `objectResponse`), authz, the app's API, its bearer mounts (`apiMountRoutes`) and pages' bound `POST`s (`pagePostRoutes`), mounted by BOTH boots. `isr` and `static` render as nobody (`runtime-render-shared-actor.test.ts`); a hole's children run in the forwarded request context (`stream-hole-scope.ts`, `X_STREAM_ALREADY_FLUSHED`). Full rule: [`docs/history/cli.md`](../../docs/history/cli.md#moved-out-2026-11-03-plan-101-wave-3-the-claudemd-ceiling) |
-| `runtime-overrides.ts` | the one field a host hands the framework a driver through — and `routes`, the plain routes for a wire format no primitive speaks (OAuth token endpoint) |
+| `runtime-overrides.ts` | the one field a host hands the framework a driver through — and `routes`, the plain routes for a wire format no primitive speaks (OAuth token endpoint); a webhook receiver needs no line here |
+| `plain-routes.ts` | the plain routes both boots mount and `x routes` lists: `runtime.routes`, then every declared `webhookReceiver()`'s, each once |
 | `app-openapi.ts` | `openapi.json` (complete when `defineApi({ openapi })` is declared) and each bearer mount's own document; staleness for all of them |
 | `script-csp.ts` / `style-csp.ts` / `style-bundle.ts` / `page-sync.ts` / `worker-bundle.ts` | CSP hashes, the CSS file, the page's sync target and worker |
 | `page-navigation.ts` | the client router for `navigation.client` surfaces — built, routed and named ONCE for `x dev`, the container and the static export; none opted in builds nothing |
@@ -146,7 +147,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | File | Job |
 |---|---|
 | `cmd-registries.ts` / `cmd-jobs.ts` / `cmd-tasks.ts` / `cmd-policy.ts` / `cmd-i18n.ts` | project a framework registry; each pairs CLI wiring with a facts module |
-| `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: the one-shot that seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` (compare-and-set per row; `{ sealed, alreadySealed, skipped }`), over `startQueue`'s client, `open` injectable. Full rule: `docs/history/cli.md` |
+| `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets`. Full rule: `docs/history/cli.md` |
 | `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` | `x mcp serve`: 18 tools, two transports; a taken port is `X_PORT_IN_USE`. `mcp-test-run.ts` folds `bun test`'s `N errors` line and exit code into `tests.run` |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
 | `cmd-pr.ts` / `cmd-ci.ts` | GitHub through `gh`, parsed against a schema. Not gate steps |

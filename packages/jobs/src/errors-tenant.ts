@@ -1,6 +1,6 @@
 // The one refusal for a job whose PAYLOAD and declared tenant disagree — a webhook delivery's
 // `orgId` that is not the org the run is under, a tenant that derives no org from the payload, an
-// agent actor resolved in another org. Its code stays declared in `errors.ts`, classified terminal.
+// agent actor resolved in another org. Its code stays declared in `error-codes.ts`, classified terminal.
 
 import { UltimateError } from '@ultimat3/core';
 

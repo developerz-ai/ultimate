@@ -1,5 +1,5 @@
 // The two `X_EXPORT_*` codes an export pass can end on, apart from `errors.ts` for the reason
-// `backfill-errors.ts` and `webhook-errors.ts` are: one file, one job, and `errors.ts` holds the
+// `backfill-errors.ts` and `webhook-errors.ts` are: one file, one job, and `error-codes.ts` holds the
 // registry — the codes, the titles and the single `registerErrorCodes()` call.
 //
 // Both are TERMINAL and both are refusals of the DECLARATION rather than of the data: the same

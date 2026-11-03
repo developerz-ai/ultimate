@@ -117,18 +117,18 @@ export { postgresJobDriver, postgresLeader } from './driver-pg';
 // too — the array-parameter proofs are `driver-pg-array.live.test.ts` (25.0.0).
 export { SQL_JOBS_TABLE } from './driver-pg-sql';
 export { signalEnqueued, signalStaged } from './enqueue-signal';
-export type { JobErrorCode } from './errors';
+export type { JobErrorCode } from './error-codes';
+export { JOB_ERROR_CODES, JOB_ERROR_TITLES } from './error-codes';
 export {
   ActionJobUnbridgedError,
   CancelUnsupportedError,
   ClaimQueuesEmptyError,
   DriverUnavailableError,
   IdempotencyRequiredError,
-  JOB_ERROR_CODES,
-  JOB_ERROR_TITLES,
   JobAbortedError,
   JobDrainedError,
   JobDuplicateError,
+  JobEnqueueBatchTooLargeError,
   JobMaxAttemptsError,
   JobNameTakenError,
   JobNotCancellableError,
@@ -183,6 +183,25 @@ export {
   memoryExportSink,
 } from './export-sink';
 export { IDLE_POLL_CEILING_MS } from './idle-backoff';
+export type { ImportDefinition, ImportReport } from './import';
+export {
+  DEFAULT_IMPORT_BATCH,
+  DEFAULT_IMPORT_MAX_RECORD_BYTES,
+  DEFAULT_IMPORT_MAX_ROW_ERRORS,
+  DEFAULT_IMPORT_PAGE_BYTES,
+  importRows,
+} from './import';
+export {
+  ImportHeaderMismatchError,
+  ImportRecordTooLargeError,
+  ImportTooManyErrorsError,
+} from './import-errors';
+export type { ImportRejection } from './import-format';
+export { IMPORT_REJECTIONS } from './import-format';
+export type { ImportRowError } from './import-pass';
+export { importErrorKey } from './import-pass';
+export type { ImportObject, ImportSource, MemoryImportSource } from './import-source';
+export { memoryImportSource } from './import-source';
 export type {
   DeadLetterEntry,
   JobsManifest,
@@ -237,6 +256,8 @@ export type {
   JobRunArgs,
 } from './job';
 export { describeJobs, getJob, isJobHandle, job, registeredJobs, resetJobs } from './job';
+export type { EnqueueManyOptions } from './job-enqueue-many';
+export { MAX_ENQUEUE_BATCH } from './job-enqueue-many';
 export type { JobsRetentionOptions } from './jobs-retention';
 export { jobsPurgeTarget } from './jobs-retention';
 export type { HeldLease, LeaseStore, MemoryLeaseStore, MemoryLeaseStoreOptions } from './leases';
@@ -389,6 +410,25 @@ export {
 } from './webhook-errors';
 export type { MemoryWebhookLedger, WebhookAttempt, WebhookLedger } from './webhook-ledger';
 export { DEFAULT_MAX_WEBHOOK_ATTEMPTS, memoryWebhookLedger } from './webhook-ledger';
+export { webhookReceiver, webhookReceiverRoutes } from './webhook-receiver';
+export {
+  WEBHOOK_EVENT_ID_PATTERN,
+  WEBHOOK_RECEIVER_RETRY_AFTER_SECONDS,
+  WebhookEventIdInvalidError,
+  WebhookReceiverInvalidError,
+  WebhookReceiverUnavailableError,
+} from './webhook-receiver-errors';
+export type {
+  ReceivedEvent,
+  ReceivedEventFacts,
+  WebhookAnswer,
+  WebhookHandleArgs,
+  WebhookInbound,
+  WebhookReceiver,
+  WebhookReceiverDefinition,
+  WebhookReceiverInput,
+  WebhookReceiverTenant,
+} from './webhook-receiver-types';
 export type { Worker, WorkerOptions, WorkerStats } from './worker';
 export { jobWorker } from './worker';
 export type { CutoffTimes } from './worker-drain-cutoff';

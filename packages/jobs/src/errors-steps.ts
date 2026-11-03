@@ -1,5 +1,5 @@
 // The two refusals a step answer can raise: a value JSON cannot hold, and a waited event its schema
-// refuses. Both are terminal, and their codes stay declared in `errors.ts`.
+// refuses. Both are terminal, and their codes stay declared in `error-codes.ts`.
 
 import { UltimateError } from '@ultimat3/core';
 

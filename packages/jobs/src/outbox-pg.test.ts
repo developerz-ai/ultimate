@@ -7,7 +7,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
-import { SQL_OUTBOX_CLAIM, SQL_OUTBOX_STAGE } from './driver-pg-sql';
+import {
+  SQL_OUTBOX_CLAIM,
+  SQL_OUTBOX_MARK_PUBLISHED_MANY,
+  SQL_OUTBOX_STAGE,
+  SQL_OUTBOX_STAGE_MANY,
+} from './driver-pg-sql';
 import type { OutboxRecord } from './outbox';
 import { postgresOutboxStore } from './outbox-pg';
 
@@ -127,5 +132,40 @@ describe('the pg outbox store', () => {
     expect(SQL_OUTBOX_CLAIM).toContain('for update skip locked');
     expect(SQL_OUTBOX_CLAIM).toContain('where published_at is null');
     expect(SQL_OUTBOX_CLAIM).toContain('order by staged_at');
+  });
+
+  test('stageMany() is ONE statement on the transaction executor, and commit() reports every row', async () => {
+    const pool = recorder();
+    const transaction = recorder();
+    const store = postgresOutboxStore({ executor: pool, txExecutor: () => transaction });
+    const second = { ...record, id: 'row-2', input: undefined };
+    const open = tx('tx-many');
+
+    await store.stageMany?.(open, [record, second]);
+    await store.stageMany?.(open, []);
+
+    expect(pool.calls).toHaveLength(0);
+    expect(transaction.calls.map((call) => call.sql)).toEqual([SQL_OUTBOX_STAGE_MANY]);
+    const rows = JSON.parse(String(transaction.calls[0]?.params[0])) as Record<string, unknown>[];
+    expect(rows.map((row) => [row['id'], row['input']])).toEqual([
+      ['row-1', { orderId: 'o-1' }],
+      ['row-2', null],
+    ]);
+    expect((await store.commit(open)).map((row) => row.id)).toEqual(['row-1', 'row-2']);
+  });
+
+  test('markPublishedMany() is one fenced statement on the pool, under this relay by default', async () => {
+    const pool = recorder();
+    const store = postgresOutboxStore({
+      executor: pool,
+      txExecutor: () => recorder(),
+      relayId: 'relay-a',
+    });
+    await store.markPublishedMany?.(['row-1', 'row-2'], 5_000);
+    await store.markPublishedMany?.([], 5_000);
+    expect(pool.calls).toEqual([
+      { sql: SQL_OUTBOX_MARK_PUBLISHED_MANY, params: [['row-1', 'row-2'], 5_000, 'relay-a'] },
+    ]);
+    expect(SQL_OUTBOX_MARK_PUBLISHED_MANY).toContain('published_at is null and claimed_by = $3');
   });
 });

@@ -27,9 +27,10 @@ const pinOf = (name: string): string | undefined => {
 /** What an action may say about its own HTTP projection. */
 export interface ActionHttp {
   /**
-   * Pin the URL, whatever the app's style derives — for a path a vendor was given and cannot be
-   * told to change (a webhook registered with a payment provider). Static and lowercase; the pin
-   * is also what a rename of the export can no longer move.
+   * Pin the URL, whatever the app's style derives — for a path a caller already holds and cannot
+   * be told to change. Static and lowercase; the pin is also what a rename of the export can no
+   * longer move. A vendor's webhook goes to `webhookReceiver()` (`@ultimat3/jobs`) instead: an
+   * action's schema answers before any signature is checked.
    */
   readonly path?: string;
 }

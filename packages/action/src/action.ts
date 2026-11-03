@@ -65,8 +65,10 @@ export interface ActionDef<
   readonly rateLimit?: ActionRateLimit;
   /**
    * The HTTP projection's one per-action knob: `http: { path }` pins the URL whatever the app's
-   * `pathStyle` derives — for a webhook a vendor was given. Everything else about the route (the
-   * method, the policy, the body) stays the framework's.
+   * `pathStyle` derives — for a path a caller holds and cannot be told to change (a signed upload).
+   * Everything else about the route (the method, the policy, the body) stays the framework's. An
+   * inbound WEBHOOK is not this door: it is `webhookReceiver()` from `@ultimat3/jobs`, whose route
+   * verifies the vendor's bytes before anything parses them.
    */
   readonly http?: ActionHttp;
   /**

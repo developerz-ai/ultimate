@@ -8,6 +8,7 @@ import { describePages } from '@ultimat3/render';
 import { apiRoutes } from './api-routes';
 import { loadAppRuntime } from './app-runtime';
 import type { JsonValue } from './output';
+import { plainRoutes } from './plain-routes';
 
 /** One printed and one JSON row per served route: a page, a mounted page, or an API route. */
 export interface RouteRow {
@@ -94,7 +95,7 @@ export function routeRows(plain: readonly Route[] = []): readonly RouteRow[] {
  * since an action or query validates its own input. Loaded as `x dev` loads them.
  */
 export async function plainAppRoutes(root: string): Promise<readonly Route[]> {
-  return (await loadAppRuntime(root))?.routes ?? [];
+  return plainRoutes((await loadAppRuntime(root))?.routes);
 }
 
 /** Fixed-width columns so the output diffs cleanly between runs and between machines. */

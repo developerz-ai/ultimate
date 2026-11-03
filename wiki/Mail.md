@@ -98,9 +98,13 @@ export const resend = resendEventReceiver({ secret: Bun.env['RESEND_WEBHOOK_SECR
 | `sesEventReceiver` | SNS: the topic is in `topicArns`, the certificate URL is `https://sns.<topic region>.amazonaws.com/…pem`, `SignatureVersion` 1 or 2, `Timestamp` within `toleranceMs` (1 h). A `SubscriptionConfirmation` returns its `confirmUrl`; it is fetched only with `confirmSubscriptions: true` |
 | `resendEventReceiver` | Svix: HMAC-SHA256 under the `whsec_` secret, constant-time, within `toleranceMs` (5 min) |
 
-Mount `receive(request)` as a plain HTTP route in the `routes` runtime override
-([Configuration](Configuration)). `api/` holds no route file — it is actions and queries only, and a
-webhook body an action cannot parse is exactly what `routes` is for.
+Mount a receiver through `webhookReceiver()` ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks)),
+the one door for an inbound webhook. Its `verify` calls `ses.receive(inbound.request())` — a fresh
+`Request` over the exact bytes, verified there — and returns `{ eventId, payload }` with the events
+as the payload (the SNS `MessageId` as the id), or `{ answer: Response }` for a subscription
+confirm. Its `handle` applies the stored events in the worker without verifying again, so a retry
+an hour later is not refused by the signature window. Declaring it is its registration: the boot
+mounts its route. `api/` holds no route file.
 `SES_CONFIGURATION_SET` names the SES configuration set sent on every message (`ConfigurationSetName`) — the set whose event destination publishes to that SNS topic.
 
 ## Framework mails

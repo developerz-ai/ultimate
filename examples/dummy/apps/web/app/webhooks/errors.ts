@@ -37,3 +37,16 @@ export const EndpointNotFound = defineError<string>({
   cause: (endpointId) => `no webhook endpoint ${endpointId} in the acting member's org`,
   fix: 'psql "$DATABASE_URL" -c "SELECT id, url FROM webhook_endpoints WHERE org_id = \'<orgId>\'"',
 });
+
+/**
+ * A billing event whose bytes verified and do not read as the event Postly expects. 400, because
+ * the signature proved the vendor sent exactly this and a redelivery sends it again. The cause
+ * names no byte of it: the body is `.sensitive()` on the queue, and a parser's message quotes it.
+ */
+export const BillingEventUnreadable = defineError<string>({
+  code: 'X_BILLING_EVENT_UNREADABLE',
+  title: 'a verified billing event is not the shape Postly reads',
+  status: 400,
+  cause: (reason) => `the billing event verified and ${reason}`,
+  fix: 'x jobs list --name billing.events --json — compare the vendor payload docs with BillingEvent in apps/web/app/webhooks/jobs/billing-events-receiver.ts',
+});

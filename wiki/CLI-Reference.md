@@ -1070,7 +1070,7 @@ the pages from `describePages()`, then — sorted by path — the action and que
 | a page | `site` / `app` | its file | `method` (`GET`), `path`, `surface`, `file`, `render`, `hydrate`, `offline`, `budget` |
 | a mounted page — every screen `defineAdmin()` serves | `site` / `app` | the call and the permissions that gate it: `defineAdmin() · admin:read + widgets:read` | the page keys plus `mount: { by, permissions }`; a file route has no `mount` key |
 | an action or query projection | `api` | the primitive, its name and its policy: `action publishPost · posts:publish` | `method`, `path`, `surface`, `primitive`, `name`, `auth`, `policy` |
-| a plain `runtime.ts` route — a webhook receiver, an OAuth endpoint | `api` | `runtime.ts routes <name>`, then its policy | the same keys, `primitive: null` |
+| a plain route — a `runtime.ts` one (an OAuth endpoint) or a declared `webhookReceiver()`'s (`webhook.<name>`, public) | `api` | `runtime.ts routes <name>`, then its policy | the same keys, `primitive: null` |
 
 ```bash
 $ x routes --surface api --json

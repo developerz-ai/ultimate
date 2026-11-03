@@ -68,6 +68,10 @@ an object refused whole is readable a page at a time.
 covers every byte, and there is no chunked form of it: a slice neither opens nor means anything.
 Page a sealed log by sealing each page as its own object; range-read plain objects.
 
+A ranged read is what `importRows()` reads a large upload with: a `StorageDriver` IS an
+`ImportSource` (`stat` + `get(key, { range })`), one page-sized window per step, never the object
+whole ([Jobs and workflows](Jobs-And-Workflows#exports-and-imports--exportrows-and-importrows)).
+
 ## A large object — `streamRange` and `putStream`
 
 ```ts

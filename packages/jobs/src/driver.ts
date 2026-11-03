@@ -9,7 +9,7 @@
 // for real. Swapping the driver is `setJobDriver(other)` and ZERO job-code change, and that
 // is what the interface buys.
 
-import { finiteCount, finiteOption } from '@ultimat3/core';
+import { assert, finiteCount, finiteOption } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { ClaimQueuesEmptyError } from './errors';
 import type { JobIntrospection, JobProgress } from './introspection';
@@ -324,6 +324,13 @@ export interface JobDriver {
   /** Step persistence lives with the queue: one store, one transaction boundary. */
   readonly steps: StepStore;
   enqueue(request: EnqueueRequest): Promise<EnqueueResult>;
+  /**
+   * `enqueue` for every request in ONE round trip — a statement on Postgres, a script on Redis —
+   * answered in request order with what `enqueue` would have answered each: a repeat of an `id` or
+   * a live key is `deduped: true`, a key twice in the batch is one job. REQUIRED, the one batch
+   * path `handle.enqueueMany` and the outbox relay take. Opens with `assertEnqueueMany`.
+   */
+  enqueueMany(requests: readonly EnqueueRequest[]): Promise<readonly EnqueueResult[]>;
   claim(options: ClaimOptions): Promise<readonly ClaimedJob[]>;
   /**
    * Both settles are fenced on `state = 'running'` AND on the claimer, and both answer whether
@@ -407,6 +414,22 @@ export function resetJobDriver(): void {
  */
 export const assertClaimQueues = (driver: string, options: ClaimOptions): void => {
   if (options.queues.length === 0) throw new ClaimQueuesEmptyError(driver);
+};
+
+/**
+ * Every driver's `enqueueMany` opens with this, so a batch is refused ONE way. `onConflict:
+ * 'error'` has no batch meaning the drivers could share: Postgres inserts every other row of the
+ * statement before the refusal is known, a loop only the rows before it — two different sets of
+ * jobs left behind by one refused call. A request that must refuse a duplicate is a single
+ * `enqueue`; `handle.enqueueMany` never sets it.
+ */
+export const assertEnqueueMany = (driver: string, requests: readonly EnqueueRequest[]): void => {
+  const at = requests.findIndex((request) => request.onConflict === 'error');
+  assert(
+    at === -1,
+    `the ${driver} driver's enqueueMany was handed onConflict: 'error' on request ${at}, and a batch that refuses a duplicate would leave a different set of jobs behind on every driver`,
+    "drop onConflict from the batch — a duplicate is answered deduped: true — or send that request alone: driver.enqueue({ ...request, onConflict: 'error' })",
+  );
 };
 
 /**

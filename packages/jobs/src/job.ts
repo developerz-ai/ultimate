@@ -20,7 +20,8 @@ import { describeJob } from './describe';
 import type { EnqueueResult } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import { IdempotencyRequiredError, JobNameTakenError } from './errors';
-import { JobDeclarationInvalidError } from './errors-declaration';
+import { JobDeclarationInvalidError, missingJobFields } from './errors-declaration';
+import type { EnqueueManyOptions } from './job-enqueue-many';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
@@ -219,6 +220,14 @@ export interface JobHandle<I = unknown> {
    */
   enqueue(input: I, options?: EnqueueOptions): Promise<EnqueueResult>;
   /**
+   * Many inputs of this job, one round trip per 1,000, answered in input order — never a loop of
+   * `enqueue` (`X_N_PLUS_ONE_WRITE`). At most `MAX_ENQUEUE_BATCH`; see `job-enqueue-many.ts`.
+   */
+  enqueueMany(
+    inputs: readonly I[],
+    options?: EnqueueManyOptions,
+  ): Promise<readonly EnqueueResult[]>;
+  /**
    * Enqueue on behalf of `actor`: fills `tenantId` from the actor's org so per-tenant limits
    * apply. It queues rather than running inline because a job's execution surface IS the
    * queue — an inline run would be a second execution path alongside `executeJob`.
@@ -246,18 +255,6 @@ interface JobOrigin {
 }
 
 const origin = new WeakMap<object, JobOrigin>();
-
-/** The required fields a definition lacks, in declaration order. Read off the value, not the type. */
-function missingJobFields(definition: object): string[] {
-  const loose = definition as unknown as Readonly<Record<string, unknown>>;
-  const missing: string[] = [];
-  if (typeof loose['input'] !== 'object' || loose['input'] === null) missing.push('input');
-  if (typeof loose['idempotencyKey'] !== 'function') missing.push('idempotencyKey');
-  if (loose['tenant'] === undefined) missing.push('tenant');
-  if (typeof loose['retry'] !== 'object' || loose['retry'] === null) missing.push('retry');
-  if (typeof loose['run'] !== 'function') missing.push('run');
-  return missing;
-}
 
 export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<I> {
   anonymous += 1;
@@ -363,6 +360,9 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     },
     enqueue(input: I, options?: EnqueueOptions): Promise<EnqueueResult> {
       return jobsFacade().enqueue(handle, input, options);
+    },
+    enqueueMany(inputs: readonly I[], options?: EnqueueManyOptions) {
+      return jobsFacade().enqueueMany(handle, inputs, options);
     },
     as(actor: JobActor | null, input: I, options: EnqueueOptions = {}): Promise<EnqueueResult> {
       const tenantId = options.tenantId ?? tenantFor(actor);

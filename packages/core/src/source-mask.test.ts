@@ -3,7 +3,7 @@
 // where it was, because a scanner maps its match index back to a line number.
 
 import { describe, expect, test } from 'bun:test';
-import { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
+import { endOfLiteral, maskLiterals, memoText, QUOTES, stripComments } from './source-mask';
 
 describe('stripComments', () => {
   test('blanks line and block comments, keeps newlines and every string literal', () => {
@@ -101,5 +101,50 @@ describe('a regex literal inside a template placeholder', () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
     const text = 'const r = `${a /* } ` */ + b}`;\nconst d = { code: 1 };\n';
     expect(maskLiterals(text)).toContain('code:');
+  });
+});
+
+// Every guard re-masked every file: 74,031 masks for 11,298 distinct inputs, 42% of the `errors`
+// step's CPU. The memo answers a repeat from the map, and drops the map whole past its cap.
+describe('the mask memo', () => {
+  test('a repeated input is answered once, and past the cap the map is cleared whole', () => {
+    const seen: string[] = [];
+    const upper = memoText((text) => {
+      seen.push(text);
+      return text.toUpperCase();
+    }, 10);
+    expect(upper('abcd')).toBe('ABCD');
+    expect(upper('abcd')).toBe('ABCD');
+    expect(seen).toEqual(['abcd']);
+    // Key and answer, 8 + 16 units, is past 10: the map goes, so `abcd` is computed again.
+    expect(upper('abcdefgh')).toBe('ABCDEFGH');
+    expect(upper('abcdefgh')).toBe('ABCDEFGH');
+    expect(upper('abcd')).toBe('ABCD');
+    expect(seen).toEqual(['abcd', 'abcdefgh', 'abcd']);
+  });
+
+  test('the cap counts the key and the answer, twice the input', () => {
+    const seen: string[] = [];
+    const same = memoText((text) => {
+      seen.push(text);
+      return text;
+    }, 10);
+    // 2 × 4 = 8 held; 2 × 2 more is 12, past 10, so the map is cleared before `ab` is kept.
+    same('abcd');
+    same('ab');
+    same('abcd');
+    expect(seen).toEqual(['abcd', 'ab', 'abcd']);
+  });
+
+  test('a memoised answer is the unmemoised one, for an astral character and a regex literal', () => {
+    // An astral character is two UTF-16 units: the case that once desynced the mask from its input.
+    const source = "const s = 'piñata 🎉'; const re = /['\"]/; // 🎉 note\nconst c = 'X';";
+    const expected = "const s = '         '; const re = /    /;           \nconst c = ' ';";
+    expect(maskLiterals(source)).toBe(expected);
+    expect(maskLiterals(source)).toBe(expected);
+    expect(maskLiterals(source).length).toBe(source.length);
+    const comments = "const s = 'piñata 🎉'; const re = /['\"]/;           \nconst c = 'X';";
+    expect(stripComments(source)).toBe(comments);
+    expect(stripComments(source)).toBe(comments);
   });
 });

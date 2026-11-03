@@ -14,6 +14,7 @@ import {
   statusGapFindingFor,
 } from './error-map';
 import { backlogCodes, ERROR_STATUS_BACKLOG, OFF_SOCKET, UNDECIDED } from './error-map-backlog';
+import { UNDECIDED_FILE } from './lib/error-map-undecided';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 const at = (owner: string): string => `packages/${owner}/src/errors.ts`;
@@ -102,7 +103,7 @@ describe('unit · the ratchet may only shrink', () => {
         tree({ declared: [code(one, owner)], status: { [one]: 400 }, backlog: { [owner]: [one] } }),
       )[0]?.fix;
     expect(fixOf(undecided, 'ai')).toBe(
-      `delete '${undecided}' from the ai group of UNDECIDED in ${BACKLOG_FILE}`,
+      `delete '${undecided}' from the ai group of UNDECIDED in ${UNDECIDED_FILE}`,
     );
     expect(fixOf(decided, 'mcp')).toBe(
       `delete '${decided}' from the mcp group of OFF_SOCKET in ${BACKLOG_FILE}`,

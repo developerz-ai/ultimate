@@ -154,6 +154,26 @@ describe('a value laundered through a file-local duck-type helper', () => {
     expect(found[0]?.kind).toBe('conversion');
   });
 
+  test('a helper whose `instanceof` and `Error` sit on two lines is still found', () => {
+    // The scan returns early from a file with no `instanceof` in it — 16% of the step's CPU was
+    // this one regex. The early return may not be narrower than the regex: `\s+` spans a newline.
+    const found = scan(`
+      const describe = (error: unknown): string =>
+        error instanceof
+          Error ? error.message : String(error);
+
+      export function loadFailed(error: unknown): RenderError {
+        return new RenderError({
+          code: 'X_ROUTE_LOAD_FAILED',
+          cause: \`load threw: \${describe(error)}\`,
+          fix: 'return a value from load()',
+        });
+      }
+    `);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.kind).toBe('conversion');
+  });
+
   test('a helper that does real work is NOT a duck-type and is left alone', () => {
     // Deliberately narrow: a false finding here is a rule an agent learns to skip, which is the
     // failure this file's header names.

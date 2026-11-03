@@ -18,6 +18,9 @@
       "path": "../entity"
     },
     {
+      "path": "../http"
+    },
+    {
       "path": "../schema"
     },
     {

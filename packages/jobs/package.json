@@ -47,6 +47,7 @@
     "@ultimat3/core": "29.4.0",
     "@ultimat3/db": "29.4.0",
     "@ultimat3/entity": "29.4.0",
+    "@ultimat3/http": "29.4.0",
     "@ultimat3/schema": "29.4.0",
     "@ultimat3/time": "29.4.0"
   }

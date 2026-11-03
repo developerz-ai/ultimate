@@ -21,6 +21,31 @@ select id,${NOTIFY_STAGED}::text as woke
 `.trim();
 
 /**
+ * `SQL_OUTBOX_STAGE` for a whole chunk: each element of `$1` one row, in order, and the wake ONCE
+ * for the statement rather than once per row — the same `NOTIFY_STAGED` clause, on the caller's
+ * connection, so it still commits or vanishes with the business rows. `staged_at` is shared by
+ * the chunk and `id` (a UUIDv7) orders it, which is the claim's total key. Both instants cross as
+ * `numeric`, never `bigint`: a fractional epoch ms is no `bigint` literal, and `SQL_OUTBOX_STAGE`
+ * takes one — a `22P02` here failed the caller's whole transaction.
+ */
+export const SQL_OUTBOX_STAGE_MANY = `
+with staged as (
+  insert into x_outbox
+    (id, job, queue, input, idempotency_key, max_attempts, run_at, staged_at, tenant_id,
+     traceparent, enqueued_by, run_id)
+  select (r->>'id')::uuid, r->>'job', r->>'queue', r->'input', r->>'idempotencyKey',
+         (r->>'maxAttempts')::int, to_timestamp((r->>'runAt')::numeric / 1000.0),
+         to_timestamp((r->>'stagedAt')::numeric / 1000.0), r->>'tenantId', r->>'traceparent',
+         r->>'enqueuedBy', (r->>'runId')::uuid
+    from jsonb_array_elements($1::jsonb) with ordinality as t(r, ord)
+   order by t.ord
+  returning id
+)
+select count(*)::bigint as staged,${NOTIFY_STAGED}::text as woke
+  from staged
+`.trim();
+
+/**
  * The claim, and it has to be ONE statement. `for update skip locked` in a bare select holds its
  * row locks only until that statement ends — under autocommit, before `claim()` even resolves — so
  * two relays polling 200ms apart read the same unpublished rows and both hand them to `enqueue`.
@@ -95,6 +120,15 @@ update x_outbox
 export const SQL_OUTBOX_MARK_PUBLISHED = `
 update x_outbox set published_at = to_timestamp($2 / 1000.0)
  where id = $1 and published_at is null and claimed_by = $3
+`.trim();
+
+/**
+ * `SQL_OUTBOX_MARK_PUBLISHED` for a published batch: the same two fences, row for row, so a
+ * lapsed claimant's batch mark retires none of the rows a newer claimant now holds.
+ */
+export const SQL_OUTBOX_MARK_PUBLISHED_MANY = `
+update x_outbox set published_at = to_timestamp($2 / 1000.0)
+ where id = any($1::uuid[]) and published_at is null and claimed_by = $3
 `.trim();
 
 /**

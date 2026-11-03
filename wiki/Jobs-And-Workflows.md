@@ -31,6 +31,7 @@ Every projection is a method on the job — `onboardOrg.enqueue({ orgId })`, nev
 | Member | Is | Rule |
 |---|---|---|
 | `onboardOrg.enqueue(input, options?)` | the enqueue | resolves the ambient jobs facade, so it **joins the caller's transaction** when the app installed the outbox. One call site works in a request handler, a job, a script and a test. Answers `{ id, runId, deduped }` — the job's own ids, allocated when the row is staged, so an action can name the run it started without leaving the transaction. `options.runId` names the run instead: a lowercase uuid, or the enqueue is refused with `X_ID_INVALID` before anything is staged or queued |
+| `onboardOrg.enqueueMany(inputs, options?)` | many of one job, in bulk | the same facade and the same transaction, ONE round trip per 1,000 inputs on every driver — one statement on Postgres (or on the outbox, staged), one Lua script on Redis — where a loop of `enqueue` is one per input (1,000 rows: 18 ms against 1.1 s, Postgres, 2026-11-02) — and the loop is `X_N_PLUS_ONE_WRITE` in `x dev` and the `statements` fixture, whose `fix:` names this call. Answers one `{ id, runId, deduped }` per input, in input order; two inputs sharing a key are one job, the second `deduped`. One `options` for the batch, without `runId`. Every refusal comes before the first write: past `MAX_ENQUEUE_BATCH` (10,000) is `X_JOB_ENQUEUE_BATCH_TOO_LARGE` (page the source with `backfill()`), an empty key in any input refuses the call. Staged in a transaction it commits or vanishes whole; outside one it is atomic per 1,000, so wrap it in `withTransaction` for all-or-nothing |
 | `.as(actor, input, options?)` | the same enqueue, on someone's behalf | fills `tenantId` from the actor's org, so per-tenant concurrency and rate limits apply. `null` — or an actor with no org — leaves `tenantId` unset: the limiter's own shared bucket, not a fake org id on the row. It **queues; it never runs inline** |
 | `.run(args)` | the handler itself | the worker calls it. App code does not — see below |
 | `.parse(raw)` | the payload check | a raw queue payload against the declared `input` |
@@ -65,6 +66,8 @@ async handle({ input, ctx }) {
 | **Ordering inversion** | worker reads the row before the writer's commit is visible → "record not found", then a retry storm |
 
 Rolled back → the job never existed. Committed → durably queued. No window in between, no compensating-action code for an agent to forget.
+
+**The relay publishes a claimed batch in two statements** — `driver.enqueueMany`, then `store.markPublishedMany`, where the row loop spends two per row: 8,564–9,505 rows/s at the default `batchSize` of 500, against 4,259–5,052 at the 100 it was (10,000 staged rows, three runs each, Postgres, 2026-11-03, a shared box). 500 because a pass is three statements whatever its size: its longest statement was 45 ms, and a dead relay strands 500 rows for its 30 s lease instead of 100. A batch that fails anywhere falls back to the row loop for that batch, which publishes in order up to the failing row and releases the rest: the order guarantee and the poison row named in `jobs.outbox.publish-failed` are unchanged. `JobDriver.enqueueMany` is required of every driver — Postgres, Redis and memory each answer a batch in one round trip; `OutboxStore.markPublishedMany` is optional, and a store without it keeps the row loop. A batch republished after a crash before its mark adds no row — every row is published under the id it was staged with.
 
 External brokers are not exempted: the outbox table stays the transactional record and a relay moves committed rows onto the broker. At-least-once delivery is preserved; the atomicity is not negotiable.
 
@@ -123,8 +126,9 @@ Omitting it is a **compile error**, not a lint warning. At-least-once is the onl
 | Duplicate enqueue with a live key | second enqueue returns the existing job handle, no new row |
 | Key uniqueness window | while a row holding the key is **live** (`ready`, `delayed`, `running`, `suspended`) — scoped by job name and tenant (`x_jobs_name_tenant_idempotency_live_idx`, `LIVE_STATES` in every driver). Once that row is terminal (`done`, `failed`, `dead`, `cancelled`) the same key enqueues a new job at once; there is no per-queue retention policy and no post-terminal window. The terminal row itself is kept for `jobs.doneRetentionMs` (14 days) or `jobs.deadRetentionMs` (90 days), then the hourly `x.purge` deletes it ([Configuration](Configuration#jobs)) |
 | Key must be | deterministic from `input` only. No timestamps, no random, no `ctx` |
-| Same key, different payload | `X_IDEMPOTENCY_CONFLICT` — `idempotency key "…" was already used with a different payload` |
-| Same key, still in flight | `X_IDEMPOTENCY_CONFLICT` — retry the same key after the first request settles |
+| Same key, different payload | deduped: `{ deduped: true, id }` of the live row, the **first payload wins**, nothing thrown. `X_IDEMPOTENCY_CONFLICT` is an action's `Idempotency-Key` refusal ([Actions](Actions)), never the queue's |
+| Same key, still in flight | deduped too: a `running` row holds its key. A re-arm from outside (a `task` on a cron) is a no-op while the run is live and a fresh run once it settled |
+| Same key, from the job's own body | deduped onto the **running row itself**: a job re-enqueueing itself on its way out arms nothing, and no later run exists. Re-arm from outside the run instead |
 | Missing key | `X_IDEMPOTENCY_REQUIRED` at build time |
 
 **Durable business state lives in your tables, never only in the queue payload.** A payload is a pointer, not a record. If the queue is drained, replaced, or migrated to another driver, the business must still be reconstructible from Postgres alone. So `{ orgId }`, not `{ org: {...30 fields} }`.
@@ -150,7 +154,8 @@ export const syncCrm = job({
 | `concurrency: 4` | max simultaneous runs of **this job**, fleet-wide | one `x_job_leases` row per **held slot**, keyed `(lease_key, slot)` — the primary key is what serialises two workers reaching for the same slot. A driver with no `LeaseStore` refuses the job at worker start (`X_JOB_CONCURRENCY_UNENFORCEABLE`) rather than capping per process |
 | `concurrency: { key, limit }` | max simultaneous runs **sharing one key** — "one run per account" | the same lease rows, one set per `key(input)`. `key` answers a non-empty string of at most 200 characters; `limit` is a whole number, 1 or more |
 | `concurrency.whenBusy` | what a claim over the cap does. `'wait'` (default): the run stays queued, no attempt burned. `'fail'`: the run settles **`failed`** with `X_JOB_KEY_BUSY`, its body never runs, nothing retries it, and it is not a dead letter | the worker, at claim. A plain number always waits |
-| rate limits | starts per window, per tenant | `concurrencyLimiter({ ratePerTenant })` on the worker — **per process**, never a `job()` field. There is no `rateLimit:` on a job, `As of 2026-10`. A start is a body that ran: a claim handed back over `job.concurrency`, or refused by its key, spends none |
+| rate limits | starts per window, per tenant | `concurrencyLimiter({ ratePerTenant })` on the worker — **per process**, never a `job()` field. There is no `rateLimit:` on a job, `As of 2026-11`. A start is a body that ran: a claim handed back over `job.concurrency`, or refused by its key, spends none |
+| a **fleet** budget — "600 sends a minute to the mail vendor" | one bucket every worker spends | `@ultimat3/http`'s limiter over the store the boot installs on every role, as the body's FIRST lines, ahead of the first `step.run`: `const vendor = rateLimiter({ config, store: installedRateLimitStore() }); assertRateLimitScope(config, vendor); await vendor.assert(key, bucket)`, with `config = resolveRateLimitConfig({ scope: 'shared', buckets: { vendor: toBucket('<job>', { limit, windowMs }) }, defaultBucket: 'vendor' })` at module scope. `assertRateLimitScope` refuses one process' memory under `'shared'` (`X_RATE_LIMIT_NOT_SHARED`) — N workers would each spend the whole budget. A refusal is `X_RATE_LIMITED`: the run is deferred to its `Retry-After` with the attempt **uncounted**, so a backlog waits for the vendor and is never dead-lettered for waiting. First, because a refusal after a step replays nothing that ran. Pinned by `rate-recipe.job.test.ts`; Postly's `deliverDigest` is the worked use |
 | `maxInFlight` | max simultaneous runs in **one worker process**, across every queue it serves — Sidekiq's `concurrency`. `jobs.maxInFlight` in `app.config.ts`, or `jobWorker({ maxInFlight })`; unset, no process cap | read before every claim, so a worker at the cap claims nothing; each run that ends frees one claim at once. The per-queue `jobs.concurrency` slots still bound each queue under it. A pass splits its room over the queues (`ceil(room / queues left)`), hands what an empty queue leaves to the next, and starts after the last queue served — no queue starves. `worker.stats().maxInFlight`, gauges `job_worker_in_flight` / `job_worker_capacity`. `0`, fractional, `NaN`, `Infinity`: `X_INVARIANT` / `X_CONFIG_INVALID` |
 | `queue` | named pool; the `worker` role runs one pool per config (`WORKER_QUEUES=default,integrations`) | worker pool sizing, see [Deployment](Deployment) |
 | `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'` | driver scheduler |
@@ -283,6 +288,56 @@ export const syncAccount = job({
 | the wake has to be proven | a probe sent through the pool must come back on the session: `jobs.wake.live`. If it does not — PgBouncer in `pool_mode = transaction` delivers no notification — the log says `jobs.wake.unverified` once and the ceiling stays 2 s. Give the `worker` role a direct or session-pooled `DATABASE_URL` ([`docs/ops/04-datastores.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/04-datastores.md#pooling-and-the-trap-under-it)) |
 | a queue pause | read by the claim statement itself, so it holds from each worker's next claim; a resume announces the queue |
 
+## Exports and imports — `exportRows()` and `importRows()`
+
+**A bulk file in either direction is a job.** `exportRows()` streams a paged read to object
+storage, one object per page; `importRows()` reads an object back a page at a time into the app's
+tables. Both are factories over `job()`, so both get `.enqueue()`, retries, the dead-letter path,
+`x jobs show` and a manifest row. Long form, with the export's rules: the
+[`@ultimat3/jobs` README](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/README.md#importing-a-large-file-is-a-job-too).
+
+```ts
+import { importRows, t } from '@ultimat3/jobs';
+import { disk } from '@ultimat3/storage';
+
+const Order = t.object({ id: t.uuid, total: t.number.int() });
+declare const db: {
+  readonly orders: {
+    upsertAll(rows: readonly object[], args: { onConflict: readonly string[] }): Promise<unknown>;
+  };
+};
+
+export const importOrders = importRows({
+  name: 'orders.import',
+  input: t.object({ orgId: t.uuid, key: t.string }),
+  tenant: ({ orgId }) => orgId,
+  source: () => disk('imports'), // ImportSource: stat + get(key, { range })
+  key: ({ key }) => key,
+  format: 'csv',
+  columns: ['id', 'total'],
+  schema: Order, // any Standard Schema; csv text is coerced as an HTTP form is
+  handle: ({ rows, input }) =>
+    db.orders.upsertAll(rows.map((r) => ({ ...r, orgId: input.orgId })), {
+      onConflict: ['orgId', 'id'],
+    }),
+  errors: { sink: () => disk('imports'), prefix: ({ orgId, key }) => `${orgId}/errors/${key}` },
+});
+```
+
+| Rule | Why |
+|---|---|
+| one `step.run` per page, checkpointed at the BYTE OFFSET | a killed attempt resumes there; no carry survives a step, because bytes after the last whole record are read again by the next page |
+| record ends found on bytes, quote-aware | a newline inside `"…"` is data, a character split by a page edge arrives whole, CRLF and a UTF-8 BOM read as nothing |
+| `handle` is AT LEAST ONCE per page | a page that dies after `handle` and before its checkpoint runs again: write with `upsertAll` |
+| the csv header must name exactly `columns` | in any order; missing or undeclared is `X_IMPORT_HEADER_MISMATCH` before a row is read |
+| a record past `maxRecordBytes` (64 KiB) is refused | usually an unclosed quote: `X_IMPORT_RECORD_TOO_LARGE` at its byte offset, never read on into the heap |
+| a refused row is `{ line, field, code }` in `<prefix>/<runId>/errors-NNNNN.ndjson` | one part per page, keyed by page index so a replay overwrites, under the RUN so a re-import never mixes reports; the result's `errorPrefix` names it. **Never the refused value**: the report would keep what the app refused, PII included |
+| past `maxRowErrors` (1,000; `0` allowed) the run fails | `X_IMPORT_TOO_MANY_ERRORS`; the `batch` that crossed it is not handled, the report is already written |
+| a page uses its whole read, `batch` (500) rows per `handle` call | bytes read are the file's size and steps about file ÷ `pageBytes`: a 10 MB file of two-byte rows is 10 reads and 10 page steps |
+| a csv with no first line (empty, a BOM, blank lines) | `X_IMPORT_HEADER_MISMATCH`, never a success with zero rows |
+| no formula guard on the way in | the export prefixes `'` on `=`, `+`, `-`, `@`; an import cannot know the prefix was added, so it keeps it |
+| peak memory is a page, not the file | measured `As of 2026-11-03`: a 200 MB csv (190 × `pageBytes`) imported with the heap up 42 MB, a 20 MB one with it up 24 MB |
+
 ## Outbound webhooks — `webhook()`
 
 **An outbound webhook is a job: `webhook()` is a factory over `job()` that delivers one event to
@@ -322,6 +377,63 @@ for (const endpoint of await subscribersOf('orders.paid')) {
 | the attempt deadline | `timeout:` bounds one attempt and the request inside it — there is no second per-request timeout |
 
 Full contract, every rule with its reason: [`packages/jobs/README.md` § Outbound webhooks](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/README.md#outbound-webhooks-are-jobs-too).
+
+## Inbound webhooks
+
+**An inbound webhook is a job too: `webhookReceiver()` is a factory over `job()`, the twin of
+`webhook()`, plus the plain route that feeds it.** The route reads the exact bytes, asks your
+`verify`, enqueues the payload `verify` read out of them, and only then answers
+`200 { ok: true, eventId, deduped }`. `handle` runs as the job's body and receives that payload: it
+never re-verifies, so a retry past a vendor's 5-minute window is not refused. No vendor verifier
+ships: `verify` is your function, and `verifyBodyHmac` from `@ultimat3/http` is the one helper
+(`packages/jobs/src/webhook-receiver.ts`). It is the one door for a vendor's webhook. A pinned
+action (`http.path`) answers 400/422 from its schema before the signature is checked, and refuses
+XML, `octet-stream` and no content type.
+
+```ts
+// apps/web/app/billing/jobs/billing-events.ts — declaring it is its registration
+import { verifyBodyHmac } from '@ultimat3/http';
+import { t, webhookReceiver } from '@ultimat3/jobs';
+
+const Event = t.object({ id: t.string, type: t.string });
+
+export const billingEvents = webhookReceiver({
+  name: 'billing.events',            // required: a durable queue key, and the route's webhook.<name>
+  path: '/hooks/billing/:account',   // absolute, may hold :param; never under /api or /_x
+  tenant: 'none',                    // or ({ orgId }) => orgId
+  verify: (inbound) => {             // { bytes, headers, params, url, request() } — nothing parsed
+    const { text } = verifyBodyHmac({
+      bytes: inbound.bytes,
+      secret: [Bun.env['BILLING_SECRET'] ?? '', Bun.env['BILLING_SECRET_OLD'] ?? ''],
+      given: inbound.headers.get('x-billing-signature'),
+      encoding: 'hex',               // or 'base64'
+      prefix: 'sha256=',
+    });
+    const event = Event.parse(JSON.parse(text ?? ''), 'billing event'); // catch both: see below
+    return { eventId: event.id, payload: event };   // the id from the SIGNED bytes — or { answer }
+  },
+  handle: async ({ eventId, payload }) => { /* the work; at least once per eventId */ },
+});
+```
+
+List it in `defineApi({ jobs })` like any job. Both boots mount every declared receiver's routes
+beside `runtime.routes` — no second list, and one also named in `runtime.ts` is mounted once.
+
+| Fact | Rule |
+|---|---|
+| the door | a plain `Route`, `meta: { name: 'webhook.<name>', auth: 'public' }`, `rateLimit` passed through. `x routes --json` lists it with `primitive: null`. No content type required, no body parsed before `verify` |
+| a refusal | `verify` throws: `X_WEBHOOK_SIGNATURE_INVALID` / `_STALE` (401), nothing queued. An empty or unset secret, or one empty entry in a rotation list, is `X_CONFIG_INVALID` |
+| the event id | the dedupe key, so read it from VERIFIED data — `verifyBodyHmac(...).text`, or a header the mac covers. An unsigned header lets one captured signature replay forever under fresh ids. 1–256 printable ASCII characters, else `X_WEBHOOK_EVENT_ID_INVALID` (422, never echoed) |
+| parsing in `verify` | catch it and throw your own code naming no content: Bun's `JSON.parse` message quotes the token it stopped at, a piece of the body, into the log and the response |
+| a challenge | `verify` answers `{ answer: Response }` (a subscription confirm), nothing queued. `handshake(inbound)` mounts `GET` on the same path; unset, no `GET` route exists |
+| the body cap | `maxBytes`, default `DEFAULT_WEBHOOK_BODY_LIMIT` (1 MiB), enforced while the body streams: over is `X_BODY_INVALID` naming `maxBytes` |
+| the ack | never before the durable row: an enqueue failure is `503` + `Retry-After: 30`, `X_WEBHOOK_RECEIVER_UNAVAILABLE`, and the vendor redelivers |
+| dedupe | a redelivery while the job is live answers `deduped: true`. After it settles, `handle` runs again with the same `eventId` — **at least once**; the seen-set is your table |
+| the stored payload | JSON, `.sensitive()`, so `x jobs show` prints `[redacted]`. Kept in `x_jobs` until `jobs.doneRetentionMs` / `jobs.deadRetentionMs` ([Configuration](Configuration)); evidence kept longer is stored by `handle` |
+| a declaration fault | `X_WEBHOOK_RECEIVER_INVALID` at `webhookReceiver()`: a relative path, one under `/api` or `/_x`, a missing `verify`/`handle`, a non-function `handshake`, a bad `maxBytes` |
+| `mail/events` | `verify` calls `ses.receive(inbound.request())` — a fresh `Request` over the bytes — and returns its events as the payload ([Mail](Mail)) |
+
+Worked example: the reference app's `apps/web/app/webhooks/jobs/billing-events-receiver.ts`.
 Codes: `X_WEBHOOK_ENDPOINT_UNKNOWN`, `X_WEBHOOK_ENDPOINT_INVALID`, `X_WEBHOOK_ENDPOINT_DISABLED`,
 `X_WEBHOOK_EVENT_UNKNOWN`, `X_WEBHOOK_EVENT_INVALID`, `X_WEBHOOK_DELIVERY_FAILED`,
 `X_WEBHOOK_DELIVERY_THROTTLED`, `X_WEBHOOK_DELIVERY_REJECTED` ([Error codes](Error-Codes)).

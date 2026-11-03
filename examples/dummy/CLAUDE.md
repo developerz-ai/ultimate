@@ -220,7 +220,7 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   scope), so `api/index.ts` hands `postActions` to the `jobs` list too.
 - **Outbound webhooks are `app/webhooks/`.** `webhook()` is the mechanism; which endpoints exist
   (`webhook_endpoints`, `secret` sealed), the ledger (`ledger.ts` over `webhook_deliveries`) and
-  the fan-out (`ctx.webhooks.announcePublished`, one enqueue per live endpoint, from
+  the fan-out (`ctx.webhooks.announcePublished`, ONE `enqueueMany` over every live endpoint, from
   `publishPost`) are Postly's. The org rides on every delivery's input (`tenant: ({ orgId }) =>
   orgId`) and is handed to both seams — never read off the actor. Limits are the DATABASE's, never
   a read before a write: an org's cap is a `slot` unique per org (`webhook_endpoint_slot_unique`),

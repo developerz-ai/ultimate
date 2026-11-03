@@ -8,10 +8,12 @@
  * `send()` falls back to an inline send and the outbox counts deliveries rather than enqueues.
  */
 
-import { expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { localDateIn } from '@postly/core';
 import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
 import { applyFlagSnapshot } from '@ultimat3/flags';
+import type { RateLimitStore } from '@ultimat3/http';
+import { installRateLimitStore, memoryRateLimitStore, resetRateLimitStore } from '@ultimat3/http';
 import type { JobDriver, StepRunner, StepStore } from '@ultimat3/jobs';
 import {
   memoryJobDriver as createQueue,
@@ -156,6 +158,16 @@ const mailFailingOn = (nth: number): BlippingMail => {
     },
   };
 };
+
+// `deliverDigest` spends a FLEET budget and refuses a per-process store under it. The boot installs
+// the shared Postgres one; a delivery test stands in one store this process shares, and puts the
+// default back after.
+beforeEach(() => {
+  installRateLimitStore({ ...memoryRateLimitStore(), scope: 'shared' });
+});
+afterEach(() => {
+  resetRateLimitStore();
+});
 
 const runnerOn = (store: StepStore, jobName: string): StepRunner =>
   stepRunner({ runId: RUN, jobName, store });
@@ -416,4 +428,43 @@ test('the fan-out enqueues one delivery per (org, zone), each in its own step', 
     if (previous === undefined) resetJobDriver();
     else setJobDriver(previous);
   }
+});
+
+test('a delivery past the mail vendor budget is refused before its first step', async () => {
+  // A fleet store with nothing left: every take refused, an hour to refill.
+  const spent: RateLimitStore = {
+    scope: 'shared',
+    take: (_key, bucket) =>
+      Promise.resolve({
+        allowed: false,
+        limit: bucket.capacity,
+        remaining: 0,
+        resetAtMs: SLOT_AT + 3_600_000,
+        retryAfterSeconds: 3_600,
+      }),
+    peek: () => Promise.resolve({ remaining: 0, retryAfterSeconds: 3_600 }),
+    reset: () => Promise.resolve(),
+  };
+  installRateLimitStore(spent);
+  const reads = noReads();
+  const store = memoryStepStore();
+  try {
+    await expect(
+      deliver(runnerOn(store, 'deliverDigest'), reads, [summary('raii')]),
+    ).rejects.toBeUltimateError('X_RATE_LIMITED');
+  } finally {
+    resetRateLimitStore();
+  }
+  // Refused AHEAD of the steps: nothing read, nothing recorded, so the deferred run replays nothing.
+  expect(reads.windows).toEqual([]);
+  expect(await store.list(RUN)).toEqual([]);
+});
+
+test('a delivery over a per-process store is refused, not counted ten times over', async () => {
+  resetRateLimitStore();
+  const reads = noReads();
+  await expect(
+    deliver(runnerOn(memoryStepStore(), 'deliverDigest'), reads, [summary('raii')]),
+  ).rejects.toBeUltimateError('X_RATE_LIMIT_NOT_SHARED');
+  expect(reads.windows).toEqual([]);
 });

@@ -1,5 +1,5 @@
 // The eight `X_WEBHOOK_*` codes an outbound delivery can end on, apart from `errors.ts` for the
-// reason `backfill-errors.ts` is: one file, one job, and `errors.ts` holds the registry. The codes,
+// reason `backfill-errors.ts` is: one file, one job, and `error-codes.ts` holds the registry. The codes,
 // the titles and the single `registerErrorCodes()` call stay there; only the classes live here.
 //
 // THE RULE THIS FILE EXISTS TO KEEP: no secret and no signature reaches a `cause`, a `fix` or a

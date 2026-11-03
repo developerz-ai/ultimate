@@ -58,6 +58,7 @@ import * as withdrawPost from '../app/posts/actions/withdraw-post';
 import * as postExcerpts from '../app/posts/backfills/post-excerpts';
 import * as commentPosted from '../app/posts/jobs/comment-posted';
 import * as exportPosts from '../app/posts/jobs/export-posts';
+import * as importPosts from '../app/posts/jobs/import-posts';
 import * as notifySubscribers from '../app/posts/jobs/notify-subscribers';
 import * as reviewDraftLater from '../app/posts/jobs/review-draft-later';
 import * as liveFeed from '../app/posts/live/live-feed';
@@ -87,6 +88,7 @@ import * as toggleDigestOptIn from '../app/settings/actions/toggle-digest-opt-in
 import * as unsubscribePush from '../app/settings/actions/unsubscribe-push';
 import * as addWebhookEndpoint from '../app/webhooks/actions/add-webhook-endpoint';
 import * as removeWebhookEndpoint from '../app/webhooks/actions/remove-webhook-endpoint';
+import * as billingEventsReceiver from '../app/webhooks/jobs/billing-events-receiver';
 import * as postPublishedWebhook from '../app/webhooks/jobs/post-published-webhook';
 // `defineService(...)` and the channel declaration run on import — the same "importing IS the
 // boot" rule as the registration below, so `ctx.orgs`, `ctx.posts`, `ctx.runs` and `ctx.webhooks`
@@ -150,6 +152,7 @@ export const api = defineApi({
   jobs: [
     notifySubscribers,
     exportPosts,
+    importPosts,
     commentPosted,
     reviewDraftLater,
     postExcerpts,
@@ -161,6 +164,7 @@ export const api = defineApi({
     syncConnection,
     purgeMcpConfirmations,
     postPublishedWebhook,
+    billingEventsReceiver,
   ],
   tasks: [nightlyDigest, hourlyPurge],
   // A second door for machine callers, onto the run actions a browser already calls: same

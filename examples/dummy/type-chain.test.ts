@@ -288,6 +288,9 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
       'apps/web/app/posts/backfills/post-excerpts.test.ts',
       'apps/web/app/posts/backfills/post-excerpts.ts',
       'apps/web/app/posts/entity.ts',
+      // `importRows()` writes a restored post back, `excerpt` included, and its job test builds one.
+      'apps/web/app/posts/jobs.job.test.ts',
+      'apps/web/app/posts/jobs/import-posts.ts',
       'apps/web/app/posts/repo.ts',
       'apps/web/app/posts/repo.test.ts',
       'packages/db/seeds/dev.ts',
@@ -334,7 +337,9 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // 22 as of 2026-08-24: 21, plus the one `scripts/test-setup.test.ts` now contributes.
     // 26 as of 2026-10-01: the sweep's handler writes `{ excerpt }` by primary key (2 more in
     // `post-excerpts.ts`), and `post-excerpts.test.ts` stores and reads the column (2).
-    expect(introduced).toHaveLength(26);
+    // 28 as of 2026-11-03: `import-posts.ts` writes `excerpt: ''` on a restored post (1), and
+    // `posts/jobs.job.test.ts` builds a post row that names it (1).
+    expect(introduced).toHaveLength(28);
 
     // `entity.ts`: the view's field list no longer names a real column (hop 4).
     expect(

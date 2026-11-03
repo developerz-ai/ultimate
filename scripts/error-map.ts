@@ -20,6 +20,7 @@ import {
   UNDECIDED,
 } from './error-map-backlog';
 import { parseScriptArgs } from './lib/args';
+import { UNDECIDED_FILE } from './lib/error-map-undecided';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -121,6 +122,10 @@ const groupOf = (code: string, owner: string): string => {
   return list === undefined ? `the ${owner} group` : `the ${owner} group of ${list}`;
 };
 
+/** `UNDECIDED` lives in its own file (`lib/error-map-undecided.ts`); everything else here. */
+const fileOf = (code: string, owner: string): string =>
+  UNDECIDED[owner]?.includes(code) === true ? UNDECIDED_FILE : BACKLOG_FILE;
+
 const missingFinding = (gap: StatusGap): Finding => ({
   code: 'X_ERROR_STATUS_MISSING',
   cause: `${gap.code} is owned by @ultimat3/${gap.owner} (tier ${tierOf(gap.owner)}) and has no row in ${ERROR_MAP_FILE}, so a request carrying it answers 500 and pages the on-call`,
@@ -135,7 +140,7 @@ const pinnedFinding = (gap: StatusGap): Finding => ({
     gap.status === undefined
       ? `${gap.code} is pinned in ${BACKLOG_FILE} but no tier <= ${HTTP_STATUS_MAX_TIER} package declares it any more`
       : `${gap.code} is pinned in ${BACKLOG_FILE} and ${ERROR_MAP_FILE} now maps it to ${gap.status} — a pin nobody removes is a pin nobody reads`,
-  fix: `delete '${gap.code}' from ${groupOf(gap.code, gap.owner)} in ${BACKLOG_FILE}`,
+  fix: `delete '${gap.code}' from ${groupOf(gap.code, gap.owner)} in ${fileOf(gap.code, gap.owner)}`,
   at: gap.at,
 });
 

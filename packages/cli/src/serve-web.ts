@@ -18,6 +18,7 @@ import { loadOrBuildIslands } from './island-store';
 import { loadNavigation, pageNavigation } from './page-navigation';
 import { loadSpeculation, otherLocaleSegments, pageSpeculation } from './page-speculation';
 import { pageSync } from './page-sync';
+import { plainRoutes } from './plain-routes';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { adminMountRoutes } from './runtime-admin';
 import { assetRoutes } from './runtime-assets';
@@ -122,7 +123,7 @@ export async function webSurface(
     ...apiMountRoutes(options.runtime?.rateLimitStore ?? runtime.rateLimitStore),
     ...mcpMount.routes,
     // The app's own plain routes (`apps/<app>/runtime.ts` `routes`), before any page can shadow one.
-    ...(options.runtime?.routes ?? []),
+    ...plainRoutes(options.runtime?.routes),
     ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...assetRoutes({
       root: options.root,

@@ -1775,3 +1775,10 @@ The runtime HTTP surface row, whole, as it stood:
 `dev-dashboard-guard.ts`: the loopback `Host` and the same-origin `POST /_x/db` are checked in the route, never left to the app's `csrf` config.
 
 `upgrade-agents-link.ts`: an `AGENTS.md` byte-identical to `CLAUDE.md` becomes a relative symlink to it during the hop; a different one is reported as `data.agentsMd: "differs"` and left, because which half is right is the author's call.
+
+## Moved out 2026-11-03 (plan 101 wave 4a, the `CLAUDE.md` ceiling)
+
+Two file-map rows, whole, as they stood, to make room for `plain-routes.ts`:
+
+| `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: the one-shot that seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` (compare-and-set per row; `{ sealed, alreadySealed, skipped }`), over `startQueue`'s client, `open` injectable. Full rule: `docs/history/cli.md` |
+| `fix-truth.test.ts` / `fix-truth-fixture.ts` / `db-fix-truth.job.test.ts` | a printed fix, executed: each row breaks a scaffold, asserts the code and runs the line. A false fix found later adds a row in the same diff |

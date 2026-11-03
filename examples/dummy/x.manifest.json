@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "92d977d9c8f6b0fb",
+  "buildId": "3071d26f0eb72114",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -5751,6 +5751,42 @@
   ],
   "jobs": [
     {
+      "name": "billing.events",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "orgId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "topic": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload": {
+            "description": "any JSON value, nested at most 256 levels deep",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "eventId",
+          "payload"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "deliverDigest",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6123,6 +6159,54 @@
           "exportId"
         ],
         "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "posts.import",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "orgId",
+          "importId",
+          "authorId",
+          "key"
+        ],
+        "additionalProperties": false,
+        "description": "key must sit under org/<orgId>/imports/ for the orgId this import names",
+        "x-ultimate-refinements": [
+          {
+            "name": "key-in-own-org",
+            "message": "key must sit under org/<orgId>/imports/ for the orgId this import names",
+            "path": [
+              "key"
+            ]
+          }
+        ]
       },
       "queue": "default",
       "retry": {
@@ -6643,6 +6727,10 @@
   "errorCodes": [
     {
       "code": "X_ACTOR_UNRESOLVED",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_BILLING_EVENT_UNREADABLE",
       "package": "apps/web"
     },
     {

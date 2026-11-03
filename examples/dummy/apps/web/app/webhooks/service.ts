@@ -91,13 +91,14 @@ export const webhooksService = defineService('webhooks', (ctx) => ({
     const member = memberOf(ctx.actor);
     if (member === null) throw new NotAMember(ctx.actor.id);
     const endpoints = await liveEndpoints(member.orgId);
-    for (const endpoint of endpoints) {
-      await postPublishedWebhook.enqueue({
+    // One statement for every endpoint, never a loop of `enqueue` (`X_N_PLUS_ONE_WRITE`).
+    await postPublishedWebhook.enqueueMany(
+      endpoints.map((endpoint) => ({
         endpointId: endpoint.id,
         eventId: post.id,
         orgId: member.orgId,
-      });
-    }
+      })),
+    );
     return endpoints.length;
   },
 }));

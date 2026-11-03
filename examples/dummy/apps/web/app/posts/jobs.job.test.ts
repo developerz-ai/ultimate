@@ -9,6 +9,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import { db } from '@postly/db';
 import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { StepRunner, StepStore } from '@ultimat3/jobs';
 import { memoryStepStore, stepRunner } from '@ultimat3/jobs';
@@ -24,6 +25,7 @@ import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat
 import { jobTest } from '@ultimat3/testing';
 import { publishPost } from './actions/publish-post';
 import { exportPosts, postsExportPrefix } from './jobs/export-posts';
+import { importPosts } from './jobs/import-posts';
 import { notifySubscribers } from './jobs/notify-subscribers';
 
 const ORG = '00000000-0000-4000-8000-00000000f001';
@@ -245,6 +247,106 @@ jobTest(
     expect(rows.some((row) => row.startsWith(`${tenancy.id},`))).toBe(true);
     expect(part).not.toContain(offline.id);
     expect(JSON.parse(await text(`${prefix}/manifest.json`))).toMatchObject({ parts: 1 });
+  },
+);
+
+// `importPosts` — the export's own CSV read back, a page at a time, through the real queue. The
+// round trip is the claim: a post the export carried and the table then lost comes back under its
+// own id and slug, and every post still stored is left exactly as it was.
+
+/** The export's parts, concatenated, which both formats promise is one valid file. */
+const exportedFile = async (prefix: string, parts: number): Promise<Uint8Array> => {
+  const chunks: Uint8Array[] = [];
+  for (let part = 0; part < parts; part += 1) {
+    chunks.push((await disk().get(`${prefix}/part-${String(part).padStart(5, '0')}.csv`)).bytes);
+  }
+  const file = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
+  let at = 0;
+  for (const chunk of chunks) {
+    file.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return file;
+};
+
+jobTest(
+  'importPosts reads back exportPosts’ file: the same rows, a lost one restored',
+  async ({ seed, runJobs }) => {
+    const { tenancy, ada } = await seed('dev').pick({ tenancy: 'post:tenancy', ada: 'member:ada' });
+    const orgId = tenancy.orgId;
+    resetStorage();
+    defineStorage({ disks: { local: memoryStorageDriver() }, default: 'local' });
+    using _storage = { [Symbol.dispose]: resetStorage };
+    const lost = await db.posts.insert({
+      orgId,
+      authorId: ada.id,
+      slug: 'round-trip-draft',
+      title: 'Back from the file',
+      excerpt: 'an excerpt',
+      body: 'a body',
+    });
+    const before = (await db.posts.where({ orgId }).all()).length;
+
+    const target = { orgId, exportId: '00000000-0000-4000-8000-00000000e002' };
+    await runJobs(exportPosts, target);
+    const prefix = postsExportPrefix(target);
+    const manifest = JSON.parse(await text(`${prefix}/manifest.json`)) as {
+      parts: number;
+      rows: number;
+    };
+    const key = `org/${orgId}/imports/posts/round-trip.csv`;
+    await disk().put(key, await exportedFile(prefix, manifest.parts));
+    await db.posts.delete(lost.id, { orgId });
+
+    const input = {
+      orgId,
+      importId: '00000000-0000-4000-8000-00000000e003',
+      authorId: ada.id,
+      key,
+    };
+    const trace = await runJobs(importPosts, input);
+    const imported = trace.executions.filter((run) => run.job === importPosts.name);
+    expect(imported.map((run) => [run.outcome, run.error])).toEqual([['completed', undefined]]);
+    expect(imported[0]?.result).toMatchObject({ rows: manifest.rows, rejected: 0 });
+    const after = await db.posts.where({ orgId }).all();
+    expect(after).toHaveLength(before);
+    expect(after.find((post) => post.id === lost.id)).toMatchObject({
+      slug: 'round-trip-draft',
+      title: 'Back from the file',
+      status: 'draft',
+    });
+  },
+);
+
+jobTest(
+  'importPosts refuses a file key outside the org its input names',
+  async ({ seed, runJobs }) => {
+    const { tenancy, offline, ada } = await seed('dev').pick({
+      tenancy: 'post:tenancy',
+      offline: 'post:offline', // Tinta's
+      ada: 'member:ada',
+    });
+    resetStorage();
+    defineStorage({ disks: { local: memoryStorageDriver() }, default: 'local' });
+    using _storage = { [Symbol.dispose]: resetStorage };
+    // Another org's upload, really there and readable: only the key check stands between them.
+    const theirs = `org/${offline.orgId}/imports/posts/theirs.csv`;
+    await disk().put(
+      theirs,
+      new TextEncoder().encode('id,slug,title,status,likeCount,publishedAt,createdAt\n'),
+    );
+    const input = {
+      orgId: tenancy.orgId,
+      importId: '00000000-0000-4000-8000-00000000e004',
+      authorId: ada.id,
+      key: theirs,
+    };
+    for (const key of [theirs, `org/${tenancy.orgId}/imports/../../${theirs}`]) {
+      const trace = await runJobs(importPosts, { ...input, key });
+      const run = trace.executions.filter((one) => one.job === importPosts.name).at(-1);
+      expect(run?.outcome).toBe('dead-lettered');
+      expect(run?.error).toContain('X_VALIDATION_FAILED');
+    }
   },
 );
 
