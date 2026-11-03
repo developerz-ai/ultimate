@@ -95,6 +95,10 @@ describe.skipIf(noBrowser)('client navigation · the swap and its fallbacks', ()
     'islands under an enforced CSP: old disposed, new booted, the persisted one untouched',
     async () => {
       await start('/a');
+      await currentTab().waitFor(
+        'window.__mounts && window.__mounts.includes("a")',
+        'island a to mount',
+      );
       await click('to-b');
       await currentTab().waitFor(
         'window.__mounts && window.__mounts.includes("b")',
