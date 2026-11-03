@@ -43,6 +43,14 @@ const NO_SERVER: ServicePart = {
   urls: ['TEST_DATABASE_URL', 'TEST_REDIS_URL'],
 };
 
+/** The part that runs `live` and starts Redis, but exports no URL for it. */
+const NO_URL: ServicePart = {
+  part: 'live',
+  only: ['live'],
+  services: ['postgres', 'redis'],
+  urls: ['TEST_DATABASE_URL'],
+};
+
 const REDIS_SUITE = 'packages/cache/src/redis.live.test.ts';
 const POSTGRES_SUITE = 'packages/db/src/client.live.test.ts';
 
@@ -95,11 +103,25 @@ describe('unit · the gap a suite leaves when no part supplies its service', () 
 
     expect(gaps).toEqual([{ suite: REDIS_SUITE, url: 'TEST_REDIS_URL' }]);
   });
+
+  // The fixture that pins the export alone: this part runs the step AND starts Redis, so the
+  // missing URL is the only thing left that can leave the suite unsupplied.
+  test('a part that starts the service but exports no URL for it leaves the suite unsupplied', () => {
+    const gaps = serviceCoverageGaps(
+      [suite(REDIS_SUITE, 'live', ['TEST_REDIS_URL'])],
+      [NO_URL],
+      SERVES,
+    );
+
+    expect(gaps).toEqual([{ suite: REDIS_SUITE, url: 'TEST_REDIS_URL' }]);
+  });
 });
 
 describe('unit · what counts as a read of the environment', () => {
   test('code is a requirement; a comment and a quoted fixture are not', () => {
-    const source = `// TEST_REDIS_URL is named in this comment only.
+    // The comment and the fixture name a URL the code never reads, so counting either one grows
+    // the answer and the assertion below turns red.
+    const source = `// Bun.env['TEST_NATS_URL'] is named in this comment only.
 const url = Bun.env['TEST_REDIS_URL'];
 const fixture = \`const other = Bun.env['TEST_NATS_URL'];\`;`;
 
@@ -121,5 +143,26 @@ const fixture = \`const other = Bun.env['TEST_NATS_URL'];\`;`;
 const two = process.env['TEST_DATABASE_URL'];`;
 
     expect(requiredServiceUrls(source)).toEqual(['TEST_DATABASE_URL']);
+  });
+
+  test('a destructured read is a requirement: the name sits in the pattern', () => {
+    const source = `const { TEST_REDIS_URL } = Bun.env;
+const { TEST_NATS_URL: nats } = process.env;`;
+
+    expect(requiredServiceUrls(source)).toEqual(['TEST_NATS_URL', 'TEST_REDIS_URL']);
+  });
+
+  test('a write is not a requirement: a suite that sets a URL needs no server', () => {
+    const source = `Bun.env['TEST_REDIS_URL'] = 'redis://fixture';
+Bun.env.TEST_NATS_URL = 'nats://fixture';`;
+
+    expect(requiredServiceUrls(source)).toEqual([]);
+  });
+
+  test('a read beside a write is still a requirement', () => {
+    const source = `Bun.env['TEST_REDIS_URL'] = 'redis://fixture';
+const url = Bun.env['TEST_REDIS_URL'];`;
+
+    expect(requiredServiceUrls(source)).toEqual(['TEST_REDIS_URL']);
   });
 });

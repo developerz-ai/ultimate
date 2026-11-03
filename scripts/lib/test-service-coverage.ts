@@ -39,7 +39,41 @@ export interface CoverageGap {
  * a server) are not services.
  */
 const ENV_READ =
-  /\b((?:Bun|process)\.env)(?:\[\s*['"](TEST_[A-Z0-9_]*_URL)['"]|\.(TEST_[A-Z0-9_]*_URL)\b)/g;
+  /\b((?:Bun|process)\.env)(?:\[\s*['"](TEST_[A-Z0-9_]*_URL)['"]\s*\]|\.(TEST_[A-Z0-9_]*_URL)\b)/g;
+
+/**
+ * A destructured read: `const { TEST_X_URL } = Bun.env` — the name sits in the PATTERN, not after
+ * the env, so `ENV_READ` cannot see it and a suite that reads the service looks uncovered.
+ */
+const ENV_DESTRUCTURE = /\{([^{}]*)\}\s*=\s*((?:Bun|process)\.env)\b/g;
+
+/** The name a service URL has: `TEST_` and `_URL`, as `ENV_READ` reads them. */
+const SERVICE_NAME = /^TEST_[A-Z0-9_]*_URL$/;
+
+/**
+ * The names one destructuring pattern reads: `TEST_X_URL`, `TEST_X_URL: local` and
+ * `TEST_X_URL = 'default'` all read `TEST_X_URL` — the local name and the default are the
+ * suite's business.
+ */
+function destructuredNames(pattern: string): readonly string[] {
+  const names: string[] = [];
+  for (const entry of pattern.split(',')) {
+    const property = entry.split(':')[0];
+    const name = (property?.split('=')[0] ?? '').trim();
+    if (SERVICE_NAME.test(name)) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Whether the expression ending at `end` is only WRITTEN: `Bun.env['TEST_X_URL'] = '…'`. `==`
+ * and `===` compare, and `+=` reads before it writes, so neither of those is a write.
+ */
+function isWriteOnly(text: string, end: number): boolean {
+  let at = end;
+  while (at < text.length && /\s/.test(text[at] ?? '')) at += 1;
+  return text[at] === '=' && text[at + 1] !== '=';
+}
 
 /**
  * The `TEST_*_URL` names a suite READS from the environment, distinct and sorted.
@@ -57,17 +91,31 @@ const ENV_READ =
  * blanks a template WHOLE, interpolations with it, and an interpolation is evaluated code. So a
  * read inside `${Bun.env['TEST_X_URL']}` is a read, while the same text in a template's static
  * text is a fixture.
+ *
+ * A READ is what a suite needs, and it has two shapes: the name after the env
+ * (`Bun.env['TEST_X_URL']`) and the name in the pattern (`const { TEST_X_URL } = Bun.env`). A
+ * WRITE is not a need: `Bun.env['TEST_X_URL'] = '…'` sets a fixture for a suite that never
+ * dials that server, and claiming the service there fails a suite that needed no server.
  */
 export function requiredServiceUrls(source: string): readonly string[] {
   const code = stripComments(source);
   const masked = withInterpolations(source, maskLiterals(source));
   const found = new Set<string>();
   for (const match of code.matchAll(ENV_READ)) {
+    const whole = match[0] ?? '';
     const at = match.index;
     const prefix = match[1] ?? '';
     if (masked.slice(at, at + prefix.length) !== prefix) continue;
+    if (isWriteOnly(code, at + whole.length)) continue;
     const name = match[2] ?? match[3];
     if (name !== undefined) found.add(name);
+  }
+  for (const match of code.matchAll(ENV_DESTRUCTURE)) {
+    const whole = match[0] ?? '';
+    const prefix = match[2] ?? '';
+    const at = match.index + whole.length - prefix.length;
+    if (masked.slice(at, at + prefix.length) !== prefix) continue;
+    for (const name of destructuredNames(match[1] ?? '')) found.add(name);
   }
   return [...found].sort();
 }
