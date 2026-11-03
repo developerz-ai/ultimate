@@ -4,6 +4,8 @@
 // matrix would otherwise unmake, and `x verify merge` would only notice after a push.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { SUITE_STEP_TIMEOUT_MS } from '../packages/cli/src/verify-deadline';
+import { paceOf, REFERENCE_CPUS, REFERENCE_PROBE_MS } from '../packages/cli/src/verify-pace';
 import { BESIDE_SERIAL_SUITES } from '../packages/cli/src/verify-run';
 import { SHARDABLE_STEPS } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
@@ -122,6 +124,45 @@ describe('unit · ci.yml · the gate in parts is still the gate', () => {
       flags.filter((flag) => !(verifyArgs.VERIFY_FLAGS as readonly string[]).includes(flag)),
     ).toEqual([]);
     expect(subcommands.filter((name) => !(accepted ?? []).includes(name))).toEqual([]);
+  });
+});
+
+describe('unit · ci.yml · the gate kill-switch is above the gate deadline', () => {
+  // The runner's documented reference probe (`verify-pace.ts`: 31–35 ms measured on GitHub's
+  // `ubuntu-latest`) and the minute of overhead a part pays around its step (checkout + setup 11 s,
+  // services 20 s, upload 5 s), both stated by the workflow's own comment.
+  const RUNNER_PROBE_MS = REFERENCE_PROBE_MS;
+  const JOB_OVERHEAD_MS = 60_000;
+
+  test("the job's timeout clears the pace-stretched suite deadline plus the job overhead", () => {
+    // 480 s stretched by the runner's measured pace: the deadline that NAMES a slow step must
+    // expire before the job's own kill-switch, or the runner cancels the part that was about to
+    // report. At the runner's documented reference this is 480 s plus the job's overhead; the
+    // former 10-minute timeout was below it and is now refused.
+    const pace = paceOf(REFERENCE_CPUS, RUNNER_PROBE_MS).factor;
+    const timeoutMs = (job('gate')['timeout-minutes'] ?? 0) * 60_000;
+    expect(timeoutMs).toBeGreaterThan(SUITE_STEP_TIMEOUT_MS * pace + JOB_OVERHEAD_MS);
+  });
+
+  test('the merge step judges even when the part listing refuses', () => {
+    // `bash -e` is the default shell: an unguarded listing exit aborted the step BEFORE the
+    // merge, and the run carried no verdict at all. The listing is a report; the merge judges.
+    const joined = runsOf(job('verify')).replace(/\\\n\s*/g, ' ');
+    const lines = joined.split('\n');
+    // The listing's POSITION, not its text: `findIndex` answers -1 when the line is absent, and
+    // the ordering below is only about a line that is really there. `find` plus
+    // `joined.indexOf(listing ?? '')` could not tell a real line from the `''` fallback, and the
+    // 0 that fallback answers passes the comparison.
+    const listing = lines.findIndex(
+      (line) => line.includes('scripts/verify-parts.ts') && !line.includes('--json'),
+    );
+    expect(listing).toBeGreaterThanOrEqual(0);
+    expect(lines[listing]).toMatch(/\|\|\s\S/);
+    // The merge follows the listing, so the listing can never abort it.
+    const merge = lines.findIndex((line) => line.includes('scripts/verify.ts merge'));
+    expect(merge).toBeGreaterThan(listing);
+    // The second listing runs inside a process substitution: its exit status cannot abort either.
+    expect(joined).toContain('mapfile -t docs < <(bun run scripts/verify-parts.ts');
   });
 });
 

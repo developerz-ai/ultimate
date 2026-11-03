@@ -123,8 +123,18 @@ jobs:
   gate:
     name: gate (${{ matrix.part }})
     runs-on: ubuntu-latest
-    # A runaway kill-switch, not a budget: the slowest part is ~2 minutes.
-    timeout-minutes: 10
+    # A runaway kill-switch, not a budget — and it must sit ABOVE the gate's own deadline, or it
+    # kills the part that was about to name itself. The suite deadline is 480 s
+    # (`packages/cli/src/verify-deadline.ts`, SUITE_STEP_TIMEOUT_MS), stretched by the runner's
+    # measured pace: at the runner's documented reference (35 ms against 35 ms) the step's deadline
+    # is 480 s, so the kill-switch must clear 480 s plus the job's overhead (checkout + setup ~11 s,
+    # services ~20 s, artifact upload ~5 s, rounded to a minute). 25 min leaves room for a slower
+    # probe.
+    # Run 41665182870 (2026-11-03) was cancelled after 15 minutes with no part document and no
+    # `verify-part-unit-3-attempt-1` artifact; that cancellation cannot come from the former
+    # 10-minute timeout. The kill-switch is raised so the gate's own deadline names a slow step
+    # before the job is cancelled, and the merge reads any remaining loss as a shard never arrived.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -288,7 +298,14 @@ jobs:
           status=0
           # Each part's newest attempt only: an earlier attempt's document of a re-run part is
           # still in the download, and merged beside its replacement it is the old verdict.
-          bun run scripts/verify-parts.ts ${{ runner.temp }}/parts
+          #
+          # A REPORT, not a gate: this listing refuses (exit 1) when the download holds no part
+          # document, or one that names no attempt. Under the default `bash -e` that refusal
+          # ABORTED the step before the merge below ran, so the run carried no verdict at all —
+          # the one thing this job exists to produce. The refusal is printed, and the merge
+          # judges: handed no document it refuses in turn, by name, and a refusal IS a verdict.
+          bun run scripts/verify-parts.ts ${{ runner.temp }}/parts \
+            || echo "the part listing refused; the merge below judges what the download holds"
           mapfile -t docs < <(bun run scripts/verify-parts.ts ${{ runner.temp }}/parts --json | jq -r '.data[]')
           bun run scripts/verify.ts merge "${docs[@]}" > "$RUNNER_TEMP/verdict.txt" 2>&1 \
             || status=$?

@@ -154,3 +154,66 @@ in the sense this page forbids: its question is the platform, which no Ubuntu ru
 | checkout with the runner's default `core.autocrlf` | that is a contributor's clone; `.gitattributes` has to make it LF |
 | a path-heavy unit subset, `./`-prefixed, not the full suite | ~2× slower runner, 25-minute budget; bare, `bun test packages/core` also selects `examples/dummy/packages/core` |
 | `continue-on-error: true`, outside `verify`'s `needs` | lands red first so the sweep's rows can watch it turn green; flipped to required in the diff that makes it green |
+
+## The gate kill-switch is above the gate deadline, 2026-11-03
+
+The gate's `timeout-minutes` sat BELOW the deadline the gate gives its own slowest step. Raised to
+25 min, and pinned by a test. What run 41665182870 shows, and what it does not, is below.
+
+### What run 41665182870 shows
+
+Run 41665182870 (`main`, head `c3fbaa48fb40ca325f8950eaff6b6689b9df1950`) lost `gate (unit-3)`:
+
+| Fact | Reading |
+|---|---|
+| the head | `c3fbaa48fb40ca325f8950eaff6b6689b9df1950` |
+| the job's conclusion | **cancelled** |
+| the runner | `GitHub Actions 1000060192` — GitHub DID acquire one |
+| started → cancelled | 15:33:57Z → 15:48:57Z, 15 minutes of wall time |
+| the part's document | none written |
+| `verify-part-unit-3-attempt-1` | no such artifact |
+
+The shard's loss was **not** GitHub never acquiring a runner: the job ran on one.
+
+### What it does NOT show
+
+The cause of the cancellation is **not established** by those timestamps. The job's
+`timeout-minutes: 10` cannot cancel at 15 minutes, so the kill-switch does not account for what
+the run recorded — and nothing else in the run's own evidence names a cause. The step's own
+deadline is what would name a slow step (`X_VERIFY_STEP_TIMEOUT`); this part never reached one.
+
+So: the shard was lost to a cancellation whose cause the run does not say. Do not read the loss
+as a verdict on the code, and do not read it as the runner's fault.
+
+### The invariant this pins
+
+The number below is the one the change turns: a kill-switch BELOW the pace-stretched deadline is a
+latent defect whatever caused this run's cancellation, and the one thing that would have turned a
+part's slow step into a named finding instead of a missing shard.
+
+| Number | Value |
+|---|---|
+| the suite step's deadline (`SUITE_STEP_TIMEOUT_MS`) | 480 s |
+| the runner's measured pace (4 cores, probe 31–35 ms against the 35 ms reference, `As of 2026-10-19`) | ×1 |
+| the step's own deadline on that runner | 480 s = 8 min |
+| the job's overhead (checkout + setup ~11 s, services ~20 s, artifact upload ~5 s) | ~1 min |
+| what the kill-switch must clear | ~9 min |
+| the kill-switch | **25 min** (was 10) |
+
+25 min clears the 8-min deadline three times over, and leaves room for a slower probe than the
+one GitHub's `ubuntu-latest` is documented to read (31–35 ms, `verify-pace.ts`, `As of 2026-10-19`) —
+a core reading 65–90 ms would stretch the deadline to ~20.6 min, still inside the kill-switch.
+
+Two rules follow, and both are held by `scripts/ci-workflow-shape.test.ts`:
+
+1. **The job's kill-switch must exceed the pace-stretched step deadline plus the job overhead.**
+   The step deadline is what names a slow step (`X_VERIFY_STEP_TIMEOUT`); the job timeout is only a
+   runaway kill-switch. A kill-switch BELOW the deadline cancels the part that was about to report,
+   which destroys the timeout evidence and makes the merge read the loss as a shard that never
+   arrived — a finding about the gate, not about the code. That is the hazard the number closes,
+   whether or not it is what run 41665182870 hit.
+2. **The merge job always reaches `x verify merge`.** `scripts/verify-parts.ts` is a REPORT, and it
+   refuses (exit 1) when the download holds no part document or one that names no attempt. Under
+   the default `bash -e` that refusal aborted the `verify` step before the merge ran, so the run
+   carried no verdict at all. The listing is now guarded; the merge judges, and its own refusal —
+   over no document — is a verdict by name.
