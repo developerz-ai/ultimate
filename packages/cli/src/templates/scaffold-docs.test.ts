@@ -45,7 +45,8 @@ describe('unit · the generated brain names bun run verify as the gate', () => {
 
   test('one file under two names: AGENTS.md is a link to CLAUDE.md, carrying the same text', () => {
     const agents = docsFiles(app).find((file) => file.path === 'AGENTS.md');
-    expect(agents?.merge === undefined ? agents.link : undefined).toBe('CLAUDE.md');
+    if (agents === undefined) return expect.unreachable('x new writes no AGENTS.md');
+    expect(agents.merge === undefined ? agents.link : undefined).toBe('CLAUDE.md');
     expect(doc('AGENTS.md')).toBe(doc('CLAUDE.md'));
     // The target is planned first, so `writeNewApp` never links to a file not yet on disk.
     const order = docsFiles(app).map((file) => file.path);

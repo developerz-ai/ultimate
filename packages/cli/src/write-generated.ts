@@ -5,15 +5,11 @@
 // why: Bun ships no symlink or mkdir API, nor a path API to find the link's parent directory.
 import { mkdir, rm, symlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { stringField } from '@ultimat3/core';
 import type { GeneratedFile } from './templates';
 
 /** The OS refusing the privilege, not the call being wrong: only these fall back to a copy. */
 const PRIVILEGE_CODES: ReadonlySet<string> = new Set(['EPERM', 'EACCES', 'ENOTSUP', 'ENOSYS']);
-
-const codeOf = (error: unknown): string | undefined =>
-  typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
-    ? error.code
-    : undefined;
 
 export interface WriteGeneratedSeams {
   readonly link?: (target: string, path: string) => Promise<void>;
@@ -40,7 +36,7 @@ export async function writeGenerated(
     return 'link';
   } catch (error) {
     const windows = (seams.platform ?? process.platform) === 'win32';
-    if (!windows || !PRIVILEGE_CODES.has(codeOf(error) ?? '')) throw error;
+    if (!windows || !PRIVILEGE_CODES.has(stringField(error, 'code') ?? '')) throw error;
     await Bun.write(path, file.contents);
     return 'copy';
   }
