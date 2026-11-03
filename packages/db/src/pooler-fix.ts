@@ -7,8 +7,15 @@
  * `alter role` is an ordinary statement. A login opened before the `alter` keeps the old values,
  * which is why reopening is in the comment after `#`, where prose belongs.
  */
+/**
+ * `DATABASE_URL` with its `options` query parameter cut out, as shell: the pooler refused the
+ * connection for an option in there, so a `psql` that sent it again would fail before `alter role`
+ * ran. Every other parameter (`sslmode`, `application_name`) stays.
+ */
+const PSQL_WITHOUT_OPTIONS = `psql "$(printf '%s' "$DATABASE_URL" | sed -E 's/([?&])options=[^&]*(&|$)/\\1/; s/[?&]$//')"`;
+
 const ALTER_ROLE =
-  `psql "$DATABASE_URL" -c "alter role <user> set statement_timeout = '10s'" ` +
+  `${PSQL_WITHOUT_OPTIONS} -c "alter role <user> set statement_timeout = '10s'" ` +
   `-c "alter role <user> set idle_in_transaction_session_timeout = '30s'"`;
 
 const ALTER_ROLE_NOTE =
@@ -33,7 +40,7 @@ export function poolerOptionsRefusedFix(parameter: string | undefined): string {
   }
   const named = parameter !== undefined && /^[a-z_][a-z0-9_.]*$/.test(parameter);
   const setting = named ? parameter : '<setting>';
-  return `psql "$DATABASE_URL" -c "alter role <user> set ${setting} = '<value>'"   # then remove -c ${setting}=… from the options of DATABASE_URL, or add it to ignore_startup_parameters of the pooler: a pooler forwards no startup option`;
+  return `${PSQL_WITHOUT_OPTIONS} -c "alter role <user> set ${setting} = '<value>'"   # then remove -c ${setting}=… from the options of DATABASE_URL, or add it to ignore_startup_parameters of the pooler: a pooler forwards no startup option`;
 }
 
 export const STATEMENT_BOUND_LOST_FIX = `${ALTER_ROLE}   # ${ALTER_ROLE_NOTE}; and export DATABASE_POOLER=transaction (or session) if a pooler sits in the path`;

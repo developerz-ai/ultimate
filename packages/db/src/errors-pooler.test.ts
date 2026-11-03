@@ -147,9 +147,14 @@ describe('every pooler fix is a command a shell runs', () => {
     }
   });
 
-  test('the switch is an export, then the alter role lines through psql', () => {
-    expect(refused('statement_timeout')).toStartWith(
-      `export DATABASE_POOLER=transaction && psql "$DATABASE_URL" -c "alter role <user> set statement_timeout = '10s'" -c "alter role <user> set idle_in_transaction_session_timeout = '30s'"`,
+  test('the switch is an export, then the alter role lines through psql, the URL options cut', () => {
+    const fix = refused('statement_timeout');
+
+    expect(fix).toStartWith('export DATABASE_POOLER=transaction && psql "$(printf');
+    // The pooler refused the connection for an option in the URL: psql must not send it again.
+    expect(fix).toContain(`sed -E 's/([?&])options=[^&]*(&|$)/\\1/; s/[?&]$//'`);
+    expect(fix).toContain(
+      `-c "alter role <user> set statement_timeout = '10s'" -c "alter role <user> set idle_in_transaction_session_timeout = '30s'"`,
     );
   });
 });

@@ -148,6 +148,7 @@ describe('x deploy verify · the queues', () => {
   test('a queue read that hangs ends at --timeout, and the database is told the same bound', async () => {
     const server = origin([[200, BUILD]]);
     const bounds: number[] = [];
+    const limits: number[] = [];
     let closed = 0;
     const result = await runDeployVerify(
       contextFor(['--url', server.url, ...held], appRoot(), DB),
@@ -164,14 +165,51 @@ describe('x deploy verify · the queues', () => {
             },
           });
         },
-        expire: () => Promise.resolve(),
+        expire: (ms) => {
+          limits.push(ms);
+          return Promise.resolve();
+        },
       }),
     );
     expect(codes(result)).toEqual(['X_DB_UNAVAILABLE']);
     expect(result.findings?.[0]?.cause).toContain('--timeout');
-    // Opened once the 10 s window closed: what is left of the 30 s wait.
-    expect(bounds).toEqual([20_000]);
+    // One --interval, never the 20 s left: the sample the verdict stands on is at most that old.
+    expect(bounds).toEqual([5_000]);
+    expect(limits[0]).toBe(5_000);
     expect(closed).toBe(1);
+  });
+
+  test('a read that lands disarms its expiry: no timer outlives the verdict', async () => {
+    const server = origin([[200, BUILD]]);
+    const signals: AbortSignal[] = [];
+    const result = await runDeployVerify(
+      contextFor(['--url', server.url, ...held], appRoot(), DB),
+      frozen({
+        ...queueDeps({ rows: () => [worker()] }),
+        expire: (_ms, signal) => {
+          signals.push(signal);
+          return new Promise<void>(() => undefined);
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(signals.length).toBe(1);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+  });
+
+  test('a fresh sample after the read: web rolling back during a slow read is not green', async () => {
+    const server = origin([
+      [200, BUILD],
+      [200, BUILD],
+      [200, BUILD],
+      [200, OLD],
+    ]);
+    const result = await runDeployVerify(
+      contextFor(['--url', server.url, ...held], appRoot(), DB),
+      frozen(queueDeps({ rows: () => [worker()] })),
+    );
+    expect(result.ok).toBe(false);
+    expect(codes(result)).toEqual(['X_DEPLOY_UNSTABLE']);
   });
 
   test('--idle-ok with an empty queue passes as idle, and with work waiting fails', async () => {

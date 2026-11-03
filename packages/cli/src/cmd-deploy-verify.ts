@@ -76,8 +76,11 @@ export interface DeployVerifyDeps {
     env: CommandContext['env'],
     statementTimeoutMs: number,
   ): Promise<QueueReader>;
-  /** Resolves once `ms` of real time pass: what a hung read is raced against. */
-  expire(ms: number): Promise<void>;
+  /**
+   * Resolves once `ms` of real time pass: what a hung read is raced against. `signal` disarms it,
+   * aborted the moment the read settles, so no timer holds the process open past the verdict.
+   */
+  expire(ms: number, signal: AbortSignal): Promise<void>;
 }
 
 /** Imported when asked: the verdict on the build alone never loads the app or a database driver. */
@@ -87,7 +90,11 @@ const realDeps: DeployVerifyDeps = {
   expectedQueues: async (root) => (await import('./deploy-verify-queues')).expectedQueues(root),
   openQueue: async (url, env, statementTimeoutMs) =>
     (await import('./deploy-verify-queues')).openQueue(url, env, statementTimeoutMs),
-  expire: (ms) => Bun.sleep(ms),
+  expire: (ms, signal) =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
+    }),
 };
 
 interface Answered {
@@ -156,17 +163,21 @@ async function readQueues(
   limitMs: number,
   deps: DeployVerifyDeps,
 ): Promise<QueueGrade> {
-  const expired = deps.expire(limitMs).then(() => {
+  const disarm = new AbortController();
+  const expired = deps.expire(limitMs, disarm.signal).then(() => {
     throw new UltimateError({
       code: 'X_DB_UNAVAILABLE',
-      cause: `a read of x_job_workers outlasted what was left of --timeout (${limitMs} ms)`,
+      cause: `a read of x_job_workers outlasted one --interval or what was left of --timeout (${limitMs} ms)`,
       fix: 'x jobs list --json',
     });
   });
-  const [workers, demand] = await Promise.race([
-    Promise.all([reader.workers(), reader.demand()]),
-    expired,
-  ]);
+  let rows: readonly [readonly WorkerRecord[], readonly QueueDemand[]];
+  try {
+    rows = await Promise.race([Promise.all([reader.workers(), reader.demand()]), expired]);
+  } finally {
+    disarm.abort();
+  }
+  const [workers, demand] = rows;
   return gradeQueues({
     ...input,
     workers,
@@ -195,26 +206,32 @@ async function awaitVerdict(
   let reader: QueueReader | undefined;
   let read: QueueRead | undefined;
   const left = (): number => deadline - deps.clock.monotonic();
+  /** One `/readyz` sample, folded in; whether the window holds after it. */
+  const sample = async (): Promise<boolean> => {
+    const answered = await takeSample(
+      options.origin,
+      Math.max(SAMPLE_FLOOR_MS, Math.min(SAMPLE_TIMEOUT_MS, left())),
+    );
+    lastFailure = answered.failure ?? lastFailure;
+    tally = foldSample(
+      tally,
+      {
+        at: deps.clock.monotonic(),
+        status: answered.status,
+        build: answered.build,
+        cached: answered.cached,
+      },
+      build,
+    );
+    return windowClosed(tally, options.windowMs, perWindow);
+  };
   try {
     for (;;) {
-      const answered = await takeSample(
-        options.origin,
-        Math.max(SAMPLE_FLOOR_MS, Math.min(SAMPLE_TIMEOUT_MS, left())),
-      );
-      lastFailure = answered.failure ?? lastFailure;
-      tally = foldSample(
-        tally,
-        {
-          at: deps.clock.monotonic(),
-          status: answered.status,
-          build: answered.build,
-          cached: answered.cached,
-        },
-        build,
-      );
-      const closed = windowClosed(tally, options.windowMs, perWindow);
+      let closed = await sample();
       if (closed && plan !== undefined) {
-        const bound = Math.max(READ_FLOOR_MS, left());
+        // One --interval at most: the window's last sample is never older than that when the
+        // queues are judged, and the server stops the statement at the same bound.
+        const bound = Math.max(READ_FLOOR_MS, Math.min(options.intervalMs, left()));
         reader ??= await plan.open(bound);
         try {
           const grade = await readQueues(
@@ -228,6 +245,9 @@ async function awaitVerdict(
           // One reset connection is a read lost, never the verdict: the last grade stands.
           read = { grade: read?.grade, lastFailure: renderThrowable(error) };
         }
+        // Served is judged against web as it answers NOW: a sample taken after the read landed,
+        // so a rollback during the read is red, never a green from the sample before it.
+        if ((read.grade?.unserved.length ?? 1) === 0) closed = await sample();
       }
       const served = plan === undefined || (read?.grade?.unserved.length ?? 1) === 0;
       const wait = { tally, closed, lastFailure };

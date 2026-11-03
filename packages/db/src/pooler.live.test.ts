@@ -22,6 +22,7 @@ const hasPooler =
 /** A login of its own: `alter role` on the suite's shared one would reach every other suite. */
 const BOUND_ROLE = `x_pooler_live_${String(process.pid)}`;
 const IDLE_ROLE = `x_pooler_idle_${String(process.pid)}`;
+const OWN_ROLE = `x_pooler_own_${String(process.pid)}`;
 
 describe.skipIf(!hasPooler)('live · a transaction pooler in its stock config', () => {
   const clients: PostgresClient[] = [];
@@ -46,6 +47,7 @@ describe.skipIf(!hasPooler)('live · a transaction pooler in its stock config', 
     const admin = postgresClient({ url: directUrl ?? '', role: 'web', profile: { max: 1 } });
     await admin.execute(raw(`drop role if exists ${BOUND_ROLE}`));
     await admin.execute(raw(`drop role if exists ${IDLE_ROLE}`));
+    await admin.execute(raw(`drop role if exists ${OWN_ROLE}`));
     await admin.close();
   });
 
@@ -137,6 +139,35 @@ describe.skipIf(!hasPooler)('live · a transaction pooler in its stock config', 
     expect(bound.statementTimeout.applied).toBe(10_000);
     expect(bound.idleInTransaction.applied).toBe(30_000);
     expect(lostStatementBound(bound, 'web', client.pooler)).toBeUndefined();
+  });
+
+  test('an option of the operator own refused: the printed fix connects without it, and runs', async () => {
+    const admin = postgresClient({ url: directUrl ?? '', role: 'web', profile: { max: 1 } });
+    clients.push(admin);
+    await admin.execute(raw(`drop role if exists ${OWN_ROLE}`));
+    await admin.execute(raw(`create role ${OWN_ROLE} login password 'own'`));
+    const carrying = new URL(poolerUrl ?? '');
+    carrying.username = OWN_ROLE;
+    carrying.password = 'own';
+    carrying.searchParams.set('options', '-c lock_timeout=1000');
+    const refused = await through({ url: carrying.toString() })
+      .query(sql`select 1`)
+      .catch((error: unknown) => error as DbError);
+    expect((refused as DbError).code).toBe('X_DB_POOLER_OPTIONS_REFUSED');
+
+    const fix = (refused as DbError).fix.replaceAll('<user>', OWN_ROLE).replaceAll('<value>', '1s');
+    const shell = Bun.spawnSync(['bash', '-c', fix], {
+      env: { PATH: process.env['PATH'] ?? '', DATABASE_URL: carrying.toString() },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 10_000,
+    });
+    expect(shell.stderr.toString()).toBe('');
+    expect(shell.exitCode).toBe(0);
+    const row = await admin.one<{ readonly settings: readonly string[] | null }>(
+      sql`select setconfig as settings from pg_db_role_setting s join pg_roles r on r.oid = s.setrole where r.rolname = ${OWN_ROLE}`,
+    );
+    expect(row?.settings).toEqual(['lock_timeout=1s']);
   });
 
   test('an idle transaction ends through it too, once the role says so', async () => {
