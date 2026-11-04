@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Enforce that every external workspace dependency is an explicit row in the checked-in allowlist,
-// and that a dependency declared in two manifests is DECLARED COMPATIBLY in both.
+// and that each declaration sharing a root dependency accepts a version its root range accepts.
 //
 // Root `CLAUDE.md` allows no new dependency without a stated reason. A name-only allowlist would
 // duplicate the workspace registry, so internal names are checked against the real workspaces and
@@ -10,6 +10,7 @@
 //
 //   bun run dependency-allowlist  ·  bun run scripts/dependency-allowlist.ts [--json]
 
+import { singleLine } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import { DEPENDENCY_ALLOWLIST, DEPENDENCY_ALLOWLIST_FILE } from './lib/dependency-allowlist-data';
 import { rangeCompatibility } from './lib/dependency-ranges';
@@ -61,7 +62,7 @@ const staleFinding = (key: string): Finding => ({
 });
 
 /**
- * The range conflict: one dependency, two manifests, and no version both accept.
+ * The range refusal: two declarations with no shared version, or syntax we cannot compare.
  *
  * The cause names the dependency, the ROOT manifest with its range and the conflicting manifest
  * with its range — one line, so a reader sees which two declarations to reconcile without
@@ -74,8 +75,10 @@ const conflictFinding = (
   problem: string,
 ): Finding => ({
   code: 'X_DEPENDENCY_RANGE_CONFLICT',
-  cause: `${name} is declared as '${root.range}' in ${root.manifest} and as '${other.range}' in ${other.manifest}, and ${problem}`,
-  fix: `bun run scripts/dependency-allowlist.ts --json   # then widen one of the two ranges so a single version satisfies both`,
+  cause: singleLine(
+    `${name} is declared as '${root.range}' in ${root.manifest} and as '${other.range}' in ${other.manifest}, and ${problem}`,
+  ),
+  fix: `bun run scripts/dependency-allowlist.ts --json   # then correct unsupported range syntax or reconcile the ranges so a single version satisfies both`,
   at: other.manifest,
 });
 
@@ -153,8 +156,8 @@ export async function workspaceNames(root: string): Promise<ReadonlySet<string>>
 }
 
 /**
- * The cross-manifest check: a dependency declared in more than one manifest must be declared
- * COMPATIBLY in every one of them.
+ * The cross-manifest check: each dependency declaration sharing a root reference must accept
+ * a version that reference accepts.
  *
  * The ROOT manifest is the reference. Two ranges conflict when no single version satisfies both —
  * never when their texts differ: the root's `^7.0.2` and an app's `7.0.2` agree, and a textual

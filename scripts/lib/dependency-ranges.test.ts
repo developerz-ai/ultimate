@@ -91,6 +91,33 @@ describe('a range that does not parse', () => {
 });
 
 describe('a range with alternatives and conjunctions', () => {
+  test('operators stay attached to their versions across whitespace', () => {
+    for (const range of ['>= 7.0.0 < 8.0.0', '>=\t7.0.0, <\n8.0.0']) {
+      expect(verdict('7.0.2', range)).toBe('compatible');
+      expect(verdict('8.0.0', range)).toBe('incompatible');
+    }
+    expect(verdict('7.0.2', '^ 7.0.0')).toBe('compatible');
+    expect(verdict('7.0.2', '~ 7.0.0')).toBe('compatible');
+    expect(verdict('7.0.2', '>= < 8.0.0')).toBe('unparsable');
+  });
+
+  test('strict wildcard comparators match no version, even an unbounded range', () => {
+    for (const range of ['<*', '>*', '<x', '>X', '< *', '> *', '<0.0.0']) {
+      for (const other of ['1.2.3', '*', '<2.0.0']) {
+        expect(verdict(range, other)).toBe('incompatible');
+        expect(verdict(other, range)).toBe('incompatible');
+      }
+    }
+    expect(verdict('<* || 1.2.3', '1.2.3')).toBe('compatible');
+  });
+
+  test('non-strict wildcard operators still accept every release version', () => {
+    for (const range of ['*', '>=*', '<=*', '=*', '^*', '~*']) {
+      expect(verdict(range, '0.0.0')).toBe('compatible');
+      expect(verdict(range, '7.0.2')).toBe('compatible');
+    }
+  });
+
   test('an alternative is compatible when one of its branches matches', () => {
     expect(verdict('^1.0.0 || ^3.0.0', '^3.1.0')).toBe('compatible');
   });

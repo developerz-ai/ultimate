@@ -183,10 +183,30 @@ describe('a dependency two manifests declare', () => {
     );
     const cause = findings[0]?.cause ?? '';
     expect(cause).toContain('typescript');
-    expect(cause).toContain('^7.0.2');
-    expect(cause).toContain('package.json');
-    expect(cause).toContain('^1.0.0');
+    expect(cause).toContain("declared as '^7.0.2' in package.json and as");
+    expect(cause).toContain("as '^1.0.0' in examples/dummy/package.json,");
     expect(cause.split('\n')).toHaveLength(1);
+  });
+
+  test('conflict diagnostics escape control characters in every external value', () => {
+    const name = 'type\tscript';
+    for (const range of ['>=1.0.0\n<2.0.0', 'unsupported\r\nrange\u001b']) {
+      const root = { ...rootDeclaration(name, '^7.0.2\n'), manifest: 'package\r.json' };
+      const findings = checkDependencyRanges(
+        [declaration(name, 'devDependencies', range, 'examples/\u2028dummy/package.json')],
+        new Map([[name, root]]),
+      );
+      const cause = findings[0]?.cause ?? '';
+      expect(findings[0]?.code).toBe('X_DEPENDENCY_RANGE_CONFLICT');
+      expect(cause).toContain('type\\tscript');
+      expect(cause).toContain('package\\r.json');
+      expect(cause).toContain('^7.0.2\\n');
+      expect(cause).toContain('examples/\\u2028dummy/package.json');
+      expect(cause).toContain(range.startsWith('>=') ? '\\n<2.0.0' : '\\r\\nrange\\u001b');
+      for (const control of ['\r', '\n', '\t', '\u001b', '\u2028']) {
+        expect(cause).not.toContain(control);
+      }
+    }
   });
 
   test('the conflict names the conflicting manifest as the location of the finding', () => {
@@ -277,6 +297,7 @@ describe('a fixture tree with a conflicting range', () => {
       expect(findings.filter((finding) => finding.code === 'X_DEPENDENCY_RANGE_CONFLICT')).toEqual(
         [],
       );
+      expect(findings.filter((finding) => finding.code === 'X_DEPENDENCY_UNSCANNED')).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

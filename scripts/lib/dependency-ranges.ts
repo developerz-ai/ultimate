@@ -72,7 +72,8 @@ const upperOf = (
  * pair no install can satisfy.
  */
 export function intervalsOverlap(a: VersionInterval, b: VersionInterval): boolean {
-  const lo = lowerOf(a.lower, b.lower);
+  // Release versions cannot be negative: an upper-only `<0.0.0` interval is empty too.
+  const lo = lowerOf(lowerOf(a.lower, b.lower), boundAt([0, 0, 0], true));
   const hi = upperOf(a.upper, b.upper);
   if (lo === undefined || hi === undefined) return true;
   const order = compareVersions(lo.version, hi.version);
@@ -198,7 +199,8 @@ const parseComparator = (text: string): VersionInterval | undefined => {
   const version = parseVersion(raw);
   if (version === undefined) return undefined;
   if (version.precision === 0) {
-    // `*` and `x` alone: every version.
+    // npm's strict wildcard comparators match nothing; all other operators accept every release.
+    if (operator === '<' || operator === '>') return { upper: boundAt([0, 0, 0], false) };
     return { lower: boundAt([0, 0, 0], true) };
   }
   return comparatorInterval(operator, version);
@@ -244,7 +246,8 @@ export function parseVersionRange(range: string): ParsedRange | undefined {
       intervals.push(hyphen);
       continue;
     }
-    const parts = text.split(/[\s,]+/).filter((part) => part !== '');
+    // Whitespace may separate an operator from its version, not just separate comparators.
+    const parts = text.match(/\s*(?:>=|<=|>|<|=|\^|~)?\s*[^\s,]+/g) ?? [];
     if (parts.length === 0) return undefined;
     const bounds: VersionInterval[] = [];
     for (const part of parts) {
