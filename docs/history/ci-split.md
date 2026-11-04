@@ -168,3 +168,37 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `deploy-social-demo.yml` | green `ci` on `main` → the demo image |
 | `wiki.yml` | push to `main` → the wiki |
 | `tutorial-run.yml` | push to `main` touching a tutorial or a generator → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never on a PR, never in `ci` |
+
+## Packages-failure investigation
+
+As of 2026-11: investigation only, not a diagnosed regression or a repair. Source inspection
+establishes the current execution path; it does not establish which historical run first failed.
+
+| Verified in this checkout | Source |
+|---|---|
+| The current `packages` check has shards `1/2` and `2/2`, invoking `bun run scripts/coverage-gate.ts --all --shard "$SHARD"` | `.github/workflows/ci.yml:1032-1050` |
+| Each unit runs in one coverage process, without `--isolate`; a nonzero suite exit is rejected before reading lcov, then coverage is scoped to the unit | `scripts/coverage-gate.ts:281-315` |
+| Coverage floors and stale-pin ratchets remain enforced | `scripts/coverage-gate.ts:150-214` |
+
+The relationship between merge #580, the reported first-red SHA
+`75a794fa0d594b80f3dbe9db3c16e0840cac4099`, and current `main` is **unconfirmed**. Missing
+historical CI logs and ancestry evidence block that attribution. No reproduction was performed
+for this record; source inspection alone cannot identify a failing test or prescribe a repair.
+
+Earlier-run completion statements described a browser-temp-root repair. That repair is not
+present in the inspected source: `packages/testing/src/cdp-launch-profile.ts:77` defaults to
+`tmpdir()`, and `packages/testing/src/cdp-launch-attempt.ts:220-223` supplies no child environment
+override. Those statements do not prove a repair in this checkout. Browser temp-root handling
+remains an unverified hypothesis, not the diagnosed cause of the packages failure.
+
+| Remaining evidence | Required to complete the investigation and repair |
+|---|---|
+| Historical failure | Failing Actions run/job logs, SHA and attempt; merge #580 metadata; comparison against current `main` |
+| Ancestry | Verified relationship among #580, the reported first-red SHA and current `main`; a repaired head containing the red-base SHA |
+| Reproduction and regression guard | Reproduce the failure and demonstrate failing-first coverage of the defect before repairing its cause |
+| Packages results | Successful packages checks on the repaired head, with their logs and attempts |
+| Merge gates | Required CI and review results on that head |
+
+None of that completion evidence was obtained for this record. This investigation-only patch
+changes no workflow, coverage floor, pin, skip condition, review gate or runtime code, and claims
+neither a repair nor green packages or merge checks.
