@@ -14,6 +14,7 @@ import { frameworkVersion } from '@ultimat3/core';
 // app's `engines.bun` (`scaffold-repo.ts`) — the source `scripts/bun-pin.test.ts` reads it from.
 import { REQUIRED_BUN } from '../packages/cli/src/app-root';
 import { flagString, parseScriptArgs } from './lib/args';
+import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { ABOVE_TABLE, allowedTiersFor, TIER_OF, TIERS, tierOf } from './lib/tiers';
@@ -296,111 +297,84 @@ export function nameProblem(name: string): string | undefined {
     : `the package name must be kebab-case (a-z, 0-9, single hyphens, a letter first), and "${name}" is not`;
 }
 
-function readTier(raw: string | undefined, name: string, json: boolean): number {
-  const problem = tierProblem(raw, name);
-  if (problem !== undefined) {
-    report(
-      {
-        ok: false,
-        script: 'new-package',
-        summary: 'a package needs a real tier before it needs a file',
-        findings: [
-          {
-            code: 'X_CLI_BAD_FLAG',
-            cause: problem,
-            fix: `bun run scripts/new-package.ts ${name} --tier 1`,
-          },
-        ],
-      },
-      json,
-    );
-  }
-  return raw === undefined ? tierOf(name) : Number.parseInt(raw, 10);
+/** A refusal, in the command's own result shape. */
+const refused = (summary: string, finding: Finding): ScriptResult => ({
+  ok: false,
+  script: 'new-package',
+  summary,
+  findings: [finding],
+});
+
+/** What one scaffold is asked for: the package, and the checkout it is written under. */
+export interface ScaffoldRequest {
+  /** The root the package is scaffolded under: `packages/<name>` and the root solution config. */
+  readonly root: string;
+  /** The package name; `undefined` is the "no package name given" refusal. */
+  readonly name: string | undefined;
+  /** `--tier`, as typed. */
+  readonly tier: string | undefined;
+  /** `--description`, as typed. */
+  readonly description: string | undefined;
+  /** `--only`: one contract file to fill in, for a package that already exists. */
+  readonly only: string | undefined;
 }
 
-if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const name = args.positionals[0];
+/**
+ * The whole command as a value: the refusal, or the scaffold with the files it wrote.
+ *
+ * A function and not a `report()` call, so a test can drive it against a throwaway tree. The block
+ * this moved out of ran only as a process, so every line of it counted as uncovered — a scaffolder
+ * nothing could exercise was a scaffolder nothing had proved.
+ */
+export async function scaffoldPackage(request: ScaffoldRequest): Promise<ScriptResult> {
+  const name = request.name;
   if (name === undefined) {
-    report(
-      {
-        ok: false,
-        script: 'new-package',
-        summary: 'a package name is required',
-        findings: [
-          {
-            code: 'X_CLI_BAD_FLAG',
-            cause: 'no package name given',
-            fix: 'bun run scripts/new-package.ts seo --tier 1',
-          },
-        ],
-      },
-      args.json,
-    );
+    return refused('a package name is required', {
+      code: 'X_CLI_BAD_FLAG',
+      cause: 'no package name given',
+      fix: 'bun run scripts/new-package.ts seo --tier 1',
+    });
   }
   const badName = nameProblem(name);
   if (badName !== undefined) {
-    report(
-      {
-        ok: false,
-        script: 'new-package',
-        summary: 'a package name is a kebab-case directory name',
-        findings: [
-          {
-            code: 'X_CLI_BAD_FLAG',
-            cause: badName,
-            fix: 'bun run scripts/new-package.ts my-package --tier 1',
-          },
-        ],
-      },
-      args.json,
-    );
+    return refused('a package name is a kebab-case directory name', {
+      code: 'X_CLI_BAD_FLAG',
+      cause: badName,
+      fix: 'bun run scripts/new-package.ts my-package --tier 1',
+    });
   }
-  const dir = join(root, 'packages', name);
-  const tier = readTier(flagString(args, 'tier'), name, args.json);
-  const description = flagString(args, 'description') ?? 'One line about what this package owns';
+  const dir = join(request.root, 'packages', name);
+  const badTier = tierProblem(request.tier, name);
+  if (badTier !== undefined) {
+    return refused('a package needs a real tier before it needs a file', {
+      code: 'X_CLI_BAD_FLAG',
+      cause: badTier,
+      fix: `bun run scripts/new-package.ts ${name} --tier 1`,
+    });
+  }
+  const tier = request.tier === undefined ? tierOf(name) : Number.parseInt(request.tier, 10);
+  const description = request.description ?? 'One line about what this package owns';
 
   // `--only <path>` fills in one missing contract file in a package that already exists, which is
   // what the `package-shape` verify step tells you to run.
-  const only = flagString(args, 'only');
+  const only = request.only;
   if (existsSync(dir) && only === undefined) {
-    report(
-      {
-        ok: false,
-        script: 'new-package',
-        summary: `packages/${name} already exists`,
-        findings: [
-          {
-            code: 'X_GENERATE_CONFLICT',
-            cause: `packages/${name} is already a directory`,
-            fix: `bun run scripts/new-package.ts ${name} --only README.md, or pick another name`,
-            at: `packages/${name}`,
-          },
-        ],
-      },
-      args.json,
-    );
+    return refused(`packages/${name} already exists`, {
+      code: 'X_GENERATE_CONFLICT',
+      cause: `packages/${name} is already a directory`,
+      fix: `bun run scripts/new-package.ts ${name} --only README.md, or pick another name`,
+      at: `packages/${name}`,
+    });
   }
 
   const all = packageTemplates(name, tier, description);
   const files = only === undefined ? all : all.filter((file) => file.path === only);
   if (files.length === 0) {
-    report(
-      {
-        ok: false,
-        script: 'new-package',
-        summary: `no template named ${only ?? ''}`,
-        findings: [
-          {
-            code: 'X_CLI_BAD_FLAG',
-            cause: `--only ${only ?? ''} is not one of the package templates`,
-            fix: `bun run scripts/new-package.ts ${name} --only ${all.map((file) => file.path).join('|')}`,
-          },
-        ],
-      },
-      args.json,
-    );
+    return refused(`no template named ${only ?? ''}`, {
+      code: 'X_CLI_BAD_FLAG',
+      cause: `--only ${only ?? ''} is not one of the package templates`,
+      fix: `bun run scripts/new-package.ts ${name} --only ${all.map((file) => file.path).join('|')}`,
+    });
   }
   for (const file of files) {
     if (existsSync(join(dir, file.path))) continue;
@@ -409,40 +383,41 @@ if (import.meta.main) {
 
   // The build graph is part of the scaffold, not a follow-up: a package outside the root
   // `references` is a package `tsc -b` never compiles, and the `typecheck` step is `tsc -b`.
-  const rootConfig = join(root, ROOT_TSCONFIG);
+  const rootConfig = join(request.root, ROOT_TSCONFIG);
   const before = await Bun.file(rootConfig).text();
   const after = withPackageReference(before, name);
   if (after === undefined) {
-    report(
-      {
-        ok: false,
-        script: 'new-package',
-        summary: `packages/${name} was written, but ${ROOT_TSCONFIG} could not be rewritten`,
-        findings: [
-          {
-            code: 'X_GENERATE_CONFLICT',
-            cause: `${ROOT_TSCONFIG} does not read as a solution config with a "references" array, so packages/${name} is outside the build graph`,
-            fix: `add { "path": "./packages/${name}" } to the "references" array in ${ROOT_TSCONFIG}`,
-            at: ROOT_TSCONFIG,
-          },
-        ],
-      },
-      args.json,
-    );
+    return refused(`packages/${name} was written, but ${ROOT_TSCONFIG} could not be rewritten`, {
+      code: 'X_GENERATE_CONFLICT',
+      cause: `${ROOT_TSCONFIG} does not read as a solution config with a "references" array, so packages/${name} is outside the build graph`,
+      fix: `add { "path": "./packages/${name}" } to the "references" array in ${ROOT_TSCONFIG}`,
+      at: ROOT_TSCONFIG,
+    });
   }
   if (after !== before) await Bun.write(rootConfig, after);
 
+  return {
+    ok: true,
+    script: 'new-package',
+    summary: `packages/${name} scaffolded at tier ${tier}`,
+    lines: [
+      ...files.map((file) => `  + packages/${name}/${file.path}`),
+      ...(after === before ? [] : [`  ~ ${ROOT_TSCONFIG} references ./packages/${name}`]),
+    ],
+    data: { name, tier, files: files.map((file) => file.path), referenced: true },
+  };
+}
+
+if (import.meta.main) {
+  const args = parseScriptArgs(Bun.argv.slice(2));
   report(
-    {
-      ok: true,
-      script: 'new-package',
-      summary: `packages/${name} scaffolded at tier ${tier}`,
-      lines: [
-        ...files.map((file) => `  + packages/${name}/${file.path}`),
-        ...(after === before ? [] : [`  ~ ${ROOT_TSCONFIG} references ./packages/${name}`]),
-      ],
-      data: { name, tier, files: files.map((file) => file.path), referenced: true },
-    },
+    await scaffoldPackage({
+      root: repoRoot(),
+      name: args.positionals[0],
+      tier: flagString(args, 'tier'),
+      description: flagString(args, 'description'),
+      only: flagString(args, 'only'),
+    }),
     args.json,
   );
 }

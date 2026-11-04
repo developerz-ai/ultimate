@@ -79,8 +79,8 @@ export interface CoveragePin {
  */
 export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
   scripts: {
-    lines: 83,
-    funcs: 89,
+    lines: 84,
+    funcs: 90,
     why:
       'First measurement, 2026-10-01: 80.35% lines / 88.21% functions over 139 files, a file no ' +
       "test loads counted at 0%. What is uncovered is each script's `import.meta.main` block " +
@@ -92,7 +92,10 @@ export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
       '83.81% / 90.55% (CI) after sweep 11b: the guards it tightened each gained fixture tests. ' +
       '2026-10-27, Bun 1.4.4: 83.28% / 89.48%, functions 90 -> 89 with no test or source ' +
       'changed — over the same files lcov counts 202 uncovered functions on both, of 2657 on ' +
-      '1.4.3 and 2397 on 1.4.4.',
+      '1.4.3 and 2397 on 1.4.4. 2026-11-04: 84.34% / 90.35% — compile-x, new-package and ' +
+      'side-effects moved their `import.meta.main` blocks into exported functions a test calls, ' +
+      'and list-package-dirs gained the test beside it it never had; the pin rises to the ' +
+      'measurement, as `judge()` asks when a pin has outlived its reason.',
   },
 };
 

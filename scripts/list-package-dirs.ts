@@ -7,7 +7,8 @@
 //
 //   bun run scripts/list-package-dirs.ts [--json]
 
-import { flagBool, parseScriptArgs } from './lib/args';
+import { parseScriptArgs } from './lib/args';
+import type { ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
@@ -16,17 +17,25 @@ export function packageDirs(root: string): readonly string[] {
   return dirs.map((path) => path.split('/')[1] as string).sort();
 }
 
+/**
+ * The whole command as a value: the directory list, and the summary that counts it.
+ *
+ * A function and not a `report()` call, so a test can drive it. The block this moved out of ran
+ * only as a process, so every line of it counted as uncovered — a command nothing could exercise
+ * was a command nothing had proved.
+ */
+export function listPackageDirs(root: string): ScriptResult {
+  const dirs = packageDirs(root);
+  return {
+    ok: dirs.length > 0,
+    script: 'list-package-dirs',
+    summary: `${dirs.length} package directories`,
+    findings: [],
+    data: dirs,
+  };
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const dirs = packageDirs(repoRoot());
-  report(
-    {
-      ok: dirs.length > 0,
-      script: 'list-package-dirs',
-      summary: `${dirs.length} package directories`,
-      findings: [],
-      data: dirs,
-    },
-    flagBool(args, 'json'),
-  );
+  report(listPackageDirs(repoRoot()), args.json);
 }

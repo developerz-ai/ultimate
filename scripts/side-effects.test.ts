@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { parseScriptArgs } from './lib/args';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { PackageFacts, SideEffectGap } from './side-effects';
 import {
@@ -18,6 +19,7 @@ import {
   scanTopLevelEffects,
   sideEffectFinding,
   sideEffectGaps,
+  sideEffectsResult,
   unknownPins,
 } from './side-effects';
 
@@ -349,6 +351,75 @@ describe('readPackageFacts', () => {
     expect(sideEffectFinding(gaps[0] as SideEffectGap).at).toBe(
       'packages/fake/src/deep/thing.ts:3',
     );
+  });
+});
+
+/**
+ * The command's own wiring: a scan over a tree, turned into the report the command prints.
+ *
+ * The block that did this ran only as a process, so every line of it counted as uncovered. The
+ * tree is a fixture of its own — the rule reads the packages under the root it is handed — while
+ * the ratchet rows it holds are this repository's, which is why the fixture's own gap is the one
+ * asserted here and the rest is not.
+ */
+describe('the command entry point', () => {
+  const ENTRY_FIXTURE = join(ROOT, 'scripts', '.side-effects-entry-fixture');
+
+  beforeEach(async () => {
+    await rm(ENTRY_FIXTURE, { recursive: true, force: true });
+    await Bun.write(
+      join(ENTRY_FIXTURE, 'packages/fake/package.json'),
+      JSON.stringify({ name: '@fake/fake', sideEffects: [], exports: { '.': './src/index.ts' } }),
+    );
+    await Bun.write(join(ENTRY_FIXTURE, 'packages/fake/src/index.ts'), "import './framework';\n");
+    await Bun.write(
+      join(ENTRY_FIXTURE, 'packages/fake/src/framework.ts'),
+      'registerErrorCodes({});\n',
+    );
+  });
+  afterEach(async () => {
+    await rm(ENTRY_FIXTURE, { recursive: true, force: true });
+  });
+
+  test('the scan over a fixture tree is reported as the rule finds it', async () => {
+    const result = await sideEffectsResult(ENTRY_FIXTURE, parseScriptArgs([]));
+    const gaps = await sideEffectGaps(ENTRY_FIXTURE);
+
+    // The report IS the rule's findings, in order: the wiring, not a second opinion about them.
+    expect(result.findings?.map((finding) => finding.code)).toEqual(
+      gaps.map(sideEffectFinding).map((finding) => finding.code),
+    );
+    expect(result.summary).toBe(`${String(gaps.length)} sideEffects gap(s)`);
+    // And the fixture's own gap is in there — a scan that read nothing reports the same clean
+    // answer a truthful tree does.
+    expect(result.findings?.map((finding) => finding.at)).toContain(
+      'packages/fake/src/framework.ts:1',
+    );
+  });
+
+  test('an --unpin name the ratchet does not hold is refused, and writes nothing', async () => {
+    const pinsPath = join(ROOT, PINS_FILE);
+    const before = await Bun.file(pinsPath).text();
+    const args = parseScriptArgs(['--unpin', 'packages/does-not-exist']);
+
+    const result = await sideEffectsResult(ROOT, args);
+
+    // A refusal answers `ok: false` with the flag code, so a typo in the fix line the gate
+    // printed cannot read as success.
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => finding.code)).toEqual(['X_CLI_BAD_FLAG']);
+    expect(result.findings?.[0]?.cause).toContain('packages/does-not-exist');
+    // And it wrote nothing: the ratchet IS the array in that file.
+    expect(await Bun.file(pinsPath).text()).toBe(before);
+  });
+
+  test('--explain reports the array this tree measures', async () => {
+    const result = await sideEffectsResult(ENTRY_FIXTURE, parseScriptArgs(['--explain']));
+
+    // The array a `missing` finding's fix line asks for: measured, not merely counted.
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe('measured import-time effects in 1 package(s)');
+    expect(result.data).toEqual({ measured: { 'packages/fake': ['./src/framework.ts'] } });
   });
 });
 

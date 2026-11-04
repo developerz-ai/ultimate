@@ -3,12 +3,22 @@
 // yet), and a `--tier` parsed with no guard.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun.file().exists() answers about a file and answers false for a directory, so a refusal
+// cannot be asked through it whether it left a package directory behind.
+import { existsSync } from 'node:fs';
+// why: Bun has no mkdtemp and no recursive remove; the fixture needs a throwaway tree on disk.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
+import { join } from 'node:path';
 import { PACKAGE_FILES } from '@ultimat3/cli';
 import { registerIn } from './lib/error-code-plan';
 import { allowedTiersFor, TIERS } from './lib/tiers';
 import {
   nameProblem,
   packageTemplates,
+  scaffoldPackage,
   TIER_NUMBERS,
   tierProblem,
   withPackageReference,
@@ -118,6 +128,181 @@ describe('unit · a scaffolded package joins the root build graph', () => {
   test('a root config this cannot parse is returned untouched, never half-rewritten', () => {
     expect(withPackageReference('{ "references": [ // a comment\n]}', 'jobs')).toBeUndefined();
     expect(withPackageReference(JSON.stringify({ files: [] }), 'jobs')).toBeUndefined();
+  });
+});
+
+describe('unit · the scaffolder writes the package it says it writes', () => {
+  // The command's own block ran only as a process, so every line of it counted as uncovered. The
+  // tree is a throwaway root: the package directory, the template files and the root `references`
+  // entry are what the command claims to write, and the tree is asked whether they are there.
+  test('the package directory, its template files and the root reference are all written', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-new-package-'));
+    try {
+      await Bun.write(
+        join(root, 'tsconfig.json'),
+        `${JSON.stringify({ files: [], references: [{ path: './packages/core' }] }, null, 2)}\n`,
+      );
+
+      const result = await scaffoldPackage({
+        root,
+        name: 'widgets',
+        tier: '1',
+        description: 'one line about widgets',
+        only: undefined,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.summary).toBe('packages/widgets scaffolded at tier 1');
+      expect(result.data).toMatchObject({ name: 'widgets', tier: 1, referenced: true });
+      // The package directory, with the contract files the shape gate demands.
+      expect(await Bun.file(join(root, 'packages/widgets/package.json')).exists()).toBe(true);
+      expect(await Bun.file(join(root, 'packages/widgets/README.md')).exists()).toBe(true);
+      expect(await Bun.file(join(root, 'packages/widgets/src/index.ts')).exists()).toBe(true);
+      // The build graph: a package outside the root references is a package `tsc -b` never compiles.
+      const config = JSON.parse(await Bun.file(join(root, 'tsconfig.json')).text()) as {
+        readonly references: readonly { readonly path: string }[];
+      };
+      expect(config.references).toContainEqual({ path: './packages/widgets' });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('unit · a refusal is a refusal, and it leaves the tree alone', () => {
+  // Every refusal in the command was a branch no test reached: the happy path was pinned and the
+  // refusals were not, so deleting one left this file green while the command wrote the package it
+  // had just refused. Each case drives the command against a throwaway root and asks the tree what
+  // the refusal left behind.
+  const inThrowawayRoot = async (run: (root: string) => Promise<void>): Promise<void> => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-new-package-'));
+    try {
+      await run(root);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  test('no package name is refused, and nothing is written', async () => {
+    await inThrowawayRoot(async (root) => {
+      const result = await scaffoldPackage({
+        root,
+        name: undefined,
+        tier: '1',
+        description: 'one line about widgets',
+        only: undefined,
+      });
+      const finding = result.findings?.[0];
+      expect(result.ok).toBe(false);
+      expect(result.summary).toBe('a package name is required');
+      expect(finding?.code).toBe('X_CLI_BAD_FLAG');
+      expect(finding?.fix).toContain('bun run scripts/new-package.ts seo --tier 1');
+      expect(existsSync(join(root, 'packages'))).toBe(false);
+    });
+  });
+
+  test('a name that is not a kebab-case directory is refused, and nothing is written', async () => {
+    await inThrowawayRoot(async (root) => {
+      const result = await scaffoldPackage({
+        root,
+        name: '../../x',
+        tier: '1',
+        description: 'one line about widgets',
+        only: undefined,
+      });
+      const finding = result.findings?.[0];
+      expect(result.ok).toBe(false);
+      expect(result.summary).toBe('a package name is a kebab-case directory name');
+      expect(finding?.code).toBe('X_CLI_BAD_FLAG');
+      expect(finding?.fix).toContain('bun run scripts/new-package.ts my-package --tier 1');
+      expect(existsSync(join(root, 'packages'))).toBe(false);
+    });
+  });
+
+  test('a tier that is not a tier is refused, and nothing is written', async () => {
+    await inThrowawayRoot(async (root) => {
+      const result = await scaffoldPackage({
+        root,
+        name: 'widgets',
+        tier: 'abc',
+        description: 'one line about widgets',
+        only: undefined,
+      });
+      const finding = result.findings?.[0];
+      expect(result.ok).toBe(false);
+      expect(result.summary).toBe('a package needs a real tier before it needs a file');
+      expect(finding?.code).toBe('X_CLI_BAD_FLAG');
+      expect(finding?.fix).toContain('bun run scripts/new-package.ts widgets --tier 1');
+      expect(existsSync(join(root, 'packages'))).toBe(false);
+    });
+  });
+
+  test('a package that already exists is refused, and its directory is left as it was', async () => {
+    await inThrowawayRoot(async (root) => {
+      await Bun.write(join(root, 'packages/widgets/marker.txt'), 'as it was');
+      const result = await scaffoldPackage({
+        root,
+        name: 'widgets',
+        tier: '1',
+        description: 'one line about widgets',
+        only: undefined,
+      });
+      const finding = result.findings?.[0];
+      expect(result.ok).toBe(false);
+      expect(result.summary).toBe('packages/widgets already exists');
+      expect(finding?.code).toBe('X_GENERATE_CONFLICT');
+      expect(finding?.at).toBe('packages/widgets');
+      expect(finding?.fix).toContain('--only README.md');
+      // The directory is as it was: no template was written into it.
+      expect(await Bun.file(join(root, 'packages/widgets/marker.txt')).text()).toBe('as it was');
+      expect(await Bun.file(join(root, 'packages/widgets/package.json')).exists()).toBe(false);
+    });
+  });
+
+  test('an --only that names no template is refused, and nothing is written', async () => {
+    await inThrowawayRoot(async (root) => {
+      const result = await scaffoldPackage({
+        root,
+        name: 'widgets',
+        tier: '1',
+        description: 'one line about widgets',
+        only: 'NOPE.md',
+      });
+      const finding = result.findings?.[0];
+      expect(result.ok).toBe(false);
+      expect(result.summary).toBe('no template named NOPE.md');
+      expect(finding?.code).toBe('X_CLI_BAD_FLAG');
+      expect(finding?.fix).toContain('--only package.json');
+      expect(existsSync(join(root, 'packages'))).toBe(false);
+    });
+  });
+
+  // The one refusal that writes first: the package is on disk before the root config is read, so
+  // the refusal has to say so — a reader who saw only "refused" would think nothing was written.
+  test('a root config that cannot be rewritten is refused AFTER the package is written', async () => {
+    await inThrowawayRoot(async (root) => {
+      // A root solution config this cannot rewrite: JSON with a comment in it, so the parse fails.
+      const config = '{ "references": [ // a comment\n]}';
+      await Bun.write(join(root, 'tsconfig.json'), config);
+      const result = await scaffoldPackage({
+        root,
+        name: 'widgets',
+        tier: '1',
+        description: 'one line about widgets',
+        only: undefined,
+      });
+      const finding = result.findings?.[0];
+      expect(result.ok).toBe(false);
+      expect(result.summary).toBe(
+        'packages/widgets was written, but tsconfig.json could not be rewritten',
+      );
+      expect(finding?.code).toBe('X_GENERATE_CONFLICT');
+      expect(finding?.at).toBe('tsconfig.json');
+      expect(finding?.fix).toContain('add { "path": "./packages/widgets" }');
+      // The package was written before the refusal, and the config was left exactly as it was.
+      expect(await Bun.file(join(root, 'packages/widgets/package.json')).exists()).toBe(true);
+      expect(await Bun.file(join(root, 'tsconfig.json')).text()).toBe(config);
+    });
   });
 });
 

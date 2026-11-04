@@ -33,8 +33,9 @@
 // why: Bun exposes no path-join primitive, and the pins file is rewritten by absolute path.
 import { join } from 'node:path';
 import { renderFixShellArg } from '../packages/core/src/error-render';
+import type { ScriptArgs } from './lib/args';
 import { flagBool, flagList, parseScriptArgs } from './lib/args';
-import type { Finding } from './lib/log';
+import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import type { PackageFacts } from './lib/side-effects-scan';
@@ -375,71 +376,68 @@ export async function applyUnpin(
   return lowered;
 }
 
-if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
+/**
+ * The whole command as a value: the refusal, the ratchet it lowered, or the scan it reports.
+ *
+ * A function and not a `report()` call, so a test can drive the scan over a tree of its own. The
+ * block this moved out of ran only as a process, so every line of it counted as uncovered — a rule
+ * nothing could exercise was a rule nothing had proved.
+ */
+export async function sideEffectsResult(root: string, args: ScriptArgs): Promise<ScriptResult> {
   const unpin = flagList(args, 'unpin');
   const unknown = unknownPins(unpin);
   if (unknown.length > 0) {
     const cause = `--unpin names ${unknown.join(', ')}, which ${unknown.length === 1 ? 'is' : 'are'} not on the ratchet, so nothing would have been lowered and the command would still have answered ok — spell each one as its repo-relative directory; the ratchet is the SIDE_EFFECTS_UNDECLARED array in ${PINS_FILE}`;
-    report(
-      {
-        ok: false,
-        script: SCRIPT,
-        summary: cause,
-        findings: [
-          {
-            code: 'X_CLI_BAD_FLAG',
-            cause,
-            fix: 'grep -n -A40 "SIDE_EFFECTS_UNDECLARED" scripts/side-effects.ts',
-            at: PINS_FILE,
-          },
-        ],
-      },
-      args.json,
-    );
+    return {
+      ok: false,
+      script: SCRIPT,
+      summary: cause,
+      findings: [
+        {
+          code: 'X_CLI_BAD_FLAG',
+          cause,
+          fix: 'grep -n -A40 "SIDE_EFFECTS_UNDECLARED" scripts/side-effects.ts',
+          at: PINS_FILE,
+        },
+      ],
+    };
   }
   if (unpin.length > 0) {
     const lowered = await applyUnpin(root, unpin);
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package still declares no sideEffects'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-      },
-      args.json,
-    );
-  } else if (flagBool(args, 'explain')) {
-    const measured = await explainSideEffects(root);
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary: `measured import-time effects in ${String(Object.keys(measured).length)} package(s)`,
-        lines: Object.entries(measured).map(
-          ([dir, entries]) =>
-            `  ${dir}: ${entries.length === 0 ? 'false' : JSON.stringify(entries)}`,
-        ),
-        data: { measured },
-      },
-      args.json,
-    );
-  } else {
-    const gaps = await sideEffectGaps(root);
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? 'every declared sideEffects field is true of its package'
-            : `${String(gaps.length)} sideEffects gap(s)`,
-        findings: gaps.map(sideEffectFinding),
-      },
-      args.json,
-    );
+    return {
+      ok: true,
+      script: SCRIPT,
+      summary:
+        lowered.length === 0
+          ? 'nothing to lower — every named package still declares no sideEffects'
+          : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
+    };
   }
+  if (flagBool(args, 'explain')) {
+    const measured = await explainSideEffects(root);
+    return {
+      ok: true,
+      script: SCRIPT,
+      summary: `measured import-time effects in ${String(Object.keys(measured).length)} package(s)`,
+      lines: Object.entries(measured).map(
+        ([dir, entries]) => `  ${dir}: ${entries.length === 0 ? 'false' : JSON.stringify(entries)}`,
+      ),
+      data: { measured },
+    };
+  }
+  const gaps = await sideEffectGaps(root);
+  return {
+    ok: gaps.length === 0,
+    script: SCRIPT,
+    summary:
+      gaps.length === 0
+        ? 'every declared sideEffects field is true of its package'
+        : `${String(gaps.length)} sideEffects gap(s)`,
+    findings: gaps.map(sideEffectFinding),
+  };
+}
+
+if (import.meta.main) {
+  const args = parseScriptArgs(Bun.argv.slice(2));
+  report(await sideEffectsResult(repoRoot(), args), args.json);
 }

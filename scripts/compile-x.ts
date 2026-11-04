@@ -9,47 +9,61 @@
 import { compileExecutable } from '../packages/cli/src/compile-executable';
 import { VERSION_DEFINE } from '../packages/core/src/version';
 import { flagString, parseScriptArgs } from './lib/args';
+import type { ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
 /** The CLI's entry, the file `x` is. */
 const X_ENTRY = 'packages/cli/src/bin.ts';
 
-if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const outfile = flagString(args, 'outfile');
+/** What one compile is asked for: where the binary goes, and the checkout it is built from. */
+export interface CompileXRequest {
+  /** Where the binary is written; `undefined` is the refusal. */
+  readonly outfile: string | undefined;
+  /** The checkout the CLI graph is read from. */
+  readonly root: string;
+}
+
+/**
+ * The whole command as a value: the refusal when there is no `--outfile`, and the compile with its
+ * summary when there is.
+ *
+ * A function and not a `report()` call, so a test can drive the refusal. The block this moved out
+ * of ran only as a process, so every line of it counted as uncovered — a command nothing could
+ * exercise was a command nothing had proved.
+ */
+export async function compileX(request: CompileXRequest): Promise<ScriptResult> {
+  const outfile = request.outfile;
   if (outfile === undefined) {
-    report(
-      {
-        ok: false,
-        script: 'compile-x',
-        summary: '--outfile is required',
-        findings: [
-          {
-            code: 'X_CONFIG_INVALID',
-            cause: 'compile-x writes one binary and was not told where',
-            fix: 'bun run scripts/compile-x.ts --outfile /out/app',
-          },
-        ],
-      },
-      args.json,
-    );
+    return {
+      ok: false,
+      script: 'compile-x',
+      summary: '--outfile is required',
+      findings: [
+        {
+          code: 'X_CONFIG_INVALID',
+          cause: 'compile-x writes one binary and was not told where',
+          fix: 'bun run scripts/compile-x.ts --outfile /out/app',
+        },
+      ],
+    };
   }
-  const root = repoRoot();
   // A single-file executable carries no `package.json`: the define is the version `x --version`
   // answers (`docker/Dockerfile` says why it is not optional).
   const version = (
-    (await Bun.file(`${root}/packages/core/package.json`).json()) as { version: string }
+    (await Bun.file(`${request.root}/packages/core/package.json`).json()) as { version: string }
   ).version;
   await compileExecutable({
-    entry: `${root}/${X_ENTRY}`,
+    entry: `${request.root}/${X_ENTRY}`,
     outfile,
     define: { [VERSION_DEFINE]: JSON.stringify(version) },
     minify: true,
     sourcemap: true,
   });
-  report(
-    { ok: true, script: 'compile-x', summary: `x ${version} compiled to ${outfile}` },
-    args.json,
-  );
+  return { ok: true, script: 'compile-x', summary: `x ${version} compiled to ${outfile}` };
+}
+
+if (import.meta.main) {
+  const args = parseScriptArgs(Bun.argv.slice(2));
+  report(await compileX({ outfile: flagString(args, 'outfile'), root: repoRoot() }), args.json);
 }
