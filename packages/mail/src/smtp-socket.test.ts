@@ -1,132 +1,19 @@
-// Tests for the production stream over a real loopback socket: chunks queue in order, a closed
-// connection reads as EOF instead of hanging, and the STARTTLS upgrade is handed to the runtime in
-// the shape it accepts. A completed TLS handshake needs a certificate authority and is not tested
-// here — `driver-smtp.test.ts` covers the plaintext path end to end. The failures a real socket
-// will not perform on cue (a refused write, a handshake that fails, a `drain` that never comes)
-// run against `smtpStreamOver` with the runtime handed in.
+// The socket-layer failures a real connection will not perform on cue — a refused or stalled
+// write, a failed handshake, and the ciphertext and lifecycle events Bun keeps firing at the RAW
+// socket after `upgradeTLS` (oven-sh/bun#26297) — driven by hand against `smtpStreamOver` with the
+// runtime injected. The real-listener half lives in `bun-smtp-stream.test.ts`; a completed TLS
+// handshake needs a certificate authority and is `driver-smtp.test.ts`'s end-to-end proof.
 
 import { expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import type { SmtpStream } from './smtp-client';
+import { type SmtpEnvelope, type SmtpSessionOptions, smtpDeliver } from './smtp-client';
+import { authPlain } from './smtp-protocol';
 import {
   type BunConnect,
-  bunSmtpStream,
   type SocketHandlers,
   type SocketLike,
   smtpStreamOver,
 } from './smtp-socket';
-
-interface Echo {
-  readonly port: number;
-  readonly received: string[];
-  hangUp(): void;
-  stop(): void;
-}
-
-/**
- * A server that greets, answers every line with `250 ok`, and can drop the connection on demand.
- * Answering is what makes the tests deterministic: reading the reply proves the server already
- * processed what was written to it, with no sleep to race against.
- */
-function startEcho(): Echo {
-  const received: string[] = [];
-  const decoder = new TextDecoder();
-  const sockets: { write(data: string): void; end(): void }[] = [];
-
-  const listener = Bun.listen({
-    hostname: '127.0.0.1',
-    port: 0,
-    socket: {
-      open(socket) {
-        sockets.push(socket);
-        socket.write('220 local.test ESMTP\r\n');
-      },
-      data(socket, chunk) {
-        received.push(decoder.decode(chunk));
-        socket.write('250 ok\r\n');
-      },
-    },
-  });
-
-  return {
-    port: listener.port,
-    received,
-    hangUp: () => {
-      for (const socket of sockets) socket.end();
-    },
-    stop: () => listener.stop(true),
-  };
-}
-
-const target = (port: number): { host: string; port: number; tls: boolean; timeoutMs: number } => ({
-  host: '127.0.0.1',
-  port,
-  tls: false,
-  timeoutMs: 2_000,
-});
-
-test('chunks arrive in the order the server wrote them', async () => {
-  const server = startEcho();
-  try {
-    const stream = await bunSmtpStream(target(server.port));
-
-    expect(await stream.read()).toBe('220 local.test ESMTP\r\n');
-    await stream.write('EHLO postly.test\r\n');
-
-    expect(await stream.read()).toBe('250 ok\r\n');
-    expect(server.received.join('')).toBe('EHLO postly.test\r\n');
-
-    stream.close();
-  } finally {
-    server.stop();
-  }
-});
-
-test('a server that hangs up reads as EOF rather than parking the reader forever', async () => {
-  const server = startEcho();
-  try {
-    const stream = await bunSmtpStream(target(server.port));
-    expect(await stream.read()).toContain('220');
-
-    // The reader parks first, so this exercises the waiting path, not the buffered one.
-    const pending = stream.read();
-    server.hangUp();
-
-    expect(await pending).toBeUndefined();
-    expect(await stream.read()).toBeUndefined();
-  } finally {
-    server.stop();
-  }
-});
-
-test('the STARTTLS upgrade is handed to the runtime in the shape it accepts', async () => {
-  const server = startEcho();
-  try {
-    const stream = await bunSmtpStream(target(server.port));
-    expect(await stream.read()).toContain('220');
-
-    // `upgradeTLS` validates its options and throws on a wrong shape ("Expected \"socket\"
-    // option"), so a clean resolve here is what proves the call site, not the handshake.
-    await stream.startTls();
-
-    stream.close();
-  } finally {
-    server.stop();
-  }
-});
-
-test('a connection refused by nobody listening rejects instead of resolving a dead stream', async () => {
-  const server = startEcho();
-  const port = server.port;
-  server.stop();
-
-  const opened = await bunSmtpStream(target(port)).then(
-    () => 'resolved',
-    () => 'rejected',
-  );
-
-  expect(opened).toBe('rejected');
-});
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -144,249 +31,388 @@ const caught = (promise: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-/**
- * The runtime, driven by hand: what `write` returns, when `drain` arrives, whether the TLS upgrade
- * yields a socket, and which event fires when. A real socket performs none of these on demand.
- * `timeoutMs` is deliberately long — a test that only passes because the deadline fired is not a
- * test of failing fast.
- */
-class FakeRuntime implements BunConnect {
-  /** Byte counts handed to `write`, in order. */
-  readonly writes: number[] = [];
-  /** What `write` returns for a given byte count. Full acceptance by default. */
-  writeReturns: (length: number) => number = (length) => length;
-  /** What `upgradeTLS` hands back. Bun's own shape is `[raw, tls]`. */
-  tlsSockets: (raw: SocketLike) => readonly SocketLike[] = (raw) => [raw, raw];
-  upgrades = 0;
+// Which write answers with which reply; an answer may arrive as several chunks.
+type Script = readonly (readonly [RegExp, string | readonly string[]])[];
+
+const FAKE_TARGET = { host: 'mail.example.test', port: 587, tls: false, timeoutMs: 2_000 };
+
+const ENVELOPE: SmtpEnvelope = {
+  from: 'no-reply@postly.test',
+  recipients: ['ada@example.test'],
+  data: 'Subject: hi\r\n\r\nbody line\r\n',
+};
+
+const SESSION: SmtpSessionOptions = {
+  clientName: 'postly.test',
+  secure: false,
+  allowInsecure: false,
+  timeoutMs: 500,
+  user: 'ada',
+  password: 'hunter2',
+};
+
+// Both EHLOs answer with capabilities split across chunks, so the reader reassembles them.
+const EHLO_FRAGMENTS: readonly string[] = [
+  '250-mail.example.test ESMTP\r\n250-STARTTLS\r\n250 AUTH',
+  ' PLAIN\r\n',
+];
+
+const DELIVERY: Script = [
+  [/^MAIL FROM:/, '250 2.1.0 Ok\r\n'],
+  [/^RCPT TO:/, '250 2.1.5 Ok\r\n'],
+  [/^DATA\r\n$/, '354 End data with <CR><LF>.<CR><LF>\r\n'],
+  [/\r\n\.\r\n$/, '250 2.0.0 Ok: queued as ABC123\r\n'],
+  [/^QUIT/, '221 2.0.0 Bye\r\n'],
+];
+
+// Ciphertext Bun keeps firing at the raw socket, carrying a reply the parser would misread.
+const RAW_CIPHERTEXT = '\u0017\u0003\u0003\x00\x10not tls\r\n250 AUTH PLAIN\r\n';
+
+/** A SocketLike with its own write/end records, answering writes through the runtime's script. */
+class FakeSocket implements SocketLike {
+  readonly written: string[] = [];
   ended = false;
+  refuseWrites = false;
+  stallWrites = false;
+  /** Bytes the next write accepts before backpressure; 0 accepts everything. */
+  partialWrite = 0;
 
-  readonly socket: SocketLike = {
-    write: (data) => {
-      this.writes.push(data.length);
-      return this.writeReturns(data.length);
-    },
-    end: () => {
-      this.ended = true;
-    },
-    upgradeTLS: (options) => {
-      this.upgrades += 1;
-      this.handlers = options.socket;
-      return this.tlsSockets(this.socket);
-    },
-  };
+  constructor(private readonly runtime: FakeRuntime) {}
 
-  private handlers: SocketHandlers | undefined;
-
-  connect(options: { readonly socket: SocketHandlers }): Promise<SocketLike> {
-    this.handlers = options.socket;
-    return Promise.resolve(this.socket);
+  write(data: Uint8Array): number {
+    if (this.refuseWrites) return -1;
+    const text = new TextDecoder().decode(data);
+    this.written.push(text);
+    if (this.stallWrites) return 0;
+    // Backpressure: part of the buffer is accepted, the rest only after a `drain` — no reply yet.
+    if (this.partialWrite > 0 && data.length > this.partialWrite) {
+      const accepted = this.partialWrite;
+      this.partialWrite = 0;
+      return accepted;
+    }
+    this.runtime.answer(text);
+    return data.length;
   }
 
-  /** The handlers the runtime would call. Registered by `connect`, re-registered by `upgradeTLS`. */
-  events(): SocketHandlers {
-    expect(this.handlers).toBeDefined();
-    return this.handlers as SocketHandlers;
+  end(): void {
+    this.ended = true;
   }
 
-  push(text: string): void {
-    this.events().data(this.socket, new TextEncoder().encode(text));
+  upgradeTLS(options: {
+    readonly tls: { readonly serverName: string };
+    readonly socket: SocketHandlers;
+  }): readonly SocketLike[] {
+    this.runtime.upgradeEvents = options.socket;
+    return this.runtime.tlsSockets(this);
   }
 }
 
-const FAKE_TARGET = { host: 'mail.example.test', port: 587, tls: false, timeoutMs: 30_000 };
-/** `smtps://`: the socket is handed to TLS before a single SMTP byte is exchanged. */
-const IMPLICIT_TLS_TARGET = { host: 'mail.example.test', port: 465, tls: true, timeoutMs: 30_000 };
+/**
+ * A `BunConnect` whose sockets answer a script, so a test fires every event by hand. `rawEvents()`
+ * is the RAW socket's handler set — the one Bun keeps feeding ciphertext and lifecycle events
+ * after `upgradeTLS` (oven-sh/bun#26297); `events()` is the live side's. The upgrade hands back
+ * the same socket twice by default; the upgrade tests override it with a distinct TLS socket.
+ */
+class FakeRuntime implements BunConnect {
+  readonly socket: FakeSocket = new FakeSocket(this);
+  readonly tlsSocket: FakeSocket = new FakeSocket(this);
+  tlsSockets: (raw: SocketLike) => readonly SocketLike[] = (raw) => [raw, raw];
+  script: Script = [];
+  /** Runs before the scripted reply — where a test installs the raw-socket noise. */
+  onCommand: ((command: string) => void) | undefined;
+  connectEvents: SocketHandlers | undefined;
+  upgradeEvents: SocketHandlers | undefined;
 
-const openFake = async (runtime: FakeRuntime, target = FAKE_TARGET): Promise<SmtpStream> =>
-  await smtpStreamOver(runtime, target);
+  constructor(options: { readonly distinctTls?: boolean } = {}) {
+    if (options.distinctTls === true) this.tlsSockets = (raw) => [raw, this.tlsSocket];
+  }
 
-test('a write the socket refuses (-1) fails at once rather than waiting for a drain', async () => {
+  connect(options: { readonly socket: SocketHandlers }): Promise<SocketLike> {
+    this.connectEvents = options.socket;
+    return Promise.resolve(this.socket);
+  }
+
+  events(): SocketHandlers | undefined {
+    return this.upgradeEvents ?? this.connectEvents;
+  }
+
+  rawEvents(): SocketHandlers | undefined {
+    return this.connectEvents;
+  }
+
+  /** The socket the conversation currently runs on: the TLS side once an upgrade was handed in. */
+  private liveSocket(): SocketLike {
+    return this.upgradeEvents !== undefined ? this.tlsSocket : this.socket;
+  }
+
+  /** The server speaks on the live side: plaintext before the upgrade, TLS bytes after it. */
+  deliver(text: string): void {
+    this.events()?.data(this.liveSocket(), new TextEncoder().encode(text));
+  }
+
+  /** The retired raw socket speaks: ciphertext wearing a reply, and its own lifecycle events. */
+  pushRaw(text: string): void {
+    this.rawEvents()?.data(this.socket, new TextEncoder().encode(text));
+  }
+
+  rawClose(): void {
+    this.rawEvents()?.close();
+  }
+
+  rawEnd(): void {
+    this.rawEvents()?.end();
+  }
+
+  rawError(message: string): void {
+    this.rawEvents()?.error(this.socket, new Error(message));
+  }
+
+  liveError(message: string): void {
+    this.events()?.error(this.liveSocket(), new Error(message));
+  }
+
+  /** A write landed: run the test's noise hook, then answer from the script, fragments in order. */
+  answer(text: string): void {
+    this.onCommand?.(text);
+    const rule = this.script.find(([pattern]) => pattern.test(text));
+    if (rule === undefined) return;
+    for (const chunk of Array.isArray(rule[1]) ? rule[1] : [rule[1]]) this.deliver(chunk);
+  }
+}
+
+/** Everything Bun keeps firing at the retired raw socket in the middle of a live conversation. */
+const fireRawNoise = (runtime: FakeRuntime): void => {
+  runtime.rawClose();
+  runtime.rawEnd();
+  runtime.rawError('read ECONNRESET');
+  runtime.pushRaw(RAW_CIPHERTEXT);
+};
+
+test('after the upgrade the retired raw socket is noise: no ciphertext, and TLS fragments assemble', async () => {
+  const runtime = new FakeRuntime({ distinctTls: true });
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.deliver('220 mail.example.test ESMTP\r\n');
+  expect(await stream.read()).toBe('220 mail.example.test ESMTP\r\n');
+
+  await stream.startTls();
+
+  fireRawNoise(runtime);
+  // Nothing landed: `buffered()` is what `assertNothingAfterStarttls` reads, so a byte of the
+  // retired socket surfacing here would refuse every healthy session.
+  expect(stream.buffered?.()).toBe(false);
+
+  runtime.deliver('250-mail.example.test ESMTP\r\n');
+  runtime.deliver('250 AUTH PLAIN\r\n');
+  expect(stream.buffered?.()).toBe(true);
+  const first = await stream.read();
+  const second = await stream.read();
+  expect(`${first}${second}`).toBe('250-mail.example.test ESMTP\r\n250 AUTH PLAIN\r\n');
+});
+
+test('over an upgraded stream, AUTH 235 completes envelope and DATA while the raw socket is noise', async () => {
+  const runtime = new FakeRuntime({ distinctTls: true });
+  runtime.script = [
+    [/^EHLO /, EHLO_FRAGMENTS],
+    [/^STARTTLS/, '220 2.0.0 Ready to start TLS\r\n'],
+    [/^AUTH PLAIN /, '235 2.7.0 Authentication successful\r\n'],
+    ...DELIVERY,
+  ];
+  runtime.onCommand = (command) => {
+    if (command.startsWith('AUTH PLAIN ')) fireRawNoise(runtime);
+  };
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.deliver('220 mail.example.test ESMTP\r\n');
+
+  const reply = await smtpDeliver(stream, ENVELOPE, SESSION);
+
+  expect(reply.code).toBe(250);
+  expect(reply.text).toContain('queued as ABC123');
+  const commands = runtime.tlsSocket.written.map((line) => line.replace(/\r\n$/, ''));
+  expect(commands).toEqual([
+    'EHLO postly.test',
+    `AUTH PLAIN ${authPlain('ada', 'hunter2')}`,
+    'MAIL FROM:<no-reply@postly.test>',
+    'RCPT TO:<ada@example.test>',
+    'DATA',
+    'Subject: hi\r\n\r\nbody line\r\n.',
+    'QUIT',
+  ]);
+  // The cleartext half carried exactly the plaintext commands, nothing after the upgrade.
+  expect(runtime.socket.written).toEqual(['EHLO postly.test\r\n', 'STARTTLS\r\n']);
+});
+
+test('a 535 over the upgraded stream surfaces the server refusal, not a dead connection', async () => {
+  const runtime = new FakeRuntime({ distinctTls: true });
+  runtime.script = [
+    [/^EHLO /, EHLO_FRAGMENTS],
+    [/^STARTTLS/, '220 2.0.0 Ready to start TLS\r\n'],
+    [/^AUTH PLAIN /, '535 5.7.8 Authentication credentials invalid\r\n'],
+  ];
+  runtime.onCommand = (command) => {
+    if (command.startsWith('AUTH PLAIN ')) fireRawNoise(runtime);
+  };
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.deliver('220 mail.example.test ESMTP\r\n');
+
+  const error = await caught(smtpDeliver(stream, ENVELOPE, SESSION));
+
+  // The noise must not bury the rejection under a closed connection or an expired deadline: the
+  // server's own 535 is the diagnosis, and a permanent one.
+  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(error)['stage']).toBe('auth');
+  expect(metaOf(error)['status']).toBe(535);
+  expect(metaOf(error)['retryable']).toBe(false);
+  expect(causeOf(error)).toContain('Authentication credentials invalid');
+});
+
+test('raw close, end and error after the upgrade leave the TLS conversation readable', async () => {
+  const runtime = new FakeRuntime({ distinctTls: true });
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.deliver('220 mail.example.test ESMTP\r\n');
+  expect(await stream.read()).toContain('220');
+  await stream.startTls();
+  runtime.deliver('250 ok\r\n'); // the first TLS byte closes the STARTTLS handshake window
+  expect(await stream.read()).toBe('250 ok\r\n');
+
+  // A reader parks first, then the retired socket dies its own death: the parked read is answered
+  // by the next TLS byte, never by the raw side's goodbye.
+  const pending = stream.read();
+  runtime.rawClose();
+  runtime.rawEnd();
+  runtime.rawError('read ECONNRESET');
+  runtime.pushRaw('221 raw farewell\r\n');
+  runtime.deliver('250 still here\r\n');
+
+  expect(await pending).toBe('250 still here\r\n');
+});
+
+test('an error on the live TLS socket propagates in both handshake windows', async () => {
+  const inWindow = new FakeRuntime({ distinctTls: true });
+  const starttls = await smtpStreamOver(inWindow, FAKE_TARGET);
+  inWindow.deliver('220 mail.example.test ESMTP\r\n');
+  expect(await starttls.read()).toContain('220');
+  await starttls.startTls();
+  inWindow.liveError('certificate has expired');
+  const refused = await caught(starttls.read());
+  expect(codeOf(refused)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(refused)['stage']).toBe('starttls');
+  expect(metaOf(refused)['retryable']).toBe(false);
+
+  // After the first byte back the window is closed: the same error is a transient data failure.
+  const afterByte = new FakeRuntime({ distinctTls: true });
+  const data = await smtpStreamOver(afterByte, FAKE_TARGET);
+  afterByte.deliver('220 mail.example.test ESMTP\r\n');
+  expect(await data.read()).toContain('220');
+  await data.startTls();
+  afterByte.deliver('250 ok\r\n');
+  expect(await data.read()).toBe('250 ok\r\n');
+  fireRawNoise(afterByte);
+  afterByte.liveError('read ECONNRESET');
+  const transient = await caught(data.read());
+  expect(metaOf(transient)['stage']).toBe('data');
+  expect(metaOf(transient)['retryable']).toBe(true);
+});
+
+test('a failure inside the implicit-TLS handshake window is a refused handshake, not a retry', async () => {
+  const errored = new FakeRuntime();
+  const refusedStream = await smtpStreamOver(errored, { ...FAKE_TARGET, tls: true });
+  errored.liveError('certificate has expired');
+  const refused = await caught(refusedStream.read());
+  expect(codeOf(refused)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(refused)['stage']).toBe('tls');
+  expect(metaOf(refused)['retryable']).toBe(false);
+  expect(causeOf(refused)).toContain('certificate has expired');
+
+  const halfClosed = new FakeRuntime();
+  const endedStream = await smtpStreamOver(halfClosed, { ...FAKE_TARGET, tls: true });
+  halfClosed.rawEnd();
+  const eof = await caught(endedStream.read());
+  expect(metaOf(eof)['stage']).toBe('tls');
+  expect(causeOf(eof)).toContain('half-closed');
+});
+
+test('a socket that refuses a write fails it at once instead of parking for a drain', async () => {
   const runtime = new FakeRuntime();
-  const stream = await openFake(runtime);
-  runtime.writeReturns = () => -1;
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.socket.refuseWrites = true;
 
-  const started = Bun.nanoseconds();
   const error = await caught(stream.write('EHLO postly.test\r\n'));
 
   expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
   expect(metaOf(error)['stage']).toBe('data');
   expect(metaOf(error)['retryable']).toBe(true);
-  expect(causeOf(error)).toContain('refused');
-  // A closed socket emits no `drain`, so the old path burned the whole 30s deadline first.
-  expect(Bun.nanoseconds() - started).toBeLessThan(1e9);
+  expect(causeOf(error)).toContain('refused a 18-byte write');
 });
 
-test('a partial write still waits for drain, and the drain releases it', async () => {
+test('a socket that never drains hits the write deadline instead of holding the worker', async () => {
   const runtime = new FakeRuntime();
-  const stream = await openFake(runtime);
-  let accepted = 4;
-  runtime.writeReturns = (length) => Math.min(accepted, length);
+  const stream = await smtpStreamOver(runtime, { ...FAKE_TARGET, timeoutMs: 20 });
+  runtime.socket.stallWrites = true;
 
-  const pending = stream.write('EHLO postly.test\r\n');
-  accepted = 64;
-  runtime.events().drain();
-
-  await pending;
-  expect(runtime.writes).toEqual([18, 14]);
-});
-
-test('a socket error releases a write parked for drain instead of leaving it to the deadline', async () => {
-  const runtime = new FakeRuntime();
-  const stream = await openFake(runtime);
-  runtime.writeReturns = () => 4;
-
-  const started = Bun.nanoseconds();
-  const pending = caught(stream.write('EHLO postly.test\r\n'));
-  runtime.events().error(runtime.socket, new Error('read ECONNRESET'));
-  const error = await pending;
+  const error = await caught(stream.write('EHLO postly.test\r\n'));
 
   expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
   expect(metaOf(error)['stage']).toBe('data');
   expect(metaOf(error)['retryable']).toBe(true);
-  expect(Bun.nanoseconds() - started).toBeLessThan(1e9);
+  expect(causeOf(error)).toContain('stopped accepting bytes for 20ms');
 });
 
-test('a socket close releases a write parked for drain — no drain can follow it', async () => {
+test('a partial write waits for drain, then lands the rest', async () => {
   const runtime = new FakeRuntime();
-  const stream = await openFake(runtime);
-  runtime.writeReturns = () => 4;
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.socket.partialWrite = 4;
 
-  const pending = caught(stream.write('EHLO postly.test\r\n'));
-  runtime.events().close();
+  const flushed = stream.write('EHLO postly.test\r\n');
+  runtime.events()?.drain();
 
-  expect(codeOf(await pending)).toBe('X_MAIL_SEND_FAILED');
-  // The reader still sees a clean EOF: only the parked write failed.
-  expect(await stream.read()).toBeUndefined();
+  await flushed;
+  // The second call carried exactly the unsent remainder — the accepted 4 bytes were 'EHLO'.
+  expect(runtime.socket.written).toEqual(['EHLO postly.test\r\n', ' postly.test\r\n']);
 });
 
-test('an error during the TLS handoff is a starttls failure, not a transient data one', async () => {
+test('a parked write is failed at once by a live socket error, not at the deadline', async () => {
   const runtime = new FakeRuntime();
-  const stream = await openFake(runtime);
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.socket.stallWrites = true;
 
-  await stream.startTls();
-  // Bun buffers writes made before the handshake completes, so the client sends EHLO straight
-  // away and the handshake failure arrives after it. That does not make it a DATA failure.
-  await stream.write('EHLO postly.test\r\n');
-  runtime.events().error(runtime.socket, new Error('SSL_ERROR: self signed certificate'));
+  const parked = caught(stream.write('EHLO postly.test\r\n'));
+  runtime.liveError('read ECONNRESET');
 
-  const error = await caught(stream.read());
+  const error = await parked;
   expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
-  expect(metaOf(error)['stage']).toBe('starttls');
-  expect(metaOf(error)['retryable']).toBe(false);
-  expect(causeOf(error)).toContain('self signed certificate');
-  // The remedy is the host's certificate, not the runtime — that is the other, separate case —
-  // and reproducing an in-band upgrade needs the `-starttls smtp` form of the command.
-  expect(fixOf(error)).toContain('openssl s_client -starttls smtp -connect mail.example.test:587');
-  expect(fixOf(error)).not.toContain('bun upgrade');
+  expect(metaOf(error)['stage']).toBe('data');
+  expect(metaOf(error)['retryable']).toBe(true);
+  // The socket error is the diagnosis; the deadline's wording would mean `failDrain` never ran.
+  expect(causeOf(error)).toContain('read ECONNRESET');
 });
 
-test('a close or an end during the handoff is a refused handshake, not a clean EOF', async () => {
-  for (const fire of [
-    (events: SocketHandlers): void => events.close(),
-    (events: SocketHandlers): void => events.end(),
-  ]) {
-    const runtime = new FakeRuntime();
-    const stream = await openFake(runtime);
-
-    await stream.startTls();
-    fire(runtime.events());
-
-    const error = await caught(stream.read());
-    expect(metaOf(error)['stage']).toBe('starttls');
-    expect(metaOf(error)['retryable']).toBe(false);
-  }
-});
-
-test('an EHLO sent immediately after the upgrade reaches the upgraded socket and reads back', async () => {
-  const runtime = new FakeRuntime();
-  const stream = await openFake(runtime);
-
+test('close ends the socket the conversation currently runs on', async () => {
+  const runtime = new FakeRuntime({ distinctTls: true });
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.deliver('220 mail.example.test ESMTP\r\n');
+  expect(await stream.read()).toContain('220');
   await stream.startTls();
-  await stream.write('EHLO postly.test\r\n');
-  runtime.push('250 mail.example.test\r\n');
-
-  expect(runtime.upgrades).toBe(1);
-  expect(runtime.writes).toEqual([18]);
-  expect(await stream.read()).toBe('250 mail.example.test\r\n');
 
   stream.close();
-  // `close()` ends the upgraded socket, not the raw one it replaced.
-  expect(runtime.ended).toBe(true);
+
+  expect(runtime.tlsSocket.ended).toBe(true);
+  expect(runtime.socket.ended).toBe(false);
 });
 
-test('once the upgraded socket has produced bytes, a socket error is transient again', async () => {
+test('an upgrade that returns no TLS socket is refused, and the raw socket stays live', async () => {
   const runtime = new FakeRuntime();
-  const stream = await openFake(runtime);
-
-  await stream.startTls();
-  runtime.push('250 mail.example.test\r\n');
-  expect(await stream.read()).toBe('250 mail.example.test\r\n');
-  // Encrypted bytes only flow after the handshake, so this reset is a mid-session one: retrying
-  // the job can work, and calling it a permanent TLS failure would strand a deliverable message.
-  runtime.events().error(runtime.socket, new Error('read ECONNRESET'));
-
-  const error = await caught(stream.read());
-  expect(metaOf(error)['stage']).toBe('data');
-  expect(metaOf(error)['retryable']).toBe(true);
-});
-
-test('a runtime that hands back no TLS socket is the runtime-upgrade case, not a certificate one', async () => {
-  const runtime = new FakeRuntime();
-  const stream = await openFake(runtime);
   runtime.tlsSockets = (raw) => [raw];
+  const stream = await smtpStreamOver(runtime, FAKE_TARGET);
+  runtime.deliver('220 mail.example.test ESMTP\r\n');
+  expect(await stream.read()).toContain('220');
 
   const error = await caught(stream.startTls());
 
+  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
   expect(metaOf(error)['stage']).toBe('starttls');
   expect(metaOf(error)['retryable']).toBe(false);
-  expect(fixOf(error)).toContain('bun upgrade');
-});
-
-test('an implicit-TLS handshake that fails is permanent, and its own stage', async () => {
-  const runtime = new FakeRuntime();
-  const stream = await openFake(runtime, IMPLICIT_TLS_TARGET);
-
-  // `smtps://` puts the handshake before the greeting, with no STARTTLS command anywhere in it —
-  // so an expired certificate here used to read as a transient DATA failure and requeue the job
-  // forever against something no retry can clear.
-  runtime.events().error(runtime.socket, new Error('SSL_ERROR: certificate has expired'));
-
-  const error = await caught(stream.read());
-  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
-  expect(metaOf(error)['stage']).toBe('tls');
-  expect(metaOf(error)['retryable']).toBe(false);
-  expect(causeOf(error)).toContain('certificate has expired');
-  // The command that reproduces it is the plain one: there is no in-band upgrade to ask for.
-  expect(fixOf(error)).toContain('openssl s_client -connect mail.example.test:465');
-  expect(fixOf(error)).not.toContain('-starttls');
-});
-
-test('an implicit-TLS connection closing before the greeting is a refused handshake', async () => {
-  for (const fire of [
-    (events: SocketHandlers): void => events.close(),
-    (events: SocketHandlers): void => events.end(),
-  ]) {
-    const runtime = new FakeRuntime();
-    const stream = await openFake(runtime, IMPLICIT_TLS_TARGET);
-
-    fire(runtime.events());
-
-    // A host that hangs up before saying 220 on 465 rejected the handshake; EOF hides that.
-    expect(metaOf(await caught(stream.read()))['stage']).toBe('tls');
-    expect(metaOf(await caught(stream.read()))['retryable']).toBe(false);
-  }
-});
-
-test('once an implicit-TLS host has greeted, a socket failure is transient again', async () => {
-  const runtime = new FakeRuntime();
-  const stream = await openFake(runtime, IMPLICIT_TLS_TARGET);
-
-  // The 220 could not have arrived over an unfinished handshake, so the window is closed.
-  runtime.push('220 mail.example.test ESMTP\r\n');
-  expect(await stream.read()).toBe('220 mail.example.test ESMTP\r\n');
-  runtime.events().error(runtime.socket, new Error('read ECONNRESET'));
-
-  const error = await caught(stream.read());
-  expect(metaOf(error)['stage']).toBe('data');
-  expect(metaOf(error)['retryable']).toBe(true);
+  expect(fixOf(error)).toContain('upgrade the runtime');
+  // Nothing was upgraded, so the raw socket's handlers are still the live ones.
+  runtime.pushRaw('250 still in the clear\r\n');
+  expect(await stream.read()).toBe('250 still in the clear\r\n');
 });
