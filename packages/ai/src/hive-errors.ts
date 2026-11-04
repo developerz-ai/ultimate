@@ -1,6 +1,6 @@
 // The X_HIVE_* codes, apart from ./errors only because one file has one job and that catalogue is
 // already at its ceiling — the same split `eval-errors.ts` made. The codes, their titles and the
-// single `registerErrorCodes` call stay in ./errors: one owner, one registration, one place a
+// single `registerErrorCodes` call stay in ./error-codes: one owner, one registration, one place a
 // duplicate can surface.
 
 import { UltimateError } from '@ultimat3/core';

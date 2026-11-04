@@ -19,6 +19,24 @@ import { TEST_STEPS } from './verify-tests';
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
 const COVERED = processRoot(join(import.meta.dir, '..', '.eval-covered-fixture'));
 const BARE = processRoot(join(import.meta.dir, '..', '.eval-bare-fixture'));
+const AGENT = processRoot(join(import.meta.dir, '..', '.eval-agent-fixture'));
+
+/** An `agent()` on an unevaluated prompt: its fix must name the agent arm, not the prompt arm. */
+const agentModule = `import { t } from '@ultimat3/action';
+import { agent, definePrompt } from '@ultimat3/ai';
+import { allow } from '@ultimat3/policy';
+
+const answerPrompt = definePrompt({ id: 'support.answer', version: '1', template: 'Answer {{q}}' });
+
+export const supportAgent = agent({
+  input: t.object({ q: t.string }),
+  output: t.object({ a: t.string }),
+  prompt: answerPrompt,
+  vars: ({ input }) => ({ q: input.q }),
+  tools: [],
+  policy: allow(),
+});
+`;
 
 const promptModule = (id: string): string => `import { definePrompt } from '@ultimat3/ai';
 
@@ -53,6 +71,10 @@ const FIXTURES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   [BARE]: {
     'app.config.ts': APP_CONFIG,
     'apps/web/app/posts/prompts/summarize.ts': promptModule('bare.summarize'),
+  },
+  [AGENT]: {
+    'app.config.ts': APP_CONFIG,
+    'apps/web/app/support/agent.ts': agentModule,
   },
 };
 
@@ -120,6 +142,15 @@ describe('unit · a prompt with no eval fails the gate', () => {
     expect(findings[0]?.cause).toContain('bare.summarize@3');
     expect(findings[0]?.fix).toContain('defineEval(');
     expect(findings[0]?.at).toBe('bare.summarize@3');
+  });
+
+  test("an agent's unevaluated prompt names the agent arm in its fix", async () => {
+    const findings = (await checkEvalCoverage(AGENT)).filter(
+      (finding) => finding.at === 'support.answer@1',
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain('agent supportAgent');
+    expect(findings[0]?.fix).toContain('agent: supportAgent, cases, tools');
   });
 
   test('the step applies with no eval suite at all, and fails on the missing eval', async () => {

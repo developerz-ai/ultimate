@@ -29,7 +29,7 @@ afterAll(async () => {
 // The tool's `can()` names a permission nothing declares: legal only while the set is empty.
 beforeAll(clearPermissions);
 
-const mounted = async () => {
+const mounted = async (corsOrigins: readonly string[] = []) => {
   await Bun.write(
     join(ROOT, 'app.config.ts'),
     `export const config = { name: 'demo', ai: { mcp: { expose: true } } };\n`,
@@ -65,7 +65,11 @@ export const mcp = defineAppMcp({
     sessionsRead: () => sessionsRead,
     pipeline: httpPipeline({
       table: httpRouter(mount.routes),
-      config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false }),
+      config: defineHttpConfig({
+        rateLimit: { scope: 'process' },
+        dev: false,
+        cors: { origins: [...corsOrigins] },
+      }),
       // The app's authenticator: a cookie `sid=admin` is an admin who may do anything.
       hooks: {
         authenticate: (request) => {
@@ -129,5 +133,35 @@ describe('unit · a session cookie authenticates nothing on POST /mcp', () => {
     const right = await pipeline.handle(call({ authorization: 'Bearer right' }), { role: 'web' });
     expect(right.status).toBe(200);
     expect(calls()).toBe(before + 1);
+  });
+});
+
+describe('unit · the endpoint takes POST only, as x mcp serve does', () => {
+  test('GET and DELETE are the pipeline’s 405 X_METHOD_NOT_ALLOWED with Allow: POST', async () => {
+    const { pipeline } = await mounted();
+    for (const method of ['GET', 'DELETE']) {
+      const response = await pipeline.handle(new Request('http://localhost/mcp', { method }), {
+        role: 'web',
+      });
+      expect(response.status).toBe(405);
+      expect(response.headers.get('allow')).toBe('POST');
+      expect(((await response.json()) as { code: string }).code).toBe('X_METHOD_NOT_ALLOWED');
+    }
+  });
+});
+
+describe('unit · Origin on the mounted /mcp is the app’s own rule', () => {
+  test('a page on a sibling origin listed in http.cors.origins reaches the tool; another is 403', async () => {
+    const { pipeline } = await mounted(['https://admin.example']);
+    const token = { authorization: 'Bearer right' };
+    const sibling = await pipeline.handle(call({ ...token, origin: 'https://admin.example' }), {
+      role: 'web',
+    });
+    expect(sibling.status).toBe(200);
+    const foreign = await pipeline.handle(call({ ...token, origin: 'https://evil.test' }), {
+      role: 'web',
+    });
+    expect(foreign.status).toBe(403);
+    expect(((await foreign.json()) as { code: string }).code).toBe('X_MCP_ORIGIN_REFUSED');
   });
 });

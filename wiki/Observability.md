@@ -153,6 +153,10 @@ Declared in `packages/realtime/src/socket.ts`, not in `runtime-metrics.ts`: that
 
 CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. That is why the two custom series exist → [Deployment](Deployment).
 
+## The database, on demand
+
+`x db diagnostics --json` (`As of 2026-11`) answers what the series cannot: who blocks whom (`data.blockers.rows[].blockedBy`), what each session is doing, the slowest statements (`pg_stat_statements`, when an operator installed it), unused and invalid indexes, `NOT VALID` constraints, dead tuples and the last autovacuum. Facts only, exit 0; `/readyz` stays the one-`select 1` probe. Read-only, 2 s per statement, no user table read, literals printed as `?`; whoever runs it sees the redacted SQL of every session on the app's database role → [CLI reference](CLI-Reference#x-db). The same report is `dbDiagnostics()` from `@ultimat3/db`.
+
 ## Spans and logs
 
 | Concern | Where |

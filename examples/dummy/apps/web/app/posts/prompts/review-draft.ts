@@ -5,16 +5,16 @@
  */
 
 import { definePrompt } from '@ultimat3/ai';
-import { CLAUDE_SONNET_5 } from '../../models';
+import { CLAUDE_SONNET_5_5 } from '../../models';
 import { reviewDraftTemplate } from './review-draft-template';
 
 /** Editing the template requires bumping this version — it keys the traces and the baseline. */
 export const reviewDraftPrompt = definePrompt({
   id: 'posts.review-draft',
-  version: '1',
+  version: '2',
   template: reviewDraftTemplate,
   // Imported, never spelled: the app registers every model it names (`app/models.ts`).
-  model: CLAUDE_SONNET_5,
+  model: CLAUDE_SONNET_5_5,
   input: {
     type: 'object',
     properties: { title: { type: 'string' }, body: { type: 'string' }, locale: { type: 'string' } },

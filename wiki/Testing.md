@@ -57,6 +57,14 @@ export function useMigratedDatabase(): void {
 | DDL a test runs | not undone — a test that changes the schema opens its own `migratedDatabase` and closes it |
 | a Postgres server (`TEST_DATABASE_URL`) | a database per worker cloned from the template (`describeApp`), or a per-run probe database (`probeDatabaseName`), dropped at teardown |
 
+**The handle follows the installed client**, `As of 30.0`. The scaffolded `packages/db/src/client.ts` picks `testDriver()` under test (`storeMode(env) === 'memory' ? testDriver() : postgresDriver()`): memory until `setDbClient` installs one, that client while it is, decided per repository call. So `db.<table>` and a repo's raw `sql` join read and write one database in a file that runs the recipe, and a file that never runs it is the memory driver exactly: no PGlite loaded, no WASM cost. An app scaffolded before 30.0 makes that one-line edit in its own `client.ts`; until then its handle stays in memory while raw SQL reaches the installed client. Worked example: `examples/dummy/apps/web/app/posts/repo-join.test.ts`.
+
+| The test is about | Suite |
+|---|---|
+| a repo's handle calls, a service, a policy | a plain `.test.ts` on memory |
+| a repo mixing the handle with a raw join, an aggregate, a CTE | a `.test.ts` running the recipe above |
+| behaviour only a real server has (a second connection, `LISTEN`, a lock across sessions) | `.live.test.ts` against `TEST_DATABASE_URL` |
+
 **What a run leaves behind is swept** — before every `x test` and every test step of `x verify` (once per process), and on demand by `x clean`:
 
 | Leftover | Before a run | `x clean` |
@@ -189,6 +197,41 @@ export const summarizeEval = defineEval({
 reviewable diff instead of an edited threshold. It is refused inside the gate: `x verify` with that
 variable set is `X_EVAL_RECORDING` and runs no eval suite, because recording passes by definition
 and would overwrite the committed baselines during the run.
+
+**An agent's prompt takes the `agent` arm** — one case is one whole `agent.run()`, its tools and its
+turns, under the gateway handed to `run` / `assert`. The prompt arm sends one request with no tools,
+which measures something an agent never runs. `As of 2026-11`:
+
+```ts
+import { calledTool, contains, defineEval, type EvaluatedAgent } from '@ultimat3/ai';
+import type { Actor } from '@ultimat3/core';
+
+declare const supportAgent: EvaluatedAgent<{ question: string }>; // yours: an agent() action
+declare const reviewer: Actor;
+
+export const supportEval = defineEval({
+  name: 'support.answer',
+  agent: supportAgent,                       // an agent() action, registered
+  cases: [{ name: 'where-is-o-1', input: { question: 'Where is o-1?' }, expected: 'shipped' }],
+  tools: { lookupOrder: () => ({ status: 'shipped' }) },   // a double per tool the model may call
+  scorers: [calledTool('lookupOrder'), contains],
+  actor: reviewer,                           // optional: default is the `eval` service actor
+  baseline: import.meta.resolve('./support.baseline.json'),
+  tolerance: 0.05,
+});
+```
+
+| Agent arm | Rule |
+|---|---|
+| a real tool | never runs: a call to a tool with no double is `X_EVAL_TOOL_UNDOUBLED`, thrown out of `run` / `assert` |
+| a failed run (`X_AGENT_MAX_TURNS`, an invalid answer, a policy denial) | scores 0 on that case, its code in `cases[].failed`; the suite goes on |
+| scorers | read `output` (the answer as JSON) and `run: { turns, toolCalls, usage }`; `calledTool(name)` is 1 or 0 |
+| the report | `result.agent`, and per case `run: { turns, toolCalls }` |
+| baseline | the same file, keyed by the agent's prompt hash; a model change is a new prompt version |
+| coverage | an agent eval covers the agent's prompt; an uncovered one's `X_EVAL_MISSING` fix names the agent arm |
+
+Recorded runs come from `scriptedProvider({ turns })`; harvesting production failures into `cases`
+is the app's script — `transcriptOf(error)` hands over what happened.
 
 ```ts
 // contract test — generated as a scaffold with the action
@@ -461,6 +504,40 @@ unitTest('a row deleted before the run is skipped, not failed', async ({ runJobs
 | the event bus | fresh per fixture: one test's `publishEvent` never resumes the next test's `step.waitForEvent` |
 
 Enforced through it, keyed or not: `concurrency` and `whenBusy` — each pass is a real worker's `tick()`, so a run over its slot waits for the next pass, or is refused under `whenBusy: 'fail'`. The lease is renewed on the test clock — every millisecond of it — so a body in flight learns of a cancel at the next `clock.advance()`: cancel, `clock.advance(1)`, await the drain. A `clock.advance()` past the visibility timeout while it runs is `X_JOB_LEASE_LOST`, as in production. `As of 2026-10`.
+
+## A model call under test
+
+`echoProvider()` answers text; it cannot call a tool. A test that drives an `agent()` through its tools scripts the model with `scriptedProvider({ turns })`: each provider call answers the next turn, and `.seen` keeps every request in order.
+
+```ts
+import { configureAi, meteredRun, providerGateway, scriptedProvider } from '@ultimat3/ai';
+
+declare const draft: { id: string; orgId: string };
+declare function reviewDraft(input: { postId: string; orgId: string }): Promise<unknown>;
+
+const model = scriptedProvider({
+  turns: [
+    { call: 'summarize', input: { postId: draft.id, orgId: draft.orgId } },
+    { answer: { summary: 'Minor units and a currency.', tags: ['money'] } }, // the tool's own llm()
+    { answer: { verdict: 'revise', notes: 'Say which rounding rule the body defends.' } },
+  ],
+});
+configureAi({ gateway: providerGateway({ providers: [model] }) });
+
+// The agent's turns and its tool's model call, as one bill: three calls.
+const { billed } = await meteredRun(() => reviewDraft({ postId: draft.id, orgId: draft.orgId }));
+console.assert(billed?.calls === 3 && model.seen.length === 3);
+```
+
+| Turn | The provider answers |
+|---|---|
+| `{ text }` | prose, `end_turn`: the JSON-in-text path, or a repair turn when it is not JSON |
+| `{ call, input? }` | one tool call, `tool_use` |
+| `{ calls: [{ call, input? }, …] }` | several tool calls in one turn |
+| `{ answer }` | a `respond` call: the structured answer |
+| any of them `+ { stop }` | that stop reason instead, `'max_tokens'` for a cut-off turn |
+
+One call past the last turn is `X_AI_SCRIPT_EXHAUSTED`, never the last turn again: a loop that never answers fails the test instead of spinning to `maxTurns` on a script that looked like it passed. `usage` fixes every turn's token counts; absent, they are estimated from the request, as echo does. `As of 2026-11`.
 
 ## Testing an island
 

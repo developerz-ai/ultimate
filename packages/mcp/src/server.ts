@@ -9,13 +9,21 @@ import { outcomeForResult } from './audit';
 import type { McpAuditHook, McpAuditor } from './audit-hook';
 import { LOG_ONLY_AUDITOR, mcpAuditor } from './audit-hook';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
-import { asFrameworkError, forAudience } from './framework-error';
 import { metaCall } from './meta-call';
 import { META_UNKNOWN_FIX } from './meta-errors';
-import { SPLIT_DISPATCHERS } from './meta-split';
 import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
-import { MANAGE_RESOURCE, META_TOOL_NAMES, MetaSurface } from './meta-surface';
+import { MetaSurface } from './meta-surface';
 import { promptListEntry, promptsGet, visiblePrompts } from './prompts-get';
+import type { McpEra } from './protocol-era';
+import {
+  classifyBody,
+  discoverResult,
+  eraOf,
+  initializeResult,
+  METHODS,
+  stamped,
+  unsupportedVersion,
+} from './protocol-era';
 import type {
   AnyMcpTool,
   McpCaller,
@@ -27,6 +35,7 @@ import type {
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { ResourceRegistry } from './resources';
+import { resourcesRead } from './server-resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
 import { instructionsFor, invalidArgsResult } from './server-voice';
 import { admitted, thrownResponse } from './tool-thrown';
@@ -34,12 +43,10 @@ import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpWire, ServerInfo } 
 import {
   defaultServerInfo,
   errorResponse,
-  INTERNAL_ERROR,
   INVALID_PARAMS,
   INVALID_REQUEST,
   isJsonRpcRequest,
   isNotification,
-  MCP_PROTOCOL_VERSION,
   METHOD_NOT_FOUND,
   messageUnitOf,
   paramsOf,
@@ -76,18 +83,6 @@ export interface McpServerInput {
   /** Stamps each `onAudit` event's `at`. */
   readonly clock?: Clock | undefined;
 }
-
-/** The set of JSON-RPC methods this server answers. Kept in sync with `classify`. */
-const METHODS = [
-  'initialize',
-  'ping',
-  'tools/list',
-  'tools/call',
-  'resources/list',
-  'resources/read',
-  'prompts/list',
-  'prompts/get',
-] as const;
 
 export function mcpServer(input: McpServerInput = {}): McpServer {
   const tools = new ToolRegistry().registerAll(input.tools ?? []);
@@ -171,21 +166,42 @@ export class McpServer {
     // Notifications get no answer at all; the transport replies 202 with an empty body.
     if (isNotification(body)) return null;
     const id = body.id ?? null;
+    // The era is per request (`protocol-era.ts`): a modern one is answered statelessly and stamped.
+    const era = eraOf(body);
+    if (typeof era !== 'string') return unsupportedVersion(id, era.unsupported);
+    const answer = METHODS[era].includes(body.method)
+      ? await this.answer(id, body, caller, era)
+      : undefined;
+    if (answer === undefined) {
+      return errorResponse(id, METHOD_NOT_FOUND, `method not found: ${body.method}`, {
+        supported: METHODS[era],
+      });
+    }
+    return era === 'modern' ? stamped(answer, body.method, this.serverInfo) : answer;
+  }
 
+  /** One method of `METHODS[era]`, answered. */
+  private async answer(
+    id: JsonRpcId,
+    body: JsonRpcRequest,
+    caller: McpCaller,
+    era: McpEra,
+  ): Promise<JsonRpcResponse | undefined> {
     switch (body.method) {
-      case 'initialize': {
-        const instructions = instructionsFor(this.voice.instructions, caller);
-        return resultResponse(id, {
-          protocolVersion: MCP_PROTOCOL_VERSION,
-          capabilities: {
-            tools: { listChanged: false },
-            resources: { subscribe: false, listChanged: false },
-            prompts: { listChanged: false },
-          },
-          serverInfo: this.serverInfo,
-          ...(instructions === undefined ? {} : { instructions }),
-        });
-      }
+      case 'initialize':
+        return resultResponse(
+          id,
+          initializeResult(
+            paramsOf(body),
+            this.serverInfo,
+            instructionsFor(this.voice.instructions, caller),
+          ),
+        );
+      case 'server/discover':
+        return resultResponse(id, discoverResult(instructionsFor(this.voice.instructions, caller)));
+      // Empty on both eras until an adopter declares a template; `resources` is advertised.
+      case 'resources/templates/list':
+        return resultResponse(id, { resourceTemplates: [] });
       case 'tools/list':
         return resultResponse(id, { tools: this.list(caller) });
       case 'tools/call':
@@ -193,7 +209,12 @@ export class McpServer {
       case 'resources/list':
         return resultResponse(id, { resources: this.resources.list(caller) });
       case 'resources/read':
-        return this.resourcesRead(body, caller);
+        return resourcesRead(
+          { resources: this.resources, audit: this.audit, audience: this.voice.errorAudience },
+          body,
+          caller,
+          era,
+        );
       // MCP's keep-alive: an empty result, which clients treat as "still here".
       case 'ping':
         return resultResponse(id, {});
@@ -204,9 +225,7 @@ export class McpServer {
       case 'prompts/get':
         return promptsGet(this.prompts, id, paramsOf(body), caller);
       default:
-        return errorResponse(id, METHOD_NOT_FOUND, `method not found: ${body.method}`, {
-          supported: METHODS,
-        });
+        return undefined;
     }
   }
 
@@ -238,30 +257,9 @@ export class McpServer {
     return meta !== undefined && meta.surfaceFor(caller) !== 'flat' ? meta : undefined;
   }
 
-  /**
-   * Rate-limit class of a body WITHOUT executing it, and WITHOUT a caller — bucket
-   * selection is metering, not authorization. All MCP traffic is one `POST /mcp`, so a
-   * coarse per-route rule would charge `initialize` and every read to the write bucket and
-   * throttle an agent on its handshake.
-   *
-   * KEEP IN SYNC with `handle`: only `tools/call` can reach a tool, so every other method
-   * is protocol chatter that structurally cannot mutate.
-   */
+  /** Rate-limit class of a body without executing it — see `classifyBody`. */
   classify(body: unknown): McpVerbClass {
-    if (!isJsonRpcRequest(body) || body.method !== 'tools/call') return 'read';
-    const params = paramsOf(body);
-    const name = params?.['name'];
-    // An unresolvable call is refused before it runs, so charging it the strict bucket
-    // only costs a broken client — it never hands an unproven verb the cheap one.
-    if (typeof name !== 'string') return 'write';
-    if (this.meta !== undefined && (name === MANAGE_RESOURCE || SPLIT_DISPATCHERS.includes(name))) {
-      // Billed as the tool it reaches, so the dispatcher is never a cheap door to a write.
-      const args = params?.['arguments'];
-      const action = isRecord(args) ? args['action'] : undefined;
-      return typeof action === 'string' ? this.tools.verbClass(action) : 'write';
-    }
-    if (this.meta !== undefined && META_TOOL_NAMES.includes(name)) return 'read';
-    return this.tools.verbClass(name);
+    return classifyBody(body, this.meta, this.tools);
   }
 
   private async toolsCall(req: JsonRpcRequest, caller: McpCaller): Promise<JsonRpcResponse> {
@@ -388,92 +386,6 @@ export class McpServer {
     if (result.isError === true) payload['isError'] = true;
     return resultResponse(id, payload);
   }
-
-  /**
-   * The same three-outcome shape `toolsCall` above applies, on the document surface. It took no
-   * caller at all until 2026-08: every accepted token could list every URI and read every one of
-   * them — the manifest, the OpenAPI document, the route table and the entity schema.
-   *
-   * And every outcome is AUDITED, hidden included, exactly as `toolsCall`'s are: this method
-   * emitted nothing at all, so a URI walk over those four documents was invisible while the same
-   * walk over tool names was one `warn` per attempt. `resources/list` stays silent, as
-   * `tools/list` does — it is answered pre-filtered.
-   */
-  private async resourcesRead(req: JsonRpcRequest, caller: McpCaller): Promise<JsonRpcResponse> {
-    const id = req.id ?? null;
-    const uri = paramsOf(req)?.['uri'];
-    if (typeof uri !== 'string') {
-      return errorResponse(id, INVALID_PARAMS, 'resources/read params.uri must be a string');
-    }
-
-    const resolved = this.resources.resolve(uri, caller);
-    switch (resolved.kind) {
-      // OUTCOME 1. Absent AND hidden collapse to one answer with no `data`: this branch used to
-      // return `available: [...every uri]`, so one wrong guess enumerated the whole catalog. No
-      // `code` on the audit line either, because the wire carries none — the tool surface's
-      // `X_MCP_TOOL_UNKNOWN` is an error class this branch has no twin for.
-      case 'not-found':
-        this.audit.resourceRead({ uri, outcome: 'hidden', caller });
-        return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`);
-      // OUTCOME 2. The caller can already see this resource, so naming the missing scope leaks
-      // nothing — and the fix travels with it, built by the error that owns the wording.
-      case 'scope-denied': {
-        const denial = new McpScopeDeniedError({
-          name: uri,
-          scope: resolved.scope,
-          subject: 'resource',
-        });
-        this.audit.resourceRead({
-          uri,
-          outcome: 'scope-denied',
-          caller,
-          scope: resolved.scope,
-          code: denial.code,
-        });
-        return errorResponse(id, INVALID_REQUEST, `missing scope: ${resolved.scope}`, {
-          code: denial.code,
-          scope: resolved.scope,
-          fix: fixFor(denial, this.voice.errorAudience),
-          docs: denial.docs,
-        });
-      }
-      case 'ok':
-        break;
-    }
-
-    // The provider is an INJECTED THUNK — `frameworkResources` wires these to file reads, and
-    // `Bun.file(...).text()` on a missing `x.manifest.json` throws ENOENT. Outside a try it escaped
-    // `handle()` entirely: `serveStdio` rejected with the raw error, zero frames written, the
-    // request unanswered and every later request on that buffer never processed. Same shape
-    // `toolsCall` uses above, for the same reason.
-    try {
-      const contents = await this.resources.read(uri);
-      if (contents === undefined) {
-        // The resolver said `ok` and the registry then had nothing: a bug here, not a walk, so it
-        // is `failed` in the log while the caller still gets the same not-found it would have.
-        this.audit.resourceRead({ uri, outcome: 'failed', caller });
-        return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`);
-      }
-      this.audit.resourceRead({ uri, outcome: 'ok', caller });
-      return resultResponse(id, { contents: [contents] });
-    } catch (error) {
-      const thrown = asFrameworkError(error);
-      if (thrown !== undefined) {
-        const framework = forAudience(thrown, this.voice.errorAudience);
-        this.audit.resourceRead({ uri, outcome: 'failed', caller, code: framework.code });
-        return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`, {
-          code: framework.code,
-          cause: framework.cause,
-          fix: fixFor(framework, this.voice.errorAudience),
-          ...(framework.docs === undefined ? {} : { docs: framework.docs }),
-        });
-      }
-      // No internals: a provider's own message names a path, a query or a host the caller has no
-      // business seeing, exactly as a failing tool's does.
-      this.audit.resourceRead({ uri, outcome: 'failed', caller });
-      return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`);
-    }
-  }
 }
 
 /**
@@ -489,6 +401,3 @@ function protocolRefusal(message: string, error: McpProtocolError): JsonRpcRespo
     docs: error.docs,
   });
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);

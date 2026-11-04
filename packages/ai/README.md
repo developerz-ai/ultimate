@@ -73,6 +73,7 @@ provider whose `models` lists it.
 | `X_LLM_REFUSED`'s "a more capable model" | a rung above, in the same `family`, among the rows the APP registered — or no suggestion at all |
 | a direct provider call naming no model | `X_AI_MODEL_UNRESOLVED` from every shipped provider — `anthropicProvider()`, `openAiProvider()` and `echoProvider()` alike; a provider's `models` list is what it serves, never a fallback |
 | `echoProvider()` | serves whatever the app registered, and has no model of its own |
+| `scriptedProvider({ turns, usage?, name? })` | the test double that calls tools: each provider call answers the next turn — `{ text }`, `{ call, input? }`, `{ calls: [...] }` or `{ answer }` (a `respond` call), each with an optional `stop` — and `.seen` keeps every request. Serves whatever the app registered. One call past the last turn is `X_AI_SCRIPT_EXHAUSTED`, never the last turn again: a loop must not look like a pass |
 
 ## Budgets — and which of the three is fleet-wide
 
@@ -456,6 +457,11 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 ### What a call cost
 
 `cost` is the currency's minor units, rounded up once per call; `costExact` beside it is the same figure exactly (`Money` at a finer `scale`, from `exactCostOf`). `agent()` reports both per turn and for the run in `onTurn`; `llm()` per provider call in `onCall`; a ledger sums exact costs and rounds once when read. `repairOf` on either event is what a repair turn was told to fix.
+
+One total across several calls — a job that runs two `llm()` calls and an `agent()` — is
+`meteredRun(fn)` → `{ value, billed }`: every provider call `fn` makes, however deeply nested, summed
+once (`Billed`, `undefined` when none started). A throw is rethrown with that total on `meta.billed`,
+so `billedOf(error)` reads it. A meter, not a ledger: it refuses nothing.
 
 ### Continuing a run
 
@@ -859,7 +865,46 @@ X_EVAL_THRESHOLD: an eval scored below its tolerance
 
 Built-in scorers: `exact`, `contains`, `jsonValid`, `jsonSchemaValid(keys)`,
 `numericTolerance(t)`, `llmJudge({ judge })` — the judge prompt is itself versioned, so a
-judge that drifts is a measuring instrument that lies, and its hash is in the scorer name.
+judge that drifts is a measuring instrument that lies, and its hash is in the scorer name —
+and `calledTool(name)`, 1 when an agent run called that tool.
+
+### The agent arm
+
+`DefineEvalInput` is a union: `PromptEvalInput` (`prompt` + `cases[].vars`) or `AgentEvalInput`
+(`agent` + `cases[].input` + `tools`). Narrow with `'prompt' in input`. The agent arm runs
+`agent.run(input, { actor })` per case — default actor `serviceActor({ id: 'eval' })` — with the
+gateway handed to `run` / `assert` and every tool answered by its double in `tools`:
+
+```ts
+import {
+  calledTool,
+  defineEval,
+  type EvaluatedAgent,
+  providerGateway,
+  type ScriptedTurn,
+  scriptedProvider,
+} from '@ultimat3/ai';
+
+declare const supportAgent: EvaluatedAgent<{ question: string }>; // your registered agent()
+declare const turns: ScriptedTurn[];
+
+const supportEval = defineEval({
+  name: 'support.answer',
+  agent: supportAgent,
+  cases: [{ name: 'where-is-o-1', input: { question: 'Where is o-1?' } }],
+  tools: { lookupOrder: () => ({ status: 'shipped' }) },
+  scorers: [calledTool('lookupOrder')],
+  baseline: import.meta.resolve('./support.baseline.json'),
+  tolerance: 0.05,
+});
+await supportEval.assert(providerGateway({ providers: [scriptedProvider({ turns })] }));
+```
+
+An undoubled call is `X_EVAL_TOOL_UNDOUBLED` (`EvalToolUndoubledError`) and ends the eval: an eval
+never runs a real tool. Any other failed run scores 0 and records its code in `cases[].failed`.
+Scorers get `run: { turns, toolCalls, usage }` (`EvalRun`, `EvalToolCall`, `ScorerInput`); the
+baseline is the same file, keyed by the agent's prompt hash. Exported types: `AgentEvalCase`,
+`AgentEvalInput`, `EvaluatedAgent`, `PromptEvalInput`, `ToolDouble`.
 
 ## Prompts are versioned artifacts
 
@@ -1076,6 +1121,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `EvalMissingError` | `X_EVAL_MISSING` | `src/eval-errors.ts` |
 | `EvalRecordingError` | `X_EVAL_RECORDING` | `src/eval-errors.ts` |
 | `EvalThresholdError` | `X_EVAL_THRESHOLD` | `src/eval-errors.ts` |
+| `EvalToolUndoubledError` | `X_EVAL_TOOL_UNDOUBLED` | `src/eval-errors.ts` |
 | `HiveEmptyError` | `X_HIVE_EMPTY` | `src/hive-errors.ts` |
 | `LlmOutputInvalidError` | `X_LLM_OUTPUT_INVALID` | `src/errors.ts` |
 | `LlmRefusedError` | `X_LLM_REFUSED` | `src/errors.ts` |

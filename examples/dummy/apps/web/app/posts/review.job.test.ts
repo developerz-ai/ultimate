@@ -17,7 +17,7 @@ import {
   providerGateway,
 } from '@ultimat3/ai';
 import { beforeEach, expect, jobTest } from '@ultimat3/testing';
-import { CLAUDE_SONNET_5 } from '../models';
+import { CLAUDE_SONNET_5_5 } from '../models';
 import { keepDraftReview } from './actions/keep-draft-review';
 import { requestDraftReview } from './actions/request-draft-review';
 import { reviewDraftLater } from './jobs/review-draft-later';
@@ -46,7 +46,7 @@ const steeredEditor = (
   }),
 ): Provider => ({
   name: 'steered-editor',
-  models: [CLAUDE_SONNET_5],
+  models: [CLAUDE_SONNET_5_5],
   generate(request: GenerateRequest) {
     for (const tool of request.tools ?? []) offered.add(tool.name);
     sentToModel += JSON.stringify(request.messages);
@@ -58,13 +58,13 @@ const steeredEditor = (
         ? steeredCall(steeredTo)
         : { name: 'respond', input: { verdict: 'revise', notes } };
     return Promise.resolve({
-      model: CLAUDE_SONNET_5,
+      model: CLAUDE_SONNET_5_5,
       text: '',
       toolCalls: [{ id: `call-${turns}`, ...call }],
       stopReason: 'tool_use',
       stopDetails: undefined,
       usage: USAGE,
-      cost: costOf(CLAUDE_SONNET_5, USAGE),
+      cost: costOf(CLAUDE_SONNET_5_5, USAGE),
     } satisfies GenerateResult);
   },
   stream() {

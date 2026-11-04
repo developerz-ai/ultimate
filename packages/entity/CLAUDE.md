@@ -53,6 +53,13 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **A repository call rejects, never throws synchronously** (`tableFor`'s writes are `async`).
 - **`defaultDriver()`** is the process default; `Driver.reset?()` is optional (memory only), resets
   repositories in place. Test seam only.
+- **`testDriver()` (`test-driver.ts`) follows `@ultimat3/db`'s `dbClientInstalled()` on every call.**
+  A plain object of forwarders, never a `Proxy` (`observedRepo` spreads the repository, and a spread
+  Proxy copies the target it answered at load); it forwards the keys both repositories carry, so a
+  new `Repo` method needs no edit. `reset` empties memory only. `transactor().run` opens an
+  `asyncContext` holding the side it began on; a call inside it whose installed side differs rejects
+  `X_TEST_DRIVER_CLIENT_CHANGED`, never a synchronous throw. `test-driver.test.ts` fails a
+  resolve-once mutation.
 - **A repository pinned to its own client joins a transaction opened ON that client** (`tx.origin`)
   **and refuses any other** (`X_REPO_CLIENT_PINNED`, in `client()` in `pg-driver.ts`); the fix names
   `setDbClient(client)` plus an unpinned repository.
@@ -265,20 +272,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Files
 
-Each file's header states its one job. The map, by area: `types.ts` (derivation; `COLUMN_KINDS`),
-`column.ts` / `columns.ts` / `columns-data.ts` / `array-element.ts` / `enum-column.ts` /
-`column-values.ts` (builders, `columnName`, `narrowMoney`), `refuse.ts`, `expr.ts` / `invariants.ts`,
-`entity.ts` / `describe.ts` / `index-name.ts` / `search.ts`, `state-machine.ts` / `transition*.ts`,
-`feature-errors.ts`, `view.ts` / `row-schema.ts` / `record-projection.ts` / `record-key.ts` /
-`rows-of.ts` / `record-table.ts` / `record.ts`, `entity-error.ts` / `errors.ts`, `query.ts` /
-`touch.ts` / `entity-patch.ts` / `database.ts` / `clock.ts`, `memory-match.ts` / `like.ts` / `numeric-compare.ts` / `unique-constraints.ts` / `repo.ts` /
-`memory-repo.ts` / `memory-transactor.ts` / `tenancy.ts` /
-`cross-tenant.ts`, `plan.ts` / `cursor.ts` / `batch.ts`, `pg-driver.ts` / `coalesce.ts` /
-`batch-read.ts` / `bulk-write.ts` / `bulk-write-send.ts` / `memory-batch.ts` / `memory-seek.ts` / `count-by.ts` / `jit-preload.ts` / `preload.ts` /
-`preload-ceiling.ts` / `judged-write.ts` / `pg-sql.ts` /
-`pg-row.ts`, `row-observer.ts` / `write-tag.ts` (a keyed request's write names itself in the WAL via
-`pg_logical_emit_message`), `registry.ts` / `relations.ts` / `n-plus-one.ts` / `seed.ts`,
-`type-pins.ts`, `live-registry-cleanup.test.ts`.
+Each file's header states its one job; `ls packages/entity/src` is the map, kept by no hand.
 
 ## Commands
 

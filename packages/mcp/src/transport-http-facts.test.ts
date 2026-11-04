@@ -54,7 +54,8 @@ describe('resolveToken receives the request facts', () => {
 
   test('an app refuses a browser origin: the same 401 as an unknown token', async () => {
     const { route } = routeSeeing((facts) => facts.origin === null);
-    const refused = await route.handle(ping({ origin: 'https://evil.example' }));
+    // Same-origin: a cross-origin page is the transport's 403 before any resolver runs.
+    const refused = await route.handle(ping({ origin: 'http://local' }));
     expect(refused.status).toBe(401);
     expect(((await refused.json()) as { code: string }).code).toBe('X_MCP_PROTOCOL');
     expect((await route.handle(ping())).status).toBe(200);

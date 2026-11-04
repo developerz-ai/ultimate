@@ -1,6 +1,6 @@
 /**
  * `jsonSchemaOf` REFUSES a schema the active provider cannot describe — publishing
- * "any object accepted" for an input `validateInput` rejects every payload from is the deploy that
+ * "any object accepted" for an input `parseActionInput` rejects every payload from is the deploy that
  * succeeds while every caller is lied to — and `sortSchema` is the byte-stable ordering the
  * committed OpenAPI file depends on.
  */
@@ -36,7 +36,7 @@ describe('jsonSchemaOf', () => {
 
   // `additionalProperties: true` was published for a schema the runtime rejects EVERYTHING from,
   // so the OpenAPI component and the MCP `inputSchema` both said "any object accepted" while
-  // `validateInput` refused every payload. A spec that cannot be produced must not be produced.
+  // `parseActionInput` refused every payload. A spec that cannot be produced must not be produced.
   test('refuses, with the provider code, when the provider cannot introspect it', () => {
     expect(() => jsonSchemaOf(unintrospectable)).toThrow(/X_SCHEMA_UNSUPPORTED/);
   });

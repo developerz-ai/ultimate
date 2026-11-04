@@ -3,6 +3,7 @@
 // that script re-exports every name here, so its callers import from one module.
 
 import { SEMVER } from '@ultimat3/cli';
+import { unknownFlags } from './args';
 import type { Finding } from './log';
 import { compareReleaseVersions } from './release-preflight';
 
@@ -34,7 +35,7 @@ export const RELEASE_FLAGS = ['version', 'bump', 'check', 'dry-run', 'json', 'se
 
 /** Every `--flag` the caller passed that this script does not declare. */
 export const unknownReleaseFlags = (flags: Iterable<string>): readonly string[] =>
-  [...flags].filter((name) => !(RELEASE_FLAGS as readonly string[]).includes(name)).sort();
+  unknownFlags(flags, RELEASE_FLAGS);
 
 /**
  * Both flags, refused before a single manifest is rewritten.

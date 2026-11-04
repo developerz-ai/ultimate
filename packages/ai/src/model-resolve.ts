@@ -7,7 +7,13 @@ import type { ModelId } from './models';
 import { aiGateway } from './runtime';
 
 /** Where a model was resolved. Bounded, and the first word of the refusal's cause. */
-export type ModelSite = 'llm' | 'agent' | 'gateway' | 'provider' | 'echo-provider';
+export type ModelSite =
+  | 'llm'
+  | 'agent'
+  | 'gateway'
+  | 'provider'
+  | 'echo-provider'
+  | 'scripted-provider';
 
 /** The three places, spelled once so the refusal and the docs cannot drift apart. */
 const PLACES =

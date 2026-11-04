@@ -107,7 +107,7 @@ export function configureActionPathStyle(style: ActionPathStyle): void {
  * Both schemas must reach JSON Schema, and this is where that is decided — boot, beside the policy
  * check, never the first `tools/list`. `jsonSchemaOf` used to swallow the refusal into
  * `additionalProperties: true`, so an action whose `input:` the provider cannot describe registered
- * cleanly and then published "any object accepted" on three surfaces while `validateInput` rejected
+ * cleanly and then published "any object accepted" on three surfaces while `parseActionInput` rejected
  * every payload. The shipped `X_SCHEMA_UNSUPPORTED` is re-raised rather than re-coded — the failure
  * is the provider's, and only the cause needs to say which action and which field.
  */

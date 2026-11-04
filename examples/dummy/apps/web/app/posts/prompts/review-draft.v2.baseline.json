@@ -1,0 +1,11 @@
+{
+  "eval": "posts.review-draft",
+  "prompt": "posts.review-draft@2",
+  "promptHash": "87699542c8249c4984b0d457c70e9495",
+  "score": 1,
+  "cases": {
+    "english/draft-money": 1,
+    "english/tenancy": 1,
+    "english/timezones": 1
+  }
+}

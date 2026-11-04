@@ -9,14 +9,13 @@ import { t } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
 import { ctxOf, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
-import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
 import { llm } from './llm';
-import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL } from './model-fixture';
+import { FIXTURE_MODEL } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
-import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
-import { costOf } from './provider';
+import type { GenerateRequest, Provider, TokenUsage } from './provider';
 import { configureAi } from './runtime';
+import { scriptedProvider } from './scripted-provider';
 
 export const Input = t.object({ postId: t.uuid });
 export const Output = t.object({ summary: t.string, tags: t.array(t.string) });
@@ -32,43 +31,23 @@ export const USAGE: TokenUsage = {
 };
 
 /**
- * A provider that replays scripted answers and records what it was asked. A string is a prose
+ * A `scriptedProvider` that answers in order and records what it was asked. A string is a prose
  * answer (the JSON-in-text path), an object is a `respond` tool call (the tool-use path).
  */
-export function stub(...answers: readonly unknown[]): {
+export function stub(...answers: readonly (string | Record<string, unknown>)[]): {
   provider: Provider;
-  seen: GenerateRequest[];
+  seen: readonly GenerateRequest[];
 } {
-  const seen: GenerateRequest[] = [];
-  const echo = echoProvider();
-  const provider: Provider = {
+  const provider = scriptedProvider({
+    turns: answers.map((answer) => (typeof answer === 'string' ? { text: answer } : { answer })),
+    usage: USAGE,
     name: 'stub',
-    models: FIXTURE_ANTHROPIC_IDS,
-    generate(request) {
-      const answer = answers[Math.min(seen.length, answers.length - 1)];
-      seen.push(request);
-      return Promise.resolve(reply(request, answer));
-    },
-    stream: (request) => echo.stream(request),
-  };
-  return { provider, seen };
+  });
+  return { provider, seen: provider.seen };
 }
 
-function reply(request: GenerateRequest, answer: unknown): GenerateResult {
-  const model = request.model ?? FIXTURE_MODEL;
-  const prose = typeof answer === 'string';
-  return {
-    model,
-    text: prose ? answer : '',
-    toolCalls: prose
-      ? []
-      : [{ id: 'call-1', name: 'respond', input: answer as Record<string, unknown> }],
-    stopReason: prose ? 'end_turn' : 'tool_use',
-    stopDetails: undefined,
-    usage: USAGE,
-    cost: costOf(model, USAGE),
-  };
-}
+/** `answer`, `n` times: a script that answers every one of `n` calls alike, spelled out. */
+export const times = <T>(n: number, answer: T): T[] => Array.from({ length: n }, () => answer);
 
 export function install(provider: Provider): void {
   configureAi({ gateway: providerGateway({ providers: [provider], defaultModel: FIXTURE_MODEL }) });

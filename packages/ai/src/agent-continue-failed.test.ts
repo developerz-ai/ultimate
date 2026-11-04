@@ -17,7 +17,7 @@ describe('a failed call leaves a handle that counts what it was billed', () => {
   const CUT = { call: 'respond', input: {}, stop: 'max_tokens' as const };
 
   test('six truncated continuations exhaust tokensPerRun when each retry uses the returned handle', async () => {
-    const { seen } = model(READ, ANSWER, CUT);
+    const { seen } = model(READ, ANSWER, ...Array<typeof CUT>(8).fill(CUT));
     // Each call reserves ~4,100 and settles at 1,200. The run uses 2,400 of 12,000.
     const write = declare({ tokensPerRun: 12_000, maxTurns: 50 });
     let handle = (await write.run(INPUT, { ctx: ctx() })).transcript;

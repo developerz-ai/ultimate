@@ -10,13 +10,15 @@ import {
   timingSafeEqual,
   UltimateError,
 } from '@ultimat3/core';
-import { mcpHttpRoute, type StdioTransportInput, serveStdio } from '@ultimat3/mcp';
+import { jsonResponse, methodNotAllowed, toProblem } from '@ultimat3/http';
+import { mcpHostRefused, mcpHttpRoute, type StdioTransportInput, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
 import { DEFAULT_PORT, mcpSpec } from './cmd-mcp-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
 import { intFlagOr, neighbouringPort, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
+import { isLoopbackHostname } from './loopback-host';
 import type { CliMcpServer } from './mcp-host';
 import { createDevMcpServer, DEV_TOOL_SCOPES } from './mcp-host';
 import { msg } from './messages';
@@ -119,8 +121,18 @@ export async function startMcpHttp(host: CliMcpServer, port: number): Promise<Mc
       idleTimeout: 0,
       fetch: (request: Request, server): Response | Promise<Response> => {
         const url = new URL(request.url);
-        if (request.method !== route.method || url.pathname !== route.path) {
-          return notFound(route.path);
+        // Where this server IS reached — every refusal's fix names it, never the Host a request sent.
+        const endpoint = `${server.url.origin}${route.path}`;
+        // Before anything else, as `/_x` does: this server serves this machine, and a rebound name
+        // reaches it with a Host and an Origin that agree, which no Origin rule can tell apart.
+        if (!isLoopbackHostname(url.hostname)) return mcpHostRefused(endpoint);
+        if (url.pathname !== route.path) return notFound(route.path);
+        // `@ultimat3/http`'s own 405, the one the pipeline answers on an app's mounted `/mcp`.
+        if (request.method !== route.method) {
+          return jsonResponse(toProblem(methodNotAllowed(request.method, route.path, ['POST'])), {
+            status: 405,
+            headers: { allow: 'POST' },
+          });
         }
         // The socket's peer: failed tokens are metered per address, and only the server knows it.
         return route.handle(request, { address: server.requestIP(request)?.address });

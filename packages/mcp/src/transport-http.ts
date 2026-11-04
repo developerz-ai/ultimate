@@ -21,9 +21,9 @@
 
 import type { Actor, Clock } from '@ultimat3/core';
 import { finiteCount, readWithinLimit, systemClock } from '@ultimat3/core';
-import type { Bucket, RequestFacts as McpRequestFacts, RateLimitStore } from '@ultimat3/http';
+import type { RequestFacts as McpRequestFacts, RateLimitStore } from '@ultimat3/http';
 import { memoryRateLimitStore, requestFacts, toBucket } from '@ultimat3/http';
-import { McpBodyTooLargeError, McpRateLimitedError } from './errors-transport';
+import { McpBodyTooLargeError } from './errors-transport';
 import type { McpOAuth } from './oauth-metadata';
 import {
   assertMcpOAuth,
@@ -35,9 +35,18 @@ import {
   resourceUrl,
   supportedScopes,
 } from './oauth-metadata';
+import { headerRefusal, httpStatusOf } from './protocol-era';
 import type { McpCaller, McpRole, McpVerbClass } from './registry';
 import type { McpServer } from './server';
-import type { JsonRpcResponse } from './wire';
+import {
+  failureMeter,
+  json,
+  NO_STORE_HEADERS,
+  notAnAgent,
+  originRefusal,
+  throttled,
+  unauthorized,
+} from './transport-http-answers';
 import { errorResponse, INVALID_REQUEST, PARSE_ERROR, refusalMessage } from './wire';
 
 /**
@@ -119,8 +128,18 @@ export interface McpHttpTransportInput {
 
 /** How the host saw the request — what a bare `Request` behind a TLS-terminating proxy cannot say. */
 export interface McpRequestOrigin {
-  /** The PUBLIC origin, `https://www.example.com`. Defaults to the request URL's own. */
+  /**
+   * The PUBLIC origin, `https://www.example.com`: the URLs this route publishes, and the self origin
+   * a browser's `Origin` is proven against. Defaults to the request URL's own. Both are read off
+   * the Host, so a DNS-rebound name proves same-origin: a server that serves only this machine
+   * refuses a non-loopback Host before calling `handle` (`x mcp serve`, `mcpHostRefused`).
+   */
   readonly origin?: string | undefined;
+  /**
+   * An EXACT allowance for a sibling origin — the app's `http.cors.origins`, through
+   * `@ultimat3/http`'s `originListed`. Absent: the request's own origin only.
+   */
+  readonly listed?: ((origin: string) => boolean) | undefined;
   /**
    * The caller's address as the host resolved it (a trusted proxy's `x-forwarded-for` honoured) —
    * what failed authentications are counted against. Absent, they are not counted here: one
@@ -148,15 +167,6 @@ export interface McpRouteDescriptor {
   readonly protectedResource?: McpProtectedResource;
   handle(request: Request, seen?: McpRequestOrigin): Promise<Response>;
 }
-
-/**
- * Every answer on this route is one caller's: a 401 challenge, a refusal, a JSON-RPC result for
- * the token that asked. `no-store` on all of them (RFC 6750 §3 / RFC 6749 §5.1 for the auth
- * answers), stated HERE because the descriptor is also served bare by `x mcp serve`, where no
- * pipeline stage decides a cache header for it.
- */
-const NO_STORE_HEADERS = { 'cache-control': 'no-store' } as const;
-const JSON_HEADERS = { 'content-type': 'application/json', ...NO_STORE_HEADERS } as const;
 
 export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
   const { server } = input;
@@ -228,6 +238,25 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
         }),
 
     async handle(request: Request, seen?: McpRequestOrigin): Promise<Response> {
+      const address = seen?.address;
+      // Built once per request: the resolver's second argument and every refusal's audit facts.
+      // The address inside is the host's answer (`seen.address`), never a header read here.
+      const facts = requestFacts({ headers: request.headers, url: request.url, address });
+      const audit = server.audit;
+      // A browser page that cannot be shown to be this app's is refused before the token is read,
+      // so a token in its hands decides nothing — core's `proveSameOrigin`, the rule CSRF, the sync
+      // upgrade and `/_x` answer to. A client process sends no `Origin` and is never asked.
+      const foreign = originRefusal({
+        origin: facts.origin,
+        secFetchSite: request.headers.get('sec-fetch-site'),
+        self: seen?.origin ?? new URL(request.url).origin,
+        listed: seen?.listed ?? (() => false),
+        path,
+      });
+      if (foreign !== undefined) {
+        audit.authRefused('origin-refused', foreign.status, facts);
+        return foreign;
+      }
       // Every authentication answer lands BEFORE the body is read. Parsing first meant a caller
       // holding a rejected token still learned whether its JSON was well formed — `400 parse
       // error` for one payload and `401` for the next is exactly the oracle the 401 exists to
@@ -236,11 +265,6 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       const metadataUrl = resource === undefined ? undefined : metadataUrlFor(resource);
       // An address that has spent its failures is refused BEFORE the credential store is asked:
       // counting only after the fact turned a 401 into a 429 and still answered a valid guess.
-      const address = seen?.address;
-      // Built once per request: the resolver's second argument and every refusal's audit facts.
-      // The address inside is the host's answer (`seen.address`), never a header read here.
-      const facts = requestFacts({ headers: request.headers, url: request.url, address });
-      const audit = server.audit;
       const exhausted = await failures.refusing(address);
       if (exhausted !== undefined) {
         audit.authRefused('throttled', exhausted.status, facts);
@@ -308,6 +332,11 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
         return json(errorResponse(null, PARSE_ERROR, 'request body is not valid JSON'), 400);
       }
 
+      // A versioned request mirrors its body into headers, and an intermediary may have routed on
+      // them: one that disagrees is refused before it is metered or run.
+      const refusedHeaders = headerRefusal(body, request.headers);
+      if (refusedHeaders !== undefined) return json(refusedHeaders, 400);
+
       // Metered AFTER the class is known and BEFORE the tool runs. It cannot move above the
       // parse — the class comes out of the body — and an unauthenticated caller never reaches it,
       // so a token nobody issued cannot spend an actor's allowance.
@@ -340,35 +369,9 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       const response = await server.handle(body, caller, { transport: 'http', path });
       // A notification has no response. 202 with an empty body is the MCP-correct answer.
       if (response === null) return new Response(null, { status: 202, headers: NO_STORE_HEADERS });
-      // JSON-RPC errors are 200s: the transport succeeded, the call did not. Only a
-      // malformed envelope (below) is an HTTP-level failure.
-      const status = response.error?.code === INVALID_REQUEST && response.id === null ? 400 : 200;
-      return json(response, status);
-    },
-  };
-}
-
-/**
- * The per-address failure allowance. `refusing` reads the bucket (`RateLimitStore.peek`, which
- * writes nothing) and answers the 429 when not one more failure fits; `spend` charges one
- * failure and answers the 429 when that one did not fit. `undefined` from either: carry on.
- */
-function failureMeter(store: RateLimitStore, bucket: Bucket, clock: Clock) {
-  const keyOf = (address: string): string => `mcp:unauthenticated|ip:${address}`;
-  const refusal = (retryAfterSeconds: number): Response =>
-    throttled('unauthenticated', bucket.capacity, retryAfterSeconds);
-  return {
-    async refusing(address: string | undefined): Promise<Response | undefined> {
-      if (address === undefined) return undefined;
-      // READ ONLY: this runs on every request, an agent's included, and a write per call would be
-      // a Postgres upsert on the hot path of every authenticated one.
-      const peek = await store.peek(keyOf(address), bucket, clock.now().getTime());
-      return peek.remaining >= 1 ? undefined : refusal(peek.retryAfterSeconds);
-    },
-    async spend(address: string | undefined): Promise<Response | undefined> {
-      if (address === undefined) return undefined;
-      const spent = await store.take(keyOf(address), bucket, 1, clock.now().getTime());
-      return spent.allowed ? undefined : refusal(spent.retryAfterSeconds);
+      // JSON-RPC errors are 200s: the transport succeeded, the call did not. A malformed envelope,
+      // an unserved version and a modern unknown method are the HTTP-level ones.
+      return json(response, httpStatusOf(body, response));
     },
   };
 }
@@ -388,51 +391,4 @@ export function bearerToken(request: Request): string | null {
  */
 export function isAgentActor(actor: Actor): boolean {
   return (actor as { kind?: unknown }).kind === 'agent';
-}
-
-/**
- * The refusal, rendered the way this file's 401 and 403 already are: `{ code, cause, fix }` and an
- * HTTP status, never a JSON-RPC envelope — the transport refused before dispatch, so there is no
- * call to answer. `retry-after` carries the same number the `fix:` line names, because an agent
- * reads one of the two and must not get different answers from them.
- */
-function throttled(
-  verbClass: keyof McpRateLimits,
-  limit: number,
-  retryAfterSeconds: number,
-): Response {
-  const error = new McpRateLimitedError({ verbClass, limit, retryAfterSeconds });
-  return new Response(JSON.stringify({ code: error.code, cause: error.cause, fix: error.fix }), {
-    status: 429,
-    headers: { ...JSON_HEADERS, 'retry-after': String(retryAfterSeconds) },
-  });
-}
-
-function notAnAgent(): Response {
-  return new Response(
-    JSON.stringify({
-      code: 'X_MCP_PROTOCOL',
-      cause: 'resolveToken returned an actor whose kind is not "agent"',
-      fix: 'return { kind: "agent", ... } from resolveToken; MCP callers are agents, not users',
-    }),
-    { status: 403, headers: JSON_HEADERS },
-  );
-}
-
-function unauthorized(challenge: string): Response {
-  return new Response(
-    JSON.stringify({
-      code: 'X_MCP_PROTOCOL',
-      cause: 'missing or unrecognised bearer token',
-      fix: "send Authorization: Bearer <token> with a token the app's resolveToken(token) resolves to { actor, scopes } — it is the only issuer this route has",
-    }),
-    {
-      status: 401,
-      headers: { ...JSON_HEADERS, 'www-authenticate': challenge },
-    },
-  );
-}
-
-function json(response: JsonRpcResponse, status: number): Response {
-  return new Response(JSON.stringify(response), { status, headers: JSON_HEADERS });
 }

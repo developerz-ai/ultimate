@@ -40,6 +40,10 @@ export const MCP_ERROR_CODES = [
   'X_MCP_EFFECT_CONFLICT',
   'X_MCP_WRONG_TOOL',
   'X_MCP_USER_CONFIRMATION_REQUIRED',
+  'X_MCP_PROTOCOL_UNSUPPORTED',
+  'X_MCP_HEADER_MISMATCH',
+  'X_MCP_ORIGIN_REFUSED',
+  'X_MCP_HOST_REFUSED',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -84,6 +88,11 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_WRONG_TOOL: 'a meta-split action was called through the wrong dispatcher',
   X_MCP_USER_CONFIRMATION_REQUIRED:
     'a delete_resource commit did not carry confirmed_by_user: true',
+  X_MCP_PROTOCOL_UNSUPPORTED:
+    'the request names an MCP protocol version this server does not serve',
+  X_MCP_HEADER_MISMATCH: 'an MCP request header is absent or disagrees with the body',
+  X_MCP_ORIGIN_REFUSED: 'an MCP request came from a browser page on another origin',
+  X_MCP_HOST_REFUSED: 'an MCP request named a Host that is not this machine',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

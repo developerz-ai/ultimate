@@ -10,7 +10,8 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
-import { sql } from '@ultimat3/db';
+import { setDbClient, sql } from '@ultimat3/db';
+import { database, entity, integer, testDriver } from '@ultimat3/entity';
 import { MIGRATIONS_DIR } from './migrations';
 import { migratedDatabase } from './test-database';
 import { TEST_DB_DIR } from './test-db-template';
@@ -65,6 +66,30 @@ describe('migratedDatabase', () => {
       expect(await tables(root)).toContain('likes');
       // Three migration states, two templates: the current one and the newest previous.
       expect(templates()).toHaveLength(2);
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  // The probe of plan 101 slice 17, inverted: a handle over `testDriver()` built BEFORE the client
+  // was installed writes through it, so raw SQL on the same client sees the handle's row.
+  test(
+    "the scaffolded handle's write is visible to raw SQL on the installed client",
+    async () => {
+      migration('20260102000000_tags', 'create table tags (id serial primary key);');
+      const db = database(
+        { tags: entity('tags', { columns: { id: integer().primaryKey() } }) },
+        { driver: testDriver() },
+      );
+      const client = await migratedDatabase({ root });
+      setDbClient(client);
+      try {
+        await db.tags.insert({ id: 7 });
+        const seen = await client.query<{ n: number }>(sql`select count(*)::int as n from tags`);
+        expect(seen).toEqual([{ n: 1 }]);
+      } finally {
+        setDbClient(undefined);
+        await client.close();
+      }
     },
     PGLITE_BOOT_MS,
   );

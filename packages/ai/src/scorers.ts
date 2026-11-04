@@ -5,13 +5,36 @@
 // prompt is a versioned artifact and its hash is part of the scorer's name.
 
 import { assert, finiteCount, finiteOption } from '@ultimat3/core';
+import type { AgentRunUsage } from './agent-usage';
 import type { Gateway } from './gateway';
 import type { Prompt } from './prompt';
+
+/** One tool call an agent eval's run made, answered by the eval's double. */
+export interface EvalToolCall {
+  readonly name: string;
+  readonly input: Readonly<Record<string, unknown>>;
+}
+
+/** What an agent eval's run did beside answering — handed to every scorer of the agent arm. */
+export interface EvalRun {
+  readonly turns: number;
+  /** In the order the model asked for them. */
+  readonly toolCalls: readonly EvalToolCall[];
+  readonly usage: AgentRunUsage;
+}
+
+/** What a scorer reads. `run` is present on the agent arm (`defineEval({ agent })`) only. */
+export interface ScorerInput {
+  /** The answer: the model's text, or on the agent arm the validated output as JSON. */
+  readonly output: string;
+  readonly expected?: string;
+  readonly run?: EvalRun;
+}
 
 /** A scorer returns 0..1. Deterministic scorers are preferred; judges are a last resort. */
 export interface Scorer {
   readonly name: string;
-  score(input: { output: string; expected?: string }): Promise<number> | number;
+  score(input: ScorerInput): Promise<number> | number;
 }
 
 /**
@@ -43,6 +66,17 @@ export const contains: Scorer = {
   score: ({ output, expected }) =>
     expected !== undefined && output.toLowerCase().includes(expected.toLowerCase()) ? 1 : 0,
 };
+
+/**
+ * 1 when the agent's run called `tool` at least once, else 0 — and 0 on the prompt arm, which has
+ * no run. Named per tool, so two of them on one eval are two columns rather than one overwritten.
+ */
+export function calledTool(tool: string): Scorer {
+  return {
+    name: `called-tool:${tool}`,
+    score: ({ run }) => (run?.toolCalls.some((call) => call.name === tool) === true ? 1 : 0),
+  };
+}
 
 /** Output parses as JSON. Pairs with a prompt that declares an `output` schema. */
 export const jsonValid: Scorer = {

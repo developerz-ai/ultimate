@@ -3,44 +3,47 @@
  * (`X_EVAL_MISSING`). Cases here, scored by `review-draft.eval.test.ts`, for the reason
  * `summarize.evals.ts` gives: the gate reads this module without importing a test.
  *
+ * The AGENT arm, not the prompt arm: this prompt drives `reviewDraft`, which may call `summarize`
+ * before it answers through its `respond` tool. A single request offering no tools would measure
+ * something the agent never runs. Each case is one whole run — the agent's own `vars()` loading
+ * the seeded post, its turns, its tools — under the gateway the test hands over.
+ *
+ * An eval never runs a real tool. `summarize` is answered by the double below; `publishPost` has
+ * none on purpose, so a regression that reaches for it ends the run as `X_EVAL_TOOL_UNDOUBLED`
+ * instead of publishing.
+ *
  * Deterministic scorers only. A verdict is checked against the one each case was written to earn,
- * and the notes against the prompt's own rules: three sentences at most, and no praise.
+ * the notes against the prompt's own rules (three sentences at most, no praise), and the run
+ * against the one tool the prompt allows it.
  */
 
 import type { Scorer } from '@ultimat3/ai';
-import { defineEval, jsonSchemaValid } from '@ultimat3/ai';
-import { reviewDraftPrompt } from './review-draft';
+import { calledTool, defineEval, jsonSchemaValid } from '@ultimat3/ai';
+import { userActor } from '@ultimat3/core';
+import { seedId } from '@ultimat3/entity';
+import { reviewDraft } from '../actions/review-draft';
+
+const ACME = seedId('org:acme');
+
+/** A seeded `dev` post, by label: the agent loads it itself, as it would in production. */
+const post = (label: string) => ({ postId: seedId(`post:${label}`), orgId: ACME });
 
 /** `expected` is the verdict the draft was written to earn. */
 export const reviewDraftCases = [
-  {
-    name: 'english/ready',
-    expected: 'ready',
-    vars: {
-      locale: 'en',
-      title: 'Money is an integer',
-      body: 'Store every price as minor units beside its currency, and format it only at the edge — a float total drifts by a cent the first time two prices are added.',
-    },
-  },
-  {
-    name: 'english/revise',
-    expected: 'revise',
-    vars: {
-      locale: 'en',
-      title: 'Some thoughts',
-      body: 'There are a few things. Some of them matter more than others, depending.',
-    },
-  },
-  {
-    name: 'spanish/ready',
-    expected: 'ready',
-    vars: {
-      locale: 'es',
-      title: 'Nadie formatea una fecha sin zona',
-      body: 'Cada fecha se muestra en la zona de quien la lee: la zona vive en la membresía, nunca en el servidor.',
-    },
-  },
+  { name: 'english/draft-money', expected: 'ready', input: post('draft-money') },
+  { name: 'english/tenancy', expected: 'ready', input: post('tenancy') },
+  { name: 'english/timezones', expected: 'ready', input: post('timezones') },
 ];
+
+/** Bruno, the draft's author — `post:read` decides about a member of the post's org. */
+export const reviewer = userActor({
+  id: seedId('member:bruno'),
+  orgId: ACME,
+  roles: ['author'],
+});
+
+/** What the feed would show: the double `summarize` answers with, whatever post it is asked for. */
+export const SUMMARY = { summary: 'Minor units and a currency.', tags: ['money'] };
 
 const parsed = (output: string): { verdict?: unknown; notes?: unknown } | undefined => {
   try {
@@ -85,9 +88,17 @@ export const noPraise: Scorer = {
 
 export const reviewDraftEval = defineEval({
   name: 'posts.review-draft',
-  prompt: reviewDraftPrompt,
-  baseline: import.meta.resolve('./review-draft.v1.baseline.json'),
+  agent: reviewDraft,
+  actor: reviewer,
+  baseline: import.meta.resolve('./review-draft.v2.baseline.json'),
   tolerance: 0.05,
-  scorers: [jsonSchemaValid(['verdict', 'notes']), verdictMatches, withinThreeSentences, noPraise],
+  tools: { summarize: () => SUMMARY },
+  scorers: [
+    jsonSchemaValid(['verdict', 'notes']),
+    verdictMatches,
+    withinThreeSentences,
+    noPraise,
+    calledTool('summarize'),
+  ],
   cases: reviewDraftCases,
 });

@@ -65,11 +65,17 @@ function fakeIo(fake: Fake = {}) {
         return fake.bootLog ?? '{"msg":"app mcp mounted","path":"/mcp"}';
       },
     }),
-    fetcher: async (_url, init) => {
+    fetcher: async (url, init) => {
       const body = JSON.parse(String(init.body)) as { method: string };
       const headers = new Headers(init.headers);
       const token = headers.get('authorization');
-      if (headers.has('origin')) return new Response('{}', { status: fake.browserStatus ?? 401 });
+      const origin = headers.get('origin');
+      // The route's own rule (core's proveSameOrigin): an Origin that is not this app is 403 before
+      // any token is read, so only a SAME-origin page — what a rebound name is — reaches the
+      // resolver's no-Origin rule under test.
+      if (origin !== null && origin !== new URL(url).origin)
+        return new Response('{}', { status: 403 });
+      if (origin !== null) return new Response('{}', { status: fake.browserStatus ?? 401 });
       if (token !== `Bearer ${DEV_AGENT_TOKEN}`) {
         return new Response('{}', { status: fake.anonymousStatus ?? 401 });
       }

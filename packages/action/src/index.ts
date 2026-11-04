@@ -246,6 +246,12 @@ export type {
 } from './transition';
 export { transition } from './transition';
 /**
+ * `invoke`'s input parse and its `X_INPUT_INVALID` refusal, alone. Exported so a caller that must
+ * hold something else to an action's input — an agent eval's tool double (`@ultimat3/ai`) — runs
+ * this one check instead of a copy that drifts.
+ */
+export { parseActionInput } from './validate';
+/**
  * The one reader of a problem document's `issues` member. Exported because the typed client is not
  * the only caller that meets one: an island that posts with a plain `fetch` — which is what
  * `x g resource` emits, to keep this package out of its chunk — holds the parsed body itself and

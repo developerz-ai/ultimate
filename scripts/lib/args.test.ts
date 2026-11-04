@@ -8,10 +8,12 @@ import {
   flagList,
   flagString,
   parseScriptArgs,
+  refuseUnknownFlags,
   scriptNameOf,
   scriptPathOf,
 } from './args';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
+import { ScriptError } from './script-error';
 
 // Spawns a real script from the repo root, so it runs on the repo-scan backstop.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -75,6 +77,30 @@ describe('unit · --json is boolean in every script, so parseScriptArgs refuses 
     expect(parseScriptArgs(['merge', 'x.json', '--json']).json).toBe(true);
     expect(parseScriptArgs(['--json', '--explain']).json).toBe(true);
     expect(parseScriptArgs([]).json).toBe(false);
+  });
+});
+
+describe('unit · a `known` list refuses every other flag with the script own code', () => {
+  const known = {
+    names: ['dry-run', 'package'],
+    refuse: (unknown: readonly string[]) =>
+      new ScriptError({ code: 'X_PROBE_FLAG', cause: unknown.join(' '), fix: 'rerun' }),
+  };
+
+  test('an undeclared flag is refused, every one named, sorted — never ignored', () => {
+    const r = refusal(() => parseScriptArgs(['--dryrun', '--zeta', 'z', '--package', 'ai'], known));
+    expect(r.code).toBe('X_PROBE_FLAG');
+    expect(r.cause).toBe('dryrun zeta');
+  });
+
+  test('declared flags and --json pass; without a list nothing is judged', () => {
+    expect(parseScriptArgs(['--dry-run', '--json'], known).flags.get('dry-run')).toBe(true);
+    expect(parseScriptArgs(['--anything']).flags.get('anything')).toBe(true);
+  });
+
+  test('refuseUnknownFlags is the same rule over an already-parsed map', () => {
+    expect(() => refuseUnknownFlags(new Map([['package', 'ai']]), known)).not.toThrow();
+    expect(refusal(() => refuseUnknownFlags(new Map([['pkg', 'ai']]), known)).cause).toBe('pkg');
   });
 });
 

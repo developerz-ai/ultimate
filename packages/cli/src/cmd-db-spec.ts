@@ -12,13 +12,14 @@ export const DB_SUBCOMMANDS = [
   'studio',
   'branch',
   'backfill',
+  'diagnostics',
 ] as const;
 
 export const dbSpec: CommandSpec = {
   name: 'db',
-  summary: 'gen, migrate, reset, seed, studio, branch, backfill',
+  summary: 'gen, migrate, reset, seed, studio, branch, backfill, diagnostics',
   usage:
-    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
+    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n]',
   requiresApp: true,
   subcommands: DB_SUBCOMMANDS,
   // Declared from the constant `runBranchCommand` validates against, never a second literal: it
@@ -85,8 +86,9 @@ export const dbSpec: CommandSpec = {
     {
       name: 'limit',
       type: 'string',
-      summary: 'backfill: max ledger rows to return',
-      subcommands: ['backfill'],
+      summary:
+        'backfill, diagnostics: max ledger rows, or rows per diagnostics section (default 20)',
+      subcommands: ['backfill', 'diagnostics'],
     },
     // Declared because `X_MIGRATION_IRREVERSIBLE`'s own fix line names it. A `fix:` is copied
     // and run verbatim, so a flag the parser refuses would make the error unfollowable.

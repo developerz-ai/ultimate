@@ -10,7 +10,7 @@ An action is not "also exposed over MCP". There is one invocation core; HTTP and
 // packages/action/src/invoke.ts — the single invocation core
 export function invoke(target: AnyAction, raw: unknown, options: InvokeOptions = {}) {
   const def = defOf(target);                                 // private store, this module only
-  const input = await validateInput(def.input, raw, name);   // X_INPUT_INVALID
+  const input = await parseActionInput(def.input, raw, name);   // X_INPUT_INVALID
   guardAction(def.policy, { actor: actorOf(ctx), input, ctx, action: name }, options.surface);
   const out = await def.handle({ input, ctx });              // policy's own code on denial
   return validateOutput(def.output, out, name);              // X_OUTPUT_INVALID

@@ -48,6 +48,9 @@ const CATALOG = {
   'cli.db.branch.none': 'this database has no branch',
   /** The empty cell in an `x db branch list` column — a value, not a column key. */
   'cli.db.branch.unknown': '-',
+  'cli.db.diagnostics.done': '{available} of {total} diagnostic section(s) answered',
+  'cli.db.diagnostics.section': '{section}: {count} row(s)',
+  'cli.db.diagnostics.unavailable': '{section}: unavailable, {code} — {reason}  fix: {fix}',
   'cli.db.gen.failed': 'migration not generated',
   'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',
   'cli.db.gen.blocked':

@@ -186,12 +186,13 @@ describe('unit · x mcp serve --transport http', () => {
     await server.stop();
   });
 
-  const rpc = (body: unknown, token?: string): Promise<Response> =>
+  const rpc = (body: unknown, token?: string, extra: Record<string, string> = {}) =>
     fetch(data.url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        ...extra,
       },
       body: JSON.stringify(body),
     });
@@ -243,6 +244,38 @@ describe('unit · x mcp serve --transport http', () => {
     const body = (await response.json()) as { result: { tools: readonly ToolRow[] } };
     expect(body.result.tools).toHaveLength(18);
     expect(body.result.tools.map((tool) => tool.name)).toContain('db.query');
+  });
+
+  test('a rebound name (Host and Origin agree, not this machine) is 421 before any token', async () => {
+    const response = await fetch(data.url, {
+      method: 'POST',
+      headers: {
+        host: 'rebound.test:9229',
+        origin: 'http://rebound.test:9229',
+        authorization: `Bearer ${data.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+    expect(response.status).toBe(421);
+    expect(((await response.json()) as { code: string }).code).toBe('X_MCP_HOST_REFUSED');
+  });
+
+  test('a page on another loopback origin (x dev’s, say) carrying the token is 403', async () => {
+    const response = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, data.token, {
+      origin: 'http://localhost:1',
+    });
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe('X_MCP_ORIGIN_REFUSED');
+  });
+
+  test('GET or DELETE on the endpoint is http’s 405, the one an app’s /mcp answers', async () => {
+    for (const method of ['GET', 'DELETE']) {
+      const response = await fetch(data.url, { method });
+      expect(response.status).toBe(405);
+      expect(response.headers.get('allow')).toBe('POST');
+      expect(((await response.json()) as { code: string }).code).toBe('X_METHOD_NOT_ALLOWED');
+    }
   });
 
   test('any other path is 404 — one route, nothing to probe', async () => {

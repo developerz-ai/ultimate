@@ -148,12 +148,12 @@ pgvector in the same Postgres. No second datastore.
 
 | Piece | Detail |
 |---|---|
-| Embeddings | declared on an entity: `embed: { field: 'body', model: 'text-embedding-3-large' }` |
-| Backfill | generated as a `job` with steps, resumable, rate-limited per tenant |
-| Index | HNSW, created by the generated migration |
+| Embeddings | an `Embedder` value (`remoteEmbedder()`, `hashEmbedder()`), never an entity option — `As of 2026-11` no package defines `embed:` |
+| Writing | `indexDocument({ store, embedder, document })`; a sweep is the app's `backfill()` calling it per page |
+| Index | HNSW, printed by `postgresVectorStore(…).ddl()` and pasted into a migration by the app |
 | Hybrid search | one `query` primitive fusing pgvector cosine + Postgres FTS with Reciprocal Rank Fusion; weights are config |
 | Filtering | tenant + policy filters applied **in SQL**, so vector search cannot leak across tenants |
-| Re-embed | content-hash change triggers a job; unchanged text is never re-embedded |
+| Re-embed | `indexDocument` again; it embeds every chunk, so the app's job decides when text changed |
 
 ## Evals as a test type
 

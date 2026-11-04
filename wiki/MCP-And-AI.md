@@ -84,6 +84,29 @@ None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose l
 | Behind N replicas | pass `rateLimitStore: postgresRateLimitStore({ executor })` as well. The default is a per-process memory store — honest for `x mcp serve`, and a lie for N replicas behind one URL, each enforcing the full allowance on its own |
 
 
+### Protocol revisions: modern and legacy, one endpoint
+
+`As of 2026-11`, read from the spec on 2026-11-02. Every server is **dual-era**: the era is decided per request, never per connection.
+
+| Request | Era | Answered |
+|---|---|---|
+| `params._meta["io.modelcontextprotocol/protocolVersion"]` in `MCP_MODERN_VERSIONS` (`2026-07-28`) | modern, stateless | `server/discover` and the seven shared methods. Every result carries `resultType: 'complete'` and `_meta["io.modelcontextprotocol/serverInfo"]`; the lists, `resources/read` and `server/discover` add `ttlMs: 0`, `cacheScope: 'private'`. No `initialize`, no `ping` |
+| no `_meta` version, or one in `MCP_LEGACY_VERSIONS` (`2025-11-25`, `2025-06-18`, `2025-03-26`) | legacy | `initialize` echoes an offered legacy revision, else answers `2025-11-25`; `ping`; the seven shared methods |
+| any other `_meta` version | — | `-32022` `X_MCP_PROTOCOL_UNSUPPORTED`, `data: { supported, requested }` |
+
+`MCP_PROTOCOL_VERSION` is gone (`As of 2026-11`): name the era — `MCP_MODERN_VERSIONS[0]`, or `MCP_LEGACY_VERSIONS`. `resources/templates/list` is `{ resourceTemplates: [] }` on both eras. A resource not found, hidden or absent, is one answer: `-32601` legacy, `-32602` modern. Not served and not advertised: `subscriptions/listen`, multi-round-trip input, the tasks extension, `x-mcp-header`, SSE responses; every `listChanged` is `false`.
+
+Over HTTP:
+
+| Request | Answer |
+|---|---|
+| `Origin` present and core's `proveSameOrigin` cannot show it is this app: not the route's public origin, not listed in `http.cors.origins` (CSRF's, the sync upgrade's and `/_x`'s rule) | `403` `X_MCP_ORIGIN_REFUSED`, **before** `resolveToken` runs. No `Origin` (a client process) passes. A page rebound to this server's address IS same-origin and passes here: `x mcp serve` refuses a non-loopback Host first (`421` `X_MCP_HOST_REFUSED`), and `x new`'s development token is honoured only with no `Origin` at all |
+| modern, `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` (`tools/call`, `resources/read`, `prompts/get`) absent or unequal to the body (`=?base64?…?=` decoded first) | `400`, `-32020` `X_MCP_HEADER_MISMATCH` |
+| `MCP-Protocol-Version` naming no served revision | `400`, `-32022` |
+| modern, a method this server does not answer | `404`, `-32601` |
+| `GET` or `DELETE` on the endpoint — `x mcp serve` and an app's own mounted `/mcp` alike | `405` `X_METHOD_NOT_ALLOWED`, `Allow: POST` — `@ultimat3/http`'s, the pipeline's own |
+| `x mcp serve`: a Host that is not `localhost`, `*.localhost` or a loopback address | `421` `X_MCP_HOST_REFUSED`, before anything else — `/_x`'s rule |
+
 ## Every action is an MCP tool
 
 ```ts
@@ -425,12 +448,12 @@ pgvector in the same Postgres. No second datastore.
 
 | Piece | Detail |
 |---|---|
-| Embeddings | declared on an entity: `embed: { field: 'body', model: 'text-embedding-3-large' }` |
-| Backfill | generated as a `job` with steps, resumable, rate-limited per tenant |
-| Index | HNSW, created by the generated migration |
+| Embeddings | an `Embedder` value, never an entity option: `remoteEmbedder({ name, dimension, baseUrl? })` speaks the `/v1/embeddings` shape (`EMBEDDINGS_API_KEY`), `hashEmbedder()` is the offline default |
+| Writing | `indexDocument({ store, embedder, document })` chunks, embeds, upserts and prunes the stale tail; a sweep over many rows is the app's `backfill()` calling it per page |
+| Index | HNSW: `postgresVectorStore({ name, dimension }).ddl()` prints the table and both indexes, pasted into a migration by the app |
 | Hybrid search | one `query` primitive fusing pgvector cosine + Postgres FTS with Reciprocal Rank Fusion; weights are config |
 | Filtering | tenant + policy filters applied **in SQL**, so vector search cannot leak across tenants; a store with no tenant bound, read inside a request acting for an org, is `X_VECTOR_UNSCOPED` — a backfill opts in with `scope: UNSCOPED` |
-| Re-embed | content-hash change triggers a job; unchanged text is never re-embedded |
+| Re-embed | `indexDocument` again: every chunk is embedded on each call, so a job decides when text changed |
 
 ## Evals as a test type
 
@@ -439,6 +462,7 @@ pgvector in the same Postgres. No second datastore.
 | Aspect | Detail |
 |---|---|
 | Shape | fixture set + assertions: exact, schema, rubric (LLM judge), or regression-vs-baseline |
+| Agents | `defineEval({ agent, cases, tools })` runs the whole loop with each tool a double; an undoubled call is `X_EVAL_TOOL_UNDOUBLED` → [Testing](Testing#evals) |
 | Determinism | temperature 0 where possible; judge model and prompt version pinned |
 | Gate | `x verify` fails on a score drop beyond the declared tolerance, not on absolute score |
 | Cost | reported per run; `x test eval --sample 20` for the fast local loop |

@@ -63,7 +63,7 @@ The framework ships no default model and no catalogue row (25.0.0): every id is 
 | Question | Answer |
 |---|---|
 | How do I make one agent call another agent? | List it in the caller's `tools`. An agent **is** an action, so it needs nothing else → [An agent is a tool of another agent](#an-agent-is-a-tool-of-another-agent) |
-| How do I cancel an agent run when the user closes the tab? | `ctx.signal`. Over HTTP that signal is the **request deadline**, not the socket — a closed tab does not abort it `As of 2026-08` → [Cancellation](#cancellation) |
+| How do I cancel an agent run when the user closes the tab? | `ctx.signal`. Over HTTP it fires on the **request deadline** or a **closed tab**, the two joined by `AbortSignal.any` `As of 2026-11` → [Cancellation](#cancellation) |
 | How do I run an agent over 2 million rows without blowing my budget? | `backfill()` for the sweep, `hive()` or `agentJob()` per page, `budget.tokensPerRun` on both, and a shared `BudgetStore` for the fleet-wide ceiling → [Millions of rows](#millions-of-rows) |
 | Do agent tool calls run in parallel? | Yes — every tool of **one turn**, concurrently and unbounded. Turns themselves are serial → [Tools of one turn run concurrently](#tools-of-one-turn-run-concurrently) |
 | How do I stop paying full price for the same long prompt every turn? | Nothing — `agent()` asks the provider to cache each turn's prefix by default. Put text every run shares in `system().stable` → [Provider prompt caching](#provider-prompt-caching) |
@@ -473,6 +473,22 @@ export async function metered<T>(runId: string, run: () => Promise<T>): Promise<
 | `unsettled` | calls that were started and never reported usage — aborted by the caller or the deadline, cut mid-stream, failed in transport. **Their bill cannot be known**: a provider may charge for what it generated before the socket closed, and usage is the last thing a response carries. They are counted, never estimated, and their budget reservation is given back |
 
 A tool that itself calls `llm()` or another `agent()` spends under the run that called it: that spend is in `usage`, `calls` and `cost` here, in `onTurn`'s `run`, and in `AgentRun.usage` — including a nested call that failed and reached the model only as a tool error.
+
+**What a piece of work cost.** One total across several calls — a job that runs two `llm()` calls and an `agent()` — is `meteredRun(fn)`: every provider call `fn` makes, however deeply nested, summed once. A throw is rethrown with that total on `meta.billed`, so the `billedOf(error)` above reads the whole job's bill, not the last call's. It meters; it refuses nothing — a ceiling is `budget`'s.
+
+```ts
+import type { Billed } from '@ultimat3/ai';
+import { meteredRun } from '@ultimat3/ai';
+
+declare function recordSpend(runId: string, billed: Billed): Promise<void>;
+declare function draftAndReview(postId: string): Promise<string>;
+
+export async function reviewJob(runId: string, postId: string): Promise<string> {
+  const { value, billed } = await meteredRun(() => draftAndReview(postId));
+  if (billed !== undefined) await recordSpend(runId, billed); // undefined: no model call started
+  return value;
+}
+```
 
 It is the same on `X_LLM_TRUNCATED`, `X_LLM_REFUSED`, `X_LLM_OUTPUT_INVALID`, `X_LLM_TOOL_ARGUMENTS_INVALID`, `X_AGENT_MAX_TURNS`, `X_AGENT_TOOL_LOOP`, `X_AGENT_DEADLINE`, `X_ABORTED`, `X_AI_BUDGET_EXCEEDED` and a transport failure on a later turn. The ledger the run ran under holds the same settled figures. `meta` is operator-only: it is never in a problem document. A throw that is not an `UltimateError` (an `onTurn` that threw a `TypeError`) has no `meta` to carry it; the ledger still does.
 

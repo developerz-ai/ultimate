@@ -9,7 +9,7 @@
 
 import type { SemanticCache } from '@ultimat3/cache';
 import { memorySemanticCache } from '@ultimat3/cache';
-import { cachedFormatter } from '@ultimat3/core';
+import { asyncContext, cachedFormatter } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { hashEmbedder } from './embeddings';
 import { AiGatewayMissingError } from './errors';
@@ -71,15 +71,50 @@ export function configureAi(input: AiRuntimeInput): void {
   caches.clear();
 }
 
-/** The installed gateway. `prompt` names the caller so the miss says what was about to run. */
+/** A tool double an agent eval declares: the model's arguments in, the tool's result out. */
+export type ToolDouble = (input: Readonly<Record<string, unknown>>) => unknown;
+
+/**
+ * An agent eval in flight (`defineEval({ agent })`): the gateway `run` / `assert` was handed, and
+ * the doubles every tool call resolves to. PRIVATE — not exported from the package — because it is
+ * a measurement seam, never a way to swap an agent's tools in production: `agent({ tools })` stays
+ * the one declaration of what an agent may call.
+ */
+export interface EvalScope {
+  readonly eval: string;
+  readonly gateway: Gateway;
+  readonly tools: Readonly<Record<string, ToolDouble>>;
+  /** Every doubled call the run made, in the order the model asked for them. */
+  readonly calls: { name: string; input: Readonly<Record<string, unknown>> }[];
+}
+
+const evalScopes = asyncContext<EvalScope>('an agent eval');
+
+/** Run `fn` as one agent eval case: its model calls reach `scope.gateway`, its tools the doubles. */
+export function withEvalScope<T>(scope: EvalScope, fn: () => T): T {
+  return evalScopes.run(scope, fn);
+}
+
+/** The agent eval in flight, or `undefined` everywhere else. */
+export function currentEvalScope(): EvalScope | undefined {
+  return evalScopes.get();
+}
+
+/**
+ * The installed gateway. `prompt` names the caller so the miss says what was about to run.
+ * Inside an agent eval it is the eval's: the run measures the gateway the test handed over, never
+ * whatever an earlier test file left installed.
+ */
 export function aiGateway(prompt: string): Gateway {
+  const scoped = evalScopes.get()?.gateway;
+  if (scoped !== undefined) return scoped;
   if (runtime === undefined) throw new AiGatewayMissingError({ prompt });
   return runtime.gateway;
 }
 
 /** The installed gateway, or `undefined` — for a caller that may run without one (`hive()`). */
 export function installedGateway(): Gateway | undefined {
-  return runtime?.gateway;
+  return evalScopes.get()?.gateway ?? runtime?.gateway;
 }
 
 export function aiEmbedder(): Embedder {

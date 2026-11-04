@@ -55,7 +55,7 @@ async function applyScript(tx: DbClient, script: string): Promise<void> {
  *
  * `SET LOCAL`, inside the migration's own transaction: it reverts at COMMIT, so a value chosen for
  * DDL never leaks onto the session the next migration runs on. The failure it produces is `55P03`,
- * typed as `X_DB_LOCK_TIMEOUT` by `driverError` with the `pg_stat_activity` read as its fix.
+ * typed as `X_DB_LOCK_TIMEOUT` by `driverError`, whose fix is `x db diagnostics --json`.
  */
 async function setLockTimeout(tx: DbClient, lockTimeoutMs: number): Promise<void> {
   if (lockTimeoutMs <= 0) return;

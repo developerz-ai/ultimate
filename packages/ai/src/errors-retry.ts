@@ -1,10 +1,10 @@
-// The retry classification for this package's codes, apart from ./errors only because one file has
-// one job and that catalogue is at its ceiling. The codes, their titles and the single
-// `registerErrorCodes` call stay in ./errors — one owner, one registration.
+// The retry classification for this package's codes, apart from ./error-codes only because one
+// file has one job. The codes, their titles and the single `registerErrorCodes` call stay in
+// ./error-codes — one owner, one registration.
 
 import type { ErrorRetry } from '@ultimat3/core';
 import { registerErrorRetry } from '@ultimat3/core';
-import type { AiErrorCode } from './errors';
+import type { AiErrorCode } from './error-codes';
 
 /**
  * May a client run this model call again? Unclassified means `terminal` — core fails closed — and

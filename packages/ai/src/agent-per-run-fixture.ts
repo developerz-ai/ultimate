@@ -1,5 +1,5 @@
 // The harness the two per-run suites share (`agent-per-run.test.ts`, `agent-run-limits.test.ts`):
-// a scripted model that serves two registered ids and records every request, two counting tools,
+// a `scriptedProvider` serving every registered id and records every request, two counting tools,
 // and one agent declared with whatever per-run picks a test hands it. Not shipped
 // (`!src/**/*-fixture.ts`).
 
@@ -8,13 +8,13 @@ import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AgentDef } from './agent';
 import { agent } from './agent';
-import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
 import { FIXTURE_MODEL } from './model-fixture';
 import { definePrompt } from './prompt';
-import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
-import { costOf } from './provider';
+import type { GenerateRequest, TokenUsage } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
+import type { ScriptedCall } from './scripted-provider';
+import { scriptedProvider } from './scripted-provider';
 import type { ProjectableAction } from './tools';
 
 // The fixture models are registered by each suite (`useFixtureModels()` in the test file), never
@@ -32,36 +32,20 @@ export const USAGE: TokenUsage = {
   cacheWriteTokens: 0,
 };
 
-export type Step = { readonly call: string; readonly input?: Record<string, unknown> };
+export type Step = ScriptedCall;
 export const ANSWER: Step = { call: 'respond', input: { title: 'Tides' } };
 export const READ: Step = { call: 'readDoc', input: { id: 'kb-1' } };
 export const PUBLISH: Step = { call: 'publish', input: {} };
 
-/** Call N answers `steps[N-1]`, the last one repeating; every request is kept, in order. */
-export function scripted(...steps: readonly Step[]): { seen: GenerateRequest[] } {
-  const seen: GenerateRequest[] = [];
-  const provider: Provider = {
-    name: 'scripted',
-    models: [FIXTURE_MODEL, OTHER_MODEL],
-    generate(request) {
-      const step = steps[Math.min(seen.length, steps.length - 1)] ?? ANSWER;
-      seen.push(request);
-      const result: GenerateResult = {
-        model: request.model ?? FIXTURE_MODEL,
-        text: '',
-        toolCalls: [{ id: `call-${seen.length}`, name: step.call, input: step.input ?? {} }],
-        stopReason: 'tool_use',
-        stopDetails: undefined,
-        usage: USAGE,
-        cost: costOf(request.model ?? FIXTURE_MODEL, USAGE),
-      };
-      return Promise.resolve(result);
-    },
-    stream: (request) => echoProvider().stream(request),
-  };
+/**
+ * Call N answers `steps[N-1]`; one call past the last is `X_AI_SCRIPT_EXHAUSTED`. Every request is
+ * kept, in order. Serves every registered model, `OTHER_MODEL` included.
+ */
+export function scripted(...steps: readonly Step[]): { seen: readonly GenerateRequest[] } {
+  const provider = scriptedProvider({ turns: steps, usage: USAGE });
   resetAiRuntime();
   configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
-  return { seen };
+  return { seen: provider.seen };
 }
 
 /** How often each tool and `vars()` ran — a refusal "before anything is loaded" leaves all at 0. */

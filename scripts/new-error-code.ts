@@ -8,7 +8,7 @@
 //
 //   bun run scripts/new-error-code.ts X_FOO_BAR --package realtime --title 'one line' \
 //     --cause 'what usually makes it happen' --fix 'x … or an edit naming a file' \
-//     [--status <n> | --off-socket] [--section '<## heading>'] [--json]
+//     [--status <n> | --off-socket] [--section '<## heading>'] [--dry-run] [--json]
 //
 // `--status`/`--off-socket`: exactly one for a tier <= 4 package, neither above it (below).
 //
@@ -22,6 +22,7 @@
 // The throw site is still the author's: this registers the code and documents it, and the class or
 // factory that raises it is the edit only the author can make.
 
+import type { KnownFlags } from './lib/args';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { NewErrorCode } from './lib/error-code-plan';
 import {
@@ -35,6 +36,8 @@ import {
   validateNewCode,
 } from './lib/error-code-plan';
 import { report } from './lib/log';
+import type { Snapshot } from './lib/planned-writes';
+import { snapshotReader, writePlanned } from './lib/planned-writes';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { tierOf } from './lib/tiers';
@@ -154,8 +157,11 @@ export async function planFiles(
   root: string,
   input: NewErrorCode,
   decision: StatusDecision = { kind: 'none' },
+  /** Filled with the text of every file the plan read: what `writePlanned` checks against. */
+  snapshot: Snapshot = new Map(),
 ): Promise<Planned> {
   validateNewCode(input);
+  const read = snapshotReader(root, snapshot);
   // In order: `error-codes.ts` where a package split its titles out of `errors.ts` (`@ultimat3/cli`
   // did at the 500-line ceiling), `<pkg>-error-codes.ts` where `error-codes.ts` is the REGISTRY
   // itself (`@ultimat3/core`), then `errors.ts`, then `<pkg>-error.ts` where the registry was split
@@ -177,10 +183,10 @@ export async function planFiles(
   let registered: { readonly errorsPath: string; readonly errorsTs: string } | undefined;
   let unrecognised: ScriptError | undefined;
   for (const errorsPath of candidates) {
-    const file = Bun.file(`${root}/${errorsPath}`);
-    if (!(await file.exists())) continue;
+    const text = await read(errorsPath);
+    if (text === undefined) continue;
     try {
-      registered = { errorsPath, errorsTs: registerIn(await file.text(), errorsPath, input) };
+      registered = { errorsPath, errorsTs: registerIn(text, errorsPath, input) };
       break;
     } catch (error) {
       if (!(error instanceof ScriptError) || error.code !== 'X_NEW_ERROR_CODE_PATTERN_UNKNOWN') {
@@ -205,24 +211,23 @@ export async function planFiles(
   else {
     // `@ultimat3/ui` keeps the registration in `error-registry.ts` and the name table in `errors.ts`.
     const companion = `packages/${input.pkg}/src/errors.ts`;
-    const file = Bun.file(`${root}/${companion}`);
-    if (companion !== errorsPath && (await file.exists())) {
-      const text = codeNameIn(await file.text(), companion, input, true);
+    const held = companion === errorsPath ? undefined : await read(companion);
+    if (held !== undefined) {
+      const text = codeNameIn(held, companion, input, true);
       if (text !== undefined) names = { path: companion, text };
     }
   }
-  const wiki = rowIn(await Bun.file(`${root}/${WIKI_PAGE}`).text(), input);
+  const wiki = rowIn((await read(WIKI_PAGE)) ?? '', input);
   const fixesPath = FIX_TABLES.get(input.pkg);
   let fixes: Planned['fixes'];
   if (fixesPath !== undefined) {
     // A table that is gone reads as one with no literal: the same coded refusal, never an ENOENT.
-    const table = Bun.file(`${root}/${fixesPath}`);
-    const current = (await table.exists()) ? await table.text() : '';
+    const current = (await read(fixesPath)) ?? '';
     fixes = { path: fixesPath, text: fixRowIn(current, fixesPath, input) };
   }
   if (decision.kind === 'none') return { errorsPath, errorsTs, wiki, names, fixes };
   const path = decision.kind === 'row' ? statusTableFor(input.pkg) : STATUS_BACKLOG;
-  const current = await Bun.file(`${root}/${path}`).text();
+  const current = (await read(path)) ?? '';
   if (decision.kind === 'pin') {
     return {
       errorsPath,
@@ -236,16 +241,26 @@ export async function planFiles(
   // The table is composed by spread, which takes the last duplicate silently: a code another
   // slice already names is refused here, by the same check that guards the slice being written.
   for (const other of STATUS_TABLE_SLICES) {
-    const file = Bun.file(`${root}/${other}`);
-    if (other !== path && (await file.exists()))
-      statusRowIn(await file.text(), other, input, decision.status);
+    const slice = other === path ? undefined : await read(other);
+    if (slice !== undefined) statusRowIn(slice, other, input, decision.status);
   }
   const text = statusRowIn(current, path, input, decision.status);
   return { errorsPath, errorsTs, wiki, names, fixes, status: { path, text } };
 }
 
+/** Every flag this script reads. Anything else is refused: a misspelt `--dry-run` used to write. */
+const KNOWN: KnownFlags = {
+  names: ['package', 'title', 'cause', 'fix', 'status', 'off-socket', 'section', 'dry-run'],
+  refuse: (unknown) =>
+    new ScriptError({
+      code: 'X_NEW_ERROR_CODE_INVALID',
+      cause: `unknown flag(s): ${unknown.map((name) => `--${name}`).join(', ')} — refused rather than ignored, so nothing was written (known: ${KNOWN.names.map((name) => `--${name}`).join(' ')} --json)`,
+      fix: "bun run scripts/new-error-code.ts X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>' [--dry-run]",
+    }),
+};
+
 export function inputFrom(argv: readonly string[]): NewErrorCode {
-  const args = parseScriptArgs(argv);
+  const args = parseScriptArgs(argv, KNOWN);
   const [code] = args.positionals;
   const pkg = flagString(args, 'package');
   const title = flagString(args, 'title');
@@ -275,23 +290,51 @@ export function inputFrom(argv: readonly string[]): NewErrorCode {
   };
 }
 
+/** Another writer moved a file between this run's read and its write: refuse, write nothing. */
+const changedUnderneath = (changed: readonly string[]): ScriptError =>
+  new ScriptError({
+    code: 'X_NEW_ERROR_CODE_INVALID',
+    cause: `${changed.join(', ')} changed after this run read it — another run (or an editor) wrote there first, and writing now would drop that edit, so nothing was written`,
+    fix: "bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'   # rerun the same command: it plans against the files as they are now",
+  });
+
+/** One planned file edit: where, and the lines it adds that the file does not already hold. */
+export interface PlannedEdit {
+  readonly path: string;
+  readonly added: readonly string[];
+}
+
+/** The lines of `after` that `before` lacks, in order — what a reader checks a dry run against. */
+const addedLines = (before: string, after: string): string[] => {
+  const had = new Set(before.split('\n'));
+  return after.split('\n').filter((line) => !had.has(line));
+};
+
+/**
+ * Plan every edit, then write them — or, under `--dry-run`, write nothing anywhere and return the
+ * plan alone. Planning reads every file before anything is written, so a refusal writes nothing.
+ */
 export async function newErrorCode(root: string, argv: readonly string[]) {
   const input = inputFrom(argv);
-  const planned = await planFiles(root, input, statusDecision(input.pkg, argv));
-  await Bun.write(`${root}/${planned.errorsPath}`, planned.errorsTs);
-  await Bun.write(`${root}/${WIKI_PAGE}`, planned.wiki);
-  for (const extra of [planned.names, planned.fixes, planned.status]) {
-    if (extra !== undefined) await Bun.write(`${root}/${extra.path}`, extra.text);
+  const dryRun = flagBool(parseScriptArgs(argv), 'dry-run');
+  const snapshot: Snapshot = new Map();
+  const planned = await planFiles(root, input, statusDecision(input.pkg, argv), snapshot);
+  const edits = [
+    { path: planned.errorsPath, text: planned.errorsTs },
+    { path: WIKI_PAGE, text: planned.wiki },
+    ...[planned.names, planned.fixes, planned.status].filter((edit) => edit !== undefined),
+  ];
+  const plan: PlannedEdit[] = [];
+  for (const edit of edits) {
+    plan.push({ path: edit.path, added: addedLines(snapshot.get(edit.path) ?? '', edit.text) });
   }
+  if (!dryRun) await writePlanned(root, edits, snapshot, changedUnderneath);
   return {
     input,
-    written: [
-      planned.errorsPath,
-      WIKI_PAGE,
-      ...(planned.names === undefined ? [] : [planned.names.path]),
-      ...(planned.fixes === undefined ? [] : [planned.fixes.path]),
-      ...(planned.status === undefined ? [] : [planned.status.path]),
-    ],
+    dryRun,
+    planned: plan,
+    written: dryRun ? [] : plan.map((edit) => edit.path),
+    errorsPath: planned.errorsPath,
     fixesPath: planned.fixes?.path,
     statusPath: planned.status?.path,
   };
@@ -301,7 +344,8 @@ if (import.meta.main) {
   const argv = Bun.argv.slice(2);
   const json = parseScriptArgs(argv).json;
   try {
-    const { input, written, fixesPath, statusPath } = await newErrorCode(repoRoot(), argv);
+    const result = await newErrorCode(repoRoot(), argv);
+    const { input, fixesPath, statusPath } = result;
     const also = [
       fixesPath === undefined ? '' : `, its fix added to ${fixesPath}`,
       statusPath === undefined ? '' : `, its HTTP status decided in ${statusPath}`,
@@ -310,8 +354,15 @@ if (import.meta.main) {
       {
         ok: true,
         script: SCRIPT,
-        summary: `${input.code} registered in ${written[0]} and documented in ${WIKI_PAGE}${also} — the throw site is yours`,
-        data: { code: input.code, written },
+        summary: result.dryRun
+          ? `dry run, nothing written: ${input.code} would be registered in ${result.errorsPath} and documented in ${WIKI_PAGE}${also}`
+          : `${input.code} registered in ${result.errorsPath} and documented in ${WIKI_PAGE}${also} — the throw site is yours`,
+        data: {
+          code: input.code,
+          dryRun: result.dryRun,
+          written: result.written,
+          planned: result.planned,
+        },
       },
       json,
     );

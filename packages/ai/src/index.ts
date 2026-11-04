@@ -93,12 +93,11 @@ export {
   normalizeVector,
   wordTokens,
 } from './embeddings';
-export type { AiErrorCode } from './errors';
+export type { AiErrorCode } from './error-codes';
+export { AI_ERROR_CODES, AI_ERROR_TITLES } from './error-codes';
 export {
   AgentMaxTurnsError,
   AgentToolUnexposedError,
-  AI_ERROR_CODES,
-  AI_ERROR_TITLES,
   AiBudgetExceededError,
   AiGatewayMissingError,
   AiKeyMissingError,
@@ -133,14 +132,19 @@ export {
   EvalMissingError,
   EvalRecordingError,
   EvalThresholdError,
+  EvalToolUndoubledError,
 } from './eval-errors';
 export type {
+  AgentEvalCase,
+  AgentEvalInput,
   CaseResult,
   DefineEvalInput,
   Eval,
   EvalCase,
   EvalFact,
   EvalResult,
+  EvaluatedAgent,
+  PromptEvalInput,
 } from './evals';
 export {
   baselineFrom,
@@ -282,7 +286,8 @@ export {
 export { assertNoSecrets } from './redaction';
 export type { RemoteEmbedder, RemoteEmbedderInput } from './remote-embedder';
 export { remoteEmbedder } from './remote-embedder';
-export type { AiRuntimeInput, Redactor } from './runtime';
+export { meteredRun } from './run-meter';
+export type { AiRuntimeInput, Redactor, ToolDouble } from './runtime';
 export {
   aiEmbedder,
   aiGateway,
@@ -291,8 +296,9 @@ export {
   semanticCacheFor,
 } from './runtime';
 export type { Sampling } from './sampling';
-export type { Scorer } from './scorers';
+export type { EvalRun, EvalToolCall, Scorer, ScorerInput } from './scorers';
 export {
+  calledTool,
   contains,
   exact,
   jsonSchemaValid,
@@ -300,6 +306,13 @@ export {
   llmJudge,
   numericTolerance,
 } from './scorers';
+export type {
+  ScriptedCall,
+  ScriptedProvider,
+  ScriptedProviderInput,
+  ScriptedTurn,
+} from './scripted-provider';
+export { AiScriptExhaustedError, scriptedProvider } from './scripted-provider';
 export type {
   AgentTool,
   JsonSchema,

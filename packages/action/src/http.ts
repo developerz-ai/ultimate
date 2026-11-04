@@ -164,7 +164,7 @@ function projectRoute(
     // called over MCP, over the typed client or directly answered `X_INPUT_INVALID`. One action,
     // one input schema, two codes, decided by the surface the call arrived through.
     //
-    // `invoke`'s own `validateInput` is the one parser now, and nothing is lost by dropping this:
+    // `invoke`'s own `parseActionInput` is the one parser now, and nothing is lost by dropping this:
     // `bodyRaw()` still parses by content-type, caches, and enforces the size cap — the body stage
     // only ever added SCHEMA validation on top. `X_BODY_INVALID` keeps its job, which is a body
     // failing a plain `route.ts`'s own schema, where no primitive owns the input.

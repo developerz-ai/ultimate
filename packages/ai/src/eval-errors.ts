@@ -1,6 +1,6 @@
-// The five X_EVAL_* codes, apart from ./errors only because one file has one job and the catalogue
+// The six X_EVAL_* codes, apart from ./errors only because one file has one job and the catalogue
 // outgrew its ceiling. The codes themselves, their titles and the single `registerErrorCodes` call
-// stay in ./errors — one owner, one registration, one place a duplicate can surface.
+// stay in ./error-codes — one owner, one registration, one place a duplicate can surface.
 
 import { UltimateError } from '@ultimat3/core';
 
@@ -73,11 +73,37 @@ export class EvalBaselineInvalidError extends UltimateError {
  * money and answers users, so the gate fails on it exactly like an untyped module.
  */
 export class EvalMissingError extends UltimateError {
-  constructor(input: { prompt: string; id: string }) {
+  /** `agent`: the agent the prompt drives, so the fix names the arm that runs its tools and turns. */
+  constructor(input: { prompt: string; id: string; agent?: string }) {
+    const arm =
+      input.agent === undefined
+        ? 'prompt, cases, scorers'
+        : `agent: ${input.agent}, cases, tools, scorers`;
     super({
       code: 'X_EVAL_MISSING',
-      cause: `prompt "${input.prompt}" has no eval`,
-      fix: `defineEval({ name: '${input.id}', prompt, cases, scorers, tolerance, baseline }) beside the prompt, then ULTIMATE_EVAL_RECORD=1 x test eval`,
+      cause:
+        input.agent === undefined
+          ? `prompt "${input.prompt}" has no eval`
+          : `prompt "${input.prompt}" has no eval, and agent ${input.agent} runs on it`,
+      fix: `defineEval({ name: '${input.id}', ${arm}, tolerance, baseline }) beside the prompt, then ULTIMATE_EVAL_RECORD=1 x test eval`,
+    });
+  }
+}
+
+/**
+ * An agent eval's model called a tool the eval declares no double for. An eval NEVER runs a real
+ * tool — a case that reached one in CI would write — so the run ends here rather than reading the
+ * call as a tool failure the model could route around, or scoring it 0 and letting a recording
+ * accept it. Thrown out of `run` / `assert`: the eval is misdeclared, not the agent regressed.
+ */
+export class EvalToolUndoubledError extends UltimateError {
+  constructor(input: { eval: string; tool: string; doubled: readonly string[] }) {
+    const doubled = input.doubled.length === 0 ? 'none' : input.doubled.join(', ');
+    super({
+      code: 'X_EVAL_TOOL_UNDOUBLED',
+      cause: `agent eval "${input.eval}" ran a case whose model called ${input.tool}, which has no double (doubled: ${doubled}); an eval never runs a real tool`,
+      fix: `tools: { ${input.tool}: (input) => ({ /* what the tool answers */ }) }   # on defineEval({ name: '${input.eval}' })`,
+      meta: { eval: input.eval, tool: input.tool },
     });
   }
 }

@@ -14,7 +14,7 @@ import { actionName, invoke } from './invoke';
 import { buildOpenApi } from './openapi';
 import { listActions } from './registry';
 import { describeSampleGap, sampleGaps, sampleInput } from './sample-input';
-import { validateInput } from './validate';
+import { parseActionInput } from './validate';
 
 export interface ContractTest {
   readonly name: string;
@@ -55,7 +55,7 @@ export function contractTestsFor(
       // refused 401 without the schema ever seeing the garbage. The claim is about `input:`.
       run: async () => {
         await expectThrow(
-          () => validateInput(target.input, garbage, name),
+          () => parseActionInput(target.input, garbage, name),
           'X_INPUT_INVALID',
           `${name} accepted the value this assertion sent as garbage`,
           `tighten \`input:\` in the ${name} definition`,
@@ -188,7 +188,7 @@ async function expectDenied(
     if (error instanceof ActionDeniedError) return;
     // `invoke` runs the policy's actor half → parse input → row → policy → handle → parse
     // output, and every stage lands here identically. Only `X_INPUT_INVALID` is attributable: it
-    // is what `validateInput` raises before `guardAction()` is reached (for a policy whose actor half
+    // is what `parseActionInput` raises before `guardAction()` is reached (for a policy whose actor half
     // could not decide), and `input:` is the knob that answers it. Any other
     // code — `X_TENANCY_UNSCOPED` from a `row:` loader, `X_DB_CONFLICT` from a handler,
     // `X_OUTPUT_INVALID` from the parse after it — keeps its own code and its own fix rather

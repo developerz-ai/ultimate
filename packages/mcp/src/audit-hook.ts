@@ -11,7 +11,13 @@ import type { McpAuditEntry, McpResourceAuditEntry } from './audit';
 import { auditResourceRead, auditToolCall } from './audit';
 
 /** Why the transport refused before a caller existed. The 429 is `throttled` whichever came first. */
-export type McpAuthRefusal = 'missing-token' | 'rejected-token' | 'not-an-agent' | 'throttled';
+/** `origin-refused`: a cross-origin `Origin`, refused 403 before the token is read. */
+export type McpAuthRefusal =
+  | 'missing-token'
+  | 'rejected-token'
+  | 'not-an-agent'
+  | 'throttled'
+  | 'origin-refused';
 
 /** One decision. `at` is the auditor's clock, never `new Date()`; the token never travels. */
 export type McpAuditEvent =

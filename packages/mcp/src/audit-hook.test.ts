@@ -137,7 +137,7 @@ describe('onAudit on the route: the refusals before any caller exists', () => {
     const events: McpAuditEvent[] = [];
     const route = routeWith(events);
     expect((await route.handle(ping(null), { address: '203.0.113.1' })).status).toBe(401);
-    expect((await route.handle(ping('bad', 'https://x.example'))).status).toBe(401);
+    expect((await route.handle(ping('bad', 'http://local'))).status).toBe(401);
     expect((await route.handle(ping('human'))).status).toBe(403);
     expect((await route.handle(ping('agent'))).status).toBe(200);
     expect(
@@ -148,9 +148,25 @@ describe('onAudit on the route: the refusals before any caller exists', () => {
       ['not-an-agent', 403],
     ]);
     expect(events[0]).toMatchObject({ facts: { address: '203.0.113.1', path: '/mcp' } });
-    expect(events[1]).toMatchObject({ facts: { origin: 'https://x.example' } });
+    expect(events[1]).toMatchObject({ facts: { origin: 'http://local' } });
     // The token itself never travels: a hook that persists events must not hold credentials.
     expect(JSON.stringify(events)).not.toContain('bad');
+  });
+
+  test('a cross-origin page is an origin-refused decision at 403, before any token', async () => {
+    const events: McpAuditEvent[] = [];
+    const route = routeWith(events);
+    const response = await route.handle(ping('agent', 'https://evil.example'), {
+      address: '203.0.113.3',
+    });
+    expect(response.status).toBe(403);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      kind: 'auth-refused',
+      reason: 'origin-refused',
+      status: 403,
+      facts: { origin: 'https://evil.example', address: '203.0.113.3', path: '/mcp' },
+    });
   });
 
   test('an address past its failure allowance is a throttled refusal at 429', async () => {

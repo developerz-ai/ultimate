@@ -188,3 +188,48 @@ The inherited-key defect in `validate-args.ts` (`constructor`, `toString`, `hasO
   exploitable through Postgres (a syntax error either way); the point is that this layer must not
   be the thing that waves it through. `@ultimat3/admin`'s `/_x` panel failed CLOSED here where this
   failed open, which is how it was found — a second, differently-behaved copy of one rule.
+
+## Moved out 2026-11-03 (plan 101 wave 4c, the `CLAUDE.md` ceiling)
+
+- **A thrown value is a framework error only when its `code` matches core's `FRAMEWORK_CODE`,
+  never `code.startsWith('X_')`** (`As of 2026-09`). `asFrameworkError` substitutes
+  `x errors explain ${code}` when a coded throw carries no `fix:`, so the code lands in a COMMAND
+  an agent is told to run — and a prefix test admits `X_$(id)`. A value that is not a code spelled
+  the one way takes the `-32603` branch, which leaks nothing of the throw. One pattern, core's,
+  because `@ultimat3/core`'s `client-wire.ts` already had to answer the same question for a
+  problem document off the wire.
+- **A key's membership of a declared schema is `Object.hasOwn(properties, key)`, never
+  `properties[key] === undefined`.** The arguments of a `tools/call` are NAMED by the caller, and
+  `Object.prototype` supplies a value for `constructor`, `toString`, `hasOwnProperty` and
+  `__proto__` on every plain object — so the index read answered "declared" for four names no
+  schema declares, and `validate-args.ts` accepted them past an `additionalProperties: false` that
+  forbids them and then dropped them. Its twin: a validated key
+  lands on the result through `Object.defineProperty`, because `out[key] = v` for `__proto__` runs
+  the setter on `Object.prototype` and re-prototypes the record instead of adding a key.
+- **Every provider call is inside a `try`.** A resource's `read` is an INJECTED THUNK —
+  `frameworkResources` wires it to a file read, and `Bun.file(...).text()` on a missing
+  `x.manifest.json` throws ENOENT. Outside the try it escaped `handle()`: `serveStdio` REJECTED with
+  the raw error, zero frames written, the request unanswered and every later request on that buffer
+  never processed. Same shape `toolsCall` uses — a framework error keeps its code/cause/fix, anything
+  else is `-32603` with no internals.
+- **`format` is NOT in the wire subset**, and `wire.ts` types it `never` so re-adding it does not
+  compile. It names a rule whose meaning lives in `@ultimat3/schema` (`uuid`, `email`,
+  `iana-time-zone`), and this package cannot check it without a second definition of each that can
+  only drift from the action's own parse. `tools/list` published it and `validate-args.ts` ignored
+  it, so a tool declaring `t.uuid` accepted `"not-a-uuid"` with `ok: true`. `pattern` is the
+  opposite case and is kept: the rule travels with the schema. The narrowing is `@ultimat3/schema`'s
+  `toWireSchema` (tier 0, so OpenAPI-adjacent readers reach the same document) and the
+  type is its `WireJsonSchema`, which `wire.ts` names `JsonSchema`; `validate-args-subset.test.ts`
+  asserts every published keyword is one this server enforces, at any depth.
+- `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr. It also **caps one
+  message** at `DEFAULT_STDIO_LINE_LIMIT` (1 MiB, the same figure `transport-http.ts` enforces with
+  `readWithinLimit`) — the peer launched this process and is trusted, a bug in it is not, and a
+  stream with no newline grew the buffer until the process died. Over-long is one `-32600` frame
+  carrying a `fix`, then the rest of that line is DISCARDED to the next newline: what follows an
+  over-long message on the same line is its tail, never a message of its own.
+
+### 2026-11: dual-era (MCP 2026-07-28)
+
+Read from the spec on 2026-11-02: the current revision `2026-07-28` drops `initialize`; version, client info and capabilities ride in each request's `_meta`, `server/discover` is mandatory, and the compatibility matrix says a modern client on a legacy server **fails** — only a dual-era client falls back. Probes through `route.handle` that day: `initialize` offering `2025-11-25` or `2025-03-26` answered `2025-06-18` both times; `resources/templates/list` was `-32601` while `resources` was advertised; `MCP-Protocol-Version: garbage` was a 200; `Origin: https://evil.example` with a token was a 200 (the spec requires 403); `x mcp serve` answered GET and DELETE `404` (the spec says 405).
+
+Decisions: the era is per request, never per connection (no session state exists to hold one). A `_meta` version naming a LEGACY revision is served as that revision rather than refused — `-32022`'s `supported` lists the legacy revisions, so refusing them in `_meta` would loop a client retrying from that list. `Origin` is core's `proveSameOrigin` (honouring `http.cors.origins`), never a list of this package's own; an audit reproduced that a Host-derived self origin admits a DNS-rebound page, so `x mcp serve` checks the Host as `/_x` does (421). `MCP_PROTOCOL_VERSION` was deleted rather than repointed, because a constant that silently changed era would mislead every caller that compiled. No `allowedOrigins` option: `POST /mcp` sends no CORS headers (`cli/src/app-mcp.ts`), so a browser client cannot read an answer today, and non-browser clients send no `Origin`; the option arrives with the first browser client. `ttlMs: 0` / `cacheScope: 'private'` because every list is filtered per caller; a longer TTL is a later knob, with evidence. Not shipped and not advertised: `subscriptions/listen`, multi-round-trip input, the tasks extension, `x-mcp-header`, SSE responses — long work stays `.job()` plus a query.

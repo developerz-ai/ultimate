@@ -314,10 +314,22 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
 }
 
 let ambient: DbClient | undefined;
+// Separate from `ambient`, which the lazy default also fills: a unit test that sent one statement
+// through `db()` must not flip `@ultimat3/entity`'s `testDriver()` onto a pool nobody asked for.
+let installed = false;
 
 /** Test/dev seam. `setDbClient(undefined)` restores lazy construction from `DATABASE_URL`. */
 export function setDbClient(client: DbClient | undefined): void {
   ambient = client;
+  installed = client !== undefined;
+}
+
+/**
+ * Whether `setDbClient` installed a client that is still in place. Asking never builds the lazy
+ * default — `testDriver()` asks on every repository call of every unit test.
+ */
+export function dbClientInstalled(): boolean {
+  return installed;
 }
 
 /**

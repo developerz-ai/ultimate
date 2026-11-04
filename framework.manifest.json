@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "422f3d95346b6b9e9715204786e2a98d8df05cfb82cbfbcb0d63c303b88f6a6b",
+  "buildId": "e809114619c7fc9319c94842be6bd1809784b9efb88d81d19f90136c8f4d2f66",
   "tiers": {
     "0": [
       "core",
@@ -377,37 +377,37 @@
     {
       "code": "X_AGENT_CONTEXT_EXHAUSTED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AGENT_DEADLINE",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AGENT_MAX_TURNS",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AGENT_TOOL_LOOP",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AGENT_TOOL_UNDECLARED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AGENT_TOOL_UNEXPOSED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AGENT_TRANSCRIPT_INVALID",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AGENTS_MD_MISSING",
@@ -432,62 +432,67 @@
     {
       "code": "X_AI_BUDGET_EXCEEDED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_CONTENT_UNSUPPORTED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_EMBEDDER_INVALID",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_GATEWAY_MISSING",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_KEY_MISSING",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_MODEL_UNKNOWN",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_MODEL_UNRESOLVED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_PROMPT_SECRET",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_PROMPT_VERSION",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_PROVIDER_UNAVAILABLE",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_PROVIDER_UNEXPECTED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_AI_REQUEST_INVALID",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
+    },
+    {
+      "code": "X_AI_SCRIPT_EXHAUSTED",
+      "owner": "ai",
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_ALLOCATION_INVALID",
@@ -1747,27 +1752,32 @@
     {
       "code": "X_EVAL_BASELINE_INVALID",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_EVAL_BASELINE_MISSING",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_EVAL_MISSING",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_EVAL_RECORDING",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_EVAL_THRESHOLD",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
+    },
+    {
+      "code": "X_EVAL_TOOL_UNDOUBLED",
+      "owner": "ai",
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_EXPORT_PART_TOO_LARGE",
@@ -2052,7 +2062,7 @@
     {
       "code": "X_HIVE_EMPTY",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_ID_INVALID",
@@ -2427,27 +2437,27 @@
     {
       "code": "X_LLM_OUTPUT_INVALID",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_LLM_REFUSED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_LLM_STREAM_INVALID",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_LLM_TOOL_ARGUMENTS_INVALID",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_LLM_TRUNCATED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_LLMS_TXT_DRIFT",
@@ -2655,6 +2665,16 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_HEADER_MISMATCH",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_HOST_REFUSED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_IDEMPOTENCY_KEY_SHADOWED",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -2675,12 +2695,22 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_ORIGIN_REFUSED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_PATH_DUPLICATE",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
     {
       "code": "X_MCP_PROTOCOL",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_PROTOCOL_UNSUPPORTED",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
@@ -4720,6 +4750,11 @@
       "at": "scripts/test-discovery.ts"
     },
     {
+      "code": "X_TEST_DRIVER_CLIENT_CHANGED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_TEST_EVAL_THRESHOLD",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -5167,17 +5202,17 @@
     {
       "code": "X_VECTOR_DIM_MISMATCH",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_VECTOR_SCOPE_WIDENED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_VECTOR_UNSCOPED",
       "owner": "ai",
-      "at": "packages/ai/src/errors.ts"
+      "at": "packages/ai/src/error-codes.ts"
     },
     {
       "code": "X_VERIFY_FAILED",

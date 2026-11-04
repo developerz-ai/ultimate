@@ -60,18 +60,27 @@ export function inProcessTool<TInput extends StandardSchemaV1>(
     inputJsonSchema: toWireSchema(def.input),
     inProcess: true,
     ...(def.discloseErrors === undefined ? {} : { discloseErrors: def.discloseErrors }),
+    parseInput: (raw) => parseToolInput(def, raw),
     async run({ input, actor }) {
-      const parsed = await validateAsync(def.input, input);
-      if (parsed.issues !== undefined) {
-        // The line only: the structured issues are `@ultimat3/action`'s own shape, for a form.
-        throw new InputInvalidError(
-          def.name,
-          formatIssues(parsed.issues).join('; '),
-          undefined,
-          'tool',
-        );
-      }
-      return def.execute({ input: parsed.value, actor });
+      return def.execute({ input: await parseToolInput(def, input), actor });
     },
   };
+}
+
+/** The input parse `run` makes, alone — also what an agent eval holds this tool's double to. */
+async function parseToolInput<TInput extends StandardSchemaV1>(
+  def: InProcessToolDef<TInput>,
+  raw: unknown,
+): Promise<InferOutput<TInput>> {
+  const parsed = await validateAsync(def.input, raw);
+  if (parsed.issues !== undefined) {
+    // The line only: the structured issues are `@ultimat3/action`'s own shape, for a form.
+    throw new InputInvalidError(
+      def.name,
+      formatIssues(parsed.issues).join('; '),
+      undefined,
+      'tool',
+    );
+  }
+  return parsed.value;
 }

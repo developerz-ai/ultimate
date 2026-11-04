@@ -1,7 +1,7 @@
 // The two failures of an answer that ARRIVED and cannot be used: cut off at the ceiling, or a tool
 // call whose arguments do not parse. Apart from ./errors only because one file has one job and
 // that catalogue is at its line ceiling — the split `hive-errors.ts` and `agent-errors.ts` made.
-// The codes, their titles and the single `registerErrorCodes` call stay in ./errors.
+// The codes, their titles and the single `registerErrorCodes` call stay in ./error-codes.
 
 import { UltimateError } from '@ultimat3/core';
 import type { Billed } from './billed';

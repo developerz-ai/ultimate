@@ -86,7 +86,35 @@ const refuseValue = (argv: readonly string[], name: string, value: string): neve
   );
 };
 
-export function parseScriptArgs(argv: readonly string[]): ScriptArgs {
+/**
+ * The flags a script declares, and its own refusal for any other. One rule for every script: a flag
+ * nobody reads is refused, never ignored — a misspelt `--dry-run` that is ignored runs for real.
+ */
+export interface KnownFlags {
+  /** Every flag the script reads. `--json` is always known: every script takes it. */
+  readonly names: readonly string[];
+  /** The script's own coded refusal, handed the unknown names, sorted: thrown, or `report`ed. */
+  readonly refuse: (
+    unknown: readonly string[],
+    flags: ReadonlyMap<string, string | boolean>,
+  ) => Error;
+}
+
+/** The flag names in `flags` that `known` does not declare, sorted. */
+export const unknownFlags = (flags: Iterable<string>, known: readonly string[]): string[] =>
+  [...flags].filter((name) => name !== 'json' && !known.includes(name)).sort();
+
+/** Throws the script's refusal when any flag is undeclared; the one copy of the rule. */
+export function refuseUnknownFlags(
+  flags: ReadonlyMap<string, string | boolean>,
+  known: KnownFlags,
+): void {
+  const unknown = unknownFlags(flags.keys(), known.names);
+  if (unknown.length > 0) throw known.refuse(unknown, flags);
+}
+
+/** Parse `argv`; with `known`, an undeclared flag is the script's refusal before anything runs. */
+export function parseScriptArgs(argv: readonly string[], known?: KnownFlags): ScriptArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | boolean>();
   let index = 0;
@@ -114,6 +142,7 @@ export function parseScriptArgs(argv: readonly string[]): ScriptArgs {
   // `--json` is boolean in every script, so it is refused here rather than per caller.
   const json = flags.get('json');
   if (typeof json === 'string') refuseValue(argv, 'json', json);
+  if (known !== undefined) refuseUnknownFlags(flags, known);
   return { positionals, flags, json: json === true, argv };
 }
 

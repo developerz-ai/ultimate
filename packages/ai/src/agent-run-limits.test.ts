@@ -31,7 +31,7 @@ const usd = (minor: number) => ({ minor, currency: 'USD' });
 
 describe('limits() lowers the declared ceilings for one run', () => {
   test('a lower maxTurns stops the run there', async () => {
-    const { seen } = scripted(READ);
+    const { seen } = scripted(READ, READ);
     const write = declare({ maxTurns: 6, limits: () => ({ maxTurns: 2 }) });
 
     await expect(write(FREE, { ctx: ctx() })).rejects.toMatchObject({
@@ -41,7 +41,7 @@ describe('limits() lowers the declared ceilings for one run', () => {
   });
 
   test('it reads the run: one tier is bounded, another keeps the declaration', async () => {
-    const { seen } = scripted(ANSWER);
+    const { seen } = scripted(ANSWER, ANSWER);
     const write = declare({
       maxTokens: 2_000,
       limits: ({ input }) => (input.tier === 'free' ? { maxTokens: 500 } : {}),

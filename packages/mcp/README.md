@@ -371,6 +371,24 @@ an over-long line with the same code. A JSON-RPC batch (an array) is refused `-3
 this surface carries its instruction, `As of 2026-09-07` — the 413 and the batch were the two that
 did not.
 
+**Dual-era, `As of 2026-11`** (`protocol-era.ts`). A request whose
+`params._meta["io.modelcontextprotocol/protocolVersion"]` is in `MCP_MODERN_VERSIONS` (`2026-07-28`)
+is served statelessly: `server/discover`, no `initialize` or `ping`, every result stamped
+`resultType: 'complete'` + `_meta` `serverInfo`, lists and reads `ttlMs: 0`, `cacheScope: 'private'`.
+No `_meta` version, or one in `MCP_LEGACY_VERSIONS` (`2025-11-25`, `2025-06-18`, `2025-03-26`), is
+today's legacy dispatch; `initialize` echoes an offered legacy revision, else `2025-11-25`. Any
+other version is `-32022` `X_MCP_PROTOCOL_UNSUPPORTED` with `data: { supported, requested }`.
+There is no `MCP_PROTOCOL_VERSION`: name the era, `MCP_MODERN_VERSIONS[0]` or `MCP_LEGACY_VERSIONS`.
+
+| HTTP refusal | Status | Code |
+|---|---|---|
+| `Origin` present and core's `proveSameOrigin` cannot show it is this app — not `seen.origin` (else the request URL's), not `seen.listed` (`http.cors.origins` on a mounted app) — before `resolveToken`. A DNS-rebound name passes it (Host and Origin agree) | 403 | `X_MCP_ORIGIN_REFUSED` |
+| a Host the host does not serve — `x mcp serve` checks loopback and renders `mcpHostRefused(endpoint)` before `handle` | 421 | `X_MCP_HOST_REFUSED` |
+| modern request whose `MCP-Protocol-Version`, `Mcp-Method` or `Mcp-Name` is absent or unequal to the body (base64 sentinel decoded) | 400, `-32020` | `X_MCP_HEADER_MISMATCH` |
+| a version (header or `_meta`) this server does not serve | 400, `-32022` | `X_MCP_PROTOCOL_UNSUPPORTED` |
+| a modern request naming a method not served | 404, `-32601` | — |
+| `GET`/`DELETE` on the endpoint (a legacy stream or session) | 405, `Allow: POST` | `@ultimat3/http`'s `X_METHOD_NOT_ALLOWED` — the pipeline's on a mounted app, rendered the same by `x mcp serve` |
+
 | Knob | Where | Default |
 |---|---|---|
 | the body cap | `mcpHttpRoute({ bodyLimitBytes })` · `defineAppMcp({ bodyLimitBytes })` | `DEFAULT_MCP_BODY_LIMIT_BYTES`, 1 MiB |
@@ -420,7 +438,7 @@ handed on. What an action or query DID still reaches core's `setAuditSink` (`sur
 |---|---|---|
 | `tool-call` | every `tools/call` outcome (`ok`, `hidden`, `scope-denied`, `policy-denied`, `invalid-args`, `unconfirmed`, `failed`) | `tool`, `outcome`, `caller`, `scope?`, `code?` |
 | `resource-read` | every `resources/read` outcome | `uri`, `outcome`, `caller`, `scope?`, `code?` |
-| `auth-refused` | a missing or rejected token, a non-agent actor, an address past its failure allowance — also logged `mcp.auth.<reason>` at `warn` | `reason`, `status` (401/403/429), `facts` |
+| `auth-refused` | a missing or rejected token, a non-agent actor, an address past its failure allowance, a cross-origin `Origin` (`origin-refused`, before the token is read) — also logged `mcp.auth.<reason>` at `warn` | `reason`, `status` (401/403/429), `facts` |
 
 Every event has `at` from the server's `clock`. Never the token, never the arguments. The hook is
 not awaited and cannot change an answer: one that throws or rejects is logged once as
@@ -561,6 +579,10 @@ is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot.
 | `X_MCP_SURFACE_OVER_BUDGET` | `assertMcpSurfaceBudget` measured a surface over its declared ceiling |
 | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an idempotent action's input declares `idempotencyKey`, the reserved retry-key argument |
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
+| `X_MCP_PROTOCOL_UNSUPPORTED` | the request names a protocol version this server does not serve (`-32022`, 400) |
+| `X_MCP_HEADER_MISMATCH` | a modern HTTP request's mirrored header is absent or disagrees with the body (`-32020`, 400) |
+| `X_MCP_ORIGIN_REFUSED` | `Origin` that `proveSameOrigin` cannot show is this app's (nor listed in `http.cors.origins`), refused 403 before the token is read |
+| `X_MCP_HOST_REFUSED` | `x mcp serve` was reached on a Host that is not loopback — a DNS-rebound name — 421 |
 | `X_MCP_QUERY_REJECTED` | `db.query` given anything but one read-only statement |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a production or otherwise non-branch database |
 | `X_MCP_RESOURCE_DUPLICATE` | two resources claim one `ultimate://` URI — refused at registration, as a duplicate tool name is |
@@ -596,6 +618,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpConfirmationRejectedError` | `X_MCP_CONFIRMATION_REJECTED` | `src/confirmation-errors.ts` |
 | `McpConfirmationToolUnknownError` | `X_MCP_CONFIRMATION_TOOL_UNKNOWN` | `src/confirmation-errors.ts` |
 | `McpConfirmationUnknownError` | `X_MCP_CONFIRMATION_UNKNOWN` | `src/confirmation-errors.ts` |
+| `McpHeaderMismatchError` | `X_MCP_HEADER_MISMATCH` | `src/errors-transport.ts` |
+| `McpHostRefusedError` | `X_MCP_HOST_REFUSED` | `src/errors-transport.ts` |
+| `McpOriginRefusedError` | `X_MCP_ORIGIN_REFUSED` | `src/errors-transport.ts` |
+| `McpProtocolUnsupportedError` | `X_MCP_PROTOCOL_UNSUPPORTED` | `src/errors-transport.ts` |
 | `McpGroupConflictError` | `X_MCP_GROUP_CONFLICT` | `src/meta-errors.ts` |
 | `McpGroupUnknownError` | `X_MCP_GROUP_UNKNOWN` | `src/meta-errors.ts` |
 | `McpListParamsInvalidError` | `X_MCP_LIST_PARAMS_INVALID` | `src/meta-errors.ts` |

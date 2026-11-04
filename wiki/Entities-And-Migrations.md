@@ -309,7 +309,7 @@ export const db = database(entities, { driver });
 | Raw `sql` | Where |
 |---|---|
 | belongs | a `query`'s source, built with `from()`; a migration |
-| is the exception | a `repo.ts`, for what the handle cannot say: a join, an aggregate, a CTE, a window |
+| is the exception | a `repo.ts`, for what the handle cannot say: a join, an aggregate, a CTE, a window. Its unit test runs [the migrated-database recipe](Testing#database-state-and-what-a-run-leaves-behind): the handle's `testDriver()` follows the installed client, so the handle's writes and the join meet in one database |
 | is refused | a `repo.ts`, for `select *` / `insert` / `update` / `delete` on one table, and `select * … where id = ? for update` (`db.<table>.lock(id, fn)`) |
 
 | Enforced by | What fails |

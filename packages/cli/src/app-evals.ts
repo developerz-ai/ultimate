@@ -7,6 +7,7 @@
 
 import {
   baselinePath,
+  describeAgents,
   describeEvals,
   EvalBaselineMissingError,
   EvalMissingError,
@@ -36,10 +37,17 @@ export async function checkEvalCoverage(root: string): Promise<readonly Finding[
   // Loading is idempotent per process: `x verify` loads the app once and every later step,
   // including the manifest, reads the same registries.
   await loadApp(root);
-  return promptsWithoutEvals().map((prompt) => ({
-    ...findingFrom(new EvalMissingError({ prompt: prompt.ref, id: prompt.id })),
-    at: prompt.ref,
-  }));
+  // An agent's prompt is measured by the agent arm — its tools and turns — so the fix names it.
+  const agents = new Map(describeAgents().map((fact) => [fact.prompt, fact.name]));
+  return promptsWithoutEvals().map((prompt) => {
+    const agent = agents.get(prompt.ref);
+    const missing = new EvalMissingError({
+      prompt: prompt.ref,
+      id: prompt.id,
+      ...(agent === undefined ? {} : { agent }),
+    });
+    return { ...findingFrom(missing), at: prompt.ref };
+  });
 }
 
 /**

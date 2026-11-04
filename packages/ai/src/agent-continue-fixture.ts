@@ -1,4 +1,4 @@
-// The harness the two `agent-continue*.test.ts` suites share: a scripted model, one declared agent
+// The harness the two `agent-continue*.test.ts` suites share: a `scriptedProvider`, one declared agent
 // with one counting tool. Not shipped (`!src/**/*-fixture.ts`).
 
 import { ctxOf, userActor } from '@ultimat3/core';
@@ -6,13 +6,13 @@ import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AgentTurn } from './agent';
 import { agent } from './agent';
-import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
 import { FIXTURE_MODEL } from './model-fixture';
 import { definePrompt } from './prompt';
-import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
-import { costOf } from './provider';
+import type { GenerateRequest, TokenUsage } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
+import type { ScriptedTurn } from './scripted-provider';
+import { scriptedProvider } from './scripted-provider';
 import type { ProjectableAction } from './tools';
 
 // The fixture models are registered by each suite (`useFixtureModels()` in the test file), never
@@ -25,37 +25,14 @@ export const USAGE: TokenUsage = {
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
 };
-export type Step = {
-  readonly call: string;
-  readonly input?: Record<string, unknown>;
-  readonly stop?: 'max_tokens';
-};
+export type Step = ScriptedTurn;
 
-/** Call N answers `steps[N-1]`, the last one repeating. */
-export function model(...steps: readonly Step[]): { seen: GenerateRequest[] } {
-  const seen: GenerateRequest[] = [];
-  const provider: Provider = {
-    name: 'scripted',
-    models: [FIXTURE_MODEL],
-    generate(request) {
-      const step = steps[Math.min(seen.length, steps.length - 1)] ?? { call: 'respond' };
-      seen.push(request);
-      const result: GenerateResult = {
-        model: FIXTURE_MODEL,
-        text: '',
-        toolCalls: [{ id: `call-${seen.length}`, name: step.call, input: step.input ?? {} }],
-        stopReason: step.stop ?? 'tool_use',
-        stopDetails: undefined,
-        usage: USAGE,
-        cost: costOf(FIXTURE_MODEL, USAGE),
-      };
-      return Promise.resolve(result);
-    },
-    stream: (request) => echoProvider().stream(request),
-  };
+/** Call N answers `steps[N-1]`; one call past the last is `X_AI_SCRIPT_EXHAUSTED`. */
+export function model(...steps: readonly Step[]): { seen: readonly GenerateRequest[] } {
+  const provider = scriptedProvider({ turns: steps, usage: USAGE });
   resetAiRuntime();
   configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
-  return { seen };
+  return { seen: provider.seen };
 }
 
 export const Input = t.object({ topic: t.string });

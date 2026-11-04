@@ -170,13 +170,14 @@ describe('hidden is not forbidden', () => {
 });
 
 describe('dispatch', () => {
-  test('initialize advertises the protocol version and three capabilities', async () => {
+  test('initialize advertises the newest legacy revision and three capabilities', async () => {
     const response = await server.handle(call('initialize'), caller(undefined, []));
     const result = response?.result as {
       protocolVersion: string;
       capabilities: Record<string, unknown>;
     };
-    expect(result.protocolVersion).toBe('2025-06-18');
+    // No version offered: the newest handshake revision (`protocol-era.test.ts` has the rest).
+    expect(result.protocolVersion).toBe('2025-11-25');
     expect(Object.keys(result.capabilities).sort()).toEqual(['prompts', 'resources', 'tools']);
   });
 

@@ -26,7 +26,15 @@ import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
 import type { JsonRpcResponse } from './wire';
-import { INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
+import {
+  INVALID_REQUEST,
+  MCP_MODERN_VERSIONS,
+  META_PROTOCOL_VERSION,
+  METHOD_NOT_FOUND,
+} from './wire';
+
+/** The newest modern revision, as a caller now spells it. */
+const MODERN = MCP_MODERN_VERSIONS[0];
 
 /** Reading the wire the way an agent does — the same readers `security.test.ts` uses. */
 const errorData = (response: JsonRpcResponse | null): Record<string, unknown> =>
@@ -261,6 +269,29 @@ describe('the three outcomes over the blessed path — defineAppMcp', () => {
     // Never `Forbidden` on a hidden tool: the whole model is that these three differ.
     expect(JSON.stringify(hidden)).not.toContain('FORBIDDEN');
     expect(JSON.stringify(hidden)).not.toContain('scope');
+  });
+
+  test('a modern request (2026-07-28) meets the same three outcomes, hidden still = absent', async () => {
+    const server = appServer();
+    const modern = (body: ReturnType<typeof call>) => ({
+      ...body,
+      params: { ...body.params, _meta: { [META_PROTOCOL_VERSION]: MODERN } },
+    });
+    const hidden = await server.handle(modern(call('transferOrg')), asMember());
+    const absent = await server.handle(modern(call('no.such.tool')), asMember());
+    expect(hidden?.error?.code).toBe(METHOD_NOT_FOUND);
+    expect(JSON.stringify(hidden).replace('transferOrg', 'no.such.tool')).toBe(
+      JSON.stringify(absent),
+    );
+    expect(Object.keys(hidden?.error ?? {}).sort()).toEqual(['code', 'message']);
+    const scope = await inRequest(() => server.handle(modern(call('publishPost', {})), asMember()));
+    expect(errorData(scope)['code']).toBe('X_MCP_SCOPE_DENIED');
+    const policy = await inRequest(() =>
+      server.handle(modern(call('publishPost', { postId: 'p_1' })), asMember(['posts:write'])),
+    );
+    expect(toolResult(policy).isError).toBe(true);
+    expect(toolResult(policy).content?.[0]?.text ?? '').toContain('X_FORBIDDEN');
+    expect(published).toBe(0);
   });
 
   test('OUTCOME 3 outranks invalid-args — a caller the policy refuses never sees the arg issues', async () => {

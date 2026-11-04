@@ -123,7 +123,7 @@ describe('registry', () => {
   // Boot, never the first `tools/list` — the same rule the policy check above follows. An input
   // the provider cannot describe used to register cleanly and then publish
   // `additionalProperties: true` on three surfaces, so the spec said "any object accepted" for an
-  // action whose own `validateInput` rejects every payload.
+  // action whose own `parseActionInput` rejects every payload.
   test('an action whose schemas cannot be projected fails at registration, naming which one', () => {
     const opaque = {
       '~standard': { version: 1, vendor: 'test', validate: () => ({ value: undefined }) },

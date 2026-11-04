@@ -1,6 +1,6 @@
 // The X_AGENT_* codes an UNATTENDED run needs, and the one a continuation's handle is refused by, apart from ./errors only because one file has
 // one job and that catalogue is at its ceiling — the split `hive-errors.ts` made. The codes, their
-// titles and the single `registerErrorCodes` call stay in ./errors.
+// titles and the single `registerErrorCodes` call stay in ./error-codes.
 
 import { UltimateError } from '@ultimat3/core';
 

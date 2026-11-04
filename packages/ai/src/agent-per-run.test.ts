@@ -30,7 +30,7 @@ beforeEach(resetRuns);
 
 describe('offerTools() narrows the catalogue for one run', () => {
   test('the request offers the subset, in the declared catalogue order, and respond', async () => {
-    const { seen } = scripted(ANSWER);
+    const { seen } = scripted(ANSWER, ANSWER);
     const write = declare({
       offerTools: ({ input }) => (input.tier === 'pro' ? ['publish', 'readDoc'] : ['readDoc']),
     });
@@ -103,7 +103,7 @@ describe('offerTools() narrows the catalogue for one run', () => {
 
 describe('model may be picked per run', () => {
   test('the function reads the run, and its id is the one the request is sent on', async () => {
-    const { seen } = scripted(ANSWER);
+    const { seen } = scripted(ANSWER, ANSWER);
     const write = declare({
       model: ({ input }) => (input.tier === 'pro' ? OTHER_MODEL : FIXTURE_MODEL),
     });

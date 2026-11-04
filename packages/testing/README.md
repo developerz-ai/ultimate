@@ -349,6 +349,13 @@ the template to leave, and the next worker's migration holds one. With no Postgr
 its own `--parallel` worker — measured on Bun 1.3.14, `--parallel` populates `BUN_TEST_WORKER_ID`
 and `JEST_WORKER_ID` itself, so that precedence is load-bearing rather than defensive.
 
+**A unit test on the migrated database** is `reusableDatabase(() => migratedDatabase({ root }))`
+plus `setDbClient` in `beforeAll` and `setDbClient(undefined)` in `afterAll` — the recipe in
+[Testing](../../wiki/Testing.md#database-state-and-what-a-run-leaves-behind). `unitTest` grows no
+database mode for it: the scaffolded handle's `testDriver()` (`@ultimat3/entity`, `As of 30.0`)
+follows the installed client per call, so `db.<table>` and raw SQL meet in one database, and a
+file that installs none never loads PGlite.
+
 ## The harness puts back what it found
 
 `bun test` is one process, so `describeApp`/`testApp` teardown is a **restore**, never an uninstall.

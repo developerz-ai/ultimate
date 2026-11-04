@@ -6,7 +6,7 @@
 
 import { configureAi, echoProvider, modelSpec, providerGateway } from '@ultimat3/ai';
 import { expect, test } from '@ultimat3/testing';
-import { APP_MODELS, CLAUDE_SONNET_5, claudeSonnet5 } from './models';
+import { APP_MODELS, CLAUDE_SONNET_5_5, claudeSonnet55 } from './models';
 import { reviewDraft } from './posts/actions/review-draft';
 import { summarize } from './posts/actions/summarize';
 import { reviewDraftPrompt } from './posts/prompts/review-draft';
@@ -17,7 +17,16 @@ const PROMPTS = [summarizePrompt, reviewDraftPrompt];
 
 test('the model the app names is the row the app registered', () => {
   // Identity, not equality: only the app's own `registerModel` puts THIS object in the catalogue.
-  expect(modelSpec(CLAUDE_SONNET_5)).toBe(claudeSonnet5);
+  expect(modelSpec(CLAUDE_SONNET_5_5)).toBe(claudeSonnet55);
+});
+
+test('every prompt runs on the current Sonnet row, which refuses a forced tool choice', () => {
+  for (const prompt of PROMPTS) expect(prompt.model).toBe(CLAUDE_SONNET_5_5);
+  expect(claudeSonnet55).toMatchObject({
+    forcedToolChoice: false,
+    cacheReadPerMillion: { minor: 10, currency: 'USD' },
+    cacheMinimumTokens: 512,
+  });
 });
 
 test('every prompt names a model from app/models.ts', () => {

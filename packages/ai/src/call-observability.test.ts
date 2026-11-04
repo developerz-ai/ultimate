@@ -59,7 +59,7 @@ describe('llm() onCall', () => {
   });
 
   test('a call that then fails its schema twice still reported both — and the error lists the issues', async () => {
-    const { provider } = stub({ summary: 7 });
+    const { provider } = stub({ summary: 7 }, { summary: 7 });
     install(provider);
     const calls: LlmCall[] = [];
     const summarize = declare(promptFor(), { onCall: (event) => void calls.push(event) });

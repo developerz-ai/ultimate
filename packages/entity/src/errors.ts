@@ -183,6 +183,14 @@ export const repoClientPinned = (entityName: string): EntityError =>
     fix: `setDbClient(client) at boot and build the repository with no client: — postgresDriver() then resolves the open transaction through db() — or run this call outside withTransaction()`,
   });
 
+/** `testDriver()`: the transaction began on one store and `setDbClient` now names the other. */
+export const testDriverClientChanged = (entityName: string, began: string): EntityError =>
+  new EntityError({
+    code: 'X_TEST_DRIVER_CLIENT_CHANGED',
+    cause: `${entityName} was called inside a transaction that began on ${began}, and setDbClient has since ${began === 'memory' ? 'installed a client' : 'cleared the client'} — following it would split one transaction's writes across two stores`,
+    fix: 'beforeAll(() => setDbClient(client)); afterAll(() => setDbClient(undefined));   # outside every transactor().run / withTransaction scope',
+  });
+
 export const notFound = (entityName: string, id: string): EntityError =>
   new EntityError({
     code: 'X_NOT_FOUND',

@@ -75,7 +75,7 @@ export const dbClientSource = (
 
 ${sortedImports([
   "import { storeMode } from '@ultimat3/core';",
-  "import { type Driver, database, memoryDriver, postgresDriver } from '@ultimat3/entity';",
+  "import { type Driver, database, postgresDriver, testDriver } from '@ultimat3/entity';",
   ...entries.map(handleImportLine),
 ])}
 
@@ -84,13 +84,13 @@ ${sortedImports([
  * reads through (\`driver.reset?.()\`).
  *
  * \`postgresDriver()\` takes no connection: it resolves \`@ultimat3/db\`'s process client, which is
- * the embedded PGlite under \`x dev\` and the \`DATABASE_URL\` pool in a container. \`bun test\`
- * installs no client, so a test gets the in-memory driver — the same contract, no database.
- * \`storeMode\` is core's one answer to that question, shared with every other seam that has a
- * memory and a database store.
+ * the embedded PGlite under \`x dev\` and the \`DATABASE_URL\` pool in a container. Under
+ * \`bun test\` it is \`testDriver()\`: memory until a test installs its migrated database with
+ * \`setDbClient\`, that database while it is installed — decided per call, so this module-load
+ * constant follows the client. \`storeMode\` is core's one answer to which store a seam takes.
  */
 export const selectDriver = (env: Readonly<Record<string, string | undefined>>): Driver =>
-  storeMode(env) === 'memory' ? memoryDriver() : postgresDriver();
+  storeMode(env) === 'memory' ? testDriver() : postgresDriver();
 
 export const driver = selectDriver(Bun.env);
 
@@ -111,6 +111,7 @@ const clientTest = (
 ): string => `// Which store the handle reads: memory under \`bun test\`, the process's Postgres client
 // everywhere else. A handle that silently took the memory driver in a container would serve an
 // empty database with a green gate.
+import { recordingClient, setDbClient } from '@ultimat3/db';
 import { expect, unitTest } from '@ultimat3/testing';
 import { db, driver, selectDriver } from './client';
 
@@ -125,6 +126,19 @@ unitTest('${app.kebab} reads memory under test and Postgres everywhere else', ()
 unitTest('the handle is built over the driver this module exports', () => {
   expect(driver.reset).toBeDefined();
   expect(typeof db).toBe('object');
+});
+
+// The test driver decides per call: a migrated database installed with \`setDbClient\` is what
+// \`db\` reaches, and clearing it hands the handle back to memory.
+unitTest('under test the handle follows an installed client', async () => {
+  const client = recordingClient();
+  setDbClient(client);
+  try {
+    await driver.transactor().run(async () => undefined);
+  } finally {
+    setDbClient(undefined);
+  }
+  expect(client.texts).toContain('BEGIN');
 });
 `;
 

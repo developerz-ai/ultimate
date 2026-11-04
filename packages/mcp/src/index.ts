@@ -119,9 +119,14 @@ export {
   McpToolUnknownError,
   McpToolUnsafeError,
 } from './errors';
+export type { McpMirroredHeader } from './errors-transport';
 export {
   McpBodyTooLargeError,
+  McpHeaderMismatchError,
+  McpHostRefusedError,
   McpOAuthInvalidError,
+  McpOriginRefusedError,
+  McpProtocolUnsupportedError,
   McpRateLimitedError,
 } from './errors-transport';
 export { exposedPrimitives } from './exposed';
@@ -243,6 +248,7 @@ export {
   MCP_UNAUTHENTICATED_LIMIT,
   mcpHttpRoute,
 } from './transport-http';
+export { mcpHostRefused } from './transport-http-answers';
 export type { StdioTransportInput } from './transport-stdio';
 export { serveStdio } from './transport-stdio';
 export type { ArgIssue, ArgValidation } from './validate-args';
@@ -258,12 +264,15 @@ export type {
 export {
   defaultServerInfo,
   errorResponse,
+  HEADER_MISMATCH,
   INTERNAL_ERROR,
   INVALID_PARAMS,
   INVALID_REQUEST,
   isJsonRpcRequest,
-  MCP_PROTOCOL_VERSION,
+  MCP_LEGACY_VERSIONS,
+  MCP_MODERN_VERSIONS,
   METHOD_NOT_FOUND,
   PARSE_ERROR,
   resultResponse,
+  UNSUPPORTED_PROTOCOL_VERSION,
 } from './wire';

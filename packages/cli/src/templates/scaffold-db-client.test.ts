@@ -34,9 +34,26 @@ describe('unit · the packages/db client x new writes', () => {
   test("the driver is chosen by core's storeMode, never a local environment ternary", () => {
     const client = clientOf('ledger-demo', true);
     expect(client).toContain("import { storeMode } from '@ultimat3/core';");
-    expect(client).toContain("storeMode(env) === 'memory' ? memoryDriver() : postgresDriver()");
+    expect(client).toContain("storeMode(env) === 'memory' ? testDriver() : postgresDriver()");
     expect(client).not.toContain('resolveEnvironment');
     expect(client).not.toMatch(/=== 'test'/);
+  });
+
+  // Under test the handle follows `setDbClient`: a test that installs its migrated database reads
+  // and writes it through `db`, and one that installs none is exactly the memory driver.
+  test('under test the handle takes testDriver, so it follows an installed client', () => {
+    const client = clientOf('ledger-demo', true);
+    expect(client).toContain(
+      "import { type Driver, database, postgresDriver, testDriver } from '@ultimat3/entity';",
+    );
+    expect(client).not.toContain('memoryDriver');
+    const test = String(
+      dbClientFiles(names('ledger-demo'), true).find(
+        (file) => file.path === 'packages/db/src/client.test.ts',
+      )?.contents,
+    );
+    expect(test).toContain('setDbClient(client);');
+    expect(test).toContain("expect(client.texts).toContain('BEGIN');");
   });
 
   test('the client ships with the test that covers it', () => {

@@ -192,6 +192,8 @@ export {
   orgScoped,
   scopedPlan,
 } from './tenancy';
+// The scaffolded handle's driver under test: memory until `setDbClient` installs a client.
+export { testDriver } from './test-driver';
 export type { Move } from './transition';
 export type { TransitionObservation } from './transition-pins';
 export type {

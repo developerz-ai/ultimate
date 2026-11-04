@@ -7,22 +7,22 @@
  *
  * The `llm()` declaration that uses it lives in `../actions/summarize.ts`, because `llm()` returns
  * an `action` and an action is only ever declared in a feature's `actions/`. What lives
- * beside this file is the rest of the artifact: `summarize.v5.md`, `summarize.evals.ts` and
- * `summarize.v5.baseline.json`. Earlier versions (`summarize.v3.md`, `summarize.v4.md`, their
+ * beside this file is the rest of the artifact: `summarize.v6.md`, `summarize.evals.ts` and
+ * `summarize.v6.baseline.json`. Earlier versions (`summarize.v3.md` to `summarize.v5.md`, their
  * baselines) stay on disk unchanged — old traces cite them, and rollback is a version number, not a restore from git.
  */
 
 import { definePrompt } from '@ultimat3/ai';
-import { CLAUDE_SONNET_5 } from '../../models';
+import { CLAUDE_SONNET_5_5 } from '../../models';
 import { summarizeTemplate } from './summarize-template';
 
 /** Editing the markdown requires bumping this version — it keys the cache and the traces. */
 export const summarizePrompt = definePrompt({
   id: 'posts.summarize',
-  version: '5',
+  version: '6',
   template: summarizeTemplate,
   // Imported, never spelled: the app registers every model it names (`app/models.ts`).
-  model: CLAUDE_SONNET_5,
+  model: CLAUDE_SONNET_5_5,
   input: {
     type: 'object',
     properties: { title: { type: 'string' }, body: { type: 'string' }, locale: { type: 'string' } },
