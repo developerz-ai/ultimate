@@ -286,6 +286,37 @@ test('raw close, end and error after the upgrade leave the TLS conversation read
   expect(await pending).toBe('250 still here\r\n');
 });
 
+test('a live TLS socket close or end inside the STARTTLS window is a permanent handshake failure', async () => {
+  // Before the first decrypted byte the handshake window is still open, so the live socket's own
+  // goodbye is a refused handshake — swallowing the TLS EOF would leave the reader parked forever
+  // on a server that died mid-handshake.
+  const closed = new FakeRuntime({ distinctTls: true });
+  const closedStream = await smtpStreamOver(closed, FAKE_TARGET);
+  closed.deliver('220 mail.example.test ESMTP\r\n');
+  expect(await closedStream.read()).toContain('220');
+  await closedStream.startTls();
+  const parkedRead = caught(closedStream.read());
+  closed.events()?.close();
+  const closeError = await parkedRead;
+  expect(codeOf(closeError)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(closeError)['stage']).toBe('starttls');
+  expect(metaOf(closeError)['retryable']).toBe(false);
+  expect(causeOf(closeError)).toContain('the socket closed');
+
+  // `end` is the same goodbye over the same live handlers: EOF inside the window fails, not ends.
+  const ended = new FakeRuntime({ distinctTls: true });
+  const endedStream = await smtpStreamOver(ended, FAKE_TARGET);
+  ended.deliver('220 mail.example.test ESMTP\r\n');
+  expect(await endedStream.read()).toContain('220');
+  await endedStream.startTls();
+  const parkedEof = caught(endedStream.read());
+  ended.events()?.end();
+  const endError = await parkedEof;
+  expect(metaOf(endError)['stage']).toBe('starttls');
+  expect(metaOf(endError)['retryable']).toBe(false);
+  expect(causeOf(endError)).toContain('half-closed');
+});
+
 test('an error on the live TLS socket propagates in both handshake windows', async () => {
   const inWindow = new FakeRuntime({ distinctTls: true });
   const starttls = await smtpStreamOver(inWindow, FAKE_TARGET);
@@ -384,6 +415,24 @@ test('a parked write is failed at once by a live socket error, not at the deadli
   expect(metaOf(error)['retryable']).toBe(true);
   // The socket error is the diagnosis; the deadline's wording would mean `failDrain` never ran.
   expect(causeOf(error)).toContain('read ECONNRESET');
+});
+
+test('a parked write is failed at once by the socket closing, not at the deadline', async () => {
+  const runtime = new FakeRuntime();
+  const stream = await smtpStreamOver(runtime, { ...FAKE_TARGET, timeoutMs: 20 });
+  runtime.socket.stallWrites = true;
+
+  const parked = caught(stream.write('EHLO postly.test\r\n'));
+  runtime.events()?.close();
+
+  const error = await parked;
+  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(error)['stage']).toBe('data');
+  expect(metaOf(error)['retryable']).toBe(true);
+  // The close is the diagnosis; the deadline's wording would mean `failDrain` never ran.
+  expect(causeOf(error)).toContain('the socket closed');
+  // The same close ended the read side: the next reader gets EOF, not a second hang.
+  expect(await stream.read()).toBeUndefined();
 });
 
 test('close ends the socket the conversation currently runs on', async () => {
