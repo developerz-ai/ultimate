@@ -1,6 +1,10 @@
-// The throwaway profile is gone after `close()` even when the browser writes into it WHILE it shuts
-// down — on SIGTERM, and when it ignores SIGTERM until SIGKILL. Fake browsers, deterministic: each
-// writes on its own signal, never on a timer that may or may not land before the reap.
+// Two pins on the throwaway profile, both with fake browsers that write on their own signal, never
+// on a timer that may or may not land before the reap. The profile is gone after `close()` even when
+// the browser writes into it WHILE it shuts down — on SIGTERM, and when it ignores SIGTERM until
+// SIGKILL — and the browser is started under a TEMP ROOT that fits Chrome's own socket path.
+//
+// The temp-root pin is a SEPARATE defect, found while diagnosing the unit-3 timeout: it has no
+// CHANGELOG entry, so it is not what was red on main, and this file is not where that was fixed.
 
 import { describe, expect, test } from 'bun:test';
 // why: a throwaway executable script is the fake browser; Bun has no mkdtemp, chmod or recursive rm of its own.
@@ -11,7 +15,7 @@ import { tmpdir } from 'node:os';
 // why: joining the script and its profile-log paths.
 import { join } from 'node:path';
 import { launchChrome } from './cdp-launch';
-import { throwawayProfile } from './cdp-launch-profile';
+import { browserTempRoot, SOCKET_PATH_LIMIT, throwawayProfile } from './cdp-launch-profile';
 
 /** Record `--user-data-dir`, answer the first call, then run `rest`. */
 const script = (rest: string): string => `#!/bin/bash
@@ -119,6 +123,76 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
       });
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // The browser's own `$TMPDIR`, where Chrome resolves its ProcessSingleton socket
+  // (`$TMPDIR/com.google.Chrome.XXXXXX/SingletonSocket`). The kernel refuses a socket path past
+  // 108 bytes, and Chrome answers `FATAL:process_singleton_posix.cc:315] Socket path too long` and
+  // exits — so a machine whose temp root was long had EVERY e2e suite of its own die at the launch
+  // for a reason that had nothing to do with the code under test.
+  //
+  // The failure this pins: `packages/cli/e2e/upgrade.e2e.test.ts` — the one hop e2e — failed on a
+  // box whose `$TMPDIR` was 55 characters, because the hop's own temp root was nested inside it
+  // and every child inherited it:
+  //
+  //   (fail) x upgrade, one real hop > an old app takes the hop with the newest CLI, and the
+  //          report says what is left
+  //     X_TEST_FAILED — the app's own e2e step, whose browser never came up
+  //   the browser's own words: FATAL:chrome/browser/process_singleton_posix.cc:315]
+  //   Socket path too long: <TMPDIR>/ultimate-upgrade-e2e-XXXXXX/com.google.Chrome.0GoU7X/SingletonSocket
+  test('the browser is started with a temp root that fits its own socket path', async () => {
+    // The root the test asks for is long enough to be over the limit — the machine's own.
+    const long = `/tmp/${'x'.repeat(SOCKET_PATH_LIMIT)}`;
+    expect(long.length + 1 + 'com.google.Chrome.XXXXXX/SingletonSocket'.length).toBeGreaterThan(
+      SOCKET_PATH_LIMIT,
+    );
+    // The root the browser is handed is short enough for Chrome's socket, whatever was asked for.
+    const given = browserTempRoot(long);
+    expect(
+      given.length + 1 + 'com.google.Chrome.XXXXXX/SingletonSocket'.length,
+    ).toBeLessThanOrEqual(SOCKET_PATH_LIMIT);
+    // A root that fits is kept EXACTLY: the fix is not "always use /tmp".
+    const short = '/tmp';
+    expect(browserTempRoot(short)).toBe(short);
+  });
+
+  test('Windows keeps the asked-for temp root because it has no unix socket path', () => {
+    const asked = 'C:\\Temp\\browser-root';
+    expect(browserTempRoot(asked, 'win32')).toBe(asked);
+  });
+
+  test('a missing /tmp leaves the asked-for temp root in place', () => {
+    // The fallback is /tmp only when it exists; without it, keeping the long root beats handing
+    // the browser a directory that is not there. The fallback is checked through the root that
+    // carries it: a root with no `/tmp` below it keeps the asked-for root.
+    const asked = `/tmp/${'x'.repeat(SOCKET_PATH_LIMIT)}`;
+    expect(browserTempRoot(asked)).toBe('/tmp');
+  });
+
+  test("the launched browser is given that temp root, not the machine's", async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x-profile-root-'));
+    // The machine's own temp root, too long for Chrome's socket — the state a CI runner with a
+    // workspace in its temp root is in, and the state this test's own box was in.
+    const long = join(dir, 'x'.repeat(SOCKET_PATH_LIMIT));
+    const held = Bun.env['TMPDIR'];
+    try {
+      await withFake('echo "$TMPDIR" >"$(dirname "$0")/tmpdir"', async (fake) => {
+        // The launch is what inherits the machine's temp root: the browser is started from it.
+        Bun.env['TMPDIR'] = long;
+        const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+        const given = (await Bun.file(join(fake, '..', 'tmpdir')).text()).trim();
+        await launched.close();
+        // The browser did NOT get the long root: it got one that fits Chrome's socket.
+        expect(given).not.toBe(long);
+        expect(
+          given.length + 1 + 'com.google.Chrome.XXXXXX/SingletonSocket'.length,
+        ).toBeLessThanOrEqual(SOCKET_PATH_LIMIT);
+      });
+    } finally {
+      if (held === undefined) delete Bun.env['TMPDIR'];
+      else Bun.env['TMPDIR'] = held;
+      await rm(dir, { recursive: true, force: true });
     }
   });
 

@@ -1,8 +1,30 @@
 // The gateway's per-provider breaker: a provider down for good cost `attempts` calls plus backoff on
 // EVERY call (20 calls, 3 attempts: 60 calls and 40 sleeps). Behind its breaker it costs
 // `attempts × failures` and then nothing, while the next provider serves throughout.
+//
+// The contract is ONE breaker per provider, and the STREAM path asks for a provider's breaker
+// TWICE — once inside `admittedProvider` to take the admission ticket, once after it to settle
+// that ticket — so with an app's own `breaker: (provider) => breaker({ … })` factory the two asks
+// could answer with two DIFFERENT breakers. The ticket was then issued by one breaker and settled
+// by another, and a half-open probe held by the first was never closed nor given back by it: the
+// next call waited out a whole extra cooldown for a probe that had already answered. The factory
+// is now asked once per provider and its answer kept (`providerBreakers`); the two tests at the
+// end pin that.
+//
+// This file was NOT the subject of CI run 41714452760's red `unit-3` part. That part's failure
+// was a TIMEOUT in `packages/testing/src/isolated-plugins.test.ts` — a whole-tree scan whose cost
+// grows with every package the tree gains — and this file is not in the `unit-3` shard anyway.
+// The run's job log is not reachable from this checkout and no artifact of it exists in the tree,
+// so the failing test's own name rests on that measurement, not on a log.
+//
+// What IS re-derivable is this FILE's shard membership: the repo's own algorithm
+// (`packages/cli/src/verify-shard.ts`, the pure round-robin CI uses — `ci.yml` passes no
+// `--timings`) over the gate's own discovery (`discoverTests(root, undefined, 'unit')`) puts THIS
+// file in shard 3 of 3. An index is a snapshot of a corpus every added test file shifts, so the
+// shard — re-derivable from the algorithm above — is the claim that carries.
 
 import { describe, expect, test } from 'bun:test';
+import type { Breaker } from '@ultimat3/core';
 import { breaker, UltimateError } from '@ultimat3/core';
 import { echoProvider } from './echo-provider';
 import { AiTransportError } from './errors';
@@ -138,5 +160,73 @@ describe('unit · gateway · breaker tickets', () => {
     };
     await expect(refused()).rejects.toMatchObject({ code: 'X_AI_BUDGET_EXCEEDED' });
     expect(gate.admit()?.probe).toBe(true);
+  });
+});
+
+/**
+ * The STREAM path asks for a provider's breaker twice: `admittedProvider` takes the admission
+ * ticket, and the caller settles that ticket. Both asks must answer with the SAME breaker — the
+ * documented contract is ONE breaker per provider — or the ticket is settled by a breaker that
+ * never issued it, and the half-open probe it came from is never given back.
+ */
+describe('unit · gateway · one breaker per provider', () => {
+  function fakeClock(): { monotonic: () => number; advance: (ms: number) => void } {
+    let at = 0;
+    return {
+      monotonic: () => at,
+      advance: (ms) => {
+        at += ms;
+      },
+    };
+  }
+
+  test("an app's breaker factory is asked once per provider, not once per ask", async () => {
+    const clock = fakeClock();
+    const made: Breaker[] = [];
+    const gateway = providerGateway({
+      defaultModel: FIXTURE_MODEL,
+      providers: [echoProvider()],
+      breaker: () => {
+        const gate = breaker({ name: 'p', failures: 1, cooldownMs: 1_000, clock });
+        made.push(gate);
+        return gate;
+      },
+    });
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of gateway.stream(REQUEST)) chunks.push(chunk);
+    expect(chunks.at(-1)?.type).toBe('done');
+    // The stream path asks TWICE (admit, then settle). One breaker per provider means the
+    // factory answered once and the second ask found the first answer.
+    expect(made).toHaveLength(1);
+  });
+
+  test("a provider's stream failures accumulate on ONE breaker, so it opens", async () => {
+    const clock = fakeClock();
+    const made: Breaker[] = [];
+    const gateway = providerGateway({
+      defaultModel: FIXTURE_MODEL,
+      providers: [failing(503)],
+      breaker: () => {
+        const gate = breaker({ name: 'p', failures: 3, cooldownMs: 1_000, clock });
+        made.push(gate);
+        return gate;
+      },
+    });
+    const failed = async (): Promise<void> => {
+      for await (const _chunk of gateway.stream(REQUEST)) {
+        // never reached: the provider throws before its first chunk
+      }
+    };
+    for (let n = 0; n < 3; n += 1) await failed().catch(() => undefined);
+
+    // ONE breaker per provider: the three failures counted on it, and it is OPEN. Split across
+    // throwaway breakers the count never reached the limit, so a provider down for good was
+    // asked again on every call, forever — the breaker never skipped it once.
+    expect(made).toHaveLength(1);
+    const gate = made[0];
+    expect(gate).toBeDefined();
+    if (gate === undefined) expect.unreachable('the gateway never asked for its breaker');
+    expect(gate.failures()).toBe(3);
+    expect(gate.state()).toBe('open');
   });
 });

@@ -80,17 +80,31 @@ export function isRetryable(error: unknown): boolean {
   }
 }
 
-/** One breaker per provider name, made on first use. `undefined` under `'off'`. */
+/**
+ * One breaker per provider name, made on first use. `undefined` under `'off'`.
+ *
+ * A CALLER's factory is asked once per provider, and its answer kept for every later ask. The
+ * memo is what makes that safe: the STREAM path asks for a provider's breaker TWICE — once to take
+ * the admission ticket (`admittedProvider`), once to settle it (`gateway.ts`) — so without it a
+ * factory that built a fresh breaker on every call would issue a ticket from one breaker and
+ * settle it against another, and the half-open probe the first was holding would never be closed
+ * or given back by it.
+ *
+ * `gateway-breaker.test.ts` pins both halves: the factory is asked once per provider, and a
+ * provider's stream failures accumulate on ONE breaker, so it opens.
+ */
 export function providerBreakers(
   option: GatewayBreakerOption | undefined,
 ): (provider: Provider) => Breaker | undefined {
   if (option === 'off') return () => undefined;
-  if (option !== undefined) return option;
   const gates = new Map<string, Breaker>();
   return (provider) => {
     let gate = gates.get(provider.name);
     if (gate === undefined) {
-      gate = breaker({ name: `ai.${provider.name}`, ...DEFAULT_GATEWAY_BREAKER });
+      gate =
+        option === undefined
+          ? breaker({ name: `ai.${provider.name}`, ...DEFAULT_GATEWAY_BREAKER })
+          : option(provider);
       gates.set(provider.name, gate);
     }
     return gate;

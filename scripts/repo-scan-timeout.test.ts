@@ -168,7 +168,9 @@ describe('unit · a scripts test that reads the tree declares the repo-scan budg
    * source carry the number as a LITERAL, each with a comment saying it mirrors this constant. The
    * comment was the only thing holding it: they read `30_000` while the constant was `90_000`, a
    * whole factor below what they claimed, and one of them was the last red in the Bun 1.3 run.
-   * A mirror nothing compares is a wish.
+   * A mirror nothing compares is a wish. `packages/testing` joins them because its isolated-plugin
+   * scan walks the whole framework source (every package's `src` tree), the same class of
+   * whole-tree scan and the same need for the shared budget.
    */
   test('the packages-side literals that claim to mirror the budget actually carry it', async () => {
     const mirrors = [
@@ -179,6 +181,7 @@ describe('unit · a scripts test that reads the tree declares the repo-scan budg
       // errors.explain suite awaits it directly. Both read every installed package's source.
       'packages/cli/src/mcp-host.test.ts',
       'packages/cli/src/mcp-host-tools.test.ts',
+      'packages/testing/src/isolated-plugins.test.ts',
     ];
     const literal = `}, ${String(REPO_SCAN_TIMEOUT_MS / 1000)}_000);`;
     for (const path of mirrors) {

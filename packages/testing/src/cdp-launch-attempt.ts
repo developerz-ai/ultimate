@@ -1,12 +1,15 @@
-// One responsibility: ONE start of a Chrome process — spawn it on a throwaway profile, wait for its
-// first DevTools answer, and on no answer reap it (killed, awaited, profile removed) and say why.
+// One responsibility: ONE start of a Chrome process — spawn it on a throwaway profile, under ONE
+// temp root that BOTH the profile and the browser's own `$TMPDIR` sit under, wait for its first
+// DevTools answer, and on no answer reap it (killed, awaited, profile removed) and say why.
 // Which binary, which flags and how many starts is `cdp-launch.ts`.
 
+// why: Bun exposes no temp-root primitive; the browser's own temp root is node:os's alone.
+import { tmpdir } from 'node:os';
 import { renderThrowable } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
 import type { CdpLaunchAttempt } from './cdp-errors';
 import { CdpTimeoutError } from './cdp-errors';
-import { throwawayProfile } from './cdp-launch-profile';
+import { browserTempRoot, throwawayProfile } from './cdp-launch-profile';
 import { CLOSE_GRACE_MS, killTree } from './cdp-launch-reap';
 import type { CdpWire } from './cdp-launch-wire';
 import { pipeConnection, portConnection, wireStdio } from './cdp-launch-wire';
@@ -111,12 +114,16 @@ const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
  */
 export async function launchAttempt(options: LaunchAttemptOptions): Promise<LaunchAttemptResult> {
   const platform = options.platform ?? process.platform;
-  const profile = throwawayProfile();
+  // ONE root for the profile AND the browser's own `$TMPDIR`: Chrome puts its singleton socket in
+  // `$TMPDIR` and links it from the profile, so the two must be the same one or one of them is
+  // left with a path too long for a unix socket.
+  const root = browserTempRoot(tmpdir(), platform);
+  const profile = throwawayProfile(root);
   const profileDir = profile.path;
   const began = performance.now();
   let child: ReturnType<typeof spawnBrowser>;
   try {
-    child = spawnBrowser(options, profileDir, platform);
+    child = spawnBrowser(options, profileDir, platform, root);
   } catch (error) {
     // A binary that cannot be started at all — not there, not executable, not an executable FORMAT
     // this OS runs (a `#!` script on Windows). Bun throws from `spawn`, synchronously, and that
@@ -214,11 +221,22 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
  * reaped with it (`killTree`). It still ends with this process on the pipe wire: Chrome exits when
  * its fd 3 closes. Windows has no group to make — `detached` there is a console flag — so not.
  */
-function spawnBrowser(options: LaunchAttemptOptions, profileDir: string, platform: string) {
+function spawnBrowser(
+  options: LaunchAttemptOptions,
+  profileDir: string,
+  platform: string,
+  root: string,
+) {
   // Spread into a fresh tuple: Bun's `stdio` type takes a mutable tuple, never a readonly one.
   const [stdin, stdout, stderr, ...extra] = wireStdio(options.wire);
+  // The browser's own `$TMPDIR`, where Chrome resolves its singleton socket. Inheriting a long
+  // one killed the launch on a machine whose temp root was long — every e2e suite on it, for a
+  // reason that had nothing to do with the code under test. `root` is the one the profile is
+  // under too, so neither path is left long.
+  const env = { ...Bun.env, TMPDIR: root };
   return Bun.spawn([options.executable, ...options.flags(profileDir)], {
     stdio: [stdin, stdout, stderr, ...extra],
     detached: platform !== 'win32',
+    env,
   });
 }

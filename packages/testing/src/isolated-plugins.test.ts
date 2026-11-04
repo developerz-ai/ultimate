@@ -150,16 +150,39 @@ describe('releasePluginsAfterIsolatedFile', () => {
 
 // `x test` sets the variable and this package's preload reads it: a second spelling on either side
 // is a rename that compiles and silently turns the per-file release off.
+//
+// The scan reads the WHOLE framework's source (6,866 files, ~34 MB) and it is the one test here
+// whose cost grows with every package the tree gains. It ran under Bun's 5 s default — the
+// one-way rule broken for a number (#589) — and measured 3.6-4.4 s on an IDLE box, so it timed
+// out on a runner with three workers on it:
+//
+//   (fail) ISOLATED_ENV is spelled once > no framework source outside isolated-plugins.ts writes
+//          the name as a literal [5001.52ms]
+//     ^ this test timed out after 5000ms.
+//
+// THIS FILE IS IN A CI JOB'S SLICE: the shard is a pure round-robin over the sorted unit file list
+// (no `--timings` in CI), and this file is at unit index 2360 — 2360 % 3 === 2, the third shard.
+// That job was red on the push of run 41714452760; the run's own log is not reachable from a
+// developer box, so the failure above is the one MEASURED here, on the same slice, and the reason
+// it belongs to this job.
+//
+// TWO fixes, both behaviour-preserving: the reads run in PARALLEL (the repo's own idiom for a
+// tree walk, `scripts/primitive-factories.test.ts`), and the test carries the repo's whole-tree
+// scan budget. The number is `REPO_SCAN_TIMEOUT_MS`'s, written as a literal because a published
+// package's suite may not import the host monorepo's `scripts/`; `scripts/repo-scan-timeout.test.ts`
+// compares them, so the mirror is a build error rather than a claim in a comment. The assertion
+// is untouched: the same files are read and the same spelling is refused — a second spelling
+// still fails it.
 describe('ISOLATED_ENV is spelled once', () => {
   test('no framework source outside isolated-plugins.ts writes the name as a literal', async () => {
     const packages = join(import.meta.dir, '..', '..');
-    const spelled: string[] = [];
+    const paths: string[] = [];
     for await (const path of new Bun.Glob('*/src/**/*.{ts,tsx}').scan({ cwd: packages })) {
       if (path.endsWith('.test.ts') || path === 'testing/src/isolated-plugins.ts') continue;
-      if ((await Bun.file(join(packages, path)).text()).includes(`'${ISOLATED_ENV}'`)) {
-        spelled.push(path);
-      }
+      paths.push(path);
     }
+    const texts = await Promise.all(paths.map((path) => Bun.file(join(packages, path)).text()));
+    const spelled = paths.filter((_, index) => (texts[index] ?? '').includes(`'${ISOLATED_ENV}'`));
     expect(spelled).toEqual([]);
-  });
+  }, 180_000);
 });
