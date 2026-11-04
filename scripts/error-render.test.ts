@@ -329,6 +329,25 @@ describe('the entry point sees a catch binding', () => {
   // The catch half of the rule, through the entry point the command and the gate step both call.
   // `error-render.ts` reads PARAMETERS typed `unknown`, and a catch binding is neither — so the
   // half that sees one is `catch-render.ts`, and this is the composition of the two.
+  //
+  // Both fixtures below carry the source text of a caught value rendered into a cause, so the
+  // literal `${…}` is the case under test — the same reason `scripts/catch-render.test.ts`
+  // suppresses the rule at each of its own source-text fixtures. Merge #972 added these two
+  // entry-point catch-render fixtures without the targeted suppression, and Windows run
+  // 41741316882 is the failure: Biome reported `lint/suspicious/noTemplateCurlyInString` at both
+  // fixture lines.
+  //
+  // The step that reported it is the `lint` one — `bun run lint` (`biome check .`,
+  // `.github/workflows/ci.yml:1007-1009`) — because that is the only step in the `windows` job
+  // that reads `scripts/` at all. It is NOT `unit · core` (`.github/workflows/ci.yml:1013-1015`),
+  // which runs `bun test --isolate ./packages/core` and therefore never selects this file: a
+  // behaviour failure in this suite surfaces in the Linux `unit` job, and this file is not part
+  // of the Windows unit subset and does not need to be — the defect was a lint diagnostic, and
+  // the lint step already covers it. So this file must not be added to the Windows subset to
+  // "cover" it.
+  //
+  // The rule stays enabled; only the two intentional source-text fixtures are suppressed, and
+  // both assertions below are unchanged.
   test('a catch binding rendered into a cause is reported', async () => {
     await write(
       [
@@ -337,6 +356,7 @@ describe('the entry point sees a catch binding', () => {
         '    return JSON.parse(raw) as string;',
         '  } catch (error) {',
         '    throw new Error({',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
         '      cause: `unreadable payload: ${error instanceof Error ? error.message : String(error)}`,',
         '    });',
         '  }',
@@ -356,6 +376,7 @@ describe('the entry point sees a catch binding', () => {
         '    return JSON.parse(raw) as string;',
         '  } catch (error) {',
         '    throw new Error({',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
         '      cause: `unreadable payload: ${renderThrowable(error)}`,',
         '    });',
         '  }',
