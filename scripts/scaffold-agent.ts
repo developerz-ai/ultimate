@@ -118,14 +118,16 @@ async function askEndpoint(url: string, io: AgentCheckIo): Promise<readonly stri
   const anonymous = await io.fetcher(url, post(rpc(1, 'tools/list')));
   if (anonymous.status !== 401)
     problems.push(`POST /mcp with no token answered ${String(anonymous.status)}, not 401`);
-  // A browser sends Origin on every POST, and a page that rebinds its name to 127.0.0.1 is one: the
-  // development token must buy it nothing.
+  // A page that rebinds its name to 127.0.0.1 sends an Origin equal to the endpoint's own, and core's
+  // proveSameOrigin admits it: the route's 403 is for an Origin that is neither this app nor listed
+  // in http.cors.origins. What refuses the rebound page is the resolver — the development token is
+  // honoured only with no Origin at all — so the probe sends exactly that pair and expects its 401.
   const fromPage = await io.fetcher(url, {
     ...post(rpc(4, 'tools/list'), DEV_AGENT_TOKEN),
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${DEV_AGENT_TOKEN}`,
-      origin: 'http://rebound.test',
+      origin: new URL(url).origin,
     },
   });
   if (fromPage.status !== 401)

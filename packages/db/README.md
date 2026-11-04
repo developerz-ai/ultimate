@@ -30,6 +30,7 @@ await withTransaction(async (tx) => {
 | `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
 | `shellInertIdentifier()` | `As of 2026-08-26`: a quoted identifier that is also inert wherever a human PASTES it — or `null`. The one screen a catalog name goes through before it reaches a `fix:`. `identifier()` answers about SQL and **accepts** a backtick and a `$`, which are exactly what a shell substitutes inside double quotes, so a column called `$(id)` inside `x db gen "add $(id)"` runs `id` on paste |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
+| `dbClientInstalled()` | `As of 30.0`: whether `setDbClient` installed a client that is still in place. Never builds the lazy default. `@ultimat3/entity`'s `testDriver()` asks it on every repository call |
 | `dbExecutor(client = db)` | the client as `@ultimat3/core`'s `PgExecutor` (`query(text, values)`) — what a jobs, idempotency, notify or MCP confirmation store takes. The client is resolved per statement: the default reaches the boot's client even when declared at module scope, and joins an open `withTransaction`; `() => pool` pins one pool whatever transaction is open |
 | `DbTx.origin` | `As of 2026-08`: the client the transaction was **opened on** — `options.client` or `baseClient()`, never the reservation it runs statements through. `@ultimat3/entity` compares a pinned repository's client against it, so a pinned repo joins its own shard's transaction instead of being refused |
 | `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam. `{ retry: n }` (`As of 2026-08`) re-runs `fn` from the top on a `40001`/`40P01` and on nothing else — default 0, so `fn` must be idempotent before you ask for it. Each re-run **waits first**, `As of 2026-08-23`: exponential from 10ms, capped at 500ms, full jitter (`@ultimat3/core`'s `backoffDelay`). A budget of 0 waits not at all. **A transaction the server aborted is reported as one**, `As of 2026-10-02` → [Transactions that end badly](#transactions-that-end-badly) |
@@ -72,6 +73,7 @@ await withTransaction(async (tx) => {
 | `pgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
+| `dbDiagnostics()` / `DIAGNOSTICS_LIMIT` / `DIAGNOSTICS_TIMEOUT_MS` (from `@ultimat3/db/diagnostics`) | `As of 2026-11`: what the database is doing now, as seven sections (`blockers`, `activity`, `slowQueries`, `unusedIndexes`, `invalidIndexes`, `notValidConstraints`, `deadTuples`), each `{ available: true, rows }` or `{ available: false, code, reason, fix }` → [Diagnostics](#diagnostics). `x db diagnostics` prints it |
 | `setStatementObserver()` / `statementObserver()` | `As of 2026-08`: one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
 | `expectedQueryLoop()` / `expectedQueryLoopReason()` | `As of 2026-08`: the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `StatementEvent.expected` |
 | `withStatementAttribution()` / `statementAttribution()` | `As of 2026-08`: the `{ entity, op }` pair on `StatementEvent.attribution`, scoped exactly like `expectedQueryLoop()` — `@ultimat3/entity`'s `postgresRepo` is the one producer |
@@ -151,6 +153,21 @@ statement's own error. Every caller handles that failure; nothing here swallows 
 `creators: ['migrator']` when migrations run as a different DB user than the one that ran
 `ensureReadOnlyRole()` — otherwise a table created later is not selectable by the role, and
 layer 1 covers only what existed at grant time.
+
+## Diagnostics
+
+`As of 2026-11`. `dbDiagnostics({ client?, limit? })` answers facts, never a verdict: how bloated is
+too bloated differs per app. `checkDb()` stays the readiness probe `/readyz` reads.
+
+| Rule | |
+|---|---|
+| Read-only, bounded | every section is one catalog statement through `readOnlyQuery()`: `BEGIN READ ONLY`, `DIAGNOSTICS_TIMEOUT_MS` (2 s), a cursor capped at `limit` (default 20). Sequential, so one connection |
+| One failure stays one | a section that throws is `{ available: false, code, reason, fix }`; the other six answer. The single throw is a probe (`select 1`) that cannot connect |
+| No row values | no statement reads a user table. Session SQL (`activity`, `blockers`, `slowQueries`) has every literal replaced by `?` before it leaves (`db-diagnostics-redact.ts`, over the package's one lexer); a `scheme://user:pass@` in a reason is masked |
+| `slowQueries` | reads `pg_stat_statements`; absent (always on PGlite) is `available: false` with the operator's `create extension` + `shared_preload_libraries` fix. The framework never creates an extension |
+| `unusedIndexes` | `idx_scan = 0`, unique and primary excluded; each row carries `statsAgeSeconds` (since `pg_stat_reset`, `null` = never) and `replica` — counters are per server |
+| `activity` | `queryVisible: false` (and `query: null`) for a session another role owns when this one lacks `pg_read_all_stats` |
+| Who sees what | whoever runs it sees the SQL text (redacted) of **every session on the app's database role**, and of every role when that role holds `pg_read_all_stats` or is a superuser: other users' requests, background jobs, `psql` sessions. Literals are `?`, statement shape and identifiers are not. Run it with the credentials of someone allowed to see that |
 
 ## Index access methods
 

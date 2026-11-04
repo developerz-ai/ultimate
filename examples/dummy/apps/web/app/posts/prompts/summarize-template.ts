@@ -3,7 +3,7 @@
  * template into the prompt's identity, and a hash over something the process reads from disk
  * would differ between a dev checkout and a built container.
  *
- * The markdown original lives beside this file as `summarize.v5.md` — it is what a human edits
+ * The markdown original lives beside this file as `summarize.v6.md` — it is what a human edits
  * and what `x ai prompts` renders. Bump the version in both when the text changes.
  *
  * v5 fences the post as DATA (#689): v4 interpolated the title and body bare, so a body with its

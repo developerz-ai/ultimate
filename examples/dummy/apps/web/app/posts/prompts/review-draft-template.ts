@@ -1,7 +1,7 @@
 /**
  * The `posts.review-draft` prompt body as a module, for the reason `summarize-template.ts` gives:
  * `definePrompt` hashes the template into the prompt's identity, and a file read at runtime would
- * hash differently in a checkout and in a container. `review-draft.v1.md` carries the same body
+ * hash differently in a checkout and in a container. `review-draft.v2.md` carries the same body
  * under its front matter, byte for byte — `prompt-artifacts.test.ts` fails the moment they differ.
  */
 

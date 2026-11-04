@@ -52,6 +52,9 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`close()` is BOUNDED by the driver's own `{ timeout }` in SECONDS** (`drainTimeoutMs / 1000`; `0`
   sends none); the verdict is elapsed `performance.now()` (`X_DB_DRAIN_TIMEOUT`). It clears the
   cached driver before awaiting the teardown. `pool-drain{,.live}.test.ts`.
+- **`dbClientInstalled()` reads `installed`, a flag only `setDbClient` writes**, never `ambient`, which
+  the lazy default also fills: a unit test that sent one statement through `db()` must not flip
+  entity's `testDriver()` onto a pool nobody asked for.
 - **`client.listen` is ONE session beside the pool** (`listen.ts`; `Bun.SQL.listen`, PGlite's
   `listen` under a turn), never a reserved pin. `onListening` fires on every re-dial; a channel is
   refused unless it is a plain identifier. `listen.test.ts`, `listen.live.test.ts`.
@@ -63,9 +66,9 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `statement-funnel.ts` (`sendOn`/`runOn`), `pool-gate.ts`, `pool-sweep.ts`, `pool-retire.ts`,
   `pool-listeners.ts` and `pool-timer.ts` hold the rest.
 - **`pool-gate.ts` is the one count of `max`** (`takeSlot`/`freeSlot`), per pool: a statement holds a slot until it settles, a pin until `release()`, a statement ON a pin none. A wait past `acquireTimeoutMs` is `X_DB_POOL_EXHAUSTED`; `enter` answers `undefined` on a free slot so a send stays in the caller's turn. `reserveWithin` keeps its timer for `Bun.SQL`'s own queue. `close()` refuses who is queued; a retirement hands them to the next pool, unsent.
-- **`pool-sweep.ts`: an unanswered plain statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`; `0` has none; never a pin). One unref'd 1 s timer, armed only while statements are in flight. Age is ticks that FIRED, never a clock (`observe.test.ts`'s no-clock promise), so an answer unread in its socket is never judged late. `retire()` in `client.ts` is read-then-clear; `pool-retire.ts` closes in the background with `{ timeout: 1 }`, SECONDS. A miss only ever retires the pool it ran on. No breaker (`90-deferred.md`).
+- **`pool-sweep.ts`: an unanswered plain statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`; never a pin); age is ticks that fired, never a clock. Full rule: `docs/history/db.md`.
 - **`pool-pins.ts`: a pin statement is COUNTED by the sweep, never rejected** (`SET LOCAL` may raise its bound); `pinsWedged` on an acquire refusal (every slot a pin, each past the bound) retires the pool. `reserve()` passes `reserveWithin` what the gate left of one budget. **`pool-listeners.ts` holds `client.listen`** and re-dials every session on a retirement, with backoff.
-- **`pooler.ts` owns the pooler**: mode, `poolerFromEnv`, `POOLER_WAIT_MS`, `statementBound`/`lostStatementBound`, both factories. `postgresClient({ env })` is the one reader (`ROLE`, `DATABASE_POOLER`, `DATABASE_URL` from one source); everything after asks `client.pooler` (a replica takes the primary's). Never a detection (one pooler accepts `options` and drops them). Set: `connectionUrl` sends neither bound and no empty `options`; the sweep deadline adds `poolerWaitMs`. `transaction` refuses `migrate`/`replicator` at construction (`X_DB_POOLER_SESSION_REQUIRED`); the CLI's `startQueue` refuses `schema === 'apply'` too. `pooler.live.test.ts`.
+- **`pooler.ts` owns the pooler**: `postgresClient({ env })` is the one reader; everything after asks `client.pooler`. Never a detection. `pooler.live.test.ts`. Full rule: `docs/history/db.md`.
 - **`idleInTransactionMs` is sent beside `statement_timeout`.** `25P03` stays `X_DB_STATEMENT_FAILED`, its fix naming the slow await; `08P01` with `unsupported startup parameter` is `X_DB_POOLER_OPTIONS_REFUSED`. `statementBound` reads `pg_settings` (ms), `lostStatementBound` judges: no pooler, any difference; a pooler, only a `0` on a role with a bound. Fix text lives in the leaf `pooler-fix.ts` (no cycle). `client-idle-tx.live.test.ts`.
 - **`libpq-options.ts` merges the framework's `options` into the operator's**: the framework wins
   on the names it sets, the operator keeps the rest; emitted for all six roles.
@@ -225,6 +228,13 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   dropped. `@ultimat3/cli`'s `ls`/`drop` scope by name prefix.
 - **Read replicas are opt-in twice**: a pool when `DATABASE_REPLICA_URL` names one (`default-client.ts`), and a read only inside `withReplicaReads(fn)` (`replica-scope.ts`). `withTransaction` stays on the primary; `isPlainRead` is an allow-list. The breaker is core's `breaker({ name: 'db.replica' })`: `parked` means `state() === 'open'`, routing calls `admit()` last, and after the cooldown one read probes the replica (`replica-client-probe.test.ts`). Full rule: `docs/history/db.md`.
 - **This package owns no "is this SQL a write?" lexer.** Layers: `ensureReadOnlyRole()`, `readOnlyQuery()` (one statement; it throws), then `@ultimat3/mcp`. Full rule: `docs/history/db.md`.
+- **`db-diagnostics.ts` is `dbDiagnostics()`, on its own entry `@ultimat3/db/diagnostics`** (`diagnostics-entry.test.ts`): facts, never a verdict (`checkDb` stays `/readyz`'s).
+  Seven catalog reads (`db-diagnostics-sql.ts`), sequential, each through `readOnlyQuery` (2 s,
+  cursor-capped), one failing alone as `{ available: false, code, reason, fix }`; the single throw
+  is the `select 1` probe. A client-side deadline per section (3 s) and per command (15 s,
+  `db-diagnostics-deadline.ts`), because PGlite cannot interrupt a statement. No statement reads a
+  user table; session SQL leaves through `redactQueryText` (`db-diagnostics-redact.ts`, over
+  `noiseAt`); rows are typed in `db-diagnostics-rows.ts`.
 
 ```bash
 bun test                      # from packages/db

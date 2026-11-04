@@ -1,16 +1,27 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { resetActions } from '@ultimat3/action';
+import { resetAgents } from './agent-facts';
+import { baselineFile, declareSupport, scripted } from './eval-agent-fixture';
 import type { EvalBaseline } from './eval-baseline';
 import {
   baselinePath,
   describeRegression,
   OVERALL,
+  RECORD_ENV,
   readBaseline,
   regressionsAgainst,
   writeBaseline,
 } from './eval-baseline';
+import { defineEval, resetEvals } from './evals';
+import { useFixtureModels } from './model-fixture';
+import { resetPrompts } from './prompt';
+import { calledTool } from './scorers';
+
+// The agent-arm case below calls a model: the framework registers none (`model-fixture.ts`).
+useFixtureModels();
 
 const BASELINE: EvalBaseline = {
   eval: 'summarize',
@@ -148,5 +159,46 @@ describe('unit · a score compared with its own recording', () => {
     expect(
       regressionsAgainst({ baseline, score: 0.66, cases: { alpha: 0.333 }, tolerance: 0 }),
     ).toEqual([{ case: OVERALL, baseline: 0.667, score: 0.66 }]);
+  });
+});
+
+// The agent arm records through the same writer under the same key — the prompt hash — so a
+// baseline file never says which arm produced it, and the gate reads both the same way.
+describe('unit · an agent eval records the same file', () => {
+  afterEach(() => {
+    delete Bun.env[RECORD_ENV];
+    resetEvals();
+    resetPrompts();
+    resetAgents();
+    resetActions();
+  });
+
+  test('a recorded agent run reads back as a baseline keyed by the prompt hash', async () => {
+    const { support, prompt } = declareSupport();
+    const { path, dir } = await baselineFile(undefined);
+    try {
+      const evaluation = defineEval({
+        name: 'support',
+        agent: support,
+        cases: [{ name: 'looked-up', input: { question: 'q' } }],
+        tools: { lookupOrder: () => ({ status: 'shipped' }) },
+        scorers: [calledTool('lookupOrder')],
+        baseline: path,
+        tolerance: 0,
+      });
+      Bun.env[RECORD_ENV] = '1';
+      await evaluation.assert(
+        scripted({ call: 'lookupOrder' }, { answer: { status: 'shipped' } }).gateway,
+      );
+      expect(await readBaseline(path)).toEqual({
+        eval: 'support',
+        prompt: prompt.ref,
+        promptHash: prompt.hash,
+        score: 1,
+        cases: { 'looked-up': 1 },
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

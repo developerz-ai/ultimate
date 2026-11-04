@@ -2,11 +2,18 @@
  * unit — `requestPostsExport`, and the posts feature's model-backed actions, `summarizePosts` (a `hive()`) and `reviewDraft`
  * (an `agent()`), against a deterministic provider installed as the app's AI runtime. What is
  * asserted is the factory's contract as this app relies on it: members in the order asked, one
- * unreadable post failing alone, the agent's answer parsed into its schema, and a refusal decided
- * before a single token is spent.
+ * unreadable post failing alone, the agent's tool call and its answer parsed into its schema, and a
+ * refusal decided before a single token is spent. The agent runs on `scriptedProvider`, because
+ * echo cannot call a tool.
  */
 
-import { configureAi, echoProvider, providerGateway } from '@ultimat3/ai';
+import {
+  configureAi,
+  echoProvider,
+  meteredRun,
+  providerGateway,
+  scriptedProvider,
+} from '@ultimat3/ai';
 import { beforeEach, expect, test } from '@ultimat3/testing';
 import { requestPostsExport } from './actions/request-posts-export';
 import { reviewDraft } from './actions/review-draft';
@@ -16,12 +23,10 @@ import { exportPosts, postsExportPrefix } from './jobs/export-posts';
 /** Every prompt the provider was sent, so a refusal can be shown to have cost nothing. */
 const sent: string[] = [];
 
-/** The reviewer and the summariser answer differently; both answer in their declared schema. */
+/** The summariser's answer, in its declared schema, for every post the hive fans out over. */
 const answer = (prompt: string): string => {
   sent.push(prompt);
-  return prompt.includes('editor of a team blog')
-    ? JSON.stringify({ verdict: 'revise', notes: 'Say which rounding rule the body defends.' })
-    : JSON.stringify({ summary: 'Minor units and a currency.', tags: ['money'] });
+  return JSON.stringify({ summary: 'Minor units and a currency.', tags: ['money'] });
 };
 
 // Installed fresh per test: `configureAi` replaces the runtime and clears the semantic cache, so no
@@ -70,7 +75,7 @@ test('summarizePosts is refused for another org before any member runs', async (
   expect(sent).toEqual([]);
 });
 
-test('reviewDraft answers a verdict in its schema, from the draft it was pointed at', async ({
+test('reviewDraft calls its summarize tool, then answers a verdict in its schema', async ({
   seed,
   actorFor,
 }) => {
@@ -78,12 +83,28 @@ test('reviewDraft answers a verdict in its schema, from the draft it was pointed
     draft: 'post:draft-money',
     bruno: 'member:bruno',
   });
+  // Three model calls, in order: the agent asks for `summarize`, the tool's own `llm()` answers,
+  // the agent answers. A fourth would be X_AI_SCRIPT_EXHAUSTED, never the last turn again.
+  const model = scriptedProvider({
+    turns: [
+      { call: 'summarize', input: { postId: draft.id, orgId: draft.orgId } },
+      { answer: { summary: 'Minor units and a currency.', tags: ['money'] } },
+      { answer: { verdict: 'revise', notes: 'Say which rounding rule the body defends.' } },
+    ],
+  });
+  configureAi({ gateway: providerGateway({ providers: [model] }) });
 
-  const review = await reviewDraft.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
+  const { value, billed } = await meteredRun(() =>
+    reviewDraft.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId }),
+  );
 
-  expect(review).toEqual({ verdict: 'revise', notes: 'Say which rounding rule the body defends.' });
+  expect(value).toEqual({ verdict: 'revise', notes: 'Say which rounding rule the body defends.' });
   // The draft's own words reached the model — `vars` loaded the row the input named.
-  expect(sent.some((prompt) => prompt.includes(draft.title))).toBe(true);
+  expect(JSON.stringify(model.seen[0]?.messages)).toContain(draft.title);
+  // The tool's summary is what the agent's last turn read.
+  expect(JSON.stringify(model.seen[2]?.messages)).toContain('Minor units and a currency.');
+  // One bill for the run, the tool's model call included.
+  expect(billed?.calls).toBe(3);
 });
 
 test('reviewDraft is refused for a member of another org, at no cost', async ({
@@ -94,11 +115,13 @@ test('reviewDraft is refused for a member of another org, at no cost', async ({
     draft: 'post:draft-money',
     mara: 'member:mara',
   });
+  const model = scriptedProvider({ turns: [] });
+  configureAi({ gateway: providerGateway({ providers: [model] }) });
 
   await expect(
     reviewDraft.as(actorFor(mara), { postId: draft.id, orgId: draft.orgId }),
   ).rejects.toBeUltimateError('X_FORBIDDEN');
-  expect(sent).toEqual([]);
+  expect(model.seen).toEqual([]);
 });
 
 test('requestPostsExport enqueues one export for an admin and answers where it will land', async ({

@@ -182,7 +182,7 @@ describe('structured output', () => {
   });
 
   test('two bad answers throw X_LLM_OUTPUT_INVALID rather than looping', async () => {
-    const { provider, seen } = stub({ summary: 42 });
+    const { provider, seen } = stub({ summary: 42 }, { summary: 42 });
     install(provider);
     const summarize = declare(promptFor());
 

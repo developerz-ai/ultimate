@@ -58,6 +58,12 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
     'the schema-dump family',
     /packages\/db\/src\/(?:catalog(?:-fold|-objects|-relations)?|dump-drift|introspect-catalog|object-drift|schema-dump(?:-table|-entry)?|schema-load)\.ts$/,
   ],
+  // Five modules only `x db diagnostics` calls, on `@ultimat3/db/diagnostics` from the day they
+  // landed: on the barrel every role evaluated them to serve nothing.
+  [
+    'the diagnostics family',
+    /packages\/db\/src\/(?:db-diagnostics(?:-deadline|-redact|-rows|-sql)?|diagnostics-entry)\.ts$/,
+  ],
   // The island builder and its compiler: an image is prebuilt, and a boot that is not loads them
   // through `island-store.ts`'s own import — in the web role, never in a worker.
   ['Babel', /\/node_modules\/@babel\//],

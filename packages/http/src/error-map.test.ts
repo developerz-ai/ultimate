@@ -455,11 +455,15 @@ describe('the codes 12.0.0 added are each classified on purpose', () => {
   // The bytes are the seam: `@ultimat3/mcp` is tier 4 and can never be imported here, exactly as
   // `scripts/oauth-route-status.test.ts` pins auth's statuses from outside both packages.
   test('and that 429 is the number the MCP transport hardcodes', async () => {
-    const source = await Bun.file(`${import.meta.dir}/../../mcp/src/transport-http.ts`).text();
-    const written = /new McpRateLimitedError\([\s\S]*?status: (\d{3}),/.exec(source)?.[1];
+    const source = await Bun.file(
+      `${import.meta.dir}/../../mcp/src/transport-http-answers.ts`,
+    ).text();
+    const written = /new McpRateLimitedError\([^;]*\);\s*return refusal\(error, (\d{3}),/.exec(
+      source,
+    )?.[1];
     expect(
       written,
-      'packages/mcp/src/transport-http.ts no longer answers a status beside McpRateLimitedError',
+      'packages/mcp/src/transport-http-answers.ts no longer answers a status beside McpRateLimitedError',
     ).toBeDefined();
     expect(statusFor('X_MCP_RATE_LIMITED')).toBe(Number(written));
   });

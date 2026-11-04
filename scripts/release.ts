@@ -30,7 +30,6 @@ import {
   isBump,
   RELEASE_FLAGS,
   readReleaseVersion,
-  unknownReleaseFlags,
 } from './lib/release-version';
 import {
   performedWriteLine,
@@ -123,7 +122,27 @@ export const repinFrameworkDeps = (raw: string, version: string): string =>
   );
 
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
+  // Before anything is decided, let alone written — `--check` included: a flag this script does not
+  // declare is a mistake, and the mistake this guard exists for wrote 47 manifests.
+  const args = parseScriptArgs(Bun.argv.slice(2), {
+    names: RELEASE_FLAGS,
+    refuse: (unknown, flags) =>
+      report(
+        {
+          ok: false,
+          script: 'release',
+          summary: `refusing to release: ${unknown.length} unknown flag(s)`,
+          findings: unknown.map((name) => ({
+            code: 'X_RELEASE_FLAG_UNKNOWN',
+            cause: `--${name} is not a flag scripts/release.ts declares (known: ${RELEASE_FLAGS.join(', ')})`,
+            fix: 'bun run scripts/release.ts --bump patch --dry-run --json',
+            at: 'scripts/release.ts',
+          })),
+          data: { unknown },
+        },
+        flags.get('json') === true,
+      ),
+  });
   const root = repoRoot();
   const workspaces = await listWorkspaces(root);
   const publishable = publishOrder(workspaces);
@@ -177,27 +196,6 @@ if (import.meta.main) {
             : `${findings.length} finding(s): this repo is not at ${check}`,
         findings,
         data: { check, packages: publishable.length },
-      },
-      args.json,
-    );
-  }
-
-  // Before anything is decided, let alone written: a flag this script does not declare is a
-  // mistake, and the mistake this guard exists for wrote 47 manifests.
-  const unknown = unknownReleaseFlags(args.flags.keys());
-  if (unknown.length > 0) {
-    report(
-      {
-        ok: false,
-        script: 'release',
-        summary: `refusing to release: ${unknown.length} unknown flag(s)`,
-        findings: unknown.map((name) => ({
-          code: 'X_RELEASE_FLAG_UNKNOWN',
-          cause: `--${name} is not a flag scripts/release.ts declares (known: ${RELEASE_FLAGS.join(', ')})`,
-          fix: 'bun run scripts/release.ts --bump patch --dry-run --json',
-          at: 'scripts/release.ts',
-        })),
-        data: { unknown, current },
       },
       args.json,
     );

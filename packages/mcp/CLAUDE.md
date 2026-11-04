@@ -12,16 +12,19 @@ import. The CLI wires it.
 
 | File | Job |
 |---|---|
-| `wire.ts` | JSON-RPC types, error codes, protocol version, `JsonSchema` subset |
+| `wire.ts` | JSON-RPC types, error codes (incl. `-32020`/`-32022`), `MCP_MODERN_VERSIONS` / `MCP_LEGACY_VERSIONS` (no `MCP_PROTOCOL_VERSION`: name the era), `JsonSchema` subset |
 | `registry.ts` | catalog + the first two security outcomes (visibility, scope) |
 | `audit.ts` | one structured line per `tools/call` and per `resources/read`, outcome → level |
 | `validate-args.ts` | JSON-Schema-subset arg validation, applies defaults |
-| `server.ts` | JSON-RPC dispatch, `classify` for rate-limit buckets |
+| `server.ts` | JSON-RPC dispatch; `classify` delegates to `protocol-era.ts` |
+| `protocol-era.ts` | one request's era (`_meta` version), `METHODS` per era, `classifyBody`, `initialize` negotiation, `server/discover`, the modern stamp, the HTTP mirrored-header check and each answer's status |
+| `server-resources.ts` | `resources/read`'s three outcomes, audited, provider in a `try` |
 | `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
-| `dev-server.ts` | the 13 dev tools; depends only on an injected `DevHost` |
+| `dev-server.ts` | 13 of the 18 dev tools (`routes.list` … `logs.tail`); `ui.shot`, `ui.island`, `ui.inspect`, `ui.diff` are `dev-ui-tools.ts`, `ui.interact` `dev-ui-interact.ts`. Depends only on an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
-| `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself |
+| `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself; it keeps the order |
+| `transport-http-answers.ts` | the pre-dispatch answers (401, 403 not-an-agent / origin, 421, 429) and the per-address failure meter |
 | `audit-hook.ts` | `onAudit`; `resolveToken`'s 2nd arg is http's `RequestFacts` (`seen.address` only, never `x-forwarded-for`), re-exported as `McpRequestFacts` |
 | `confirmations.ts` · `confirmation-*.ts` | `mcpConfirmations`: a factory over `action` (view/decide) · the gate on `handle` · stores · DDL · codes |
 | `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`); the authorization server is the app's |
@@ -40,6 +43,18 @@ import. The CLI wires it.
 | `server-voice.ts` · `surface-budget.ts` | `instructions`, `errorAudience`, the invalid-args RESULT · `tools/list`/`list_resources` size, measured and budgeted |
 
 ## Invariants
+
+- **Dual-era, per request** (`As of 2026-11`, MCP 2026-07-28). A `_meta` version in
+  `MCP_MODERN_VERSIONS` → modern: stateless, `server/discover`, no `initialize`/`ping`, every result
+  stamped (`resultType`, `_meta` `serverInfo`; lists/reads `ttlMs: 0`, `cacheScope: 'private'`).
+  None, or one in `MCP_LEGACY_VERSIONS` → legacy. Else `-32022`. Resource not found is one answer
+  per era (`-32602` modern, `-32601` legacy, never `data`). A modern HTTP request's mirrored
+  headers equal its body (`headerRefusal`): absent or unequal → 400 `-32020`.
+- **`Origin` is core's `proveSameOrigin`, at the transport, before the token is read** (403
+  `X_MCP_ORIGIN_REFUSED`, audited `origin-refused`): self = `seen.origin`, allowance = `seen.listed`
+  (`http.cors.origins`), never a second origin rule. It cannot refuse a DNS-rebound name: `x mcp
+  serve` refuses a non-loopback Host first (421 `X_MCP_HOST_REFUSED`). `GET`/`DELETE` is
+  `@ultimat3/http`'s one `X_METHOD_NOT_ALLOWED` 405, mount and `x mcp serve` alike.
 
 - **`manage_resource` is a second DOOR, never a second PATH** (`As of 2026-09-26`): locate (visibility,
   else the absent answer) → the shared `resolve` (scope → args; a list whitelist's issues win) → `dispatch`,
@@ -76,48 +91,28 @@ import. The CLI wires it.
   `exposureOf` to the projected tool — outcome 1's only declaration surface for a projected
   primitive. Dropping it there silently disables outcome 1 for every projected tool: nothing
   fails, every caller simply sees every tool.
-- **A thrown value is a framework error only when its `code` matches core's `FRAMEWORK_CODE`,
-  never `code.startsWith('X_')`** (`As of 2026-09`). `asFrameworkError` substitutes
-  `x errors explain ${code}` when a coded throw carries no `fix:`, so the code lands in a COMMAND
-  an agent is told to run — and a prefix test admits `X_$(id)`. A value that is not a code spelled
-  the one way takes the `-32603` branch, which leaks nothing of the throw. One pattern, core's,
-  because `@ultimat3/core`'s `client-wire.ts` already had to answer the same question for a
-  problem document off the wire.
+- **A thrown value is a framework error only when its `code` matches core's `FRAMEWORK_CODE`**,
+  never `code.startsWith('X_')` (`asFrameworkError` puts the code in a command). Full rule: `docs/history/mcp.md`.
 - Resolve order is visibility → scope → args → policy. Validating first leaks a schema;
   running the policy first decides a refusal from attacker-supplied input.
-- **A key's membership of a declared schema is `Object.hasOwn(properties, key)`, never
-  `properties[key] === undefined`.** The arguments of a `tools/call` are NAMED by the caller, and
-  `Object.prototype` supplies a value for `constructor`, `toString`, `hasOwnProperty` and
-  `__proto__` on every plain object — so the index read answered "declared" for four names no
-  schema declares, and `validate-args.ts` accepted them past an `additionalProperties: false` that
-  forbids them and then dropped them. Its twin: a validated key
-  lands on the result through `Object.defineProperty`, because `out[key] = v` for `__proto__` runs
-  the setter on `Object.prototype` and re-prototypes the record instead of adding a key.
+- **A key's membership of a declared schema is `Object.hasOwn(properties, key)`**, never an index
+  read (`Object.prototype` answers four names); a validated key lands through `Object.defineProperty`.
+  Full rule: `docs/history/mcp.md`.
 - **The RESOURCE surface owes the same three outcomes as the tool surface.** `resources/list` and
   `resources/read` take the `McpCaller`; `McpResource` carries `visibleTo` and `scope`, applied by
   `ResourceRegistry.resolve` in `ToolRegistry.resolve`'s order through the same `visibleToCaller`.
   The not-found branch carries no `data` (a catalog there enumerates it). `resource-security.test.ts`
   is the contract, for hand-built resources AND `defineAppMcp({ resources })`.
-- **Every provider call is inside a `try`.** A resource's `read` is an INJECTED THUNK —
-  `frameworkResources` wires it to a file read, and `Bun.file(...).text()` on a missing
-  `x.manifest.json` throws ENOENT. Outside the try it escaped `handle()`: `serveStdio` REJECTED with
-  the raw error, zero frames written, the request unanswered and every later request on that buffer
-  never processed. Same shape `toolsCall` uses — a framework error keeps its code/cause/fix, anything
-  else is `-32603` with no internals.
+- **Every provider call is inside a `try`** (an injected `read` thunk can throw ENOENT): a framework
+  error keeps its code/cause/fix, anything else is `-32603`. Full rule: `docs/history/mcp.md`.
 - **A declared `pattern` is compiled once per schema NODE, never per `tools/call`** — a `WeakMap`
   keyed on the node (never on the pattern string, which grows forever), caching an uncompilable
   pattern's `null` too. `compiledPatternCount()` is the test-only probe; `validate-args.test.ts`
   asserts it does not climb over 100 calls. Compiled WITH `x-ultimate-pattern-flags` (schema's),
   `lastIndex` reset.
-- **`format` is NOT in the wire subset**, and `wire.ts` types it `never` so re-adding it does not
-  compile. It names a rule whose meaning lives in `@ultimat3/schema` (`uuid`, `email`,
-  `iana-time-zone`), and this package cannot check it without a second definition of each that can
-  only drift from the action's own parse. `tools/list` published it and `validate-args.ts` ignored
-  it, so a tool declaring `t.uuid` accepted `"not-a-uuid"` with `ok: true`. `pattern` is the
-  opposite case and is kept: the rule travels with the schema. The narrowing is `@ultimat3/schema`'s
-  `toWireSchema` (tier 0, so OpenAPI-adjacent readers reach the same document) and the
-  type is its `WireJsonSchema`, which `wire.ts` names `JsonSchema`; `validate-args-subset.test.ts`
-  asserts every published keyword is one this server enforces, at any depth.
+- **`format` is NOT in the wire subset** (`wire.ts` types it `never`): its meaning is
+  `@ultimat3/schema`'s; `pattern` is kept. `validate-args-subset.test.ts` asserts every published
+  keyword is enforced. Full rule: `docs/history/mcp.md`.
 - **A hand-written app tool parses its own input**, in the slot `invoke` puts it: parse, then
   `guardAction()`, then `handle`. A projected action re-parses inside `invoke`; `app-tool.ts` had no second
   parse, so `handle` was handed whatever the wire subset let through — typed `InferOutput<TInput>`,
@@ -261,12 +256,9 @@ import. The CLI wires it.
   a property named `__proto__` runs `Object.prototype`'s setter and re-prototypes the published
   `properties` record instead of adding a key, so a field the tool author declared vanishes from
   `tools/list` and from what the arg validator reads back.
-- `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr. It also **caps one
-  message** at `DEFAULT_STDIO_LINE_LIMIT` (1 MiB, the same figure `transport-http.ts` enforces with
-  `readWithinLimit`) — the peer launched this process and is trusted, a bug in it is not, and a
-  stream with no newline grew the buffer until the process died. Over-long is one `-32600` frame
-  carrying a `fix`, then the rest of that line is DISCARDED to the next newline: what follows an
-  over-long message on the same line is its tail, never a message of its own.
+- `transport-stdio.ts` never writes stdout except the wire (diagnostics → stderr) and caps one
+  message at `DEFAULT_STDIO_LINE_LIMIT` (1 MiB): one `-32600` frame, the rest of that line discarded.
+  Full rule: `docs/history/mcp.md`.
 - New mutating tool ⇒ set `destructive: true`, or it is metered as cheap read chatter.
 - **Invalid arguments are an `isError` RESULT (`X_INPUT_INVALID`), `As of 22.10`** — clients hide a
   `-32602` from the model. Audit outcome stays `invalid-args`. `-32602` only for a call that is not

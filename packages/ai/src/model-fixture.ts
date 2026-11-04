@@ -83,7 +83,7 @@ export function registerFixtureModels(): void {
     ...big,
     inputPerMillion: usd(200),
     outputPerMillion: usd(1_000),
-    cacheReadPerMillion: usd(20),
+    cacheReadPerMillion: usd(10),
     cacheWritePerMillion: usd(250),
     cacheMinimumTokens: 512,
     reasoning: {

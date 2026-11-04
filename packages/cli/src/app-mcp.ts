@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
-import { jsonResponse, selfOrigin } from '@ultimat3/http';
+import { jsonResponse, originListed, selfOrigin } from '@ultimat3/http';
 import {
   type AppMcp,
   McpAppUnmountedError,
@@ -199,6 +199,8 @@ function endpointRoutes(route: Descriptor, path: string, index: number): readonl
         route.handle(request.raw, {
           origin: selfOrigin(ctx.url, ctx.https),
           address: ctx.ip ?? undefined,
+          // A browser `Origin` is proven the way CSRF proves it: this origin, or one listed exactly.
+          listed: (origin) => originListed(ctx.config.cors, origin),
         }),
       // `authenticate` answers nobody: the route's ONE credential is the bearer `resolveToken`
       // reads, so a session cookie authenticates nothing here. Without it the app's authenticator

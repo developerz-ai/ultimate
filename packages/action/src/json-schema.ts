@@ -15,7 +15,7 @@ export type JsonSchemaObject = Record<string, unknown>;
  * `{ type: 'object', additionalProperties: true }` so that "a missing OpenAPI detail must not
  * break a deploy" — which inverts axiom 3: the deploy succeeded and every caller was lied to.
  * `toJsonSchema` throws exactly when the spec must not claim anything, and the same schema
- * still fails `validateInput` on every payload, so the OpenAPI component and the MCP
+ * still fails `parseActionInput` on every payload, so the OpenAPI component and the MCP
  * `inputSchema` were advertising "any object accepted" for an endpoint that accepts none.
  * `registerAction` calls this at boot (`assertProjectable`), so a registered action can never
  * reach a projection that throws.

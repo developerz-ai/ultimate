@@ -4,7 +4,7 @@
  */
 
 import { storeMode } from '@ultimat3/core';
-import { type Driver, database, memoryDriver, postgresDriver } from '@ultimat3/entity';
+import { type Driver, database, postgresDriver, testDriver } from '@ultimat3/entity';
 import { comments } from './schema/comments';
 import { connections } from './schema/connections';
 import { likes } from './schema/likes';
@@ -36,10 +36,13 @@ import { webhookEndpoints } from './schema/webhook-endpoints';
  *
  * `test` is the one carve-out and it is not laziness: `bun test` installs no client, so a
  * statement would have nothing to reach. Core's `storeMode` is that rule, written once: it reads
- * `ULTIMATE_ENV` then `NODE_ENV`, and `bun test` sets the second to `test`.
+ * `ULTIMATE_ENV` then `NODE_ENV`, and `bun test` sets the second to `test`. `testDriver()` is
+ * memory until a test installs its migrated database with `setDbClient`, then that database —
+ * per call, so a repo's handle writes and its join reads meet in one store
+ * (`apps/web/app/posts/repo-join.test.ts`).
  */
 export const selectDriver = (env: Readonly<Record<string, string | undefined>>): Driver =>
-  storeMode(env) === 'memory' ? memoryDriver() : postgresDriver();
+  storeMode(env) === 'memory' ? testDriver() : postgresDriver();
 
 export const driver = selectDriver(Bun.env);
 

@@ -83,6 +83,14 @@ export function describeAgents(): readonly AgentFact[] {
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
+/**
+ * One agent's facts, named yet or not — how `defineEval({ agent })` learns the prompt it measures.
+ * `undefined` for an action `agent()` did not build, and for a `named()` twin (see above).
+ */
+export function agentFactsOf(target: AnyAction): Omit<AgentFact, 'name'> | undefined {
+  return registry.get(target)?.();
+}
+
 /** Test-only reset. A module-level registry otherwise leaks between test files. */
 export function resetAgents(): void {
   registry.clear();

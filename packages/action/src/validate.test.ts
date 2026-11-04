@@ -1,5 +1,5 @@
 /**
- * `validateInput`/`validateOutput` are the one parse path every surface shares —
+ * `parseActionInput`/`validateOutput` are the one parse path every surface shares —
  * covered directly here so the two failure modes (bad input, drifted output)
  * stay pinned to their own code and carry the action name and the issue text.
  */
@@ -7,38 +7,40 @@
 import { describe, expect, test } from 'bun:test';
 import { formatIssues, t } from '@ultimat3/schema';
 import { InputInvalidError, OutputInvalidError } from './errors';
-import { validateInput, validateOutput } from './validate';
+import { parseActionInput, validateOutput } from './validate';
 
 const Schema = t.object({ postId: t.uuid, title: t.string.min(1) });
 
 const Nested = t.object({ items: t.array(t.object({ price: t.number })) });
 
-// `schema: Parameters<typeof validateInput>[0]`, never `schema = Schema`: a default parameter
+// `schema: Parameters<typeof parseActionInput>[0]`, never `schema = Schema`: a default parameter
 // infers its type from the default, so the helper accepted only `Schema`'s exact shape and the
 // nested-path case below could not be passed to it. Derived from the function under test, so it
-// cannot drift from what `validateInput` actually accepts.
+// cannot drift from what `parseActionInput` actually accepts.
 const refusalOf = async (
   raw: unknown,
-  schema: Parameters<typeof validateInput>[0] = Schema,
+  schema: Parameters<typeof parseActionInput>[0] = Schema,
 ): Promise<InputInvalidError> => {
-  const failure = await validateInput(schema, raw, 'publishPost').catch((error: unknown) => error);
+  const failure = await parseActionInput(schema, raw, 'publishPost').catch(
+    (error: unknown) => error,
+  );
   if (!(failure instanceof InputInvalidError)) {
     return expect.unreachable(`expected an InputInvalidError, got ${typeof failure}`);
   }
   return failure;
 };
 
-describe('validateInput', () => {
+describe('parseActionInput', () => {
   test('returns the parsed value for a payload the schema accepts', async () => {
     const raw = { postId: '00000000-0000-4000-8000-0000000000aa', title: 'Hello' };
 
-    const parsed = await validateInput(Schema, raw, 'publishPost');
+    const parsed = await parseActionInput(Schema, raw, 'publishPost');
 
     expect(parsed).toEqual(raw);
   });
 
   test('throws InputInvalidError, carrying the action name and the issue text', async () => {
-    const failure = await validateInput(
+    const failure = await parseActionInput(
       Schema,
       { postId: 'not-a-uuid', title: '' },
       'publishPost',
@@ -55,7 +57,7 @@ describe('validateInput', () => {
  * The structured channel BESIDE the line, added 2026-08-24. Before it, a client rebuilding a form
  * had the flattened `cause` and nothing else — every app split that string back apart by hand.
  */
-describe('validateInput carries the issues, not only the line', () => {
+describe('parseActionInput carries the issues, not only the line', () => {
   test('addresses every rejection by path, nested ones included', async () => {
     const failure = await refusalOf({ items: [{ price: 1 }, { price: 'free' }] }, Nested);
 

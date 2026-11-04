@@ -104,6 +104,10 @@ export function runMeter(): RunMeter {
           unsettled -= 1;
           absorb(error);
           parent?.report(bill);
+        } else {
+          // Never answered: its bill cannot be known, so it travels up as a count. Without this a
+          // caught failure, or one beside a sibling that settled, vanished from the parent's total.
+          parent?.report(UNSETTLED_CALL);
         }
         throw error;
       }
@@ -131,7 +135,36 @@ export function runMeter(): RunMeter {
   };
 }
 
-/** Two bills as one. A cost in another currency cannot be added and is left out of the sum. */
+/**
+ * One bill across every `llm()` and `agent()` call `fn` makes, however deep they nest — what a
+ * job reads to say what its run cost. A throw is rethrown carrying the total on `meta.billed`
+ * (`billedOf(error)`); `billed` is `undefined` when no provider call was ever started. A meter,
+ * not a ledger: it refuses nothing.
+ */
+export async function meteredRun<T>(
+  fn: () => T | Promise<T>,
+): Promise<{ readonly value: T; readonly billed: Billed | undefined }> {
+  const meter = runMeter();
+  try {
+    const value = await meter.within(fn);
+    return { value, billed: meter.billed() };
+  } catch (error) {
+    throw meter.fail(error);
+  }
+}
+
+/** One started call that never reported usage: counted, never priced. */
+const UNSETTLED_CALL: Billed = {
+  usage: ZERO_USAGE,
+  cost: { minor: 0, currency: 'USD' },
+  calls: 0,
+  unsettled: 1,
+};
+
+/**
+ * Two bills as one. A cost in another currency cannot be added and is left out of the sum — except
+ * a zero, which carries no currency worth keeping: an unsettled call's placeholder never decides it.
+ */
 function sum(a: Billed, b: Billed): Billed {
   return {
     usage: {
@@ -140,7 +173,12 @@ function sum(a: Billed, b: Billed): Billed {
       cacheReadTokens: a.usage.cacheReadTokens + b.usage.cacheReadTokens,
       cacheWriteTokens: a.usage.cacheWriteTokens + b.usage.cacheWriteTokens,
     },
-    cost: a.cost.currency === b.cost.currency ? addMoney(a.cost, b.cost) : a.cost,
+    cost:
+      a.cost.currency === b.cost.currency
+        ? addMoney(a.cost, b.cost)
+        : a.cost.minor === 0
+          ? b.cost
+          : a.cost,
     calls: a.calls + b.calls,
     unsettled: a.unsettled + b.unsettled,
   };

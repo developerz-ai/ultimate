@@ -41,6 +41,7 @@ export const ENTITY_ERROR_CODES = [
   'X_ENTITY_APPEND_ONLY',
   'X_ENTITY_OPERATOR_UNKNOWN',
   'X_LOCK_UNSUPPORTED',
+  'X_TEST_DRIVER_CLIENT_CHANGED',
 ] as const;
 
 export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
@@ -76,6 +77,7 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_ENTITY_APPEND_ONLY: 'an append-only entity was asked to rewrite or remove a row',
   X_ENTITY_OPERATOR_UNKNOWN: 'a predicate names an operator outside the vocabulary',
   X_LOCK_UNSUPPORTED: 'a repository has no lock',
+  X_TEST_DRIVER_CLIENT_CHANGED: 'The installed client changed inside a testDriver() transaction',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the

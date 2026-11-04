@@ -13,7 +13,7 @@ import type { BudgetLimits, BudgetStore, BudgetTake } from './budget';
 import { budgetKeysFor, type MemoryBudgetStore, memoryBudgetStore } from './budget';
 import { providerGateway } from './gateway';
 import { hive } from './hive';
-import { ANSWER, ctxFor, declare, POST_ID, promptFor, stub } from './llm-fixture';
+import { ANSWER, ctxFor, declare, POST_ID, promptFor, stub, times } from './llm-fixture';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { Provider } from './provider';
@@ -85,7 +85,7 @@ describe('budgetKeysFor', () => {
 describe('an llm() runs under its caller’s actor and org ceilings', () => {
   test('the second call of one actor is refused; another actor still runs', async () => {
     const estimate = await oneEstimate();
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(ANSWER, ANSWER);
     install(provider, { actor: estimate + 1 }, memoryBudgetStore());
     const summarize = declare(promptFor());
 
@@ -114,7 +114,7 @@ describe('an llm() runs under its caller’s actor and org ceilings', () => {
 describe('an agent() runs under its caller’s org ceiling', () => {
   test('a second run in the same org is refused before the provider', async () => {
     const { store, takes } = recording();
-    const { provider, seen } = stub({ answer: 'ok' });
+    const { provider, seen } = stub({ answer: 'ok' }, { answer: 'ok' });
     install(provider, { org: 1_000_000 }, store);
     const support = agent({
       input: t.object({ q: t.string }),
@@ -203,7 +203,7 @@ describe('the org ceiling holds under concurrency', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const { provider: inner, seen } = stub(ANSWER);
+    const { provider: inner, seen } = stub(ANSWER, ANSWER);
     const holding: Provider = {
       ...inner,
       async generate(request) {
@@ -289,7 +289,7 @@ describe('a scope with no ceiling never touches the store', () => {
         return inner.take(key, tokens, limit);
       },
     };
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(...times(20, ANSWER));
     configureAi({
       gateway: providerGateway({
         defaultModel: FIXTURE_MODEL,

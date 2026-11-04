@@ -143,7 +143,8 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   identically and neither form is a second authz path.
 - `packages/db/src/client.ts` NAMES its driver rather than taking `database()`'s default, because
   the seed and the app have to write and read one store. `postgresDriver()` everywhere except
-  `bun test`, where nothing installs a client.
+  `bun test`, where `testDriver()` is memory until a test installs its migrated database
+  (`app/posts/repo-join.test.ts`).
 - Tests sit next to their source: `<file>.test.ts` (unit), `.contract.test.ts`, `.live.test.ts`,
   `.job.test.ts`, `.e2e.test.ts`, `.eval.test.ts`.
 - A route that reads or writes over the socket declares an `island()`, and the hook call lives in

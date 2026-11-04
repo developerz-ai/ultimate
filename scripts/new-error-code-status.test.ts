@@ -77,20 +77,20 @@ describe('the HTTP status is decided in the same edit', () => {
 
   test('--off-socket is a DECISION: it lands in OFF_SOCKET, never in the shrink-only UNDECIDED', async () => {
     const dir = await fixtureRoot();
-    // money has a group in BOTH lists; `ai` has one only in UNDECIDED, so OFF_SOCKET opens one.
-    await mkdir(`${dir}/packages/ai/src`, { recursive: true });
+    // money has a group in BOTH lists; `time` has one only in UNDECIDED, so OFF_SOCKET opens one.
+    await mkdir(`${dir}/packages/time/src`, { recursive: true });
     await Bun.write(
-      `${dir}/packages/ai/src/errors.ts`,
-      "export const AI_TITLES = {\n  X_A: 'a',\n};\n",
+      `${dir}/packages/time/src/errors.ts`,
+      "export const TIME_TITLES = {\n  X_A: 'a',\n};\n",
     );
     await newErrorCode(dir, money('X_MONEY_PROBE_ONLY', '--off-socket'));
-    const ai = money('X_AI_PROBE_ONLY', '--off-socket').with(2, 'ai');
-    await newErrorCode(dir, ai);
+    const time = money('X_TIME_PROBE_ONLY', '--off-socket').with(2, 'time');
+    await newErrorCode(dir, time);
     const written = await import(`${dir}/${STATUS_BACKLOG}`);
     expect(written.OFF_SOCKET.money).toContain('X_MONEY_PROBE_ONLY');
-    expect(written.OFF_SOCKET.ai).toEqual(['X_AI_PROBE_ONLY']);
+    expect(written.OFF_SOCKET.time).toEqual(['X_TIME_PROBE_ONLY']);
     expect(written.UNDECIDED.money).not.toContain('X_MONEY_PROBE_ONLY');
-    expect(written.UNDECIDED.ai).not.toContain('X_AI_PROBE_ONLY');
+    expect(written.UNDECIDED.time).not.toContain('X_TIME_PROBE_ONLY');
   });
 
   test('a code UNDECIDED already pins is refused, not decided twice', async () => {

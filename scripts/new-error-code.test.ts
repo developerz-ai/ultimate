@@ -136,7 +136,7 @@ describe('a registry kept as frozen declarations, not titles', () => {
     expect(transpiles(codes)).toBe(true);
     expect(await read(dir, WIKI_PAGE)).toContain('| `X_SCHEMA_PROBE` | a probe |');
     // The pin joins schema's OFF_SOCKET group — never schema's UNDECIDED group. Opening a group a
-    // package lacks is `new-error-code-status.test.ts`'s `ai` case.
+    // package lacks is `new-error-code-status.test.ts`'s `time` case.
     expect(await read(dir, STATUS_BACKLOG)).toContain(
       "  schema: ['X_SCHEMA_BOUNDS_INVALID', 'X_SCHEMA_SENSITIVE_OUTPUT', 'X_SCHEMA_PROBE'],\n};",
     );
@@ -452,7 +452,11 @@ describe('the real tree', () => {
   test('most real packages are in a shape it can add to — the rest are refused, never guessed', async () => {
     const shapes: Record<string, string> = {};
     for (const pkg of PACKAGE_SECTIONS.keys()) {
-      const file = Bun.file(`${ROOT}/packages/${pkg}/src/errors.ts`);
+      // A package that split its titles out (`ai`, `cli`, `jobs`) is probed where the planner writes.
+      const split = Bun.file(`${ROOT}/packages/${pkg}/src/error-codes.ts`);
+      const file = (await split.exists())
+        ? split
+        : Bun.file(`${ROOT}/packages/${pkg}/src/errors.ts`);
       if (!(await file.exists())) continue;
       try {
         const out = registerIn(await file.text(), pkg, {

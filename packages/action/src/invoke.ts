@@ -39,7 +39,7 @@ import { getIdempotencyStore, withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
 import { guardAction, guardActionBeforeInput } from './policy-gate';
 import { spendActionLimit, withCallerAddress, withJobFrame } from './rate-limit-gate';
-import { parsedOrNothing, validateInput, validateOutput } from './validate';
+import { parseActionInput, parsedOrNothing, validateOutput } from './validate';
 
 /**
  * Private on purpose. `@ultimat3/action` exports no way to read this back, which
@@ -274,7 +274,7 @@ async function perform(
   const spentEarly = def.rateLimit === undefined || peeked === undefined;
   if (spentEarly) await spend();
 
-  const input = await validateInput(def.input, raw, name);
+  const input = await parseActionInput(def.input, raw, name);
   // The audit record's copy, `.sensitive()` fields masked by THIS action's own schema — never a
   // key table, so a `cardPan` flagged here changes nothing another action records or stores.
   if (def.audit === true) trace.input = maskSensitive(def.input, input, REDACTED);

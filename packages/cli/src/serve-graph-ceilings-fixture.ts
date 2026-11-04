@@ -118,8 +118,13 @@
  * raised 738 → 740, measured 740 (2026-11-03, plan 101 wave 4b): `core/src/config-assets.ts`
  * (`assets.retain`) and `core/src/config-client-errors.ts` (`clientErrors`) — two `app.config.ts`
  * sections, validated where every config section is, through the core barrel. Nothing else moved.
+ * raised 740 → 741, measured 741 (2026-11-03, plan 101 wave 4c): `entity/src/test-driver.ts`
+ * (`testDriver()`, which a scaffolded `packages/db/src/client.ts` names) through the entity barrel.
+ * `dbDiagnostics()`'s five modules were 746 on the db barrel; they moved to
+ * `@ultimat3/db/diagnostics` (one caller, `x db diagnostics`) and `NEVER_AT_BOOT` holds them out.
+ * Measured against a copy of HEAD with its own workspace links.
  */
-export const MIGRATE_CEILING = 740;
+export const MIGRATE_CEILING = 741;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -266,8 +271,9 @@ export const MIGRATE_CEILING = 740;
  * `core/src/render-node.ts` (the node brands, split out so `render` reads them from a leaf).
  * raised 1068 → 1080, measured 1080 (2026-11-03, plan 101 wave 4a): `MIGRATE_CEILING`'s 12.
  * raised 1080 → 1082, measured 1082 (2026-11-03, plan 101 wave 4b): `MIGRATE_CEILING`'s 2.
+ * raised 1082 → 1083, measured 1083 (2026-11-03, plan 101 wave 4c): `MIGRATE_CEILING`'s 1.
  */
-export const SERVING_ROLE_CEILING = 1082;
+export const SERVING_ROLE_CEILING = 1083;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -401,5 +407,9 @@ export const SERVING_ROLE_CEILING = 1082;
  * `clientErrors.enabled`); and `assets.retain`, `cli/src/retained-assets{,-boot,-layout,-read,
  * -sweep}.ts` — the publish before `/readyz` and the reader every asset route's 404 asks. Measured
  * against a copy of HEAD with its own workspace links: no existing module newly reached.
+ * raised 1222 → 1226, measured 1226 (2026-11-03, plan 101 wave 4c): `SERVING_ROLE_CEILING`'s 1,
+ * and MCP's dual era — `mcp/src/protocol-era.ts` (the era per request, `server/discover`, the
+ * mirrored-header check), plus `server-resources.ts` and `transport-http-answers.ts`, split out
+ * of `server.ts` and `transport-http.ts` at their line ceilings. No existing module newly reached.
  */
-export const WEB_ROLE_CEILING = 1222;
+export const WEB_ROLE_CEILING = 1226;

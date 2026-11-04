@@ -25,6 +25,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./diagnostics": "./src/diagnostics-entry.ts",
     "./schema-dump": "./src/schema-dump-entry.ts"
   },
   "files": [

@@ -876,6 +876,16 @@ a `null` also matches the NULL rows, which `col = null` never does).
 rather than keep a comparator of their own; `compare-parity.test.ts` runs the rule against both
 drivers.
 
+`testDriver()` is the third, and only a test takes it (`As of 30.0`): memory until
+`@ultimat3/db`'s `setDbClient` installs a client, `postgresDriver()` through that client while one
+is, decided per repository call — `database()` resolves each table's repository once at module
+load, so a driver chosen once would never follow a test's migrated database. `reset()` empties the
+memory half only. `transactor().run` takes the side installed when it starts, and every call inside
+it stays there: a client installed or cleared mid-transaction is `X_TEST_DRIVER_CLIENT_CHANGED`,
+never a transaction split across two stores. The scaffolded handle's line is
+`storeMode(env) === 'memory' ? testDriver() : postgresDriver()`; the recipe is
+[Testing](../../wiki/Testing.md#database-state-and-what-a-run-leaves-behind).
+
 `database()` called with no driver takes the process default, and `defaultDriver()` is that same
 object — the one seam a test harness needs, `As of 2026-08`:
 

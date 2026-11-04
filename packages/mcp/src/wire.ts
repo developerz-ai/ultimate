@@ -3,13 +3,23 @@
 // Pure data + pure functions so every transport (http, stdio, a test) agrees on the wire
 // without importing the server.
 //
-// Reference: https://modelcontextprotocol.io/specification (2025-06-18).
+// Reference: https://modelcontextprotocol.io/specification (2026-07-28, read 2026-11-02).
 
 import { frameworkVersion } from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
 
-/** MCP protocol version advertised on `initialize`. */
-export const MCP_PROTOCOL_VERSION = '2025-06-18';
+/**
+ * The modern revisions served: version, identity and capabilities ride in each request's `_meta`,
+ * no `initialize`. Newest first.
+ */
+export const MCP_MODERN_VERSIONS = ['2026-07-28'] as const;
+
+/** The handshake revisions `initialize` negotiates — echoed when offered, else the first. */
+export const MCP_LEGACY_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'] as const;
+
+/** The `_meta` keys a modern request and result carry. */
+export const META_PROTOCOL_VERSION = 'io.modelcontextprotocol/protocolVersion';
+export const META_SERVER_INFO = 'io.modelcontextprotocol/serverInfo';
 
 /**
  * Identity advertised on `initialize` unless the host overrides it. A call and not a constant:
@@ -50,7 +60,7 @@ export interface JsonRpcResponse {
 
 // ── standard error codes (jsonrpc.org/spec) ──────────────────────────────────
 //
-// The MCP spec adds no codes of its own, so the two security answers map onto these:
+// The two security answers map onto these:
 //   INVALID_REQUEST  (-32600) → Forbidden: the tool exists and you may see it, but your
 //                               token lacks its scope.
 //   METHOD_NOT_FOUND (-32601) → ToolNotFound: the tool is absent OR hidden from your role.
@@ -61,6 +71,10 @@ export const INVALID_REQUEST = -32600;
 export const METHOD_NOT_FOUND = -32601;
 export const INVALID_PARAMS = -32602;
 export const INTERNAL_ERROR = -32603;
+
+// ── MCP's own (2026-07-28), from the sub-range the spec reserves ─────────────
+export const HEADER_MISMATCH = -32020;
+export const UNSUPPORTED_PROTOCOL_VERSION = -32022;
 
 /**
  * The JSON Schema subset a tool publishes and `validate-args.ts` enforces — `@ultimat3/schema`'s

@@ -1,6 +1,6 @@
 // The X_AI_CONTENT_UNSUPPORTED class, apart from ./errors because that catalogue is at its ceiling —
 // the split `hive-errors.ts` and `eval-errors.ts` made. Its code and title are registered in
-// ./errors with the rest: one owner, one registration, one place a duplicate can surface.
+// ./error-codes with the rest: one owner, one registration, one place a duplicate can surface.
 
 import { UltimateError } from '@ultimat3/core';
 

@@ -18,7 +18,7 @@ import { InputInvalidError, OutputInvalidError } from './errors';
  * handed to an HTTP surface that returns it to the caller. Four members travel, and
  * `describeValue` is what keeps a value out of the fifth.
  */
-export async function validateInput<S extends StandardSchemaV1>(
+export async function parseActionInput<S extends StandardSchemaV1>(
   schema: S,
   raw: unknown,
   actionName: string,

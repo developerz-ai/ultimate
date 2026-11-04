@@ -78,7 +78,12 @@ export const OFF_SOCKET: Pins = {
     'X_OAUTH_PROVIDER_DUPLICATE',
   ],
   // tier 2 — the N+1 pair: dev notices surfaced by the overlay, never thrown at a caller.
-  entity: ['X_N_PLUS_ONE_QUERY', 'X_N_PLUS_ONE_WRITE', 'X_LOCK_UNSUPPORTED'],
+  entity: [
+    'X_N_PLUS_ONE_QUERY',
+    'X_N_PLUS_ONE_WRITE',
+    'X_LOCK_UNSUPPORTED',
+    'X_TEST_DRIVER_CLIENT_CHANGED',
+  ],
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],
   // tier 3 — an action or its path registered twice, at `registerActions`.
@@ -140,6 +145,9 @@ export const OFF_SOCKET: Pins = {
     'X_TRANSPORT_UNAVAILABLE',
     'X_REALTIME_PRODUCER_CONFLICT',
   ],
+  // tier 4 — a test double's script running out, raised inside `bun test` by `scriptedProvider`,
+  // which no served app installs.
+  ai: ['X_AI_SCRIPT_EXHAUSTED', 'X_EVAL_TOOL_UNDOUBLED'],
   // tier 4 — a mail declared twice, at registration.
   mail: ['X_MAIL_DUPLICATE', 'X_MAIL_KEY_MISSING'],
   // tier 4 — build-time only: the manifest emitter and the `AGENTS.md` rules, all on `x verify`.

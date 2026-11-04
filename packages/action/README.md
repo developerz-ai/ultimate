@@ -939,3 +939,4 @@ Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `db`, `entity`, `policy`, `
 |---|---|
 | `IdempotencyOutputUnserializableError` | the class behind `X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE` |
 | `IdempotencyRunCeilingError` | the class behind `X_IDEMPOTENCY_RUN_CEILING` |
+| `parseActionInput(schema, raw, name)` | `invoke`'s input parse, alone: the parsed value, or the same `X_INPUT_INVALID` (line and `issues`) `invoke` throws. `@ultimat3/ai` holds an agent eval's tool double to it |

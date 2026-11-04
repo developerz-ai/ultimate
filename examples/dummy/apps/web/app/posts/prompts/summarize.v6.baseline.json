@@ -1,0 +1,11 @@
+{
+  "eval": "posts.summarize",
+  "prompt": "posts.summarize@6",
+  "promptHash": "6f9dc1df192bf1b1e473d87ee899fdc1",
+  "score": 0.972,
+  "cases": {
+    "english/tenancy": 1,
+    "short-body/passthrough": 0.917,
+    "spanish/timezones": 1
+  }
+}

@@ -3,6 +3,8 @@
 // measurement and the ratchet are the gate's.
 
 import { BadFlagError } from '../../packages/cli/src/errors';
+import type { KnownFlags } from './args';
+import { refuseUnknownFlags } from './args';
 
 /**
  * One thing this gate measures alone: a package, or `scripts/`. `name` is what `--package` takes
@@ -60,6 +62,12 @@ export const COVERAGE_GATE_FLAGS = ['json', 'package', 'all', 'jobs', 'shard'] a
 const refuse = (flag: string, reason: string, fix: string): BadFlagError =>
   new BadFlagError({ flag, command: 'coverage-gate', reason, fix });
 
+/** The flags the coverage gate reads; any other is refused, never dropped. */
+const COVERAGE_KNOWN: KnownFlags = {
+  names: COVERAGE_GATE_FLAGS,
+  refuse: ([name = '']) => refuse(name, `unknown flag --${name}`, `${SELF} --all`),
+};
+
 /**
  * `--shard i/n`: the units this runner gates — round-robin over the SORTED list, so every unit is
  * in exactly one shard and shard i is the same units on every runner. Refused without `--all`:
@@ -84,10 +92,7 @@ export function unitsFor(
   root: string,
   flags: ReadonlyMap<string, string | boolean>,
 ): readonly string[] {
-  for (const name of flags.keys()) {
-    if ((COVERAGE_GATE_FLAGS as readonly string[]).includes(name)) continue;
-    throw refuse(name, `unknown flag --${name}`, `${SELF} --all`);
-  }
+  refuseUnknownFlags(flags, COVERAGE_KNOWN);
   const only = flags.get('package');
   const rawAll = flags.get('all');
   // A boolean given a value (`--all=false`) is refused, never read as off — `lib/args.ts`'s rule.

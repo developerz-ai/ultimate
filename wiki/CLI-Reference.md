@@ -32,7 +32,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x stop [--timeout 30s]` | stop this checkout's `x dev` (the pid its `.x/dev.lock` names, nothing else) and return once the next `x dev` can boot | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
-| `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill | shipped |
+| `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill, diagnostics | shipped |
 | `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example\|init]` | validate the process env against `envSchema`, regenerate `.env.example` from it, or write `.env.production` (`init --production`) | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
@@ -417,6 +417,7 @@ x db gen "add publish_at" | migrate | reset | studio
      | backfill --list [--name n] [--status s] [--limit n] [--json]
      | backfill --pending [--json]
      | backfill <name>|--all [--write] [--force] [--json]
+     | diagnostics [--limit n] [--json]
 ```
 
 | Subcommand | Does | Notes |
@@ -432,6 +433,7 @@ x db gen "add publish_at" | migrate | reset | studio
 | `backfill --list` | print the `x_backfills` ledger — one row per `backfill()` pass, newest first | what has already been swept |
 | `backfill --pending` | every backfill the app **declared**, minus the ones that completed | the alarm: a sweep merged and never enqueued had no ledger row and was invisible everywhere. **Non-zero exit** when anything is unswept, so a cron reads the code and not the table |
 | `backfill <name>` / `backfill --all` | gate one sweep (or every pending one) and enqueue it | **dry run by default** — `--write` is never implied. `--write` enqueues; the workers perform the pass, because the queue is a job's execution surface. `--all` isolates per name and continues past a failure, exiting non-zero naming each |
+| `diagnostics` | what the database is doing now: `blockers` (each waiting `pid` and the `blockedBy` pid holding it, at `data.blockers.rows[]`), `activity`, `slowQueries`, `unusedIndexes`, `invalidIndexes`, `notValidConstraints`, `deadTuples` | **facts, never a verdict: exit 0** whatever they say. The one failure is a connection that never opens, `X_DB_UNAVAILABLE`. Every section is one catalog read in its own `BEGIN READ ONLY` with a 2 s `statement_timeout`, capped at `--limit` rows (default 20, at most 1000). A section that fails is `{ available: false, code, reason, fix }` in place and the other six still answer; `slowQueries` is unavailable until an operator installs `pg_stat_statements` (never on the embedded database). No user table is read; session SQL is printed with every literal as `?`; a credential in a reason is masked. **Whoever runs it sees the redacted SQL of every session on the app's database role** (every role, when it holds `pg_read_all_stats`): statement shape and identifiers, never values. `unusedIndexes` skips unique and primary indexes and carries `statsAgeSeconds` and `replica`. Opens the database without applying the framework tables; an embedded one `x dev` holds is refused (`X_DEV_ALREADY_RUNNING`). `--json`: `data.<section>`. Arbitrary read-only SQL is `db.query` over [`x mcp serve`](MCP-And-AI) |
 
 A bare `x db backfill` is `X_CLI_BAD_FLAG` naming a shape that works: the four answer four different questions, and defaulting to one of them is the ambiguity axiom 1 refuses.
 

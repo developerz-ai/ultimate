@@ -10,7 +10,8 @@ import { assertShardable, parseShard } from '../../packages/cli/src/verify-shard
 import type { VerifyStepName } from '../../packages/cli/src/verify-step';
 import { VERIFY_STEP_NAMES } from '../../packages/cli/src/verify-step';
 import { nearestName } from '../../packages/core/src/nearest-name';
-import type { ScriptArgs } from './args';
+import type { KnownFlags, ScriptArgs } from './args';
+import { refuseUnknownFlags } from './args';
 
 /**
  * The gate as it is typed at the framework root. `x verify` answers `X_NOT_IN_APP` here, so every
@@ -61,6 +62,18 @@ const unknownFlagFix = (name: string, value: string | boolean | undefined): stri
   return near === undefined ? 'bun run verify --json' : `bun run verify --${near}`;
 };
 
+/** The flags `verify` reads; the first unknown one is refused with the nearest flag's command. */
+const VERIFY_KNOWN: KnownFlags = {
+  names: VERIFY_FLAGS,
+  refuse: ([name = ''], flags) =>
+    new BadFlagError({
+      flag: name,
+      command: 'verify',
+      reason: `unknown flag --${name}`,
+      fix: unknownFlagFix(name, flags.get(name)),
+    }),
+};
+
 /**
  * `--only a,b,c`: the same comma list `x verify --only` takes, refused item by item. An empty item
  * (`lint,,drift`, a trailing comma, a bare `--only`) is refused too — never read as "no steps".
@@ -81,15 +94,7 @@ const readOnly = (raw: string | boolean | undefined): readonly VerifyStepName[] 
 
 /** Refuses an unknown flag or step with `X_CLI_BAD_FLAG`; never narrows to nothing. */
 export function readVerifyArgs(args: ScriptArgs): VerifyArgs {
-  for (const name of args.flags.keys()) {
-    if ((VERIFY_FLAGS as readonly string[]).includes(name)) continue;
-    throw new BadFlagError({
-      flag: name,
-      command: 'verify',
-      reason: `unknown flag --${name}`,
-      fix: unknownFlagFix(name, args.flags.get(name)),
-    });
-  }
+  refuseUnknownFlags(args.flags, VERIFY_KNOWN);
   const only = readOnly(args.flags.get('only'));
   // The CLI's own integer reader and bounds: `parseInt` alone dropped `abc` and `0` without a word,
   // read `4x` as 4 and accepted 5000 — `x verify --workers` refuses all four, and so does this.

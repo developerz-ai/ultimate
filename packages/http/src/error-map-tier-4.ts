@@ -150,4 +150,12 @@ export const TIER_4_ERROR_STATUS = {
   X_AGENT_CONTEXT_EXHAUSTED: 500,
   // @ultimat3/notify — another attempt holds this delivery
   X_NOTIFY_DELIVERY_HELD: 409,
+  // @ultimat3/mcp — the request names an MCP protocol version this server does not serve
+  X_MCP_PROTOCOL_UNSUPPORTED: 400,
+  // @ultimat3/mcp — an MCP request header is absent or disagrees with the body
+  X_MCP_HEADER_MISMATCH: 400,
+  // @ultimat3/mcp — an MCP request came from a browser page on another origin
+  X_MCP_ORIGIN_REFUSED: 403,
+  // @ultimat3/mcp — an MCP request named a Host that is not this machine
+  X_MCP_HOST_REFUSED: 421,
 } satisfies Readonly<Record<string, number>>;

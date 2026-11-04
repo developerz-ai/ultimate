@@ -45,7 +45,7 @@ describe('the semantic cache', () => {
   });
 
   test('scopes are separate stores, so one tenant never reads another tenant answer', async () => {
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(ANSWER, ANSWER);
     install(provider);
     let tenant = 'org-a';
     const summarize = declare(promptFor(), {
@@ -60,7 +60,7 @@ describe('the semantic cache', () => {
   });
 
   test('a prompt version bump invalidates it — that is what the bump is for', async () => {
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(ANSWER, ANSWER);
     install(provider);
     const cache = { semantic: { threshold: 0.99 } } as const;
     const v1 = declare(promptFor('bumped', '1.0.0'), { cache });
@@ -78,7 +78,7 @@ describe('the semantic cache', () => {
   // similarity has no notion of a tenant, so two tenants asking near-identical questions of a
   // shared cache is one tenant reading the other's answer" — and the default contradicted it.
   test('two tenants asking the SAME prompt do not share an answer by default', async () => {
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(ANSWER, ANSWER);
     install(provider);
     // No `scope` at all — the shape `wiki/Money.md` and `wiki/MCP-And-AI.md` both print.
     const summarize = declare(promptFor(), { cache: { semantic: { threshold: 0.5 } } });
@@ -101,7 +101,7 @@ describe('the semantic cache', () => {
   test('two actors of ONE org do not share either — narrowest, not tenant-wide', async () => {
     // `readAuthority`'s rule: a read that says nothing gets the narrowest key. Widening to a
     // tenant is a statement about what the rows are, and it has to be written down.
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(ANSWER, ANSWER);
     install(provider);
     const summarize = declare(promptFor(), { cache: { semantic: { threshold: 0.5 } } });
 
@@ -120,7 +120,7 @@ describe('the semantic cache', () => {
    * 0.97. No threshold an app can defend separates them — 0.999 would also lose an honest repeat.
    */
   test('two locales are two answers, so a summary never comes back in the wrong language', async () => {
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(ANSWER, ANSWER);
     install(provider);
     const summarize = declare(promptFor(), { cache: { semantic: { threshold: 0.5 } } });
 
@@ -146,7 +146,7 @@ describe('the semantic cache', () => {
    * read one another's summaries, never that a Spanish one will do for an English reader.
    */
   test('a written-down shared cache is still not shared ACROSS locales', async () => {
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(ANSWER, ANSWER);
     install(provider);
     const summarize = declare(promptFor(), {
       cache: { semantic: { threshold: 0.5, scope: () => 'global' } },
@@ -192,7 +192,7 @@ describe('the semantic cache', () => {
   });
 
   test('an unrelated input misses, so the cache never answers the wrong question', async () => {
-    const { provider, seen } = stub(ANSWER);
+    const { provider, seen } = stub(ANSWER, ANSWER);
     install(provider);
     const summarize = declare(promptFor(), {
       cache: { semantic: { threshold: 0.99 } },
@@ -211,7 +211,7 @@ describe('the entry key', () => {
   test('two rendered prompts that collide under FNV-1a are two entries', async () => {
     const keys: string[] = [];
     const inner = memorySemanticCache();
-    const { provider } = stub({ answer: 'ok' });
+    const { provider } = stub({ answer: 'ok' }, { answer: 'ok' });
     configureAi({
       gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       // Orthogonal per first letter, so the two prompts never answer each other's lookup and the

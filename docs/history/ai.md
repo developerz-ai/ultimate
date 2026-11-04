@@ -950,3 +950,33 @@ Provider prompt caching, as the agent notes stated it:
 - **`maxRepeatedToolCalls` compares calls AND results over cycles of 1–3 turns**; `deadlineMs` has no
   default and rides the request's AND each tool's signal; both stops are `terminal`
   (`errors-retry.ts`).
+
+## Moved out 2026-11-03 (plan 101 wave 4c, the `CLAUDE.md` ceiling)
+
+- **`openAiProvider()` is a FORMAT, not a vendor** — `baseUrl`, `auth`, `headers` are the
+  differences; never a second class per vendor:
+  - structured output is the `respond` tool, never `response_format`; `tool_choice` names the tool
+    only when the request offers exactly one and the row is not `forcedToolChoice: false`;
+  - `strict: true` only when `satisfiesStrictMode` says the schema qualifies;
+  - tool-call deltas merge by `tool_calls[].index`, a differing `id` starting a new call; calls are
+    read at `end()` (`[DONE]` or socket close), never at the finish reason; `isComplete()` accepts
+    `[DONE]` or a finish reason, except `[DONE]` with pending tool fragments, which is refused;
+  - the rest: [history](../../docs/history/ai.md#openaiprovider-wire-rules).
+- **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
+  member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
+  order with `index`; the hive never names an actor; no hive budget code; a member's throw goes
+  through `discloseFailure` (`HIDDEN_MEMBER_CAUSE`);
+  `skipped` reasons `SKIPPED_ABORTED` / `SKIPPED_NO_INPUT`; `onMemberError` is required;
+  `concurrency` 4, `minMembers` 2 (a below-floor split runs serially); an empty split is
+  `X_HIVE_EMPTY`; an aborted `ctx` is `X_ABORTED`.
+  - **A 5xx code's cause reaches the model only when core's `hasPublicCause` allows it** (status from
+    `@ultimat3/http`'s `statusFor`) — else `CODE: HIDDEN_TOOL_CAUSE`, plus a branded `callerFix`. The
+    same verdict a problem document and `@ultimat3/mcp` give, from `failure-disclosure.ts` — the
+    rule a hive member's `reason` follows too. Never a second copy. A tool's shown fix is its
+    `callerFix`, if branded (`tools.ts`). One widening, for an
+    `inProcess` tool only (`discloseOwnFailure`): a branded error under a code with NO declared
+    status is shown as `{ error: { code, cause, fix } }`; `discloseErrors: false` opts out.
+
+### The agent arm of `defineEval` (2026-11, plan 101 slice 27)
+
+`X_EVAL_MISSING` required an eval for every prompt, agents' included, and `runEval` sent the rendered prompt in one request with no tools — so an agent's template ("answer through the respond tool") was scored in a request that offered none, and the number described something the agent never ran. Three adopters had built around it (183 LOC of harness; a comment naming the limit; 30 tool-selection eval files). The agent arm runs `agent.run()` per case under an eval-private async scope that carries the gateway `assert` was handed and the tool doubles; `aiGateway` reads it, `runLlmToolCall` resolves the doubles. Decisions: one `defineEval`, never `defineAgentEval`; an undoubled call throws (scoring it 0 would let a recording accept a case that reached a real tool); any other failure scores 0 so a loop or `X_AGENT_MAX_TURNS` is a regression, not a crashed suite; no `maxTokens` on the agent arm (the agent's declared ceiling is part of what is measured); harvesting production failures stays the app's script (`transcriptOf`); no cassette (`90-deferred.md`). The baseline key stays the prompt hash, so a model change is a new prompt version.

@@ -4,7 +4,7 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 48
+percent: 52
 current_focus: "wave 4"
 slices:
   - file: 01-ai-tool-gate.md
@@ -271,8 +271,8 @@ slices:
   - file: 20-cli-db-diagnostics.md
     tier: 1
     sweep: "15"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 33-ops-ci.md
     tier: 5
     sweep: "15"
@@ -292,23 +292,23 @@ slices:
   - file: 18-ai-scripted-and-meter.md
     tier: 4
     sweep: "16"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 27-mcp-dual-era.md
     tier: 4
     sweep: "16"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 27-agents-evals.md
     tier: 1
     sweep: "16"
-    status: in_progress
-    percent: 10
+    status: complete
+    percent: 100
   - file: 17-entity-test-driver.md
     tier: 1
     sweep: "16"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 24-web-client-errors.md
     tier: 0
     sweep: "16"

@@ -99,7 +99,7 @@ describe.skipIf(!hasPostgres)('live · postgres · pool settings on the wire', (
     ).catch((error: unknown) => error)) as DbError;
 
     expect(caught.code).toBe('X_DB_LOCK_TIMEOUT');
-    expect(caught.fix).toContain('pg_stat_activity');
+    expect(caught.fix).toContain('x db diagnostics');
 
     await blocker.execute(sql`ROLLBACK`);
     await owner.execute(sql`drop table x_live_lock`);

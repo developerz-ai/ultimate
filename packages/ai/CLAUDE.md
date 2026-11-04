@@ -25,9 +25,10 @@ one adds, the other adds.
 | `model-resolve.ts` | `resolveModel` / `modelForCall` — declaration → prompt → gateway `defaultModel`, none is `X_AI_MODEL_UNRESOLVED` naming all three; `describedModel` for a published fact |
 | `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`). Not shipped |
 | `provider.ts` | `Provider` interface, the request half, `anthropicProvider()` |
-| `echo-provider.ts` | `echoProvider()`, the deterministic double — split from `provider.ts` at its line ceiling |
+| `echo-provider.ts` | `echoProvider()`, the deterministic double — split from `provider.ts` at its line ceiling. A fixture that needs a tool call uses `scriptedProvider`, never a hand-rolled `Provider` |
+| `scripted-provider.ts` | `scriptedProvider()`, the scripted double that calls tools, and `X_AI_SCRIPT_EXHAUSTED`: one call past the script is refused, never answered with the last turn again |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
-| `content-errors.ts` | the `X_AI_CONTENT_UNSUPPORTED` class; its code and title belong in `errors.ts` |
+| `content-errors.ts` | the `X_AI_CONTENT_UNSUPPORTED` class; its code and title belong in `error-codes.ts` |
 | `wire.ts` | the response half: `usage` / `stop_reason` shapes, and the SSE `MessageStream` |
 | `error-body.ts` | what a failure body SAYS (`detailOf`) and what must never survive into it (`withoutKey`) — one copy, both transports |
 | `sse.ts` | Server-Sent Events framing — protocol only, knows nothing about Anthropic |
@@ -43,6 +44,8 @@ one adds, the other adds.
 | `embeddings.ts` | `Embedder`, `hashEmbedder()`, cosine helpers |
 | `remote-embedder.ts` | `remoteEmbedder()` — the production `/v1/embeddings` client |
 | `evals.ts` | `defineEval`, the run, the baseline gate, prompt coverage |
+| `eval-agent.ts` | the agent arm of `defineEval`: one case is one `agent.run()` in the eval scope; `agentPrompt` reads the prompt off `agentFactsOf` |
+| `eval-agent-fixture.ts` | the agent-arm suites' harness. Not shipped |
 | `eval-baseline.ts` | the recorded scores: path, read/write, what counts as a regression |
 | `scorers.ts` | what a `Scorer` is, the built-in ones, and `llmJudge` |
 | `vector.ts` | `VectorStore`, in-memory cosine + BM25, RRF hybrid |
@@ -55,7 +58,7 @@ one adds, the other adds.
 | `tools-gate.ts` | a tool's way to `run`: actor half, the name's gate, the tool |
 | `tool-idempotency.ts` | an idempotent action's reserved `idempotencyKey` tool argument — MCP's, restated (same tier), held equal by the parity test |
 | `tool-arguments.ts` / `answer-errors.ts` | one argument-string reader for both wires and what an unreadable one means (`assertToolArguments`); `X_LLM_TRUNCATED` + `X_LLM_TOOL_ARGUMENTS_INVALID` |
-| `billed.ts` / `run-meter.ts` | `meta.billed` + `billedOf`; the meter every `llm()`/`agent()` provider call goes through |
+| `billed.ts` / `run-meter.ts` | `meta.billed` + `billedOf`; the meter every `llm()`/`agent()` provider call goes through, and `meteredRun`, its one public total (`RunMeter` stays internal) |
 | `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged, never its message or cause |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
@@ -74,12 +77,13 @@ one adds, the other adds.
 | `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
 | `hive.ts` | `hive()` — one action fanned out over many inputs, declared as an `action` |
 | `hive-result.ts` | `HiveMember` / `HiveResult`, and the SCHEMA built from the member's own `output` |
-| `hive-errors.ts` | the `X_HIVE_*` class; its code and title stay in `errors.ts` |
+| `hive-errors.ts` | the `X_HIVE_*` class; its code and title stay in `error-codes.ts` |
 | `redaction.ts` | the one gate between `vars()` and the provider: a `Secret` never reaches a prompt |
-| `eval-errors.ts` | the five `X_EVAL_*` classes; their codes and titles stay in `errors.ts` |
+| `eval-errors.ts` | the six `X_EVAL_*` classes; their codes and titles stay in `error-codes.ts` |
+| `error-codes.ts` | the codes this package owns, their titles and the one `registerErrorCodes` call (`new-error-code --package ai` writes here); `errors.ts` holds the core classes |
 | `llm-cache.ts` | the semantic cache half of `llm()`: what a declaration may partition on, and the store it reaches |
 | `llm-fixture.ts` / `bounds-fixture.ts` | the `llm()` harness; the one `refusal`/`asyncRefusal` of every bound suite. Not shipped (`!src/**/*-fixture.ts`) |
-| `runtime.ts` | the ambient gateway / embedder / semantic caches an `llm()` reaches |
+| `runtime.ts` | the ambient gateway / embedder / semantic caches an `llm()` reaches, and the private agent-eval scope (`withEvalScope`): `aiGateway`/`installedGateway` read its gateway first; `runLlmToolCall` resolves its doubles |
 | `fix-line*` | the package's dogfood eval — proof the baseline convention fails a build |
 
 ## Invariants — bounds and budget
@@ -198,14 +202,7 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 - **Every provider and embedder is built by its factory** (`anthropicProvider()`, `echoProvider()`,
   `hashEmbedder()`, `remoteEmbedder()`); the classes are type exports only (`bun run factory-names`).
 - **`openAiProvider()` is a FORMAT, not a vendor** — `baseUrl`, `auth`, `headers` are the
-  differences; never a second class per vendor:
-  - structured output is the `respond` tool, never `response_format`; `tool_choice` names the tool
-    only when the request offers exactly one and the row is not `forcedToolChoice: false`;
-  - `strict: true` only when `satisfiesStrictMode` says the schema qualifies;
-  - tool-call deltas merge by `tool_calls[].index`, a differing `id` starting a new call; calls are
-    read at `end()` (`[DONE]` or socket close), never at the finish reason; `isComplete()` accepts
-    `[DONE]` or a finish reason, except `[DONE]` with pending tool fragments, which is refused;
-  - the rest: [history](../../docs/history/ai.md#openaiprovider-wire-rules).
+  differences; never a second class per vendor. Wire rules: [history](../../docs/history/ai.md#openaiprovider-wire-rules).
 - **`embedBatched` enforces the `Embedder` arity per batch** (`X_AI_EMBEDDER_INVALID` with both
   counts). One `remoteEmbedder()` for every vendor; vectors L2-normalised; a wrong width is
   `X_VECTOR_DIM_MISMATCH`.
@@ -238,13 +235,9 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
     ("superseded").
   - A tool result is rendered totally (`'null'` for `undefined`; a non-JSON result reported as such,
     never as a failure); the throw is read with `stringField`.
-  - **A 5xx code's cause reaches the model only when core's `hasPublicCause` allows it** (status from
-    `@ultimat3/http`'s `statusFor`) — else `CODE: HIDDEN_TOOL_CAUSE`, plus a branded `callerFix`. The
-    same verdict a problem document and `@ultimat3/mcp` give, from `failure-disclosure.ts` — the
-    rule a hive member's `reason` follows too. Never a second copy. A tool's shown fix is its
-    `callerFix`, if branded (`tools.ts`). One widening, for an
-    `inProcess` tool only (`discloseOwnFailure`): a branded error under a code with NO declared
-    status is shown as `{ error: { code, cause, fix } }`; `discloseErrors: false` opts out.
+  - **A 5xx code's cause reaches the model only when core's `hasPublicCause` allows it**, else
+    `CODE: HIDDEN_TOOL_CAUSE` plus a branded `callerFix` (`failure-disclosure.ts`, never a second
+    copy). Full rule: `docs/history/ai.md`.
 - **A run only NARROWS its declaration**: `offerTools()` ⊆ declared names (`X_AGENT_TOOL_UNDECLARED`),
   `model()` via `modelSpec`, `limits()` screened and ≤ declared (`X_AI_REQUEST_INVALID`); all
   before `vars()`. The handle binds the run's model and OFFERED subset; `costPerRun` is checked per turn.
@@ -258,12 +251,8 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   system, tools, kept turns byte-identical; failed → whole, or `X_AGENT_CONTEXT_EXHAUSTED`, never
   truncated ([why](../../docs/history/ai.md#auto-compaction-2026-10)).
 - **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
-  member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
-  order with `index`; the hive never names an actor; no hive budget code; a member's throw goes
-  through `discloseFailure` (`HIDDEN_MEMBER_CAUSE`);
-  `skipped` reasons `SKIPPED_ABORTED` / `SKIPPED_NO_INPUT`; `onMemberError` is required;
-  `concurrency` 4, `minMembers` 2 (a below-floor split runs serially); an empty split is
-  `X_HIVE_EMPTY`; an aborted `ctx` is `X_ABORTED`.
+  member's `output`; a member's throw goes through `discloseFailure`; the hive never names an actor.
+  Full rule: `docs/history/ai.md`.
 - **`describeAgents()` / `registeredModels()` are offered, not published** — their only legal consumer
   is `@ultimat3/cli`. The facts are a THUNK; an unnamed agent has no row.
 - **`agentJob()` composes `job()`** (never an imitation). `name`, `tenant`, `retry` are
@@ -282,6 +271,12 @@ In brief ([full text](../../docs/history/ai.md#evals-retrieval-fix-lines)): no f
 `x ai`; an eval gates on the DROP from its baseline, mean AND per case, and every prompt has one;
 retrieval is hybrid only; an unbound store read under an org actor is `X_VECTOR_UNSCOPED`;
 `postgresVectorStore()` filters tenant and policy in SQL on every statement; `scoped()` TIGHTENS.
+
+- **An eval never runs a real tool.** Inside the eval scope `runLlmToolCall` answers a call with the
+  eval's double, outside its `try`; no double is `X_EVAL_TOOL_UNDOUBLED`, rethrown by the eval (a
+  misdeclared eval, never a 0). Any other failed agent run scores 0 and records its code. The scope
+  is not exported: no public override of `agent({ tools })`. An agent eval needs a registered agent
+  (`agentFactsOf`); a `named()` twin is refused (`X_INVARIANT`).
 
 ## Commands
 

@@ -5,8 +5,8 @@
 // component importing it is X_BOUNDARY_VIOLATION, because that is how N+1 queries end up inside a
 // <head> computation and how SQL ends up where no policy guards it.
 
-import { EnvMissingError, isLocal } from '@ultimat3/core';
-import { type Driver, database, memoryDriver, postgresDriver } from '@ultimat3/entity';
+import { EnvMissingError, isLocal, storeMode } from '@ultimat3/core';
+import { type Driver, database, memoryDriver, postgresDriver, testDriver } from '@ultimat3/entity';
 import { blocks } from './schema/blocks';
 import { comments } from './schema/comments';
 import { conversations } from './schema/conversations';
@@ -43,6 +43,9 @@ export const storesInPostgres = (env: Readonly<Record<string, string | undefined
  * `LocalDiskUnsafeError` (packages/cli/src/runtime-services.ts): a shipped embedded default that is
  * fine on a laptop is a silent data-loss bug in a deploy, and the deploy is where nobody is
  * watching. `docker/README.md:84` has said "never in production" since before this line was written.
+ *
+ * Under `bun test` the embedded arm is `testDriver()`: memory until a test installs a migrated
+ * database with `setDbClient`, then that database, decided per call. `x dev` keeps `memoryDriver()`.
  */
 export const selectDriver = (env: Readonly<Record<string, string | undefined>>): Driver => {
   if (storesInPostgres(env)) return postgresDriver();
@@ -53,7 +56,7 @@ export const selectDriver = (env: Readonly<Record<string, string | undefined>>):
       meta: { key: DATABASE_URL },
     });
   }
-  return memoryDriver();
+  return storeMode(env) === 'memory' ? testDriver() : memoryDriver();
 };
 
 export const driver = selectDriver(Bun.env);

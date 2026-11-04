@@ -19,12 +19,20 @@
 // boundary error. Both packages describe the same structural contract.
 
 import type { AnyAction } from '@ultimat3/action';
-import { actionName, admitActionCaller, invoke, isAction } from '@ultimat3/action';
+import {
+  actionName,
+  admitActionCaller,
+  invoke,
+  isAction,
+  parseActionInput,
+} from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import { isMcpExposed, isUltimateError, stringField, tryUseContext } from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
 import { toWireSchema } from '@ultimat3/schema';
+import { EvalToolUndoubledError } from './eval-errors';
 import { discloseFailure, discloseOwnFailure } from './failure-disclosure';
+import { currentEvalScope } from './runtime';
 import { takeToolIdempotencyKey, withToolIdempotencyKey } from './tool-idempotency';
 import { behindToolGate, passesToolGate } from './tools-gate';
 
@@ -78,6 +86,12 @@ export interface ProjectableAction {
   readonly inProcess?: boolean;
   /** In-process only: `false` withholds its refusals as a projected tool's are. Default `true`. */
   readonly discloseErrors?: boolean;
+  /**
+   * The input parse `run` makes before anything executes, alone: the parsed value, or the same
+   * refusal `run` would throw. What an agent eval holds its tool double to, so arguments production
+   * refuses are refused there too. Absent on a hand-built tool: there is no schema to hold it to.
+   */
+  readonly parseInput?: (raw: unknown) => Promise<unknown>;
   run(args: { input: unknown; actor: Actor }): Promise<unknown>;
 }
 
@@ -121,6 +135,9 @@ export function asProjectableAction(listed: AgentTool): ProjectableAction {
       ...(mcp === undefined ? {} : { mcp }),
       ...(mcp?.description === undefined ? {} : { description: mcp.description }),
       inputJsonSchema: keyed ? withToolIdempotencyKey(name, wire) : wire,
+      // `invoke`'s own parse and refusal (`parseActionInput`), after the reserved key is taken off.
+      parseInput: (raw) =>
+        parseActionInput(listed.input, keyed ? takeToolIdempotencyKey(raw).input : raw, name),
       // The actor rides in on the options and `invoke` swaps it inside the one execution path —
       // the action's own `policy` still decides, and its `input:` still parses what the model sent,
       // which is what drops a `{ actor: 'admin' }` the model invented before any handler sees it.
@@ -197,14 +214,42 @@ export async function runLlmToolCall(
   // This function is exported and documented, so a hand-built tool can arrive unprojected. Its one
   // pass through the gate is decided here, where the model's call actually runs.
   const action = asProjectableAction(found);
+  // Outside the `try`: an undoubled call inside an agent eval ends the run, never reaches the model
+  // as a tool result it could route around.
+  const run = evalDoubleFor(action, call);
   try {
-    const output = await action.run({ input: call.input, actor });
+    const output = await run({ input: call.input, actor });
     return resultOf(call.id, output);
   } catch (error) {
     // A policy denial is an outcome the model should read and react to, not a crash.
     const content = describeFailure(error, action, options.discloseErrors !== false);
     return { toolUseId: call.id, content, isError: true };
   }
+}
+
+/**
+ * Inside an agent eval (`defineEval({ agent })`) a call resolves to the eval's double and the real
+ * tool never runs: an eval in CI cannot write. A tool with no double is `X_EVAL_TOOL_UNDOUBLED`.
+ * Everywhere else, the tool itself.
+ */
+function evalDoubleFor(tool: ProjectableAction, call: LlmToolCall): ProjectableAction['run'] {
+  const scope = currentEvalScope();
+  if (scope === undefined) return (args) => tool.run(args);
+  const double = Object.hasOwn(scope.tools, call.name) ? scope.tools[call.name] : undefined;
+  if (double === undefined) {
+    throw new EvalToolUndoubledError({
+      eval: scope.eval,
+      tool: call.name,
+      doubled: Object.keys(scope.tools),
+    });
+  }
+  return async ({ input }) => {
+    // Inside the caller's `try`: a refused input is answered to the model exactly as production
+    // answers it, and the double — like the tool's handler — never sees it.
+    const parsed = tool.parseInput === undefined ? input : await tool.parseInput(input);
+    scope.calls.push({ name: call.name, input: call.input });
+    return double(parsed as Readonly<Record<string, unknown>>);
+  };
 }
 
 /**

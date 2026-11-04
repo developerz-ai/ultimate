@@ -250,8 +250,8 @@ const SQLSTATE_FIXES = Object.freeze<Record<DbSqlStateCode, string>>({
   X_DB_STATEMENT_TIMEOUT:
     'add the index this statement needs to the entity (indexes: [...]), then: x db gen "add index"',
   X_DB_LOCK_TIMEOUT:
-    `psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity where state <> 'idle'"` +
-    '   # end the blocker, then re-run the statement',
+    "x db diagnostics --json | jq '.data.blockers.rows[] | {pid, blockedBy, blockerState}'" +
+    '   # end the blockedBy session or wait for it, then re-run the statement',
   X_DB_POOL_EXHAUSTED:
     'set DATABASE_POOL_MAX below max_connections / replicas (per-role default: POOL_PROFILES), ' +
     'or cut the replica count',

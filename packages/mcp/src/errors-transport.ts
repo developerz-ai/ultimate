@@ -1,8 +1,9 @@
 // The refusals a TRANSPORT raises before dispatch: one message too large for the wire, a caller
-// past its rate allowance, an `oauth` block that cannot be published. Split from `errors.ts`,
+// past its rate allowance, an `oauth` block that cannot be published, a protocol version or a
+// mirrored header the request got wrong, a cross-origin page. Split from `errors.ts`,
 // which keeps the code registry; this module loads it, so every title is registered first.
 
-import { UltimateError } from '@ultimat3/core';
+import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 // why a side-effect import: the codes these classes raise are REGISTERED by `errors.ts`, and a
 // process that imports only a transport must still render their titles.
 import './errors';
@@ -89,6 +90,86 @@ export class McpOAuthInvalidError extends UltimateError {
       code: 'X_MCP_OAUTH_INVALID',
       cause: `defineAppMcp({ oauth }) cannot be published as protected-resource metadata: ${reason}`,
       fix: "defineAppMcp({ ..., oauth: { authorizationServers: ['https://www.example.com'] } }) — at least one absolute https (or http://localhost) issuer URL; resource and resourceDocumentation, when set, absolute URLs with no fragment",
+    });
+  }
+}
+
+/**
+ * A request naming a revision this server does not serve — MCP's `UnsupportedProtocolVersionError`
+ * (`-32022`, HTTP 400). `supported` travels as data so a modern client retries without a human: a
+ * dual-era client that reads this body knows the server is modern and stays modern.
+ */
+export class McpProtocolUnsupportedError extends UltimateError {
+  constructor(input: { requested: string | null; supported: readonly string[] }) {
+    super({
+      code: 'X_MCP_PROTOCOL_UNSUPPORTED',
+      cause:
+        input.requested === null
+          ? 'the request names its protocol version with a value that is not a string'
+          : `the request names protocol version "${input.requested}", which this server does not serve`,
+      fix: `{ "_meta": { "io.modelcontextprotocol/protocolVersion": "${input.supported[0] ?? ''}" } } in params, with the MCP-Protocol-Version header equal to it; served: ${input.supported.join(', ')}`,
+      meta: { supported: input.supported, requested: input.requested },
+    });
+  }
+}
+
+/** The mirrored request headers, by the body field each must equal. */
+export type McpMirroredHeader = 'MCP-Protocol-Version' | 'Mcp-Method' | 'Mcp-Name';
+
+/**
+ * A modern request whose mirrored header is absent or disagrees with its body — MCP's
+ * `HeaderMismatch` (`-32020`, HTTP 400). Refused because a load balancer may route on the header
+ * while this server runs the body. The header's VALUE is never echoed: it is the caller's input.
+ */
+export class McpHeaderMismatchError extends UltimateError {
+  constructor(input: { header: McpMirroredHeader; absent: boolean }) {
+    super({
+      code: 'X_MCP_HEADER_MISMATCH',
+      cause: input.absent
+        ? `the ${input.header} header is absent from a request that carries a protocol version in _meta`
+        : `the ${input.header} header does not equal the body's ${BODY_FIELD[input.header]}`,
+      fix: `{ "MCP-Protocol-Version": "<params._meta version>", "Mcp-Method": "<method>", "Mcp-Name": "<params.name or params.uri>" } as the request headers — ${input.header} equal to the body's ${BODY_FIELD[input.header]}, a non-ASCII Mcp-Name as =?base64?<utf-8 base64>?=`,
+      meta: { header: input.header },
+    });
+  }
+}
+
+const BODY_FIELD: Readonly<Record<McpMirroredHeader, string>> = {
+  'MCP-Protocol-Version': 'params._meta["io.modelcontextprotocol/protocolVersion"]',
+  'Mcp-Method': 'method',
+  'Mcp-Name': 'params.name or params.uri',
+};
+
+/**
+ * A request carrying an `Origin` that core's `proveSameOrigin` cannot show is this app's — not the
+ * route's own public origin, not listed in `http.cors.origins` — refused 403 before the token is read
+ * (MCP Streamable HTTP: "If the Origin header is present and invalid, servers MUST respond with
+ * HTTP 403"). It does NOT catch a DNS-rebound name: that page's Host and Origin agree, so a server
+ * that serves only this machine refuses the Host first (`X_MCP_HOST_REFUSED`).
+ */
+export class McpOriginRefusedError extends UltimateError {
+  constructor(input: { reason: string; endpoint: string }) {
+    super({
+      code: 'X_MCP_ORIGIN_REFUSED',
+      cause: `a browser page called POST /mcp and could not be shown to be this app: ${input.reason}`,
+      fix: `curl -X POST ${renderFixShellArg(input.endpoint, 'http://localhost:3000/mcp')} -H 'authorization: Bearer <token>' — no Origin header; a page on a sibling origin is listed in http.cors.origins`,
+    });
+  }
+}
+
+/**
+ * A request naming a Host that is not this machine, on a server that only ever serves this machine
+ * (`x mcp serve`). The `Origin` cannot carry this check: a DNS-rebound page's Host and Origin agree.
+ * The host decides what is loopback (the CLI's `isLoopbackHostname`, `/_x`'s rule); this renders it.
+ * Never echoes the Host it was sent.
+ */
+export class McpHostRefusedError extends UltimateError {
+  constructor(input: { endpoint: string }) {
+    super({
+      code: 'X_MCP_HOST_REFUSED',
+      cause:
+        'the request named a Host that is not localhost, a *.localhost name or a loopback address — the shape of a DNS-rebinding page, whose Host and Origin agree',
+      fix: `curl -X POST ${renderFixShellArg(input.endpoint, 'http://localhost:9229/mcp')} -H 'authorization: Bearer <token>'`,
     });
   }
 }

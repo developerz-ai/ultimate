@@ -6,8 +6,8 @@ import type { ErrorRetry } from '@ultimat3/core';
 import { classifyThrown, declaredErrorRetry, registerErrorRetry } from '@ultimat3/core';
 import { AgentDeadlineError, AgentToolLoopError } from './agent-errors';
 import { LlmTruncatedError } from './answer-errors';
+import { AI_ERROR_CODES } from './error-codes';
 import {
-  AI_ERROR_CODES,
   AiBudgetExceededError,
   AiKeyMissingError,
   AiProviderUnavailableError,
