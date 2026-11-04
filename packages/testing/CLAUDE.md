@@ -133,10 +133,9 @@ no bundler, because a test here cannot import one.
 
 ## The browser-backed e2e driver (moved here from `@ultimat3/cli` in 22.0.0)
 
-It was in `@ultimat3/cli`, on the argument that the adapter joined `testing`'s `PageLike` to
-`@ultimat3/scraping`'s browser and only `cli` could import both. That stopped being true when the
-browser became RAW CDP (below): the driver needs `@ultimat3/core` and Bun, nothing else, so it
-lives beside the `PageLike` it implements. `cli` imports it over the declared `cli -> testing` edge.
+The driver needs `@ultimat3/core` and Bun, nothing else, so it lives beside the `PageLike` it
+implements; `cli` imports it over the declared `cli -> testing` edge. Why it moved:
+[`docs/history/testing.md`](../../docs/history/testing.md#the-browser-backed-e2e-driver-moved-here-from-ultimat3cli-in-2200).
 
 | File | Job |
 |---|---|
@@ -162,6 +161,10 @@ lives beside the `PageLike` it implements. `cli` imports it over the declared `c
 **Absent by default.** Nothing here runs until `installE2eDriver` is called, so `hasE2eDriver()`
 answers `false` and the gate's `e2e` step refuses rather than passing over a browser it lacks.
 GitHub-hosted `ubuntu-latest` ships Chrome at `/usr/bin/google-chrome`.
+
+- **The BROWSER gets a SHORT temp root** (`cdp-launch-profile.ts`'s `browserTempRoot()`): at most
+  `MAX_BROWSER_TEMP_ROOT` (63) characters. LENGTH, not ownership — the process's own `TMPDIR` when
+  short enough. Full rule: [`docs/history/testing.md`](../../docs/history/testing.md).
 
 How the raw-CDP driver behaves — the pipe, the load event, deadlines, the lossy `evaluate`, the
 refusing `update()` — is [`docs/history/testing.md`](../../docs/history/testing.md#the-e2e-driver-in-brief-moved-2026-10-01).

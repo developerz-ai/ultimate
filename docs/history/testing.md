@@ -343,3 +343,9 @@ Verbatim from [`packages/testing/CLAUDE.md`](../../packages/testing/CLAUDE.md), 
 | | |
 |---|---|
 | The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. `packages/ui/src/fake-dom-fixture.ts` is a second one for keyboard code, and `ui -> testing` is upward: not a copy to collapse. `bun test` has no DOM and no DOM library may be added |
+
+### @ultimat3/testing — boundary
+
+| | |
+|---|---|
+| The BROWSER gets a SHORT temp root | Chrome's ProcessSingleton puts its socket in `$TMPDIR` — `$TMPDIR/com.google.Chrome.XXXXXX/SingletonSocket` — and the kernel caps a UNIX socket path at 108 bytes. Measured on 2026-11-04: a root of 60 characters launches, 66 does not, so a root over 63 cannot hold the socket. A `TMPDIR` that long kills Chrome at start-up with `FATAL: Socket path too long`, BEFORE it announces a DevTools endpoint, and the launcher reported that as `X_CDP_LAUNCH_FAILED` — naming the browser rather than the cause, so every browser-backed e2e suite on such a machine failed for a reason no finding carried. `cdp-launch-profile.ts`'s `browserTempRoot()` answers a root short enough for that socket (`MAX_BROWSER_TEMP_ROOT`) and the browser is spawned with it (`cdp-launch-attempt.ts`). The rule is LENGTH, not ownership: the process's own `TMPDIR` IS the root when it is short enough — which is every ordinary Linux and macOS machine — and `/tmp` is the fallback when it is not. The profile and the socket must share the root: the socket's path is the limit, and a profile under a different root would leave the socket where the limit is. `cdp-launch-profile.test.ts` pins all of it, and the long-root case runs in a SUBPROCESS, because `Bun.spawn` snapshots the environment at process start and a test cannot hand its own child a different `TMPDIR` |

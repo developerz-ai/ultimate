@@ -3,7 +3,17 @@
 // the singleton-socket directory Chrome makes BESIDE it in the temp root.
 
 // why: Bun exposes no temp-root, recursive-remove or readlink primitive; the profile needs all three.
-import { existsSync, mkdtempSync, readdirSync, readlinkSync, rmdirSync, rmSync } from 'node:fs';
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readlinkSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -33,6 +43,17 @@ const SINGLETON_FILES: ReadonlySet<string> = new Set([
 
 export interface ThrowawayProfile {
   readonly path: string;
+  /**
+   * The temp root the BROWSER must run under, and the one the profile lives in.
+   *
+   * Chrome's ProcessSingleton puts its socket in `$TMPDIR`, not in the profile: the path is
+   * `$TMPDIR/com.google.Chrome.XXXXXX/SingletonSocket`, and a UNIX socket path is capped at 108
+   * bytes by the kernel. A machine whose `TMPDIR` is 64 characters or longer therefore kills
+   * Chrome at start-up with `FATAL: Socket path too long`, before it ever announces a DevTools
+   * endpoint — and the launcher reported that as `X_CDP_LAUNCH_FAILED`, naming the browser
+   * rather than the cause. So the browser is given a temp root short enough for that socket.
+   */
+  readonly tempRoot: string;
   /**
    * Where the browser's singleton socket lives, read off the profile's own link. Asked BEFORE the
    * browser is signalled: a browser that exits cleanly removes the link first, and one killed
@@ -73,11 +94,74 @@ function removeSingleton(dir: string): void {
   quietly(() => rmdirSync(dir));
 }
 
-/** A fresh profile directory under the temp root, named so a leak is recognisable as ours. */
-export function throwawayProfile(root: string = tmpdir()): ThrowawayProfile {
+/**
+ * The longest a temp root may be and still leave room for Chrome's singleton socket.
+ *
+ * `$TMPDIR/com.google.Chrome.XXXXXX/SingletonSocket` is 45 characters past the root, and the
+ * kernel caps a UNIX socket path at 108 bytes — measured on this box: a root of 60 characters
+ * launches, 66 does not. 63 is the last root that fits.
+ */
+export const MAX_BROWSER_TEMP_ROOT = 63;
+
+/**
+ * A candidate temp root the browser can be given: short enough for Chrome's singleton socket, a
+ * directory, and writable.
+ *
+ * Existence alone is not enough. A root that exists but cannot be written in is a profile the
+ * browser cannot make and a socket it cannot create, and the launch dies inside Chrome with no
+ * reason named — so writability is asked, not assumed.
+ */
+function isUsableTempRoot(candidate: string): boolean {
+  if (candidate.length > MAX_BROWSER_TEMP_ROOT) return false;
+  try {
+    if (!statSync(candidate).isDirectory()) return false;
+    accessSync(candidate, constants.W_OK);
+    return true;
+  } catch {
+    // Missing, not a directory, or not writable: not a root the browser can be given.
+    return false;
+  }
+}
+
+/**
+ * A temp root short enough for Chrome's singleton socket, whatever `TMPDIR` says.
+ *
+ * The OS temp root is used when it is short enough AND usable. When it is not, `/tmp` is tried
+ * next (it is the root Linux and macOS both default to). The rule is LENGTH, not ownership: the
+ * process's own `TMPDIR` IS the root when it is short enough, which is every ordinary machine.
+ *
+ * A candidate that is refused is NEVER handed back — the answer is `undefined` instead. A root
+ * over the limit is exactly what kills Chrome at start-up with `FATAL: Socket path too long`, and
+ * a root the browser cannot write in is a profile it cannot make: both are the launch's failure
+ * to report with its reason, not a root to pass on and let Chrome die inside.
+ *
+ * `candidates` is a parameter so the rule can be asked about roots this process does not have.
+ */
+export function browserTempRoot(
+  candidates: readonly string[] = [tmpdir(), '/tmp'],
+): string | undefined {
+  for (const candidate of candidates) {
+    if (isUsableTempRoot(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * A fresh profile directory under a temp root short enough for Chrome, named so a leak is
+ * recognisable as ours.
+ *
+ * The profile and the singleton socket share ONE root: the socket's path is what the 108-byte
+ * limit is about, so a profile under a different root would leave the socket where the limit is.
+ *
+ * The root is named by the caller, never defaulted: `browserTempRoot()` answers `undefined`
+ * when no root is usable, and that refusal has to reach the launch as a failure — not
+ * become a profile under a root Chrome cannot use.
+ */
+export function throwawayProfile(root: string): ThrowawayProfile {
   const path = mkdtempSync(join(root, 'x-e2e-chrome-'));
   return {
     path,
+    tempRoot: root,
     singletonDir() {
       try {
         const target = readlinkSync(join(path, 'SingletonSocket'));

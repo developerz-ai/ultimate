@@ -6,7 +6,7 @@ import { renderThrowable } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
 import type { CdpLaunchAttempt } from './cdp-errors';
 import { CdpTimeoutError } from './cdp-errors';
-import { throwawayProfile } from './cdp-launch-profile';
+import { browserTempRoot, MAX_BROWSER_TEMP_ROOT, throwawayProfile } from './cdp-launch-profile';
 import { CLOSE_GRACE_MS, killTree } from './cdp-launch-reap';
 import type { CdpWire } from './cdp-launch-wire';
 import { pipeConnection, portConnection, wireStdio } from './cdp-launch-wire';
@@ -111,12 +111,29 @@ const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
  */
 export async function launchAttempt(options: LaunchAttemptOptions): Promise<LaunchAttemptResult> {
   const platform = options.platform ?? process.platform;
-  const profile = throwawayProfile();
+  const tempRoot = browserTempRoot();
+  if (tempRoot === undefined) {
+    // No temp root the browser can be given: it would die at start-up with `FATAL: Socket path
+    // too long`, or with a profile it cannot make, and the report named the browser rather than
+    // the cause. Named here instead — the machine, not the binary, is what refused.
+    return {
+      ok: false,
+      failure: {
+        why: 'spawn',
+        waitedMs: 0,
+        exitCode: null,
+        stderr: '',
+        detail: `no temp root the browser can be given: every candidate is longer than ${String(MAX_BROWSER_TEMP_ROOT)} characters, or is not a writable directory — Chrome's singleton socket path is capped at 108 bytes, so set TMPDIR to a short writable path`,
+      },
+      reaped: true,
+    };
+  }
+  const profile = throwawayProfile(tempRoot);
   const profileDir = profile.path;
   const began = performance.now();
   let child: ReturnType<typeof spawnBrowser>;
   try {
-    child = spawnBrowser(options, profileDir, platform);
+    child = spawnBrowser(options, profileDir, platform, profile.tempRoot);
   } catch (error) {
     // A binary that cannot be started at all — not there, not executable, not an executable FORMAT
     // this OS runs (a `#!` script on Windows). Bun throws from `spawn`, synchronously, and that
@@ -214,11 +231,26 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
  * reaped with it (`killTree`). It still ends with this process on the pipe wire: Chrome exits when
  * its fd 3 closes. Windows has no group to make — `detached` there is a console flag — so not.
  */
-function spawnBrowser(options: LaunchAttemptOptions, profileDir: string, platform: string) {
+function spawnBrowser(
+  options: LaunchAttemptOptions,
+  profileDir: string,
+  platform: string,
+  tempRoot: string,
+) {
   // Spread into a fresh tuple: Bun's `stdio` type takes a mutable tuple, never a readonly one.
   const [stdin, stdout, stderr, ...extra] = wireStdio(options.wire);
   return Bun.spawn([options.executable, ...options.flags(profileDir)], {
     stdio: [stdin, stdout, stderr, ...extra],
     detached: platform !== 'win32',
+    // The temp root the browser runs under, and the reason it is set at all: Chrome's
+    // ProcessSingleton puts its socket in `$TMPDIR`, and a UNIX socket path is capped at 108
+    // bytes — so a `TMPDIR` of 64 characters or more kills Chrome at start-up with `FATAL: Socket
+    // path too long`, before it announces a DevTools endpoint. The launch reported that as
+    // `X_CDP_LAUNCH_FAILED`, naming the browser rather than the cause.
+    //
+    // The root is usually the PROCESS's own `TMPDIR` — `browserTempRoot()` hands that back
+    // whenever it is short enough, which is every ordinary machine. The rule is LENGTH, not
+    // ownership: what matters is that the root is short enough to hold Chrome's socket.
+    env: { ...process.env, TMPDIR: tempRoot, TMP: tempRoot, TEMP: tempRoot },
   });
 }

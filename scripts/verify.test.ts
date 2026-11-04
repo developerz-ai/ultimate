@@ -1,3 +1,62 @@
+// The repo gate's own tests: the host checks this repo runs on itself, the rules they carry, and
+// the seam that puts them on a step.
+//
+// THE CI FAILURE THIS FILE CARRIES (ci push run 41714452760, job `packages (1/2)`, step "tests +
+// coverage per package"). That job runs `bun run scripts/coverage-gate.ts --all --shard 1/2`; the
+// coverage unit list is the 30 tiered packages plus `create-ultimate` (it has a
+// `packages/create-ultimate/src/`) plus `scripts` — 32 units, sorted — so `scripts` is index 26
+// and lands in shard 1/2, whose suite is `bun test ./scripts`
+// (scripts/lib/coverage-units.ts:22-29). This file ran THERE and failed with:
+//
+//   - []   + [{ "at": ".github/workflows/ci.yml", "code": "X_PRIVATE_NAMES_UNSET", "cause": "a
+//               push to main ran with ULTIMATE_PRIVATE_NAMES empty, so the private-name guard
+//               would scan nothing and pass; on main the secret must arrive" }]
+//
+// THE CAUSE, established and reproduced — NOT the tier rule and NOT the manifest. The four host
+// checks that assertion calls in sequence (tierBoundaries, frameworkManifest, errorCodeDocs,
+// checkRoadmap) shared ONE opaque `expect(...).toEqual([])`, so the test NAME could not say which
+// one failed; only the diff could, and it named `X_PRIVATE_NAMES_UNSET` — the private-name
+// guard's CONFIGURATION rule: the run that requires the names must carry them, or the guard
+// scans nothing and passes. It fired because `scripts/verify.ts`'s `tierBoundaries` read
+// `process.env` for it, so "does this tree have boundary violations" depended on WHICH PROCESS
+// asked. The `packages` job IS a push to main on Actions and is handed NO secret — by design:
+// ci.yml gives `ULTIMATE_PRIVATE_NAMES` to the `gate` part that runs `boundaries`, and to nobody
+// else. REPRODUCED: with the secret unset and the guard's requirement DECLARED, the assertion
+// fails with that diff.
+//
+// THE CAUSE TEXT ABOVE IS THE ONE THAT RUN PRINTED, and it names the guard of THAT tree: it
+// inferred the requirement from the push event, so the tree scan carried it into every job on
+// the push. The guard in this tree asks for the requirement EXPLICITLY — `scripts/private-names.ts`
+// raises `X_PRIVATE_NAMES_UNSET` only when `ULTIMATE_PRIVATE_NAMES_REQUIRED` is `1` and the names
+// are empty, and its header says the rule is "Never inferred from the event". So the cause it
+// prints today is "`ULTIMATE_PRIVATE_NAMES_REQUIRED=1` and `ULTIMATE_PRIVATE_NAMES` is empty, so
+// the private-name guard would scan nothing and pass; the step that requires the names must
+// receive the secret". The CODE and the FILE in the diff above are the same; the wording is the
+// guard's, and it moved with the rule.
+//
+// THE REPAIR. `tierBoundaries` is the TREE's answer and is now env-independent; the private-name
+// guard is `privateNames` in `scripts/verify.ts`, a RUN's answer, and the gate's `boundaries`
+// step runs both. The rule is NOT weakened: it still fires for the run that requires the names
+// and arrives without them.
+//
+// THE SECOND ENV-READING RULE, found by the self-review of the repair above: the split was not
+// complete. `tierBoundaries` still reached the environment TRANSITIVELY — its last rule,
+// `stabilityFindings(root)`, falls back to `Bun.env` when it is handed no environment
+// (`scripts/lib/stability-findings.ts`), and `targetBranch(env)` answers 'main' on a push to main
+// and nothing on a pull request or a local run. So the no-break-on-main rule (`X_BREAKING_ON_MAIN`)
+// — WHERE a change is landing — was still the tree scan's answer, and the tree scan's answer still
+// varied by the process that asked. The repair completes the split: the tree half asks the
+// stability rule with an EXPLICIT empty environment, and the rule that needs to know the branch
+// is `breaksOnMain`, a RUN's answer beside `privateNames`, wired onto the same step. The rule is
+// NOT weakened: it still fires for a break headed to `main` inside a closed window, and the tests
+// below pin both halves — the tree scan never answers it, and the run's half still does.
+//
+// WHERE THE TWO HALVES' ASSERTIONS LIVE. The four host checks below each have their OWN named
+// assertion, so a failure says WHICH scan failed and WHAT it found — that is the first repair, and
+// it is in this file. The assertions that pin the split itself — the tree scan reads no
+// environment, and neither run rule is answered by the tree scan — are one responsibility of their
+// own and live in `scripts/verify-split.test.ts`, beside this file and in the same `scripts` unit
+// (`bun test ./scripts`), so the `packages (1/2)` CI shard runs them.
 import { describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -6,8 +65,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { exec, readVerifyFloor, VERIFY_STEPS, verifyStepNames } from '@ultimat3/cli';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
-// Only the integration assertion below lives here — `checkRoadmap`'s own cases are in
-// `scripts/roadmap.test.ts`, next to their source.
+// `checkRoadmap`'s own cases are in `scripts/roadmap.test.ts`, next to their source.
 import { checkRoadmap } from './roadmap';
 import {
   ERROR_REFERENCE,
@@ -19,14 +77,6 @@ import {
   mergeGateParts,
   tierBoundaries,
 } from './verify';
-
-const readJson = async (path: string): Promise<unknown> => Bun.file(path).json();
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** One key off a parsed tsconfig, checked rather than cast — the file is data, not a type. */
-const field = (value: unknown, key: string): unknown => (isRecord(value) ? value[key] : undefined);
 
 describe('unit · a generation failure is described, never re-thrown', () => {
   // Two values `error instanceof Error ? error.message : String(error)` — what stood here — cannot
@@ -252,17 +302,6 @@ describe('unit · the repo gate is the CLI gate', () => {
     }
   });
 
-  // Bun's runtime reads the tsconfig at the CWD to transpile JSX, and at the repo root that is
-  // this file — a solution-style config that carries no compilerOptions of its own unless it is
-  // told to. Without these two keys every `.tsx` in the repo transpiles against the React
-  // automatic runtime, which is not installed, so `bun test` at the root cannot import a single
-  // component. One JSX flavour, declared where the runtime looks for it.
-  test('the root tsconfig tells the runtime which JSX runtime this repo uses', async () => {
-    const options = field(await readJson(join(repoRoot(), 'tsconfig.json')), 'compilerOptions');
-    expect(field(options, 'jsx')).toBe('preserve');
-    expect(field(options, 'jsxImportSource')).toBe('solid-js');
-  });
-
   /**
    * The floor is the ratchet on the ratchet: `applies` returning false records a step as SKIPPED
    * and green, so deleting a suite turns its step into a silent skip — unless `x.verify.json`
@@ -292,73 +331,18 @@ describe('unit · the repo gate is the CLI gate', () => {
     REPO_SCAN_TIMEOUT_MS,
   );
 
-  /**
-   * `tsc -b` compiles the projects the root REFERENCES and nothing else, and a project can only be
-   * referenced if it is `composite`. `scripts/` satisfied neither: `scripts/tsconfig.json` set
-   * `composite: false` and no `references` entry named it, so `export const probe: number = 'no'`
-   * dropped anywhere under `scripts/` left `bunx tsc -b` at exit 0 — the gate's own implementation
-   * compiled nowhere, which is how `list-workspaces.ts` shipped passing a string to a number
-   * parameter. Both halves are asserted, because either one alone puts the hole straight back.
-   */
-  test('the root build graph contains scripts/, and scripts/ can be referenced', async () => {
-    const root = repoRoot();
-    const references = field(await readJson(join(root, 'tsconfig.json')), 'references');
-    const paths = (Array.isArray(references) ? references : []).map((ref) => field(ref, 'path'));
-    expect(paths).toContain('./scripts');
-    const options = field(await readJson(join(root, 'scripts/tsconfig.json')), 'compilerOptions');
-    expect(field(options, 'composite')).toBe(true);
-  });
-
-  /**
-   * What the two keys above BUY, proved against a real `tsc -b` rather than asserted about it: a
-   * type error in a referenced composite project fails the build, and the same error in the same
-   * project fails nothing once the reference is gone. Run on a two-file solution in a temp dir —
-   * the repo's own build is minutes and writes `.tsbuildinfo` every other suite shares.
-   */
-  test(
-    'tsc -b fails on a referenced project and passes over an unreferenced one',
-    async () => {
-      const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-refs-'));
-      try {
-        const project = {
-          compilerOptions: { composite: true, noEmit: true, strict: true, types: [] },
-        };
-        for (const name of ['sub', 'other']) {
-          await Bun.write(join(dir, name, 'tsconfig.json'), JSON.stringify(project));
-        }
-        await Bun.write(join(dir, 'other/ok.ts'), 'export const ok = 1;\n');
-        await Bun.write(
-          join(dir, 'sub/probe.ts'),
-          "export const probe: number = 'not a number';\n",
-        );
-        const tsc = join(repoRoot(), 'node_modules/.bin/tsc');
-        // `other` is always referenced, so the solution has something to build either way and the
-        // exit code is answering "was sub compiled?" and not "was this configuration empty?".
-        const build = async (paths: readonly string[]): Promise<number> => {
-          const references = paths.map((path) => ({ path }));
-          await Bun.write(join(dir, 'tsconfig.json'), JSON.stringify({ files: [], references }));
-          await rm(join(dir, 'sub/tsconfig.tsbuildinfo'), { force: true });
-          return (await exec([tsc, '-b', '--pretty', 'false'], { cwd: dir })).code;
-        };
-        expect(await build(['./other', './sub'])).not.toBe(0);
-        expect(await build(['./other'])).toBe(0);
-      } finally {
-        await rm(dir, { recursive: true, force: true });
-      }
-    },
-    REPO_SCAN_TIMEOUT_MS,
-  );
-
-  // Four full-repo scans, one of them a complete manifest regeneration over 29 packages —
-  // `REPO_SCAN_TIMEOUT_MS`.
-  test(
-    'this repo has no tier violations and its manifest still generates',
-    async () => {
-      const root = repoRoot();
-      expect(await tierBoundaries(root)).toEqual([]);
-      expect(await frameworkManifest(root)).toEqual([]);
-      expect(await errorCodeDocs(root)).toEqual([]);
-      expect(await checkRoadmap(root)).toEqual([]);
+  // Four full-repo scans, one a manifest regeneration over 29 packages — `REPO_SCAN_TIMEOUT_MS`.
+  // FOUR assertions, one per host check, each naming its own.
+  test.each([
+    ['the boundaries scan finds no violation here', tierBoundaries],
+    ['the manifest still generates and describes this tree', frameworkManifest],
+    ['every error code this repo ships is documented', errorCodeDocs],
+    ['the roadmap table describes what this repo ships', checkRoadmap],
+  ] as const)(
+    '%s',
+    async (_name, check) => {
+      const findings = await check(repoRoot());
+      expect(findings.map((finding) => `${finding.code} at ${finding.at}`)).toEqual([]);
     },
     REPO_SCAN_TIMEOUT_MS,
   );

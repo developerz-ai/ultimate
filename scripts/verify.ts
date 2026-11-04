@@ -20,13 +20,9 @@
 import { join } from 'node:path';
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
 import {
-  checkErrorCodeDocs,
-  checkErrorCodeRegistry,
   checkFlagReads,
-  collectDeclaredCodes,
   exec,
   exitCodeFor,
-  registeredErrorCodes,
   render,
   runVerify,
   SPECS,
@@ -34,8 +30,6 @@ import {
 } from '@ultimat3/cli';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
 import { requireBunVersion } from '../packages/cli/src/app-root';
-// The leaf, not the barrel (DX ledger #10): a guard must load while a package is mid-edit.
-import { checkErrorCodesThrown } from '../packages/cli/src/error-unthrown';
 import { BadFlagError, MissingPositionalError } from '../packages/cli/src/errors';
 import { readVerifyFloor } from '../packages/cli/src/verify-floor';
 import { mergeParts, parsePart, VerifyMergeInputError } from '../packages/cli/src/verify-merge';
@@ -44,7 +38,6 @@ import { withVerifyProgress } from '../packages/cli/src/verify-progress';
 import { readTimings } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
 import { writeErrorLine } from '../packages/cli/src/write-line';
-import { benchClaimFindings } from './bench-claims';
 import {
   adminFlattenerFindingFor,
   checkAdminFlattener,
@@ -57,49 +50,32 @@ import {
   floorFindings,
   sharedLeafFindingFor,
 } from './boundaries';
-import { boundaryRuleDocFindings } from './boundary-rule-docs';
-import { chartVersionFindings } from './chart-version';
 import { cliOutboundFindings } from './cli-outbound';
-import { docCommandFindings } from './doc-commands';
-import { docFixFindings } from './doc-fixes';
-import { docPathFindings } from './doc-paths';
-import { errorStatusCompleteness } from './error-map';
-import { errorRendering } from './error-render';
-import { fixProseFindings } from './fix-prose';
-import { gateStepFindings } from './gate-steps';
-import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
 import { imageContractFindings } from './image-contract';
-import { knownGapLinkFindings } from './known-gaps-links';
 import { flagBool, parseScriptArgs } from './lib/args';
+import { CHANGELOG_PATH } from './lib/changelog-format';
+import { breakingOnMainFindings, targetBranch } from './lib/changelog-highlights';
 import { checkConfigImports, configImportFindingFor } from './lib/config-import';
+import type { Finding } from './lib/log';
 import { report, writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
-import { stabilityFindings } from './lib/stability-findings';
+import { stabilityFindings, todayUtc } from './lib/stability-findings';
 import { REPO_GATE, readVerifyArgs, VERIFY_SUBCOMMANDS } from './lib/verify-args';
-import { llmsTxtFindings } from './llms-txt';
+// The two host-check halves this gate wires onto its steps live in `scripts/lib/`, one file each:
+// the `errors` step's and the `manifest` step's committed-file rules. The `errors` step's half is
+// re-exported below so every importer of this module keeps ONE import site, and so the gate's own
+// row in `docs/architecture/guards.md` still names the codes it raises — `scripts/guards-doc.ts`
+// reads a guard's row from its own text plus the `scripts/lib/*` modules it imports, one level
+// down.
+import { errorContract } from './lib/verify-errors';
+import { committedFiles } from './lib/verify-manifest';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
-import { opsUidFindings } from './ops-uid-docs';
-import { packageFrontFindings } from './package-front';
 import { privateNameFindings } from './private-names';
-import { readmeFenceFindings } from './readme-fences';
-import { readmeSampleFindings } from './readme-sample';
-import { releaseFactFindings } from './release-facts';
-import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
 import { sealCallFindings } from './seal-calls';
-import { setupCommandFindings } from './setup-commands';
-import { bareErrorFindings } from './test-bare-error';
-import { testDiscoveryFindings } from './test-discovery';
-import { testFixFindings } from './test-fix-citations';
-import { realSleepFindings } from './test-real-sleep';
-import { testTypecheckFindings } from './test-typecheck-gate';
-import { throwFindings } from './to-throw-returns';
-import { versionStampFindings } from './version-stamps';
-import { wikiAnchorFindings } from './wiki-anchors';
-import { wikiFenceFindings } from './wiki-fences';
-import { frameDocFindings } from './wiki-frames';
-import { wikiTableFindings } from './wiki-tables';
+
+export { ERROR_REFERENCE, errorCodeDocs, errorContract } from './lib/verify-errors';
 
 /**
  * Five rules on one step. The tier table: a package may import only from a strictly lower tier.
@@ -123,6 +99,21 @@ import { wikiTableFindings } from './wiki-tables';
  * eighteenth step only this repo can run. This is already the slot for "conventions this repo makes
  * about its own source that the framework cannot know" — the flattener rule is not a tier rule
  * either — and it runs third, before any suite, which is where a millisecond-cost text rule belongs.
+ *
+ * EVERY RULE HERE IS ABOUT THE TREE, and none reads the environment: a scan of a tree answers the
+ * same way for every caller, so its answer is a fact about the tree. TWO rules could not keep that
+ * promise, and both are the RUN's answers, not the tree's — each is asked of the run that owns the
+ * fact, and each is wired onto this same step:
+ *
+ * - the private-name guard — `privateNames` below: the secret is a fact about the RUN.
+ * - the no-break-on-main rule — `breaksOnMain` below: WHERE this change is landing is a fact about
+ *   the RUN, and only the run knows it. The changelog's `BREAKING —` entries under `[Unreleased]`
+ *   are the tree's half, and they stay here; the branch is not.
+ *
+ * The stability rule is asked HERE with an explicit empty environment, so this scan reads no
+ * environment at all — `stabilityFindings` falls back to `Bun.env` when it is handed none
+ * (`scripts/lib/stability-findings.ts`), and a rule whose answer varies by the process that asked
+ * is the defect this file's split exists to prevent.
  */
 export const tierBoundaries: HostCheck = async (root) => {
   // One scan for both halves of the tier rule. Two would transpile 4,000 files twice for an answer
@@ -151,11 +142,87 @@ export const tierBoundaries: HostCheck = async (root) => {
     ...(await sealCallFindings(root)),
     // No telemetry: every host `packages/cli/src` spells is reserved or an allowlist row with a why.
     ...(await cliOutboundFindings(root)),
-    // No private adopter name in a tracked file or path; the names are the CI secret, unset a skip.
-    ...(await privateNameFindings(root, process.env)),
-    // wiki/Stability.md: the major window, Highlights, no break on main, the deprecation window.
-    ...(await stabilityFindings(root)),
+    // wiki/Stability.md: the major window, Highlights, the deprecation window. Asked with an
+    // explicit empty environment, so this scan reads none: the no-break-on-main half is the RUN's
+    // question and lives in `breaksOnMain` below.
+    ...(await stabilityFindings(root, { env: {} })),
   ];
+};
+
+/**
+ * The private-name guard, in the RUN that performs it. Two rules, about different things:
+ *
+ * - The SCAN: no tracked file or path may carry a private adopter's name. The names are a CI
+ *   secret, so unset is a skip that says so — a scan that read nothing must never read as a scan.
+ * - The CONFIGURATION: on a push to main the secret must ARRIVE, or the scan skips and the guard
+ *   passes while reading nothing.
+ *
+ * The second is a fact about the RUN, and the guard asks for it EXPLICITLY:
+ * `scripts/private-names.ts` raises `X_PRIVATE_NAMES_UNSET` only when
+ * `ULTIMATE_PRIVATE_NAMES_REQUIRED` is `1` and the names are empty — never inferred from the
+ * event, because a unit job on a push to main runs this guard with no secret and must skip.
+ * `.github/workflows/ci.yml` sets that flag on the part that runs `boundaries` on a push to
+ * `main`, and hands that part the secret; every other job, the `packages` one included, is
+ * handed neither.
+ *
+ * The failure this split repairs was on the tree BEFORE it: the repo gate's TREE scan
+ * (`tierBoundaries`) read `process.env`, so "does this tree have boundary violations" depended
+ * on WHICH PROCESS asked, and the `packages (1/2)` job — a push to main handed no secret on
+ * purpose — was red for a rule that was not its own. On THAT tree the guard inferred its
+ * requirement from the push event, so the tree scan carried it; on this tree the guard asks for
+ * the flag and the tree scan asks for nothing. `scripts/verify.test.ts`'s repo-gate assertion
+ * failed with `X_PRIVATE_NAMES_UNSET` at `.github/workflows/ci.yml`, against a tree with no
+ * boundary violation in it.
+ *
+ * The rule is asked of the job that owns the secret: the gate's `boundaries` step runs this with
+ * `process.env` (see `HOST_CHECKS` below), where the secret arrives and the scan is real. The
+ * rule is NOT weakened — `scripts/private-names.test.ts` pins both halves, and the finding still
+ * fires for the run that requires the names and arrives without them.
+ *
+ * The environment is a parameter with a default rather than a read of `process.env` in the body,
+ * so a test can hand this rule a CI-shaped environment and watch it answer: `process.env` is
+ * process-wide state, and a test that mutates it leaves the next test reading a machine it did
+ * not choose.
+ */
+export const privateNames = async (
+  root: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<readonly Finding[]> => privateNameFindings(root, env);
+
+/**
+ * The no-break-on-main rule, in the RUN that performs it — the second rule whose answer is a fact
+ * about the run and not about the tree.
+ *
+ * From v30, `main` ships minors and patches only while the major window is closed: a `BREAKING —`
+ * entry under `[Unreleased]` waits on `next`. The changelog's entries are the TREE's half and stay
+ * in `tierBoundaries`; WHERE this change is landing is the RUN's half, and only the run knows it —
+ * the pull request's base branch (`GITHUB_BASE_REF`), else the pushed branch (`GITHUB_REF_NAME` on
+ * a push), else nothing (a local run reads no branch and the rule stays silent).
+ *
+ * It lived inside `tierBoundaries` until this split, which is how the tree scan read the
+ * environment: `stabilityFindings` falls back to `Bun.env` when it is handed no environment, so the
+ * tree's answer varied by the process that asked — the same defect the private-name guard had, and
+ * the same fix: the rule is asked of the run that owns the fact. It is NOT weakened. The gate's
+ * `boundaries` step runs this with `process.env` (see `HOST_CHECKS` below), where the branch
+ * arrives, and the finding still fires for a break headed to `main` inside a closed window.
+ *
+ * The environment is a parameter with a default rather than a read of `process.env` in the body, so
+ * a test can hand this rule a CI-shaped environment and watch it answer: `process.env` is
+ * process-wide state, and a test that mutates it leaves the next test reading a machine it did not
+ * choose.
+ */
+export const breaksOnMain = async (
+  root: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<readonly Finding[]> => {
+  const changelog = await Bun.file(`${root}/${CHANGELOG_PATH}`)
+    .text()
+    .catch(() => '');
+  return breakingOnMainFindings({
+    changelog,
+    target: targetBranch(env),
+    today: todayUtc(),
+  });
 };
 
 /**
@@ -210,153 +277,28 @@ export const frameworkManifest: HostCheck = async (root) => {
 };
 
 /**
- * The reference page every shipped `X_*` code must appear on. A framework monorepo publishes one
- * and a generated app does not, so naming it is the host's job — the CLI owns the rule, this repo
- * owns the file it is checked against.
- */
-export const ERROR_REFERENCE = 'wiki/Error-Codes.md';
-
-/**
- * The codes this repo's own gate emits. `scripts/` never ships, so no package may register
- * `X_ROADMAP_STATUS_MISSING` or `X_BOUNDARY_VIOLATION` — but the reference documents them, and a
- * rule that demanded a registration would push a contributor-only code into every generated app.
- * Scanned rather than listed, so a new script code needs no second edit here; a *documented* code
- * that neither a package nor a script declares is still the ghost row the registry check exists
- * to catch.
+ * The `manifest` step's host half: the generated manifest — the original — and every committed
+ * file that claims something about this repo, each checked against the tree it describes.
  *
- * The exemption follows the code's *declaration*, not every file that names it: a code a package
- * declares and a script merely throws — `X_BUN_VERSION` — is the package's to register, and
- * exempting it because `scripts/setup.ts` mentions it would waive the rule for a shipped code.
- */
-const hostOwnedCodes = async (root: string): Promise<readonly string[]> =>
-  (await collectDeclaredCodes(root))
-    .filter((site) => site.at.startsWith('scripts/'))
-    .map((site) => site.code);
-
-/**
- * Both halves of the reference's contract, on one step. Every shipped code has a row here, and
- * every row this page presents as live resolves through `x errors explain` — the second half is
- * what stops the page documenting a code the registry never heard of.
- */
-export const errorCodeDocs: HostCheck = async (root) => {
-  const known = new Set([...(await registeredErrorCodes()), ...(await hostOwnedCodes(root))]);
-  return [
-    ...(await checkErrorCodeDocs(root, ERROR_REFERENCE)),
-    ...(await checkErrorCodeRegistry(root, ERROR_REFERENCE, known)),
-    ...(await checkErrorCodesThrown(root, ERROR_REFERENCE)),
-  ];
-};
-
-/**
- * The `errors` step's host half: the reference page's three rules, the rule that an error factory
- * may not die formatting its own message, and the rule that `@ultimat3/http`'s status table stays
- * closed. Five rules on one step, the same shape `boundaries` already carries — a rule about
- * errors belongs on the errors step, not on an eighteenth one an agent has to learn the name of.
- *
- * `docFixFindings` is the reference page's THIRD rule and the one nothing enforced: the CLI's
- * `checkErrorFixes` resolves cited commands for `fix:` literals in shipped SOURCE, and the page an
- * agent is sent to when it hits a code was held to coverage and registration only. So a `Fix` cell
- * could print `x db query "select id …"` — and `x db` has no `query`, which is a second failure
- * handed to a reader already holding one.
- *
- * `testFixFindings`, `bareErrorFindings` and `throwFindings` join it because all three are the same
- * contract one file set further on. `checkErrorFixes` holds every `fix:` in `src/` to being runnable and skips tests, so a
- * fixture error, a helper that builds one and an assertion pinning a fix string were unchecked —
- * and `x schema show` and `x logs tail` are what that costs. `throwFindings` is the other half of
- * an error assertion: bun's synchronous `toThrow` PASSES when the callback returns an Error rather
- * than throwing one, and this repo exports 196 functions that return one. `bareErrorFindings` is the rule itself in
- * that file set: `CLAUDE.md` says never throw a bare `Error` and the enforced check skips tests, so
- * 422 sites sat under a green gate — a convention that is not a build error does not exist.
- * `fixProseFindings` holds the same `fix:` lines to OPENING with a command or a code shape, on a
- * per-package ratchet: the rule says a fix is a command, and 987 lines were sentences.
- *
- * The completeness rule is deliberately NOT its own step: `VerifyStepName` is a closed union owned
- * by `@ultimat3/cli`, and a generated app would inherit a step name that only this repo can run.
- * It blocks `x verify` either way, which is what "enforced, not documented" asks for.
- */
-export const errorContract: HostCheck = async (root) => [
-  ...(await errorCodeDocs(root)),
-  ...(await errorRendering(root)),
-  ...(await errorStatusCompleteness(root)),
-  ...(await docFixFindings(root)),
-  ...(await testFixFindings(root)),
-  ...(await bareErrorFindings(root)),
-  ...(await realSleepFindings(root)),
-  ...(await throwFindings(root)),
-  ...(await fixProseFindings(root)),
-];
-
-/**
- * The `manifest` step's host half: four rules, all asking that step's own question — does a
- * committed file still describe this tree? The generated manifest is the original. The other three
- * are hand-maintained files that claim something about the repo and were checked by nothing:
- *
- * | Rule | The claim, and what it cost | Source of truth |
- * |---|---|---|
- * | `publishListFindings` | `.github/workflows/release.yml` publishes every package — it does not, and `@ultimat3/flags` has never been on npm | `publishOrder(listWorkspaces())` |
- * | `benchClaimFindings` | `CLAUDE.md`'s realtime figures are what was measured | `scripts/bench/results/*.json` |
- * | `wikiTableFindings` | every `wiki/` table renders as a table | the GFM row rule |
- * | `frameDocFindings` | `wiki/Realtime.md` names the frames the wire actually sends | `FRAME_KINDS` |
- * | `chartVersionFindings` | `docker/helm/Chart.yaml` is on the lockstep version — it sat at 0.0.1, and `appVersion` IS the default image tag | the publishable workspaces' version |
- * | `docCommandFindings` | every `` `x …` `` on a page an agent reads is an invocation this build can run | `loadCommandCatalog()` |
- * | `docPathFindings` | every backticked `packages/…`, `scripts/…` or `docs/…` path on a published page exists — eight package CLAUDE.md files named `dev-*` modules 22.0.0 had renamed | the tree, and the two tracked apps |
- * | `gateStepFindings` | a page stating how many steps `x verify` runs, or enumerating them, describes this build's gate — 17 documented against 18 shipped, in 20 files, through a whole major | `VERIFY_STEP_NAMES` |
- * | `versionStampFindings` | one page stamps a version, it is the shipped one, and the workspaces agree | every workspace manifest |
- * | `readmeFenceFindings` | a fenced `ts`/`tsx` example in a package README typechecks | `tsc`, on a ratchet |
- * | `testTypecheckFindings` | this repo's TEST sources typecheck — every package config excludes them, so `tsc -b` reads none of the 966 | `tsc -p tsconfig.tests.json`, on a ratchet |
- * | `testDiscoveryFindings` | a test file the gate's discovery never yields, or one outside the one convention — *.spec.*, *_spec.*, *_test.* and *.test.{js,jsx} are invisible to the glob, while a __tests__/ path whose basename the glob matches IS yielded by it and run by the gate, so it is refused for the convention it breaks; a colliding basename names no test file at all | `TEST_GLOB` in packages/cli/src/test-select.ts, and the ignore policy in packages/cli/src/test-ignores.ts |
- * | `generatorCountFindings` | a documented `N files` for `x new` / `x g resource` is what the generator still emits — five had gone stale and were corrected by hand | `planNewApp()` / `generate()`, the planners `--dry-run` calls |
- * | `releaseFactFindings` | the package COUNT ten pages restate is the count on disk; `SECURITY.md` claimed 28 two majors late | `listWorkspaces()` |
- * | `setupCommandFindings` | a page stating what a scaffolded app's `bun run setup` runs, or how many steps it is, describes the script `x new` writes — `x db seed` was in the script and in no CI path, and four pages hand-copy the list | `binSetup()` in `templates/scaffold-bin.ts` |
- * | `llmsTxtFindings` | `llms.txt`'s package and wiki lists are generated — they were not, and `@ultimat3/notify` was missing | `listWorkspaces()`, `wiki/_Sidebar.md`, `wiki/Home.md` |
- * | `wikiFenceFindings` | a fenced `ts`/`tsx` example on a wiki page typechecks — `readmeFenceFindings` read package READMEs only (sweep 11). Runs AFTER it: both compile in one fixture directory | `tsc`, on a ratchet |
- * | `wikiAnchorFindings` | every `Page#anchor` link lands on a heading of its page | the target page's heading slugs |
- * | `knownGapLinkFindings` | each Known-Gaps `[B<n>]` link resolves to its backlog row and names its issue | the plan files |
- * | `opsUidFindings` | a uid `docs/ops` states is the one its image runs | `RUNTIME_UID`, `docker/helm/values.yaml` |
- * | `boundaryRuleDocFindings` | `02-boundaries.md`'s rule count and code table match the boundary rules | `BOUNDARY_CODES` |
- * | `readmeSampleFindings` | the root README's code sample is the `examples/dummy` file it quotes | that file |
- * | `packageFrontFindings` | a publishable package's npm page opens on a sentence, install, example and wiki page, with `keywords` | each `package.json` |
- *
- * `testTypecheckFindings` rides HERE and not on `typecheck`, which is where it belongs by meaning:
- * that step takes no host findings at all (`packages/cli/src/cmd-verify.ts` calls `hostFindings`
- * on four steps, and `typecheck` is not one), and widening it is that package's edit rather than a
- * rider on this one. This is the step that already carries the other `tsc`-on-a-ratchet rule, and
- * it asks the same question both do: does a committed file still describe this tree?
- *
- * None of them is a step of its own, for the reason the `errors` step's comment already gives:
- * `VerifyStepName` is a closed union owned by `@ultimat3/cli`, and a generated app would inherit an
- * eighteenth step that only this repo can run. `package-shape` would have been the natural home for
- * the publish list, but the CLI's step takes no host findings — widening it is that package's edit.
+ * The two halves live in two files because they are two jobs: the generated manifest is this
+ * repo's own artifact and is checked here, beside the gate; the committed files are a list of
+ * rules, and `scripts/lib/verify-manifest.ts` holds them.
  */
 export const frameworkFiles: HostCheck = async (root) => [
   ...(await frameworkManifest(root)),
-  ...(await publishListFindings(root)),
-  ...(await benchClaimFindings(root)),
-  ...(await wikiTableFindings(root)),
-  ...(await frameDocFindings(root)),
-  ...(await chartVersionFindings(root)),
-  ...(await docCommandFindings(root)),
-  ...(await docPathFindings(root)),
-  ...(await gateStepFindings(root)),
-  ...(await versionStampFindings(root)),
-  ...(await readmeFenceFindings(root)),
-  ...(await testDiscoveryFindings(root)),
-  ...(await testTypecheckFindings(root)),
-  ...(await generatorCountFindings(root)),
-  ...(await releaseFactFindings(root)),
-  ...(await setupCommandFindings(root)),
-  ...(await llmsTxtFindings(root)),
-  ...(await wikiFenceFindings(root)),
-  ...(await wikiAnchorFindings(root)),
-  ...(await knownGapLinkFindings(root)),
-  ...(await opsUidFindings(root)),
-  ...(await boundaryRuleDocFindings(root)),
-  ...(await readmeSampleFindings(root)),
-  ...(await packageFrontFindings(root)),
+  ...(await committedFiles(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
-  boundaries: tierBoundaries,
+  // THREE host checks on one step, and the split is the repair: `tierBoundaries` answers about the
+  // TREE, `privateNames` and `breaksOnMain` about the RUN — only the run that carries the secret
+  // can be asked whether the secret arrived, and only the run knows which branch this change is
+  // landing on. Merged here so the step still reports every half.
+  boundaries: async (root) => [
+    ...(await tierBoundaries(root)),
+    ...(await privateNames(root)),
+    ...(await breaksOnMain(root)),
+  ],
   errors: errorContract,
   manifest: frameworkFiles,
   roadmap: checkRoadmap,
