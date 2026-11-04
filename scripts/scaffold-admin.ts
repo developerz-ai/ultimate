@@ -17,7 +17,8 @@
 
 import { DEV_BINDING, quoteArg } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
-import { freeDevPort } from '../packages/cli/src/dev-supervisor';
+import type { PortProbe } from '../packages/testing/src/free-port';
+import { freePortPair } from '../packages/testing/src/free-port';
 import type { AdminStep, AdminWalk, Fetcher } from './lib/admin-walk';
 import { adminFindings, walkAdmin } from './lib/admin-walk';
 import { parseScriptArgs } from './lib/args';
@@ -158,30 +159,15 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
   };
 }
 
-/** `port` bound and released at once on the address `x dev` binds; `undefined` when it is held. */
-const heldOn = (port: number): number | undefined => {
-  try {
-    const probe = Bun.listen({
-      hostname: DEV_BINDING.hostname,
-      port,
-      socket: { data: () => undefined },
-    });
-    const bound = probe.port;
-    probe.stop(true);
-    return bound;
-  } catch {
-    return undefined;
-  }
-};
-
 /**
- * A port whose PAIR nothing holds, probed on the address `x dev` binds (`dev-lock.ts`'s rule):
- * `x dev` binds the web role on `port` and its sync node on `port + 1`, so a lone free port whose
- * neighbour was taken booted, listened and stopped again — red with nothing wrong with the app.
- * `freeDevPort`'s pair rule, the one `x dev --port 0` uses; `pick` is injectable for the test.
+ * A port whose PAIR nothing holds: `x dev` binds the web role on `port` and its sync node on
+ * `port + 1`, both on `localhost`, so a lone free port whose neighbour was taken booted, listened
+ * and stopped again — red with nothing wrong with the app. `localhost` is `127.0.0.1` AND `::1` on
+ * a dual-stack runner and Bun binds whichever resolves first, so a probe ON `localhost` passed a
+ * port held on the other one (CI run 41764752262): `@ultimat3/testing`'s `freePortPair` asks each
+ * loopback address, the one rule the e2e app's spawn keeps too. `listen` is injectable for the test.
  */
-export const freeDevPair = (pick: () => number = () => heldOn(0) ?? 0): number =>
-  freeDevPort(pick, (port) => heldOn(port) !== undefined);
+export const freeDevPair = (listen?: () => PortProbe): number => freePortPair(listen);
 
 /** The real thing: the app's own `x dev`, a free port pair, the wall clock. */
 const realIo: AdminCheckIo = {

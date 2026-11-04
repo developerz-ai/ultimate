@@ -58,26 +58,43 @@ export const freePortApartFrom = (
   }
 };
 
-/** Whether `port` can be listened on right now: a refusal is the answer, not an error. */
-const bindable = (port: number): boolean => {
-  try {
-    Bun.serve({ port, fetch: () => new Response() }).stop(true);
-    return true;
-  } catch {
-    return false;
-  }
-};
+/**
+ * The addresses `localhost` can name. A dual-stack host (GitHub's Ubuntu runner, a Debian container)
+ * maps it to both, and Bun binds the FIRST it resolves: a holder on `::1` left `localhost` free on
+ * `127.0.0.1`, so a probe on `localhost`, or on Bun's default `::`, answered "free" for a port
+ * `x dev` then met held (scaffold-smoke, CI run 41764752262). Each is asked on its own.
+ */
+export const LOOPBACK_ADDRESSES: readonly string[] = ['127.0.0.1', '::1'];
+
+/** An address this host does not have — IPv6 switched off — holds nothing. */
+const ABSENT = new Set(['EADDRNOTAVAIL', 'EAFNOSUPPORT', 'EINVAL']);
+
+/** Whether `port` is free on every loopback address `localhost` may resolve to. */
+export const loopbackFree = (
+  port: number,
+  addresses: readonly string[] = LOOPBACK_ADDRESSES,
+): boolean =>
+  addresses.every((hostname) => {
+    try {
+      Bun.listen({ hostname, port, socket: { data: () => undefined } }).stop(true);
+      return true;
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null ? Reflect.get(error, 'code') : '';
+      return typeof code === 'string' && ABSENT.has(code);
+    }
+  });
 
 /**
  * A free port whose NEIGHBOUR is free too, both ones a browser opens. `x dev` binds the web role on
  * `port` and the sync node on `port + 1`, so a lone free port whose neighbour another process held
  * was an e2e app that listened, failed its sync bind and exited before `/readyz` — the CLI's own
  * `freeDevPort` rule (`dev-supervisor.ts`), which this package cannot import. A candidate is held
- * while the next is asked for, as a refused port is, so the walk ends.
+ * while the next is asked for, as a refused port is, so the walk ends. The candidate itself is held
+ * on Bun's dual-stack `::`, which covers both loopbacks; the neighbour is asked of each.
  */
 export const freePortPair = (
   listen: () => PortProbe = listenOnAnyPort,
-  canBind: (port: number) => boolean = bindable,
+  canBind: (port: number) => boolean = loopbackFree,
 ): number => {
   const held: PortProbe[] = [];
   try {

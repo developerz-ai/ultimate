@@ -440,23 +440,28 @@ describe('unit · the command: boot, walk, stop', () => {
 });
 
 describe('freeDevPair', () => {
-  // `x dev` binds `port` and `port + 1`: a candidate whose neighbour is held booted, listened and
-  // stopped (scaffold-smoke bareapp, 2026-11-03: listening on :22503, then `draining`, `:22504` held).
-  test('a candidate whose neighbour is held is skipped, on the address x dev binds', () => {
-    const held = Bun.listen({
-      hostname: DEV_BINDING.hostname,
-      port: 0,
-      socket: { data: () => undefined },
-    });
-    try {
-      const busy = held.port - 1;
-      const candidates = [busy];
-      // The busy candidate first, then whatever the real probe answers.
-      const picked = freeDevPair(() => candidates.shift() ?? freeDevPair());
-      expect(picked).not.toBe(busy);
-      expect(picked).toBeGreaterThan(0);
-    } finally {
-      held.stop(true);
-    }
-  });
+  // `x dev` binds `port` and `port + 1` on `localhost`, which a dual-stack runner resolves to
+  // `127.0.0.1` AND `::1`: a neighbour held on EITHER is a boot that listens and stops. Held on each
+  // in turn, never on `localhost`, which names only one of them on a given box (CI run 41764752262).
+  test.each(['127.0.0.1', '::1', 'localhost'])(
+    'a candidate whose neighbour is held on %s is skipped',
+    (hostname) => {
+      const held = Bun.listen({ hostname, port: 0, socket: { data: () => undefined } });
+      try {
+        const busy = held.port - 1;
+        const candidates = [busy];
+        // The busy candidate first (never bound: the test hands its number), then a real ask.
+        const picked = freeDevPair(() => {
+          const port = candidates.shift();
+          if (port !== undefined) return { port, stop: () => undefined };
+          const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+          return { port: probe.port ?? 0, stop: () => void probe.stop(true) };
+        });
+        expect(picked).not.toBe(busy);
+        expect(picked).toBeGreaterThan(0);
+      } finally {
+        held.stop(true);
+      }
+    },
+  );
 });
