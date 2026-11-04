@@ -57,7 +57,11 @@ export const REQUIRED_ARTIFACTS: Readonly<Record<number, readonly string[]>> = {
   5: ['packages/jobs/src/index.ts', 'packages/mail/src/index.ts', 'packages/storage/src/index.ts'],
   6: ['packages/realtime/src/index.ts'],
   7: ['packages/cache/src/index.ts'],
-  8: ['packages/pwa/src/index.ts'],
+  8: [
+    'packages/pwa/src/index.ts',
+    'packages/cli/src/retained-assets.ts',
+    'packages/cli/e2e/six-deploys.e2e.test.ts',
+  ],
   9: ['packages/ai/src/index.ts', 'packages/mcp/src/index.ts'],
   10: [
     'packages/admin/src/index.ts',

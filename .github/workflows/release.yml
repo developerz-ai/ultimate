@@ -349,12 +349,15 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
 
       # npm answers "may take a few minutes to become available" after a publish, and 25.0.0 took
-      # several: the audit is polled, never read once.
-      - name: wait for every package on npm at this version, attested
+      # several: the audit is polled, never read once. `--tarballs` HEADs every version's
+      # `dist.tarball` too, inside the same loop: npm lists a version before it serves the file,
+      # and v29.4.0's scaffold 404'd on `http-29.4.0.tgz` after the audit had passed (run
+      # 41214625530).
+      - name: wait for every package on npm at this version, attested, its tarball served
         run: |
           set -euo pipefail
           for attempt in $(seq 1 40); do
-            if bun run scripts/registry-audit.ts --json > audit.json; then
+            if bun run scripts/registry-audit.ts --tarballs --json > audit.json; then
               jq -r '.summary' audit.json
               exit 0
             fi

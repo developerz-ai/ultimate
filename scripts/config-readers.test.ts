@@ -464,9 +464,9 @@ describe('the derived leaf set, checked against the RUNTIME config', () => {
     const { defineConfig } = await import('@ultimat3/core');
     const built = walk(defineConfig({ name: 'probe' }) as unknown as Record<string, unknown>);
     const derived = configLeaves(await configDeclaration(repoRoot()));
-    // `pwa.colors` is the ONE exception and it is the walk being RIGHT: its default is `undefined`,
-    // so the object cannot be descended into, while the declaration knows its four leaves.
-    for (const leaf of built.filter((one) => one !== 'pwa.colors')) {
+    // `pwa.colors` and `assets.retain` are the exceptions and the walk is RIGHT: each defaults to
+    // `undefined`, so the object cannot be descended into, while the declaration knows its leaves.
+    for (const leaf of built.filter((one) => one !== 'pwa.colors' && one !== 'assets.retain')) {
       expect(derived).toContain(leaf);
     }
     expect(built).toContain('pwa.colors');

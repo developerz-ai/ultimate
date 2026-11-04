@@ -95,6 +95,13 @@ describe.skipIf(noBrowser)('client navigation · the swap and its fallbacks', ()
     'islands under an enforced CSP: old disposed, new booted, the persisted one untouched',
     async () => {
       await start('/a');
+      // `start()` returns once ANY island is mounted, and each boots on its own idle callback: the
+      // shell can mount first and `a` after the click, so nothing is disposed (`__disposed`
+      // undefined, run 41515246191 — the packages job, under coverage). The click waits for `a`.
+      await currentTab().waitFor(
+        'window.__mounts && window.__mounts.includes("a")',
+        'island a to mount',
+      );
       await click('to-b');
       await currentTab().waitFor(
         'window.__mounts && window.__mounts.includes("b")',

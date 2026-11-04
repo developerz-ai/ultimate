@@ -139,6 +139,64 @@ jobs:
 Make `check` the single required status. A job that crashed before uploading its part is not a
 pass: its steps are missing and `merge` names them.
 
+## A push a green PR run already tested
+
+Merging an up-to-date green pull request pushes a tree CI has already tested. `x ci tested` says
+so — `data.tested` — and every job that run answered skips. As of 2026-11, 55 of this repository's
+last 81 pushes to `main` were such a tree.
+
+| `tested: true` needs | Why |
+|---|---|
+| the subject ends `(#N)` | only a merge of PR N is a candidate |
+| PR N merged as **this** commit | a `(#N)` typed by hand proves nothing |
+| its head is in this repository | a fork writes its own workflow; its green is not reused |
+| its head tree is this tree | a base that moved after the run is an untested merge |
+| the newest same-repository run on that head concluded `success`, under `--max-age` (default `24h`) | the runner image and the registry move |
+
+Any doubt — a condition unmet, `gh` absent, an API that did not answer — is `false`: a full run.
+The command exits 0 on every answer.
+
+```yaml
+jobs:
+  tested:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, actions: read, pull-requests: read }
+    outputs:
+      tested: ${{ steps.tested.outputs.tested }}
+    steps:
+      # Only a push asks. Never a release commit: what publishes is a run of everything.
+      - if: github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'release')
+        uses: actions/checkout@v4
+      - if: github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'release')
+        uses: oven-sh/setup-bun@v2
+      - if: github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'release')
+        run: bun install --frozen-lockfile
+      - id: tested
+        if: github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'release')
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          bunx x ci tested --repo "$GITHUB_REPOSITORY" --json > tested.json
+          echo "tested=$(jq -r .data.tested tested.json)" >> "$GITHUB_OUTPUT"
+
+  part:
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    # … the matrix above, unchanged
+
+  check:
+    needs: [tested, part]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    # … unchanged
+```
+
+Each reused job carries that **one** `if` and nothing else, so a skip has exactly one cause:
+`tested` said true. `!cancelled()` is load-bearing: a bare `needs.…` condition implies
+`success()`, and a red or timed-out `tested` would skip every job instead of running them. A
+reader of a skipped check (a deploy, a required status) can then accept the skip only beside a
+green `tested` check. On a
+pull request every step of `tested` is skipped and nothing below it is. The cost: one near-empty
+job's runner acquisition ahead of every other job, a few seconds.
+
 ## Width and memory, per job
 
 Each job sizes its own test width the same way the laptop does (`x verify` prints it on the step

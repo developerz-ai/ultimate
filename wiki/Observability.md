@@ -166,4 +166,19 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 | Request context | the ALS context carries the request id every log line and span inherits |
 | Request span name | `GET /r/:token` — the route PATTERN, never the concrete URL (a token in a path would reach every collector); `http.route` carries the same pattern, and an unmatched request is named by its method alone with `http.route: unmatched` (`As of 22.6.0`) |
 
+## Browser failures
+
+`app.config.ts` `clientErrors: { enabled: true }` (`As of 30.0`, off by default) sends a failure on an `app/` page to the same `ErrorReporter` a server failure reaches, as `source: 'browser'` and code `X_CLIENT_ERROR`. `site/` documents never carry it; the admin ships no script.
+
+| Concern | Rule |
+|---|---|
+| Doors | window `error` (only a `filename` on this origin; `Script error.` with no stack dropped), `unhandledrejection` (dropped when its stack names only other origins), an island whose `mount()` rejected (the `data-x-failed` marker, watched by a `MutationObserver` — the hydration runtime swallows that rejection, so no window event fires) |
+| Script | `/x-client-errors.js`, 1,961 B (962 B gzip) `As of 2026-11-03`, in `<head>` with `defer`. Served `app/` documents only: the static export `budget.js` is weighed on never names it, so no route figure moves. The build is the document's `x-ultimate-build` meta (else the tag's `data-build`), read at send time. Never throws, never reports its own failure |
+| Caps | 5 reports per document, one per distinct path and message — reset when the client router swaps a page in (`ultimate:navigated`); one report per failed island element, so one carried across a swap is not re-reported; message 1,000, stack 8,000, path 2,048 characters; body 32 KiB |
+| Route | `POST /_client-errors`, `204` on acceptance. `403 X_CSRF_BLOCKED` without proof of same origin (`sec-fetch-site`, then `Origin` — a request with neither is refused too); a path with a query, a fragment, whitespace or a control character is refused; `401` anonymous unless `clientErrors.anonymous: true`; `422 X_BODY_INVALID` for a body over the cap, an unknown key or a field out of shape; `429` past `clientErrors.perMinute` per actor or address, on the app's rate-limit store. A refusal is never reported |
+| Report | `cause` = the browser's message; `stack` = the browser's stack, as sent (no source maps); `meta.clientBuild` beside the server's `release` tells a stale tab from a bug; `meta.kind`, `meta.island`; `scope.operation` = the matched `app/` route pattern, plus the island id when a page of this build declares that island — any other id is filed with no operation, so an invented id makes no new group; `scope.extra.path` = the path, never the query string. `errorFingerprint` groups on these: one island's fault on every `/posts/:id` is one group |
+| Credential | none in the browser: the tab posts to its own origin and the server forwards through the configured reporter |
+| Static export | no route to receive a report, so no exported document names the script and `x build` warns |
+| Not on this route | web vitals, source maps, a filter DSL — an app's own rules belong in its wrapped `ErrorReporter` |
+
 Running an app for real — the PaaS → Compose → Kubernetes ladder, secrets, dashboards, datastore sizing, DR and runbooks — is the operations manual: [`docs/ops/`](https://github.com/developerz-ai/ultimate/tree/main/docs/ops), and specifically [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md). Recommendations only; the framework depends on none of it.

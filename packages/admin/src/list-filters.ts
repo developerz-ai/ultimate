@@ -81,21 +81,25 @@ const onCalendar = (raw: string): boolean => {
 };
 
 /**
- * A typed instant → the ISO string a driver compares. `datetime-local` posts `YYYY-MM-DDTHH:mm`
- * and the control says UTC beside the box — the same contract the edit form states — and a bare
- * date is that day's first instant in UTC.
+ * An instant → the ISO string a store compares. It names its zone — an offset or `Z` — or it is a
+ * bare `YYYY-MM-DD`, that day's first instant in UTC. A zoneless time is refused: no store invents
+ * a zone. What the audit stores and the audit URL read.
  */
-const instantOf = (raw: string): string | undefined => {
+export const instantOf = (raw: string): string | undefined => {
   if (!onCalendar(raw)) return undefined;
-  const text = DATE.test(raw)
-    ? `${raw}T00:00:00.000Z`
-    : LOCAL_MINUTE.test(raw)
-      ? `${raw}:00.000Z`
-      : raw;
+  const text = DATE.test(raw) ? `${raw}T00:00:00.000Z` : raw;
   if (!ZONED.test(text)) return undefined;
   const at = new Date(text);
   return Number.isNaN(at.getTime()) ? undefined : at.toISOString();
 };
+
+/**
+ * A `datetime-local` control's value as the UTC its label states: `YYYY-MM-DDTHH:mm` gets its `Z`
+ * HERE, the one place a form's minute is given a zone, and everything else is `instantOf`'s. A
+ * list filter's range control and the audit trail's form post exactly that shape.
+ */
+export const utcFormInstantOf = (raw: string): string | undefined =>
+  instantOf(LOCAL_MINUTE.test(raw) ? `${raw}Z` : raw);
 
 interface Refusal {
   readonly cause: string;
@@ -127,7 +131,7 @@ function scalarOf(field: AdminField, raw: unknown): Scalar | Refusal {
           : { cause: `takes a YYYY-MM-DD date, got ${shown(raw)}` };
       }
       return (
-        instantOf(raw) ?? {
+        utcFormInstantOf(raw) ?? {
           cause: `takes a UTC instant (YYYY-MM-DDTHH:mm, or ISO-8601 with an offset), got ${shown(raw)}`,
         }
       );

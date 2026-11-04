@@ -10,6 +10,7 @@ import { api } from '@postly/web/api';
 import {
   type AdminActor,
   adminList,
+  adminRouteMatch,
   invokeRowAction,
   relatedLists,
   relatedOf,
@@ -99,6 +100,25 @@ describe('who may open it is the role map, and only the owner holds it', () => {
     for (const permission of required) {
       expect(rolesGranting(permission, roles)).toContain('owner');
     }
+  });
+
+  test('the audit trail answers a filtered URL, and refuses one it cannot read', async () => {
+    const statusOf = (path: string) =>
+      asOperator(async () => {
+        const url = `http://localhost${path}`;
+        const matched = adminRouteMatch(admin, new URL(url).pathname);
+        if (matched === null) return expect.unreachable(`no admin route serves ${path}`);
+        const response = await matched.route.respond({
+          ctx: await admin.requestCtx(new Request(url)),
+          params: matched.params,
+          url,
+          method: 'GET',
+          form: null,
+        });
+        return response.kind === 'document' ? response.status : 303;
+      });
+    expect(await statusOf('/admin/audit?outcome=denied&since=2026-11-01&changes=1')).toBe(200);
+    expect(await statusOf('/admin/audit?org=someone-else')).toBe(400);
   });
 
   test('a reader opens nothing: the coarse gate is not theirs', async () => {

@@ -171,3 +171,11 @@ still hold are in that file, and where the two disagree it wins.
 ## Moved out 2026-11-03 (plan 101 wave 3, the `CLAUDE.md` ceiling)
 
 Every admin route is `ssr` + `hydrate: 'never'`, so a control is a link or a native form: `<Pagination hrefFor>`, `<DataTable sortHrefFor>`, scope tabs as links, the filter bar one GET form, a form posted at the URL that rendered it, an action posted at its ROW's URL (`_operation`).
+
+## Moved out 2026-11-03 (plan 101 wave 4b, the `CLAUDE.md` ceiling)
+
+Three sentences, verbatim, to make room for the audit trail's rule:
+
+- The relations rule: The picker is server-rendered: a `<select>` for a small target, else an id box + the target's lookup screen (`/admin/<resource>/lookup`, `screen-lookup.tsx`, `return` held to the admin's own paths).
+- The MCP scope rule: A token's own scopes are `AdminMcpActor.tokenScopes` (not `scopes`: core's `Actor.scopes` is another thing), expanded `destroy ⇒ write ⇒ read` by `adminTokenScopes` (`mcp-scopes.ts`).
+- The no-script rule: `form-decode.ts` is the one place posted strings become typed input, per widget — an empty box of a typed widget (money, number, instant, JSON) is `null`, never `''`.

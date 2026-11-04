@@ -16,8 +16,11 @@ const clock: ShotClock = {
 const chrome = await findChrome(process.env);
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';
 const SHOT_TIMEOUT_MS = 20_000;
-/** Long enough for a popup's navigation to have reached the server if anything let it through. */
-const POPUP_SETTLE_MS = 1_500;
+/**
+ * How long both popups' first requests may take to be decided. Waited for as an event, never slept:
+ * a fixed 1.5 s settle read the refusals before a loaded runner's Chrome had made them.
+ */
+const POPUP_DECIDED_MS = 15_000;
 
 describe.skipIf(chrome === undefined && !required)('x shot’s allow list, on a popup', () => {
   const hits: string[] = [];
@@ -65,15 +68,24 @@ describe.skipIf(chrome === undefined && !required)('x shot’s allow list, on a 
     'a target=_blank link and a window.open never reach an off-list host, and are recorded refused',
     async () => {
       if (session === undefined) expect.unreachable('the session never opened');
-      await session.page.click('#link');
-      await session.page.click('#open');
-      await Bun.sleep(POPUP_SETTLE_MS);
+      const { page } = session;
+      const refused = (): string[] =>
+        page
+          .network()
+          .filter((entry) => entry.refused === 'host')
+          .map((entry) => entry.url)
+          .sort();
+      await page.click('#link');
+      await page.click('#open');
+      // Until both are decided. A popup the allow list missed is never recorded refused, so this
+      // runs to the deadline and `hits` holds the leak.
+      const deadline = performance.now() + POPUP_DECIDED_MS;
+      while (refused().length < 2 && performance.now() < deadline) {
+        // real-clock: the popups open in Chrome's own process, on its time.
+        await Bun.sleep(25);
+      }
       expect(hits).toEqual([]);
-      const refused = session.page.network().filter((entry) => entry.refused === 'host');
-      expect(refused.map((entry) => entry.url).sort()).toEqual([
-        offList('/leak-link'),
-        offList('/leak-open'),
-      ]);
+      expect(refused()).toEqual([offList('/leak-link'), offList('/leak-open')]);
     },
     3 * SHOT_TIMEOUT_MS,
   );

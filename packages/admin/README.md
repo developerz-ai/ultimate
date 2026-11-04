@@ -285,6 +285,18 @@ from the leaf module `@ultimat3/admin/schema` (`SQL_ADMIN_AUDIT_TABLE`, `ADMIN_A
 no migration, no screen loaded to install it. That subpath is their one import path: 25.0.0 took
 them off the barrel.
 
+`/admin/audit` is the whole trail, 100 entries per page, newest first, behind one native GET form:
+`?entity=`, `?actor=`, `?outcome=`, `?since=`, `?until=` (an instant with an offset or `Z`, a
+bare `YYYY-MM-DD` as that day's first UTC instant, or the form's `YYYY-MM-DDTHH:mm`, given its
+`Z` by `utcFormInstantOf` and nowhere else; `until` is exclusive), `?changes=1`, and the
+keyset `?before=`, which the older link writes with the filters kept. `auditRequestOf(url)`
+is the one parser and `auditHref(path, request)` the one builder; a parameter it does not
+read (`?org=` too: the tenant is the actor's) is `X_ADMIN_FILTER_INVALID`, a 400. Both stores
+take `outcome`, `since` and `until` (`AuditQuery`). An app's own log should too: the screen
+re-checks every entry it returns with `auditEntryMatches`, so a log that ignores a field draws
+a short page, never another tenant's or another outcome's entry. A diff on either screen
+masks a `sensitive` or sealed field's value, whatever the stored entry holds.
+
 ### A sealed column
 
 `.sealed()` on the entity is read by nothing here: no list column, no detail row, no filter, no

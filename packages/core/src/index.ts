@@ -168,6 +168,17 @@ export type {
 } from './config';
 export { defineConfig, INBOX_RETENTION_KEYS } from './config';
 export type { AiConfig, AiConfigInput, McpConfig } from './config-ai';
+export type {
+  AssetsConfig,
+  AssetsRetainConfig,
+  AssetsSection,
+  AssetsSectionInput,
+} from './config-assets';
+export type {
+  ClientErrorsConfig,
+  ClientErrorsSection,
+  ClientErrorsSectionInput,
+} from './config-client-errors';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
 export type { IslandsConfig, IslandsSection, IslandsSectionInput } from './config-islands';

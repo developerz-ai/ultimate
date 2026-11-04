@@ -111,14 +111,11 @@ describe('generateServiceWorker', () => {
     expect(preview.source).not.toContain('x-precache-abc123def456');
   });
 
-  test('retained build ids survive activation', () => {
-    const output = generateServiceWorker(
-      routes,
-      { ...config, retainBuildIds: ['old-1', 'old-2'] },
-      'new-3',
+  test('activation keeps this build’s caches and deletes every other build’s', () => {
+    const output = generateServiceWorker(routes, config, 'new-3');
+    expect(output.source).toContain(
+      'const RETAINED=["x-precache-new-3","x-runtime-new-3","x-pages-new-3"]',
     );
-    expect(output.source).toContain('x-precache-old-1');
-    expect(output.source).toContain('x-precache-old-2');
     expect(output.source).toContain('caches.delete');
   });
 

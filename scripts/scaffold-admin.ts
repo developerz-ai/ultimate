@@ -17,6 +17,8 @@
 
 import { DEV_BINDING, quoteArg } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
+import type { PortProbe } from '../packages/testing/src/free-port';
+import { freePortPair } from '../packages/testing/src/free-port';
 import type { AdminStep, AdminWalk, Fetcher } from './lib/admin-walk';
 import { adminFindings, walkAdmin } from './lib/admin-walk';
 import { parseScriptArgs } from './lib/args';
@@ -157,7 +159,17 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
   };
 }
 
-/** The real thing: the app's own `x dev`, a free port, the wall clock. */
+/**
+ * A port whose PAIR nothing holds: `x dev` binds the web role on `port` and its sync node on
+ * `port + 1`, both on `localhost`, so a lone free port whose neighbour was taken booted, listened
+ * and stopped again — red with nothing wrong with the app. `localhost` is `127.0.0.1` AND `::1` on
+ * a dual-stack runner and Bun binds whichever resolves first, so a probe ON `localhost` passed a
+ * port held on the other one (CI run 41764752262): `@ultimat3/testing`'s `freePortPair` asks each
+ * loopback address, the one rule the e2e app's spawn keeps too. `listen` is injectable for the test.
+ */
+export const freeDevPair = (listen?: () => PortProbe): number => freePortPair(listen);
+
+/** The real thing: the app's own `x dev`, a free port pair, the wall clock. */
 const realIo: AdminCheckIo = {
   boot: (dir, port) => {
     const server = Bun.spawn([appBin(dir), 'dev', '--port', String(port), '--json'], {
@@ -179,18 +191,7 @@ const realIo: AdminCheckIo = {
     };
   },
   fetcher: fetch,
-  // A port nothing holds right now, on the address `x dev` will bind — `dev-lock.ts`'s rule: probe
-  // what the server binds. `x dev` takes the next one up for its sync node.
-  port: () => {
-    const probe = Bun.listen({
-      hostname: DEV_BINDING.hostname,
-      port: 0,
-      socket: { data: () => undefined },
-    });
-    const { port } = probe;
-    probe.stop(true);
-    return port;
-  },
+  port: () => freeDevPair(),
   now: () => performance.now(),
   sleep: (ms) => Bun.sleep(ms),
 };

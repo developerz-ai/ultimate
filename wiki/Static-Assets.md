@@ -39,6 +39,7 @@ import { Image } from '@ultimat3/ui';
 | no `..`, no empty segment, no backslash | `assetPathProblem()`, the same check in the page, the table and the route |
 | only the hashed URL is served | `/assets/hero.avif` is 404; so is a hash that no longer matches the bytes (a document from an earlier build) |
 | the URL changes when the bytes change | the hash is xxHash32 of the file, re-read when its mtime or size changes, with no watcher and no restart |
+| an earlier build's URL survives a deploy | a static host keeps the old hashed file because nothing deletes it. The container answers it only with `assets.retain` in `app.config.ts`, which reads it from a shared disk on a miss ([Deployment](Deployment#hashed-assets-across-a-deploy--assetsretain)); without it, the stale hash is the 404 above |
 
 Call `asset()` in a page or a server component, never in an island. A browser has no asset table, so
 there it throws `X_ASSET_MISSING`: pass the URL to the island as a prop instead.

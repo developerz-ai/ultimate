@@ -12,7 +12,8 @@ name: ci
 # chart drop a request (`deploy-proof`, main only), is each package green and above its
 # coverage bar in isolation (`packages`), and does any of it work on native Windows (`windows`,
 # the one runner that is not `ubuntu-latest`). The last four each carry their own argument, above
-# the job.
+# the job. One more asks first, on a push: did a green pull-request run already test this tree
+# (`tested`)? When it did, every job that run answered is skipped — never on a release commit.
 #
 # There is still no `lint`, `typecheck`, `boundaries` or `test` job BESIDE the gate — that is the
 # second path axiom 1 forbids, and it once cost ~2.2 runner-minutes for checks the gate then ran
@@ -75,6 +76,71 @@ env:
   E2E_NPM_REQUIRED: '1'
 
 jobs:
+  # Did a green pull-request run already test THIS tree? Plan 101, 33-ops-ci: 55 of 81 pushes to
+  # main (2026-10-24 to 11-02) carried a tree a green PR run had already tested, and each re-ran
+  # ~34 runner-minutes and held the demo image ~5 minutes. `x ci tested` answers it, and every job
+  # that run already answered carries ONE `if` on the answer — `deploy-proof` keeps its own rule.
+  #
+  # `tested: true` needs all of: the subject ends `(#N)`, PR N merged as this commit, its head is
+  # in this repository, its head tree is this tree, and the newest same-repository ci.yml run on
+  # that head concluded `success` under 24 h ago (wiki/CLI-Reference.md#x-pr--x-ci). Any doubt,
+  # an API failure included, is `false`: a full run. The command exits 0 on every answer, and each
+  # `gh` call is killed past its own deadline (`x ci tested`'s `api` answer), so this job goes red
+  # only on a broken step. Red, timed out or cancelled, it never skips anything: each job below
+  # opens its `if` with `!cancelled()` — a bare `needs.…` test implies `success()`, and every job
+  # would be skipped — so they run, and the red `tested` still reddens the run.
+  #
+  # Only a push asks, and never a release commit: `release.yml` reads this workflow's whole run for
+  # the commit it publishes from, so that run is a run of everything. A release commit is what
+  # `RELEASE_SUBJECT` says it is, the rule release-tag.yml reads (the shape test holds the two
+  # steps to one command). On a pull request every step is skipped, the output is empty and
+  # nothing is skipped below: an empty job, a few seconds of runner acquisition ahead of the rest.
+  tested:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      tested: ${{ steps.tested.outputs.tested }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'push'
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        if: github.event_name == 'push'
+      # The one release-subject rule — `RELEASE_SUBJECT`, read exactly as release-tag.yml's
+      # `subject` step reads it — never a prefix: `chore(deps): release 1.2.3` is a release too.
+      - name: is this push a release commit
+        id: subject
+        if: github.event_name == 'push'
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          bun -e "const { RELEASE_SUBJECT } = await import('./scripts/lib/release-subject.ts'); const subject = (process.env.MESSAGE ?? '').split('\n')[0] ?? ''; console.log(RELEASE_SUBJECT.test(subject) ? 'release=true' : 'release=false'); console.error('subject: ' + JSON.stringify(subject));" >> "$GITHUB_OUTPUT"
+      # PRIVATE_NAMES_SET is a boolean, never the secret: an empty or rotated-away
+      # ULTIMATE_PRIVATE_NAMES must red the boundaries part on this push (#970's REQUIRED flag),
+      # and a reuse would skip that part — so with the secret empty this answers false, a full run.
+      - name: x ci tested — did a green PR run already test this tree?
+        id: tested
+        if: github.event_name == 'push' && steps.subject.outputs.release == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRIVATE_NAMES_SET: ${{ secrets.ULTIMATE_PRIVATE_NAMES != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$PRIVATE_NAMES_SET" != true ]; then
+            echo "not tested: ULTIMATE_PRIVATE_NAMES is empty, so the boundaries part must run and say so — a full run"
+            echo "tested=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bun run x -- ci tested --repo "$GITHUB_REPOSITORY" --json > "$RUNNER_TEMP/tested.json"
+          jq -r '.summary' "$RUNNER_TEMP/tested.json"
+          echo "tested=$(jq -r '.data.tested' "$RUNNER_TEMP/tested.json")" >> "$GITHUB_OUTPUT"
+
   # The framework gate, one part per runner. Every part is the same command a contributor runs —
   # `bun run verify --only <steps>` — over a slice of the one step list, and none of them is a
   # verdict: a narrowed run says NOT A GATE RUN on its own summary line. `verify`, below, is.
@@ -92,6 +158,13 @@ jobs:
   #                                      Two runners of their own cost 4 billed minutes to save none.
   #   e2e      6 + 12 + 16 + 34 s        the compiler, then `contract` and `job` (Postgres only),
   #                                      then a browser: `tsc -b` writes, so it runs alone and first.
+  #            now 8-15 + 11-19 +        re-measured on main 2026-11-03 (runs 41633286118,
+  #            28-39 + 94-118 s,         41644207342, 41722567738): the job took 169-232 s. Wave
+  #            + ~72 s                   4's `six-deploys.e2e` adds ~72 s locally (3 cases), so
+  #                                      the `e2e` step is ~166-190 s, under its 480 s suite limit
+  #                                      (`SUITE_STEP_TIMEOUT_MS`), and the job ~241-304 s: at the
+  #                                      5-minute target, not under it. `packages (2/2)`, 360-400 s,
+  #                                      is still the run's critical path.
   #
   # `contract` and `job` moved here from `live` on 2026-10-03. With them, `live` was the slowest
   # part (129-157 s, against 79-125 s for a unit shard and 55-70 s for e2e), and the verdict
@@ -124,6 +197,8 @@ jobs:
   # URL exported for a server that is not there would fail them instead, never pass them.
   gate:
     name: gate (${{ matrix.part }})
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     # A runaway kill-switch, not a budget: the slowest part is ~2 minutes.
     timeout-minutes: 10
@@ -199,7 +274,9 @@ jobs:
       # output and runs past a megabyte on ONE line, and the Actions log dropped that line and every
       # line after it: run 37103688822's red `unit-1` showed no step table at all. What the log gets
       # is the step table rendered from it, which names a red part's step, its findings and `fix:`
-      # lines, and the suite output's last lines. The job summary gets the BOUNDED render of the same
+      # lines, the twelve lines before each of the first five failed tests (where bun prints the
+      # assertion's diff: run 40323842229's red live part named its test and never its cause), and
+      # the suite output's last lines. The job summary gets the BOUNDED render of the same
       # document (`scripts/verify-summary.ts`, the one `verify` uses): the whole table with every
       # finding past GitHub's 1024 KiB summary limit was an "upload aborted", and no summary at all.
       #
@@ -229,6 +306,7 @@ jobs:
             | "\(if .skipped then "-" elif .ok then "✓" else "✗" end) \(.name)  \(.durationMs)ms\(if .tests then "  \(.tests.ran) ran, \(.tests.skipped) skipped\(if .tests.errors then ", \(.tests.errors) errored" else "" end)" else "" end)",
               (.findings[]? | "    \(.code)\(if .at then " (\(.at))" else "" end)\n      cause: \(.cause)\n      fix:   \(.fix)"),
               (select(.ok | not) | .output // empty | split("\n") | map(select(test("^\\s*\\(fail\\)"))) | unique | select(length > 0) | "    failed tests:\n\(map("      " + ltrimstr(" ")) | join("\n"))"),
+              (select(.ok | not) | .output // empty | split("\n") as $lines | [range(0; $lines | length) as $i | select($lines[$i] | test("^\\s*\\(fail\\)")) | {i: $i, t: $lines[$i]}] | unique_by(.t) | sort_by(.i) | .[:5][] | "    before \(.t | ltrimstr(" ")):\n\($lines[([.i - 12, 0] | max):.i] | map("      " + .[:400]) | join("\n"))"),
               (select(.ok | not) | .output // empty | "    output (last lines):\n\(split("\n")[-40:] | map("      " + .) | join("\n"))")
           ' "$doc" || true)"
           echo "$table"
@@ -268,8 +346,8 @@ jobs:
   # Job id unchanged from when it was the whole gate: `release.yml`'s `check` job reads this job's
   # conclusion, by this name, for the tagged commit.
   verify:
-    needs: gate
-    if: ${{ !cancelled() }}
+    needs: [tested, gate]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -333,6 +411,8 @@ jobs:
   # gate of the app whose image it publishes — so the `name:` below is a contract with that file.
   reference-app-verify:
     name: reference-app-verify (${{ matrix.app }})
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     # A runaway kill-switch, not a budget: both apps together measured 106 s on main, 2026-10-01.
     timeout-minutes: 10
@@ -404,6 +484,8 @@ jobs:
   # that measures what a stranger's first ten minutes with the framework actually do.
   scaffold-smoke:
     name: scaffold-smoke (${{ matrix.app }})
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -515,6 +597,8 @@ jobs:
   # runtime stage is where three of the four recorded build bugs lived (musl-vs-glibc, the Debian
   # skew, the missing --define), and a build stopping at "build" would have caught none of them.
   container:
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -823,6 +907,8 @@ jobs:
   # packages, runs `x env init --production`, `x build --target docker` and `x deploy`, and asserts
   # `/readyz` and `/` answer 200. Every push: about 2 minutes (measured 2026-11-03, a warm daemon).
   compose-deploy:
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -838,6 +924,8 @@ jobs:
   # and `bun run verify`. Not the generator sweep or the admin walk: those ask about the generators,
   # which are the same bytes on every platform, and `scaffold-smoke` asks them.
   macos:
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: macos-latest
     timeout-minutes: 20
     env:
@@ -943,6 +1031,8 @@ jobs:
   # The live paths are the gate's `live` step, which does have them.
   packages:
     name: packages (${{ matrix.shard }})
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -990,6 +1080,8 @@ jobs:
   # CI-only line, and its comment explains it), run once and through the scaffold's OWN
   # `bun run setup` and `bun run verify` — the commands a Windows developer types.
   windows:
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: windows-latest
     timeout-minutes: 25
     defaults:

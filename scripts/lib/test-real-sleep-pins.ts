@@ -20,7 +20,7 @@ export const REAL_SLEEP_PINS: Readonly<Record<string, number>> = {
   ai: 4,
   auth: 1,
   cache: 1,
-  cli: 106,
+  cli: 105,
   core: 18,
   db: 25,
   entity: 2,

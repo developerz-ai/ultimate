@@ -10,7 +10,13 @@ import { DEV_BINDING } from '@ultimat3/cli';
 import type { AdminWalk } from './lib/admin-walk';
 import { adminFindings, filledForm, walkAdmin } from './lib/admin-walk';
 import type { AdminCheckIo } from './scaffold-admin';
-import { adminResource, appDirWord, checkAdmin, devRoleCookie } from './scaffold-admin';
+import {
+  adminResource,
+  appDirWord,
+  checkAdmin,
+  devRoleCookie,
+  freeDevPair,
+} from './scaffold-admin';
 
 const BASE = 'http://127.0.0.1:4000';
 const WALK: AdminWalk = { base: BASE, resource: 'smoke_resources', roleCookie: 'demo_dev_role' };
@@ -431,4 +437,31 @@ describe('unit · the command: boot, walk, stop', () => {
       expect(calls.booted).toEqual([]);
     }
   });
+});
+
+describe('freeDevPair', () => {
+  // `x dev` binds `port` and `port + 1` on `localhost`, which a dual-stack runner resolves to
+  // `127.0.0.1` AND `::1`: a neighbour held on EITHER is a boot that listens and stops. Held on each
+  // in turn, never on `localhost`, which names only one of them on a given box (CI run 41764752262).
+  test.each(['127.0.0.1', '::1', 'localhost'])(
+    'a candidate whose neighbour is held on %s is skipped',
+    (hostname) => {
+      const held = Bun.listen({ hostname, port: 0, socket: { data: () => undefined } });
+      try {
+        const busy = held.port - 1;
+        const candidates = [busy];
+        // The busy candidate first (never bound: the test hands its number), then a real ask.
+        const picked = freeDevPair(() => {
+          const port = candidates.shift();
+          if (port !== undefined) return { port, stop: () => undefined };
+          const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+          return { port: probe.port ?? 0, stop: () => void probe.stop(true) };
+        });
+        expect(picked).not.toBe(busy);
+        expect(picked).toBeGreaterThan(0);
+      } finally {
+        held.stop(true);
+      }
+    },
+  );
 });

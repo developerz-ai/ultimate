@@ -3,14 +3,16 @@
 // `await import()` for `ROLE=web` alone, and `serve-graph.test.ts` pins what every other role is
 // spared: render's server half, the PWA, SEO, MCP and island subsystems.
 
+import { resolveEnvironment } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
-
 import { installedVapid } from '@ultimat3/pwa';
 import { describePages } from '@ultimat3/render';
 import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
+import { loadAppConfig } from './app-config-load';
 import { mountAppMcp } from './app-mcp';
+import { clientErrorsSurface } from './client-errors-routes';
 import { errorPageStyleBodies } from './error-page-csp';
 import { islandRoutes } from './island-routes';
 import type { LoadedIslands } from './island-store';
@@ -20,6 +22,8 @@ import { loadSpeculation, otherLocaleSegments, pageSpeculation } from './page-sp
 import { pageSync } from './page-sync';
 import { plainRoutes } from './plain-routes';
 import { loadPwaArtifacts } from './pwa-artifacts';
+import { retainBuildAssets } from './retained-assets-boot';
+import { withRetainedAssets } from './retained-assets-read';
 import { adminMountRoutes } from './runtime-admin';
 import { assetRoutes } from './runtime-assets';
 import { attachedIsr } from './runtime-isr';
@@ -109,6 +113,25 @@ export async function webSurface(
   const mcpMount = await mountAppMcp(options.root);
   // The app's own disks when it declared any (`defineStorage` in an app module), else this boot's.
   const served = servedStorage(runtime.storage);
+  // `assets.retain`: this build's hashed files onto the shared disk, BEFORE the role binds — a pod
+  // takes no traffic until `/readyz`, so no document of this build reaches an old pod first.
+  const config = await loadAppConfig(options.root);
+  const scripts = [
+    ...sync.scripts,
+    ...(navigation.script === undefined ? [] : [navigation.script]),
+  ];
+  const retained = await retainBuildAssets({
+    root: options.root,
+    config,
+    storage: served,
+    buildId,
+    environment: resolveEnvironment({ env: options.env, fallback: 'production' }),
+    islands,
+    styles: styleBundle(),
+    scripts,
+  });
+  // The same call `x dev` makes: `clientErrors.enabled` or nothing mounted and nothing named.
+  const clientErrors = clientErrorsSurface(config?.clientErrors, buildId);
   // Attached, so a tag bust marks this process's ISR pages stale. The store is the deployment's
   // when it supplied one: the default is per process, so twelve replicas hold twelve of them and a
   // purge regenerates one twelfth of the fleet while the other eleven keep the invalidated page.
@@ -132,6 +155,7 @@ export async function webSurface(
       ...(pwa === undefined ? {} : { pwa }),
     }),
     ...storageRoutes({ storage: served }),
+    ...(clientErrors?.routes ?? []),
     ...islandRoutes(() => islands),
     // The surface stylesheets the documents link. Built from the registry the `loadApp` above
     // filled, so this process serves exactly the CSS it renders against.
@@ -170,11 +194,13 @@ export async function webSurface(
       ...(pwa === undefined
         ? {}
         : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
+      ...(clientErrors === undefined ? {} : { appHead: clientErrors.head }),
       isr: isr.isr,
     }),
   ];
   return {
-    routes,
+    // A miss on any asset route asks the retained builds (`assets.retain`); none declared, unchanged.
+    routes: withRetainedAssets(routes, retained?.reader),
     inlineScripts: [theme.cspSource, ...(speculation === undefined ? [] : [speculation.cspSource])],
     // The enforced policy this process sends must admit the app's own error pages' `<style>` and
     // the brand's; `x dev` is report-only, so only here was a missing hash an unstyled page.

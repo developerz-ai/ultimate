@@ -68,8 +68,6 @@ export interface ServiceWorkerConfig {
    * precached, never the default locale's page.
    */
   readonly localePrefixes?: readonly string[];
-  /** Build ids whose caches must survive this activation (see `retentionPlan`). */
-  readonly retainBuildIds?: readonly string[];
   readonly precacheWarnBytes?: number;
 }
 
@@ -145,7 +143,8 @@ export function generateServiceWorker(
   });
 
   const usedStrategies = [...new Set(rules.map((rule) => rule.strategy))].sort();
-  const retained = [...new Set([buildId, ...(config.retainBuildIds ?? [])])].sort();
+  // This build's caches only: an earlier build's files are the server's to keep (`assets.retain`).
+  const retained = [buildId];
 
   const blocks: string[] = [
     header(buildId),
@@ -286,7 +285,8 @@ function activateBlock(): string {
   return `
 self.addEventListener('activate',(event)=>{
   event.waitUntil((async()=>{
-    // Retain the last N deploys so a tab open across a release still resolves its chunks.
+    // Every other build's caches go: a tab open across a release gets earlier chunks from the
+    // server's assets.retain window, never from a cache this worker keeps.
     const names=await caches.keys();
     await Promise.all(names.filter((n)=>n.startsWith('x-')&&RETAINED.indexOf(n)===-1)
       .map((n)=>caches.delete(n)));

@@ -61,6 +61,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | the shape screens that run before any rule reads a value — section, list, boolean, closed set, path | `config-shape.ts` |
 | the keys a major deleted (`locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme.tokens` in 25.0.0; `jobs.driver`, deleted in 5.0.0 and refused since 25.0.0) — each REFUSED by name with `X_CONFIG_INVALID` and its replacement, never ignored | `config-removed.ts` |
 | the `pwa` block — what an install needs, and the boot refusal when it is not there | `config-pwa.ts` |
+| the `assets` block — `retain: { disk, builds }`, earlier builds' hashed files kept across a deploy (`AssetsConfig`, `AssetsRetainConfig`, `AssetsSection`, `AssetsSectionInput`) | `config-assets.ts` |
 | `isSameOriginPath(value)` — a path on THIS origin as a browser resolves it: refuses `//host`, `/\host`, a C0 control or DEL (`/\t/evil.example` parses to `//evil.example`) and a dot segment leaving a `//` pathname. The one predicate for every URL precached as an offline answer, `@ultimat3/pwa`'s build included | `config-pwa.ts` |
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
 | which of two route patterns wins a pathname (`routeRank`) | `route-rank.ts` |

@@ -12,8 +12,19 @@ import { DRAIN_DEADLINE_DEFAULT_MS, WORKER_RETIRE_DEFAULT_MS } from './drain-dea
 import { defaultReadinessGraceMs } from './lifecycle-grace';
 import { ROLES } from './roles';
 
-/** The keys their own files default: `config-site.ts`, `-navigation`, `-islands`, `-mail`. */
-type Sectioned = 'name' | 'site' | 'seo' | 'navigation' | 'islands' | 'mail';
+/**
+ * The keys their own files default: `config-site.ts`, `-navigation`, `-islands`, `-mail`,
+ * `-client-errors`, `-assets`.
+ */
+type Sectioned =
+  | 'name'
+  | 'site'
+  | 'seo'
+  | 'navigation'
+  | 'islands'
+  | 'mail'
+  | 'clientErrors'
+  | 'assets';
 
 export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
   return {

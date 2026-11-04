@@ -4,6 +4,8 @@
 
 import { canonicalJson, finiteCount, REDACTED } from '@ultimat3/core';
 import type { AdminActor, AdminDecision } from './authz';
+import { AdminFilterInvalidError } from './errors';
+import { instantOf } from './list-filters';
 import type { AdminRow } from './registry';
 
 /** Named once, so both refusals below say the same thing about the same call. */
@@ -79,6 +81,15 @@ export interface AuditQuery {
    * changed something or was refused. What a row's history shows.
    */
   readonly changes?: boolean;
+  /** Only entries with this outcome: what was refused is `denied`, what threw is `failed`. */
+  readonly outcome?: AuditOutcome;
+  /**
+   * Only entries at or after this instant: ISO-8601 with an offset, or a bare `YYYY-MM-DD` as that
+   * day's first instant in UTC. Anything else is `X_ADMIN_FILTER_INVALID` — no store invents a zone.
+   */
+  readonly since?: string;
+  /** Only entries strictly BEFORE this instant — exclusive, so two windows never share an entry. */
+  readonly until?: string;
 }
 
 export interface AuditLog {
@@ -86,6 +97,9 @@ export interface AuditLog {
   /**
    * Newest first, at most `limit` (`AUDIT_PAGE_MAX` at the outside). A copy — the log cannot be
    * mutated through what it hands out. Async because the record is a table, not this process.
+   * A log of an app's own must honour EVERY field of `AuditQuery`: `/admin/audit` re-checks each
+   * returned entry against the query (`auditEntryMatches`) and drops what does not match, so a log
+   * that ignores `outcome` or a bound draws a short page — never an unfiltered one.
    */
   entries(query?: AuditQuery): Promise<readonly AuditEntry[]>;
   /**
@@ -132,6 +146,50 @@ export const auditLimit = (subject: string, query: AuditQuery): number =>
         // 0 stays legal — asking for none is a coherent request.
         finiteCount(subject, 'entries limit', query.limit),
   );
+
+/** The store refusal's fix: the two spellings a bound in `AuditQuery` may take. */
+export const AUDIT_BOUND_FIX =
+  "entries({ since: '2026-11-01', until: '2026-11-02T00:00:00+02:00' })   # a bound is YYYY-MM-DD (UTC) or ISO-8601 with an offset";
+
+/** One bound, as the ISO instant a store compares — or refused, naming the grammar it takes. */
+const boundOf = (subject: string, name: 'since' | 'until', raw: string): string => {
+  const at = instantOf(raw);
+  if (at !== undefined) return at;
+  throw new AdminFilterInvalidError({
+    entity: subject,
+    asked: `${name}=${raw}`,
+    cause: 'is neither an ISO-8601 instant with an offset nor a YYYY-MM-DD date (read as UTC)',
+    known: ['since=2026-11-01', 'until=2026-11-01T12:00:00Z'],
+    fix: AUDIT_BOUND_FIX,
+  });
+};
+
+/**
+ * A query with its bounds normalised to ISO instants, or refused. Every store calls it before it
+ * reads, so a bound no store can read is an error in both — never "no bound" in one of them.
+ */
+export function auditWindow(subject: string, query: AuditQuery): AuditQuery {
+  return {
+    ...query,
+    ...(query.since === undefined ? {} : { since: boundOf(subject, 'since', query.since) }),
+    ...(query.until === undefined ? {} : { until: boundOf(subject, 'until', query.until) }),
+  };
+}
+
+/**
+ * Whether one entry answers a query, `before` and `limit` aside — the memory log's filter, and the
+ * check `/admin/audit` runs again on whatever a log of an app's own returned. A bound that does not
+ * parse matches nothing: this predicate fails closed.
+ */
+export const auditEntryMatches = (entry: AuditEntry, query: AuditQuery): boolean =>
+  (query.entity === undefined || entry.entity === query.entity) &&
+  (query.entityId === undefined || entry.entityId === query.entityId) &&
+  (query.actorId === undefined || entry.actor.id === query.actorId) &&
+  (query.orgId === undefined || entry.actor.orgId === query.orgId) &&
+  (query.outcome === undefined || entry.outcome === query.outcome) &&
+  (query.since === undefined || Date.parse(entry.at) >= Date.parse(query.since)) &&
+  (query.until === undefined || Date.parse(entry.at) < Date.parse(query.until)) &&
+  (query.changes !== true || !isAllowedRead(entry));
 
 /** Where the page after `entries` starts, or `null` for an empty page. */
 export const auditCursorOf = (entries: readonly AuditEntry[]): AuditCursor | null => {
@@ -186,7 +244,8 @@ export function memoryAuditLog(opts: AuditLogOptions = {}): AuditLog {
       for (const sink of sinks) await sink.write(entry);
       return entry;
     },
-    async entries(query = {}): Promise<readonly AuditEntry[]> {
+    async entries(asked = {}): Promise<readonly AuditEntry[]> {
+      const query = auditWindow(SUBJECT, asked);
       const limit = auditLimit(SUBJECT, query);
       const before = query.before;
       // Insertion order reversed IS newest first, ties included: two entries of one millisecond
@@ -199,14 +258,7 @@ export function memoryAuditLog(opts: AuditLogOptions = {}): AuditLog {
             ? log.slice(0, at)
             : log.filter((entry) => newestFirst(before, entry) < 0);
       return older
-        .filter(
-          (entry) =>
-            (query.entity === undefined || entry.entity === query.entity) &&
-            (query.entityId === undefined || entry.entityId === query.entityId) &&
-            (query.actorId === undefined || entry.actor.id === query.actorId) &&
-            (query.orgId === undefined || entry.actor.orgId === query.orgId) &&
-            (query.changes !== true || !isAllowedRead(entry)),
-        )
+        .filter((entry) => auditEntryMatches(entry, query))
         .reverse()
         .slice(0, limit);
     },

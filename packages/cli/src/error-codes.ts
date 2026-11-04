@@ -259,6 +259,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ENV_FILE_EXISTS',
   'X_DEV_STOP_TIMEOUT',
   'X_DEV_STOP_DENIED',
+  'X_ASSET_RETAIN_FAILED',
 ] as const;
 
 /**
@@ -474,6 +475,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ENV_FILE_EXISTS: 'x env init --production found .env.production already written',
   X_DEV_STOP_TIMEOUT: 'x stop sent SIGTERM and x dev did not exit in time',
   X_DEV_STOP_DENIED: 'x stop may not signal the x dev the lock names',
+  X_ASSET_RETAIN_FAILED: 'Build assets were not retained',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

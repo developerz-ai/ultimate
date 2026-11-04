@@ -1,5 +1,5 @@
 // Single responsibility: the version-skew vocabulary a deploy is built on — the build id, the three
-// skew states, what retention keeps, and the cache namespace. Plus the one contract the framework
+// skew states and the cache namespace. Plus the one contract the framework
 // cannot typecheck: the `AppUpdateAvailable` message is emitted as SOURCE by the service-worker
 // generator, so its shape and its discriminant are read back out of that source, never restated.
 
@@ -9,8 +9,7 @@ import { BuildIdMissingError } from './errors';
 import { generateServiceWorker } from './service-worker';
 import type { AppUpdateAvailable } from './skew';
 import { detectSkew } from './skew';
-import type { Deploy } from './version-skew';
-import { buildId, cacheNamespace, retentionPlan } from './version-skew';
+import { buildId, cacheNamespace } from './version-skew';
 
 describe('buildId', () => {
   test('is deterministic and scoped by channel so previews never collide', () => {
@@ -34,33 +33,6 @@ describe('detectSkew', () => {
     expect(detectSkew(null, 'b2')).toBe('unknown');
     expect(detectSkew('', 'b2')).toBe('unknown');
     expect(detectSkew(undefined, 'b2')).toBe('unknown');
-  });
-});
-
-describe('retentionPlan', () => {
-  const deploys: readonly Deploy[] = [
-    { buildId: 'b1', deployedAt: 1_000 },
-    { buildId: 'b2', deployedAt: 2_000 },
-    { buildId: 'b3', deployedAt: 3_000 },
-    { buildId: 'b4', deployedAt: 4_000 },
-    { buildId: 'b5', deployedAt: 5_000 },
-  ];
-
-  test('keeps the newest N deploys and evicts the rest', () => {
-    const plan = retentionPlan(deploys, 3);
-    expect(plan.retain).toEqual(['b5', 'b4', 'b3']);
-    expect(plan.evict).toEqual(['b2', 'b1']);
-  });
-
-  test('names every cache that must survive activation', () => {
-    const plan = retentionPlan(deploys, 2);
-    expect(plan.caches).toContain(cacheNamespace('b5', 'precache'));
-    expect(plan.caches).toContain(cacheNamespace('b4', 'runtime'));
-    expect(plan.caches).not.toContain(cacheNamespace('b1', 'precache'));
-  });
-
-  test('never evicts everything', () => {
-    expect(retentionPlan(deploys, 0).retain).toEqual(['b5']);
   });
 });
 
@@ -101,25 +73,5 @@ describe('cacheNamespace', () => {
   test('scopes every cache by build id and refuses an empty one', () => {
     expect(cacheNamespace('preview-pr-9-abc', 'runtime')).toBe('x-runtime-preview-pr-9-abc');
     expect(() => cacheNamespace('', 'runtime')).toThrow(BuildIdMissingError);
-  });
-});
-
-/**
- * `Math.max(1, NaN)` is `NaN`, and `slice(0, NaN)` is `[]` — so a non-finite `keep` retains
- * nothing and evicts every deploy, the RUNNING one included, which is the exact case the
- * `keep: 0` test above pins as impossible. `Math.max` is not a validator; it propagates.
- */
-describe('a non-finite retention count is refused', () => {
-  const deploys: readonly Deploy[] = [
-    { buildId: 'b1', deployedAt: 1_000 },
-    { buildId: 'b2', deployedAt: 2_000 },
-  ];
-
-  test('NaN is refused rather than evicting every deploy including the live one', () => {
-    expect(() => retentionPlan(deploys, Number.NaN)).toThrow(/keep/);
-  });
-
-  test('a fractional keep is refused — there is no half a deploy to retain', () => {
-    expect(() => retentionPlan(deploys, 1.5)).toThrow(/keep/);
   });
 });

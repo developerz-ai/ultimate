@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { PortProbe } from './free-port';
-import { BROWSER_REFUSED_PORTS, freePort, freePortApartFrom } from './free-port';
+import { BROWSER_REFUSED_PORTS, freePort, freePortApartFrom, freePortPair } from './free-port';
 
 /** A listener that answers `ports` in order and records what was released, and when. */
 const scripted = (ports: readonly number[]) => {
@@ -73,5 +73,29 @@ describe('freePortApartFrom', () => {
   test('a browser-refused port is still refused beside the taken ones', () => {
     const { listen } = scripted([6000, 44_829, 51_234]);
     expect(freePortApartFrom([44_829], listen)).toBe(51_234);
+  });
+});
+
+describe('freePortPair', () => {
+  test('a candidate whose neighbour is held is skipped, and kept held until the walk ends', () => {
+    const { listen, log } = scripted([41_000, 6665, 52_000]);
+    const held = new Set([41_001]);
+    expect(freePortPair(listen, (port) => !held.has(port))).toBe(52_000);
+    // 6665's neighbour 6666 is one a browser refuses, so 6665 is skipped too.
+    expect(log).toEqual([
+      'listen 41000',
+      'listen 6665',
+      'listen 52000',
+      'stop 52000',
+      'stop 41000',
+      'stop 6665',
+    ]);
+  });
+
+  test('against the real OS its neighbour can be bound', () => {
+    const port = freePortPair();
+    const neighbour = Bun.serve({ port: port + 1, fetch: () => new Response() });
+    expect(neighbour.port).toBe(port + 1);
+    neighbour.stop(true);
   });
 });

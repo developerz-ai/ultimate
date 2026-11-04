@@ -10,7 +10,7 @@ import { get } from 'node:http';
 import { dirname, join } from 'node:path';
 import { assert, DRAIN_DEADLINE_DEFAULT_MS, READINESS_GRACE_DEFAULT_MS } from '@ultimat3/core';
 import { E2eAppFailedError } from './e2e-errors';
-import { freePort, freePortApartFrom } from './free-port';
+import { freePortApartFrom, freePortPair } from './free-port';
 
 /** `x dev` (sync included), or the production entry `apps/web/server.ts` under `ROLE=web`. */
 export type E2eAppMode = 'dev' | 'serve';
@@ -113,7 +113,8 @@ export const refuse = (step: string, output: string): E2eAppFailedError =>
 /** Spawn the app and answer once `/readyz` does; refuses with the app's own output tail. */
 export async function spawnE2eApp(options: SpawnE2eAppOptions): Promise<SpawnedE2eApp> {
   const deadline = options.readyTimeoutMs;
-  const port = freePort();
+  // A PAIR: `x dev` binds its sync node on `port + 1`, and a held neighbour exited the app at boot.
+  const port = freePortPair();
   // Its own scrape port too: every role opens one, the default is a fixed 9090, and a second app —
   // or a developer's `x dev` — already holding it is an app that dies at boot with X_PORT_IN_USE.
   // Apart from the web port AND its neighbour, which `x dev` binds the sync node on: the OS may hand

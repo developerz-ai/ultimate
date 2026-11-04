@@ -4,7 +4,7 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 44
+percent: 48
 current_focus: "wave 4"
 slices:
   - file: 01-ai-tool-gate.md
@@ -276,18 +276,19 @@ slices:
   - file: 33-ops-ci.md
     tier: 5
     sweep: "15"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 70
+    note: "`x ci tested` (a push reuses the green PR run of its tree) and the four flakes are done. The under-5-minute target is missed: packages (2/2) takes 360-400 s on the cli coverage unit, and the e2e job about 241-304 s"
   - file: 28-assets-deploy-skew.md
     tier: 0
     sweep: "15"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 33-ops-deploy-proof.md
     tier: 5
     sweep: "15"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 18-ai-scripted-and-meter.md
     tier: 4
     sweep: "16"
@@ -311,13 +312,13 @@ slices:
   - file: 24-web-client-errors.md
     tier: 0
     sweep: "16"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 24-web-admin-audit-trail.md
     tier: 5
     sweep: "16"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 23-ui-live-refresh.md
     tier: 0
     sweep: "17"

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "75d98559d4a2a956f3df1af9509da84bf1e36b1d1d0a728f4d72d18bce151e90",
+  "buildId": "422f3d95346b6b9e9715204786e2a98d8df05cfb82cbfbcb0d63c303b88f6a6b",
   "tiers": {
     "0": [
       "core",
@@ -540,6 +540,11 @@
       "at": "packages/render/src/errors.ts"
     },
     {
+      "code": "X_ASSET_RETAIN_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ASYNC_CONTEXT_UNAVAILABLE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -938,6 +943,11 @@
       "code": "X_CLI_UNKNOWN_COMMAND",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CLIENT_ERROR",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_CLIENT_RECORD_ENVELOPE_INVALID",

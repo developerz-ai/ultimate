@@ -16,6 +16,7 @@ import {
 import type { AdminApp, AdminRoute } from './admin';
 import styles from './admin.module.scss';
 import { auditCursorOf } from './audit';
+import { HISTORY_PARAM, historyCursorOf, historyCursorText } from './audit-request';
 import {
   adminCreate,
   adminDestroy,
@@ -25,7 +26,7 @@ import {
   canOperate,
   decideOperation,
 } from './crud';
-import { AdminDetail, HISTORY_PARAM, historyCursorOf, historyCursorText } from './detail';
+import { AdminDetail } from './detail';
 import { AdminFilterInvalidError } from './errors';
 import { AdminForm } from './form';
 import { decodeForm, posted } from './form-decode';

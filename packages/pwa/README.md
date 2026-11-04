@@ -70,7 +70,7 @@ and the app dies with a blank screen and no error anyone can act on.
 |---|---|
 | Build id | immutable per deploy, derived from the commit sha; `X_BUILD_ID_MISSING` if absent |
 | Client → server | every SW-proxied request carries `x-ultimate-build` — `@ultimat3/core`'s `BUILD_ID_HEADER` |
-| Retention | `retentionPlan(deploys, keep)` keeps the last N deploys' assets alive (default 3) |
+| Retention | the server's, not this package's: `assets: { retain: { disk, builds } }` in `app.config.ts` keeps earlier builds' hashed files served. `retentionPlan` was removed in 30.0.0 |
 | Stale client | gets `AppUpdateAvailable`, never a 404 |
 | Forced reload | none. This package never navigates a client — the app decides what to do with the message |
 | Preview deploys | cache names are `x-<kind>-<buildId>`, so a branch build cannot poison production |
@@ -199,7 +199,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `routeRules`, `assetRules` | the worker's rule list: routes most specific first, runtime asset prefixes (`/islands/`) ahead of them. `routeRules(routes, personalPages)` — `'last-member'` gives a personal page a `pages` rule; a pattern matches the browser's percent-encoded pathname, and a catch-all its bare prefix |
 | `CLEAR_PAGES_MESSAGE`, `PAGES_CLEARED_MESSAGE` | `{ type: 'clear-pages' }` — post it to the worker on sign-out; it empties every pages cache and answers `{ type: 'pages-cleared' }` |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |
-| `buildId`, `detectSkew`, `retentionPlan` | version skew (`detectSkew` also on `./client`) |
+| `buildId`, `detectSkew` | version skew (`detectSkew` also on `./client`) |
 | `generateWebManifest` | the manifest + `theme-color` metas for both schemes, from a `WebManifestInput`. Called by `@ultimat3/cli` (`pwa-artifacts.ts`) `As of 2026-08-27`, so `x dev`, the container and the static export all emit `manifest.webmanifest` |
 | `planIcons`, `requireSourceIcon`, `maskableSafeZone` | icons and splashes from one source |
 | `BuiltinImagePipeline` | renders that plan: one square PNG per entry, deterministic |

@@ -72,6 +72,12 @@ export const config = defineConfig({
   // is not listed, so the marketing pages stay 0kb of JS. Sign-out still reloads: its 303 lands on
   // a document rendered for nobody, and a new principal is always a full navigation.
   navigation: { client: ['app'] },
+
+  // A browser failure on an `app/` page — a window error, an unhandled rejection, an island whose
+  // `mount()` threw — reaches the same `ErrorReporter` a server failure does, as `source: 'browser'`.
+  // Signed-in members only (`anonymous` stays false) at 30 reports a minute each; `site/` pages
+  // never carry the script, so the marketing pages stay 0kb of JS.
+  clientErrors: { enabled: true },
 });
 
 /**

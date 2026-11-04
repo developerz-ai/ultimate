@@ -73,6 +73,7 @@ The HTTP body is the same content as an RFC 9457 problem document — `type`, `t
 | `X_OUTBOUND_BODY_INVALID` | an outbound HTTP response did not match its schema | json(schema) on an outbound() answer refused the body: the vendor changed its shape, or the schema is wrong. meta.issues names the rejected paths | edit the schema passed to `answer.json(schema)` for `meta.vendor`, or ask the vendor whether the response changed |
 | `X_BREAKER_OPEN` | a circuit breaker is open and refused the call | the dependency meta.name names failed failures times in a row, so the breaker refuses calls until cooldownMs passes and one probe succeeds. meta.retryAfterSeconds is the time left | wait `meta.retryAfterSeconds`; check the dependency `meta.name` names; raise `failures` in `breaker({ name, failures, cooldownMs })` or adjust its `classify` if this outage is not one |
 | `X_ERROR_DECLARATION_INVALID` | a defineError declaration is malformed | `defineError()` given both or neither of `status` and `offSocket`, a status outside 100-599, or a code that is not `X_` followed by SCREAMING_SNAKE words | `edit the defineError call the cause names, then x verify --only errors` |
+| `X_CLIENT_ERROR` | a browser reported an uncaught failure | an app/ page threw in the browser: a window error, an unhandled rejection or an island whose mount() rejected — the report's cause is the browser's own message, capped, and meta.clientBuild is the build the tab was rendered by | `x shot <route> --json` |
 
 ## Metrics
 
@@ -1272,6 +1273,7 @@ Two sets override the table, in `failures.ts`:
 | `X_ENV_FILE_EXISTS` | x env init --production found .env.production already written | the file holds the secrets this deploy already runs with, and minting new ones would lock the running database and sessions out | `NODE_ENV=production x env check --json` |
 | `X_DEV_STOP_TIMEOUT` | x stop sent SIGTERM and x dev did not exit in time | the x dev the checkout lock names is still running when the wait ends: a drain past its deadline, or a process that ignores SIGTERM | `x stop --timeout 2m --json`; still running: `kill -9` the pid its cause names, then `x dev --json` (a hard kill leaves the lock, which the next boot clears) |
 | `X_DEV_STOP_DENIED` | x stop may not signal the x dev the lock names | the pid in .x/dev.lock belongs to another user, so SIGTERM is refused with EPERM | `ps -o user= -p <pid>, then run x stop --json as that user` |
+| `X_ASSET_RETAIN_FAILED` | Build assets were not retained | publishing this build to the retained-asset disk failed | `x doctor --json` |
 
 ## Reserved codes
 

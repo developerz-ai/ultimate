@@ -41,6 +41,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x errors explain <CODE>` / `list` | the error table, programmatically | refuses an unregistered code instead of inventing one |
 | `x docs "<question>"` | the framework docs and the wiki, offline | answered from the installed packages and the `wiki/` this tarball ships (`prepack`: `scripts/pack-cli-wiki.ts`), never the network; `x docs Upgrading#<anchor>` prints one whole section |
 | `x fix boundary <file>` | the minimal cut for a crossed surface boundary | prints the plan and the `git mv`; never rewrites a file |
+| `x ci [runs]` / `x ci tested` | CI triage through `gh`; `tested`: may this push reuse a green PR run of the same tree | `tested` exits 0 on every answer, `data.tested`; any doubt is `false`, a full run ([conditions](../../wiki/CLI-Reference.md#x-pr--x-ci)) |
 
 Everything in [CLI reference](../../wiki/CLI-Reference.md)'s planned table is also in the registry
 and exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command — "not built yet"
@@ -193,6 +194,8 @@ that name where there is one (`x new` writes all nineteen), the blank template o
 | `dev-*.ts` | what `x dev` boots: services, runtime, routes, hooks, roles, the `/_x` mount |
 | `island-bundle.ts` | every `*.island.tsx` built as its own entry point, content-hashed |
 | `island-routes.ts` | the one route those chunks are served from, in dev and in the container |
+| `retained-assets.ts` / `-sweep.ts` / `-read.ts` / `-layout.ts` / `-boot.ts` | `assets.retain`: the web boot publishes this build's hashed files to `x-build-assets/<app>/<environment>/` on a shared disk before `/readyz` (30 s deadline), sweeps to the newest `builds` without touching a concurrent publish, and `withRetainedAssets(routes, reader)` answers an asset route's 404 for any URL a retained manifest names — an open tab keeps its stylesheet and islands across a deploy |
+| `client-errors-script.ts` / `client-errors-routes.ts` | `clientErrors.enabled`: `/x-client-errors.js` on every `app/` document (`DocumentOptions.appHead`, never `site/`), and `POST /_client-errors` — same-origin proven, 32 KiB, closed shape, the app's rate-limit store, an island id grouped on only when this build serves it — into `reportError(…, { source: 'browser' })` as `X_CLIENT_ERROR`. Both boots mount it beside `/_storage`; a static export warns ([Observability](../../wiki/Observability.md#browser-failures)) |
 | `mcp-host.ts` | the shell-side half of `@ultimat3/mcp`'s dev server — db, tests, logs, verify |
 | `verify-step.ts` | the step shape, the step names, the host-check hook |
 | `verify-tests.ts` | one `bun test` invocation per test type |

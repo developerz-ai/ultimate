@@ -85,4 +85,10 @@ export interface DocumentOptions {
    * app declares no favicon — the browser's own `/favicon.ico` request is then the only one.
    */
   readonly faviconHead?: string;
+  /**
+   * Tags on `app/` documents ONLY — today `/x-client-errors.js` (`client-errors-routes.ts`), when
+   * `clientErrors.enabled`. A `site/` document never carries it: the static path never pays for
+   * the app path (axiom 6), and a static export has no route to receive a report.
+   */
+  readonly appHead?: string;
 }

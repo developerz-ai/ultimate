@@ -11,7 +11,7 @@
 // runner does not control. Read-only always: it fetches packuments and publishes nothing, so there
 // is no write mode to gate behind a `--check`.
 //
-//   bun run scripts/registry-audit.ts [--json]
+//   bun run scripts/registry-audit.ts [--tarballs] [--json]
 
 // why: the LEAF module, never the `@ultimat3/cli` barrel: the barrel links every package in the
 // tree, and this audit is an operator command a daily workflow runs. `quoteArg` screens the values
@@ -33,7 +33,7 @@ export const REQUEST_TIMEOUT_MS = 15_000;
 /** The seam. Injected so the tests drive fixtures — a test that resolves npm is a flake. */
 export type RegistryFetch = (
   url: string,
-  init: { readonly signal: AbortSignal },
+  init: { readonly signal: AbortSignal; readonly method?: 'HEAD' },
 ) => Promise<Response>;
 
 /** What the audit needs of a workspace: its published name and the version this tree stamps. */
@@ -66,6 +66,8 @@ export interface PublishState extends AuditTarget {
   readonly maint?: readonly MaintTag[];
   /** `_npmUser` on the stamped version — `GitHub Actions` for a workflow publish. */
   readonly publishedBy?: string;
+  /** `dist.tarball` on the stamped version: what `tarballsServed` HEADs. */
+  readonly tarball?: string | undefined;
   /** Only for `unreachable`: how the request failed, in words a reader can act on. */
   readonly detail?: string;
   /**
@@ -139,7 +141,7 @@ export interface MaintTag {
 }
 
 interface VersionRecord {
-  readonly dist?: { readonly attestations?: unknown };
+  readonly dist?: { readonly attestations?: unknown; readonly tarball?: unknown };
   readonly _npmUser?: { readonly name?: unknown } | string;
 }
 
@@ -223,6 +225,7 @@ export function classify(
       : { tag: expected, ...(typeof served === 'string' ? { served } : {}) }),
     ...(maint.length === 0 ? {} : { maint }),
     ...(publishedBy === undefined ? {} : { publishedBy }),
+    ...(typeof record.dist?.tarball === 'string' ? { tarball: record.dist.tarball } : {}),
   };
 }
 
@@ -400,6 +403,45 @@ export async function withTags(
 }
 
 /**
+ * Every listed version's tarball, HEADed. npm serves a version's packument before its tarball, so
+ * a release's scaffold read "every package attested" and 404'd on `http-29.4.0.tgz` (release run
+ * 41214625530). Only states the audit calls listed are asked: the rest already carry a finding.
+ */
+export async function tarballsServed(
+  states: readonly PublishState[],
+  fetcher: RegistryFetch = defaultFetch,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<readonly Finding[]> {
+  const findings: Finding[] = [];
+  for (const state of states) {
+    if (state.kind !== 'ok' && state.kind !== 'unattested') continue;
+    const detail = await tarballMiss(state.tarball, fetcher, timeoutMs);
+    if (detail === undefined) continue;
+    findings.push({
+      code: 'X_REGISTRY_UNREACHABLE',
+      at: state.name,
+      cause: `${state.name}@${state.version} is listed and its tarball is not served yet: ${detail} — npm serves the packument first, so this is lag, not evidence the version is unpublished`,
+      fix: 'bun run scripts/registry-audit.ts --tarballs --json   # re-run in a minute; release.yml polls this 40 times',
+    });
+  }
+  return findings;
+}
+
+async function tarballMiss(
+  url: string | undefined,
+  fetcher: RegistryFetch,
+  timeoutMs: number,
+): Promise<string | undefined> {
+  if (url === undefined) return 'the version record names no dist.tarball';
+  try {
+    const response = await fetcher(url, { signal: AbortSignal.timeout(timeoutMs), method: 'HEAD' });
+    return response.ok ? undefined : `HEAD ${url} answered HTTP ${response.status}`;
+  } catch (failure) {
+    return `HEAD ${url} failed: ${failureDetail(failure)}`;
+  }
+}
+
+/**
  * The whole audit as one result, the floor first: a tree that enumerates no publishable workspace
  * answered "0/0 … every one attested", `ok: true` — a perfect registry and a wrong directory read
  * the same.
@@ -408,10 +450,15 @@ export async function registryAuditResult(
   workspaces: readonly Workspace[],
   fetcher: RegistryFetch = defaultFetch,
   probe: TagProbe = remoteTagProbe(repoRoot()),
+  tarballs = false,
 ): Promise<ScriptResult> {
   const targets = publishOrder(workspaces);
   const states = await withTags(await auditRegistry(targets, fetcher), probe);
-  const findings = [...publishFloorFindings(workspaces), ...registryFindings(states)];
+  const findings = [
+    ...publishFloorFindings(workspaces),
+    ...registryFindings(states),
+    ...(tarballs ? await tarballsServed(states, fetcher) : []),
+  ];
   const attested = states.filter((state) => state.kind === 'ok').length;
   const version = targets[0]?.version ?? 'unknown';
   return {
@@ -428,5 +475,11 @@ export async function registryAuditResult(
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  report(await registryAuditResult(await listWorkspaces(repoRoot())), args.json);
+  // `--tarballs`: also HEAD every listed tarball — release.yml's wait, before it installs any.
+  const tarballs = args.flags.get('tarballs') === true;
+  const workspaces = await listWorkspaces(repoRoot());
+  report(
+    await registryAuditResult(workspaces, defaultFetch, remoteTagProbe(repoRoot()), tarballs),
+    args.json,
+  );
 }

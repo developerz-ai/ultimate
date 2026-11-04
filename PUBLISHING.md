@@ -435,13 +435,17 @@ every `maint-*` tag.
    be `refs/tags/v*`, the tree must be stamped at the tag's version (`release.ts --check`), and
    ci.yml's whole run — the merged gate and every app, scaffold, package and container job beside
    it — must have concluded `success` on the tagged commit: read, never re-run, waiting up to 20
-   minutes for a run still in flight. A Release cut before the bump (the
+   minutes for a run still in flight. That run is a run of everything: ci.yml's `tested` job,
+   which lets a push reuse the green pull-request run of the same tree, never asks on a
+   `chore: release ` or `release: ` subject (`scripts/ci-workflow-shape-tested.test.ts`). A Release cut before the bump (the
    `developerz-ai[bot]` shape) fails here, before any `npm-publish` deployment is requested.
 5. Only then does the **`publish` job** start behind `environment: npm-publish` — nobody approves
    anything today, the environment has no reviewers (human step 2 above) — and publish each tier over
    OIDC.
 6. Then the **`npm-scaffold` job** proves what npm SERVES, with no `id-token` and no workspace on
-   the path. It waits until `registry-audit` sees every package at the version, attested, then runs
+   the path. It waits until `registry-audit --tarballs` sees every package at the version, attested,
+   and HEADs every `dist.tarball` with a 200 — npm lists a version before it serves the file, and
+   v29.4.0's scaffold 404'd on `http-29.4.0.tgz` after the listing passed (As of 2026-11) — then runs
    `bunx create-ultimate@<version>`, `bun install`, `bun run setup`, `bun run check` and
    `docker build -f docker/Dockerfile .` in a temp directory. CI's scaffold smoke builds against
    workspace links, so this is the one check that a registry-only gap (an export the tarball lacks)

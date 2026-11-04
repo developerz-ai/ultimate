@@ -2,12 +2,13 @@
 // to this row, the row's history, and the actions this actor may run on it — each a link or a
 // native form, so the screen ships no script. A detail page with no row is a state, not a card.
 
+import { REDACTED } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { Button, Card, DataTable, ErrorState, Link } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { AdminActions, ConfirmationField, DELETE_OPERATION, OPERATION_FIELD } from './actions';
 import styles from './admin.module.scss';
-import type { AuditCursor, AuditEntry } from './audit';
+import type { AuditEntry, AuditFieldDiff } from './audit';
 import type { AdminActor, AdminAuthz } from './authz';
 import { type AdminErrorParts, adminErrorFrom } from './errors';
 import { valueText } from './json-text';
@@ -54,6 +55,41 @@ export const operationLabel = (entry: AuditEntry): string =>
   entry.kind === 'action'
     ? t(`admin.action.${entry.operation}`)
     : t(`admin.operation.${entry.operation}`);
+
+/**
+ * The fields a diff never shows a value of: a `sensitive` field and a sealed column. The log is
+ * written redacted (`crud-input.ts`), and the view masks again, so an entry written by an app's own
+ * log, or before a field was marked, still draws no plaintext.
+ */
+export const maskedFieldsOf = (
+  resource: Pick<AdminResource, 'fields' | 'secretFields'>,
+): ReadonlySet<string> =>
+  new Set(
+    [...resource.fields, ...resource.secretFields]
+      .filter((field) => field.sensitive)
+      .map((field) => field.name),
+  );
+
+const shown = (masked: ReadonlySet<string>, field: string, value: unknown): string =>
+  value === undefined ? '' : masked.has(field) ? REDACTED : valueText(value);
+
+/** One entry's diff: field, before struck out, after inserted. Masked fields say only that. */
+export function AuditDiff(props: {
+  readonly diff: readonly AuditFieldDiff[];
+  readonly masked: ReadonlySet<string>;
+}): JSX.Element | null {
+  if (props.diff.length === 0) return null;
+  return (
+    <ul>
+      {props.diff.map((change) => (
+        <li>
+          <code>{change.field}</code>: <del>{shown(props.masked, change.field, change.before)}</del>{' '}
+          <ins>{shown(props.masked, change.field, change.after)}</ins>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function AdminDetail<Row extends AdminRow>(props: AdminDetailProps<Row>): JSX.Element {
   if (props.error !== null) {
@@ -157,7 +193,7 @@ export function AdminDetail<Row extends AdminRow>(props: AdminDetailProps<Row>):
 
       <Card header={<h2>{t('admin.audit.title')}</h2>}>
         {props.audit.length === 0 ? (
-          <p class="x-admin-empty">{t('admin.audit.empty')}</p>
+          <p class="x-admin-empty">{t('admin.audit.empty-row')}</p>
         ) : (
           <ol class="x-admin-audit">
             {props.audit.map((entry) => (
@@ -167,14 +203,7 @@ export function AdminDetail<Row extends AdminRow>(props: AdminDetailProps<Row>):
                 <span data-outcome={entry.outcome}>
                   {t(`admin.audit.outcome.${entry.outcome}`)}
                 </span>
-                <ul>
-                  {entry.diff.map((change) => (
-                    <li>
-                      <code>{change.field}</code>: <del>{valueText(change.before)}</del>{' '}
-                      <ins>{valueText(change.after)}</ins>
-                    </li>
-                  ))}
-                </ul>
+                <AuditDiff diff={entry.diff} masked={maskedFieldsOf(props.resource)} />
               </li>
             ))}
           </ol>
@@ -185,24 +214,4 @@ export function AdminDetail<Row extends AdminRow>(props: AdminDetailProps<Row>):
       </Card>
     </>
   );
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** The query parameter an older page of a row's history is asked for by: `?history=<at>~<id>`. */
-export const HISTORY_PARAM = 'history';
-
-/** The cursor as one parameter value — an ISO instant holds no `~`, a uuid neither. */
-export const historyCursorText = (cursor: AuditCursor): string => `${cursor.at}~${cursor.id}`;
-
-/** A posted-back cursor, or `undefined` for anything that is not one: page one, never an error. */
-export function historyCursorOf(raw: string | null): AuditCursor | undefined {
-  if (raw === null) return undefined;
-  const at = raw.indexOf('~');
-  if (at <= 0) return undefined;
-  const instant = raw.slice(0, at);
-  const id = raw.slice(at + 1);
-  // A uuid, because the durable log compares it as one: anything else would be a cast error from
-  // the database where a hand-edited URL deserves page one.
-  return Number.isNaN(Date.parse(instant)) || !UUID.test(id) ? undefined : { at: instant, id };
 }

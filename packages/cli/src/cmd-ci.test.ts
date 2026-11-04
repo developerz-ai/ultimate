@@ -155,8 +155,9 @@ describe('unit · every message key x ci renders exists', () => {
 });
 
 describe('unit · the x ci surface', () => {
-  test('no subcommands, no app root, and every flag its usage names', () => {
-    expect(ciCommand.spec.subcommands).toBeUndefined();
+  test('runs by default, tested by name, no app root, and every flag its usage names', () => {
+    expect(ciCommand.spec.subcommands).toEqual(['runs', 'tested']);
+    expect(ciCommand.spec.defaultSubcommand).toBe('runs');
     expect(ciCommand.spec.requiresApp).toBeUndefined();
     const flags = ciCommand.spec.flags?.map((flag) => flag.name) ?? [];
     for (const flag of ['repo', 'branch', 'run', 'tail', 'full', 'workflow', 'event'])

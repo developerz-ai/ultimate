@@ -20,7 +20,7 @@ export type ErrorSeverity = 'warning' | 'error' | 'fatal';
  * free-form string here is the same unbounded-cardinality mistake that a user id in a metric
  * label is. A new surface adds a member; it never passes a string of its own.
  */
-export const ERROR_SOURCES = ['http', 'job', 'realtime', 'cli', 'process'] as const;
+export const ERROR_SOURCES = ['http', 'job', 'realtime', 'cli', 'process', 'browser'] as const;
 
 export type ErrorSource = (typeof ERROR_SOURCES)[number];
 
