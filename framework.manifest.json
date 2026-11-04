@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e809114619c7fc9319c94842be6bd1809784b9efb88d81d19f90136c8f4d2f66",
+  "buildId": "a0c696e5907eb06013d03d8ebf741286c9b369c07c1adfb4fadb18892ee031ac",
   "tiers": {
     "0": [
       "core",
@@ -1301,6 +1301,11 @@
     },
     {
       "code": "X_DEPENDENCY_NOT_ALLOWLISTED",
+      "owner": "scripts",
+      "at": "scripts/dependency-allowlist.ts"
+    },
+    {
+      "code": "X_DEPENDENCY_RANGE_CONFLICT",
       "owner": "scripts",
       "at": "scripts/dependency-allowlist.ts"
     },

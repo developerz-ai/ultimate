@@ -1,14 +1,19 @@
 #!/usr/bin/env bun
-// Enforce that every external workspace dependency is an explicit row in the checked-in allowlist.
+// Enforce that every external workspace dependency is an explicit row in the checked-in allowlist,
+// and that each declaration sharing a root dependency accepts a version its root range accepts.
 //
 // Root `CLAUDE.md` allows no new dependency without a stated reason. A name-only allowlist would
 // duplicate the workspace registry, so internal names are checked against the real workspaces and
-// external names against the checked-in table.
+// external names against the checked-in table. The root manifest is the tree's reference range:
+// a workspace that declares the same dependency must accept a version the root accepts, or the
+// tree installs two different versions of one package.
 //
 //   bun run dependency-allowlist  ·  bun run scripts/dependency-allowlist.ts [--json]
 
+import { singleLine } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import { DEPENDENCY_ALLOWLIST, DEPENDENCY_ALLOWLIST_FILE } from './lib/dependency-allowlist-data';
+import { rangeCompatibility } from './lib/dependency-ranges';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { toPosix } from './lib/posix-path';
@@ -17,16 +22,26 @@ import { readWorkspaceManifest } from './lib/workspaces';
 
 const SCRIPT = 'dependency-allowlist';
 
+/** The root manifest, relative to the repository root. The reference range of every dependency. */
+export const ROOT_MANIFEST = 'package.json';
+
 export interface DependencyDeclaration {
   readonly manifest: string;
   readonly field: 'dependencies' | 'devDependencies';
   readonly name: string;
+  /** The version range this manifest declares, as written. Never compared as text. */
+  readonly range: string;
 }
 
 export interface DependencyAllowlistInput {
   readonly declarations: readonly DependencyDeclaration[];
   readonly workspaceNames: ReadonlySet<string>;
   readonly allowlist: Readonly<Record<string, { readonly reason: string }>>;
+  /**
+   * The ROOT manifest's declarations, by dependency name. The root is the tree's reference range:
+   * a workspace declaring the same dependency must accept a version the root accepts.
+   */
+  readonly rootDeclarations?: ReadonlyMap<string, DependencyDeclaration>;
 }
 
 const keyOf = (declaration: DependencyDeclaration): string =>
@@ -44,6 +59,27 @@ const staleFinding = (key: string): Finding => ({
   cause: `${DEPENDENCY_ALLOWLIST_FILE} allows '${key}', but no workspace manifest declares it — a stale row would hide a later declaration of the same name`,
   fix: `bun run scripts/dependency-allowlist.ts --json   # then delete '${key}' from ${DEPENDENCY_ALLOWLIST_FILE}`,
   at: DEPENDENCY_ALLOWLIST_FILE,
+});
+
+/**
+ * The range refusal: two declarations with no shared version, or syntax we cannot compare.
+ *
+ * The cause names the dependency, the ROOT manifest with its range and the conflicting manifest
+ * with its range — one line, so a reader sees which two declarations to reconcile without
+ * opening a second file.
+ */
+const conflictFinding = (
+  name: string,
+  root: DependencyDeclaration,
+  other: DependencyDeclaration,
+  problem: string,
+): Finding => ({
+  code: 'X_DEPENDENCY_RANGE_CONFLICT',
+  cause: singleLine(
+    `${name} is declared as '${root.range}' in ${root.manifest} and as '${other.range}' in ${other.manifest}, and ${problem}`,
+  ),
+  fix: `bun run scripts/dependency-allowlist.ts --json   # then correct unsupported range syntax or reconcile the ranges so a single version satisfies both`,
+  at: other.manifest,
 });
 
 /** One manifest path per workspace, including the root and both tracked applications. */
@@ -85,7 +121,7 @@ export interface WorkspaceScan {
 export async function scanWorkspaceManifests(root: string): Promise<WorkspaceScan> {
   const declarations: DependencyDeclaration[] = [];
   const names = new Set<string>();
-  for (const manifest of ['package.json', ...(await dependencyManifestPaths(root))]) {
+  for (const manifest of [ROOT_MANIFEST, ...(await dependencyManifestPaths(root))]) {
     const read = await readWorkspaceManifest(`${root}/${manifest}`);
     if (read.kind !== 'read') {
       return {
@@ -99,8 +135,8 @@ export async function scanWorkspaceManifests(root: string): Promise<WorkspaceSca
     }
     if (typeof read.manifest.name === 'string') names.add(read.manifest.name);
     for (const field of ['dependencies', 'devDependencies'] as const) {
-      for (const name of Object.keys(read.manifest[field] ?? {})) {
-        declarations.push({ manifest, field, name });
+      for (const [name, range] of Object.entries(read.manifest[field] ?? {})) {
+        declarations.push({ manifest, field, name, range });
       }
     }
   }
@@ -119,6 +155,37 @@ export async function workspaceNames(root: string): Promise<ReadonlySet<string>>
   return (await scanWorkspaceManifests(root)).names;
 }
 
+/**
+ * The cross-manifest check: each dependency declaration sharing a root reference must accept
+ * a version that reference accepts.
+ *
+ * The ROOT manifest is the reference. Two ranges conflict when no single version satisfies both —
+ * never when their texts differ: the root's `^7.0.2` and an app's `7.0.2` agree, and a textual
+ * comparison would report every one of this tree's own pairs.
+ *
+ * A name the root does not declare has no reference range, and the rule says nothing about it —
+ * the root's absence is not a conflict.
+ */
+export function checkDependencyRanges(
+  declarations: readonly DependencyDeclaration[],
+  rootDeclarations: ReadonlyMap<string, DependencyDeclaration>,
+): readonly Finding[] {
+  const findings: Finding[] = [];
+  for (const declaration of declarations) {
+    if (declaration.manifest === ROOT_MANIFEST) continue;
+    const root = rootDeclarations.get(declaration.name);
+    if (root === undefined) continue;
+    const answer = rangeCompatibility(root.range, declaration.range);
+    if (answer.kind === 'compatible') continue;
+    const problem =
+      answer.kind === 'incompatible'
+        ? 'no single version satisfies both ranges'
+        : `the range '${answer.range}' ${answer.problem}`;
+    findings.push(conflictFinding(declaration.name, root, declaration, problem));
+  }
+  return findings;
+}
+
 export function checkDependencyAllowlist(input: DependencyAllowlistInput): readonly Finding[] {
   const findings: Finding[] = [];
   const declared = new Set<string>();
@@ -130,6 +197,9 @@ export function checkDependencyAllowlist(input: DependencyAllowlistInput): reado
   }
   for (const key of Object.keys(input.allowlist)) {
     if (!declared.has(key)) findings.push(staleFinding(key));
+  }
+  if (input.rootDeclarations !== undefined) {
+    findings.push(...checkDependencyRanges(input.declarations, input.rootDeclarations));
   }
   return findings;
 }
@@ -177,7 +247,26 @@ export async function dependencyAllowlistFindings(root: string): Promise<readonl
     declarations,
     workspaceNames: names,
     allowlist: DEPENDENCY_ALLOWLIST,
+    rootDeclarations: rootDeclarationsOf(declarations),
   });
+}
+
+/**
+ * The ROOT manifest's declarations, by dependency name.
+ *
+ * The root is scanned FIRST, so its declarations come first in the scan; the map keeps the first
+ * of each name, which is the root's own. A name the root does not declare has no entry, and the
+ * cross-manifest rule then says nothing about it.
+ */
+export function rootDeclarationsOf(
+  declarations: readonly DependencyDeclaration[],
+): ReadonlyMap<string, DependencyDeclaration> {
+  const byName = new Map<string, DependencyDeclaration>();
+  for (const declaration of declarations) {
+    if (declaration.manifest !== ROOT_MANIFEST) continue;
+    if (!byName.has(declaration.name)) byName.set(declaration.name, declaration);
+  }
+  return byName;
 }
 
 if (import.meta.main) {
