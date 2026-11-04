@@ -10,14 +10,27 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   checkDependencyAllowlist,
+  checkDependencyRanges,
   type DependencyDeclaration,
   dependencyAllowlistFindings,
+  ROOT_MANIFEST,
+  rootDeclarationsOf,
 } from './dependency-allowlist';
 
 const declaration = (
   name: string,
   field: DependencyDeclaration['field'] = 'dependencies',
-): DependencyDeclaration => ({ manifest: 'packages/core/package.json', field, name });
+  range = '1.2.3',
+  manifest = 'packages/core/package.json',
+): DependencyDeclaration => ({ manifest, field, name, range });
+
+/** The root's own declaration of a dependency: the reference range every other manifest is read against. */
+const rootDeclaration = (name: string, range: string): DependencyDeclaration => ({
+  manifest: ROOT_MANIFEST,
+  field: 'devDependencies',
+  name,
+  range,
+});
 
 describe('an external dependency', () => {
   test('an allowlisted dependency passes', () => {
@@ -124,6 +137,146 @@ describe('a broken manifest', () => {
       const findings = await dependencyAllowlistFindings(root);
       expect(findings[0]?.code).toBe('X_DEPENDENCY_UNSCANNED');
       expect(findings[0]?.fix).toContain('bun run');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The cross-manifest rule: a dependency two manifests declare must be declared COMPATIBLY in
+ * both, and the ROOT manifest is the reference.
+ *
+ * The tree's own pairs are the regression this rule must not break: the root's `^7.0.2` against
+ * an app's `7.0.2`, and the root's `0.5.10` against an app's `^0.5.8`. A textual comparison
+ * would report both.
+ */
+describe('a dependency two manifests declare', () => {
+  test('an exact root pin against a wider app range is compatible', () => {
+    const findings = checkDependencyRanges(
+      [declaration('typescript', 'devDependencies', '7.0.2', 'examples/dummy/package.json')],
+      new Map([['typescript', rootDeclaration('typescript', '^7.0.2')]]),
+    );
+    expect(findings).toEqual([]);
+  });
+
+  test('a root range against an incompatible app range is a conflict', () => {
+    const findings = checkDependencyRanges(
+      [declaration('typescript', 'devDependencies', '^1.0.0', 'examples/dummy/package.json')],
+      new Map([['typescript', rootDeclaration('typescript', '^7.0.2')]]),
+    );
+    expect(findings[0]?.code).toBe('X_DEPENDENCY_RANGE_CONFLICT');
+  });
+
+  test('a root pin against an app range that excludes the pin is a conflict', () => {
+    const findings = checkDependencyRanges(
+      [declaration('typescript', 'devDependencies', '^6.0.0', 'examples/dummy/package.json')],
+      new Map([['typescript', rootDeclaration('typescript', '7.0.2')]]),
+    );
+    expect(findings[0]?.code).toBe('X_DEPENDENCY_RANGE_CONFLICT');
+  });
+
+  test('the conflict names the dependency and both manifests with their ranges', () => {
+    const findings = checkDependencyRanges(
+      [declaration('typescript', 'devDependencies', '^1.0.0', 'examples/dummy/package.json')],
+      new Map([['typescript', rootDeclaration('typescript', '^7.0.2')]]),
+    );
+    const cause = findings[0]?.cause ?? '';
+    expect(cause).toContain('typescript');
+    expect(cause).toContain('^7.0.2');
+    expect(cause).toContain('package.json');
+    expect(cause).toContain('^1.0.0');
+    expect(cause.split('\n')).toHaveLength(1);
+  });
+
+  test('the conflict names the conflicting manifest as the location of the finding', () => {
+    const findings = checkDependencyRanges(
+      [declaration('typescript', 'devDependencies', '^1.0.0', 'examples/dummy/package.json')],
+      new Map([['typescript', rootDeclaration('typescript', '^7.0.2')]]),
+    );
+    expect(findings[0]?.at).toBe('examples/dummy/package.json');
+  });
+
+  test('a dependency the root does not declare is not compared at all', () => {
+    const findings = checkDependencyRanges(
+      [declaration('nats', 'dependencies', '2.29.3', 'packages/realtime/package.json')],
+      new Map([['typescript', rootDeclaration('typescript', '^7.0.2')]]),
+    );
+    expect(findings).toEqual([]);
+  });
+
+  test('the own declaration of the root is never compared against itself', () => {
+    const findings = checkDependencyRanges(
+      [rootDeclaration('typescript', '^7.0.2')],
+      new Map([['typescript', rootDeclaration('typescript', '^7.0.2')]]),
+    );
+    expect(findings).toEqual([]);
+  });
+
+  test('a range that does not parse is refused, never read as compatible', () => {
+    const findings = checkDependencyRanges(
+      [declaration('typescript', 'devDependencies', 'workspace:*', 'examples/dummy/package.json')],
+      new Map([['typescript', rootDeclaration('typescript', '^7.0.2')]]),
+    );
+    expect(findings[0]?.code).toBe('X_DEPENDENCY_RANGE_CONFLICT');
+  });
+
+  test('the root declarations are read off the scan, one per name', () => {
+    const root = rootDeclarationsOf([
+      rootDeclaration('typescript', '^7.0.2'),
+      rootDeclaration('solid-js', '1.9.17'),
+      declaration('typescript', 'devDependencies', '7.0.2', 'examples/dummy/package.json'),
+    ]);
+    expect(root.get('typescript')?.range).toBe('^7.0.2');
+    expect(root.get('solid-js')?.range).toBe('1.9.17');
+    expect(root.size).toBe(2);
+  });
+});
+
+/**
+ * A fixture tree, read end to end: the manifests are written, the guard is run over them, and the
+ * verdict is the finding — the same path the real tree takes.
+ */
+describe('a fixture tree with a conflicting range', () => {
+  test('is reported as a range conflict naming both manifests', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-dependency-range-'));
+    try {
+      await Bun.write(
+        join(root, 'package.json'),
+        '{"name":"root","version":"1.0.0","devDependencies":{"typescript":"^7.0.2"}}',
+      );
+      await mkdir(join(root, 'packages/core'), { recursive: true });
+      await Bun.write(
+        join(root, 'packages/core/package.json'),
+        '{"name":"@ultimat3/core","version":"1.0.0","devDependencies":{"typescript":"^1.0.0"}}',
+      );
+      const findings = await dependencyAllowlistFindings(root);
+      const conflict = findings.find((finding) => finding.code === 'X_DEPENDENCY_RANGE_CONFLICT');
+      expect(conflict).toBeDefined();
+      expect(conflict?.cause).toContain('typescript');
+      expect(conflict?.cause).toContain('packages/core/package.json');
+      expect(conflict?.fix).toContain('bun run');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a fixture tree with a compatible pair reports nothing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-dependency-range-'));
+    try {
+      await Bun.write(
+        join(root, 'package.json'),
+        '{"name":"root","version":"1.0.0","devDependencies":{"typescript":"^7.0.2"}}',
+      );
+      await mkdir(join(root, 'packages/core'), { recursive: true });
+      await Bun.write(
+        join(root, 'packages/core/package.json'),
+        '{"name":"@ultimat3/core","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}',
+      );
+      const findings = await dependencyAllowlistFindings(root);
+      expect(findings.filter((finding) => finding.code === 'X_DEPENDENCY_RANGE_CONFLICT')).toEqual(
+        [],
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
