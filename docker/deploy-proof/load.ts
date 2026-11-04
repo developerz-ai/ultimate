@@ -3,6 +3,10 @@
 // traffic does. Prints one `PROOF {json}` line; run.sh asserts `failed` is 0. Runs as
 // `bun -e "$(cat load.ts)"` in a pod on the app image — no file to mount, no second image.
 //
+// Four kinds in turn per lane: the static page, the health action, a job enqueued through the
+// enqueue action and a read of the table v2's migration changes (run.sh's held-job.sh). Each lane
+// enqueues under ONE key, so at most one of its jobs is live: the writes are real, the backlog is not.
+//
 // Each request carries its own client address in X-Forwarded-For, with TRUSTED_PROXY_HOPS=1 in the
 // release's secret, because that is what an ingress sends: one pod's address on every request is
 // ONE client, and the app's per-client rate limit answers it 429 — a verdict about the harness.
@@ -37,21 +41,31 @@ const causeOf = (error: unknown): string => {
   return typeof name === 'string' ? name : 'error';
 };
 
+/** What a failure is tallied under, by kind: the verb and the route, so a red names its path. */
+const KINDS = ['GET /', 'POST health', 'GET proof-attempts', 'POST enqueue-hold'] as const;
+
+/** Request `kind` of lane `index`, in KINDS' order. */
+function send(kind: number, index: number, headers: Record<string, string>): Promise<Response> {
+  const key = `load-${index}`;
+  const json = { ...headers, 'content-type': 'application/json' };
+  // `health` is the scaffold's own public action and `/` its static landing page.
+  if (kind === 0) return fetch(`${base}/`, { headers });
+  if (kind === 1) {
+    return fetch(`${base}/api/healths/invoke`, { method: 'POST', headers: json, body: '{}' });
+  }
+  if (kind === 2) return fetch(`${base}/_x/query/proof-attempts?key=${key}`, { headers });
+  const body = JSON.stringify({ key, holdSeconds: 0 });
+  return fetch(`${base}/api/holds/enqueue`, { method: 'POST', headers: json, body });
+}
+
 async function lane(index: number): Promise<void> {
   for (let i = 0; Date.now() < end; i += 1) {
-    const post = (i + index) % 2 === 1;
-    const verb = post ? 'POST' : 'GET';
+    const kind = (i + index) % KINDS.length;
+    const verb = KINDS[kind] ?? 'unknown';
     const headers = { 'x-forwarded-for': `10.${index}.${(i >> 8) & 255}.${i & 255}` };
     total += 1;
     try {
-      // `health` is the scaffold's one public action; `/` its static landing page.
-      const res = post
-        ? await fetch(`${base}/api/healths/invoke`, {
-            method: 'POST',
-            headers: { ...headers, 'content-type': 'application/json' },
-            body: '{}',
-          })
-        : await fetch(`${base}/`, { headers });
+      const res = await send(kind, index, headers);
       const body = await res.text();
       // core's BUILD_ID_HEADER, spelled out: `bun -e` runs this with no module graph to import from.
       bump(builds, res.headers.get('x-ultimate-build') ?? 'none');

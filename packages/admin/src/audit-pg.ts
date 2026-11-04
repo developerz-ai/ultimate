@@ -15,6 +15,7 @@ import {
   type AuditSink,
   auditEntry,
   auditLimit,
+  auditWindow,
   isAllowedRead,
 } from './audit';
 import { ADMIN_AUDIT_TABLE } from './audit-schema';
@@ -105,6 +106,10 @@ function selectFor(query: AuditQuery, limit: number): { text: string; values: un
   if (query.entityId !== undefined) where.push(`entity_id = ${bind(query.entityId)}`);
   if (query.actorId !== undefined) where.push(`actor_id = ${bind(query.actorId)}`);
   if (query.orgId !== undefined) where.push(`org_id = ${bind(query.orgId)}`);
+  if (query.outcome !== undefined) where.push(`outcome = ${bind(query.outcome)}`);
+  // Normalised by `auditWindow` before this runs: an ISO instant, never a bare local time.
+  if (query.since !== undefined) where.push(`at >= ${bind(query.since)}::timestamptz`);
+  if (query.until !== undefined) where.push(`at < ${bind(query.until)}::timestamptz`);
   if (query.before !== undefined) {
     where.push(
       `(at, id) < (${bind(query.before.at)}::timestamptz, ${bind(query.before.id)}::uuid)`,
@@ -187,7 +192,8 @@ export function postgresAuditLog(options: PostgresAuditLogOptions = {}): AuditLo
       for (const sink of sinks) await sink.write(entry);
       return entry;
     },
-    async entries(query = {}): Promise<readonly AuditEntry[]> {
+    async entries(asked = {}): Promise<readonly AuditEntry[]> {
+      const query = auditWindow(SUBJECT, asked);
       const select = selectFor(query, auditLimit(SUBJECT, query));
       const rows = await client().query<AuditRow>(select);
       return rows.map(entryOf);

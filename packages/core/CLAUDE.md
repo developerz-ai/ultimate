@@ -163,7 +163,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
   `meta`, ids or `release`. Total over hostile getters; the Sentry envelope's `fingerprint`.
 - **Three OTLP variables, three codes** — `X_OTLP_ENDPOINT_INVALID`, `X_OTLP_HEADERS_INVALID`,
   `X_OTLP_PROTOCOL_UNSUPPORTED`. A header KEY is in the cause/fix/meta; its VALUE never is.
-- `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`.
+- `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`. `'browser'`: only cli's `client-errors-routes.ts`, one `X_CLIENT_ERROR` per report.
 - `METRICS_PATH` is served by `@ultimat3/cli`'s `metrics-endpoint.ts` on `METRICS_PORT` (9090), never
   the role's HTTP port; every role opens it.
 

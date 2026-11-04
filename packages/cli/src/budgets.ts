@@ -300,6 +300,11 @@ export interface MeasuredJs {
  * excluded as data, by `carriesJson`, not by this set. A further entry joins this set by a
  * decision, here, with the register's argument: every document carries it and no author can
  * remove it.
+ *
+ * `/x-client-errors.js` (`clientErrors.enabled`, plan 101, 24) is NOT here, and needs no entry: it
+ * rides `app/` documents a served process renders, and the static export this measures never names
+ * it (no route there receives a report). Measured 2026-11-03: 1,961 B (962 B gzip) per served
+ * `app/` document of an app that turned it on, and 0 B for every other document.
  */
 export const FRAMEWORK_SCRIPTS: ReadonlySet<string> = new Set([SW_REGISTER_PATH]);
 

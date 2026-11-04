@@ -7,6 +7,8 @@
 // drift into two vocabularies with no map between them (issue #293).
 import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 import type { AiConfig, AiConfigInput } from './config-ai';
+import * as assetsSection from './config-assets';
+import * as clientErrors from './config-client-errors';
 import { countIssue } from './config-count';
 import { configDefaults } from './config-defaults';
 import { BASE_FIX, CACHE_TIER_FIX } from './config-fixes';
@@ -229,6 +231,8 @@ export interface AppConfig {
   readonly navigation: NavigationConfig;
   readonly islands: IslandsConfig;
   readonly mail: MailConfig;
+  readonly assets: assetsSection.AssetsConfig;
+  readonly clientErrors: clientErrors.ClientErrorsConfig;
 }
 
 /**
@@ -246,7 +250,9 @@ export interface AppConfigInput
   extends SiteSectionsInput,
     NavigationSectionInput,
     IslandsSectionInput,
-    MailSectionInput {
+    MailSectionInput,
+    assetsSection.AssetsSectionInput,
+    clientErrors.ClientErrorsSectionInput {
   readonly name: string;
   readonly theme?: Input<ThemeConfig> | undefined;
   readonly auth?: Input<AuthConfig> | undefined;
@@ -345,6 +351,8 @@ function validate(config: AppConfig): void {
   navigationIssues(config, issues);
   islandsIssues(config, issues);
   mailIssues(config, issues);
+  assetsSection.assetsIssues(config, issues);
+  clientErrors.clientErrorsIssues(config, issues);
 
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
@@ -441,6 +449,8 @@ function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
     ...mergeNavigation(layers),
     ...mergeIslands(layers),
     ...mergeMail(layers),
+    ...assetsSection.mergeAssets(layers),
+    ...clientErrors.mergeClientErrors(layers),
   };
 }
 

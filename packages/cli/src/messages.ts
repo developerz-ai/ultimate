@@ -299,6 +299,22 @@ const CATALOG = {
   'cli.ci.running':
     '{running} of {runs} workflow run(s) on {branch} has not finished — nothing has failed yet',
   'cli.ci.tail': '  log tail, {job}:',
+  // `x ci tested`, one reason per condition (`TESTED_CONDITIONS`): what reused, or why it ran all.
+  'cli.ci.tested.tested':
+    'tested: PR #{pr} merged this tree, and {workflow} run {run} passed on its head — the jobs it ran are reused',
+  'cli.ci.tested.subject':
+    'not tested: the subject does not end (#N), so no pull request merged this commit — a full run',
+  'cli.ci.tested.merged': 'not tested: PR #{pr} was not merged as this commit — a full run',
+  'cli.ci.tested.fork':
+    "not tested: PR #{pr}'s head is not in {repo}, and a fork's run is never reused — a full run",
+  'cli.ci.tested.tree':
+    "not tested: this tree is not PR #{pr}'s head tree, so its base moved after the run — a full run",
+  'cli.ci.tested.run': "not tested: no green {workflow} run on PR #{pr}'s head — a full run",
+  'cli.ci.tested.stale':
+    'not tested: {workflow} run {run} for PR #{pr} is older than {maxAge} — a full run',
+  'cli.ci.tested.api': 'not tested: GitHub did not answer ({detail}) — a full run',
+  'cli.ci.tested.sha':
+    'not tested: no GITHUB_SHA, and git rev-parse HEAD named no commit — a full run',
   'cli.pr.body.truncated': '      … {hidden} more line(s) — re-run with --full',
   /** The line of a thread whose anchor GitHub answers null for — a value, not a column key. */
   'cli.pr.line.unknown': '-',

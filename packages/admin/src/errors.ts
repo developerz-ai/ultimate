@@ -174,6 +174,8 @@ export class AdminFilterInvalidError extends UltimateError {
     cause: string;
     /** What the resource DOES answer, in the caller's own spelling. */
     known: readonly string[];
+    /** A site whose fix is not the manifest's — the audit trail's URL and its stores. */
+    fix?: string;
   }) {
     const known = input.known.length > 0 ? input.known.join(', ') : 'none';
     super({
@@ -181,7 +183,9 @@ export class AdminFilterInvalidError extends UltimateError {
       cause: `${input.entity}: "${input.asked}" ${input.cause} (this list answers: ${known})`,
       // The manifest records every resource's filters, sorts and scopes, so the command prints the
       // list this error names — for the resource, and for every other one.
-      fix: `x manifest --json   # admin[].resources lists the filters, sorts and scopes of "${input.entity}"`,
+      fix:
+        input.fix ??
+        `x manifest --json   # admin[].resources lists the filters, sorts and scopes of "${input.entity}"`,
     });
   }
 }

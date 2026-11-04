@@ -32,7 +32,7 @@ export const config = defineConfig({
 
 Everything derivable from code is **not** in this file — routes, actions, policies, jobs, tags all live in the generated `x.manifest.json`. Inspect the resolved config with `x config show --json`.
 
-`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly these keys `As of 2026-10-06`: `name`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `notify`, `ai`, `drain`, `health`, `site`, `seo`, `navigation`, `islands`, `mail`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `budgets`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
+`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly these keys `As of 2026-10-06`: `name`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `notify`, `ai`, `drain`, `health`, `site`, `seo`, `navigation`, `islands`, `mail`, `clientErrors`, `assets`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `budgets`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
 
 **The shape is closed**, `As of 25.0.0`: a key `defineConfig` does not declare — at any depth, in `app.config.ts` or any `config/*.ts` overlay — is refused at boot with `X_CONFIG_INVALID`, naming the full path and the nearest real key (`drian is not an app.config.ts key — did you mean drain?`, fix `rename drian to drain in app.config.ts`). Before 25.0.0 `section()` copied an unknown key through and nothing read it, so a typo or a JS config that skipped the compiler was a switch with no wire. A key an earlier major **deleted** gets its own refusal first, naming the major and the replacement (`REMOVED_CONFIG_KEYS` in [`packages/core/src/config-removed.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-removed.ts)). The known keys are the defaults' own plus `SECTION_KEYS` in [`packages/core/src/config-keys.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-keys.ts) — the members with no default (`pwa.id`, `pwa.shortcuts[]`, `pwa.colors`, `mail.retainMime`, `navigation`), each row checked against its interface by `tsc`. The only positions whose keys an app chooses are `OPEN_CONFIG_PATHS`: the locale-keyed manifest texts (`pwa.description`, a shortcut's `name`/`shortName`/`description`, a screenshot's `src`/`label`). A key written as `undefined` is a layer not saying, and is never refused.
 
@@ -375,6 +375,22 @@ islands: { sharedChunks: true },
 |---|---|---|---|
 | `islands.sharedChunks` | `boolean` | `false` | **read** by `x dev`, the container and `x build`: `true` builds every island in one split bundle, so a module two islands import is one `/islands/chunk-<hash>.js` a page fetches once and a browser caches across pages; each route's `budget.js` counts it once. `false` builds each island alone, self-contained. Off by default because tree shaking across one split build keeps what ANY importer uses: a small island importing a helper from a module other islands use heavily pays for all of it (`examples/dummy`'s update banner 712 → 16,288 B). Turn it on where pages render several islands over one graph, then weigh the routes with `x verify`. A non-boolean → `X_CONFIG_INVALID` |
 
+## `clientErrors`
+
+Whether `app/` documents report browser failures to the app's `ErrorReporter` ([Observability](Observability#browser-failures)). Off unless declared:
+
+```ts
+import { defineConfig } from '@ultimat3/core';
+
+export const config = defineConfig({ name: 'my-app', clientErrors: { enabled: true } });
+```
+
+| field | type | default | notes |
+|---|---|---|---|
+| `clientErrors.enabled` | `boolean` | `false` | **read** by `x dev` and the container's web role: on, `GET /x-client-errors.js` and `POST /_client-errors` are mounted and every `app/` document names the script; off, both are 404 and no document names it. A static export never carries it and `x build` warns. A non-boolean → `X_CONFIG_INVALID` |
+| `clientErrors.anonymous` | `boolean` | `false` | `true` accepts a report with no signed-in actor, limited per address. Off, an anonymous report is `401`: crash text is input to whoever reads the monitor |
+| `clientErrors.perMinute` | `number` | `30` | reports one actor (or, anonymous, one address) may file per minute, spent on the app's rate-limit store. A whole number ≥ 1, else `X_CONFIG_INVALID` |
+
 ## `http`
 
 **Not an `app.config.ts` block, and never was.** `AppConfigInput` has no `http` key. `@ultimat3/core` is tier 0 and cannot hold `@ultimat3/http`'s types, so an `http` block here would be a **second declaration** of `HttpConfigInput` in a package that can never check it against the real one. An app declares its half with `configureHttp()`, at module scope in a file under `apps/*/` — the same seam `configureAuthenticator()` and `defineStorage()` are, and for the same reason.
@@ -493,6 +509,26 @@ A transport without `MAIL_FROM` is refused at boot rather than on the first send
 
 `x dev` prints which one it installed — `mail=embedded`, or `mail=external(smtp via SMTP_URL)`.
 The env **key** is reported, never its value, because `SMTP_URL` carries a password.
+
+## `assets`
+
+Whether a web pod keeps earlier builds' hashed files reachable across a deploy. Off unless declared:
+
+```ts
+import { defineConfig } from '@ultimat3/core';
+
+// `deploys` is a disk from the app's `defineStorage({ disks })`
+export const config = defineConfig({
+  name: 'my-app',
+  assets: { retain: { disk: 'deploys', builds: 3 } },
+});
+```
+
+| field | type | default | notes |
+|---|---|---|---|
+| `assets.retain` | `{ disk: string; builds: number }` | absent | **read** by the container's web role at boot (`retainBuildAssets`, `packages/cli/src/retained-assets-boot.ts`): it publishes its `/styles`, `/islands`, `/_x/assets` and `/assets` files to `disk` under `x-build-assets/<name>/<environment>/` before `/readyz`, and every asset route answers a miss a retained manifest names from it. Absent: each pod serves only what it built. `x dev` never publishes. Details: [Deployment](Deployment#hashed-assets-across-a-deploy--assetsretain) |
+| `assets.retain.disk` | `string` | — | a disk from the app's `defineStorage({ disks })`. Empty is `X_CONFIG_INVALID` at `defineConfig`; a name the app did not declare is `X_CONFIG_INVALID` at boot |
+| `assets.retain.builds` | `number` | none | how many builds' files stay, newest first. No default — the window is the app's. A whole number ≥ 1, else `X_CONFIG_INVALID` |
 
 ## `storage`
 

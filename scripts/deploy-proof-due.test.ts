@@ -107,6 +107,12 @@ describe('unit · deploy-proof-due · the paths that decide the verdict', () => 
       // `x db gen initial` writes the migration the release applies in the cluster.
       'packages/cli/src/cmd-db.ts',
       'packages/cli/src/db-generate.ts',
+      // The proof holds a job across the roll: the worker that claims and retires it, and the
+      // Postgres driver whose rows it asserts on, decide that half.
+      'packages/jobs/src/worker.ts',
+      'packages/jobs/src/worker-drain-cutoff.ts',
+      'packages/jobs/src/driver-pg.ts',
+      'packages/jobs/src/driver-pg-claim-sql.ts',
     ]) {
       expect({ file, decides: touchesVerdict([file]) }).toEqual({ file, decides: file });
     }
@@ -123,6 +129,8 @@ describe('unit · deploy-proof-due · the paths that decide the verdict', () => 
         'examples/dummy/package.json',
         'packages/cli/src/cmd-newsletter.ts',
         'packages/cli/src/cmd-dbx.ts',
+        'packages/jobs/src/steps.ts',
+        'packages/jobs/README.md',
       ]),
     ).toBe(undefined);
   });

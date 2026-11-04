@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { REDACTED } from '@ultimat3/core';
 import { diffRows, memoryAuditLog } from './audit';
+import {
+  AUDIT_QUERY_CASES,
+  AUDIT_QUERY_REFUSALS,
+  answerAuditCase,
+  auditCaseClock,
+  seedAuditCases,
+} from './audit-query-fixture';
 
 describe('diffRows', () => {
   test('records only what changed, before and after', () => {
@@ -165,5 +172,35 @@ describe('memoryAuditLog · a capacity that is not a number is not a capacity', 
     // shipped API for no safety gained.
     expect(await log.entries({ limit: 0 })).toEqual([]);
     expect((await log.entries({ limit: 1 })).length).toBe(1);
+  });
+});
+
+// The same cases `audit-pg.contract.test.ts` asks of Postgres: one list, so the stores cannot differ.
+describe('memoryAuditLog · outcome, since, until and before answer as the durable log does', () => {
+  const log = memoryAuditLog({ now: auditCaseClock() });
+  const seeded = seedAuditCases(log);
+
+  test.each(AUDIT_QUERY_CASES.map((one) => [one.name, one] as const))('%s', async (_, one) => {
+    await seeded;
+    expect(await answerAuditCase(log, one)).toEqual([...one.expected]);
+  });
+
+  test('a bound that is not an instant with a zone is refused, never read as no bound', async () => {
+    for (const query of AUDIT_QUERY_REFUSALS) {
+      await expect(log.entries(query)).rejects.toThrow('X_ADMIN_FILTER_INVALID');
+    }
+  });
+
+  test('the refusal’s fix is an entries() call whose bounds the store reads', async () => {
+    const thrown = await log.entries({ since: 'yesterday' }).catch((error: unknown) => error);
+    const fix = String((thrown as { fix?: unknown }).fix);
+    expect(fix).not.toContain('x manifest');
+    expect(
+      fix.startsWith("entries({ since: '2026-11-01', until: '2026-11-02T00:00:00+02:00' })"),
+    ).toBe(true);
+    // The two bounds the fix names are ones the store answers, not another refusal.
+    await expect(
+      log.entries({ since: '2026-11-01', until: '2026-11-02T00:00:00+02:00' }),
+    ).resolves.toBeDefined();
   });
 });

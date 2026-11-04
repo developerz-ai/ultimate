@@ -84,6 +84,7 @@ const CORE_CODE_TITLES = {
   X_OUTBOUND_BODY_INVALID: 'an outbound HTTP response did not match its schema',
   X_BREAKER_OPEN: 'a circuit breaker is open and refused the call',
   X_ERROR_DECLARATION_INVALID: 'a defineError declaration is malformed',
+  X_CLIENT_ERROR: 'a browser reported an uncaught failure',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

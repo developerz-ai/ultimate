@@ -184,7 +184,7 @@ export {
 } from './vapid';
 export type { ResolvedVapidKeys } from './vapid-keys';
 export { DEV_VAPID_KEYS, resolveVapidKeys, usesDevVapidKeys } from './vapid-keys';
-export type { BuildIdInput, Deploy, DeployChannel, RetentionPlan } from './version-skew';
-export { assertBuildId, buildId, cacheNamespace, retentionPlan } from './version-skew';
+export type { BuildIdInput, DeployChannel } from './version-skew';
+export { assertBuildId, buildId, cacheNamespace } from './version-skew';
 export type { PushNotification, PushReport, WebPusher } from './web-push';
 export { pushToActor, webPush } from './web-push';

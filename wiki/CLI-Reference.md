@@ -55,7 +55,7 @@ x version              # CLI version
 | `x affected` | the workspaces a diff can have broken, transitively | shipped |
 | `x shot <route>` | photograph one route from a real browser, plus a `verdict.json` a picture cannot carry | shipped |
 | `x pr review\|resolve\|reply` | inline review threads — the ones `gh pr view --comments` does not show | shipped |
-| `x ci` | the workflow runs for this branch, and the findings inside the failed step's log | shipped |
+| `x ci` | the workflow runs for this branch, and the findings inside the failed step's log; `x ci tested`: whether a push reuses a green PR run | shipped |
 | `x errors explain <CODE>` | code → cause, fix, docs | shipped |
 | `x docs "<question>"` | framework docs and this wiki, offline, from the install — the first lookup | shipped |
 | `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
@@ -1547,7 +1547,8 @@ The file an agent opens instead of guessing at forty PNGs. Markdown, written by 
 x pr review [--pr <n>] [--repo owner/name] [--all] [--full] [--json]
 x pr resolve <thread-id> [--json]
 x pr reply <thread-id> --body "…" [--json]
-x ci [--branch <name>] [--run <id>] [--repo owner/name] [--tail <n>] [--full] [--workflow <name>] [--event <push|pull_request|workflow_dispatch>] [--json]
+x ci [runs] [--branch <name>] [--run <id>] [--repo owner/name] [--tail <n>] [--full] [--workflow <name>] [--event <push|pull_request|workflow_dispatch>] [--json]
+x ci tested [--max-age 24h] [--repo owner/name] [--workflow ci.yml] [--json]
 ```
 
 **`gh pr view --comments` does not show inline review threads.** It shows *issue* comments; the actionable findings are anchored to lines and reachable only through GraphQL, and the thread id needed to resolve one exists nowhere else. That is the whole reason `x pr` exists — otherwise every team on Ultimate rediscovers the same query.
@@ -1564,6 +1565,8 @@ It reads `latestOpinionatedReviews`, not `reviews(last: n)`: the most recent rev
 **Resolving closes a conversation, not a finding.** Whether the code is fixed is a fact no GitHub mutation observes, and `x pr resolve` says so rather than implying otherwise.
 
 `x ci` exists because *"`gh run view` prints a tree of ticks and one cross, and the error is inside a per-job log that is mostly setup noise."* For a `verify` job the log tail **is** the findings block — this repo's gate already prints `X_*` codes and executable `fix:` lines — so `x ci` reads them back out into `findings[]` in the standard shape. `ok: false` iff a run failed; `ok: true` means *no failed run* — an in-flight or queued run still completes with `ok: true` and is reported through the `running > 0` line and a per-run `headSha`, not as a green verdict. `x pr review` always exits 0, because unresolved threads are the work to do, not a failure of the command that listed them. The two flags narrow the `gh run list` server-side — `--workflow` takes the workflow name or filename (`ci.yml`), `--event` takes `push|pull_request|workflow_dispatch` — so `x ci --workflow ci.yml --event push --branch main` answers *"is main's push CI green"* instead of folding every main-branch workflow into one verdict.
+
+**`x ci tested` answers whether a push may reuse a green pull-request run** — `{ tested, condition, reason, pr?, run? }`, for `GITHUB_SHA` or `HEAD`. `tested: true` needs all of: the subject ends `(#N)`; PR N merged as this very commit; its head is in this repository (a fork's run is never reused); its head tree is this tree; the newest same-repository run of `--workflow` (default `ci.yml`) on that head concluded `success`, under `--max-age` old (default `24h`: the runner image and the registry move). Any doubt — a condition unmet, `gh` absent, an API that did not answer — is `tested: false` and a full run. Exit 0 on every answer, so a workflow reads `data.tested`; only an unreadable `--max-age` refuses (`X_CLI_BAD_FLAG`). The workflow shape that consumes it: [CI-Parallel-Gate](CI-Parallel-Gate.md#a-push-a-green-pr-run-already-tested). As of 2026-11.
 
 **Neither is a step of `x verify`.** A gate that needs network and a GitHub token goes red for reasons unrelated to the change.
 

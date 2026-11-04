@@ -419,7 +419,7 @@ x build --target static        # dist in .x/static — upload it with your CDN's
 | Property | Consequence |
 |---|---|
 | Static build does not include the app image | a copy change, a new blog post, a pricing tweak **does not redeploy the API** |
-| Independent version, shared build ID namespace | assets stay resolvable across N deploys ([PWA and offline](PWA-And-Offline)) |
+| Independent version, content-addressed files | a host keeps earlier exports' hashed files because nothing deletes them, so an open tab still resolves its assets. The container needs `assets.retain` for the same ([Rollback](#hashed-assets-across-a-deploy--assetsretain)) |
 | ISR pages regenerate server-side and push to the CDN | no full rebuild for one changed record |
 | Rollback is a pointer swap | seconds, no container churn |
 | Cache purge | tag-driven, one hop from the write ([Caching and invalidation](Caching-And-Invalidation)) |
@@ -468,4 +468,28 @@ Two design-only companions — **specification, not shipped behaviour**: [`docs/
 
 ## Rollback
 
-Redeploy the previous image tag. The last **3** builds' assets stay served — `retentionPlan(deploys, keep = 3)`, a count of deploys with no time component and no `pwa.retention` config field — so a rollback one release back does not 404 anyone mid-session. Version-skew handling: [Upgrading](Upgrading). Failure symptoms: [Troubleshooting](Troubleshooting).
+Redeploy the previous image tag. Inside an `assets.retain` window (below) a rollback 404s nobody mid-session; without one, a tab holding the other build's document reloads.
+
+### Hashed assets across a deploy — `assets.retain`
+
+A web process serves only the hashed files it built: `/styles/<hash>.css`, `/islands/<island>-<hash>.js`, `/_x/assets/<script>/<hash>.js`, `/assets/<name>.<hash>.<ext>`. With no window, an open tab holding the previous build's document gets a 404 for its stylesheet, or for its island chunk on the first click, after every deploy, one replica or many. During a rolling update both directions fail: a new document that reaches an old pod also gets no stylesheet. Declare a window over a disk every web pod can read:
+
+```ts
+// app.config.ts — `deploys` is a disk from the app's defineStorage({ disks })
+import { defineConfig } from '@ultimat3/core';
+
+export const config = defineConfig({
+  name: 'my-app',
+  assets: { retain: { disk: 'deploys', builds: 3 } },
+});
+```
+
+| Step | What happens |
+|---|---|
+| boot, before `/readyz` | the web pod puts each missing hashed file at `x-build-assets/<app>/<environment>/files/<url>` (content-addressed, so a file two builds share is one object), then writes `…/builds/<buildId>.json` dated now. `<app>` is `config.name`, `<environment>` is `resolveEnvironment()` (`ULTIMATE_ENV`, else `NODE_ENV`), so staging and production on one bucket never touch each other. A pod of a build already published puts back any file a sweep took and re-dates the manifest, so a rolled-back build counts as the newest. At most 30 s (`RETAIN_PUBLISH_DEADLINE_MS`): past it the pod serves |
+| sweep, after a publish | keeps the newest `builds` manifests and deletes every file none of them names, except a file younger than 10 minutes (`RETAIN_SWEEP_GRACE_MS`, a publish still in flight) and anything named by a manifest that appeared while it ran; a pod killed mid-sweep leaves extra objects, never a missing one |
+| a miss on any asset route | a URL a retained build's manifest names is read from the disk as an object — `200` `immutable`, an `etag` (304) and `Range` (206). Any other URL never reads the disk: the usual `no-store` 404. A build published after this pod booted becomes readable within 5 s (`RETAINED_REFRESH_MS`) |
+| a file over the disk's `maxPutBytes` | skipped, named in one `assets.retain_skipped` line; only its own build's pods serve it |
+| the disk refuses a put, list or delete, or the publish passes its deadline | `X_ASSET_RETAIN_FAILED` is logged and the pod serves anyway |
+
+`disk` naming no declared disk, or `builds` that is not a whole number ≥ 1, is `X_CONFIG_INVALID`. `x dev` never publishes. An S3-compatible bucket or a volume shared on one box is the whole requirement: no CDN, no platform primitive. The prefix sits outside `org/`, so `/_storage` and `/media` refuse it. A static export needs none of this: a host keeps earlier exports' hashed files because nothing deletes them. Version-skew handling: [Upgrading](Upgrading). Failure symptoms: [Troubleshooting](Troubleshooting).

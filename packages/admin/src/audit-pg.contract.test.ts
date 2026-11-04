@@ -13,6 +13,13 @@ import { REDACTED, UltimateError } from '@ultimat3/core';
 import { type PgliteClient, pgliteClient, raw } from '@ultimat3/db';
 import { type AuditDraft, auditCursorOf, memoryAuditLog } from './audit';
 import { postgresAuditLog } from './audit-pg';
+import {
+  AUDIT_QUERY_CASES,
+  AUDIT_QUERY_REFUSALS,
+  answerAuditCase,
+  auditCaseClock,
+  seedAuditCases,
+} from './audit-query-fixture';
 import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from './audit-schema';
 
 // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
@@ -200,4 +207,29 @@ describe('contract · the Postgres audit log', () => {
     const pageTwo = await log.entries({ ...trail, before: cursor });
     expect(pageTwo.map((entry) => entry.diff[0]?.after)).toEqual(['one']);
   });
+});
+
+// The cases `audit.test.ts` asks of the memory log, asked here of Postgres: one list, one answer.
+describe('contract · outcome, since, until and before answer as the memory log does', () => {
+  test.each(AUDIT_QUERY_CASES.map((one) => [one.name, one] as const))(
+    '%s',
+    async (_, one) => {
+      const log = postgresAuditLog({ client, reads: true, now: auditCaseClock() });
+      const seeded = await log.entries({ entity: 'audit_cases' });
+      if (seeded.length === 0) await seedAuditCases(log);
+      expect(await answerAuditCase(log, one)).toEqual([...one.expected]);
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  test(
+    'a bound that is not an instant with a zone is refused before a statement is sent',
+    async () => {
+      const log = postgresAuditLog({ client });
+      for (const query of AUDIT_QUERY_REFUSALS) {
+        await expect(log.entries(query)).rejects.toThrow('X_ADMIN_FILTER_INVALID');
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
 });

@@ -3,6 +3,7 @@
 // is merged and read by nothing is the switch with no wire, and a typo (`drian`) is the same defect.
 
 import type { JobsConfig } from './config';
+import type { AssetsRetainConfig } from './config-assets';
 import { BASE_FIX } from './config-fixes';
 import type { MailRetainMimeConfig } from './config-mail';
 import type { NavigationConfig, SpeculationConfig } from './config-navigation';
@@ -62,6 +63,7 @@ export const SECTION_KEYS: Readonly<Record<string, readonly string[]>> = Object.
   'pwa.shortcuts[].icons[]': keysOf<PwaImage>()(['src', 'sizes', 'type', 'purpose']),
   'pwa.screenshots[]': keysOf<PwaScreenshot>()(['src', 'sizes', 'type', 'formFactor', 'label']),
   'mail.retainMime': keysOf<MailRetainMimeConfig>()(['maxBytes']),
+  'assets.retain': keysOf<AssetsRetainConfig>()(['disk', 'builds']),
   jobs: keysOf<JobsConfig>()([
     'queues',
     'concurrency',

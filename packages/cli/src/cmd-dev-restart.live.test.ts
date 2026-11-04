@@ -98,13 +98,21 @@ describe('x dev restarts on a save it cannot serve in process', () => {
         expect(await body(`${url}/greet`)).toContain('greeting one');
 
         await Bun.write(join(ROOT, SERVICE), FILES[SERVICE]?.replace('one', 'two') ?? '');
-        expect(await waitFor(logs, 'restarting:')).toContain(SERVICE);
+        // The verdict is what the port SERVES, never which `restarting:` line came first: the wait
+        // was `waitFor(logs, 'restarting:')` then `toContain(SERVICE)`, so any earlier restart line
+        // satisfied it and the assertion failed at once (run 40323842229, 4.6 s). Reproduced by
+        // holding a restart for queries.ts open before the edit — and then the child booted after
+        // it reads the edit, so no line names the service at all. Which file a restart names is
+        // `restartReason`'s unit test (`dev-supervisor.test.ts`).
         let served = '';
         while (!served.includes('greeting two')) {
+          // real-clock: the restarted child boots an embedded Postgres on its own time
           await Bun.sleep(100);
           served = await body(`${url}/greet`);
         }
         expect(served).toContain('greeting two');
+        // Served by a fresh child: an in-process re-import prints no restart line.
+        expect(logs.seen()).toContain('restarting: ');
         for (const pid of descendantsOf(child.pid)) started.add(pid);
         // The supervisor is still the process the terminal holds, and a signal to it stops both.
         expect(child.exitCode).toBeNull();

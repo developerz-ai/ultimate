@@ -37,7 +37,7 @@ registerCatalog('en', {
   'admin.detail.not-found.cause': 'No {entity} with that id (probe)',
   'admin.detail.not-found.fix': 'Go back (probe)',
   'admin.audit.title': 'Audit (probe)',
-  'admin.audit.empty': 'Nothing logged (probe)',
+  'admin.audit.empty-row': 'Nothing logged (probe)',
   'admin.post.field.title': 'Title (probe)',
   'admin.post.field.secret': 'Secret (probe)',
 });

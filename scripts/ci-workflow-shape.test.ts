@@ -88,7 +88,8 @@ describe('unit · ci.yml · the gate in parts is still the gate', () => {
     expect(
       listOf(verify.needs).concat(typeof verify.needs === 'string' ? [verify.needs] : []),
     ).toContain('gate');
-    expect(verify.if).toBe(expr('!cancelled()'));
+    // Skipped only when a green PR run already tested this tree (`ci-workflow-shape-tested.test.ts`).
+    expect(verify.if).toBe(expr("!cancelled() && needs.tested.outputs.tested != 'true'"));
     const download = (verify.steps ?? []).find((step) =>
       text(step.uses).startsWith('actions/download-artifact@'),
     );
@@ -222,6 +223,20 @@ describe('unit · deploy-social-demo.yml · only completed ci runs on main or di
   ] as const)('rejects workflow_run with %s', (_label, mutatedRun) => {
     expect(() => assertTriggers({ ...triggers, workflow_run: mutatedRun })).toThrow();
   });
+});
+
+// A frozen image updater reported nothing (plan 101, 33-ops-deploy-proof): `served` reds the run.
+test('deploy-social-demo.yml: served needs build and verifies the sha-<7> it published', () => {
+  const served = record(record(record(deployDocument)['jobs'])['served']);
+  expect(served['needs']).toBe('build');
+  const runs = listOf(served['steps'])
+    .map((step) => text(record(step)['run']))
+    .join('\n');
+  expect(runs).toContain(
+    'bunx x deploy verify --url https://social-media.ultimate.demo.developerz.ai --build "$BUILD" --timeout 10m --json',
+  );
+  const env = listOf(served['steps']).map((step) => record(record(step)['env'])['BUILD']);
+  expect(env).toContain(expr('needs.build.outputs.short'));
 });
 
 describe('unit · ci.yml · the embedded Postgres boots from a cached snapshot', () => {
@@ -374,7 +389,8 @@ describe('unit · ci.yml · what the split may not change', () => {
     expect(optional).toEqual([]);
   });
 
-  test('no job in the gate waits on a job outside it', () => {
+  // `tested` is the one job they wait on: a few seconds that decide whether they run at all.
+  test('no job in the gate waits on a job outside it, except the tested question', () => {
     for (const name of [
       'gate',
       'reference-app-verify',
@@ -385,7 +401,7 @@ describe('unit · ci.yml · what the split may not change', () => {
       'windows',
       'macos',
     ]) {
-      expect(job(name).needs, `${name} must not wait on another job`).toBeUndefined();
+      expect(job(name).needs, `${name} must wait on tested alone`).toBe('tested');
     }
   });
 });

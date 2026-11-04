@@ -17,6 +17,7 @@
 
 import { DEV_BINDING, quoteArg } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
+import { freeDevPort } from '../packages/cli/src/dev-supervisor';
 import type { AdminStep, AdminWalk, Fetcher } from './lib/admin-walk';
 import { adminFindings, walkAdmin } from './lib/admin-walk';
 import { parseScriptArgs } from './lib/args';
@@ -157,7 +158,32 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
   };
 }
 
-/** The real thing: the app's own `x dev`, a free port, the wall clock. */
+/** `port` bound and released at once on the address `x dev` binds; `undefined` when it is held. */
+const heldOn = (port: number): number | undefined => {
+  try {
+    const probe = Bun.listen({
+      hostname: DEV_BINDING.hostname,
+      port,
+      socket: { data: () => undefined },
+    });
+    const bound = probe.port;
+    probe.stop(true);
+    return bound;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A port whose PAIR nothing holds, probed on the address `x dev` binds (`dev-lock.ts`'s rule):
+ * `x dev` binds the web role on `port` and its sync node on `port + 1`, so a lone free port whose
+ * neighbour was taken booted, listened and stopped again — red with nothing wrong with the app.
+ * `freeDevPort`'s pair rule, the one `x dev --port 0` uses; `pick` is injectable for the test.
+ */
+export const freeDevPair = (pick: () => number = () => heldOn(0) ?? 0): number =>
+  freeDevPort(pick, (port) => heldOn(port) !== undefined);
+
+/** The real thing: the app's own `x dev`, a free port pair, the wall clock. */
 const realIo: AdminCheckIo = {
   boot: (dir, port) => {
     const server = Bun.spawn([appBin(dir), 'dev', '--port', String(port), '--json'], {
@@ -179,18 +205,7 @@ const realIo: AdminCheckIo = {
     };
   },
   fetcher: fetch,
-  // A port nothing holds right now, on the address `x dev` will bind — `dev-lock.ts`'s rule: probe
-  // what the server binds. `x dev` takes the next one up for its sync node.
-  port: () => {
-    const probe = Bun.listen({
-      hostname: DEV_BINDING.hostname,
-      port: 0,
-      socket: { data: () => undefined },
-    });
-    const { port } = probe;
-    probe.stop(true);
-    return port;
-  },
+  port: () => freeDevPair(),
   now: () => performance.now(),
   sleep: (ms) => Bun.sleep(ms),
 };

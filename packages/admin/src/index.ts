@@ -75,6 +75,8 @@ export {
   type AuditSink,
   auditCursorOf,
   auditEntry,
+  auditEntryMatches,
+  auditWindow,
   deniedDraft,
   diffRows,
   memoryAuditLog,
@@ -83,6 +85,12 @@ export {
   type PostgresAuditLogOptions,
   postgresAuditLog,
 } from './audit-pg';
+export {
+  type AuditRequest,
+  auditHref,
+  auditRequestOf,
+  HISTORY_PARAM,
+} from './audit-request';
 // The audit table's DDL is `@ultimat3/admin/schema`'s alone — one import path for one statement.
 export {
   type AdminActor,
@@ -155,7 +163,6 @@ export {
 export {
   AdminDetail,
   type AdminDetailProps,
-  HISTORY_PARAM,
 } from './detail';
 export {
   type AdminColumnFacts,

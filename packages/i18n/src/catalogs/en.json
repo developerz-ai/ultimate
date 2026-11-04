@@ -173,7 +173,16 @@
     },
     "audit": {
       "title": "Audit trail",
-      "empty": "Nothing has been done to this row yet.",
+      "empty": "No entry in the trail matches.",
+      "empty-row": "Nothing has been done to this row yet.",
+      "filter": {
+        "entity": "Entity",
+        "actor": "Actor",
+        "outcome": "Outcome",
+        "since": "From",
+        "until": "Before",
+        "changes": "Changes and refusals only"
+      },
       "outcome": {
         "allowed": "Allowed",
         "denied": "Denied",

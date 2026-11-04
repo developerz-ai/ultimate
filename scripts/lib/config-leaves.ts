@@ -24,6 +24,8 @@ export const CONFIG_FILES = [
   'packages/core/src/config-islands.ts',
   'packages/core/src/config-ai.ts',
   'packages/core/src/config-mail.ts',
+  'packages/core/src/config-assets.ts',
+  'packages/core/src/config-client-errors.ts',
 ] as const;
 export const CONFIG_FILE = CONFIG_FILES[0];
 export const ROOT_INTERFACE = 'AppConfig';
@@ -49,8 +51,12 @@ const INTERFACE = /export (?:interface (\w+)\s*|type (\w+)\s*=\s*)\{([\s\S]*?)\n
  * is not a guard.
  */
 const MEMBER = /^\s+(?:readonly\s+)?([A-Za-z_$][\w$]*)\??\s*:\s*([^;]+);/gm;
-/** A member whose type is a single named interface — the one shape the walk descends into. */
-const NAMED_TYPE = /^([A-Z]\w*)(?:\s*\|\s*undefined)?$/;
+/**
+ * A member whose type is a single named interface — the one shape the walk descends into — bare or
+ * through a namespace import (`clientErrors.ClientErrorsConfig`), which `config.ts` uses to stay
+ * under its line ceiling. Missing the qualified form made a whole section one leaf.
+ */
+const NAMED_TYPE = /^(?:[A-Za-z_$][\w$]*\.)?([A-Z]\w*)(?:\s*\|\s*undefined)?$/;
 
 /**
  * Every leaf key of `AppConfig`, dotted. Derived from the declaration's own text rather than typed

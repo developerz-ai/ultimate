@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Milestone 11's proof, as one command: a scaffolded app's image on the chart `x new` writes,
 # installed and then upgraded by `x deploy --method helm`, while a load pod inside the cluster
-# sends mixed GET and POST through the Service. Green means the upgrade dropped ZERO requests.
+# sends mixed GET and POST through the Service. Green means the upgrade dropped ZERO requests,
+# AND that a job held across it ran exactly once, finished by the v1 worker the roll retired, and
+# that v1 and v2 differ by a real migration the release applied under that load.
 #
 #   bash docker/deploy-proof/run.sh            # from the repo root; needs docker kind helm kubectl bun jq timeout
 #   KEEP_CLUSTER=1 bash docker/deploy-proof/run.sh   # leave the kind cluster up to poke at
+#   RETIRE_SECONDS=0 bash docker/deploy-proof/run.sh # the retire off: the held-job check must refuse
 #
 # The app is built from THIS tree, not from npm: every packages/* is packed into the app's
 # vendor/ and pinned by `overrides`, so the image carries the framework the commit under test
@@ -18,39 +21,68 @@ WORK="${WORK:-$(mktemp -d)}"
 CLUSTER="${CLUSTER:-ultimate-proof}"
 APP="$WORK/proofapp"
 LOAD_SECONDS="${LOAD_SECONDS:-120}"
+# Longer than the drain budget (25 s), so only the retire can finish it; long enough that the roll
+# reaches its worker while it still holds the job, which the retiring log line below asserts.
+HOLD_SECONDS="${HOLD_SECONDS:-90}"
 export KUBECONFIG="$WORK/kubeconfig"
 
 refuse() { echo "::error title=deploy proof::$1"; exit 1; }
 step() { echo "── $1"; }
 # shellcheck source=docker/deploy-proof/scaffold.sh
 . "$REPO/docker/deploy-proof/scaffold.sh"
+# shellcheck source=docker/deploy-proof/held-job.sh
+. "$REPO/docker/deploy-proof/held-job.sh"
+# shellcheck source=docker/deploy-proof/held-assert.sh
+. "$REPO/docker/deploy-proof/held-assert.sh"
 
 for tool in docker kind helm kubectl bun jq timeout; do
   command -v "$tool" >/dev/null || refuse "$tool is not on PATH. fix: install $tool, then re-run bash docker/deploy-proof/run.sh"
 done
 
 cleanup() {
+  if [ -n "${HELD_LOG_PID:-}" ]; then kill "$HELD_LOG_PID" 2>/dev/null || true; fi
+  if [ -n "${HELD_DRAIN_PID:-}" ]; then kill "$HELD_DRAIN_PID" 2>/dev/null || true; fi
   if [ "${KEEP_CLUSTER:-0}" != 1 ]; then kind delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true; fi
 }
 trap cleanup EXIT
 
-step "x new proofapp, on this tree's packages"
+step "x new proofapp, on this tree's packages, plus a held job"
 scaffold_proof_app "$REPO" "$WORK"
+add_held_job "$APP"
+# The retire is app.config.ts's (drain.workerRetireMs); x deploy hands it to the chart.
+if [ -n "${RETIRE_SECONDS:-}" ]; then
+  sed -i "s/^  jobs: {/  drain: { workerRetireMs: $((RETIRE_SECONDS * 1000)) },\n  jobs: {/" "$APP/app.config.ts"
+  grep -q "workerRetireMs: $((RETIRE_SECONDS * 1000))" "$APP/app.config.ts" \
+    || refuse "RETIRE_SECONDS=$RETIRE_SECONDS did not reach $APP/app.config.ts. fix: anchor the sed in docker/deploy-proof/run.sh on the scaffold's jobs: line"
+fi
 
-step "x db gen initial, bounded"
 # Bounded, so a hang is this step's named failure and not the job's silent 15-minute cancel: an
 # embedded-database boot that never became ready spun here at full CPU (PGlite 0.5.10).
-gen_status=0
-(cd "$APP" && timeout "${DB_GEN_SECONDS:-180}" bunx x db gen initial --json >"$WORK/db-gen.json") || gen_status=$?
-[ "$gen_status" != 124 ] \
-  || refuse "x db gen initial did not finish within ${DB_GEN_SECONDS:-180}s. fix: cd $APP && bunx x db gen initial --json, then read packages/db/src/pglite.ts's boot (loadPgliteDriver)"
-[ "$gen_status" = 0 ] \
-  || refuse "x db gen initial exited $gen_status: $(jq -c '.findings // .' "$WORK/db-gen.json" 2>/dev/null || cat "$WORK/db-gen.json"). fix: cd $APP && bunx x db gen initial --json"
+db_gen() {
+  local gen_status=0
+  step "x db gen $1, bounded"
+  (cd "$APP" && timeout "${DB_GEN_SECONDS:-180}" bunx x db gen "$1" --json >"$WORK/db-gen-$1.json") || gen_status=$?
+  [ "$gen_status" != 124 ] \
+    || refuse "x db gen $1 did not finish within ${DB_GEN_SECONDS:-180}s. fix: cd $APP && bunx x db gen $1 --json, then read packages/db/src/pglite.ts's boot (loadPgliteDriver)"
+  [ "$gen_status" = 0 ] \
+    || refuse "x db gen $1 exited $gen_status: $(jq -c '.findings // .' "$WORK/db-gen-$1.json" 2>/dev/null || cat "$WORK/db-gen-$1.json"). fix: cd $APP && bunx x db gen $1 --json"
+}
 
-step "two images, differing only by BUILD_ID"
-for build in v1 v2; do
-  docker build -q -f "$APP/docker/Dockerfile" --build-arg BUILD_ID="$build" -t "proofapp:$build" "$APP" >/dev/null
-done
+# `docker build`, not `x build --target docker`: the image's own `x build --target prebuilt` runs
+# no gate (packages/cli/src/cmd-build.ts), so neither build here pays the static preflight, and
+# the gate over a fresh scaffold is scaffold-smoke's question, not this proof's.
+image() {
+  docker build -q -f "$APP/docker/Dockerfile" --build-arg BUILD_ID="$1" -t "proofapp:$1" "$APP" >/dev/null \
+    || refuse "docker build of proofapp:$1 failed. fix: docker build -f $APP/docker/Dockerfile --build-arg BUILD_ID=$1 $APP"
+}
+
+db_gen initial
+step "image v1"
+image v1
+step "v2: one nullable column, so the roll crosses a migration"
+add_v2_column "$APP"
+db_gen "$V2_MIGRATION"
+image v2
 # The upgrade ships v2 under an ALL-DIGIT tag, the shape of a CI build number: `--set image.tag=`
 # typed it as an int64 and the chart rendered `proofapp:%!s(int64=…)` into every workload.
 NUMERIC_TAG=2026100502
@@ -85,13 +117,15 @@ deploy() {
 step "first install: the migrate hook must not wait on an object the chart has not made yet"
 deploy v1
 
-step "helm upgrade v1 -> v2 under ${LOAD_SECONDS}s of mixed GET/POST"
+step "helm upgrade v1 -> v2 under ${LOAD_SECONDS}s of mixed GET/POST, with a job held across it"
 kubectl delete pod proof-load --ignore-not-found >/dev/null
 kubectl run proof-load --image=proofapp:v1 --image-pull-policy=Never --restart=Never \
   --env=TARGET=http://proofapp-web --env=LOAD_SECONDS="$LOAD_SECONDS" \
   --command -- bun -e "$(cat "$KIT/load.ts")" >/dev/null
 kubectl wait --for=condition=Ready pod/proof-load --timeout=120s >/dev/null
 sleep 10
+# Last before the upgrade, so the roll reaches its worker while it still holds the job.
+hold_before_roll
 deploy "$NUMERIC_TAG"
 [ "$(kubectl get pod proof-load -o jsonpath='{.status.phase}')" = Running ] \
   || refuse "the load ended before the rollout did, so part of the upgrade went unmeasured. fix: LOAD_SECONDS=$((LOAD_SECONDS * 2)) bash docker/deploy-proof/run.sh"
@@ -108,3 +142,9 @@ new="$(jq -r '.builds.v2 // 0' <<<"$proof")"
 [ "$failed" = 0 ] \
   || refuse "$failed of $total requests failed during helm upgrade: $(jq -c .reasons <<<"$proof"). fix: read the sample bodies above, then the drain in packages/http/src/stages.ts and packages/core/src/lifecycle.ts"
 echo "ok: $total requests across a rolling upgrade, 0 failed (v1=$old, v2=$new)"
+
+step "the held job ran once, on v1, through the retire; v2 claims after a migration it applied"
+assert_held_job
+assert_v2_after
+assert_retired
+echo "ok: one attempt held across the roll by a retiring v1 worker; v2 claimed after migration $V2_MIGRATION"

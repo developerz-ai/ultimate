@@ -69,6 +69,10 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # What `served` checks the live demo against: the tag pushed, and whether it is main's tip.
+    outputs:
+      short: ${{ steps.built.outputs.short }}
+      latest: ${{ steps.tip.outputs.latest }}
     environment:
       name: social-demo
       url: https://social-media.ultimate.demo.developerz.ai
@@ -121,27 +125,47 @@ jobs:
       # publish. No polling: nothing here is waiting for a run that might still be going.
       #
       # CHECK is the `name:` ci.yml gives the matrix job for this app, spaces and parentheses
-      # included, so it travels as a `-f` field: `gh api` URL-encodes a field and does not encode a
-      # query string written into the path. `scripts/ci-workflow-shape.test.ts` holds the two
-      # spellings to each other.
+      # included, so the check runs are read once and matched by name in jq rather than in a query
+      # string. `scripts/ci-workflow-shape.test.ts` holds the two spellings to each other.
+      #
+      # A push whose tree a green pull-request run already tested skips ci.yml's app jobs (plan
+      # 101, 33-ops-ci): its `tested` job answered `x ci tested` true. A skipped app gate is accepted
+      # ONLY then — REUSED_BY's check concluded success and every check under CHECK's job name
+      # concluded skipped — because `tested` answering true is the one cause of a skip there
+      # (`scripts/ci-workflow-shape-tested.test.ts` pins it). A skipped matrix job may carry its
+      # unexpanded name, so the skip is read by the job-name prefix. The PR run that tested this
+      # tree passed the same app gate; anything else — red, cancelled, absent, a mix — refuses.
       - name: require the app gate's verdict for this commit
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.built.outputs.sha }}
           CHECK: reference-app-verify (dummy/social-media-clone)
+          REUSED_BY: tested
         run: |
           set -euo pipefail
-          conclusion="$(gh api -X GET \
-            "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs" -f check_name="${CHECK}" \
-            --jq '[.check_runs[] | select(.status == "completed")]
-                    | sort_by(.completed_at) | last | .conclusion // ""' || true)"
-          # `|| true`: a transient API failure is "no verdict", which the check below refuses by
-          # name rather than as a bare set -e exit — the pattern release.yml's gate uses.
-          if [ "$conclusion" != success ]; then
-            echo "::error::${CHECK} concluded '${conclusion:-no verdict}' for ${SHA} — not publishing. Dispatch this only for a commit ci.yml has passed."
-            exit 1
+          # `|| echo '[]'`: a transient API failure is "no verdict", which the check below refuses
+          # by name rather than as a bare set -e exit — the pattern release.yml's gate uses.
+          checks="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs" -f per_page=100 \
+            --jq '[.check_runs[] | select(.status == "completed") | {name, conclusion, completed_at}]' \
+            || echo '[]')"
+          verdict() {
+            jq -r --arg name "$1" \
+              '[.[] | select(.name == $name)] | sort_by(.completed_at) | last | .conclusion // ""' <<< "$checks"
+          }
+          conclusion="$(verdict "$CHECK")"
+          if [ "$conclusion" = success ]; then
+            echo "ok: ${CHECK} passed for ${SHA}"
+            exit 0
           fi
-          echo "ok: ${CHECK} passed for ${SHA}"
+          reused="$(verdict "$REUSED_BY")"
+          under="$(jq -r --arg job "${CHECK%% (*}" \
+            '[.[] | select(.name | startswith($job)) | .conclusion] | unique | join(",")' <<< "$checks")"
+          if [ "$reused" = success ] && [ "$under" = "skipped" ]; then
+            echo "ok: ${SHA}'s tree was tested green by its pull request; ${CHECK} was reused, not re-run"
+            exit 0
+          fi
+          echo "::error::${CHECK} concluded '${conclusion:-no verdict}' for ${SHA} (${REUSED_BY}: '${reused:-no verdict}', ${CHECK%% (*}: '${under:-none}') — not publishing. Dispatch this only for a commit ci.yml has passed."
+          exit 1
 
       # Third-party actions are SHA-pinned — the rule and its reason are in
       # .github/actions/setup/action.yml. This workflow holds a registry credential.
@@ -185,3 +209,25 @@ jobs:
             docker buildx imagetools inspect "$ref" > /dev/null
             echo "ok $ref"
           done
+
+  # The other half of the tag contract above: does the demo now SERVE what `build` published? A
+  # frozen updater used to report nothing; this reds the run instead, named by
+  # X_DEPLOY_BUILD_MISMATCH, and the daily `health` brief reads a red workflow. Only for main's tip:
+  # the updater rolls the newest `sha-<7>`, so an older commit's build is never expected to answer.
+  # `--timeout 10m` covers the updater's poll (about two minutes) and the roll behind it. No
+  # DATABASE_URL here, so the queue grade is skipped and says so: HTTP alone.
+  served:
+    needs: build
+    if: needs.build.outputs.latest == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: x deploy verify — the demo answers with the build just published
+        working-directory: dummy/social-media-clone
+        env:
+          BUILD: ${{ needs.build.outputs.short }}
+        run: bunx x deploy verify --url https://social-media.ultimate.demo.developerz.ai --build "$BUILD" --timeout 10m --json

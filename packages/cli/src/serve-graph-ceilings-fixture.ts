@@ -115,8 +115,11 @@
  * (`import,import-pass,import-format,import-source,import-errors`) and `webhookReceiver()`
  * (`webhook-receiver,webhook-receiver-route,webhook-receiver-errors`). No existing module newly
  * reached: `@ultimat3/http`, the one new package edge, was already in this graph whole.
+ * raised 738 → 740, measured 740 (2026-11-03, plan 101 wave 4b): `core/src/config-assets.ts`
+ * (`assets.retain`) and `core/src/config-client-errors.ts` (`clientErrors`) — two `app.config.ts`
+ * sections, validated where every config section is, through the core barrel. Nothing else moved.
  */
-export const MIGRATE_CEILING = 738;
+export const MIGRATE_CEILING = 740;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -262,8 +265,9 @@ export const MIGRATE_CEILING = 738;
  * raised 1047 → 1068, measured 1068 (2026-11-03, plan 101 wave 3): `MIGRATE_CEILING`'s 20, and
  * `core/src/render-node.ts` (the node brands, split out so `render` reads them from a leaf).
  * raised 1068 → 1080, measured 1080 (2026-11-03, plan 101 wave 4a): `MIGRATE_CEILING`'s 12.
+ * raised 1080 → 1082, measured 1082 (2026-11-03, plan 101 wave 4b): `MIGRATE_CEILING`'s 2.
  */
-export const SERVING_ROLE_CEILING = 1080;
+export const SERVING_ROLE_CEILING = 1082;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -392,5 +396,10 @@ export const SERVING_ROLE_CEILING = 1080;
  * raised 1200 → 1213, measured 1213 (2026-11-03, plan 101 wave 4a): `SERVING_ROLE_CEILING`'s 12,
  * and `cli/src/plain-routes.ts` — `runtime.routes` plus every declared `webhookReceiver()`'s, the
  * one list both boots mount and `x routes` prints.
+ * raised 1213 → 1222, measured 1222 (2026-11-03, plan 101 wave 4b): `SERVING_ROLE_CEILING`'s 2;
+ * browser error reporting, `cli/src/client-errors-{routes,script}.ts` (mounted when
+ * `clientErrors.enabled`); and `assets.retain`, `cli/src/retained-assets{,-boot,-layout,-read,
+ * -sweep}.ts` — the publish before `/readyz` and the reader every asset route's 404 asks. Measured
+ * against a copy of HEAD with its own workspace links: no existing module newly reached.
  */
-export const WEB_ROLE_CEILING = 1213;
+export const WEB_ROLE_CEILING = 1222;

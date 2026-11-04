@@ -14,11 +14,11 @@ x build --target static     # site/ output only: HTML, assets, sitemap, feeds
 |---|---|---|---|
 | `docker` | one OCI image, `ROLE` selects behavior | the normal path ([`11-topology.md`](./11-topology.md)) | works — entry `docker/Dockerfile`, `ENTRYPOINT ["bun", "apps/web/server.ts"]` |
 | `binary` | `dist/myapp` — `bun build --compile`, all roles inside | VMs, systemd, air-gapped, a CLI-shaped product | compiles and **boots**; not yet served from a bare VM |
-| `static` | `dist/static/` — one self-contained HTML file per `render: 'static'` route | CDN / object storage, deployed independently | works — entry `apps/web/prerender.ts`. Emits **no** sitemap, robots, feeds or asset files `As of 2026-08` |
+| `static` | `dist/static/` — one self-contained HTML file per `render: 'static'` route | CDN / object storage, deployed independently | works — entry `apps/web/prerender.ts`. Writes the island chunks, the surface stylesheets and the hashed site assets beside the HTML (`prerender.ts`) `As of 2026-11` |
 
 **`--target binary` boots `As of 2026-08`.** The framework's version is resolved on first call, not at module scope, and from the build define when there is no manifest to read ([`packages/core/src/version.ts`](../../packages/core/src/version.ts)) — so `x build --target binary` passes `--define ULTIMATE_FRAMEWORK_VERSION="<version>"` and the executable answers with it. A broken publish still fails loudly rather than reporting `undefined`: a manifest that exists and declares no semver throws as before, and a build with neither source exits `X_INVARIANT` naming the flag. [`packages/core/e2e/version.e2e.test.ts`](../../packages/core/e2e/version.e2e.test.ts) compiles a real executable and runs it, both ways, on every push — the gap existed because nothing executed the artifact. The bare-VM row in [Targets](#targets) is still **unproven**: booting is not serving, and no scaffolded app has been compiled and run on a VM.
 
-All targets share one build ID (content hash), from `x.manifest.json`. It reaches a served page as the `x-ultimate-build` **response header** on every mode, and as a `<meta>` inside a `spa` shell. It is **not** stamped into asset filenames — there are no hashed asset files, because there is no client bundle to name (below).
+All targets share one build ID (content hash), from `x.manifest.json`. It reaches a served page as the `x-ultimate-build` **response header** on every mode, and as a `<meta>` inside a `spa` shell. It is **not** stamped into asset filenames: each file is named by its OWN bytes — `/styles/<hash>.css`, `/islands/<island>-<hash>.js`, `/assets/<name>.<hash>.<ext>`, `/_x/assets/<script>/<hash>.js` — so a file two builds share is one URL, served `immutable`.
 
 `x build` runs six of `x verify`'s steps before it produces anything: `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors` ([`packages/cli/src/cmd-build.ts`](../../packages/cli/src/cmd-build.ts)). It does **not** run `budgets`, `contract`, `drift` or any test suite — `x verify` is still the gate, and `x build` is the subset that can run before an artifact exists.
 
@@ -35,7 +35,7 @@ Class names are content-addressed (`hero_92a494d7`), so two checkouts at differe
 
 The compiled CSS is **one content-hashed file per surface**, linked from `<head>` and served `public, max-age=31536000, immutable`, filtered to the route's own surface: a `site/` page never carries `app/` CSS ([axiom 6](./00-thesis.md)). It was inlined until 2026-09-06, on the argument that a `site/` artifact is a single file a CDN serves with no round trip — measured against a real app, that trip was re-paid on every navigation instead of once: 156,738 bytes of `<style>` inside a `private, no-store` document, 84% of it. `x build --target static` writes the file into the export, so the artifact is still self-contained.
 
-**There is no client bundle `As of 2026-08`.** Nothing calls `Bun.build` anywhere in the framework, so there are no chunks, no code splitting, no `modulepreload`, and nothing to hydrate with. The blocker is **ours, not upstream's**: `solid-js@1.9.14` ships `solid-js/web` with `render`, `hydrate`, `renderToString` and `generateHydrationScript`. What is missing is a compile step. Solid turns JSX into `template()` calls at build time — its `jsx-runtime` subpath carries *types* and no factory — so the client needs a Solid-compiled bundle graph of its own, separate from the inert `h` the server renders through. Islands, `hydrate: 'idle' | 'visible' | 'interaction'` and `renderSpaShell`'s `chunks` are declared and unbacked until that graph exists. Pages render server-side and ship 0 bytes of JS, which is correct for `site/` and incomplete for `app/`.
+**Islands are a client bundle `As of 2026-11`.** Every `*.island.tsx` is built by `Bun.build` into a source-addressed chunk — with `islands.sharedChunks`, the modules two islands share become one `/islands/chunk-<hash>.js` ([`packages/cli/src/island-bundle.ts`](../../packages/cli/src/island-bundle.ts)); `hydrate: 'idle' | 'visible' | 'interaction'` decides when a chunk is imported. The image build writes them once (`x build --target prebuilt`); a page with no island ships 0 bytes of JS.
 
 Async data does **not** wait on any of this: `renderToHtml` awaits async components and promise children, so a page loads its data by `await`ing it, and a `stream` page moves what should not hold up the first flush into a `<Hole>`.
 
@@ -130,7 +130,7 @@ The `site/` output is a separate artifact with a separate lifecycle.
 | Property | Consequence |
 |---|---|
 | Static build does not include the app image | a copy change, a new blog post, a pricing tweak **does not redeploy the API** |
-| Independent version, shared build ID namespace | assets stay resolvable across N deploys ([`08-pwa-offline.md`](./08-pwa-offline.md)) |
+| Independent version, content-addressed files | a static host keeps an earlier export's hashed files because nothing deletes them, so an open tab still resolves its assets; the container serves earlier builds' files only with `assets.retain` (below) |
 | ISR pages regenerate server-side and push to the CDN | no full rebuild for one changed record |
 | Rollback is a pointer swap | seconds, no container churn |
 | Cache purge | tag-driven, one hop from the write ([`05-caching.md`](./05-caching.md)) |
@@ -167,4 +167,6 @@ x status --json                # build-ID distribution of connected clients — 
 
 `x status` is a **planned** command `As of 2026-08`: it is in the registry and exits `X_NOT_IMPLEMENTED` naming the closest shipped command, rather than a typo error. The rest of the checklist runs today.
 
-Rollback: redeploy the previous image tag. The previous build's assets are still served under the N-deploy retention window, so a rollback does not 404 anyone mid-session.
+Rollback: redeploy the previous image tag.
+
+**Hashed assets across a deploy.** A web process serves only the stylesheets, island chunks and scripts it built itself, so without a window a tab holding the previous build's document meets a 404 for its stylesheet or island chunk on the first click after a deploy, in both directions during a rolling update. `assets: { retain: { disk, builds } }` in `app.config.ts` is the window: each web pod publishes its hashed files to that disk (`x-build-assets/<app>/<environment>/`) before `/readyz` says ready, keeps the newest `builds` builds' files, and every asset route answers a miss from it, `immutable`. Unset, nothing is retained `As of 2026-11`. A failed publish logs `X_ASSET_RETAIN_FAILED` and the pod still serves ([`packages/cli/src/retained-assets.ts`](../../packages/cli/src/retained-assets.ts)). A rollback inside the window therefore 404s nobody mid-session; outside it, a stale tab reloads.

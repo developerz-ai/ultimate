@@ -16,10 +16,12 @@ import {
 import type { RouteEntry } from '@ultimat3/render';
 import { describePages, routeEntries } from '@ultimat3/render';
 import { renderStatic } from '@ultimat3/render/server';
+import { loadAppConfig } from './app-config-load';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import type { RouteStats } from './budgets';
 import { measureDocumentJs, routeStatsRow, writeBuildStats } from './budgets';
+import { clientErrorsStaticWarning } from './client-errors-routes';
 import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { PrerenderLoadFailedError } from './errors';
 import { FAVICON_PATH, faviconBytes } from './favicon';
@@ -144,7 +146,10 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const origin = declaredOrigin ?? DEFAULT_ORIGIN;
   // Written to stderr as well as returned: an app's `prerender.ts` prints its report as ONE JSON
   // line on stdout, and a build that parses it must not meet a warning inside it.
-  const warnings = originWarning(tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT, declaredOrigin);
+  const warnings = [
+    ...originWarning(tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT, declaredOrigin),
+    ...clientErrorsStaticWarning((await loadAppConfig(options.root))?.clientErrors),
+  ];
   for (const warning of warnings) writeErrorLine(`warning: ${warning}`);
   // The app's locales as `loadApp` read them, ONCE, off `@ultimat3/i18n`'s one reader — the same
   // answer the PWA manifest and the service worker below are built from. The default first, so

@@ -22,10 +22,11 @@ import { repoRoot, run } from './lib/run';
  * rule itself, so a change to it is proved rather than skipped by itself. run.sh drives three
  * commands, so each one's code is here too: `x new` (`cmd-new*.ts` and all of `templates/` — the
  * proof app IS what they emit), `x db gen` (`cmd-db.ts`, `db-generate.ts`: the migration the
- * release applies in the cluster) and `x deploy` (`cmd-deploy*`).
+ * release applies in the cluster) and `x deploy` (`cmd-deploy*`). The proof also holds a job across
+ * the roll, so the jobs worker and its Postgres driver (`worker*`, `driver-pg*`) decide it too.
  */
 export const VERDICT_PATHS =
-  /^(\.github\/workflows\/ci\.yml|\.github\/actions\/setup\/|docker\/|bun\.lock$|package\.json$|scripts\/deploy-proof-due\.ts$|scripts\/lib\/release-subject\.ts$|packages\/[^/]+\/package\.json$|packages\/cli\/src\/templates\/|packages\/cli\/src\/(cmd-new(-[^/]+)?\.ts$|cmd-db\.ts$|db-generate\.ts$|cmd-deploy|serve|role-|runtime-)|packages\/core\/src\/lifecycle|packages\/http\/src\/(server|stages)\.ts)/;
+  /^(\.github\/workflows\/ci\.yml|\.github\/actions\/setup\/|docker\/|bun\.lock$|package\.json$|scripts\/deploy-proof-due\.ts$|scripts\/lib\/release-subject\.ts$|packages\/[^/]+\/package\.json$|packages\/cli\/src\/templates\/|packages\/cli\/src\/(cmd-new(-[^/]+)?\.ts$|cmd-db\.ts$|db-generate\.ts$|cmd-deploy|serve|role-|runtime-)|packages\/jobs\/src\/(worker|driver-pg)|packages\/core\/src\/lifecycle|packages\/http\/src\/(server|stages)\.ts)/;
 
 /** The job whose conclusion is the verdict being carried forward. Its id in ci.yml. */
 export const PROOF_JOB = 'deploy-proof';

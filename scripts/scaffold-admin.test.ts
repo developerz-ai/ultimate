@@ -10,7 +10,13 @@ import { DEV_BINDING } from '@ultimat3/cli';
 import type { AdminWalk } from './lib/admin-walk';
 import { adminFindings, filledForm, walkAdmin } from './lib/admin-walk';
 import type { AdminCheckIo } from './scaffold-admin';
-import { adminResource, appDirWord, checkAdmin, devRoleCookie } from './scaffold-admin';
+import {
+  adminResource,
+  appDirWord,
+  checkAdmin,
+  devRoleCookie,
+  freeDevPair,
+} from './scaffold-admin';
 
 const BASE = 'http://127.0.0.1:4000';
 const WALK: AdminWalk = { base: BASE, resource: 'smoke_resources', roleCookie: 'demo_dev_role' };
@@ -429,6 +435,28 @@ describe('unit · the command: boot, walk, stop', () => {
       expect(result.findings?.[0]?.code).toBe('X_SCAFFOLD_FIRST_RUN_FAILED');
       expect(result.findings?.[0]?.cause).toContain(cause);
       expect(calls.booted).toEqual([]);
+    }
+  });
+});
+
+describe('freeDevPair', () => {
+  // `x dev` binds `port` and `port + 1`: a candidate whose neighbour is held booted, listened and
+  // stopped (scaffold-smoke bareapp, 2026-11-03: listening on :22503, then `draining`, `:22504` held).
+  test('a candidate whose neighbour is held is skipped, on the address x dev binds', () => {
+    const held = Bun.listen({
+      hostname: DEV_BINDING.hostname,
+      port: 0,
+      socket: { data: () => undefined },
+    });
+    try {
+      const busy = held.port - 1;
+      const candidates = [busy];
+      // The busy candidate first, then whatever the real probe answers.
+      const picked = freeDevPair(() => candidates.shift() ?? freeDevPair());
+      expect(picked).not.toBe(busy);
+      expect(picked).toBeGreaterThan(0);
+    } finally {
+      held.stop(true);
     }
   });
 });

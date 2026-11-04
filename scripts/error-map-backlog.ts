@@ -36,6 +36,7 @@ export const OFF_SOCKET: Pins = {
     'X_SECRETS_KEY_ACL_FAILED',
     'X_OUTBOUND_RETRY_UNSAFE',
     'X_ERROR_DECLARATION_INVALID',
+    'X_CLIENT_ERROR',
   ],
   // tier 1 — a tier's ceiling or similarity floor, screened where `app.config.ts` names it: raised
   // by `new LruCache(...)` and `memorySemanticCache(...)`, which a boot builds once.

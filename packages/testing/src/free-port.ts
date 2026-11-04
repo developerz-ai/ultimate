@@ -57,3 +57,45 @@ export const freePortApartFrom = (
     for (const probe of held) probe.stop();
   }
 };
+
+/** Whether `port` can be listened on right now: a refusal is the answer, not an error. */
+const bindable = (port: number): boolean => {
+  try {
+    Bun.serve({ port, fetch: () => new Response() }).stop(true);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A free port whose NEIGHBOUR is free too, both ones a browser opens. `x dev` binds the web role on
+ * `port` and the sync node on `port + 1`, so a lone free port whose neighbour another process held
+ * was an e2e app that listened, failed its sync bind and exited before `/readyz` — the CLI's own
+ * `freeDevPort` rule (`dev-supervisor.ts`), which this package cannot import. A candidate is held
+ * while the next is asked for, as a refused port is, so the walk ends.
+ */
+export const freePortPair = (
+  listen: () => PortProbe = listenOnAnyPort,
+  canBind: (port: number) => boolean = bindable,
+): number => {
+  const held: PortProbe[] = [];
+  try {
+    for (;;) {
+      const probe = listen();
+      const next = probe.port + 1;
+      if (
+        BROWSER_REFUSED_PORTS.has(probe.port) ||
+        BROWSER_REFUSED_PORTS.has(next) ||
+        !canBind(next)
+      ) {
+        held.push(probe);
+        continue;
+      }
+      probe.stop();
+      return probe.port;
+    }
+  } finally {
+    for (const probe of held) probe.stop();
+  }
+};

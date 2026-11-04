@@ -52,6 +52,12 @@ export const SECTION_PACKAGE: Readonly<Record<string, string>> = {
   // why: `AppConfig.islands` is the island bundler's opt-in (`island-bundle.ts`); no package is
   // named `islands`.
   islands: 'cli',
+  // why: `AppConfig.assets` is the web boot's retention window (`retained-assets-boot.ts`); no
+  // package is named `assets`.
+  assets: 'cli',
+  // why: `AppConfig.clientErrors` is the browser-error intake both boots mount
+  // (`client-errors-routes.ts`); no package is named `clientErrors`.
+  clientErrors: 'cli',
   theme: 'ui',
 };
 

@@ -4,12 +4,21 @@
 // command fetches the runs, opens only the failed steps' log, and hands back the findings the gate
 // already wrote — in the same three-line shape every other Ultimate error is printed in.
 
-import { UltimateError } from '@ultimat3/core';
+import { renderThrowable, UltimateError } from '@ultimat3/core';
+import { parseDuration } from '@ultimat3/time';
 import type { CiLogLine } from './ci-log';
 import { findingKey, findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
 import type { CiJob, CiRun } from './ci-runs';
 import { failedLog, isFailed, isRunning, latestPerWorkflow, listRuns, viewRun } from './ci-runs';
-import { CI_EVENTS, ciSpec, TAIL_LINES } from './cmd-ci-spec';
+import type { CiTestedAnswer, TestedCondition } from './ci-tested';
+import {
+  ciTested,
+  ghTestedReads,
+  TESTED_CALL_TIMEOUT_MS,
+  TESTED_CONDITIONS,
+  withDeadline,
+} from './ci-tested';
+import { CI_EVENTS, ciSpec, TAIL_LINES, TESTED_MAX_AGE, TESTED_WORKFLOW } from './cmd-ci-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
 import { parseIntFlag } from './flag-number';
@@ -39,6 +48,11 @@ export const CI_MESSAGE_KEYS = [
   'cli.ci.pending',
   'cli.ci.logs.empty',
 ] as const;
+
+/** One reason per `x ci tested` answer, keyed by the condition that decided it. */
+export const CI_TESTED_MESSAGE_KEYS = TESTED_CONDITIONS.map(
+  (condition) => `cli.ci.tested.${condition}` as const,
+);
 
 /** How far back a branch's run history is read before "the latest run of each workflow". */
 export const RUN_LOOKBACK = 20;
@@ -88,6 +102,7 @@ function readEvent(raw: string | undefined): (typeof CI_EVENTS)[number] | undefi
 export const ciCommand: CliCommand = {
   spec: ciSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
+    if (ctx.args.subcommand === 'tested') return tested(ctx);
     // Filters are validated, and crossed with --run, before any subprocess runs: a refusal must
     // not cost a gh round trip, and a filter beside --run would otherwise be silently ignored.
     const rawRun = flagString(ctx.args, 'run');
@@ -129,6 +144,88 @@ export const ciCommand: CliCommand = {
     return report(repo, branch, inspected);
   },
 };
+
+/**
+ * `x ci tested`: may this push skip the jobs a green PR run already ran on this exact tree? Exit 0
+ * on every answer — the workflow reads `data.tested`, and a doubt anywhere (no `gh`, no remote, an
+ * API that did not answer) is `tested: false`, a full run. Only a malformed flag refuses.
+ */
+async function tested(ctx: CommandContext): Promise<CommandResult> {
+  const rawAge = flagString(ctx.args, 'max-age') ?? TESTED_MAX_AGE;
+  const maxAgeMs = readMaxAge(rawAge);
+  const workflow = flagString(ctx.args, 'workflow') ?? TESTED_WORKFLOW;
+  const flag = flagString(ctx.args, 'repo');
+  let repo = flag ?? '';
+  let sha = ctx.env['GITHUB_SHA'] ?? '';
+  let answer: CiTestedAnswer;
+  // Every subprocess this answer waits on is killed past its deadline, and that is a doubt too.
+  const host = { ...ctx, ...withDeadline(ctx, TESTED_CALL_TIMEOUT_MS) };
+  try {
+    const resolved = await resolveRepo(host, 'ci tested', flag);
+    repo = resolved.slug;
+    if (sha === '') sha = await headSha(host);
+    answer =
+      sha === ''
+        ? { tested: false, condition: 'sha' }
+        : await ciTested({
+            sha,
+            repo,
+            maxAgeMs,
+            now: Date.now(),
+            reads: ghTestedReads(host, resolved, workflow),
+          });
+  } catch (error) {
+    if (error instanceof BadFlagError) throw error;
+    answer = { tested: false, condition: 'api', detail: renderThrowable(error) };
+  }
+  const reason = testedReason(answer.condition, {
+    pr: answer.pr ?? '?',
+    run: answer.run ?? '?',
+    repo,
+    workflow,
+    maxAge: rawAge,
+    detail: answer.detail ?? '',
+  });
+  return {
+    ok: true,
+    command: 'ci',
+    summary: reason,
+    data: {
+      sha,
+      repo,
+      workflow,
+      tested: answer.tested,
+      condition: answer.condition,
+      reason,
+      ...(answer.pr === undefined ? {} : { pr: answer.pr }),
+      ...(answer.run === undefined ? {} : { run: answer.run }),
+    },
+  };
+}
+
+const testedReason = (
+  condition: TestedCondition,
+  params: Readonly<Record<string, string | number>>,
+): string => msg(`cli.ci.tested.${condition}`, params);
+
+function readMaxAge(raw: string): number {
+  try {
+    return parseDuration(raw);
+  } catch (error) {
+    throw new BadFlagError({
+      flag: 'max-age',
+      command: 'ci tested',
+      reason: `${quoteArg(raw)} is not a duration: ${renderThrowable(error)}`,
+      fix: 'x ci tested --max-age 24h --json',
+    });
+  }
+}
+
+/** The commit a local run asks about; none is a doubt, which the caller answers as one. */
+async function headSha(ctx: CommandContext): Promise<string> {
+  const result = await ctx.runner(['git', 'rev-parse', 'HEAD'], { cwd: ctx.cwd });
+  return result.ok ? result.stdout.trim() : '';
+}
 
 interface JobFailure {
   readonly job: string;

@@ -11,7 +11,7 @@ import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
-import { appDirWord, type DevServer } from './scaffold-admin';
+import { appDirWord, type DevServer, freeDevPair } from './scaffold-admin';
 import { appBin } from './scaffold-first-run';
 
 const SCRIPT = 'scaffold-agent';
@@ -267,17 +267,8 @@ const realIo: AgentCheckIo = {
     };
   },
   fetcher: fetch,
-  // A port nothing holds right now, on the address `x dev` binds — the rule `scaffold-admin.ts` keeps.
-  port: () => {
-    const probe = Bun.listen({
-      hostname: DEV_BINDING.hostname,
-      port: 0,
-      socket: { data: () => undefined },
-    });
-    const { port } = probe;
-    probe.stop(true);
-    return port;
-  },
+  // A free port PAIR on the address `x dev` binds — the rule `scaffold-admin.ts` keeps.
+  port: () => freeDevPair(),
   now: () => performance.now(),
   sleep: (ms) => Bun.sleep(ms),
 };

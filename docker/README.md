@@ -49,7 +49,7 @@ cleanly.
 | `test-services.env` | the `TEST_*_URL` each of those services is found at. The one place they are written |
 | `docker-compose.prod.yml` | the production topology: one service per role, one box. Point `IMAGE` at an app image |
 | `helm/` | Kubernetes chart with **per-role HPAs** — where `web` and `sync` actually scale out |
-| `deploy-proof/` | milestone 11's proof: `bash docker/deploy-proof/run.sh` scaffolds an app on this tree, installs it into kind with `x deploy --method helm`, and upgrades it under load, failing on one non-2xx. CI's `deploy-proof` job runs it on `main`. Test harness only — nothing here ships |
+| `deploy-proof/` | milestone 11's proof: `bash docker/deploy-proof/run.sh` scaffolds an app on this tree, installs it into kind with `x deploy --method helm`, and upgrades it under load, failing on one non-2xx. The upgrade crosses a migration (`x db gen deploy_proof_v2`, one nullable column) and holds a 90 s job (`HOLD_SECONDS`) past the drain budget: the proof refuses unless the v1 worker that claimed it finished it once through the retire and a v2 worker runs the next one. CI's `deploy-proof` job runs it on `main`. Test harness only — nothing here ships |
 
 ## Local
 

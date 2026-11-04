@@ -436,6 +436,6 @@ export function demoShippedVerdict(input: DemoShippedInput, mainGreen: Verdict):
     ...base,
     verdict: 'unhealthy',
     ...fields,
-    reason: `the demo deploy ended ${run.conclusion} — name the guard the run log's ::error:: line names: the not-on-main-tip guard (deploy-social-demo.yml:99-115) or the app-gate-verdict guard (deploy-social-demo.yml:127-144)`,
+    reason: `the demo deploy ended ${run.conclusion} — name the guard the run log's ::error:: line names: the not-on-main-tip guard (deploy-social-demo.yml:99-115) or the app-gate-verdict guard (deploy-social-demo.yml:123-164), whose skip is legal only beside a green tested job`,
   };
 }

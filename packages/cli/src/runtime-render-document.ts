@@ -109,7 +109,10 @@ export const headFor = async (
     ((options.root === undefined ? options.faviconHead : await appFaviconHead(options.root)) ??
       '') +
     // Per locale: each links its own locale's manifest (`PwaArtifacts.headFor`).
-    (typeof options.pwaHead === 'function' ? options.pwaHead(meta.locale) : (options.pwaHead ?? ''))
+    (typeof options.pwaHead === 'function'
+      ? options.pwaHead(meta.locale)
+      : (options.pwaHead ?? '')) +
+    (entry.surface === 'app' ? (options.appHead ?? '') : '')
   );
 };
 

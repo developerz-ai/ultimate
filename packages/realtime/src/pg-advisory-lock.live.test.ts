@@ -44,19 +44,38 @@ describeLive('live · pg advisory lock', () => {
     expect(await second.tryAcquire()).toBe(false);
 
     // The refused lock closed its connection rather than parking an idle session on the server.
+    // A backend outlives its client's close by however long the server takes to reap it, so
+    // `pg_stat_activity` may still list it (red run 40072958691, "Received 2"): polled to a
+    // deadline on the admin connection, never read once. The close is HELD here on purpose — a
+    // session of this key's name, listed at the first read and closed only after it — so the race
+    // runs on every pass, not only on a loaded runner. Counted for THIS key alone.
     const target = parsePgUrl(url ?? '');
-    const admin = await PgConnection.open({
-      stream: await bunPgStream(target),
-      user: target.user,
-      password: target.password,
-      database: target.database,
-      applicationName: 'ultimate-lock-audit',
-    });
+    const connect = async (applicationName: string): Promise<PgConnection> =>
+      PgConnection.open({
+        stream: await bunPgStream(target),
+        user: target.user,
+        password: target.password,
+        database: target.database,
+        applicationName,
+      });
+    const admin = await connect('ultimate-lock-audit');
     try {
-      const rows = await admin.query(
-        "SELECT count(*) FROM pg_stat_activity WHERE application_name LIKE 'ultimate-replicator-lock:%'",
-      );
-      expect(rows[0]?.[0]).toBe('1');
+      const stray = await connect(`ultimate-replicator-lock:${KEY}`);
+      const sessions = async (): Promise<unknown> =>
+        (
+          await admin.query(
+            `SELECT count(*) FROM pg_stat_activity WHERE application_name = 'ultimate-replicator-lock:${KEY}'`,
+          )
+        )[0]?.[0];
+      let count = await sessions();
+      const closing = stray.close();
+      for (let poll = 0; poll < 400 && count !== '1'; poll += 1) {
+        // real-clock: a closed client's backend exits on the server's time, not this process's
+        await Bun.sleep(25);
+        count = await sessions();
+      }
+      await closing;
+      expect(count).toBe('1');
     } finally {
       await admin.close();
     }

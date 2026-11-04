@@ -4,13 +4,12 @@
  * a blank screen. Nothing here is optional:
  *
  *   immutable build id per deploy → the client sends it on every request →
- *   old builds' assets are retained for N deploys → a stale client gets
+ *   old builds' assets stay served (`assets.retain`) → a stale client gets
  *   `AppUpdateAvailable`, never a 404.
  *
  * The app decides what to do with that message. This package never navigates a client.
  */
 
-import { finiteCount } from '@ultimat3/core';
 import { BuildIdMissingError } from './errors';
 
 // The header every proxied request carries is core's `BUILD_ID_HEADER`, the document meta core's
@@ -72,42 +71,6 @@ export function assertBuildId(value: string | undefined | null): asserts value i
 export function cacheNamespace(id: string, kind: 'precache' | 'runtime' | 'pages'): string {
   assertBuildId(id);
   return `x-${kind}-${id}`;
-}
-
-export interface Deploy {
-  readonly buildId: string;
-  /** Epoch milliseconds. */
-  readonly deployedAt: number;
-  readonly channel?: DeployChannel;
-}
-
-export interface RetentionPlan {
-  readonly retain: readonly string[];
-  readonly evict: readonly string[];
-  readonly caches: readonly string[];
-}
-
-/**
- * Keep the last N builds' assets alive. N is how many deploys a tab may sit open across
- * before it is allowed to break; 3 is the sane default for a daily-deploy team.
- */
-export function retentionPlan(deploys: readonly Deploy[], keep = 3): RetentionPlan {
-  // `Math.max` is not a validator, it PROPAGATES: `Math.max(1, NaN)` is `NaN`, `slice(0, NaN)` is
-  // `[]`, and the plan then retains nothing and evicts every deploy — the running one included,
-  // which is the case `never evicts everything` pins as impossible. `0` keeps its meaning below.
-  const bound = Math.max(1, finiteCount('retentionPlan', 'keep', keep));
-  const ordered = [...deploys].sort((a, b) => b.deployedAt - a.deployedAt);
-  const retained = ordered.slice(0, bound);
-  const evicted = ordered.slice(bound);
-  return {
-    retain: retained.map((d) => d.buildId),
-    evict: evicted.map((d) => d.buildId),
-    caches: retained.flatMap((d) => [
-      cacheNamespace(d.buildId, 'precache'),
-      cacheNamespace(d.buildId, 'runtime'),
-      cacheNamespace(d.buildId, 'pages'),
-    ]),
-  };
 }
 
 // `SkewState`, `detectSkew` and `AppUpdateAvailable` — the page's half of skew — live in `skew.ts`,
