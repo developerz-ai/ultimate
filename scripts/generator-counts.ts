@@ -118,6 +118,52 @@ async function shapeVariants(
 }
 
 /**
+ * What `x g sign-in` PRINTS, both shapes, in the default scaffold before and after setup — measured
+ * by its own dry run, exactly as `x g resource` is. One run per shape, each in a fresh scaffold:
+ * an app has one sign-in, so a second run into the same app is a conflict and counts nothing.
+ */
+async function signInVariants(): Promise<readonly GeneratorVariant[]> {
+  const variants: GeneratorVariant[] = [];
+  for (const flags of [['--password'], ['--oidc', 'corp-sso']]) {
+    const dir = await mkdtemp(join(tmpdir(), 'generator-counts-'));
+    try {
+      await writeNewApp(dir, { name: 'probe', example: true });
+      for (const file of SETUP_ARTIFACTS) await Bun.write(join(dir, file), '{}\n');
+      const out: string[] = [];
+      const argv = ['g', 'sign-in', ...flags, '--dry-run', '--json'];
+      const code = await dispatch({
+        argv,
+        cwd: dir,
+        env: {},
+        bunVersion: Bun.version,
+        write: (line) => out.push(line),
+      });
+      const run = code === 0 ? DryRun(JSON.parse(out.join('\n'))) : undefined;
+      if (run === undefined) {
+        throw new ScriptError({
+          code: 'X_DOC_FILE_COUNT_UNSCANNED',
+          cause: `x ${argv.join(' ')} in the default scaffold exited ${String(code)} without a file list`,
+          fix: `bun run scripts/generator-counts.ts --json   # then run x ${argv.join(' ')} in a fresh \`x new probe\` app and fix what it reports`,
+        });
+      }
+      // The flag that names the shape is what a doc line writes: `--oidc`, never its value.
+      const shape = flags.slice(0, 1);
+      variants.push(
+        { flags: shape, files: run.files, shape: 'the default scaffold, before setup' },
+        {
+          flags: shape,
+          files: run.files + run.refreshes,
+          shape: 'the default scaffold, after setup',
+        },
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+  return variants;
+}
+
+/**
  * `x g action` is deliberately absent, and the reason is a property of the generator rather than an
  * omission. `writeFiles` SKIPS a slice module that already exists (`cmd-generate.ts`), so an
  * action's count depends on how much of the slice is already there — `wiki/CLI-Reference.md:233`
@@ -137,6 +183,7 @@ export async function generatorFacts(): Promise<readonly GeneratorFacts[]> {
       ],
     },
     { id: 'x g resource', variants: await resourceVariants() },
+    { id: 'x g sign-in', variants: await signInVariants() },
   ];
 }
 

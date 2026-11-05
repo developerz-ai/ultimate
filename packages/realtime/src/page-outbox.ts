@@ -6,7 +6,6 @@
 
 import type { ClientScope, UltimateError } from '@ultimat3/core/page';
 import {
-  actionPath,
   classifyThrown,
   clientTransport,
   OUTBOX_DRAIN_MESSAGE,
@@ -28,6 +27,7 @@ import {
 import { type OutboxTabs, type OutboxTabsWindow, outboxTabs } from './outbox-tabs';
 import { LocalStoreUnavailableError, OfflineQueueAbandonedError } from './page-errors';
 import { peekPageRealtime } from './page-store';
+import { mutationWire } from './pinned-wire';
 import { carriedBy } from './record-store';
 
 export type { OutboxEntry } from './outbox-slot';
@@ -55,7 +55,7 @@ export interface OutboxOptions {
   readonly local: LocalStore | Promise<LocalStore>;
   readonly principal?: (() => ClientScope['principal']) | undefined;
   /**
-   * One write, over HTTP. Default: `clientTransport` POST to `actionPath(entry.name)`, adding every
+   * One write, over HTTP. Default: `clientTransport` to the entry's pin or `actionPath(entry.name)` (`pinned-wire.ts`), adding every
    * record the answer carried (`type:key`) to `carried` — what its overlay settles against.
    */
   readonly send?: ((entry: OutboxEntry, carried: Set<string>) => Promise<unknown>) | undefined;
@@ -175,7 +175,8 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
     async (mutation: QueuedMutation): Promise<void> => {
       const carried = new Set<string>();
       try {
-        await send({ key: mutation.key, name: mutation.name, input: mutation.input }, carried);
+        const { key, name, input, http } = mutation;
+        await send({ key, name, input, ...(http === undefined ? {} : { http }) }, carried);
       } catch (error) {
         const kind = classifyThrown(error);
         // The network, or a server asking to be asked again: stays queued, and the pass stops so
@@ -297,7 +298,12 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
       return held?.queue.pending().length ?? 0;
     },
     pending: () =>
-      (held?.queue.pending() ?? []).map(({ key, name, input }) => ({ key, name, input })),
+      (held?.queue.pending() ?? []).map(({ key, name, input, http }) => ({
+        key,
+        name,
+        input,
+        ...(http === undefined ? {} : { http }),
+      })),
     refresh: async () => {
       await current();
       await refreshHeld();
@@ -369,11 +375,12 @@ function exclusive<T>(name: string, work: () => Promise<T>): Promise<T> {
 
 const LOCAL_LOCKS: unique symbol = Symbol.for('ultimate.outbox-locks');
 type LockHost = { [LOCAL_LOCKS]?: Map<string, Promise<unknown>> };
-function sendOverHttp(entry: OutboxEntry, carried: Set<string>): Promise<unknown> {
-  return clientTransport({
-    method: 'POST',
-    url: actionPath(entry.name),
-    body: entry.input,
+async function sendOverHttp(entry: OutboxEntry, carried: Set<string>): Promise<unknown> {
+  const wire = mutationWire(entry.name, entry.input, entry.http);
+  return await clientTransport({
+    method: wire.method,
+    url: wire.url,
+    body: wire.body,
     idempotencyKey: entry.key,
     onEnvelope: (envelope) => carriedBy(envelope, carried),
   });

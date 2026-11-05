@@ -353,6 +353,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x stop --timeout 2m --json   # still running: kill -9 the pid its cause names, then x dev --json',
   X_DEV_STOP_DENIED: 'cat .x/dev.lock   # then, as the user who owns that pid: x stop --json',
   X_ASSET_RETAIN_FAILED: 'x doctor --json',
+  X_APP_MODULE_LOAD_FAILED:
+    'x manifest --json   # names each module that does not load and why; fix it, then restart the role',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

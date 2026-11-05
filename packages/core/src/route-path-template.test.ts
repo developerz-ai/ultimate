@@ -82,9 +82,24 @@ describe('fillTemplate', () => {
   });
 
   test('a missing, empty or non-string value is named', () => {
-    expect(fillTemplate('/orders/:id', {})).toEqual({ ok: false, missing: 'id' });
-    expect(fillTemplate('/orders/:id', { id: '' })).toEqual({ ok: false, missing: 'id' });
-    expect(fillTemplate('/orders/:id', { id: 7 })).toEqual({ ok: false, missing: 'id' });
-    expect(fillTemplate('/orders/:id', null)).toEqual({ ok: false, missing: 'id' });
+    for (const input of [{}, { id: '' }, { id: 7 }, null]) {
+      expect(fillTemplate('/orders/:id', input)).toMatchObject({
+        ok: false,
+        missing: 'id',
+        reason: expect.stringContaining('non-empty string'),
+      });
+    }
+  });
+
+  test.each(['.', '..'])('%s is refused: a URL resolver walks it out of its segment', (value) => {
+    // `/posts/../edit` resolves to `/edit`, and `%2E%2E` is a dot-segment too, so no encoding helps.
+    const filled = fillTemplate('/posts/:id/edit', { id: value });
+    expect(filled.ok).toBe(false);
+    expect(filled).toMatchObject({ missing: 'id', reason: expect.stringContaining('dot-segment') });
+  });
+
+  test('a value that only contains dots is still one segment', () => {
+    expect(fillTemplate('/posts/:id', { id: '...' })).toEqual({ ok: true, path: '/posts/...' });
+    expect(fillTemplate('/posts/:id', { id: 'a..b' })).toEqual({ ok: true, path: '/posts/a..b' });
   });
 });

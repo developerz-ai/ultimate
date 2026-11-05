@@ -256,6 +256,10 @@ const runs = useRecords<Run>('runs', {                              // EVERY `ru
   throttleMs: 1_000,                                                // optional: at most once a second
 });
 const like = useMutation(LIKE_POST);                                // await like(input); like.pending
+// A ref names the primitive, never its URL: an action or query declared `http: { path, method }`
+// is reached where the server's `<meta name="ultimate-pins">` says (core's `renderedActionPin` /
+// `renderedQueryPin`), and a queued write keeps the pin it was sent under. A `:param` the input
+// cannot fill is `X_MUTATION_PATH_UNFILLED`, before anything is painted or sent.
 const connection = useConnection();                                 // .offline .online .reconnectAt .updateAvailable
 const writes = useMutationQueue();                                  // .pending .failed
 const outbox = useOutbox();                                         // .size — queued, not yet sent

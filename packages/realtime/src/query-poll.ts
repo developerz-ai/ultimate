@@ -6,7 +6,6 @@ import { type VisibleIntervalOptions, visibleInterval } from '@ultimat3/core/pag
 
 /** What `useQuery` starts with its `refetch`; the disposer is called by `release()`. */
 export interface QueryPoll {
-  readonly ms: number;
   start(run: () => Promise<void>): () => void;
 }
 
@@ -16,5 +15,5 @@ export interface QueryPoll {
  * value is `visibleInterval`'s refusal (`finiteOption`), raised when the read starts.
  */
 export function pollEvery(ms: number, options: VisibleIntervalOptions = {}): QueryPoll {
-  return { ms, start: (run) => visibleInterval(run, ms, options) };
+  return { start: (run) => visibleInterval(run, ms, options) };
 }

@@ -18,6 +18,7 @@ export type { AssetExtension, AssetPath, AssetResolver } from './asset';
 export { ASSET_DIR, ASSET_EXTENSIONS, asset, assetPathProblem, setAssetResolver } from './asset';
 /** The `<meta name="ultimate-path-style">` core's `actionPath` reads — a non-default style only. */
 export { clientPathStyleTags } from './client-path-style-tag';
+export { clientPinTags } from './client-pins-tag';
 /** The `<meta name="ultimate-scope">` core's `pageClient()` reads, on private documents only. */
 export {
   clientPersistTags,

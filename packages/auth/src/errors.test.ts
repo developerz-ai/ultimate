@@ -13,6 +13,7 @@ import {
   authForbidden,
   authUnauthenticated,
   kdfOverloaded,
+  signInUnconfigured,
 } from './errors';
 
 describe('authUnauthenticated', () => {
@@ -24,6 +25,17 @@ describe('authUnauthenticated', () => {
     expect(error.cause).toContain('ctx.actor is anonymous');
     expect(error.fix).toContain('__Host-x_session');
     expect(error.fix).toContain('readSessionCookie');
+  });
+});
+
+describe('signInUnconfigured', () => {
+  test('names the role, every unset key, and the command that lists them', () => {
+    const error = signInUnconfigured('web', ['OIDC_ISSUER', 'OIDC_CLIENT_ID']);
+    expect(error.code).toBe('X_AUTH_SIGN_IN_UNCONFIGURED');
+    expect(error.cause).toContain('"web"');
+    expect(error.cause).toContain('OIDC_ISSUER, OIDC_CLIENT_ID are unset');
+    expect(error.fix.startsWith('bunx x env example')).toBe(true);
+    expect(error.meta).toEqual({ role: 'web', missing: ['OIDC_ISSUER', 'OIDC_CLIENT_ID'] });
   });
 });
 

@@ -88,6 +88,31 @@ describe('exerciseQuery', () => {
     expect(failure.code).toBe('X_CONTRACT_DEFECT');
   });
 
+  test('a deploy is refused before a read runs', async () => {
+    let calls = 0;
+    const counted = feed('deployedFeed', () => {
+      calls += 1;
+    });
+    const previous = process.env['ULTIMATE_ENV'];
+    process.env['ULTIMATE_ENV'] = 'staging';
+    try {
+      const failure = await failureOf(() => exerciseQuery(counted, { actor: reader }));
+      expect(failure.code).toBe('X_CONTRACT_EXERCISE_ENVIRONMENT');
+    } finally {
+      if (previous === undefined) delete process.env['ULTIMATE_ENV'];
+      else process.env['ULTIMATE_ENV'] = previous;
+    }
+    expect(calls).toBe(0);
+  });
+
+  test('a defect keeps what the read threw: meta.failure and the source error', async () => {
+    const drifting = feed('failureFeed', () => {
+      throw new UltimateError({ code: 'X_DB_DRIFT', cause: 'drifted', fix: 'x db gen' });
+    });
+    const failure = await failureOf(() => exerciseQuery(drifting, { actor: reader }));
+    expect(failure.meta?.['failure']).toEqual({ code: 'X_DB_DRIFT', cause: 'drifted' });
+  });
+
   test('a binder that breaks every draw keeps X_CONTRACT_DRIFT', async () => {
     const fine = feed('boundFeed', () => undefined);
     const failure = await failureOf(() =>

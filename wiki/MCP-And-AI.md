@@ -267,6 +267,34 @@ container. The contract is one file:
 | exposed and unmountable | `X_MCP_APP_UNMOUNTED`, logged once | no file exports `mcp`, or it was built without `resolveToken` (no `route`); the fix names the file to write |
 | a new app | `x new` writes it | `apps/web/mcp.ts` over the `@<app>/mcp` catalog, `resolveToken` from `apps/web/app/auth/agent-token.ts`: an API key (`issueApiKey`, `x_api_keys`) is an agent in every environment; `dev-agent.<role>` is one under `x dev` alone, and only from a loopback address with no `Origin` (a page rebound to 127.0.0.1 sends one). No token, or one it does not know: 401 |
 
+**A token from an external issuer** (`As of 2026-11-05`): an app whose agents present an IdP's JWT
+rather than an API key hands `defineAppMcp` `jwtBearerResolver` from `@ultimat3/auth` — the twin of
+`apiKeyResolver`. The signature, issuer, audience and time checks are `verifyWorkloadToken`'s; the
+app keeps only its claim check and its actor:
+
+```ts
+// apps/web/app/auth/agent-token.ts
+import { actorFromService, jwksClient, jwtBearerResolver } from '@ultimat3/auth';
+
+const ISSUER = 'https://login.example.com/tenant-a/v2.0';
+const TENANT = 'tenant-a';
+const ORG_ID = '00000000-0000-4000-8000-000000000001';
+const keys = jwksClient({ provider: ISSUER, jwksUri: `${ISSUER}/discovery/v2.0/keys` });
+
+export const resolveAgentToken = jwtBearerResolver({
+  keys: () => keys,                       // read per token: no network at import
+  issuers: [ISSUER],
+  audience: 'api://ledger',
+  requiredScope: 'ledger.agent',          // optional; the scope name is the app's
+  accept: (raw) => raw['tid'] === TENANT, // the app's own claim, after the signature held
+  actorOf: (token) => actorFromService({ ...token.identity, orgId: ORG_ID }),
+});
+```
+
+Every refusal is `null` — the mount's `401` — and one `auth.jwt_bearer.refused` line naming the
+check (`signature`, `issuer`, `audience`, `expiry`, `not-before`, `scope`, `accept`, `key-set`),
+never a claim's value. A key set that cannot be read and an unknown `kid` both fail closed.
+
 #### Several endpoints, one per population
 
 `As of 22.14.0`. `mcp` may be a non-empty **array** of `defineAppMcp` values — one endpoint per

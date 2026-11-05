@@ -755,7 +755,9 @@ A legal input that crashes the handler is red in `contract`, the day the action 
 | Opting out | `{ exercise: { off: '<reason>' } }`. The reason is in the test's name. A blank one is `X_CONTRACT_EXERCISE_UNDECLARED` |
 | Runs | 16 (`EXERCISE_RUNS`), `runs` from 1 to 64. Runs 0-3 sit on the IR's bounds (`minLength`, `maxLength`, `minimum`, `maximum`, `minItems`). The rest draw multibyte text, every enum and union member, optional keys on and off, `null` where nullable. A format value (`t.uuid`, `t.email`, …) is never varied |
 | Seed | `fnv1a(<action name>)`, never time, so a red run replays: `bun test <file> -t '<name>: handler survives generated input'` |
-| Side effects | each run inside `withTransaction`, always rolled back: a SAVEPOINT in a test's open transaction, a root transaction once `setDbClient` installed a client. The outbox stage and the post-commit bust drop with it. Mail and egress stay sealed. **Not rolled back:** a write on a second client or `outsideTransaction`, and the memory store (`storeMode` `memory`): its rows stay until the next `seed()` |
+| Rolled back | each run inside `withTransaction`, always rolled back: a SAVEPOINT in a test's open transaction, a root transaction once `setDbClient` installed a client. The handler's SQL writes, the outbox stage and the post-commit bust drop with it |
+| **Not rolled back** | the memory store (`storeMode` `memory`, no client installed): its rows stay until the next `seed()` or `driver.reset()`. A write on a second client or `outsideTransaction`. A job enqueued with `outbox: false`. Storage puts. Mail and outbound fetch: the test preload seals both, so a real one is only sent where a test opted out. Rate-limit counters. An audit record a non-database sink accepted |
+| Where it runs | `development` and `test` only. `staging` or `production` (`ULTIMATE_ENV`, else `NODE_ENV`) is `X_CONTRACT_EXERCISE_ENVIRONMENT` before the first run: generated input never reaches a deploy. `bun test` sets `NODE_ENV=test` |
 | Pass | the output parsed, or a coded refusal under 500 |
 | Defect, `X_CONTRACT_DEFECT` | an uncoded throw, `X_OUTPUT_INVALID`, or a coded 5xx (an undeclared `errors:` code is one). `meta.run`, `meta.input`, `meta.failure` |
 | Red, `X_CONTRACT_EXERCISE_UNREACHED` | no run reached the handler. `X_TEST_NETWORK_SEALED` counts as unreached, its host in `meta.outcomes` |
@@ -763,8 +765,9 @@ A legal input that crashes the handler is red in `contract`, the day the action 
 
 A query has the same assertion: `orgFeed.contract({ exercise: { actor } })`, named
 `<name>: read survives generated input`. "Reached" is `sql()` building a source, and a read
-writes nothing, so no transaction wraps it. The generators emit the call with an actor
-(`x g action`, `x g resource`), holding the slice's grant: a hand-written `policy.ts`'s one literal
+writes nothing, so no transaction wraps it; it refuses a deploy the same way. Both are one loop,
+`@ultimat3/core`'s `runExercise`: the verdicts above are the same words for a read and a write.
+The generators emit the call with an actor (`x g action`, `x g resource`), holding the slice's grant: a hand-written `policy.ts`'s one literal
 `can('<perm>')`, or `{ off }` when its grant cannot be read.
 `@ultimat3/schema/sample`'s `arbitrary(schema, { seed, run })` is the draw, off the barrel.
 

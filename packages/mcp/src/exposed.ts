@@ -10,16 +10,26 @@
 // shortcut buys convenience while changing no execution path.
 
 import { listActions } from '@ultimat3/action';
+import { isMcpExposed } from '@ultimat3/core';
 import { listQueries } from '@ultimat3/query';
 import type { ProjectablePrimitive } from './from-action';
 import { primitiveFromAction, primitiveFromQuery } from './projectable';
 
 /**
- * Every registered action and query, as projectable primitives. `toolsFrom` applies the opt-in
- * filter, so this deliberately does NOT filter: one place decides what "exposed" means.
+ * Every registered action and query that opted in, as projectable primitives — asked with core's
+ * `isMcpExposed`, the one predicate `toolsFrom` asks again. Filtered BEFORE projecting: projecting
+ * reserves the `idempotencyKey` argument and builds the wire schema, so an action no surface
+ * serves could refuse the boot (`X_MCP_IDEMPOTENCY_KEY_SHADOWED`) of every tool that is served.
  *
  * Read eagerly, at the moment `defineAppMcp` runs — register the app's primitives first.
  */
 export function exposedPrimitives(): readonly ProjectablePrimitive[] {
-  return [...listActions().map(primitiveFromAction), ...listQueries().map(primitiveFromQuery)];
+  return [
+    ...listActions()
+      .filter((target) => isMcpExposed(target.mcp))
+      .map(primitiveFromAction),
+    ...listQueries()
+      .filter((target) => isMcpExposed(target.mcp))
+      .map(primitiveFromQuery),
+  ];
 }

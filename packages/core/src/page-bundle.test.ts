@@ -169,7 +169,9 @@ describe('the browser path to the page seam', () => {
   // caller as a `Date` (`x-ultimate-dates`), where every app converted ISO strings by hand (#710).
   // The next whole kilobyte above the measurement. 11,950 B on 2026-11-04 (11,553 before): +397 B,
   // the dispatch marking a scoped page's first 401 as a lost session (`session-lost.ts`).
-  test('clientTransport alone reaches no titles table and stays under 12 kB (11,395 B as of 2026-10-09)', async () => {
+  // 12,325 B on 2026-11-05 (Bun 1.4.4, 11,950 before): +375 B, a session loss only from a 401 on
+  // the page's own origin (`session-lost.ts` `isPageOrigin`) — another origin's 401 is not ours.
+  test('clientTransport alone reaches no titles table and stays under 13 kB (12,325 B as of 2026-11-05)', async () => {
     const transport =
       "import { clientTransport } from '@ultimat3/core/page';\nglobalThis.probe = clientTransport;\n";
     const { modules } = await build('transport', '', false, transport);
@@ -178,20 +180,22 @@ describe('the browser path to the page seam', () => {
       'schema/src/error-brand.ts',
     ]);
     const { bytes } = await build('transport-min', '', true, transport);
-    expect(bytes).toBeLessThan(12_288);
+    expect(bytes).toBeLessThan(13_312);
   }, 60_000);
 
   // `visibleInterval` alone: what an island that only polls pays. It reaches `UltimateError`
   // through `finiteOption` (a NaN wait is refused, never armed as 0) and the session-loss cell, and
   // never the transport. measured: 6,045 B (2026-11-05, Bun 1.4.4); the next whole kilobyte above.
-  test('visibleInterval alone reaches no titles table and stays under 6 kB (6,045 B as of 2026-11-05)', async () => {
+  // 6,370 B later the same day: +325 B, `whileSessionHeld` and the `onRescope` it reaches — a poll
+  // stopped by a lost session starts again when a principal next signs in.
+  test('visibleInterval alone reaches no titles table and stays under 7 kB (6,370 B as of 2026-11-05)', async () => {
     const poll =
       "import { visibleInterval } from '@ultimat3/core/page';\nglobalThis.probe = visibleInterval;\n";
     const { modules } = await build('poll', '', false, poll);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     expect(modules).not.toContain('core/src/client-dispatch.ts');
     const { bytes } = await build('poll-min', '', true, poll);
-    expect(bytes).toBeLessThan(6_144);
+    expect(bytes).toBeLessThan(7_168);
   }, 60_000);
 
   // Everything the entry exports at once — the transport, the URL rule, the fence and the helpers a
@@ -212,12 +216,19 @@ describe('the browser path to the page seam', () => {
   // one; 87 B of it backs off only on a failed run) and `onSessionLost`/`sessionIsLost`, the first
   // 401 said once; and +391 B, `fillTemplate`/`templateParams` (`route-path-template.ts`), joined
   // the entry in the same wave. The next whole kilobyte above the measurement.
-  test('the whole entry reaches no titles table and stays under 21 kB (20,549 B as of 2026-11-05)', async () => {
+  //
+  // measured: 22,355 B (2026-11-05, Bun 1.4.4), 21,332 without this change. why: +1,023 B, plan
+  // 101 wave 5b — +227 B, `fillWire` (the one pinned-URL/body split `rpc`, `queryClient` and
+  // `useMutation` share), and +796 B, `renderedActionPin`/`renderedQueryPin` + `CLIENT_PINS_META`
+  // (`client-paths-pins.ts`): a pinned action or query reached by NAME from the browser goes where
+  // the server's `<meta name="ultimate-pins">` says, so no island ref restates a pin it could drift
+  // from. The next whole kilobyte above the measurement.
+  test('the whole entry reaches no titles table and stays under 22 kB (22,355 B as of 2026-11-05)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(21_504);
+    expect(bytes).toBeLessThan(22_528);
   }, 60_000);
 
   test('the barrel still drags both titles tables — the reason the subpath exists', async () => {

@@ -24,6 +24,8 @@ import { refusePluralTable } from './generate-plural';
 import { followReexports } from './generate-reexports';
 import { refuseShadowedTypes, refuseShadowedValues } from './generate-shadow';
 import { declaresOnlyOtherEntities } from './generate-sibling';
+import { runSignIn } from './generate-sign-in';
+import { refuseSignInFlags } from './generate-sign-in-mode';
 import { containedPath, planWrites, writeFiles } from './generate-write';
 import { resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
@@ -70,6 +72,9 @@ export const generateCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('g', ctx.cwd).dir;
     const kind = readKind(ctx.args.positionals[0]);
+    refuseSignInFlags(kind, ctx.args);
+    // One sign-in per app, named by a flag rather than a `<name>`, and edits no other kind makes.
+    if (kind === 'sign-in') return await runSignIn(ctx, root);
     const name = readName(ctx.args.positionals[1], kind);
     const featureFlag = readFeature(flagString(ctx.args, 'feature'), kind);
     // Both flags are resolved before a single file is planned: a bad surface or a locale that is

@@ -140,6 +140,18 @@ describe('verifyWorkloadToken', () => {
     ).toBe('X_UNAUTHENTICATED');
   });
 
+  test('the decoded payload rides along as raw, so an issuer claim is the app to judge', async () => {
+    const issuer = await pair();
+    const verified = await verifyWorkloadToken({
+      ...(await base()),
+      keys: await jwksFor(issuer),
+      token: await sign(issuer, { ...CLAIMS, tid: 'tenant-7', groups: ['ops'] }),
+    });
+    expect(verified.raw['tid']).toBe('tenant-7');
+    expect(verified.raw['groups']).toEqual(['ops']);
+    expect(verified.raw['sub']).toBe(CLAIMS.sub);
+  });
+
   test('a token with no scope claim carries none, rather than inheriting any', async () => {
     const issuer = await pair();
     const claims = { ...CLAIMS };

@@ -110,7 +110,41 @@ const actor = actorFromService(identity);   // kind: 'service', id: the caller's
 
 Signature first, then issuer, audience, `exp` and `nbf`. `scope` (space-delimited) or `scp` (an
 array) become the actor's scopes; a token with neither carries none. There is no trusted-channel
-exemption here — the token arrived in a header.
+exemption here — the token arrived in a header. The `WorkloadToken` also carries `raw`, the whole
+decoded payload, read only after every check held — an issuer's own claim (`tid`, `groups`) is the
+app's to judge. `checkWorkloadToken` is the same checks as a verdict naming the one that refused.
+
+### An external issuer's bearer, as a `resolveToken`
+
+`jwtBearerResolver` is `apiKeyResolver`'s twin for a JWT some other issuer minted — an IdP's token
+an agent presents to the app's MCP endpoint or a bearer mount:
+
+```ts
+import { actorFromService, jwksClient, jwtBearerResolver } from '@ultimat3/auth';
+
+const ISSUER = 'https://login.example.com/tenant-a/v2.0';
+const keys = jwksClient({ provider: 'idp', jwksUri: `${ISSUER}/discovery/v2.0/keys` });
+
+/** `resolveToken: resolveAgent` — on the mount, and on `defineAppMcp()`. */
+export const resolveAgent = jwtBearerResolver({
+  keys: () => keys,
+  issuers: [ISSUER],
+  audience: 'api://ledger',
+  requiredScope: 'ledger.agent',
+  accept: (raw) => raw['tid'] === 'tenant-a',
+  actorOf: (token) => actorFromService(token.identity),
+});
+```
+
+| Presented | Answer |
+|---|---|
+| a token every check accepts | `{ actor: actorOf(token), scopes }` — the token's `scope`/`scp` as a `Set` |
+| bad signature or `alg: none`, wrong issuer or audience, expired, not yet valid, without `requiredScope`, refused by `accept` | `null`, plus one `auth.jwt_bearer.refused` log line naming the check — never a claim's value, never the token |
+| a key set that cannot be read, or an unknown `kid` | `null` (`check: 'key-set'`): fail closed, and the two look the same |
+| an `accept` or `actorOf` that throws | the throw — the app's bug, not a verdict |
+
+`keys` is a THUNK read when a token arrives, so discovery opens no network at import; hold the
+client and return it. The mount answers `null` as `401 X_UNAUTHENTICATED`.
 
 **mTLS is out of scope.** TLS termination is the mesh's job ([axiom
 7](../../docs/idea/README.md)); the framework's part is reading a trusted
@@ -931,6 +965,7 @@ later. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is a
 | `X_API_KEY_INVALID` | key unknown, revoked, expired, wrong, or owned by a user who is gone or disabled |
 | `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
 | `X_AUTH_WRITE_FAILED` | an `AuthAdapter` lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
+| `X_AUTH_SIGN_IN_UNCONFIGURED` | `signInUnconfigured(role, missing)`, thrown by the boot guard `x g sign-in` writes into the app: a `web` or `sync` role outside development and test with sign-in keys unset. Off the socket — a boot refusal, never a response |
 
 ```bash
 bun test packages/auth
@@ -952,6 +987,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Name | What |
 |---|---|
+| `JwtBearerCaller` | what `jwtBearerResolver` answers: `{ actor, scopes }`, structurally `ApiKeyCaller` |
+| `JwtBearerResolverOptions` | what `jwtBearerResolver` takes |
+| `JwtBearerCheck` | the check a refusal's log line names: a `WorkloadCheck`, or `key-set`, `scope`, `accept` |
+| `WorkloadCheck` · `WorkloadTokenCheck` | `checkWorkloadToken`'s verdict: the token, or the check that refused it |
 | `PostgresTotpReplayGuard` | the `TotpReplayGuard` `postgresTotpReplayGuard` returns |
 | `PostgresTotpReplayGuardOptions` | what `postgresTotpReplayGuard` takes |
 | `TotpReplayFactory` | `() => TotpReplayGuard`: what `configureTotpReplay` takes |

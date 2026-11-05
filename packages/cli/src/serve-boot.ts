@@ -6,9 +6,10 @@
 // module graph holds neither.
 
 import type { DrainConfig, LifecycleOptions, Role } from '@ultimat3/core';
-import { configureLifecycle, logger } from '@ultimat3/core';
+import { configureLifecycle, logger, UltimateError } from '@ultimat3/core';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
+import type { Finding } from './output';
 import { loadAppForRole, roleLoadFor } from './role-load';
 import { startRoles } from './role-start';
 import { resolveServices } from './runtime-bindings';
@@ -96,6 +97,29 @@ export async function bootServing(boot: {
   return bootRoles({ ...boot, runtime });
 }
 
+/**
+ * A container role whose app did not load whole: `X_APP_MODULE_LOAD_FAILED`. Beside its one thrower
+ * (`errors.ts` is at its ceiling). Every environment, not only production: this boot has no watcher
+ * to load the module again after a save — that is `x dev`'s, which keeps its own log-and-reload —
+ * so a half-loaded app here stays half-loaded, answering `/readyz` without a route or a policy.
+ */
+export class AppModuleLoadFailedError extends UltimateError {
+  constructor(input: { role: Role; findings: readonly Finding[] }) {
+    const modules = input.findings.map((finding) => finding.at ?? '(unknown module)');
+    super({
+      code: 'X_APP_MODULE_LOAD_FAILED',
+      cause: `the ${input.role} role refused to start: ${String(modules.length)} app module(s) failed to load, and serving without them drops their routes, actions, policies and jobs — ${input.findings.map((finding, index) => `${modules[index] ?? ''} (${finding.code})`).join(', ')}`,
+      fix: 'x manifest --json   # names each module that does not load and why; fix it, then restart the role',
+      meta: { role: input.role, modules },
+    });
+  }
+}
+
+/** Throws when any app module failed to load; each was already logged with its own cause. */
+export function refuseHalfLoadedApp(role: Role, findings: readonly Finding[]): void {
+  if (findings.length > 0) throw new AppModuleLoadFailedError({ role, findings });
+}
+
 /** The half of `serveApp` whose every acquisition is registered for rollback. */
 async function bootRoles(boot: {
   readonly options: ServeOptions;
@@ -121,11 +145,12 @@ async function bootRoles(boot: {
   // Importing the app's modules IS the registration: every route, action and job below is
   // whatever this call put in the registries — for THIS role (`role-load.ts`).
   const loaded = await loadAppForRole(options.root, role);
-  // A module that would not import registered nothing, and a process that only logs the roles it
-  // started gives no sign of it: each one is a line an operator can act on.
+  // A module that would not import registered nothing — its routes, actions, policies and jobs
+  // are simply absent — so each is logged with its own cause, and then the role refuses to serve.
   for (const finding of loaded.findings) {
     logger.error('ultimate app module failed to load', { role, ...finding });
   }
+  refuseHalfLoadedApp(role, loaded.findings);
   // After the app's modules: an app swaps the store at import time, after `startServices`.
   warnIfIdempotencyProcessScoped();
   const buildId = await buildIdFor(options, role);

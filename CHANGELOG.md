@@ -208,9 +208,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - A `deprecated.replacedBy` that names a parameterised pin is `X_ACTION_DEPRECATION_INVALID`, because a `Link` header cannot carry a template.
 - `@ultimat3/query/client` browser budget raised from 13,312 B to 14,848 B. Measured 14,494 B, of which +1,013 B is a pinned read's URL fill. The rest of the rise over the 2026-10-09 figure came from wave 5a's core `./page` additions.
 - `@ultimat3/core/page` budget raised from 18,432 B to 21,504 B. Measured 20,549 B: `visibleInterval`, `onSessionLost` and `sessionIsLost`, and `fillTemplate`/`templateParams`.
+- **BREAKING — (#83) `@ultimat3/auth`: `WorkloadToken` carries `raw`, the decoded payload.** A hand-built token, usually a test fake, adds it.
+- **BREAKING — (#84) a container role whose app module fails to load refuses to start** with `X_APP_MODULE_LOAD_FAILED`, naming each module. Before, it logged `ultimate app module failed to load` and served without that module's routes, actions, policies and jobs.
+- **BREAKING — (#85) an undescribed query's MCP tool says `Read with the "<name>" query.`**, not `Run the "<name>" action.`; an admin action's quotes its name. `toolDescription()` in `@ultimat3/core` is the one rule for `@ultimat3/mcp`, `@ultimat3/ai` and `@ultimat3/admin`. `exposedPrimitives()` returns opted-in primitives only.
+- **BREAKING — (#86) `QueryPoll` no longer exposes `ms`.**
+- **BREAKING — (#87) `exerciseAction` / `exerciseQuery` refuse `staging` and `production`** (`X_CONTRACT_EXERCISE_ENVIRONMENT`), and outside `test` with nothing to roll back into (`X_CONTRACT_EXERCISE_UNSCOPED`). Both run one loop, `@ultimat3/core`'s `runExercise`; a query defect carries `meta.failure`, and a sealed-network outcome names the host.
+- `fillTemplate` refuses a `.` or `..` param value, which walked the URL path (`/posts/../edit` resolves to `/edit`), and returns a `reason`; a pinned action's or query's refusal says why.
+- `onSessionLost` fires only for a 401 from the page's own origin, and `visibleInterval` polls again after the next signed-in `rescope`.
+- `@ultimat3/render`: a navigation with no answer in `NAVIGATION_TIMEOUT_MS` (30 s) is aborted and fails like a network failure; a refresh that fails or times out fails quietly, with no reload under the reader; `scheduleRefresh` gives up on a refresh unsettled after `REFRESH_TIMEOUT_MS`.
+- A pinned action or query is reached by name from a browser: the server stamps every `http` pin into `<meta name="ultimate-pins">`, and `rpc`, `queryClient`, `useQuery`, channel catch-up, `useMutation` and the offline outbox read it. A queued write keeps the pin it was sent under. A page with no pin carries no tag.
+- Budgets raised by measurement: `@ultimat3/core/page` 21,504 → 22,528 B (measured 22,355: `fillWire` +227, the pin reader +796); its `clientTransport` 12,288 → 13,312 B (+375, the same-origin 401 check) and `visibleInterval` 6,144 → 7,168 B (+325, resume on rescope); `@ultimat3/query/client` 14,848 → 15,872 B (measured 15,628: `fillWire` +96, the pin reader +506).
 
 ### Added
 
+- `@ultimat3/auth`: `jwtBearerResolver({ keys, issuers, audience, requiredScope?, accept?, actorOf })`, `checkWorkloadToken`, `signInUnconfigured` / `X_AUTH_SIGN_IN_UNCONFIGURED`.
+- `x g sign-in --password | --oidc <provider>`: a deployed scaffold reaches a policy-protected route after one command, with a boot guard refusing a people-facing role with sign-in unconfigured outside development and test.
+- `@ultimat3/core`: `fillWire(path, input)`, the one pinned-URL and body split; `CLIENT_PINS_META`, `encodeClientPins`, `renderedActionPin`, `renderedQueryPin`. `@ultimat3/render`: `clientPinTags`. `@ultimat3/realtime`: `X_MUTATION_PATH_UNFILLED`.
 - `@ultimat3/entity`: `testDriver()`, the driver a scaffolded handle takes under test. It uses memory until `setDbClient` installs a client and Postgres through that client while one is installed, decided on each repository call. `reset()` empties memory only. A transaction stays on the side it began on, and a client installed or cleared inside one is `X_TEST_DRIVER_CLIENT_CHANGED` (new code, off-socket), so one transaction's writes are never split across two stores. A repo that mixes `db.<table>` with a raw join can now be tested through the migrated-database recipe. A test file that installs no client loads no PGlite.
 - `@ultimat3/db`: `dbClientInstalled()` answers whether `setDbClient` installed a client that is still in place. It never builds the lazy default.
 - `x db diagnostics [--limit n] [--json]` and `dbDiagnostics()` from `@ultimat3/db/diagnostics` (its own subpath, so no role's boot evaluates it): blockers (each waiting `pid` with the `blockedBy` pid holding it), activity, slow statements (`pg_stat_statements`), unused indexes (unique and primary excluded, with counter age and replica flag), invalid indexes, `NOT VALID` constraints and dead tuples. Facts only, exit 0; the one failure is `X_DB_UNAVAILABLE` when no connection opens. Every section is one catalog statement in its own `BEGIN READ ONLY` with a 2 s `statement_timeout` and a cursor-capped row count; a failing section is `{ available: false, code, reason, fix }` and the other six still answer. No user table is read, session SQL is printed with every literal as `?`, and a credential in a reason is masked. `slowQueries` is `available: false` with the operator's `create extension` fix wherever `pg_stat_statements` is absent, the embedded database included.
@@ -380,6 +393,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `assets/never-send-a-human.webp`: a still from a commercial film, never licensed for an MIT repository.
 
 ### Fixed
+
+- `@ultimat3/mcp`: `include: 'exposed'` no longer fails at boot with `X_MCP_IDEMPOTENCY_KEY_SHADOWED` because of an un-exposed idempotent action with its own `idempotencyKey` input field.
+- `@ultimat3/ui`: a `DataTable` row whose cell throws while built is disposed, not leaked; `rowKey` is documented as the primary key: unique, stable, never an index.
 
 - `@ultimat3/ai`: `meteredRun` and every nested `agent()`/`llm()` total now count a call that never reported usage (a transport failure, an abort, a deadline) as `unsettled`. Before, such a call disappeared from the parent's total when it was caught, or when a sibling call settled.
 - `@ultimat3/ai`: `scriptedProvider().stream()` takes its turn when it is called, not at the first read.

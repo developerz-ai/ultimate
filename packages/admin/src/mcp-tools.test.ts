@@ -219,7 +219,7 @@ describe('a GLOBAL action — one bound to no entity — gets its own tool', () 
     const tool = adminMcpTools(globalApp(authz), ctxWith(authz)).find(
       (candidate) => candidate.name === 'admin.action.admin.vacuum',
     );
-    expect(tool?.description).toBe('Run the admin.vacuum action.');
+    expect(tool?.description).toBe('Run the "admin.vacuum" action.');
     // Destructive, so the envelope demands the token — the same rule a resource action follows.
     expect(tool?.destructive).toBe(true);
     expect(tool?.input.find((field) => field.name === 'confirmation')?.required).toBe(true);

@@ -183,6 +183,10 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   // The app's own convention. It is the only generated file that imports `@ultimat3/cli` for its
   // types, so compiling it is what proves a scaffolded app can actually write one.
   { kind: 'guard', name: 'migration-safety' },
+  // The OIDC shape: its routes, its runtime and its provider module are the files the password
+  // shape does not write. Both shapes, with the authenticator swap, compile whole in
+  // `generate-sign-in.contract.test.ts`; one sign-in per app, so one here.
+  { kind: 'sign-in', name: 'corp-sso', signIn: { kind: 'oidc', provider: 'corp-sso' } },
 ];
 
 /** The whole scaffolded surface: a new app, then every generator run inside it. */

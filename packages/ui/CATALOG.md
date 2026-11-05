@@ -276,7 +276,7 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `caption` | `string` | yes |  |
 | `columns` | `readonly Column<Row>[]` | yes |  |
 | `rows` | `readonly Row[]` | yes |  |
-| `rowKey` | `(row: Row) => string` | yes | The row's identity — its primary key, unique within `rows`. A live update keeps the `<tr>` of every key it still holds: the same object runs nothing, so focus and an open "more" stay put; a new object redraws that row's cells. Two rows under one key are `X_UI_INVALID_VALUE`. |
+| `rowKey` | `(row: Row) => string` | yes | The row's identity: its primary key — unique within `rows` and stable across updates, never an index or a value that can change. A live update keeps the `<tr>` of every key it still holds: the same object runs nothing, so focus and an open "more" stay put; a new object redraws that row's cells. Two rows under one key are `X_UI_INVALID_VALUE`. |
 | `sort` | `SortState` | — |  |
 | `loading` | `boolean` | — |  |
 | `error` | `unknown` | — | An UltimateError (or anything shaped like one) from the query. |

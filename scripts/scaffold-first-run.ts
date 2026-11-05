@@ -143,13 +143,17 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
 export const firstRunPlan = (): readonly FirstRunStep[] => [
   ...GENERATORS.map((kind) => ({
     name: `g ${kind}`,
-    args: [
-      'g',
-      kind,
-      generatorName(kind),
-      ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
-      '--json',
-    ],
+    // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`.
+    args:
+      kind === 'sign-in'
+        ? ['g', kind, '--password', '--json']
+        : [
+            'g',
+            kind,
+            generatorName(kind),
+            ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
+            '--json',
+          ],
   })),
   ...SECOND_SHAPES,
   { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },

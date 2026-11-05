@@ -133,6 +133,24 @@ describe('tools/list advertises the key on idempotent actions only', () => {
       expect.objectContaining({ code: 'X_MCP_IDEMPOTENCY_KEY_SHADOWED' }),
     );
   });
+
+  // The sweep projects only what opted in: an action no MCP surface serves reserves no argument,
+  // so its own `idempotencyKey` field is its business — not a boot failure for every other tool.
+  test('an UN-exposed action naming the argument does not break the exposed sweep', async () => {
+    charge(true);
+    registerAction(
+      'importRows',
+      action({
+        input: t.object({ idempotencyKey: t.string }),
+        output: t.object({ ok: t.boolean }),
+        policy: can('card:charge'),
+        idempotent: true,
+        handle: () => ({ ok: true }),
+      }),
+    );
+    const { server } = defineAppMcp({ include: 'exposed' });
+    expect((await listedSchema(server)).properties).toHaveProperty(MCP_IDEMPOTENCY_KEY_ARG);
+  });
 });
 
 describe('tools/call hands the key to invoke', () => {

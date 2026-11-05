@@ -64,7 +64,7 @@ Tier 4. Imports `@ultimat3/core`, `schema`, `i18n`, `money`, `time` (each in `pa
 | `src/tokens/*.scss` | canonical token maps + `_mixins.scss` authoring helpers (`respond-to`/`-down`/`-between`) + `_units.scss` (`rem()`, `fluid()`). Every `@error` is `string.unquote('X_CODE: … fix: …')` with a REGISTERED code — `mixins.test.ts` |
 | `src/tokens/theme.scss` | the only stylesheet that emits global custom properties |
 | `src/list-url.ts` | a list's URL state read leniently, written as hrefs; `ui-barrel-bytes.test.ts` refuses it in a component-only island |
-| `src/components/data-table-rows.ts` | keyed rows: one `createRoot` per `rowKey`; a duplicate is `X_UI_INVALID_VALUE`. Full rule: `docs/history/ui.md` |
+| `src/components/data-table-rows.ts` | keyed rows: one `createRoot` per `rowKey`; a duplicate is `X_UI_INVALID_VALUE`; a row whose build throws is disposed, never cached. Full rule: `docs/history/ui.md` |
 | `src/tokens/reset.scss` | the reset, ZERO specificity: every rule a component may restyle sits in `:where(…)` whole, pseudo-class inside (`:where(a:hover)`, never `:where(a):hover`). `a:hover` (0,1,1) beat `.primary` and hid a button link's text until 22.3.2. `reset.test.ts` computes it |
 | `src/theme/runtime-slot.ts` | the module-scope slot holding the app's Solid runtime — and nothing else, so registering one costs an island 72 B |
 | `src/theme/solid-adapter.ts` | the runtime's SHAPE, and the one rule that decides which runtime a render gets |

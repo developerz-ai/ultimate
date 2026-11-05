@@ -130,6 +130,12 @@ export {
   queryPath,
   splitWords,
 } from './client-paths';
+export type { ActionPin, ClientPins, PinnedActionMethod } from './client-paths-pins';
+export {
+  encodeClientPins,
+  renderedActionPin,
+  renderedQueryPin,
+} from './client-paths-pins';
 export type { TransportFailure } from './client-problem';
 export {
   MAX_REMOTE_TITLE_LENGTH,
@@ -359,6 +365,23 @@ export {
   resolveEnvironment,
   tryResolveEnvironment,
 } from './environment';
+export { ExerciseEnvironmentError, ExerciseUnscopedError } from './exercise-errors';
+// A contract exercise's one loop: `@ultimat3/action`'s and `@ultimat3/query`'s, one tier apart from neither.
+export type {
+  ExerciseAttempt,
+  ExerciseReport,
+  ExerciseSubject,
+  ExerciseVerdict,
+} from './exercise-run';
+export {
+  assertExerciseScoped,
+  EXERCISE_RUNS,
+  EXERCISE_RUNS_MAX,
+  exerciseDefect,
+  exerciseReplay,
+  runExercise,
+  sealedHost,
+} from './exercise-run';
 export type {
   CodedErrorInit,
   CoreErrorCode,
@@ -612,6 +635,8 @@ export {
   writeMasterKeyFile,
   writeSecretsFile,
 } from './exports/secrets';
+export type { FilledWire } from './fill-wire';
+export { fillWire } from './fill-wire';
 export { finiteCount, finiteOption, MAX_TIMER_MS } from './finite-option';
 export type {
   FlightGate,
@@ -788,6 +813,7 @@ export {
   CLIENT_NAVIGATION_SURFACE_HEADER,
   CLIENT_PATH_STYLE_META,
   CLIENT_PERSIST_META,
+  CLIENT_PINS_META,
   CLIENT_SCOPE_HEADER,
   CLIENT_SCOPE_META,
   CLIENT_SYNC_META,
@@ -886,6 +912,9 @@ export type { StoreMode } from './store-mode';
 export { STORE_MODES, storeMode } from './store-mode';
 export { THEME_STORAGE_KEY } from './theme-storage';
 export { timingSafeEqual } from './timing-safe-equal';
+// A projected tool's description: `@ultimat3/mcp`'s and `@ultimat3/ai`'s, one tier apart from neither.
+export type { ToolDescriptionSource } from './tool-description';
+export { toolDescription } from './tool-description';
 export {
   frameworkVersion,
   readPackageVersion,

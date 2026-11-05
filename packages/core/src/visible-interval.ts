@@ -6,7 +6,7 @@
 
 import { backoffDelay, type Random } from './backoff';
 import { finiteOption, MAX_TIMER_MS } from './finite-option';
-import { onSessionLost, sessionIsLost } from './session-lost';
+import { whileSessionHeld } from './session-lost';
 
 export interface VisibleIntervalOptions {
   /**
@@ -33,7 +33,8 @@ const SUBJECT = 'visibleInterval';
  * Call `run` every `ms` while the tab is shown. Hidden: no call; one make-up call when shown. An
  * async `run` is never overlapped — the next wait starts when it settles; a throw or rejection is
  * re-raised for the page's error hook. With `maxMs`, failures back off and a success resets.
- * Stops for good on a session loss. Returns an idempotent disposer.
+ * Stops on a session loss; starts afresh when a principal next signs in. Returns an idempotent
+ * disposer.
  */
 export function visibleInterval(
   run: () => unknown,
@@ -53,7 +54,12 @@ export function visibleIntervalOn(
   const base = clampTimer(finiteOption(SUBJECT, 'ms', ms));
   const max =
     options.maxMs === undefined ? base : clampTimer(finiteOption(SUBJECT, 'maxMs', options.maxMs));
-  if (sessionIsLost()) return (): void => {};
+  // Stopped by a session loss, started afresh — attempt 1 — by the next signed-in principal.
+  return whileSessionHeld(() => runLoop(host, run, base, max));
+}
+
+/** One session's loop: armed now, stopped by the returned function. */
+function runLoop(host: IntervalHost, run: () => unknown, base: number, max: number): () => void {
   /** 1 + the failures since the last success: what `backoffDelay` grows the wait by. */
   let attempt = 1;
   let timer: unknown;
@@ -110,16 +116,13 @@ export function visibleIntervalOn(
   };
 
   const offVisibility = host.onVisibility(visible);
-  let offLost: () => void = () => {};
   const stop = (): void => {
     if (stopped) return;
     stopped = true;
     if (timer !== undefined) host.clearTimer(timer);
     timer = undefined;
     offVisibility();
-    offLost();
   };
-  offLost = onSessionLost(stop);
   arm();
   return stop;
 }

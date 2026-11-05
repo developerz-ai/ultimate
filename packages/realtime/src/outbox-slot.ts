@@ -2,14 +2,20 @@
 // (`boot.ts`) is the one module that constructs it — IndexedDB, the queue, the drain listeners —
 // so a writing island ships this reader and none of that (~7.5 kB it would otherwise carry).
 
+import type { ActionPin } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
 
 export interface OutboxEntry {
   /** The idempotency key the write was first attempted under — the SAME key on every replay. */
   readonly key: string;
-  /** The mutator's action name; the replay POSTs to `actionPath(name)`. */
+  /** The mutator's action name; the replay POSTs to `actionPath(name)` unless `http` pins it. */
   readonly name: string;
   readonly input: JsonValue;
+  /**
+   * The action's pin, as the document stamped it when the write was made — persisted, so a reload
+   * replays it there.
+   */
+  readonly http?: ActionPin | undefined;
 }
 
 /** What a hook asks of the outbox the boot opened: queue a write, list them, replay them. */

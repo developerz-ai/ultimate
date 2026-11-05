@@ -244,3 +244,29 @@ describe('visibleInterval', () => {
     expect(waits).toEqual([1000, 1000]);
   });
 });
+
+describe('visibleInterval across sessions', () => {
+  test('stopped by a loss, it polls again once a principal signs back in', async () => {
+    rescope('user:1');
+    const host = fakeHost();
+    let calls = 0;
+    const stop = visibleIntervalOn(host, () => (calls += 1), 1000);
+    await clientTransport({
+      method: 'GET',
+      url: '/q/feed',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ code: 'X_UNAUTHENTICATED', cause: 'c', fix: 'f' }), {
+          status: 401,
+        }),
+    }).catch(() => undefined);
+    expect(host.armed()).toBe(0);
+    rescope('user:2');
+    expect(host.armed()).toBe(1);
+    expect(host.listeners()).toBe(1);
+    host.fire();
+    expect(calls).toBe(1);
+    stop();
+    expect(host.armed()).toBe(0);
+    expect(host.listeners()).toBe(0);
+  });
+});

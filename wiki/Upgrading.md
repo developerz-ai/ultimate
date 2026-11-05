@@ -180,13 +180,18 @@ Tier 0 — `@ultimat3/core` (1–2). Tier 1 — `@ultimat3/db` (3–5), `@ultima
 | 73 | `McpAuthRefusal` | an exhaustive `switch` over it, or a `Record<McpAuthRefusal, …>`: add an `'origin-refused'` arm (`mcp.auth.origin-refused`, `onAudit`'s `auth-refused` with status 403) |
 | 74 | `x mcp serve --transport http` | you reach it through a name that is not `localhost`, `*.localhost` or a loopback address: `421` `X_MCP_HOST_REFUSED`. Use `http://localhost:<port>/mcp` or `http://127.0.0.1:<port>/mcp`. `GET`/`DELETE` on it answer `405` `X_METHOD_NOT_ALLOWED`, not `404` |
 | 75 | `setSolidRuntime` | every island that registers the runtime: add `createRoot` to the `solid-js` import and to the call, `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot })`. A six-name call no longer compiles (TS2345). A whole `solid-js` namespace still registers |
-| 76 | `DataTable`'s `rowKey` | two rows answering one key are `X_UI_INVALID_VALUE`: make the key unique, normally the row's primary key, `rowKey={(row) => row.id}` |
+| 76 | `DataTable`'s `rowKey` | two rows answering one key are `X_UI_INVALID_VALUE`: make the key the row's primary key — unique within `rows`, stable across updates, never an index — `rowKey={(row) => row.id}` |
 | 77 | `UI_KEYS`, `UiKey` | a `Record<UiKey, string>`: add `ui.first` |
 | 78 | a cursor-mode `Pagination` with no `prevCursor` | it no longer draws a disabled Previous. To give a keyset list a way back, pass `firstHref` (link mode, `listUrl().firstHref`) or `onFirst` (callback mode) |
 | 79 | `refresh()` from `@ultimat3/render/client` | code that relied on the old behaviour, [the table below](#entry-79-what-refresh-no-longer-does) |
 | 80 | `.contract()` on a non-public action or query | it calls your handler 16 times with generated legal input: pass `{ exercise: { actor } }` or `{ exercise: { off: '<reason>' } }`, [the rules below](#entry-80-the-exercise-assertion) |
 | 81 | `sampleInput` | you imported action's `sample-input` module by path; it is gone: `import { sampleInput } from '@ultimat3/schema/sample'` |
 | 82 | `ActionDescriptor`, `QueryDescriptor`, `Query` | code that assigned `.method` to a `'POST'`-typed variable widens it to `ActionHttpMethod`. A hand-built descriptor adds `errors: null`; a hand-built `Query` adds `contract` |
+| 83 | `WorkloadToken` (`@ultimat3/auth`) | you build one by hand, usually a test fake: add `raw`, the decoded payload (`raw: {}` where nothing reads it) |
+| 84 | a deployed role's app modules | a module throws on import or registration: the role now exits `X_APP_MODULE_LOAD_FAILED` instead of serving without it. `x manifest --json` names the module and why |
+| 85 | MCP tool descriptions | you snapshot `tools/list`: an undescribed query reads `Read with the "<name>" query.`, an admin action quotes its name. Set `mcp: { description }` to keep your own wording. `exposedPrimitives()` returns opted-in primitives only |
+| 86 | `QueryPoll` | you read `.ms`: keep the number you passed to `pollEvery` |
+| 87 | `.contract()` / `exerciseAction` / `exerciseQuery` | you ran one with `ULTIMATE_ENV` or `NODE_ENV` set to `staging` or `production`: run it under `bun test` |
 
 ### Entry 25: a hand-written `DeliveryLedger`
 

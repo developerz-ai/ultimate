@@ -148,6 +148,24 @@ describe('verdicts', () => {
     expect(failure.fix).toContain('exercise: { actor, input:');
   });
 
+  test('a deploy is refused before a run: generated input never reaches production', async () => {
+    let calls = 0;
+    const counted = failing('deployedNote', () => {
+      calls += 1;
+      return { length: 1 };
+    });
+    const previous = process.env['ULTIMATE_ENV'];
+    process.env['ULTIMATE_ENV'] = 'production';
+    try {
+      const failure = await failureOf(() => exerciseAction(counted, { actor: null }));
+      expect(failure.code).toBe('X_CONTRACT_EXERCISE_ENVIRONMENT');
+    } finally {
+      if (previous === undefined) delete process.env['ULTIMATE_ENV'];
+      else process.env['ULTIMATE_ENV'] = previous;
+    }
+    expect(calls).toBe(0);
+  });
+
   test('runs outside 1..64 are refused rather than clamped', async () => {
     const fine = failing('runsNote', () => ({ length: 1 }));
     for (const runs of [0, 65, 1.5]) {

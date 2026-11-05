@@ -5,6 +5,7 @@
 import '../theme/ambient';
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderNodes } from '@ultimat3/core/render-nodes';
+import { invalidValueError } from '../errors';
 import type { Accessor } from '../theme/solid-adapter';
 import { DataTable } from './DataTable';
 import { type KeyedRowsRuntime, keyedRows } from './data-table-rows';
@@ -133,6 +134,44 @@ describe('keyedRows under a real Solid runtime', () => {
     expect(table.failure()).toMatchObject({ code: 'X_UI_INVALID_VALUE' });
     expect(String((table.failure() as { cause?: unknown }).cause)).toContain('"a"');
     table.dispose();
+  });
+
+  test('a row whose build throws releases what it had built, and is built afresh next time', () => {
+    let released = 0;
+    let fail = true;
+    let rendered: readonly string[] = [];
+    let failure: unknown;
+    const [rows, setRows] = solid.createSignal<readonly Row[]>([a]);
+    const dispose = solid.createRoot((done) => {
+      const map = keyedRows<Row, string>(
+        runtime,
+        (row) => row.id,
+        (row, key) => {
+          solid.onCleanup(() => {
+            released += 1;
+          });
+          // Input, not a verdict: a column's `cell` that throws on the data it was handed.
+          if (fail)
+            throw invalidValueError('DataTable', row().title, 'a cell this column can draw');
+          return key;
+        },
+      );
+      solid.createComputed(() => {
+        try {
+          rendered = map(rows());
+        } catch (error) {
+          failure = error;
+        }
+      });
+      return done;
+    });
+    expect(failure).toBeDefined();
+    expect(released).toBe(1);
+    fail = false;
+    setRows([{ ...a }]);
+    expect(rendered).toEqual(['a']);
+    dispose();
+    expect(released).toBe(2);
   });
 
   test('disposing the table releases every row', () => {

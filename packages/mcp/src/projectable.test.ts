@@ -204,6 +204,39 @@ describe('a written-out list of real primitives projects like the registry sweep
     );
     expect(textOf(result)).toContain('p1');
   });
+
+  // Both description paths — `toolFrom`'s, and `exposureOf`'s under a declared `errors:` — say a
+  // read reads. They said "Run the … action." until v30, which told an agent a read was a write.
+  test('an undescribed query is described as a read, with or without declared errors', () => {
+    const plain = registerQuery(
+      'orgFeed',
+      query({
+        input: t.object({}),
+        policy: can('post:read'),
+        mcp: { expose: true },
+        sql: () => from<{ id: string }>('posts', [{ id: 'p1' }]),
+      }),
+    );
+    const refusing = registerQuery(
+      'orgPost',
+      query({
+        input: t.object({}),
+        policy: can('post:read'),
+        mcp: { expose: true },
+        errors: ['X_NOT_FOUND'],
+        sql: () => from<{ id: string }>('posts', [{ id: 'p1' }]),
+      }),
+    );
+
+    const described = defineAppMcp({ queries: [plain, refusing] }).tools.map((tool) => [
+      tool.name,
+      tool.description,
+    ]);
+    expect(described).toEqual([
+      ['orgFeed', 'Read with the "orgFeed" query.'],
+      ['orgPost', 'Read with the "orgPost" query. Declared refusals: X_NOT_FOUND.'],
+    ]);
+  });
 });
 
 describe('the listed primitive runs through the ONE authz path', () => {

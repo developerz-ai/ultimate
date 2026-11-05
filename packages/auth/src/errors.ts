@@ -30,6 +30,7 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_AUTH_LIMITER_NOT_SHARED',
   'X_AUTH_LIMITER_POLICY_MISMATCH',
   'X_MFA_SECRET_UNSEALED',
+  'X_AUTH_SIGN_IN_UNCONFIGURED',
 ] as const;
 
 /**
@@ -76,6 +77,8 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_AUTH_LIMITER_NOT_SHARED: 'the lockout is declared fleet-wide and the limiter is per-process',
   X_AUTH_LIMITER_POLICY_MISMATCH: 'the limiter in use enforces other numbers than the app declared',
   X_MFA_SECRET_UNSEALED: 'a stored totp secret is not sealed, so it is never read as one',
+  X_AUTH_SIGN_IN_UNCONFIGURED:
+    'a people-facing role started with no sign-in settings outside development and test',
 };
 
 // Registered unconditionally, in one call: a second package claiming a code auth owns has to fail
@@ -232,6 +235,20 @@ export const mfaSecretUnsealed = (): AuthError =>
     cause:
       'x_users.mfa_secret holds a value that is not sealed — written before second-factor secrets were sealed at rest, or written past saveTotpSecret — and a plaintext secret is never read as one',
     fix: 'x auth seal-mfa --json',
+  });
+
+/**
+ * The boot guard `x g sign-in` writes, refusing a people-facing role (`web`, `sync`) outside
+ * development and test when the app's sign-in settings are unset: started anyway, every
+ * policy-protected route answers 401 and nobody can sign in to fix it. The guard is the app's —
+ * an API-only app has no sign-in — so the code is here and the decision to throw it is not.
+ */
+export const signInUnconfigured = (role: string, missing: readonly string[]): AuthError =>
+  new AuthError({
+    code: 'X_AUTH_SIGN_IN_UNCONFIGURED',
+    cause: `the ${renderCauseValue(role)} role serves people and sign-in is unconfigured: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} unset`,
+    fix: `bunx x env example   # then set ${missing.join(', ')} and restart the role`,
+    meta: { role, missing: [...missing] },
   });
 
 /**

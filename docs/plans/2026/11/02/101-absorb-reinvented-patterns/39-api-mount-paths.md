@@ -16,7 +16,7 @@ Recorded objection: a third URL spelling beside `http.path` and `runtime.routes`
 | Path versus body disagree | refused 400 `X_HTTP_PATH_INPUT_CONFLICT`. Path winning silently would let a policy read one id and a handler another |
 | Method | `http: { path, method }`, action: `POST` (default), `PUT`, `PATCH`, `DELETE`; query: `GET`. `X_ACTION_PATH_DUPLICATE` keys on method and path, so REST's two verbs on one URL are legal |
 | Decoding | `route-path.ts`'s one decode. A segment with `/` stays one param |
-| Typed clients | `action.client()` substitutes from input, `encodeURIComponent`. `rpc()` by name "cannot see a pin" today (`action/CLAUDE.md`), so a pinned action takes `.client()`; a miss stays `X_CONTRACT_DRIFT`. Unchanged rule |
+| Typed clients | `action.client()` substitutes from input, `encodeURIComponent`. `rpc()` reaches a pin by name in a browser through the `ultimate-pins` stamp (wave 5b); a server takes `.client()`; a miss stays `X_CONTRACT_DRIFT` |
 | `derivePath`, `actionHttpPath` | parameterised: require `params` and fill, or refuse with the path invalid code. A deprecation's `replacedBy` naming one is `X_ACTION_DEPRECATION_INVALID`: a `Link` cannot carry a template |
 | OpenAPI | `:id` → `{id}`, `in: path, required`, the key removed from the published request body and from query parameters. Operation key follows `method`, not fixed `post` |
 | Path style | a pin outranks `pathStyle`, as it does today |

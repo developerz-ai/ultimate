@@ -90,8 +90,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `'resource'` stays the default (changing it moves every URL). `defineApi` sets the style FIRST and
   `configureActionPathStyle` re-derives every seated action (the module scan may have seated them
   under the default). `derivePath(name)` is pin-aware through `installPinLookup` — handed down by
-  `registry.ts`, never imported up (cycle through `action.ts`). `rpc()` cannot see a pin;
-  `action.client()` holds it.
+  `registry.ts`, never imported up (cycle through `action.ts`). browser `rpc()` reads the `ultimate-pins` stamp;
+  a server takes `action.client()`.
 - **The style is stated ONCE, on the server**; a browser reads `<meta name="ultimate-path-style">` through core's `actionPath(name)`. Full rule: `docs/history/action.md`.
 - **`Merge` in `define-api.ts` never recurses over the module list.** `Head & Merge<Rest>` is not
   a tail call: it cost one instantiation level per MODULE and answered TS2589 at the 48th entry of

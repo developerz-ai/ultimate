@@ -182,6 +182,9 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `ApiKeyCaller` is structurally http's `BearerCaller` and mcp's `ResolvedToken` — declared here
   because tier 2 imports neither. The store is a thunk (a mount is declared before boot installs
   the database client). No second in-memory key store: `MemoryAuthAdapter` IS an `ApiKeyStore`.
+- **`jwtBearerResolver` is its twin for an external JWT**: `checkWorkloadToken`'s checks, then
+  scope, then `accept(raw)`. Every refusal — a throwing key source too — is `null` plus one
+  `auth.jwt_bearer.refused` line naming the check, never a claim. `keys` is a thunk.
 - Rotate the session id on any privilege change (`rotateSession`, called by `updatePrivileges` in
   `privileges.ts`), never patch the row. A `passwordHash` change also ends every OTHER session of
   that user (`deleteOtherSessions`), or all of them when the caller passed no session of theirs.
@@ -236,7 +239,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds` |
 | `oauth-discovery.ts` | `/.well-known/openid-configuration` → an `OAuthProvider`. One `fetch` |
 | `jwks.ts` | `crypto.subtle` signature verification, cached by `kid`, one shared in-flight refresh. No dependency |
-| `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity` |
+| `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity`; `checkWorkloadToken`, the verdict form |
+| `jwt-bearer-resolver.ts` | an external bearer JWT → `{ actor, scopes } \| null` |
 | `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys) |
 | `mfa-challenge.ts` | the sealed challenge `X_MFA_REQUIRED` carries, and `completeMfa` |
 | `mfa-replay-postgres.ts` | the shared replay guard: one table, the claim, the sweep |
@@ -246,21 +250,19 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-cookie.ts` | the handshake's home between the two legs: seal, open, the cookie |
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
 | `id-token.ts` | id token → claims this handshake may believe |
-| `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |
-| `auth-fixture.ts` | the KDF parameters, the password and the `AuthError` catcher the three `auth*.test.ts` suites share. Off `index.ts` |
+| `*-fixture.ts` | test-only, off `index.ts`: `id-token-` (the string-input JWT builder), `auth-` (KDF params, password, `AuthError` catcher for `auth*.test.ts`), `oauth-login-` (adapter, clock, profile) |
 | `oauth-profile.ts` | claims or userinfo → one `OAuthProfile`; `userinfoBody`, the one userinfo reader |
 | `oauth-grant-context.ts` | `resolveGrants`' second argument: tokens, every id-token claim, a lazy subject-checked `userinfo()` |
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
-| `oauth-login-fixture.ts` | the adapter, clock and profile the three `oauth-login*` suites share. Off `index.ts` |
 | `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |
 | `errors.ts` | the codes this package owns and borrows, their titles, the one `registerErrorCodes()` call, `AuthError`, and every non-OAuth factory |
 | `oauth-errors.ts` | the OAuth refusals more than one OAuth module raises, and `restartAt`. A refusal with one thrower lives beside it; declares no code and registers nothing |
 | `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
-| `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it — core's `flightGate` with auth's own refusal injected |
+| `kdf-gate.ts` | the one bound on concurrent argon2 work: core's `flightGate`, auth's `X_OVERLOADED` |
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
 | `sign-out.ts` | `signOutHeaders({ session? })` — the expired session cookie plus `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), never `"cookies"`. Secure contexts only |
-| `client-scope.ts` | `clientScopeOf(actor)` — the OPAQUE per-principal id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`) over kind, id and impersonator, 32 hex; `''` for anonymous. Without `SESSION_SECRET`, a random per-process key and one `auth.client_scope.process_key` warning |
+| `client-scope.ts` | `clientScopeOf(actor)`, the OPAQUE id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`, else a per-process key and one warning) over kind, id, impersonator; `''` anonymous |
 
 ```bash
 bun test packages/auth
@@ -270,12 +272,10 @@ bun run --filter @ultimat3/auth typecheck
 Gotchas:
 - `exactOptionalPropertyTypes` — declare optional fields as `x?: T | undefined`.
 - `noUncheckedIndexedAccess` — index a `Record` into a local before narrowing it.
-- `X_NOT_IMPLEMENTED` is core's, `X_FORBIDDEN` is policy's. `errors.ts` registers only the codes
-  this package **owns**, unconditionally, and lists the borrowed two in `AUTH_BORROWED_ERROR_CODES`
-  without a title. Never a `hasErrorCode()` guard.
-- Tests run against `MemoryAuthAdapter`; the one ADAPTER test that boots a database is
-  `adapter-parity-identity.test.ts` (PGlite). `postgresAuthLimiter` and `postgresTotpReplayGuard`
-  each pair a scripted-executor twin (`*.test.ts`) with a `*.live.test.ts`, `describe.skip`
-  without `TEST_DATABASE_URL`.
+- `errors.ts` registers only the codes this package **owns**, unconditionally; borrowed ones
+  (`X_FORBIDDEN`, `X_NOT_IMPLEMENTED`, …) sit untitled in `AUTH_BORROWED_ERROR_CODES`. Never a
+  `hasErrorCode()` guard.
+- Tests run against `MemoryAuthAdapter`; `adapter-parity-identity.test.ts` boots PGlite. The two
+  Postgres guards pair a scripted twin with a `*.live.test.ts` (skips without `TEST_DATABASE_URL`).
 
 Why each rule above is shaped the way it is: [`docs/history/auth.md`](../../docs/history/auth.md).

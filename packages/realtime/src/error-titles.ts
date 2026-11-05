@@ -45,6 +45,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_OFFLINE_QUEUE_ABANDONED',
   'X_SOCKET_LIMIT',
   'X_REALTIME_PRODUCER_CONFLICT',
+  'X_MUTATION_PATH_UNFILLED',
 ] as const;
 
 export type RealtimeOwnedErrorCode = (typeof REALTIME_OWNED_ERROR_CODES)[number];
@@ -83,6 +84,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_OFFLINE_QUEUE_ABANDONED: 'a write was queued after its page changed principal',
   X_SOCKET_LIMIT: 'one principal holds too many sockets on this node',
   X_REALTIME_PRODUCER_CONFLICT: 'two kinds of producer carry one table on the change bus',
+  X_MUTATION_PATH_UNFILLED: "a pinned action's :param had no value in the write's input",
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws

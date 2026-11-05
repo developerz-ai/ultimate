@@ -238,8 +238,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   routed; a port silent for `REAP_AFTER_BEATS` is reaped; each tab resubscribes from its OWN cursors.
   No `SharedWorker` → the in-page host runs the same engine over a `MessageChannel`.
 - **The socket is READ-ONLY (protocol 3)**. A write is `useMutation`: the twin into the overlay, then
-  `POST actionPath(name)` through core's `clientTransport` with an idempotency key; the answer's
-  records are adopted inside the transport call, before `settle`. An `ack` is only a refusal.
+  the stamped pin (`renderedActionPin`) or `POST actionPath(name)`, via `clientTransport`, keyed;
+  the answer's records are adopted inside the transport call, before `settle`. An `ack` is only a refusal.
   KNOWN offline (`knownOffline()`), it is queued with no POST and painted once on disk (#777).
 - **`LiveClient` holds no signal** — plain reads plus `onStatus` / `onChange`; hooks wrap them.
 - **An answer that did not carry a touched row keeps that row's overlay** until the server's next row
