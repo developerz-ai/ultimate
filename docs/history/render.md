@@ -185,3 +185,7 @@ Verbatim from [`packages/render/CLAUDE.md`](../../packages/render/CLAUDE.md), wh
 | | |
 |---|---|
 | Router ↔ the page's lifecycle | `navigation-scroll.ts` owns `scrollRestoration = 'manual'` and RESTORES the entry's saved offset at start, before its first save (a reload, or Back after a full load); `navigation-tabs.ts` owns the `BroadcastChannel`, closed on `pagehide` (it blocks the back/forward cache), reopened and the cache emptied on a persisted `pageshow`. A sheet `loadStylesheets` appends is `owned` at once, so an aborted navigation's sheets are retired by the next swap. A view transition is tracked by identity: an older one finishing never clears the running one. |
+
+## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
+
+- Client navigation: `refresh()` passes `{ history: 'none', refresh: run }`; what a refresh changes lives in `navigation-refresh.ts` (`holdFor`, `refreshYields`, `swapIn`, `landFocus`): no view transition, `markFocus`/`restoreFocus` (`navigation-dom.ts`) instead of `focusMain`, no announcer write, never aborts `inflight`, nothing under an open modal. `held` is asked again at the swap, and `refresh()` answers whether it landed, so `refresh-idle.ts` owes one that did not. `scheduleRefresh()`'s state sits on `window[Symbol.for('ultimate.refresh-idle')]`. `client-bundle.test.ts` pins it alone at 3,079 B (ceiling 3,584).

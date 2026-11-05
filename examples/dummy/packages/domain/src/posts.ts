@@ -26,15 +26,24 @@ export const isValidTitle = (title: string): boolean =>
 export const hasCoherentPublishState = (status: PostStatus, publishedAt: Date | null): boolean =>
   (status === 'published') === (publishedAt !== null);
 
+/**
+ * A URL-safe slug from any text. Accents fold to their letter; a letter or digit with no ASCII form
+ * (`日本語`) becomes its code point (`u65e5-u672c-u8a9e`), so a title in any script has a slug and two
+ * different titles keep different ones. Text with no letter or digit at all is `post`: the slug's
+ * unique index, not this function, decides a collision.
+ */
 export const slugify = (title: string): string =>
   title
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/[^\p{ASCII}]/gu, (char) =>
+      /[\p{L}\p{N}]/u.test(char) ? `-u${(char.codePointAt(0) ?? 0).toString(16)}-` : '-',
+    )
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, SLUG_MAX)
-    .replace(/-+$/, '');
+    .replace(/-+$/, '') || 'post';
 
 /** Deterministic excerpt — no ellipsis heuristics per surface, no drift between site and app. */
 export const excerptOf = (body: string): string => {

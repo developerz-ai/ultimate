@@ -4,8 +4,12 @@
   display: flex;
   align-items: center;
   gap: t.space(2);
-  // Trailing edge in both writing directions.
-  justify-content: flex-end;
+}
+
+// Next holds the trailing edge in both writing directions, so it stays put whether Previous or
+// First is drawn beside it or not.
+.next {
+  margin-inline-start: auto;
 }
 
 .status {

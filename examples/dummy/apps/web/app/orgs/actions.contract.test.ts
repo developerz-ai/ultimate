@@ -13,7 +13,7 @@
  */
 
 import { orgId, priceOf, seatLimit } from '@postly/domain';
-import { expect, test } from '@ultimat3/testing';
+import { contractTest, expect, test } from '@ultimat3/testing';
 import { upgradePlan } from './actions/upgrade-plan';
 import { orgById } from './repo';
 
@@ -56,4 +56,16 @@ test('upgradePlan refuses an org admin — the contract is the owner’s, not th
 
   // And nothing moved. A denial that still wrote would be the worse half of the same bug.
   expect((await orgById(orgId(org.id)))?.planCode).toBe('free');
+});
+
+contractTest('upgradePlan passes the contract an action owes', async ({ seed, actorFor }) => {
+  // The four generated assertions, the last one running the handler as the owner on 16 generated
+  // plans — every plan code, the current one included, against one org. On Postgres each run rolls
+  // back; this suite's memory store keeps them, and the next test's `seed()` starts it over.
+  const { org, owner } = await seed('dev').pick({ org: 'org:tinta', owner: 'member:mara' });
+  const exercise = {
+    actor: actorFor(owner),
+    input: (drawn: unknown) => ({ ...(drawn as object), orgId: org.id }),
+  };
+  for (const contract of upgradePlan.contract({ exercise })) await contract.run();
 });

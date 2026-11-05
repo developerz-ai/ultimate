@@ -26,13 +26,13 @@ const LABELS = {
   retry: 'Try again',
 };
 const PROPS = { endpoint: ENDPOINT, locale: 'en', currency: 'USD', labels: LABELS };
-/** The one line that registers the runtime — six named imports, and the order the contract lists them. */
+/** The registration — seven named imports, in the order the contract lists them, as Biome prints it. */
 const REGISTRATION =
-  'setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup })';
+  'setSolidRuntime({\n    createContext,\n    useContext,\n    createSignal,\n    createMemo,\n    createEffect,\n    onCleanup,\n    createRoot,\n  })';
 /**
  * A string only an UN-SHAKEN solid-js carries: `observable()`'s refusal, which no island calls.
  * `setSolidRuntime(solidRuntime)` from `import * as solidRuntime` kept it — and the 14.8 kB around
- * it — in every chunk; the six-pick registration lets the bundler drop it. A string literal, so it
+ * it — in every chunk; the seven-pick registration lets the bundler drop it. A string literal, so it
  * survives minification; the negative control below proves `dist/solid.js` really contains it.
  */
 const NAMESPACE_ONLY = 'Expected the observer to be an object.';
@@ -143,7 +143,7 @@ describe('unit · the form x g resource emits ships a shaken solid-js', () => {
   // not milliseconds — 3.9 s alone, over 5 s under the gate's three workers, where Bun's 5 s
   // default fails a test about what the chunk CONTAINS. The file's own budget, as the mounting
   // cases below declare.
-  test('the chunk carries the six the contract names and not the exports nothing calls', async () => {
+  test('the chunk carries the seven the contract names and not the exports nothing calls', async () => {
     using root = await fixtureAppRoot('resource-form-shaken', withStylesheet(emitted()));
     const chunk = (await buildIslands(root.path, { only: ENTRY })).chunks[0];
     expect(chunk?.code).not.toContain(NAMESPACE_ONLY);

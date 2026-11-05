@@ -36,7 +36,7 @@ import {
   realtimeIslandEntry,
   realtimeKind,
 } from './island-realtime';
-import type { IslandRealtime } from './island-realtime-state';
+import { appPersistsRecords, type IslandRealtime } from './island-realtime-state';
 import type { Runtimes } from './island-runtime';
 import { loadingRuntime, mergeBuilds, runtimeBuilder, runtimeShared } from './island-runtime';
 import { solidDedupePlugin } from './island-solid-dedupe';
@@ -144,9 +144,10 @@ async function buildAll(
   // Inside the refusal: the realtime probe PARSES the island's graph, and a file that will not
   // parse rejected with a raw `AggregateError: Failed to scan imports` — out of the web boot, with
   // no code, no file and no fix — before `Bun.build` ever ran to raise the one below.
+  const persists = appPersistsRecords();
   const realtime = await Promise.all(
     files.map((file) =>
-      realtimeKind(root, file).catch((error: unknown) => {
+      realtimeKind(root, file, persists).catch((error: unknown) => {
         throw new IslandBuildFailedError({ file, logs: describeBuildError(error) });
       }),
     ),

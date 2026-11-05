@@ -8,6 +8,7 @@ import { tag } from '@postly/db';
 import { postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
 import { PostView } from '../entity';
+import { PostNotFound } from '../errors';
 import { postPublish } from '../policy';
 
 export const withdrawPost = action({
@@ -15,6 +16,8 @@ export const withdrawPost = action({
   output: PostView,
   // The publishing right decides its reverse too, on the same loaded row (`publishPost`).
   policy: postPublish,
+  // Closed: see `publishPost`.
+  errors: [PostNotFound.code],
   row: ({ input: { postId: id }, ctx }) => ctx.posts.authorship(postId(id)),
   // The same three tags `publishPost` busts: the post, the org feed, and the public blog.
   cache: { invalidates: [tag.post, tag.feed, tag.blog] },

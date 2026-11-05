@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "50519dfd6bb5060c",
+  "buildId": "bcebf555a27a56b0",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -2962,6 +2962,10 @@
     {
       "code": "X_RAW_FETCH",
       "package": "guards/raw-fetch.ts"
+    },
+    {
+      "code": "X_RAW_INTERVAL",
+      "package": "guards/raw-interval.ts"
     },
     {
       "code": "X_RAW_LENGTH",

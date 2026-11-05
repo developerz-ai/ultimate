@@ -10,11 +10,13 @@ import type { Deprecation } from '@ultimat3/core';
 import {
   IDEMPOTENCY_HEADER,
   isMcpExposed,
+  mergePathParams,
   RECORDS_OPENAPI_HEADER,
   REPLAYED_HEADER,
   recordDeprecatedCall,
   recordEnvelopeSchema,
   renderDeprecation,
+  templateParams,
   useContext,
   withWriteOrigin,
   writeDigest,
@@ -27,7 +29,8 @@ import { jsonResponse, publishRateLimit, redirect, takeRedirect, toBucket } from
 import { admitsAnonymous, policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { ActionRateLimit, AnyAction } from './action';
 import { ActionDeprecationInvalidError } from './errors';
-import { actionPathStyle, servedActionRoute } from './http-path';
+import { ActionDeprecationSuccessorInvalidError } from './errors-http';
+import { actionPathStyle, methodOfHttp, pathParametersOf, servedActionRoute } from './http-path';
 import { actionName, defOf, invoke } from './invoke';
 import {
   inputSchemaName,
@@ -36,6 +39,7 @@ import {
   schemaRef,
   toOperationId,
 } from './naming';
+import { withDeclaredErrors } from './openapi-errors';
 import { carriesRecords, recordResponse } from './record-wire';
 
 /** The digest a request's idempotency key names its write by; none for a missing or blank one. */
@@ -54,9 +58,18 @@ export function toRoute(target: AnyAction): Route {
   // name still has the path it declared. Reading only the seated registry answered the style's
   // derived path for an unseated pinned action — right by coincidence under `resource`, wrong
   // under `readable` (a shared test worker whose app declared it, 22.7).
-  const pinned = defOf(target).http?.path;
-  const path = pinned ?? servedActionRoute(actionName(target)).path;
-  return projectRoute(target, path, (req) => req.bodyRaw());
+  const http = defOf(target).http;
+  const path = http?.path ?? servedActionRoute(actionName(target)).path;
+  const owner = `action "${actionName(target)}"`;
+  // A `:param` pin's values come from the router's DECODED params and join the body before
+  // `invoke` parses it: one input for the schema, the policy, the row loader and the handler. A
+  // body naming the same key differently is refused (`X_HTTP_PATH_INPUT_CONFLICT`), never overridden.
+  const readInput =
+    templateParams(path).length === 0
+      ? (req: UltimateRequest) => req.bodyRaw()
+      : async (req: UltimateRequest) =>
+          mergePathParams({ owner, template: path, params: req.params, raw: await req.bodyRaw() });
+  return projectRoute(target, path, readInput, methodOfHttp(http));
 }
 
 /**
@@ -67,17 +80,23 @@ export function toRoute(target: AnyAction): Route {
  * `toRoute`'s: the policy, the idempotency, the redirect a handler asks for, the problem document.
  */
 export function toPostBinding(target: AnyAction, path: string): Route {
-  return projectRoute(target, path, async (req) => {
-    const body = await req.bodyRaw();
-    const fields = typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {};
-    return { ...fields, ...req.queryRaw() };
-  });
+  return projectRoute(
+    target,
+    path,
+    async (req) => {
+      const body = await req.bodyRaw();
+      const fields = typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {};
+      return { ...fields, ...req.queryRaw() };
+    },
+    'POST',
+  );
 }
 
 function projectRoute(
   target: AnyAction,
   path: string,
   readInput: (req: UltimateRequest) => Promise<unknown>,
+  method: Route['method'],
 ): Route {
   const name = actionName(target);
   const def = defOf(target);
@@ -178,7 +197,7 @@ function projectRoute(
     ...(def.mcp?.description === undefined ? {} : { description: def.mcp.description }),
   };
 
-  return { method: 'POST', path, handler, meta };
+  return { method, path, handler, meta };
 }
 
 /**
@@ -218,17 +237,20 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
   const deprecation = deprecationMetaFor(name, def.deprecated);
   const outputRef = schemaRef(outputSchemaName(name));
   const enveloped = carriesRecords(target.output);
+  // A `:param` pin's values are path parameters; an unpinned operation's bytes are unchanged.
+  const inPath = pathParametersOf(def.http?.path ?? '', target.input);
   return {
     operationId: toOperationId(name),
     tags: [operationTagOf(target)],
     summary: def.mcp?.description ?? name,
     ...(deprecation === undefined ? {} : { deprecated: true }),
-    parameters: idempotent ? [IDEMPOTENCY_PARAMETER] : [],
+    parameters: [...inPath, ...(idempotent ? [IDEMPOTENCY_PARAMETER] : [])],
     requestBody: {
       required: true,
       content: { 'application/json': { schema: { $ref: schemaRef(inputSchemaName(name)) } } },
     },
-    responses: {
+    // The declared refusals join the framework's own, per status (`openapi-errors.ts`).
+    responses: withDeclaredErrors(def.errors, {
       // Only an output that references an entity row changes shape: every other operation's
       // bytes are the ones `x verify`'s contract diff already holds.
       '200': enveloped
@@ -245,11 +267,13 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       // at all: malformed JSON, over `bodyLimitBytes`, an unreadable content type. That one is
       // HTTP-only, because only HTTP has bytes, and it is raised in `bodyRaw()` before any schema
       // exists to fail.
-      '400': problemResponse('X_INPUT_INVALID'),
+      '400': problemResponse(
+        inPath.length === 0 ? 'X_INPUT_INVALID' : 'X_INPUT_INVALID or X_HTTP_PATH_INPUT_CONFLICT',
+      ),
       '422': problemResponse('X_BODY_INVALID'),
       '403': problemResponse('policy denied'),
       ...(idempotent ? { '409': problemResponse('X_IDEMPOTENCY_CONFLICT') } : {}),
-    },
+    }),
     'x-ultimate': {
       capability: policyCapability(def.policy),
       idempotent,
@@ -282,6 +306,15 @@ function deprecationHeadersFor(
   if (deprecated === undefined) return undefined;
   const successor =
     deprecated.replacedBy === undefined ? undefined : servedActionRoute(deprecated.replacedBy).path;
+  if (deprecated.replacedBy !== undefined && successor !== undefined) {
+    if (templateParams(successor).length > 0) {
+      throw new ActionDeprecationSuccessorInvalidError({
+        name,
+        successor: deprecated.replacedBy,
+        path: successor,
+      });
+    }
+  }
   const rendered = renderDeprecation(deprecated, successor);
   if (!rendered.ok) throw new ActionDeprecationInvalidError(name, rendered.field, rendered.value);
   return rendered.headers;

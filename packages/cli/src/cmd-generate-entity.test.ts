@@ -167,8 +167,8 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
   // the run it wrapped was green. Same shape and same reasoning as `scaffold-typecheck.test.ts:158`
   // ("the whole-fixture build is the coverage, so the budget moves") and
   // `error-contract.test.ts:283` ("~5s alone, ~30s under eight competing workers"). The assertions
-  // below are the coverage — the subprocess must reach `9 pass` (the scaffolded client test gained its
-  // testDriver case) — so only the budget moves.
+  // below are the coverage — the subprocess must reach `10 pass` (the scaffolded client test gained
+  // its testDriver case, the repo test its sort-before-bound case) — so only the budget moves.
   test('the generated repo passes its own test, and the admin finds every label it reads', async () => {
     await Bun.write(join(root, 'admin-keys.test.ts'), ADMIN_KEYS_PROBE);
     const run = await exec(
@@ -182,7 +182,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
       { cwd: root },
     );
     expect(`${run.stdout}${run.stderr}`).toContain(' 0 fail');
-    expect(`${run.stdout}${run.stderr}`).toContain(' 9 pass');
+    expect(`${run.stdout}${run.stderr}`).toContain(' 10 pass');
     expect(run.ok).toBe(true);
   }, 60_000);
 

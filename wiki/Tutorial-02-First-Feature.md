@@ -46,10 +46,11 @@ bunx x g resource todo --dry-run
   + apps/web/app/todos/page.e2e.test.ts
   + apps/web/app/todos/page.tsx
   + apps/web/app/todos/page.test.ts
+  + apps/web/app/todos/page-db.test.ts
   + apps/web/shared/roles.ts
   + apps/web/api/index.ts
   + packages/db/src/client.ts
-✓ would write 36 file(s) for resource todo — nothing written
+✓ would write 37 file(s) for resource todo — nothing written
 ```
 
 **The form is an island, not a `ui/` component** — `todo-form.island.tsx` beside the slice rather than under `ui/`. A `createSignal` needs the browser, `.island.tsx` is what puts a module in the client bundle graph, and the route's `budget.js` is what bounds it. Everything under `ui/` renders on the server and ships no JS.
@@ -61,16 +62,16 @@ bunx x g resource todo
 ```
 
 ```text
-✓ wrote 38 file(s) for resource todo — next: …
+✓ wrote 39 file(s) for resource todo — next: …
 ```
 
-`x g` never clobbers — an existing file is `X_GENERATE_CONFLICT`; the i18n catalog is merged key-by-key rather than overwritten; and a **slice module** (`entity.ts`, `repo.ts`, `policy.ts`, `errors.ts`) the slice already has is skipped, `--force` included, because it belongs to the slice rather than to the generator that needed it. The last three lines are the wiring: the grants in `roles.ts`, the slice's actions, query and job in `api/index.ts`, and its entity in the db client (`packages/db/src/client.ts`). A file the run would leave unchanged — a catalog merge that gains no key, wiring a previous slice already wrote — is skipped rather than counted. Here `bun run setup` has written `x.manifest.json` and `openapi.json` ([tutorial 1](Tutorial-01-First-App)), so the run re-projects both and prints 38; in an app with neither it prints 36. In a `x new --no-example` app, whose two `package.json`s do not yet name the workspace packages, the same runs print 38 and 40 (41 with `--admin`).
+`x g` never clobbers — an existing file is `X_GENERATE_CONFLICT`; the i18n catalog is merged key-by-key rather than overwritten; and a **slice module** (`entity.ts`, `repo.ts`, `policy.ts`, `errors.ts`) the slice already has is skipped, `--force` included, because it belongs to the slice rather than to the generator that needed it. The last three lines are the wiring: the grants in `roles.ts`, the slice's actions, query and job in `api/index.ts`, and its entity in the db client (`packages/db/src/client.ts`). A file the run would leave unchanged — a catalog merge that gains no key, wiring a previous slice already wrote — is skipped rather than counted. Here `bun run setup` has written `x.manifest.json` and `openapi.json` ([tutorial 1](Tutorial-01-First-App)), so the run re-projects both and prints 39; in an app with neither it prints 37. In a `x new --no-example` app, whose two `package.json`s do not yet name the workspace packages, the same runs print 39 and 41 (42 with `--admin`).
 
 **No migration is in that list.** `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource todo` and then the two steps below.
 
 | Generator | Emits |
 |---|---|
-| `x g resource <n>` | the whole slice above — 36 files on a dry run in tutorial 1's app, 39 with `--admin` (`As of 2026-11-03`); a real run after `bun run setup` adds the two re-projected artifacts |
+| `x g resource <n>` | the whole slice above — 37 files on a dry run in tutorial 1's app, 40 with `--admin` (`As of 2026-11-04`); a real run after `bun run setup` adds the two re-projected artifacts |
 | `x g entity` / `policy` / `action` / `mutator` / `query` / `job` / `task` | that primitive plus its test — **and the slice modules its own source imports**, when the slice has none: `x g job` is 5 files into a bare slice, `x g action` 8. Which ones differ per generator, so a job plants no `policy.ts` ([CLI reference § x g](CLI-Reference)) |
 | `x g route <path> --surface site\|app` | `page.tsx`, its stylesheet, its test, its catalog keys |
 

@@ -120,7 +120,7 @@ That line is the entire integration. From the existing declaration:
 | tool name | the action's export name, **verbatim** — `publishPost`, never `publish_post`. The one name `tools/call` accepts, `scopes:` is keyed on, and every published catalog spells. `As of 2026-08`: `openapi.json`'s `x-ultimate.mcpTool` and `describe().mcp.tool` published a snake_case name until then, and an agent that trusted either called a tool the server answers ToolNotFound for |
 | JSON Schema for input | the `input` schema (Standard Schema → JSON Schema, via `introspect()`) |
 | output schema | `output` — published as the tool's `outputSchema` when its root is an object ([below](#what-a-client-is-told-beyond-the-schema)) |
-| description | `mcp.description` |
+| description | `mcp.description`, ending `Declared refusals: <codes>.` when the primitive declares `errors:` — the same sentence on the MCP tool and the in-app agent's tool, on both protocol eras, so an agent plans around a refusal before it calls ([Actions](Actions#declared-refusals-errors)). `As of 2026-11` |
 | title | `mcp.title` — omitted, none is published |
 | annotations | derived from the kind, `mcp.annotations` overrides key by key ([below](#what-a-client-is-told-beyond-the-schema)) |
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical |

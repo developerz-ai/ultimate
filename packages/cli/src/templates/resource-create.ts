@@ -137,7 +137,9 @@ const writer = testActor('writer', {
 }).actor;
 
 contractTest('create${feature.pascal} passes the action contract', async () => {
-  for (const contract of target.contract()) await contract.run();
+  // The fourth assertion runs the handler as the writer on 16 generated legal inputs, each
+  // inside a transaction that rolls back, so nothing it creates outlives the test.
+  for (const contract of target.contract({ exercise: { actor: writer } })) await contract.run();
 });
 
 contractTest('create${feature.pascal} needs an actor with an org', async () => {

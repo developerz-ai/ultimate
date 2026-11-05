@@ -288,6 +288,22 @@ export {
 export type { Page } from './cursor-page';
 export { pageOf } from './cursor-page';
 export { compareDecimalText } from './decimal-order';
+// `errors:` on an action and a query: the rule both share, since the two packages are one tier.
+export type { DeclaredErrorsOwner, DeclaredErrorVerdict, ErrorStatusOf } from './declared-errors';
+export {
+  ActionErrorsInvalidError,
+  checkDeclaredErrors,
+  describeDeclaredErrors,
+  ErrorUndeclaredError,
+  enforceDeclared,
+  judgeThrown,
+  LIFETIME_ERROR_CODES,
+  withDeclaredErrors,
+} from './declared-errors';
+export type { DeclaredResponsesWire } from './declared-errors-openapi';
+export { DECLARED_ERRORS_EXTENSION, withDeclaredResponses } from './declared-errors-openapi';
+export type { SourceReader } from './declared-errors-scan';
+export { definedErrorClassCodes, scanHandlerSource } from './declared-errors-scan';
 export { DEFAULT_LOCALE, DEFAULT_TIME_ZONE } from './default-locale';
 export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
 export {
@@ -823,6 +839,15 @@ export { retryDecision } from './retry-loop';
 export { isRetryableStatus, RETRYABLE_STATUSES } from './retryable-status';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
+export { HttpPathInputConflictError, mergePathParams } from './route-path-merge';
+export type { FilledTemplate, TemplateKeyNode } from './route-path-template';
+export {
+  fillTemplate,
+  pathTemplateProblem,
+  templateKeyProblem,
+  templateParams,
+  toOpenApiPath,
+} from './route-path-template';
 export { routeRank } from './route-rank';
 export type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from './route-vocabulary';
@@ -853,6 +878,7 @@ export {
   resetServices,
   type ServiceFactory,
 } from './service';
+export { onSessionLost, sessionIsLost } from './session-lost';
 export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
 export { singleFlight } from './single-flight';
 export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
@@ -866,6 +892,8 @@ export {
   resolveVersion,
   VERSION_DEFINE,
 } from './version';
+export type { VisibleIntervalOptions } from './visible-interval';
+export { visibleInterval } from './visible-interval';
 // The webhook wire format, at the tier both halves can reach — `@ultimat3/jobs` signs a delivery
 // and `@ultimat3/http` verifies one, and neither may import the other. Same argument
 // `timing-safe-equal.ts` makes for itself, one line above.

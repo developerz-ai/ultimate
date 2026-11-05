@@ -15,8 +15,10 @@ import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
+import { type Accessor, solid } from '../theme/solid-adapter';
 import { type AsyncBranch, asyncBranch, isBusyBranch } from './async-branch';
 import styles from './DataTable.module.scss';
+import { keyedRows } from './data-table-rows';
 import {
   type ColumnPriority,
   columnPriority,
@@ -58,6 +60,11 @@ interface DataTableBaseProps<Row> {
   caption: string;
   columns: readonly Column<Row>[];
   rows: readonly Row[];
+  /**
+   * The row's identity — its primary key, unique within `rows`. A live update keeps the `<tr>` of
+   * every key it still holds: the same object runs nothing, so focus and an open "more" stay put;
+   * a new object redraws that row's cells. Two rows under one key are `X_UI_INVALID_VALUE`.
+   */
   rowKey: (row: Row) => string;
   sort?: SortState | undefined;
   loading?: boolean | undefined;
@@ -66,9 +73,12 @@ interface DataTableBaseProps<Row> {
   onRetry?: (() => void) | undefined;
   emptyTitle?: string | undefined;
   emptyDescription?: string | undefined;
-  /** Opaque cursors from the query result; absent means no further page. */
-  nextCursor?: string | undefined;
-  prevCursor?: string | undefined;
+  /**
+   * Opaque cursors from the query result; `null` or absent means no further page, so a framework
+   * `Page`'s `nextCursor` is handed straight through. A keyset `Page` has no `prevCursor`.
+   */
+  nextCursor?: string | null | undefined;
+  prevCursor?: string | null | undefined;
   stickyHeader?: boolean | undefined;
   /** Pins the first column while the table scrolls sideways. */
   stickyFirstColumn?: boolean | undefined;
@@ -86,8 +96,11 @@ export interface DataTableCallbackProps<Row> extends DataTableBaseProps<Row> {
   onCursor?: ((cursor: string, direction: 'next' | 'prev') => void) | undefined;
   /** Callback sorting. Never beside `sortHrefFor` — the type refuses the pair. */
   onSortChange?: ((sort: SortState | undefined) => void) | undefined;
+  /** Back to the first page: the pager's "First" button. Pass it only past the first page. */
+  onFirst?: (() => void) | undefined;
   hrefFor?: undefined;
   sortHrefFor?: undefined;
+  firstHref?: undefined;
 }
 
 /** The pager and the sort headers are anchors: a server-rendered table needs no script. */
@@ -99,14 +112,18 @@ export interface DataTableLinkProps<Row> extends DataTableBaseProps<Row> {
    * is "unsorted"). Absent, a sortable header is plain text — never a button with no handler.
    */
   sortHrefFor?: ((sort: SortState | undefined) => string) | undefined;
+  /** The first page's URL, for the pager's "First" anchor — `listUrl().firstHref`. */
+  firstHref?: string | undefined;
   onCursor?: undefined;
   onSortChange?: undefined;
+  onFirst?: undefined;
 }
 
 export type DataTableProps<Row> = DataTableCallbackProps<Row> | DataTableLinkProps<Row>;
 
 export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
   const ui = useUi();
+  const rt = solid();
 
   const sortLabel = (key: string): string =>
     ariaSortFor(props.sort, key) === 'ascending'
@@ -152,9 +169,10 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
 
   /**
    * The hidden columns' values, each entry shown only over the widths its own cell is hidden —
-   * a `<details>`, so it opens with scripting off.
+   * a `<details>`, so it opens with scripting off. Only the values read the row: a new object
+   * under the same key redraws them and leaves the `<details>` — and whether it is open — alone.
    */
-  const disclosure = (more: MoreColumn<Column<Row>>, row: Row): JSX.Element => (
+  const disclosure = (more: MoreColumn<Column<Row>>, row: Accessor<Row>): JSX.Element => (
     <td role={TABLE_ROLES.cell} class={styles['more']} data-more={more.until}>
       <details class={styles['disclosure']}>
         <summary class={styles['summary']}>{ui.t(UI_KEYS.more)}</summary>
@@ -162,13 +180,36 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
           {more.columns.map((column) => (
             <div class={styles['entry']} data-priority={priorityOf(column)}>
               <dt>{column.header}</dt>
-              <dd>{column.cell(row)}</dd>
+              <dd>{column.cell(row())}</dd>
             </div>
           ))}
         </dl>
       </details>
     </td>
   );
+
+  /** One `<tr>` per key, built once; only what reads `row()` redraws when its object changes. */
+  const rowNode = (row: Accessor<Row>, key: string): JSX.Element => {
+    const more = moreColumn(props.columns);
+    return (
+      <tr role={TABLE_ROLES.row} class={styles['row']} data-row={key}>
+        {props.columns.map((column) => (
+          <td
+            role={TABLE_ROLES.cell}
+            class={cx(styles['cell'], column.numeric === true && styles['numeric'])}
+            data-priority={priorityOf(column)}
+          >
+            {cellContent(column, row())}
+          </td>
+        ))}
+        {more === undefined ? null : disclosure(more, row)}
+      </tr>
+    );
+  };
+
+  // Built in the component body, once: the cache must outlive every run of `body()`, and the
+  // owner here is what disposes every row with the table.
+  const rowNodes = keyedRows<Row, JSX.Element>(rt, (row) => props.rowKey(row), rowNode);
 
   const body = (): JSX.Element => {
     if (branch().kind === 'pending') {
@@ -192,22 +233,15 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
         </tr>
       ));
     }
-    const more = moreColumn(props.columns);
-    return props.rows.map((row) => (
-      <tr role={TABLE_ROLES.row} class={styles['row']} data-row={props.rowKey(row)}>
-        {props.columns.map((column) => (
-          <td
-            role={TABLE_ROLES.cell}
-            class={cx(styles['cell'], column.numeric === true && styles['numeric'])}
-            data-priority={priorityOf(column)}
-          >
-            {cellContent(column, row)}
-          </td>
-        ))}
-        {more === undefined ? null : disclosure(more, row)}
-      </tr>
-    ));
+    return rowNodes(props.rows);
   };
+
+  /** No cursor either way and no way back is a single page: no pager at all. */
+  const hasPager = (): boolean =>
+    props.nextCursor != null ||
+    props.prevCursor != null ||
+    props.firstHref !== undefined ||
+    props.onFirst !== undefined;
 
   /** One mode per use, exactly as `Pagination` declares it — the table only hands it through. */
   const pager = (): JSX.Element =>
@@ -216,12 +250,14 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
         nextCursor={props.nextCursor}
         prevCursor={props.prevCursor}
         onCursor={props.onCursor}
+        onFirst={props.onFirst}
       />
     ) : (
       <Pagination
         nextCursor={props.nextCursor}
         prevCursor={props.prevCursor}
         hrefFor={props.hrefFor}
+        firstHref={props.firstHref}
       />
     );
 
@@ -314,7 +350,13 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     );
   };
 
-  const table = (decided: AsyncBranch<readonly Row[]>): JSX.Element => [
+  /** Read inside the attributes, so a refresh restyles the tbody instead of rebuilding it. */
+  const stale = (): boolean => {
+    const decided = branch();
+    return decided.kind === 'ready' && decided.busy;
+  };
+
+  const table = (): JSX.Element => (
     <Table
       caption={props.caption}
       stickyHeader={props.stickyHeader !== false}
@@ -325,36 +367,52 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
       {header()}
       <tbody
         role={TABLE_ROLES.rowgroup}
-        class={cx(styles['body'], decided.kind === 'ready' && decided.busy && styles['stale'])}
-        aria-busy={ariaBool(isBusyBranch(decided))}
+        class={cx(styles['body'], stale() && styles['stale'])}
+        aria-busy={ariaBool(isBusyBranch(branch()))}
       >
         {body()}
       </tbody>
-    </Table>,
-    props.nextCursor === undefined && props.prevCursor === undefined ? null : pager(),
-  ];
+    </Table>
+  );
 
   /**
    * The branch is decided INSIDE the returned JSX, as `AsyncRegion` does: a component body runs
    * once, so a decision taken there is the decision for the island's whole life — a table that
    * first rendered its error state kept it after the query recovered.
+   *
+   * And only the KIND is decided here, through a memo: a live update that stays `ready` must not
+   * rebuild the `<table>`, or every kept `<tr>` is detached and re-attached — and a detached node
+   * drops focus, which is the defect keyed rows exist to fix. The rows, the busy state and the
+   * pager each track the data on their own.
    */
-  const content = (): JSX.Element => {
+  const view = rt.createMemo((): 'failed' | 'empty' | 'table' => {
+    const kind = branch().kind;
+    return kind === 'failed' || kind === 'empty' ? kind : 'table';
+  });
+
+  const failure = (): unknown => {
     const decided = branch();
-    if (decided.kind === 'failed') {
-      return <ErrorState error={decided.error} onRetry={props.onRetry} />;
-    }
+    return decided.kind === 'failed' ? decided.error : undefined;
+  };
+
+  const content = (): JSX.Element => {
+    const kind = view();
+    if (kind === 'failed') return <ErrorState error={failure()} onRetry={props.onRetry} />;
     // Unreachable while pending, by the shape of `AsyncBranch` rather than by the order of two
     // ifs: "No results" under a first page in flight is the bug that ordering used to stop.
-    if (decided.kind === 'empty') {
+    if (kind === 'empty') {
       return <EmptyState title={props.emptyTitle} description={props.emptyDescription} />;
     }
-    return table(decided);
+    return table();
   };
+
+  /** Beside the table and outside its memo: a new cursor redraws the pager and nothing else. */
+  const pagerSlot = (): JSX.Element => (view() === 'table' && hasPager() ? pager() : null);
 
   return (
     <div class={cx(styles['wrap'], props.class)} data-narrow={props.narrow ?? 'cards'}>
       {content()}
+      {pagerSlot()}
     </div>
   );
 }

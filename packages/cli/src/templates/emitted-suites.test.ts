@@ -335,3 +335,35 @@ describe('unit · each generator writes a unit test that loads the source it wro
     }
   });
 });
+
+// `.contract()` on a guarded action with no `exercise` is X_CONTRACT_EXERCISE_UNDECLARED, so a
+// generator that emitted the bare call would ship a suite red on its first run. Every emitted call
+// names who the handler runs as, or why it does not run, and the first draw is bound to the org
+// the scaffold's tenancy rule compares — else every run is denied, and that is red too.
+describe('unit · every emitted .contract() call declares its exercise', () => {
+  const calls = (): readonly { readonly from: string; readonly call: string }[] =>
+    emitted().flatMap((file) =>
+      [...stripComments(file.contents).matchAll(/\.contract\(([^;]*?)\)\)/gs)].map((match) => ({
+        from: `${file.from} → ${file.path}`,
+        call: match[1] ?? '',
+      })),
+    );
+
+  test('none is bare', () => {
+    const bare = calls().filter(({ call }) => !call.includes('exercise:'));
+    expect(bare.map(({ from }) => from)).toEqual([]);
+  });
+
+  test('the rule has subjects: x g action and x g resource both emit one', () => {
+    const from = calls().map((each) => each.from);
+    expect(from.some((each) => each.includes('send-invoice.contract.test.ts'))).toBe(true);
+    expect(from.some((each) => each.includes('create-invoice.contract.test.ts'))).toBe(true);
+  });
+
+  test('a tenancy-ruled action binds the org its member actor belongs to', () => {
+    const action = calls().find((each) => each.from.includes('send-invoice.contract.test.ts'));
+    expect(action?.call).toContain(
+      'exercise: { actor: member, input: (drawn) => ({ ...(drawn as object), orgId }) }',
+    );
+  });
+});

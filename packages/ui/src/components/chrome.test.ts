@@ -61,6 +61,7 @@ function formRuntime(): { flush(): void; restore(): void } {
     createMemo: <T>(fn: () => T) => fn,
     createEffect: (fn: () => void): void => void effects.push(fn),
     onCleanup: (): void => undefined,
+    createRoot: <T>(fn: (dispose: () => void) => T): T => fn(() => {}),
   });
   return {
     flush: () => {

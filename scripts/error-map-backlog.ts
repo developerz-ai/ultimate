@@ -37,6 +37,8 @@ export const OFF_SOCKET: Pins = {
     'X_OUTBOUND_RETRY_UNSAFE',
     'X_ERROR_DECLARATION_INVALID',
     'X_CLIENT_ERROR',
+    // Raised by `checkDeclaredErrors` at `action()`/`query()`: a module's load, never a request.
+    'X_ACTION_ERRORS_INVALID',
   ],
   // tier 1 — a tier's ceiling or similarity floor, screened where `app.config.ts` names it: raised
   // by `new LruCache(...)` and `memorySemanticCache(...)`, which a boot builds once.
@@ -87,7 +89,13 @@ export const OFF_SOCKET: Pins = {
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],
   // tier 3 — an action or its path registered twice, at `registerActions`.
-  action: ['X_ACTION_DUPLICATE', 'X_ACTION_PATH_DUPLICATE'],
+  action: [
+    'X_ACTION_DUPLICATE',
+    'X_ACTION_PATH_DUPLICATE',
+    'X_CONTRACT_DEFECT',
+    'X_CONTRACT_EXERCISE_UNREACHED',
+    'X_CONTRACT_EXERCISE_UNDECLARED',
+  ],
   // tier 3 — the worker's own runtime vocabulary. A job runs with no socket attached and
   // `ROLE=worker` opens no HTTP port. `X_JOB_CLAIM_QUEUES_EMPTY`: every shipped caller of
   // `driver.claim()` is off-socket (`worker.ts`, `x jobs drain`, `@ultimat3/testing`'s fixture)

@@ -108,6 +108,19 @@ describe('unit · every generated route is one the framework will register', () 
     }
   });
 
+  /**
+   * `x g resource`'s list page by name: a fixture that stopped emitting it would leave the loop
+   * below green over every OTHER route. It registers, and it pages by link (`listUrl`).
+   */
+  test('the generated resource list route registers, paging by link', () => {
+    const lists = emittedRoutes().filter((route) => route.path.endsWith('app/invoices/page.tsx'));
+    expect(lists.map((route) => route.variant)).toEqual(['x new']);
+    for (const route of lists) {
+      expect(() => check(route)).not.toThrow();
+      expect(route.source).toContain('hrefFor={list.hrefFor}');
+    }
+  });
+
   test('no generated defineRoute throws X_ROUTE_MODE_INVALID', () => {
     const offenders = emittedRoutes().flatMap((route) => {
       try {

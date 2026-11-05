@@ -27,6 +27,7 @@ function install(withRouter: boolean) {
     prefetch: () => undefined,
     refresh: async () => {
       calls.push('refresh');
+      return true;
     },
     openModal: async (path: string) => {
       calls.push(`openModal ${path}`);

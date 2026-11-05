@@ -123,7 +123,11 @@ export const config = defineRoute({
   // `X_ERROR_DECLARATION_INVALID`, `X_SCHEMA_SENSITIVE_OUTPUT`: 878 B of titles), so a refusal
   // with one of them reaching the island is still titled, and a refusal's issues carry the `rule` and `params` a form translates
   // on (plan 101 slice 10) — raised 25kb → 26kb (30.0.0): contact-sales island +1,244 B.
-  budget: { js: '26kb' },
+  // measured: 28474 B (2026-11-05; x build --target static, against main's 26,212) — why: the
+  // contact-sales island +2,262 B, this one `rpc` island's whole rise: `action.client()` filling a
+  // pinned URL (`action/client.ts` +536, `errors-http.ts` 443, `route-path-template.ts` 385), 5a's
+  // titles (+499) and the session flag (+392) — raised 26kb → 28kb (30.0.0).
+  budget: { js: '28kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

@@ -23,3 +23,33 @@ describe('sparklinePath', () => {
     expect(sparklinePath([])).toBe('');
   });
 });
+
+/**
+ * An unknown value is a GAP, as `LineChart` holds: `[5, null, 5]` used to draw a dive to the
+ * baseline in the middle — a zero nobody measured.
+ */
+describe('sparklinePath with gaps', () => {
+  const gappy = [
+    { key: 'd0', value: 5 },
+    { key: 'd1', value: null },
+    { key: 'd2', value: 5 },
+    { key: 'd3', value: 2 },
+  ];
+
+  test('null splits the line into runs, one M each, with no point at the baseline', () => {
+    const d = sparklinePath(gappy);
+    expect(d.match(/M/g)).toHaveLength(2);
+    expect(d).not.toContain(`,${(SPARKLINE.height - SPARKLINE.pad).toFixed(1)}`);
+    expect(d).toBe('M4.0,4.0 M398.7,4.0 L596.0,42.4');
+  });
+
+  test('a null point has no position, and every other point keeps its index', () => {
+    const placed = sparkPoints(gappy);
+    expect(placed[1]).toBeNull();
+    expect(placed[2]?.x).toBeCloseTo(398.667, 2);
+  });
+
+  test('all unknown is no line at all', () => {
+    expect(sparklinePath([{ key: 'd0', value: null }])).toBe('');
+  });
+});

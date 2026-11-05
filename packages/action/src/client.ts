@@ -27,13 +27,17 @@ import {
   BUILD_ID_HEADER,
   clientTransport,
   FRAMEWORK_CODE,
+  fillTemplate,
   isJsonObject,
   problemOf,
   remoteTitleOf,
+  templateParams,
 } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
 import { ContractDriftError, RemoteActionError } from './errors';
+import { ActionHttpPathInvalidError } from './errors-http';
+import type { ActionHttp } from './http-path';
 import { issuesFromWire } from './wire-issues';
 
 /**
@@ -125,12 +129,13 @@ export function rpc<TActions extends ActionMap>(options: ClientOptions): Client<
 export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
   name: string,
   options: ClientOptions,
-  pinnedPath?: string,
+  pinned?: ActionHttp,
 ): ClientMethod<TInput, TOutput> {
   // No default here: for a caller naming no style, `actionPath` asks the document the server
   // rendered, and that answer must be the same one `useMutation` and the outbox replay get.
-  const path = pinnedPath ?? actionPath(name, options.pathStyle);
-  const url = `${options.baseUrl.replace(/\/+$/, '')}${path}`;
+  const path = pinned?.path ?? actionPath(name, options.pathStyle);
+  const base = options.baseUrl.replace(/\/+$/, '');
+  const params = templateParams(path);
   const onResponse = (response: Response): void =>
     assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
   const decodeError = (
@@ -139,11 +144,19 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
     retryAfterSeconds?: number,
   ): UltimateError | undefined => toUltimateError(text, status, name, retryAfterSeconds);
   // Erased at the wire seam; the response type is this action's by construction.
-  return (input, callOptions = {}) =>
-    clientTransport({
-      method: 'POST',
+  return (input, callOptions = {}) => {
+    let wire: { readonly url: string; readonly body: unknown };
+    try {
+      wire = wireOf(name, base, path, params, input);
+    } catch (error) {
+      // A rejection like every other refusal of a call, never a throw out of a Promise-returning one.
+      return Promise.reject(error);
+    }
+    const { url, body } = wire;
+    return clientTransport({
+      method: pinned?.method ?? 'POST',
       url,
-      body: input ?? {},
+      body,
       headers: headersFor(options),
       signal: callOptions.signal,
       idempotencyKey: callOptions.idempotencyKey,
@@ -156,6 +169,35 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
       decodeError,
       fetchImpl: options.fetch,
     }) as Promise<InferOutput<TOutput>>;
+  };
+}
+
+/**
+ * A `:param` pin's URL, filled from the input the way the server's router reads it back (each value
+ * one encoded segment), and the body without those keys — the URL carries them. A static path is
+ * the whole input as the body, as every unpinned call always sent. A missing value is refused
+ * before any request exists.
+ */
+function wireOf(
+  name: string,
+  base: string,
+  path: string,
+  params: readonly string[],
+  input: unknown,
+): { readonly url: string; readonly body: unknown } {
+  if (params.length === 0) return { url: `${base}${path}`, body: input ?? {} };
+  const filled = fillTemplate(path, input);
+  if (!filled.ok) {
+    throw new ActionHttpPathInvalidError({
+      name,
+      path,
+      reason: `needs a non-empty string for :${filled.missing}, and the call's input has none`,
+      fix: `${name}.client(options)({ ${filled.missing}: '<value>', ... }) — a non-empty string, the URL's :${filled.missing}`,
+    });
+  }
+  const entries = Object.entries(input as Record<string, unknown>);
+  const body = Object.fromEntries(entries.filter(([key]) => !params.includes(key)));
+  return { url: `${base}${filled.path}`, body };
 }
 
 /** One attempt, and no retry at all. What a mutation carrying no idempotency key is allowed. */

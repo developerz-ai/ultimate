@@ -186,6 +186,20 @@ export interface ActionFact {
   readonly rateLimit?: RateLimitFact;
   readonly mcp: { readonly expose: boolean; readonly description?: string };
   readonly mutator?: boolean;
+  /**
+   * The declared refusals, sorted — absent for an action that declares none (an open contract),
+   * like `rateLimit`. A caller branches on each code: removing one is breaking, adding one additive
+   * (`diffDeclaredErrors`). `errors: []` is written: a closed list is a fact, an empty one too.
+   */
+  readonly errors?: readonly string[];
+  /** A pinned `http: { path, method }`, absent when unpinned. A change is `breaking`. */
+  readonly http?: HttpPinFact;
+}
+
+/** Where a pinned primitive is served: the `:param` template and its verb. */
+export interface HttpPinFact {
+  readonly path: string;
+  readonly method: string;
 }
 
 export interface QueryFact {
@@ -226,6 +240,10 @@ export interface QueryFact {
    * column must not flip every `rows: X.$schema` read. Present before and absent after is breaking.
    */
   readonly rows?: JsonValue;
+  /** The declared refusals, sorted — `ActionFact.errors`, the same rule. */
+  readonly errors?: readonly string[];
+  /** `ActionFact.http`, the same rule; `method` is always `GET`. */
+  readonly http?: HttpPinFact;
 }
 
 /**

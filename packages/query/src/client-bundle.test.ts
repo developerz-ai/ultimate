@@ -55,15 +55,19 @@ describe('@ultimat3/query/client in a browser', () => {
     expect(modules.filter(isTitlesTable)).toEqual([]);
   }, 60_000);
 
-  // measured: 12,746 B (2026-10-09, Bun 1.4.2), against 13,312. why: +763 B, core's
+  // measured: 14,494 B (2026-11-05), against 14,848, the next half kilobyte. why: +1,013 B, a
+  // pinned read's URL — core's `fillTemplate`/`templateParams` and `X_QUERY_HTTP_PATH_INVALID`'s leaf class, so
+  // `client()` on `http: { path: '/orders/:id' }` fills the URL rather than 404ing on the derived
+  // one; the other +697 B over 12,746 is wave 5a's core `./page` additions (13,443 B without
+  // this). measured: 12,746 B (2026-10-09, Bun 1.4.2), against 13,312. why: +763 B, core's
   // `reviveWireDates`: a row's `Date` reaches the caller as a `Date`, named by the route in
   // `x-ultimate-dates` (#710). 11,983 B on 2026-10-05; it was 11,012 at the tip before
   // this change. why: +971 B, core's decoders reading an http refusal off the wire — the
   // `Retry-After` reader (`client-retry-after.ts`) and the `retry-after` rule in `retryForStatus`,
   // so a read refused with a 429 waits the delay the server named, and the problem body's `title`
   // for a code this realm never registered (`remoteTitleOf`). The next whole kilobyte above it.
-  test('stays under 13 kB minified (12,746 B as of 2026-10-09)', async () => {
+  test('stays under 14.5 kB minified (14,494 B as of 2026-11-05)', async () => {
     const { bytes } = await build(true);
-    expect(bytes).toBeLessThan(13_312);
+    expect(bytes).toBeLessThan(14_848);
   }, 60_000);
 });

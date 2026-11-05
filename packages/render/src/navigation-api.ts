@@ -54,7 +54,7 @@ export function refresh(): Promise<void> {
     win.location.reload();
     return Promise.resolve();
   }
-  return win.__xNavigation.refresh();
+  return win.__xNavigation.refresh().then(() => undefined);
 }
 
 /**

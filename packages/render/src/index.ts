@@ -169,6 +169,7 @@ export {
 } from './navigation-rules';
 export type { ClientNavigationHead } from './navigation-tags';
 export { clientNavigationTags, modalRouteList } from './navigation-tags';
+export { scheduleRefresh } from './refresh-idle';
 export type {
   MountedRouteInput,
   RegisterRouteInput,

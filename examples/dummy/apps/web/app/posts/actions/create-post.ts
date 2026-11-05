@@ -19,6 +19,8 @@ export const createPost = action({
   input: CreatePostInput.extend({ orgId: t.uuid }),
   output: PostView,
   policy: postCreate,
+  // Closed: see `publishPost`.
+  errors: [],
   cache: { invalidates: [tag.feed] },
   mcp: { expose: true, description: 'Create a draft post in the actor’s organisation' },
   async handle({ input, ctx }) {

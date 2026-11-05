@@ -111,4 +111,6 @@ export const TIER_3_ERROR_STATUS = {
   X_WEBHOOK_RECEIVER_UNAVAILABLE: 503,
   // @ultimat3/jobs — the event id a webhook receiver verified is not one it can key a job by
   X_WEBHOOK_EVENT_ID_INVALID: 422,
+  // @ultimat3/query — a query's pinned http.path is not a valid path template
+  X_QUERY_HTTP_PATH_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

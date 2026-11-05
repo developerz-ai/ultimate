@@ -94,7 +94,7 @@ const repoSource = (name: NameSet, dbModule: string, stems: EntityStems): string
   const listSignature = wrapList(
     '',
     'export async function list(',
-    ['limit = 50'],
+    ['limit = 50', "sort: ListSort = 'createdAt'", "dir: 'asc' | 'desc' = 'desc'"],
     `): Promise<readonly ${row}[]> {`,
   );
   const byIdSignature = wrapList(
@@ -111,7 +111,7 @@ const repoSource = (name: NameSet, dbModule: string, stems: EntityStems): string
     `): Promise<${row}> {`,
   );
   const listChain = chain('  ', `return ${table}`, [
-    ".orderBy('createdAt', 'desc')",
+    '.orderBy(sort, dir)',
     '.limit(limit)',
     '.all()',
   ]);
@@ -134,10 +134,13 @@ ${byIdSignature}
 ${byIdBody}
 }
 
+/** The columns a list sorts by. Newest first (\`createdAt\`, \`desc\`) when nobody asks. */
+export type ListSort = 'createdAt' | 'title';
+
 ${listSignature}
   // The actor's org and nobody else's: the handle scopes the read, so there is no org to pass.
-  // Ordered and bounded — an unordered page is a different page on every request — and the handle
-  // adds the primary key as the last sort key, so the order is total without \`id\` spelled here.
+  // Ordered BEFORE it is bounded, so a sort by title is the first titles and never the newest rows
+  // re-sorted; the handle adds the primary key last, in this direction, so the order is total.
 ${listChain}
 }
 
@@ -208,6 +211,18 @@ unitTest('list is newest first and bounded', async () => {
   }
   const page = await inOrg(orgId, () => repo.list(2));
   expect(page.map((row) => row.title)).toEqual(['third', 'second']);
+});
+
+unitTest('list sorts before it bounds, either way', async () => {
+  // Written newest-last, so a bound taken before the sort would hold the wrong two.
+  for (const title of ['b', 'c', 'a']) {
+    await inOrg(orgId, () => repo.insert(draft(title)));
+    clock.advance(1000);
+  }
+  const first = await inOrg(orgId, () => repo.list(2, 'title', 'asc'));
+  expect(first.map((row) => row.title)).toEqual(['a', 'b']);
+  const last = await inOrg(orgId, () => repo.list(2, 'title', 'desc'));
+  expect(last.map((row) => row.title)).toEqual(['c', 'b']);
 });
 
 unitTest('an actor in another org never reads the row, and no call names an org', async () => {

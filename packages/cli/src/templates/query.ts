@@ -31,27 +31,38 @@ ${wrapImport(
 )}
 import * as repo from '../repo';
 
+/** The columns this read sorts by: \`repo.ListSort\`, and what a page's \`listUrl\` offers. */
+export const ${name.camel}Sorts = ['createdAt', 'title'] as const;
+
 // No \`orgId\` in the input, and none in the policy: \`repo.list\` reads through the typed handle,
 // which scopes every read to the ACTOR's org, and a live window is keyed by the subscriber's
 // tenant. One source of tenancy — a parameter would be a second one a caller could set.
 export const ${name.camel} = query({
-  input: t.object({ limit: t.number.default(50) }),
+  input: t.object({
+    limit: t.number.default(50),
+    // A closed set, so a sort is a column this read has an order for, never a caller's string.
+    sort: t.enum(${name.camel}Sorts).default('createdAt'),
+    dir: t.enum(['asc', 'desc']).default('desc'),
+  }),
   policy: can${feature.pascal}Read,
   live: ${String(live)},${cacheLine(feature, live)}
+  // The refusals a caller may branch on, closed: add each code this read comes to throw.
+  errors: [],
   // Opt-in, unlike an action's tool: a read hands rows to an agent, so silence exposes nothing.
   mcp: { expose: true, description: '${name.raw} — edit this description' },
-  sql: ({ limit }) =>
+  sql: ({ limit, sort, dir }) =>
     // \`feature.table\`, not the kebab plural: \`from()\` quotes the identifier into the SQL text,
     // and the entity created the table as snake_case.
-    from<${feature.pascal}>('${feature.table}', () => repo.list(limit))
-      // Newest first — \`repo.list\`'s own order. These two lines are ONE read spelled twice: the
-      // thunk is what the in-memory driver answers and this chain is the SQL Postgres runs, so a
-      // direction that differs here is a bounded page holding different rows on each.
-      .orderBy('createdAt', 'desc')
-      // The primary key last is what makes the order TOTAL: \`createdAt\` alone ties, and two
-      // rows that tie can swap between evaluations — a bounded read then drops one and repeats
-      // the other, and a live subscription patches a row it never sent.
-      .orderBy('id')
+    from<${feature.pascal}>('${feature.table}', () => repo.list(limit, sort, dir))
+      // \`repo.list\`'s own order. These lines are ONE read spelled twice: the thunk is what the
+      // in-memory driver answers and this chain is the SQL Postgres runs, so a sort or a direction
+      // that differs here is a bounded page holding different rows on each.
+      .orderBy(sort, dir)
+      // The primary key last, in the same direction the handle adds it, is what makes the order
+      // TOTAL: a sort column alone ties, and two rows that tie can swap between evaluations — a
+      // bounded read then drops one and repeats the other, and a live subscription patches a row
+      // it never sent.
+      .orderBy('id', dir)
       .limit(limit),
 });
 `;
@@ -120,6 +131,23 @@ ${wrapper}('${name.camel} is bounded and TOTALLY ordered', async () => {
   // "ordered" is not enough. Dropping the id tiebreak still leaves an ORDER BY, so asserting on
   // its presence alone would keep passing while the read went non-deterministic under ties.
   expect(text.slice(text.lastIndexOf('order by'))).toContain('id');
+});
+
+${wrapper}('the read sorts by the column it is asked for, either way', async () => {
+  // The same sort the in-memory thunk applies (\`repo.list(limit, sort, dir)\`), spelled as SQL —
+  // and the id tiebreak follows the direction, as the handle's does.
+  const reason = 'a scaffolded test asserts the SQL text; the policy is asserted separately';
+  const sqlFor = async (dir: 'asc' | 'desc') => {
+    const input = { limit: 50, sort: 'title' as const, dir };
+    const source = await sourceFor(target, input, { actor: null, unenforced: reason });
+    return source.toSQL().sql.toLowerCase();
+  };
+  const asc = await sqlFor('asc');
+  expect(asc).toContain('order by "title" asc');
+  expect(asc).toContain('"id" asc');
+  const desc = await sqlFor('desc');
+  expect(desc).toContain('order by "title" desc');
+  expect(desc).toContain('"id" desc');
 });
 
 ${wrapper}('${name.camel} denies an orgless actor before a read', async () => {

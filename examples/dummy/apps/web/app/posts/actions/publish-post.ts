@@ -12,6 +12,7 @@ import { tag } from '@postly/db';
 import { postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
 import { PostView } from '../entity';
+import { PostNotFound } from '../errors';
 import { notifySubscribers } from '../jobs/notify-subscribers';
 import { postPublish } from '../policy';
 
@@ -19,6 +20,14 @@ export const publishPost = action({
   input: t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
   policy: postPublish,
+  // The refusals a caller may branch on, closed: a 4xx the handler throws outside this list is
+  // X_ERROR_UNDECLARED in every test, and `.contract()` scans the handler for one. Each is
+  // the class's own `.code`: importing the class is what registered its status before this line.
+  errors: [PostNotFound.code],
+  // A resource-shaped URL: the post is in the path, and a bearer mount whose scopes name this
+  // action serves it at `<prefix>/posts/:postId/publish`. The URL's `postId` joins the body before
+  // the schema runs; a body naming another post is 400 X_HTTP_PATH_INPUT_CONFLICT.
+  http: { path: '/api/posts/:postId/publish' },
   // `postPublish` decides about a post, not just about an org, so the post has to be loaded
   // before the guard rather than inside it — the predicate stays synchronous, and this runs once
   // per invocation instead of once per live subscriber.

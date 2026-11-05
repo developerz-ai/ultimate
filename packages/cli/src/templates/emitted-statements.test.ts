@@ -80,9 +80,9 @@ describe('unit · a generated statements assertion fails when its handler gains 
 
     await edit(
       source,
-      '() => repo.list(limit))',
+      '() => repo.list(limit, sort, dir))',
       `async () => {
-        const rows = await repo.list(limit);
+        const rows = await repo.list(limit, sort, dir);
         for (const row of rows) await repo.byId(row.id);
         return rows;
       })`,

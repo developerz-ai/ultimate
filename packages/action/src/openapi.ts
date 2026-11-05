@@ -7,11 +7,11 @@
  * registry, and nothing here reads the clock, the environment or a random source.
  */
 
-import { ERROR_RETRY_KINDS } from '@ultimat3/core';
+import { ERROR_RETRY_KINDS, templateParams, toOpenApiPath } from '@ultimat3/core';
 import type { AnyAction } from './action';
 import { operationTagOf, toOpenApiOperation } from './http';
-import { servedActionRoute } from './http-path';
-import { actionName } from './invoke';
+import { methodOfHttp, servedActionRoute } from './http-path';
+import { actionName, defOf } from './invoke';
 import { type JsonSchemaObject, jsonSchemaOf, sortSchema } from './json-schema';
 import { inputSchemaName, outputSchemaName, PROBLEM_SCHEMA_NAME } from './naming';
 import { listActions } from './registry';
@@ -53,8 +53,16 @@ export function buildOpenApi(options: BuildOpenApiOptions = {}): OpenApiDocument
   for (const target of actions) {
     const name = actionName(target);
     const { path } = servedActionRoute(name);
-    paths[path] = { post: toOpenApiOperation(target) };
-    schemas[inputSchemaName(name)] = sortSchema(jsonSchemaOf(target.input));
+    const documented = toOpenApiPath(path);
+    // Merged, never replaced: REST's two verbs on one URL are two operations of one path item.
+    const item = Object.hasOwn(paths, documented) ? (paths[documented] as object) : {};
+    const verb = methodOfHttp(defOf(target).http).toLowerCase();
+    paths[documented] = { ...item, [verb]: toOpenApiOperation(target) };
+    // The component IS the request body, so a `:param`'s key leaves it: the URL carries it.
+    schemas[inputSchemaName(name)] = withoutKeys(
+      sortSchema(jsonSchemaOf(target.input)),
+      templateParams(path),
+    );
     schemas[outputSchemaName(name)] = sortSchema(jsonSchemaOf(target.output));
     tags.add(operationTagOf(target));
   }
@@ -71,6 +79,27 @@ export function buildOpenApi(options: BuildOpenApiOptions = {}): OpenApiDocument
 /** The bytes `x verify` compares. Sorted keys, trailing newline, 2-space indent. */
 export function serializeOpenApi(document: OpenApiDocument): string {
   return `${stableStringify(document, 2)}\n`;
+}
+
+/** `schema` minus `keys` from `properties` and `required`; the same object when `keys` is empty. */
+function withoutKeys(schema: JsonSchemaObject, keys: readonly string[]): JsonSchemaObject {
+  if (keys.length === 0) return schema;
+  const properties = schema['properties'];
+  const required = schema['required'];
+  const kept =
+    typeof properties === 'object' && properties !== null
+      ? Object.fromEntries(Object.entries(properties).filter(([key]) => !keys.includes(key)))
+      : properties;
+  const { required: _dropped, ...rest } = schema;
+  const still = Array.isArray(required)
+    ? required.filter((key: unknown) => typeof key !== 'string' || !keys.includes(key))
+    : [];
+  return {
+    ...rest,
+    ...(kept === undefined ? {} : { properties: kept }),
+    // Omitted when nothing is left, as `jsonSchemaOf` omits it for an all-optional object.
+    ...(still.length === 0 ? {} : { required: still }),
+  };
 }
 
 function compareByName(a: AnyAction, b: AnyAction): number {

@@ -4,6 +4,7 @@
 // whole realtime use is a channel's events, a roster or the connection reads neither: its server
 // markup is as current as any other island's, so hiding it only delayed the page's content.
 
+import { registeredEntities } from '@ultimat3/entity';
 import { firstInGraph } from './live-routes';
 
 const REALTIME = '@ultimat3/realtime';
@@ -20,6 +21,8 @@ export const FOLLOW_ONLY_EXPORTS: readonly string[] = [
   'hasPageSocket',
   // Hears THAT records moved and renders none of them, so a restored store contradicts nothing.
   'useRecordChanges',
+  // A timer value for `useQuery`'s `poll`: it reads nothing, so it adds no reason to hold.
+  'pollEvery',
   'readPresence',
   'channel',
   'channelRef',
@@ -64,16 +67,41 @@ export function realtimeBindings(source: string, path: string): readonly string[
 export type IslandRealtime = 'restores' | 'follows';
 
 /**
- * Whether a realtime island restores nothing: every module of its relative graph takes only
- * `FOLLOW_ONLY_EXPORTS` from the barrel. One unknown name, or one statement with no names, and it
- * restores — the answer every realtime island had before. Pure: asked per build, of that build's
- * root. The blind spot is `reachesRealtime`'s own: a PACKAGE reading the store for the island is
- * not seen.
+ * The reads that restore something only when the app keeps a record type on disk: with none, the
+ * boot restores no record their server markup could be older than. `useMutation` is not here —
+ * the outbox rebuilds a queued write's overlay whatever the app persists.
  */
-export async function followsOnly(root: string, file: string): Promise<boolean> {
+export const NO_DISK_FOLLOW_EXPORTS: readonly string[] = ['useQuery', 'useRecord'];
+
+/**
+ * Whether the loaded app keeps any record type on disk (`entity(…, { persist: true })`), read off
+ * the entity registry the build process loaded the app into. An empty registry is `undefined`: an
+ * app that registered nothing and a build that never loaded it look the same, so it is unknown.
+ */
+export function appPersistsRecords(): boolean | undefined {
+  const entries = registeredEntities();
+  if (entries.length === 0) return undefined;
+  return entries.some((entry) => entry.persist === true);
+}
+
+/**
+ * Whether a realtime island restores nothing: every module of its relative graph takes only
+ * `FOLLOW_ONLY_EXPORTS` from the barrel — plus `NO_DISK_FOLLOW_EXPORTS` when `persists` is
+ * `false`. One unknown name, or one statement with no names, and it restores — the answer every
+ * realtime island had before; `persists` unknown keeps that answer. Pure: asked per build, of that
+ * build's root. The blind spot is `reachesRealtime`'s own: a PACKAGE reading the store for the
+ * island is not seen.
+ */
+export async function followsOnly(
+  root: string,
+  file: string,
+  persists?: boolean,
+): Promise<boolean> {
+  const allowed =
+    persists === false ? [...FOLLOW_ONLY_EXPORTS, ...NO_DISK_FOLLOW_EXPORTS] : FOLLOW_ONLY_EXPORTS;
   const restores = await firstInGraph(root, file, (source, path) => {
     const names = realtimeBindings(source, path);
-    const follows = names?.every((name) => FOLLOW_ONLY_EXPORTS.includes(name)) === true;
+    const follows = names?.every((name) => allowed.includes(name)) === true;
     return follows ? undefined : true;
   });
   return restores !== true;

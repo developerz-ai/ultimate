@@ -7,17 +7,25 @@
 
 import { tagKeys } from '@ultimat3/cache';
 import type { Deprecation } from '@ultimat3/core';
-import { queryPath, recordDeprecatedCall, renderDeprecation, useContext } from '@ultimat3/core';
+import {
+  mergePathParams,
+  queryPath,
+  recordDeprecatedCall,
+  renderDeprecation,
+  templateParams,
+  useContext,
+} from '@ultimat3/core';
 import type { RateLimitDecision, Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import { publishRateLimit, toBucket } from '@ultimat3/http';
 import { admitsAnonymous, policyCapability } from '@ultimat3/policy';
 import { coerceQuery } from '@ultimat3/schema';
 import { toDownloadRoute } from './download-http';
 import { QueryDeprecationInvalidError, QueryInputInvalidError } from './errors';
+import { servedQueryPath } from './http-pin';
 import { absentArraysOf } from './input-shape';
 import { PAGE_FIRST_KEY, pageControlsOf } from './page-controls';
 import type { AnyQuery, QueryRateLimit } from './query';
-import { queryName, runQuery } from './read';
+import { defOf, queryName, runQuery } from './read';
 import { recordAnswerFor, recordRowAnswerFor } from './record-answer';
 import { oneRowOf } from './single-answer';
 
@@ -34,6 +42,11 @@ export function toQueryRoute(target: AnyQuery): Route {
   if (target.download === true) return toDownloadRoute(target, name, sunsetting);
   const answer = recordAnswerFor(target.rows);
   const answerRow = recordRowAnswerFor(target.rows);
+  // A pinned `http.path` replaces `/_x/query/<kebab>`; its `:param`s join the search string as
+  // the one input, and a search string naming one differently is `X_HTTP_PATH_INPUT_CONFLICT`.
+  const path = servedQueryPath(name, defOf(target).http);
+  const pinned = templateParams(path).length > 0;
+  const owner = `query "${name}"`;
 
   const handler = async (request: UltimateRequest): Promise<Response> => {
     if (sunsetting !== undefined) {
@@ -68,7 +81,19 @@ export function toQueryRoute(target: AnyQuery): Route {
       onRateLimit: (decision: RateLimitDecision) =>
         publishRateLimit(request.ctx, decision, useContext().now().getTime()),
     } as const;
-    const { input: values, page } = pageControlsOf(name, request.queryRaw());
+    const search = request.queryRaw();
+    const { input: values, page } = pageControlsOf(
+      name,
+      pinned
+        ? // The search values plus string params: still `SearchValues` by construction.
+          (mergePathParams({
+            owner,
+            template: path,
+            params: request.params,
+            raw: search,
+          }) as typeof search)
+        : search,
+    );
     const input = absentArraysOf(target.input, coerceQuery(target.input, values));
     if (target.single === true) {
       // Refused, not ignored: a caller paging a read of one object has the wrong read in mind, and
@@ -135,7 +160,7 @@ export function toQueryRoute(target: AnyQuery): Route {
     ...(target.mcp?.description === undefined ? {} : { description: target.mcp.description }),
   };
 
-  return { method: 'GET', path: queryPath(name), handler, meta };
+  return { method: 'GET', path, handler, meta };
 }
 
 /** Validates the declaration through the limiter's own conversion, then hands the route its flag. */

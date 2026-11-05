@@ -64,7 +64,7 @@ overlay already holds the raw body. `describe-value.test.ts` is the enforcement.
 
 `t.array(items, { min, max })` (`array-schema.ts`) carries its bounds as `minItems`/`maxItems` ON
 the node — JSON Schema's names — and `json-schema.ts` and `wire-schema.ts` publish both;
-`@ultimat3/action`'s `sampleFor` samples `minItems` items. A bound no count meets is
+`sample.ts`'s walker samples `minItems` items. A bound no count meets is
 `X_SCHEMA_BOUNDS_INVALID` where it is declared, the same rule as the discriminant below.
 
 `X_SCHEMA_DISCRIMINANT_INVALID` is thrown where a `discriminatedUnion` is BUILT, not where a value
@@ -204,7 +204,7 @@ Gotchas:
   is `describeValue`d in the `cause` and whole in `meta`, never echoed.
 - **Prefer a new `SchemaNode` FIELD to a new `SchemaKind`.** Every consumer that switches on `kind`
   has a `default:` that degrades quietly — `json-schema.ts` emits `{}`, `coerce.ts` passes the raw
-  value through, `@ultimat3/action`'s `sample-input.ts` answers `null` — and they live in packages
+  value through, `sample.ts` answers `null` — and they live in packages
   a schema change is not allowed to edit. `refinements` and `discriminant` are both fields for that
   reason: a refined string still reads as a string, and a discriminated union still reads as a
   union, everywhere. `lazy` and `tuple` cannot be — which is why neither has shipped.
@@ -221,3 +221,10 @@ Gotchas:
 - `@ultimat3/action`'s `sampleInput` does not read `refinements`, so a contract test over a refined
   schema reports `X_CONTRACT_DRIFT` exactly as it already does for a bare `pattern`. Documented
   there; fixing it is that package's change, not this one's.
+
+## The `./sample` subpath
+
+- `sample.ts`, `sample-draw.ts` and `sample-seeded.ts` are the `./sample` subpath, never re-exported
+  from `src/index.ts` (axiom 6: `t` is in every bundle graph).
+- Module order: `sample-draw → sample-seeded → sample`, reading `node` and `provider`.
+- `seededDraw` is mulberry32 over the seed it is handed. It never uses `Math.random` or the clock.

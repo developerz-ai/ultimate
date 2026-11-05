@@ -6,8 +6,9 @@ import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
 import { diffInput } from './diff-input';
 import { diffRateLimit } from './diff-rate-limit';
+import { diffDeclaredErrors } from './diff-registries';
 import { diffRows } from './diff-rows';
-import type { ActionFact, QueryFact } from './schema';
+import type { ActionFact, HttpPinFact, QueryFact } from './schema';
 
 /** Any fact that names the permissions it requires — an action, a query, a channel. */
 export interface PermissionBearing {
@@ -85,6 +86,8 @@ export function diffActions(
       });
     }
     changes.push(...diffPermissions(path, action, next));
+    changes.push(...diffHttpPin(path, action.http, next.http));
+    changes.push(...diffDeclaredErrors(path, action.errors, next.errors));
     changes.push(...diffRateLimit(path, action, next));
     if (canonicalJson(action.cacheInvalidates) !== canonicalJson(next.cacheInvalidates)) {
       changes.push({
@@ -145,6 +148,8 @@ export function diffQueries(
       });
     }
     changes.push(...diffPermissions(path, query, next));
+    changes.push(...diffHttpPin(path, query.http, next.http));
+    changes.push(...diffDeclaredErrors(path, query.errors, next.errors));
     if (query.live !== next.live) {
       // Losing live-ness breaks subscribers; gaining it breaks nobody.
       changes.push({
@@ -183,6 +188,47 @@ export function diffQueries(
     }
   }
   return changes;
+}
+
+/**
+ * A pinned `http: { path, method }` moving: every caller holding the URL or the verb is refused
+ * (`404`/`405`), so a changed or withdrawn pin is breaking. A pin appearing where `before` had
+ * none is additive: a manifest written before the fact existed carries no `http` for a pin that
+ * was always there, and reading that as a move would flag every pinned action on upgrade.
+ */
+export function diffHttpPin(
+  path: string,
+  before: HttpPinFact | undefined,
+  after: HttpPinFact | undefined,
+): readonly ManifestChange[] {
+  if (before === undefined) {
+    return after === undefined
+      ? []
+      : [
+          {
+            kind: 'additive',
+            path: `${path}.http`,
+            detail: `pinned ${after.method} ${after.path}`,
+          },
+        ];
+  }
+  if (after === undefined) {
+    return [
+      {
+        kind: 'breaking',
+        path: `${path}.http`,
+        detail: `${before.method} ${before.path} unpinned`,
+      },
+    ];
+  }
+  if (before.method === after.method && before.path === after.path) return [];
+  return [
+    {
+      kind: 'breaking',
+      path: `${path}.http`,
+      detail: `${before.method} ${before.path} -> ${after.method} ${after.path}`,
+    },
+  ];
 }
 
 /**

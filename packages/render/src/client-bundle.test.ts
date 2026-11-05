@@ -36,6 +36,7 @@ globalThis.probe = [
   client.NAVIGATED_EVENT,
   client.NAVIGATION_ERROR_EVENT,
   client.disposeIslands,
+  client.scheduleRefresh,
 ];
 `;
 
@@ -78,6 +79,7 @@ test('the browser entry carries the navigation helpers and core/page, never the 
     'render/src/navigation-errors.ts',
     'render/src/navigation-modal-rules.ts',
     'render/src/navigation-rules.ts',
+    'render/src/refresh-idle.ts',
   ]);
   // Anything else is `UltimateError`'s graph through `@ultimat3/core/page` — no titles table.
   for (const module of modules.filter((m) => !m.startsWith('render/'))) {
@@ -105,6 +107,20 @@ test('an island that only releases nested islands carries island-dispose.ts and 
   // 296 B when measured (2026-10-10, Bun 1.4.2, `minify: true`).
   const minified = await bundle('dispose-only-min', source, true);
   expect(new TextEncoder().encode(minified.code).byteLength).toBeLessThan(512);
+});
+
+test('an island that schedules refreshes carries refresh-idle.ts and the session flag, no router', async () => {
+  const source =
+    "import { scheduleRefresh } from '@ultimat3/render/client';\nglobalThis.probe = scheduleRefresh;\n";
+  const { modules } = await bundle('schedule-only', source);
+  expect(modules.filter((module) => module.startsWith('render/'))).toEqual([
+    'render/src/refresh-idle.ts',
+  ]);
+  expect(modules).not.toContain('core/src/errors.ts');
+  // 3,079 B when measured (2026-11-05, Bun 1.4.4, `minify: true`): the scheduler, `systemClock`
+  // and the page handle's session cell. The ceiling keeps half a kilobyte of headroom.
+  const minified = await bundle('schedule-only-min', source, true);
+  expect(new TextEncoder().encode(minified.code).byteLength).toBeLessThan(3_584);
 });
 
 test('openModal still rejects with the stable code, as the one class both entries export', async () => {

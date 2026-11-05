@@ -90,7 +90,8 @@ export const postsService = defineService('posts', (ctx) => {
       return insertDraft({
         orgId: tenantId(),
         authorId: authorId(),
-        slug: input.slug ?? slugify(input.title),
+        // A caller's slug is normalised like a derived one: `My Post` is `my-post`, never a 422.
+        slug: slugify(input.slug ?? input.title),
         title: input.title,
         excerpt: excerptOf(input.body),
         body: input.body,

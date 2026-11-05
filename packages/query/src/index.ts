@@ -68,6 +68,8 @@ export { downloadClientFor, queryClient, queryClientMethodFor } from './client';
  */
 export type { KindOf } from './column-kinds';
 export { kindsOf } from './column-kinds';
+export type { QueryContractTest, QueryContractTestOptions } from './contract-test';
+export { queryContractTestsFor } from './contract-test';
 /**
  * `query({ download })` — a read answered by a FILE at a short-lived signed URL. Still a `query`:
  * one policy, one name, one route (`GET /_x/query/<kebab>`: mint without `_token`, serve with it).
@@ -111,8 +113,18 @@ export {
   QuerySubscribesInvalidError,
   QueryUnregisteredError,
 } from './errors';
+export type {
+  QueryExerciseActorOptions,
+  QueryExerciseOffOptions,
+  QueryExerciseOptions,
+  QueryExerciseReport,
+} from './exercise';
+export { exerciseQuery, QUERY_EXERCISE_RUNS, QUERY_EXERCISE_RUNS_MAX } from './exercise';
 /** The HTTP projection: `GET /_x/query/<kebab>`, the URL `client()` derives. */
 export { toQueryRoute } from './http';
+export type { QueryHttp } from './http-pin';
+export { queryHttpPinOf } from './http-pin';
+export { QueryHttpPathInvalidError } from './http-pin-error';
 export type { LiveCursor, LiveQuery, ResumeMode, ResumePlan, ToLiveOptions } from './live';
 export { planResume, seekOf, spendQueryLimit, toLiveQuery } from './live';
 export type { ChangeEvent, ChangeOp, Patch } from './matcher';

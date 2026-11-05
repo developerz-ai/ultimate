@@ -30,13 +30,13 @@ export interface SolidContext<T> {
 }
 
 /**
- * The exact slice of solid-js the design system touches — six functions, and the registration is
- * meant to be handed exactly those six as NAMED imports: `setSolidRuntime({ createContext,
- * useContext, createSignal, createMemo, createEffect, onCleanup })`. A `typeof import('solid-js')`
+ * The exact slice of solid-js the design system touches — seven functions, and the registration is
+ * meant to be handed exactly those seven as NAMED imports: `setSolidRuntime({ createContext,
+ * useContext, createSignal, createMemo, createEffect, onCleanup, createRoot })`. A `typeof import('solid-js')`
  * namespace still satisfies this shape and still registers, but a namespace object passed to a
  * function is one the bundler cannot shake — every export of solid-js stays in the chunk. Measured
  * with the island bundler's own settings (minified, production, no splitting): the namespace form
- * is 28,556 B against 13,708 B for the six picks, 14.8 kB per island that nothing ever calls.
+ * is 28,556 B against 13,708 B for the picks (six, then), 14.8 kB per island that nothing ever calls.
  */
 export interface SolidRuntime {
   createContext<T>(defaultValue: T): SolidContext<T>;
@@ -45,6 +45,12 @@ export interface SolidRuntime {
   createMemo<T>(fn: () => T): Accessor<T>;
   createEffect(fn: () => void): void;
   onCleanup(fn: () => void): void;
+  /**
+   * An owner that outlives the computation it was created in. `DataTable`'s keyed rows need it:
+   * Solid disposes what a computation owns each time it re-runs, so a row built inside the body
+   * kept its markup and lost every binding in it on the next live update. v30.
+   */
+  createRoot<T>(fn: (dispose: () => void) => T): T;
 }
 
 /**
@@ -72,7 +78,7 @@ export function solid(): SolidRuntime {
       // ONE literal, never a concatenation: `fix-scan.ts` reads a single literal in this position
       // and counts anything else `unreadable`, so a fix split across `+` is a fix the gate stops
       // checking.
-      "paste `import { createContext, createEffect, createMemo, createSignal, onCleanup, useContext } from 'solid-js';` at the top of your *.island.tsx and `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });` as the first line of its mount(), above render() — six named imports, never `import * as`, which keeps all of solid-js in the chunk; a server render needs none",
+      "paste `import { createContext, createEffect, createMemo, createRoot, createSignal, onCleanup, useContext } from 'solid-js';` at the top of your *.island.tsx and `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot });` as the first line of its mount(), above render() — seven named imports, never `import * as`, which keeps all of solid-js in the chunk; a server render needs none",
     );
   }
   return INERT_SOLID_RUNTIME;

@@ -1,10 +1,12 @@
 // The property that matters is not which value comes out, it is that the schema ACCEPTS it —
-// so every case parses the sample back through the schema that produced it.
+// so every case parses the sample back through the schema that produced it. Moved here from
+// `@ultimat3/action`'s `sample-input.test.ts` with the walker; the goldens below pin the move.
 
 import { describe, expect, test } from 'bun:test';
-import type { AnySchema } from '@ultimat3/schema';
-import { t } from '@ultimat3/schema';
-import { describeSampleGap, SAMPLE_ITEMS_MAX, sampleGaps, sampleInput } from './sample-input';
+import type { AnySchema } from './builder';
+import { describeSampleGap, SAMPLE_ITEMS_MAX, sampleGaps, sampleInput } from './sample';
+import { SAMPLE_FIXTURES } from './sample-fixture';
+import { t } from './t';
 
 const accepts = (schema: AnySchema): boolean =>
   schema.safeParse(sampleInput(schema)).issues === undefined;
@@ -231,4 +233,17 @@ describe('a required field named after a prototype member becomes an own key', (
     expect(sample['constructor']).toBeUndefined();
     expect(sample['toString']).toBeUndefined();
   });
+});
+
+// `sampleInput` before the walker took a `Draw`, captured over the shared fixtures by running the
+// pre-move `@ultimat3/action/src/sample-input.ts`. The minimal draw must answer it byte for byte:
+// the policy assertion of every app's contract suite sends exactly these values.
+const PRE_MOVE_SAMPLES =
+  '{"string":"sample","number":0,"boolean":false,"uuid":"00000000-0000-4000-8000-000000000000","email":"sample@example.test","url":"https://example.test/sample","date":"2020-01-01T00:00:00.000Z","money":{"minor":0,"currency":"USD"},"timezone":"UTC","locale":"en","slug":"sample","cursor":"sample","string.min":"samplexxxxxxxxxxxxxx","string.max":"sam","string.between":"sampl","number.min":7,"number.max":-3,"int.min":1,"int.max":-4,"int.between":1,"enum":"draft","literal":7,"array":[],"array.bounded":["samp","samp"],"record":{},"union":"00000000-0000-4000-8000-000000000000","nullable":{"cover":null},"object":{"postId":"00000000-0000-4000-8000-000000000000","title":"sample","tags":[],"price":{"minor":0,"currency":"USD"},"author":{"id":"00000000-0000-4000-8000-000000000000","nickname":null}},"discriminated":{"kind":"a","size":1}}';
+
+test('the minimal draw answers what sampleInput answered before the move, byte for byte', () => {
+  const now = JSON.stringify(
+    Object.fromEntries(SAMPLE_FIXTURES.map(([label, schema]) => [label, sampleInput(schema)])),
+  );
+  expect(now).toBe(PRE_MOVE_SAMPLES);
 });

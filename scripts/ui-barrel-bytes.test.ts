@@ -226,6 +226,7 @@ describe('the @ultimat3/ui barrel', () => {
   test.each([
     ['useUi', 'theme/context'],
     ['moneyText', 'components/money-view'],
+    ['listUrl', 'list-url'],
   ])(
     'retains no more for %s than the module path does, so a subpath export would buy nothing',
     async (name, module) => {
@@ -284,6 +285,10 @@ describe('the @ultimat3/ui barrel', () => {
         `@ultimat3/${name} modules in the theme-toggle graph: `,
       );
     }
+
+    // `listUrl` is a page's and an island's, never a component's: a component-only island owes it
+    // nothing, and the day a component imports it this names it.
+    expect(chunk.modules).not.toContain(resolve(UI_SRC, 'list-url.ts'));
 
     // And of this package, nothing outside the list — a new import in any of these modules that
     // reaches a component, a formatter or the icon tables lands here by name.

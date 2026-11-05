@@ -10,6 +10,7 @@
 
 import { postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
+import { OrgNotFound } from '../../orgs/errors';
 import { reviewDraftLater } from '../jobs/review-draft-later';
 import { postPublish } from '../policy';
 
@@ -22,6 +23,8 @@ export const requestDraftReview = action({
   input: t.object({ postId: t.uuid, orgId: t.uuid }),
   output: t.object({ jobId: t.string }),
   policy: postPublish,
+  // Closed: see `publishPost`.
+  errors: [OrgNotFound.code],
   row: ({ input: { postId: id }, ctx }) => ctx.posts.authorship(postId(id)),
   mcp: { expose: true, description: 'Queue a review of your draft; read it back with postReview' },
   async handle({ input, ctx }) {

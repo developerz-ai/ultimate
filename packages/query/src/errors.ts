@@ -35,6 +35,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_QUERY_DOWNLOAD_ONLY: 'rows were asked of a query that answers a file',
   X_QUERY_DOWNLOAD_TOKEN_INVALID: 'a download URL carries a token this app did not mint for it',
   X_QUERY_DOWNLOAD_TOKEN_EXPIRED: 'a download URL is past its expiry',
+  X_QUERY_HTTP_PATH_INVALID: "a query's pinned http.path is not a valid path template",
 };
 
 /**
@@ -44,7 +45,15 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
  * re-declares it: two copies of a title are two titles, one of which is stale. `X_RPC_FAILED` left this list in
  * 21.0.0: the typed read client's wire failures are `@ultimat3/core`'s `clientTransport`'s now.
  */
-export const QUERY_BORROWED_ERROR_CODES = ['X_INPUT_INVALID', 'X_NOT_FOUND'] as const;
+// `X_CONTRACT_*`: the exercise assertion `contract-test.ts` runs, a twin of action's (`exercise.ts`).
+export const QUERY_BORROWED_ERROR_CODES = [
+  'X_INPUT_INVALID',
+  'X_NOT_FOUND',
+  'X_CONTRACT_DRIFT',
+  'X_CONTRACT_DEFECT',
+  'X_CONTRACT_EXERCISE_UNREACHED',
+  'X_CONTRACT_EXERCISE_UNDECLARED',
+] as const;
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"
 // from an X_ERROR_CODE_DUPLICATE at import into whichever module loaded first deciding the title.

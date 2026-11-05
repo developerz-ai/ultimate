@@ -42,6 +42,7 @@ Before stating or working around a framework limit, ask the installed framework:
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
 | Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal the handle can express | \`guards/repo-raw-sql.ts\` |
 | Vendors | a server \`fetch(\` carries a \`signal\` in its own options — better, it is \`outbound()\` from \`@ultimat3/core/outbound\`: a deadline, the caller's signal, safe-only retry | \`guards/raw-fetch.ts\` |
+| Polling | an island re-reads on a timer with \`visibleInterval(run, ms)\` from \`@ultimat3/core/page\` — no call while the tab is hidden, none after a lost session — never a bare \`setInterval(\`; a \`// why:\` on the line admits a tick that is not a read | \`guards/raw-interval.ts\` |
 | Errors | never \`throw new Error\` — declare each code once, \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core\`, and throw its class; never a handwritten \`UltimateError\` subclass | \`guards/bare-error.ts\`, \`guards/error-declared.ts\` |
 | Money | \`{ minor, currency }\`, never a float — \`money()\` on the column | the type: \`price: 19.99\` is TS2322, \`number\` is not \`MoneyInput\` |
 | Time | store UTC, format with an explicit IANA time zone | \`guards/unzoned-date.ts\` |

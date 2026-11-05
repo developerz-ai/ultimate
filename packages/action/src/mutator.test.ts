@@ -144,6 +144,7 @@ describe('mutator', () => {
       'favoritePost: input schema rejects garbage',
       'favoritePost: policy denies an anonymous actor',
       'favoritePost: OpenAPI document contains its operation',
+      'favoritePost: handler survives generated input',
     ]);
     // The original keeps its own name: renaming twins, it never mutates in place.
     expect(likePost.describe().name).toBe('likePost');

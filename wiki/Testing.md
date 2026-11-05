@@ -129,7 +129,7 @@ Locale and zone are declared per test when the behavior under test depends on th
 | Type | Command | Asserts | Runs against |
 |---|---|---|---|
 | **unit** | `x test unit` | pure logic — services, money, policy predicates, matchers | no DB, no I/O |
-| **contract** | `x test contract` | an action's input/output schema, its policy denials, its emitted OpenAPI + MCP tool shape | cloned DB |
+| **contract** | `x test contract` | an action's input/output schema, its policy denials, its emitted OpenAPI + MCP tool shape, its handler on generated legal input | cloned DB |
 | **live** | `x test live` | a live query's initial snapshot, incremental patches on write, reconnect delta, and that a policy-failing row is never delivered | cloned DB + in-process replicator + in-process NATS |
 | **job** | `x test job` | step-level replay (a step already run is not re-run), idempotency-key dedupe, retry/backoff, concurrency and rate limits, outbox atomicity on rollback | cloned DB + frozen clock |
 | **e2e** | `x test e2e` | a real browser (Chrome over raw CDP, no Playwright) against the app: render mode behavior, streaming holes filling, hydration timing, SW install + offline fallback, version-skew reload, two tabs, offline writes | the app spawned on a throwaway database (`ULTIMATE_STATE_DIR`) + a real browser, when Chrome is present |
@@ -729,18 +729,44 @@ coverage floor counts that suite alone, so a body only a typed suite reaches is 
 
 | Generator | `unit` (in process, in-memory driver) | Its typed suite |
 |---|---|---|
-| `x g action` | input parse; the handler through `.as(actor, input)` — the refusal first, then what it answers | `contract`: the action contract, the foreign-org denial, the OpenAPI operation |
+| `x g action` | input parse; the handler through `.as(actor, input)` — the refusal first, then what it answers | `contract`: the action contract (the exercise as a member of the input's org), the foreign-org denial, the OpenAPI operation |
 | `x g mutator` | the same, plus `local()` against `memoryLocalTx()`, applied twice | `contract` |
 | `x g query` | the SQL's bound, total order and direction; the read through `.as()` — no grant refused, an empty org reads empty, stored rows read back newest first and never another org's, the read costing one `statements` count however many rows it answers | `--live`: the declaration in `.live.test.ts` |
 | `x g job` · `x g task` | the body under `runJobs`: which steps one run takes, what it answers, and how it ends | `job`: key, tenant, retry policy, enqueue dedupe |
 | `x g backfill` | one whole pass over rows in two tenants; the projection replayed | `job`: durable name, dedupe |
 | `x g route` | the page rendered (`renderRoute`): heading, metadata, mode, budget, islands | `e2e`: the offline fallback |
-| `x g resource` | every row above for its slice, plus `page.test.ts`: the page rendered as the request's actor — the org's rows newest first beside the form island, the empty state, a member of another org reading none of them, and the refusal rendered inside the page | `e2e`: the offline fallback |
+| `x g resource` | every row above for its slice, plus `page.test.ts`: the page rendered as the request's actor — the org's rows newest first beside the form island, the empty state, a member of another org reading none of them, the refusal rendered inside the page, and the list sorted and paged by link; `page-db.test.ts` asks the same sort and pages of the app's migrated database (`migratedDatabase` + `setDbClient`), the read's SQL path | `e2e`: the offline fallback |
 | `x g island` | a `describeIslandState` block per state the `.island.states.ts` declares | — |
 | `llm` prompt | — | `eval`: an evals file (missing evals fails `x verify`) |
 
 A stored-row case is written only into a slice whose entity still has the columns `x g entity`
 scaffolds; one an author reshaped gets the cases that need no row.
+
+## The exercise assertion
+
+`.contract()`'s fourth assertion calls the handler with generated input its own schema accepts.
+A legal input that crashes the handler is red in `contract`, the day the action is written.
+`As of 2026-11`.
+
+| Rule | |
+|---|---|
+| Who acts | `action.contract({ exercise: { actor } })`. Required unless the policy admits an anonymous caller. There is no bypass: a policy that denies `actor` makes an unreached run |
+| A row | `{ exercise: { actor, input: (drawn) => ({ ...drawn, postId }) } }` binds what a generated uuid cannot resolve |
+| Opting out | `{ exercise: { off: '<reason>' } }`. The reason is in the test's name. A blank one is `X_CONTRACT_EXERCISE_UNDECLARED` |
+| Runs | 16 (`EXERCISE_RUNS`), `runs` from 1 to 64. Runs 0-3 sit on the IR's bounds (`minLength`, `maxLength`, `minimum`, `maximum`, `minItems`). The rest draw multibyte text, every enum and union member, optional keys on and off, `null` where nullable. A format value (`t.uuid`, `t.email`, …) is never varied |
+| Seed | `fnv1a(<action name>)`, never time, so a red run replays: `bun test <file> -t '<name>: handler survives generated input'` |
+| Side effects | each run inside `withTransaction`, always rolled back: a SAVEPOINT in a test's open transaction, a root transaction once `setDbClient` installed a client. The outbox stage and the post-commit bust drop with it. Mail and egress stay sealed. **Not rolled back:** a write on a second client or `outsideTransaction`, and the memory store (`storeMode` `memory`): its rows stay until the next `seed()` |
+| Pass | the output parsed, or a coded refusal under 500 |
+| Defect, `X_CONTRACT_DEFECT` | an uncoded throw, `X_OUTPUT_INVALID`, or a coded 5xx (an undeclared `errors:` code is one). `meta.run`, `meta.input`, `meta.failure` |
+| Red, `X_CONTRACT_EXERCISE_UNREACHED` | no run reached the handler. `X_TEST_NETWORK_SEALED` counts as unreached, its host in `meta.outcomes` |
+| Red, `X_CONTRACT_DRIFT` | the schema refused every draw: a provider refinement the IR does not carry. Bind it with `exercise.input` |
+
+A query has the same assertion: `orgFeed.contract({ exercise: { actor } })`, named
+`<name>: read survives generated input`. "Reached" is `sql()` building a source, and a read
+writes nothing, so no transaction wraps it. The generators emit the call with an actor
+(`x g action`, `x g resource`), holding the slice's grant: a hand-written `policy.ts`'s one literal
+`can('<perm>')`, or `{ off }` when its grant cannot be read.
+`@ultimat3/schema/sample`'s `arbitrary(schema, { seed, run })` is the draw, off the barrel.
 
 ## Memory, width and isolation
 

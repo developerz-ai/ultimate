@@ -45,4 +45,8 @@ export const INERT_SOLID_RUNTIME: SolidRuntime = Object.freeze({
   createEffect: () => {},
 
   onCleanup: () => {},
+
+  // A server render is one pass: there is nothing to outlive, so a root is the call itself, and
+  // its `dispose` has nothing to release.
+  createRoot: <T>(fn: (dispose: () => void) => T): T => fn(() => {}),
 });

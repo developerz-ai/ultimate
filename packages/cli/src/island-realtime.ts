@@ -50,14 +50,18 @@ export async function reachesRealtime(root: string, file: string): Promise<boole
  * Both of a build's answers about one island, for its chunk to carry (`IslandChunk.realtime`):
  * `undefined` when its graph never reaches realtime. A page needs realtime's page boot only if one
  * of ITS islands does — `settings` paid 34.9 kB of boot script for an island that never touched a
- * record — and holds only the ones that restore.
+ * record — and holds only the ones that restore. `persists` is REQUIRED, and the build passes the
+ * loaded app's registry's answer (`appPersistsRecords`): every boot that builds islands has imported
+ * the app first. As a default it read process-wide state here, so one test's entities changed
+ * another's answer (`bun test ./packages/cli`, alone, went red); `undefined` is "unknown".
  */
 export async function realtimeKind(
   root: string,
   file: string,
+  persists: boolean | undefined,
 ): Promise<IslandRealtime | undefined> {
   if (!(await reachesRealtime(root, file))) return undefined;
-  return (await followsOnly(root, file)) ? 'follows' : 'restores';
+  return (await followsOnly(root, file, persists)) ? 'follows' : 'restores';
 }
 
 /**

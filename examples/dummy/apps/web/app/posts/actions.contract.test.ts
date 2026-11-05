@@ -163,13 +163,34 @@ contractTest('every post action rejects input that is not a uuid', async () => {
   await expect(createComment.input).toRejectInput({ ...comment, postId: ORG, orgId: NOT_A_UUID });
 });
 
-contractTest('every post action passes the contract an action owes', async () => {
-  // Three assertions the framework makes for any action without knowing what it does: garbage
-  // input is rejected, an anonymous actor is denied, and the operation reaches OpenAPI.
-  for (const action of [createPost, publishPost, createComment]) {
-    for (const contract of action.contract()) await contract.run();
-  }
-});
+contractTest(
+  'every post action passes the contract an action owes',
+  async ({ seed, actorFor, runJobs }) => {
+    // Four assertions the framework makes for any action without knowing what it does: garbage
+    // input is rejected, an anonymous actor is denied, the operation reaches OpenAPI, and the
+    // handler survives 16 generated legal inputs, each in a transaction that rolls back. A uuid
+    // cannot be generated into a row that exists, so each binds the ids its policy loads.
+    // `runJobs` installs the queue the publish and the comment enqueue on.
+    void runJobs;
+    const { draft, author, reader } = await seed('dev').pick({
+      draft: 'post:draft-money',
+      author: 'member:bruno',
+      reader: 'member:kenji',
+    });
+    const exercised = [
+      [createPost, author, { orgId: author.orgId }],
+      [publishPost, author, { postId: draft.id, orgId: draft.orgId }],
+      [createComment, reader, { postId: draft.id, orgId: draft.orgId }],
+    ] as const;
+    for (const [action, member, bound] of exercised) {
+      const exercise = {
+        actor: actorFor(member),
+        input: (drawn: unknown) => ({ ...(drawn as object), ...bound }),
+      };
+      for (const contract of action.contract({ exercise })) await contract.run();
+    }
+  },
+);
 
 contractTest(
   'the action projects the MCP tool and the OpenAPI operation from one declaration',

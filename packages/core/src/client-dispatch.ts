@@ -14,6 +14,7 @@ import { CLIENT_BUILD_META } from './page-meta';
 import type { RecordEnvelope } from './record-envelope';
 import { RECORDS_HEADER } from './record-envelope';
 import { outboundSlot, pageClient } from './record-sink';
+import { noteRefusal } from './session-lost';
 import { DATES_HEADER } from './wire-dates';
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -119,10 +120,13 @@ export async function dispatch(
         response.headers.get('retry-after'),
         response.headers.get('date'),
       );
-      throw (
+      const refusal =
         req.decodeError?.(response.status, text, stated) ??
-        problemError(response.status, text, req.url, stated)
-      );
+        problemError(response.status, text, req.url, stated);
+      // Only the principal this request was issued for can have lost its session.
+      const scope = pageClient().scope;
+      if (scope.epoch === issued) noteRefusal(refusal.code, scope.principal);
+      throw refusal;
     }
     return {
       text,

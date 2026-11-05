@@ -109,10 +109,18 @@ export {
   RpcFailedError,
 } from './errors';
 export {
+  ActionDeprecationSuccessorInvalidError,
   ActionHttpPathInvalidError,
   ActionPathStyleInvalidError,
   OpenApiConfigInvalidError,
 } from './errors-http';
+export type {
+  ExerciseActorOptions,
+  ExerciseOffOptions,
+  ExerciseOptions,
+  ExerciseReport,
+} from './exercise';
+export { EXERCISE_RUNS, EXERCISE_RUNS_MAX, exerciseAction } from './exercise';
 export type { OpenApiOperation } from './http';
 export {
   operationTagOf,
@@ -121,8 +129,13 @@ export {
   toRoute,
 } from './http';
 /** `http: { path }` on an action pins its URL; the app's `pathStyle` derives every other one. */
-export type { ActionHttp } from './http-path';
-export { actionPathStyle, forgetHandedOutActionPaths } from './http-path';
+export type { ActionHttp, ActionHttpMethod } from './http-path';
+export {
+  ACTION_HTTP_METHODS,
+  actionHttpPinOf,
+  actionPathStyle,
+  forgetHandedOutActionPaths,
+} from './http-path';
 /**
  * The idempotency seam. `withIdempotency` and `IDEMPOTENCY_HEADER` are both public, so a plain
  * mutating `route` can reserve-and-replay exactly as an action does — `idempotencyKeyFor` is the

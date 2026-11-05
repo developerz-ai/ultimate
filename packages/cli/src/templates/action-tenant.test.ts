@@ -45,8 +45,12 @@ describe('unit · the contract test names only what it reads', () => {
       for (const binding of ['id', 'orgId', 'input', 'outsider']) {
         expect(text).not.toMatch(new RegExp(`^const ${binding}\\b`, 'm'));
       }
-      expect(text).not.toContain('testActor');
-      expect(text).toContain('../policy.ts is hand-written');
+      // The one actor is the exercise's, holding the policy's own literal grant — never an outsider.
+      expect(text.match(/testActor\('/g)).toEqual(["testActor('"]);
+      expect(text).toContain(
+        "const member = testActor('member', {\n  permissions: ['invoice:write'],",
+      );
+      expect(text).toContain('exercise: { actor: member }');
     });
 
     test(`${kind}, the policy this run writes: all four, and the foreign-org denial`, () => {

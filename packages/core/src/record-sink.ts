@@ -40,11 +40,18 @@ export interface ScopeCell {
   readonly listeners: Set<(next: ClientScope, prev: ClientScope) => void>;
 }
 
+/** Whether this page's session is lost (`session-lost.ts`). On the handle, so every copy agrees. */
+export interface SessionLostCell {
+  lost: boolean;
+  readonly listeners: Set<() => void>;
+}
+
 /** Headers every outbound request carries, or nothing. See `outbound-headers.ts`. */
 export type OutboundHeaders = () => Readonly<Record<string, string>>;
 
 interface PageClientHandle extends PageClient {
   readonly scopeCell: ScopeCell;
+  readonly sessionLost: SessionLostCell;
   /** The early-records buffer, or `undefined` where there is no page to install a store on. */
   readonly pending: PendingRecords | undefined;
   outboundHeaders: OutboundHeaders | undefined;
@@ -62,6 +69,11 @@ export function pageClient(): PageClient {
 /** The scope cell behind `pageClient().scope`. Internal: `client-scope.ts` is its one caller. */
 export function scopeCell(): ScopeCell {
   return handle().scopeCell;
+}
+
+/** The session-loss cell. Internal: `session-lost.ts` and `rescope()` are its callers. */
+export function sessionLostCell(): SessionLostCell {
+  return handle().sessionLost;
 }
 
 /**
@@ -109,6 +121,7 @@ function handle(): PageClientHandle {
   const created: PageClientHandle = {
     socket: undefined,
     scopeCell: cell,
+    sessionLost: { lost: false, listeners: new Set() },
     pending,
     outboundHeaders: undefined,
     get store(): RecordSink | undefined {

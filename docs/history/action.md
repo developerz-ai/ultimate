@@ -749,3 +749,27 @@ Verbatim from [`packages/action/CLAUDE.md`](../../packages/action/CLAUDE.md), wh
   (`withCallerAddress`); a `'job'` invoke opens a fresh frame (`withJobFrame`) so no visitor's
   address follows work into the worker, and calls nested in it are the job's.
   `rate-limit-surfaces.test.ts`. The computed rate must be finite and `limit` at least one token.
+
+## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
+
+- **An answer rests REDACTED** (#591): `withIdempotency` passes the store `restingAnswer(value)`
+  (core's `isRedactedKey` + `isSecret` — never a second rule) and `redacted` as `settle`'s
+  REQUIRED 4th argument; both stores keep it (`x_idempotency.redacted`, memory's record field).
+  A flagged replay is `X_IDEMPOTENT_REPLAY_REDACTED`, decided by the FLAG, never by scanning for
+  `[redacted]`. Plain data is the same reference, replayed as before; anything else that
+  `JSON.stringify` would run app code on (`toJSON`, `Map`/`Set`, class instances, `Date`
+  subclasses) is redacted FAIL-CLOSED, and a getter is read once. `keepsRedaction: true` is a
+  required store declaration (`type-pins.ts`: a pre-25 store is a build error — a required
+  parameter alone is not). A reclaim and a `fail` reset the flag.
+
+- **The two failure policies are opposites**: `X_AUDIT_SINK_MISSING` before the input parse (no
+  logger-backed default sink); a sink refusing an ALLOWED record is `X_AUDIT_SINK_FAILED`, whose `fix:`
+  branches on `record.idempotencyKey !== null` (`meta.replayable`); a sink refusing a denied or failed
+  record is logged (`audit.sink.failed`) and the original error still reaches the caller.
+
+- **Inside a transaction the SETTLE commits with the write, on BOTH stores** (`liveTransaction()`):
+  Postgres on the handler's connection, memory at `onCommit`. The reservation and `fail` stay
+  immediate. A tx-bound settle that matches no record THROWS `X_IDEMPOTENCY_RESERVATION_LOST` (the
+  rollback of an attempt a retry replaced); the autocommit one only logs. Only a tx-bound
+  `in-flight` record is reclaimed past the deadline — never an autocommit one.
+  `idempotency-parity.test.ts` (memory + PGlite), `idempotency-postgres.live.test.ts`.

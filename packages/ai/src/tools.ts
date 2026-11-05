@@ -27,7 +27,13 @@ import {
   parseActionInput,
 } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
-import { isMcpExposed, isUltimateError, stringField, tryUseContext } from '@ultimat3/core';
+import {
+  describeDeclaredErrors,
+  isMcpExposed,
+  isUltimateError,
+  stringField,
+  tryUseContext,
+} from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
 import { toWireSchema } from '@ultimat3/schema';
 import { EvalToolUndoubledError } from './eval-errors';
@@ -120,10 +126,10 @@ export type AgentTool = AnyAction | ProjectableAction;
  */
 export function asProjectableAction(listed: AgentTool): ProjectableAction {
   if (!isAction(listed)) return passesToolGate(listed) ? listed : behindToolGate(listed);
-  const mcp = listed.mcp;
   // Throws `X_ACTION_UNREGISTERED` on an unnamed action rather than offering a tool called `''`:
   // a nameless tool is unaddressable by the model, by `runLlmToolCall` and by the author.
   const name = actionName(listed);
+  const mcp = withDeclaredRefusals(listed.mcp, name, listed.errors);
   const wire = toWireSchema(listed.input);
   // `idempotent: true` is honoured here as over MCP and HTTP: the model's key reaches `invoke`,
   // which files it under the action, the caller and the key. Until 25.0.0 this adapter dropped it,
@@ -150,6 +156,21 @@ export function asProjectableAction(listed: AgentTool): ProjectableAction {
     },
     admitActionCaller(listed, name),
   );
+}
+
+/**
+ * A declared `errors:` ends the description — core's one sentence, the one `@ultimat3/mcp`'s
+ * `exposureOf` writes (held equal by `scripts/ai-mcp-tool-parity.test.ts`). With none written,
+ * `toLlmTool`'s default is spelled out before the list.
+ */
+function withDeclaredRefusals<M extends { readonly description?: string }>(
+  mcp: M | undefined,
+  name: string,
+  errors: readonly string[] | undefined,
+): M | undefined {
+  if (mcp === undefined || errors === undefined || errors.length === 0) return mcp;
+  const lead = mcp.description ?? `Run the "${name}" action.`;
+  return { ...mcp, description: describeDeclaredErrors(lead, errors) };
 }
 
 /**

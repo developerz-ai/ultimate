@@ -1140,14 +1140,9 @@
           "orgId": {
             "format": "uuid",
             "type": "string"
-          },
-          "postId": {
-            "format": "uuid",
-            "type": "string"
           }
         },
         "required": [
-          "postId",
           "orgId"
         ],
         "type": "object"
@@ -4847,6 +4842,34 @@
             },
             "description": "policy denied"
           },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_ORG_NOT_FOUND",
+                            "urn:ultimate:error:X_POST_NOT_FOUND"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_ORG_NOT_FOUND | X_POST_NOT_FOUND",
+            "x-ultimate-errors": [
+              "X_ORG_NOT_FOUND",
+              "X_POST_NOT_FOUND"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -5052,6 +5075,32 @@
             },
             "description": "policy denied"
           },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_POST_NOT_FOUND"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_POST_NOT_FOUND",
+            "x-ultimate-errors": [
+              "X_POST_NOT_FOUND"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -5120,6 +5169,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_ORG_NOT_FOUND"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_ORG_NOT_FOUND",
+            "x-ultimate-errors": [
+              "X_ORG_NOT_FOUND"
+            ]
           },
           "422": {
             "content": {
@@ -5665,6 +5740,32 @@
             },
             "description": "policy denied"
           },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_POST_NOT_FOUND"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_POST_NOT_FOUND",
+            "x-ultimate-errors": [
+              "X_POST_NOT_FOUND"
+            ]
+          },
           "409": {
             "content": {
               "application/problem+json": {
@@ -5698,79 +5799,6 @@
             "post"
           ],
           "mcpTool": "likePost",
-          "rateLimit": null
-        }
-      }
-    },
-    "/api/posts/publish": {
-      "post": {
-        "operationId": "publishPost",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PublishPostInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishPostOutput"
-                }
-              }
-            },
-            "description": "ok"
-          },
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "X_INPUT_INVALID"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "policy denied"
-          },
-          "422": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "X_BODY_INVALID"
-          }
-        },
-        "summary": "Publish a draft post",
-        "tags": [
-          "posts"
-        ],
-        "x-ultimate": {
-          "capability": "post:publish",
-          "idempotent": false,
-          "invalidates": [
-            "blog",
-            "feed",
-            "post"
-          ],
-          "mcpTool": "publishPost",
           "rateLimit": null
         }
       }
@@ -5889,6 +5917,32 @@
             },
             "description": "policy denied"
           },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_POST_NOT_FOUND"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_POST_NOT_FOUND",
+            "x-ultimate-errors": [
+              "X_POST_NOT_FOUND"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -5913,6 +5967,115 @@
             "post"
           ],
           "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts/{postId}/publish": {
+      "post": {
+        "operationId": "publishPost",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "postId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishPostInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishPostOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_HTTP_PATH_INPUT_CONFLICT"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_POST_NOT_FOUND"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_POST_NOT_FOUND",
+            "x-ultimate-errors": [
+              "X_POST_NOT_FOUND"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "Publish a draft post",
+        "tags": [
+          "posts"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": false,
+          "invalidates": [
+            "blog",
+            "feed",
+            "post"
+          ],
+          "mcpTool": "publishPost",
           "rateLimit": null
         }
       }

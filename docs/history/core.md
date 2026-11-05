@@ -676,3 +676,18 @@ Gotchas:
   It clamps to `max` **before** jitter.
 - **`ClientFlight` stays `import type`-only in `action`'s and `query`'s `client.ts`** — a value import
   pulls the whole flight layer into every caller's chunk.
+
+## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
+
+- `route-rank.ts`: Read by `@ultimat3/render`'s `compilePattern` and `@ultimat3/pwa`'s rule order — both tier 4, so the one copy lives here. `@ultimat3/http`'s trie encodes the same order by its walk, not by this number. Never a sum: 100/10/1 ranked `/:a/b/c` above `/a/:x/:y`
+
+- **`postOtlp` (`otlp-post.ts`) retries `OTLP_RETRY_STATUSES` (429, 502, 503, 504) and a transport
+  failure only**, never `isRetryableStatus`: a validating collector's 400 or 500 repeats forever. It
+  calls `retryLoop`, not `retry()`, so a batch flushed inside a request outlives that request's
+  signal. `timeoutMs` is the whole export; the retryable marker is a private `X_DRAINING` instance
+  that never leaves the function. One log line per batch, never per attempt.
+
+- **A readiness grace runs before the `accept` phase** (`lifecycle-grace.ts`): `/readyz` answers 503
+  with the socket still open for `drain.readinessGraceMs`, ADDED to `deadlineMs` (a chart's
+  `terminationGracePeriodSeconds` must exceed the sum — 5 s + 25 s by default). Unset: 0 in
+  development/test, 5000 everywhere else including a process naming no environment (fail closed).

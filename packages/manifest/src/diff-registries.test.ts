@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { diffManifest } from './diff';
 import { fixtureManifest } from './diff-fixture';
+import { diffDeclaredErrors } from './diff-registries';
 
 type Policy = NonNullable<ManifestSources['policies']>[number];
 
@@ -84,5 +85,32 @@ describe('errorCodes', () => {
         (c) => c.path.startsWith('errorCodes.') || c.path.startsWith('policies.'),
       ),
     ).toEqual([]);
+  });
+});
+
+// 39-action-declared-errors: an operation's `errors:` is a list a caller branches on, code by code.
+describe('declared errors on an operation', () => {
+  const at = 'actions.refundOrder';
+
+  test('a removed declared code is breaking, an added one additive', () => {
+    const changes = diffDeclaredErrors(at, ['X_LATE', 'X_SMALL'], ['X_LATE', 'X_TOO_BIG']);
+    expect(changes).toEqual([
+      { kind: 'breaking', path: `${at}.errors.X_SMALL`, detail: expect.any(String) },
+      { kind: 'additive', path: `${at}.errors.X_TOO_BIG`, detail: expect.any(String) },
+    ]);
+  });
+
+  test('the same list, in any order, is no change; both absent is none', () => {
+    expect(diffDeclaredErrors(at, ['X_B', 'X_A'], ['X_A', 'X_B'])).toEqual([]);
+    expect(diffDeclaredErrors(at, undefined, undefined)).toEqual([]);
+  });
+
+  test('declaring a list is additive; dropping the list is breaking', () => {
+    expect(diffDeclaredErrors(at, undefined, ['X_A'])).toEqual([
+      { kind: 'additive', path: `${at}.errors`, detail: expect.any(String) },
+    ]);
+    expect(diffDeclaredErrors(at, ['X_A'], undefined)).toEqual([
+      { kind: 'breaking', path: `${at}.errors`, detail: expect.any(String) },
+    ]);
   });
 });

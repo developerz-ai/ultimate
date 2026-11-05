@@ -11,7 +11,7 @@ Recorded objection: "declared means closed" could only be a log line (axiom 3). 
 |---|---|
 | What is judged | only a throw out of `def.handle` / `def.row` (`invoke.ts:277-286`). Policy, parse, rate limit and idempotency sit outside the wrap, so no ambient allow-list exists to go stale |
 | Which throws | a coded error whose `statusFor` is 400-499. A 5xx or a statusless code is an outage, not a contract member. `X_ABORTED`, `X_DRAINING` are lifetime, exempt by code |
-| Test and dev | raises `X_ACTION_ERROR_UNDECLARED`, original as `sourceError`. A test expecting the old code goes red, naming the code to add |
+| Test and dev | raises `X_ERROR_UNDECLARED`, original as `sourceError`. A test expecting the old code goes red, naming the code to add |
 | Production | answer unchanged; `logger.warn` and `undeclared_errors_total{primitive,name,code}`. A bookkeeping miss never turns a refusal into a 500 |
 | Static half | `.contract()` scans `def.handle.toString()` and `def.row.toString()` for `X_…` literals and `new <Class>(` of a `defineError` class. Probe under `bun test`: source kept `new Late("X_REFUND_TOO_LATE")` and inlined a local const to `"X_OTHER"`. First hop only |
 | Reached behind a helper | the dynamic half, driven by any test and by 39-testing-property's generated runs. A path nothing reaches stays unjudged: stated in `wiki/Actions.md`, not hidden |
@@ -40,7 +40,7 @@ Recorded objection: "declared means closed" could only be a log line (axiom 3). 
 ## Error codes
 | Code | When | Fix |
 |---|---|---|
-| `X_ACTION_ERROR_UNDECLARED` (off-socket) | test or dev run threw a 4xx code outside `errors`, or the contract scan found one | add `'<CODE>'` to `errors:` in `<name>`, or stop throwing it there. `bun run new-error-code X_ACTION_ERROR_UNDECLARED --package core --title '…' --cause '…' --fix '…' --off-socket` |
+| `X_ERROR_UNDECLARED` (status 500: `x dev` raises it inside a request) | test or dev run threw a 4xx code outside `errors`, or the contract scan found one | add `'<CODE>'` to `errors:` in `<name>`, or stop throwing it there. `bun run new-error-code X_ERROR_UNDECLARED --package core --title '…' --cause '…' --fix '…' --off-socket` |
 | `X_ACTION_ERRORS_INVALID` (off-socket) | a listed code is malformed, unregistered, not a 4xx, or repeated | `defineError({ code, status })` first, then list it; `x errors explain <CODE> --json` |
 
 ## Tests

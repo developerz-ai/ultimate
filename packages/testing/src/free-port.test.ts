@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { PortProbe } from './free-port';
-import { BROWSER_REFUSED_PORTS, freePort, freePortApartFrom, freePortPair } from './free-port';
+import {
+  BROWSER_REFUSED_PORTS,
+  freePort,
+  freePortApartFrom,
+  freePortPair,
+  loopbackFree,
+} from './free-port';
 
 /** A listener that answers `ports` in order and records what was released, and when. */
 const scripted = (ports: readonly number[]) => {
@@ -93,9 +99,20 @@ describe('freePortPair', () => {
   });
 
   test('against the real OS its neighbour can be bound', () => {
-    const port = freePortPair();
-    const neighbour = Bun.serve({ port: port + 1, fetch: () => new Response() });
-    expect(neighbour.port).toBe(port + 1);
-    neighbour.stop(true);
+    // Held from the moment the walk finds it free. Released and bound again, another test worker
+    // can take it in between: a port nobody holds promises nothing past the ask that found it.
+    let neighbour: ReturnType<typeof Bun.serve> | undefined;
+    const holdIt = (next: number): boolean => {
+      if (!loopbackFree(next)) return false;
+      try {
+        neighbour = Bun.serve({ port: next, fetch: () => new Response() });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const port = freePortPair(undefined, holdIt);
+    expect(neighbour?.port).toBe(port + 1);
+    neighbour?.stop(true);
   });
 });

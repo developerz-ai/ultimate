@@ -34,6 +34,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createRoot,
   createSignal,
   For,
   onCleanup,
@@ -152,7 +153,15 @@ function Feed(props: FeedIslandProps): JSX.Element {
  */
 export function mount(el: HTMLElement, props: FeedIslandProps): void {
   // The design system's reactive seam, from THIS bundle's solid-js — named, never `import *`.
-  setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });
+  setSolidRuntime({
+    createContext,
+    useContext,
+    createSignal,
+    createMemo,
+    createEffect,
+    onCleanup,
+    createRoot,
+  });
   el.textContent = '';
   render(
     () => (

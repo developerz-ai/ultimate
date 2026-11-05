@@ -97,8 +97,12 @@ export const config = defineRoute({
    * aborting on close), opened with `show()` + `showPopover()` instead of `showModal()` and so
    * keeping focus, Tab and Escape itself; charged to every `app/` document, as the router is.
    * All of the +3,397 B over main's 26,970 B.
+   * raised 30kb → 31kb (30.0.0). measured: 31,740 B (2026-11-05; `x build --target static`), against
+   * 31,744 and main's 30,331. why: the client router +1,409 B, all of it: `refresh()` keeps the
+   * same visitor's focus (`navigation-refresh.ts`, `markFocus`/`restoreFocus`), never aborts a
+   * click in flight and is asked its hold again at the swap; charged to every `app/` document.
    */
-  budget: { js: '30kb' },
+  budget: { js: '31kb' },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 

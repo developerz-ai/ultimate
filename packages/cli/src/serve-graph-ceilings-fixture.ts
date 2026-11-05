@@ -123,8 +123,12 @@
  * `dbDiagnostics()`'s five modules were 746 on the db barrel; they moved to
  * `@ultimat3/db/diagnostics` (one caller, `x db diagnostics`) and `NEVER_AT_BOOT` holds them out.
  * Measured against a copy of HEAD with its own workspace links.
+ * raised 741 → 745, measured 745 (2026-11-05, plan 101 wave 5a): `errors:`'s rule on `invoke`'s path
+ * (`core/src/declared-errors.ts`, `action/src/declared-errors.ts`) and a `:param` pin's URL merged
+ * into the input before `invoke` (`core/src/route-path-template.ts`, `route-path-merge.ts`), all
+ * through the action and core barrels. No existing module newly reached.
  */
-export const MIGRATE_CEILING = 741;
+export const MIGRATE_CEILING = 745;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -272,8 +276,10 @@ export const MIGRATE_CEILING = 741;
  * raised 1068 → 1080, measured 1080 (2026-11-03, plan 101 wave 4a): `MIGRATE_CEILING`'s 12.
  * raised 1080 → 1082, measured 1082 (2026-11-03, plan 101 wave 4b): `MIGRATE_CEILING`'s 2.
  * raised 1082 → 1083, measured 1083 (2026-11-03, plan 101 wave 4c): `MIGRATE_CEILING`'s 1.
+ * raised 1083 → 1089, measured 1089 (2026-11-05, plan 101 wave 5a): the four in `MIGRATE_CEILING`'s
+ * row, plus a read's twins `query/src/declared-errors.ts` and `query/src/http-pin.ts`.
  */
-export const SERVING_ROLE_CEILING = 1083;
+export const SERVING_ROLE_CEILING = 1089;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -411,5 +417,7 @@ export const SERVING_ROLE_CEILING = 1083;
  * and MCP's dual era — `mcp/src/protocol-era.ts` (the era per request, `server/discover`, the
  * mirrored-header check), plus `server-resources.ts` and `transport-http-answers.ts`, split out
  * of `server.ts` and `transport-http.ts` at their line ceilings. No existing module newly reached.
+ * raised 1226 → 1232, measured 1232 (2026-11-05, plan 101 wave 5a): the same six as
+ * `SERVING_ROLE_CEILING`'s row; the web role adds nothing of its own.
  */
-export const WEB_ROLE_CEILING = 1226;
+export const WEB_ROLE_CEILING = 1232;

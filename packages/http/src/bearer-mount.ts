@@ -4,7 +4,9 @@
 // so there is no second projection of an action to drift from the first. What the mount adds is
 // the credential (only the bearer token authenticates here; a session cookie reaches nothing), the
 // cut (a primitive outside the caller's scopes answers 404, the way MCP answers an unknown tool),
-// and a per-token allowance with `RateLimit-*` and `Retry-After`, which replaces `default`.
+// and a per-token allowance with `RateLimit-*` and `Retry-After`, which replaces `default`. A route
+// path may be a `:param` template (an action's `http: { path: '/orders/:id/refund' }`): only the
+// PREFIX is parameter-free, and `/v1/orders/:id/refund` is matched by the router as any route is.
 
 import type { Actor, Clock } from '@ultimat3/core';
 import {

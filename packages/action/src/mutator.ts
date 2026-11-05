@@ -97,6 +97,8 @@ export interface MutatorDef<
   readonly deprecated?: Deprecation;
   /** Same key, same meaning as an action's: `http: { path }` pins the URL. */
   readonly http?: ActionHttp;
+  /** Same key, same meaning as an action's: the refusals `server` may throw, closed. */
+  readonly errors?: readonly string[];
   /**
    * REQUIRED, and only `true`. A mutator's write is replayed under one `Idempotency-Key` —
    * `useMutation`'s retry, the offline queue's drain after a dropped response — and the server
@@ -178,6 +180,7 @@ export function mutator<
     ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),
     ...(def.deprecated === undefined ? {} : { deprecated: def.deprecated }),
     ...(def.http === undefined ? {} : { http: def.http }),
+    ...(def.errors === undefined ? {} : { errors: def.errors }),
     ...(row === undefined ? {} : { row: (args: ActionRowArgs<TInput>) => row.call(def, args) }),
     idempotent: true,
     ...(def.audit === undefined ? {} : { audit: def.audit }),

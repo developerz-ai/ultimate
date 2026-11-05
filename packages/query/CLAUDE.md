@@ -14,6 +14,12 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 |---|---|
 | `query.ts` | the primitive: `query()`, `describeQuery`, `queryHash`; the front door for the read path |
 | `read.ts` | **the one read path** (`runQuery`, `sourceFor`) + the private declaration store `sql` lives in |
+| `contract-test.ts` | `.contract()`, the generated suite. The three `X_CONTRACT_*` codes and `X_CONTRACT_DRIFT` are borrowed (`QUERY_BORROWED_ERROR_CODES`) |
+| `exercise.ts` | the exercise twin. "Reached" means `sql()` built a source, read off the refusal (`beforeSql`), because `read.ts` keeps no counter. No transaction: a read writes nothing |
+| `declared-errors.ts` | `judgedSql` / `judgedRead`, around `sql` and the source's `execute` in `read.ts`. `errors:` is checked where it is lifted (`facade.ts`), not in `query.ts` |
+| `declared-errors-contract.ts`, `openapi-errors.ts` | `.contract()`'s source scan; core's builder bound to http's status |
+| `http-pin.ts` | a read's pinned `http.path`, its check at `query()`, `servedQueryPath`, `queryHttpPinOf` |
+| `http-pin-error.ts` | `X_QUERY_HTTP_PATH_INVALID`, a leaf over `@ultimat3/core/page` so the browser client can raise it without `errors.ts`'s titles table |
 | `facade.ts` | the fluent surface — binds each projection to the query, re-implements none |
 | `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
 | `client.ts` | typed read client (browser-safe); dispatches through `@ultimat3/core`'s `clientTransport`, never `fetch` |
@@ -71,7 +77,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A read has ONE tool name, the export name verbatim.** `toToolName` is deleted.
   `index.test.ts` asserts the barrel exports nothing matching `/tool_?name/i`.
 - **`queryClient` is the map-wide read client (mirror of `rpc`)**; both spellings run
-  `queryClientMethodFor`. **`toQueryRoute` and `client()` derive the same URL from core's `queryPath`.**
+  `queryClientMethodFor`. **`toQueryRoute` and `client()` derive the same URL from core's `queryPath`, or from the read's pin, which both read from the declaration.**
 - **`QueryClient` typechecks at any app size, and a `.test.ts` cannot say so** (`tsconfig.json`
   excludes them): `client-scale-pins.ts` is source, so a regression is a `typecheck` error. The map
   it pins is the intersection `@ultimat3/action`'s `Merge` hands over; that package pins `Merge`.
@@ -165,9 +171,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **`@ultimat3/query/client` is the read client without the barrel** — `client.ts`
   imports core from `@ultimat3/core/page`, the page keys live in the leaf `page-keys.ts`, and
   `client.ts` never imports `page-controls.ts` or `stable.ts`. `client-bundle.test.ts` fails on any
-  titles table in the graph or past 12 kB; `client-subpath.test.ts` pins the specifier. Byte figures
-  (browser, minified): barrel `queryClient` 25,237 B (`As of 2026-10-02`); `./client` 11,983 B
-  (`As of 2026-10-05`, +971 B: core reads a refusal's `Retry-After` and body title).
+  titles table in the graph or past 14.5 kB; `client-subpath.test.ts` pins the specifier. Byte figures
+  (browser, minified): barrel `queryClient` 25,237 B (`As of 2026-10-02`); `./client` 14,494 B
+  (`As of 2026-11-05`: +1,013 B a pinned read's URL fill, the rest wave 5a's core `./page` additions).
 - **The record envelope is derived from `rows:`** — `answersRecords(rows)` (`hasEntityRows`,
   `@ultimat3/entity`), decided once at projection for `http.ts` and `openapi.ts`, sent on every
   answer. No `rows:` is byte-identical on the wire.

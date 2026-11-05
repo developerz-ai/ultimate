@@ -33,9 +33,11 @@ describe('unit · the resource page', () => {
 
   test('it reads through the slice query as the actor, and mounts the slice form', () => {
     const page = pageOf('widget', true);
-    expect(page).toContain("import { widgetList } from '../widget/live/widget-list';");
+    expect(page).toContain(
+      "import { widgetList, widgetListSorts } from '../widget/live/widget-list';",
+    );
     // The read's tenancy is the actor's, held by the query — never an input the page fills.
-    expect(page).toContain('const input = () => ({ limit: PAGE_ROWS });');
+    expect(page).toContain('? { limit: PAGE_ROWS }');
     expect(page).not.toContain('orgId');
     expect(page).toContain("src: '../widget/widget-form.island.tsx',");
     expect(page).toContain("endpoint={derivePath('createWidget').path}");
@@ -47,19 +49,63 @@ describe('unit · the resource page', () => {
   test('the read lives in a thunk of a <Hole>, on stream, and nothing is left in load', () => {
     const page = pageOf('widget', true);
     expect(page).toContain("render: 'stream',");
-    expect(page).toContain('<Hole fallback={<Skeleton lines={3} />}>{rows}</Hole>');
+    expect(page).toContain('<Hole fallback={<Skeleton lines={3} />}>{() => rows(list)}</Hole>');
     expect(page).not.toMatch(/^\s*load[,:]/m);
     expect(page).not.toContain('props.data');
   });
 
   test('the read line breaks as Biome does, once the name makes it too wide', () => {
     expect(pageOf('widget', true)).toContain(
-      '  const state = await rowsState(() => widgetList(input()));',
+      '  const state = await rowsState(() => widgetList.page(inputOf(list), windowOf(list)));',
     );
     const long = pageOf('quarterly-subscription-invoice-reconciliation-line-item', true);
     expect(long).toContain(
-      '  const state = await rowsState(() =>\n    quarterlySubscriptionInvoiceReconciliationLineItemList(input()),\n  );',
+      '  const state = await rowsState(() =>\n    quarterlySubscriptionInvoiceReconciliationLineItemList.page(inputOf(list), windowOf(list)),\n  );',
     );
+  });
+});
+
+describe('unit · the list pages by link', () => {
+  test('the URL is read through listUrl, with the read’s own bound as the ceiling', () => {
+    const page = pageOf('widget', true);
+    expect(page).toContain('listUrl,');
+    expect(page).toContain('const list = listOf(props.url);');
+    expect(page).toContain('limit: { default: PAGE_ROWS, max: PAGE_ROWS },');
+  });
+
+  test('it sorts by link, over the query’s own closed set of columns', () => {
+    const page = pageOf('widget', true);
+    expect(page).toContain('sorts: widgetListSorts,');
+    expect(page).toContain('sortHrefFor={list.sortHrefFor}');
+    expect(page).toContain('sort={list.sort}');
+    expect(page).toContain(
+      ': { limit: PAGE_ROWS, sort: list.sort.key, dir: list.sort.direction };',
+    );
+  });
+
+  test('a link-mode DataTable: a Page handed through, the pager as anchors, no island for it', () => {
+    const page = pageOf('widget', true);
+    expect(page).toContain('<DataTable');
+    expect(page).toContain('nextCursor={page?.nextCursor}');
+    expect(page).toContain('hrefFor={list.hrefFor}');
+    expect(page).toContain('firstHref={list.firstHref}');
+    expect(page).not.toContain('onCursor');
+    // The form is the page's only island; paging adds none.
+    expect(page.match(/island\(\{/g)).toHaveLength(1);
+  });
+
+  test('its own test follows the next link and lands on the last page', () => {
+    const feature = names('widget');
+    const files = resourcePageFiles({
+      feature,
+      dir: 'apps/web/app/widget',
+      pageDir: 'apps/web/app/widgets',
+      shell: true,
+      dbModule: '@acme/db',
+    });
+    const test = String(files.find((file) => file.path.endsWith('/page.test.ts'))?.contents);
+    expect(test).toContain("unitTest('the list pages by link: a cursor in the URL, no script'");
+    expect(test).toContain("expect(second.html).not.toContain('after=null');");
   });
 });
 

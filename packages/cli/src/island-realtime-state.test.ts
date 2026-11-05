@@ -1,15 +1,22 @@
 // Which realtime islands restore page state (held, #506) and which only follow the socket: read
 // off the names each module of the island's graph takes from the barrel, and unknown means held.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun has no temp-directory or recursive-remove native; each case writes a throwaway tree.
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
+import { clearRegistry, type RegistryEntry, registerEntity } from '@ultimat3/entity';
 import { realtimeKind } from './island-realtime';
-import { FOLLOW_ONLY_EXPORTS, followsOnly, realtimeBindings } from './island-realtime-state';
+import {
+  appPersistsRecords,
+  FOLLOW_ONLY_EXPORTS,
+  followsOnly,
+  NO_DISK_FOLLOW_EXPORTS,
+  realtimeBindings,
+} from './island-realtime-state';
 
 describe('realtimeBindings', () => {
   test('the value names of a named import, aliases and type names aside', () => {
@@ -104,12 +111,12 @@ describe('followsOnly', () => {
   });
 
   test("realtimeKind is the build's one answer, and an edit that adds a read changes it", async () => {
-    expect(await realtimeKind(root, at('events.island.tsx'))).toBe('follows');
-    expect(await realtimeKind(root, at('rows.island.tsx'))).toBe('restores');
-    expect(await realtimeKind(root, at('plain.island.tsx'))).toBeUndefined();
+    expect(await realtimeKind(root, at('events.island.tsx'), undefined)).toBe('follows');
+    expect(await realtimeKind(root, at('rows.island.tsx'), undefined)).toBe('restores');
+    expect(await realtimeKind(root, at('plain.island.tsx'), undefined)).toBeUndefined();
 
     await write('feed.ts', "import { useRecord } from '@ultimat3/realtime';\nuseRecord;\n");
-    expect(await realtimeKind(root, at('events.island.tsx'))).toBe('restores');
+    expect(await realtimeKind(root, at('events.island.tsx'), undefined)).toBe('restores');
   });
 
   // The answer is a function of (root, file) and of nothing a previous ask left behind: two apps
@@ -122,9 +129,9 @@ describe('followsOnly', () => {
         join(other, at('star.island.tsx')),
         "import { useChannel } from '@ultimat3/realtime';\nexport const mount = useChannel;\n",
       );
-      expect(await realtimeKind(other, at('star.island.tsx'))).toBe('follows');
-      expect(await realtimeKind(root, at('star.island.tsx'))).toBe('restores');
-      expect(await realtimeKind(other, at('star.island.tsx'))).toBe('follows');
+      expect(await realtimeKind(other, at('star.island.tsx'), undefined)).toBe('follows');
+      expect(await realtimeKind(root, at('star.island.tsx'), undefined)).toBe('restores');
+      expect(await realtimeKind(other, at('star.island.tsx'), undefined)).toBe('follows');
     } finally {
       await rm(other, { recursive: true, force: true });
     }
@@ -132,6 +139,53 @@ describe('followsOnly', () => {
 
   test('every name on the list is one the client barrel exports', async () => {
     const barrel: Record<string, unknown> = await import('@ultimat3/realtime');
-    for (const name of FOLLOW_ONLY_EXPORTS) expect(barrel[name]).toBeTypeOf('function');
+    for (const name of [...FOLLOW_ONLY_EXPORTS, ...NO_DISK_FOLLOW_EXPORTS]) {
+      expect(barrel[name]).toBeTypeOf('function');
+    }
+  });
+
+  // With no type on disk the boot restores no record a read could contradict; the outbox still
+  // rebuilds a queued write's overlay, so a writer is held whatever the app persists.
+  test('a read follows when the app persists nothing, and restores when it persists one', async () => {
+    await write('reads.island.tsx', "import { useQuery } from '@ultimat3/realtime';\nuseQuery;\n");
+    await write('record.ts', "import { useRecord } from '@ultimat3/realtime';\nuseRecord;\n");
+    await write('one.island.tsx', "import './record';\nexport const mount = 1;\n");
+    expect(await followsOnly(root, at('reads.island.tsx'), false)).toBe(true);
+    expect(await followsOnly(root, at('one.island.tsx'), false)).toBe(true);
+    expect(await followsOnly(root, at('reads.island.tsx'), true)).toBe(false);
+    expect(await followsOnly(root, at('one.island.tsx'), true)).toBe(false);
+    expect(await followsOnly(root, at('writer.island.tsx'), false)).toBe(false);
+    expect(await followsOnly(root, at('writer.island.tsx'), true)).toBe(false);
+    // Unknown is today's answer: held.
+    expect(await followsOnly(root, at('reads.island.tsx'))).toBe(false);
+    expect(await realtimeKind(root, at('reads.island.tsx'), false)).toBe('follows');
+    expect(await realtimeKind(root, at('reads.island.tsx'), true)).toBe('restores');
+  });
+});
+
+describe('appPersistsRecords', () => {
+  const entry = (name: string, persist: boolean): RegistryEntry => ({
+    name,
+    tableName: name,
+    persist,
+    describe: () => expect.unreachable('the persistence probe describes no entity'),
+    references: () => [],
+  });
+
+  afterEach(() => {
+    clearRegistry();
+  });
+
+  test('an empty registry cannot say, so the answer is unknown', () => {
+    clearRegistry();
+    expect(appPersistsRecords()).toBeUndefined();
+  });
+
+  test('read off each registered entity’s persist flag', () => {
+    clearRegistry();
+    registerEntity(entry('note', false));
+    expect(appPersistsRecords()).toBe(false);
+    registerEntity(entry('post', true));
+    expect(appPersistsRecords()).toBe(true);
   });
 });

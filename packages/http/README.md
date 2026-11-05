@@ -332,7 +332,7 @@ exactly three things. Apps declare it through `defineApi({ http: { mounts } })` 
 | no / unresolved token | 401, `WWW-Authenticate: Bearer` / `Bearer error="invalid_token"` |
 | a primitive outside the token's `scopes` | 404 `X_ROUTE_NOT_FOUND`, identical to an unknown path — MCP's hidden-tool rule |
 | per-token allowance | `RateLimit-Limit/-Remaining/-Reset` on every answer, 429 + `Retry-After` past it; keyed by a SHA-256 of the token |
-| paths | `/api/<x>` → `<prefix>/<x>`, `/_x/query/<x>` → `GET <prefix>/<x>` (`mountedPath`) |
+| paths | `/api/<x>` → `<prefix>/<x>`, `/_x/query/<x>` → `GET <prefix>/<x>` (`mountedPath`); a pinned `:param` template keeps its params — `/orders/:id/refund` → `<prefix>/orders/:id/refund`. Only the prefix is parameter-free |
 | `rateLimit` declared | spent once per request in the mount's authenticator, before `body` and `authz`, so a 422 or a 403 pays too; it REPLACES `default` on the mount's routes (`rateLimitedBy: 'handler'`); a route's own `meta.rateLimit` and the tenant allowance still apply. Not declared: `default` stands |
 | `Link: rel="successor-version"` | the mounted path when the successor is in the cut and this token holds its scope, success or refusal; otherwise removed. Any other `Link` is the handler's |
 
