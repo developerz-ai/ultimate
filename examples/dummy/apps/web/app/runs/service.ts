@@ -14,7 +14,7 @@ import { answerPrompt as publishAnswer } from '@ultimat3/scraping';
 import type { ConnectInput, ConnectionView, RunKeyIssued, RunStarted } from './entity';
 import { ConnectionNotFound, RunNotFound, RunQueueUnavailable } from './errors';
 import { syncConnection } from './jobs/sync-connection';
-import { issueRunKeyFor, revokeRunKeyById, runKeyOwner } from './keys';
+import { issueOrgKeyFor, orgKeyOwner, revokeOrgKeyById } from './keys';
 import type { RunOwner } from './policy';
 import * as repo from './repo';
 
@@ -86,14 +86,14 @@ export const runsService = defineService('runs', (ctx) => ({
   },
 
   issueKey(orgId: string): Promise<RunKeyIssued> {
-    return issueRunKeyFor({ orgId, clock: ctx.clock });
+    return issueOrgKeyFor({ orgId, clock: ctx.clock });
   },
 
   keyOwner(keyId: string): Promise<RunOwner | null> {
-    return runKeyOwner(keyId);
+    return orgKeyOwner(keyId);
   },
 
   revokeKey(keyId: string): Promise<boolean> {
-    return revokeRunKeyById(keyId, ctx.clock);
+    return revokeOrgKeyById(keyId, ctx.clock);
   },
 }));

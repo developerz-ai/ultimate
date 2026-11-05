@@ -68,6 +68,9 @@ the same refusal and could not reach `apps/web/`. Every surface that resolves a 
 the same way: `memberOf(ctx.actor)`, then `member.orgId`, never `ctx.actor.orgId` — core's `Actor`
 types that `string | undefined`, so it is neither an `OrgId` nor evidence of a membership.
 
+An org API key (`/v1`) has no membership: `postPublish` and `ctx.posts.publish`/`authorship` decide it
+by `ctx.actor.orgId`, the key's own org (`app/runs/keys.ts`'s `ORG_KEY_SCOPES`).
+
 `apps/web/shared/actor.ts` is the app half of the actor — the member row, their org, the request
 clock — read through `useActor()`. It rides on core's own `ActorFacts` seam, on the SAME actor
 every policy reads (`memberOf`, `@postly/core`), and `postlyActor()` is the one constructor for a

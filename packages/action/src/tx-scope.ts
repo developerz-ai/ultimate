@@ -7,6 +7,7 @@
 
 // Type-only: `idempotency-postgres.ts` imports this module, and a runtime edge would be a cycle.
 import type { PgExecutor } from '@ultimat3/core';
+import { storeMode } from '@ultimat3/core';
 import {
   completeTransaction,
   currentTx,
@@ -14,6 +15,7 @@ import {
   liveTxConnection,
   withTransaction,
 } from '@ultimat3/db';
+import { memoryTransactor } from '@ultimat3/entity';
 
 /** The mark a keyed run puts on the open root: its COMMIT carries the settle, abort or no abort. */
 export const carrySettleOnCommit = (): void => completeTransaction();
@@ -78,34 +80,41 @@ export type Settled<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: unknown };
 
-/** Whether `inRolledBackScope` has a transaction to undo the writes in: one open, or a client. */
-export const rollbackAvailable = (): boolean =>
-  liveTxConnection() !== undefined || dbClientInstalled();
+/** Whether a SQL transaction can hold the writes: one is open, or a client is installed. */
+const sqlScopeAvailable = (): boolean => liveTxConnection() !== undefined || dbClientInstalled();
 
 /**
- * `run` inside a transaction that ALWAYS rolls back — a SAVEPOINT when one is already open (a
- * test's own scope), a root BEGIN when a test installed a client, and no scope at all when there
- * is no database to write to. The outbox stage and the post-commit bust ride the transaction, so
- * they drop with it. A write made outside it (a second client, `outsideTransaction`) is not undone.
+ * Whether `inRolledBackScope` undoes the writes: a SQL transaction can hold them, or the store is
+ * memory (`storeMode`, `test`), whose writes the memory transaction it always opens holds.
+ */
+export const rollbackAvailable = (): boolean =>
+  sqlScopeAvailable() || storeMode(Bun.env) === 'memory';
+
+/**
+ * `run` inside a transaction that ALWAYS rolls back — a memory transaction, always, so a memory
+ * store write is undone however the handler wrote it; and in it a SAVEPOINT when a SQL transaction
+ * is already open (a test's own scope), a root BEGIN when a test installed a client. The outbox
+ * stage and the post-commit bust ride the SQL transaction, so they drop with it. A write made
+ * outside both (a second client, `outsideTransaction`) is not undone.
  */
 export async function inRolledBackScope<T>(run: () => Promise<T>): Promise<Settled<T>> {
-  const settle = async (): Promise<Settled<T>> => {
-    try {
-      return { ok: true, value: await run() };
-    } catch (error) {
-      return { ok: false, error };
-    }
-  };
-  if (!rollbackAvailable()) return settle();
   let settled: Settled<T> | undefined;
+  const settleThenRollBack = async (): Promise<never> => {
+    try {
+      settled = { ok: true, value: await run() };
+    } catch (error) {
+      settled = { ok: false, error };
+    }
+    throw ROLLBACK;
+  };
   try {
-    await withTransaction(async () => {
-      settled = await settle();
-      throw ROLLBACK;
-    });
+    // One ROLLBACK ends both: thrown out of the SQL scope, it carries on through the memory one.
+    await memoryTransactor().run(() =>
+      sqlScopeAvailable() ? withTransaction(settleThenRollBack) : settleThenRollBack(),
+    );
   } catch (error) {
     if (error !== ROLLBACK) throw error;
   }
-  // `settle` never throws, so a scope that ended on ROLLBACK always assigned it.
+  // `settleThenRollBack` assigns before it throws, so a scope that ended on ROLLBACK assigned it.
   return settled ?? { ok: false, error: ROLLBACK };
 }

@@ -3,6 +3,8 @@
 // made, which is what keeps a CI box with no Chrome answering `hasE2eDriver() === false`.
 
 import { test as bunTest } from 'bun:test';
+import type { A11yOptions, A11yRun } from './e2e-a11y-run';
+import { checkAllow, startA11yRun } from './e2e-a11y-run';
 import type { E2eBrowserPage, E2ePageOptions } from './e2e-page';
 import { e2ePage } from './e2e-page';
 import { FixtureUnavailableError } from './errors';
@@ -75,6 +77,44 @@ export const e2eFixtures = (
     ),
 });
 
+/** One suite's page and the way it runs an `e2eTest` body — audited, with the app's log on failure. */
+export interface E2eRunner {
+  readonly page: PageLike;
+  run(body: E2eBody, a11y?: A11yOptions): Promise<void>;
+}
+
+/**
+ * What `installE2eDriver` registers, without the registering: the page, and one body's run.
+ *
+ * The audit runs after every settled navigation and once more after the body — so a dialog the
+ * body opened counts — and fails the test only then, with every finding at once. A body that threw
+ * fails on its own error: the page it left is not the page it meant to show. `reported` is the
+ * suite's, so a finding one test failed on is not told again by the next (`e2e-a11y-run.ts`).
+ */
+export function e2eRunner(options: E2eDriverOptions): E2eRunner {
+  // The running test's audit, which every settled navigation feeds; none outside a test body.
+  let audit: A11yRun | undefined;
+  const page = e2ePage({ ...options, afterNavigate: () => audit?.check() ?? Promise.resolve() });
+  const reported = new Set<string>();
+  return {
+    page,
+    async run(body, a11y) {
+      // Through `withFailureContext`, as `fixtureTest` is: the failing test carries the app's log.
+      try {
+        const current = startA11yRun(options.page, checkAllow(a11y), reported);
+        audit = current;
+        await body(e2eFixtures(page, options.page, options.newBuild));
+        await current.check();
+        current.verdict();
+      } catch (error) {
+        throw withFailureContext(error);
+      } finally {
+        audit = undefined;
+      }
+    },
+  };
+}
+
 /**
  * Install the browser-backed driver for this process.
  *
@@ -93,22 +133,18 @@ export const e2eFixtures = (
  * every later file in the run.
  */
 export function installE2eDriver(options: E2eDriverOptions): () => void {
-  const page = e2ePage(options);
+  const { page, run } = e2eRunner(options);
   const newBuild = options.newBuild;
   defineFixtures({
     page: () => page,
     ...(newBuild === undefined ? {} : { deploy: () => ({ newBuild }) }),
   });
   useE2eDriver((name, body: E2eBody, test) => {
-    // Through `withFailureContext`, as `fixtureTest` is: the failing test carries the app's log.
-    const run = async (): Promise<void> => {
-      try {
-        await body(e2eFixtures(page, options.page, newBuild));
-      } catch (error) {
-        throw withFailureContext(error);
-      }
-    };
-    bunTest(name, run, test?.timeoutMs === undefined ? undefined : paced(test.timeoutMs));
+    bunTest(
+      name,
+      () => run(body, test?.a11y),
+      test?.timeoutMs === undefined ? undefined : paced(test.timeoutMs),
+    );
   });
   return () => {
     // Both halves, because both were installed. Putting the DECLARATION back — rather than

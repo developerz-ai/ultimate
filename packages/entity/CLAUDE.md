@@ -214,6 +214,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   (`overwrittenBy` before `$parse`, `UpsertArgs.overwrites`); a present `undefined` is absent. Memory's
   upsert and `deleteWhere` undo on refusal (`memory-batch.ts`); a soft delete under a JS-only rule is
   judged (`judgedRows`). `bulk-write-parity.test.ts`.
+- **`memoryTransactor().run` is ambient** (`memory-journal.ts`): a write naming no `tx` joins it; a nested
+  commit hands its undos up. `memory-journal.test.ts`.
 - **A seed is replayable**: `SeedContext.insert` is one `upsertAll(…, { onMatch: 'nothing' })` per
   call; a generated PK the row does not name is refused. `upsert(entity, { by }, values)` keys on a
   natural key, reads first for the report, writes one `on conflict … do update`, preserves `createdAt`.

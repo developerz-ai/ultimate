@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "927441a03f5e90247bc4aa7205359f72a317ec226bb3eabc9b98777d3deac960",
+  "buildId": "222e2358472e917221d1f5df02a8949f4c9a7df4bcd720a1d9a5021b1b2a3a46",
   "tiers": {
     "0": [
       "core",
@@ -1628,6 +1628,11 @@
       "code": "X_DURATION_INVALID",
       "owner": "time",
       "at": "packages/time/src/errors.ts"
+    },
+    {
+      "code": "X_E2E_A11Y_VIOLATION",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_E2E_APP_FAILED",
@@ -4268,6 +4273,11 @@
       "code": "X_SEED_ENVIRONMENT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SEED_GRAPH_UNSATISFIED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_SEO_CANONICAL_MISMATCH",

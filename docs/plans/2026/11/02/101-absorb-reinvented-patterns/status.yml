@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 60
-current_focus: "wave 5b (PR after #985) closes sweeps 17-18: 5a findings M1-M3, L5-L7, the tool-description path, sign-in. Next: finish 39-testing-property memory rollback and 33-ops-ci from the parked drafts, then sweep 19 (two PRs: 19a exercise/seed graph/a11y, 19b verify step/tenant proof)."
+percent: 61
+current_focus: "wave 6a: the memory rollback (39-testing-property done), the parallel coverage gate (33-ops-ci), and sweep 19a: seedGraph (40-next-exercise-pass phase 1) and the e2eTest accessibility audit (39-web-a11y-audit). Next: 19b (x exercise, the gate step, the tenant proof), then auditing the raw-tab browser suites."
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -277,8 +277,8 @@ slices:
     tier: 5
     sweep: "15"
     status: in_progress
-    percent: 70
-    note: "x ci tested and the four flakes done. Under-5-minute target missed: packages (2/2) 360-400 s on the cli coverage unit, e2e 241-304 s. A half-built coverage-schedule/parallel coverage-gate draft is parked at node_modules/.cache/p101/parked-5b/ (ci.yml, scripts/coverage-gate*, scripts/lib/coverage-*)"
+    percent: 85
+    note: "x ci tested and the four flakes done. Wave 6a: parallel coverage gate (units weighted by measured core-seconds, cli alone on shard 1/2, scripts/lib/coverage-schedule.ts) and contract/job moved to the unit shards (ci.yml). Local packages critical path ~400 s -> 249-286 s (four cores, 2026-11-05); the CI number is due. cli's own slow tests (x upgrade hop, scaffold tsc) are what is left"
   - file: 28-assets-deploy-skew.md
     tier: 0
     sweep: "15"
@@ -342,9 +342,9 @@ slices:
   - file: 39-testing-property.md
     tier: 0
     sweep: "18"
-    status: in_progress
-    percent: 90
-    note: "wave 5b: one exercise loop in core (runExercise), staging/production refused (X_CONTRACT_EXERCISE_ENVIRONMENT), X_CONTRACT_EXERCISE_UNSCOPED registered. exercise.ts passes scoped: rollbackAvailable() and runExercise refuses unscoped. Open: roll back the in-memory store (entity memory journal) - a half-built draft is parked at node_modules/.cache/p101/parked-5b/"
+    status: complete
+    percent: 100
+    note: "wave 5b: one exercise loop in core (runExercise), staging/production refused (X_CONTRACT_EXERCISE_ENVIRONMENT), X_CONTRACT_EXERCISE_UNSCOPED registered. Wave 6a: the memory store rolls back - memoryTransactor().run is ambient (entity memory-journal.ts), inRolledBackScope always opens one, rollbackAvailable() is true for the memory store (exercise-memory.test.ts)"
   - file: 39-action-declared-errors.md
     tier: 0
     sweep: "18"
@@ -353,14 +353,15 @@ slices:
   - file: 39-api-mount-paths.md
     tier: 0
     sweep: "18"
-    status: in_progress
-    percent: 85
-    note: "path templates, OpenAPI {param}, .client() fill and the mount route shipped; publishPost pins /api/posts/:postId/publish. Open (Done-when 1): no /v1 scope names publishPost - RUN_KEY_SCOPES (examples/dummy/apps/web/app/runs/keys.ts:20) covers startRun/answerPrompt/cancelRun/liveRunEvents only, so POST /v1/posts/:postId/publish answers 404; add it to a scope and a bearer contract test that calls it"
+    status: complete
+    percent: 100
+    note: "path templates, OpenAPI {param}, .client() fill and the mount route shipped. Done-when 1 closed in the reference app: publishPost (pinned /api/posts/:postId/publish) is served at POST /v1/posts/:postId/publish by the org API key's post:publish scope (ORG_KEY_SCOPES, examples/dummy/apps/web/app/runs/keys.ts, renamed from RUN_KEY_SCOPES); postPublish lets a non-member org actor publish its own org's posts, posts.service resolves that actor's org, announcePublished takes the post's org. Proof: apps/web/app/posts/actions/publish-post.contract.test.ts (200 + published, 404 unscoped, 403 foreign key)"
   - file: 40-next-exercise-pass.md
     tier: 5
     sweep: "19"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 35
+    note: "phase 1 (seedGraph, insertSeedGraph, declaration-read factoriesFor) done; phases 2-3 (x exercise, the gate step) open; PGlite parity for seedGraph open (seed-graph.live.test.ts runs on Postgres only)"
   - file: 40-next-tenant-proof.md
     tier: 2
     sweep: "19"
@@ -369,8 +370,9 @@ slices:
   - file: 39-web-a11y-audit.md
     tier: 5
     sweep: "19"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 80
+    note: "audit shipped and wired into e2eTest; the tracked apps' and packages' browser suites drive raw tabs, not e2eTest, so they are not audited yet: converting them (or auditing raw tabs) is the remaining step"
   - file: 41-add-reads.md
     tier: 1
     sweep: "20"

@@ -75,7 +75,16 @@ export const renderOverlay = (error: unknown, meta: OverlayMeta = {}): string =>
     dev: true,
   });
   const where = `${meta.method ?? ''} ${meta.path ?? ''}`.trim();
-  return `<style>${OVERLAY_STYLE}</style>
+  // A whole document, `lang` and `<title>` included: an e2e test's accessibility audit reads the
+  // overlay like any page, and a fragment has neither.
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(`${facts.code} ${facts.title}`)}</title>
+<style>${OVERLAY_STYLE}</style>
+</head>
+<body>
 <main>
   <section class="card">
     <h1>${escapeHtml(facts.code)} <span class="title">${escapeHtml(facts.title)}</span></h1>
@@ -105,7 +114,9 @@ export const renderOverlay = (error: unknown, meta: OverlayMeta = {}): string =>
     <h2>json</h2>
     <pre>${escapeHtml(JSON.stringify(problem, null, 2))}</pre>
   </section>
-</main>`;
+</main>
+</body>
+</html>`;
 };
 
 export const overlayResponse = (error: unknown, meta: OverlayMeta = {}): Response =>

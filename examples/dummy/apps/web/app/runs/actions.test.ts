@@ -12,7 +12,7 @@ import { connectSite } from './actions/connect-site';
 import { issueRunKey } from './actions/issue-run-key';
 import { revokeRunKey } from './actions/revoke-run-key';
 import { startRun } from './actions/start-run';
-import { resolveRunKey } from './keys';
+import { resolveOrgKey } from './keys';
 import * as repo from './repo';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
@@ -88,9 +88,9 @@ unitTest(
   async () => {
     const issued = await issueRunKey.as(admin, { orgId: ORG });
     expect(issued.key.startsWith(`${issued.prefix}_`)).toBe(true);
-    const caller = await resolveRunKey(issued.key);
+    const caller = await resolveOrgKey(issued.key);
     expect(caller?.actor.orgId).toBe(ORG);
-    expect([...(caller?.scopes ?? [])].sort()).toEqual(['run:read', 'run:write']);
+    expect([...(caller?.scopes ?? [])].sort()).toEqual(['post:publish', 'run:read', 'run:write']);
   },
 );
 
@@ -101,7 +101,7 @@ unitTest('a member without the grant cannot issue a key', async () => {
 unitTest('a revoked key resolves to nobody, and revoking it twice changes nothing', async () => {
   const issued = await issueRunKey.as(admin, { orgId: ORG });
   expect(await revokeRunKey.as(admin, { orgId: ORG, keyId: issued.id })).toEqual({ revoked: true });
-  expect(await resolveRunKey(issued.key)).toBeNull();
+  expect(await resolveOrgKey(issued.key)).toBeNull();
   expect(await revokeRunKey.as(admin, { orgId: ORG, keyId: issued.id })).toEqual({
     revoked: false,
   });
@@ -113,7 +113,7 @@ unitTest('a key from another org, or one nobody issued, cannot be revoked', asyn
   await expect(revokeRunKey.as(elsewhere, theirs)).rejects.toBeUltimateError('X_FORBIDDEN');
   const unknown = { orgId: ORG, keyId: 'nobody-issued-this' };
   await expect(revokeRunKey.as(admin, unknown)).rejects.toBeUltimateError('X_FORBIDDEN');
-  expect(await resolveRunKey(issued.key)).not.toBeNull();
+  expect(await resolveOrgKey(issued.key)).not.toBeNull();
 });
 
 unitTest('a cancel names its missing queue instead of failing on undefined', async () => {

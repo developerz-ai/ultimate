@@ -25,7 +25,15 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `sealed-network.ts` | any unmocked `fetch`, `WebSocket` or `Bun.connect` egress fails, with the URL and the line that fixes it |
 | `sealed-sockets.ts` | the `WebSocket` and `Bun.connect` patches, behind `sealed-network.ts`'s one gate |
 | `factories.ts` | `defineFactory` — seeded rows, traits, associations, `build` vs `create` |
-| `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, defaults read off column names |
+| `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, each value read off its column's declaration (default, enum, kind, money, nullability) through `$parse`, never off its name |
+| `seed-graph.ts` | `seedGraph(entities, { tenants, perTable, seed, factories })` — rows for every table with no factory written: parents first, same-tenant keys, every declared rule kept. Pure, same seed same bytes |
+| `seed-graph-plan.ts` | the plan's types and `insertSeedGraph(graph, writer)` — every insert, then every deferred key, sequentially |
+| `seed-graph-values.ts` | one column's candidate values, off its declaration, kept only where `$parse` accepts them — `factoriesFor`'s source too |
+| `seed-graph-order.ts` · `seed-graph-row.ts` · `seed-graph-shape.ts` | insert order over `$references()` (a cycle broken at a nullable key) · one row solved against invariants and unique keys · what the graph reads off an entity, structurally |
+| `seed-graph-error.ts` | `X_SEED_GRAPH_UNSATISFIED`, its fix naming the `defineFactory` to write |
+| `e2e-a11y.ts` | the accessibility audit's rules: `NAMED_ROLES`, `auditTree`, the in-page probe for `<html lang>` and focus under `aria-hidden` |
+| `e2e-a11y-run.ts` | one `e2eTest`'s audit: read after every navigation and at the end, a reasoned `allow`, findings deduplicated per suite, `X_E2E_A11Y_VIOLATION` |
+| `ax-node.ts` | the one reader of the browser's accessibility nodes — `toAxNode` (one element, `x shot`'s) and `toAxTreeNodes` (a whole tree, the audit's) |
 | `factory-persist.ts` | `usePersister` — the one seam `create()` writes through |
 | `shared-examples.ts` | `sharedExamples` / `behavesLike` — one rule, many subjects |
 | `test-types.ts` | the six test types and their helpers — four of them take the fixture bag, as `test` does |
@@ -212,7 +220,7 @@ there is no flag on the fixture and no code to silence.
 | `contractTest` | OpenAPI diff vs the committed spec, MCP exposure | `contract` |
 | `liveTest` | exactly what each subscriber receives | `live` |
 | `jobTest` | step sequence, retries, idempotency | `job` |
-| `e2eTest` | a browser driver; with none registered it SKIPS, and the gate's `e2e` step passes over the skip — ask `hasE2eDriver()` rather than reading that as a pass | `e2e` |
+| `e2eTest` | a browser driver; with none registered it SKIPS, and the gate's `e2e` step passes over the skip — ask `hasE2eDriver()` rather than reading that as a pass. Every one audits the page's accessibility tree; the only exception is `{ a11y: { allow: [{ role, selector, because }] } }` ([Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-accessibility-audit)) | `e2e` |
 | `evalTest` | LLM output scoring against a threshold | `eval` |
 
 Each takes an optional `{ timeoutMs }` after the body — `unitTest(name, body, { timeoutMs: 30_000 })`,
@@ -274,9 +282,16 @@ await posts.with('published').create();   // org written first, then the post
 | **seeded per table** | the default seed is derived from the table name, so a post and an org never draw the same uuid. Pass `seed` only to replay an older recording |
 | **`with()` validates** | an undeclared trait fails at the line that named it, listing the declared ones (`X_TEST_FACTORY_TRAIT_UNKNOWN`) |
 
-`factoriesFor(registry)` builds one factory per registered entity, with values inferred from column
-names (`…Id` → uuid, `…At` → date, `…Minor` → integer, `is…`/`has…` → false). Enough for the rows a
+`factoriesFor(registry)` builds one factory per registered entity, each value read off the
+column's declaration — its default, an enumerated value, its kind, `null` only where nullable — and
+kept only if the column's `$parse` accepts it; never off its name. A non-`entity()` column, or one
+that refuses every generated value, is `X_SEED_GRAPH_UNSATISFIED` at `build()`. Enough for the rows a
 test does not care about; `defineFactory` is for the rows it does.
+
+`seedGraph(entities, options)` is the same value source over a whole schema: every table, parents
+first, each child keyed to a parent of its own tenant, a cycle broken at a nullable key and set by an
+update. It returns a plan; `insertSeedGraph(graph, writer)` writes it. Rules and options:
+[Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#a-whole-graph-seedgraph).
 
 ## Shared examples
 
@@ -855,7 +870,7 @@ fails on a page that simply has not painted yet.
 `X_TEST_ISLAND_STATES_NOT_PURE` `X_TEST_ISLAND_STATES_MISSING_FILE` `X_TEST_ISLAND_STATES_UNKNOWN`
 `X_TEST_ISLAND_STATES_AMBIGUOUS` `X_TEST_ISLAND_STATE_ID_INVALID` `X_TEST_ISLAND_STATE_DUPLICATE`
 `X_TEST_ISLAND_STATE_JSON_INVALID` `X_TEST_ISLAND_STATE_CLOCK_INVALID`
-`X_TEST_ISLAND_STATE_STUB_INVALID`
+`X_TEST_ISLAND_STATE_STUB_INVALID` `X_SEED_GRAPH_UNSATISFIED` `X_E2E_A11Y_VIOLATION`
 
 ### Error classes
 
@@ -865,11 +880,15 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Class | Code | Declared in |
 |---|---|---|
 | `AppNotBootedError` | `X_TEST_APP_NOT_BOOTED` | `src/errors.ts` |
+| `E2eA11yAllowUnreasonedError` | `X_E2E_A11Y_VIOLATION` | `src/e2e-a11y-run.ts` |
+| `E2eA11yUnavailableError` | `X_TEST_FIXTURE_UNAVAILABLE` | `src/e2e-a11y-run.ts` |
+| `E2eA11yViolationError` | `X_E2E_A11Y_VIOLATION` | `src/e2e-a11y-run.ts` |
 | `FixtureUnavailableError` | `X_TEST_FIXTURE_UNAVAILABLE` | `src/errors.ts` |
 | `NetworkOfflineError` | `X_TEST_NETWORK_OFFLINE` | `src/errors.ts` |
 | `NetworkSealedError` | `X_TEST_NETWORK_SEALED` | `src/errors.ts` |
 | `NondeterministicError` | `X_TEST_NONDETERMINISTIC` | `src/errors.ts` |
 | `RegistryLeakError` | `X_TEST_REGISTRY_LEAK` | `src/errors.ts` |
+| `SeedGraphUnsatisfiedError` | `X_SEED_GRAPH_UNSATISFIED` | `src/seed-graph-error.ts` |
 | `TestDatabaseUnavailableError` | `X_TEST_DB_UNAVAILABLE` | `src/errors.ts` |
 
 ## Log lines under test

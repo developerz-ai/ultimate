@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { CdpConnection, CdpResult } from './cdp-connection';
 import type { E2eTab } from './cdp-e2e-page';
-import { cdpE2eTab } from './cdp-e2e-page';
+import { cdpE2eTab, FULL_AX_TREE } from './cdp-e2e-page';
 import { CdpCallFailedError } from './cdp-errors';
 
 interface Call {
@@ -343,5 +343,49 @@ describe('cdpE2eTab', () => {
     const { connection } = fakeConnection({ [`Runtime.evaluate:${listing}`]: value(['a', 'b']) });
     expect(await tabOn(connection).indexedDbNames()).toEqual(['a', 'b']);
     expect(await tabOn(fakeConnection().connection).indexedDbNames()).toEqual([]);
+  });
+
+  test('accessibilityTree reads the whole tree once and describes only the nodes asked for', async () => {
+    const tree = {
+      nodes: [
+        {
+          ignored: false,
+          role: { type: 'role', value: 'button' },
+          name: { value: '' },
+          backendDOMNodeId: 7,
+        },
+        {
+          ignored: false,
+          role: { type: 'role', value: 'link' },
+          name: { value: 'Y' },
+          backendDOMNodeId: 8,
+        },
+      ],
+    };
+    const { connection, calls } = fakeConnection({
+      [`${FULL_AX_TREE}:`]: tree,
+      'DOM.resolveNode:': { object: { objectId: 'obj-7' } },
+      'Runtime.callFunctionOn:': value(
+        JSON.stringify({ html: '<button></button>', matches: ['#x'] }),
+      ),
+    });
+    const nodes = await tabOn(connection).accessibilityTree({
+      describe: (node) => node.name === '',
+      selectors: ['#x'],
+    });
+
+    expect(nodes.map((node) => [node.role, node.roleType, node.html, node.matches])).toEqual([
+      ['button', 'role', '<button></button>', ['#x']],
+      ['link', 'role', undefined, undefined],
+    ]);
+    expect(calls.map((call) => call.method)).toEqual([
+      FULL_AX_TREE,
+      'DOM.resolveNode',
+      'Runtime.callFunctionOn',
+      'Runtime.releaseObjectGroup',
+    ]);
+    expect(calls[1]?.params['backendNodeId']).toBe(7);
+    expect(calls[2]?.params['arguments']).toEqual([{ value: ['#x'] }]);
+    expect(calls.every((call) => call.sessionId === 'session-1')).toBe(true);
   });
 });

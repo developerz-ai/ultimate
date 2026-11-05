@@ -4,7 +4,14 @@
  */
 
 import { type Actor as Member, memberOf, NotAMember } from '@postly/core';
-import { excerptOf, type MemberId, type OrgId, type PostId, slugify } from '@postly/domain';
+import {
+  excerptOf,
+  type MemberId,
+  type OrgId,
+  type PostId,
+  slugify,
+  orgId as toOrgId,
+} from '@postly/domain';
 import { defineService } from '@ultimat3/core';
 import type { CommentView, CreatePostInput, DraftReview, PostView, ReviewView } from './entity';
 import { PostNotFound } from './errors';
@@ -72,6 +79,16 @@ export const postsService = defineService('posts', (ctx) => {
    */
   const tenantId = (): OrgId => acting().orgId;
 
+  /**
+   * The org of a caller with an org and NO membership — an org's API key on the `/v1` mount
+   * (`app/runs/keys.ts`), which `postPublish` lets publish inside that org. `null` for a member,
+   * whose every path above stays `acting()`'s, and for an actor with no org at all.
+   */
+  const keyOrg: OrgId | null =
+    member === null && ctx.actor.orgId !== undefined && ctx.actor.orgId !== ''
+      ? toOrgId(ctx.actor.orgId)
+      : null;
+
   return {
     async byId(postId: PostId): Promise<PostView> {
       const post = await byId(tenantId(), postId);
@@ -103,6 +120,13 @@ export const postsService = defineService('posts', (ctx) => {
      * retried action or a replayed job never rewrites publication history.
      */
     async publish(postId: PostId): Promise<PostView> {
+      if (keyOrg !== null) {
+        // An org key: the member-free read, inside the key's own org, then the same write.
+        const post = await this.inOrg(keyOrg, postId);
+        if (!post) throw new PostNotFound(postId);
+        if (post.status === 'published') return post;
+        return markPublished(keyOrg, postId, ctx.now());
+      }
       const post = await this.byId(postId);
       if (post.status === 'published') return post;
       return markPublished(tenantId(), postId, ctx.now());
@@ -195,10 +219,12 @@ export const postsService = defineService('posts', (ctx) => {
      * denial, and `input.orgId` is still compared against the member's own inside the rule.
      *
      * No `orgId` parameter, deliberately: there is no value a caller could pass that would widen
-     * this read, so the scope is not something a call site can get wrong.
+     * this read, so the scope is not something a call site can get wrong. An org key reads inside
+     * its OWN org for the same reason; `null` for anyone with neither.
      */
     async authorship(postId: PostId): Promise<PostRow | null> {
-      return member === null ? null : authorshipOf(member.orgId, postId);
+      const org = member?.orgId ?? keyOrg;
+      return org === null ? null : authorshipOf(org, postId);
     },
   };
 });

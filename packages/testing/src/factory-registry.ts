@@ -1,8 +1,11 @@
-// One factory per registered entity, with defaults inferred from column names. Enough for the rows
-// a test does not care about; `defineFactory` is what a test reaches for when it cares.
+// One factory per registered entity, each value read off its column's declaration — kind,
+// nullability, enumerated values, money parts, default — through the seed graph's one value
+// source. Enough for the rows a test does not care about; `defineFactory` is for the ones it does.
 
 import type { EntityLike, Factory, FactoryIds } from './factories';
 import { defineFactory } from './factories';
+import { seedGraphUnsatisfied } from './seed-graph-error';
+import { candidatesFor, isSeedColumn } from './seed-graph-values';
 
 export type EntityRegistry = Readonly<Record<string, EntityLike>>;
 
@@ -25,9 +28,13 @@ export function factoriesFor<TRegistry extends EntityRegistry>(
       ...(seed === undefined ? {} : { seed }),
       defaults: (index, ids): Record<string, unknown> => {
         const row: Record<string, unknown> = {};
-        for (const column of Object.keys(entity.$columns)) {
-          row[column] = defaultFor(column, index, ids);
-        }
+        Object.entries(entity.$columns).forEach(([property, column], position) => {
+          row[property] = defaultFor(
+            { table: entity.$table, property, column, position },
+            index,
+            ids,
+          );
+        });
         return row;
       },
     });
@@ -35,16 +42,37 @@ export function factoriesFor<TRegistry extends EntityRegistry>(
   return out as FactoryRegistry<TRegistry>;
 }
 
+/** One column of one entity: what `defaultFor` reads. The name labels a refusal, nothing more. */
+export interface DefaultColumn {
+  readonly table: string;
+  readonly property: string;
+  readonly column: unknown;
+  readonly position: number;
+}
+
 /**
- * Column names carry the type in this framework's conventions — `…At` is a timestamp, `…Minor` is
- * the integer half of a Money, `is…`/`has…` is a flag — so the name is the only input that can
- * produce a value the schema will accept without the test saying anything.
+ * The first value the column's own declaration admits — its default, else what its kind offers.
+ * A value that is not an `entity()` column, or a column that refuses every generated value, is
+ * `X_SEED_GRAPH_UNSATISFIED`: the fix is a `defineFactory` naming that column.
  */
-export function defaultFor(column: string, index: number, ids: FactoryIds): unknown {
-  if (column === 'id' || column.endsWith('Id')) return ids.uuid();
-  if (column.endsWith('At')) return new Date(0);
-  if (column.endsWith('Minor')) return ids.number();
-  if (column.endsWith('Currency')) return 'USD';
-  if (column.startsWith('is') || column.startsWith('has')) return false;
-  return `${column}-${index}`;
+export function defaultFor(target: DefaultColumn, index: number, ids: FactoryIds): unknown {
+  const { column, property, table } = target;
+  const values = isSeedColumn(column)
+    ? candidatesFor(property, column, {
+        ordinal: index,
+        canary: String(index),
+        position: target.position,
+        uuid: () => ids.uuid(),
+      })
+    : [];
+  if (values.length === 0) {
+    throw seedGraphUnsatisfied({
+      entity: table,
+      what: isSeedColumn(column)
+        ? `no generated value is storable in ${property} — its column refuses every one`
+        : `${property} is not an entity() column, so it declares nothing to generate from`,
+      columns: [property],
+    });
+  }
+  return values[0];
 }

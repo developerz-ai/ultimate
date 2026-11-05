@@ -149,28 +149,28 @@ jobs:
   # 2026-10-03, 4-core runners):
   #
   #   unit-N   79-90 s per shard         the one step worth splitting; `--shard i/n` is a pure
-  #                                      function of the sorted file list, so 2/3 is the same files
-  #                                      on every runner and reproduces locally with the same flags
+  #            + contract, job           function of the sorted file list, so 2/3 is the same files
+  #                                      on every runner and reproduces locally with the same flags.
+  #                                      `contract` and `job` are split the same way, a third each
   #   live     72 s, the static steps    every suite that needs more than one Postgres. The six
   #            BESIDE it, at no wall     static steps run BESIDE the serial suites whenever `live`
   #            time of their own         is in the list — the runner's own rule — so they cost this
   #                                      part nothing: the slowest (`errors`, 32 s) fits inside it.
   #                                      Two runners of their own cost 4 billed minutes to save none.
-  #   e2e      6 + 12 + 16 + 34 s        the compiler, then `contract` and `job` (Postgres only),
-  #                                      then a browser: `tsc -b` writes, so it runs alone and first.
-  #            now 8-15 + 11-19 +        re-measured on main 2026-11-03 (runs 41633286118,
-  #            28-39 + 94-118 s,         41644207342, 41722567738): the job took 169-232 s. Wave
-  #            + ~72 s                   4's `six-deploys.e2e` adds ~72 s locally (3 cases), so
-  #                                      the `e2e` step is ~166-190 s, under its 480 s suite limit
-  #                                      (`SUITE_STEP_TIMEOUT_MS`), and the job ~241-304 s: at the
-  #                                      5-minute target, not under it. `packages (2/2)`, 360-400 s,
-  #                                      is still the run's critical path.
+  #   e2e      typecheck, then e2e       the compiler, then a browser: `tsc -b` writes, so it runs
+  #                                      alone and first. Measured on main 2026-11-05 (runs
+  #                                      42032367633, 41965364111): typecheck 11-14 s, contract
+  #                                      13-18 s, job 36-43 s, e2e 156-184 s — the job 245-283 s
+  #                                      with all four, at the 5-minute target. `e2e` is serial by
+  #                                      design (`SHARDABLE_STEPS`), so it cannot be split; the
+  #                                      two that can moved to the unit shards: ~50-60 s off this
+  #                                      part, ~17-20 s onto each unit shard (112-197 s today).
   #
-  # `contract` and `job` moved here from `live` on 2026-10-03. With them, `live` was the slowest
-  # part (129-157 s, against 79-125 s for a unit shard and 55-70 s for e2e), and the verdict
-  # cannot start before the slowest part ends. They read only TEST_DATABASE_URL, which this part
-  # now starts, and here they run one after another before the browser: with no `live` in the
-  # list, nothing opens the overlap window.
+  # `contract` and `job` moved out of `live` on 2026-10-03, when `live` was the slowest part, and
+  # out of `e2e` on 2026-11-05, when it was. They read only TEST_DATABASE_URL, which every unit
+  # shard already starts, and both are in `SHARDABLE_STEPS`: each shard runs a third of their files,
+  # after its unit slice, and `x verify merge` checks the three slices are one corpus exactly once,
+  # as it does for `unit`.
   #
   # Fixed cost per part, measured on main: 7-11 s for checkout and setup (the install cache is a
   # 168 MB restore keyed on bun.lock and the install after it is under a second), plus 10-20 s for
@@ -207,17 +207,17 @@ jobs:
       matrix:
         include:
           - part: unit-1
-            only: unit
+            only: unit,contract,job
             shard: 1/3
             services: postgres
             urls: TEST_DATABASE_URL
           - part: unit-2
-            only: unit
+            only: unit,contract,job
             shard: 2/3
             services: postgres
             urls: TEST_DATABASE_URL
           - part: unit-3
-            only: unit
+            only: unit,contract,job
             shard: 3/3
             services: postgres
             urls: TEST_DATABASE_URL
@@ -226,7 +226,7 @@ jobs:
             services: postgres postgres-logical postgres-tls pooler redis nats s3
             urls: TEST_DATABASE_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
           - part: e2e
-            only: typecheck,contract,job,e2e
+            only: typecheck,e2e
             services: postgres
             urls: TEST_DATABASE_URL
     steps:
@@ -1025,6 +1025,21 @@ jobs:
   # per runner and keeps the script as the only thing that knows what the list is — no package
   # name is written here, and `--all` still reports every package's findings, never only the first
   # to break.
+  #
+  # A shard is only as fast as its longest unit, and `cli` alone is the run's critical path: CI
+  # `packages (2/2)` 318-451 s against `(1/2)`'s 108-118 s (runs 41965364111, 42032367633, the
+  # round-robin split, `cli` in ONE process). So a unit with more than `FILES_PER_WORKER` test
+  # files runs on several `bun test --parallel` workers, every file isolated, and leases that many
+  # of the runner's cores (`scripts/lib/coverage-schedule.ts`); `--jobs` defaults to the runner's
+  # cores, four here. Bun folds the workers' coverage by function identity, so the number is the
+  # one-process number — `scripts/coverage-gate-parallel.test.ts` holds that against the real
+  # `bun`. And `--shard` deals units by measured core-seconds (`UNIT_SECONDS`), so `cli`, which
+  # outweighs every other unit together, gets a shard to itself.
+  #
+  # Measured LOCALLY 2026-11-05, pinned to four cores (`taskset -c 0-3`) on a shared box, no CI
+  # number yet: before, shard 1/2 81 s and 2/2 402 s; after, 1/2 (`cli` alone, four workers)
+  # 249-286 s and 2/2 (the other 31 units) 129-159 s. `cli` on one process on the same four cores:
+  # 432 s. Still at the 5-minute target, not under it, if a runner is as slow as this box.
   #
   # No services, deliberately: `scripts/lib/coverage-pins.ts` explains that the pins are measured
   # with no Postgres, no Redis and no NATS so the number is identical on a laptop and on a runner.

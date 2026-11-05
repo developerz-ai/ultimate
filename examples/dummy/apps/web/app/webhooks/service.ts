@@ -3,10 +3,9 @@
  * publication out to every live one. No HTTP here, so the action, an MCP tool and a test all call
  * the same functions with the same actor.
  *
- * `(ctx)` is left unannotated for the reason `posts/service.ts` gives.
+ * The factory takes no context: every rule here reads what its caller hands it, never the actor.
  */
 
-import { memberOf, NotAMember } from '@postly/core';
 import { WEBHOOK_ENDPOINT_SLOTS, type WebhookEndpoint } from '@postly/db';
 import { defineService, isUltimateError } from '@ultimat3/core';
 import type { PostView } from '../posts/entity';
@@ -57,7 +56,7 @@ const mintSecret = (): string =>
     byte.toString(16).padStart(2, '0'),
   ).join('');
 
-export const webhooksService = defineService('webhooks', (ctx) => ({
+export const webhooksService = defineService('webhooks', () => ({
   /**
    * A new receiver, and its secret — answered here once and never readable again. The URL is
    * screened before anything is written: one the delivery screen refuses would dead-letter every
@@ -85,18 +84,18 @@ export const webhooksService = defineService('webhooks', (ctx) => ({
   /**
    * One delivery per live endpoint of the post's org, enqueued in the caller's transaction: a
    * rolled-back publish tells nobody. ONE endpoint per job, because retry and disable-after-N are
-   * per-endpoint facts. The org is the acting member's, carried onto each delivery for `tenant`.
+   * per-endpoint facts. The org is the POST's, carried onto each delivery for `tenant`: the caller
+   * may be a member or an org's API key (`/v1`), and either way the post came from a read scoped
+   * to the caller's own org, so its org is already the one they acted in.
    */
   async announcePublished(post: PostView): Promise<number> {
-    const member = memberOf(ctx.actor);
-    if (member === null) throw new NotAMember(ctx.actor.id);
-    const endpoints = await liveEndpoints(member.orgId);
+    const endpoints = await liveEndpoints(post.orgId);
     // One statement for every endpoint, never a loop of `enqueue` (`X_N_PLUS_ONE_WRITE`).
     await postPublishedWebhook.enqueueMany(
       endpoints.map((endpoint) => ({
         endpointId: endpoint.id,
         eventId: post.id,
-        orgId: member.orgId,
+        orgId: post.orgId,
       })),
     );
     return endpoints.length;

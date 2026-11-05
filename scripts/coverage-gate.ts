@@ -12,8 +12,8 @@
 //   bun run scripts/coverage-gate.ts --package scripts [--json]
 //   bun run scripts/coverage-gate.ts --all [--jobs <n>] [--shard i/n] [--json]
 //
-// `--shard i/n` is one CI runner's share of `--all`: round-robin over the SORTED unit list, so
-// shard 1/2 is the same units on every runner. The lcov reader is the CLI's (`coverage-lcov.ts`),
+// `--shard i/n` is one CI runner's share of `--all`, dealt by each unit's measured core-seconds
+// (`UNIT_SECONDS`), so shard 1/2 is the same units on every runner. The lcov reader is the CLI's (`coverage-lcov.ts`),
 // the one an app's `x verify` reads its own floor through.
 
 import { readFileSync, rmSync } from 'node:fs';
@@ -31,8 +31,9 @@ import {
   PIN_SLACK,
   PINS_FILE,
 } from './lib/coverage-pins';
+import { concurrency, leasePool, serviceKeys, unitEnv, workersFor } from './lib/coverage-schedule';
 import type { CoverageUnit } from './lib/coverage-units';
-import { atOf, SCRIPTS_UNIT, unitOf, unitsFor } from './lib/coverage-units';
+import { atOf, SCRIPTS_UNIT, testFileCount, unitOf, unitsFor } from './lib/coverage-units';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -55,6 +56,8 @@ export interface CoverageReading {
   readonly unimported: readonly string[];
   /** Wall seconds the unit's suite took alone — what a `--shard` split is balanced by. */
   readonly seconds?: number;
+  /** `bun test` workers the unit ran on — one is a single process (`testCommand`). */
+  readonly workers?: number;
 }
 
 /**
@@ -277,26 +280,56 @@ export function withUnloadedCounted(
   };
 }
 
-/** Runs one unit's suite with coverage and reads the report back. */
-async function measure(root: string, name: string): Promise<CoverageReading> {
+/**
+ * The `bun test` one unit is measured by. One worker is the command this gate always ran: ONE
+ * process, every file sharing it. More is `--parallel=<n>`, which implies `--isolate`: n processes,
+ * every FILE in a fresh global, the way `x verify`'s `unit` step already runs every one of them —
+ * and Bun folds the coverage of every file and worker into one lcov by FUNCTION IDENTITY, which
+ * this gate cannot do itself (its lcov carries counts, no `FN:` lines).
+ * `coverage-gate-parallel.test.ts` holds that premise against the real `bun`.
+ *
+ * Measured 2026-11-05, Bun 1.4.4, one process against isolated workers on the same tree, same
+ * denominators: `cli` 96.54% / 95.51% one process, 96.51% / 95.50% on four; `scripts`, `core`,
+ * `db`, `testing`, `admin`, `http`, `ai`, `action`, `auth`, `scraping`, `entity`, `jobs`
+ * identical to the hundredth. Lower, and the same at 1, 2 and 4 workers: `render` functions
+ * 97.12% → 96.87% (`registry.ts`), `ui` 97.45% → 97.34% — functions reached only through state
+ * an EARLIER file left in the one process, which no test of their own calls. A number that
+ * depends on which file ran first is not one this gate should report. (`render` and `ui` stay one
+ * process under `FILES_PER_WORKER` today; the number is what they would read widened.)
+ *
+ * Isolated and not `--no-isolate`, which costs a third less CPU: with files sharing a worker's
+ * registry, WHICH files share one is decided by the clock, and two suites green in one process
+ * went red that way, every run (`entity`'s `test-driver.test.ts`, `cli`'s
+ * `unscanned-admin.test.ts`) — a failure a rerun can move is a flake this gate would mint.
+ * `--isolate` alone was refused on 2026-09-05 because Bun's lcov then kept the last file's record,
+ * not the union (`packages/admin` 92.04% against 99.73%); Bun 1.4.4 unions them, and the premise
+ * test above fails if a Bun stops.
+ */
+export function testCommand(unit: CoverageUnit, dir: string, workers: number): readonly string[] {
+  const wide = workers > 1 ? [`--parallel=${String(workers)}`] : [];
+  return [
+    'bun',
+    'test',
+    '--coverage',
+    '--coverage-reporter=lcov',
+    `--coverage-dir=${dir}`,
+    ...wide,
+    unit.test,
+  ];
+}
+
+/** Runs one unit's suite with coverage, on `workers` workers, and reads the report back. */
+async function measure(root: string, name: string, workers: number): Promise<CoverageReading> {
   const unit = unitOf(name);
   const dir = join(root, '.x', 'coverage', name);
   rmSync(dir, { recursive: true, force: true });
   const started = performance.now();
-  // ONE process per unit, deliberately and with the alternative measured. `--isolate` — the
-  // flag `x test` runs every suite under — was tried on 2026-09-05 because a package's files share
-  // this one process and a process has one lifecycle: the second in-process boot of `x dev` is
-  // refused (`X_LIFECYCLE_DRAINED`), so with two boot files whichever `readdir` listed first was
-  // measured and the other failed in silence (`packages/cli`: 94.94% on a runner, 95.73% on a
-  // laptop, same tree). But Bun's lcov writer keeps ONE record per source under `--isolate` —
-  // the last file's, not the union: `packages/admin` read 92.04% isolated against 99.73% here,
-  // with the same 578 tests passing both ways. So the rule the gate enforces instead is the
-  // tests': a package boots the framework in-process in exactly one test file
-  // (`cmd-dev.test.ts` for `cli`), and every assertion that needs a booted app lives there.
-  const proc = Bun.spawn(
-    ['bun', 'test', '--coverage', '--coverage-reporter=lcov', `--coverage-dir=${dir}`, unit.test],
-    { cwd: root, stdout: 'ignore', stderr: 'pipe' },
-  );
+  const proc = Bun.spawn([...testCommand(unit, dir, workers)], {
+    cwd: root,
+    env: unitEnv(Bun.env, serviceKeys(root)),
+    stdout: 'ignore',
+    stderr: 'pipe',
+  });
   const stderr = await new Response(proc.stderr).text();
   const failure = suiteFailure(name, await proc.exited, stderr);
   if (failure !== undefined) throw new ScriptError(failure);
@@ -312,38 +345,7 @@ async function measure(root: string, name: string): Promise<CoverageReading> {
   const scoped = { ...scopeLcov(lcov, name), unimported: unimportedSources(root, name, lcov) };
   const reading = unit === SCRIPTS_UNIT ? withUnloadedCounted(root, scoped, lcov) : scoped;
   rmSync(dir, { recursive: true, force: true });
-  return { ...reading, seconds: Math.round((performance.now() - started) / 100) / 10 };
-}
-
-/**
- * How many unit suites run at once. Each is already its own `bun test` process — the isolation
- * this gate exists for — so running them side by side changes nothing a suite can observe except
- * the clock, and serially `--all` was 3m38s on a 12-core box that sat mostly idle. Defaults to
- * every core; `--jobs 1` is the serial run.
- */
-export function concurrency(flag: string | undefined): number | undefined {
-  if (flag === undefined) return Math.max(1, navigator.hardwareConcurrency);
-  const n = Number(flag);
-  return Number.isInteger(n) && n >= 1 ? n : undefined;
-}
-
-/** Maps `items` through `run` with at most `limit` in flight, answering in input order. */
-export async function pool<T, R>(
-  items: readonly T[],
-  limit: number,
-  run: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      const index = next;
-      next += 1;
-      out[index] = await run(items[index] as T);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return out;
+  return { ...reading, seconds: Math.round((performance.now() - started) / 100) / 10, workers };
 }
 
 if (import.meta.main) {
@@ -377,14 +379,24 @@ if (import.meta.main) {
       json,
     );
   }
-  const settled = await pool(names, jobs, async (name): Promise<CoverageVerdict | Finding> => {
-    try {
-      return judge(await measure(root, name), COVERAGE_PINS[name]);
-    } catch (error) {
-      if (!(error instanceof ScriptError)) throw error;
-      return { ...error.toFinding(), at: atOf(unitOf(name)) };
-    }
-  });
+  // A unit leases as many cores as it runs workers, so a widened `cli` and three narrow units
+  // never ask a 4-core runner for seven at once.
+  const width = new Map(
+    names.map((name) => [name, workersFor(testFileCount(root, unitOf(name)), jobs)]),
+  );
+  const settled = await leasePool(
+    names,
+    jobs,
+    (name) => width.get(name) ?? 1,
+    async (name): Promise<CoverageVerdict | Finding> => {
+      try {
+        return judge(await measure(root, name, width.get(name) ?? 1), COVERAGE_PINS[name]);
+      } catch (error) {
+        if (!(error instanceof ScriptError)) throw error;
+        return { ...error.toFinding(), at: atOf(unitOf(name)) };
+      }
+    },
+  );
   // Reported in unit order whatever order the pool finished in, so two runs of one tree print
   // one report.
   const verdicts: CoverageVerdict[] = [];
@@ -411,7 +423,7 @@ if (import.meta.main) {
         .sort((a, b) => (b.reading.seconds ?? 0) - (a.reading.seconds ?? 0))
         .map(
           (verdict) =>
-            `  ${String(verdict.reading.seconds ?? 0).padStart(6)}s  ${verdict.reading.pkg}  ${verdict.reading.lines}% / ${verdict.reading.funcs}%`,
+            `  ${String(verdict.reading.seconds ?? 0).padStart(6)}s  ${verdict.reading.pkg}  ${verdict.reading.lines}% / ${verdict.reading.funcs}%${(verdict.reading.workers ?? 1) > 1 ? `  (${String(verdict.reading.workers)} workers)` : ''}`,
         ),
       data: verdicts.map((verdict) => verdict.reading),
     },

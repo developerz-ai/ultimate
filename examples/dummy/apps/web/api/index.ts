@@ -78,7 +78,7 @@ import * as issueRunKey from '../app/runs/actions/issue-run-key';
 import * as revokeRunKey from '../app/runs/actions/revoke-run-key';
 import * as startRun from '../app/runs/actions/start-run';
 import * as syncConnection from '../app/runs/jobs/sync-connection';
-import { RUN_KEY_SCOPES, resolveRunKey } from '../app/runs/keys';
+import { ORG_KEY_SCOPES, resolveOrgKey } from '../app/runs/keys';
 import * as liveRunEvents from '../app/runs/live/live-run-events';
 import * as runConnections from '../app/runs/queries/run-connections';
 import * as savePreferences from '../app/settings/actions/save-preferences';
@@ -167,9 +167,10 @@ export const api = defineApi({
     billingEventsReceiver,
   ],
   tasks: [nightlyDigest, hourlyPurge],
-  // A second door for machine callers, onto the run actions a browser already calls: same
-  // handler, same policy, a bearer key instead of a session. `/api/runs/start` is `/v1/runs/start`.
-  http: { mounts: [{ prefix: '/v1', scopes: RUN_KEY_SCOPES, resolveToken: resolveRunKey }] },
+  // A second door for machine callers, onto actions a browser already calls: same handler, same
+  // policy, an org's bearer key instead of a session. `/api/runs/start` is `/v1/runs/start`, and
+  // publishPost's pinned `/api/posts/:postId/publish` is `/v1/posts/:postId/publish`.
+  http: { mounts: [{ prefix: '/v1', scopes: ORG_KEY_SCOPES, resolveToken: resolveOrgKey }] },
 });
 
 /** What the typed client is shaped from — imported as a TYPE only by `shared/client.ts`. */
