@@ -1,11 +1,12 @@
 // Row 7's world on its own: one Dependabot PR page judged on inactivity — failed checks with more
-// than seven days since `updatedAt` file the stuck ask, green or fresh pages stay healthy, and
+// than seven days since `updatedAt` file the stuck ask, green or fresh pages short of the reader's
+// --limit stay healthy, a page as FULL as the limit is unverdicted (PRs beyond it are unread), and
 // pending or unreadable evidence is unverdicted, never a mute on a confirmed failure. Split from
 // health.ts.test.ts: this row's cases plus the row-4 evidence pins breach the ceiling together.
 
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
-import { healthAt } from './health';
+import { DEPENDABOT_PAGE_LIMIT, healthAt } from './health';
 import type { DependabotPr } from './lib/health-narrow';
 import { narrowPrs } from './lib/health-narrow';
 import type { RowVerdict } from './lib/health-rule';
@@ -133,7 +134,9 @@ describe('unit · health · Dependabot activity and checks', () => {
         },
       ];
       const prs = narrowPrs(raw);
-      expect(dependabotVerdict({ prs, nowMs }).verdict).toBe(one.verdict);
+      expect(dependabotVerdict({ prs, nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT }).verdict).toBe(
+        one.verdict,
+      );
       // Translate the fixed inactivity to the reader's real clock, without a boundary race.
       const readerAge = one.age <= weekMs ? 0 : weekMs * 2;
       const result = await healthAt('.', {
@@ -165,7 +168,7 @@ describe('unit · health · Dependabot activity and checks', () => {
         statusCheckRollup: [{ __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null }],
       },
     ]);
-    const verdict = dependabotVerdict({ prs: page, nowMs });
+    const verdict = dependabotVerdict({ prs: page, nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT });
     expect(verdict.verdict).toBe('unhealthy');
     expect(verdict.reason).toContain('#805');
     expect(verdict.reason).not.toContain('#806');
@@ -181,7 +184,7 @@ describe('unit · health · Dependabot activity and checks', () => {
       },
       { number: 808, createdAt: '2020-01-01T00:00:00Z', statusCheckRollup: [green] },
     ]);
-    const verdict = dependabotVerdict({ prs: page, nowMs });
+    const verdict = dependabotVerdict({ prs: page, nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT });
     expect(verdict.verdict).toBe('unhealthy');
     expect(verdict.reason).toContain('#807');
   });
@@ -195,7 +198,86 @@ describe('unit · health · Dependabot activity and checks', () => {
         statusCheckRollup: [{ __typename: 'CheckRun', status: 'QUEUED', conclusion: null }],
       },
     ]);
-    expect(dependabotVerdict({ prs: page, nowMs }).verdict).toBe('unverdicted');
+    expect(dependabotVerdict({ prs: page, nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT }).verdict).toBe(
+      'unverdicted',
+    );
+  });
+
+  test('a full page of green fresh PRs is unverdicted, never healthy', async () => {
+    // The bug this pins: gh was asked for 5 PRs and returned 5, so PRs beyond the page are unread
+    // — `healthy` over that world is the silent green this row refuses to file.
+    const raw = Array.from({ length: DEPENDABOT_PAGE_LIMIT }, (_, at) => ({
+      number: 900 + at,
+      createdAt: '2020-01-01T00:00:00Z',
+      updatedAt: new Date(nowMs).toISOString(),
+      statusCheckRollup: [green],
+    }));
+    const page = narrowPrs(raw);
+    const pure = dependabotVerdict({ prs: page, nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT });
+    expect(pure.verdict).toBe('unverdicted');
+    expect(pure.prs).toBe(page);
+    expect(pure.reason).toContain(`at the ${DEPENDABOT_PAGE_LIMIT} --limit`);
+    // Through the reader, on the reader's real clock to avoid a boundary race.
+    const result = await healthAt('.', {
+      ...healthyReaders,
+      'dependabot-not-stuck': async () => ({
+        prs: raw.map((one) => ({ ...one, updatedAt: new Date(Date.now()).toISOString() })),
+      }),
+    });
+    expect(result.ok).toBe(true);
+    expect((result.data as { healthy: boolean }).healthy).toBe(false);
+    const row = verdictOf(result).find((one) => one.row === 'dependabot-not-stuck');
+    expect(row?.verdict).toBe('unverdicted');
+    expect(row?.prs).toHaveLength(DEPENDABOT_PAGE_LIMIT);
+  });
+
+  test('a full page holding a confirmed stuck PR still files the stuck ask', () => {
+    // Gate order: stuck-first outranks the full-page gate, exactly as it outranks the pending and
+    // unreadable-updatedAt gates — a confirmed failure is never muted by the page being full.
+    const raw = Array.from({ length: DEPENDABOT_PAGE_LIMIT }, (_, at) => ({
+      number: 910 + at,
+      createdAt: '2020-01-01T00:00:00Z',
+      updatedAt: new Date(nowMs - (at === 0 ? weekMs + 1 : 0)).toISOString(),
+      statusCheckRollup: [at === 0 ? red : green],
+    }));
+    const verdict = dependabotVerdict({
+      prs: narrowPrs(raw),
+      nowMs,
+      pageLimit: DEPENDABOT_PAGE_LIMIT,
+    });
+    expect(verdict.verdict).toBe('unhealthy');
+    expect(verdict.reason).toContain('#910');
+    expect(verdict.reason).not.toContain('#911');
+  });
+
+  test('a green page one short of the limit stays healthy', () => {
+    const raw = Array.from({ length: DEPENDABOT_PAGE_LIMIT - 1 }, (_, at) => ({
+      number: 920 + at,
+      createdAt: '2020-01-01T00:00:00Z',
+      updatedAt: new Date(nowMs).toISOString(),
+      statusCheckRollup: [green],
+    }));
+    expect(
+      dependabotVerdict({ prs: narrowPrs(raw), nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT }).verdict,
+    ).toBe('healthy');
+  });
+
+  test('the 4-vs-5 boundary: the gate reads pageLimit, not a pinned page size', () => {
+    // The same four fresh green PRs: short of 5 the row files healthy, filling a limit of 4 it is
+    // unverdicted — the comparison is `>=` against the reader's own --limit.
+    const raw = Array.from({ length: DEPENDABOT_PAGE_LIMIT - 1 }, (_, at) => ({
+      number: 930 + at,
+      createdAt: '2020-01-01T00:00:00Z',
+      updatedAt: new Date(nowMs).toISOString(),
+      statusCheckRollup: [green],
+    }));
+    const page = narrowPrs(raw);
+    expect(dependabotVerdict({ prs: page, nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT }).verdict).toBe(
+      'healthy',
+    );
+    expect(dependabotVerdict({ prs: page, nowMs, pageLimit: page.length }).verdict).toBe(
+      'unverdicted',
+    );
   });
 
   test('through healthAt, a mixed page files the stuck ask and turns healthy off', async () => {
@@ -239,7 +321,10 @@ describe('unit · health · Dependabot activity and checks', () => {
             statusCheckRollup,
           },
         ];
-        expect(dependabotVerdict({ prs: narrowPrs(raw), nowMs }).verdict).toBe('unverdicted');
+        expect(
+          dependabotVerdict({ prs: narrowPrs(raw), nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT })
+            .verdict,
+        ).toBe('unverdicted');
         const result = await healthAt('.', {
           ...healthyReaders,
           'dependabot-not-stuck': async () => ({ prs: raw }),
@@ -258,8 +343,14 @@ describe('unit · health · Dependabot activity and checks', () => {
       updatedAt: new Date(nowMs - weekMs).toISOString(),
       checks: 'red',
     };
-    expect(dependabotVerdict({ prs: [pr], nowMs }).verdict).toBe('healthy');
-    const stale = dependabotVerdict({ prs: [pr], nowMs: nowMs + 1 });
+    expect(dependabotVerdict({ prs: [pr], nowMs, pageLimit: DEPENDABOT_PAGE_LIMIT }).verdict).toBe(
+      'healthy',
+    );
+    const stale = dependabotVerdict({
+      prs: [pr],
+      nowMs: nowMs + 1,
+      pageLimit: DEPENDABOT_PAGE_LIMIT,
+    });
     expect(stale.verdict).toBe('unhealthy');
     expect(stale.reason).toContain(pr.updatedAt ?? 'missing');
     expect(stale.reason).not.toContain(pr.createdAt ?? 'missing');

@@ -31,6 +31,26 @@ export const TAG_RUN_ARGS = [
   TAG_RUN_FIELDS,
 ] as const;
 
+/**
+ * Row 7's one argv — the spawn below, `ROW_COMMANDS` in scripts/health.ts and the full-page gate
+ * all read it, so the command a refusal quotes is the command that ran. `--limit` is part of the
+ * advertised command: without it gh answers its own default page, and a full page — which the
+ * brief says may be truncated, never filed — could not be told from a short one.
+ */
+export const DEPENDABOT_PAGE_LIMIT = 5;
+export const DEPENDABOT_ARGS = [
+  'pr',
+  'list',
+  '--app',
+  'dependabot',
+  '--limit',
+  String(DEPENDABOT_PAGE_LIMIT),
+  '--state',
+  'open',
+  '--json',
+  'number,createdAt,updatedAt,statusCheckRollup',
+] as const;
+
 // Exported for the test that pins the prefix: without `bun` first, run() spawns a binary named
 // `run`, which no normal Bun installation has, and the row refuses everywhere.
 export const CI_ARGS = [
@@ -203,23 +223,7 @@ export const defaultReaders = (root: string, ghRunner: GhRunner = gh): HealthRea
     ),
   }),
   'dependabot-not-stuck': async () => ({
-    prs: jsonDocument(
-      (
-        await ghRunner(
-          [
-            'pr',
-            'list',
-            '--app',
-            'dependabot',
-            '--state',
-            'open',
-            '--json',
-            'number,createdAt,updatedAt,statusCheckRollup',
-          ],
-          root,
-        )
-      ).output,
-    ),
+    prs: jsonDocument((await ghRunner([...DEPENDABOT_ARGS], root)).output),
   }),
   'demo-shipped': async () => ({
     runs: jsonDocument(

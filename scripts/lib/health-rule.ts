@@ -325,8 +325,13 @@ const WEEK_MS = 7 * 24 * 3_600_000;
 export interface DependabotInput {
   readonly prs: readonly DependabotPr[];
   readonly nowMs: number;
+  /** The `--limit` the reader asked gh for: a page this full may have cut PRs off. */
+  readonly pageLimit: number;
 }
-/** Row 7. Stuck means failed checks and more than seven days without activity. */
+/**
+ * Row 7. Stuck means failed checks and more than seven days without activity. A page as full as
+ * that limit is unverdicted — PRs beyond it are unread.
+ */
 export function dependabotVerdict(input: DependabotInput): RowVerdict {
   const base = { row: 'dependabot-not-stuck' as const };
   // Stuck is computed BEFORE the row-wide unknown gates: a page holding one confirmed stuck PR
@@ -358,6 +363,16 @@ export function dependabotVerdict(input: DependabotInput): RowVerdict {
       ...base,
       verdict: 'unverdicted',
       reason: 'Dependabot checks are pending or unknown — re-run before filing',
+      prs: input.prs,
+    };
+  }
+  // Healthy is only safe on a SHORT page: gh was asked for `pageLimit` PRs, and a page as full as
+  // its limit may have cut more off — a PR it never returned cannot be judged green.
+  if (input.prs.length >= input.pageLimit) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason: `gh returned ${input.prs.length} PRs, a full page at the ${input.pageLimit} --limit — PRs beyond it are unread, re-run before filing`,
       prs: input.prs,
     };
   }
