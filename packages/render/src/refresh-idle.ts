@@ -14,6 +14,12 @@ export const QUIET_MS = 1_000;
 /** A press unreleased this long is a lost `pointerup`, not a visitor still pressing. */
 export const PRESS_HOLD_MS = 10_000;
 
+/**
+ * A refresh not settled by now is given up on, so one hung answer cannot hold `running` forever and
+ * starve every later ask. Long past any answer still worth swapping in under a reader.
+ */
+export const REFRESH_TIMEOUT_MS = 30_000;
+
 const KEY: unique symbol = Symbol.for('ultimate.refresh-idle');
 
 /** What the scheduler reads of the window; injected by the tests. */
@@ -113,7 +119,13 @@ export function refreshIdleOn(win: IdleWindow, clock: Pick<Clock, 'monotonic'>):
     state.owed = false;
     state.running = true;
     const router = win.__xNavigation;
+    let settled = false;
+    let deadline: number | undefined;
     const done = (ran: boolean): void => {
+      // Once per run: a hung answer landing after its timeout belongs to no run.
+      if (settled) return;
+      settled = true;
+      win.clearTimeout(deadline);
       state.running = false;
       if (ran) {
         pump();
@@ -124,9 +136,14 @@ export function refreshIdleOn(win: IdleWindow, clock: Pick<Clock, 'monotonic'>):
       state.owed = true;
       state.timer = win.setTimeout(pump, QUIET_MS);
     };
-    if (router === undefined) done(true);
+    if (router === undefined) {
+      done(true);
+      return;
+    }
+    // Given up on, a hung refresh counts as run: retrying it would only ask the same stuck router.
+    deadline = win.setTimeout(() => done(true), REFRESH_TIMEOUT_MS);
     // A failed refresh is not retried here: the router already handed the visitor its own answer.
-    else router.refresh(() => heldFor() > 0).then(done, () => done(true));
+    router.refresh(() => heldFor() > 0).then(done, () => done(true));
   };
 
   const input = (): void => {

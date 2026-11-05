@@ -196,7 +196,7 @@ export function filledRoute(name: string, route: ActionRoute, params: unknown): 
   throw new ActionHttpPathInvalidError({
     name,
     path: route.path,
-    reason: `needs a non-empty string for :${filled.missing}, and the call passed none`,
+    reason: `:${filled.missing} ${filled.reason}`,
     fix: `actionHttpPath('${name}', { ${filled.missing}: '<value>' }) — or call ${name}.client(options), which fills it from the input`,
   });
 }

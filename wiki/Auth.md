@@ -53,6 +53,15 @@ service worker and cached pages. Revocation at scale is `revokeUserSessions`, `r
 user's live API keys. A `passwordHash` change through `updatePrivileges` ends every other session
 of that user — all of them when no session of theirs is passed, as in a reset.
 
+**A sign-in page is one command**, `As of 2026-11`: `x g sign-in --password` (a native form over
+`login()`, its second leg over `completeMfa()`) or `x g sign-in --oidc <provider>` (an OpenID Connect
+issuer, discovered on the first sign-in). Both write the sign-in page, the `destroySession` action,
+`auth.signInPath`, and a boot guard: outside `development` and `test` a `web` or `sync` role with
+its sign-in keys unset refuses to start (`X_AUTH_SIGN_IN_UNCONFIGURED`). `--password` also writes
+`createSession` / `confirmSession` and the second-factor page; `--oidc` writes the start and
+callback routes and drops `x new`'s development viewer while its files are still `x new`'s own. What each writes:
+[CLI reference](CLI-Reference#x-g).
+
 ## OAuth
 
 `github` and `google` ship; `registerOAuthProvider` adds one. PKCE is mandatory on every
@@ -77,7 +86,8 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 | TOTP + recovery codes | `enrolTotp`, `saveTotpSecret`, `generateRecoveryCodes`. The secret is **sealed at rest** under the app's master key and a plaintext one is refused, never read (`X_MFA_SECRET_UNSEALED`; `x auth seal-mfa` seals rows from before); a recovery code is consumed in one statement, so it works once. A password proven with a factor outstanding is `X_MFA_REQUIRED`, whose `meta.challenge` is a sealed five-minute credential; `completeMfa(auth, challenge, code)` finishes the sign-in, meters the guess against the same lockout buckets a password guess spends, and refuses a spent code on every replica (`x_totp_steps`, installed by the boot) |
 | email verification, password reset | `issueVerification` / `consumeVerification`; a token is consumed only when its hash matches, so a wrong guess cannot burn the victim's live link. The mail is sent through an injected `MailSender` ([Mail](Mail)) |
 | API keys — how an agent authenticates | `issueApiKey` → `ult_<env>_<id>_<secret>`, shown once; `verifyApiKey` + `apiKeyActor` give a `kind: 'agent'` actor whose scopes are the key's and never the owner's roles (`X_API_KEY_INVALID`). A key is its owner's credential: a missing or disabled owner refuses it on the next use, a wildcard scope (`*`, `<resource>:*`) is refused at issue, and an owned key keeps only the scopes its owner's grants cover — pass `grantsOf` to expand roles ([`packages/auth/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/auth/README.md)); a key with no `userId` is unchanged. `apiKeyResolver(() => store)` is both as the `resolveToken` a bearer mount and `defineAppMcp()` take: `{ actor, scopes }` for a live key, one `null` for every wrong one, and a store fault left a throw. In a test the store is `memoryAuthAdapter()` |
-| service-to-service | `verifyWorkloadToken` reads a Kubernetes service-account token, a SPIFFE JWT-SVID or a cloud IMDS token (they are all one JWT); `actorFromService` gives a `kind: 'service'` actor. mTLS is the mesh's job |
+| service-to-service | `verifyWorkloadToken` reads a Kubernetes service-account token, a SPIFFE JWT-SVID or a cloud IMDS token (they are all one JWT); `actorFromService` gives a `kind: 'service'` actor. The returned `WorkloadToken` carries `raw`, the whole decoded payload, read only after every check held. mTLS is the mesh's job |
+| an external issuer's bearer (`As of 2026-11`) | `jwtBearerResolver({ keys, issuers, audience, requiredScope?, accept?, actorOf })` — `apiKeyResolver`'s twin for JWTs, the `resolveToken` a bearer mount and `defineAppMcp()` take. `keys` is a thunk read when a token arrives (no discovery at import); `accept(raw)` is the app's own claim check after the signature; `actorOf(token)` builds the actor. Every refusal — signature, issuer, audience, expiry, scope, `accept`, and a key set that cannot be read — is `null` plus one `auth.jwt_bearer.refused` log line naming the check, never a claim's value. The mount answers that `null` as `401 X_UNAUTHENTICATED` |
 
 Every auth code — `X_UNAUTHENTICATED`, `X_SESSION_EXPIRED`, `X_MFA_REQUIRED`, `X_OAUTH_*`,
 `X_ACCOUNT_LOCKED`, `X_API_KEY_INVALID` and the rest — is in [Error codes](Error-Codes).

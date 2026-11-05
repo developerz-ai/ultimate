@@ -18,7 +18,7 @@
 
 import type { ClientFlight, ClientRetry } from '@ultimat3/core';
 import type { FetchLike, RecordEnvelope } from '@ultimat3/core/page';
-import { clientTransport, fillTemplate, queryPath, templateParams } from '@ultimat3/core/page';
+import { clientTransport, fillWire, queryPath, renderedQueryPin } from '@ultimat3/core/page';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { DownloadClientMethod, DownloadQuery } from './download';
 import { QueryHttpPathInvalidError } from './http-pin-error';
@@ -191,7 +191,9 @@ function methodsOf<TInput extends StandardSchemaV1, TRow extends object>(
   pinnedPath?: string,
 ) {
   const base = options.baseUrl.replace(/\/+$/, '');
-  const path = pinnedPath ?? queryPath(name);
+  // A browser caller naming the read only by name — `queryClient`, `useQuery`, a channel's
+  // catch-up — goes where the server's document says it pinned it, never to a derived 404.
+  const path = pinnedPath ?? renderedQueryPin(name) ?? queryPath(name);
   // Erased at the wire seam; the row type is this query's by construction.
   const rows = (input: InferInput<TInput>, callOptions: QueryCallOptions = {}) =>
     read(base, options, name, input, callOptions, undefined, path) as Promise<readonly TRow[]>;
@@ -233,27 +235,16 @@ function read(
   page: PageControls | undefined,
   path: string,
 ): Promise<unknown> {
-  const params = templateParams(path);
-  let at = path;
-  let rest = input;
-  if (params.length > 0) {
-    // The URL carries a `:param` pin's values, each one encoded segment the router decodes back;
-    // the search string carries the rest. A missing value is refused before any request exists.
-    const filled = fillTemplate(path, input);
-    if (!filled.ok) {
-      return Promise.reject(
-        new QueryHttpPathInvalidError({
-          name,
-          path,
-          reason: `needs a non-empty string for :${filled.missing}, and the call's input has none`,
-        }),
-      );
-    }
-    at = filled.path;
-    const entries = Object.entries(input as Record<string, unknown>);
-    rest = Object.fromEntries(entries.filter(([key]) => !params.includes(key)));
+  // The URL carries a `:param` pin's values, each one encoded segment the router decodes back; the
+  // search string carries the rest. A missing value is refused before any request exists.
+  const filled = fillWire(path, input);
+  if (!filled.ok) {
+    return Promise.reject(
+      new QueryHttpPathInvalidError({ name, path, reason: `:${filled.missing} ${filled.reason}` }),
+    );
   }
-  const search = searchOf(rest, page);
+  const at = filled.url;
+  const search = searchOf(filled.rest, page);
   return clientTransport({
     method: 'GET',
     url: `${base}${at}${search === '' ? '' : `?${search}`}`,

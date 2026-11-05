@@ -91,6 +91,7 @@ export {
   passwordWeak,
   sessionExpired,
   sessionUnknown,
+  signInUnconfigured,
 } from './errors';
 export { currentActor, requireActor } from './guards';
 export type { IdTokenClaims, VerifyIdTokenInput } from './id-token';
@@ -113,6 +114,12 @@ export {
   providerJwks,
   verifyJwtSignature,
 } from './jwks';
+export type {
+  JwtBearerCaller,
+  JwtBearerCheck,
+  JwtBearerResolverOptions,
+} from './jwt-bearer-resolver';
+export { jwtBearerResolver } from './jwt-bearer-resolver';
 export type { KdfGate, KdfLimits } from './kdf-gate';
 export {
   boundedKdfGate,
@@ -374,7 +381,9 @@ export {
 } from './verify';
 export type {
   VerifyWorkloadTokenInput,
+  WorkloadCheck,
   WorkloadClaims,
   WorkloadToken,
+  WorkloadTokenCheck,
 } from './workload';
-export { verifyWorkloadToken } from './workload';
+export { checkWorkloadToken, verifyWorkloadToken } from './workload';

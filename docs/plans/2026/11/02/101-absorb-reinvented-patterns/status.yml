@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 57
-current_focus: "stopped 2026-11-05 at the owner's word, with PR 5a the last PR of the run. Waves 1-4 and 5a landed; 5b, 5c and the later sweeps are not started. The six 5a slices stay in_progress with what is open in each note, the 5a security findings M1-M4 and L5-L7 among them."
+percent: 60
+current_focus: "wave 5b (PR after #985) closes sweeps 17-18: 5a findings M1-M3, L5-L7, the tool-description path, sign-in. Next: finish 39-testing-property memory rollback and 33-ops-ci from the parked drafts, then sweep 19 (two PRs: 19a exercise/seed graph/a11y, 19b verify step/tenant proof)."
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -278,7 +278,7 @@ slices:
     sweep: "15"
     status: in_progress
     percent: 70
-    note: "`x ci tested` (a push reuses the green PR run of its tree) and the four flakes are done. The under-5-minute target is missed: packages (2/2) takes 360-400 s on the cli coverage unit, and the e2e job about 241-304 s"
+    note: "x ci tested and the four flakes done. Under-5-minute target missed: packages (2/2) 360-400 s on the cli coverage unit, e2e 241-304 s. A half-built coverage-schedule/parallel coverage-gate draft is parked at node_modules/.cache/p101/parked-5b/ (ci.yml, scripts/coverage-gate*, scripts/lib/coverage-*)"
   - file: 28-assets-deploy-skew.md
     tier: 0
     sweep: "15"
@@ -322,44 +322,40 @@ slices:
   - file: 23-ui-live-refresh.md
     tier: 0
     sweep: "17"
-    status: in_progress
-    percent: 90
-    note: "visibleInterval, onSessionLost, scheduleRefresh, refresh() keeping focus and the raw-interval guard are done. Open from the 5a security audit: L5, noteRefusal fires on any origin's refusal, where it should only on a 401 from the same origin, and pollers stay stopped after a rescope (core/src/client-dispatch.ts, session-lost.ts); L6, refresh-idle.ts has no timeout on the refresh fetch, so `running` can stick."
+    status: complete
+    percent: 100
   - file: 25-pkg-realtime-client-reads.md
     tier: 3
     sweep: "17"
-    status: in_progress
-    percent: 95
-    note: "useQuery poll (pollEvery, backoff on a failed read) and no-hold for a no-persist app are done. persists is passed explicitly (realtimeKind's parameter is required; the ambient default was the coverage gate's red). Open from the 5a arch audit: QueryPoll.ms is still on the public interface, read only by query-poll.test.ts."
+    status: complete
+    percent: 100
   - file: 23-ui-data-table.md
     tier: 4
     sweep: "17"
-    status: in_progress
-    percent: 95
-    note: "listUrl, keyed rows, First control, generated list and sort are done. Open from the 5a security audit: L7, the docs say rowKey is normally the primary key and should say it must be."
+    status: complete
+    percent: 100
   - file: 25-pkg-auth-sign-in.md
     tier: 2
     sweep: "17"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-testing-property.md
     tier: 0
     sweep: "18"
     status: in_progress
-    percent: 80
-    note: "the exercise assertion, @ultimat3/schema/sample, the query contract suite and the generators are done. Open from the 5a arch audit: the exercise core is not extracted, so action/src/exercise.ts and query/src/exercise.ts still duplicate verdict and replay, with no onReached probe (handlerReached stays). Open from the 5a security audit: M4, inRolledBackScope runs with no rollback at all when no database is installed, so memory-store writes persist, and jobs outbox:false, storage, mail, outbound and rate-limit side effects are undocumented; exerciseAction and exerciseQuery are on the public barrels with no environment guard."
+    percent: 90
+    note: "wave 5b: one exercise loop in core (runExercise), staging/production refused (X_CONTRACT_EXERCISE_ENVIRONMENT), X_CONTRACT_EXERCISE_UNSCOPED registered. exercise.ts passes scoped: rollbackAvailable() and runExercise refuses unscoped. Open: roll back the in-memory store (entity memory journal) - a half-built draft is parked at node_modules/.cache/p101/parked-5b/"
   - file: 39-action-declared-errors.md
     tier: 0
     sweep: "18"
-    status: in_progress
-    percent: 90
-    note: "errors: on action, mutator and query, the source scan, OpenAPI, MCP and manifest are done, and the code is settled as X_ERROR_UNDECLARED (status 500, reachable in x dev). Open from the 5a arch audit: one tool-description string. The default lead `Run the \"<name>\" action.` has four copies (ai/src/tools.ts:172,192, mcp/src/projectable.ts:152, mcp/src/from-action.ts:97), and the errors: path drops a primitive's own `description`: both tools.ts:172 and projectable.ts:152 read mcp.description then the default, skipping primitive.description."
+    status: complete
+    percent: 100
   - file: 39-api-mount-paths.md
     tier: 0
     sweep: "18"
     status: in_progress
-    percent: 80
-    note: "templates, http.method, X_HTTP_PATH_INPUT_CONFLICT, OpenAPI, manifest, action.client()/query.client() and the X_ACTION_HTTP_PATH_INVALID title are done. Open from the 5a security audit: M1, fillTemplate passes '.' and '..', so a value can walk the path (core/src/route-path-template.ts:94); M2, a query ref does not carry http.path, so page-runtime and channel-catch-up read the derived URL; M3, useMutation, the outbox and rpc ignore {path, method} (realtime/src/use-mutation.ts:199), so a pinned action is unreachable from them."
+    percent: 85
+    note: "path templates, OpenAPI {param}, .client() fill and the mount route shipped; publishPost pins /api/posts/:postId/publish. Open (Done-when 1): no /v1 scope names publishPost - RUN_KEY_SCOPES (examples/dummy/apps/web/app/runs/keys.ts:20) covers startRun/answerPrompt/cancelRun/liveRunEvents only, so POST /v1/posts/:postId/publish answers 404; add it to a scope and a bearer contract test that calls it"
   - file: 40-next-exercise-pass.md
     tier: 5
     sweep: "19"
@@ -602,4 +598,4 @@ slices:
     percent: 0
 evidence: []
 notes: "Slices stay numbered by area; execution order is by sweep. 90-deferred.md is not a slice and has no row."
-last_updated: 2026-11-03
+last_updated: 2026-11-05

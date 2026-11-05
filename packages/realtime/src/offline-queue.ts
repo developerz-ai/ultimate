@@ -9,6 +9,7 @@
 //      to a socket and nothing more, so a drained mutation is `inflight` — not `acked` — until an
 //      `ack`/`fail` frame settles it, or a lost connection returns it to the queue.
 
+import type { ActionPin } from '@ultimat3/core/page';
 import { renderThrowable, stringField } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
 import { OfflineQueueAbandonedError } from './page-errors';
@@ -23,6 +24,8 @@ export interface QueuedMutation {
   readonly seq: number;
   readonly name: string;
   readonly input: JsonValue;
+  /** The action's `http` pin, when the write was made against one (`pinned-wire.ts`). */
+  readonly http?: ActionPin | undefined;
   readonly enqueuedAt: number;
   attempts: number;
   status: MutationStatus;
@@ -215,6 +218,7 @@ export class OfflineQueue {
     key: string;
     name: string;
     input: JsonValue;
+    http?: ActionPin | undefined;
     at?: number;
   }): Promise<QueuedMutation> {
     // Read BEFORE the key is looked up, never between the lookup and the push: with the await in
@@ -244,6 +248,7 @@ export class OfflineQueue {
       seq: this.#nextSeq,
       name: args.name,
       input: args.input,
+      ...(args.http === undefined ? {} : { http: args.http }),
       enqueuedAt: args.at ?? 0,
       attempts: 0,
       status: 'pending',

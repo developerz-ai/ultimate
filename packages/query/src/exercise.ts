@@ -1,18 +1,16 @@
 /**
- * A read's twin of `@ultimat3/action`'s exercise (this tier cannot import it): run the read with
- * inputs its own schema accepts, seeded by its name, and see whether `sql()` and its execution
- * survive. A read writes nothing, so no transaction wraps it. The codes are action's, borrowed.
+ * A read's adapter over `@ultimat3/core`'s exercise loop (`runExercise`, shared with `action`):
+ * run the read with inputs its own schema accepts, seeded by its name, and see whether `sql()` and
+ * its execution survive. A read writes nothing, so no transaction wraps it. The codes are action's.
  */
 
-import type { Actor, Ctx } from '@ultimat3/core';
+import type { Actor, Ctx, ExerciseReport } from '@ultimat3/core';
 import {
-  assert,
   ctxOf,
-  fnv1a,
-  isFixShellSafe,
+  exerciseReplay,
   isUltimateError,
   renderFixShellArg,
-  renderThrowable,
+  runExercise,
   tryUseContext,
   UltimateError,
 } from '@ultimat3/core';
@@ -24,10 +22,6 @@ import { QueryAuditSinkMissingError } from './audit-errors';
 import { QueryDeniedError } from './errors';
 import type { AnyQuery } from './query';
 import { queryName, sourceFor } from './read';
-
-/** The same numbers `@ultimat3/action` runs: sixteen by default, sixty-four at most. */
-export const QUERY_EXERCISE_RUNS = 16;
-export const QUERY_EXERCISE_RUNS_MAX = 64;
 
 /** Who reads, and what binds the parts a generated value cannot. Same shape as an action's. */
 export interface QueryExerciseActorOptions {
@@ -42,33 +36,10 @@ export interface QueryExerciseOffOptions {
 
 export type QueryExerciseOptions = QueryExerciseActorOptions | QueryExerciseOffOptions;
 
-export interface QueryExerciseReport {
-  readonly runs: number;
-  readonly reached: number;
-  readonly refused: number;
-  readonly outcomes: readonly string[];
-}
+export type QueryExerciseReport = ExerciseReport;
 
 export const queryExerciseTestName = (name: string): string =>
   `${name}: read survives generated input`;
-
-/** `bun test <file> -t '<name>…'` from inside a test file, the step otherwise. */
-function replayCommand(name: string): string {
-  const main = Bun.main;
-  const file = main.replace(`${process.cwd()}/`, '');
-  if (!main.includes('.test.') || !isFixShellSafe(file) || !isFixShellSafe(name)) {
-    return 'x verify --only contract';
-  }
-  return `bun test ${file} -t '${queryExerciseTestName(name)}'`;
-}
-
-/** `null` passes (a coded refusal under 500); otherwise what the read did wrong. */
-function defectOf(error: unknown): string | null {
-  if (!isUltimateError(error)) return `threw an uncoded ${renderThrowable(error)}`;
-  if (error.code === 'X_OUTPUT_INVALID') return 'answered rows its schema rejects';
-  const status = statusFor(error.code);
-  return status >= 500 ? `answered ${error.code}, a ${status}` : null;
-}
 
 /**
  * Whether a refusal came from the front half every surface shares — the policy, the parse, the
@@ -88,6 +59,10 @@ const accepts = async (schema: StandardSchemaV1, input: unknown): Promise<boolea
 /**
  * Exercise `target`. "Reached" is `sql()` having built a source: everything before it — the
  * policy, the declared limit, the parse — is the front half every surface shares.
+ *
+ * A test-time call: refused in `staging`/`production` (`X_CONTRACT_EXERCISE_ENVIRONMENT`). Nothing
+ * is rolled back, because a read writes nothing; what it touches anyway (a rate-limit counter, an
+ * audit record, an outbound fetch — sealed under the test preload) is kept.
  */
 export async function exerciseQuery(
   target: AnyQuery,
@@ -95,58 +70,58 @@ export async function exerciseQuery(
   ctx?: Ctx,
 ): Promise<QueryExerciseReport> {
   const name = queryName(target);
-  const runs = options.runs ?? QUERY_EXERCISE_RUNS;
-  assert(
-    Number.isInteger(runs) && runs >= 1 && runs <= QUERY_EXERCISE_RUNS_MAX,
-    `${name}: exercise runs must be a whole number from 1 to ${QUERY_EXERCISE_RUNS_MAX}`,
-    `${name}.contract({ exercise: { actor, runs: ${QUERY_EXERCISE_RUNS} } })`,
-  );
-  const seed = fnv1a(name);
   const base = ctx ?? tryUseContext() ?? ctxOf({});
-  const outcomes: string[] = [];
-  let reached = 0;
-  let refused = 0;
-  for (let run = 0; run < runs; run += 1) {
-    const drawn = arbitrary(target.input, { seed, run });
-    const input = options.input === undefined ? drawn : await options.input(drawn);
-    if (!(await accepts(target.input, input))) {
-      refused += 1;
-      outcomes.push(`run ${run}: input refused by its own schema`);
-      continue;
-    }
-    try {
-      const source = await sourceFor(target, input, {
-        ctx: base,
-        actor: options.actor,
-        surface: 'http',
-      });
-      await source.execute();
-      reached += 1;
-      outcomes.push(`run ${run}: answered`);
-    } catch (error) {
-      if (isUltimateError(error) && error.code === 'X_TEST_NETWORK_SEALED') {
-        outcomes.push(`run ${run}: network sealed`);
-        continue;
+  const verdict = await runExercise({
+    name,
+    runs: options.runs,
+    stoppedLabel: 'stopped before sql()',
+    draw: (seed, run) => arbitrary(target.input, { seed, run }),
+    bind: options.input,
+    accepts: (input) => accepts(target.input, input),
+    attempt: async (input) => {
+      try {
+        const source = await sourceFor(target, input, {
+          ctx: base,
+          actor: options.actor,
+          surface: 'http',
+        });
+        await source.execute();
+        return { ok: true, reached: true };
+      } catch (error) {
+        return { ok: false, reached: !beforeSql(error), error };
       }
-      const defect = defectOf(error);
-      if (defect !== null) throw queryDefect(name, run, input, defect);
-      const built = !beforeSql(error);
-      reached += built ? 1 : 0;
-      const code = isUltimateError(error) ? error.code : 'uncoded';
-      outcomes.push(`run ${run}: ${built ? 'refused' : 'stopped before sql()'} with ${code}`);
-    }
+    },
+    statusOf: statusFor,
+  });
+  switch (verdict.kind) {
+    case 'pass':
+      return verdict.report;
+    case 'drift':
+      throw queryDrawsRefused(name);
+    case 'unreached':
+      throw queryUnreached(name, verdict.outcomes);
+    case 'defect':
+      throw queryDefect(name, verdict.run, verdict.input, verdict.defect, verdict.error);
   }
-  if (refused === runs) throw queryDrawsRefused(name);
-  if (reached === 0) throw queryUnreached(name, outcomes);
-  return { runs, reached, refused, outcomes };
 }
 
-function queryDefect(name: string, run: number, input: unknown, defect: string): UltimateError {
+function queryDefect(
+  name: string,
+  run: number,
+  input: unknown,
+  defect: string,
+  error: unknown,
+): UltimateError {
   return new UltimateError({
     code: 'X_CONTRACT_DEFECT',
-    cause: `query ${name} ${defect} on generated run ${run}, for input its own schema accepts (meta.input)`,
-    fix: `${replayCommand(name)}   # replays the run; fix the ${name} read or tighten its input: first`,
-    meta: { run, input },
+    cause: `query ${name} ${defect} on generated run ${run}, for input its own schema accepts (meta.input, meta.failure)`,
+    fix: `${exerciseReplay(name, queryExerciseTestName(name))}   # replays the run; fix the ${name} read or tighten its input: first`,
+    meta: {
+      run,
+      input,
+      ...(isUltimateError(error) ? { failure: { code: error.code, cause: error.cause } } : {}),
+    },
+    sourceError: error,
   });
 }
 

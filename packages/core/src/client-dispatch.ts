@@ -123,9 +123,13 @@ export async function dispatch(
       const refusal =
         req.decodeError?.(response.status, text, stated) ??
         problemError(response.status, text, req.url, stated);
-      // Only the principal this request was issued for can have lost its session.
+      // Only the principal this request was issued for can have lost its session. The answer's
+      // own URL, so a same-origin call redirected elsewhere is judged by where it was refused.
       const scope = pageClient().scope;
-      if (scope.epoch === issued) noteRefusal(refusal.code, scope.principal);
+      if (scope.epoch === issued) {
+        const url = response.url === '' ? req.url : response.url;
+        noteRefusal({ status: response.status, url, code: refusal.code }, scope.principal);
+      }
       throw refusal;
     }
     return {

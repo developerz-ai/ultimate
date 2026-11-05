@@ -71,12 +71,26 @@ export function templateKeyProblem(
 
 export type FilledTemplate =
   | { readonly ok: true; readonly path: string }
-  | { readonly ok: false; readonly missing: string };
+  | {
+      readonly ok: false;
+      /** The `:param` that could not be filled. */
+      readonly missing: string;
+      /** Why, as a phrase that follows the param's name: `:id <reason>`. */
+      readonly reason: string;
+    };
+
+/**
+ * `.` and `..` survive `encodeURIComponent` untouched, and a URL resolver (`fetch`, `new URL`)
+ * walks them — `/posts/../edit` is `/edit` — as it does their `%2E` spellings, so no encoding
+ * keeps one inside its segment. Refused, never sent.
+ */
+const DOT_SEGMENTS: ReadonlySet<string> = new Set(['.', '..']);
 
 /**
  * The template with every `:param` replaced by `input[param]`, `encodeURIComponent`-ed so a `/` in
  * a value stays inside its one segment — the router decodes it back into the same one param.
- * A missing, empty or non-string value is named rather than spelled into a different URL.
+ * A missing, empty or non-string value, or a dot-segment, is named rather than spelled into a
+ * different URL.
  */
 export function fillTemplate(path: string, input: unknown): FilledTemplate {
   const values = typeof input === 'object' && input !== null ? input : {};
@@ -90,7 +104,20 @@ export function fillTemplate(path: string, input: unknown): FilledTemplate {
     const value = Object.hasOwn(values, name)
       ? (values as Record<string, unknown>)[name]
       : undefined;
-    if (typeof value !== 'string' || value === '') return { ok: false, missing: name };
+    if (typeof value !== 'string' || value === '') {
+      return {
+        ok: false,
+        missing: name,
+        reason: 'needs a non-empty string, and the input has none',
+      };
+    }
+    if (DOT_SEGMENTS.has(value)) {
+      return {
+        ok: false,
+        missing: name,
+        reason: `is '${value}', a dot-segment the URL resolver would walk out of its one segment`,
+      };
+    }
     out.push(encodeURIComponent(value));
   }
   return { ok: true, path: out.join('/') };

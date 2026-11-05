@@ -62,7 +62,13 @@ export function keyedRows<Row, Node>(
     }
     const made = runtime.createRoot((dispose) => {
       const [current, set] = runtime.createSignal(row);
-      return { row, set, node: build(current, key), dispose };
+      try {
+        return { row, set, node: build(current, key), dispose };
+      } catch (error) {
+        // Never cached, so never disposed by a later run: what the build made so far goes now.
+        dispose();
+        throw error;
+      }
     });
     cells.set(key, made);
     return made;

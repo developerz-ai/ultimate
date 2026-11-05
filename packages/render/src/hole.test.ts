@@ -7,12 +7,18 @@ import type { MemoryErrorReporter } from '@ultimat3/core';
 import { configureErrorReporting, memoryErrorReporter, resetErrorReporting } from '@ultimat3/core';
 import { HOLE_NODE } from '@ultimat3/core/render-node';
 import { Hole, isHoleNode } from './hole';
-import { island } from './island';
+import { drainDeclaredIslands, island } from './island';
 import { islandCollector } from './island-collector';
 import { h } from './jsx';
 import type { HoleSink } from './render-html';
 import { holeSink, renderToHtml } from './render-html';
 import { collectStream, holeMarker, renderStreamHtml } from './render-stream';
+
+// `island()` records a declaration for the NEXT `defineRoute` in the process: drained here, or the
+// next test file's module-level route inherits this file's badge islands.
+afterEach(() => {
+  drainDeclaredIslands();
+});
 
 // A foreign failure handed to the subject: test input, never its verdict.
 const BOOM = new RangeError('boom');

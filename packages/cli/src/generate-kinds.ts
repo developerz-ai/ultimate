@@ -27,6 +27,7 @@ export const GENERATORS = [
   'island',
   'admin:page',
   'guard',
+  'sign-in',
 ] as const;
 
 export type Generator = (typeof GENERATORS)[number];
@@ -280,4 +281,6 @@ const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   island: 'counter',
   'admin:page': 'ops',
   guard: 'migration-safety',
+  // Sign-in takes no name: its "example" is the flag that picks a shape, so the line still runs.
+  'sign-in': '--password',
 };

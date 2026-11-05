@@ -138,3 +138,18 @@ export class CursorStaleError extends RealtimeError {
     });
   }
 }
+
+/**
+ * A write to an action pinned at a `:param` template (`http: { path: '/orders/:id/refund' }`) whose
+ * input could not fill it: no URL exists to send it to, so it is refused before anything is sent
+ * or queued. `name` and `path` are the mutator's declared strings; the input is not rendered.
+ */
+export class MutationPathUnfilledError extends RealtimeError {
+  constructor(args: { name: string; path: string; param: string; reason: string }) {
+    super({
+      code: 'X_MUTATION_PATH_UNFILLED',
+      cause: `the write "${args.name}" is pinned at ${args.path}, and its :${args.param} ${args.reason} — it was not sent; the input must carry the URL's :${args.param} as a non-empty string`,
+      fix: `mutate({ ${args.param}: '<value>', ... })`,
+    });
+  }
+}

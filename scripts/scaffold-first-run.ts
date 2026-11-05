@@ -5,7 +5,7 @@
 // database commands and the manifest write that used to be re-spelled here are gone: they were an
 // approximation of a script nobody executed, and two spellings of one sequence is the second path
 // axiom 1 forbids. What is left is the half `bun run setup` does not do and no other check reaches
-// — `x g` for every kind the CLI offers, then the migration those thirteen entities earn.
+// — `x g` for every kind the CLI offers, then the migration the entities they emit earn.
 //
 // The generators all exit 0 even when what they emit cannot resolve an import, so this sweep is not
 // itself the catch: the `bun run verify` that follows it is (`TS2307: Cannot find module '../repo'`
@@ -13,7 +13,7 @@
 // typecheck.
 //
 // Takes a scaffolded app whose `bun run setup` has run and is not idempotent against a used one:
-// `x g` never clobbers, so a second run over the same directory is thirteen `X_GENERATE_CONFLICT`s.
+// `x g` never clobbers, so a second run over the same directory is fourteen `X_GENERATE_CONFLICT`s.
 //
 //   bun run scripts/scaffold-first-run.ts <app dir> [--json]
 
@@ -121,13 +121,13 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
 
 /**
  * The generators are projected from `GENERATORS`, never a hand-written list: the defect was four of
- * thirteen, so a sample would likely have missed it — and a fourteenth generator is covered the day
+ * thirteen, so a sample would likely have missed it — and a new generator is covered the day
  * it lands rather than the day someone remembers this file.
  *
  * | # | Step | What only this step can tell you |
  * |---|---|---|
- * | 1 | `g <kind>` x 13 | every generator runs |
- * | 2 | `db gen "generated"` | `x db gen` against entities from EIGHT different generators in one diff — the only migration in CI written from generator output rather than from the scaffold's own example entity |
+ * | 1 | `g <kind>` x 14 | every generator runs |
+ * | 2 | `db gen "generated"` | `x db gen` against entities from every generator that emits one, in one diff — the only migration in CI written from generator output rather than from the scaffold's own example entity |
  *
  * Nothing APPLIES that migration here, deliberately: `bun run setup` runs `x db migrate`, and the
  * `scripts/scaffold-gate.ts` run after this sweep runs `bun run setup` again — which is also what
@@ -143,13 +143,17 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
 export const firstRunPlan = (): readonly FirstRunStep[] => [
   ...GENERATORS.map((kind) => ({
     name: `g ${kind}`,
-    args: [
-      'g',
-      kind,
-      generatorName(kind),
-      ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
-      '--json',
-    ],
+    // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`.
+    args:
+      kind === 'sign-in'
+        ? ['g', kind, '--password', '--json']
+        : [
+            'g',
+            kind,
+            generatorName(kind),
+            ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
+            '--json',
+          ],
   })),
   ...SECOND_SHAPES,
   { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },

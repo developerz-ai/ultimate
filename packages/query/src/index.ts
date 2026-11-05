@@ -119,7 +119,7 @@ export type {
   QueryExerciseOptions,
   QueryExerciseReport,
 } from './exercise';
-export { exerciseQuery, QUERY_EXERCISE_RUNS, QUERY_EXERCISE_RUNS_MAX } from './exercise';
+export { exerciseQuery } from './exercise';
 /** The HTTP projection: `GET /_x/query/<kebab>`, the URL `client()` derives. */
 export { toQueryRoute } from './http';
 export type { QueryHttp } from './http-pin';

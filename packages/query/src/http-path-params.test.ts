@@ -120,4 +120,15 @@ describe('client()', () => {
       expect(error).toEqual(expect.objectContaining({ code: 'X_QUERY_HTTP_PATH_INVALID' }));
     }
   });
+  test("a dot-segment value is refused, and the refusal says why rather than 'missing'", async () => {
+    const fetch: FetchLike = async () => expect.unreachable('nothing may be sent');
+    try {
+      await orderById().client({ baseUrl: 'http://app.test', fetch })({ id: '..' });
+      expect.unreachable('a :id of .. must be refused');
+    } catch (error) {
+      expect(error).toEqual(expect.objectContaining({ code: 'X_QUERY_HTTP_PATH_INVALID' }));
+      expect(String((error as { cause?: unknown }).cause)).toContain(':id is');
+      expect(String((error as { cause?: unknown }).cause)).toContain('dot-segment');
+    }
+  });
 });

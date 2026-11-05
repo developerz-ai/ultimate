@@ -34,6 +34,14 @@ export const APP_UPDATE_MESSAGE = 'AppUpdateAvailable';
  */
 export const CLIENT_PATH_STYLE_META = 'ultimate-path-style';
 
+/**
+ * Every PINNED action and query (`http: { path, method }`) the server serves, as one JSON object
+ * (`client-paths-pins.ts` owns the format). A browser caller reaching one BY NAME — `rpc`,
+ * `queryClient`, `useQuery`, `useMutation`, the outbox — goes where the declaration put it, and
+ * no browser ref restates a pin it could drift from. Absent when nothing is pinned.
+ */
+export const CLIENT_PINS_META = 'ultimate-pins';
+
 /** Where the page's one socket dials: `/_x/sync`, or the deployment's absolute `SYNC_URL`. */
 export const CLIENT_SYNC_META = 'ultimate-sync';
 

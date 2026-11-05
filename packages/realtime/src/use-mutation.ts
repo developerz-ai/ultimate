@@ -4,11 +4,18 @@
 // before the overlay goes — no flicker — and a refusal takes the overlay back. No socket writes.
 
 import type { ConflictPolicy } from '@ultimat3/core/page';
-import { actionPath, isSuperseded, isUltimateError, pageClient, uuidV7 } from '@ultimat3/core/page';
+import {
+  isSuperseded,
+  isUltimateError,
+  pageClient,
+  renderedActionPin,
+  uuidV7,
+} from '@ultimat3/core/page';
 import type { JsonValue } from './json';
 import { knownOffline, type OutboxHandle, peekOutbox } from './outbox-slot';
 import { OfflineQueueAbandonedError, ServerRenderLiveError } from './page-errors';
 import { installedPage, type PageWrites, pageRealtime } from './page-store';
+import { mutationWire } from './pinned-wire';
 import { isServerRender, signalFor } from './reactivity';
 import { carriedBy } from './record-store';
 
@@ -121,6 +128,11 @@ export function useMutation(mutator: MutatorLike): Mutate {
   const call = async (input: JsonValue): Promise<unknown> => {
     if (writes === undefined) throw new ServerRenderLiveError({ operation: 'useMutation()' });
     const page = installedPage('useMutation');
+    // The pin the server stamped into this document, resolved ONCE: the outbox keeps it with the
+    // write, so a replay goes where the write was aimed. Before anything is painted, counted or
+    // queued: an input that cannot fill the pin is no write.
+    const http = renderedActionPin(mutator.name);
+    const wire = mutationWire(mutator.name, input, http);
     const issued = pageClient().scope.epoch;
     const key = `${mutator.name}:${uuidV7()}`;
     const local = mutator.local;
@@ -152,7 +164,12 @@ export function useMutation(mutator: MutatorLike): Mutate {
         if (pageClient().scope.epoch !== issued) {
           throw new OfflineQueueAbandonedError({ name: mutator.name });
         }
-        await outbox.enqueue({ key, name: mutator.name, input });
+        await outbox.enqueue({
+          key,
+          name: mutator.name,
+          input,
+          ...(http === undefined ? {} : { http }),
+        });
       } catch (error) {
         page.store.drop(key);
         // A principal change is nobody's failure to report; a disk that refused the write is.
@@ -196,9 +213,9 @@ export function useMutation(mutator: MutatorLike): Mutate {
     const carried = new Set<string>();
     try {
       output = await page.services.send({
-        method: 'POST',
-        url: actionPath(mutator.name),
-        body: input,
+        method: wire.method,
+        url: wire.url,
+        body: wire.body,
         idempotencyKey: key,
         onEnvelope: (envelope) => carriedBy(envelope, carried),
       });

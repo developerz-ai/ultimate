@@ -8,11 +8,12 @@ import { type FocusMark, focusMain, markFocus, restoreFocus, transition } from '
 
 /**
  * One `refresh()` in flight: `held` is asked again at the swap — the visitor may have started
- * typing or opened a dialog while the page was fetched — and `landed` is what `refresh()` answers.
+ * typing or opened a dialog while the page was fetched — and `settled` is what `refresh()` answers:
+ * `true` once it landed OR failed (neither is owed again), `false` when it was skipped.
  */
 export interface RefreshRun {
   readonly held: (() => boolean) | undefined;
-  landed: boolean;
+  settled: boolean;
 }
 
 /** Held across a refresh's swap: where focus was. `undefined` for an ordinary navigation. */
@@ -48,13 +49,24 @@ export function swapIn(
 }
 
 /**
+ * Whether a navigation whose answer never came (the network, `NAVIGATION_TIMEOUT_MS`) ends here,
+ * quietly: a refresh is. Reloading a page under a reader is what a refresh exists to prevent, and
+ * the page on screen is still the visitor's; settled, so the scheduler does not owe it again.
+ */
+export function refreshFailsQuietly(run: RefreshRun | undefined): boolean {
+  if (run === undefined) return false;
+  run.settled = true;
+  return true;
+}
+
+/**
  * After the scripts ran, so an island's mounted control is there to take focus back. A new place:
  * `<main>` and the title read out. A refresh: the marked control, and the announcer untouched.
  */
 export function landFocus(doc: Document, live: HTMLElement, hold: RefreshHold): void {
   if (hold !== undefined) {
     restoreFocus(doc, hold.mark);
-    hold.run.landed = true;
+    hold.run.settled = true;
     return;
   }
   focusMain(doc);

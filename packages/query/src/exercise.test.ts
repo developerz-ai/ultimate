@@ -2,12 +2,12 @@
 // A read that crashes on a filter its own schema allows ships green without this suite.
 
 import { describe, expect, test } from 'bun:test';
-import { isUltimateError, UltimateError, userActor } from '@ultimat3/core';
+import { EXERCISE_RUNS, isUltimateError, UltimateError, userActor } from '@ultimat3/core';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { QueryContractTest } from './contract-test';
 import { queryContractTestsFor } from './contract-test';
-import { exerciseQuery, QUERY_EXERCISE_RUNS, queryExerciseTestName } from './exercise';
+import { exerciseQuery, queryExerciseTestName } from './exercise';
 import { query } from './query';
 import { from } from './source';
 
@@ -64,7 +64,7 @@ describe('exerciseQuery', () => {
   test('a read that survives passes, and every run reached sql()', async () => {
     const fine = feed('fineFeed', () => undefined);
     const report = await exerciseQuery(fine, { actor: reader });
-    expect(report.reached).toBe(QUERY_EXERCISE_RUNS);
+    expect(report.reached).toBe(EXERCISE_RUNS);
   });
 
   test('a denied reader reaches nothing, which is red', async () => {
@@ -80,12 +80,37 @@ describe('exerciseQuery', () => {
     const missing = feed('missingFeed', () => {
       throw new UltimateError({ code: 'X_NOT_FOUND', cause: 'gone', fix: 'seed one' });
     });
-    expect((await exerciseQuery(missing, { actor: reader })).reached).toBe(0 + QUERY_EXERCISE_RUNS);
+    expect((await exerciseQuery(missing, { actor: reader })).reached).toBe(0 + EXERCISE_RUNS);
     const drifting = feed('driftFeed', () => {
       throw new UltimateError({ code: 'X_DB_DRIFT', cause: 'drifted', fix: 'x db gen' });
     });
     const failure = await failureOf(() => exerciseQuery(drifting, { actor: reader }));
     expect(failure.code).toBe('X_CONTRACT_DEFECT');
+  });
+
+  test('a deploy is refused before a read runs', async () => {
+    let calls = 0;
+    const counted = feed('deployedFeed', () => {
+      calls += 1;
+    });
+    const previous = process.env['ULTIMATE_ENV'];
+    process.env['ULTIMATE_ENV'] = 'staging';
+    try {
+      const failure = await failureOf(() => exerciseQuery(counted, { actor: reader }));
+      expect(failure.code).toBe('X_CONTRACT_EXERCISE_ENVIRONMENT');
+    } finally {
+      if (previous === undefined) delete process.env['ULTIMATE_ENV'];
+      else process.env['ULTIMATE_ENV'] = previous;
+    }
+    expect(calls).toBe(0);
+  });
+
+  test('a defect keeps what the read threw: meta.failure and the source error', async () => {
+    const drifting = feed('failureFeed', () => {
+      throw new UltimateError({ code: 'X_DB_DRIFT', cause: 'drifted', fix: 'x db gen' });
+    });
+    const failure = await failureOf(() => exerciseQuery(drifting, { actor: reader }));
+    expect(failure.meta?.['failure']).toEqual({ code: 'X_DB_DRIFT', cause: 'drifted' });
   });
 
   test('a binder that breaks every draw keeps X_CONTRACT_DRIFT', async () => {

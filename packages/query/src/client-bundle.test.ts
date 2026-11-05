@@ -55,7 +55,16 @@ describe('@ultimat3/query/client in a browser', () => {
     expect(modules.filter(isTitlesTable)).toEqual([]);
   }, 60_000);
 
-  // measured: 14,494 B (2026-11-05), against 14,848, the next half kilobyte. why: +1,013 B, a
+  // measured: 15,628 B (2026-11-05), against 15,872, the next half kilobyte. why: +506 B,
+  // `renderedQueryPin` (core's `client-paths-pins.ts`): a read the server pinned is fetched where
+  // the document's `<meta name="ultimate-pins">` says when it is reached by NAME (`queryClient`,
+  // `useQuery`, a channel's catch-up), so no browser ref restates the pin.
+  // was: 15,122 B (2026-11-05), against 15,360, the next half kilobyte. why: +628 B over
+  // 14,494: +96 B, core's `fillWire` — the one pinned-URL/body split `action.client()`, this client
+  // and `useMutation` now share instead of three copies — and +532 B, wave 5b's core `./page`
+  // changes this client reaches through the transport and `fillTemplate` (the dot-segment refusal
+  // and its reason, the session-lost and dispatch edits).
+  // was: 14,494 B (2026-11-05), against 14,848, the next half kilobyte. why: +1,013 B, a
   // pinned read's URL — core's `fillTemplate`/`templateParams` and `X_QUERY_HTTP_PATH_INVALID`'s leaf class, so
   // `client()` on `http: { path: '/orders/:id' }` fills the URL rather than 404ing on the derived
   // one; the other +697 B over 12,746 is wave 5a's core `./page` additions (13,443 B without
@@ -66,8 +75,8 @@ describe('@ultimat3/query/client in a browser', () => {
   // `Retry-After` reader (`client-retry-after.ts`) and the `retry-after` rule in `retryForStatus`,
   // so a read refused with a 429 waits the delay the server named, and the problem body's `title`
   // for a code this realm never registered (`remoteTitleOf`). The next whole kilobyte above it.
-  test('stays under 14.5 kB minified (14,494 B as of 2026-11-05)', async () => {
+  test('stays under 15.5 kB minified (15,628 B as of 2026-11-05)', async () => {
     const { bytes } = await build(true);
-    expect(bytes).toBeLessThan(14_848);
+    expect(bytes).toBeLessThan(15_872);
   }, 60_000);
 });

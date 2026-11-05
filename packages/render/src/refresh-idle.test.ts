@@ -3,7 +3,7 @@
 // asks, nothing after a lost session, and one state per page however many chunks carry the module.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rescope } from '@ultimat3/core/page';
-import { type IdleWindow, QUIET_MS, refreshIdleOn } from './refresh-idle';
+import { type IdleWindow, QUIET_MS, REFRESH_TIMEOUT_MS, refreshIdleOn } from './refresh-idle';
 
 const KEY = Symbol.for('ultimate.refresh-idle');
 
@@ -238,6 +238,24 @@ describe('scheduleRefresh', () => {
     await tab.settle(true);
     tab.advance(QUIET_MS * 3);
     expect(tab.refreshes()).toBe(2);
+  });
+
+  test('a refresh that never settles is given up after REFRESH_TIMEOUT_MS, and the next ask runs', async () => {
+    const tab = fakeTab();
+    const schedule = refreshIdleOn(tab.win, tab.clock);
+    schedule();
+    expect(tab.refreshes()).toBe(1);
+    schedule();
+    tab.advance(REFRESH_TIMEOUT_MS - 1);
+    expect(tab.refreshes()).toBe(1);
+    tab.advance(1);
+    expect(tab.refreshes()).toBe(2);
+    // The hung answer landing late is not a second settlement of the run that replaced it.
+    await tab.settle();
+    schedule();
+    expect(tab.refreshes()).toBe(2);
+    await tab.settle();
+    expect(tab.refreshes()).toBe(3);
   });
 
   test('the router is handed the hold, so a visitor busy by the time the answer lands is not swapped under', () => {

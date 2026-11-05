@@ -67,6 +67,8 @@ const ADDED_SINCE = [
   'X_SOCKET_LIMIT',
   // 25.0.0 (#682): a replicator and a record publisher carrying one table, the second dropped.
   'X_REALTIME_PRODUCER_CONFLICT',
+  // Plan 101 wave 5b: a write whose input cannot fill its action's pinned `:param`.
+  'X_MUTATION_PATH_UNFILLED',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

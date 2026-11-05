@@ -20,7 +20,7 @@
 // import this one to return it. `cross-surface.test.ts` pins `toolFrom` to the served entry.
 
 import type { Actor, McpExposureDeclaration } from '@ultimat3/core';
-import { isMcpExposed } from '@ultimat3/core';
+import { isMcpExposed, toolDescription } from '@ultimat3/core';
 import { McpToolUndeclaredError } from './errors';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
@@ -93,8 +93,7 @@ export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
   // The primitive's own name and nothing else: `mcp.name` was a second naming field no
   // declaration could set, deleted in 25.0.0 (plan 101, M4).
   const name = primitive.name;
-  const description =
-    primitive.mcp?.description ?? primitive.description ?? `Run the "${primitive.name}" action.`;
+  const description = toolDescription(primitive);
   const mutates = primitive.mutates ?? true;
   const visibleTo = primitive.mcp?.visibleTo;
   const listParams = primitive.mcp?.listParams;

@@ -78,6 +78,10 @@ export type Settled<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: unknown };
 
+/** Whether `inRolledBackScope` has a transaction to undo the writes in: one open, or a client. */
+export const rollbackAvailable = (): boolean =>
+  liveTxConnection() !== undefined || dbClientInstalled();
+
 /**
  * `run` inside a transaction that ALWAYS rolls back — a SAVEPOINT when one is already open (a
  * test's own scope), a root BEGIN when a test installed a client, and no scope at all when there
@@ -92,7 +96,7 @@ export async function inRolledBackScope<T>(run: () => Promise<T>): Promise<Settl
       return { ok: false, error };
     }
   };
-  if (liveTxConnection() === undefined && !dbClientInstalled()) return settle();
+  if (!rollbackAvailable()) return settle();
   let settled: Settled<T> | undefined;
   try {
     await withTransaction(async () => {

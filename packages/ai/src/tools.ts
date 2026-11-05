@@ -28,10 +28,10 @@ import {
 } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import {
-  describeDeclaredErrors,
   isMcpExposed,
   isUltimateError,
   stringField,
+  toolDescription,
   tryUseContext,
 } from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
@@ -159,9 +159,9 @@ export function asProjectableAction(listed: AgentTool): ProjectableAction {
 }
 
 /**
- * A declared `errors:` ends the description — core's one sentence, the one `@ultimat3/mcp`'s
- * `exposureOf` writes (held equal by `scripts/ai-mcp-tool-parity.test.ts`). With none written,
- * `toLlmTool`'s default is spelled out before the list.
+ * A declared `errors:` ends the description — core's `toolDescription`, the one `@ultimat3/mcp`'s
+ * `exposureOf` calls (held equal by `scripts/ai-mcp-tool-parity.test.ts`). With none written,
+ * its default lead is spelled out before the list.
  */
 function withDeclaredRefusals<M extends { readonly description?: string }>(
   mcp: M | undefined,
@@ -169,8 +169,7 @@ function withDeclaredRefusals<M extends { readonly description?: string }>(
   errors: readonly string[] | undefined,
 ): M | undefined {
   if (mcp === undefined || errors === undefined || errors.length === 0) return mcp;
-  const lead = mcp.description ?? `Run the "${name}" action.`;
-  return { ...mcp, description: describeDeclaredErrors(lead, errors) };
+  return { ...mcp, description: toolDescription({ name, mcp }, errors) };
 }
 
 /**
@@ -188,8 +187,7 @@ const EMPTY_SCHEMA: JsonSchema = { type: 'object', properties: {}, additionalPro
 export function toLlmTool(action: ProjectableAction): LlmTool {
   return {
     name: action.name,
-    description:
-      action.mcp?.description ?? action.description ?? `Run the "${action.name}" action.`,
+    description: toolDescription(action),
     input_schema: action.inputJsonSchema ?? EMPTY_SCHEMA,
     strict: true,
   };

@@ -127,8 +127,11 @@
  * (`core/src/declared-errors.ts`, `action/src/declared-errors.ts`) and a `:param` pin's URL merged
  * into the input before `invoke` (`core/src/route-path-template.ts`, `route-path-merge.ts`), all
  * through the action and core barrels. No existing module newly reached.
+ * raised 745 → 747, measured 747 (2026-11-05, plan 101 wave 5b): `jwtBearerResolver()`
+ * (`auth/src/jwt-bearer-resolver.ts`) through the auth barrel, and the server-stamped path pins
+ * (`core/src/client-paths-pins.ts`) through the core barrel. No existing module newly reached.
  */
-export const MIGRATE_CEILING = 745;
+export const MIGRATE_CEILING = 747;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -278,8 +281,10 @@ export const MIGRATE_CEILING = 745;
  * raised 1082 → 1083, measured 1083 (2026-11-03, plan 101 wave 4c): `MIGRATE_CEILING`'s 1.
  * raised 1083 → 1089, measured 1089 (2026-11-05, plan 101 wave 5a): the four in `MIGRATE_CEILING`'s
  * row, plus a read's twins `query/src/declared-errors.ts` and `query/src/http-pin.ts`.
+ * raised 1089 → 1092, measured 1092 (2026-11-05, plan 101 wave 5b): `MIGRATE_CEILING`'s 2, plus
+ * `render/src/client-pins-tag.ts`, the document's `ultimate-pins` meta.
  */
-export const SERVING_ROLE_CEILING = 1089;
+export const SERVING_ROLE_CEILING = 1092;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -419,5 +424,7 @@ export const SERVING_ROLE_CEILING = 1089;
  * of `server.ts` and `transport-http.ts` at their line ceilings. No existing module newly reached.
  * raised 1226 → 1232, measured 1232 (2026-11-05, plan 101 wave 5a): the same six as
  * `SERVING_ROLE_CEILING`'s row; the web role adds nothing of its own.
+ * raised 1232 → 1236, measured 1236 (2026-11-05, plan 101 wave 5b): `SERVING_ROLE_CEILING`'s 3,
+ * plus `cli/src/page-pins.ts`, which collects the pins a rendered document stamps.
  */
-export const WEB_ROLE_CEILING = 1232;
+export const WEB_ROLE_CEILING = 1236;

@@ -220,9 +220,18 @@ apps/web/{site,app}/<path>/page.tsx
 apps/web/{site,app}/<path>/<name>.island.tsx     # x g island <name> --at <dir>
 apps/admin/app/admin/pages/<name>.tsx            # x g admin:page <name> --permission p
 guards/<name>.ts                                 # x g guard <name>
+apps/web/app/auth/{sign-in,actions,…}            # x g sign-in --password | --oidc <provider>
+apps/web/runtime.ts                              #   …and the boot guard it calls
 ```
 
 Every emitted source has a `<file>.test.ts` beside it that passes on the first run.
+
+`x g sign-in` takes no `<name>` — an app has one sign-in — and exactly one of `--password` or
+`--oidc <provider>` (`generate-sign-in-mode.ts`). It writes through `writeFiles` like every
+generator (a second run is `X_GENERATE_CONFLICT`), then edits `app.config.ts`
+(`generate-sign-in-config.ts`) and, for OIDC, swaps `x new`'s authenticator only while it is
+byte-for-byte `x new`'s (`generate-sign-in.ts`). `generate-sign-in.contract.test.ts` compiles,
+lints and runs what both shapes leave; `e2e/sign-in.e2e.test.ts` signs in to a production boot.
 
 ## Errors
 

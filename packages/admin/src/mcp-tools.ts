@@ -5,6 +5,7 @@
 // Tool descriptions are literal English on purpose: they are protocol payload read by a
 // model, not UI copy read by a person, so they are not `t()` keys.
 
+import { toolDescription } from '@ultimat3/core';
 import { adminPermissionForAction, decideAction, permissionsForAction } from './action-gate';
 import type { AdminApp } from './admin';
 import { type AdminDecision, decideAll } from './authz';
@@ -73,7 +74,7 @@ const actionEnvelope = (action: AdminAction): readonly AdminToolField[] => [
 /** What an agent reads about when and over what an action runs — the schema cannot say it. */
 const actionDescription = (action: AdminAction): string =>
   [
-    action.mcp?.description ?? `Run the ${action.name} action.`,
+    toolDescription(action),
     action.when === undefined
       ? ''
       : ' Applies only to some rows: a row it does not apply to is refused with X_ADMIN_ACTION_NOT_APPLICABLE.',

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "529f85e16affda856e643179243029e349a97dfa0c53909dc70885cc439d9130",
+  "buildId": "927441a03f5e90247bc4aa7205359f72a317ec226bb3eabc9b98777d3deac960",
   "tiers": {
     "0": [
       "core",
@@ -520,6 +520,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_APP_MODULE_LOAD_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_APP_NAME_EMPTY",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -576,6 +581,11 @@
     },
     {
       "code": "X_AUTH_LIMITER_POLICY_MISMATCH",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_AUTH_SIGN_IN_UNCONFIGURED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },
@@ -1025,6 +1035,11 @@
       "at": "packages/action/src/error-titles.ts"
     },
     {
+      "code": "X_CONTRACT_EXERCISE_ENVIRONMENT",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
       "code": "X_CONTRACT_EXERCISE_UNDECLARED",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
@@ -1033,6 +1048,11 @@
       "code": "X_CONTRACT_EXERCISE_UNREACHED",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_CONTRACT_EXERCISE_UNSCOPED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_COOKIE_INVALID",
@@ -2918,6 +2938,11 @@
       "code": "X_MONEY_SCALE_INVALID",
       "owner": "money",
       "at": "packages/money/src/errors.ts"
+    },
+    {
+      "code": "X_MUTATION_PATH_UNFILLED",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_MUTATOR_CLOCK_MISSING",

@@ -4,6 +4,7 @@
  * the page handle (`record-sink.ts`) because every island chunk carries its own copy of core.
  */
 
+import { onRescope } from './client-scope';
 import { sessionLostCell } from './record-sink';
 
 /** The two codes that mean the credential this page was rendered with no longer resolves. */
@@ -33,11 +34,54 @@ export function onSessionLost(fn: () => void): () => void {
 }
 
 /**
- * Internal, `client-dispatch.ts`'s: a refusal `code` answered to a page acting for `principal`.
- * Only a page that HAD a principal can lose one — an anonymous page's 401 is a wrong password.
+ * Internal, the pollers': `start` runs while the page holds a session — now, unless it is already
+ * lost — and its returned stop is called on a loss. The next rescope to a signed-in principal
+ * starts it again, fresh: a poll stopped by a 401 is not one stopped for good once the visitor
+ * signs back in. A rescope to `null` keeps waiting, since an anonymous page's 401 never stops it.
+ * Returns the idempotent disposer, which stops a running `start` too.
  */
-export function noteRefusal(code: string, principal: string | null | undefined): void {
-  if (typeof principal !== 'string' || !LOSS_CODES.has(code)) return;
+export function whileSessionHeld(start: () => () => void): () => void {
+  let stopRun: (() => void) | undefined;
+  let offLost = (): void => {};
+  let disposed = false;
+  const pause = (): void => {
+    const stop = stopRun;
+    stopRun = undefined;
+    stop?.();
+  };
+  const begin = (): void => {
+    stopRun = start();
+    offLost = onSessionLost(pause);
+  };
+  const offScope = onRescope((next) => {
+    if (stopRun === undefined && typeof next.principal === 'string') begin();
+  });
+  if (!sessionIsLost()) begin();
+  return (): void => {
+    if (disposed) return;
+    disposed = true;
+    offScope();
+    offLost();
+    pause();
+  };
+}
+
+/** The refusal as `client-dispatch.ts` saw it: the answer's status, its URL and its code. */
+export interface Refusal {
+  readonly status: number;
+  readonly url: string;
+  readonly code: string;
+}
+
+/**
+ * Internal, `client-dispatch.ts`'s: a refusal answered to a page acting for `principal`. Only a
+ * page that HAD a principal can lose one — an anonymous page's 401 is a wrong password — and only
+ * a 401 from this page's own origin speaks for the cookie it was rendered with: another origin's
+ * 401 is about that origin's credential.
+ */
+export function noteRefusal(refusal: Refusal, principal: string | null | undefined): void {
+  if (typeof principal !== 'string' || refusal.status !== 401) return;
+  if (!LOSS_CODES.has(refusal.code) || !isPageOrigin(refusal.url)) return;
   const cell = sessionLostCell();
   if (cell.lost) return;
   cell.lost = true;
@@ -54,4 +98,18 @@ export function noteRefusal(code: string, principal: string | null | undefined):
       });
     }
   }
+}
+
+/** Stands in for the page's origin where there is none (a server, a test): only a relative URL is. */
+const NO_ORIGIN = 'http://page-origin.invalid';
+
+/** Whether `url` resolves to the page's origin; relative URLs always do. */
+function isPageOrigin(url: string): boolean {
+  const location: unknown = Reflect.get(globalThis, 'location');
+  const stated =
+    typeof location === 'object' && location !== null ? Reflect.get(location, 'origin') : undefined;
+  // `'null'` is an opaque origin (a sandboxed frame): no absolute URL can match it.
+  const base = typeof stated === 'string' && stated !== 'null' ? stated : NO_ORIGIN;
+  if (!URL.canParse(url, base)) return false;
+  return new URL(url, base).origin === new URL(base).origin;
 }

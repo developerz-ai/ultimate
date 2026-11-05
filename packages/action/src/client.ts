@@ -27,11 +27,11 @@ import {
   BUILD_ID_HEADER,
   clientTransport,
   FRAMEWORK_CODE,
-  fillTemplate,
+  fillWire,
   isJsonObject,
   problemOf,
   remoteTitleOf,
-  templateParams,
+  renderedActionPin,
 } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
@@ -133,9 +133,13 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
 ): ClientMethod<TInput, TOutput> {
   // No default here: for a caller naming no style, `actionPath` asks the document the server
   // rendered, and that answer must be the same one `useMutation` and the outbox replay get.
-  const path = pinned?.path ?? actionPath(name, options.pathStyle);
+  // A pin by name (`rpc`) is the one the server stamped into this document (`renderedActionPin`);
+  // a declaration's own (`.client()`) wins, and with neither the style derives the path. A
+  // declared method with no path still names the verb when no stamp does (a server has none).
+  const pin = pinned?.path === undefined ? renderedActionPin(name) : pinned;
+  const path = pin?.path ?? actionPath(name, options.pathStyle);
+  const method = pin?.method ?? pinned?.method ?? 'POST';
   const base = options.baseUrl.replace(/\/+$/, '');
-  const params = templateParams(path);
   const onResponse = (response: Response): void =>
     assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
   const decodeError = (
@@ -147,14 +151,14 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
   return (input, callOptions = {}) => {
     let wire: { readonly url: string; readonly body: unknown };
     try {
-      wire = wireOf(name, base, path, params, input);
+      wire = wireOf(name, base, path, input);
     } catch (error) {
       // A rejection like every other refusal of a call, never a throw out of a Promise-returning one.
       return Promise.reject(error);
     }
     const { url, body } = wire;
     return clientTransport({
-      method: pinned?.method ?? 'POST',
+      method,
       url,
       body,
       headers: headersFor(options),
@@ -182,22 +186,18 @@ function wireOf(
   name: string,
   base: string,
   path: string,
-  params: readonly string[],
   input: unknown,
 ): { readonly url: string; readonly body: unknown } {
-  if (params.length === 0) return { url: `${base}${path}`, body: input ?? {} };
-  const filled = fillTemplate(path, input);
+  const filled = fillWire(path, input);
   if (!filled.ok) {
     throw new ActionHttpPathInvalidError({
       name,
       path,
-      reason: `needs a non-empty string for :${filled.missing}, and the call's input has none`,
+      reason: `:${filled.missing} ${filled.reason}`,
       fix: `${name}.client(options)({ ${filled.missing}: '<value>', ... }) — a non-empty string, the URL's :${filled.missing}`,
     });
   }
-  const entries = Object.entries(input as Record<string, unknown>);
-  const body = Object.fromEntries(entries.filter(([key]) => !params.includes(key)));
-  return { url: `${base}${filled.path}`, body };
+  return { url: `${base}${filled.url}`, body: filled.rest ?? {} };
 }
 
 /** One attempt, and no retry at all. What a mutation carrying no idempotency key is allowed. */

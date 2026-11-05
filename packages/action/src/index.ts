@@ -120,7 +120,7 @@ export type {
   ExerciseOptions,
   ExerciseReport,
 } from './exercise';
-export { EXERCISE_RUNS, EXERCISE_RUNS_MAX, exerciseAction } from './exercise';
+export { exerciseAction } from './exercise';
 export type { OpenApiOperation } from './http';
 export {
   operationTagOf,

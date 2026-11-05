@@ -98,7 +98,8 @@ export const devAuthenticate = (request: HeaderRequest): Actor | null => {
 };
 `;
 
-const authModule =
+/** `apps/web/app/auth/auth.ts`: also `x g sign-in`'s, written only where an older app lacks it. */
+export const authModule =
   (): string => `// This app's one \`@ultimat3/auth\` instance: sessions, passwords and the lockout, over the
 // framework's own \`x_users\` and \`x_sessions\` tables — \`x dev\` and \`ROLE=migrate\` apply them.
 //

@@ -35,7 +35,27 @@ export interface WorkloadToken {
   readonly claims: WorkloadClaims;
   /** Feed this to `actorFromService()` — the same funnel every other credential goes through. */
   readonly identity: ServiceIdentity;
+  /**
+   * The whole decoded payload, read only after the signature, issuer, audience and time bounds
+   * held: an issuer's own claim (`tid`, `groups`, `azp`) is the app's to judge, and re-decoding the
+   * token to reach it is a second parser beside this one.
+   */
+  readonly raw: Readonly<Record<string, unknown>>;
 }
+
+/** Which check refused a token — a name for a log line, never a claim's value. */
+export type WorkloadCheck =
+  | 'signature'
+  | 'payload'
+  | 'subject'
+  | 'expiry'
+  | 'issuer'
+  | 'audience'
+  | 'not-before';
+
+export type WorkloadTokenCheck =
+  | { readonly ok: true; readonly token: WorkloadToken }
+  | { readonly ok: false; readonly check: WorkloadCheck; readonly reason: string };
 
 export interface VerifyWorkloadTokenInput {
   readonly token: string;
@@ -77,35 +97,63 @@ const readAudience = (value: unknown): readonly string[] => {
  * wrote it, and every check below would otherwise pass for a token the caller minted themselves.
  */
 export async function verifyWorkloadToken(input: VerifyWorkloadTokenInput): Promise<WorkloadToken> {
+  const checked = await checkWorkloadToken(input);
+  if (!checked.ok) throw refused(checked.reason);
+  return checked.token;
+}
+
+const checkRefusal = (check: WorkloadCheck, reason: string): WorkloadTokenCheck => ({
+  ok: false,
+  check,
+  reason,
+});
+
+/**
+ * `verifyWorkloadToken`'s checks as a verdict rather than a throw, naming the check that refused —
+ * what `jwtBearerResolver` logs. A key source that throws still throws: an unreadable key set is
+ * not a verdict on the token, and the caller decides what it is.
+ */
+export async function checkWorkloadToken(
+  input: VerifyWorkloadTokenInput,
+): Promise<WorkloadTokenCheck> {
   if (!(await verifyJwtSignature(input.token, input.keys))) {
-    throw refused('the signature does not verify against the published key set');
+    return checkRefusal('signature', 'the signature does not verify against the published key set');
   }
 
   const payloadSegment = input.token.split('.')[1];
   const parsed = payloadSegment === undefined ? null : decodeJwtSegment(payloadSegment);
   if (parsed === null) {
-    throw refused('the payload is not base64url-encoded JSON describing an object');
+    return checkRefusal(
+      'payload',
+      'the payload is not base64url-encoded JSON describing an object',
+    );
   }
 
   const iss = parsed['iss'];
   const sub = parsed['sub'];
   const exp = parsed['exp'];
   if (typeof iss !== 'string' || typeof sub !== 'string' || sub === '') {
-    throw refused('the payload carries no iss or sub');
+    return checkRefusal('subject', 'the payload carries no iss or sub');
   }
-  if (typeof exp !== 'number') throw refused('the payload carries no numeric exp');
-  if (!input.issuers.includes(iss)) throw refused('the issuer is not one this service accepts');
+  if (typeof exp !== 'number') return checkRefusal('expiry', 'the payload carries no numeric exp');
+  if (!input.issuers.includes(iss)) {
+    return checkRefusal('issuer', 'the issuer is not one this service accepts');
+  }
 
   const aud = readAudience(parsed['aud']);
-  if (!aud.includes(input.audience)) throw refused('the token is addressed to another audience');
+  if (!aud.includes(input.audience)) {
+    return checkRefusal('audience', 'the token is addressed to another audience');
+  }
 
   const nowMs = input.clock.now().getTime();
   // The same skew the id token path allows, from the same declaration: two servers rarely agree
   // on the second, and a second number here would drift from that one.
-  if (exp * 1000 + ID_TOKEN_CLOCK_SKEW_MS <= nowMs) throw refused('the token is already expired');
+  if (exp * 1000 + ID_TOKEN_CLOCK_SKEW_MS <= nowMs) {
+    return checkRefusal('expiry', 'the token is already expired');
+  }
   const nbf = parsed['nbf'];
   if (typeof nbf === 'number' && nbf * 1000 - ID_TOKEN_CLOCK_SKEW_MS > nowMs) {
-    throw refused('the token is not valid yet');
+    return checkRefusal('not-before', 'the token is not valid yet');
   }
   const iat = parsed['iat'];
 
@@ -119,13 +167,17 @@ export async function verifyWorkloadToken(input: VerifyWorkloadTokenInput): Prom
     ...(typeof iat === 'number' ? { iat } : {}),
   };
   return {
-    claims,
-    identity: {
-      // The SPIFFE ID, the service account's `system:serviceaccount:ns:name`, or the IMDS
-      // principal — whichever the issuer put there. Never rewritten, so a trace names the caller.
-      id: claims.sub,
-      scopes: claims.scopes,
-      ...(input.orgId === undefined ? {} : { orgId: input.orgId }),
+    ok: true,
+    token: {
+      claims,
+      identity: {
+        // The SPIFFE ID, the service account's `system:serviceaccount:ns:name`, or the IMDS
+        // principal — whichever the issuer put there. Never rewritten, so a trace names the caller.
+        id: claims.sub,
+        scopes: claims.scopes,
+        ...(input.orgId === undefined ? {} : { orgId: input.orgId }),
+      },
+      raw: parsed,
     },
   };
 }

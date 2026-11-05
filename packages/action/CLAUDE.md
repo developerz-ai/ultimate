@@ -90,8 +90,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `'resource'` stays the default (changing it moves every URL). `defineApi` sets the style FIRST and
   `configureActionPathStyle` re-derives every seated action (the module scan may have seated them
   under the default). `derivePath(name)` is pin-aware through `installPinLookup` — handed down by
-  `registry.ts`, never imported up (cycle through `action.ts`). `rpc()` cannot see a pin;
-  `action.client()` holds it.
+  `registry.ts`, never imported up (cycle through `action.ts`). browser `rpc()` reads the `ultimate-pins` stamp;
+  a server takes `action.client()`.
 - **The style is stated ONCE, on the server**; a browser reads `<meta name="ultimate-path-style">` through core's `actionPath(name)`. Full rule: `docs/history/action.md`.
 - **`Merge` in `define-api.ts` never recurses over the module list.** `Head & Merge<Rest>` is not
   a tail call: it cost one instantiation level per MODULE and answered TS2589 at the 48th entry of
@@ -197,13 +197,12 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `bun build --target=browser --minify`, one entry importing from `@ultimat3/action` — **the ONE
   table for these figures** (`packages/core/CLAUDE.md` points here):
 
-  | Entry | `As of 2026-11-02`, one entry over the working tree |
+  | Entry | `As of 2026-11`, Bun 1.4.4, one entry over the working tree |
   |---|---|
-  | `rpc` | 22,423 B (+183 B over this branch's HEAD, 22,240 B, wave 2 edits included) |
-  | `rpc` + core's `clientFlight` | 30,891 B (+184 B over 30,707 B) |
+  | `rpc` | 27,472 B: pinned paths (wave 5b) add `fillWire` +758 B, `renderedActionPin` +619 B (each stubbed out) |
+  | `rpc` + core's `clientFlight` | 35,921 B (the same +1,377 B) |
 
-  `issueRuleFacts` in `wire-issues.ts` adds +296 B to the `rpc` entry (23,752 to 24,048 B,
-  `Bun.build --minify` over a different entry, 2026-11-03): re-measure the table above with it.
+  Without both, `rpc` is 26,095 B: +3,672 B over 2026-11-02's 22,423 B is waves 3–5a (`issueRuleFacts`…).
 
 - **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
   titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do

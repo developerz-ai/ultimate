@@ -6,6 +6,7 @@ import { NotImplementedError } from '@ultimat3/core';
 import { BadFlagError } from './errors';
 import type { Generator } from './generate-kinds';
 import { assertLiveSupported, assertSurfaceSupported, GENERATORS } from './generate-kinds';
+import type { SignInMode } from './generate-sign-in-mode';
 import { dedupe } from './generate-write';
 import { quoteArg } from './shell-quote';
 import type { GeneratedFile, Surface } from './templates';
@@ -27,6 +28,8 @@ import {
   taskFiles,
 } from './templates';
 import { adminCatalogFiles } from './templates/admin-catalog';
+import { oidcSignInFiles } from './templates/sign-in-oidc';
+import { passwordSignInFiles } from './templates/sign-in-password';
 
 export interface GenerateOptions {
   readonly kind: Generator;
@@ -89,6 +92,8 @@ export interface GenerateOptions {
    * written beside it as `entity-<name>.ts` + `repo-<name>.ts`. Read off the disk by `run`.
    */
   readonly sibling?: boolean;
+  /** `sign-in` only: which shape — `--password` or `--oidc <provider>`. Required for that kind. */
+  readonly signIn?: SignInMode;
 }
 
 const DEFAULT_SURFACE_DIR: Record<Surface, string> = {
@@ -234,6 +239,20 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           ...(options.catalogModule === undefined ? {} : { catalogModule: options.catalogModule }),
         }),
       );
+    case 'sign-in': {
+      // The shape's own files only. The edits outside them — the authenticator swap, the config —
+      // read the app's disk, so `generate-sign-in.ts` makes them; this stays a pure function.
+      const signIn = options.signIn ?? { kind: 'password' };
+      const shape = {
+        locales: options.locales ?? ['en'],
+        ...(options.catalogModule === undefined ? {} : { catalogModule: options.catalogModule }),
+      };
+      return dedupe(
+        signIn.kind === 'password'
+          ? passwordSignInFiles(shape)
+          : oidcSignInFiles(signIn.provider, shape),
+      );
+    }
     case 'route':
       // `--locales` reaches the route generator too: its catalog entry is the route's title and
       // description, and a locale asked for on the command line is a locale that gets a file.

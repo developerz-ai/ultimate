@@ -3,7 +3,7 @@
 // `TypeError`. Each test below is one verdict the exercise has to reach.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { isUltimateError, UltimateError } from '@ultimat3/core';
+import { EXERCISE_RUNS, isUltimateError, sealedHost, UltimateError } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';
 import { db, pgliteClient, raw, setDbClient, sql, withTransaction } from '@ultimat3/db';
 import { allow, can, testActor } from '@ultimat3/policy';
@@ -11,7 +11,7 @@ import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { ContractTest } from './contract-test';
 import { contractTestsFor } from './contract-test';
-import { EXERCISE_RUNS, exerciseAction, exerciseTestName, sealedHost } from './exercise';
+import { exerciseAction, exerciseTestName } from './exercise';
 import { handlerReached } from './invoke';
 
 const Input = t.object({ title: t.string.min(1).max(40), note: t.string.optional() });
@@ -146,6 +146,24 @@ describe('verdicts', () => {
     );
     expect(failure.code).toBe('X_CONTRACT_DRIFT');
     expect(failure.fix).toContain('exercise: { actor, input:');
+  });
+
+  test('a deploy is refused before a run: generated input never reaches production', async () => {
+    let calls = 0;
+    const counted = failing('deployedNote', () => {
+      calls += 1;
+      return { length: 1 };
+    });
+    const previous = process.env['ULTIMATE_ENV'];
+    process.env['ULTIMATE_ENV'] = 'production';
+    try {
+      const failure = await failureOf(() => exerciseAction(counted, { actor: null }));
+      expect(failure.code).toBe('X_CONTRACT_EXERCISE_ENVIRONMENT');
+    } finally {
+      if (previous === undefined) delete process.env['ULTIMATE_ENV'];
+      else process.env['ULTIMATE_ENV'] = previous;
+    }
+    expect(calls).toBe(0);
   });
 
   test('runs outside 1..64 are refused rather than clamped', async () => {

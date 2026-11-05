@@ -89,6 +89,8 @@ const CORE_CODE_TITLES = {
     'a path parameter and the request body or query name one key with two values',
   X_ERROR_UNDECLARED: 'a handler threw a 4xx code its errors: list does not declare',
   X_ACTION_ERRORS_INVALID: 'an errors: list names a code that cannot be declared there',
+  X_CONTRACT_EXERCISE_ENVIRONMENT: 'a contract exercise was asked to run in a deployed environment',
+  X_CONTRACT_EXERCISE_UNSCOPED: 'a contract exercise could not roll back its writes',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

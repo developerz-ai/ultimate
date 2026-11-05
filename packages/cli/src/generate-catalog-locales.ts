@@ -77,3 +77,22 @@ export async function localiseCatalogs(
     return { ...file, contents: serializeCatalog(seedCatalog(loadCatalog(generated))) };
   });
 }
+
+/**
+ * `--locales` when the caller named any, and otherwise every locale the app already has a catalog
+ * for: a key written to `en` alone in an app that also ships `es` renders ⟦key⟧ for every Spanish
+ * reader. A stem that is not a locale tag is some other JSON file, and not a catalog to write to.
+ */
+export async function namedOrAppLocales(
+  root: string,
+  named: readonly string[],
+): Promise<readonly string[]> {
+  if (named.length > 0) return named;
+  return (await catalogLocales(root)).filter((stem) => {
+    try {
+      return Intl.getCanonicalLocales(stem).length === 1;
+    } catch {
+      return false;
+    }
+  });
+}

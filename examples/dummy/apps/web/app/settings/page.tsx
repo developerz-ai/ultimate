@@ -138,7 +138,14 @@ export const config = defineRoute({
   // (+392); the client router +1,409 B: `refresh()` keeps the same visitor's focus
   // (`navigation-refresh.ts`, `markFocus`/`restoreFocus`), never aborts a click in flight and is
   // asked its hold again at the swap — raised 72.5kb → 76kb (30.0.0).
-  budget: { js: '76kb' },
+  // measured: 79561 B (2026-11-05; x build --target static, against wave 5a's 77,774) — why: the
+  // client router +327 B: a navigation given up at `NAVIGATION_TIMEOUT_MS`
+  // (`navigation-deadline.ts`) and a timed-out `refresh()` that fails quietly
+  // (`navigation-refresh.ts`); the settings island +1,460 B: `rpc()` reading the server-stamped
+  // path pins read from `<meta name="ultimate-pins">` (`client-paths-pins.ts`) and filled by
+  // `fill-wire.ts`, which refuses a `.`/`..` segment — raised 76kb → 78kb (30.0.0, plan 101 wave
+  // 5b).
+  budget: { js: '78kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

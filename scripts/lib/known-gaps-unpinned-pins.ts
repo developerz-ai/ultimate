@@ -12,7 +12,6 @@ export const KNOWN_GAPS_UNPINNED: readonly string[] = [
   'A purge that a replica never hears is bounded by `ttl`, not by the next request',
   'A queued offline write is not bound to its principal **on the server**',
   'Presence leaves past the lease roster cap',
-  'A **deployed** fresh scaffold issues no session: every policy-protected route answers 401',
   'An **offline** scrape reads `/robots.txt` over the real network',
   'The cache fill fence crosses nodes for **tag busts through Redis only**',
   'A replicated table with **no** replica identity is warned about, never refused',

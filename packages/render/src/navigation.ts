@@ -16,6 +16,7 @@
  */
 
 import { navigationCache } from './navigation-cache';
+import { withinDeadline } from './navigation-deadline';
 import { anchorOf, announcer, handOver, intentUrl, linkFacts, submitFacts } from './navigation-dom';
 import {
   type Answer,
@@ -34,7 +35,14 @@ import {
 import { modalController } from './navigation-modal';
 import { addressOf, modalAddress, modalHistory } from './navigation-modal-rules';
 import { pressTracker } from './navigation-press';
-import { holdFor, landFocus, type RefreshRun, refreshYields, swapIn } from './navigation-refresh';
+import type { RefreshRun } from './navigation-refresh';
+import {
+  holdFor,
+  landFocus,
+  refreshFailsQuietly,
+  refreshYields,
+  swapIn,
+} from './navigation-refresh';
 import {
   answerMovesTab,
   formVerdict,
@@ -77,8 +85,9 @@ export interface NavigationRouter {
   navigate(url: string, options?: NavigateOptions): Promise<void>;
   prefetch(url: string): void;
   /**
-   * The page on screen, fetched again and swapped in where it is scrolled — unless `held()` says
-   * the visitor is busy when the answer lands. `true` when it was swapped in.
+   * The page fetched again and swapped in where it is scrolled, unless `held()` says the visitor
+   * is busy. `true` once SETTLED (`RefreshRun`): landed, or failed quietly (`refreshFailsQuietly`).
+   * `false` when held, yielded to another navigation, or a modal was open.
    */
   refresh(held?: () => boolean): Promise<boolean>;
   /** `path` as the modal over this page (`#<path>`); anything but a modal of this tab: nothing. */
@@ -155,21 +164,19 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     else win.location.reload();
   };
 
-  const answerFor = (
-    url: string,
-    method: 'GET' | 'POST',
-    options: NavigateOptions,
-    signal: AbortSignal,
-  ) => {
-    if (method === 'POST') {
-      // Before AND once it settles, landed or not: a guess sent while the write was in flight
-      // may have rendered the old state, and a write that failed here may still have committed.
-      forget();
-      const body = options.body === undefined ? {} : { body: options.body };
-      return request(url, 'soft', { method, ...body, signal }).finally(forget);
-    }
-    return heldOrFetched(cache, url, () => request(url, 'soft', { signal }));
-  };
+  /** Bounded by `NAVIGATION_TIMEOUT_MS`: a hung answer never holds `inflight` for good. */
+  const answerFor = (url: string, options: NavigateOptions, mine: AbortSignal) =>
+    withinDeadline(win, mine, (signal) => {
+      const method = options.method ?? 'GET';
+      if (method === 'POST') {
+        // Before AND once it settles, landed or not: a guess sent while the write was in flight
+        // may have rendered the old state, and a write that failed here may still have committed.
+        forget();
+        const body = options.body === undefined ? {} : { body: options.body };
+        return request(url, 'soft', { method, ...body, signal }).finally(forget);
+      }
+      return heldOrFetched(cache, url, () => request(url, 'soft', { signal }));
+    });
 
   const navigate = async (url: string, options: NavigateOptions = {}): Promise<void> => {
     // The redirect chain's only exit is `hops >= NAVIGATION_MAX_HOPS`, which `NaN` never meets.
@@ -205,9 +212,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     try {
       let answer: Answer;
       try {
-        answer = await answerFor(url, method, options, mine.signal);
+        answer = await answerFor(url, options, mine.signal);
       } catch {
-        if (mine.signal.aborted) return;
+        if (mine.signal.aborted || refreshFailsQuietly(options.refresh)) return;
         // A GET that never arrived is the browser's to try; a POST that failed is never re-sent.
         if (method === 'GET') win.location.assign(url);
         else failed(url, method, 'the request failed on the network');
@@ -464,9 +471,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       if (modal.address !== undefined) return false;
       cache.delete(rendered);
       scroll.save();
-      const run: RefreshRun = { held, landed: false };
+      const run: RefreshRun = { held, settled: false };
       await navigate(rendered, { history: 'none', refresh: run });
-      return run.landed;
+      return run.settled;
     },
     openModal(path) {
       const address = modalAddress(`#${path}`, win.location.href);

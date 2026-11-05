@@ -42,9 +42,12 @@ const gapsFor = (text: string): readonly string[] =>
 describe('the counts come from the generators, never from this file', () => {
   test('every modelled variant is a real count, and the flags change it, shape by shape', async () => {
     const facts = await generatorFacts();
-    expect(facts.map((entry) => entry.id)).toEqual(['x new', 'x g resource']);
+    expect(facts.map((entry) => entry.id)).toEqual(['x new', 'x g resource', 'x g sign-in']);
     for (const entry of facts) {
       for (const variant of entry.variants) expect(variant.files).toBeGreaterThan(0);
+      // `--password` and `--oidc` are two sign-ins, not a flag over a base: equal counts are a
+      // coincidence of what each writes, and the test below holds each to its own run.
+      if (entry.id === 'x g sign-in') continue;
       for (const shape of new Set(entry.variants.map((variant) => variant.shape))) {
         const counts = entry.variants
           .filter((variant) => variant.shape === shape)
@@ -55,6 +58,20 @@ describe('the counts come from the generators, never from this file', () => {
       }
     }
   });
+
+  test('`x g sign-in` is what the CLI prints for each shape, the projections after setup', async () => {
+    const signIn = (await generatorFacts()).find((entry) => entry.id === 'x g sign-in');
+    for (const flag of ['--password', '--oidc']) {
+      const counts = (signIn?.variants ?? [])
+        .filter((variant) => variant.flags.join(' ') === flag)
+        .map((variant) => variant.files);
+      expect(counts).toHaveLength(2);
+      // Larger than the planner's own list: the command also edits the API index and the config.
+      const [before, after] = counts;
+      expect(before).toBeGreaterThan(10);
+      expect(after).toBe((before ?? 0) + 2);
+    }
+  }, 60_000);
 
   test('`x g resource` is what the CLI prints in each scaffold shape, not the planner array', async () => {
     const resource = (await generatorFacts()).find((entry) => entry.id === 'x g resource');

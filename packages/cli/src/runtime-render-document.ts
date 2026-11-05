@@ -10,6 +10,7 @@ import type { IslandCollector, RouteData, RouteEntry } from '@ultimat3/render';
 import {
   clientPathStyleTags,
   clientPersistTags,
+  clientPinTags,
   clientScopeTag,
   clientSyncTags,
   headFromMeta,
@@ -24,6 +25,7 @@ import { loadAppConfig } from './app-config-load';
 import type { DocumentOptions } from './document-options';
 import { routeQuery } from './isr-query-guard';
 import { navigationTagsOf } from './page-navigation';
+import { servedPins } from './page-pins';
 import { bootScript, collectorFor } from './route-islands';
 import { siteAssetTable } from './site-assets';
 import { styleBundle } from './style-bundle';
@@ -92,6 +94,9 @@ export const headFor = async (
           // it is the only way an island's `rpc()` learns it. Read per render — `defineApi` may run
           // after these routes are built. `'resource'`, the default, is no tag.
           ...clientPathStyleTags(actionPathStyle()),
+          // Same reason, same read: a pinned action or query is reached by NAME from the browser
+          // (`rpc`, `useQuery`, `useMutation`) only through this. Nothing pinned is no tag.
+          ...clientPinTags(servedPins()),
           ...router,
           // The page boot rides the scope tag: its whole job — restoring a principal's persisted
           // records and replaying its queued writes — is per principal, and a shareable document

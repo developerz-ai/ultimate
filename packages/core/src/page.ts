@@ -17,6 +17,8 @@ export { backoffDelay } from './backoff';
 export type { FetchLike, TransportRequest } from './client-dispatch';
 export { IDEMPOTENCY_HEADER } from './client-dispatch';
 export { actionPath, queryPath, splitWords } from './client-paths';
+export type { ActionPin, PinnedActionMethod } from './client-paths-pins';
+export { renderedActionPin, renderedQueryPin } from './client-paths-pins';
 export type { ClientScope } from './client-scope';
 export { onRescope, rescope } from './client-scope';
 export { clientTransport } from './client-transport';
@@ -34,6 +36,7 @@ export { renderFixShellArg, renderThrowable, stringField } from './error-render'
 export { classifyThrown } from './error-retry';
 export type { UltimateErrorInit } from './errors';
 export { isUltimateError, UltimateError } from './errors';
+export { fillWire } from './fill-wire';
 export { finiteCount, finiteOption } from './finite-option';
 export { isSuperseded } from './generation-fence';
 export { uuidV7 } from './ids';
@@ -49,6 +52,7 @@ export {
   CLIENT_NAVIGATION_SURFACE_HEADER,
   CLIENT_PATH_STYLE_META,
   CLIENT_PERSIST_META,
+  CLIENT_PINS_META,
   CLIENT_SCOPE_HEADER,
   CLIENT_SCOPE_META,
   CLIENT_SYNC_META,

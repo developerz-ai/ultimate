@@ -89,17 +89,18 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `handle-registration.ts` / `workspace-dep-edit.ts` / `templates/scaffold-db-client.ts` | a written entity joins `entities` in `packages/db/src/client.ts` (`X_DB_HANDLE_UNREGISTERED` carries the lines). Full rule: `docs/history/cli.md` |
 | `generated-imports.ts` | every sibling workspace a written file imports is declared in the manifest it landed under (`x g admin:page`'s `@<app>/i18n` in `apps/admin`) — `package-shape` would otherwise refuse the generator's own output (`X_WORKSPACE_DEP_UNDECLARED`) |
 | `admin-registration.ts` / `templates/admin-catalog.ts` / `source-edit.ts` | `--admin` wires the override it wrote into `admin.ts` (`X_ADMIN_RESOURCE_UNWIRED`) and the labels its screen reads. Full rule: `docs/history/cli.md` |
-| `app-artifacts.ts` | `x.manifest.json` + `openapi.json`, written together by `x g` and `x manifest` |
-| `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one file per generator otherwise. Full rule: `docs/history/cli.md` |
+| `app-artifacts.ts` | `x.manifest.json` + `openapi.json`, written together (`x g`, `x manifest`) |
+| `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one per generator otherwise. See history |
 | `generate-feature-required.ts` | `x g query`/`backfill` with no slice holding an `entity.ts` is `X_FEATURE_REQUIRED` |
-| `generate-format-written.ts` | the app's own Biome over the TypeScript a run created, best effort; the verdict is `lint`'s |
+| `generate-sign-in*.ts` | `x g sign-in`: one flag, no name; OIDC swaps only `x new`'s bytes |
+| `generate-format-written.ts` | the app's Biome over the TypeScript a run created, best effort; `lint` judges |
 | `templates/scaffold-mcp-json.ts` / `templates/scaffold-mcp-endpoint.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`) and the refusing `apps/web/mcp.ts` + `app/auth/agent-token.ts`; `scaffold-agents-md.test.ts` resolves every command `AGENTS.md` names |
 
 ### Boot (`x dev`, the container)
 
 | File | Job |
 |---|---|
-| `serve.ts` / `serve-boot.ts` / `serve-entry.ts` / `serve-env.ts` | the production entry: roles from `ROLE`, bindings from env, `ROLE=migrate` = `x db migrate`. Full rule: `docs/history/cli.md` |
+| `serve.ts` / `serve-boot.ts` / `serve-entry.ts` / `serve-env.ts` | the production entry: roles from `ROLE`, bindings from env, `ROLE=migrate` = `x db migrate`; a module that fails to load stops it (`X_APP_MODULE_LOAD_FAILED`) |
 | `role-load.ts` / `document-graph.ts` / `serve-web.ts` | a role imports what it runs: `ROLE_LOADS`, verified against `x.manifest.json` (`X_ROLE_LOAD_INCOMPLETE` imports everything); `serve-web.ts` behind `await import()`. Full rule: `docs/history/cli.md` |
 | `module-imports.ts` | the files a module's source imports, resolved once for both graphs: `referenced` (reload) and `evaluated` (document) |
 | `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` | `x dev`: the command (`cmd-dev.ts`, re-exports `startDev`); the boot — every role in one process, `/_x`, the watcher (`dev-boot.ts`); one save rebuilt as one generation (`dev-rebuild.ts`) |

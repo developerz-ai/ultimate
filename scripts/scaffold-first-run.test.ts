@@ -62,12 +62,19 @@ const stepsAmong = (wanted: readonly string[]): readonly string[] =>
 
 describe('firstRunPlan', () => {
   // The defect was four of THIRTEEN generators, so a sample would likely have missed it. This is
-  // what makes a fourteenth generator covered the day it lands.
+  // what makes a new generator covered the day it lands.
   test('invokes every generator the CLI registry declares, exactly once', () => {
     const invoked = firstRunPlan()
       .filter((step) => step.name === `g ${step.args[1]}`)
       .map((step) => step.args[1]);
     expect([...invoked].sort()).toEqual([...GENERATORS].sort());
+  });
+
+  // An app has one sign-in and names it by a flag, never a `<name>`: `g sign-in smoke-sign-in` is
+  // X_CLI_BAD_FLAG, so the sweep's own step would be the red.
+  test('sign-in runs as its password shape, with no name', () => {
+    const step = firstRunPlan().find((one) => one.name === 'g sign-in');
+    expect(step?.args).toEqual(['g', 'sign-in', '--password', '--json']);
   });
 
   // A read never creates its table (`X_FEATURE_REQUIRED`), so each needs a slice to read, and one
@@ -118,7 +125,7 @@ describe('firstRunPlan', () => {
     }
   });
 
-  // Eight of the thirteen generators emit an entity, and this is the only migration in CI written
+  // Every generator that emits an entity feeds it, and this is the only migration in CI written
   // from generator output rather than from the scaffold's own example entity. The apply is
   // `bun run setup`'s, on the `scaffold-gate` run that follows this sweep.
   test('regenerates after the generators, as the plan’s last step', () => {

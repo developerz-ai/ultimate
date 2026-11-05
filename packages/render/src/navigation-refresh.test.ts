@@ -200,4 +200,10 @@ describe('refresh()', () => {
     expect(doc.getElementById('q')).toBe(before);
     expect(doc.title).toBe('A');
   });
+  test('a refresh that fails on the network fails quietly: no reload under the reader', async () => {
+    const { win } = tab({});
+    expect(await currentRouter()?.refresh()).toBe(true);
+    await settle();
+    expect(win.assigned).toEqual([]);
+  });
 });
