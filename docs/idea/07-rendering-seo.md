@@ -156,7 +156,7 @@ x verify
 | Budget raises | explicit, measured and justified | when real function costs bytes, raise the declared budget by the measured amount with the number and reason in the same diff (`bun run budget-raises`) |
 
 See [Configuration: budgets](../../wiki/Configuration.md#budgets) for JS measurement and removed
-budget fields, and [Configuration: SEO](../../wiki/Configuration.md#seo) for the absence of a
+budget fields, and [Configuration: SEO](../../wiki/Configuration.md#site-and-seo) for the absence of a
 `seo.lighthouse` gate — not the absence of SEO configuration.
 
 Failures name the *cause* (the transitive import that added the bytes), because "bundle too big" without a chain is not an instruction.

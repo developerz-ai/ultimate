@@ -165,24 +165,49 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
     else queue.end();
   };
 
-  const handlers: SocketHandlers = {
+  /**
+   * Bun keeps calling the ORIGINAL socket's handlers after `upgradeTLS` — with TLS ciphertext and
+   * the raw socket's own `close`/`end`/`error` (oven-sh/bun#26297). Flipped once the upgrade has
+   * actually handed back a TLS socket, the connect-time handlers go deaf here: those bytes would
+   * enter the queue as garbage — reply-shaped ones become phantom replies — and those lifecycle
+   * events would kill a conversation the TLS side is still carrying. Same shape as
+   * `packages/realtime/src/pg-socket.ts`, which fixed the identical bug.
+   */
+  let upgraded = false;
+
+  /** The five socket events; a socket the upgrade retired answers none of them. */
+  const makeHandlers = (live: () => boolean): SocketHandlers => ({
     data: (_socket, data) => {
+      if (!live()) return;
       handshake = undefined;
       queue.push(decoder.decode(data));
     },
-    close: () => died('the socket closed'),
-    end: () => died('the server half-closed the socket'),
+    close: () => {
+      if (!live()) return;
+      died('the socket closed');
+    },
+    end: () => {
+      if (!live()) return;
+      died('the server half-closed the socket');
+    },
     drain: () => {
+      if (!live()) return;
       const waiter = draining;
       draining = undefined;
       waiter?.resolve();
     },
     error: (_socket, error) => {
+      if (!live()) return;
       const failure = socketFailure(error.message);
       failDrain(failure);
       queue.fail(failure);
     },
-  };
+  });
+
+  // Registered on the RAW socket at `connect`; deaf once `upgraded` flips.
+  const handlers = makeHandlers(() => !upgraded);
+  // Registered on the TLS socket at `upgradeTLS`; every event on it is real, so no guard.
+  const tlsHandlers = makeHandlers(() => true);
 
   const opening = runtime.connect({
     hostname: target.host,
@@ -241,13 +266,15 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
       buffered: () => queue.size > 0,
       write: (data: string) => flush(encoder.encode(data)),
       startTls: () => {
-        // Bun hands back `[raw, tls]`; every later read and write goes through the second one, and
-        // the handlers are re-registered because the upgraded socket is a different object.
-        const upgraded = socket.upgradeTLS({
+        // Bun hands back `[raw, tls]`; every later read and write goes through the second one. The
+        // upgraded socket gets its OWN handlers — the raw socket keeps its registered set, which
+        // goes deaf above, because Bun keeps feeding it ciphertext and lifecycle events.
+        const tls = socket.upgradeTLS({
           tls: { serverName: target.host },
-          socket: handlers,
+          socket: tlsHandlers,
         })[1];
-        if (upgraded === undefined) {
+        if (tls === undefined) {
+          // Nothing was upgraded, so the raw socket and its handlers stay live.
           return Promise.reject(
             sendFailed({
               driver: 'smtp',
@@ -258,7 +285,8 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
             }),
           );
         }
-        socket = upgraded;
+        upgraded = true;
+        socket = tls;
         // Writes made now are buffered by the runtime until the handshake completes, so the client
         // may send EHLO straight away — what changes is how a failure from here is reported.
         handshake = 'starttls';
