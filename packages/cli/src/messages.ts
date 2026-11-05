@@ -143,6 +143,8 @@ const CATALOG = {
   // own `--dry-run`, and `x new`. Three copies of the same two characters is how a fourth writer
   // arrives with a fifth marker; `--json` carries the paths themselves in `data.files`.
   'cli.file.added': '  + {path}',
+  // Its pair, for the one generator that deletes: `x g sign-in --oidc` drops `x new`'s dev viewer.
+  'cli.file.removed': '  - {path}',
   'cli.fix.clean': 'no boundary violation involves {file}',
   // "nothing written", the same admission `cli.generate.planned` makes and for the same reason: a
   // command called `fix` that only ever REPORTS teaches an agent to expect a repair and act as

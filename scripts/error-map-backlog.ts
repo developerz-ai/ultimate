@@ -39,7 +39,11 @@ export const OFF_SOCKET: Pins = {
     'X_CLIENT_ERROR',
     // Raised by `checkDeclaredErrors` at `action()`/`query()`: a module's load, never a request.
     'X_ACTION_ERRORS_INVALID',
+    // Both raised by `runExercise` (`exercise-run.ts`) inside a test's `.exercise()` call — a test
+    // run, never a request or a module's load. This one: the environment is staging or production.
     'X_CONTRACT_EXERCISE_ENVIRONMENT',
+    // This one: outside `test`, no rolled-back transaction would undo the writes
+    // (`assertExerciseScoped`, fed `rollbackAvailable()` by `action`'s `exercise.ts`).
     'X_CONTRACT_EXERCISE_UNSCOPED',
   ],
   // tier 1 — a tier's ceiling or similarity floor, screened where `app.config.ts` names it: raised
@@ -155,6 +159,8 @@ export const OFF_SOCKET: Pins = {
     'X_TRANSPORT_PROTOCOL',
     'X_TRANSPORT_UNAVAILABLE',
     'X_REALTIME_PRODUCER_CONFLICT',
+    // Not a frame: raised in the browser by `mutationWire` (`pinned-wire.ts`) before the write is
+    // sent, when the input leaves a pinned path's `:param` unfilled. No request leaves the page.
     'X_MUTATION_PATH_UNFILLED',
   ],
   // tier 4 — a test double's script running out, raised inside `bun test` by `scriptedProvider`,

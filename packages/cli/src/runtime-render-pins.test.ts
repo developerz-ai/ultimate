@@ -3,10 +3,11 @@
 // by NAME goes where the declaration put it. An app that pins nothing — a static page included —
 // renders no tag. Driven through `@ultimat3/http`'s real pipeline, like `runtime-render.test.ts`.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { action, registerAction, resetActions } from '@ultimat3/action';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
+import { resetQueries } from '@ultimat3/query';
 import type { RenderMode } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { t } from '@ultimat3/schema';
@@ -59,10 +60,14 @@ const refund = (http?: { path: string; method: 'PUT' }) =>
     handle: () => ({ ok: true }),
   });
 
-afterEach(() => {
+const clean = (): void => {
   clearRoutes();
   resetActions();
-});
+  resetQueries();
+};
+// Before too: an earlier file in this process may have left a pinned action or a route behind.
+beforeEach(clean);
+afterEach(clean);
 
 describe('unit · a document carries the pins its server serves', () => {
   test('a pinned action is stamped into the head of every document', async () => {

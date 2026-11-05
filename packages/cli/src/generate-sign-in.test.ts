@@ -9,8 +9,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
+import { generateSpec } from './cmd-generate-spec';
 import { writeNewApp } from './cmd-new';
 import { dispatch } from './dispatch';
+import { appName, planAuthenticatorSwap } from './generate-sign-in';
 import { signInConfigEdit } from './generate-sign-in-config';
 
 let root = '';
@@ -27,6 +29,7 @@ interface Run {
   readonly ok: boolean;
   readonly files: readonly string[];
   readonly codes: readonly string[];
+  readonly removed: readonly string[];
 }
 
 const run = async (...argv: string[]): Promise<Run> => {
@@ -40,7 +43,7 @@ const run = async (...argv: string[]): Promise<Run> => {
   });
   const parsed = JSON.parse(out.join('\n')) as {
     ok: boolean;
-    data?: { files?: string[] };
+    data?: { files?: string[]; removed?: string[] };
     findings?: { code: string }[];
     error?: { code: string };
   };
@@ -48,6 +51,7 @@ const run = async (...argv: string[]): Promise<Run> => {
     code,
     ok: parsed.ok,
     files: parsed.data?.files ?? [],
+    removed: parsed.data?.removed ?? [],
     codes: [
       ...(parsed.findings ?? []).map((finding) => finding.code),
       ...(parsed.error === undefined ? [] : [parsed.error.code]),
@@ -129,9 +133,77 @@ describe('x g sign-in --oidc', () => {
     expect(await Bun.file(path).text()).toBe(edited);
     expect(await exists(`${AUTH}/dev-actor.ts`)).toBe(true);
   }, 60_000);
+
+  test('a dry run names the deletions as removed, never among the files it writes', async () => {
+    const result = await run('g', 'sign-in', '--oidc', 'corp-sso', '--dry-run');
+    expect(result.codes).toEqual([]);
+    expect(result.removed).toEqual([`${AUTH}/dev-actor.ts`, `${AUTH}/dev-actor.test.ts`]);
+    for (const path of result.removed) expect(result.files).not.toContain(path);
+    expect(await exists(`${AUTH}/dev-actor.ts`)).toBe(true);
+  }, 60_000);
+
+  test('a dev viewer file already gone is skipped, and the real run says removed', async () => {
+    await rm(join(root, `${AUTH}/dev-actor.test.ts`));
+    const result = await run('g', 'sign-in', '--oidc', 'corp-sso');
+    expect(result.codes).toEqual([]);
+    expect(result.removed).toEqual([`${AUTH}/dev-actor.ts`, `${AUTH}/dev-actor.test.ts`]);
+    expect(await exists(`${AUTH}/dev-actor.ts`)).toBe(false);
+  }, 60_000);
+
+  test('a package.json that does not parse degrades to a finding, not a throw', async () => {
+    await Bun.write(join(root, 'package.json'), '{ "name": ');
+    expect(await appName(root)).toBeUndefined();
+    const swap = await planAuthenticatorSwap(root);
+    expect(swap.findings.map((finding) => finding.code)).toEqual(['X_GENERATE_CONFLICT']);
+    expect(swap.remove).toEqual([]);
+  });
+});
+
+describe('an API index already binding a sign-in action', () => {
+  test.each([[[]], [['--dry-run']]])(
+    '%j refuses before anything lands',
+    async (extra) => {
+      const index = join(root, 'apps/web/api/index.ts');
+      await Bun.write(
+        index,
+        `${await Bun.file(index).text()}export const createSession = 'mine';\n`,
+      );
+      const result = await run('g', 'sign-in', '--password', ...extra);
+      expect(result.ok).toBe(false);
+      expect(result.codes).toEqual(['X_GENERATE_CONFLICT']);
+      expect(result.files).toEqual([]);
+      expect(await exists(`${AUTH}/sign-in/page.tsx`)).toBe(false);
+    },
+    60_000,
+  );
 });
 
 describe('the spelling', () => {
+  test('the usage spells sign-in once, in its own clause, never with a <name>', () => {
+    expect(generateSpec.usage).not.toContain('|sign-in');
+    expect(generateSpec.usage.match(/sign-in/g)).toEqual(['sign-in']);
+  });
+
+  test('every catalog the app ships gets the sign-in keys, not en alone', async () => {
+    const es = 'packages/i18n/catalogs/es.json';
+    await Bun.write(join(root, es), await read('packages/i18n/catalogs/en.json'));
+    const result = await run('g', 'sign-in', '--password');
+    expect(result.ok).toBe(true);
+    // A catalog file is nested JSON: its keys are the dotted paths to each string.
+    const flat = (node: unknown, at = ''): string[] =>
+      typeof node === 'object' && node !== null
+        ? Object.entries(node).flatMap(([key, value]) =>
+            flat(value, at === '' ? key : `${at}.${key}`),
+          )
+        : [at];
+    const keys = async (path: string): Promise<string[]> => flat(JSON.parse(await read(path)));
+    const added = (await keys('packages/i18n/catalogs/en.json')).filter((key) =>
+      key.startsWith('app.auth.'),
+    );
+    expect(added.length).toBeGreaterThan(0);
+    expect(await keys(es)).toEqual(expect.arrayContaining(added));
+  });
+
   test.each([
     [['g', 'sign-in']],
     [['g', 'sign-in', '--password', '--oidc', 'corp']],
@@ -139,6 +211,13 @@ describe('the spelling', () => {
     [['g', 'sign-in', '--oidc', 'github']],
     [['g', 'sign-in', '--oidc', 'Corp SSO']],
     [['g', 'route', 'about', '--password']],
+    [['g', 'sign-in', '--password', '--feature', 'accounts']],
+    [['g', 'sign-in', '--password', '--surface', 'site']],
+    [['g', 'sign-in', '--password', '--at', 'apps/web/app/login']],
+    [['g', 'sign-in', '--password', '--permission', 'users:read']],
+    [['g', 'sign-in', '--password', '--locales', 'es']],
+    [['g', 'sign-in', '--password', '--live']],
+    [['g', 'sign-in', '--password', '--admin']],
   ])('%j is refused before anything is written', async (argv) => {
     const result = await run(...argv);
     expect(result.ok).toBe(false);
@@ -167,6 +246,27 @@ export const config = defineConfig({
     expect(first.contents).toContain("auth: { signInPath: '/auth/sign-in' },\n  cache: {},");
     expect(first.contents).toContain("  X_ISSUER: {\n    type: 'url',");
     expect(signInConfigEdit(first.contents, '/auth/sign-in', keys).contents).toBe(first.contents);
+  });
+
+  test('a signInPath only in a comment declares nothing: the edit still lands', () => {
+    const parked = SOURCE.replace(
+      "  name: 'probe',\n",
+      "  name: 'probe',\n  // signInPath: '/login',\n",
+    );
+    const edit = signInConfigEdit(parked, '/auth/sign-in', []);
+    expect(edit.findings).toEqual([]);
+    expect(edit.contents).toContain("auth: { signInPath: '/auth/sign-in' },");
+  });
+
+  test('a declared signInPath is left alone', () => {
+    const declared = SOURCE.replace(
+      '  cache: {},\n',
+      "  auth: { signInPath: '/login' },\n  cache: {},\n",
+    );
+    expect(signInConfigEdit(declared, '/auth/sign-in', [])).toEqual({
+      contents: declared,
+      findings: [],
+    });
   });
 
   test('a config reshaped past the anchors is a finding naming the lines, not a guess', () => {

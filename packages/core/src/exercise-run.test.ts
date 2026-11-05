@@ -163,6 +163,28 @@ describe('refusals before a run', () => {
     }
   });
 
+  test('a process naming neither ULTIMATE_ENV nor NODE_ENV is read as production and refused', async () => {
+    let attempts = 0;
+    const unnamed = subject(
+      () => {
+        attempts += 1;
+        return { ok: true, reached: true };
+      },
+      { env: {} },
+    );
+    const refusal = await refusalOf(() => runExercise(unnamed));
+    expect(refusal.code).toBe('X_CONTRACT_EXERCISE_ENVIRONMENT');
+    expect(refusal.meta).toEqual({ environment: 'production' });
+    expect(attempts).toBe(0);
+    // The scope check reads the environment the same way: unnamed is not `test`.
+    expect(() => assertExerciseScoped('probe', false, {})).toThrow(
+      expect.objectContaining({
+        code: 'X_CONTRACT_EXERCISE_UNSCOPED',
+        meta: { environment: 'production' },
+      }),
+    );
+  });
+
   test('development and test run', async () => {
     for (const env of [{ NODE_ENV: 'development' }, TEST_ENV]) {
       const verdict = await runExercise(subject(() => ({ ok: true, reached: true }), { env }));

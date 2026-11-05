@@ -134,9 +134,11 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
   // No default here: for a caller naming no style, `actionPath` asks the document the server
   // rendered, and that answer must be the same one `useMutation` and the outbox replay get.
   // A pin by name (`rpc`) is the one the server stamped into this document (`renderedActionPin`);
-  // a declaration's own (`.client()`) wins, and with neither the style derives the path.
+  // a declaration's own (`.client()`) wins, and with neither the style derives the path. A
+  // declared method with no path still names the verb when no stamp does (a server has none).
   const pin = pinned?.path === undefined ? renderedActionPin(name) : pinned;
   const path = pin?.path ?? actionPath(name, options.pathStyle);
+  const method = pin?.method ?? pinned?.method ?? 'POST';
   const base = options.baseUrl.replace(/\/+$/, '');
   const onResponse = (response: Response): void =>
     assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
@@ -156,7 +158,7 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
     }
     const { url, body } = wire;
     return clientTransport({
-      method: pin?.method ?? 'POST',
+      method,
       url,
       body,
       headers: headersFor(options),

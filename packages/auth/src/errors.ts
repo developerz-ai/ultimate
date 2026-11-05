@@ -247,7 +247,8 @@ export const signInUnconfigured = (role: string, missing: readonly string[]): Au
   new AuthError({
     code: 'X_AUTH_SIGN_IN_UNCONFIGURED',
     cause: `the ${renderCauseValue(role)} role serves people and sign-in is unconfigured: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} unset`,
-    fix: `bunx x env example   # then set ${missing.join(', ')} and restart the role`,
+    // The env edit itself: `x env example` is an app-tree command, absent from a deployed image.
+    fix: `export <KEY>="<value>"   # each key the cause names, in the role's deployed environment (compose environment:, the platform's secrets), then restart the role`,
     meta: { role, missing: [...missing] },
   });
 

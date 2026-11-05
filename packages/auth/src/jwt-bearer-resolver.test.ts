@@ -197,3 +197,46 @@ describe('jwtBearerResolver accepts', () => {
     expect(lines).toEqual([]);
   });
 });
+
+describe("jwtBearerResolver propagates the app's own bug", () => {
+  // A throwing `accept` or `actorOf` is a defect in the app, never a verdict on the token: turned
+  // into `null` it would answer 401 to a valid caller and hide the bug behind a refusal line.
+  const appBug = (): EnvMissingError =>
+    new EnvMissingError({ cause: 'TENANT_MAP is not set', fix: 'x env check' });
+
+  test('a throwing accept() reaches the caller, not a 401', async () => {
+    const issuer = await pair();
+    const thrown = appBug();
+    const resolve = jwtBearerResolver(
+      await options(issuer, {
+        accept: () => {
+          throw thrown;
+        },
+      }),
+    );
+    const outcome = await resolve(await sign(issuer, CLAIMS)).then(
+      (caller) => ({ caller }),
+      (error: unknown) => ({ error }),
+    );
+    expect('error' in outcome && outcome.error).toBe(thrown);
+    expect(lines.filter((line) => line['msg'] === 'auth.jwt_bearer.refused')).toEqual([]);
+  });
+
+  test('a throwing actorOf() reaches the caller, not a 401', async () => {
+    const issuer = await pair();
+    const thrown = appBug();
+    const resolve = jwtBearerResolver(
+      await options(issuer, {
+        actorOf: () => {
+          throw thrown;
+        },
+      }),
+    );
+    const outcome = await resolve(await sign(issuer, CLAIMS)).then(
+      (caller) => ({ caller }),
+      (error: unknown) => ({ error }),
+    );
+    expect('error' in outcome && outcome.error).toBe(thrown);
+    expect(lines.filter((line) => line['msg'] === 'auth.jwt_bearer.refused')).toEqual([]);
+  });
+});

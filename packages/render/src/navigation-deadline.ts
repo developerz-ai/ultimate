@@ -28,7 +28,9 @@ export function withinDeadline<T>(
     }, NAVIGATION_TIMEOUT_MS);
   });
   // The race, not the signal alone: a held prefetch the click reuses was fetched with no signal.
-  return Promise.race([ask(AbortSignal.any([mine, timed.signal])), expired]).finally(() =>
-    win.clearTimeout(timer),
-  );
+  // `ask` runs inside a promise so a synchronous throw rejects through the race, and its `finally`
+  // clears the timer — thrown before it, `expired` would reject later with nobody listening.
+  // (`Promise.try`, once the lib target types it.)
+  const answer = new Promise<T>((resolve) => resolve(ask(AbortSignal.any([mine, timed.signal]))));
+  return Promise.race([answer, expired]).finally(() => win.clearTimeout(timer));
 }

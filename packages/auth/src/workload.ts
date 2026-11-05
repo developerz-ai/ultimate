@@ -102,7 +102,7 @@ export async function verifyWorkloadToken(input: VerifyWorkloadTokenInput): Prom
   return checked.token;
 }
 
-const refusal = (check: WorkloadCheck, reason: string): WorkloadTokenCheck => ({
+const checkRefusal = (check: WorkloadCheck, reason: string): WorkloadTokenCheck => ({
   ok: false,
   check,
   reason,
@@ -117,40 +117,43 @@ export async function checkWorkloadToken(
   input: VerifyWorkloadTokenInput,
 ): Promise<WorkloadTokenCheck> {
   if (!(await verifyJwtSignature(input.token, input.keys))) {
-    return refusal('signature', 'the signature does not verify against the published key set');
+    return checkRefusal('signature', 'the signature does not verify against the published key set');
   }
 
   const payloadSegment = input.token.split('.')[1];
   const parsed = payloadSegment === undefined ? null : decodeJwtSegment(payloadSegment);
   if (parsed === null) {
-    return refusal('payload', 'the payload is not base64url-encoded JSON describing an object');
+    return checkRefusal(
+      'payload',
+      'the payload is not base64url-encoded JSON describing an object',
+    );
   }
 
   const iss = parsed['iss'];
   const sub = parsed['sub'];
   const exp = parsed['exp'];
   if (typeof iss !== 'string' || typeof sub !== 'string' || sub === '') {
-    return refusal('subject', 'the payload carries no iss or sub');
+    return checkRefusal('subject', 'the payload carries no iss or sub');
   }
-  if (typeof exp !== 'number') return refusal('expiry', 'the payload carries no numeric exp');
+  if (typeof exp !== 'number') return checkRefusal('expiry', 'the payload carries no numeric exp');
   if (!input.issuers.includes(iss)) {
-    return refusal('issuer', 'the issuer is not one this service accepts');
+    return checkRefusal('issuer', 'the issuer is not one this service accepts');
   }
 
   const aud = readAudience(parsed['aud']);
   if (!aud.includes(input.audience)) {
-    return refusal('audience', 'the token is addressed to another audience');
+    return checkRefusal('audience', 'the token is addressed to another audience');
   }
 
   const nowMs = input.clock.now().getTime();
   // The same skew the id token path allows, from the same declaration: two servers rarely agree
   // on the second, and a second number here would drift from that one.
   if (exp * 1000 + ID_TOKEN_CLOCK_SKEW_MS <= nowMs) {
-    return refusal('expiry', 'the token is already expired');
+    return checkRefusal('expiry', 'the token is already expired');
   }
   const nbf = parsed['nbf'];
   if (typeof nbf === 'number' && nbf * 1000 - ID_TOKEN_CLOCK_SKEW_MS > nowMs) {
-    return refusal('not-before', 'the token is not valid yet');
+    return checkRefusal('not-before', 'the token is not valid yet');
   }
   const iat = parsed['iat'];
 

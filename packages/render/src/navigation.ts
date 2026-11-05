@@ -85,8 +85,9 @@ export interface NavigationRouter {
   navigate(url: string, options?: NavigateOptions): Promise<void>;
   prefetch(url: string): void;
   /**
-   * The page on screen, fetched again and swapped in where it is scrolled — unless `held()` says
-   * the visitor is busy when the answer lands. `true` when it was swapped in.
+   * The page fetched again and swapped in where it is scrolled, unless `held()` says the visitor
+   * is busy. `true` once SETTLED (`RefreshRun`): landed, or failed quietly (`refreshFailsQuietly`).
+   * `false` when held, yielded to another navigation, or a modal was open.
    */
   refresh(held?: () => boolean): Promise<boolean>;
   /** `path` as the modal over this page (`#<path>`); anything but a modal of this tab: nothing. */

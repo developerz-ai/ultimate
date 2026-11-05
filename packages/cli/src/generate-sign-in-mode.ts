@@ -3,6 +3,7 @@
 // generator: a flag accepted and ignored is a second spelling an agent believes did something.
 
 import { BUILTIN_OAUTH_PROVIDER_IDS } from '@ultimat3/auth';
+import { generateSpec } from './cmd-generate-spec';
 import { BadFlagError } from './errors';
 import type { Generator } from './generate-kinds';
 import type { ParsedArgs } from './parse';
@@ -33,7 +34,30 @@ export function refuseSignInFlags(kind: Generator, args: ParsedArgs): void {
   }
 }
 
+/** The `x g` flags the sign-in generator reads; every other one would be ignored, so is refused. */
+const SIGN_IN_READS = new Set(['oidc', 'password', 'force', 'dry-run', 'locales']);
+
+/**
+ * Any other `x g` flag set to something but its default: the generator never reads `--feature`,
+ * `--surface`, `--at`, `--permission`, `--live`, `--admin` or `--locales`, so each would be a
+ * flag accepted and ignored — the second spelling the header refuses.
+ */
+function refuseUnreadFlags(args: ParsedArgs): void {
+  for (const flag of generateSpec.flags ?? []) {
+    if (SIGN_IN_READS.has(flag.name)) continue;
+    const value = args.flags.get(flag.name);
+    if (value === undefined || value === flag.default) continue;
+    throw new BadFlagError({
+      flag: flag.name,
+      command: 'g sign-in',
+      reason: `the sign-in generator does not read --${flag.name}, so it would change nothing`,
+      fix: 'x g sign-in --password',
+    });
+  }
+}
+
 export function readSignInMode(args: ParsedArgs): SignInMode {
+  refuseUnreadFlags(args);
   const named = args.positionals[1];
   if (named !== undefined) {
     throw new BadFlagError({

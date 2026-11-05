@@ -79,6 +79,19 @@ describe('action.client() on a :param pin', () => {
       { url: 'http://app.test/api/hooks/in', method: 'POST', body: { id: 'x' } },
     ]);
   });
+
+  test('a declared method with no path is still sent, on the path the style derives', async () => {
+    const seen = recording();
+    const put = action({
+      input: t.object({ id: t.string }),
+      output: t.object({ ok: t.boolean }),
+      policy: allow('order:put'),
+      http: { method: 'PUT' },
+      handle: () => ({ ok: true }),
+    }).named('putOrder');
+    await put.client({ baseUrl: 'http://app.test', fetch: seen.fetch })({ id: 'x' });
+    expect(seen.sent.map((sent) => sent.method)).toEqual(['PUT']);
+  });
 });
 
 describe('rpc() by name in a document whose server pinned the action', () => {

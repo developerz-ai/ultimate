@@ -134,7 +134,7 @@ const guardSource = (
 ${commentLines(why)}
 import { signInUnconfigured } from '@ultimat3/auth';
 
-/** The settings sign-in cannot run without. \`bunx x env example\` lists them. */
+/** Set in the role's environment, or sign-in cannot run. \`x env example\` lists them. */
 ${arrayLiteral('export const SIGN_IN_ENV: readonly string[] = ', keys, ';')}
 
 /** The roles a person reaches. \`worker\`, \`scheduler\`, \`replicator\` and \`migrate\` sign nobody in. */

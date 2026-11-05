@@ -4,9 +4,11 @@
 // the authenticator swap that drops `x new`'s development viewer, only over `x new`'s own bytes.
 
 import { ERROR_DOCS_URL, stringField } from '@ultimat3/core';
+import { indexBindingFindings } from './api-registration';
 import { generateSpec } from './cmd-generate-spec';
 import type { CommandContext } from './command';
 import { invocationOf } from './command';
+import { localiseCatalogs, namedOrAppLocales } from './generate-catalog-locales';
 import { appDisk, plannedDisk } from './generate-disk';
 import { generate } from './generate-files';
 import { followUpEdits } from './generate-follow-ups';
@@ -20,8 +22,8 @@ import { resolveCatalogModule } from './i18n-audit';
 import { reproducedFlags } from './invocation-flags';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
-import { flagBool } from './parse';
-import { names } from './templates';
+import { flagBool, flagList } from './parse';
+import { names, resolveLocales } from './templates';
 import { authFiles } from './templates/scaffold-auth';
 import { DEV_ACTOR_FILES, signedInAuthenticatorFiles } from './templates/sign-in-authenticator';
 import { oidcEnvPrefix } from './templates/sign-in-oidc';
@@ -41,11 +43,21 @@ export const oidcEnvKeys = (provider: string): readonly SignInEnvKey[] => {
   ];
 };
 
-/** The app's slug, as `x new` named it: the root `package.json`'s `name`. */
-async function appName(root: string): Promise<string | undefined> {
+/**
+ * The app's slug, as `x new` named it: the root `package.json`'s `name`. A manifest that does not
+ * parse names nothing, which is the conservative answer: no scaffold to compare against, so every
+ * file on disk reads as edited and the swap becomes a finding rather than a throw.
+ */
+export async function appName(root: string): Promise<string | undefined> {
   const text = await appDisk(root).read('package.json');
   if (text === undefined) return undefined;
-  return stringField(JSON.parse(text), 'name');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  return stringField(parsed, 'name');
 }
 
 export interface AuthenticatorSwap {
@@ -96,12 +108,19 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
   const label = signInLabel(mode);
   const catalogModule = await resolveCatalogModule(root);
   const dbModule = await resolveDbModule(root);
-  const files = generate({
-    kind: 'sign-in',
-    name: label,
-    signIn: mode,
-    ...(catalogModule === undefined ? {} : { catalogModule }),
-  });
+  // Every catalog the app keeps, as every other generator seeds them: `en` alone renders ⟦key⟧
+  // for a reader of any other locale the app ships.
+  const locales = resolveLocales(await namedOrAppLocales(root, flagList(ctx.args, 'locales')));
+  const files = await localiseCatalogs(
+    root,
+    generate({
+      kind: 'sign-in',
+      name: label,
+      signIn: mode,
+      locales,
+      ...(catalogModule === undefined ? {} : { catalogModule }),
+    }),
+  );
   const flags = reproducedFlags(generateSpec, ctx.args);
   const invocation = [invocationOf(ctx, 'g'), 'sign-in', ...flags].join(' ');
   const force = flagBool(ctx.args, 'force');
@@ -118,6 +137,13 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
   // An app with no `app.config.ts` has no `signInPath` to declare: nothing to edit, nothing owed.
   const configFindings = configSource === undefined ? [] : config.findings;
   const configEdited = configSource !== undefined && config.contents !== configSource;
+  // The three actions are listed in the API index under their file names, so an app already
+  // binding `createSession` there is refused before anything lands — `cmd-generate.ts`'s preflight.
+  const bindings = await indexBindingFindings(
+    root,
+    files.map((file) => file.path),
+    `${invocation}   # after renaming what apps/web/api/index.ts already binds under that name`,
+  );
 
   if (flagBool(ctx.args, 'dry-run')) {
     const plan = await planWrites(root, files, force, invocation, label);
@@ -128,40 +154,44 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
           : [],
       ),
     );
+    const refused = [...plan.conflicts, ...bindings];
     const follow =
-      plan.conflicts.length > 0
+      refused.length > 0
         ? { edited: [], findings: [] }
         : await followUpEdits(root, plan.written, dbModule, plannedDisk(root, planned));
-    const findings = [...plan.conflicts, ...follow.findings, ...swap.findings, ...configFindings];
+    const findings = [...refused, ...follow.findings, ...swap.findings, ...configFindings];
     const touched =
-      plan.conflicts.length > 0
+      refused.length > 0
         ? []
         : [
             ...new Set([
               ...plan.written,
               ...follow.edited,
               ...swap.replace.map((file) => file.path),
-              ...swap.remove,
               ...(configEdited ? [APP_CONFIG] : []),
             ]),
           ];
+    const removed = refused.length > 0 ? [] : [...swap.remove];
     return {
       ok: findings.length === 0,
       command: 'g',
       summary: msg('cli.generate.planned', { count: touched.length, kind: 'sign-in', name: label }),
       data: {
         files: touched,
-        removes: [...swap.remove],
+        removed,
         // What a real run re-projects after it writes, named as `x g`'s other dry runs name them.
         ...(touched.length === 0 ? {} : { refreshes: [...(await existingArtifacts(root))] }),
         dryRun: true,
       },
-      lines: touched.map((file) => msg('cli.file.added', { path: file })),
+      lines: fileLines(touched, removed),
       findings,
     };
   }
 
-  const report = await writeFiles(root, files, force, invocation, label);
+  const report =
+    bindings.length > 0
+      ? { written: [], conflicts: bindings }
+      : await writeFiles(root, files, force, invocation, label);
   if (report.conflicts.length > 0) {
     return {
       ok: false,
@@ -173,7 +203,10 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
   }
   const disk = appDisk(root);
   for (const file of swap.replace) await disk.write(file.path, file.contents);
-  for (const path of swap.remove) await Bun.file(`${root}/${path}`).delete();
+  for (const path of swap.remove) {
+    const file = Bun.file(`${root}/${path}`);
+    if (await file.exists()) await file.delete();
+  }
   if (configEdited) await disk.write(APP_CONFIG, config.contents);
   const follow = await followUpEdits(root, report.written, dbModule, disk);
   await formatWritten(root, report.written, ctx.runner);
@@ -193,7 +226,13 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
     command: 'g',
     summary: msg('cli.generate.wrote', { count: written.length, kind: 'sign-in', name: label }),
     data: { files: written, removed: [...swap.remove] },
-    lines: written.map((path) => msg('cli.file.added', { path })),
+    lines: fileLines(written, swap.remove),
     findings,
   };
 }
+
+/** One `+` line per file written, then one `-` per file deleted: a deletion is never "added". */
+const fileLines = (added: readonly string[], removed: readonly string[]): readonly string[] => [
+  ...added.map((path) => msg('cli.file.added', { path })),
+  ...removed.map((path) => msg('cli.file.removed', { path })),
+];

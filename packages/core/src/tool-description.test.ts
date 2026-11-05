@@ -1,3 +1,7 @@
+// `toolDescription` — the one lead an agent tool is described by (the mcp block, else the
+// primitive's own, else a read or write default) plus its declared refusals, and a sweep holding
+// every other package to calling it rather than spelling the default lead out again.
+
 import { describe, expect, test } from 'bun:test';
 import { Glob } from 'bun';
 import { toolDescription } from './tool-description';
@@ -44,22 +48,26 @@ describe('toolDescription', () => {
   });
 });
 
-// The four copies this function replaced (plan 101, wave 5b) drifted: two of them skipped the
-// primitive's own description. No tool projection may spell the default lead out again.
+// The copies this function replaced (plan 101, wave 5b) drifted: two of them skipped the
+// primitive's own description. They were five sites in four files — `ai/src/tools.ts` (two),
+// `mcp/src/from-action.ts`, `mcp/src/projectable.ts`, `admin/src/mcp-tools.ts` — and the sweep
+// reads every package but this one, so a fifth home cannot appear outside it.
 describe('the default lead has one home', () => {
   const packages = `${import.meta.dir}/../..`;
   const copy = /`(?:Run|Read with) the "?\$\{/;
 
-  for (const pkg of ['ai', 'mcp', 'admin']) {
-    test(`packages/${pkg}/src restates no default lead`, async () => {
-      const offenders: string[] = [];
-      for await (const file of new Glob('**/*.ts').scan(`${packages}/${pkg}/src`)) {
-        if (file.endsWith('.test.ts')) continue;
-        if (copy.test(await Bun.file(`${packages}/${pkg}/src/${file}`).text())) {
-          offenders.push(`packages/${pkg}/src/${file}`);
-        }
+  test('no package but core restates a default lead', async () => {
+    const offenders: string[] = [];
+    let read = 0;
+    for await (const file of new Glob('*/src/**/*.ts').scan(packages)) {
+      if (file.startsWith('core/') || file.endsWith('.test.ts')) continue;
+      read += 1;
+      if (copy.test(await Bun.file(`${packages}/${file}`).text())) {
+        offenders.push(`packages/${file}`);
       }
-      expect(offenders).toEqual([]);
-    });
-  }
+    }
+    // Zero files read is a broken glob, never a clean tree.
+    expect(read).toBeGreaterThan(100);
+    expect(offenders).toEqual([]);
+  });
 });

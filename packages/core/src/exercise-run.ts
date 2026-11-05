@@ -6,7 +6,7 @@
 
 import { assert } from './assert';
 import type { ErrorStatusOf } from './declared-errors';
-import { resolveEnvironment } from './environment';
+import { type Environment, resolveEnvironment } from './environment';
 import { isFixShellSafe, renderThrowable } from './error-render';
 import { isUltimateError } from './errors';
 import { ExerciseEnvironmentError, ExerciseUnscopedError } from './exercise-errors';
@@ -95,20 +95,26 @@ export function exerciseReplay(name: string, testName: string): string {
 }
 
 /**
+ * Which deploy the exercise is in. Fails CLOSED: a process naming neither `ULTIMATE_ENV` nor
+ * `NODE_ENV` is read as `production`, where the shared default is `development` — an unnamed
+ * deploy must not run generated input. `bun test` names `test`, so a test run is unaffected.
+ */
+const exerciseEnvironment = (env: Env | undefined): Environment =>
+  resolveEnvironment({ env, fallback: 'production' });
+
+/**
  * Refuse when no transaction would undo the writes — no client installed, none open — anywhere
  * but `test`, where the store is memory. Outside it the handler's writes reach `DATABASE_URL`.
  */
 export function assertExerciseScoped(name: string, scoped: boolean, env?: Env): void {
-  const environment = resolveEnvironment(env === undefined ? undefined : { env });
+  const environment = exerciseEnvironment(env);
   if (!scoped && environment !== 'test') throw new ExerciseUnscopedError(name, environment);
 }
 
 /** Exercise `subject`: refuse a deploy, then draw, check, attempt and judge each run. */
 export async function runExercise(subject: ExerciseSubject): Promise<ExerciseVerdict> {
   const { name } = subject;
-  const environment = resolveEnvironment(
-    subject.env === undefined ? undefined : { env: subject.env },
-  );
+  const environment = exerciseEnvironment(subject.env);
   if (environment !== 'development' && environment !== 'test') {
     throw new ExerciseEnvironmentError(name, environment);
   }

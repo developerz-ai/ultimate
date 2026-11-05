@@ -4,7 +4,7 @@
 // The mutator names only the action: the pin is the one the SERVER stamped into the document.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { CLIENT_PINS_META, encodeClientPins, isUltimateError } from '@ultimat3/core';
+import { actionPath, CLIENT_PINS_META, encodeClientPins, isUltimateError } from '@ultimat3/core';
 import { pageHarness, resetPage } from './hooks-fixture';
 import { memoryLocalStore } from './local-store-idb';
 import { OUTBOX_KEY, type OutboxEntry, type OutboxHandle } from './outbox-slot';
@@ -118,6 +118,55 @@ describe('a pinned write from the page', () => {
     });
     await outbox.replay();
     expect(sent).toEqual([{ url: '/orders/o1/refund', method: 'PUT', body: { reason: 'late' } }]);
+  });
+
+  // The outbox's store is the browser's (IndexedDB): anything on the origin can rewrite an entry.
+  test('a stored pin that is not a same-origin absolute path is dropped for the derived URL', async () => {
+    const tampered: readonly unknown[] = [
+      '//evil.test/steal',
+      'https://evil.test/steal',
+      '/\\evil.test/steal',
+      '/\t/evil.test/steal',
+      'orders/o1',
+      42,
+    ];
+    for (const path of tampered) {
+      const sent = answering();
+      const outbox = localOutbox({
+        local: memoryLocalStore(),
+        principal: () => 'u1',
+        overlays: () => undefined,
+      });
+      // The entry as read back off disk: its shape is whatever was written there.
+      const entry = {
+        key: 'refundOrder:1',
+        name: 'refundOrder',
+        input: { id: 'o1', reason: 'late' },
+        http: { path, method: 'PUT' },
+      } as unknown as OutboxEntry;
+      await outbox.enqueue(entry);
+      await outbox.replay();
+      expect(sent).toEqual([
+        { url: actionPath('refundOrder'), method: 'POST', body: { id: 'o1', reason: 'late' } },
+      ]);
+    }
+  });
+
+  test('a stored pin with a verb this build never pins is dropped too', async () => {
+    const sent = answering();
+    const outbox = localOutbox({
+      local: memoryLocalStore(),
+      principal: () => 'u1',
+      overlays: () => undefined,
+    });
+    await outbox.enqueue({
+      key: 'refundOrder:1',
+      name: 'refundOrder',
+      input: { id: 'o1' },
+      http: { path: '/orders/:id/refund', method: 'TRACE' },
+    } as unknown as OutboxEntry);
+    await outbox.replay();
+    expect(sent).toEqual([{ url: actionPath('refundOrder'), method: 'POST', body: { id: 'o1' } }]);
   });
 
   test('an action the server did not pin still POSTs its whole input to the derived URL', async () => {

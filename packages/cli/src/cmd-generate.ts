@@ -11,7 +11,7 @@ import { requireAppRoot } from './app-root';
 import { generateSpec } from './cmd-generate-spec';
 import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
-import { localiseCatalogs } from './generate-catalog-locales';
+import { localiseCatalogs, namedOrAppLocales } from './generate-catalog-locales';
 import { appDisk, plannedDisk } from './generate-disk';
 import { assertFeatureExists } from './generate-feature';
 import { assertSliceToRead } from './generate-feature-required';
@@ -29,7 +29,6 @@ import { refuseSignInFlags } from './generate-sign-in-mode';
 import { containedPath, planWrites, writeFiles } from './generate-write';
 import { resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
-import { catalogLocales } from './i18n-index';
 import { reproducedFlags } from './invocation-flags';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -284,25 +283,6 @@ export const generateCommand: CliCommand = {
     };
   },
 };
-
-/**
- * `--locales` when the caller named any, and otherwise every locale the app already has a catalog
- * for: a key written to `en` alone in an app that also ships `es` renders ⟦key⟧ for every Spanish
- * reader. A stem that is not a locale tag is some other JSON file, and not a catalog to write to.
- */
-async function namedOrAppLocales(
-  root: string,
-  named: readonly string[],
-): Promise<readonly string[]> {
-  if (named.length > 0) return named;
-  return (await catalogLocales(root)).filter((stem) => {
-    try {
-      return Intl.getCanonicalLocales(stem).length === 1;
-    } catch {
-      return false;
-    }
-  });
-}
 
 const isEntityKind = (kind: Generator): boolean => kind === 'entity' || kind === 'resource';
 

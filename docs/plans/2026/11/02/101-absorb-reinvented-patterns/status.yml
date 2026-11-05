@@ -344,7 +344,7 @@ slices:
     sweep: "18"
     status: in_progress
     percent: 90
-    note: "wave 5b: one exercise loop in core (runExercise), staging/production refused (X_CONTRACT_EXERCISE_ENVIRONMENT), X_CONTRACT_EXERCISE_UNSCOPED registered. Open: wire assertExerciseScoped via action/src/tx-scope.ts rollbackAvailable, and roll back the in-memory store (entity memory journal) - a half-built draft is parked at node_modules/.cache/p101/parked-5b/"
+    note: "wave 5b: one exercise loop in core (runExercise), staging/production refused (X_CONTRACT_EXERCISE_ENVIRONMENT), X_CONTRACT_EXERCISE_UNSCOPED registered. exercise.ts passes scoped: rollbackAvailable() and runExercise refuses unscoped. Open: roll back the in-memory store (entity memory journal) - a half-built draft is parked at node_modules/.cache/p101/parked-5b/"
   - file: 39-action-declared-errors.md
     tier: 0
     sweep: "18"
@@ -353,8 +353,9 @@ slices:
   - file: 39-api-mount-paths.md
     tier: 0
     sweep: "18"
-    status: complete
-    percent: 100
+    status: in_progress
+    percent: 85
+    note: "path templates, OpenAPI {param}, .client() fill and the mount route shipped; publishPost pins /api/posts/:postId/publish. Open (Done-when 1): no /v1 scope names publishPost - RUN_KEY_SCOPES (examples/dummy/apps/web/app/runs/keys.ts:20) covers startRun/answerPrompt/cancelRun/liveRunEvents only, so POST /v1/posts/:postId/publish answers 404; add it to a scope and a bearer contract test that calls it"
   - file: 40-next-exercise-pass.md
     tier: 5
     sweep: "19"

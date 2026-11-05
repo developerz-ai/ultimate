@@ -2,6 +2,7 @@
 // aborted, it fails the way a network failure does (a GET is the browser's, a POST is reported),
 // and the router is free again — a hung refresh used to make every later refresh yield to it.
 import { afterEach, describe, expect, test } from 'bun:test';
+import { UltimateError } from '@ultimat3/core';
 import {
   click,
   currentRouter,
@@ -10,7 +11,7 @@ import {
   stopRouter,
   tab,
 } from './navigation-controller-fixture';
-import { NAVIGATION_TIMEOUT_MS } from './navigation-deadline';
+import { NAVIGATION_TIMEOUT_MS, withinDeadline } from './navigation-deadline';
 import { htmlAnswer, settle } from './navigation-dom-fixture';
 import { NAVIGATION_ERROR_EVENT } from './navigation-rules';
 
@@ -118,5 +119,32 @@ describe('the navigation deadline', () => {
     expect(doc.title).toBe('B');
     expect(deadline.pending()).toBe(1);
     expect(cleared).toContain(-1);
+  });
+});
+
+describe('withinDeadline', () => {
+  test('an ask that throws before its promise rejects through the race and clears the deadline', async () => {
+    const armed: number[] = [];
+    const cleared: (number | undefined)[] = [];
+    const win = {
+      setTimeout: (() => {
+        armed.push(7);
+        return 7;
+      }) as unknown as Window['setTimeout'],
+      clearTimeout: (id: number | undefined): void => {
+        cleared.push(id);
+      },
+    };
+    const thrown = new UltimateError({ code: 'X_INVARIANT', cause: 'probe', fix: 'x verify' });
+    const outcome = await withinDeadline(win, new AbortController().signal, () => {
+      throw thrown;
+    }).then(
+      () => 'resolved',
+      (error: unknown) => error,
+    );
+    expect(outcome).toBe(thrown);
+    // Armed and then cleared: a timer left behind would reject `expired` with nobody listening.
+    expect(armed).toEqual([7]);
+    expect(cleared).toEqual([7]);
   });
 });

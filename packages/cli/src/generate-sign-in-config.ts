@@ -3,7 +3,7 @@
 // `envSchema`, so `x env example` lists them. Text edits at anchors `x new` writes; a file reshaped
 // past them gets a finding with the exact lines, never a guess.
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, stripComments } from '@ultimat3/core';
 import type { Finding } from './output';
 
 export const APP_CONFIG = 'app.config.ts';
@@ -32,11 +32,16 @@ const unplaced = (what: string, lines: string): Finding => ({
 
 const SIGN_IN_PATH_LINE = (path: string): string => `auth: { signInPath: '${path}' },`;
 
-/** `auth: { signInPath }` after the config's `name:` line, unless a sign-in path is declared. */
+/**
+ * `auth: { signInPath }` after the config's `name:` line, unless a sign-in path is declared. Both
+ * tests read the code with its comments blanked: a `// signInPath: …` the author parked declares
+ * nothing, and skipping the edit over it left a 401 page linking nowhere.
+ */
 function withSignInPath(source: string, path: string): ConfigEdit {
-  if (/\bsignInPath\b/.test(source)) return { contents: source, findings: [] };
+  const code = stripComments(source);
+  if (/\bsignInPath\s*:/.test(code)) return { contents: source, findings: [] };
   const anchor = /(export const config = defineConfig\(\{\n(\s*)name: [^\n]*\n)/.exec(source);
-  if (anchor === null || /\n\s*auth:\s*\{/.test(source)) {
+  if (anchor === null || /\n\s*auth:\s*\{/.test(code)) {
     return {
       contents: source,
       findings: [unplaced('defineConfig({ … })', SIGN_IN_PATH_LINE(path))],

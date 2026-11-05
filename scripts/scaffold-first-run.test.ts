@@ -62,7 +62,7 @@ const stepsAmong = (wanted: readonly string[]): readonly string[] =>
 
 describe('firstRunPlan', () => {
   // The defect was four of THIRTEEN generators, so a sample would likely have missed it. This is
-  // what makes a fourteenth generator covered the day it lands.
+  // what makes a new generator covered the day it lands.
   test('invokes every generator the CLI registry declares, exactly once', () => {
     const invoked = firstRunPlan()
       .filter((step) => step.name === `g ${step.args[1]}`)
@@ -125,7 +125,7 @@ describe('firstRunPlan', () => {
     }
   });
 
-  // Eight of the thirteen generators emit an entity, and this is the only migration in CI written
+  // Every generator that emits an entity feeds it, and this is the only migration in CI written
   // from generator output rather than from the scaffold's own example entity. The apply is
   // `bun run setup`'s, on the `scaffold-gate` run that follows this sweep.
   test('regenerates after the generators, as the plan’s last step', () => {

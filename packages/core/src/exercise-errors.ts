@@ -34,7 +34,7 @@ export class ExerciseUnscopedError extends UltimateError {
     super({
       code: ExerciseUnscopedError.code,
       cause: `${subject} was exercised in ${environment} with no database client installed and no transaction open, so its writes could not be rolled back`,
-      fix: `setDbClient(<a test database client>) from @ultimat3/db before ${renderFixShellArg(subject, '<name>')}.contract(), or run it under bun test (NODE_ENV=test)`,
+      fix: `setDbClient(<a test database client>) from @ultimat3/db before ${renderFixShellArg(subject, '<name>')}.contract()   # or run it under bun test (NODE_ENV=test)`,
       meta: { environment },
     });
   }
