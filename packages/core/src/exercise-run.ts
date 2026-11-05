@@ -83,8 +83,11 @@ export function sealedHost(cause: string): string {
  * `isFixShellSafe` already carries verbatim; `testName` is that name plus fixed words.
  */
 export function exerciseReplay(name: string, testName: string): string {
-  const main = Bun.main;
-  const file = main.replace(`${process.cwd()}/`, '');
+  // POSIX separators on every platform: a Windows `Bun.main` is `C:\…\x.test.ts`, which neither
+  // strips against the cwd nor travels through a shell as written.
+  const posix = (path: string): string => path.replaceAll('\\', '/');
+  const main = posix(Bun.main);
+  const file = main.replace(`${posix(process.cwd())}/`, '');
   if (!main.includes('.test.') || !isFixShellSafe(file) || !isFixShellSafe(name)) {
     return 'x verify --only contract';
   }

@@ -5,6 +5,7 @@
 
 import type { GeneratedFile } from './naming';
 import { authModule } from './scaffold-auth';
+import { destroySessionTest } from './sign-in-action-tests';
 
 /** Every generated file lives under the scaffold's own auth slice, beside `auth.ts`. */
 export const AUTH_DIR = 'apps/web/app/auth';
@@ -115,25 +116,6 @@ export const destroySession = action({
     }
     return { ok: true, next: landAt('/'), revoked };
   },
-});
-`;
-
-const destroySessionTest =
-  (): string => `// destroySession's declared shape: public, off the MCP surface, and an input that is a statement.
-import { expect, unitTest } from '@ultimat3/testing';
-import { destroySession } from './destroy-session';
-
-const target = destroySession.named('destroySession');
-
-unitTest('destroySession is a declared action off the MCP surface', () => {
-  expect(target.kind).toBe('action');
-  expect(target.describe().name).toBe('destroySession');
-});
-
-unitTest('it takes the one statement a sign-out form sends', async () => {
-  await expect(target.input).toAcceptInput({ confirm: 'sign-out' });
-  await expect(target.input).toRejectInput({});
-  await expect(target.input).toRejectInput({ confirm: 'yes' });
 });
 `;
 

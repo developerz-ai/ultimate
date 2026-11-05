@@ -5,6 +5,7 @@
 import { catalogJson } from './catalog-json';
 import { catalogPath } from './locales';
 import type { GeneratedFile } from './naming';
+import { confirmSessionTest, createSessionTest } from './sign-in-action-tests';
 import {
   SIGN_IN_CATALOG,
   type SignInForm,
@@ -136,29 +137,6 @@ export const confirmSession = action({
 });
 `;
 
-const actionTest = (
-  name: string,
-  file: string,
-  accepted: string,
-  refused: string,
-): string => `// ${name}'s declared shape: public, off the MCP surface, and the input it refuses. The handler
-// runs inside a request; packages/cli/e2e/sign-in.e2e.test.ts drives it over HTTP.
-import { expect, unitTest } from '@ultimat3/testing';
-import { ${name} } from './${file}';
-
-const target = ${name}.named('${name}');
-
-unitTest('${name} is a declared action', () => {
-  expect(target.kind).toBe('action');
-  expect(target.describe().name).toBe('${name}');
-});
-
-unitTest('${name} takes what its form posts and refuses the rest', async () => {
-  await expect(target.input).toAcceptInput(${accepted});
-  await expect(target.input).toRejectInput(${refused});
-});
-`;
-
 /** An address and a password, posted at `createSession`, with the way back to where they were. */
 const PASSWORD_FORM: SignInForm = {
   comment: `// Sign in: a native \`<form method="post">\` at the route \`createSession\` derives. Nothing here
@@ -206,17 +184,12 @@ export function passwordSignInFiles(options: SignInTemplateOptions): readonly Ge
     { path: `${AUTH_DIR}/actions/create-session.ts`, contents: createSessionSource() },
     {
       path: `${AUTH_DIR}/actions/create-session.test.ts`,
-      contents: actionTest(
-        'createSession',
-        'create-session',
-        "{ email: 'ada@example.com', password: 'a passphrase' }",
-        "{ email: 'not an address', password: 'a passphrase' }",
-      ),
+      contents: createSessionTest(),
     },
     { path: `${AUTH_DIR}/actions/confirm-session.ts`, contents: confirmSessionSource() },
     {
       path: `${AUTH_DIR}/actions/confirm-session.test.ts`,
-      contents: actionTest('confirmSession', 'confirm-session', "{ code: '123456' }", '{}'),
+      contents: confirmSessionTest(),
     },
     { path: `${AUTH_DIR}/sign-in/page.tsx`, contents: signInPageSource(module, PASSWORD_FORM) },
     {
