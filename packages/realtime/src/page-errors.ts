@@ -148,8 +148,8 @@ export class MutationPathUnfilledError extends RealtimeError {
   constructor(args: { name: string; path: string; param: string; reason: string }) {
     super({
       code: 'X_MUTATION_PATH_UNFILLED',
-      cause: `the write "${args.name}" is pinned at ${args.path}, and its :${args.param} ${args.reason} — it was not sent`,
-      fix: `pass it in the input: mutate({ ${args.param}: '<value>', ... }) — a non-empty string, the URL's :${args.param}`,
+      cause: `the write "${args.name}" is pinned at ${args.path}, and its :${args.param} ${args.reason} — it was not sent; the input must carry the URL's :${args.param} as a non-empty string`,
+      fix: `mutate({ ${args.param}: '<value>', ... })`,
     });
   }
 }

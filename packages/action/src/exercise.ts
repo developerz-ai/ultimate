@@ -5,16 +5,7 @@
  */
 
 import type { Actor, Ctx, ExerciseAttempt, ExerciseReport } from '@ultimat3/core';
-import {
-  ctxOf,
-  EXERCISE_RUNS,
-  EXERCISE_RUNS_MAX,
-  exerciseReplay,
-  isUltimateError,
-  runExercise,
-  sealedHost,
-  tryUseContext,
-} from '@ultimat3/core';
+import { ctxOf, exerciseReplay, isUltimateError, runExercise, tryUseContext } from '@ultimat3/core';
 import { statusFor } from '@ultimat3/http';
 import { admitsAnonymous } from '@ultimat3/policy';
 import { arbitrary } from '@ultimat3/schema/sample';
@@ -27,11 +18,10 @@ import {
   everyDrawRefused,
 } from './exercise-errors';
 import { actionName, handlerReached, invoke } from './invoke';
-import { inRolledBackScope } from './tx-scope';
+import { inRolledBackScope, rollbackAvailable } from './tx-scope';
 import { parseActionInput } from './validate';
 
 export type { ExerciseReport };
-export { EXERCISE_RUNS, EXERCISE_RUNS_MAX, sealedHost };
 
 /** Who the handler runs as, and what binds the parts a generated value cannot (a real row's id). */
 export interface ExerciseActorOptions {
@@ -76,6 +66,7 @@ export async function exerciseAction(
     name,
     runs: options.runs,
     stoppedLabel: 'stopped before the handler',
+    scoped: rollbackAvailable(),
     draw: (seed, run) => arbitrary(target.input, { seed, run }),
     bind: options.input,
     accepts: (input) => acceptedBy(target, input, name),

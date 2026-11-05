@@ -127,7 +127,11 @@ export const config = defineRoute({
   // contact-sales island +2,262 B, this one `rpc` island's whole rise: `action.client()` filling a
   // pinned URL (`action/client.ts` +536, `errors-http.ts` 443, `route-path-template.ts` 385), 5a's
   // titles (+499) and the session flag (+392) — raised 26kb → 28kb (30.0.0).
-  budget: { js: '28kb' },
+  // measured: 29932 B (2026-11-05; x build --target static, against wave 5a's 28,474) — why: the
+  // contact-sales island +1,458 B, all of it: `rpc()` reading the server-stamped path pins read
+  // from `<meta name="ultimate-pins">` (`client-paths-pins.ts`) and filled by `fill-wire.ts`, which
+  // refuses a `.`/`..` segment — raised 28kb → 30kb (30.0.0, plan 101 wave 5b).
+  budget: { js: '30kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

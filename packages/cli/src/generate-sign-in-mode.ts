@@ -44,12 +44,12 @@ export function readSignInMode(args: ParsedArgs): SignInMode {
     });
   }
   const provider = flagString(args, 'oidc');
-  const password = flagBool(args, 'password');
-  if ((provider === undefined) === !password) {
+  const passwordFlag = flagBool(args, 'password');
+  if ((provider === undefined) !== passwordFlag) {
     throw new BadFlagError({
-      flag: password ? 'password' : 'oidc',
+      flag: passwordFlag ? 'password' : 'oidc',
       command: 'g sign-in',
-      reason: password
+      reason: passwordFlag
         ? '--password and --oidc are two sign-ins, and the generator writes one'
         : 'needs exactly one of --oidc <provider> or --password',
       fix: 'x g sign-in --password',

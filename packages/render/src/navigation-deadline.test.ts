@@ -25,7 +25,7 @@ const hung = (signals: (AbortSignal | undefined)[]): Handler => {
 };
 
 /** Deadline timers are held for the test to fire; every other timer runs as it would. */
-function heldDeadlines(win: { setTimeout(fn: () => void, ms?: number): number }) {
+function heldDeadlines(win: { setTimeout: (fn: () => void, ms?: number) => number }) {
   const due: (() => void)[] = [];
   const real = win.setTimeout.bind(win);
   win.setTimeout = (fn: () => void, ms?: number): number => {

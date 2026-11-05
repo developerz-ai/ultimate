@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { join } from 'node:path';
 import { Glob } from 'bun';
 import { toolDescription } from './tool-description';
 
@@ -48,15 +47,15 @@ describe('toolDescription', () => {
 // The four copies this function replaced (plan 101, wave 5b) drifted: two of them skipped the
 // primitive's own description. No tool projection may spell the default lead out again.
 describe('the default lead has one home', () => {
-  const packages = join(import.meta.dir, '..', '..');
+  const packages = `${import.meta.dir}/../..`;
   const copy = /`(?:Run|Read with) the "?\$\{/;
 
   for (const pkg of ['ai', 'mcp', 'admin']) {
     test(`packages/${pkg}/src restates no default lead`, async () => {
       const offenders: string[] = [];
-      for await (const file of new Glob('**/*.ts').scan(join(packages, pkg, 'src'))) {
+      for await (const file of new Glob('**/*.ts').scan(`${packages}/${pkg}/src`)) {
         if (file.endsWith('.test.ts')) continue;
-        if (copy.test(await Bun.file(join(packages, pkg, 'src', file)).text())) {
+        if (copy.test(await Bun.file(`${packages}/${pkg}/src/${file}`).text())) {
           offenders.push(`packages/${pkg}/src/${file}`);
         }
       }

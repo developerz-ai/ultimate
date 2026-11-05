@@ -102,7 +102,12 @@ export const config = defineRoute({
    * same visitor's focus (`navigation-refresh.ts`, `markFocus`/`restoreFocus`), never aborts a
    * click in flight and is asked its hold again at the swap; charged to every `app/` document.
    */
-  budget: { js: '31kb' },
+  // measured: 32067 B (2026-11-05; x build --target static, against wave 5a's 31,740) — why: the
+  // client router +327 B: a navigation given up at `NAVIGATION_TIMEOUT_MS`
+  // (`navigation-deadline.ts`) and a timed-out `refresh()` that fails quietly
+  // (`navigation-refresh.ts`), all of it; charged to every `app/` document — raised 31kb → 32kb
+  // (30.0.0, plan 101 wave 5b).
+  budget: { js: '32kb' },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 

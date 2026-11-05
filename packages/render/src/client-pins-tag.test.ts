@@ -18,7 +18,10 @@ describe('clientPinTags', () => {
 
   test("stamps core's format under the one meta core's readers ask for, escaped", () => {
     const [tag] = clientPinTags(PINS);
-    expect(tag?.attrs).toEqual({ name: 'ultimate-pins', content: encodeClientPins(PINS) });
+    expect(tag?.attrs).toEqual({
+      name: 'ultimate-pins',
+      content: encodeClientPins(PINS) ?? expect.unreachable('a pin to stamp'),
+    });
     expect(tag?.key).toBe('meta:ultimate-pins');
     const html = renderHead(clientPinTags(PINS));
     expect(html.startsWith('<meta name="ultimate-pins" content="{&quot;a&quot;:')).toBe(true);

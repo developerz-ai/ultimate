@@ -84,9 +84,8 @@ describe('a pinned write from the page', () => {
   test('a write the network refused is queued WITH the pin it was resolved against', async () => {
     pageHarness();
     stamped();
-    globalThis.fetch = (async () => {
-      throw new TypeError('Failed to fetch');
-    }) as unknown as typeof fetch;
+    globalThis.fetch = (() =>
+      Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof fetch;
     const queued: OutboxEntry[] = [];
     const handle: OutboxHandle = {
       enqueue: async (entry) => {

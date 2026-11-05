@@ -3,7 +3,7 @@
 // actions listed in the API index, `app.config.ts`'s `signInPath` and env keys, and — for OIDC —
 // the authenticator swap that drops `x new`'s development viewer, only over `x new`'s own bytes.
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, stringField } from '@ultimat3/core';
 import { generateSpec } from './cmd-generate-spec';
 import type { CommandContext } from './command';
 import { invocationOf } from './command';
@@ -45,12 +45,7 @@ export const oidcEnvKeys = (provider: string): readonly SignInEnvKey[] => {
 async function appName(root: string): Promise<string | undefined> {
   const text = await appDisk(root).read('package.json');
   if (text === undefined) return undefined;
-  const parsed: unknown = JSON.parse(text);
-  return typeof parsed === 'object' && parsed !== null && 'name' in parsed
-    ? typeof parsed.name === 'string'
-      ? parsed.name
-      : undefined
-    : undefined;
+  return stringField(JSON.parse(text), 'name');
 }
 
 export interface AuthenticatorSwap {

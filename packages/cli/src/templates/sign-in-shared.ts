@@ -4,6 +4,7 @@
 // `sign-in-oidc.ts`); the session after that is one session, so its edges are written once.
 
 import type { GeneratedFile } from './naming';
+import { authModule } from './scaffold-auth';
 
 /** Every generated file lives under the scaffold's own auth slice, beside `auth.ts`. */
 export const AUTH_DIR = 'apps/web/app/auth';
@@ -279,5 +280,7 @@ export function sharedSignInFiles(
     { path: `${AUTH_DIR}/actions/destroy-session.ts`, contents: destroySessionSource() },
     { path: `${AUTH_DIR}/actions/destroy-session.test.ts`, contents: destroySessionTest() },
     { path: `${AUTH_DIR}/sign-in/page.module.scss`, contents: styleSource() },
+    // Every action above imports `../auth`; an app from before `x new` wrote it gets it here.
+    { path: `${AUTH_DIR}/auth.ts`, contents: authModule(), merge: 'if-absent' },
   ];
 }

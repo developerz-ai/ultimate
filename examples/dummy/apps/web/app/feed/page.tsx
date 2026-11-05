@@ -162,7 +162,14 @@ export const config = defineRoute({
   // focus (`navigation-refresh.ts`, `markFocus`/`restoreFocus`), never aborts a click in flight and
   // is asked its hold again at the swap; the feed island +524 B, `createRoot` and core's `./page`
   // additions — raised 169kb → 172.5kb (30.0.0).
-  budget: { js: '172.5kb' },
+  // measured: 180542 B (2026-11-05; x build --target static, against wave 5a's 176,131) — why: the
+  // client router +327 B: a navigation given up at `NAVIGATION_TIMEOUT_MS`
+  // (`navigation-deadline.ts`) and a timed-out `refresh()` that fails quietly
+  // (`navigation-refresh.ts`); the page boot and the feed island +4,084 B together: the
+  // server-stamped path pins read from `<meta name="ultimate-pins">` (`client-paths-pins.ts`) and
+  // filled by `fill-wire.ts`, which refuses a `.`/`..` segment, and the session flag raised only
+  // for a same-origin 401 (`session-lost.ts`) — raised 172.5kb → 177kb (30.0.0, plan 101 wave 5b).
+  budget: { js: '177kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

@@ -178,4 +178,22 @@ describe('refusals before a run', () => {
     expect(() => assertExerciseScoped('probe', false, TEST_ENV)).not.toThrow();
     expect(() => assertExerciseScoped('probe', true, { NODE_ENV: 'development' })).not.toThrow();
   });
+
+  test('a write with nothing to roll it back is refused before its first attempt', async () => {
+    let attempts = 0;
+    const unscoped = subject(
+      () => {
+        attempts += 1;
+        return { ok: true, reached: true };
+      },
+      { env: { NODE_ENV: 'development' }, scoped: false },
+    );
+    expect((await refusalOf(() => runExercise(unscoped))).code).toBe(
+      'X_CONTRACT_EXERCISE_UNSCOPED',
+    );
+    expect(attempts).toBe(0);
+    // A read declares no scope and runs in development as before.
+    const read = subject(() => ({ ok: true, reached: true }), { env: { NODE_ENV: 'development' } });
+    expect((await runExercise(read)).kind).toBe('pass');
+  });
 });

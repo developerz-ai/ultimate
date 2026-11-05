@@ -7,8 +7,6 @@
 import type { Actor, Ctx, ExerciseReport } from '@ultimat3/core';
 import {
   ctxOf,
-  EXERCISE_RUNS,
-  EXERCISE_RUNS_MAX,
   exerciseReplay,
   isUltimateError,
   renderFixShellArg,
@@ -24,10 +22,6 @@ import { QueryAuditSinkMissingError } from './audit-errors';
 import { QueryDeniedError } from './errors';
 import type { AnyQuery } from './query';
 import { queryName, sourceFor } from './read';
-
-/** The same numbers `@ultimat3/action` runs — one constant, core's. */
-export const QUERY_EXERCISE_RUNS = EXERCISE_RUNS;
-export const QUERY_EXERCISE_RUNS_MAX = EXERCISE_RUNS_MAX;
 
 /** Who reads, and what binds the parts a generated value cannot. Same shape as an action's. */
 export interface QueryExerciseActorOptions {

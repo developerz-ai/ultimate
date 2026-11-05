@@ -27,7 +27,7 @@ const read = (http?: { path: string }) =>
     input: t.object({ id: t.string }),
     policy: allow('order:read'),
     ...(http === undefined ? {} : { http }),
-    sql: ({ id }) => from<{ id: string }>('orders', { id: t.string }).where({ id }).orderBy('id'),
+    sql: ({ id }) => from<{ id: string }>('orders', []).where({ id }).orderBy('id'),
   });
 
 describe('servedPins', () => {

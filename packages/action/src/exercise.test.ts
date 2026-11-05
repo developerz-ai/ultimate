@@ -3,7 +3,7 @@
 // `TypeError`. Each test below is one verdict the exercise has to reach.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { isUltimateError, UltimateError } from '@ultimat3/core';
+import { EXERCISE_RUNS, isUltimateError, sealedHost, UltimateError } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';
 import { db, pgliteClient, raw, setDbClient, sql, withTransaction } from '@ultimat3/db';
 import { allow, can, testActor } from '@ultimat3/policy';
@@ -11,7 +11,7 @@ import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { ContractTest } from './contract-test';
 import { contractTestsFor } from './contract-test';
-import { EXERCISE_RUNS, exerciseAction, exerciseTestName, sealedHost } from './exercise';
+import { exerciseAction, exerciseTestName } from './exercise';
 import { handlerReached } from './invoke';
 
 const Input = t.object({ title: t.string.min(1).max(40), note: t.string.optional() });

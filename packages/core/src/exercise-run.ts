@@ -44,6 +44,8 @@ export interface ExerciseSubject {
   attempt(input: unknown): Promise<ExerciseAttempt>;
   readonly statusOf: ErrorStatusOf;
   readonly env?: Env | undefined;
+  /** A write: whether a transaction undoes each attempt. Omitted by a read, which writes nothing. */
+  readonly scoped?: boolean | undefined;
 }
 
 /** The loop's answer. Returned, never thrown: the codes are the adapter's to raise. */
@@ -107,6 +109,7 @@ export async function runExercise(subject: ExerciseSubject): Promise<ExerciseVer
   if (environment !== 'development' && environment !== 'test') {
     throw new ExerciseEnvironmentError(name, environment);
   }
+  if (subject.scoped !== undefined) assertExerciseScoped(name, subject.scoped, subject.env);
   const runs = subject.runs ?? EXERCISE_RUNS;
   assert(
     Number.isInteger(runs) && runs >= 1 && runs <= EXERCISE_RUNS_MAX,
