@@ -51,7 +51,8 @@ export const atOf = (unit: CoverageUnit): string =>
 /** Every unit `--all` gates, sorted: each workspace with a `src/`, and `scripts`. */
 export function unitsToGate(root: string): readonly string[] {
   const packages = [...new Bun.Glob('packages/*/src').scanSync({ cwd: root, onlyFiles: false })];
-  return [...packages.map((path) => path.split('/')[1] as string), SCRIPTS_UNIT.name].sort();
+  // Either separator: a Windows scan answers `packages\core\src`.
+  return [...packages.map((path) => path.split(/[\\/]/)[1] as string), SCRIPTS_UNIT.name].sort();
 }
 
 /** The script as it is typed, for a refusal's `fix:`. */
