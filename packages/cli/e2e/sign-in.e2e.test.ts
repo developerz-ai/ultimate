@@ -18,7 +18,6 @@ import { pgliteClient } from '@ultimat3/db';
 import { seedId } from '@ultimat3/entity';
 import { allowHost } from '@ultimat3/testing';
 import { writeNewApp } from '../src/cmd-new';
-import { dispatch } from '../src/dispatch';
 import { linkWorkspace } from '../src/generate-sign-in-fixture';
 
 const EMAIL = 'ada@example.com';
@@ -30,18 +29,31 @@ let stateDir = '';
 let server: ReturnType<typeof Bun.spawn> | undefined;
 let origin = '';
 
-/** One `x` command in the app, as its author runs it; the verdict is its JSON line. */
+/** The CLI this checkout ships, run as the app's own `x` would be. */
+const BIN = join(import.meta.dir, '..', 'src', 'bin.ts');
+
+/**
+ * One `x` command in the app, as its author runs it — in a CHILD process: `x db gen` loads the app,
+ * and an app's modules register its actions, routes and authenticator process-wide. In this
+ * process they outlived the suite and decided later files' answers (`bun test ./packages/cli`).
+ */
 const x = async (argv: readonly string[], env: Record<string, string> = {}): Promise<string> => {
-  const out: string[] = [];
-  const code = await dispatch({
-    argv: [...argv, '--json'],
+  const child = Bun.spawn([process.execPath, BIN, ...argv, '--json'], {
     cwd: dir,
-    env: { ULTIMATE_STATE_DIR: stateDir, ...env },
-    bunVersion: Bun.version,
-    write: (line) => out.push(line),
+    env: { ...process.env, ULTIMATE_STATE_DIR: stateDir, ...env },
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
-  const text = out.join('\n');
-  if (code !== 0) expect.unreachable(`x ${argv.join(' ')} exited ${String(code)}: ${text}`);
+  const [text, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (code !== 0) {
+    expect.unreachable(
+      `x ${argv.join(' ')} exited ${String(code)}: ${text} ${stderr.slice(-2000)}`,
+    );
+  }
   return text;
 };
 

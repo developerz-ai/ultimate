@@ -1,13 +1,14 @@
 // The container's island chunks, written once by `x build --target docker` and verified at boot.
 // A real build of a fixture app, then every way the store can be wrong and must be refused.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 // why: Bun ships no recursive delete, no mkdir and no symlink; `rm(…, { force: true })` removes a
 // root that may not exist, and a workspace package is linked into `node_modules` as an install does.
 import { mkdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path'; // why: Bun exposes no path API — nothing native joins a path.
 import { clearStylesheets, stylesFor } from '@ultimat3/render/server';
 import { buildIslands } from './island-bundle';
+import * as realtimeState from './island-realtime-state';
 import {
   ISLAND_STORE_DIR,
   loadOrBuildIslands,
@@ -279,8 +280,13 @@ describe('unit · the island store is stale once a source it was built from chan
 describe('unit · the island store carries which islands are realtime', () => {
   const READER = 'apps/web/app/reader.island.tsx';
   const FOLLOWER = 'apps/web/app/follower.island.tsx';
+  // The build asks the LOADED app whether it keeps records on disk. This suite loads none, so it
+  // answers "unknown" itself: an earlier file's entities in this process must not decide it.
+  let persists: ReturnType<typeof spyOn> | undefined;
+  afterEach(() => persists?.mockRestore());
 
   beforeEach(async () => {
+    persists = spyOn(realtimeState, 'appPersistsRecords').mockReturnValue(undefined);
     await write(
       READER,
       "import { useRecord } from '@ultimat3/realtime';\n" +

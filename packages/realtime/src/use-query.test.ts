@@ -277,7 +277,16 @@ describe('useQuery — poll', () => {
     await settle();
   };
 
+  // Every poll a test starts is released after it: a loop a session loss paused is started afresh
+  // by the next sign-in, and one left here would poll on into every later test.
+  const held: { release(): void }[] = [];
+  const polled = <T extends { release(): void }>(handle: T): T => {
+    held.push(handle);
+    return handle;
+  };
+
   afterEach(() => {
+    for (const handle of held.splice(0)) handle.release();
     jest.useRealTimers();
     rescope(null);
   });
@@ -286,9 +295,11 @@ describe('useQuery — poll', () => {
     jest.useFakeTimers();
     pageHarness();
     const urls = answering([{ id: 'p1' }], [{ id: 'p2' }], [{ id: 'p3' }]);
-    const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, {
-      poll: pollEvery(1_000),
-    });
+    const posts = polled(
+      useQuery({ name: 'listPosts', entity: 'posts' }, null, {
+        poll: pollEvery(1_000),
+      }),
+    );
     await settle();
     expect(urls).toHaveLength(1);
     await tick(999);
@@ -304,9 +315,11 @@ describe('useQuery — poll', () => {
     jest.useFakeTimers();
     pageHarness();
     const urls = answering([{ id: 'p1' }], [{ id: 'p2' }]);
-    const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, {
-      poll: pollEvery(1_000),
-    });
+    const posts = polled(
+      useQuery({ name: 'listPosts', entity: 'posts' }, null, {
+        poll: pollEvery(1_000),
+      }),
+    );
     await settle();
     posts.release();
     await tick(5_000);
@@ -340,9 +353,11 @@ describe('useQuery — poll', () => {
             })
           : new Response(JSON.stringify({ data: [] }), { status: 200 });
       }) as unknown as typeof fetch;
-      const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, {
-        poll: pollEvery(1_000, { maxMs: 4_000 }),
-      });
+      const posts = polled(
+        useQuery({ name: 'listPosts', entity: 'posts' }, null, {
+          poll: pollEvery(1_000, { maxMs: 4_000 }),
+        }),
+      );
       await settle();
       for (; elapsed < 12_000; ) {
         elapsed += 1_000;
@@ -370,9 +385,11 @@ describe('useQuery — poll', () => {
         { status: 401 },
       );
     }) as unknown as typeof fetch;
-    const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, {
-      poll: pollEvery(1_000),
-    });
+    const posts = polled(
+      useQuery({ name: 'listPosts', entity: 'posts' }, null, {
+        poll: pollEvery(1_000),
+      }),
+    );
     await settle();
     expect(posts().status).toBe('failed');
     expect(sessionIsLost()).toBe(true);

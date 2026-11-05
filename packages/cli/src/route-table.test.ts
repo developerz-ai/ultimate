@@ -2,18 +2,21 @@
 // an action or query validates its own input. `x routes` listed none of them, so that code's fix
 // sent a reader to a table without the route it named.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetActions } from '@ultimat3/action';
 import type { Route } from '@ultimat3/http';
 import { resetQueries } from '@ultimat3/query';
 import { clearRoutes } from '@ultimat3/render';
 import { routeRows } from './route-table';
 
-afterEach(() => {
+const clean = (): void => {
   clearRoutes();
   resetActions();
   resetQueries();
-});
+};
+// Before too: the table lists every registered route, and an earlier file may have left some.
+beforeEach(clean);
+afterEach(clean);
 
 const webhook: Route = {
   method: 'POST',

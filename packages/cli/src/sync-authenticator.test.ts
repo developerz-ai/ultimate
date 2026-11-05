@@ -2,7 +2,7 @@
 // so every socket carried `actorId: null` and the channel guard, the live-query gate, the presence
 // entry and the tenant cap all decided against an anonymous actor. The failure case is first.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, userActor } from '@ultimat3/core';
 import { dbUnavailable } from '@ultimat3/db';
 import { configureAuthenticator, resetAuthenticator } from '@ultimat3/http';
@@ -13,6 +13,8 @@ import { SYNC_GRANT_TTL_MS, syncAuthenticator } from './sync-authenticator';
 /** A fixed instant, so an expiry is a number this file can name rather than a range. */
 const NOW = 1_760_000_000_000;
 
+// Before too: a file earlier in this process that loaded an app left its authenticator behind.
+beforeEach(resetAuthenticator);
 afterEach(resetAuthenticator);
 
 const upgrade = (headers: HeadersInit = {}): Request =>
