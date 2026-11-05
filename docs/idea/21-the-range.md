@@ -112,7 +112,7 @@ convention removes.
 
 The expensive-model case is the same argument with a different lever: the scarce resource is
 context, and an app whose infrastructure is already decided spends its context on the product
-([`README.md`](../../README.md#how-much-code-you-do-not-write) measures how much code that is).
+([`README.md`](../../README.md#navigate) measures how much code that is).
 
 ## What the range does not claim
 
