@@ -59,7 +59,9 @@ describe('the default lead has one home', () => {
   test('no package but core restates a default lead', async () => {
     const offenders: string[] = [];
     let read = 0;
-    for await (const file of new Glob('*/src/**/*.ts').scan(packages)) {
+    for await (const found of new Glob('*/src/**/*.ts').scan(packages)) {
+      // Windows scans with `\`: one spelling, or `core\` slips past the skip below.
+      const file = found.replaceAll('\\', '/');
       if (file.startsWith('core/') || file.endsWith('.test.ts')) continue;
       read += 1;
       if (copy.test(await Bun.file(`${packages}/${file}`).text())) {
