@@ -135,7 +135,11 @@ export const config = defineRoute({
   // server-stamped path pins read from `<meta name="ultimate-pins">` (`client-paths-pins.ts`) and
   // filled by `fill-wire.ts`, which refuses a `.`/`..` segment, and the session flag raised only
   // for a same-origin 401 (`session-lost.ts`) — raised 188.5kb → 192kb (30.0.0, plan 101 wave 5b).
-  budget: { js: '192kb' },
+  // measured: 196744 B (2026-11-05; CI's x build --target static, against 196,449) — why: the
+  // page boot +255 B, a replayed write's stored pin checked as a same-origin path before it is
+  // sent (`pinned-wire.ts`), and the router +25 B, a navigation whose request throws at once
+  // still clears its deadline (`navigation-deadline.ts`) — raised 192kb → 192.5kb (30.0.0).
+  budget: { js: '192.5kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });
