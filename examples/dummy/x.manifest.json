@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "83c2a55c99ea0bf9",
+  "buildId": "9f2fecb60224bca9",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -5763,6 +5763,9 @@
     {
       "prefix": "/v1",
       "scopes": {
+        "post:publish": [
+          "publishPost"
+        ],
         "run:read": [
           "liveRunEvents"
         ],

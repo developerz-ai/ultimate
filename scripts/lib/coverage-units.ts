@@ -5,6 +5,7 @@
 import { BadFlagError } from '../../packages/cli/src/errors';
 import type { KnownFlags } from './args';
 import { refuseUnknownFlags } from './args';
+import { unitWeight } from './coverage-schedule';
 
 /**
  * One thing this gate measures alone: a package, or `scripts/`. `name` is what `--package` takes
@@ -68,12 +69,32 @@ const COVERAGE_KNOWN: KnownFlags = {
   refuse: ([name = '']) => refuse(name, `unknown flag --${name}`, `${SELF} --all`),
 };
 
+/** How many test files `bun test <unit.test>` finds — what a unit is widened by (`workersFor`). */
+export function testFileCount(root: string, unit: CoverageUnit): number {
+  const base = unit.test.replace(/^\.\//, '');
+  let count = 0;
+  for (const rel of new Bun.Glob(`${base}/**/*.{test,spec}.{ts,tsx}`).scanSync({ cwd: root })) {
+    if (!rel.includes('/node_modules/')) count += 1;
+  }
+  return count;
+}
+
 /**
- * `--shard i/n`: the units this runner gates — round-robin over the SORTED list, so every unit is
- * in exactly one shard and shard i is the same units on every runner. Refused without `--all`:
- * one named package has nothing to split.
+ * `--shard i/n`: the units this runner gates. Dealt heaviest first, each to the shard holding the
+ * least weight so far (ties to the lowest index; equal weights by name), so every unit is in
+ * exactly one shard and shard i is the same units on every runner. With every weight equal that
+ * is round-robin over the SORTED list. Refused without `--all`: one named package has nothing to
+ * split.
+ *
+ * Weighed, because round-robin over names put `cli`, `jobs`, `testing` and `entity` — four of the
+ * five slowest units — in one shard: `packages (2/2)` 318-451 s against `(1/2)`'s 108-118 s
+ * (runs 41965364111, 42032367633).
  */
-export function shardUnits(units: readonly string[], raw: string): readonly string[] {
+export function shardUnits(
+  units: readonly string[],
+  raw: string,
+  weight: (name: string) => number = () => 1,
+): readonly string[] {
   const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(raw);
   const index = match === null ? Number.NaN : Number(match[1]);
   const total = match === null ? Number.NaN : Number(match[2]);
@@ -84,7 +105,21 @@ export function shardUnits(units: readonly string[], raw: string): readonly stri
       `${SELF} --all --shard 1/2`,
     );
   }
-  return [...units].sort().filter((_, position) => position % total === index - 1);
+  const sorted = [...units].sort();
+  const weighed = new Map(sorted.map((name) => [name, weight(name)]));
+  // A stable sort: equal weights keep name order.
+  const order = [...sorted].sort((a, b) => (weighed.get(b) ?? 0) - (weighed.get(a) ?? 0));
+  const loads = Array.from({ length: total }, () => 0);
+  const owner = new Map<string, number>();
+  for (const name of order) {
+    let best = 0;
+    for (let shard = 1; shard < total; shard += 1) {
+      if ((loads[shard] as number) < (loads[best] as number)) best = shard;
+    }
+    loads[best] = (loads[best] as number) + (weighed.get(name) ?? 0);
+    owner.set(name, best);
+  }
+  return sorted.filter((name) => owner.get(name) === index - 1);
 }
 
 /** The units this invocation gates, or a refusal naming the flag that was wrong. */
@@ -118,5 +153,6 @@ export function unitsFor(
   }
   if (typeof only === 'string') return [only];
   const units = unitsToGate(root);
-  return shard === undefined ? units : shardUnits(units, typeof shard === 'string' ? shard : '');
+  if (shard === undefined) return units;
+  return shardUnits(units, typeof shard === 'string' ? shard : '', (name) => unitWeight(name));
 }

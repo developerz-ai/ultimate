@@ -70,6 +70,7 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
     evaluate: (expression) => browser.page.evaluate(expression),
     click: (selector) => browser.page.click(selector),
     offline: (enabled) => browser.page.offline(enabled),
+    accessibilityTree: (request) => browser.page.accessibilityTree(request),
   };
   const uninstall = deps.install({ page: current, baseUrl: app.base, newBuild });
 

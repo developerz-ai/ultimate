@@ -7,9 +7,11 @@
 // through it: `ScrapePage` is a full scraping surface whose intended implementation is
 // `puppeteer-core`, and an e2e driver needs none of it.
 
+import type { AxTreeNode } from './ax-node';
+import { axRecord, toAxTreeNodes } from './ax-node';
 import type { CdpConnection } from './cdp-connection';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
-import type { E2eBrowserPage } from './e2e-page';
+import type { AxTreeRequest, E2eBrowserPage } from './e2e-page';
 
 /** What the page threw, when `Runtime.evaluate` answered with an exception rather than a value. */
 const thrownIn = (result: Record<string, unknown> | undefined): string | undefined => {
@@ -39,9 +41,12 @@ const NAVIGATED_AWAY = [
   'Inspected target navigated or closed',
   'Execution context was destroyed',
   'Cannot find context with specified id',
+  // A tree node's DOM id from the document that was just replaced (`DOM.resolveNode`).
+  'No node with given id found',
 ] as const;
 
-const navigatedAway = (error: unknown): error is CdpCallFailedError =>
+/** A call refused because the document it addressed is gone: "not this document", not a failure. */
+export const navigatedAway = (error: unknown): error is CdpCallFailedError =>
   error instanceof CdpCallFailedError && NAVIGATED_AWAY.some((text) => error.cause.includes(text));
 
 /** One tab: the port the driver drives, plus what a multi-tab acceptance suite asks of one. */
@@ -65,6 +70,8 @@ export interface E2eTab extends E2eBrowserPage {
    * dispatches straight at the element and can never see that.
    */
   pointerClick(selector: string): Promise<void>;
+  /** Required on a tab: the audit of every `e2eTest` reads it (`e2e-a11y-run.ts`). */
+  accessibilityTree(request: AxTreeRequest): Promise<readonly AxTreeNode[]>;
   /** Reload and wait for the load, at the url the tab already had. */
   reload(): Promise<void>;
   /** Poll `expression` in the page until it is truthy, or refuse naming `what`. */
@@ -90,6 +97,23 @@ export interface CdpE2eTabOptions {
 }
 
 const POLL_MS = 100;
+
+/** The one place the framework reads a whole document's accessibility tree. */
+export const FULL_AX_TREE = 'Accessibility.getFullAXTree';
+
+/**
+ * Run ON the resolved node: a document answers for its `<html>`, opening tag only — its whole
+ * markup starts with the head, which names nothing. Bounded as `e2e-a11y.ts` says.
+ */
+const DESCRIBE_NODE = `function (selectors) {
+  const el = this.nodeType === 9 ? this.documentElement : this;
+  if (!el || typeof el.outerHTML !== 'string') return JSON.stringify({ html: '', matches: [] });
+  const html = el === document.documentElement ? el.outerHTML.slice(0, el.outerHTML.indexOf('>') + 1) : el.outerHTML;
+  return JSON.stringify({
+    html: html.slice(0, 120),
+    matches: selectors.filter((s) => { try { return el.matches(s); } catch { return false; } }),
+  });
+}`;
 
 /** A tab over a session the caller has already attached and enabled (`cdp-e2e-session.ts`). */
 export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
@@ -143,6 +167,44 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
     }
     const last = threw === undefined ? '' : `, and its last poll threw: ${threw}`;
     throw new CdpTimeoutError({ method: `waitFor(${what})${last}`, timeoutMs });
+  };
+
+  // One node described: resolved to a page object, asked in the page, released with its group.
+  const describeNode = async (
+    backendNodeId: number,
+    selectors: readonly string[],
+  ): Promise<Pick<AxTreeNode, 'html' | 'matches'>> => {
+    const objectGroup = 'x-e2e-a11y';
+    const resolved = await send('DOM.resolveNode', { backendNodeId, objectGroup }, sessionId);
+    const objectId = axRecord(resolved.result?.['object'])?.['objectId'];
+    if (typeof objectId !== 'string') return {};
+    try {
+      const raw = evaluated(
+        (
+          await send(
+            'Runtime.callFunctionOn',
+            {
+              objectId,
+              functionDeclaration: DESCRIBE_NODE,
+              arguments: [{ value: selectors }],
+              returnByValue: true,
+            },
+            sessionId,
+          )
+        ).result,
+      );
+      const answer = axRecord(typeof raw === 'string' ? JSON.parse(raw) : raw);
+      const html = answer?.['html'];
+      const matches = answer?.['matches'];
+      return {
+        ...(typeof html === 'string' ? { html } : {}),
+        matches: Array.isArray(matches)
+          ? matches.filter((m): m is string => typeof m === 'string')
+          : [],
+      };
+    } finally {
+      await send('Runtime.releaseObjectGroup', { objectGroup }, sessionId).catch(() => undefined);
+    }
   };
 
   const tab: E2eTab = {
@@ -230,6 +292,18 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
       }
     },
     offline: (enabled: boolean) => options.offline(enabled),
+    async accessibilityTree(request: AxTreeRequest): Promise<readonly AxTreeNode[]> {
+      const nodes = toAxTreeNodes((await send(FULL_AX_TREE, {}, sessionId)).result);
+      const out: AxTreeNode[] = [];
+      for (const node of nodes) {
+        const described =
+          node.backendNodeId !== undefined && request.describe(node)
+            ? await describeNode(node.backendNodeId, request.selectors)
+            : {};
+        out.push({ ...node, ...described });
+      }
+      return out;
+    },
     async scripting(enabled: boolean): Promise<void> {
       await send('Emulation.setScriptExecutionDisabled', { value: !enabled }, sessionId);
     },

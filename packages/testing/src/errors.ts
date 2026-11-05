@@ -49,6 +49,8 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_ISLAND_STATE_UNKNOWN',
   'X_TEST_APP_NOT_BOOTED',
   'X_TEST_PACE_INVALID',
+  'X_SEED_GRAPH_UNSATISFIED',
+  'X_E2E_A11Y_VIOLATION',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -90,6 +92,8 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_ISLAND_STATE_UNKNOWN: 'an island state manifest declares no state with that id',
   X_TEST_APP_NOT_BOOTED: 'describeApp handle read before boot',
   X_TEST_PACE_INVALID: 'ULTIMATE_TEST_PACE is not a number at or above 1',
+  X_SEED_GRAPH_UNSATISFIED: 'no generated row satisfies a table',
+  X_E2E_A11Y_VIOLATION: 'a page fails the accessibility audit',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

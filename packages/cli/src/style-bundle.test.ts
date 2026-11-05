@@ -192,5 +192,6 @@ describe('the surface stylesheet URL is the same in every process', () => {
     const first = await run(['alpha', 'beta', 'gamma', 'delta']);
     expect(first).toMatch(new RegExp(`^${STYLE_BASE_PATH}/[0-9a-f]{8}\\.css$`));
     expect(await run(['delta', 'gamma', 'alpha', 'beta'])).toBe(first);
-  });
+    // Two cold `bun -e` children, each compiling Sass: past the 5 s default on a loaded runner.
+  }, 30_000);
 });

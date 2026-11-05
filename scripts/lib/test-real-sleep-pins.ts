@@ -32,7 +32,7 @@ export const REAL_SLEEP_PINS: Readonly<Record<string, number>> = {
   realtime: 57,
   render: 7,
   scraping: 2,
-  scripts: 4,
+  scripts: 2,
   testing: 7,
   ui: 3,
 };

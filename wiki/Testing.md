@@ -257,6 +257,49 @@ test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) =>
 
 The `job` example is the one that matters: it asserts the durability guarantee, not that mail was sent. See [Jobs and workflows](Jobs-And-Workflows) and [Policies and authz](Policies-And-Authz).
 
+## The accessibility audit
+
+**Every `e2eTest` audits the browser's accessibility tree, `As of 2026-11`** (30.0.0 entry 88). After each settled `goto`, `reload` and `gotoStreamed`, and once more after the body (so a dialog the body opened counts), the driver reads the tree the browser computed for a screen reader and fails the test once, at the end, with `X_E2E_A11Y_VIOLATION` listing every element. There is no switch.
+
+| Rule | Fails |
+|---|---|
+| `name` | a node of a `NAMED_ROLES` role with a blank accessible name: button, link, textbox, searchbox, combobox, checkbox, radio, switch, slider, spinbutton, tab, menuitem, image, heading, iframe, `<summary>` |
+| `title` | the document with no `<title>` |
+| `lang` | `<html>` with no `lang` |
+| `aria-hidden-focus` | a Tab-reachable element inside `aria-hidden="true"` |
+
+Name what it lists: visible text, `aria-label`, `<label for>`, `alt` (`alt=""` for a decorative image, which the browser then leaves out of the tree), a `<title>`, `<html lang>`. A deliberate exception is per test and per element, with a reason:
+
+```ts
+import { e2eTest, expect } from '@ultimat3/testing';
+
+e2eTest(
+  'the gallery paints',
+  async ({ page }) => {
+    await page.goto('/gallery');
+    await expect(page.getByRole('heading', { name: 'Gallery' })).toBeVisible();
+  },
+  {
+    a11y: {
+      allow: [
+        { role: 'image', selector: '#vendor-map img', because: 'the vendor embed sets no alt' },
+      ],
+    },
+  },
+);
+```
+
+| Fact | |
+|---|---|
+| matching | `role` equals the finding's role and `selector` (CSS) matches the element, tested in the page |
+| a blank `because` | the test is refused before its body runs (`X_E2E_A11Y_VIOLATION`) |
+| a body that throws | fails on its own error; the audit verdict is not added |
+| once per suite | a finding one test already failed on (rule, role, markup, URL) is not reported by a later test, so a shared header fails one test |
+| not markup | a non-`http(s)` URL (`about:blank`) and a document that is not HTML (JSON, an image) are not audited |
+| the page port | `E2eBrowserPage.accessibilityTree?(request)`. `cdpE2eTab` implements it with one `Accessibility.getFullAXTree` per read; a page passed to `installE2eDriver({ page })` without it fails every `e2eTest` with `X_TEST_FIXTURE_UNAVAILABLE`, never a silent pass |
+
+`As of 2026-11`, the audit runs inside `e2eTest` only. `x g route`'s generated `page.e2e.test.ts` is one, so it is audited; the tracked apps' and the packages' browser suites that drive a raw tab (`openE2eBrowser()`, `acceptanceBrowser()`) are not audited. Source: `packages/testing/src/e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (one test's run), `ax-node.ts` (the tree reader).
+
 ## Matchers
 
 Installed by the preload on `expect`.
@@ -688,7 +731,7 @@ A column whose value comes from another factory, built with the **same strategy*
 
 `ids.uuid()` and `ids.number()` come from the seeded generators; `index` starts at 1 for the first row.
 
-`factoriesFor(registry, seed?)` derives a factory per entity with name-based column inference — `id`/`*Id` → uuid, `*At` → epoch, `*Minor` → number, `*Currency` → `'USD'`, `is*`/`has*` → `false`, else `<column>-<index>`.
+`factoriesFor(registry, seed?)` derives a factory per entity, each value read off the column's **declaration**, never its name (`As of 2026-11`, 30.0.0 entry 89): the declared default first, else an enumerated value, else what the kind offers (uuid, text, integer, boolean, timestamp, money as `{ minor, currency }`, …), and `null` only where the column is nullable. Every candidate goes through the column's own `$parse`, so a built row is one the table stores. A registry entry whose `$columns` are not `entity()` columns, or a column that refuses every generated value (a `json(t.object(…))` with required keys), throws `X_SEED_GRAPH_UNSATISFIED` at `build()`, naming the `defineFactory` to write. Source: `packages/testing/src/factory-registry.ts`, `seed-graph-values.ts`.
 
 ### Persisting
 
@@ -700,6 +743,46 @@ usePersister({ insert: (table, row) => repoFor(table).insert(row) });
 ```
 
 Without one, `create()` throws `X_TEST_FACTORY_NOT_PERSISTED` — which means **nothing was attempted**, distinct from an insert that failed. `build()` needs no persister. `clearPersister()` and `persisterInstalled()` round out the seam.
+
+### A whole graph: `seedGraph`
+
+Rows for every table, with no factory written. Pure: it returns a plan, `insertSeedGraph` writes it.
+
+```ts
+import { entity, enumerated, text, uuid } from '@ultimat3/entity';
+import { insertSeedGraph, type SeedWriter, seedGraph } from '@ultimat3/testing';
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), name: text({ max: 80 }) } });
+const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid()
+      .references(() => orgs.id)
+      .tenant(),
+    status: enumerated(['draft', 'published'] as const),
+  },
+});
+
+const graph = seedGraph({ orgs, posts }, { tenants: 2, perTable: 3, seed: 7 });
+// graph.order is ['orgs', 'posts']: one org per tenant, three posts in each
+
+declare const writer: SeedWriter; // insert(row) and update(update), over your driver
+await insertSeedGraph(graph, writer);
+```
+
+| Rule | What it does |
+|---|---|
+| order | parents before children, over the entities' own `$references()` |
+| tenancy | each child points at a parent of its **own** tenant; the entity a tenant column references holds one row per tenant, keyed by the tenant |
+| a cycle | broken at a nullable key: inserted `null`, set by an entry of `graph.updates` once its target exists. A cycle with no nullable key is `X_SEED_GRAPH_UNSATISFIED` |
+| values | read off the declaration, as `factoriesFor` reads them, and kept only if `$parse` accepts them |
+| rules | every invariant, the primary key, unique columns and unique indexes are kept; a partial unique is treated as total. A unique column that runs out of values ends its table early rather than refusing |
+| `factories` | `{ factories: { posts: myFactory } }` — what the factory builds wins, except keys and the tenant column, which stay the graph's |
+| determinism | defaults `tenants: 2`, `perTable: 3` (per tenant for a tenant-scoped table), `seed` the package's `DEFAULT_SEED`. Same seed, same bytes |
+| canaries | each row's generated text carries a token; `graph.canaries` lists it per row with the columns holding it, so a later read can say whose row it saw |
+| writing | `insertSeedGraph(graph, writer)`: every insert in order, then every update, sequentially |
+
+`X_SEED_GRAPH_UNSATISFIED` names the table, the columns to supply and the `defineFactory` call. `As of 2026-11`, `seed-graph.live.test.ts` inserts both tracked apps' schemas into Postgres with no factory; PGlite parity is not tested. Source: `packages/testing/src/seed-graph*.ts`.
 
 ## Shared examples
 
@@ -755,8 +838,8 @@ A legal input that crashes the handler is red in `contract`, the day the action 
 | Opting out | `{ exercise: { off: '<reason>' } }`. The reason is in the test's name. A blank one is `X_CONTRACT_EXERCISE_UNDECLARED` |
 | Runs | 16 (`EXERCISE_RUNS` from `@ultimat3/core`), `runs` from 1 to 64. Runs 0-3 sit on the IR's bounds (`minLength`, `maxLength`, `minimum`, `maximum`, `minItems`). The rest draw multibyte text, every enum and union member, optional keys on and off, `null` where nullable. A format value (`t.uuid`, `t.email`, …) is never varied |
 | Seed | `fnv1a(<action name>)`, never time, so a red run replays: `bun test <file> -t '<name>: handler survives generated input'` |
-| Rolled back | each run inside `withTransaction`, always rolled back: a SAVEPOINT in a test's open transaction, a root transaction once `setDbClient` installed a client. The handler's SQL writes, the outbox stage and the post-commit bust drop with it |
-| **Not rolled back** | the memory store (`storeMode` `memory`, no client installed): its rows stay until the next `seed()` or `driver.reset()`. A write on a second client or `outsideTransaction`. A job enqueued with `outbox: false`. Storage puts. Mail and outbound fetch: the test preload seals both, so a real one is only sent where a test opted out. Rate-limit counters. An audit record a non-database sink accepted |
+| Rolled back | each run inside a memory transaction, always, and in it `withTransaction` when SQL can hold the writes: a SAVEPOINT in a test's open transaction, a root transaction once `setDbClient` installed a client. Both always roll back. The handler's SQL writes, its memory-store writes (`storeMode` `memory`, `tx` passed or not, since `memoryTransactor().run` is ambient), the outbox stage and the post-commit bust drop with it (`packages/action/src/tx-scope.ts` `inRolledBackScope`) |
+| **Not rolled back** | a write on a second client or `outsideTransaction`. A job enqueued with `outbox: false`. Storage puts. Mail and outbound fetch: the test preload seals both, so a real one is only sent where a test opted out. Rate-limit counters. An audit record a non-database sink accepted |
 | Where it runs | `development` and `test` only. `staging` or `production` (`ULTIMATE_ENV`, else `NODE_ENV`) is `X_CONTRACT_EXERCISE_ENVIRONMENT` before the first run: generated input never reaches a deploy. `bun test` sets `NODE_ENV=test` |
 | Pass | the output parsed, or a coded refusal under 500 |
 | Defect, `X_CONTRACT_DEFECT` | an uncoded throw, `X_OUTPUT_INVALID`, or a coded 5xx (an undeclared `errors:` code is one). `meta.run`, `meta.input`, `meta.failure` |

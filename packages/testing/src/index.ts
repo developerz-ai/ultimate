@@ -27,6 +27,10 @@ export { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from 'bu
 // `@ultimat3/http` is imported inside the function.
 export type { AuthRequestInit } from './auth-request';
 export { authRequest } from './auth-request';
+// The accessibility audit every `e2eTest` runs (plan 101 / 39): the one reader of the browser's
+// tree, its rules, and the reasoned per-test `allow`.
+export type { AxNode, AxTreeNode } from './ax-node';
+export { toAxNode, toAxTreeNodes } from './ax-node';
 export type { BudgetStoreLike } from './budget-store-conformance';
 export { budgetStoreConformance } from './budget-store-conformance';
 // The browser-backed e2e driver and the raw-CDP browser under it — moved here from
@@ -106,6 +110,14 @@ export {
   setFrozenClock,
   withFrozenClock,
 } from './determinism';
+export type { A11yFinding, A11yRule } from './e2e-a11y';
+export { auditTree, NAMED_ROLES } from './e2e-a11y';
+export type { A11yAllow, A11yOptions } from './e2e-a11y-run';
+export {
+  E2eA11yAllowUnreasonedError,
+  E2eA11yUnavailableError,
+  E2eA11yViolationError,
+} from './e2e-a11y-run';
 export type { E2eApp, E2eAppMode, StartE2eAppOptions } from './e2e-app';
 export { E2E_APP_START_MS, E2E_APP_STOP_MS, startE2eApp } from './e2e-app';
 export { E2E_ROOT_ENV, e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
@@ -126,7 +138,7 @@ export type { EvaluablePage } from './e2e-evaluate';
 export { closureSource, evaluateClosure, evaluateExpression } from './e2e-evaluate';
 export type { LocatablePage } from './e2e-locator';
 export { e2eLocator, resetLocatorMarks } from './e2e-locator';
-export type { E2eBrowserPage, E2ePageOptions } from './e2e-page';
+export type { AxTreeRequest, E2eBrowserPage, E2ePageOptions } from './e2e-page';
 export { DEFAULT_E2E_TIMEOUT_MS, DEFAULT_SERVICE_WORKER_TIMEOUT_MS, e2ePage } from './e2e-page';
 export type { E2eResolution, E2eSelection } from './e2e-selection';
 export {
@@ -340,6 +352,23 @@ export {
   sealNetwork,
   unsealNetwork,
 } from './sealed-network';
+// Rows for every table with no factory written (plan 101 / 40, phase 1): parents first, same-tenant
+// keys, values off each column's declaration. Types only from `@ultimat3/entity`, so no registry.
+export { seedGraph } from './seed-graph';
+export type { SeedGraphUnsatisfiedInput } from './seed-graph-error';
+export { SeedGraphUnsatisfiedError } from './seed-graph-error';
+export type {
+  SeedCanary,
+  SeedFactory,
+  SeedGraph,
+  SeedGraphOptions,
+  SeedRow,
+  SeedUpdate,
+  SeedWriter,
+} from './seed-graph-plan';
+export { insertSeedGraph } from './seed-graph-plan';
+export type { SeedEntity } from './seed-graph-shape';
+export type { SeedColumn } from './seed-graph-values';
 export type { SharedExamples } from './shared-examples';
 export { behavesLike, sharedExamples } from './shared-examples';
 export type {
@@ -365,6 +394,7 @@ export type {
   E2eBody,
   E2eDriver,
   E2eFixtures,
+  E2eTestOptions,
   EvalCase,
   EvalOptions,
   LocatorLike,

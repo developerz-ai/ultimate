@@ -2,6 +2,7 @@
 // Postgres refuses a statement as one; rows the memory driver can only judge one at a time are
 // undone here when a later one is refused, and handed to the surrounding `tx` when none is.
 
+import { memoryJournal } from './memory-journal';
 import type { Tx } from './repo';
 
 /**
@@ -9,7 +10,9 @@ import type { Tx } from './repo';
  * succeeds. An effect with nowhere to wait runs at once, what `Tx.onCommit` promises a bare `Tx`.
  * Async work settles the scope when it settles; a lock's savepoint is this scope too.
  */
-export const undoingBatch = <T>(tx: Tx | undefined, work: (scope: Tx) => T): T => {
+export const undoingBatch = <T>(given: Tx | undefined, work: (scope: Tx) => T): T => {
+  // No `tx` named: the ambient rollback scope, when one is open, is the surrounding transaction.
+  const tx = given ?? memoryJournal();
   const undos: (() => void)[] = [];
   const undo = (): void => {
     for (const each of undos.reverse()) each();

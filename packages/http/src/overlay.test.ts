@@ -42,6 +42,13 @@ describe('renderOverlay', () => {
     expect(markup).toContain(ERROR_DOCS_URL);
   });
 
+  test('is a whole document: a language and a title an accessibility audit reads', () => {
+    const markup = renderOverlay(routeNotFound('GET', '/missing'));
+    expect(markup.startsWith('<!doctype html>\n<html lang="en">')).toBe(true);
+    expect(markup).toMatch(/<title>X_ROUTE_NOT_FOUND [^<]+<\/title>/);
+    expect(markup.trimEnd().endsWith('</html>')).toBe(true);
+  });
+
   test('escapes html embedded in the cause instead of injecting it raw', () => {
     const error = bodyInvalid('/x', ['<img src=x>']);
     const markup = renderOverlay(error);

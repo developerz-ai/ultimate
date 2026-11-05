@@ -64,11 +64,11 @@ servers a `services:` block cannot start.
 
 | Job | Runners | What one runner does |
 |---|---|---|
-| `gate` | 5 | one part of the framework gate: `unit` in three shards, `live` (every suite that needs more than one server, with the six static steps beside it), `e2e` (the compiler, then `contract` and `job` against one Postgres, then a browser) |
+| `gate` | 5 | one part of the framework gate: `unit`, `contract` and `job` in three shards against one Postgres, `live` (every suite that needs more than one server, with the six static steps beside it), `e2e` (the compiler, then a browser) — as of 2026-11-05, below |
 | `verify` | 1 | `x verify merge` over the five parts — the framework gate's verdict. `release.yml` reads the whole run's conclusion, which includes it (2026-10-03) |
 | `reference-app-verify` | 2 | one tracked app: build, gate, ratchet |
 | `scaffold-smoke` | 2 | one scaffold shape: default, `--no-example` |
-| `packages` | 2 | half the packages, each tested and covered alone |
+| `packages` | 2 | each unit tested and covered alone; `cli` in one shard, every other unit in the other (2026-11-05, below) |
 | `container` | 1 | unchanged |
 | `deploy-proof` | 1 | unchanged, `main` only |
 | `windows` | 1 | native Windows in PowerShell: lint, typecheck, a path-heavy unit subset, a scaffold smoke — added 2026-10-05, below |
@@ -139,7 +139,28 @@ Measured on eight runs of 2026-10-03 (run 37101906027 among them), seconds per j
 | the step table, its `(fail)` test names and the merged verdict go to the job summary | a red run names its step and `fix:` on the run page |
 
 The run's wall time is still `packages (2/2)` until `cli`'s coverage is split across processes
-(`scripts/coverage-gate.ts`), which is outside this change.
+(`scripts/coverage-gate.ts`), which is outside this change — done 2026-11-05, below.
+
+## Rebalanced again, 2026-11-05
+
+Measured on main, the two full runs of 2026-11-05 (41965364111, 42032367633), seconds per job: `packages (2/2)` 318–451, `gate (e2e)` 245–283, `gate (live)` 219–256, a `unit` shard 112–197, `packages (1/2)` 108–118. Two jobs at or past the five-minute target.
+
+| Change | Why |
+|---|---|
+| `contract` and `job` moved from `e2e` into the three unit shards: `--only unit,contract,job --shard i/3` | `e2e` is serial by design and cannot be split; both suites are in `SHARDABLE_STEPS` and read only `TEST_DATABASE_URL`, which every unit shard starts. `x verify merge` folds each step's three slices on its own; an empty slice (fewer files than shards) is a pass with zero tests, the floor applied to the sum (`verify-merge.test.ts`, "three parts, each a slice of unit, contract and job") |
+| a unit with more than 200 test files runs on `bun test --parallel=<n>`, every file isolated, leasing n cores (`scripts/lib/coverage-schedule.ts`) | `cli` alone was the critical path. Bun folds the workers' coverage by function identity, so the reading is the one-process reading (`scripts/coverage-gate-parallel.test.ts`). `--no-isolate` was refused: which files share a worker is the clock's choice, and two suites went red that way |
+| `--shard` deals units by measured core-seconds (`UNIT_SECONDS`), heaviest first | round-robin by name put `cli`, `jobs`, `testing` and `entity` in one shard; by weight `cli` gets a shard to itself |
+| each unit's `bun test` gets the env minus every `docker/test-services.env` URL and `DATABASE_URL` | the pins are measured with no services, so a laptop that sourced the env file read a number of its own; and side-by-side units handed one `TEST_DATABASE_URL` would each clone and `DROP … WITH (FORCE)` `ultimate_test_template_w1` (`packages/testing/src/template-db.ts`) |
+
+Local, not CI: one box, 8 cores, pinned to four with `taskset -c 0-3`, shared with other work, Bun 1.4.4.
+
+| Run | Before (main's script) | After |
+|---|---|---|
+| `--all --shard 1/2` | 81 s | 249–286 s — `cli` alone, four workers |
+| `--all --shard 2/2` | 402 s — `cli` one process, beside 15 units | 129–159 s — the other 31 units |
+| `cli` alone | 432 s, one process | 286 s, four workers; 793 s user CPU |
+
+The critical path moves from ~400 s to 250–290 s here. Not yet a CI number: the runner may be slower than this box, so `packages (1/2)` can still sit at the five-minute target. What is left is `cli`'s own tests — the `x upgrade` hop (30–72 s) and the scaffold `tsc` runs — not the gate.
 
 ## Windows, 2026-10-05
 

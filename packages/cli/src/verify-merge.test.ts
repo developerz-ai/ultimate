@@ -392,3 +392,57 @@ describe('unit · a part step is read against its shape, not cast', () => {
     expect(read.steps.map((step) => step.durationMs)).toEqual([2]);
   });
 });
+
+// `ci.yml`'s shape since 2026-11-05: each of three unit parts runs `--only unit,contract,job
+// --shard i/3`, so ONE document carries a slice of three steps, and a suite with fewer files than
+// shards leaves one slice empty. Each step is still folded on its own.
+describe('unit · three parts, each a slice of unit, contract and job', () => {
+  const UNIT = ['u1.test.ts', 'u2.test.ts', 'u3.test.ts', 'u4.test.ts'];
+  const CONTRACT = ['a.contract.test.ts', 'b.contract.test.ts'];
+  const JOB = ['a.job.test.ts', 'b.job.test.ts', 'c.job.test.ts', 'd.job.test.ts'];
+  const slice = (name: string, files: readonly string[], index: number) => {
+    const shard = shardFiles(files, { index, total: 3 });
+    return {
+      name,
+      ok: true,
+      durationMs: 1,
+      skipped: false,
+      findings: [],
+      tests: { ran: shard.files.length, skipped: 0 },
+      shard,
+    };
+  };
+  const shardPart = (index: number, steps = ['unit', 'contract', 'job']) =>
+    part(
+      `unit-${String(index)}.json`,
+      steps.map((name) =>
+        slice(name, name === 'unit' ? UNIT : name === 'contract' ? CONTRACT : JOB, index),
+      ),
+    );
+  const STEPS = ['lint', 'unit', 'contract', 'job', 'e2e'];
+  const rest = part('e2e.json', [whole('lint'), whole('e2e')]);
+
+  test('every step whole, its counts summed, though contract has an empty third slice', () => {
+    const result = mergeParts([rest, shardPart(1), shardPart(2), shardPart(3)], undefined, STEPS);
+    expect(codes(result)).toEqual([]);
+    expect(result.ok).toBe(true);
+    const tests = (name: string) => result.steps?.find((step) => step.name === name)?.tests;
+    expect([tests('unit'), tests('contract'), tests('job')]).toEqual([
+      { ran: 4, skipped: 0 },
+      { ran: 2, skipped: 0 },
+      { ran: 4, skipped: 0 },
+    ]);
+  });
+
+  test('a part that dropped one step’s slice reddens that step alone, naming the shard', () => {
+    const result = mergeParts(
+      [rest, shardPart(1), shardPart(2), shardPart(3, ['unit', 'contract'])],
+      undefined,
+      STEPS,
+    );
+    expect(result.ok).toBe(false);
+    expect((result.data as { failed: string[] }).failed).toEqual(['job']);
+    const job = result.steps?.find((step) => step.name === 'job');
+    expect(job?.findings[0]?.cause).toStartWith('step "job" is missing shard(s) 3/3');
+  });
+});

@@ -5,7 +5,7 @@
 
 import { expect, test } from 'bun:test';
 import { memberId, orgId } from '@postly/domain';
-import { userActor } from '@ultimat3/core';
+import { agentActor, userActor } from '@ultimat3/core';
 import { type Actor, evaluate } from '@ultimat3/policy';
 // Roles are app state, installed by importing the leaf both surfaces already import. Without it
 // every actor holds nothing and each case below would pass on the grant check instead of the rule.
@@ -89,4 +89,28 @@ test('feedRead still allows a null row, because subscribe genuinely has none', (
 test('feedRead drops a row that left the actor’s org mid-stream', () => {
   expect(read(kenji, brunosPost)).toBe(true);
   expect(read(kenji, tintasPost)).toBe(false);
+});
+
+/**
+ * An org's API key on the `/v1` mount: an `agent` actor carrying its org and its scopes as direct
+ * permissions, and no membership role (`actorFromApiKey`) — so no author, and nobody to own a post.
+ */
+const orgKey = (org: string, permissions: readonly string[] = ['post:publish']): Actor =>
+  agentActor({ id: 'key-1', orgId: org, roles: [], permissions });
+
+test('postPublish allows an org key holding the grant any post of its own org', () => {
+  // The org's key acts with the org's authority: the same-org half of owns-or-org-admin.
+  expect(publish(orgKey(ACME), brunosPost)).toBe(true);
+  expect(publish(orgKey(ACME), adasPost)).toBe(true);
+});
+
+test('postPublish denies an org key another org’s post, however the input is phrased', () => {
+  expect(publish(orgKey(ACME), tintasPost)).toBe(false); // input Acme, row Tinta
+  expect(publish(orgKey(ACME), tintasPost, TINTA)).toBe(false); // input Tinta, key Acme
+  expect(publish(orgKey(ACME), brunosPost, TINTA)).toBe(false); // input disagrees with both
+});
+
+test('postPublish denies an org key with no row, and one without the grant', () => {
+  expect(publish(orgKey(ACME), null)).toBe(false);
+  expect(publish(orgKey(ACME, ['run:write']), brunosPost)).toBe(false);
 });

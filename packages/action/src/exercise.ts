@@ -49,9 +49,10 @@ export const exerciseTestName = (name: string): string =>
  * `X_CONTRACT_DEFECT` on the first defect, `X_CONTRACT_EXERCISE_UNREACHED` when no run got to the
  * handler, `X_CONTRACT_DRIFT` when the schema refused every draw.
  *
- * A test-time call: refused in `staging`/`production` (`X_CONTRACT_EXERCISE_ENVIRONMENT`). Each run's transaction rolls back the handler's SQL writes, the
- * outbox stage and the post-commit cache bust. NOT rolled back: the memory store (`test` with no
- * client installed), a write on a second client or `outsideTransaction`, a job enqueued with
+ * A test-time call: refused in `staging`/`production` (`X_CONTRACT_EXERCISE_ENVIRONMENT`). Each
+ * run's transaction rolls back the handler's SQL writes, its memory-store writes (`test` with no
+ * client installed, `tx` passed or not), the outbox stage and the post-commit cache bust. NOT
+ * rolled back: a write on a second client or `outsideTransaction`, a job enqueued with
  * `outbox: false`, storage puts, mail, outbound fetch (sealed under the test preload) and
  * rate-limit counters.
  */

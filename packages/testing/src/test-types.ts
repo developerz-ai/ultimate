@@ -3,6 +3,7 @@
 // failure line say which of the six steps it belongs to. See packages/cli/src/verify-tests.ts.
 
 import { test } from 'bun:test';
+import type { A11yOptions } from './e2e-a11y-run';
 import { TestEvalThresholdError } from './errors';
 import type { FixtureBody } from './fixtures';
 import { runWithFixtures } from './fixtures';
@@ -116,8 +117,16 @@ export interface E2eFixtures {
 
 export type E2eBody = (fixtures: E2eFixtures) => Promise<void>;
 
-/** What registers one e2e test with a browser behind it. `options` is the test's own (`timeoutMs`). */
-export type E2eDriver = (name: string, body: E2eBody, options?: TestOptions) => void;
+/**
+ * An e2e test's own options. `a11y` is not a switch: every `e2eTest` audits the browser's
+ * accessibility tree, and the only exception is a reasoned `allow` entry for one element.
+ */
+export interface E2eTestOptions extends TestOptions {
+  readonly a11y?: A11yOptions | undefined;
+}
+
+/** What registers one e2e test with a browser behind it. `options` is the test's own. */
+export type E2eDriver = (name: string, body: E2eBody, options?: E2eTestOptions) => void;
 
 let e2eDriver: E2eDriver | undefined;
 
@@ -152,7 +161,7 @@ export const resetE2eDriver = (): void => {
   e2eDriver = undefined;
 };
 
-export const e2eTest = (name: string, body: E2eBody, options?: TestOptions): void => {
+export const e2eTest = (name: string, body: E2eBody, options?: E2eTestOptions): void => {
   if (e2eDriver === undefined) {
     test.skip(
       testName('e2e', `${name} (no browser driver: x build --target static && x e2e)`),

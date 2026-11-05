@@ -3,6 +3,7 @@
 // may import the other — so the join is here, in the one package allowed to know about both.
 
 import { finiteCount } from '@ultimat3/core';
+import type { AxTreeNode } from './ax-node';
 import { evaluateClosure } from './e2e-evaluate';
 import { e2eLocator } from './e2e-locator';
 import type { E2eSelection } from './e2e-selection';
@@ -31,6 +32,20 @@ export interface E2eBrowserPage {
    * app's ONLINE page pass an offline test.
    */
   offline?(enabled: boolean): Promise<void>;
+  /**
+   * The document's full accessibility tree, as the browser computed it for a screen reader. A node
+   * `request.describe` picks is answered with its bounded `outerHTML` and which of
+   * `request.selectors` it matches — one round trip per such node, never per node of the tree.
+   * OPTIONAL as `offline` is, and for its reason; absent, every `e2eTest` refuses by name
+   * (`e2e-a11y-run.ts`) rather than passing a page nothing audited.
+   */
+  accessibilityTree?(request: AxTreeRequest): Promise<readonly AxTreeNode[]>;
+}
+
+/** What the audit asks of one tree read: which nodes to describe, and the selectors to test. */
+export interface AxTreeRequest {
+  readonly describe: (node: AxTreeNode) => boolean;
+  readonly selectors: readonly string[];
 }
 
 export interface E2ePageOptions {
@@ -44,6 +59,11 @@ export interface E2ePageOptions {
    * IN THE PAGE. One test raises its own with `waitForServiceWorker({ timeoutMs })`.
    */
   readonly serviceWorkerTimeoutMs?: number | undefined;
+  /**
+   * Run after every navigation this adapter makes has settled — `goto`, `reload`, `gotoStreamed`.
+   * The e2e driver's accessibility audit (`e2e-driver.ts`); a rejection fails the navigation.
+   */
+  readonly afterNavigate?: (() => Promise<void>) | undefined;
 }
 
 /** Named once, so both refusals below name the call an app's test preload actually makes. */
@@ -137,20 +157,25 @@ export function e2ePage(options: E2ePageOptions): PageLike {
   );
   const absolute = (url: string): string => new URL(url, options.baseUrl).toString();
   const locate = (selection: E2eSelection): LocatorLike => e2eLocator(page, selection);
+  const settled = async (navigation: Promise<unknown>): Promise<unknown> => {
+    const answer = await navigation;
+    await options.afterNavigate?.();
+    return answer;
+  };
 
   return {
     url: () => page.url(),
-    goto: (url) => page.goto(absolute(url), { timeout }),
+    goto: (url) => settled(page.goto(absolute(url), { timeout })),
     // The page's OWN url, re-read at call time: a reload of the url the adapter was built with
     // would navigate away from wherever the test had got to.
-    reload: () => page.goto(page.url(), { timeout }),
+    reload: () => settled(page.goto(page.url(), { timeout })),
     title: async () => {
       const title = readField(await page.evaluate(TITLE), 'title');
       return typeof title === 'string' ? title : '';
     },
     gotoStreamed: async (url) => {
       const target = absolute(url);
-      await page.goto(target, { timeout });
+      await settled(page.goto(target, { timeout }));
       const html = readField(await page.evaluate(firstFlushExpression(target)), 'html');
       return { html: typeof html === 'string' ? html : '' };
     },

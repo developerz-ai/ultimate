@@ -10,19 +10,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { COVERAGE_BAR } from '../packages/cli/src/coverage-floor';
 import {
-  concurrency,
   judge,
-  pool,
   scopeLcov,
   suiteFailure,
   unimportedSources,
   withUnloadedCounted,
 } from './coverage-gate';
 import { COVERAGE_PINS, COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
+import { unitWeight } from './lib/coverage-schedule';
 import {
   COVERAGE_GATE_FLAGS,
   SCRIPTS_UNIT,
   shardUnits,
+  testFileCount,
   unitOf,
   unitsFor,
   unitsToGate,
@@ -196,35 +196,6 @@ describe('unimportedSources', () => {
   });
 });
 
-describe('running package suites side by side', () => {
-  test('--jobs defaults to every core and refuses anything but a positive integer', () => {
-    expect(concurrency(undefined)).toBe(Math.max(1, navigator.hardwareConcurrency));
-    expect(concurrency('3')).toBe(3);
-    for (const bad of ['0', '-1', '1.5', 'all', '']) expect(concurrency(bad)).toBeUndefined();
-  });
-
-  test('the pool answers in input order, never in finishing order', async () => {
-    const delays = [30, 0, 20, 10];
-    const out = await pool(delays, 4, async (ms) => {
-      await Bun.sleep(ms);
-      return ms;
-    });
-    expect(out).toEqual(delays);
-  });
-
-  test('the pool never has more than the limit in flight', async () => {
-    let inFlight = 0;
-    let peak = 0;
-    await pool([1, 2, 3, 4, 5, 6, 7], 3, async () => {
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      await Bun.sleep(5);
-      inFlight -= 1;
-    });
-    expect(peak).toBe(3);
-  });
-});
-
 describe('a suite that fails alone', () => {
   // The defect: the exit code was never read, so a red suite with an lcov on disk passed.
   test('a non-zero exit is X_TEST_FAILED, naming the failing tests', () => {
@@ -371,6 +342,48 @@ describe('--shard i/n', () => {
     expect(shardUnits(['c', 'a', 'd', 'b'], '2/2')).toEqual(['b', 'd']);
   });
 
+  test('weighed, the heaviest unit is dealt first and the rest fill the lighter shards', () => {
+    // `cli` alone outweighs the rest together: it keeps a shard to itself, and the others are
+    // dealt between the remaining two by weight, never by name.
+    const weight = (name: string): number =>
+      ({ cli: 660, scripts: 240, core: 180, jobs: 170, db: 160, money: 10 })[name] ?? 1;
+    const units = ['money', 'db', 'cli', 'core', 'jobs', 'scripts'];
+    expect(shardUnits(units, '1/3', weight)).toEqual(['cli']);
+    expect(shardUnits(units, '2/3', weight)).toEqual(['db', 'scripts']);
+    expect(shardUnits(units, '3/3', weight)).toEqual(['core', 'jobs', 'money']);
+  });
+
+  test('the real tree, weighed by measured core-seconds: every unit in exactly one shard', () => {
+    const weigh = (name: string): number => unitWeight(name);
+    const shards = [1, 2].map((i) => shardUnits(units, `${String(i)}/2`, weigh));
+    expect(shards.flat().sort()).toEqual([...units]);
+    expect(new Set(shards.flat()).size).toBe(units.length);
+    // The weights are real: `cli` is the heaviest unit, dealt first to shard 1, and the rest are
+    // dealt so neither shard carries more than the other plus the lightest-dealt unit.
+    expect(shards[0]?.includes('cli')).toBe(true);
+    const load = (shard: readonly string[] | undefined): number =>
+      (shard ?? []).reduce((sum, name) => sum + weigh(name), 0);
+    expect(Math.abs(load(shards[0]) - load(shards[1]))).toBeLessThanOrEqual(weigh('cli'));
+  });
+
+  test('a test file is counted where bun test finds one: *.test and *.spec, never node_modules', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'coverage-weight-'));
+    try {
+      for (const rel of [
+        'packages/w/src/a.test.ts',
+        'packages/w/e2e/b.spec.tsx',
+        'packages/w/src/c.ts',
+        'packages/w/node_modules/dep/d.test.ts',
+        'packages/other/src/e.test.ts',
+      ]) {
+        await Bun.write(join(root, rel), 'export {};\n');
+      }
+      expect(testFileCount(root, unitOf('w'))).toBe(2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('a spec that is not i/n with 1 <= i <= n is refused with a command that runs', () => {
     for (const raw of ['0/2', '3/2', '1', 'a/b', '', '1/0']) {
       try {
@@ -404,7 +417,7 @@ describe('the flags the gate reads', () => {
     expect(unitsFor(root, flags({ package: 'core', json: true }))).toEqual(['core']);
     expect(unitsFor(root, flags({ all: true }))).toEqual(unitsToGate(root));
     expect(unitsFor(root, flags({ all: true, shard: '2/2', jobs: '2' }))).toEqual(
-      shardUnits(unitsToGate(root), '2/2'),
+      shardUnits(unitsToGate(root), '2/2', (name) => unitWeight(name)),
     );
   });
 

@@ -16,7 +16,7 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 |---|---|
 | No mocks of the DB | clone a template database; `template-db.ts` is the only DB path |
 | No wall clock | `withFrozenClock` / `advanceClock`; `Date.now()` is frozen by the preload |
-| Frozen ≠ different | `globalThis.Date` becomes a subclass, so `FrozenDate[Symbol.hasInstance]` brands on the `[[DateValue]]` slot — `Date.prototype.getTime.call(value)` throws or it doesn't. |
+| Frozen ≠ different | `globalThis.Date` becomes a subclass; `FrozenDate[Symbol.hasInstance]` brands on the `[[DateValue]]` slot (`Date.prototype.getTime.call(value)` throws or not) |
 | Slot, not prototype | the brand is cross-realm on purpose: `instanceof RealDate` misses a `node:vm` or worker Date, and `Object.prototype.toString` is spoofable by `Symbol.toStringTag: 'Date'`. Only the slot is both |
 | No unmocked egress | `sealed-network.ts` seals `fetch`; `sealed-sockets.ts` `WebSocket`, `Bun.connect` (not loopback); a miss is `X_TEST_NETWORK_SEALED` |
 | One `mockFetch`, and it grows | a verb in the match, ordered answers, a pinned dial's name (`mock-route.ts`) and `requestLog` (`request-log.ts`). A stream on its way to a real server is never read: it logs `null`, because teeing it drains it ahead of its consumer. The log reads a probe, and `original(input, init)` is passed as handed: `tls`, `unix` and `proxy` are in no `Request` |
@@ -47,6 +47,8 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | `LOG_LEVEL` above `info` filters the TERMINAL | `quiet-logs.ts` pins the logger at `info` while core loads, so a collecting `setLogSink` still sees `warn` under `LOG_LEVEL=error`. It stays the preload's FIRST import |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
 | Fixtures | the preload registers the framework bag — an app registers only what it alone knows (`seed`, `actorFor`) |
+| Every `e2eTest` is audited | `e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (per-test run, `allow`, dedupe), `ax-node.ts` (the one AX reader); the full tree is read only in `cdp-e2e-page.ts` (`FULL_AX_TREE`, a convention). No switch; `allow` needs a non-blank `because` |
+| Factory values are DECLARED | `factoriesFor` and `seedGraph` share `seed-graph-values.ts`: default, enum, kind, through `$parse`, never the name. `seed-graph*.ts` type-import `entity` only |
 | e2e without a driver | `e2eTest` becomes `test.skip`; the gate reports the step SKIPPED (or `X_VERIFY_SUITE_VANISHED` when `x.verify.json` requires it), never passed |
 | The seam has an inverse | `resetE2eDriver()`: `useE2eDriver` writes MODULE scope, so a file that installs a browser undoes it |
 | Built vs declared | `clock` `mail` `network` `runJobs` `statements` `subscribe` are built in-process; `page` `budget` `signIn` `deploy` are declared and wait for a driver (`X_TEST_FIXTURE_UNAVAILABLE`). |
@@ -54,15 +56,15 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | `network` is THIS process's fetch, and an e2e page is not in this process | `network.offline()` beside `page` is a no-op on the browser. Full rule: `docs/history/testing.md` |
 | `subscribe` is a whole `sync` node | `live-node.ts` assembles what `x dev --role sync` assembles minus the listener — real `LiveQueryRegistry`, real `liveQueryDefinition` bridge, real per-subscriber gate, real cursor |
 | What `subscribe` does NOT hold | a client store, an offline queue or a rebase log — so `feed.local()` answers `undefined` rather than the server row. |
-| Draining is a macrotask yield | the node dispatches `message` into a floating async task, so `settled()` yields with `setImmediate` until the frame count stops moving. |
-| A lone subscriber cannot resume | the retained window is the registry's ENTRY and the entry is dropped when its last subscriber goes, so a reconnect with nobody else holding it re-snapshots — correctly. |
+| Draining is a macrotask yield | `message` runs in a floating async task, so `settled()` yields with `setImmediate` until the frame count stops moving |
+| A lone subscriber cannot resume | the retained window is the registry's ENTRY and the entry is dropped when its last subscriber goes, so a reconnect with nobody else holding it re-snapshots |
 | Strict is opt-in by destructuring | `statements` installs the N+1 detector in throw mode for one test. A fixture nobody names is a fixture nobody built, so there is no `strict: true` and no suite-wide switch |
-| One threshold, one error | `N_PLUS_ONE_THRESHOLD` and `nPlusOne()` are `@ultimat3/entity`'s. A number or a message written here would make a loop that fails a test a different loop from the one `x dev` warns about |
+| One threshold, one error | `N_PLUS_ONE_THRESHOLD` and `nPlusOne()` are `@ultimat3/entity`'s. A copy here would fail a different loop than the one `x dev` warns about |
 | The unit of work is the test | `x dev`'s ledger tallies per `Ctx` and ignores a statement issued outside a request |
-| Throws once per shape | the failing line is the loop's own statement (the seam lets `onStatement` throw for this reason alone). |
-| Measure vs judge | `all()` `count()` `shapes()` count `expectedQueryLoop` statements too; only the verdict honours the suppression, so "this page issues two statements" never depends on who declared what |
+| Throws once per shape | the failing line is the loop's own statement (why `onStatement` may throw) |
+| Measure vs judge | `all()` `count()` `shapes()` count `expectedQueryLoop` statements too; only the verdict honours the suppression |
 | One seam for drivers | a driver registers over a declaration with `defineFixtures` — merges, last wins. Never a second registration mechanism |
-| A driver arrives whole | `defineFixtures` holds every name `Fixtures` declares to its declared type, so a half-built `page` is a compile error at the registration, not a missing method three awaits later |
+| A driver arrives whole | `defineFixtures` holds every name `Fixtures` declares to its declared type, so a half-built `page` is a compile error at the registration |
 | Registry hygiene | the fixture registry is process-global; a test that clears it snapshots with `fixtureSnapshot()` and hands it back in `afterAll` |
 | Leaks are the file's, not the next file's | `installRegistryLeakGuard()` runs from the preload and fails the run naming the FILE that left cache tags declared or a cache tier registered after its last test (`X_TEST_REGISTRY_LEAK`). |
 | The baseline is not a hook | measured on Bun 1.3.14 the order is onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload `beforeEach`, so a preload hook cannot sample before the file's own `beforeAll` |
@@ -89,7 +91,7 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | Dispose STOPS the island, then restores the globals | when `mount` resolved to a function, `[Symbol.dispose]` calls it BEFORE `restore()` |
 | The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. Full rule: `docs/history/testing.md` |
 | `style` and `classList` RECORD | `FakeStyle` is one declaration map behind all four spellings compiled Solid uses (static attribute, `setProperty`, `cssText`, `removeAttribute`), so a test can assert the component set `--form-gap` |
-| `classList` is the class attribute | not a list of its own, so `classList.toggle` — which the compiler emits INLINE for `classList={{ … }}`, no runtime helper between — and `className` can never answer one element two ways. |
+| `classList` is the class attribute | not a list of its own, so `classList.toggle` (compiled inline from `classList={{ … }}`) and `className` never answer one element two ways |
 | A `document` listener is the documentElement's | no bubbling: `document.addEventListener` registers on `documentElement`, and `fire(mounted.documentElement, 'keydown', …)` drives it. Every listener per type runs; removal is by function identity |
 | `querySelector` skips `this` | descendants only, as the DOM's does. Matching the element it is called on made a host `<div>` answer `find('div')` with the container the test built rather than the markup the island rendered |
 | The selector grammar is SMALL and REFUSES | `island-selector.ts`: compounds of tag, `#id`, `.class`, `[attr]`, `[attr="value"]`, joined by space or `>`. Anything else is `X_TEST_ISLAND_SELECTOR_UNSUPPORTED` with the offset, never an empty answer |
@@ -152,7 +154,7 @@ lives beside the `PageLike` it implements. `cli` imports it over the declared `c
 | `cdp-launch-attempt.ts` | one start in its own group; on no answer a full reap (group, then profile + singleton dir: `cdp-launch-profile.ts`). ONE awaited `close()` |
 | `cdp-connection.ts` | CDP over a transport — the launched Chrome's pipe (`cdp-pipe.ts`), a remote one's `WebSocket` (`cdpConnect`): reply correlation by `id`, event waiters, the per-call deadline; why one went unanswered is `cdp-wire-watch.ts` |
 | `cdp-e2e-session.ts` | the BROWSER half, `E2eSession`: every target auto-attached at browser level and PAUSED until its Network domain is on (a SharedWorker opens its socket at start-up) |
-| `cdp-e2e-page.ts` | one TAB, `E2eTab`: `E2eBrowserPage`'s five methods plus `reload`, `waitFor`, `indexedDbNames`, `close`. `offline()` forwards to the session — the switch is browser-wide |
+| `cdp-e2e-page.ts` | one TAB, `E2eTab`: `E2eBrowserPage`'s six methods (`accessibilityTree` required) plus `reload`, `waitFor`, `indexedDbNames`, `close`. `offline()` forwards to the session — the switch is browser-wide |
 | `e2e-app.ts` | `startE2eApp({ root, mode, seed })`: reset + seed + spawn on a THROWAWAY `ULTIMATE_STATE_DIR` and free ports a browser opens (`free-port.ts`), `/readyz`-gated, spawned through the app's own `@ultimat3/cli` bin (`xBin`); `stop()` removes the directory |
 | `failure-context.ts` | a FAILED test's message ends with the e2e app's last 40 log lines (≤ 4 kB): `e2e-run.ts` installs `app.log()`, `fixtureTest` and `e2eTest` append it. Never on a pass |
 | `e2e-preload.ts` + `e2e-browser-handle.ts` | the `e2e` step's preload (`@ultimat3/testing/e2e-preload`): with `ULTIMATE_E2E_ROOT` set it spawns the app, opens ONE browser, installs its first tab, and publishes `e2eBrowser()`, `e2eApp()`, `e2eBaseUrl()` |

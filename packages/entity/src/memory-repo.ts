@@ -22,6 +22,7 @@ import { invariantViolated, notFound } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { lockKeyInput } from './lock-key';
 import { undoingBatch } from './memory-batch';
+import { memoryJournal } from './memory-journal';
 import { memoryLocks } from './memory-lock';
 import { compareByKind, matchesPredicate } from './memory-match';
 import { observedMemoryRepo } from './memory-observed';
@@ -166,7 +167,7 @@ export const memoryRepo = <Row>(
     if (clash !== undefined) throw uniqueViolation(entity, clash);
     const moved = from !== undefined && from !== key ? rows.get(from) : undefined;
     const previous = rows.get(key);
-    options?.tx?.onRollback(() => {
+    (options?.tx ?? memoryJournal())?.onRollback(() => {
       if (previous === undefined) rows.delete(key);
       else rows.set(key, previous);
       if (from !== undefined && moved !== undefined) rows.set(from, moved);
@@ -361,7 +362,7 @@ export const memoryRepo = <Row>(
           return;
         }
         const key = storeKey(current);
-        options?.tx?.onRollback(() => rows.set(key, current));
+        (options?.tx ?? memoryJournal())?.onRollback(() => rows.set(key, current));
         rows.delete(key);
       });
     }),

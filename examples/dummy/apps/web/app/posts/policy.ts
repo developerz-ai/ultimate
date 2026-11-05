@@ -74,11 +74,20 @@ export const postCreate = can<PostScope>('post:create', ({ actor, input }) => {
  * of authorship, and a rule that treats an absent fact as a satisfied one is a rule that fails
  * open. The row now arrives from `publishPost`'s `row:` loader, which runs once per invocation
  * before the guard.
+ *
+ * An actor with an org and the grant but no membership role is an org's API key: it may publish
+ * any post of that org, never another's. A member without a role is not a member, so it lands
+ * here too and is decided the same way — the grant check has already turned away anyone who
+ * holds nothing.
  */
 export const postPublish = can<PostScope, PostRow>('post:publish', ({ actor, input, row }) => {
+  if (actor === null || row === null) return false;
   const member = memberOf(actor);
-  if (member === null || member.orgId !== input.orgId) return false;
-  return row !== null && ownsPost(member, row);
+  if (member !== null) return member.orgId === input.orgId && ownsPost(member, row);
+  // No membership: an org's API key on the `/v1` mount (`app/runs/keys.ts`). It holds the grant
+  // as a scope and authors nothing, so it acts with the org's authority — the same-org half of
+  // owns-or-org-admin. Actor, input and row must all name one org.
+  return actor.orgId === input.orgId && row.orgId === input.orgId;
 });
 
 /**
