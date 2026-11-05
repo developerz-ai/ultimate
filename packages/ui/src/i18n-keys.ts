@@ -16,6 +16,8 @@ export const UI_KEYS = {
   retry: 'ui.retry',
   next: 'ui.next',
   previous: 'ui.previous',
+  /** Pagination: back to the first page — the one way back a keyset list has. */
+  first: 'ui.first',
   page: 'ui.page',
   sortAscending: 'ui.sort.ascending',
   sortDescending: 'ui.sort.descending',

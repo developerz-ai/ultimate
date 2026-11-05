@@ -1804,3 +1804,7 @@ The two new rows in full, as wave 4b wrote them:
 
 | `client-errors-script.ts` / `client-errors-routes.ts` | `clientErrors.enabled`: `/x-client-errors.js` on `app/` documents through `DocumentOptions.appHead`, and `POST /_client-errors`, mounted by BOTH boots beside `storageRoutes`. Same-origin PROVEN in the handler; the limit is `meta.rateLimitBucket` on the app's store; a refusal is never reported; grouping is core's `errorFingerprint`. Not in `FRAMEWORK_SCRIPTS`. Full rule: `docs/history/cli.md` |
 | `retained-assets.ts` / `-layout.ts` / `-sweep.ts` / `-read.ts` / `-boot.ts` | `assets.retain`: the web boot publishes this build's hashed files to `x-build-assets/<name>/<env>/` before `/readyz` (30 s); the sweep keeps the newest builds; `serve-web.ts` wraps its routes in `withRetainedAssets`, so an assets GET that 404s answers a URL a retained manifest names. `x dev` never wraps; `X_ASSET_RETAIN_FAILED` is logged, never thrown. Full rule: `docs/history/cli.md` |
+
+## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
+
+- `island-realtime-state.ts` also decides `useQuery` / `useRecord` as `follows` when the loaded app's entity registry has entities and none is `persist: true` (`appPersistsRecords`); an empty registry is unknown and keeps `restores`. `realtimeKind`'s `persists` is required, and `island-bundle.ts` reads the registry once per build. Every boot that builds islands has loaded the app first (`dev-boot.ts`, `serve-boot.ts` → `serve-web.ts`, `image-prepare.ts`, `prerender.ts`).

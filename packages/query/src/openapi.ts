@@ -18,18 +18,21 @@
 import { tagKeys } from '@ultimat3/cache';
 import {
   isMcpExposed,
-  queryPath,
   RECORDS_OPENAPI_HEADER,
   recordEnvelopeSchema,
+  templateParams,
+  toOpenApiPath,
 } from '@ultimat3/core';
 import { MAX_PAGE_SIZE } from '@ultimat3/entity';
 import { policyCapability } from '@ultimat3/policy';
 import type { SchemaNode } from '@ultimat3/schema';
 import { nodeToJsonSchema, toWireOutputSchema, tryIntrospect } from '@ultimat3/schema';
 import { DOWNLOAD_GRANT_PARAM } from './download-token';
+import { servedQueryPath } from './http-pin';
+import { withDeclaredErrors } from './openapi-errors';
 import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import type { AnyQuery } from './query';
-import { queryName } from './read';
+import { defOf, queryName } from './read';
 import { answersRecords } from './record-answer';
 import { listQueries } from './registry';
 
@@ -98,10 +101,13 @@ export function queryOpenApiPaths(
 ): Record<string, OpenApiPathItem> {
   const paths: Record<string, OpenApiPathItem> = {};
   for (const target of [...queries].sort(compareByName)) {
-    paths[queryPath(queryName(target))] = { get: toQueryOpenApiOperation(target) };
+    paths[toOpenApiPath(pathOf(target))] = { get: toQueryOpenApiOperation(target) };
   }
   return paths;
 }
+
+/** Where the read is served: its pin (a `:param` template), else `/_x/query/<kebab>`. */
+const pathOf = (target: AnyQuery): string => servedQueryPath(queryName(target), defOf(target).http);
 
 /**
  * The GET operation for one read. The input's members are `in: query` parameters — a read is
@@ -119,8 +125,8 @@ export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknow
     tags: [QUERY_TAG],
     summary: target.mcp?.description ?? name,
     ...(target.deprecated === undefined ? {} : { deprecated: true }),
-    parameters: [...inputParameters(target.input), ...PAGE_PARAMETERS],
-    responses: {
+    parameters: [...inputParameters(target), ...PAGE_PARAMETERS],
+    responses: withDeclaredErrors(target, PROBLEM_SCHEMA_REF, {
       '200': {
         description: 'ok',
         content: {
@@ -138,9 +144,9 @@ export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknow
       // `X_INPUT_INVALID` is the search string failing the read's own schema, or a page control
       // outside its bound; `X_CURSOR_INVALID` is an `_after` that is not one of this read's. Both
       // are the caller's to repair, which is what 400 says.
-      '400': problemResponse('X_INPUT_INVALID or X_CURSOR_INVALID'),
+      '400': problemResponse(`X_INPUT_INVALID or X_CURSOR_INVALID${conflictOf(target)}`),
       '403': problemResponse('policy denied'),
-    },
+    }),
     'x-ultimate': {
       capability: policyCapability(target.policy),
       live: target.isLive,
@@ -165,8 +171,8 @@ function singleOperation(target: AnyQuery, name: string): Record<string, unknown
     tags: [QUERY_TAG],
     summary: target.mcp?.description ?? name,
     ...(target.deprecated === undefined ? {} : { deprecated: true }),
-    parameters: inputParameters(target.input),
-    responses: {
+    parameters: inputParameters(target),
+    responses: withDeclaredErrors(target, PROBLEM_SCHEMA_REF, {
       '200': {
         description: 'ok',
         content: {
@@ -176,10 +182,10 @@ function singleOperation(target: AnyQuery, name: string): Record<string, unknown
         },
         ...(records ? { headers: RECORDS_OPENAPI_HEADER } : {}),
       },
-      '400': problemResponse('X_INPUT_INVALID'),
+      '400': problemResponse(`X_INPUT_INVALID${conflictOf(target)}`),
       '403': problemResponse('policy denied'),
       '404': problemResponse('X_NOT_FOUND — the read matched no row for this input'),
-    },
+    }),
     'x-ultimate': {
       capability: policyCapability(target.policy),
       live: target.isLive,
@@ -201,7 +207,7 @@ function downloadOperation(target: AnyQuery, name: string): Record<string, unkno
     summary: name,
     ...(target.deprecated === undefined ? {} : { deprecated: true }),
     parameters: [
-      ...inputParameters(target.input),
+      ...inputParameters(target),
       {
         name: DOWNLOAD_GRANT_PARAM,
         in: 'query',
@@ -270,24 +276,44 @@ const PAGE_PARAMETERS: readonly Record<string, unknown>[] = [
   },
 ];
 
+/** A pinned read's 400 also names the path/search disagreement; an unpinned one's bytes stay. */
+const conflictOf = (target: AnyQuery): string =>
+  templateParams(pathOf(target)).length === 0 ? '' : ' or X_HTTP_PATH_INPUT_CONFLICT';
+
 /**
- * A member per declared property, name-sorted. A schema this package cannot introspect — a
- * foreign Standard Schema, the seam `configureSchemaProvider` exists for — publishes no
- * parameters rather than guessed ones, the same answer `assertEncodableInput` gives it.
+ * A member per declared property: the pin's `:param`s first, `in: path` and required, in template
+ * order; the rest `in: query`, name-sorted. A schema this package cannot introspect — a foreign
+ * Standard Schema, the seam `configureSchemaProvider` exists for — publishes no parameters rather
+ * than guessed ones, the same answer `assertEncodableInput` gives it.
  */
-function inputParameters(input: unknown): readonly Record<string, unknown>[] {
-  const node = tryIntrospect(input);
+function inputParameters(target: AnyQuery): readonly Record<string, unknown>[] {
+  const node = tryIntrospect(target.input);
   if (node?.properties === undefined) return [];
-  return Object.entries(node.properties)
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-    .map(([key, child]) => parameterOf(key, child));
+  const properties = node.properties;
+  const inPath = templateParams(pathOf(target));
+  const fromPath = inPath.flatMap((key) => {
+    const child = Object.hasOwn(properties, key) ? properties[key] : undefined;
+    return child === undefined ? [] : [parameterOf(key, child, 'path')];
+  });
+  return [
+    ...fromPath,
+    ...Object.entries(properties)
+      .filter(([key]) => !inPath.includes(key))
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, child]) => parameterOf(key, child, 'query')),
+  ];
 }
 
-function parameterOf(name: string, node: SchemaNode): Record<string, unknown> {
+function parameterOf(
+  name: string,
+  node: SchemaNode,
+  where: 'path' | 'query',
+): Record<string, unknown> {
   return {
     name,
-    in: 'query',
-    required: node.optional !== true && node.hasDefault !== true,
+    in: where,
+    // A path parameter is required by OpenAPI's rule, and by `assertQueryHttp`'s at `query()`.
+    required: where === 'path' || (node.optional !== true && node.hasDefault !== true),
     schema: nodeToJsonSchema(node),
   };
 }

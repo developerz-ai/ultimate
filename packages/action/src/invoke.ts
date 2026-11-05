@@ -34,6 +34,7 @@ import {
   auditThrew,
 } from './audit-gate';
 import { bustAfterCommit } from './cache-gate';
+import { judgedHandler } from './declared-errors';
 import { ActionForeignError, ActionUnregisteredError } from './errors';
 import { getIdempotencyStore, withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
@@ -63,6 +64,18 @@ export function defOf(target: AnyAction): AnyActionDef {
   const def = DECLARATIONS.get(target);
   if (def === undefined) throw new ActionForeignError(target.name);
   return def;
+}
+
+/**
+ * How many times each declaration's `handle` has started, keyed like `DECLARATIONS`. Read only by
+ * `exercise.ts` — never re-exported — so "zero runs reached the handler" is countable without a
+ * second execution path: a contract that never got past policy or parse is its own red.
+ */
+const HANDLER_REACHED = new WeakMap<AnyActionDef, number>();
+
+/** Starts of `target`'s handler so far, across every surface. Off the barrel on purpose. */
+export function handlerReached(target: AnyAction): number {
+  return HANDLER_REACHED.get(defOf(target)) ?? 0;
 }
 
 /** Projections need a stable name; an unregistered action has none yet. */
@@ -286,7 +299,12 @@ async function perform(
   // The SAME `input` object reaches `def.row` here and `def.handle` below, by reference:
   // `transition()` keys what its rule read on it (`transition-observe.ts`, #702).
   const judgeRow = async (): Promise<void> => {
-    const row = def.row === undefined ? null : ((await def.row({ input, ctx })) ?? null);
+    // `row` and `handle` are the two places `errors:` judges a throw (`declared-errors.ts`).
+    const load = def.row;
+    const row =
+      load === undefined
+        ? null
+        : ((await judgedHandler(def, name, () => load.call(def, { input, ctx }))) ?? null);
     guardAction(def.policy, { actor: actorOf(ctx), input, row, ctx, action: name }, surface);
   };
   // A finished record is this key's outcome, and the key is this actor's (`idempotency-key.ts`).
@@ -304,9 +322,10 @@ async function perform(
   let started = false;
   const run = async (): Promise<unknown> => {
     started = true;
+    HANDLER_REACHED.set(def, (HANDLER_REACHED.get(def) ?? 0) + 1);
     // Read here, not closed over: under a key this runs in `runToCompletion`'s scope, and a handler
     // passing the outer `ctx.signal` onward would fail its vendor call and settle a failure.
-    const produced = await Promise.resolve(def.handle({ input, ctx: useContext() }));
+    const produced = await judgedHandler(def, name, () => def.handle({ input, ctx: useContext() }));
     return validateOutput(def.output, produced, name);
   };
   // The peek can be stale: a record that lapsed after it leaves this call a FRESH reservation, and

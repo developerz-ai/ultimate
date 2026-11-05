@@ -44,7 +44,7 @@ beforeAll(async () => {
   );
   // The build asks this of every island; the answer rides its chunk to the collector.
   for (const file of [LIVE, STILL, EVENTS]) {
-    const kind = await realtimeKind(root, file);
+    const kind = await realtimeKind(root, file, undefined);
     if (kind !== undefined) kinds.set(file, kind);
   }
   expect([...kinds]).toEqual([

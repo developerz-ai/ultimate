@@ -91,3 +91,12 @@ Eight rules shortened in `packages/ui/CLAUDE.md` to the rule itself; the reasoni
   benchmark.
 
 - **`useUi()`'s server branch is a SLOT, and the module that fills it is browser-mapped** (issue #490). `context.ts` imports no value from `@ultimat3/i18n` or `@ultimat3/time` (the i18n barrel installs the framework catalog at import: 16.1 kB per island). `src/theme/ambient.ts` registers `ambientUiContext` into `ambient-slot.ts` at import; `index.ts` imports it BARE above every re-export, and `package.json`'s `browser` field maps it to `ambient.browser.ts` (bundlers only — `bun test` and SSR get the server's). A test reaching components by module path must `import './ambient'` itself, as `inert-render.test.ts` does. `fallbackTranslator` is held member-for-member against `createTranslator({})` by `context.test.ts`. `errors.ts` is pure: `registerErrorCodes()` is `src/error-registry.ts`, imported bare. `scripts/ui-barrel-bytes.test.ts` pins the theme island's retained-module list.
+
+## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
+
+- **The barrel is the ONE import path.** Its sibling #276 — a pure re-export entry shaken to its export clause — was fixed in Bun 1.4.1 (oven-sh/bun#40578), and barrels have been built as their own entry since.
+
+- **The framework ships the mapping and no copy table.** A `messageFor` that answers `''` or throws falls back to the diagnostic text — the loud-but-safe answer `t()` already gives with `⟦key⟧`, because the alternatives are a control marked `aria-invalid` with nothing to read, or a submit abandoned mid-flight holding the user's input.
+
+- `src/components/data-table-rows.ts`: DataTable's keyed rows, one `createRoot` per `rowKey`, so a live update keeps an unchanged row's node. DataTable calls it from its body, and the table chrome is a memo over the branch KIND (failed / empty / table), so a live update never detaches a kept row.
+- `createRoot` joined `SolidRuntime` for keyed rows (v30), making the runtime seven functions.

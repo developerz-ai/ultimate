@@ -137,14 +137,15 @@ describe('the fluent surface', () => {
     expect(urls).toEqual(['https://app.test/api/posts/publish']);
   });
 
-  test('.contract() emits the three assertions and they hold', async () => {
+  test('.contract() emits the four assertions and they hold', async () => {
     resetActions();
     const { target } = definePublish();
-    const contracts = target.contract();
+    const contracts = target.contract({ exercise: { actor: editorActor } });
     expect(contracts.map((contract) => contract.name)).toEqual([
       'publishPost: input schema rejects garbage',
       'publishPost: policy denies an anonymous actor',
       'publishPost: OpenAPI document contains its operation',
+      'publishPost: handler survives generated input',
     ]);
     for (const contract of contracts) await contract.run();
   });

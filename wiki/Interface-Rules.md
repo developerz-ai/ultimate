@@ -202,6 +202,8 @@ under the reader's finger the moment the bytes land.
 |---|---|
 | Every `*.island.tsx` has a sibling `*.island.states.ts` | `guards/island-without-states.ts` |
 | A states file is pure data — no sibling import, no framework import | `assertIslandStatesPure`, at `x shot` load time |
+| An island polls with `visibleInterval()` from `@ultimat3/core/page`, never a bare `setInterval(`: a hidden tab and a lost session stop it ([Client data](Client-Data)). A `// why:` on the line, or the line above, admits a tick that is not a read | `guards/raw-interval.ts` |
+| A channel's "this changed" re-reads a server-rendered page through `scheduleRefresh()`, never `refresh()`: nothing swaps under a reader ([Realtime](Realtime#a-channel-event-re-reads-the-page)) | **judgement** |
 | Every state carries a `note` saying why it cannot be reached by clicking | **judgement** — `note` is optional, and it is the line that tells a reviewer what they are looking at |
 
 An island with no states file has never been seen with a refused save, an empty read, or a label
@@ -281,6 +283,8 @@ Read as a review checklist. Each one is a defect on sight.
 | a `*.island.tsx` with no states file | nothing has ever seen it fail |
 | a literal `cubic-bezier(…)` or `220ms` in a component stylesheet | the scale exists so the curve can be retuned in one file |
 | a raw hex in a component stylesheet | it does not flip with the theme |
+| a Previous button on a keyset list | a `Page` has no previous cursor, so it is disabled forever; `Pagination` draws First (`firstHref`) instead |
+| a list sorted or paged through an island when a link would do | `listUrl` + a link-mode `DataTable` sort and page with scripting off |
 
 ## Where each mechanism lives
 
@@ -294,6 +298,7 @@ Read as a review checklist. Each one is a defect on sight.
 | contrast, as a failing test | `packages/ui/src/tokens/contrast.test.ts` |
 | live regions and the focus trap | `packages/ui/src/a11y.ts` |
 | the toast queue's rules | `packages/ui/src/toast/toast-state.ts` |
+| a list's URL state (sort, cursor, limit, `q`) | `packages/ui/src/list-url.ts` |
 | your app's guards | `guards/` in the app root — `x new` writes every name in `SHIPPED_GUARD_NAMES`, `x g guard <name>` adds one, `x doctor` lists the shipped ones missing |
 
 Components, props and token vocabulary: [UI components](UI-Components). Colour roles and the

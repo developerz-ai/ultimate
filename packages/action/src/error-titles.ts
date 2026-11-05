@@ -34,7 +34,7 @@ export const ACTION_ERROR_TITLES: Readonly<Record<string, string>> = {
     "a mutator declares conflict: 'last-write-wins' and its entity has no number clock column",
   X_OUTPUT_INVALID: 'a handler returned a value its output schema rejects',
   X_RPC_FAILED: 'an RPC call failed without a problem+json body',
-  X_ACTION_HTTP_PATH_INVALID: "an action's pinned http.path is not a static lowercase path",
+  X_ACTION_HTTP_PATH_INVALID: "an action's pinned http.path is not a valid path or :param template",
   X_ACTION_PATH_STYLE_INVALID: "defineApi's http.pathStyle is not a known style",
   X_OPENAPI_CONFIG_INVALID: "defineApi's openapi block cannot produce a valid document",
   X_ACTION_PATH_DERIVED_EARLY: 'a path was derived before pathStyle changed',
@@ -45,6 +45,9 @@ export const ACTION_ERROR_TITLES: Readonly<Record<string, string>> = {
   X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE:
     "an idempotent action's answer cannot be stored as JSON, so no retry could replay it",
   X_IDEMPOTENCY_RUN_CEILING: 'a keyed run passed its hard ceiling',
+  X_CONTRACT_DEFECT: 'a generated legal input made a handler fail',
+  X_CONTRACT_EXERCISE_UNREACHED: 'no generated run reached the handler',
+  X_CONTRACT_EXERCISE_UNDECLARED: '.contract() on a non-public action names no exercise',
 };
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"

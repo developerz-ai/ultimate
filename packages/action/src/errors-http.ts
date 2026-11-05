@@ -9,12 +9,29 @@ import { renderCauseValue, UltimateError } from '@ultimat3/core';
 import './error-titles';
 
 export class ActionHttpPathInvalidError extends UltimateError {
-  constructor(input: { name: string; path: unknown; reason: string }) {
+  constructor(input: { name: string; path: unknown; reason: string; fix?: string }) {
     super({
       code: 'X_ACTION_HTTP_PATH_INVALID',
       cause: `action "${input.name}" pins http.path ${renderCauseValue(input.path)}, which ${input.reason}`,
-      fix: "pin a static lowercase path: http: { path: '/api/uploads/signed' } — a leading slash, segments of a-z 0-9 . _ ~ -, no :param or *wildcard, no trailing slash, never under /_x",
+      fix:
+        input.fix ??
+        "http: { path: '/orders/:id/refund', method: 'POST' } with input: t.object({ id: t.string }) — every :param a required t.string key of input:; segments of a-z 0-9 . _ ~ -, no *wildcard, no trailing slash, never under /_x; method POST, PUT, PATCH or DELETE",
       meta: { action: input.name },
+    });
+  }
+}
+
+/**
+ * `deprecated.replacedBy` names an action served at a `:param` template. The successor travels as a
+ * `Link` header, and a header cannot carry a template a client has no values for.
+ */
+export class ActionDeprecationSuccessorInvalidError extends UltimateError {
+  constructor(input: { name: string; successor: string; path: string }) {
+    super({
+      code: 'X_ACTION_DEPRECATION_INVALID',
+      cause: `action "${input.name}" declares deprecated.replacedBy "${input.successor}", which is served at the template ${input.path} — a Link header cannot carry a template`,
+      fix: `deprecated: { since, sunset } — on ${input.name}, drop replacedBy, or name an action whose http.path has no :param`,
+      meta: { action: input.name, field: 'replacedBy', value: input.successor },
     });
   }
 }

@@ -190,13 +190,15 @@ kept) until it mounts over the restored store.
 | Island | Held | `mount` waits for the restore |
 |---|---|---|
 | takes `useQuery`, `useRecord`, `useRecords`, `useMutation`, `useMutationQueue`, `useOutbox`, or any other name not listed below, anywhere in its own graph | yes — until it mounts, 3 s at most | yes, 1 s at most (`FIRST_PAINT_HOLD_MS`) |
-| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `useRecordChanges`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
+| takes `useQuery` or `useRecord` (and otherwise only the follow list below), in an app that declares no `persist: true` entity | **no** — the boot restores no record they could show | no |
+| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `useRecordChanges`, `pollEvery`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
 | takes the barrel with no list of names (`import * as`, `export *`, `import()`) | yes | yes |
 | reaches no realtime | no | no |
 
 | Fact | Rule |
 |---|---|
 | who decides | `x build`, from the names each module of the island's own graph imports from `@ultimat3/realtime` (`packages/cli/src/island-realtime-state.ts`). Nothing to declare |
+| whether the app persists | read off the entity registry the build loaded (`appPersistsRecords`). An empty registry is unknown, and keeps the held answer. `useMutation` is held either way: the outbox rebuilds a queued write's overlay |
 | the events-only list | an island that adopts the server's markup and re-reads its own query when a channel event arrives is never hidden: nothing the restore brings back can contradict what the server drew |
 | with scripting off | no island is ever hidden: `@media (scripting: none)` in `@ultimat3/ui`'s `global.scss` cancels the hold. A browser without that media feature, or a runtime that was blocked, shows the markup at the 3 s cap |
 | a prebuilt image | each island's answer rides its chunk, and the store `x build --target docker` writes records it, so a pod that builds nothing renders the same page boot and the same holds as `x dev` |
@@ -359,6 +361,35 @@ plan-101 DX ledger #21.
 | an events-only island | an island whose only realtime is `useChannel` / `usePresence` / `useConnection` is never hidden and never waits for the page's restore ([above](#which-islands-wait-for-the-pages-restore)) |
 | the browser | `useChannel(decl, params, handlers?)`; `topic()` is the one way to spell a topic, and `bun run channel-literals` refuses any other |
 | the manifest | lists every channel (`describeChannels`, on `@ultimat3/realtime/server`). In a contract diff these are **breaking**: a channel removed, its params changed, its policy changed, a record type no longer carried, `events` switched off |
+
+## A channel event re-reads the page
+
+`As of 30.0.0`. For a server-rendered page with nothing to push but "this changed": the channel
+says **when**, the server's page says **what**. An event is at-most-once, so a slow safety re-read
+sits beside it.
+
+```ts
+// in an island on the page: the event schedules, the router re-reads when the visitor is idle
+import { visibleInterval } from '@ultimat3/core/page';
+import { type ChannelRef, useChannel } from '@ultimat3/realtime';
+import { scheduleRefresh } from '@ultimat3/render/client';
+import { onCleanup } from 'solid-js';
+
+declare const ORG_FEED: ChannelRef<'orgId'>; // the ref above, from `./channel-ref`
+declare const orgId: string;
+useChannel(ORG_FEED, { orgId }, { onEvent: () => scheduleRefresh() });
+// the event is at-most-once: a safety re-read every 30 s, hidden tabs skipped
+onCleanup(visibleInterval(scheduleRefresh, 30_000));
+```
+
+| Piece | Why it is that one |
+|---|---|
+| `scheduleRefresh()`, not `refresh()` | a burst of events is one re-read; nothing swaps under an open dialog, a focused field, a selection or a scroll ([Client navigation](Client-Navigation#scheduling-a-refresh)) |
+| `visibleInterval` from `@ultimat3/core/page` | the poll a hidden tab and a lost session stop; an island that only polls reaches no realtime ([Client data](Client-Data)) |
+| rows, not a page | `useQuery(ref, input, { live: true })` stays the idiom: this is for a page whose rows no island holds |
+
+A page with no router does nothing on a `scheduleRefresh()`: it never reloads under a reader. Pause
+toggles, a flash on change and a "live" dot are the app's.
 
 ## What each role needs from the bus
 

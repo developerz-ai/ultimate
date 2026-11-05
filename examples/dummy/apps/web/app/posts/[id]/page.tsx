@@ -10,7 +10,7 @@
  */
 
 import { useT } from '@postly/i18n';
-import { derivePath } from '@ultimat3/action';
+import { actionHttpPath, derivePath } from '@ultimat3/action';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute, island } from '@ultimat3/render';
 import { Button, DateTime, RelativeTime, Stack, Text } from '@ultimat3/ui';
@@ -35,8 +35,11 @@ import styles from './page.module.scss';
 const COMMENT_ACTION = 'createComment' satisfies keyof Api['actions'];
 const COMMENT_ENDPOINT = derivePath(COMMENT_ACTION).path;
 
-/** `publishPost` → `POST /api/posts/publish`, by the same rule and for the same reason. */
-const PUBLISH_ENDPOINT = derivePath('publishPost' satisfies keyof Api['actions']).path;
+/**
+ * `publishPost` pins `POST /api/posts/:postId/publish`, so its URL names the post — filled per
+ * render from the row (`actionHttpPath`), never a module-level const: a template has no one URL.
+ */
+const PUBLISH_ACTION = 'publishPost' satisfies keyof Api['actions'];
 
 /**
  * The page's two islands, declared ABOVE `defineRoute` so the route can drain them. `props` are the
@@ -126,8 +129,18 @@ export const config = defineRoute({
    * why: −21,552 B. The page runtime (the store, the socket host, the channel book) is in the page
    * boot, once, and neither island carries a copy: the like control lost 43,871 B, the count
    * 9,250. What both islands still each carry is solid-js and the error tables (#505 cut 2).
+   *
+   * raised 156.5kb → 173kb, measured 177,027 B (2026-11-05, plan 101 wave 5a; the same sum, because
+   * the static report still lists `:id` `weighable: false`) — the like control 41,477 + the count
+   * 23,488 + the banner 710 + the page boot 79,905 + the router 29,218 + the inline runtime 2,229,
+   * against 177,152. why: the same sum on main is 171,914, already 11,658 B past `156.5kb` and
+   * unenforced, as this budget has been since it was written: the page boot 68,856 → 78,468, the
+   * router's growth, across plan 101's waves. This wave's +5,113 B: the like control +2,267, nearly
+   * all `pollEvery`'s timer, the once-a-minute repair read behind an at-most-once channel; the page
+   * boot +1,437, a pinned read's URL and the session flag; the router +1,409, `refresh()` keeping
+   * the same visitor's focus.
    */
-  budget: { js: '156.5kb' },
+  budget: { js: '173kb' },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.
@@ -218,7 +231,10 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
               the same shape as the comment form below — and costs the route zero bytes.
             */}
             <Show when={props.data.status === 'draft' && canPublish}>
-              <form method="post" action={PUBLISH_ENDPOINT}>
+              <form
+                method="post"
+                action={actionHttpPath(PUBLISH_ACTION, { postId: props.data.id }).path}
+              >
                 <input type="hidden" name="postId" value={props.data.id} />
                 <input type="hidden" name="orgId" value={props.data.orgId} />
                 <Button type="submit">{t('app.post.publish')}</Button>

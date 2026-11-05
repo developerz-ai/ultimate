@@ -2,7 +2,9 @@
  * The like control, in the browser: one of the two modules of `/posts/{id}` a browser downloads.
  *
  * It holds nothing of its own. The post is a RECORD in the page's one store, `posts:<id>`:
- * - `useQuery(POST_RECORD_READ)` seeds it — the post as its whole row, adopted from the answer;
+ * - `useQuery(POST_RECORD_READ, …, { poll })` seeds it — the post as its whole row, adopted from
+ *   the answer — and re-reads it once a minute while the tab is shown: the channel is at-most-once,
+ *   so a frame the socket missed is repaired by the next read, never left on screen;
  * - `useChannel(ORG_POSTS)` keeps it current — every committed `posts` row of the org lands there,
  *   so a like from another tab or another member moves this count with no refetch;
  * - `useMutation(LIKE_POST)` writes it — the optimistic twin into the store's overlay, the action
@@ -20,6 +22,7 @@
  */
 
 import {
+  pollEvery,
   useChannel,
   useConnection,
   useMutation,
@@ -58,10 +61,14 @@ export interface LikeIslandProps {
   readonly labels: LikeLabels;
 }
 
+/** The safety read's period: long enough that the channel, not the poll, is what moves the count. */
+const SAFETY_READ_MS = 60_000;
+
 function Like(props: LikeIslandProps): JSX.Element {
   const seed = useQuery<PostRecord>(
     { name: POST_RECORD_READ, entity: 'posts' },
     { orgId: props.orgId, postId: props.postId },
+    { poll: pollEvery(SAFETY_READ_MS) },
   );
   const channel = useChannel(ORG_POSTS, { orgId: props.orgId });
   const post = useRecord<PostRecord>('posts', props.postId);

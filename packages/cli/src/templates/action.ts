@@ -43,6 +43,18 @@ const missingLookup = (
       : `    // No lookup by id: this feature has no entity, and a generator writing into a slice never
     // invents one. \`x g entity ${feature.kebab}\` declares the table; this body is yours until then.`;
 
+/**
+ * The refusals the handler may throw, closed from day one: a 4xx it throws outside the list is
+ * `X_ERROR_UNDECLARED` in every test. The lookup's class answers its own code, so an
+ * `errors.ts` the author wrote keeps whatever code it declares.
+ */
+const errorsLine = (feature: NameSet, lookup: boolean): string =>
+  lookup
+    ? `  // The refusals a caller may branch on: add each code the handler comes to throw.
+  errors: [${feature.pascal}NotFoundError.code],`
+    : `  // The refusals a caller may branch on: add each code the handler comes to throw.
+  errors: [],`;
+
 const actionSource = (
   name: NameSet,
   feature: NameSet,
@@ -70,6 +82,7 @@ ${
   output: t.object({ id: t.uuid${lookup ? ', title: t.string' : ''} }),
   policy: can${feature.pascal}Write,
   cache: { invalidates: [${feature.camel}Tag] },
+${errorsLine(feature, lookup)}
   // No \`mcp\`: a tool's description is what an agent reads to decide to call it, and a placeholder
   // there is worse than no tool. Write one, then \`mcp: { expose: true, description: '…' }\`.
   async handle({ input }) {
@@ -111,6 +124,7 @@ export const ${name.camel} = mutator({
   // Required on a mutator (X_MUTATOR_NOT_IDEMPOTENT): the client replays this write under one
   // Idempotency-Key after a dropped response, and the replay answers the first result.
   idempotent: true,
+${errorsLine(feature, lookup)}
   // No \`mcp\` until a real description is written: see \`x g action\`.
   // tx.table(name) rather than tx.${feature.plural}: the typed accessor exists only once the app
   // augments LocalTables, and generated code cannot assume that has happened yet. The name is the
@@ -173,6 +187,11 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
   // A policy still deciding on `input.orgId` keeps it in the input, because the action compiles
   // against the policy it imports and that file is its author's to change, never this generator's.
   const singleTenant = sliceHasNoTenant(target.sliceEntity);
+  // The policy this run writes grants `<feature>:write`; a handwritten one, what it says.
+  const grant =
+    target.slicePolicy === undefined
+      ? `${feature.kebab}:write`
+      : grantOf(target.slicePolicy, `can${feature.pascal}Write`);
   const org =
     !singleTenant || (target.slicePolicy !== undefined && policyReadsOrg(target.slicePolicy));
   // Before a file is planned: a generated action that does not compile is refused, never written.
@@ -218,11 +237,7 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
         storesRow: sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo),
         dbModule: target.dbModule ?? PLACEHOLDER_DB_MODULE,
         org,
-        // The policy this run writes grants `<feature>:write`; a handwritten one, what it says.
-        grant:
-          target.slicePolicy === undefined
-            ? `${feature.kebab}:write`
-            : grantOf(target.slicePolicy, `can${feature.pascal}Write`),
+        grant,
       }),
     },
     {
@@ -233,6 +248,8 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
         isMutator,
         target.slicePolicy === undefined,
         target.slicePolicy === undefined && !singleTenant,
+        // A hand-written policy's one literal grant: its exercise runs as an actor holding it.
+        grant,
       ),
     },
   ];

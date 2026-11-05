@@ -5,10 +5,16 @@
 // a global registry. Routes and policies are supplied by the caller: the route table lives
 // in `@ultimat3/render`, which is this same tier.
 
-import { apiDeclaration, describeActions, jsonSchemaOf } from '@ultimat3/action';
+import {
+  actionHttpPinOf,
+  apiDeclaration,
+  describeActions,
+  getAction,
+  jsonSchemaOf,
+} from '@ultimat3/action';
 import { describeEntities, registeredEntities, sealedFields } from '@ultimat3/entity';
 import { describeJobs } from '@ultimat3/jobs';
-import { describeQueries, getQuery } from '@ultimat3/query';
+import { describeQueries, getQuery, queryHttpPinOf } from '@ultimat3/query';
 import { describeChannels } from '@ultimat3/realtime/server';
 import { toWireOutputSchema } from '@ultimat3/schema';
 import type { ManifestSources } from './build';
@@ -63,6 +69,22 @@ const queryInput = (name: string): { readonly input?: JsonValue } => {
 const queryRows = (name: string): { readonly rows?: JsonValue } => {
   const row = toWireOutputSchema(getQuery(name)?.rows);
   return row === undefined ? {} : { rows: asJson(row) };
+};
+
+/**
+ * A pinned `http: { path, method }`, written only when pinned: an unpinned primitive's URL is the
+ * style's derivation, which the manifest never carried, so absence keeps every fact's bytes.
+ */
+const actionHttp = (name: string) => {
+  const target = getAction(name);
+  const pin = target === undefined ? undefined : actionHttpPinOf(target);
+  return pin === undefined ? {} : { http: pin };
+};
+
+const queryHttp = (name: string) => {
+  const target = getQuery(name);
+  const pin = target === undefined ? undefined : queryHttpPinOf(target);
+  return pin === undefined ? {} : { http: pin };
 };
 
 /** Absent stays absent: only a sealed column carries the field. */
@@ -134,6 +156,9 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       // so absence already reads as "a plain action", and a `false` on every other action would
       // be bytes added to a file that is reviewed by hand for no fact gained.
       ...(action.mutator ? { mutator: true } : {}),
+      // Written when declared, sorted; `null` is the descriptor's "declares none" (an open list).
+      ...(action.errors === null ? {} : { errors: [...action.errors].sort() }),
+      ...actionHttp(action.name),
     })),
     queries: describeQueries().map((query) => ({
       name: query.name,
@@ -150,6 +175,8 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       // Written only when true — the reason `mutator` is: absence already means "answers rows".
       ...(query.download ? { download: true as const } : {}),
       ...queryRows(query.name),
+      ...(query.errors === null ? {} : { errors: [...query.errors].sort() }),
+      ...queryHttp(query.name),
     })),
     // The prefix and the cut, field by field: `resolveToken` is a function, and the rest of a mount
     // decides nothing about whether a held token's call still finds its route.

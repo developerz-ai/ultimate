@@ -63,6 +63,7 @@ function fakeRuntime(overrides: Partial<SolidRuntime> = {}): SolidRuntime {
     createMemo: <T>(fn: () => T) => fn,
     createEffect: () => {},
     onCleanup: () => {},
+    createRoot: <T>(fn: (dispose: () => void) => T): T => fn(() => {}),
     ...overrides,
   };
 }

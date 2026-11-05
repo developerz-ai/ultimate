@@ -58,8 +58,13 @@ export type { RecordEnvelope, RecordRows } from './record-envelope';
 export { decodeRecordEnvelope, RECORDS_HEADER } from './record-envelope';
 export type { PageClient, RecordSink } from './record-sink';
 export { pageClient } from './record-sink';
+export { fillTemplate, templateParams } from './route-path-template';
+export { onSessionLost, sessionIsLost } from './session-lost';
 // The key the theme boot script reads and the toggle island writes.
 export { THEME_STORAGE_KEY } from './theme-storage';
+// A poll a hidden tab and a lost session stop: here, so an island polling reaches no realtime.
+export type { VisibleIntervalOptions } from './visible-interval';
+export { visibleInterval } from './visible-interval';
 // What `clientTransport` revives a read's instants by: the header the server names them in.
 export { DATES_HEADER, reviveWireDates } from './wire-dates';
 // A write's public name, so the page's store can recognise the `records` frame its own write made.

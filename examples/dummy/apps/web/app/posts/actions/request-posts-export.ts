@@ -22,6 +22,8 @@ export const requestPostsExport = action({
   input: t.object({ orgId: t.uuid }),
   output: t.object({ exportId: t.uuid, prefix: t.string }),
   policy: postExport,
+  // Closed: see `publishPost`.
+  errors: [],
   idempotent: true,
   mcp: { expose: true, description: 'Export every post of the actor’s org as CSV to storage' },
   async handle({ input }) {

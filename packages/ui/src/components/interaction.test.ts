@@ -208,9 +208,10 @@ describe('component keyboard and form wiring', () => {
     // Numbered mode renders the "2 / 5" status; cursor mode renders none.
     expect(withAttr(nodes, 'aria-live')).toHaveLength(0);
 
+    // Cursor mode with no `prevCursor` draws Next alone: a keyset page has no way back.
     const buttons = byTag(nodes, 'button');
-    expect(buttons).toHaveLength(2);
-    fire(buttons[1] as RenderNode, 'onClick', {});
+    expect(buttons).toHaveLength(1);
+    fire(buttons[0] as RenderNode, 'onClick', {});
     // The inverted selector called onPage(3) and dropped the cursor on the floor.
     expect(cursors).toEqual(['c1']);
     expect(pages).toEqual([]);

@@ -18,9 +18,10 @@
 
 import type { ClientFlight, ClientRetry } from '@ultimat3/core';
 import type { FetchLike, RecordEnvelope } from '@ultimat3/core/page';
-import { clientTransport, queryPath } from '@ultimat3/core/page';
+import { clientTransport, fillTemplate, queryPath, templateParams } from '@ultimat3/core/page';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { DownloadClientMethod, DownloadQuery } from './download';
+import { QueryHttpPathInvalidError } from './http-pin-error';
 import type { PageControls } from './page-controls';
 import type { Page } from './pagination';
 import type { Query } from './query';
@@ -167,8 +168,9 @@ export function queryClient<TQueries extends QueryMap>(
 export function queryClientMethodFor<TInput extends StandardSchemaV1, TRow extends object>(
   name: string,
   options: QueryClientOptions,
+  pinnedPath?: string,
 ): QueryClientMethod<TInput, TRow> {
-  return methodsOf<TInput, TRow>(name, options);
+  return methodsOf<TInput, TRow>(name, options, pinnedPath);
 }
 
 /**
@@ -186,21 +188,31 @@ export function downloadClientFor<TInput extends StandardSchemaV1>(
 function methodsOf<TInput extends StandardSchemaV1, TRow extends object>(
   name: string,
   options: QueryClientOptions,
+  pinnedPath?: string,
 ) {
   const base = options.baseUrl.replace(/\/+$/, '');
+  const path = pinnedPath ?? queryPath(name);
   // Erased at the wire seam; the row type is this query's by construction.
   const rows = (input: InferInput<TInput>, callOptions: QueryCallOptions = {}) =>
-    read(base, options, name, input, callOptions) as Promise<readonly TRow[]>;
+    read(base, options, name, input, callOptions, undefined, path) as Promise<readonly TRow[]>;
   const page = (
     input: InferInput<TInput>,
     args: PageControls,
     callOptions: QueryCallOptions = {},
-  ) => read(base, options, name, input, callOptions, args) as Promise<Page<TRow>>;
+  ) => read(base, options, name, input, callOptions, args, path) as Promise<Page<TRow>>;
   const url = async (
     input: InferInput<TInput>,
     callOptions: QueryCallOptions = {},
   ): Promise<DownloadUrl> => {
-    const minted = (await read(base, options, name, input, callOptions)) as DownloadUrl;
+    const minted = (await read(
+      base,
+      options,
+      name,
+      input,
+      callOptions,
+      undefined,
+      path,
+    )) as DownloadUrl;
     return { ...minted, url: base + minted.url };
   };
   return Object.assign(rows, { page, url });
@@ -218,12 +230,33 @@ function read(
   name: string,
   input: unknown,
   callOptions: QueryCallOptions,
-  page?: PageControls,
+  page: PageControls | undefined,
+  path: string,
 ): Promise<unknown> {
-  const search = searchOf(input, page);
+  const params = templateParams(path);
+  let at = path;
+  let rest = input;
+  if (params.length > 0) {
+    // The URL carries a `:param` pin's values, each one encoded segment the router decodes back;
+    // the search string carries the rest. A missing value is refused before any request exists.
+    const filled = fillTemplate(path, input);
+    if (!filled.ok) {
+      return Promise.reject(
+        new QueryHttpPathInvalidError({
+          name,
+          path,
+          reason: `needs a non-empty string for :${filled.missing}, and the call's input has none`,
+        }),
+      );
+    }
+    at = filled.path;
+    const entries = Object.entries(input as Record<string, unknown>);
+    rest = Object.fromEntries(entries.filter(([key]) => !params.includes(key)));
+  }
+  const search = searchOf(rest, page);
   return clientTransport({
     method: 'GET',
-    url: `${base}${queryPath(name)}${search === '' ? '' : `?${search}`}`,
+    url: `${base}${at}${search === '' ? '' : `?${search}`}`,
     // The trace and budget are the transport's, from its server-side outbound slot, placed
     // before these so an explicit `traceparent` still wins; a browser bundles none of it.
     ...(options.headers === undefined ? {} : { headers: options.headers }),

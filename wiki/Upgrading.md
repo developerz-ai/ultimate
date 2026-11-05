@@ -8,7 +8,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 29.x → 30.0.0 | **74** so far — the rows below are the plan's four waves: a write past its deadline that rolls back, a closed-transaction refusal, a two-release column drop, **same-tenant composite keys that need one `x db gen`**, `upsertAll` overwriting only what it names, every agent and MCP call held by `mcpConfirmations`, `'null'` refused in `cors.origins`, `isr` and `static` that render as nobody, a query-free `isr` key by default, a pool that refuses past `acquireTimeoutMs`, an upload grant bound to its declared size, mail that refuses an unresolved key, a problem document with `retry`, a worker retire on by default, required `StorageDriver`, `JobDriver` and `PoolProfile` members, a `budgets` step that builds before it weighs, no `bin/check` in a new app, `ui`'s Standard Schema copies removed, no vendor link on the default error page, the render brands at `@ultimat3/core/render-node` only, a required `enqueueMany` on every `JobHandle`, `JobsFacade` and `JobDriver`, an outbox relay that claims 500 rows a pass, `'browser'` in `ERROR_SOURCES`, `assets` and `clientErrors` on `AppConfig`, `pwa`'s `retentionPlan` and `retainBuildIds` removed, a `DefineEvalInput` union, `MCP_PROTOCOL_VERSION` deleted, an MCP revision decided per request with `2026-07-28` the newest, a cross-origin `POST /mcp` refused with `'origin-refused'` in `McpAuthRefusal`, and `x mcp serve` answering only a loopback Host | `[Unreleased]` in `CHANGELOG.md`, and the walkthrough below in order |
+| 29.x → 30.0.0 | **82** so far — the rows below are the plan's five waves: a write past its deadline that rolls back, a closed-transaction refusal, a two-release column drop, **same-tenant composite keys that need one `x db gen`**, `upsertAll` overwriting only what it names, every agent and MCP call held by `mcpConfirmations`, `'null'` refused in `cors.origins`, `isr` and `static` that render as nobody, a query-free `isr` key by default, a pool that refuses past `acquireTimeoutMs`, an upload grant bound to its declared size, mail that refuses an unresolved key, a problem document with `retry`, a worker retire on by default, required `StorageDriver`, `JobDriver` and `PoolProfile` members, a `budgets` step that builds before it weighs, no `bin/check` in a new app, `ui`'s Standard Schema copies removed, no vendor link on the default error page, the render brands at `@ultimat3/core/render-node` only, a required `enqueueMany` on every `JobHandle`, `JobsFacade` and `JobDriver`, an outbox relay that claims 500 rows a pass, `'browser'` in `ERROR_SOURCES`, `assets` and `clientErrors` on `AppConfig`, `pwa`'s `retentionPlan` and `retainBuildIds` removed, a `DefineEvalInput` union, `MCP_PROTOCOL_VERSION` deleted, an MCP revision decided per request with `2026-07-28` the newest, a cross-origin `POST /mcp` refused with `'origin-refused'` in `McpAuthRefusal`, and `x mcp serve` answering only a loopback Host | `[Unreleased]` in `CHANGELOG.md`, and the walkthrough below in order |
 | 28.x → 29.0.0 | **2** — **Bun 1.4.4 as the floor**; a `WORKER_QUEUES` entry the app does not know refuses the worker's boot | [the `29.0.0` section](#28x--2900-entry-by-entry), in order |
 | 27.x → 28.0.0 | **2** — **Bun 1.4.3 as the floor**; `@ultimat3/ui/jsx-probe` and its `probe`/`unprobe` removed | [the `28.0.0` section](#27x--2800-entry-by-entry), in order |
 | 26.x → 27.0.0 | **2** — `AsyncContext.exit` required; **`/_storage` and `/media` refuse a key outside every `org/<id>/` prefix unless `defineStorage({ shared })` lists its prefix**, and `Storage.isShared` required | [the `27.0.0` section](#26x--2700-entry-by-entry), in order |
@@ -62,7 +62,7 @@ Each entry changes a surface the table below covers.
 
 ## 29.x → 30.0.0, entry by entry
 
-`As of 2026-11-03`, unpublished: `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by package, lowest tier first. No legacy path, no codemod, no shim. A later slice appends its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)` after the dash.
+`As of 2026-11-05`, unpublished: `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by package, lowest tier first. No legacy path, no codemod, no shim. A later slice appends its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)` after the dash.
 
 ### The upgrade, top to bottom
 
@@ -95,10 +95,13 @@ Each entry changes a surface the table below covers.
 | 25 | `grep -rn "outboxRelay(" apps/ packages/`: a relay that runs the row loop (a driver without `enqueueMany`, such as `redisJobDriver`) against very slow publishes passes `batchSize: 100` | nothing fails: 500 rows must publish inside the 30 s claim lease, or they are claimed again | 64 |
 | 26 | optional, a repository that copies `ci.yml`'s `tested` job ([CI-Parallel-Gate](CI-Parallel-Gate#a-push-a-green-pr-run-already-tested)): give each reused job, the verdict job included, `needs: tested` and `if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}` and no other `if` | without `!cancelled()`, a red or cancelled `tested` skips every job instead of running them | — |
 | 27 | an MCP client: a browser page on another origin calling `POST /mcp` lists that origin in `http.cors.origins`; a script reaching `x mcp serve` through a LAN name or a tunnel uses `localhost`; a test pinning `initialize`'s `2025-06-18` answer offers that revision | `403` `X_MCP_ORIGIN_REFUSED`; `421` `X_MCP_HOST_REFUSED`; `protocolVersion: '2025-11-25'` | 71, 72, 74 |
+| 28 | `x verify --only typecheck`: add `createRoot` to each `setSolidRuntime` call, `ui.first` to a `Record<UiKey, string>`, and `errors` to a hand-built descriptor | TS2345, TS2741 | 75, 77, 82 |
+| 29 | `x verify --only contract`: give each guarded action and query an `exercise`, and fix what its generated input finds. A keyset list that drew a disabled Previous takes `firstHref` | `X_CONTRACT_EXERCISE_UNDECLARED`, `X_CONTRACT_DEFECT`, `X_CONTRACT_EXERCISE_UNREACHED`, `X_UI_INVALID_VALUE` | 76, 78, 80, 81 |
+| 30 | `grep -rn "refresh()" apps/`: a caller that wanted focus on `<main>`, the title read out, or a navigation cancelled says so itself | nothing fails: focus stays where it was | 79 |
 
 ### Entry by entry
 
-Tier 0 — `@ultimat3/core` (1–2). Tier 1 — `@ultimat3/db` (3–5), `@ultimat3/storage` (6–7). Tier 2 — `@ultimat3/entity` (8–14), `@ultimat3/http` (15), `@ultimat3/auth` (16). Tier 3 — `@ultimat3/action` (17–20), `@ultimat3/jobs` (21–22). Tier 4 — `@ultimat3/render` (23–24), `@ultimat3/notify` (25). Appended after the tier order: `@ultimat3/mcp` (26–27), `@ultimat3/http` (28), `@ultimat3/render` (29). Appended by the second wave, by tier: `@ultimat3/core` (30), `@ultimat3/db` (31–32), `@ultimat3/i18n` (33–34), `@ultimat3/storage` (35–37), `@ultimat3/http` (38–40), `@ultimat3/entity` (41), `@ultimat3/query` (42–43), `@ultimat3/action` (44), `@ultimat3/jobs` (45–46), `@ultimat3/render` (47), `@ultimat3/mail` (48), `@ultimat3/manifest` (49), `@ultimat3/testing` (50), `@ultimat3/cli` (51–56). Appended by the third wave, by tier: `@ultimat3/http` (57), `@ultimat3/ui` (58), `@ultimat3/cli` (59–60). Appended by the wave 3 gate fix: `@ultimat3/render` (61). Appended by the fourth wave: `@ultimat3/jobs` (62–64), `@ultimat3/core` (65–66), `@ultimat3/pwa` (67–68), `@ultimat3/ai` (69), `@ultimat3/mcp` (70–73), `@ultimat3/cli` (74).
+Tier 0 — `@ultimat3/core` (1–2). Tier 1 — `@ultimat3/db` (3–5), `@ultimat3/storage` (6–7). Tier 2 — `@ultimat3/entity` (8–14), `@ultimat3/http` (15), `@ultimat3/auth` (16). Tier 3 — `@ultimat3/action` (17–20), `@ultimat3/jobs` (21–22). Tier 4 — `@ultimat3/render` (23–24), `@ultimat3/notify` (25). Appended after the tier order: `@ultimat3/mcp` (26–27), `@ultimat3/http` (28), `@ultimat3/render` (29). Appended by the second wave, by tier: `@ultimat3/core` (30), `@ultimat3/db` (31–32), `@ultimat3/i18n` (33–34), `@ultimat3/storage` (35–37), `@ultimat3/http` (38–40), `@ultimat3/entity` (41), `@ultimat3/query` (42–43), `@ultimat3/action` (44), `@ultimat3/jobs` (45–46), `@ultimat3/render` (47), `@ultimat3/mail` (48), `@ultimat3/manifest` (49), `@ultimat3/testing` (50), `@ultimat3/cli` (51–56). Appended by the third wave, by tier: `@ultimat3/http` (57), `@ultimat3/ui` (58), `@ultimat3/cli` (59–60). Appended by the wave 3 gate fix: `@ultimat3/render` (61). Appended by the fourth wave: `@ultimat3/jobs` (62–64), `@ultimat3/core` (65–66), `@ultimat3/pwa` (67–68), `@ultimat3/ai` (69), `@ultimat3/mcp` (70–73), `@ultimat3/cli` (74). Appended by the fifth wave: `@ultimat3/ui` (75–78), `@ultimat3/render` (79), `@ultimat3/action` (80–82).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
@@ -176,6 +179,14 @@ Tier 0 — `@ultimat3/core` (1–2). Tier 1 — `@ultimat3/db` (3–5), `@ultima
 | 72 | `POST /mcp` with an `Origin` | it is not this app and not in `http.cors.origins`: `403` `X_MCP_ORIGIN_REFUSED`, before `resolveToken`. Call from the app's own origin, list a sibling page's origin in `http.cors.origins`, or call from a client that sends no `Origin` |
 | 73 | `McpAuthRefusal` | an exhaustive `switch` over it, or a `Record<McpAuthRefusal, …>`: add an `'origin-refused'` arm (`mcp.auth.origin-refused`, `onAudit`'s `auth-refused` with status 403) |
 | 74 | `x mcp serve --transport http` | you reach it through a name that is not `localhost`, `*.localhost` or a loopback address: `421` `X_MCP_HOST_REFUSED`. Use `http://localhost:<port>/mcp` or `http://127.0.0.1:<port>/mcp`. `GET`/`DELETE` on it answer `405` `X_METHOD_NOT_ALLOWED`, not `404` |
+| 75 | `setSolidRuntime` | every island that registers the runtime: add `createRoot` to the `solid-js` import and to the call, `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot })`. A six-name call no longer compiles (TS2345). A whole `solid-js` namespace still registers |
+| 76 | `DataTable`'s `rowKey` | two rows answering one key are `X_UI_INVALID_VALUE`: make the key unique, normally the row's primary key, `rowKey={(row) => row.id}` |
+| 77 | `UI_KEYS`, `UiKey` | a `Record<UiKey, string>`: add `ui.first` |
+| 78 | a cursor-mode `Pagination` with no `prevCursor` | it no longer draws a disabled Previous. To give a keyset list a way back, pass `firstHref` (link mode, `listUrl().firstHref`) or `onFirst` (callback mode) |
+| 79 | `refresh()` from `@ultimat3/render/client` | code that relied on the old behaviour, [the table below](#entry-79-what-refresh-no-longer-does) |
+| 80 | `.contract()` on a non-public action or query | it calls your handler 16 times with generated legal input: pass `{ exercise: { actor } }` or `{ exercise: { off: '<reason>' } }`, [the rules below](#entry-80-the-exercise-assertion) |
+| 81 | `sampleInput` | you imported action's `sample-input` module by path; it is gone: `import { sampleInput } from '@ultimat3/schema/sample'` |
+| 82 | `ActionDescriptor`, `QueryDescriptor`, `Query` | code that assigned `.method` to a `'POST'`-typed variable widens it to `ActionHttpMethod`. A hand-built descriptor adds `errors: null`; a hand-built `Query` adds `contract` |
 
 ### Entry 25: a hand-written `DeliveryLedger`
 
@@ -187,6 +198,29 @@ A compile error until it does:
 | `settle(claim, status, at): Promise<void>` | `settle(claim, status, at, claimId): Promise<boolean>`: `false` when `claimId` no longer owns a `sending` row, and nothing changes |
 
 A `sending` row is no longer re-claimable at once: it is held for `reclaimAfterMs`, default `DEFAULT_DELIVERY_RECLAIM_MS` (5 minutes). A retry landing inside it raises `X_NOTIFY_DELIVERY_HELD` and is rescheduled past the window with the attempt uncounted.
+
+### Entry 79: what `refresh()` no longer does
+
+Only an app that relied on the old behaviour has anything to do:
+
+| Relied on | Now | Do |
+|---|---|---|
+| focus landing on `<main>` after `refresh()` | focus stays on the control the visitor was in; `<main>` only when it is gone | call `document.querySelector('main')?.focus()` after `await refresh()` where that is wanted |
+| the title read out after `refresh()` | nothing is announced | announce in the app's own live region |
+| `refresh()` cancelling a navigation in flight | it resolves and does nothing; that navigation lands | `await navigate(location.href, { replace: true })` to replace it |
+| `refresh()` re-fetching the page under an open modal | nothing is fetched | `closeModal()` first, then `refresh()` |
+
+### Entry 80: the exercise assertion
+
+`.contract()`'s fourth assertion calls the handler 16 times with input `input:` accepts, inside a rolled-back transaction.
+
+| Case | Answer | Do |
+|---|---|---|
+| no `exercise`, on a non-public action or query | `X_CONTRACT_EXERCISE_UNDECLARED` | `{ exercise: { actor } }`, or `{ exercise: { off: '<reason>' } }`. A public one (its policy admits an anonymous caller) runs as the signed-out caller with nothing declared |
+| an input a generated uuid cannot satisfy: a row id, an org the policy compares | every run stops before the handler | a binder: `{ exercise: { actor, input: (drawn) => ({ ...drawn, postId, orgId }) } }` |
+| the handler throws uncoded, fails its output schema, or answers a coded 5xx on a legal input | `X_CONTRACT_DEFECT`; an `errors:`-undeclared code counts as a 5xx | fix the handler. The `fix:` is the `bun test <file> -t '<name>: handler survives generated input'` that replays the run |
+| no run reaches the handler: every run denied, or a sealed network | `X_CONTRACT_EXERCISE_UNREACHED` | a grant the actor holds, or a binder |
+| the memory store (`storeMode` `memory`) | what a run writes stays until the next `seed()`; on Postgres each run rolls back | seed in `beforeEach` where a test reads the store |
 
 ### Not breaking, but you will see it
 
@@ -240,6 +274,12 @@ A `sending` row is no longer re-claimable at once: it is held for `reclaimAfterM
 | `x ci` gains `tested`; `--branch`, `--run`, `--tail`, `--full` and `--event` belong to `runs` | nothing: `x ci` with no subcommand is `x ci runs`, as before |
 | `X_DB_LOCK_TIMEOUT`'s `fix:` reads `x db diagnostics --json \| jq '.data.blockers.rows[] \| {pid, blockedBy, blockerState}'` | a script that matched the old `psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity …"` text matches on the code instead. `--limit` on `x db` is accepted by `diagnostics` as well as `backfill` |
 | `x new` writes `storeMode(env) === 'memory' ? testDriver() : postgresDriver()` in `packages/db/src/client.ts` | optional, one line: `import { type Driver, database, postgresDriver, testDriver } from '@ultimat3/entity'`, then change the memory arm of `selectDriver` to `testDriver()`. Without it nothing changes; with it a test file that runs the [Testing](Testing#database-state-and-what-a-run-leaves-behind) recipe reads and writes its migrated database through `db`, and a file that installs no client behaves as before. A web workspace that runs the recipe lists `@ultimat3/db` (and `@ultimat3/cli`) among its dependencies |
+| hand-rolled polling in an island (`setInterval(…)` beside a `visibilitychange` listener) | optional: `visibleInterval(run, ms)` from `@ultimat3/core/page`, or `useQuery(ref, input, { poll: pollEvery(ms) })` for a read; `x g guard raw-interval` adds the guard that refuses the bare call. A channel event that re-renders the page is `scheduleRefresh()` from `@ultimat3/render/client`, not `refresh()` |
+| `errors:` on `action()`, `mutator()` and `query()` is optional | an operation that does not declare it keeps its behaviour and its OpenAPI bytes. To close a contract, list each 4xx code the handler throws, importing the `defineError` class and listing its `.code` (the import registers the status before `action()` checks the list): `errors: [PostNotFound.code, 'X_FORBIDDEN']`. Then `x verify --only contract`: a 4xx the list does not name is `X_ERROR_UNDECLARED`, whose `fix:` names the code to add |
+| `http.path` takes `:param` templates, and `http.method` is new | nothing for an app that pins no parameterised path: every static route, its OpenAPI bytes and its manifest fact are unchanged. To serve a resource-shaped URL pin it on the primitive and write no route file: `http: { path: '/orders/:id/refund', method: 'POST' }`, each `:param` a required `t.string` key of `input:`. Call it with `action.client()` or `read.client()`; `derivePath('refundOrder')` throws, so use `actionHttpPath('refundOrder', { id })` |
+| a body or search string naming a `:param`'s key | it carries the URL's value or leaves the key out; a different value is 400 `X_HTTP_PATH_INPUT_CONFLICT` |
+| every action pinned before 30.0.0 gains `http: { path, method: 'POST' }` in `x.manifest.json` | `additive` in `contract-diff`, not breaking: regenerate with `x manifest` |
+| an app with no `persist: true` entity: a `useQuery` / `useRecord` island is no longer held | nothing: it paints earlier |
 
 ## 28.x → 29.0.0, entry by entry
 

@@ -7,6 +7,7 @@ import { type AsyncState, isSuperseded, type RecordEnvelope, type Row } from '@u
 import type { LiveHandle } from './client-contract';
 import type { JsonValue } from './json';
 import { installedPage, type PageServices } from './page-store';
+import type { QueryPoll } from './query-poll';
 import { isServerRender, signalFor } from './reactivity';
 import { keptAnswer } from './record-answer';
 import { type RecordStore, recordKey } from './record-store';
@@ -53,8 +54,33 @@ const nothing = (): void => undefined;
 export interface QueryOptions {
   /** Read in pages of this many rows (`query.page`); `more()` appends the next. Non-live only. */
   readonly first?: number;
+  /**
+   * `pollEvery(ms)`: re-read (`refetch`) on a timer that a hidden tab and a lost session stop, and
+   * `release` ends. The safety read beside an at-most-once channel. A VALUE and not a number, so
+   * the timer ships only in an island that polls. Non-live only, by type: a live read has its socket.
+   */
+  readonly poll?: QueryPoll;
 }
 
+/** A live read's options: no `poll`, because the socket is its refresh. */
+export type LiveQueryOptions = Omit<QueryOptions, 'poll'> & { readonly poll?: never };
+
+export function useQuery<R extends object = Row>(
+  ref: QueryRef & { readonly live: true },
+  input: JsonValue,
+  options?: LiveQueryOptions,
+): QueryAccessor<R>;
+export function useQuery<R extends object = Row>(
+  ref: QueryRef & { readonly live?: false },
+  input: JsonValue,
+  options?: QueryOptions,
+): QueryAccessor<R>;
+/** A ref whose liveness the type does not know may be live, so it takes no `poll` either. */
+export function useQuery<R extends object = Row>(
+  ref: QueryRef,
+  input: JsonValue,
+  options?: LiveQueryOptions,
+): QueryAccessor<R>;
 export function useQuery<R extends object = Row>(
   ref: QueryRef,
   input: JsonValue,
@@ -185,11 +211,12 @@ function readAccessor<R extends object>(
     }));
   };
 
-  const load = (append = false): void => {
+  /** Settles when this read's answer is applied or refused — never rejects. */
+  const load = (append = false): Promise<void> => {
     const mine = ++generation;
     if (state.status === 'ready') state = { status: 'refreshing', data: rows() };
     bump();
-    fetch(append).then(
+    return fetch(append).then(
       (answer) => {
         if (released || mine !== generation) return;
         if (answer.next !== undefined) after = answer.next;
@@ -217,17 +244,15 @@ function readAccessor<R extends object>(
         if (released || mine !== generation) return;
         // The page changed principal under this read: its answer was the previous one's, and the
         // store it would have landed in is already empty. Read again, as the new principal.
-        if (isSuperseded(error)) {
-          load();
-          return;
-        }
+        // Returned, so a poll waiting on this read waits on the re-read too.
+        if (isSuperseded(error)) return load();
         state = { status: 'failed', error };
         bump();
       },
     );
   };
 
-  load();
+  void load();
   /**
    * The last answer handed out: a re-read that answered the same rows (a poll, a refetch, a return
    * to the tab) hands back its `data` array, so nothing derived from it runs again.
@@ -240,20 +265,31 @@ function readAccessor<R extends object>(
     answer = keptAnswer(answer, state.status, rows() as readonly R[]);
     return answer;
   };
+  const refetch = (): Promise<void> => {
+    after = null;
+    return load();
+  };
+  // The poll awaits each read, so a slow answer is never overlapped by the next one.
+  // A read that ended `failed` rejects for the poll alone, so `maxMs` backs it off; `load` and
+  // `refetch` keep resolving for everyone else.
+  const stopPoll = options.poll?.start(() =>
+    refetch().then(() => {
+      if (state.status === 'failed') throw state.error;
+    }),
+  );
   const release = (): void => {
     if (released) return;
     released = true;
+    stopPoll?.();
     off();
     hold([]);
     keys = [];
   };
   return Object.assign(read, {
-    refetch: () => {
-      after = null;
-      load();
-    },
+    // Its promise is the poll's; a caller of the `void` member ignores it.
+    refetch,
     more: () => {
-      if (after !== null && state.status === 'ready') load(true);
+      if (after !== null && state.status === 'ready') void load(true);
     },
     hasMore: () => {
       version();

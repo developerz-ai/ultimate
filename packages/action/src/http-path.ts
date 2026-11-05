@@ -6,13 +6,25 @@
  */
 
 import type { ActionPathStyle, ActionRoute } from '@ultimat3/core';
-import { ACTION_PATH_STYLES, actionRoute } from '@ultimat3/core';
+import {
+  ACTION_PATH_STYLES,
+  actionRoute,
+  fillTemplate,
+  pathTemplateProblem,
+  renderCauseValue,
+  templateKeyProblem,
+  templateParams,
+} from '@ultimat3/core';
+import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { tryIntrospect } from '@ultimat3/schema';
+import type { AnyAction } from './action';
 import {
   ActionHttpPathInvalidError,
   ActionPathDerivedEarlyError,
   ActionPathStyleInvalidError,
 } from './errors-http';
 import { defOf } from './invoke';
+import { jsonSchemaOf } from './json-schema';
 import { seatedActions } from './registry-store';
 
 /**
@@ -24,19 +36,30 @@ const pinOf = (name: string): string | undefined => {
   return seated === undefined ? undefined : defOf(seated).http?.path;
 };
 
+/** The verbs a pinned action may answer. `POST` is every unpinned action's, and the default. */
+export const ACTION_HTTP_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const;
+export type ActionHttpMethod = (typeof ACTION_HTTP_METHODS)[number];
+
 /** What an action may say about its own HTTP projection. */
 export interface ActionHttp {
   /**
    * Pin the URL, whatever the app's style derives — for a path a caller already holds and cannot
-   * be told to change. Static and lowercase; the pin is also what a rename of the export can no
+   * be told to change, or a public `/v1` shaped by resource (`/orders/:id/refund`). Lowercase
+   * static segments and `:param`s, each a REQUIRED string key of `input:`: the URL's value is merged
+   * into the input before it is parsed, so the one schema validates it and the policy, the row
+   * loader and the handler read one object. The pin is also what a rename of the export can no
    * longer move. A vendor's webhook goes to `webhookReceiver()` (`@ultimat3/jobs`) instead: an
    * action's schema answers before any signature is checked.
    */
   readonly path?: string;
+  /** The verb the pin answers: `'POST'` (default), `'PUT'`, `'PATCH'` or `'DELETE'`. Needs `path`. */
+  readonly method?: ActionHttpMethod;
 }
 
-/** Static, lowercase, no parameters, no trailing slash. */
-const PINNED_PATH = /^(\/[a-z0-9][a-z0-9._~-]*)+$/;
+/** The method `target` is served with: its pin's, else `POST`. */
+export function methodOfHttp(http: ActionHttp | undefined): ActionHttpMethod {
+  return http?.method ?? 'POST';
+}
 
 let style: ActionPathStyle = 'resource';
 
@@ -86,26 +109,47 @@ export function resetActionPathStyle(): void {
   handedOut.clear();
 }
 
-/** Refuses a pin that is not a static lowercase path, or one under the framework's `/_x`. */
-export function assertPinnedPath(name: string, path: unknown): void {
-  if (typeof path !== 'string') {
-    throw new ActionHttpPathInvalidError({ name, path, reason: 'is not a string' });
-  }
-  if (!PINNED_PATH.test(path)) {
+/**
+ * Refuses a pin that is not a lowercase template, claims `/_x`, repeats a `:param`, or names a
+ * `:param` that is not a required string key of `input` — core's one rule, shared with
+ * `@ultimat3/query`. No `input` given proves no key, so a parameterised pin is refused then.
+ */
+export function assertPinnedPath(name: string, path: unknown, input?: unknown): void {
+  const reason =
+    pathTemplateProblem(path) ??
+    templateKeyProblem(
+      templateParams(path as string),
+      input === undefined ? undefined : tryIntrospect(input)?.properties,
+    );
+  if (reason !== undefined) throw new ActionHttpPathInvalidError({ name, path, reason });
+}
+
+/** The whole declaration: the path as above, and a method only beside a path, from the four. */
+export function assertPinnedHttp(name: string, http: ActionHttp, input: unknown): void {
+  const method: unknown = http.method;
+  if (method !== undefined && http.path === undefined) {
     throw new ActionHttpPathInvalidError({
       name,
-      path,
-      reason:
-        'is not a static lowercase path (a parameter, an uppercase letter or a trailing slash)',
+      path: http.path,
+      reason: `is absent, and http.method ${renderCauseValue(method)} has no pinned path to answer on`,
     });
   }
-  if (path === '/_x' || path.startsWith('/_x/')) {
+  if (method !== undefined && !ACTION_HTTP_METHODS.some((known) => known === method)) {
     throw new ActionHttpPathInvalidError({
       name,
-      path,
-      reason: 'claims /_x, the framework namespace',
+      path: http.path,
+      reason: `is declared with http.method ${renderCauseValue(method)}, which is not one of ${ACTION_HTTP_METHODS.join(', ')}`,
     });
   }
+  if (http.path !== undefined) assertPinnedPath(name, http.path, input);
+}
+
+/** `{ path, method }` exactly when `target` pins its URL — the manifest's fact, absent otherwise. */
+export function actionHttpPinOf(
+  target: AnyAction,
+): { readonly path: string; readonly method: ActionHttpMethod } | undefined {
+  const http = defOf(target).http;
+  return http?.path === undefined ? undefined : { path: http.path, method: methodOfHttp(http) };
 }
 
 /**
@@ -135,8 +179,45 @@ export function servedActionRoute(name: string): ActionRoute {
  * The same answer, handed to APP code by name (`derivePath`, `actionHttpPath('name')`) — which
  * may keep the string, so it is the one recorded; see `handedOut`.
  */
-export function resolveActionRoute(name: string): ActionRoute {
-  const route = servedActionRoute(name);
+export function resolveActionRoute(name: string, params?: unknown): ActionRoute {
+  const route = filledRoute(name, servedActionRoute(name), params);
   handedOut.set(name, route.path);
   return route;
+}
+
+/**
+ * A parameterised route with its `:param`s filled from `params`, each encoded as one segment. No
+ * values for a template is refused, never answered with `:id` spelled into a URL nothing serves.
+ */
+export function filledRoute(name: string, route: ActionRoute, params: unknown): ActionRoute {
+  if (templateParams(route.path).length === 0) return route;
+  const filled = fillTemplate(route.path, params);
+  if (filled.ok) return { ...route, path: filled.path };
+  throw new ActionHttpPathInvalidError({
+    name,
+    path: route.path,
+    reason: `needs a non-empty string for :${filled.missing}, and the call passed none`,
+    fix: `actionHttpPath('${name}', { ${filled.missing}: '<value>' }) — or call ${name}.client(options), which fills it from the input`,
+  });
+}
+
+/**
+ * A `:param` pin's OpenAPI parameters, `in: path` and required, in template order, each with its
+ * input member's own schema — the request body's component drops the same keys (`openapi.ts`).
+ */
+export function pathParametersOf(
+  path: string,
+  input: StandardSchemaV1,
+): readonly Record<string, unknown>[] {
+  const params = templateParams(path);
+  if (params.length === 0) return [];
+  const properties = jsonSchemaOf(input)['properties'];
+  const members: Readonly<Record<string, unknown>> =
+    typeof properties === 'object' && properties !== null ? { ...properties } : {};
+  return params.map((name) => ({
+    name,
+    in: 'path',
+    required: true,
+    schema: Object.hasOwn(members, name) ? members[name] : { type: 'string' },
+  }));
 }

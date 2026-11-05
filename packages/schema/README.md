@@ -21,6 +21,7 @@ type, a JSON Schema, an OpenAPI body, an MCP tool `inputSchema` and HTTP query c
 | `X_VALIDATION_FAILED` with path-annotated issues | `errors.ts` |
 | `SCHEMA_RULES` — the closed vocabulary an issue's `rule` names — and `issueRuleFacts` | `schema-rules.ts` |
 | `.sensitive()`'s two readers: `maskSensitive`, `assertNoSensitiveOutput` | `sensitive.ts` |
+| `@ultimat3/schema/sample`, off the barrel: `sampleInput` (the minimal value), `arbitrary(schema, { seed, run })` (the contract step's generated inputs), one walker over a `Draw` (`minimalDraw`, `seededDraw`), `sampleGaps` | `sample.ts`, `sample-draw.ts`, `sample-seeded.ts` |
 
 ## `t`
 

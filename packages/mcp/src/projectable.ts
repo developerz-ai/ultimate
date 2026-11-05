@@ -8,6 +8,7 @@ import { actionName, admitActionCaller, asCallerContext, invoke, isAction } from
 import {
   type Actor,
   actorOf,
+  describeDeclaredErrors,
   isMcpExposed,
   type McpExposureDeclaration,
   useContext,
@@ -45,10 +46,10 @@ export function asProjectable(listed: ListedPrimitive): ProjectablePrimitive {
 }
 
 export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
-  const exposure = exposureOf(target.mcp);
   // Throws `X_ACTION_UNREGISTERED` on an unnamed action rather than projecting a tool called
   // `''`: a nameless tool is unaddressable by the scope map, by `tools/call`, and by the author.
   const name = actionName(target);
+  const exposure = exposureOf(target.mcp, name, target.errors);
   const wire = toWireSchema(target.input);
   // `idempotent: true` is honoured on this surface exactly as over HTTP: the caller's key reaches
   // `invoke`, which files it under the action, the caller and the key (`idempotencyKeyFor`).
@@ -75,7 +76,6 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
 }
 
 export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
-  const exposure = exposureOf(target.mcp);
   // A `single: true` read answers ONE row, or not-found — what its route answers (404) and what
   // `@ultimat3/query`'s `readAnswer` makes every read answer. Handing an agent `[]` for a missing id said "found, and empty".
   const single = target.single === true;
@@ -84,6 +84,7 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
   // is an object by the spec; a single read's answer already IS the object.
   const output = single ? toWireOutputSchema(target.rows) : toRowsOutputSchema(target.rows);
   const name = queryName(target);
+  const exposure = exposureOf(target.mcp, name, target.errors);
   return {
     name,
     ...(exposure === undefined ? {} : { mcp: exposure }),
@@ -139,11 +140,19 @@ export function toRowsOutputSchema(rows: unknown): JsonSchema | undefined {
  */
 function exposureOf(
   declared: McpExposureDeclaration | undefined,
+  name: string,
+  errors: readonly string[] | undefined,
 ): McpExposureDeclaration | undefined {
   if (declared === undefined) return undefined;
+  // A declared `errors:` ends the description (core's one sentence, `@ultimat3/ai`'s too), so a
+  // tool with none written gets `toolFrom`'s default spelled out before the list.
+  const description =
+    errors === undefined || errors.length === 0
+      ? declared.description
+      : describeDeclaredErrors(declared.description ?? `Run the "${name}" action.`, errors);
   return {
     expose: isMcpExposed(declared),
-    ...(declared.description === undefined ? {} : { description: declared.description }),
+    ...(description === undefined ? {} : { description }),
     ...(declared.visibleTo === undefined ? {} : { visibleTo: declared.visibleTo }),
     ...(declared.listParams === undefined ? {} : { listParams: declared.listParams }),
     ...(declared.effect === undefined ? {} : { effect: declared.effect }),

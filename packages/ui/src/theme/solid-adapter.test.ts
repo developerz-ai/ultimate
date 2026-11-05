@@ -40,6 +40,7 @@ function fakeRuntime(): SolidRuntime {
     createMemo: <T>(fn: () => T) => fn,
     createEffect: () => {},
     onCleanup: () => {},
+    createRoot: <T>(fn: (dispose: () => void) => T): T => fn(() => {}),
   };
 }
 
@@ -71,17 +72,17 @@ describe('solid runtime registration', () => {
     });
     expect(caught).toMatchObject({ code: UI_ERROR_CODES.runtimeMissing });
     const fix = (caught as { fix?: string }).fix ?? '';
-    // The paste line is the six named imports, in the order the contract lists them — never the
+    // The paste line is the seven named imports, in the order the contract lists them — never the
     // namespace form, which registers just as well and costs 14.8 kB of unshaken solid-js.
     expect(fix).toContain(
-      'setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup })',
+      'setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot })',
     );
     expect(fix).not.toContain('setSolidRuntime(solidRuntime)');
   });
 
   test('a whole solid-js namespace still registers — the contract is a subset of it', () => {
     // Type-level half: `typeof import('solid-js')` must stay assignable to `SolidRuntime`, so an
-    // island written before the six-pick paste line keeps compiling. The `children` REQUIRED note
+    // island written before the seven-pick paste line keeps compiling. The `children` REQUIRED note
     // on `SolidContext` is what makes this line type-check at all.
     const registersNamespace = (namespace: typeof import('solid-js')): void =>
       setSolidRuntime(namespace);

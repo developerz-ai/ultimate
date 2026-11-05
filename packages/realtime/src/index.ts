@@ -136,6 +136,7 @@ export {
   pageOutbox,
 } from './page-outbox';
 export { hasPageSocket, type SyncTarget } from './page-store';
+export { pollEvery, type QueryPoll } from './query-poll';
 export { installRealtime, type RealtimeInstall } from './reactivity';
 export { persistedTypes, type RecordPersister, recordPersister } from './record-persister';
 export {
@@ -195,7 +196,13 @@ export {
   useMutationQueue,
 } from './use-mutation';
 export { type OutboxView, useOutbox } from './use-outbox';
-export { type QueryAccessor, type QueryOptions, type QueryRef, useQuery } from './use-query';
+export {
+  type LiveQueryOptions,
+  type QueryAccessor,
+  type QueryOptions,
+  type QueryRef,
+  useQuery,
+} from './use-query';
 export {
   type RecordAccessor,
   type RecordSelection,

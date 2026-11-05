@@ -58,6 +58,7 @@ function harness(withDocument = true): Harness {
       effects.push(fn);
     },
     onCleanup: (): void => undefined,
+    createRoot: <T>(fn: (dispose: () => void) => T): T => fn(() => {}),
   };
 
   setSolidRuntime(runtime);

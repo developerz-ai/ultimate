@@ -79,4 +79,10 @@ export const TIER_0_ERROR_STATUS = {
   X_OUTBOUND_BODY_INVALID: 502,
   // @ultimat3/core — a circuit breaker is open and refused the call
   X_BREAKER_OPEN: 503,
+  // @ultimat3/core — a path parameter and the request body or query name one key with two values
+  X_HTTP_PATH_INPUT_CONFLICT: 400,
+  // @ultimat3/core — a handler threw a 4xx code its errors: list does not declare. Reachable: `x dev`
+  // raises it inside a request. The handler broke its own contract, so it is a 500 and never the
+  // 4xx it replaced; production answers the original and this row is not read.
+  X_ERROR_UNDECLARED: 500,
 } satisfies Readonly<Record<string, number>>;

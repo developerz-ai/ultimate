@@ -238,7 +238,7 @@ export { StatTile } from './components/StatTile';
 export type { SwitchProps } from './components/Switch';
 export { Switch } from './components/Switch';
 export type { SortDirection, SortState } from './components/sort-state';
-export type { SparkPoint } from './components/sparkline-view';
+export type { SparklinePoint, SparkPoint } from './components/sparkline-view';
 export { sparklinePath } from './components/sparkline-view';
 export type { StatDelta, StatTrend } from './components/stat-delta';
 export { deltaOf } from './components/stat-delta';
@@ -309,6 +309,8 @@ export { valuesOfForm } from './form/form-values';
 export { useForm } from './form/use-form';
 export type { UiKey } from './i18n-keys';
 export { UI_KEYS } from './i18n-keys';
+export type { ListChange, ListLimit, ListUrl, ListUrlOptions } from './list-url';
+export { listUrl } from './list-url';
 export type { ArrowKeyElement, RovingItem } from './roving';
 export {
   handlesOwnArrowKeys,

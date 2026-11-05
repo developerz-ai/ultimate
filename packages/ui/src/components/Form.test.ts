@@ -28,7 +28,15 @@ describe('Form focus under a real Solid runtime', () => {
   afterEach(clearSolidRuntime);
 
   test('a failed submit focuses once; touching and editing afterwards never pull focus back', async () => {
-    const { createContext, useContext, createSignal, createMemo, createEffect, onCleanup } = solid;
+    const {
+      createContext,
+      useContext,
+      createSignal,
+      createMemo,
+      createEffect,
+      onCleanup,
+      createRoot,
+    } = solid;
     setSolidRuntime({
       createContext,
       useContext,
@@ -36,6 +44,7 @@ describe('Form focus under a real Solid runtime', () => {
       createMemo,
       createEffect,
       onCleanup,
+      createRoot,
     });
 
     const focused: string[] = [];

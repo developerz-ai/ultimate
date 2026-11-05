@@ -41,6 +41,7 @@ function runtime(): Runtime {
     createMemo: <T>(fn: () => T) => fn,
     createEffect: (fn: () => void): void => void effects.push(fn),
     onCleanup: (fn: () => void): void => void cleanups.push(fn),
+    createRoot: <T>(fn: (dispose: () => void) => T): T => fn(() => {}),
   };
   setSolidRuntime(rt);
   return {

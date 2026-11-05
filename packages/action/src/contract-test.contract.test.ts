@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { defineError, isUltimateError, UltimateError } from '@ultimat3/core';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -367,5 +367,76 @@ describe('the OpenAPI drift refusal', () => {
       'x actions show publishPost --json',
     );
     expect(documentedDrift('/api/x', undefined, 'x$(id)').fix).toStartWith('x verify --json');
+  });
+});
+
+// 39-action-declared-errors: the static half. Only an action declaring `errors:` gets the
+// assertion, and it reads the handler's own source — a literal, or a `defineError` class.
+describe('the declared-errors assertion', () => {
+  const Stray = defineError({
+    code: 'X_CONTRACT_FIXTURE_STRAY',
+    title: 'contract fixture: a refusal nobody declared',
+    status: 409,
+    cause: 'a fixture',
+    fix: 'nothing: a fixture',
+  });
+  const Listed = defineError({
+    code: 'X_CONTRACT_FIXTURE_LISTED',
+    title: 'contract fixture: a declared refusal',
+    status: 404,
+    cause: 'a fixture',
+    fix: 'nothing: a fixture',
+  });
+  const scanOf = (contracts: readonly ContractTest[]): ContractTest | undefined =>
+    contracts.find((contract) => contract.name.endsWith('names only the errors it declares'));
+  const declaring = (errors: readonly string[] | undefined, handle: () => never) =>
+    contractTestsFor(
+      action({
+        input: Input,
+        output: Output,
+        policy: can('post:publish'),
+        ...(errors === undefined ? {} : { errors }),
+        handle,
+      }).named('publishPost'),
+    );
+
+  test('an action declaring nothing gets no extra assertion', () => {
+    expect(scanOf(publish(can('post:publish')))).toBeUndefined();
+  });
+
+  test('a stray X_ literal in the handler fails it, naming the code', async () => {
+    const contract = scanOf(
+      declaring(['X_CONTRACT_FIXTURE_LISTED'], () => {
+        throw new UltimateError({
+          code: 'X_CONTRACT_FIXTURE_STRAY',
+          cause: 'a fixture',
+          fix: 'nothing: a fixture',
+        });
+      }),
+    );
+    const error = await contract?.run().then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(isUltimateError(error) && error.code).toBe('X_ERROR_UNDECLARED');
+    expect(fixOf(error)).toContain(
+      "'X_CONTRACT_FIXTURE_STRAY' ]   # add it in the publishPost definition",
+    );
+  });
+
+  test('a defineError class outside the list fails it; the declared one passes', async () => {
+    const stray = scanOf(
+      declaring(['X_CONTRACT_FIXTURE_LISTED'], () => {
+        throw new Stray();
+      }),
+    );
+    await expect(stray?.run()).rejects.toMatchObject({ code: 'X_ERROR_UNDECLARED' });
+    const listed = scanOf(
+      declaring(['X_CONTRACT_FIXTURE_LISTED'], () => {
+        throw new Listed();
+      }),
+    );
+    expect(listed).toBeDefined();
+    await listed?.run();
   });
 });

@@ -42,7 +42,9 @@ const preamble = (
   isMutator: boolean,
   wrappers: string,
   outsider: boolean,
-): string => `${outsider ? "import { testActor } from '@ultimat3/policy';\n" : ''}import { ${wrappers} } from '@ultimat3/testing';
+  /** `testActor` is imported for the outsider, or for a contract suite's exercise actor. */
+  importsActor = outsider,
+): string => `${importsActor ? "import { testActor } from '@ultimat3/policy';\n" : ''}import { ${wrappers} } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 ${
   outsider
@@ -229,6 +231,33 @@ unitTest('${name.camel} rejects input that is not a uuid', async () => {
 ${shape.isMutator ? localTwinTests() : ''}${handlerTests(feature, shape)}`;
 };
 
+/**
+ * Who the generated-input runs act as: an actor holding the slice's grant — `<feature>:write` for
+ * the policy this generator wrote, the one literal `can('<perm>')` of a handwritten one — in the
+ * input's org when the rule compares orgs. A grant that cannot be read is the author's to name,
+ * so those runs are skipped out loud instead.
+ */
+const exerciseActor = (grant: string | undefined, orgRule: boolean): string =>
+  grant === undefined
+    ? ''
+    : `
+// Holds the grant${orgRule ? ', in the org every generated input is bound to' : ''}: the actor the handler runs as when \`.contract()\`
+// calls it with generated legal input.
+const member = testActor('member', {${orgRule ? '\n  orgId,' : ''}
+  permissions: ['${grant}'],
+}).actor;
+`;
+
+/** The `.contract()` argument: the actor and, under an org rule, the org every draw is bound to. */
+const exerciseOption = (grant: string | undefined, orgRule: boolean): string => {
+  if (grant === undefined) {
+    return "{\n    exercise: { off: '../policy.ts names no one grant: pass { actor } holding what it checks' },\n  }";
+  }
+  return orgRule
+    ? '{\n    exercise: { actor: member, input: (drawn) => ({ ...(drawn as object), orgId }) },\n  }'
+    : '{ exercise: { actor: member } }';
+};
+
 export const actionContractTest = (
   name: NameSet,
   feature: NameSet,
@@ -237,14 +266,18 @@ export const actionContractTest = (
   scaffoldPolicy = true,
   /** That policy holds an org rule: false for a slice whose entity names no tenant. */
   orgRule = scaffoldPolicy,
+  /** The permission the exercise actor holds; `undefined` when the policy's grant cannot be read. */
+  grant: string | undefined = scaffoldPolicy ? `${feature.kebab}:write` : undefined,
 ): string => `// ${name.camel}: the contract every action owes, and the foreign-org actor it denies before the
 // handler runs. One declaration, every surface.
-${preamble(name, feature, isMutator, 'contractTest, expect', orgRule)}
+${preamble(name, feature, isMutator, 'contractTest, expect', orgRule, orgRule || grant !== undefined)}${exerciseActor(grant, orgRule)}
 contractTest('${name.camel} passes the action contract', async () => {
-  // Three assertions the framework makes for any action, without knowing what this one does:
-  // garbage input is rejected, an anonymous actor is denied, and the operation reaches the
-  // OpenAPI document. \`.contract()\` is the projection; this loop just runs it.
-  for (const contract of target.contract()) await contract.run();
+  // Four assertions the framework makes for any action, without knowing what this one does:
+  // garbage input is rejected, an anonymous actor is denied, the operation reaches the OpenAPI
+  // document, and the handler survives 16 generated legal inputs, each rolled back.
+  for (const contract of target.contract(${exerciseOption(grant, orgRule)})) {
+    await contract.run();
+  }
 });
 
 ${

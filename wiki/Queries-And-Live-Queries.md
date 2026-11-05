@@ -28,7 +28,9 @@ export const liveFeed = query({
 | `rows` | no | the row's schema: `Post.$schema` or a `t.object({ … })`. The published contract of the answer: `openapi.json`, the mount's document, `x.manifest.json` and the MCP tool's `outputSchema` print its members (structure only, a sealed column absent). `x verify` refuses a member removed, retyped or made optional without a major. An **entity's** `$schema` also makes the answer the record envelope. Not a parse: a query's rows are never re-validated on the way out. Absent, or a schema that cannot be introspected, the document says only `items: {}`. `As of 2026-11` |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | `mcp.visibleTo` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
+| `errors` | no — `x g query` writes `errors: []` | the 4xx codes a reader may branch on, closed: an action's rule ([Actions](Actions#declared-refusals-errors)), judged around `sql` and the source's `execute`. Undeclared in a test or dev run is `X_ERROR_UNDECLARED`; `.contract()` scans `sql`'s own source; `openapi.json` and the MCP tool name each code. `As of 2026-11` |
 | `audit` | no — default `false` | `true` records every call in the installed `AuditSink` — allowed, denied, failed, and a memo or cache hit (`replayed: true`). See [Audit](#audit-who-saw-what) |
+| `http.path` | no | pins the read's URL in place of `/_x/query/<kebab>`: `http: { path: '/orders/:id' }`. Lowercase static segments and `:param`s, never `/_x`; each `:param` a REQUIRED `t.string` key of `input:` (`X_QUERY_HTTP_PATH_INVALID` at `query()`, as is an `http.method` other than `'GET'`). The URL's value joins the search string before the input is parsed; a search string naming the key differently is **400** `X_HTTP_PATH_INPUT_CONFLICT`. `client()` fills the URL; `queryClient` by name cannot see a pin. `openapi.json` publishes `{id}` `in: path`, the key gone from the query parameters. `As of 2026-11` |
 | `download` | no | `{ handle, expiresInMs? }` in place of `sql`: the read answers a FILE at a short-lived signed URL. Every rows field beside it is `X_QUERY_DOWNLOAD_INVALID`. See [A file at a signed URL](#a-file-at-a-signed-url--download) |
 | cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
 
@@ -85,6 +87,7 @@ const feed = useQuery<FeedRow>({ name: 'liveFeed', live: true }, { orgId });
 | What it returns | an `AsyncState` accessor: `pending`, `refreshing` (keeps the rows on screen), `ready`, `failed` |
 | Lists hold ids | the rows come from the page's `RecordStore`, so a record updated through any path re-renders every list holding it |
 | Input | read **once**, at call time. A changed input is a new `useQuery` |
+| `poll` | `pollEvery(ms, { maxMs? })` from `@ultimat3/realtime`; non-live only, refused by type on a live ref: `refetch` every `ms` through `visibleInterval` from `@ultimat3/core/page`, which only an island importing `pollEvery` carries — hidden tab skipped with one make-up read on show, stopped by a lost session and by `release()`. A non-finite value is `finiteOption`'s refusal |
 | Lifetime | the caller owns `release()` (Solid: `onCleanup`) |
 | Not derived, `As of 2026-09-22` | `live` and `entity` are stated on the ref by hand, and nothing checks them against the query declaration. A ref saying `live: true` for a non-live query subscribes to nothing |
 | Types | the row type is the caller's annotation (`useQuery<FeedRow>`), not inferred from the query. That is the price of never importing the query value |
@@ -97,7 +100,7 @@ Mounted for every registered query by `x dev` and by a container, from one compo
 
 | Fact | Rule |
 |---|---|
-| Method + path | `GET /_x/query/<kebab-export-name>`, the URL `.client()` derives with no server import |
+| Method + path | `GET /_x/query/<kebab-export-name>`, the URL `.client()` derives with no server import — or the read's `http.path` pin, in its place |
 | Input | the search string, coerced at the boundary (`t.number` from `"12"`) then validated by the query's own schema. Repeated keys are an array, and keys are sorted so one input is one URL. The typed client sends a `Date` as its ISO instant and nothing for an empty array; the route reads a **required** array nobody sent as `[]`, so `{ tags: [] }` arrives (`As of 2026-10`). An optional or defaulted array keeps the schema's own answer for absence — `[]` passed to one arrives as absent |
 | Bad input | **400** `X_INPUT_INVALID`, with `x queries show <name> --json` as the fix — the same code and line every other surface of that read answers |
 | Authz | evaluated once, inside the read, from the parsed input. `auth: 'public'` only for `allow()` — anything else is `required`, and an anonymous caller is 401 before the policy is reached |

@@ -99,7 +99,7 @@ const FORMAT_MAP: Readonly<Record<string, string>> = Object.freeze({
  * `Object.hasOwn`, never the read alone: `node.format` comes from a schema PROVIDER's IR, so
  * `FORMAT_MAP['constructor']` answered with the `Object` function and `?? node.format` could not
  * rescue it — `JSON.stringify` then dropped `format` from the published document in silence.
- * Same discriminator as `@ultimat3/action`'s `BY_FORMAT[node.format]`, one package up.
+ * Same discriminator as `sample-draw.ts`'s `BY_FORMAT[node.format]`.
  */
 const publishedFormat = (format: string): string =>
   Object.hasOwn(FORMAT_MAP, format) ? (FORMAT_MAP[format] ?? format) : format;

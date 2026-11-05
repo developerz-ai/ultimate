@@ -108,6 +108,29 @@ describe('one action, one tool, whichever agent is offered it', () => {
     });
   }
 
+  // 39-action-declared-errors: both descriptions end with the declared refusals, the same words.
+  test('a declared errors: list ends the description on both, described or not', () => {
+    for (const mcp of [{ expose: true, description: 'Charge the card' }, { expose: true }]) {
+      const { ai, mcp: served } = both(
+        registerAction(
+          'chargeCard',
+          action({
+            input: t.object({ amount: t.number }),
+            output: t.object({ run: t.number }),
+            policy: can('card:charge'),
+            errors: ['X_FORBIDDEN', 'X_NOT_FOUND'],
+            mcp,
+            handle: () => ({ run: 0 }),
+          }),
+        ),
+      );
+      expect(ai.description).toBe(served.description);
+      expect(ai.mcp?.description).toBe(served.mcp?.description);
+      expect(served.mcp?.description).toEndWith('Declared refusals: X_FORBIDDEN, X_NOT_FOUND.');
+      resetActions();
+    }
+  });
+
   test('the policy decides both, and a denied caller is refused with the same code', async () => {
     const { mcp, runAi, runMcp } = both(charge(false));
     const denied = await codeOf(() => runMcp({ amount: 1 }, stranger));

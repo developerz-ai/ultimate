@@ -1530,3 +1530,7 @@ Verbatim from [`packages/realtime/CLAUDE.md`](../../packages/realtime/CLAUDE.md)
   epoch synchronously; `enqueue` decides WHOSE queue before its first await
   (`X_OFFLINE_QUEUE_ABANDONED`); `useMutation` fences its POST on its scope epoch. A refused disk is
   warned `X_LOCAL_STORE_UNAVAILABLE`, never rejecting `ready`. An entry leaves disk at its ack.
+
+## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
+
+- **A timed re-read is `useQuery`'s `poll: pollEvery(ms)`** (`query-poll.ts`), non-live only (refused by type on a live ref, `LiveQueryOptions`), through core's `visibleInterval`, never a `setInterval` in this package. A value and not a number on purpose: `use-query.ts` never imports the timer, so an island that does not poll does not carry it. `load()` returns its settle promise so the poll never overlaps a read, and a read that ended `failed` rejects for the poll alone, so `maxMs` backs it off.

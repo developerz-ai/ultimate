@@ -295,6 +295,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createRoot,
   createSignal,
   onCleanup,
   useContext,
@@ -309,12 +310,20 @@ export interface ThemeToggleIslandProps {
 /**
  * The one export the hydration runtime calls. \`setSolidRuntime\` comes FIRST and is not optional:
  * \`@ultimat3/ui\` imports types from solid-js and never a runtime, so the reactive graph a
- * component reaches is the one an entry registers. Six NAMED imports, never a namespace: a
+ * component reaches is the one an entry registers. Seven NAMED imports, never a namespace: a
  * namespace object keeps every export of solid-js alive in the chunk. The shell is cleared before
  * \`render\`, which APPENDS — the server's copy would otherwise stay on screen beside the live one.
  */
 export function mount(el: HTMLElement, props: ThemeToggleIslandProps): void {
-  setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });
+  setSolidRuntime({
+    createContext,
+    useContext,
+    createSignal,
+    createMemo,
+    createEffect,
+    onCleanup,
+    createRoot,
+  });
   el.textContent = '';
   render(
     () => (

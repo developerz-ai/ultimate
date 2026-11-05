@@ -1,19 +1,29 @@
 /**
- * Projection 6: the tests. `x g action` emits these three assertions for every
- * new action, so an action that skips validation, skips authz, or never reaches
- * the spec fails CI on the day it is written.
+ * Projection 6: the tests. `x g action` emits these four assertions for every
+ * new action, so an action that skips validation, skips authz, never reaches
+ * the spec, or crashes on a legal input fails CI on the day it is written.
  */
 
 import type { Ctx } from '@ultimat3/core';
-import { ctxOf, isJsonObject, isUltimateError, logger, renderFixShellArg } from '@ultimat3/core';
+import {
+  ctxOf,
+  isJsonObject,
+  isUltimateError,
+  logger,
+  renderFixShellArg,
+  toOpenApiPath,
+} from '@ultimat3/core';
+import { describeSampleGap, sampleGaps, sampleInput } from '@ultimat3/schema/sample';
 import type { AnyAction } from './action';
+import { declaredErrorsContract } from './declared-errors-contract';
 import { ActionDeniedError, ContractDriftError } from './errors';
+import type { ExerciseOptions } from './exercise';
+import { exerciseContract } from './exercise';
 import { toOpenApiOperation } from './http';
-import { servedActionRoute } from './http-path';
-import { actionName, invoke } from './invoke';
+import { methodOfHttp, servedActionRoute } from './http-path';
+import { actionName, defOf, invoke } from './invoke';
 import { buildOpenApi } from './openapi';
 import { listActions } from './registry';
-import { describeSampleGap, sampleGaps, sampleInput } from './sample-input';
 import { parseActionInput } from './validate';
 
 export interface ContractTest {
@@ -32,6 +42,12 @@ export interface ContractTestOptions {
    */
   readonly input?: unknown;
   readonly ctx?: Ctx;
+  /**
+   * The fourth assertion: the handler, called with generated input its schema accepts, inside a
+   * rolled-back transaction. `{ actor }` says who acts (required unless the policy admits an
+   * anonymous caller); `{ off: '<reason>' }` skips it out loud.
+   */
+  readonly exercise?: ExerciseOptions;
 }
 
 /** A context whose actor is core's anonymous actor — what a signed-out caller has. */
@@ -78,6 +94,9 @@ export function contractTestsFor(
       name: `${name}: OpenAPI document contains its operation`,
       run: async () => assertDocumented(target, name),
     },
+    exerciseContract(target, options.exercise, options.ctx),
+    // Only for an action declaring `errors:`: its handler's own source names nothing else.
+    ...declaredErrorsContract(target, name),
   ];
 }
 
@@ -90,9 +109,10 @@ export function contractTestsFor(
 function assertDocumented(target: AnyAction, name: string): void {
   const seated = listActions();
   const actions = seated.some((other) => other.name === name) ? seated : [...seated, target];
-  const { path } = servedActionRoute(name);
+  // The document's `{param}` spelling, under the verb the action declares (`http.method`).
+  const path = toOpenApiPath(servedActionRoute(name).path);
   const published = buildOpenApi({ actions }).paths[path];
-  const owner = operationIdAt(published);
+  const owner = operationIdAt(published, methodOfHttp(defOf(target).http).toLowerCase());
   if (owner === toOpenApiOperation(target).operationId) return;
   throw documentedDrift(path, owner, name);
 }
@@ -117,10 +137,12 @@ export function documentedDrift(
   );
 }
 
-/** `paths[path].post.operationId`, read off a value typed `unknown` — narrowed, never cast. */
-function operationIdAt(entry: unknown): string | undefined {
-  if (!isJsonObject(entry) || !isJsonObject(entry['post'])) return undefined;
-  const id = entry['post']['operationId'];
+/** `paths[path][verb].operationId`, read off a value typed `unknown` — narrowed, never cast. */
+function operationIdAt(entry: unknown, verb: string): string | undefined {
+  if (!isJsonObject(entry)) return undefined;
+  const operation = entry[verb];
+  if (!isJsonObject(operation)) return undefined;
+  const id = operation['operationId'];
   return typeof id === 'string' ? id : undefined;
 }
 
@@ -154,6 +176,8 @@ import { ${name} } from './actions';
 // Fill in: arrange a foreign actor, expect the policy to deny.
 // The contract tests below are framework-generated and always included. Pass
 // \`{ input }\` if the synthesized one cannot satisfy this action's schema or row loader.
+// A guarded action also needs \`{ exercise: { actor } }\` — who its handler runs as for the
+// generated-input runs — or \`{ exercise: { off: '<reason>' } }\`.
 for (const contract of contractTestsFor(${name})) {
   test(contract.name, async () => {
     await contract.run();

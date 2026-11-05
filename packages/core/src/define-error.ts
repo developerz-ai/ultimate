@@ -83,6 +83,24 @@ const duplicate = (code: string, cause: string): UltimateError =>
     meta: { code },
   });
 
+/**
+ * Where each code was declared: the caller's stack frame, as text, never parsed here. The class a
+ * declaration returns is named `Defined` whatever the app binds it to, so `errors:`'s source scan
+ * (`declared-errors-scan.ts`) reads the binding off this line — test-time, on demand.
+ */
+const DECLARED_AT = new Map<string, string>();
+
+/** Code → the stack frame that declared it. Read by `definedErrorClassCodes` alone. */
+export const definedErrorSites = (): ReadonlyMap<string, string> => DECLARED_AT;
+
+function recordSite(code: string): void {
+  if (DECLARED_AT.has(code)) return;
+  const holder: { stack?: string } = {};
+  Error.captureStackTrace(holder, defineError);
+  const frame = holder.stack?.split('\n')[1];
+  if (frame !== undefined) DECLARED_AT.set(code, frame);
+}
+
 const text = <P>(value: ErrorText<P>, params: P): string =>
   typeof value === 'function' ? value(params) : value;
 
@@ -154,6 +172,7 @@ export function defineError<P = undefined>(spec: DefineErrorSpec<P>): DefinedErr
   }
   if (spec.status !== undefined) declareAppErrorStatus(code, spec.status);
   recordDefinedError(code, spec.status);
+  recordSite(code);
 
   class Defined extends UltimateError {
     static readonly code = code;

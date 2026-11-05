@@ -5,21 +5,24 @@
 
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
-import type { ChartPoint } from './bar-chart-view';
 import styles from './Sparkline.module.scss';
-import { SPARKLINE, sparklinePath, sparkPoints } from './sparkline-view';
+import { SPARKLINE, type SparklinePoint, sparklinePath, sparkPoints } from './sparkline-view';
 
 export interface SparklineProps {
   /** The accessible name for the whole chart, already translated. */
   label: string;
-  /** Oldest first. Every point comes from exactly this array — the caller zero-fills gaps. */
-  points: readonly ChartPoint[];
+  /** Oldest first. `value: null` is unknown — a gap in the line, never a zero. */
+  points: readonly SparklinePoint[];
   class?: string | undefined;
 }
 
 export function Sparkline(props: SparklineProps): JSX.Element {
-  const last = (): ChartPoint | undefined => props.points.at(-1);
-  const lastPoint = () => sparkPoints(props.points).at(-1);
+  // The newest point is marked only when it is known: an unknown "now" has no place to sit.
+  const last = (): SparklinePoint | undefined => {
+    const newest = props.points.at(-1);
+    return newest?.value === null ? undefined : newest;
+  };
+  const lastPoint = () => sparkPoints(props.points).at(-1) ?? undefined;
   return (
     <svg
       role="img"

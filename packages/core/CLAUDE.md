@@ -62,7 +62,10 @@ top-level `UltimateError` use in `error-codes.ts`.
 | one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`). `deprecation` holds `successorLink` and `successorPathOf`, so `rel="successor-version"` is spelt in one file; `aws-sigv4`'s `presignAwsUrl` shares `signAwsRequest`'s derivation (`signatureOver`), held equal to `Bun.S3Client`'s presign by `aws-sigv4-presign.test.ts` |
 | what this process does | `roles.ts` (`ROLE`) | |
 | how a route renders, caches offline and hydrates | `route-vocabulary.ts` (`RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it |
-| which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments. Read by `@ultimat3/render`'s `compilePattern` and `@ultimat3/pwa`'s rule order — both tier 4, so the one copy lives here. `@ultimat3/http`'s trie encodes the same order by its walk, not by this number. Never a sum: 100/10/1 ranked `/:a/b/c` above `/a/:x/:y` |
+| which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments. Full rule: `docs/history/core.md` |
+| an `http.path` template (`/orders/:id`) | `route-path-template.ts` (pure, also on `./page`) + `route-path-merge.ts` (`mergePathParams`, `X_HTTP_PATH_INPUT_CONFLICT`) | `action` and `query` both pin one and share a tier; never a copy in either |
+| `errors:` | `declared-errors.ts`, `-openapi.ts`, `-scan.ts` | ONE copy for `action` and `query`. The HTTP status is passed in (`ErrorStatusOf`): http is above core. The scan is test-time only |
+| a session's loss, an island's poll | `session-lost.ts` (`noteRefusal`, called by `client-dispatch.ts`; a cell on the page handle, cleared by `rescope()`), `visible-interval.ts` (the ONE poll an island takes) | both on `./page`, pinned by `page-bundle.test.ts` |
 | which rungs a cache ladder has | `cache-vocabulary.ts` (`CACHE_TIERS`) | `@ultimat3/cache`'s read order, imported (no `TIER_ORDER` alias). `isr` is a `RenderMode`, never a tier |
 | which build of the APP this is | `app-version.ts` (`APP_VERSION`) | one reader, `dev` by default |
 | the values | `env.ts` | `checkEnv().values` holds REAL secrets — printing goes through `maskedEnvValues()` |
@@ -153,11 +156,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - The OTLP exporters are built, not wrapped ([`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md)).
   `otlpTraceRequest` / `otlpMetricsRequest` are pure. **gRPC (`:4317`) is out of scope**:
   `X_OTLP_PROTOCOL_UNSUPPORTED` names `:4318`; a boot that must not throw asks `tryOtlpEndpoint(signal)`.
-- **`postOtlp` (`otlp-post.ts`) retries `OTLP_RETRY_STATUSES` (429, 502, 503, 504) and a transport
-  failure only**, never `isRetryableStatus`: a validating collector's 400 or 500 repeats forever. It
-  calls `retryLoop`, not `retry()`, so a batch flushed inside a request outlives that request's
-  signal. `timeoutMs` is the whole export; the retryable marker is a private `X_DRAINING` instance
-  that never leaves the function. One log line per batch, never per attempt.
+- **`postOtlp` (`otlp-post.ts`) retries `OTLP_RETRY_STATUSES` and a transport failure only**, never `isRetryableStatus`. Full rule: `docs/history/core.md`.
 - **`errorFingerprint` (`error-fingerprint.ts`) is a function, never an `ErrorReport` field**:
   `code`, `source`, `scope.operation`, plus the top app frame for `X_INTERNAL` only. Never `cause`,
   `meta`, ids or `release`. Total over hostile getters; the Sentry envelope's `fingerprint`.
@@ -180,10 +179,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
   and reads through every embedded IPv4; `peerAddressClass` is what a CALLER or a local name may be
   trusted as, and a transit form (`2002:7f00:1::`, `64:ff9b::7f00:1`) is never loopback there. A
   check that grants something asks the second. Unmechanised: review catches a new `=== 'loopback'`.
-- **A readiness grace runs before the `accept` phase** (`lifecycle-grace.ts`): `/readyz` answers 503
-  with the socket still open for `drain.readinessGraceMs`, ADDED to `deadlineMs` (a chart's
-  `terminationGracePeriodSeconds` must exceed the sum — 5 s + 25 s by default). Unset: 0 in
-  development/test, 5000 everywhere else including a process naming no environment (fail closed).
+- **A readiness grace runs before the `accept` phase** (`lifecycle-grace.ts`), ADDED to `deadlineMs`. Full rule: `docs/history/core.md`.
 - **`abandonment()`: a branded abort reason refuses writes** (`@ultimat3/db`); **`runToCompletion(fn)` is the one escape**, built by `derivedContext`. `run-to-completion.test.ts`.
 - `impersonate(actor, reason, fn)` is the ONE door through `withChildContext({ actor })`; it stamps
   `Actor.onBehalfOf` so `actorLabel` renders `service:eng-7→user:cust-99@org-3`. No second path.

@@ -85,6 +85,10 @@ const CORE_CODE_TITLES = {
   X_BREAKER_OPEN: 'a circuit breaker is open and refused the call',
   X_ERROR_DECLARATION_INVALID: 'a defineError declaration is malformed',
   X_CLIENT_ERROR: 'a browser reported an uncaught failure',
+  X_HTTP_PATH_INPUT_CONFLICT:
+    'a path parameter and the request body or query name one key with two values',
+  X_ERROR_UNDECLARED: 'a handler threw a 4xx code its errors: list does not declare',
+  X_ACTION_ERRORS_INVALID: 'an errors: list names a code that cannot be declared there',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

@@ -8,16 +8,17 @@
 import type { CacheTag } from '@ultimat3/cache';
 import { tagKeys } from '@ultimat3/cache';
 import type { Actor, Ctx, Deprecation, McpExposureDeclaration } from '@ultimat3/core';
-import { isMcpExposed } from '@ultimat3/core';
+import { checkDeclaredErrors, isMcpExposed } from '@ultimat3/core';
 import type { RateLimitDecision } from '@ultimat3/http';
+import { declaredStatusFor } from '@ultimat3/http';
 import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClientMethod, ClientOptions } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
 import { facadeFor } from './facade';
 import type { OpenApiOperation } from './http';
-import type { ActionHttp } from './http-path';
-import { routeFor } from './http-path';
+import type { ActionHttp, ActionHttpMethod } from './http-path';
+import { methodOfHttp, routeFor } from './http-path';
 import type { IdempotencyStore } from './idempotency';
 import { actionName, defOf, hasDef, invoke, stashDef } from './invoke';
 import type { ActionJobHandle } from './job-handle';
@@ -86,6 +87,14 @@ export interface ActionDef<
   readonly deprecated?: Deprecation;
   /** Marks the action safe to retry with an `Idempotency-Key`. */
   readonly idempotent?: boolean;
+  /**
+   * The refusals a caller may branch on: each a registered 4xx code (`defineError` first), listed
+   * once — else `X_ACTION_ERRORS_INVALID` here. Declared, the list is CLOSED: a 4xx code thrown out
+   * of `handle` or `row` that it does not name is `X_ERROR_UNDECLARED` in a test or dev run
+   * (production answers it unchanged, warns and counts), and `.contract()` scans the handler's own
+   * source for one. The OpenAPI operation and the MCP tool publish it. Absent: today's open contract.
+   */
+  readonly errors?: readonly string[];
   /**
    * Record every attempt at this action through the installed `AuditSink` — allowed, denied and
    * failed alike. Opt-in per declaration and never a global switch: a login and a price change
@@ -158,7 +167,8 @@ export interface ActionDescriptor {
   readonly name: string;
   readonly verb: string;
   readonly resource: string;
-  readonly method: 'POST';
+  /** The verb the route answers: `http.method` on a pin, `POST` otherwise (`methodOfHttp`). */
+  readonly method: ActionHttpMethod;
   readonly path: string;
   /** The policy's DISPLAY label. A composite renders as `and(a:b, c:d)` — never a permission. */
   readonly capability: string;
@@ -182,6 +192,8 @@ export interface ActionDescriptor {
   readonly rateLimit: ActionRateLimit | null;
   /** Published so `x actions list --json` can answer "what is retiring, and when". */
   readonly deprecated: Deprecation | null;
+  /** The declared refusals, sorted; `null` for an action that declares none (an open contract). */
+  readonly errors: readonly string[] | null;
 }
 
 /**
@@ -199,6 +211,7 @@ export interface AnyActionDef {
   readonly http?: ActionHttp;
   readonly deprecated?: Deprecation;
   readonly idempotent?: boolean;
+  readonly errors?: readonly string[];
   readonly audit?: boolean;
   row?(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
   handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
@@ -212,6 +225,8 @@ export interface AnyAction {
   readonly output: StandardSchemaV1;
   readonly policy: ActionPolicy;
   readonly mcp?: ActionMcp;
+  /** The declared refusals, checked and sorted; absent for an open contract. */
+  readonly errors?: readonly string[];
   describe(): ActionDescriptor;
   /** A twin under another name. Registration uses `nameAction`, which names in place. */
   named(name: string): AnyAction;
@@ -268,7 +283,10 @@ export function action<
   TOutput extends StandardSchemaV1,
   TRow = unknown,
 >(def: ActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput> {
-  return build(def, '');
+  // Refused where it is written, and frozen before `build` stores it: the list a caller still
+  // holds is not the one the descriptor, the document and the wrap read.
+  const errors = checkDeclaredErrors(def.errors, declaredStatusFor, 'this action');
+  return build(errors === undefined ? def : { ...def, errors }, '');
 }
 
 /**
@@ -311,6 +329,7 @@ function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1
     describe: (): ActionDescriptor => describeAction(self),
     named: (next: string): Action<TInput, TOutput> => build(def, next),
     ...facadeFor(def, () => self),
+    ...(def.errors === undefined ? {} : { errors: def.errors }),
   });
   // `name` on a function is non-writable, so Object.assign cannot set it.
   Object.defineProperty(self, 'name', { value: name, configurable: true });
@@ -333,7 +352,7 @@ export function describeAction(target: AnyAction): ActionDescriptor {
     name,
     verb: path.verb,
     resource: path.resource,
-    method: 'POST',
+    method: methodOfHttp(def.http),
     path: path.path,
     capability: policyCapability(def.policy),
     // The flattened list, beside the label and never instead of it: one is read, one is matched.
@@ -358,5 +377,6 @@ export function describeAction(target: AnyAction): ActionDescriptor {
     },
     rateLimit: def.rateLimit ?? null,
     deprecated: def.deprecated ?? null,
+    errors: def.errors ?? null,
   };
 }

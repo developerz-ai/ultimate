@@ -103,20 +103,22 @@ A `level` outside 1–6 throws `X_UI_INVALID_VALUE` rather than emitting an `<h7
 ```tsx
 <Link appearance="button" variant="secondary" size="sm" href="/posts/new">{t('posts.new')}</Link>
 
-<Pagination
-  prevCursor={page.prevCursor}
-  nextCursor={page.nextCursor}
-  hrefFor={(cursor, direction) => `/posts?${direction === 'next' ? 'after' : 'before'}=${cursor}`}
-/>
+// `page` is a framework `Page` (a query's `.page()`): `nextCursor` is `string | null`, handed as is.
+const list = listUrl(props.url, { sorts: ['title', 'createdAt'] });
+<Pagination nextCursor={page.nextCursor} hrefFor={list.hrefFor} firstHref={list.firstHref} />
 ```
+
+`listUrl(url, { sorts, ns?, limit? })` reads a list's state out of its URL — `sort`, `cursor`, `limit`, `q`, never throwing: an unknown sort or a hostile limit is the default — and writes it back as hrefs: `hrefFor` (the cursor, everything else kept), `sortHrefFor` and `href(change)` (the change, the cursor dropped), `firstHref` (`undefined` on the first page). Param names are `sort`, `dir`, `after`, `limit`, `q`; `ns: 'runs'` prefixes them all (`runs.after`) for two lists on a page, and then any change but a cursor drops every cursor on the page, since a cursor is bound to its filter and sort (`X_CURSOR_INVALID`). The same object feeds a `DataTable`'s `hrefFor`, `sortHrefFor` and `firstHref`.
 
 | Component | Mode | Props | Renders |
 |---|---|---|---|
 | `Link` | text (default) | `underline`, `tone: 'accent' \| 'inherit'` | `<a>` with the link classes |
 | `Link` | `appearance="button"` | `variant`, `tone` (any `Tone`), `size`, `fullWidth`, `iconStart`, `iconEnd` | `<a>` with `Button`'s classes — one set of button styles, two elements |
-| `Pagination` | callbacks | `onCursor`, or `page` + `totalPages` + `onPage` | two `<button>`s; needs an island |
-| `Pagination` | links | `hrefFor(cursor, direction)` | `<a rel="prev">` / `<a rel="next">`; a side with no cursor is a disabled button |
-| `DataTable` | callbacks / links | `onCursor`, or `hrefFor(cursor, direction)` | its pager, in that mode — the prop is handed straight to `Pagination` |
+| `Pagination` | callbacks | `onCursor`, or `page` + `totalPages` + `onPage`; `onFirst` | `<button>`s; needs an island |
+| `Pagination` | links | `hrefFor(cursor, direction)`; `firstHref` | `<a rel="prev">` / `<a rel="next">`; Next with no cursor is a disabled button |
+| `DataTable` | callbacks / links | `onCursor` + `onFirst`, or `hrefFor(cursor, direction)` + `firstHref` | its pager, in that mode — the props are handed straight to `Pagination` |
+
+A cursor that is `null` or absent is one state: no page that way. Previous is drawn only when a `prevCursor` is given or the pager is numbered — a keyset `Page` has no way back, so its pager draws Next and, given `firstHref` / `onFirst`, First. Next holds the trailing edge either way.
 
 One mode per use, and the type holds it: `hrefFor` beside `onCursor`, `onPage`, `page` or `totalPages` does not compile, and neither does `underline` on a button-link or `variant` on a text link. Link mode pages by cursor only. `Link` also takes `rel?: 'next' | 'prev'`, which joins the `noopener noreferrer` an external link always carries.
 

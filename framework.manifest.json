@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e809114619c7fc9319c94842be6bd1809784b9efb88d81d19f90136c8f4d2f66",
+  "buildId": "529abc9829f95210cc1474a028f77745c1c47af7ad4772ae94b8ae3dfc256b81",
   "tiers": {
     "0": [
       "core",
@@ -253,6 +253,11 @@
       "code": "X_ACTION_DUPLICATE",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_ACTION_ERRORS_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ACTION_FOREIGN",
@@ -1010,7 +1015,22 @@
       "at": "scripts/config-readers.ts"
     },
     {
+      "code": "X_CONTRACT_DEFECT",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
+    },
+    {
       "code": "X_CONTRACT_DRIFT",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_CONTRACT_EXERCISE_UNDECLARED",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_CONTRACT_EXERCISE_UNREACHED",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
     },
@@ -1750,6 +1770,11 @@
       "at": "scripts/error-map.ts"
     },
     {
+      "code": "X_ERROR_UNDECLARED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
       "code": "X_EVAL_BASELINE_INVALID",
       "owner": "ai",
       "at": "packages/ai/src/error-codes.ts"
@@ -2063,6 +2088,11 @@
       "code": "X_HIVE_EMPTY",
       "owner": "ai",
       "at": "packages/ai/src/error-codes.ts"
+    },
+    {
+      "code": "X_HTTP_PATH_INPUT_CONFLICT",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ID_INVALID",
@@ -3436,6 +3466,11 @@
     },
     {
       "code": "X_QUERY_FOREIGN",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_HTTP_PATH_INVALID",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
     },

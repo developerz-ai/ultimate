@@ -35,7 +35,7 @@ describe('unit · x g entity · the repo reads through the typed handle', () => 
     const code = stripComments(repo);
     expect(code).toContain(`import { db } from '${DB}';`);
     expect(code).toContain('(await db.widgets.where({ id }).one()) ?? undefined');
-    expect(code).toContain("db.widgets.orderBy('createdAt', 'desc').limit(limit).all()");
+    expect(code).toContain('db.widgets.orderBy(sort, dir).limit(limit).all()');
     expect(code).toContain('db.widgets.insert(row)');
   });
 
@@ -49,9 +49,9 @@ describe('unit · x g entity · the repo reads through the typed handle', () => 
       'apps/web/app/customer-credit-note-attachment-revision-log-entry/repo.ts',
     );
     expect(long).toContain('db.customerCreditNoteAttachmentRevisionLogEntries');
-    // The chain no longer fits one line, so it is emitted the way the formatter breaks it.
+    // The signature no longer fits one line, so it is emitted the way the formatter breaks it.
     expect(long).toContain(
-      "  return db.customerCreditNoteAttachmentRevisionLogEntries\n    .orderBy('createdAt', 'desc')\n    .limit(limit)",
+      "export async function list(\n  limit = 50,\n  sort: ListSort = 'createdAt',\n  dir: 'asc' | 'desc' = 'desc',\n)",
     );
     for (const line of stripComments(long).split('\n')) {
       // Comments are masked to blanks, not removed: only the code a formatter measures counts.

@@ -152,8 +152,8 @@ describe('the first-paint wait, only where there is state to restore', () => {
   test('a reader waits for the restore; an island that only follows the socket does not', async () => {
     await write('apps/web/app/reader.island.tsx', READER);
     await write('apps/web/app/live.island.tsx', LIVE);
-    expect(await realtimeKind(ROOT, 'apps/web/app/reader.island.tsx')).toBe('restores');
-    expect(await realtimeKind(ROOT, 'apps/web/app/live.island.tsx')).toBe('follows');
+    expect(await realtimeKind(ROOT, 'apps/web/app/reader.island.tsx', undefined)).toBe('restores');
+    expect(await realtimeKind(ROOT, 'apps/web/app/live.island.tsx', undefined)).toBe('follows');
     // The build hands the plugin ITS islands that only follow; any other waits for the restore.
     const load = sources(new Set(['apps/web/app/live.island.tsx']));
 

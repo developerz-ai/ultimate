@@ -212,10 +212,10 @@ table — and every series has a dash and a marker as well as a colour (`chart-1
 | `Gauge` | a 270° `meter` dial with a tone and a visible label | one value against its max |
 | `ChartFrame` | the figure, caption, legend and data table every chart stands in | a custom chart |
 | `niceTicks` · `chartTable` · `seriesStyle` | axis ticks, the fallback table, a series' dash and marker | building a custom chart |
-| `DataTable` | sort, cursor paging, states; `narrow: 'cards'` (default) collapses rows to labelled cards below `sm`; `Column.priority` hides a column behind a per-row disclosure, never losing its value; `stickyFirstColumn` | any list of records |
+| `DataTable` | sort, cursor paging (link mode with `listUrl` needs no island), states; `narrow: 'cards'` (default) collapses rows to labelled cards below `sm`; `Column.priority` hides a column behind a per-row disclosure, never losing its value; `stickyFirstColumn` | any list of records |
 | `Table` | a captioned table with a sticky header; `stickyFirstColumn` | static tabular data |
 | `InlineBar` | a caller-formatted figure with a decorative proportional bar | a number in a table cell |
-| `StatTile` / `Meter` / `Sparkline` | a KPI with its delta; a bar against a max; an inline mini line | the KPI row |
+| `StatTile` / `Meter` / `Sparkline` | a KPI with its delta; a bar against a max; an inline mini line, where a `null` value is a gap, never a zero | the KPI row |
 
 
 ```tsx
@@ -290,29 +290,26 @@ so the list is right on the first paint and after a form round-trip, not only on
 ### A pager and a button that navigate
 
 ```tsx
-import { Link, Pagination } from '@ultimat3/ui';
+import { Link, listUrl, Pagination } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 
 interface PostsFooterProps {
-  prevCursor?: string | undefined;
-  nextCursor?: string | undefined;
+  /** The page's own URL: the route hands it to `Page`. */
+  url: string;
+  /** A framework `Page`'s `nextCursor` — `null` on the last page, handed straight through. */
+  nextCursor: string | null;
   /** Already translated: `t('posts.new')` at the call site. */
   newLabel: string;
 }
 
 export function PostsFooter(props: PostsFooterProps): JSX.Element {
+  const list = listUrl(props.url, { sorts: [] });
   return (
     <footer>
       <Link appearance="button" variant="secondary" size="sm" href="/posts/new">
         {props.newLabel}
       </Link>
-      <Pagination
-        prevCursor={props.prevCursor}
-        nextCursor={props.nextCursor}
-        hrefFor={(cursor, direction) =>
-          `/posts?${direction === 'next' ? 'after' : 'before'}=${cursor}`
-        }
-      />
+      <Pagination nextCursor={props.nextCursor} hrefFor={list.hrefFor} firstHref={list.firstHref} />
     </footer>
   );
 }
@@ -324,6 +321,8 @@ export function PostsFooter(props: PostsFooterProps): JSX.Element {
 | `DataTable` takes the same pair — `hrefFor` or `onCursor` — and hands it to its pager | the type: `DataTableProps<Row>` is `DataTableLinkProps<Row> \| DataTableCallbackProps<Row>` |
 | a `DataTable` sort header follows the table's mode: an anchor at `sortHrefFor(next)` in link mode, a button calling `onSortChange` in callback mode; a linked table with no `sortHrefFor` renders the header as text | the same union — `sortHrefFor` lives on `DataTableLinkProps`, `onSortChange` on `DataTableCallbackProps` — and `DataTable.test.ts` |
 | link mode pages by cursor only; a side with no cursor is a disabled button, never an anchor with nowhere to go | `Pagination.test.ts` |
+| a cursor that is `null` or absent is one state; Previous is drawn only for a `prevCursor` or a numbered pager, and `firstHref` / `onFirst` draw First | `Pagination.test.ts` |
+| `listUrl(url, { sorts, ns?, limit? })` is a list's URL state: parsing never throws, any change but a cursor drops the cursor (every cursor on the page under `ns`), and a component-only island retains none of it | `list-url.test.ts`, `scripts/ui-barrel-bytes.test.ts` |
 | a control that navigates is a `Link`; `Button` has no `href` | `ButtonProps` |
 | a button-link takes `variant` / `tone` / `size` / `fullWidth` / `iconStart` / `iconEnd`; a text link takes `underline` and `tone: 'accent' \| 'inherit'` | the type: `LinkProps` is `TextLinkProps \| ButtonLinkProps` |
 | both elements wear ONE set of classes | `buttonClassKeys` (`button-classes.ts`), asked by `Button` and `Link` |
@@ -413,7 +412,7 @@ to render on the server.**
 | | Server render | Client render |
 |---|---|---|
 | The renderer | `@ultimat3/render`'s inert JSX factory — a component is a plain function, called once | Solid, with a reactive graph |
-| The runtime | `INERT_SOLID_RUNTIME`, handed out automatically: signals hold, memos recompute on read, effects never run | the real one, registered once: `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup })`, six named imports from `'solid-js'` — never `import * as`, which keeps every export of solid-js in the chunk (14.8 kB minified, measured) |
+| The runtime | `INERT_SOLID_RUNTIME`, handed out automatically: signals hold, memos recompute on read, effects never run | the real one, registered once: `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot })`, seven named imports from `'solid-js'` — never `import * as`, which keeps every export of solid-js in the chunk (14.8 kB minified, measured) |
 | Where `useUi()` reads | the request — `currentLocale()`, `currentTimeZone()`, `useI18n()` | `<UiProvider>`, through Solid's context |
 | `<UiProvider>` | **throws** `X_UI_RUNTIME_MISSING` | the one injection point |
 
@@ -455,6 +454,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createRoot,
   createSignal,
   onCleanup,
   useContext,
@@ -475,9 +475,17 @@ export function mount(el: HTMLElement, props: Props): void {
   // NOT `await import('solid-js')`: the chunk already carries Solid statically, so the await buys
   // no bytes and makes `mount` async — and the hydration runtime calls it synchronously.
   // NOT `import * as solidRuntime` either: a namespace handed to a function cannot be shaken, and
-  // it costs 14.8 kB of solid-js per island chunk that nothing calls. The six picks are the whole
-  // contract.
-  setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });
+  // it costs 14.8 kB of solid-js per island chunk that nothing calls. The seven picks are the
+  // whole contract; `createRoot` is what lets `DataTable` keep a row across a live update.
+  setSolidRuntime({
+    createContext,
+    useContext,
+    createSignal,
+    createMemo,
+    createEffect,
+    onCleanup,
+    createRoot,
+  });
   el.textContent = ''; // Solid's `render` APPENDS; the server's shell would stay above this one.
   render(
     () => (

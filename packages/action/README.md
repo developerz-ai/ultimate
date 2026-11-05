@@ -12,7 +12,7 @@ One declaration → six artifacts. Five are projected here; the MCP tool is `@ul
 | 3 | Typed RPC client | `publishPost.client({ baseUrl })` / `rpc<Api['actions']>()` | server typo = compile error in Solid |
 | 4 | MCP tool | `toolFrom(publishPost)` from `@ultimat3/mcp` — what `tools/list` serves | *identical* policy evaluation to the route: it calls this package's `invoke` with `surface: 'mcp'` |
 | 5 | Job handle | `publishPost.job()` | enqueue durable work, no rewrite |
-| 6 | Contract tests | `publishPost.contract()` | garbage rejected, anonymous denied, spec present |
+| 6 | Contract tests | `publishPost.contract({ exercise: { actor } })` | garbage rejected, anonymous denied, spec present, the handler survives generated legal input |
 
 ## The fluent surface
 
@@ -28,7 +28,7 @@ await publishPost.as(actor, { postId })        // run as someone, one execution 
 publishPost.openapi()                          // OpenAPI operation
 publishPost.client({ baseUrl })                // typed RPC method
 publishPost.job()                              // durable-work handle
-publishPost.contract()                         // the three generated assertions
+publishPost.contract({ exercise: { actor } }) // the four generated assertions
 ```
 
 There is no `.tool()` (`As of 25.0.0`): it was a second MCP projection built a tier below the
@@ -185,9 +185,16 @@ One rule per app, declared once — `defineApi({ http: { pathStyle } })` — plu
   follows for reads. The OpenAPI tag becomes the resource the POLICY names (`can('cases:create')`
   → `cases`), never a noun parsed from `In`.
 - **`http: { path }` pins one action's URL** whatever the style — for a webhook a vendor holds:
-  `action({ …, http: { path: '/api/webhooks/wompi' } })`. Static, lowercase, no params, never
-  `/_x` (`X_ACTION_HTTP_PATH_INVALID`). A pin colliding with another path is
+  `action({ …, http: { path: '/api/webhooks/wompi' } })`. Lowercase, never `/_x`
+  (`X_ACTION_HTTP_PATH_INVALID`). A pin colliding with another path on the same method is
   `X_ACTION_PATH_DUPLICATE` at boot.
+- **A pin may carry `:param`s and a method** — `http: { path: '/orders/:id/refund', method:
+  'PATCH' }` (`ACTION_HTTP_METHODS`: `POST` default, `PUT`, `PATCH`, `DELETE`). Each `:param` is a
+  required `t.string` key of `input:`; the URL's value joins the body before `invoke`, and a body
+  naming it differently is 400 `X_HTTP_PATH_INPUT_CONFLICT` (core's). `actionHttpPath(name, { id })`
+  fills one, `derivePath(name)` refuses it, `action.client()` fills it from the input, and
+  `actionHttpPinOf(action)` is the manifest's `{ path, method }`. OpenAPI: `{id}` `in: path`, the
+  key out of the body component, the operation under its verb.
 - Every server-side reader agrees: `toRoute`, `toOpenApiOperation`, `describeAction`,
   `derivePath(name)` (pin-aware) and `actionHttpPath(action | name)`. A pinned action is called
   through `action.client()`, which holds the pin.
@@ -660,6 +667,43 @@ named across both. First registered keeps the name, a later one is a no-op. `res
 the table, so a test that calls it after each case must re-declare a module-level gate, or its later
 cases run ungated. Declared outside what a worker loads is `X_ROLE_LOAD_INCOMPLETE`.
 
+## `errors:` — the refusals a caller may branch on, closed
+
+```ts
+import { action } from '@ultimat3/action';
+import { defineError } from '@ultimat3/core';
+import { allow } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
+
+const RefundTooLate = defineError({
+  code: 'X_REFUND_TOO_LATE',
+  title: 'the refund window has closed',
+  status: 409,
+  cause: 'the order is past its refund window',
+  fix: 'read the order first, and offer a refund only inside its window',
+});
+
+export const refundOrder = action({
+  input: t.object({ late: t.boolean }),
+  output: t.object({ refunded: t.boolean }),
+  policy: allow(),
+  errors: [RefundTooLate.code], // import the defineError class: the import registers its status
+  handle: ({ input }) => {
+    if (input.late) throw new RefundTooLate();
+    return { refunded: true };
+  },
+});
+```
+
+Each entry a registered 4xx code, listed once (`X_ACTION_ERRORS_INVALID` at `action()`). Judged
+around `handle` and `row` only (`declared-errors.ts`): a 4xx code outside the list is
+`X_ERROR_UNDECLARED` in a test or dev run and the original, warned and counted
+(`undeclared_errors_total`), in production. `.contract()` gains one assertion that scans the
+handler's own source (`declared-errors-contract.ts`); the OpenAPI operation names each code at its
+status (`openapi-errors.ts`); `describe().errors` publishes the sorted list, `null` when absent.
+The rule is `@ultimat3/core`'s, shared with `@ultimat3/query`. Wiki:
+[Declared refusals](../../wiki/Actions.md#declared-refusals-errors).
+
 ## `deprecated:` — a compat window, not a version
 
 ```ts
@@ -832,13 +876,14 @@ setAuditSink({
 
 ## Contract tests
 
-`publishPost.contract()` returns three assertions. Run them; they throw `X_CONTRACT_DRIFT`.
+`publishPost.contract()` returns four assertions. Run them; the first three throw `X_CONTRACT_DRIFT`.
 
 | Assertion | Holds when |
 |---|---|
 | input schema rejects garbage | the invocation fails `X_INPUT_INVALID` — that code, not any failure |
 | policy denies an anonymous actor | the invocation fails with an `ActionDeniedError` |
 | OpenAPI document contains its operation | the action's path, in the document built from the WHOLE registry (plus this action when a test drives an unregistered `.named()` twin), is this action's operation — a second registered action deriving the same route fails it |
+| handler survives generated input | 16 runs (`exerciseAction`, `exercise.ts`) of input `arbitrary()` draws from `input:`, seeded by the name, each in a rolled-back transaction (`tx-scope.ts`): every answer is the output or a coded refusal under 500, and at least one run reached the handler |
 
 The denial assertion sends an input synthesized from `input:`'s own schema — required keys
 only, formats included — because a payload the schema rejects never reaches a policy. It
@@ -850,8 +895,14 @@ publishPost.contract({
   garbage: 42,                                 // what the input schema must reject
   input: { postId, orgId },                    // when the synthesized one cannot fit
   ctx: myCtx,                                  // default: an anonymous context
+  exercise: { actor, input: (drawn) => ({ ...drawn, postId }) }, // or { off: '<reason>' }
 })
 ```
+
+`exercise` is required unless the policy admits an anonymous caller
+(`X_CONTRACT_EXERCISE_UNDECLARED`). A defect is `X_CONTRACT_DEFECT` (`meta.run`, `meta.input`,
+`meta.failure`, and a `bun test <file> -t '<name>'` that replays it); no run reaching the handler
+is `X_CONTRACT_EXERCISE_UNREACHED`. Full rules: [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-exercise-assertion).
 
 Pass `input:` when the schema carries a constraint the IR cannot invert (a bare `pattern`) or
 when `row:` needs an id that resolves. Anything thrown *before* the policy decides is drift,
@@ -875,6 +926,9 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_MUTATOR_NOT_IDEMPOTENT` | `mutator()` declared without `idempotent: true` | add `idempotent: true` to the definition |
 | `X_IDEMPOTENCY_STATUS_UNKNOWN` | `x_idempotency.status` holds a word this build has no branch for — written by a newer deploy | finish the rollout onto the build that writes it, then reconcile those requests — never DELETE the rows, which frees the key to run an already-committed action a second time |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --only contract` |
+| `X_CONTRACT_DEFECT` | a generated legal input made the handler throw uncoded, fail its output, or answer a coded 5xx | the replay command in `fix:` |
+| `X_CONTRACT_EXERCISE_UNREACHED` | no generated run reached the handler | `.contract({ exercise: { actor } })` with a permitted actor, or bind a row with `exercise.input` |
+| `X_CONTRACT_EXERCISE_UNDECLARED` | `.contract()` on a guarded action with no `exercise`, or a blank `off` | `.contract({ exercise: { actor } })` or `{ exercise: { off: '<reason>' } }` |
 | `X_RPC_FAILED` | registered, thrown by nothing since 21.0.0 — a non-`problem+json` failure is core's `X_CLIENT_TRANSPORT_FAILED` now, as for a query | match `X_CLIENT_TRANSPORT_FAILED` instead |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
 | `X_AUDIT_SINK_MISSING` | `audit: true` and no sink installed — raised before the input parse | `setAuditSink(yourSink)` at boot |

@@ -169,6 +169,67 @@ export function focusMain(doc: Document): void {
   target.focus({ preventScroll: true });
 }
 
+/**
+ * Where focus was, said in terms the NEXT document can answer: the control's `id`, else its `name`
+ * in the same form, else its row (`[data-row]`) with its tag and place in that row. `null` when
+ * nothing had focus — the body, or no element at all.
+ */
+export interface FocusMark {
+  readonly id: string;
+  readonly name: string | null;
+  /** The form's `id`, else its place among the document's forms; `null` outside a form. */
+  readonly form: string | number | null;
+  readonly row: string | null;
+  readonly tag: string;
+  readonly nth: number;
+}
+
+export function markFocus(doc: Document): FocusMark | null {
+  const el = doc.activeElement;
+  if (el === null || el === doc.body || el === doc.documentElement) return null;
+  const form = el.closest('form');
+  const rowEl = el.closest('[data-row]');
+  const tag = el.tagName.toLowerCase();
+  return {
+    id: el.id,
+    name: el.getAttribute('name'),
+    form: form === null ? null : form.id || [...doc.querySelectorAll('form')].indexOf(form),
+    row: rowEl?.getAttribute('data-row') ?? null,
+    tag,
+    nth: rowEl === null ? -1 : [...rowEl.querySelectorAll(tag)].indexOf(el),
+  };
+}
+
+/** Focus the control `mark` names in the document now on screen, else `<main>`. No mark: nothing. */
+export function restoreFocus(doc: Document, mark: FocusMark | null): void {
+  if (mark === null) return;
+  const target = markedIn(doc, mark);
+  if (target === null) focusMain(doc);
+  else target.focus({ preventScroll: true });
+}
+
+function markedIn(doc: Document, mark: FocusMark): HTMLElement | null {
+  if (mark.id !== '') return doc.getElementById(mark.id);
+  // Attribute VALUES compared as strings, never spliced into a selector: a name needs no escaping.
+  const by = (scope: ParentNode, attr: string, value: string): HTMLElement | null =>
+    [...scope.querySelectorAll<HTMLElement>(`[${attr}]`)].find(
+      (el) => el.getAttribute(attr) === value,
+    ) ?? null;
+  if (mark.name !== null) {
+    const forms = [...doc.querySelectorAll('form')];
+    const form =
+      mark.form === null
+        ? doc
+        : typeof mark.form === 'number'
+          ? forms[mark.form]
+          : forms.find((f) => f.id === mark.form);
+    return form === undefined ? null : by(form, 'name', mark.name);
+  }
+  if (mark.row === null) return null;
+  const row = by(doc, 'data-row', mark.row);
+  return row?.querySelectorAll<HTMLElement>(mark.tag)[mark.nth] ?? null;
+}
+
 /** A polite live region carried from body to body; styled through the CSSOM, which CSP allows. */
 export function announcer(doc: Document): HTMLElement {
   const region = doc.createElement('div');

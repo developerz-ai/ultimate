@@ -14,8 +14,10 @@ import {
   Grid,
   Icon,
   InlineBar,
+  listUrl,
   RelativeTime,
   Section,
+  type SortState,
   StatTile,
 } from '@ultimat3/ui';
 import { iconArrowRight } from '@ultimat3/ui/icons/arrow-right';
@@ -137,16 +139,45 @@ function Charts(props: { readonly screen: DashboardScreen }) {
   );
 }
 
-function TopPosts(props: { readonly screen: DashboardScreen }) {
+/** The columns the top-posts table sorts by, in the URL as `top.sort` / `top.dir`. */
+const TOP_SORTS = ['likes', 'comments', 'published'] as const;
+
+const sortValue = (row: TopPost, key: (typeof TOP_SORTS)[number]): number | string =>
+  key === 'published' ? row.publishedAt : row[key];
+
+/**
+ * The top set is the WHOLE set — `screen.ts` already chose it — so sorting it here reorders what
+ * is on screen and hides nothing. Unsorted is the screen's own order, most liked first.
+ */
+function sortedTop(
+  top: readonly TopPost[],
+  sort: (SortState & { readonly key: (typeof TOP_SORTS)[number] }) | undefined,
+): readonly TopPost[] {
+  if (sort === undefined) return top;
+  const sign = sort.direction === 'asc' ? 1 : -1;
+  return [...top].sort((left, right) => {
+    const a = sortValue(left, sort.key);
+    const b = sortValue(right, sort.key);
+    return a === b ? 0 : a < b ? -sign : sign;
+  });
+}
+
+function TopPosts(props: { readonly screen: DashboardScreen; readonly url: string | undefined }) {
   const locale = currentLocale();
   const count = new Intl.NumberFormat(locale);
   const most = props.screen.top[0]?.likes ?? 0;
+  // Link mode: the headers are anchors to the next sort state, so sorting needs no island.
+  const list = listUrl(props.url ?? '/dashboard', { sorts: TOP_SORTS, ns: 'top' });
   return (
     <Section title={t('app.dashboard.top.title')}>
       <DataTable
         caption={t('app.dashboard.top.caption')}
-        rows={props.screen.top}
+        rows={sortedTop(props.screen.top, list.sort)}
         rowKey={(row: TopPost) => row.id}
+        sort={list.sort}
+        sortHrefFor={list.sortHrefFor}
+        hrefFor={list.hrefFor}
+        firstHref={list.firstHref}
         emptyTitle={t('app.dashboard.top.empty')}
         columns={[
           {
@@ -164,6 +195,7 @@ function TopPosts(props: { readonly screen: DashboardScreen }) {
             key: 'likes',
             header: t('app.dashboard.top.likes'),
             numeric: true,
+            sortable: true,
             cell: (row) => (
               <InlineBar value={row.likes} max={most} text={count.format(row.likes)} />
             ),
@@ -172,12 +204,14 @@ function TopPosts(props: { readonly screen: DashboardScreen }) {
             key: 'comments',
             header: t('app.dashboard.top.comments'),
             numeric: true,
+            sortable: true,
             priority: 2,
             cell: (row) => <span>{count.format(row.comments)}</span>,
           },
           {
             key: 'published',
             header: t('app.dashboard.top.published'),
+            sortable: true,
             priority: 2,
             cell: (row) => (
               <RelativeTime value={row.publishedAt} now={props.screen.now} locale={locale} />
@@ -201,7 +235,7 @@ export function Page(props: { readonly data: DashboardData; readonly url?: strin
       <div class={styles.page}>
         {screen === null ? null : <Figures screen={screen} />}
         {screen === null ? null : <Charts screen={screen} />}
-        {screen === null ? null : <TopPosts screen={screen} />}
+        {screen === null ? null : <TopPosts screen={screen} url={props.url} />}
         <Destinations />
       </div>
     </AppShell>

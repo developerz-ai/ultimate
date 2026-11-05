@@ -12,7 +12,7 @@
  */
 
 import type { ScopeCell } from './record-sink';
-import { heldRecords, scopeCell } from './record-sink';
+import { heldRecords, scopeCell, sessionLostCell } from './record-sink';
 
 export interface ClientScope {
   /**
@@ -35,6 +35,8 @@ export function rescope(principal: string | null): void {
   cell.current = next;
   // Held early records belong to the principal that just left; they never reach the next store.
   heldRecords()?.clear();
+  // A new principal has a session of its own: the loss was the previous one's.
+  sessionLostCell().lost = false;
   let failure: { readonly error: unknown } | undefined;
   // A snapshot: a subscriber that unsubscribes (or subscribes) mid-notify changes the NEXT round.
   for (const listener of [...cell.listeners]) {

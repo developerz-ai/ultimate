@@ -181,8 +181,8 @@ a long press — never skips it, so named elements finish their glide (`As of 20
 |---|---|
 | history | `pushState` per navigation, each entry naming the document it shows; `replaceState` for the same URL. Back/forward to an entry whose document is not the one on screen swaps it in; an entry an app pushed shows the document of its path |
 | scroll | top on a new page; the fragment's element for `#id`; back AND forward restore the saved position (saved as the visitor scrolls), and so do a reload and a Back that is a full document load (`As of 2026-10-02`). Always `instant`, whatever `scroll-behavior` says |
-| focus | moved to the new page's `<main>` (else its first `<h1>`), `tabindex="-1"` added if needed |
-| announcement | the new `document.title`, in a polite `aria-live` region the router owns |
+| focus | moved to the new page's `<main>` (else its first `<h1>`), `tabindex="-1"` added if needed. A `refresh()` keeps it where it was ([below](#refresh-is-the-same-page)) |
+| announcement | the new `document.title`, in a polite `aria-live` region the router owns. A `refresh()` announces nothing |
 | progress | `data-x-navigating` on `<html>` once a navigation runs past 150 ms. No bundled UI: style it, e.g. `html[data-x-navigating] main { opacity: 0.6 }` inside `prefers-reduced-motion: no-preference` |
 
 ## Prefetch
@@ -404,7 +404,7 @@ page, never a modal.
 `@ultimat3/render/client`, the package's browser entry:
 
 ```ts
-import { closeModal, navigate, openModal, refresh } from '@ultimat3/render/client';
+import { closeModal, navigate, openModal, refresh, scheduleRefresh } from '@ultimat3/render/client';
 
 await navigate('/runs/7'); // as a click on a link to it
 await navigate('/runs?status=failed', { replace: true }); // the current entry replaced
@@ -419,7 +419,8 @@ island that drops markup holding other islands (`As of 2026-10`, [Client data](C
 | Call | With the router | Without it (a `site/` page, a `'document'` page, the router's script blocked) |
 |---|---|---|
 | `navigate(url, { replace? })` | the router's own navigation: the server's gate and the answer decide swap, modal or full load. Another origin: a document load | `location.assign` / `location.replace` |
-| `refresh()` | the page fetched again (never from the prefetch cache) and swapped in with no history entry, at the visitor's scroll. An open modal is fetched again over it | `location.reload()` |
+| `refresh()` | the page fetched again (never from the prefetch cache) and swapped in with no history entry, at the visitor's scroll — for the same visitor: [below](#refresh-is-the-same-page). Under an open modal: nothing | `location.reload()` |
+| `scheduleRefresh()` | a `refresh()` once the visitor is idle, coalesced: [below](#scheduling-a-refresh) | nothing — a reload under a reader is the failure it prevents |
 | `openModal(path)` | `#<path>` over the page, pushed, so Back closes it. A path that is not a modal of this tab opens nothing, as a stale hash | `location.assign(path)`: the modal route's whole page |
 | `closeModal()` | as Escape: Back through the router's own entry, else the hash dropped in place | nothing — no modal is open |
 
@@ -435,6 +436,40 @@ table in any chunk that reaches it. An island whose body is `refresh()` is 216 B
 2026-10-08`). The barrel still exports them, for compatibility. The rejection is
 `NavigationModalPathInvalidError`, one class from either entry, so `instanceof` holds whichever an
 app imports; read `.code` when the two halves of an app may disagree on where they import from.
+
+### `refresh()` is the same page
+
+`As of 30.0.0`. Same page, same visitor, so none of a new page's arrival applies:
+
+| | A navigation | `refresh()` |
+|---|---|---|
+| view transition | yes, unless reduced motion | none |
+| focus | `<main>` | the control the visitor was in: by `id`, else `name` in the same form, else its row (`[data-row]`) + tag + place in the row. Restored after the page's scripts ran, so an island's control is there. Gone from the new page: `<main>`. Nothing focused: untouched |
+| announcer | the new title | not written |
+| a navigation already in flight | aborted by the newer one | kept: the refresh resolves and does nothing, since that navigation fetches fresh anyway |
+| an open modal | — | nothing is fetched; the modal and the page beneath stay |
+
+Proof: `packages/render/src/navigation-refresh.test.ts`, and in Chrome
+`packages/cli/e2e/client-navigation-refresh.e2e.test.ts`.
+
+### Scheduling a refresh
+
+`scheduleRefresh()` is "a channel said the page changed", not "re-read now". One runs, one is owed;
+any number of calls while one runs owe exactly one more. It is held — owed, paid later — while:
+
+| Held while | Paid |
+|---|---|
+| the tab is hidden | on show |
+| a `dialog[open]` or an open popover is on the page | once it closes (asked again every second) |
+| focus is in an `input`, `textarea` or `[contenteditable]`, or text is selected | once it leaves |
+| a navigation runs (`data-x-navigating`) | after it |
+| within `QUIET_MS` (1 s) of a scroll, wheel, key or press | 1 s after the last one |
+| a press is down | on release, or 10 s after it (a lost `pointerup`) |
+
+After a lost session (`sessionIsLost()`, [Client data](Client-Data)) it does nothing, ever. Without
+the router it does nothing — the difference from `refresh()`. Its state is on `window` under
+`Symbol.for('ultimate.refresh-idle')`, so every island chunk shares one. The channel-to-refresh
+idiom is in [Realtime](Realtime#a-channel-event-re-reads-the-page).
 
 ## Events
 

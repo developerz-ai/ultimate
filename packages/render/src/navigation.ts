@@ -16,16 +16,7 @@
  */
 
 import { navigationCache } from './navigation-cache';
-import {
-  anchorOf,
-  announcer,
-  focusMain,
-  handOver,
-  intentUrl,
-  linkFacts,
-  submitFacts,
-  transition,
-} from './navigation-dom';
+import { anchorOf, announcer, handOver, intentUrl, linkFacts, submitFacts } from './navigation-dom';
 import {
   type Answer,
   fetchDocument,
@@ -43,6 +34,7 @@ import {
 import { modalController } from './navigation-modal';
 import { addressOf, modalAddress, modalHistory } from './navigation-modal-rules';
 import { pressTracker } from './navigation-press';
+import { holdFor, landFocus, type RefreshRun, refreshYields, swapIn } from './navigation-refresh';
 import {
   answerMovesTab,
   formVerdict,
@@ -77,13 +69,18 @@ export interface NavigateOptions {
   readonly hops?: number;
   /** The URL's hash addressed it: a modal, or nothing — never a page (`presentation`). */
   readonly fromHash?: boolean;
+  /** The page on screen again, for the same visitor (`navigation-refresh.ts`). */
+  readonly refresh?: RefreshRun;
 }
 
 export interface NavigationRouter {
   navigate(url: string, options?: NavigateOptions): Promise<void>;
   prefetch(url: string): void;
-  /** The page on screen, fetched again and swapped in where it is scrolled. */
-  refresh(): Promise<void>;
+  /**
+   * The page on screen, fetched again and swapped in where it is scrolled — unless `held()` says
+   * the visitor is busy when the answer lands. `true` when it was swapped in.
+   */
+  refresh(held?: () => boolean): Promise<boolean>;
   /** `path` as the modal over this page (`#<path>`); anything but a modal of this tab: nothing. */
   openModal(path: string): Promise<void>;
   /** As Escape: Back through the router's own entry, else the hash dropped in place. */
@@ -189,6 +186,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       else win.location.assign(url);
       return;
     }
+    if (refreshYields(options.refresh, inflight)) return;
     const detail = { url, method };
     if (!doc.dispatchEvent(new CustomEvent(NAVIGATE_EVENT, { detail, cancelable: true }))) return;
     inflight?.abort();
@@ -280,14 +278,17 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         modal.release();
         modal.dismiss();
         let swapped: ReturnType<typeof swapDocument> | undefined;
-        await transition(
+        const hold = holdFor(doc, options.refresh);
+        if (hold === null) return;
+        await swapIn(
           win,
+          hold,
           () => {
             // A newer navigation started while the sheets loaded: this answer is no longer asked for.
             if (mine.signal.aborted) return;
             swapped = swapDocument(doc, next, owned);
             // Emptied here and filled after the scripts, so a page with the same title still reads out.
-            live.textContent = '';
+            if (hold === undefined) live.textContent = '';
             swapped.body.append(live);
             rendered = withoutFragment(landed);
             if (history !== 'none') {
@@ -314,8 +315,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         await runScripts([...done.body.querySelectorAll('script')], ran, (fresh, inert) =>
           inert.replaceWith(fresh),
         );
-        focusMain(doc);
-        live.textContent = doc.title;
+        landFocus(doc, live, hold);
         doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
         reconcile();
       } catch {
@@ -458,11 +458,15 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   const router: NavigationRouter = {
     navigate,
     prefetch,
-    refresh() {
-      // A fresh answer for the page on screen, landing where the visitor is scrolled.
+    async refresh(held) {
+      // A fresh answer for the page on screen, landing where the visitor is scrolled. Not under
+      // an open modal: the page beneath is out of reach, and the swap would take the modal with it.
+      if (modal.address !== undefined) return false;
       cache.delete(rendered);
       scroll.save();
-      return navigate(rendered, { history: 'none' });
+      const run: RefreshRun = { held, landed: false };
+      await navigate(rendered, { history: 'none', refresh: run });
+      return run.landed;
     },
     openModal(path) {
       const address = modalAddress(`#${path}`, win.location.href);

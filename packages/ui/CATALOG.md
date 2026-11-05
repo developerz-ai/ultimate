@@ -276,15 +276,15 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `caption` | `string` | yes |  |
 | `columns` | `readonly Column<Row>[]` | yes |  |
 | `rows` | `readonly Row[]` | yes |  |
-| `rowKey` | `(row: Row) => string` | yes |  |
+| `rowKey` | `(row: Row) => string` | yes | The row's identity — its primary key, unique within `rows`. A live update keeps the `<tr>` of every key it still holds: the same object runs nothing, so focus and an open "more" stay put; a new object redraws that row's cells. Two rows under one key are `X_UI_INVALID_VALUE`. |
 | `sort` | `SortState` | — |  |
 | `loading` | `boolean` | — |  |
 | `error` | `unknown` | — | An UltimateError (or anything shaped like one) from the query. |
 | `onRetry` | `(() => void)` | — |  |
 | `emptyTitle` | `string` | — |  |
 | `emptyDescription` | `string` | — |  |
-| `nextCursor` | `string` | — | Opaque cursors from the query result; absent means no further page. |
-| `prevCursor` | `string` | — |  |
+| `nextCursor` | `string \| null` | — | Opaque cursors from the query result; `null` or absent means no further page, so a framework `Page`'s `nextCursor` is handed straight through. A keyset `Page` has no `prevCursor`. |
+| `prevCursor` | `string \| null` | — |  |
 | `stickyHeader` | `boolean` | — |  |
 | `stickyFirstColumn` | `boolean` | — | Pins the first column while the table scrolls sideways. |
 | `narrow` | `DataTableNarrow` | — | What a table narrower than `sm` becomes. Default `cards`. |
@@ -293,8 +293,10 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `class` | `string` | — |  |
 | `onCursor` | `((cursor: string, direction: 'next' \| 'prev') => void)` | — | Callback paging. Never beside `hrefFor` — the type refuses the pair. |
 | `onSortChange` | `((sort: SortState \| undefined) => void)` | — | Callback sorting. Never beside `sortHrefFor` — the type refuses the pair. |
+| `onFirst` | `(() => void)` | — | Back to the first page: the pager's "First" button. Pass it only past the first page. |
 | `hrefFor` | `(cursor: string, direction: 'next' \| 'prev') => string` | — | Link paging: the URL of the page a cursor names, handed to `<Pagination hrefFor>`. |
 | `sortHrefFor` | `((sort: SortState \| undefined) => string)` | — | Link sorting: the URL of the list under the NEXT sort state of a header's cycle (`undefined` is "unsorted"). Absent, a sortable header is plain text — never a button with no handler. |
+| `firstHref` | `string` | — | The first page's URL, for the pager's "First" anchor — `listUrl().firstHref`. |
 
 ### DateTime
 
@@ -736,20 +738,23 @@ The top of a screen: breadcrumbs, the page's one heading, a description, and the
 
 ### Pagination
 
-Cursor-first pagination — the only shape a Postgres-backed list should use. Numbered mode exists for prerendered archives where the total is known. One mode per use: callbacks (`onCursor` / `onPage`) for an island, or `hrefFor` for a server-rendered list — anchors the browser follows, with no script on the page.
+Cursor-first pagination — the only shape a Postgres-backed list should use; numbered mode is for prerendered archives with a known total. One mode per use: callbacks for an island, or `hrefFor` anchors with no script. Keyset paging has no way back, so Previous is drawn only when there is one, and `firstHref`/`onFirst` restart the list.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
-| `nextCursor` | `string` | — | Opaque cursor for the following page; absent disables "next". |
-| `prevCursor` | `string` | — |  |
+| `nextCursor` | `string \| null` | — | Opaque cursor for the following page; `null` or absent disables "next" — one state, so a framework `Page`'s `nextCursor` is handed straight through. |
+| `prevCursor` | `string \| null` | — | The cursor back. A keyset `Page` has none, and with none no Previous is drawn at all. |
 | `labelPrevious` | `string` | — | Already-translated; falls back to the ui.* catalog keys. |
 | `labelNext` | `string` | — |  |
+| `labelFirst` | `string` | — |  |
 | `class` | `string` | — |  |
 | `onCursor` | `((cursor: string, direction: 'next' \| 'prev') => void)` | — | Callback mode. Never beside `hrefFor` — the type refuses the pair. |
 | `page` | `number` | — | Numbered mode: 1-based page and total. Ignored when cursors are present. |
 | `totalPages` | `number` | — |  |
 | `onPage` | `((page: number) => void)` | — |  |
+| `onFirst` | `(() => void)` | — | Back to the start: a "First" button. Callback mode's `firstHref`. |
 | `hrefFor` | `(cursor: string, direction: 'next' \| 'prev') => string` | — | Link mode: the URL of the page a cursor names. Renders `<a rel="next\|prev">` and attaches no handler, so it needs no island. Cursor paging only — never beside `onCursor`, `onPage`, `page` or `totalPages`. |
+| `firstHref` | `string` | — | The URL of the first page: a "First" anchor. Absent — already there — draws none. |
 
 ### Popover
 
@@ -861,7 +866,7 @@ One series as a single line with no axes — the trend beside a figure, in a tab
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `label` | `string` | yes | The accessible name for the whole chart, already translated. |
-| `points` | `readonly ChartPoint[]` | yes | Oldest first. Every point comes from exactly this array — the caller zero-fills gaps. |
+| `points` | `readonly SparklinePoint[]` | yes | Oldest first. `value: null` is unknown — a gap in the line, never a zero. |
 | `class` | `string` | — |  |
 
 ### Spinner

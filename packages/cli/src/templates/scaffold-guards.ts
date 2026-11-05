@@ -20,7 +20,8 @@
 // And one is about DATA: a `repo.ts` reads through the typed handle. It ships because the generator
 // used to emit string SQL, and every app that started from it copied the shape. One is about the
 // NETWORK: a server `fetch(` carries a signal, or is `outbound()` from `@ultimat3/core/outbound`. `error-declared`
-// is `bare-error`'s second half: an app code is declared once, with core's `defineError`.
+// is `bare-error`'s second half: an app code is declared once, with core's `defineError`. One is
+// about the TAB: an island polls with `visibleInterval()`, which a hidden tab and a lost session stop.
 
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
 import { bareErrorGuardFiles } from './guard-bare-error';
@@ -31,6 +32,7 @@ import { islandWithoutStatesGuardFiles } from './guard-island-without-states';
 import { rawBreakpointGuardFiles } from './guard-raw-breakpoint';
 import { rawColourGuardFiles } from './guard-raw-colour';
 import { rawFetchGuardFiles } from './guard-raw-fetch';
+import { rawIntervalGuardFiles } from './guard-raw-interval';
 import { rawLengthGuardFiles } from './guard-raw-length';
 import { rawMotionGuardFiles } from './guard-raw-motion';
 import { rawShadowGuardFiles } from './guard-raw-shadow';
@@ -59,6 +61,7 @@ const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = 
   ['raw-breakpoint', rawBreakpointGuardFiles],
   ['raw-colour', rawColourGuardFiles],
   ['raw-fetch', rawFetchGuardFiles],
+  ['raw-interval', rawIntervalGuardFiles],
   ['raw-length', rawLengthGuardFiles],
   ['raw-motion', rawMotionGuardFiles],
   ['raw-shadow', rawShadowGuardFiles],

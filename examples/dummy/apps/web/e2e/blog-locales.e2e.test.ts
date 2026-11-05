@@ -43,7 +43,9 @@ describe('the public blog, in every locale', () => {
 
   /** One of the two writes that move the post on or off the public blog, as bruno, its author. */
   async function write(verb: 'publish' | 'withdraw', extra: object = {}): Promise<void> {
-    const answered = await fetch(`${app.base}/api/posts/${verb}`, {
+    // `publishPost` pins `/api/posts/:postId/publish`; `withdrawPost` keeps its derived path.
+    const path = verb === 'publish' ? `/api/posts/${DRAFT.id}/publish` : '/api/posts/withdraw';
+    const answered = await fetch(`${app.base}${path}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

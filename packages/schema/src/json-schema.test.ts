@@ -244,7 +244,7 @@ describe('toJsonSchema', () => {
 });
 
 /**
- * The same prototype-chain read `@ultimat3/action`'s `sample-input.ts` carries, one package down.
+ * The same prototype-chain read `sample-draw.ts` carries for `BY_FORMAT`, in this package.
  * `node.format` arrives from a schema PROVIDER's IR — `configureSchemaProvider` is the seam, so
  * the string is not this build's — and `FORMAT_MAP['constructor']` is the `Object` function
  * rather than `undefined`, which the `?? node.format` fallback cannot rescue. A function in

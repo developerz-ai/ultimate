@@ -167,7 +167,8 @@ describe('the browser path to the page seam', () => {
   // measured: 11,395 B (2026-10-09, Bun 1.4.2) — 10,693 before this change, 10,622 before
   // `responseType`. why: +702 B, `wire-dates.ts`'s `reviveWireDates`: a read's `Date` reaches the
   // caller as a `Date` (`x-ultimate-dates`), where every app converted ISO strings by hand (#710).
-  // The next whole kilobyte above the measurement.
+  // The next whole kilobyte above the measurement. 11,950 B on 2026-11-04 (11,553 before): +397 B,
+  // the dispatch marking a scoped page's first 401 as a lost session (`session-lost.ts`).
   test('clientTransport alone reaches no titles table and stays under 12 kB (11,395 B as of 2026-10-09)', async () => {
     const transport =
       "import { clientTransport } from '@ultimat3/core/page';\nglobalThis.probe = clientTransport;\n";
@@ -178,6 +179,19 @@ describe('the browser path to the page seam', () => {
     ]);
     const { bytes } = await build('transport-min', '', true, transport);
     expect(bytes).toBeLessThan(12_288);
+  }, 60_000);
+
+  // `visibleInterval` alone: what an island that only polls pays. It reaches `UltimateError`
+  // through `finiteOption` (a NaN wait is refused, never armed as 0) and the session-loss cell, and
+  // never the transport. measured: 6,045 B (2026-11-05, Bun 1.4.4); the next whole kilobyte above.
+  test('visibleInterval alone reaches no titles table and stays under 6 kB (6,045 B as of 2026-11-05)', async () => {
+    const poll =
+      "import { visibleInterval } from '@ultimat3/core/page';\nglobalThis.probe = visibleInterval;\n";
+    const { modules } = await build('poll', '', false, poll);
+    expect(modules.filter(isTitlesTable)).toEqual([]);
+    expect(modules).not.toContain('core/src/client-dispatch.ts');
+    const { bytes } = await build('poll-min', '', true, poll);
+    expect(bytes).toBeLessThan(6_144);
   }, 60_000);
 
   // Everything the entry exports at once — the transport, the URL rule, the fence and the helpers a
@@ -192,12 +206,18 @@ describe('the browser path to the page seam', () => {
   // problem body's title for an unregistered code) — and the retry wait and a queued gate slot that `bump()`
   // and the caller's abort can now end. That is what let `@ultimat3/http`'s 11.5 kB leave every action island.
   // The next whole kilobyte above the measurement.
-  test('the whole entry reaches no titles table and stays under 18 kB (17,860 B as of 2026-10-09)', async () => {
+  //
+  // measured: 20,549 B (2026-11-05, Bun 1.4.4), 18,366 before plan 101 wave 5a. why: +1,748 B,
+  // `visibleInterval` (a poll a hidden tab and a lost session stop, where five adopters hand-rolled
+  // one; 87 B of it backs off only on a failed run) and `onSessionLost`/`sessionIsLost`, the first
+  // 401 said once; and +391 B, `fillTemplate`/`templateParams` (`route-path-template.ts`), joined
+  // the entry in the same wave. The next whole kilobyte above the measurement.
+  test('the whole entry reaches no titles table and stays under 21 kB (20,549 B as of 2026-11-05)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(18_432);
+    expect(bytes).toBeLessThan(21_504);
   }, 60_000);
 
   test('the barrel still drags both titles tables — the reason the subpath exists', async () => {

@@ -43,6 +43,17 @@ describe('INERT_SOLID_RUNTIME', () => {
     expect(read()).toBe(2);
   });
 
+  test('createRoot is the call itself: a server render has nothing to outlive', () => {
+    let disposed = 0;
+    const value = rt.createRoot((dispose) => {
+      dispose();
+      disposed += 1;
+      return 'built';
+    });
+    expect(value).toBe('built');
+    expect(disposed).toBe(1);
+  });
+
   test('createMemo recomputes on read rather than caching a first answer', () => {
     let calls = 0;
     const memo = rt.createMemo(() => {

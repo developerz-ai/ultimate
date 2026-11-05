@@ -1,7 +1,7 @@
-// The two declaration registries: `policies` (a permission, where it is enforced) and
-// `errorCodes` (a code, the package that owns it). Both are keyed by a string a consumer matches
-// on — a permission it grants, a code it branches on — so losing an entry is breaking and the
-// metadata beside it is internal.
+// The declaration registries: `policies` (a permission, where it is enforced), `errorCodes` (a
+// code, the package that owns it) and an operation's declared `errors:`. Each is keyed by a string
+// a consumer matches on — a permission it grants, a code it branches on — so losing an entry is
+// breaking and the metadata beside it is internal.
 
 import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
@@ -113,4 +113,50 @@ export function diffErrorCodes(
     }
   }
   return changes;
+}
+
+/**
+ * An action's or a query's `errors:` (`ActionFact.errors`, `QueryFact.errors`), code by code: a
+ * caller branches on each, so a code leaving the list is breaking and one joining it additive.
+ * Absent is the open contract — declaring a list adds a promise, dropping it withdraws every one.
+ * For `diffActions`/`diffQueries` to call per operation, with the operation's dotted path.
+ */
+export function diffDeclaredErrors(
+  path: string,
+  before: readonly string[] | undefined,
+  after: readonly string[] | undefined,
+): readonly ManifestChange[] {
+  if (before === undefined && after === undefined) return [];
+  if (before === undefined) {
+    return [{ kind: 'additive', path: `${path}.errors`, detail: 'errors declared' }];
+  }
+  if (after === undefined) {
+    return [
+      {
+        kind: 'breaking',
+        path: `${path}.errors`,
+        detail: 'errors list removed; the codes it declared are no longer a contract',
+      },
+    ];
+  }
+  const kept = new Set(after);
+  const had = new Set(before);
+  return [
+    ...[...before]
+      .sort()
+      .filter((code) => !kept.has(code))
+      .map((code) => ({
+        kind: 'breaking' as const,
+        path: `${path}.errors.${code}`,
+        detail: 'declared error removed; a caller branching on it is no longer told it can happen',
+      })),
+    ...[...after]
+      .sort()
+      .filter((code) => !had.has(code))
+      .map((code) => ({
+        kind: 'additive' as const,
+        path: `${path}.errors.${code}`,
+        detail: 'declared error added',
+      })),
+  ];
 }

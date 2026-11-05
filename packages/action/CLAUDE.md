@@ -26,7 +26,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
 | `openapi-complete.ts` | the COMPLETE document (`defineApi({ openapi })`: info, servers, security schemes, 401/429 by the ROUTE's `meta.auth`) and a bearer mount's own cut |
-| `http-path.ts` | where an action is served: the app's `pathStyle` + a per-action `http.path` pin, read lazily by every projection |
+| `http-path.ts` | where an action is served: the app's `pathStyle` + a per-action `http.path` pin, read lazily by every projection; the pin's `:param` template + `method` (`ACTION_HTTP_METHODS`), `assertPinnedHttp`, `filledRoute`, `pathParametersOf`, `actionHttpPinOf` |
 | `path-style-miss.ts` | `explainActionPathMiss` — `@ultimat3/http`'s `hooks.explainMiss`: a POST under the style this app does not serve is `X_CONTRACT_DRIFT` naming the one it does |
 | `api-declaration.ts` | `defineApi({ http, openapi })` held process-wide for the boot and `x manifest` |
 | `errors-http.ts` | the three HTTP-declaration refusals |
@@ -38,7 +38,11 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, imported from core — `src/index.ts` re-exports only the `ClientFlight`/`ClientRetry` types. There is no local copy and must not be one |
 | `job-handle.ts` | the `.job()` projection: an action as a queueable payload. **Not** consumed by `@ultimat3/jobs` — see Invariants |
 | `contract-test.ts` | assertions `x g action` emits |
-| `sample-input.ts` | a value `input:` accepts, from its own IR — what makes the policy assertion reach a policy |
+| `exercise.ts` | the fourth contract assertion: run loop, verdict, `exerciseContract` |
+| `exercise-errors.ts` | the three `X_CONTRACT_*` classes, off-socket |
+| `declared-errors.ts` | the wrap `invoke` puts around `handle` and `row`, the ONLY judged throws. `errors:` is checked, sorted and frozen at `action()` |
+| `declared-errors-contract.ts` | `.contract()`'s source scan |
+| `openapi-errors.ts` | core's builder bound to http's status and `problemTypeFor` |
 | `idempotency.ts` | the store SEAM: types, the installed-store slot, the scope declaration + `assertIdempotencyScope`, and `withIdempotency` — the replay-or-run gate |
 | `idempotency-key.ts` | the namespaced key — action + actor + the caller's key, as one JSON tuple — and the refusal of one that names no request |
 | `idempotency-memory.ts` | the process default: bounded, swept, `scope: 'process'` |
@@ -46,7 +50,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
 | `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
 | `cache-gate.ts` | the post-COMMIT bust — **the only** file that calls `invalidateTags` |
-| `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust), `liveTransaction` (the settle), `completeTransaction` |
+| `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust), `liveTransaction` (the settle), `completeTransaction`, and `inRolledBackScope`, the exercise's always-rolled-back scope |
 | `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent, and the installed-store slot |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
 | `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`setAuditSink`) is core's alone |
@@ -82,7 +86,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.
 - **`registerAction` guards the derived PATH as well as the name** (`X_ACTION_PATH_DUPLICATE`; a
   second index cleared by `resetActions`).
-- **A path is the app's `pathStyle` or the action's pin, never a third answer** (`http-path.ts`).
+- **A path is the app's `pathStyle` or the action's pin, never a third answer** (`http-path.ts`). A pin may be a template: `derivePath(name)` refuses one, `actionHttpPath(name, params)` fills it.
   `'resource'` stays the default (changing it moves every URL). `defineApi` sets the style FIRST and
   `configureActionPathStyle` re-derives every seated action (the module scan may have seated them
   under the default). `derivePath(name)` is pin-aware through `installPinLookup` — handed down by
@@ -117,11 +121,21 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `audit` off unless declared; `id` is the key `output.id` declares (`keySchemaOf`), never a fixed
   `t.uuid`; `row` goes to `mutator()` as declared, never loaded here (#687); **the rule's reads
   are pinned in the move** (#702, `transition-observe.ts`: `def.row`, `def.handle` share `input`).
-- **A lookup table is read with `Object.hasOwn`** (`IRREGULAR` in `naming.ts`, `BY_FORMAT` in
-  `sample-input.ts`) — caller- or provider-supplied keys.
+- **A lookup table is read with `Object.hasOwn`** (`IRREGULAR` in `naming.ts`; `BY_FORMAT` is
+  `@ultimat3/schema`'s `sample-draw.ts`) — caller- or provider-supplied keys.
+- **`handlerReached(target)` in `invoke.ts` is a private per-declaration counter, never on the
+  barrel.** `exercise.ts` reads it to tell a run that reached `handle` from one stopped before it.
+- **The exercise has no bypass.** The actor is `exercise.actor`; with none, a guarded action is
+  `X_CONTRACT_EXERCISE_UNDECLARED` and a public one runs as `null`. `X_TEST_NETWORK_SEALED` is
+  checked before the verdict, because it maps to no status. A coded 5xx, `X_OUTPUT_INVALID` or an
+  uncoded throw is `X_CONTRACT_DEFECT`.
 
 ## Invariants — the wire
 
+- **A `:param` pin's values come from the router's decoded params, merged into the input before
+  `invoke`** (`toRoute` → core's `mergePathParams`). A body naming the key differently is
+  `X_HTTP_PATH_INPUT_CONFLICT`, never overridden. `registerAction`'s duplicate index keys on method
+  + path. `http-path-params.test.ts`.
 - **Every browser call goes through core's `clientTransport`**: `client.ts` hands it the method, the
   URL (core's `actionPath`; `naming.ts` re-exports core's path helpers), body, headers, signal, key,
   flight and `retry`. Only action-specific hooks ride in: `onResponse` (build-id check,
@@ -213,14 +227,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `settle(key, value, reservationId, redacted)` / `fail(key, failure, reservationId)` /
   `release(key, reservationId)`. A fenced no-op is never thrown.
 - **An answer rests REDACTED** (#591): `withIdempotency` passes the store `restingAnswer(value)`
-  (core's `isRedactedKey` + `isSecret` — never a second rule) and `redacted` as `settle`'s
-  REQUIRED 4th argument; both stores keep it (`x_idempotency.redacted`, memory's record field).
-  A flagged replay is `X_IDEMPOTENT_REPLAY_REDACTED`, decided by the FLAG, never by scanning for
-  `[redacted]`. Plain data is the same reference, replayed as before; anything else that
-  `JSON.stringify` would run app code on (`toJSON`, `Map`/`Set`, class instances, `Date`
-  subclasses) is redacted FAIL-CLOSED, and a getter is read once. `keepsRedaction: true` is a
-  required store declaration (`type-pins.ts`: a pre-25 store is a build error — a required
-  parameter alone is not). A reclaim and a `fail` reset the flag.
+  (core's `isRedactedKey` + `isSecret`) and `redacted` as `settle`'s REQUIRED 4th argument. A
+  flagged replay is `X_IDEMPOTENT_REPLAY_REDACTED`, by the FLAG, never by scanning. Full rule: `docs/history/action.md`.
 - **A finished record skips the row half; a stale peek judges it in `beforeRun`** (`idempotency-row.test.ts`). **A `bigint` answer settles failed** (`X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE`).
 - **A stored status is NARROWED** (`isIdempotencyStatus`; unknown is
   `X_IDEMPOTENCY_STATUS_UNKNOWN`), never cast.
@@ -230,12 +238,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **The memory store is bounded; `in-flight` records are the last evicted.** Never an LRU.
 - **`postgresIdempotencyStore` is the shared store** over `@ultimat3/core`'s structural `PgExecutor`; the
   reservation is ONE `insert … on conflict` statement. The CLI boot installs it.
-- **Inside a transaction the SETTLE commits with the write, on BOTH stores** (`liveTransaction()`):
-  Postgres on the handler's connection, memory at `onCommit`. The reservation and `fail` stay
-  immediate. A tx-bound settle that matches no record THROWS `X_IDEMPOTENCY_RESERVATION_LOST` (the
-  rollback of an attempt a retry replaced); the autocommit one only logs. Only a tx-bound
-  `in-flight` record is reclaimed past the deadline — never an autocommit one.
-  `idempotency-parity.test.ts` (memory + PGlite), `idempotency-postgres.live.test.ts`.
+- **Inside a transaction the SETTLE commits with the write, on BOTH stores** (`liveTransaction()`). `idempotency-parity.test.ts`. Full rule: `docs/history/action.md`.
 - **The deadline is `reclaimAfterMs: () => number`, REQUIRED on the Postgres store** and read per
   reservation — the app's `requestTimeoutMs` through `requestDeadlineMs` (`request-deadline.ts`,
   http's own default, never a number here). **`origin: () => object` is required too**: a
@@ -272,10 +275,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **`x_audit` ships no purge**, deliberately. **`SQL_AUDIT_INSERT` is positional**, pinned by
   `audit-parity.test.ts` with a distinct value per field. Only `*_TABLE` DDL is exported
   (`X_SQL_EXPORT_UNREAD`).
-- **The two failure policies are opposites**: `X_AUDIT_SINK_MISSING` before the input parse (no
-  logger-backed default sink); a sink refusing an ALLOWED record is `X_AUDIT_SINK_FAILED`, whose `fix:`
-  branches on `record.idempotencyKey !== null` (`meta.replayable`); a sink refusing a denied or failed
-  record is logged (`audit.sink.failed`) and the original error still reaches the caller.
+- **The two failure policies are opposites**: `X_AUDIT_SINK_MISSING` before the input parse; a sink refusing an ALLOWED record is `X_AUDIT_SINK_FAILED`; refusing a denied or failed one is logged. Full rule: `docs/history/action.md`.
 - **`auditSettled` sits outside the `catch`**, and **`auditOutcomeFor` is TOTAL** (fails closed to
   `failed`); `audit.test.ts` asserts the caller's throwable by identity.
 

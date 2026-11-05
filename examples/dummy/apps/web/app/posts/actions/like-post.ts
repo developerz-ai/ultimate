@@ -17,6 +17,7 @@ import { tag } from '@postly/db';
 import { postId as toPostId } from '@postly/domain';
 import { mutator, t } from '@ultimat3/action';
 import { PostView } from '../entity';
+import { PostNotFound } from '../errors';
 import { likePostLocally } from '../like-mutation';
 import { postLike } from '../policy';
 
@@ -24,6 +25,8 @@ export const likePost = mutator({
   input: t.object({ postId: t.uuid, orgId: t.uuid }),
   output: PostView,
   policy: postLike,
+  // Closed: see `publishPost`.
+  errors: [PostNotFound.code],
   idempotent: true,
   cache: { invalidates: [tag.post, tag.feed] },
   mcp: { expose: true, description: 'Like a post on behalf of the acting member' },

@@ -11,7 +11,9 @@ import { isAction, nameAction } from './action';
 import { resetApiDeclaration } from './api-declaration';
 import { ActionDuplicateError, ActionPathDuplicateError, ActionPolicyMissingError } from './errors';
 import {
-  assertPinnedPath,
+  assertPinnedHttp,
+  filledRoute,
+  methodOfHttp,
   resetActionPathStyle,
   resolveActionRoute,
   routeFor,
@@ -27,7 +29,9 @@ import { clearToolGates } from './tool-gate';
 const registry = seatedActions;
 
 /**
- * Derived route -> the action name that owns it. A second index because the name is not the
+ * `METHOD path` -> the action name that owns it. Keyed on the method too, so REST's two verbs on
+ * one URL (`PUT /orders/:id`, `DELETE /orders/:id`) are two routes, as the router seats them. A
+ * second index because the name is not the
  * path: `pluralize` leaves a trailing `s` alone by design, so `archiveOrder` and `archiveOrders`
  * are two names and one route. Nothing downstream can refuse that — the router seats whichever
  * came last and the shadowed action stays in the OpenAPI document and the MCP tool list.
@@ -61,28 +65,40 @@ export function registerAction<A extends AnyAction>(name: string, target: A): A 
   // An output is sent back, which `.sensitive()` (`writeOnly`) forbids: refused at boot, once.
   const output = defOf(target).output;
   if (output !== undefined) assertNoSensitiveOutput(`action "${name}" output`, output);
-  const pin = defOf(target).http?.path;
-  if (pin !== undefined) assertPinnedPath(name, pin);
-  const { path } = routeFor(name, pin);
-  const owner = paths.get(path);
+  const http = defOf(target).http;
+  if (http !== undefined) assertPinnedHttp(name, http, defOf(target).input);
+  const slot = slotOf(name, target);
+  const owner = paths.get(slot);
   if (owner !== undefined && owner !== name) {
-    throw new ActionPathDuplicateError({ name, existing: owner, path });
+    throw new ActionPathDuplicateError({ name, existing: owner, path: slot });
   }
   const named = nameAction(target, name);
   registry.set(name, named);
-  paths.set(path, name);
+  paths.set(slot, name);
   return named;
 }
 
 /**
+ * The route table's key, and so the duplicate index's: the path alone for `POST` (every unpinned
+ * action's verb, and the spelling `X_ACTION_PATH_DUPLICATE` has always named), `METHOD path` else.
+ */
+const slotOf = (name: string, target: AnyAction): string => {
+  const http = defOf(target).http;
+  const { path } = routeFor(name, http?.path);
+  const method = methodOfHttp(http);
+  return method === 'POST' ? path : `${method} ${path}`;
+};
+
+/**
  * Where `target` is served — its pin, else the app's style over its name. A NAME is resolved
  * through the registry, so a pin declared on the action is honoured for a caller that only has the
- * name (a deprecation's `replacedBy`, a page minting an island's endpoint).
+ * name (a deprecation's `replacedBy`, a page minting an island's endpoint). A `:param` pin needs
+ * `params` (`actionHttpPath('refundOrder', { id })`), each value encoded as one segment.
  */
-export function actionHttpPath(target: AnyAction | string): ActionPath {
+export function actionHttpPath(target: AnyAction | string, params?: unknown): ActionPath {
   // By NAME is how a page mints a form target, so it answers through the recorded path.
-  if (typeof target === 'string') return resolveActionRoute(target);
-  return routeFor(target.name, defOf(target).http?.path);
+  if (typeof target === 'string') return resolveActionRoute(target, params);
+  return filledRoute(target.name, routeFor(target.name, defOf(target).http?.path), params);
 }
 
 /**
@@ -94,12 +110,12 @@ export function configureActionPathStyle(style: ActionPathStyle): void {
   setActionPathStyle(style);
   paths.clear();
   for (const [name, target] of [...registry.entries()].sort(byName)) {
-    const { path } = routeFor(name, defOf(target).http?.path);
-    const owner = paths.get(path);
+    const slot = slotOf(name, target);
+    const owner = paths.get(slot);
     if (owner !== undefined && owner !== name) {
-      throw new ActionPathDuplicateError({ name, existing: owner, path });
+      throw new ActionPathDuplicateError({ name, existing: owner, path: slot });
     }
-    paths.set(path, name);
+    paths.set(slot, name);
   }
 }
 

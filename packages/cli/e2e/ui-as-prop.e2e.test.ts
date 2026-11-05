@@ -22,7 +22,15 @@ const FILE = 'apps/web/site/as-prop.island.tsx';
  * Every layout component with an `as` prop, each asked for a non-default root, and the two that
  * choose a heading element from a `level` — the same bug through `headingTag`.
  */
-const ISLAND = `import { createContext, createEffect, createMemo, createSignal, onCleanup, useContext } from 'solid-js';
+const ISLAND = `import {
+  createContext,
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  onCleanup,
+  useContext,
+} from 'solid-js';
 import { render } from 'solid-js/web';
 import {
   Accordion,
@@ -37,7 +45,15 @@ import {
 } from '@ultimat3/ui';
 
 export function mount(el: HTMLElement): void {
-  setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });
+  setSolidRuntime({
+    createContext,
+    useContext,
+    createSignal,
+    createMemo,
+    createEffect,
+    onCleanup,
+    createRoot,
+  });
   render(
     () => (
       <Container as="main">

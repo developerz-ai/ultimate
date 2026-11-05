@@ -12,14 +12,30 @@ import { fixtureAppRoot } from './templates/island-fixture';
 
 const FILE = 'apps/web/site/table.island.tsx';
 
-const ISLAND = `import { createContext, createEffect, createMemo, createSignal, onCleanup, useContext } from 'solid-js';
+const ISLAND = `import {
+  createContext,
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  onCleanup,
+  useContext,
+} from 'solid-js';
 import { render } from 'solid-js/web';
 import { DataTable, setSolidRuntime } from '@ultimat3/ui';
 
 interface Row { id: string }
 
 export function mount(el: HTMLElement): void {
-  setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });
+  setSolidRuntime({
+    createContext,
+    useContext,
+    createSignal,
+    createMemo,
+    createEffect,
+    onCleanup,
+    createRoot,
+  });
   const [error, setError] = createSignal<unknown>({ code: 'X_TEST', cause: 'the query failed', fix: 'retry' });
   const [rows, setRows] = createSignal<Row[]>([]);
   (globalThis as Record<string, unknown>)['__recover'] = (): void => {

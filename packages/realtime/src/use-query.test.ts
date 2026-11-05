@@ -3,10 +3,12 @@
 // subscribes over the page socket, and its window renders out of the same store. Both answer
 // core's `AsyncState`, and a refetch keeps what is on screen.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, jest, spyOn, test } from 'bun:test';
 import { isUltimateError, type Row } from '@ultimat3/core';
+import { rescope, sessionIsLost } from '@ultimat3/core/page';
 import { makeCursor } from './cursor';
 import { flush, liveFeed, pageHarness, querySid, resetPage } from './hooks-fixture';
+import { pollEvery } from './query-poll';
 import { PROTOCOL_VERSION } from './sync-protocol';
 import { useQuery } from './use-query';
 
@@ -261,5 +263,128 @@ describe('useQuery — paged', () => {
     posts.more();
     await flush();
     expect(urls.at(-1)).toContain('fresh');
+  });
+});
+
+// The poll is `visibleInterval`'s, the real one: hidden tab, catch-up and session loss are tested
+// there. What is pinned here is that `poll` drives `refetch` and that both endings stop it.
+describe('useQuery — poll', () => {
+  const settle = async (): Promise<void> => {
+    for (let turn = 0; turn < 50; turn += 1) await Promise.resolve();
+  };
+  const tick = async (ms: number): Promise<void> => {
+    jest.advanceTimersByTime(ms);
+    await settle();
+  };
+
+  afterEach(() => {
+    jest.useRealTimers();
+    rescope(null);
+  });
+
+  test('re-reads every period, keeping the rows on screen', async () => {
+    jest.useFakeTimers();
+    pageHarness();
+    const urls = answering([{ id: 'p1' }], [{ id: 'p2' }], [{ id: 'p3' }]);
+    const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, {
+      poll: pollEvery(1_000),
+    });
+    await settle();
+    expect(urls).toHaveLength(1);
+    await tick(999);
+    expect(urls).toHaveLength(1);
+    await tick(1);
+    expect(urls).toHaveLength(2);
+    expect(posts()).toEqual({ status: 'ready', data: [{ id: 'p2' }] });
+    await tick(1_000);
+    expect(urls).toHaveLength(3);
+  });
+
+  test('release stops the poll', async () => {
+    jest.useFakeTimers();
+    pageHarness();
+    const urls = answering([{ id: 'p1' }], [{ id: 'p2' }]);
+    const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, {
+      poll: pollEvery(1_000),
+    });
+    await settle();
+    posts.release();
+    await tick(5_000);
+    expect(urls).toHaveLength(1);
+  });
+
+  // A failed read is the poll's failure, so `maxMs` backs it off; a success resets the period.
+  // `visibleInterval` re-raises each failure for the page's error hook: captured here, and counted.
+  test('a failing read backs the poll off to maxMs, and a success resets it', async () => {
+    jest.useFakeTimers();
+    const random = spyOn(Math, 'random').mockReturnValue(1);
+    const queue = globalThis.queueMicrotask;
+    const raised: unknown[] = [];
+    globalThis.queueMicrotask = (fn) =>
+      queue(() => {
+        try {
+          fn();
+        } catch (error) {
+          raised.push(error);
+        }
+      });
+    try {
+      pageHarness();
+      let elapsed = 0;
+      const at: number[] = [];
+      globalThis.fetch = (async () => {
+        at.push(elapsed);
+        return at.length < 5
+          ? new Response(JSON.stringify({ code: 'X_FORBIDDEN', cause: 'no', fix: 'x policy' }), {
+              status: 503,
+            })
+          : new Response(JSON.stringify({ data: [] }), { status: 200 });
+      }) as unknown as typeof fetch;
+      const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, {
+        poll: pollEvery(1_000, { maxMs: 4_000 }),
+      });
+      await settle();
+      for (; elapsed < 12_000; ) {
+        elapsed += 1_000;
+        await tick(1_000);
+      }
+      // 0 is the first read; then 1 s, 2 s, 4 s, 4 s (capped) apart while failing, 1 s after a success.
+      expect(at).toEqual([0, 1_000, 3_000, 7_000, 11_000, 12_000]);
+      expect(raised).toHaveLength(3);
+      expect(posts().status).toBe('ready');
+    } finally {
+      globalThis.queueMicrotask = queue;
+      random.mockRestore();
+    }
+  });
+
+  test('a lost session stops the poll', async () => {
+    jest.useFakeTimers();
+    pageHarness();
+    rescope('alice@example.com');
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return new Response(
+        JSON.stringify({ code: 'X_UNAUTHENTICATED', cause: 'gone', fix: 'sign in again' }),
+        { status: 401 },
+      );
+    }) as unknown as typeof fetch;
+    const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, {
+      poll: pollEvery(1_000),
+    });
+    await settle();
+    expect(posts().status).toBe('failed');
+    expect(sessionIsLost()).toBe(true);
+    await tick(5_000);
+    expect(calls).toBe(1);
+  });
+
+  test('a live read takes no poll: its socket is the refresh', () => {
+    // Never called: the assertion is the compiler's (the typecheck step reads test files).
+    const refused = (): unknown =>
+      // @ts-expect-error a live ref has no poll
+      useQuery(liveFeed, null, { poll: pollEvery(1_000) });
+    expect(refused).toBeTypeOf('function');
   });
 });

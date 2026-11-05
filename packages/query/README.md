@@ -34,6 +34,7 @@ Every projection is a method on the query itself. A query has no `.def`.
 | `toolFrom(liveFeed)` | the MCP read tool, from `@ultimat3/mcp` — named `liveFeed`, exactly what `tools/list` serves, reading fresh through `sourceFor` with the same policy object. There is no `liveFeed.tool()` (`As of 25.0.0`): it was a second projection a tier below the served one |
 | `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways. `.page(input, { first, after })` on the same method reads one page over the wire |
 | `liveFeed.describe()` | the manifest row |
+| `liveFeed.contract({ exercise: { actor } })` | the generated contract suite: the read survives 16 generated legal inputs (`exerciseQuery`), seeded by its name. `exercise` is required unless the policy admits an anonymous reader; `{ off: '<reason>' }` skips it out loud |
 
 The route on the other end of that client is `toQueryRoute(liveFeed)`, and — `As of 2026-08` —
 `x dev` and a container both mount it for every registered read, the framework's job, not the
@@ -54,6 +55,13 @@ const [post] = await queries.publicPost({ slug }); // typed input, typed rows
 ```
 
 Both spellings run `queryClientMethodFor`, so a read has one URL however it is addressed.
+
+A read may pin its URL: `query({ …, http: { path: '/orders/:id' } })` is served at `GET /orders/:id`
+in place of `/_x/query/<kebab>`. Each `:param` is a required `t.string` key of `input:`
+(`X_QUERY_HTTP_PATH_INVALID` at `query()`); the URL's value joins the search string before the
+input is parsed, and a search string naming it differently is 400 `X_HTTP_PATH_INPUT_CONFLICT`.
+`read.client()` fills the URL; `queryClient` by name cannot see a pin. `queryHttpPinOf(read)` is
+the manifest's `{ path, method: 'GET' }`.
 
 `queryClient<Api['queries']>` typechecks at any app size: `client-scale-pins.ts` compiles it over
 100 reads in 50 modules — a list read, its `.page` and a `single: true` read — on every `typecheck`.
@@ -215,6 +223,9 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
 | `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `@ultimat3/entity`'s `MAX_PAGE_SIZE` |
 | `openapi.ts` | the read half of `openapi.json` — one `GET` path item per registered query, publishing a declared `rows:` |
+| `openapi-errors.ts` | a read operation's `responses` with its declared `errors:` in them |
+| `declared-errors.ts` / `declared-errors-contract.ts` | `errors:` judged around `sql` and `execute`; `.contract()`'s scan of `sql`'s source |
+| `contract-test.ts` / `exercise.ts` | `.contract()`: the exercise assertion, a twin of `@ultimat3/action`'s; its three `X_CONTRACT_*` codes are borrowed |
 | `live.ts` | the `LiveQuery` descriptor `@ultimat3/realtime` subscribes to |
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
 | `pagination.ts` | `paginate()` — keyset pages over core's cursor codec |
@@ -611,6 +622,14 @@ subscriber, which spends nothing — and spends per subscriber through `spendQue
 The conversion is `toBucket` from `@ultimat3/http` — the same one the action route uses, because
 http owns `Bucket` and `action` is the same tier as this package. A pair the limiter cannot run
 on is `X_RATE_LIMIT_INVALID`, at projection.
+
+## `errors:` — the refusals a reader may branch on, closed
+
+An action's rule, read side: `query({ errors: [FeedGone.code], … })`, judged around `sql` and the
+source's `execute` (`declared-errors.ts`), scanned in `sql`'s own source by `.contract()`
+(`declared-errors-contract.ts`), named per status in the OpenAPI operation (`openapi-errors.ts`)
+and on the MCP tool's description. Checked where it is lifted (`facade.ts`): sorted, frozen, or
+`X_ACTION_ERRORS_INVALID`. `describe().errors` is the list, `null` when absent.
 
 ## `deprecated:` — a compat window, not a version
 

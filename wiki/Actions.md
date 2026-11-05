@@ -32,7 +32,9 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | `rateLimit` | `{ limit: number; windowMs: number }` | no | spent **inside `invoke`**, so the HTTP route, the MCP tool, the in-app agent's tool call and `.job()` draw on ONE bucket — the third call to a `limit: 2` action is `X_RATE_LIMITED` whichever surface it came through; a direct in-process call spends nothing. Keyed actor → org → IP; counted in `@ultimat3/http`'s installed store (`installRateLimitStore()`, filled by the boot on every role with the same instance `httpServer({ rateLimitStore })` holds). Over HTTP the refusal is `429` + `Retry-After` and `RateLimit-*`, and the route is not also capped by the `default` bucket; the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. `/mcp` additionally buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) |
 | `idempotent` | `boolean` | no — **required `true` on a `mutator`** | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument. Inside a transaction the Postgres store settles the record with the write's own `COMMIT`, so a rollback never leaves a `settled` record behind. A field core redacts by name (`apiKey`, `password`, `*Token`…) or a `Secret` is stored as `[redacted]`, and the replay of such an answer is `X_IDEMPOTENT_REPLAY_REDACTED` |
-| `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a caller already holds (`'/api/uploads/signed'`). Static, lowercase, no params, never `/_x` (`X_ACTION_HTTP_PATH_INVALID`). An inbound webhook is not this door: it is `webhookReceiver()` ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks)) |
+| `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a caller already holds (`'/api/uploads/signed'`) or a resource-shaped one (`'/orders/:id/refund'`). Lowercase static segments and `:param`s, never `/_x`; each `:param` a REQUIRED `t.string` key of `input:`, else `X_ACTION_HTTP_PATH_INVALID` at registration. The URL's value joins the body before the input is parsed, so the schema, the policy, `row` and the handler read one object; a body naming the key with another value is **400** `X_HTTP_PATH_INPUT_CONFLICT`, never overridden. Under a bearer mount the pin is served at the prefix (`/v1/orders/:id/refund`) — and still at its own path, with the cookie session, as every pin is; the policy decides both. `derivePath(name)` refuses a template; `actionHttpPath(name, { id })` fills it. A `deprecated.replacedBy` naming one is `X_ACTION_DEPRECATION_INVALID`. An inbound webhook is not this door: it is `webhookReceiver()` ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks)) |
+| `http.method` | `'POST'` · `'PUT'` · `'PATCH'` · `'DELETE'` | no — `'POST'` | the verb the pin answers; needs `http.path`. `X_ACTION_PATH_DUPLICATE` keys on method and path, so `PUT /orders/:id` and `DELETE /orders/:id` are two actions. `action.client()` sends it and fills the URL from the input (each value one encoded segment, the key left out of the body); `rpc()` by name cannot see a pin. In `openapi.json`: `{id}`, an `in: path` required parameter, the key gone from the request body, the operation under the declared verb. `x.manifest.json` writes `http: { path, method }` for a pin only; moving it is breaking. `As of 2026-11` |
+| `errors` | `readonly string[]` | no — `x g action` writes `errors: []` | the refusals a caller may branch on, each a registered 4xx code listed once (`X_ACTION_ERRORS_INVALID` otherwise, at `action()`). Declared, the list is CLOSED — see [Declared refusals](#declared-refusals-errors). Absent: today's open contract, bytes unchanged. `As of 2026-11` |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
 
 **`.sensitive()` on an input field** — `cardPan: t.string.sensitive()` — means sent in, never
@@ -68,7 +70,7 @@ Every projection this package owns is a method on the action — `publishPost.op
 | `.openapi()` | the OpenAPI 3.1 operation | byte-stable; `x verify` diffs it for contract drift |
 | `.client({ baseUrl })` | the typed RPC method | derives `POST /api/posts/publish` by string math, so the browser imports no server code |
 | `.job()` | the durable-work handle | the same handler, run through the queue as `action:publishPost` |
-| `.contract()` | the generated assertions | garbage rejected, anonymous denied, spec present |
+| `.contract({ exercise })` | the generated assertions | garbage rejected, anonymous denied, spec present, and the handler run 16 times on generated legal input ([Testing](Testing#the-exercise-assertion)) |
 | `.describe()` | the manifest row | `kind`, `name`, `verb`, `resource`, `method`, `path`, `capability`, `input`, `output`, `invalidates`, `idempotent`, `mutator`, `mcp`, `rateLimit` — and the only reader for the declared metadata that is not lifted |
 | `.input` `.output` `.policy` `.mcp` | the declaration, lifted | the whole lifted set — readable, and `.mcp` present only when declared. `cache.invalidates`, `rateLimit` and `idempotent` are not properties: read them off `describe()`, where `cache.invalidates` flattens to `invalidates` |
 
@@ -85,7 +87,7 @@ Every projection needs the name `registerActions()` stamps on. It names the expo
 | 3 | **Typed client function** | `input` + `output` | one map-wide client, `export const client = rpc<Api['actions']>({ baseUrl })`, then `await client.publishPost({ postId })` in `app/`; or `publishPost.client({ baseUrl })` for a single method. `rpc` is the only name for the map-wide client — no `createClient` alias, no fetch, no codegen step to remember. `x new` writes it as `apps/web/shared/browser-client.ts` (`browserClient`, beside `browserQueries`); it typechecks at any app size (pinned at 300 actions in 100 modules). **`rpc` and `queryClient` do not reach a mount**: under `baseUrl: '…/v1'` they derive `/v1/api/…` and a valid token answers 404. A machine caller uses the mount's OpenAPI document |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
 | 5 | **MCP tool** | `mcp` + `input` + `policy` | `toolFrom(publishPost)` from `@ultimat3/mcp` — one tool named `publishPost` per exposed action, exactly the `tools/list` entry, JSON Schema from `input`, every call through this action's `invoke` (authz unchanged) |
-| 6 | **Test** | `input` + `policy` | `publishPost.contract()` — schema round-trip plus a denial test per policy branch, generated green, not as a `TODO` |
+| 6 | **Test** | `input` + `policy` + `handle` | `publishPost.contract({ exercise: { actor } })` — schema round-trip, a denial test per policy branch, and the handler on generated legal input, generated green, not as a `TODO` |
 
 Plus cache invalidation: `cache.invalidates` fans out to request memo, in-process LRU (all instances, over NATS), Redis, ISR pages, and the CDN purge webhook in one hop ([Caching and invalidation](Caching-And-Invalidation)).
 
@@ -170,6 +172,8 @@ export const likePost = mutator({
 | `X_IDEMPOTENT_REPLAY_REDACTED` | a replay of an answer whose secret-named field (`isRedactedKey`, or a `Secret`) was stored as `[redacted]` — the first call ran, its answer is not kept in plaintext (409) | read the effect with a query; a new `Idempotency-Key` runs the call again |
 | `X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE` | a keyed handler's answer holds a value JSON has no form for (a `bigint`), so no retry could replay it. The handler ran, and a retry replays this refusal | return JSON from `handle`: `String(id)` for a `bigint`, then send a fresh `Idempotency-Key` |
 | `X_IDEMPOTENCY_RESERVATION_LOST` | an idempotent action inside a transaction outlived the request deadline and a retry took its key; its transaction rolls back (409) | resend with the same `Idempotency-Key` |
+| `X_ACTION_ERRORS_INVALID` | an `errors:` entry is not `X_SCREAMING_SNAKE`, has no registered 4xx status, or repeats | `defineError({ code, status })` first and import it, then list it once |
+| `X_ERROR_UNDECLARED` | a test or dev run threw a 4xx code outside `errors:`, or `.contract()`'s scan found one | add `'<CODE>'` to `errors:`, or stop throwing it there |
 | `X_MUTATOR_NOT_IDEMPOTENT` | a `mutator` declared without `idempotent: true` | add `idempotent: true` to the definition |
 | `X_CONTRACT_DRIFT` | client build id ≠ server build id, or a breaking published-contract change | reload the client / bump the action version |
 | `X_TENANCY_UNSCOPED` | a query inside `handle` had no tenant predicate | scope it through the repo, never raw SQL |
@@ -203,6 +207,34 @@ export const PostNotFound = defineError<string>({
 
 A code with no status answers 500 and hides its cause from the caller; `offSocket: true` declares a
 code no response carries. `guards/error-declared.ts` refuses a handwritten `UltimateError` subclass.
+
+### Declared refusals (`errors:`)
+
+`errors: [PostNotFound.code, 'X_FORBIDDEN']` names the 4xx codes a caller may branch on. Import
+the class and list its `.code`: the import is what registers the status before the list is
+checked. Judged at the one place a handler runs: a throw out of `handle` or `row` only — the
+policy, the parse, the rate limit and idempotency sit outside, so `X_FORBIDDEN` from the policy or
+`X_INPUT_INVALID` is never judged.
+
+| Thrown out of `handle`/`row` | Test, development | Production (or no environment named) |
+|---|---|---|
+| a listed code | itself | itself |
+| a 4xx code not listed | `X_ERROR_UNDECLARED`, the original as `sourceError`, the fix naming the code to add | itself, `logger.warn` + `undeclared_errors_total{primitive,name,code}` |
+| a 5xx, a statusless code, `X_ABORTED`, `X_DRAINING`, a non-coded throw | itself | itself |
+
+- **OpenAPI**: each code joins `responses[status]`. A status only the list answers narrows
+  `Problem.type` to an enum of `urn:ultimate:error:<CODE>`; a status the framework already answers
+  (`400`, `403`, `409`) keeps its open `Problem` and names the code in its description. Both carry
+  `x-ultimate-errors: [<codes>]`. Undeclared, the document's bytes are unchanged.
+- **`.contract()`** gains one assertion: a code literal or a `defineError` class in `handle`'s or
+  `row`'s own source, 4xx and outside the list, fails it. First hop only — a code thrown behind a
+  helper is judged when a test reaches it (the generated exercise runs included). A path nothing
+  reaches stays unjudged; a class imported under another name is missed by the scan.
+- **MCP and the in-app agent's tool**: the description ends `Declared refusals: <codes>.`
+- **Nested `invoke`**: an inner action's declared refusal is the outer's to declare too — the
+  outer's caller receives it.
+- **`x.manifest.json`**: `errors` on the action's fact; removing a code is breaking, adding one additive.
+
 
 ## Introspection
 

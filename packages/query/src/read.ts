@@ -32,6 +32,7 @@ import {
   readOnce,
   readThrough,
 } from './cache';
+import { judgedRead, judgedSql } from './declared-errors';
 import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
 import { guardQuery, guardQueryBeforeInput } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
@@ -220,7 +221,7 @@ async function readRowsIn(
   if (trace !== null) trace.replayed = true;
   const read = (): Promise<readonly object[]> => {
     if (trace !== null) trace.replayed = false;
-    return source.execute();
+    return judgedRead(target, name, () => source.execute());
   };
   // The source came from this query's own `sql()`, so its rows are TRow throughout —
   // which is what the typed overload above states, and this body never has to assert.
@@ -260,7 +261,8 @@ async function buildSource(
   trace: ReadTrace | null,
 ): Promise<SqlSource<object>> {
   const input = await admit(target, raw, ctx, options, trace);
-  const source = defOf(target).sql(input, ctx);
+  // `sql` and the source's `execute` are where `errors:` judges a throw (`declared-errors.ts`).
+  const source = judgedSql(target, queryName(target), () => defOf(target).sql(input, ctx));
   // A live window is served in the order its patches are placed in. The matcher breaks a tie on
   // the declared keys with `id` (`totalOrder`) and so does the keyset re-read a reconnect resumes
   // with, so an initial window served in the declared keys alone puts tied rows where neither of

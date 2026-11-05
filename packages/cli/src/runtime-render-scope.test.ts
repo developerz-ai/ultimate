@@ -161,7 +161,7 @@ describe('unit · the page boot rides with the scope AND a realtime island', () 
     for (const file of ['live', 'plain'].map(
       (name) => `apps/web/app/settings/${name}.island.tsx`,
     )) {
-      const kind = await realtimeKind(ROOT, file);
+      const kind = await realtimeKind(ROOT, file, undefined);
       if (kind !== undefined) kinds.set(file, kind);
     }
     expect([...kinds]).toEqual([['apps/web/app/settings/live.island.tsx', 'restores']]);

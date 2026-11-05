@@ -154,7 +154,7 @@ walked and read once however many guards ask, and `compiled(path)` is a styleshe
 compiles it. Nothing registers a guard — the directory is the registration — and what a guard returns
 is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUARD_FAILED`,
 `X_GUARD_FINDING_INVALID`). `x g guard <name>` scaffolds one with its test — the shipped guard of
-that name where there is one (`x new` writes all nineteen), the blank template otherwise — and
+that name where there is one (`x new` writes all twenty), the blank template otherwise — and
 `x doctor` lists the shipped ones an app does not hold.
 
 ## Layout

@@ -1,7 +1,7 @@
 // `x g resource <name>`'s page: the plural route a slice is reached at. It READS — a `<Hole>` calls
-// the slice's own query as the request's actor, after the shell left — renders the rows through the
-// slice's list component inside `AsyncRegion` (ready, empty, failed), and mounts the slice's form
-// island. `x g route`
+// the slice's own query a page at a time as the request's actor, after the shell left — renders the
+// rows in a link-mode `DataTable` (loading, failed, empty, ready; paged by URL, no script), and
+// mounts the slice's form island. `x g route`
 // writes a page with a heading and nothing to read; a resource has rows and a form, and a page
 // that showed neither was a slice nobody could reach without wiring it by hand.
 
@@ -9,7 +9,8 @@ import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { titleKey } from './naming';
 import { formIslandSpecifier } from './resource-form-island';
-import { LINE_WIDTH } from './wrap';
+import { pageDbTest } from './resource-page-db';
+import { LINE_WIDTH, wrapImport } from './wrap';
 
 /**
  * The page's JS budget — MEASURED, never a ceiling picked to pass. `x build --target static` on a
@@ -39,10 +40,10 @@ const i18nImports = (module: string | undefined): readonly string[] =>
 
 /** The read in `rows()`, as Biome prints it at any name length. */
 const stateLine = (read: string): string => {
-  const line = `  const state = await rowsState(() => ${read}(input()));`;
+  const line = `  const state = await rowsState(() => ${read}.page(inputOf(list), windowOf(list)));`;
   return line.length <= LINE_WIDTH
     ? line
-    : `  const state = await rowsState(() =>\n    ${read}(input()),\n  );`;
+    : `  const state = await rowsState(() =>\n    ${read}.page(inputOf(list), windowOf(list)),\n  );`;
 };
 
 export interface ResourcePageOptions {
@@ -72,25 +73,25 @@ const pageSource = (options: ResourcePageOptions): string => {
       .split('\n')
       .map((line) => (line === '' ? line : `${indent}${line}`))
       .join('\n');
-  return `// /${path}: the org's ${feature.pluralKebab}, newest first, and the form that adds one. The rows are
-// read inside a \`<Hole>\`, through the slice's own query, so the shell and the form are on screen
-// before the read answers; the policy, the tenancy and the order are the query's. The form is the
-// slice's island, the one module of this page a browser downloads.
+  return `// /${path}: the org's ${feature.pluralKebab}, newest first, and the form that adds one.
+// The rows are read inside a \`<Hole>\`, through the slice's own query, so the shell and the form
+// are on screen before the read answers; the policy, the tenancy and the order are the query's.
+// The pager is links (\`listUrl\`), so paging needs no script; the form is the slice's island, the
+// one module of this page a browser downloads.
 
 ${sortedImports([
   ...i18nImports(options.catalogModule),
   "import { derivePath } from '@ultimat3/action';",
-  "import type { AsyncState } from '@ultimat3/core';",
+  "import type { AsyncState, Page as RowPage } from '@ultimat3/core';",
   "import type { KnownPermission } from '@ultimat3/policy';",
   "import { defineRoute, Hole, island } from '@ultimat3/render';",
-  "import { AsyncRegion, EmptyState, PageHeader, Section, Skeleton } from '@ultimat3/ui';",
+  "import {\n  DataTable,\n  type ListUrl,\n  listUrl,\n  Money,\n  PageHeader,\n  Section,\n  Skeleton,\n} from '@ultimat3/ui';",
 ])}
 ${options.shell ? "import { Shell } from '../../shared/shell';\n" : ''}import type { ${feature.pascal} } from '../${feature.kebab}/entity';
-import { ${list} } from '../${feature.kebab}/live/${feature.kebab}-list';
-import { ${feature.pascal}List } from '../${feature.kebab}/ui';
+${wrapImport([list, `${list}Sorts`], `../${feature.kebab}/live/${feature.kebab}-list`)}
 import styles from './page.module.scss';
 
-/** One page of rows: the read's own bound. Past it, page with a cursor (\`${list}.page\`). */
+/** The most rows one page shows; \`?limit=\` may ask for fewer, never more. */
 const PAGE_ROWS = 50;
 
 /** The currency a price is typed in; the form sends integer minor units of it. */
@@ -98,14 +99,14 @@ const CURRENCY = 'USD';
 
 type Row = ${feature.pascal};
 
-/** The read's outcome as DATA, so the region renders each of its states. */
-export type PageData = AsyncState<readonly Row[]>;
+/** The read's outcome as DATA, so the table renders each of its states. */
+export type PageData = AsyncState<RowPage<Row>>;
 
 /**
- * The read, as a state. A refusal or a failed read is the region's error branch — code, cause and
- * fix on screen, the form still there — never a 500 for the whole document.
+ * The read, as a state. A refusal, a failed read or a stale cursor is the table's error branch —
+ * code, cause and fix on screen, the form still there — never a 500 for the whole document.
  */
-export async function rowsState(read: () => Promise<readonly Row[]>): Promise<PageData> {
+export async function rowsState(read: () => Promise<RowPage<Row>>): Promise<PageData> {
   try {
     return { status: 'ready', data: await read() };
   } catch (error) {
@@ -113,18 +114,59 @@ export async function rowsState(read: () => Promise<readonly Row[]>): Promise<Pa
   }
 }
 
-/** No org: the query reads the ACTOR's, so a read can only ever be for the caller's own org. */
-const input = () => ({ limit: PAGE_ROWS });
+/** The list's state in the URL: a sort among the query's own columns, a cursor, a page size. */
+type ListState = ListUrl<(typeof ${list}Sorts)[number]>;
 
-/** The list, once it is read. A thunk of the \`<Hole>\`: it starts after the first flush. */
-async function rows() {${translator}
+const listOf = (url: string | undefined): ListState =>
+  listUrl(url ?? '/${path}', {
+    sorts: ${list}Sorts,
+    limit: { default: PAGE_ROWS, max: PAGE_ROWS },
+  });
+
+/**
+ * No org: the query reads the ACTOR's, so a read can only ever be for the caller's own org. No
+ * sort in the URL is the query's own order, newest first; a cursor is minted for one sort alone,
+ * and \`listUrl\` drops it whenever the sort changes.
+ */
+const inputOf = (list: ListState) =>
+  list.sort === undefined
+    ? { limit: PAGE_ROWS }
+    : { limit: PAGE_ROWS, sort: list.sort.key, dir: list.sort.direction };
+
+/** The page the URL names: its size, and the cursor it reads after when it is not the first. */
+const windowOf = (list: ListState) =>
+  list.cursor === undefined ? { first: list.limit } : { first: list.limit, after: list.cursor };
+
+/** The rows, once they are read. Called by the \`<Hole>\`: it starts after the first flush. */
+async function rows(list: ListState) {${translator}
 ${stateLine(list)}
+  const page = state.status === 'ready' ? state.data : undefined;
   return (
-    <AsyncRegion
-      state={state}
-      reserve={{ lines: 3 }}
-      empty={() => <EmptyState title={t('app.${feature.kebab}.empty')} />}
-      ready={(found) => <${feature.pascal}List rows={found} />}
+    <DataTable
+      caption={t('${titleKey(path)}')}
+      rows={page?.rows ?? []}
+      rowKey={(row: Row) => row.id}
+      error={state.status === 'failed' ? state.error : undefined}
+      emptyTitle={t('app.${feature.kebab}.empty')}
+      columns={[
+        {
+          key: 'title',
+          header: t('app.${feature.kebab}.titleLabel'),
+          sortable: true,
+          cell: (row) => row.title,
+        },
+        {
+          key: 'price',
+          header: t('app.${feature.kebab}.priceLabel'),
+          numeric: true,
+          cell: (row) => <Money value={row.price} />,
+        },
+      ]}
+      sort={list.sort}
+      sortHrefFor={list.sortHrefFor}
+      nextCursor={page?.nextCursor}
+      hrefFor={list.hrefFor}
+      firstHref={list.firstHref}
     />
   );
 }
@@ -154,7 +196,8 @@ export const config = defineRoute({
   }),
 });
 
-export function Page() {${options.catalogModule === undefined ? '' : '\n  const t = useT();\n'}
+export function Page(props: { readonly url?: string | undefined }) {${options.catalogModule === undefined ? '' : '\n  const t = useT();\n'}
+  const list = listOf(props.url);
   return (
     ${open}
 ${inner(`<PageHeader title={t('${titleKey(path)}')} />
@@ -174,7 +217,7 @@ ${inner(`<PageHeader title={t('${titleKey(path)}')} />
     <Skeleton lines={3} />
   </${feature.pascal}Form>
 </Section>
-<Hole fallback={<Skeleton lines={3} />}>{rows}</Hole>`)}
+<Hole fallback={<Skeleton lines={3} />}>{() => rows(list)}</Hole>`)}
 ${close}
   );
 }
@@ -259,6 +302,55 @@ unitTest('a caller the read refuses sees the refusal, and the page around it', a
   expect(view.islands).toHaveLength(1);
 });
 
+/** The anchor a pager side renders, read off the HTML: \`rel\` names the side. */
+const linkTo = (html: string, rel: string): string | undefined => {
+  const anchor = new RegExp(\`<a\\\\b[^>]*\\\\brel="\${rel}"[^>]*>\`).exec(html)?.[0];
+  return /href="([^"]*)"/.exec(anchor ?? '')?.[1]?.replaceAll('&amp;', '&');
+};
+
+unitTest('the list pages by link: a cursor in the URL, no script', async () => {
+  await store('older');
+  clock.advance(1000);
+  await store('newer');
+  const first = await renderRoute(page, { url: \`\${url}?limit=1\`, actor: member });
+  expect(first.text).toContain('newer');
+  expect(first.text).not.toContain('older');
+  // The first page has nowhere back to, and a keyset page has no Previous.
+  expect(first.html).not.toContain('href="/${feature.pluralKebab}?limit=1"');
+  expect(linkTo(first.html, 'prev')).toBeUndefined();
+  const next = linkTo(first.html, 'next');
+  expect(next).toContain('after=');
+
+  const second = await renderRoute(page, { url: new URL(next ?? '', url).href, actor: member });
+  expect(second.text).toContain('older');
+  expect(second.text).not.toContain('newer');
+  // The last page links back to the first and on to nothing, never to \`after=null\`.
+  expect(second.html).toContain('href="/${feature.pluralKebab}?limit=1"');
+  expect(linkTo(second.html, 'next')).toBeUndefined();
+  expect(second.html).not.toContain('after=null');
+});
+
+unitTest('the list sorts by link, and a sorted list pages in that order', async () => {
+  // Written so that newest-first and by-title disagree: a sort applied after the bound would show
+  // the two newest re-sorted, never the first two titles.
+  for (const title of ['beta', 'gamma', 'alpha']) {
+    await store(title);
+    clock.advance(1000);
+  }
+  const sorted = \`\${url}?sort=title&dir=asc&limit=2\`;
+  const first = await renderRoute(page, { url: sorted, actor: member });
+  expect(first.text.indexOf('alpha')).toBeLessThan(first.text.indexOf('beta'));
+  expect(first.text).not.toContain('gamma');
+  // The header links on to the next state of its cycle, the cursor dropped with the old order.
+  const descending = 'href="/${feature.pluralKebab}?sort=title&amp;dir=desc&amp;limit=2"';
+  expect(first.html).toContain(descending);
+  const next = linkTo(first.html, 'next');
+  expect(next).toContain('sort=title');
+  const second = await renderRoute(page, { url: new URL(next ?? '', url).href, actor: member });
+  expect(second.text).toContain('gamma');
+  expect(second.text).not.toContain('alpha');
+});
+
 unitTest('it is gated, rendered per request, and budgeted', () => {
   expect(page.config.render).toBe('stream');
   expect(page.config.policy?.permission).toBe(read);
@@ -268,8 +360,12 @@ unitTest('it is gated, rendered per request, and budgeted', () => {
 `;
 };
 
-/** The resource's `page.tsx` and its unit test. The stylesheet, e2e test and catalog are `x g route`'s. */
+/**
+ * The resource's `page.tsx`, its unit test, and the same read over the migrated database. The
+ * stylesheet, e2e test and catalog are `x g route`'s.
+ */
 export const resourcePageFiles = (options: ResourcePageOptions): readonly GeneratedFile[] => [
   { path: `${options.pageDir}/page.tsx`, contents: pageSource(options) },
   { path: `${options.pageDir}/page.test.ts`, contents: pageTest(options) },
+  { path: `${options.pageDir}/page-db.test.ts`, contents: pageDbTest(options) },
 ];

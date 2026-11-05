@@ -11,6 +11,7 @@
  * inputs are sorted and nothing reads the clock or the environment.
  */
 
+import { toOpenApiPath } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { mountedPath } from '@ultimat3/http';
 import type { ApiMount, ApiOpenApi } from './api-declaration';
@@ -62,9 +63,11 @@ function problem(description: string, headers?: Record<string, unknown>): Record
 
 const lower = (method: string): string => method.toLowerCase();
 
-/** `method path` → the route that serves it. */
+/** `method path` → the route that serves it, the path in the document's `{param}` spelling. */
 function routeIndex(routes: readonly Route[]): ReadonlyMap<string, Route> {
-  return new Map(routes.map((route) => [`${lower(route.method)} ${route.path}`, route]));
+  return new Map(
+    routes.map((route) => [`${lower(route.method)} ${toOpenApiPath(route.path)}`, route]),
+  );
 }
 
 interface Refusals {
@@ -237,8 +240,10 @@ export function mountOpenApi(
     const scope = scopeOf.get(route.meta.name);
     if (scope === undefined) continue;
     const method = lower(route.method);
+    // The document spells a `:param` template `{param}`; the route table keeps the router's form.
+    const documented = toOpenApiPath(route.path);
     const item = (
-      Object.hasOwn(document.paths, route.path) ? document.paths[route.path] : undefined
+      Object.hasOwn(document.paths, documented) ? document.paths[documented] : undefined
     ) as Record<string, Operation> | undefined;
     const operation = item?.[method];
     if (operation === undefined) continue;
@@ -261,7 +266,7 @@ export function mountOpenApi(
     const extensions = (completed['x-ultimate'] as Record<string, unknown> | undefined) ?? {};
     for (const tag of (completed['tags'] as readonly string[] | undefined) ?? []) tags.add(tag);
     unlocks.set(scope, [...(unlocks.get(scope) ?? []), route.meta.name]);
-    const mounted = mountedPath(mount.prefix, route.path);
+    const mounted = toOpenApiPath(mountedPath(mount.prefix, route.path));
     mountedItems.set(mounted, {
       ...mountedItems.get(mounted),
       [method]: { ...completed, responses, 'x-ultimate': { ...extensions, scope } },

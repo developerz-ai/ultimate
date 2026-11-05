@@ -155,7 +155,14 @@ export const config = defineRoute({
   // core's shared refusal-title table gained wave 3's 12 codes (`X_OUTBOUND_*`, `X_BREAKER_OPEN`,
   // `X_ERROR_DECLARATION_INVALID`, `X_SCHEMA_SENSITIVE_OUTPUT`: 878 B of titles), so a refusal
   // with one of them reaching the island is still titled — raised 168kb → 169kb (30.0.0): feed island +948 B.
-  budget: { js: '169kb' },
+  // measured: 176131 B (2026-11-05; x build --target static, against main's 172,761) — why: the
+  // page boot +1,437 B: a pinned read's URL fill (`route-path-template.ts` 383, `http-pin-error.ts`
+  // 348, `query/client.ts` 311) and the session flag (`session-lost.ts` 260, `record-sink.ts` 76,
+  // `client-dispatch.ts` 57); the client router +1,409 B: `refresh()` keeps the same visitor's
+  // focus (`navigation-refresh.ts`, `markFocus`/`restoreFocus`), never aborts a click in flight and
+  // is asked its hold again at the swap; the feed island +524 B, `createRoot` and core's `./page`
+  // additions — raised 169kb → 172.5kb (30.0.0).
+  budget: { js: '172.5kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

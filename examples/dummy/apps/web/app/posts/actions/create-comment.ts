@@ -11,7 +11,9 @@
 import { COMMENT_MAX, tag } from '@postly/db';
 import { postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
+import { OrgNotFound } from '../../orgs/errors';
 import { CommentView } from '../entity';
+import { PostNotFound } from '../errors';
 import { commentPosted } from '../jobs/comment-posted';
 import { postRead } from '../policy';
 
@@ -19,6 +21,8 @@ export const createComment = action({
   input: t.object({ postId: t.uuid, orgId: t.uuid, body: t.string.min(1).max(COMMENT_MAX) }),
   output: CommentView,
   policy: postRead,
+  // Closed: see `publishPost`.
+  errors: [OrgNotFound.code, PostNotFound.code],
   cache: { invalidates: [tag.comment, tag.post] },
   mcp: { expose: true, description: 'Comment on a post the actor can read' },
   async handle({ input, ctx }) {

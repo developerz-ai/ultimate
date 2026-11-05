@@ -17,11 +17,6 @@ const textAt = (files: readonly { path: string; contents: unknown }[], suffix: s
 };
 
 /** `.orderBy('createdAt', 'desc')` → `['createdAt', 'desc']`; an absent direction is `asc`. */
-const ordersIn = (source: string): readonly (readonly [string, string])[] =>
-  [...source.matchAll(/\.orderBy\('(\w+)'(?:, '(asc|desc)')?\)/g)].map(
-    (match) => [match[1] ?? '', match[2] ?? 'asc'] as const,
-  );
-
 const SCAFFOLD_ENTITY = textAt(entityFiles('invoice', target), '/entity.ts');
 
 describe('unit · x g query has one source of tenancy, the actor', () => {
@@ -29,7 +24,7 @@ describe('unit · x g query has one source of tenancy, the actor', () => {
     test(`${live ? 'live' : 'one-shot'}: no org in the input, the filter or the policy`, () => {
       const files = queryFiles('invoice-search', { ...target, live });
       const query = textAt(files, `/${live ? 'live' : 'queries'}/invoice-search.ts`);
-      expect(query).toContain('input: t.object({ limit: t.number.default(50) }),');
+      expect(query).toContain('input: t.object({\n    limit: t.number.default(50),');
       expect(query).not.toContain('.where({ orgId })');
       expect(query).not.toContain('orgId:');
       const policy = textAt(files, '/policy.ts');
@@ -50,12 +45,20 @@ describe('unit · x g query orders its SQL and its in-memory read the same way',
         `/${dir}/invoice-search.ts`,
       );
       const repo = textAt(entityFiles('invoice', target), '/repo.ts');
-      // The thunk IS `repo.list`, so the order the SQL declares has to start where the repo's does.
-      expect(query).toContain('() => repo.list(limit)');
-      expect(ordersIn(repo)).toEqual([['createdAt', 'desc']]);
-      expect(ordersIn(query)[0]).toEqual(['createdAt', 'desc']);
-      // And it stays total: the primary key last, as the handle appends it to the repo's read.
-      expect(ordersIn(query).at(-1)).toEqual(['id', 'asc']);
+      // The thunk IS `repo.list`, handed the same sort, so the SQL's order starts where the repo's
+      // does — the same two names, in both files, and the same defaults behind them.
+      expect(query).toContain('() => repo.list(limit, sort, dir)');
+      expect(repo).toContain('.orderBy(sort, dir)');
+      expect(query).toContain('.orderBy(sort, dir)');
+      expect(repo).toContain("sort: ListSort = 'createdAt',");
+      expect(repo).toContain("dir: 'asc' | 'desc' = 'desc',");
+      expect(query).toContain(".default('createdAt'),");
+      expect(query).toContain(".default('desc'),");
+      // The sortable columns are one closed set, the repo's `ListSort`.
+      expect(repo).toContain("export type ListSort = 'createdAt' | 'title';");
+      expect(query).toContain("export const invoiceSearchSorts = ['createdAt', 'title'] as const;");
+      // And it stays total: the primary key last, in the direction the handle appends it.
+      expect(query).toContain(".orderBy('id', dir)");
     });
   }
 

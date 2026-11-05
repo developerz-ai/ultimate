@@ -1,6 +1,7 @@
 import { postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
 import { ReviewView } from '../entity';
+import { PostNotFound } from '../errors';
 import { postReviewKeep } from '../policy';
 import { reviewDraft } from './review-draft';
 
@@ -18,6 +19,8 @@ export const keepDraftReview = action({
   input: t.object({ postId: t.uuid, orgId: t.uuid, memberId: t.uuid }),
   output: ReviewView,
   policy: postReviewKeep,
+  // Closed: see `publishPost`.
+  errors: [PostNotFound.code],
   // Loaded before the guard, as `publishPost` loads its row: the rule decides on authorship.
   row: ({ input: { postId: id }, ctx }) => ctx.posts.authorship(postId(id)),
   async handle({ input, ctx }) {

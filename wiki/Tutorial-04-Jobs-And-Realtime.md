@@ -144,25 +144,33 @@ There is no Redis or NATS **job** driver, `As of 2026-10` — 25.0.0 deleted bot
 
 ## A live query
 
+The columns this read has an order for, then the read:
+
+```ts
+export const todoListSorts = ['createdAt', 'title'] as const;
+```
+
 ```ts
 export const todoList = query({
-  input: t.object({ limit: t.number.default(50) }),
+  input: t.object({
+    limit: t.number.default(50),
+    // A closed set, so a sort is a column this read has an order for, never a caller's string.
+    sort: t.enum(todoListSorts).default('createdAt'),
+    dir: t.enum(['asc', 'desc']).default('desc'),
+  }),
   policy: canTodoRead,
   live: true,
   // Opt-in, unlike an action's tool: a read hands rows to an agent, so silence exposes nothing.
   mcp: { expose: true, description: 'todoList — edit this description' },
-  sql: ({ limit }) =>
+  sql: ({ limit, sort, dir }) =>
     // `feature.table`, not the kebab plural: `from()` quotes the identifier into the SQL text,
     // and the entity created the table as snake_case.
-    from<Todo>('todos', () => repo.list(limit))
-      // Newest first — `repo.list`'s own order. These two lines are ONE read spelled twice: the
-      // thunk is what the in-memory driver answers and this chain is the SQL Postgres runs, so a
-      // direction that differs here is a bounded page holding different rows on each.
-      .orderBy('createdAt', 'desc')
-      // The primary key last is what makes the order TOTAL: `createdAt` alone ties, and two
-      // rows that tie can swap between evaluations — a bounded read then drops one and repeats
-      // the other, and a live subscription patches a row it never sent.
-      .orderBy('id')
+    from<Todo>('todos', () => repo.list(limit, sort, dir))
+      // `repo.list`'s own order: the thunk is what the in-memory driver answers and this chain is
+      // the SQL Postgres runs, so a sort that differs here is a page holding different rows.
+      .orderBy(sort, dir)
+      // The primary key last, in the direction the handle adds it, makes the order TOTAL.
+      .orderBy('id', dir)
       .limit(limit),
 });
 ```

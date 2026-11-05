@@ -219,6 +219,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 ## The page
 
+- **A timed re-read is `useQuery`'s `poll: pollEvery(ms)`** (`query-poll.ts`), non-live by type, through core's `visibleInterval`. Full rule: `docs/history/realtime.md`.
 - **One record store per PAGE (`record-store.ts`)**, keyed `type:key` with the SERVER's key
   (`live-record-type.ts`); the browser never derives one. SYNCED truth plus an OVERLAY of pending
   optimistic writes, REPLAYED over synced truth whenever it moves. Installed as core's `RecordSink` on

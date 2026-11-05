@@ -86,10 +86,10 @@ class — stay on `.`.
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
 | the node | `./server` | `syncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
-| hooks | `.` | `useQuery`, `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useRecordChanges`, `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
+| hooks | `.` | `useQuery` (and `pollEvery` for its `poll`), `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useRecordChanges`, `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
 | channel records, no replicator | `./server` | `recordPublisher` — an app's committed rows as channel `records`, sequenced per producer ([below](#channel-records-with-no-replicator)) |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
-| first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`, for an island that reads the store or the outbox: the boot's restore and the open outbox, capped (#506). An island taking only `useChannel` / `usePresence` / `useConnection` never awaits it and is never hidden |
+| first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`, for an island that reads the store or the outbox: the boot's restore and the open outbox, capped (#506). An island taking only `useChannel` / `usePresence` / `useConnection` never awaits it and is never hidden, nor is one taking `useQuery` / `useRecord` in an app that declares no `persist: true` entity |
 | offline | `.` | `pageOutbox`, `recordPersister`, `persistedTypes`, `openLocalStore`, `pageLocalStore`, `memoryLocalStore()` |
 | the socket's worker | `./sync-worker` | the SharedWorker entry — no exports |
 
@@ -290,6 +290,7 @@ same type `@ultimat3/ui` renders.
 | **No `solid-js` import.** Each bundle installs its own `SignalFactory` | every island carries its own solid-js; a signal from another bundle is invisible to its effects |
 | Every member is a **getter**, every result an **accessor** | a value snapshotted at hook time never re-renders |
 | `input` is read **once** | nothing here re-runs it; a changed input is a new `useQuery` |
+| A timed re-read is `useQuery(ref, input, { poll: pollEvery(ms) })` | non-live refs only (a live ref refuses it by type: `LiveQueryOptions`); `refetch` through core's `visibleInterval`, so a hidden tab, a lost session and `release()` all stop it. A value, not a number: `useQuery` never references the timer, so only an island importing `pollEvery` carries it (the reference like control rose 39,210 → 41,477 B across wave 5a, nearly all of it this, 2026-11-05) |
 | The caller owns `release()` / `using` | this layer does not know what a mount is |
 
 **A server render** (no install, no DOM) answers `pending`, reports online and creates no page

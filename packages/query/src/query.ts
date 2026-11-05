@@ -15,10 +15,12 @@ import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryCacheScope } from './cache';
 import type { QueryClientMethodOf, QueryClientOptions } from './client';
+import type { QueryContractTest, QueryContractTestOptions } from './contract-test';
 import type { DownloadQuery, DownloadQueryDef, QueryDownload } from './download';
 import { assertDownloadDef, buildDownloadQuery } from './download';
 import { QueryCacheTtlInvalidError, QuerySingleInvalidError } from './errors';
 import { facadeFor } from './facade';
+import { assertQueryHttp, type QueryHttp } from './http-pin';
 import { assertEncodableInput } from './input-shape';
 import type { LiveQuery, ToLiveOptions } from './live';
 import type { Page, PaginateArgs } from './pagination';
@@ -120,6 +122,10 @@ export interface QueryDef<
    * `X_QUERY_AUDIT_SINK_MISSING` before the input is parsed.
    */
   readonly audit?: boolean;
+  /** The refusals `sql` may throw, closed — an action's `errors:`, same rule (`declared-errors.ts`). */
+  readonly errors?: readonly string[];
+  /** Pin the URL: `http: { path: '/orders/:id' }` (`http-pin.ts`). */
+  readonly http?: QueryHttp;
   /**
    * Absent on a rows read, by type: a declaration holding `sql` AND `download` — a variable, where
    * no excess-property check reaches — must match neither `query()` overload. `download.ts`.
@@ -199,6 +205,7 @@ export interface QueryDescriptor {
   readonly deprecated: Deprecation | null;
   /** Declared `download:` — the read answers a file at a signed URL, never rows. */
   readonly download: boolean;
+  readonly errors: readonly string[] | null;
 }
 
 /**
@@ -219,6 +226,7 @@ export interface AnyQueryDef {
   readonly rateLimit?: QueryRateLimit;
   readonly deprecated?: Deprecation;
   readonly audit?: boolean;
+  readonly http?: QueryHttp;
   /** A download's handler. Private like `sql`: `download.ts` reaches it through `defOf`. */
   readonly download?: QueryDownload<StandardSchemaV1>;
 }
@@ -244,6 +252,7 @@ export interface AnyQuery {
   readonly deprecated?: Deprecation;
   /** `true` on a `query({ download })` — the route mints a URL or serves a file. Absent otherwise. */
   readonly download?: true;
+  readonly errors?: readonly string[];
   describe(): QueryDescriptor;
   /** A twin under another name. Registration names through `named`. */
   named(name: string): AnyQuery;
@@ -277,6 +286,8 @@ export interface Query<
    * so it lives here and not on the schema-erased `AnyQuery` view.
    */
   client(options: QueryClientOptions): QueryClientMethodOf<TInput, TRow, TSingle>;
+  /** The generated contract suite the `contract` step runs (`contract-test.ts`). */
+  contract(options?: QueryContractTestOptions): readonly QueryContractTest[];
 }
 
 /** The fluent half of a query: lifted declaration plus one method per projection. */
@@ -295,10 +306,12 @@ export type QueryFacade<
   | 'mcp'
   | 'rateLimit'
   | 'deprecated'
+  | 'errors'
   | 'as'
   | 'page'
   | 'live'
   | 'client'
+  | 'contract'
 >;
 
 /**
@@ -324,6 +337,7 @@ export function query<
   // anyone mounts it, and the typed client derives that same URL — so an input a query string
   // cannot carry is wrong for every call, and the file that declared it is where it is repaired.
   assertEncodableInput(def.input);
+  if (!isDownloadDef(def)) assertQueryHttp(def.http, def.input);
   if (isDownloadDef(def)) {
     assertDownloadDef(def);
     return buildDownloadQuery(def, '', describeQuery);
@@ -422,6 +436,7 @@ export function describeQuery(target: AnyQuery): QueryDescriptor {
     rateLimit: target.rateLimit ?? null,
     deprecated: target.deprecated ?? null,
     download: target.download === true,
+    errors: target.errors ?? null,
   };
 }
 

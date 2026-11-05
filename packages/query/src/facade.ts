@@ -7,9 +7,12 @@
  * (`toolFrom(orgFeed)`), a tier this package cannot import.
  */
 
+import { checkDeclaredErrors } from '@ultimat3/core';
+import { declaredStatusFor } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryClientMethodOf } from './client';
 import { queryClientMethodFor } from './client';
+import { queryContractTestsFor } from './contract-test';
 import { toLiveQuery } from './live';
 import { paginate } from './pagination';
 import type { Query, QueryDef, QueryFacade } from './query';
@@ -38,6 +41,10 @@ export function facadeFor<
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
     ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),
     ...(def.deprecated === undefined ? {} : { deprecated: def.deprecated }),
+    // Checked here, the one place a declaration is lifted: frozen and sorted, or refused.
+    ...(def.errors === undefined
+      ? {}
+      : { errors: checkDeclaredErrors(def.errors, declaredStatusFor, 'this query') }),
     // `.as()` is impersonation on the one read path: `runQuery` keeps the
     // surrounding context whole and swaps only the actor.
     as: (actor, input, options) => runQuery(self(), input, { ...options, actor }),
@@ -45,13 +52,14 @@ export function facadeFor<
     // signed cursor is only reachable through the query that issued it.
     page: (input, args) => paginate(self(), input, args),
     live: (input, options) => toLiveQuery(self(), input, options),
+    contract: (options) => queryContractTestsFor(self(), options),
     // One implementation for both wire shapes: the route decides the body, the transport parses
     // it, and only the TYPE differs — a single read's method answers the row, and has no `page`.
     client: (options) =>
-      queryClientMethodFor<TInput, TRow>(queryName(self()), options) as QueryClientMethodOf<
-        TInput,
-        TRow,
-        TSingle
-      >,
+      queryClientMethodFor<TInput, TRow>(
+        queryName(self()),
+        options,
+        def.http?.path,
+      ) as QueryClientMethodOf<TInput, TRow, TSingle>,
   };
 }

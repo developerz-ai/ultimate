@@ -207,6 +207,15 @@ From code — an island, an app script — `navigate(url, { replace? })`, `refre
 island imports them from **`@ultimat3/render/client`**, never the barrel — see
 [Two entry points](#two-entry-points). [Navigating from code](../../wiki/Client-Navigation.md#navigating-from-code).
 
+`refresh()` is the same page for the same visitor (`navigation-refresh.ts`): no view transition,
+focus kept on the control the visitor was in (`markFocus`/`restoreFocus` in `navigation-dom.ts`: by
+`id`, else `name` in its form, else `[data-row]` + tag + place), no announcement, a navigation in
+flight never aborted for it, nothing under an open modal. `scheduleRefresh()` (`refresh-idle.ts`,
+on `/client`) is "a channel said the page changed": one running, one owed, held while the tab is
+hidden, a dialog or popover is open, a field has focus, text is selected, a navigation runs or
+within `QUIET_MS` (1 s) of input; nothing after a lost session and nothing without the router.
+[Client navigation](../../wiki/Client-Navigation.md#refresh-is-the-same-page).
+
 ## Mode invariants, checked at registration
 
 | Mode | Invariant | Error if violated |
@@ -547,7 +556,7 @@ side effect. Anything that loads an app's source — `x dev`, `x build`, `server
 `@ultimat3/render/client` is the **browser** entry — what an island or a page script calls:
 `navigate`, `refresh`, `openModal`, `closeModal`, `NavigateToOptions`,
 `NavigationModalPathInvalidError`, `NAVIGATE_EVENT`, `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`,
-`disposeIslands`.
+`disposeIslands`, `scheduleRefresh`.
 The barrel bundles for the browser but its `sideEffects` keeps `errors.ts` — render's code table,
 and core's and schema's titles tables behind it — in every chunk that reaches it; this entry's
 graph is the navigation helpers plus `@ultimat3/core/page` (`client-bundle.test.ts`). `As of
@@ -630,6 +639,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
 | `clientNavigationTags`, `linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `NAVIGATION_*` (`NAVIGATION_ERROR_EVENT`‡), `NAVIGATE_EVENT`‡, `NAVIGATED_EVENT`‡ | the client router's document tags and its pure rules; the router itself is `@ultimat3/render/navigation`, built and served by the CLI |
 | `navigate`‡, `refresh`‡, `openModal`‡, `closeModal`‡, `NavigateToOptions`‡, `NavigationModalPathInvalidError`‡ | navigating from code: the router when the page has one, the browser's own load when not. Import from `/client` in an island |
+| `scheduleRefresh`‡ | a `refresh()` once the visitor is idle, coalesced; never a reload |
 | `disposeIslands` (on `/client` only) | dispose the islands mounted under an element: what the router does on a swap, for an island that drops markup holding other islands |
 | `modalAddress`, `modalLocation`, `addressOf`, `presentation`, `modalHistory`, `leaveModal`, `NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE` | route-presented modals (`navigation: 'modal'`): the hash grammar, when an answer is a modal, and what leaving one does to history |
 | `declaresModal`, `parseModalRoutes`, `modalRouteList`, `ModalRoutes`, `NAVIGATION_MODALS_META`, `NAVIGATION_MODAL_BODY_ATTRIBUTE`, `NAVIGATION_MODAL_CLOSE_ATTRIBUTE`, `NAVIGATION_MODAL_SKELETON_ATTRIBUTE` | the modal that opens on the click: the meta naming a surface's modal routes (composed by the server, read by the router) and the frame's attributes, styled by `@ultimat3/ui` |

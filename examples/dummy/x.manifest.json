@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "3071d26f0eb72114",
+  "buildId": "a8146451cb349244",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -431,7 +431,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "169kb"
+        "js": "172.5kb"
       }
     },
     {
@@ -453,7 +453,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "156.5kb"
+        "js": "173kb"
       }
     },
     {
@@ -464,7 +464,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "30kb"
+        "js": "31kb"
       }
     },
     {
@@ -481,7 +481,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "26kb"
+        "js": "28kb"
       }
     },
     {
@@ -492,7 +492,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "183.5kb"
+        "js": "188.5kb"
       }
     },
     {
@@ -503,7 +503,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "72.5kb"
+        "js": "76kb"
       }
     }
   ],
@@ -1732,7 +1732,11 @@
       "mcp": {
         "expose": true,
         "description": "Comment on a post the actor can read"
-      }
+      },
+      "errors": [
+        "X_ORG_NOT_FOUND",
+        "X_POST_NOT_FOUND"
+      ]
     },
     {
       "name": "createPost",
@@ -1867,7 +1871,8 @@
       "mcp": {
         "expose": true,
         "description": "Create a draft post in the actor’s organisation"
-      }
+      },
+      "errors": []
     },
     {
       "name": "endSession",
@@ -2246,7 +2251,10 @@
       "cacheInvalidates": [],
       "mcp": {
         "expose": false
-      }
+      },
+      "errors": [
+        "X_POST_NOT_FOUND"
+      ]
     },
     {
       "name": "likePost",
@@ -2372,7 +2380,10 @@
         "expose": true,
         "description": "Like a post on behalf of the acting member"
       },
-      "mutator": true
+      "mutator": true,
+      "errors": [
+        "X_POST_NOT_FOUND"
+      ]
     },
     {
       "name": "memberAvatar",
@@ -2616,6 +2627,13 @@
       "mcp": {
         "expose": true,
         "description": "Publish a draft post"
+      },
+      "errors": [
+        "X_POST_NOT_FOUND"
+      ],
+      "http": {
+        "path": "/api/posts/:postId/publish",
+        "method": "POST"
       }
     },
     {
@@ -2705,7 +2723,10 @@
       "mcp": {
         "expose": true,
         "description": "Queue a review of your draft; read it back with postReview"
-      }
+      },
+      "errors": [
+        "X_ORG_NOT_FOUND"
+      ]
     },
     {
       "name": "requestPostsExport",
@@ -2750,7 +2771,8 @@
       "mcp": {
         "expose": true,
         "description": "Export every post of the actor’s org as CSV to storage"
-      }
+      },
+      "errors": []
     },
     {
       "name": "reviewDraft",
@@ -3960,7 +3982,10 @@
       ],
       "mcp": {
         "expose": false
-      }
+      },
+      "errors": [
+        "X_POST_NOT_FOUND"
+      ]
     }
   ],
   "queries": [
@@ -6800,6 +6825,10 @@
     {
       "code": "X_RAW_FETCH",
       "package": "guards/raw-fetch.ts"
+    },
+    {
+      "code": "X_RAW_INTERVAL",
+      "package": "guards/raw-interval.ts"
     },
     {
       "code": "X_RAW_LENGTH",

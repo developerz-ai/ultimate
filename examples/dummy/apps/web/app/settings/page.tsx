@@ -132,7 +132,13 @@ export const config = defineRoute({
   // `X_ERROR_DECLARATION_INVALID`, `X_SCHEMA_SENSITIVE_OUTPUT`: 878 B of titles), so a refusal
   // with one of them reaching the island is still titled, and a refusal's issues carry the `rule` and `params` a form translates
   // on (plan 101 slice 10) — raised 72kb → 72.5kb (30.0.0): settings island +1,244 B.
-  budget: { js: '72.5kb' },
+  // measured: 77774 B (2026-11-05; x build --target static, against main's 74,107) — why: the
+  // settings island +2,258 B: `action.client()` filling a pinned URL (`action/client.ts` +536,
+  // `errors-http.ts` 443, `route-path-template.ts` 385), 5a's titles (+499) and the session flag
+  // (+392); the client router +1,409 B: `refresh()` keeps the same visitor's focus
+  // (`navigation-refresh.ts`, `markFocus`/`restoreFocus`), never aborts a click in flight and is
+  // asked its hold again at the swap — raised 72.5kb → 76kb (30.0.0).
+  budget: { js: '76kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
