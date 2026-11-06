@@ -239,6 +239,11 @@ describe('a suite that fails alone', () => {
     expect(cause).not.toContain('line 0 |');
   });
 
+  test("a GitHub Actions annotation names the failure: Bun's own report there", () => {
+    const out = '::error file=a.test.ts,line=3,title=probe::expect(received).toBe(expected)';
+    expect(suiteFailure('testing', 1, out)?.cause).toContain('::error file=a.test.ts');
+  });
+
   test('a zero exit is no failure, whatever stderr says', () => {
     expect(suiteFailure('money', 0, '(fail) not really')).toBeUndefined();
   });

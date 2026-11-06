@@ -234,7 +234,9 @@ export function suiteFailure(
   if (exitCode === 0) return undefined;
   const unit = unitOf(name);
   const lines = stderr.split('\n').map((line) => line.trim());
-  const failed = lines.filter((line) => /^\(fail\)|^error:|\btimed out\b/.test(line)).slice(0, 12);
+  const failed = lines
+    .filter((line) => /^\(fail\)|^error:|^::error\b|\btimed out\b/.test(line))
+    .slice(0, 12);
   // The assertion's own diff — what the test RECEIVED — is the half that names the cause; a CI
   // flake reported as `error: expect(received).toEqual(expected)` alone cannot be root-caused.
   const diff = lines.filter((line) => /^(?:[-+]\s|Expected:|Received:)/.test(line)).slice(0, 24);
@@ -336,11 +338,16 @@ async function measure(root: string, name: string, workers: number): Promise<Cov
   const proc = Bun.spawn([...testCommand(unit, dir, workers)], {
     cwd: root,
     env: unitEnv(Bun.env, serviceKeys(root)),
-    stdout: 'ignore',
+    // Both read: under GitHub Actions Bun reports a failing test as an `::error` annotation on
+    // stdout, so stderr alone named three failures as "3 tests failed:" and nothing else.
+    stdout: 'pipe',
     stderr: 'pipe',
   });
-  const stderr = await new Response(proc.stderr).text();
-  const failure = suiteFailure(name, await proc.exited, stderr);
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  const failure = suiteFailure(name, await proc.exited, `${stdout}\n${stderr}`);
   if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {
