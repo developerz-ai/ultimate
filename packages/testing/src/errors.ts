@@ -54,6 +54,11 @@ export const TESTING_ERROR_CODES = [
   'X_SEED_GRAPH_ENTITY_UNKNOWN',
   'X_TENANT_LEAK',
   'X_TENANT_WRITE_CROSSED',
+  'X_JOB_CRASH_DIVERGED',
+  'X_JOB_SIM_INVARIANT',
+  'X_JOB_SIM_NONDETERMINISTIC',
+  'X_DRILL_FAILED',
+  'X_DRILL_SERVICE_MISSING',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -100,6 +105,12 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_SEED_GRAPH_ENTITY_UNKNOWN: 'a seed plan names an entity its writer was not given',
   X_TENANT_LEAK: "another tenant's row reached a call's output or effect",
   X_TENANT_WRITE_CROSSED: "a call by one tenant changed another tenant's row",
+  X_JOB_CRASH_DIVERGED:
+    'a job run killed at a step boundary made an effect a different number of times than a clean run',
+  X_JOB_SIM_INVARIANT: 'a simulateJobs seed broke the invariant the test stated',
+  X_JOB_SIM_NONDETERMINISTIC: 'one simulateJobs seed produced two different traces',
+  X_DRILL_FAILED: 'a fault drill property did not hold',
+  X_DRILL_SERVICE_MISSING: 'a fault drill needs a service that is not there',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

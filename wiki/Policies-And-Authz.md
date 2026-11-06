@@ -175,6 +175,7 @@ X_TENANT_LEAK: another tenant's row reached a call's output or effect
 | Not a failure | Why |
 |---|---|
 | `public` | the policy admits an anonymous caller: what it returns, anyone may read. The read half is skipped; a crossed **write** is still red |
+| `public`, as a declared sweep | a job that reads every org on purpose says so with `crossTenant(reason, fn)`, and its input names no org's rows. The proof sees the scope and quotes the reason; the read half is skipped, a crossed **write** is still red. The same scope in an action or a query, or in a job handed A's id, is still `X_TENANT_LEAK` |
 | `unproven` | A's own call was not reached (that record is already red as `X_CONTRACT_EXERCISE_UNREACHED`), or a query answered A none of A's rows — B's empty answer then proves nothing |
 
 B holds the role A held, minus `tenancy:cross`. **Not checked**: a `route` `load` and a `task`

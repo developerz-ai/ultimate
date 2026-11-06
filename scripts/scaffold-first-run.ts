@@ -126,7 +126,7 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
  *
  * | # | Step | What only this step can tell you |
  * |---|---|---|
- * | 1 | `g <kind>` x 14 | every generator runs |
+ * | 1 | `g <kind>` x 15 | every generator runs |
  * | 2 | `db gen "generated"` | `x db gen` against entities from every generator that emits one, in one diff — the only migration in CI written from generator output rather than from the scaffold's own example entity |
  *
  * Nothing APPLIES that migration here, deliberately: `bun run setup` runs `x db migrate`, and the
@@ -143,17 +143,21 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
 export const firstRunPlan = (): readonly FirstRunStep[] => [
   ...GENERATORS.map((kind) => ({
     name: `g ${kind}`,
-    // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`.
+    // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`, and
+    // one chart, named by its `Chart.yaml` — which `x new` wrote holding both monitoring templates,
+    // so this step is the backfill's no-op over a current chart.
     args:
       kind === 'sign-in'
         ? ['g', kind, '--password', '--json']
-        : [
-            'g',
-            kind,
-            generatorName(kind),
-            ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
-            '--json',
-          ],
+        : kind === 'chart-alerts'
+          ? ['g', kind, '--json']
+          : [
+              'g',
+              kind,
+              generatorName(kind),
+              ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
+              '--json',
+            ],
   })),
   ...SECOND_SHAPES,
   { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },

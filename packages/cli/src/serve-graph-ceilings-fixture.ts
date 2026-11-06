@@ -144,8 +144,15 @@
  * saga and event-wake modules (14: `consumer*`, `errors-saga`, `steps-{unwind,wait}`,
  * `execute-{ctx,unwind}`, `driver-pg-event-wake-sql`, `step-resolve`, `backfill-{source,reader}`)
  * through the jobs barrel; `cli/src/runtime-replica-position.ts`.
+ * raised 804 → 822, measured 822 (2026-11-06, plan 101 wave 8): 18 new files, no existing module
+ * newly reached — time series and views (`entity/src/{time-bucket,read-aggregates,
+ * series-unsupported,pg-aggregates,memory-aggregates,entity-parse,view-entity,view-repo}.ts`,
+ * `db/src/generate-view.ts`, `jobs/src/{rollup,rollup-errors,refresh-view}.ts`), `db/src/keyset.ts`,
+ * the Redis client and its deadline (`core/src/redis-client.ts`, `cache/src/redis-deadline.ts`),
+ * the limiter's store deadline (`http/src/rate-limit-store-deadline.ts`), `core/src/
+ * error-reporter-chain.ts` and `admin/src/error-groups-schema.ts` (the framework table's DDL).
  */
-export const MIGRATE_CEILING = 804;
+export const MIGRATE_CEILING = 822;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -300,8 +307,11 @@ export const MIGRATE_CEILING = 804;
  * raised 1092 → 1093, measured 1093 (2026-11-05, plan 101 wave 6a): `MIGRATE_CEILING`'s 1.
  * raised 1093 → 1151, measured 1151 (2026-11-06, plan 101 wave 7): `MIGRATE_CEILING`'s 56, plus
  * `cli/src/row-security-boot.ts` (the boot's role check) and `query/src/http-etag.ts` (a read's 304).
+ * raised 1151 → 1174, measured 1174 (2026-11-06, plan 101 wave 8): `MIGRATE_CEILING`'s 18, plus
+ * `query/src/live-trace.ts` (a live read's spans) and the CLI catalog split at its line ceiling,
+ * `cli/src/messages-{db,gate,shot,upgrade}.ts`, which `messages.ts` composes.
  */
-export const SERVING_ROLE_CEILING = 1151;
+export const SERVING_ROLE_CEILING = 1174;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -447,5 +457,7 @@ export const SERVING_ROLE_CEILING = 1151;
  * raised 1237 → 1296, measured 1296 (2026-11-06, plan 101 wave 7): `SERVING_ROLE_CEILING`'s 58,
  * plus `mcp/src/oauth-server.ts` (`mcpAuthorizationServer`), through the MCP barrel the web role
  * mounts.
+ * raised 1296 → 1321, measured 1321 (2026-11-06, plan 101 wave 8): `SERVING_ROLE_CEILING`'s 23,
+ * plus `cli/src/client-vitals-{route,script}.ts`, the page-vitals beacon and its script.
  */
-export const WEB_ROLE_CEILING = 1296;
+export const WEB_ROLE_CEILING = 1321;

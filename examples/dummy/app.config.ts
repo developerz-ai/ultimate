@@ -77,7 +77,12 @@ export const config = defineConfig({
   // `mount()` threw — reaches the same `ErrorReporter` a server failure does, as `source: 'browser'`.
   // Signed-in members only (`anonymous` stays false) at 30 reports a minute each; `site/` pages
   // never carry the script, so the marketing pages stay 0kb of JS.
-  clientErrors: { enabled: true },
+  //
+  // `vitals`: real-user timings (LCP, CLS, INP, FCP, TTFB) from one view in ten, one anonymous
+  // beacon on hide, landing as `web_vital_seconds` / `web_vital_cls` by route PATTERN. `app/` only
+  // (the default), so the marketing pages still ship no byte of it; charged to each app route's
+  // budget as served.
+  clientErrors: { enabled: true, vitals: { enabled: true } },
 });
 
 /**

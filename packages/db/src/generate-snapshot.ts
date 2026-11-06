@@ -6,6 +6,7 @@ import { declaredChecks } from './check-ddl';
 import { defaultExpression } from './column-default';
 import type { EntityDescriptionLike } from './entity-shape';
 import { foreignKeysOf } from './foreign-key-plan';
+import { splitViews, viewDescriptionOf } from './generate-view';
 import type { ColumnDescription, SchemaDescription, TableDescription } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
 import { withSameTenantIndexes } from './same-tenant';
@@ -19,7 +20,9 @@ export function snapshotOf(
   replicaIdentityFull: ReadonlySet<string> = NONE,
   rowSecurity: ReadonlySet<string> = NONE,
 ): SchemaDescription {
-  const tables = [...withSameTenantIndexes(entities)]
+  // A view is recorded as its statements (`generate-view.ts`), never as a table it is not.
+  const split = splitViews(entities);
+  const tables = [...withSameTenantIndexes(split.tables)]
     .sort((a, b) => (a.table < b.table ? -1 : 1))
     .map((entity): TableDescription => {
       const columns: ColumnDescription[] = [...entity.columns]
@@ -72,5 +75,8 @@ export function snapshotOf(
         ...(rowSecurity.has(entity.table) ? { rowSecurity: true as const } : {}),
       };
     });
-  return { tables };
+  // `views` absent when none is declared, so no snapshot written before views existed moves.
+  return split.views.length === 0
+    ? { tables }
+    : { tables, views: split.views.map(viewDescriptionOf) };
 }

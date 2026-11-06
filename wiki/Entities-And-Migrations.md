@@ -302,7 +302,7 @@ export const db = database(entities, { driver });
 |---|---|
 | tenancy — every read runs under the actor's org | an org parameter, a `.where({ orgId })`, an `org_id = …` in SQL. No function in a generated repo takes or names an org. A read with no actor is `X_TENANCY_UNSCOPED`; an actor with no org is `X_TENANCY_ACTOR_ORG_REQUIRED`; a row written for another org is `X_TENANCY_ACTOR_MISMATCH` |
 | codecs — money, timestamps, [sealed columns](#sealed-columns) | row decoding, a column list, money's three columns |
-| paging — `.limit(n)`, then `.after(cursor).page()` | an offset, or a paging module |
+| paging — `.limit(n)`, then `.after(cursor).page()`; a raw join pages with `keyset()` from `@ultimat3/db` ([below](#paging-a-raw-join)) | an offset, or a paging module |
 | the transaction — inside `withTransaction` the handle is the transaction, and a statement on it after the scope ended is `X_DB_TRANSACTION_CLOSED`: `await` it, or `outsideTransaction(fn)` for work that must outlive the scope | a client argument |
 | locks — `db.posts.lock(id, fn)` for a row, `db.posts.lockKey(key, fn)` for a key, both under the tenant | `for update` by hand, or an advisory lock |
 | abandonment — once `ctx.signal` is aborted with a coded reason (`X_TIMEOUT`, a job's cancellation) a write rethrows that reason: a transaction rolls back and neither driver writes. A client hang-up is not a refusal. `runToCompletion(fn)` for work that must land | a check of the signal before each write |
@@ -312,12 +312,51 @@ export const db = database(entities, { driver });
 | belongs | a `query`'s source, built with `from()`; a migration |
 | is the exception | a `repo.ts`, for what the handle cannot say: a join, an aggregate, a CTE, a window. Its unit test runs [the migrated-database recipe](Testing#database-state-and-what-a-run-leaves-behind): the handle's `testDriver()` follows the installed client, so the handle's writes and the join meet in one database |
 | is refused | a `repo.ts`, for `select *` / `insert` / `update` / `delete` on one table, and `select * … where id = ? for update` (`db.<table>.lock(id, fn)`) |
+| is refused, any statement | `order by date_trunc('milliseconds', …)`: the index cannot serve it. `keyset()` pages at the column's own precision |
 
 | Enforced by | What fails |
 |---|---|
 | `tsc` | `db.widgets` exists only when `widget` is in the set; a renamed column is an error in the repo |
 | `guards/repo-raw-sql.ts` — `X_REPO_RAW_SQL`, `boundaries` step | a `sql` literal in a `repo.ts` the handle can express; the `fix:` is the handle call |
 | `X_DB_HANDLE_UNREGISTERED` — `x g entity`, `x g resource` | a `client.ts` with no `const <set> = { … }` passed to `database()`, or an `index.ts` that does not export the handle; the `fix:` is the lines to add |
+
+### Paging a raw join
+
+`keyset()` (`@ultimat3/db`): keyset paging for a statement the handle cannot say. `.after()` on the
+handle, `keyset()` in a raw read: two surfaces, never two ways for one read. `As of 2026-11-06`.
+
+```ts
+import { db, keyset, raw, sql } from '@ultimat3/db';
+
+export async function feed(orgId: string, after: string | null) {
+  const page = keyset({
+    scope: `posts.feed:${orgId}`,
+    keys: [
+      { column: raw('p.created_at'), kind: 'timestamptz', direction: 'desc' },
+      { column: raw('p.id'), kind: 'uuid', direction: 'desc' },
+    ],
+    after,
+    limit: 50,
+  });
+  const rows = await db().query<{ id: string; title: string; author: string }>(
+    sql`select p.id, p.title, m.name as author, ${page.select}
+        from posts p join members m on m.id = p.author_id
+        where p.org_id = ${orgId} and ${page.where}
+        order by ${page.orderBy} limit ${page.limit}`,
+  );
+  return page.page(rows); // core's Page: { rows, nextCursor, hasMore }
+}
+```
+
+| Question | Answer |
+|---|---|
+| Microseconds | each key is selected as `col::text` and bound back as `$n::<kind>`: exact. A `Date` would drop them, and a seek from a floored position drops rows |
+| The plan | `order by` stays on the bare columns: an index on `(created_at desc, id desc)` answers it as an Index Only Scan. `date_trunc('milliseconds', …)` measured 100 ms against 0.2 ms on 300,000 rows |
+| Kinds | `timestamptz`, `uuid`, `text`, `integer`, `bigint` |
+| Directions | all one way: a row comparison. Mixed: the or-chain |
+| A null key | `X_KEYSET_NULL_KEY` on any row of the page: a row comparison has no null order. `coalesce` the key, or order by a not-null column |
+| A cursor from another read | `X_CURSOR_INVALID`. The scope is yours plus the keys: the same scope under another sort is refused too |
+| Memory | none: raw SQL has no memory path. Test it on the migrated database |
 
 The generated `repo.test.ts` runs all three functions against the in-memory driver, inside
 `runWithContext` — the actor is what scopes the read, so a test names one, and asserts that an
@@ -479,6 +518,41 @@ a `number | undefined` — and the `undefined` is load-bearing.
 
 There is no `groupBy()` builder and no error code of its own: `countBy` is a terminal on the chain
 that already exists, over exactly the rows `count()` counts.
+
+## A count per day is a series
+
+A chart is a count per bucket of time, in a person's zone. One statement, under every guard the
+chain applies, `As of 2026-11`:
+
+```ts
+import { database, entity, timestamp, uuid } from '@ultimat3/entity';
+
+const likes = entity('likes', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), createdAt: timestamp() },
+});
+const db = database({ likes });
+
+// [{ bucket: Date, value: number }, …] ascending; `{ sum: 'amount' }` sums instead.
+export const likesPerDay = (orgId: string, from: Date, timeZone: string) =>
+  db.likes
+    .where({ orgId })
+    .andWhere('createdAt', 'gte', from)
+    .series({ on: 'createdAt', unit: 'day', timeZone, value: 'count' });
+```
+
+| Property | Behavior |
+|---|---|
+| Zone | required by the type, an IANA name (`X_ENTITY_SERIES_INVALID` for `'+09:00'` or an unknown one). The statement is `date_trunc(unit, col, zone)` with the zone bound — never the session's. 23:30 UTC is the next day in Tokyo; a spring-forward day has 23 hourly buckets |
+| Units | `minute`, `hour`, `day`, `week` (from Monday, as `date_trunc`), `month`. Closed |
+| `minute`/`hour` | keep the instant's own offset: the repeated hour of a fall-back day is two buckets, and `Asia/Kolkata`'s hour starts at :30 UTC |
+| `day`/`week`/`month` | local midnight, resolved afresh: a midnight that never happens reads at the offset before the jump, one that happens twice at the offset after it — measured on Postgres 18 and matched by the memory driver (`time-bucket.ts`) |
+| `value` | `'count'` (a `number`) or `{ sum: column }` — decimal text, or a `MoneyValue`, exactly as `sum()`; one currency across the whole series |
+| A bucket with no rows | absent — the range is the caller's to fill |
+| A row with no instant | in no bucket |
+| More than 1000 buckets | `X_ENTITY_SERIES_INVALID`, never truncated: bound the range or widen the unit |
+| A hand-written `Repo` | `series` is optional on it; the chain answers `X_ENTITY_SERIES_UNSUPPORTED` |
+
+A recomputed report table is `rollup()` over this read ([Jobs and workflows](Jobs-And-Workflows#rollups-and-materialized-views)).
 
 ## Writing many rows is one statement
 
@@ -813,6 +887,39 @@ embed: { field: 'body', model: 'text-embedding-3-large' },
 | Search | one hybrid `query` fusing pgvector cosine + Postgres FTS with Reciprocal Rank Fusion; weights are config |
 
 More in [MCP and AI](MCP-And-AI).
+
+## Views
+
+`entity(name, { view: { sql, materialized? }, columns })` declares a relation Postgres derives. The
+chain reads it like a table — tenancy, the codec, `$view` — and every write is
+`X_ENTITY_VIEW_READ_ONLY`, in both drivers, before a statement exists. `As of 2026-11`:
+
+```ts
+import { bigint, entity, uuid } from '@ultimat3/entity';
+
+export const postTotals = entity('post_totals', {
+  view: {
+    sql: 'select org_id, post_id, count(*) as total from likes group by org_id, post_id',
+    materialized: true,
+  },
+  columns: { orgId: uuid().tenant(), postId: uuid().unique(), total: bigint() },
+  primaryKey: ['postId'],
+});
+```
+
+| Rule | |
+|---|---|
+| `columns` | the view's output columns, by physical name; `primaryKey` is the read identity, no constraint |
+| `x db gen` | emits `create [materialized] view` after every table; a materialized view's indexes with it |
+| A change | the query, an index, `materialized`, or a retype/drop under it: every recorded view is dropped before the table statements and every declared one recreated after — declare a view after a view it reads |
+| Refused at declaration | a blank query, a second statement, `appendOnly`, a `.sealed()` column, an index on a plain view |
+| Refresh | `refreshView()` — a job ([Jobs and workflows](Jobs-And-Workflows#rollups-and-materialized-views)) |
+| Drift, source | the snapshot records each view's statements; `x verify`'s `drift` step compares them to the entities, so a view declared and never generated, changed since, or recorded and no longer declared is `X_DB_SCHEMA_UNMIGRATED` / `X_DB_SCHEMA_UNDECLARED` naming `view "<name>"` — one code per direction, as for a table |
+| Drift, columns | only a database knows what a query outputs, so the same step's scratch replay reads each created view's columns and holds `columns` to them: one named and not output (every read a `42703`), or output and named by none, is `X_ENTITY_VIEW_DRIFT` |
+| Schema dump | `07_views/<name>.sql`, a materialized view's indexes in the same file; load equals replay, as for a table |
+| Seeds | `x db seed --generate` and `x exercise` seed tables only — a view's rows are derived |
+| Admin, MCP | listed read-only: `list`, `detail`, `search`, and no create/edit/delete route, button or admin MCP tool. An `operations` override naming a write is `X_ADMIN_VIEW_WRITE` ([Admin dashboard](Admin-Dashboard)) |
+| Manifest | the entity's fact carries `view: { materialized }`; a table becoming a view is a **breaking** change, a view becoming a table additive |
 
 ## Migration workflow
 

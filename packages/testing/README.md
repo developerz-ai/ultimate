@@ -37,6 +37,14 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `exercise-actor.ts` · `exercise-input.ts` · `exercise-report.ts` | the first `x policy explain` actor the policy allows, minted in the primitive's tenant · the input: override, then a seeded id by field stem, then the minimal draw (`@ultimat3/schema/sample`, loaded dynamically) · the room one run executes in (network sealed, mail captured, clock frozen) and its record, `overrideLine` the entry to paste |
 | `tenant-proof.ts` | internal (`CROSS_TENANT_SCOPE` is `@ultimat3/entity`'s): `proveTenant` — B with A's ids, A's own call, B again; each B leg between two snapshots of A's rows. `withoutCrossTenant` strips `tenancy:cross` (`CROSS_TENANT_SCOPE`) from B; `publicReason` decides `public` |
 | `tenant-canary.ts` | internal: `tenantTaint` — one tenant's rows, ids and marks (row canaries, key parts of `MIN_TAINT_ID_LENGTH` 8 or more no other tenant shares); `findTaint` — every path holding one |
+| `exercise-crash.ts` | internal: `proveCrash` — a job the pass reached, run through `crashProof` with its control's input and actor, after the tenant proof; the `CrashProof` on `ExerciseRecord.crash` |
+| `job-crash-proof.ts` | `crashProof(handle, input, { context?, seed? })` — one clean run, then the worker killed at every step boundary it crossed, then each answer lost; `{ boundaries, divergences, reruns }`, a divergence carrying its `X_JOB_CRASH_DIVERGED` |
+| `job-simulate.ts` | `simulateJobs({ seed?, seeds, jobs, workers, faults, invariant })` — seeded races on the shared simulated driver; `X_JOB_SIM_INVARIANT`, `X_JOB_SIM_NONDETERMINISTIC`; `x test job --seed <n>` replays one |
+| `fault-proxy.ts` | `faultProxy({ target })` — a Bun TCP proxy whose mode switches mid-run: `pass`, `delay(ms)`, `blackhole` (bytes held, never dropped), `reset`, `refuse` |
+| `drills.ts` · `drill-verdict.ts` | the eight fault drills (`x drill`) and the verdict over evidence alone; a property with no evidence is red, and an answer may reach the load `DRILL_ANSWER_SLACK_MS` (500) past the deadline it was given by |
+| `drill-fleet.ts` · `drill-run.ts` | `startDrillFleet` — `web`, `worker` (and `sync` for `nats-down`) as processes on a scratch database, every service behind a proxy; `runDrill` — baseline, fault, recovery, judged |
+| `drill-load.ts` · `drill-writes.ts` | the load's lanes; `drillWriteTargets` — every action an anonymous POST reaches, each request a fresh seeded draw with the app's `exercise.ts` override, so a job enqueued over HTTP is on the table for `worker-sigkill`/`worker-sigterm` |
+| `drill-sync.ts` | `startDrillSync` — the sync-client lane: `hello`, resubscribe, redial on a drop, every `replay-gap` counted; `sync-resumes` reads it |
 | `tenant-proof-report.ts` | `tenantProofFindings` — one coded finding per crossing (`X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`), `tenantFindingLines` the human lines. Paths, tables and seeded ids, never a bound value |
 | `e2e-a11y.ts` | the accessibility audit's rules: `NAMED_ROLES`, `auditTree`, the in-page probe for `<html lang>` and focus under `aria-hidden` |
 | `e2e-a11y-run.ts` | one `e2eTest`'s audit: read after every navigation and at the end, a reasoned `allow`, findings deduplicated per suite, `X_E2E_A11Y_VIOLATION` |
@@ -323,6 +331,20 @@ seeded row that moved across a B leg is `X_TENANT_WRITE_CROSSED`. Both are red i
 
 Absent on `off` and `refused` records. Only `crossed` is red.
 [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-tenant-proof).
+
+A reached job is then killed at every step boundary — `crashProof` with its control's input and
+actor — and `ExerciseRecord.crash` is a `CrashProof`. The runs commit on the pass's database: job
+bodies run outside any transaction (`@ultimat3/jobs` `execute.ts`), so no rollback scope could
+hold them, and the proof runs after the control so its runs meet the rows the control left.
+
+| `verdict` | When | Red |
+|---|---|---|
+| `diverged` | a killed run made an effect more often than the clean one: `findings[]` (`boundary`, `mode`, `effect`, `clean`, `killed`, `after?`) | yes, `X_JOB_CRASH_DIVERGED`, one per effect, fix `x exercise <job> --json` and the `step.run('<name>', …)` to wrap it in |
+| `held` | no divergence; `boundaries` and `reruns` (lost answers, at-least-once) counted | no |
+| `unproven` | the proof itself threw: `reason` | no |
+
+Absent on every record but a reached job.
+[Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-crash-proof).
 
 ## Shared examples
 

@@ -48,6 +48,12 @@ describe('unit · framework schema', () => {
     expect(frameworkTableNames()).toContain('x_notify_digests');
   });
 
+  test('the error groups table is applied at boot', () => {
+    // `errorGroupsSink` only LOGS a failed write, so a missing table is an outage nobody is paged
+    // for: every group lost, `/admin/errors` empty, and the app looking like it never failed.
+    expect(frameworkTableNames()).toContain('x_error_groups');
+  });
+
   test('no table is created by two rows, so no row can be deleted as a duplicate', () => {
     const names = frameworkTableNames();
     expect([...new Set(names)].length).toBe(names.length);

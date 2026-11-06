@@ -115,6 +115,15 @@ export function configureErrorReporting(options: ErrorReportingOptions): void {
   if (options.enabled !== undefined) enabled = options.enabled;
 }
 
+/**
+ * The reporter installed now. Read by a boot that adds its own (`@ultimat3/cli`'s `SENTRY_DSN`
+ * transport) so it composes with an app's sink through `chainErrorReporters` instead of
+ * replacing it — the app's modules import, and install, before that boot line runs.
+ */
+export function installedErrorReporter(): ErrorReporter {
+  return reporter;
+}
+
 export function resetErrorReporting(): void {
   reporter = noopErrorReporter;
   clock = systemClock;

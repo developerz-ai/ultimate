@@ -43,6 +43,13 @@ export const GENERATABLE_FORMS: readonly GeneratableForm[] = [
   { name: 'create index', pattern: /^create\s+index\b/ },
   { name: 'create unique index', pattern: /^create\s+unique\s+index\b/ },
   { name: 'drop index', pattern: /^drop\s+index\b/ },
+  // `generate-view.ts` writes both kinds, and rebuilds by drop + create — never `or replace`, never
+  // `refresh` — so those two stay hand-written and stay counted. A materialized view's indexes are
+  // `create [unique] index`, already above.
+  { name: 'create view', pattern: /^create\s+view\b/ },
+  { name: 'create materialized view', pattern: /^create\s+materialized\s+view\b/ },
+  { name: 'drop view', pattern: /^drop\s+view\b/ },
+  { name: 'drop materialized view', pattern: /^drop\s+materialized\s+view\b/ },
   { name: 'add column', pattern: /^alter\s+table\s[\s\S]*?\badd\s+column\b/ },
   { name: 'drop column', pattern: /^alter\s+table\s[\s\S]*?\bdrop\s+column\b/ },
   { name: 'add constraint', pattern: /^alter\s+table\s[\s\S]*?\badd\s+constraint\b/ },

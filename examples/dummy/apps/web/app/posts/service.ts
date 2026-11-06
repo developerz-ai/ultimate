@@ -4,6 +4,7 @@
  */
 
 import { type Actor as Member, memberOf, NotAMember } from '@postly/core';
+import type { PostReviewRun } from '@postly/db';
 import {
   excerptOf,
   type MemberId,
@@ -12,7 +13,8 @@ import {
   slugify,
   orgId as toOrgId,
 } from '@postly/domain';
-import { defineService } from '@ultimat3/core';
+import type { AgentTranscript } from '@ultimat3/ai';
+import { defineService, keyedFingerprint } from '@ultimat3/core';
 import type { CommentView, CreatePostInput, DraftReview, PostView, ReviewView } from './entity';
 import { PostNotFound } from './errors';
 import type { PostRow } from './policy';
@@ -20,6 +22,8 @@ import {
   authorshipOf,
   byId,
   bySlug,
+  checkpointReviewRun,
+  closeReviewRun,
   deleteLike,
   insertComment,
   insertDraft,
@@ -29,8 +33,13 @@ import {
   publishedSince,
   recountLikes,
   reviewOf,
+  reviewRunOf,
+  startReviewRun,
   upsertReview,
 } from './repo';
+
+/** The purpose a review run's draft mark is keyed under — nothing else is fingerprinted by it. */
+const REVIEW_DRAFT_PURPOSE = 'postly.review-run.draft';
 
 /**
  * `(ctx)` with NO annotation, which is `defineService`'s own documented form and not a shortcut.
@@ -187,6 +196,36 @@ export const postsService = defineService('posts', (ctx) => {
         notes: review.notes,
         reviewedBy: authorId(),
       });
+    },
+
+    /**
+     * Open the post's review run, or pick up the one already open: its latest checkpoint, or `null`
+     * to start from the top. A run opened for an older draft is started over — its transcript holds
+     * the words the model was SENT, so resuming it would review a post that no longer reads so.
+     */
+    async openReviewRun(postId: PostId): Promise<AgentTranscript | null> {
+      const post = await this.byId(postId); // tenancy check by construction
+      const draft = keyedFingerprint({ title: post.title, body: post.body }, REVIEW_DRAFT_PURPOSE);
+      const open = await reviewRunOf(tenantId(), post.id as PostId);
+      if (open !== null && open.draft === draft) {
+        // OPAQUE JSON as far as this app is concerned: `.continue()` screens it — signature,
+        // agent, model, tools, tenant, then every block — before anything is sent.
+        return open.checkpoint as unknown as AgentTranscript | null;
+      }
+      await startReviewRun({ orgId: tenantId(), postId: post.id as PostId, draft });
+      return null;
+    },
+
+    /** `reviewDraft`'s `onCheckpoint`: the run so far, kept on the run `openReviewRun` opened. */
+    async checkpointReview(postId: PostId, transcript: AgentTranscript): Promise<void> {
+      // The handle is JSON by contract (`AgentTranscript`); the column is `json(t.json())`.
+      const checkpoint = transcript as unknown as NonNullable<PostReviewRun['checkpoint']>;
+      await checkpointReviewRun(tenantId(), postId, checkpoint);
+    },
+
+    /** The review is kept, so the run is over: the next request starts a new one. */
+    async closeReviewRun(postId: PostId): Promise<void> {
+      await closeReviewRun(tenantId(), postId);
     },
 
     /**

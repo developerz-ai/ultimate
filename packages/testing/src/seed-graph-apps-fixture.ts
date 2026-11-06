@@ -90,7 +90,8 @@ export const seedAppThrough = async (
   const graph = seedGraph(entities, { tenants: 2, perTable: 3, seed: 11 });
   await insertSeedGraph(graph, entitySeedWriter({ entities, client }));
   const counts: SeededCount[] = [];
-  for (const entity of Object.values(entities)) {
+  // A view holds no seeded row of its own (`seedGraph` skips it), so it has nothing to count.
+  for (const entity of Object.values(entities).filter((e) => e.$describe().view === undefined)) {
     const row = await client.one<{ n: number }>(
       raw(`select count(*)::int as n from "${entity.$table}"`),
     );

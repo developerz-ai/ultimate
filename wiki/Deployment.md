@@ -299,7 +299,7 @@ services:
 | `replicator` | none — `replicas: 1` | 1 | owns the slot; `strategy: Recreate`, because a surged pod can only stand by unready and `maxUnavailable: 0` would never retire the holder |
 | `migrate` | n/a | — | pre-install/pre-upgrade `Job` hook; blocks the release on failure |
 
-CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. The framework **declares** both series — `connections` and `queue_demand`, with `rps` derived from the monotonic `http_requests_total` — and `SCALING_METRICS` maps each role's signal to its series so the chart and the role table cannot drift. `As of 2026-08` every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` call the recorders, so the signals exist. **The chart's half is closed in 2.0.0**: `values.yaml` declares `metricsPort: 9090`, `_helpers.tpl` emits a container port named `metrics` on every role but `migrate`, `service.yaml` publishes it by name and `templates/servicemonitor.yaml` ships the scrape target. Two things remain, and neither is the chart's: `serviceMonitor.enabled` defaults **false**, because a cluster without the Prometheus operator has no such CRD and `helm install` would fail on an unknown kind; and turning scraped series into the `Pods` metrics an HPA reads needs a **custom-metrics adapter**. Do not hand-add a metrics container port — the chart already emits one and a duplicate is rejected by the API server → [Observability](Observability).
+CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. The framework **declares** both series — `connections` and `queue_demand`, with `rps` derived from the monotonic `http_requests_total` — and `SCALING_METRICS` maps each role's signal to its series so the chart and the role table cannot drift. `As of 2026-08` every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` call the recorders, so the signals exist. **The chart's half is closed in 2.0.0**: `values.yaml` declares `metricsPort: 9090`, `_helpers.tpl` emits a container port named `metrics` on every role but `migrate`, `service.yaml` publishes it by name and `templates/servicemonitor.yaml` ships the scrape target. `serviceMonitor.enabled` is `auto`: the object renders wherever the cluster serves the Prometheus operator's kind and is skipped where it does not, so `helm install` never fails on an unknown kind — and `templates/alert-rules.yaml` ships the mechanism alerts the same way (`alerts.enabled: auto`). One thing remains, and it is not the chart's: turning scraped series into the `Pods` metrics an HPA reads needs a **custom-metrics adapter**. Do not hand-add a metrics container port — the chart already emits one and a duplicate is rejected by the API server → [Observability](Observability).
 
 `x deploy --method helm` works in a fresh app `As of 2026-08-19`: the command implements helm
 completely and its `X_NOT_IMPLEMENTED` branch — which claimed the *build* did not implement it, over
@@ -313,8 +313,10 @@ the metrics port), every Deployment `minReadySeconds: 10`, and every rolling rol
 `maxUnavailable: 0`.
 
 The framework repo's own [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm)
-carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in
-an npm tarball, so taking them is a `git clone` of this repo. Its `image.repository` is a placeholder
+carries one template the scaffold does not — `pdb.yaml`, which is cluster policy. It ships in no
+npm tarball, so taking it is a `git clone` of this repo. The monitoring pair (`servicemonitor.yaml`,
+`alert-rules.yaml`) is in both charts; an app chart written before them gets both from
+`x g chart-alerts`. Its `image.repository` is a placeholder
 (`registry.example.com/your-app`) — the framework publishes no app image — and an emptied one is a
 render error naming the key. On 3.0.0 and below, `x new` writes no
 chart at all and `--method helm` exits `X_NOT_IMPLEMENTED`: copy the chart in, or use
@@ -469,6 +471,16 @@ Two design-only companions — **specification, not shipped behaviour**: [`docs/
 ## Rollback
 
 Redeploy the previous image tag. Inside an `assets.retain` window (below) a rollback 404s nobody mid-session; without one, a tab holding the other build's document reloads.
+
+The older image's migrate role decides whether the schema allows it (`As of 2026-11`). Over ledger rows the newer build applied it applies nothing and logs them (`ahead`). Over a row the newer build RECORDED as destructive (`x_migrations.destructive`, written at apply) it refuses before anything serves:
+
+| Ledger ahead of the build | Migrate role |
+|---|---|
+| additive rows only | passes, warns `ultimate migrate ledger ahead of build` |
+| a destructive row | `X_MIGRATION_ROLLBACK_DESTRUCTIVE`: roll forward, or `ROLLBACK_ALLOW_DESTRUCTIVE=<id>[,<id>…]` naming every such row after checking the build |
+| a row with no bit (`null`: applied before the ledger kept one) | passes, warns: the framework cannot know |
+
+The refusal is the ROLLED-BACK image's code, so it protects from the release after the one that ships it; a rollback to an older build cannot refuse. `x deploy verify --json` then proves the rolled-back build serves → [runbooks](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/06-runbooks.md#a-migration-failed-mid-deploy).
 
 ### Hashed assets across a deploy — `assets.retain`
 

@@ -50,7 +50,7 @@ export type DeclaredEntities = (
  * one of these tables was dropped" — a DROP per table, handed out as the fix, for a syntax error in
  * one file. `loadApp`'s findings are reported by the steps that own them.
  */
-const appEntities: DeclaredEntities = async (root) => {
+export const appEntities: DeclaredEntities = async (root) => {
   const app = await loadApp(root);
   if (app.findings.length > 0) return undefined;
   return describeEntities();
@@ -118,10 +118,10 @@ function repairFix(
  * never get what the app declares; `undeclared` means the database holds what nothing declares.
  * One "drift" verdict over both teaches a reader neither.
  */
-/** A table difference names the table once: `table "customers" on table "customers"` did not. */
+/** A table or view difference names it once: `table "customers" on table "customers"` did not. */
 export const schemaDifferenceCause = (difference: SchemaDifference): string =>
-  difference.part === 'table'
-    ? `table "${difference.table}" ${difference.detail}`
+  difference.part === 'table' || difference.part === 'view'
+    ? `${difference.part} "${difference.table}" ${difference.detail}`
     : `${difference.part} "${difference.name}" on table "${difference.table}" ${difference.detail}`;
 
 function findingFor(difference: SchemaDifference, repair: Repair): Finding {

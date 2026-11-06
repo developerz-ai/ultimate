@@ -12,10 +12,12 @@
 import {
   comments,
   connections,
+  dailyLikes,
   db,
   LIVE_RUN_STATUSES,
   members,
   orgs,
+  postLikeTotals,
   posts,
   runEvents,
   runs,
@@ -23,6 +25,8 @@ import {
 // Through `api`, not through the feature module: registration is what stamps an export name onto
 // its declaration, and the toolbar button IS that name. Importing the API surface is the boot.
 import { api } from '@postly/web/api';
+// The store Postly's error sink writes, read by `/admin/errors`: one store, so the list is the sink.
+import { errorGroups } from '@postly/web/app/errors/reporting';
 import type { Action } from '@ultimat3/action';
 import {
   type AdminAction,
@@ -30,6 +34,7 @@ import {
   AdminPolicyMissingError,
   adminMcp,
   defineAdmin,
+  errorGroupsPages,
   requestActor,
 } from '@ultimat3/admin';
 import { useContext } from '@ultimat3/core';
@@ -47,9 +52,15 @@ const ENTITIES: readonly AdminEntity[] = [
   connections,
   runs,
   runEvents,
+  postLikeTotals,
+  dailyLikes,
 ];
 
-/** A run and its events are written by the job alone: an operator reads them and cancels. */
+/**
+ * Written by a job alone, so an operator reads them: a run and its events (and cancels the run),
+ * the like totals `posts.like-totals` refreshes (a view, which refuses a write anyway), and the
+ * daily likes `posts.daily-likes` upserts — a hand edit there is overwritten by the next run.
+ */
 const READ_ONLY = ['list', 'detail', 'search'] as const;
 
 /**
@@ -122,6 +133,8 @@ export const admin = defineAdmin({
       related: ['run_events'],
     },
     run_events: { operations: READ_ONLY },
+    post_like_totals: { operations: READ_ONLY, listFields: ['postId', 'likes'] },
+    daily_likes: { operations: READ_ONLY },
   },
   actions: [
     toolbarAction(api.actions.publishPost, posts.$name),
@@ -129,6 +142,8 @@ export const admin = defineAdmin({
     toolbarAction(api.actions.upgradePlan, orgs.$name),
     cancelRun,
   ],
+  // `/admin/errors`: one row per error fingerprint, under the operator's own `errors:read`.
+  pages: errorGroupsPages({ store: errorGroups, navGroup: 'admin.group.ops' }),
 });
 
 /** The user's own agents drive the user's own product, with the user's own permissions. */

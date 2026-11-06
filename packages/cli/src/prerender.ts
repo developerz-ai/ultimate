@@ -37,6 +37,7 @@ import { clearPrerenderOut } from './prerender-out';
 import type { PrerenderedPage, PrerenderReport } from './prerender-report';
 import type { ServedMeasure } from './prerender-served';
 import { servedMeasure } from './prerender-served';
+import { clientVitalsStaticWarning, vitalsBuild } from './prerender-vitals';
 import { loadPwaArtifacts, writePwaIcons } from './pwa-artifacts';
 import { routeDocument, servedDocument } from './runtime-render';
 import { writeSiteAssets } from './site-assets';
@@ -146,9 +147,13 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const origin = declaredOrigin ?? DEFAULT_ORIGIN;
   // Written to stderr as well as returned: an app's `prerender.ts` prints its report as ONE JSON
   // line on stdout, and a build that parses it must not meet a warning inside it.
+  const clientErrors = (await loadAppConfig(options.root))?.clientErrors;
+  // Real-user timings as served: a site/ page that lists them is exported carrying the script.
+  const vitals = vitalsBuild(clientErrors?.vitals);
   const warnings = [
     ...originWarning(tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT, declaredOrigin),
-    ...clientErrorsStaticWarning((await loadAppConfig(options.root))?.clientErrors),
+    ...clientErrorsStaticWarning(clientErrors),
+    ...clientVitalsStaticWarning(vitals),
   ];
   for (const warning of warnings) writeErrorLine(`warning: ${warning}`);
   // The app's locales as `loadApp` read them, ONCE, off `@ultimat3/i18n`'s one reader — the same
@@ -220,6 +225,10 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   if (navigation.script !== undefined) {
     await Bun.write(join(options.out, navigation.script.url.slice(1)), navigation.script.code);
   }
+  // Before any site/ document names it, for the router's reason: weighed off disk, and charged.
+  if (vitals.siteHead !== undefined && vitals.script !== undefined) {
+    await Bun.write(join(options.out, vitals.script.url.slice(1)), vitals.script.code);
+  }
   // The registration TAG now, the worker itself after the render loop — the two halves are wanted
   // at different moments and used to be taken at the same one. Every document below has to name
   // `/x-sw-register.js`, and the worker's precache manifest is built from the content hash of
@@ -290,6 +299,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     ...(pwa === undefined
       ? {}
       : { pwaHead: (locale: string) => pwa.headFor(locale) + (swHead ?? '') }),
+    ...(vitals.siteHead === undefined ? {} : { siteHead: vitals.siteHead }),
   };
   const render = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
     routeDocument(entry, data, documentOptions);
@@ -297,7 +307,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // composed on the first route that needs it, so a build weighing none builds no page boot.
   let weighing: Promise<ServedMeasure> | undefined;
   const served = (): Promise<ServedMeasure> => {
-    weighing ??= servedMeasure(options.root, buildId, islands);
+    weighing ??= servedMeasure(options.root, buildId, islands, vitals);
     return weighing;
   };
   const document = (

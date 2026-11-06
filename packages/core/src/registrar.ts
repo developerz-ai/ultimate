@@ -85,6 +85,8 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       { factory: 'exportRows', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'importRows', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'purge', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'refreshView', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'rollup', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'webhook', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'webhookReceiver', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'mcpConfirmations', pkg: '@ultimat3/mcp', kind: 'action' },

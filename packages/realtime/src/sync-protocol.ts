@@ -101,6 +101,13 @@ export interface SubscribeFrame {
   readonly op: 'add' | 'drop';
   readonly sid: string;
   readonly target: SubscribeTarget;
+  /**
+   * The page's W3C `traceparent`, so the snapshot this subscribe causes joins the page's trace.
+   * Optional and **additive**, no `PROTOCOL_VERSION` bump: an old node never reads it, an old
+   * client never sends it. A value that is not a short string is DROPPED, never refused — a
+   * garbage header costs the subscriber its trace, not its subscription.
+   */
+  readonly traceparent?: string;
 }
 
 export interface SnapshotFrame {
@@ -201,6 +208,9 @@ export const FRAME_KINDS: readonly FrameKind[] = [
   'replay-gap',
 ];
 
+/** `00-<32>-<16>-<2>` is 55 characters; past this bound a value is dropped unread. */
+const TRACEPARENT_MAX = 128;
+
 export function encode(frame: Frame): string {
   return JSON.stringify(frame);
 }
@@ -233,14 +243,19 @@ export function decode(raw: string | Uint8Array): Frame {
         ? hello
         : { ...hello, heartbeatMs: num(parsed, 'heartbeatMs') };
     }
-    case 'subscribe':
-      return {
+    case 'subscribe': {
+      const frame = {
         type: 'subscribe',
         v: PROTOCOL_VERSION,
         op: pick(parsed, 'op', ['add', 'drop'] as const),
         sid: str(parsed, 'sid'),
         target: target(parsed['target']),
-      };
+      } as const;
+      const trace = parsed['traceparent'];
+      return typeof trace === 'string' && trace.length <= TRACEPARENT_MAX
+        ? { ...frame, traceparent: trace }
+        : frame;
+    }
     case 'snapshot': {
       const base = {
         type: 'snapshot',

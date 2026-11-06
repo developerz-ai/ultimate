@@ -21,9 +21,10 @@ import { allow, defineRoles, type RoleDef } from '@ultimat3/policy';
 /**
  * The operator's dashboard (`apps/admin`), owner-only. `admin:<verb>` gates every screen and
  * `<table>:<verb>` each resource, so the dashboard is decided by this map like every other
- * surface — no admin-only policy. A run and its events are read-only there (the job writes them);
- * cancelling one is the console's own `run:write`. `job:read`, `job:manage` and `audit:read` are
- * the jobs and audit screens every admin carries: looking, and retrying or pausing.
+ * surface — no admin-only policy. A run, its events, the like totals and the daily likes are
+ * read-only there (a job writes each); cancelling a run is the console's own `run:write`. `job:read`, `job:manage` and `audit:read` are
+ * the jobs and audit screens every admin carries: looking, and retrying or pausing. `errors:read`
+ * is `/admin/errors` — every error group the app's sink folded (`app/errors/reporting.ts`).
  */
 const OPERATOR_GRANTS = [
   'admin:read',
@@ -36,9 +37,12 @@ const OPERATOR_GRANTS = [
   ]),
   'runs:read',
   'run_events:read',
+  'post_like_totals:read',
+  'daily_likes:read',
   'job:read',
   'job:manage',
   'audit:read',
+  'errors:read',
 ];
 
 export const roles = defineRoles({

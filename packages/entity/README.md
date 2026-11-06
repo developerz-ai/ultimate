@@ -645,6 +645,18 @@ await db.orders.transition('status', id, {
 What is deliberately **not** here: who may make a move, what happens on arrival, an approval chain,
 a reason code. Those differ per app — wrap `transition()` in your own function and put them there.
 
+## A series of time buckets, and views
+
+`As of 2026-11`. `series({ on, unit, timeZone, value })` is the grouped count per bucket of time —
+`minute`/`hour`/`day`/`week`/`month`, in the IANA zone named (required), truncated as Postgres'
+`date_trunc(unit, col, zone)` truncates, by the same rules in the memory driver (`time-bucket.ts`).
+`value` is `'count'` or `{ sum: column }`; ascending; past 1000 buckets `X_ENTITY_SERIES_INVALID`.
+Optional on `Repo` (`X_ENTITY_SERIES_UNSUPPORTED` for a hand-written one).
+
+`entity(name, { view: { sql, materialized? }, columns })` is a read-only relation: `$viewQuery`,
+`$describe().view`, every write `X_ENTITY_VIEW_READ_ONLY` (`view-repo.ts`, applied through
+`appendOnlyRepo`). Full reference: [Entities and migrations](https://github.com/developerz-ai/ultimate/wiki/Entities-And-Migrations#a-count-per-day-is-a-series).
+
 ## Counting by a column
 
 `As of 2026-08`. `count()` answers one number, so a screen or a backfill that needs one per row
@@ -1114,7 +1126,9 @@ await crossTenant('nightly invite expiry runs for every org', async () => {
 The scope needs the `tenancy:cross` capability on the actor (`scopes: ['tenancy:cross']`), proven
 at the call and again at every plan built inside it, so an impersonated child context cannot
 inherit it: `X_TENANCY_CROSS_DENIED` otherwise. A blank reason is refused — an escape with no
-argument is a pragma. There is no build-time tenancy check in `x verify`, and there cannot
+argument is a pragma. `setCrossTenantObserver(fn | undefined)` installs the one process-wide
+witness told each reason once its capability is proven — `x exercise`'s tenant proof reads it to
+tell a job's declared sweep from a leak; an app has no use for it. There is no build-time tenancy check in `x verify`, and there cannot
 usefully be one: the tenant is a request-time value, so the seam every plan is built through is
 the enforcement.
 

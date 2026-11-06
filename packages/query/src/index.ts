@@ -127,6 +127,8 @@ export { queryHttpPinOf } from './http-pin';
 export { QueryHttpPathInvalidError } from './http-pin-error';
 export type { LiveCursor, LiveQuery, ResumeMode, ResumePlan, ToLiveOptions } from './live';
 export { planResume, seekOf, spendQueryLimit, toLiveQuery } from './live';
+export type { LiveReadPhase } from './live-trace';
+export { traceLiveRead } from './live-trace';
 export type { ChangeEvent, ChangeOp, Patch } from './matcher';
 export { assertMatchable, match, positionFor } from './matcher';
 /**

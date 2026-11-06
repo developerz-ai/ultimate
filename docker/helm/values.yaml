@@ -62,14 +62,27 @@ networkPolicy:
 # This is `METRICS_PORT` in the container; move one and the other follows.
 metricsPort: 9090
 
-# Prometheus-operator discovery for that port. OFF by default: a cluster without the operator has
-# no ServiceMonitor CRD at all, and a chart that always rendered one could not install there.
-# Leave it off and the roles still serve /metrics — nothing is scraping them.
+# Prometheus-operator discovery for that port (templates/servicemonitor.yaml) and the alert rules
+# on the series it scrapes (templates/alert-rules.yaml). `enabled` on each:
+#   auto   render when the cluster serves the operator's kind — so a cluster without the operator
+#          still installs. `helm template` answers from `--api-versions`, so an offline render (a
+#          GitOps pipeline) gets NEITHER unless it passes
+#          --api-versions monitoring.coreos.com/v1/ServiceMonitor and .../v1/PrometheusRule
+#   true   always render; `helm install` fails where the CRD is missing
+#   false  never render
 serviceMonitor:
-  enabled: false
+  enabled: auto
   interval: 15s
   scrapeTimeout: 10s
   labels: {}         # what your operator's `serviceMonitorSelector` matches, if it uses one
+
+# Each rule's runbook_url is runbookBase#<alert, lower-cased>. Per rule, under rules.<alert>:
+# threshold, for, severity, enabled — e.g. rules: { UltimateQueueStalled: { threshold: 600 } }.
+alerts:
+  enabled: auto
+  runbookBase: https://github.com/developerz-ai/ultimate/blob/main/docs/ops/06-runbooks.md
+  labels: {}         # what your operator's `ruleSelector` matches, if it uses one
+  rules: {}
 
 # Read by `ultimate.serviceAccountName` (_helpers.tpl), which BOTH workloads and the optional
 # ServiceAccount resource go through. `helm create`'s semantics:

@@ -10,14 +10,14 @@ Four tiers, one invalidation graph. You declare what a write touches; the framew
 |---|---|---|---|---|
 | 1 | **Request memo** | one request (AsyncLocalStorage) | ~0 | the same `query` called by three components resolves once |
 | 2 | **In-process LRU** | process lifetime, size-bounded | ~microseconds | hot rows, policy lookups, compiled templates; per-instance, so treat as a probabilistic hit |
-| 3 | **Redis** (`Bun.redis`) | cross-instance, TTL + tag sets | ~1ms | shared query results, rendered fragments, session-adjacent data |
+| 3 | **Redis** (`redisClient()`, `@ultimat3/core/redis`) | cross-instance, TTL + tag sets | ~1ms | shared query results, rendered fragments, session-adjacent data |
 | 4 | **CDN / HTTP headers** | client + edge | `Cache-Control`, `ETag`, `stale-while-revalidate` | static + ISR pages, images, assets |
 
 Read order is **1 → 2 → 3 → origin**. A tier is never consulted for a request whose `policy` has not already passed.
 
 **A cached value is JSON + `Date` + `bigint` + `Map` + `Set`, and every tier answers the same shape.** `As of 2026-10`, tiers 1–3 store one encoding (`@ultimat3/cache`'s `value-codec.ts`) and decode a fresh copy per hit: a `Date` is a `Date` whether the memo, the LRU or Redis answered, and mutating a hit never reaches the next reader. A class instance comes back as a plain object; a cycle is `X_CACHE_VALUE_UNENCODABLE` at the write.
 
-**A cache key is framework-generated, never hand-built.** `As of 2026-08` it is the query name, a fingerprint of the parsed input, and the read's sorted tag keys — `cacheKeyFor` in `@ultimat3/query`. The actor is **not** one of its parts, so what separates one tenant's entry from another's is the **input**: `feed({ orgId })` is one key per org. Policy still runs on every read before a tier is consulted, but it decides whether *this* caller may ask — not which rows the entry holds. So a read whose answer differs by actor for the same input must not declare `cache:`; tier 1 is keyed by `Ctx` identity and already separates it.
+**A cache key is framework-generated, never hand-built.** `As of 2026-11` it is the query name, the read's **authority**, a fingerprint of the parsed input and the read's sorted tag keys — `cacheKeyFor` in `@ultimat3/query`. The authority is `cache: { scope }`: `actor` by default (one key per caller — the narrowest, always correct), `tenant` (one per org; an org-less actor narrows back to itself) or `global`. Widening is a written statement that every member of the org, or everyone, sees the same rows. Policy still runs on every read before a tier is consulted; tier 1 is keyed by `Ctx` identity.
 
 **A null holds for its own lease.** `query({ single: true, cache: { ttlMs, negativeTtlMs } })`: a `single` read that matched no row is stored as `null` and kept `negativeTtlMs`, so a lookup that missed 40 ms before its row landed says "does not exist" for that long and not for the whole `ttlMs`. Only `single: true` answers `null` — an empty list is a list and keeps `ttlMs`. Non-positive or non-finite is `X_QUERY_CACHE_TTL_INVALID` at `query()`, the tiers' own rule. `As of 2026-11`
 
@@ -112,6 +112,17 @@ reader that joined before the bust keeps the load it joined. And a load whose le
 signal loads again under its own context and the rest join that. A load that fails with its leader
 still live fails its joiners too.
 
+**Redis down is a slow miss, never a hang** `As of 2026-11`. A paused server accepts a command and never answers it; unbounded, that hung a read 45 s and a bust 20 s on an action's commit path.
+
+| Redis is | A read | A bust (`invalidateTags`) |
+|---|---|---|
+| up | answers in milliseconds | answers |
+| paused | one command misses `redisTier({ commandTimeoutMs })` (default 150 ms) → a miss, the source answers; the value path parks 5 s, every read there an immediate miss with nothing sent | its own 1,000 ms deadline, never parked — a skipped bust is stale rows until TTL; past it, `report.errors` |
+| stopped | refused at once → a miss | refused at once → `report.errors`; the same tags again once it answers |
+| restarted | every pod reconnects on its own, no restart | answers |
+
+A missed deadline or a park is `X_CACHE_DRIVER_UNAVAILABLE` in `recentTierFailures()`; a stopped server's refusal is recorded with Bun's `ERR_REDIS_CONNECTION_CLOSED` message and no `code`. While the store is gone each pod still collapses its own concurrent misses to one `load()`; across pods, Postgres takes one load per pod per key — the rung's known cost. The jobs queue on the same client refuses an enqueue with `X_DRIVER_UNAVAILABLE` instead of waiting ([Jobs](Jobs-And-Workflows)).
+
 The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
 
 ## Failure modes removed
@@ -123,7 +134,7 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Stale page after publish | forgot one `revalidate` call | tags are declared on the route, resolved from the graph |
 | Purging too much | uncertainty → `flushAll` | narrow `tag.post.id(x)` is the ergonomic default |
 | Tier drift | Redis purged, CDN not | one fanout, all tiers |
-| Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from the query name, its parsed input and its tags — the tenant reaches the key through the input, which is why a read scoped by actor rather than by input must not declare `cache:` |
+| Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from the query name, the read's authority (`cache: { scope }`, default `actor`), its parsed input and its tags |
 | Stale forever | a query whose tables no tag covers | the tag rule — **not yet a gate**: `X_CACHE_UNTAGGED_QUERY` is reserved `As of 2026-08` and nothing raises it, so a cached query no tag covers is cached and never invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) |
 | Silent typo | `invalidates: [tag.pots]` | a compile error against the generated registry; at runtime `X_CACHE_TAG_UNKNOWN`, which a write logs as `action.invalidate.failed` rather than failing the commit it followed |
 
@@ -227,7 +238,7 @@ Today: `x dev` then the `/_x` cache panel, and `invalidateTags([...])` from `@ul
 | `X_CACHE_UNTAGGED_QUERY` | **reserved, nothing raises it** `As of 2026-08` — a query's tables are covered by no tag, so it could never be invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) | declare the entity tag, then `x manifest` |
 | `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `x manifest` |
 | `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `raise cache.<tier>.maxBytes in app.config.ts, or cache a projection instead of the row` |
-| `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — no Redis binding, or a purge driver built without its token | the error carries the exact config or command to fix |
+| `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — a Redis command missed its deadline, or the tier is parked after one; or a purge driver built without its token | the error carries the exact config or command to fix |
 | `X_CACHE_PURGE_FAILED` | `<driver> refused the purge (HTTP <status>)` — a wrong token, a zone without tag purge, a throttle, or a key a CDN would split | `meta.retryable === true` → the identical purge can land again; otherwise set the env key the `fix` names |
 
 Verbatim shapes: [`packages/cache/src/errors.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cache/src/errors.ts). Full index: [Error codes](Error-Codes).

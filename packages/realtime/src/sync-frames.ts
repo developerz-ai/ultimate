@@ -191,6 +191,7 @@ export function frameRouter(options: FrameRouterOptions): FrameRouter {
           input: frame.target.input,
           sid: frame.sid,
           cursor: frame.target.cursor,
+          ...(frame.traceparent === undefined ? {} : { traceparent: frame.traceparent }),
         });
         // `subscribe` has already seated the subscription and cleared its desync mark, so a reply
         // the socket refuses leaves the server believing a client that holds no rows is in sync:

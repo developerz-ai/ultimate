@@ -15,16 +15,12 @@ import {
   type SqlFragment,
   withStatementAttribution,
 } from '@ultimat3/db';
-import { aggregateColumnOf, aggregateMinor, assertOneUnit } from './aggregate';
-import { decodeAggregate } from './aggregate-decode';
 import { appendOnlyRepo } from './append-only';
 import { conflictKeys, insertColumns, statementColumns, upsertPlan } from './bulk-write';
 import { writeChunks } from './bulk-write-send';
 import { entityNow } from './clock';
 import { coalesceFindById } from './coalesce';
-import { moneyColumns } from './column';
 import { narrowRow } from './columns';
-import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
@@ -32,18 +28,10 @@ import { notFound, repoClientPinned } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { judgedWrite } from './judged-write';
+import { postgresAggregates } from './pg-aggregates';
 import { postgresLocks } from './pg-lock';
 import { bindValues, decodeRow, type PhysicalRow, physicalName, sortPrecision } from './pg-row';
 import { countStatement, type ReadShape, selectStatement } from './pg-sql';
-import {
-  type AggregateRow,
-  aggregateStatement,
-  countByStatement,
-  currenciesStatement,
-  estimateStatement,
-  type GroupRow,
-  type MoneyUnitRow,
-} from './pg-sql-aggregate';
 import { postgresTransactor } from './pg-transactor';
 import { type ConflictTarget, deleteStatement, updateStatement } from './pg-write-sql';
 import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
@@ -397,90 +385,7 @@ export const postgresRepo = <Row>(
       return Number(row?.count ?? 0);
     },
 
-    async countBy(column, args = {}) {
-      const op = 'countBy';
-      const grouped = groupColumnOf(entity, column, op);
-      const plan = readPlan(entity, args, op);
-      // One group past the bound, for the same reason a page reads one row past its limit: the
-      // presence of that group is what says the answer was never going to fit, and `countsFrom`
-      // refuses it rather than hand back a breakdown missing its tail.
-      const rows = await attributed(op, () =>
-        client().query<GroupRow>(
-          countByStatement(entity, plan, shapeOf(args), column, MAX_GROUPS + 1),
-        ),
-      );
-      return countsFrom(
-        entity,
-        column,
-        op,
-        rows.map((row) => [groupValue(grouped, row.group_value), Number(row.group_count)] as const),
-      );
-    },
-
-    async aggregate(fn, column, args = {}) {
-      const op = fn;
-      const declared = aggregateColumnOf(entity, fn, column);
-      const plan = readPlan(entity, args, op);
-      const shape = shapeOf(args);
-      const money = declared.$meta.kind === 'money' ? moneyColumns(column, declared.$meta) : null;
-      // Money is judged BEFORE the aggregate is asked for, in its own statement: `sum(minor)` over
-      // two currencies is a number in neither, and the refusal has to name them.
-      const unit =
-        money === null
-          ? undefined
-          : assertOneUnit(
-              entity,
-              fn,
-              column,
-              (
-                await attributed(op, () =>
-                  client().query<MoneyUnitRow>(
-                    currenciesStatement(entity, plan, shape, money.currency, money.scale),
-                  ),
-                )
-              ).map((row) => ({
-                currency: String(row.group_value ?? '').trim(),
-                scale:
-                  row.group_scale === null || row.group_scale === undefined
-                    ? null
-                    : Number(row.group_scale),
-              })),
-            );
-      const row = await attributed(op, () =>
-        client().one<AggregateRow>(
-          aggregateStatement(entity, plan, shape, fn, money === null ? column : `${column}.minor`),
-        ),
-      );
-      const text = row?.agg_value;
-      if (text === null || text === undefined) return null;
-      if (money === null) return decodeAggregate(fn, declared.$meta.kind, String(text));
-      if (unit === undefined) return null;
-      return {
-        minor: aggregateMinor(entity, fn, column, String(text)),
-        currency: unit.currency,
-        ...(unit.scale === null ? {} : { scale: unit.scale }),
-      };
-    },
-
-    /**
-     * `reltuples`, the planner's own estimate — one row out of `pg_class`, constant time. `count(*)`
-     * walks every visible row, so past a few million it trips a web role's `statement_timeout`.
-     */
-    async approximateCount(args = {}) {
-      const op = 'approximateCount';
-      // Built and therefore GUARDED: tenancy still applies, and a filtered chain is refused here
-      // rather than answered with the whole table's estimate.
-      readPlan(entity, args, op);
-      const row = await attributed(op, () =>
-        client().one<{ estimate: unknown }>(estimateStatement(entity.$table)),
-      );
-      const estimate = Number(row?.estimate ?? -1);
-      // `-1` is what Postgres 14+ stores for a table nobody has analysed. That is an absence of an
-      // estimate, not an estimate of zero, and answering `0` would read exactly like an empty
-      // table to every caller.
-      return Number.isFinite(estimate) && estimate >= 0 ? estimate : null;
-    },
-
+    ...postgresAggregates(entity, client),
     ...postgresLocks(entity, config.client, client),
   };
   // The one sealing seam, shared with `memoryRepo()`: sealed on the way in, opened on the way out.

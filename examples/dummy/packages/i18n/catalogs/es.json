@@ -381,9 +381,25 @@
         "failed": "Fallidas"
       }
     },
+    "post_like_totals": {
+      "title": "Totales de me gusta",
+      "field": {
+        "orgId": "ID de organización",
+        "postId": "Publicación",
+        "likes": "Me gusta"
+      }
+    },
+    "daily_likes": {
+      "title": "Me gusta por día",
+      "field": {
+        "day": "Día (UTC)",
+        "likes": "Me gusta"
+      }
+    },
     "group": {
       "data": "Datos",
-      "jobs": "Trabajos"
+      "jobs": "Trabajos",
+      "ops": "Operaciones"
     },
     "dashboard": {
       "title": "Panel"
@@ -540,6 +556,38 @@
         "retry-from-step": {
           "step": "Paso"
         }
+      }
+    },
+    "errors": {
+      "title": "Errores",
+      "detail": {
+        "title": "Grupo de errores"
+      },
+      "empty": "Aún no hay errores agrupados.",
+      "missing": "Este grupo de errores ya no existe.",
+      "back": "Volver a errores",
+      "count_one": "{count} vez",
+      "count_other": "{count} veces",
+      "filter": {
+        "status": "Filtrar por estado"
+      },
+      "status": {
+        "open": "Abierto",
+        "resolved": "Resuelto",
+        "ignored": "Ignorado"
+      },
+      "field": {
+        "code": "Código",
+        "count": "Ocurrencias",
+        "environment": "Entorno",
+        "first": "Visto por primera vez",
+        "last": "Visto por última vez",
+        "operation": "Operación",
+        "release": "Versión",
+        "request": "Solicitud",
+        "source": "Origen",
+        "status": "Estado",
+        "trace": "Traza"
       }
     }
   },

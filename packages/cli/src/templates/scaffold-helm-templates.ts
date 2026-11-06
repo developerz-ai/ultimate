@@ -3,6 +3,7 @@
 // Split from scaffold-helm.ts, which holds the chart's INPUTS (Chart.yaml, values.yaml).
 
 import type { GeneratedFile, NameSet } from './naming';
+import { helmMonitoringFiles } from './scaffold-helm-alerts';
 import { helmFenceFiles } from './scaffold-helm-fences';
 
 const helpers = (
@@ -469,5 +470,6 @@ export function helmTemplateFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'docker/helm/templates/ingress.yaml', contents: ingress(app) },
     { path: 'docker/helm/templates/hpa.yaml', contents: hpa(app) },
     ...helmFenceFiles(app),
+    ...helmMonitoringFiles(app),
   ];
 }

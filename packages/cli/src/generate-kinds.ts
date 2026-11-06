@@ -28,6 +28,7 @@ export const GENERATORS = [
   'admin:page',
   'guard',
   'sign-in',
+  'chart-alerts',
 ] as const;
 
 export type Generator = (typeof GENERATORS)[number];
@@ -283,4 +284,6 @@ const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   guard: 'migration-safety',
   // Sign-in takes no name: its "example" is the flag that picks a shape, so the line still runs.
   'sign-in': '--password',
+  // No name either: an app has one chart. `--print` runs with or without one.
+  'chart-alerts': '--print',
 };

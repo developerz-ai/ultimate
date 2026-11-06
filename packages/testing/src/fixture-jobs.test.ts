@@ -15,6 +15,7 @@ import {
   publishEvent,
   resetJobDriver,
   t,
+  UNWINDING_STEP,
 } from '@ultimat3/jobs';
 import { advanceClock } from './determinism';
 import { type RunJobs, testJobs } from './fixture-jobs';
@@ -320,3 +321,46 @@ describe(testName('unit', 'runJobs: a running body hears its cancel'), () => {
     expect(await jobs.inFlight()).toBe(0);
   });
 });
+
+describe(
+  testName('unit', 'runJobs: a compensating job killed on its final attempt unwinds'),
+  () => {
+    // A worker that dies holding the FINAL attempt leaves a lapsed lease. The row carries the unwind
+    // margin (`enqueuedAttempts`), so the claim re-offers it as an unwind attempt; filed with the
+    // policy's bare count, the claim buried it and nothing ever compensated.
+    test('the lapsed final attempt is re-offered and unwinds, under the fixture', async () => {
+      minted += 1;
+      const saga = job<Input>({
+        name: `fixture-jobs-${String(minted)}`,
+        input: t.object({ id: t.string, orgId: t.string }),
+        tenant: 'none',
+        idempotencyKey: (input) => `k:${input.id}`,
+        retry: { attempts: 1, jitter: false },
+        compensates: true,
+        run: async ({ step }) => {
+          await step.run('charge', () => 'ch-1');
+        },
+      });
+      const jobs = await worker();
+      const { id } = await jobs.enqueue(saga, { id: 'a', orgId: ORG });
+      const driver = jobDriver() ?? expect.unreachable('runJobs installed no driver');
+      // The final attempt, claimed by a worker that dies before it settles.
+      const lease = 30_000;
+      const claimed = await driver.claim({
+        queues: [saga.queue],
+        limit: 1,
+        visibilityTimeoutMs: lease,
+        workerId: 'dead-worker',
+      });
+      expect(claimed.map((one) => [one.id, one.attempt])).toEqual([[id, 1]]);
+      advanceClock(lease + 1);
+      try {
+        const trace = await jobs.drain();
+        expect(trace.executions.map((run) => run.jobId)).toEqual([id]);
+        expect(Object.keys(trace.steps)).toContain(UNWINDING_STEP);
+      } finally {
+        advanceClock(-(lease + 1));
+      }
+    });
+  },
+);

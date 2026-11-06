@@ -12,7 +12,7 @@ import {
   AdminRepoUnboundError,
 } from './errors';
 import type { AdminField } from './fields';
-import { ADMIN_OPERATIONS, type AdminOperation } from './permissions';
+import type { AdminOperation } from './permissions';
 import type { AdminAction, AdminEntity, AdminRepo, AdminRow, AdminSort } from './registry';
 import { type AdminFieldOverride, deriveField, secretField } from './resource-fields';
 import {
@@ -31,6 +31,7 @@ import {
   rowScopeOf,
   scopesOf,
 } from './resource-list';
+import { operationsFor } from './resource-operations';
 
 /** Six columns is what fits a laptop viewport without horizontal scroll. */
 const MAX_LIST_FIELDS = 6;
@@ -348,7 +349,7 @@ export function adminResource<Row extends AdminRow = AdminRow>(
     // `fetched.length > NaN` is false, the page is never trimmed, `hasMore` is false and the repo
     // is asked for `limit: NaN`. At least 1 — a page with no rows on it is not a page.
     pageSize: finiteCount('adminResource', 'pageSize', opts.pageSize ?? DEFAULT_PAGE_SIZE, 1),
-    operations: opts.operations ?? ADMIN_OPERATIONS,
+    operations: operationsFor(entity, opts.operations),
     actions,
     ...(opts.repo === undefined ? {} : { repo: opts.repo }),
     field(name: string): AdminField {

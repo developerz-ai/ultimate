@@ -1,7 +1,7 @@
 // The `drift` step's fourth rail: is the committed schema dump what the migrations produce, does
 // it hold what their snapshots record, and does a database loaded from it come back the same? The other three rails read files and open
 // nothing; this one replays the migrations on a scratch embedded database, because "what the
-// migrations produce" is a fact only a database can state.
+// migrations produce" is a fact only a database can state — and so is what a view outputs.
 
 // why: Bun has no directory probe — `Bun.file().exists()` answers about a file.
 import { existsSync } from 'node:fs';
@@ -24,7 +24,9 @@ import { DB_PACKAGE } from './drift';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 import type { Finding } from './output';
 import { findingFrom } from './output';
+import { appEntities, type DeclaredEntities } from './schema-drift';
 import { quoteArg } from './shell-quote';
+import { viewColumnFindings } from './view-drift';
 
 /** Injected so this module's rules are testable without booting a database per case. */
 export type SchemaReplay = (migrations: readonly Migration[]) => Promise<ReplayedSchema>;
@@ -122,6 +124,7 @@ export async function checkSchemaDump(
   root: string,
   env: Readonly<Record<string, string | undefined>> = Bun.env,
   replay: SchemaReplay = replayFor(root, env, true),
+  declared: DeclaredEntities = appEntities,
 ): Promise<readonly Finding[]> {
   if (!existsSync(join(root, DB_PACKAGE))) return [];
   const migrations = await readMigrations(root);
@@ -134,8 +137,12 @@ export async function checkSchemaDump(
   } catch (error) {
     return [...columns, replayFailure(error)];
   }
+  // Only a replay that created a view loads the app: what a view outputs is the one column list
+  // no snapshot records, and an app with no view owes this rail nothing.
+  const entities = replayed.catalog.views.length === 0 ? undefined : await declared(root);
   return [
     ...columns,
     ...[...compareSchemaDump(committed, replayed.files), ...replayed.reload].map(findingFor),
+    ...(entities === undefined ? [] : viewColumnFindings(entities, replayed.catalog)),
   ];
 }

@@ -271,6 +271,7 @@ export function intermediateSnapshot(
   deferredKeys: readonly DeferredKey[] = [],
 ): SchemaDescription {
   return {
+    ...final,
     tables: final.tables.map((table) => {
       const mine = deferred.filter((each) => each.table === table.name);
       const keys = deferredKeys.filter((each) => each.table === table.name);

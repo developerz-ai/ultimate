@@ -72,6 +72,12 @@ export interface LiveClientOptions {
   /** Where a failure nobody awaits is reported. Defaults to `console.error`. */
   readonly onError?: (error: unknown) => void;
   /**
+   * The W3C `traceparent` a live subscribe carries, asked at each `subscribe` frame, so the read
+   * it causes joins the caller's trace. Absent, or answering `undefined`, sends none: a browser
+   * has no ambient trace, and the node then starts the read's own.
+   */
+  readonly traceparent?: () => string | undefined;
+  /**
    * A channel's catch-up read, re-run on `replay-gap` or a new epoch: the named query, answering its
    * records UNADOPTED for the channel book to adopt with the frames held behind the read.
    * `page-socket.ts` supplies the real one (`channel-catch-up.ts`).

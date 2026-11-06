@@ -186,8 +186,10 @@ test('a queued send stores the transformed bytes, and a job retry reuses them wi
   expect(pixel(calls[2] as MailTransformMeta)).not.toBe(pixel(calls[0] as MailTransformMeta));
   calls.length = 2;
   // Two attempts of the job — a retry after a timeout — deliver the identical message.
-  await sendMailJob.run({ input: queued } as JobRunArgs<MailMessage>);
-  await sendMailJob.run({ input: queued } as JobRunArgs<MailMessage>);
+  // Two separate runs, each with a step that runs its body: the hook is not re-run either way.
+  const step = { run: (_name: string, fn: () => Promise<unknown>) => fn() };
+  await sendMailJob.run({ input: queued, step } as unknown as JobRunArgs<MailMessage>);
+  await sendMailJob.run({ input: queued, step } as unknown as JobRunArgs<MailMessage>);
   expect(memory.sent).toHaveLength(2);
   expect(memory.sent[0]?.message).toEqual(memory.sent[1]?.message as MailMessage);
   expect(calls).toHaveLength(2);

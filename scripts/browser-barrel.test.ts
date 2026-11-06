@@ -22,9 +22,10 @@
 // module EVALUATES and the call would throw. The claim is only that nothing constructs an
 // AsyncLocalStorage while the module is being evaluated — which is the defect that shipped.
 //
-// AND NOT THAT EVERY package naming the seam is here: a package declaring a `bin` is a PROGRAM, no
-// bundler has it as an entry, and it is excluded by `lib/browser-barrel-set.ts` — which states the
-// reason and is where the set is derived. `scripts/async-context-guard.ts` is what still covers a
+// AND NOT THAT EVERY package naming the seam is here: a package declaring a `bin` is a PROGRAM, and
+// one whose barrel imports a Bun builtin (`@ultimat3/testing`, `bun:test`) has no browser build;
+// no bundler has either as an entry, and both are excluded by `lib/browser-barrel-set.ts` — which
+// states the reason and is where the set is derived. `scripts/async-context-guard.ts` is what still covers a
 // program, statically and with no bundle at all.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
@@ -36,7 +37,7 @@ import { join } from 'node:path';
 import {
   browserBarrels,
   CLIENT_BARRELS,
-  isProgramPackage,
+  isExcludedPackage,
   seamPackages,
 } from './lib/browser-barrel-set';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
@@ -60,9 +61,9 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 /**
  * DERIVED, never typed out, and it lives in `lib/browser-barrel-set.ts` because `describe.each`
  * needs the list at COLLECTION time and the derivation has its own tests. Two halves: what a
- * package's own source names, minus what runs as a program — a `bin` has no bundler, and
- * `@ultimat3/cli` reaching `bun:test` through the declared `cli → testing` edge is a build that
- * cannot succeed and is not this file's finding when it does not.
+ * package's own source names, minus what no bundler has as an entry — a `bin`, or a barrel importing
+ * a Bun builtin. `@ultimat3/testing` re-exporting `bun:test` (and `@ultimat3/cli` reaching it through
+ * the declared `cli → testing` edge) is a build that cannot succeed and is not this file's finding.
  */
 const BARRELS = browserBarrels(repoRoot());
 
@@ -360,18 +361,18 @@ describe.each([...BARRELS])('a browser bundle of @ultimat3/%s', (name) => {
 
 /**
  * The exclusion's non-vacuity, and the one thing the derivation's own tests cannot ask: a program
- * that names the seam is left out of the set above, and this proves the build it was left out of
- * genuinely cannot succeed — so the exclusion is hiding no green bundle. It reds the day a program
- * becomes browser-bundlable, which is the day the exclusion is doing more than it has to.
+ * or Bun-only library that names the seam is left out of the set above, and this proves the build
+ * it was left out of genuinely cannot succeed — so the exclusion is hiding no green bundle. It reds
+ * the day one becomes browser-bundlable, which is the day the exclusion is doing more than it has to.
  *
- * An empty set here passes trivially, and that is honest: no program names the seam, so the
+ * An empty set here passes trivially, and that is honest: nothing excluded names the seam, so the
  * exclusion is inert and there is nothing to be non-vacuous about.
  */
 test(
-  'a program left out of the set could not have been bundled anyway',
+  'a package left out of the set could not have been bundled anyway',
   async () => {
     for (const name of seamPackages(repoRoot()).filter((dir) =>
-      isProgramPackage(repoRoot(), dir),
+      isExcludedPackage(repoRoot(), dir),
     )) {
       const built = await browserBuild(barrelPath(name));
       expect(built.ok ? `@ultimat3/${name} bundled for the browser` : '').toBe('');

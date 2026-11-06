@@ -35,6 +35,7 @@ export function diffEntities(
     changes.push(...diffColumns(path, entity, next));
     changes.push(...diffInvariants(`${path}.invariants`, entity.invariants, next.invariants));
     changes.push(...diffShared(`${path}.shared`, entity.shared, next.shared));
+    changes.push(...diffView(`${path}.view`, entity.view, next.view));
   }
   for (const entity of after) {
     if (!beforeByName.has(entity.name)) {
@@ -92,6 +93,32 @@ function diffShared(
         ? 'shared reason dropped'
         : `shared reason ${before} -> ${after}`;
   return [{ kind: 'additive', path, detail }];
+}
+
+/**
+ * A table becoming a view refuses every write that worked a moment ago; a view becoming a table
+ * only widens. Stored or not moves no row any reader sees, only when they are recomputed.
+ */
+function diffView(
+  path: string,
+  before: EntityFact['view'],
+  after: EntityFact['view'],
+): readonly ManifestChange[] {
+  if (before === undefined && after === undefined) return [];
+  if (before === undefined) {
+    return [{ kind: 'breaking', path, detail: 'became a view; every write is refused' }];
+  }
+  if (after === undefined) {
+    return [{ kind: 'additive', path, detail: 'became a table; writes are accepted' }];
+  }
+  if (before.materialized === after.materialized) return [];
+  return [
+    {
+      kind: 'internal',
+      path,
+      detail: after.materialized ? 'view became materialized' : 'view is no longer materialized',
+    },
+  ];
 }
 
 function diffColumns(

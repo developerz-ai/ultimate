@@ -1,11 +1,14 @@
-// Single responsibility: a gate full of pins, told apart. Every slot a pin whose statement is past the
-// bound is a dead path, and the pool is replaced on the acquire refusal; an idle pin, a pin still in
-// time, or a busy pool of healthy work stays untouched. Also: a pin's two waits share one budget.
+// Single responsibility: a pin's statements under the unanswered-statement bound. One past the bound
+// in force on that connection retires the pool and leaves the pin dead; a bound the pin raised is
+// honoured until its transaction ends; idle pins are a busy pool. Also: a pin's waits share one budget.
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Scheduler } from '@ultimat3/core';
 import { postgresClient } from './client';
 import type { DbError } from './errors';
+import { recordingClient } from './fake';
+import { setLocal } from './local-settings';
+import { boundSetBy, noteAnswered, pinBound, pinDeadlineMs } from './pool-pins';
 import { SWEEP_INTERVAL_MS, UNANSWERED_GRACE_MS } from './pool-sweep';
 import { sql } from './sql';
 
@@ -81,27 +84,89 @@ const client = (time: ReturnType<typeof manualTime>) =>
     schedule: time.schedule,
   });
 
-describe('a gate full of pins', () => {
-  test('every slot a pin hung past the bound: the refusal replaces the pool, and the work runs', async () => {
-    // Reproduced: two pins hung on `begin`, 40 plain statements, all X_DB_POOL_EXHAUSTED for as
-    // long as the probe ran, one pool built, none closed: the kernel's 15 minutes on `worker`.
+describe('the bound a pin is judged by', () => {
+  test("setLocal's own statement is the one read, so the two cannot drift apart", async () => {
+    const recorder = recordingClient();
+    await setLocal(recorder, { statement_timeout: '60000', 'x.tenant': 'org_1' });
+    const [timeout, tenant] = recorder.statements;
+    expect(timeout && boundSetBy(timeout)).toBe(60_000);
+    expect(tenant && boundSetBy(tenant)).toBeUndefined();
+  });
+
+  test.each([
+    ['set local statement_timeout = 2500', 2_500],
+    ["SET statement_timeout TO '2s'", 2_000],
+    ['set local statement_timeout = 0;', 0],
+    ["set local statement_timeout = '1min'", 60_000],
+    ['set local lock_timeout = 2500', undefined],
+    ["set local statement_timeout = 'soon'", undefined],
+    ["select set_config('statement_timeout', '20000', true)", 20_000],
+    ["select set_config('lock_timeout', '20000', true)", undefined],
+  ])('%s reads as %p', (text, ms) => {
+    expect(boundSetBy({ text, values: [] })).toBe(ms);
+  });
+
+  test('a transaction end puts the role bound back; a savepoint rollback does not', () => {
+    const pin = pinBound(1_000);
+    noteAnswered(pin, { text: 'set local statement_timeout = 9000', values: [] }, 1_000);
+    noteAnswered(pin, { text: 'ROLLBACK TO SAVEPOINT x_sp_1', values: [] }, 1_000);
+    expect(pin.boundMs).toBe(9_000);
+    noteAnswered(pin, { text: 'COMMIT', values: [] }, 1_000);
+    expect(pin.boundMs).toBe(1_000);
+    expect(pinDeadlineMs(pin, 5_000)).toBe(6_000);
+    expect(pinDeadlineMs(pinBound(0), 5_000)).toBe(0);
+  });
+});
+
+describe('a statement on a pin nobody answers', () => {
+  test('rejects at the bound, retires the pool, and the pin sends nothing more', async () => {
+    // Reproduced by `x drill pg-blackhole`: a write inside a transaction ran ~30 s, answered by the
+    // HTTP deadline's X_TIMEOUT, because a pin was only judged once pins filled the pool.
     const pools = installPools();
     const time = manualTime();
     const db = client(time);
-    const pins = [await db.reserve(), await db.reserve()];
-    for (const pin of pins) void pin.query(sql`begin`).catch(() => undefined);
+    const pin = await db.reserve();
+    const hung = pin.execute(sql`insert into t values (1)`).catch((error: unknown) => error);
     time.until(PAST_BOUND);
 
-    const next = db.query(sql`select 'after'`);
-    time.step();
-    await settled();
-
-    expect(pools).toHaveLength(2);
+    const caught = (await hung) as DbError;
+    expect(caught.code).toBe('X_DB_UNAVAILABLE');
+    expect(caught.cause).toContain('insert into t');
     expect(pools[0]?.closes).toEqual([{ timeout: 1 }]);
-    expect(pools[1]?.sent).toEqual(["select 'after'"]);
+
+    const rollback = (await pin.execute(sql`rollback`).catch((error: unknown) => error)) as DbError;
+    expect(rollback.code).toBe('X_DB_UNAVAILABLE');
+    expect(pools[0]?.sent).toEqual(['insert into t values (1)']);
+    pin.release();
+
+    const next = db.query(sql`select 'after'`);
     pools[1]?.answers.shift()?.([]);
     expect(await next).toEqual([]);
-    for (const pin of pins) pin.release();
+  });
+
+  test('a bound the pin raised is the one it is judged by, until its transaction ends', async () => {
+    const pools = installPools();
+    const time = manualTime();
+    const db = client(time);
+    const pin = await db.reserve();
+    const raising = pin.query(sql`select set_config(${'statement_timeout'}, ${'60000'}, true)`);
+    pools[0]?.answers.shift()?.([]);
+    await raising;
+
+    const slow = pin.query(sql`select 'report'`).catch((error: unknown) => error);
+    time.until(PAST_BOUND + 3 * SWEEP_INTERVAL_MS);
+    await settled();
+    expect(pools[0]?.closes).toEqual([]);
+    pools[0]?.answers.shift()?.([{ ok: 1 }]);
+    expect(await slow).toEqual([{ ok: 1 }]);
+
+    const ending = pin.query(sql`commit`);
+    pools[0]?.answers.shift()?.([]);
+    await ending;
+    const after = pin.query(sql`select 'next'`).catch((error: unknown) => error);
+    time.until(2 * PAST_BOUND + 4 * SWEEP_INTERVAL_MS);
+    expect(((await after) as DbError).code).toBe('X_DB_UNAVAILABLE');
+    pin.release();
   });
 
   test('idle pins filling the gate are a busy pool, not a dead one', async () => {
@@ -124,106 +189,57 @@ describe('a gate full of pins', () => {
     expect(pools).toHaveLength(1);
     expect(pools[0]?.closes).toEqual([]);
   });
+});
 
-  test('a pin still inside the bound keeps the pool, even beside one past it', async () => {
-    const pools = installPools();
-    const time = manualTime();
-    const db = client(time);
-    const old = await db.reserve();
-    void old.query(sql`begin`).catch(() => undefined);
-    time.until(PAST_BOUND - 2 * SWEEP_INTERVAL_MS);
-    const young = await db.reserve();
-    void young.query(sql`begin`).catch(() => undefined);
-    time.until(PAST_BOUND);
-
-    const refused = db.query(sql`select 'next'`).catch((error: unknown) => error);
-    time.step();
-    expect(((await refused) as DbError).code).toBe('X_DB_POOL_EXHAUSTED');
-    expect(pools[0]?.closes).toEqual([]);
-  });
-
-  test('a slot held by a plain statement is not a pin: the sweep owns that one', async () => {
-    const pools = installPools();
+describe('reserve() on the pool that replaced a wedged one', () => {
+  test('gets the whole budget there', async () => {
+    let built = 0;
+    host.Bun.SQL = class {
+      readonly first = built++ === 0;
+      unsafe(): Promise<unknown> {
+        return new Promise(() => undefined);
+      }
+      reserve(): Promise<unknown> {
+        const pin = { unsafe: this.unsafe.bind(this), release: () => undefined };
+        // The new pool's queue is what the test reads the budget off.
+        return this.first ? Promise.resolve(pin) : new Promise(() => undefined);
+      }
+      close(): Promise<void> {
+        return Promise.resolve();
+      }
+    };
     const time = manualTime();
     const db = postgresClient({
       url: TEST_URL,
       role: 'worker',
-      profile: { max: 2, statementTimeoutMs: 1_000, acquireTimeoutMs: 20 },
+      profile: { max: 2, statementTimeoutMs: 1_000, acquireTimeoutMs: 100 },
       schedule: time.schedule,
     });
-    const pin = await db.reserve();
-    void pin.query(sql`begin`).catch(() => undefined);
-    time.until(PAST_BOUND - 3 * SWEEP_INTERVAL_MS);
-    void db.query(sql`select 'busy'`).catch(() => undefined);
+    const pins = [await db.reserve(), await db.reserve()];
+    for (const pin of pins) void pin.query(sql`begin`).catch(() => undefined);
+    time.until(PAST_BOUND);
+    await settled();
 
-    const refused = db.query(sql`select 'next'`).catch((error: unknown) => error);
-    time.step();
-    expect(((await refused) as DbError).code).toBe('X_DB_POOL_EXHAUSTED');
-    expect(pools[0]?.closes).toEqual([]);
-  });
-});
-
-describe('reserve() on the pool that replaced a wedged one', () => {
-  test('starts a fresh budget there, rather than the 1 ms the dead pool left', async () => {
-    // Reproduced: every slot a hung pin, reserve() waits its whole budget, the pool is replaced,
-    // and the new, healthy pool was asked for a pin with 1 ms left: X_DB_POOL_EXHAUSTED.
-    let now = 0;
-    const clock = spyOn(performance, 'now').mockImplementation(() => now);
+    const delays: number[] = [];
+    const realSetTimeout = globalThis.setTimeout;
+    const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((
+      fn: () => void,
+      ms?: number,
+    ) => {
+      delays.push(ms ?? 0);
+      return realSetTimeout(fn, ms);
+    }) as typeof setTimeout);
     try {
-      let built = 0;
-      const answers: (() => void)[] = [];
-      host.Bun.SQL = class {
-        readonly first = built++ === 0;
-        unsafe(): Promise<unknown> {
-          return new Promise(() => undefined);
-        }
-        reserve(): Promise<unknown> {
-          const pin = { unsafe: this.unsafe.bind(this), release: () => undefined };
-          if (this.first) return Promise.resolve(pin);
-          // The new pool answers on the test's word, after a real wait inside the budget.
-          return new Promise((resolve) => answers.push(() => resolve(pin)));
-        }
-        close(): Promise<void> {
-          return Promise.resolve();
-        }
-      };
-      const time = manualTime();
-      const db = postgresClient({
-        url: TEST_URL,
-        role: 'worker',
-        profile: { max: 2, statementTimeoutMs: 1_000, acquireTimeoutMs: 100 },
-        schedule: time.schedule,
-      });
-      const pins = [await db.reserve(), await db.reserve()];
-      for (const pin of pins) void pin.query(sql`begin`).catch(() => undefined);
-      time.until(PAST_BOUND);
-
-      // `reserveWithin` arms a real timer for what is left: its delay is the budget it was given.
-      const delays: number[] = [];
-      const realSetTimeout = globalThis.setTimeout;
-      const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((
-        fn: () => void,
-        ms?: number,
-      ) => {
-        delays.push(ms ?? 0);
-        return realSetTimeout(fn, ms);
-      }) as typeof setTimeout);
-      try {
-        const asked = db.reserve();
-        now = 100;
-        time.step();
-        await settled();
-        expect(built).toBe(2);
-        expect(delays).toEqual([100]);
-        answers.shift()?.();
-        (await asked).release();
-      } finally {
-        timer.mockRestore();
-      }
-      for (const old of pins) old.release();
+      const asked = db.reserve().catch((error: unknown) => error);
+      await settled();
+      expect(built).toBe(2);
+      expect(delays).toHaveLength(1);
+      expect(delays[0]).toBeGreaterThan(90);
+      expect(((await asked) as DbError).code).toBe('X_DB_POOL_EXHAUSTED');
     } finally {
-      clock.mockRestore();
+      timer.mockRestore();
     }
+    for (const old of pins) old.release();
   });
 });
 

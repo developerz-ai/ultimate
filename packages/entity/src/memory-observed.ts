@@ -27,6 +27,7 @@ const OPERATIONS = {
   count: { verb: 'select', rows: one },
   countBy: { verb: 'select', rows: none },
   aggregate: { verb: 'select', rows: one },
+  series: { verb: 'select', rows: listed },
   approximateCount: { verb: 'select', rows: one },
   insert: { verb: 'insert', rows: one },
   insertAll: { verb: 'insert', rows: listed },

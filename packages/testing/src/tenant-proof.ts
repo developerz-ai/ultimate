@@ -58,6 +58,8 @@ export function publicReason(policy: Policy | undefined): string | undefined {
 export interface LegAnswer {
   readonly output: unknown;
   readonly payloads: readonly EffectPayload[];
+  /** Every `crossTenant()` reason the leg opened, as `@ultimat3/entity` witnessed it. */
+  readonly crossings?: readonly string[] | undefined;
 }
 
 export interface TenantAttack {
@@ -71,6 +73,12 @@ export interface TenantAttack {
    * nothing — a cache shared across tenants that B filled first hands A the same nothing.
    */
   readonly read: boolean;
+  /**
+   * A job: its answer goes to no caller, so a leg that opened `crossTenant()` and was handed none
+   * of A's marks is a declared sweep — `sendDigest` fanning out one delivery per org — and its read
+   * half is skipped. An action or a query answers B directly, so a declared scope excuses nothing.
+   */
+  readonly sweep: boolean;
   attack(leg: TenantLeg): Promise<LegAnswer>;
   /** A's positive control: today's exercise of the primitive, and what A's last answer was. */
   control(): Promise<{ readonly record: ExerciseRecord; readonly output: unknown }>;
@@ -104,10 +112,28 @@ export function leaksIn(
   return paths.map((path): TenantFinding => ({ code: 'X_TENANT_LEAK', leg, path }));
 }
 
+/**
+ * The reason a leg's read half is skipped as a declared sweep, or `undefined`: a job, a scope the
+ * leg opened, and an input carrying nothing of A's — so no id B chose pointed at A, and what came
+ * back is what the sweep hands every caller. Handed one of A's ids, the scope is `tpCrossRead`'s.
+ */
+export function sweepReason(
+  plan: Pick<TenantAttack, 'sweep' | 'taint'>,
+  answer: LegAnswer,
+  hunted: readonly string[],
+): string | undefined {
+  const reason = answer.crossings?.[0];
+  if (!plan.sweep || reason === undefined || hunted.length !== plan.taint.marks.length) {
+    return undefined;
+  }
+  return `crossTenant(${JSON.stringify(reason)}) declares this job reads across tenants, and B's input named nothing of A's: read half skipped, write half kept`;
+}
+
 const verdictOf = (
   plan: TenantAttack,
   control: { readonly record: ExerciseRecord; readonly output: unknown },
   findings: readonly TenantFinding[],
+  swept: string | undefined,
 ): TenantProof => {
   const { record } = control;
   if (findings.length > 0) return { verdict: 'crossed', findings };
@@ -118,6 +144,7 @@ const verdictOf = (
     };
   }
   if (plan.public !== undefined) return { verdict: 'public', reason: plan.public };
+  if (swept !== undefined) return { verdict: 'public', reason: swept };
   // Every mark of A's, handed ones included: A was handed its own ids, and reading them is the point.
   if (plan.read && findTaint(control.output, 'output', plan.taint.marks).length === 0) {
     return {
@@ -132,15 +159,19 @@ const verdictOf = (
 export async function proveTenant(plan: TenantAttack): Promise<ExerciseRecord> {
   const marks = huntedMarks(plan.taint, plan.input);
   const findings: TenantFinding[] = [];
+  let swept: string | undefined;
   const leg = async (name: TenantLeg): Promise<void> => {
     const before = await plan.snapshot(plan.taint.rows);
     const answer = await plan.attack(name);
     const after = await plan.snapshot(plan.taint.rows);
     findings.push(...crossedWrites(name, plan.taint, before, after));
-    if (plan.public === undefined) findings.push(...leaksIn(name, answer, marks));
+    if (plan.public !== undefined) return;
+    const sweep = sweepReason(plan, answer, marks);
+    if (sweep === undefined) findings.push(...leaksIn(name, answer, marks));
+    else swept = sweep;
   };
   await leg('before');
   const control = await plan.control();
   await leg('after');
-  return { ...control.record, tenant: verdictOf(plan, control, findings) };
+  return { ...control.record, tenant: verdictOf(plan, control, findings, swept) };
 }

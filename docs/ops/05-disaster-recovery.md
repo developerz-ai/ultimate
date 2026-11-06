@@ -126,7 +126,7 @@ applies a fleet of sealed secrets that cannot decrypt, and every pod comes up in
 |---|---|
 | Migrations | the `migrate` role is run-once and exits non-zero on failure. In a rebuild it runs against a restored database, so its migration history must match the dump's — restore first, migrate second |
 | The change feed | a `replicator` holds a replication slot. After a restore the slot is gone; the replicator recreates it and resumes from the current position, so changes that happened between the dump and the restore are not replayed downstream |
-| The cache | do not restore it. It is regenerable, and a restored cache is stale data presented as fresh |
+| The cache | do not restore it — and do not keep the live one. It is regenerable, and a restored cache is stale data presented as fresh; the LIVE shared tier is worse after a restore: it holds values newer than the restored rows, and no write busts them. Restore with a new `APP_VERSION` (the shared tier's keys are namespaced `x:<APP_VERSION>`, `namespaceFor` in `packages/cache/src/redis.ts`), or flush that namespace: `redis-cli -u "$REDIS_URL" --scan --pattern 'x:<old APP_VERSION>:*' \| xargs -r redis-cli -u "$REDIS_URL" UNLINK`. A pod restart clears the in-process LRU |
 | Job state | lives in Postgres, so it restores with everything else. Jobs in flight at dump time will be re-claimed and re-run — this is why job steps must be idempotent |
 | Verify with the app, not the platform | a `Synced` / `Healthy` GitOps status is reachability. Run a real user workflow |
 

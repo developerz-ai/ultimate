@@ -2,6 +2,7 @@
 // read once for N subscribers, and how one that is known to be wrong is replaced. The authz
 // decision is never here — `live-query.ts` owns that, once per subscriber, over what this returns.
 
+import type { LiveReadPhase } from '@ultimat3/query';
 import { WindowReadTimeoutError } from './errors';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
@@ -68,6 +69,12 @@ export interface QueryEntry {
   applied: number;
   readonly readDeadlineMs: number;
   readonly schedule: Scheduler;
+  /**
+   * The newest subscriber's `traceparent`, raw (`noteTraceparent`). A subscribe's read is that
+   * trace's child; a re-run a change forced LINKS to it. One per window, because the read is: N
+   * subscribers share one read, and it can parent on one trace only.
+   */
+  traceparent: string | null;
 }
 
 /**
@@ -119,8 +126,23 @@ export function queryEntry(
     applied: 0,
     readDeadlineMs: usableDeadline(options?.readDeadlineMs),
     schedule: options?.schedule ?? timeoutScheduler,
+    traceparent: null,
   };
 }
+
+/**
+ * Remember the subscriber's `traceparent` for the window's next read. Bounded and never parsed
+ * here: a value is either a string a W3C header could be or it is dropped, and `traceLiveRead`
+ * ignores one that does not parse — telemetry never fails a subscribe.
+ */
+export function noteTraceparent(entry: QueryEntry, traceparent: string | null | undefined): void {
+  if (typeof traceparent === 'string' && traceparent.length <= TRACEPARENT_MAX) {
+    entry.traceparent = traceparent;
+  }
+}
+
+/** `00-<32>-<16>-<2>` is 55 characters; anything far past it is not one. */
+const TRACEPARENT_MAX = 128;
 
 /**
  * The window this subscriber is served from, read once per entry. A subscriber arriving while
@@ -137,7 +159,7 @@ export async function fillWindow(entry: QueryEntry): Promise<FilledWindow> {
     // Read before `startRead` clears it: a second caller arriving during the read joins it and is
     // not the one that forced it, which is what keeps one forced read from becoming N.
     const forced = entry.stale;
-    const pending = forced || entry.reading === null ? startRead(entry) : entry.reading;
+    const pending = forced || entry.reading === null ? startRead(entry, 'snapshot') : entry.reading;
     const result = await pending.result;
     const again = await entry.lock.run(async () => {
       // Two rules, and neither can stand in for the other. Against another READ it is identity —
@@ -193,7 +215,8 @@ const COLD_REREADS = 3;
  * that repairs a stale window mid-fanout is spelled here rather than deadlocking on the other.
  */
 export async function refillWindowInLane(entry: QueryEntry): Promise<void> {
-  const pending = startRead(entry);
+  // A change asked for this read, not a subscriber: it links to the window's trace (`rerun`).
+  const pending = startRead(entry, 'rerun');
   const result = await pending.result;
   // Same identity rule as `fillWindow`: a read issued before this one may still be in flight, and
   // whichever was issued LAST is the one the window keeps.
@@ -223,13 +246,13 @@ function usableDeadline(declared: number | undefined): number {
  * otherwise would be a second, false promise — so the abandoned read runs to completion with
  * nobody listening, and the next caller issues its own instead of joining a corpse.
  */
-function startRead(entry: QueryEntry): PendingRead {
+function startRead(entry: QueryEntry, phase: LiveReadPhase): PendingRead {
   // Cleared here rather than when the read lands: the read about to be issued is the one that
   // answers the staleness, so a second caller must join it instead of forcing another.
   entry.stale = false;
   entry.generation += 1;
 
-  const read = readSnapshot(entry);
+  const read = readSnapshot(entry, phase);
   let expire: () => void = noop;
   const deadline = new Promise<never>((_resolve, reject) => {
     // Assigned synchronously — a Promise executor runs before the constructor returns — so `done`
@@ -276,9 +299,14 @@ function startRead(entry: QueryEntry): PendingRead {
  * to prevent is now permanent and silent. `async` so a definition that throws synchronously takes
  * the same path as one that rejects.
  */
-async function readSnapshot(entry: QueryEntry): Promise<SnapshotResult> {
+async function readSnapshot(entry: QueryEntry, phase: LiveReadPhase): Promise<SnapshotResult> {
   try {
-    return await entry.definition.snapshot({ input: entry.input, tenant: entry.tenant });
+    return await entry.definition.snapshot({
+      input: entry.input,
+      tenant: entry.tenant,
+      traceparent: entry.traceparent,
+      phase,
+    });
   } catch (error) {
     entry.stale = true;
     throw error;

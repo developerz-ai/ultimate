@@ -48,5 +48,10 @@ export const reviewDraft = agent({
   maxTokens: 1024,
   budget: { tokensPerRun: 24_000, costPerCall: { minor: 10, currency: 'USD' } },
   policy: postRead,
+  // Between turns, the run so far, onto the run `keepDraftReview` opened — so a queued attempt
+  // whose worker died resumes there rather than re-buying every turn and re-running `summarize`.
+  // Called on its own, `reviewDraft` has no open run, and the write lands on no row.
+  onCheckpoint: ({ transcript }, { input, ctx }) =>
+    ctx.posts.checkpointReview(postId(input.postId), transcript),
   mcp: { expose: true, description: 'Review a draft post and say whether it is ready to publish' },
 });

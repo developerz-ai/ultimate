@@ -134,6 +134,7 @@ export async function introspectCatalog(
         materialized: row.kind === 'm',
         options: row.options,
         definition: row.definition,
+        columns: [...row.columns],
       }))
       .sort(by((view) => view.name)),
     functions: functions

@@ -72,6 +72,7 @@ export const OFF_SOCKET: Pins = {
     'X_MIGRATION_CONCURRENT_PARTITIONED',
     'X_DB_ROW_SECURITY_BYPASSED',
     'X_DB_ROW_SECURITY_DRIFT',
+    'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
   ],
   // tier 1 — a flag declared twice, at registration.
   flags: ['X_FLAG_DUPLICATE'],
@@ -137,6 +138,8 @@ export const OFF_SOCKET: Pins = {
     'X_CONSUMER_SELF_ENQUEUE',
     'X_BACKFILL_SOURCE_INVALID',
     'X_STEP_NOT_RESOLVABLE',
+    'X_JOB_ROLLUP_INVALID',
+    'X_JOB_REFRESH_VIEW_INVALID',
   ],
   // tier 3 — judged at `query()`, where the declaration is written, or on a live read: a
   // WebSocket subscription carrying a `kind`, not a request carrying a status (`live.ts`).

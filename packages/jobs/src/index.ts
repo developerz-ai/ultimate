@@ -362,6 +362,8 @@ export { DEFAULT_PURGE_CRON, purge } from './purge';
 export type { PurgeBatching } from './purge-batches';
 export type { PgListener, QueueWake, QueueWakeOptions } from './queue-wake';
 export { startQueueWake } from './queue-wake';
+export type { RefreshViewDefinition, RefreshViewReport } from './refresh-view';
+export { refreshView } from './refresh-view';
 export type { IntervalScheduler } from './renewal-timer';
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export {
@@ -376,6 +378,15 @@ export {
 } from './retry';
 export type { JobRetryDecision, JobStopReason } from './retry-classification';
 export { failureForRow, nextRetryForError } from './retry-classification';
+export type {
+  RollupBucket,
+  RollupDefinition,
+  RollupInput,
+  RollupReport,
+  RollupTarget,
+} from './rollup';
+export { rollup } from './rollup';
+export { RefreshViewInvalidError, RollupInvalidError } from './rollup-errors';
 export type {
   CronResolver,
   DispatchedOccurrence,

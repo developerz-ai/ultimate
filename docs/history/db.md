@@ -1762,7 +1762,7 @@ Verbatim from [`packages/db/CLAUDE.md`](../../packages/db/CLAUDE.md), which keep
 
 Why a gate per pool and not per client: `pool-gauge.test.ts`'s rule, a pool draining settles against its own counter and never against its replacement, applied to slots. A pin held on a retired pool would otherwise cost the new pool capacity for as long as the handler holds it.
 
-A pin is counted, not swept (2026-11-03): a gate filled by transactions hung past the bound would refuse every plain statement before it could reach the wire and miss, so nothing would ever retire the pool; reproduced with max 2, two pins hung on `begin`, 40 statements refused, one pool built, none closed. So the acquire refusal asks `pinsWedged` and retires. A pin while the gate still has room keeps no client deadline: `tcp_retries2` bounds it.
+A pin was counted, not swept (2026-11-03): a gate filled by transactions hung past the bound would refuse every plain statement before it could reach the wire and miss, so nothing would ever retire the pool; reproduced with max 2, two pins hung on `begin`, 40 statements refused, one pool built, none closed. So the acquire refusal asked `pinsWedged` and retired. **Superseded 2026-11-06** ("pins are swept", below): a pin's statements now meet the sweep themselves, and `pinsWedged` is gone.
 
 ## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
 
@@ -1819,7 +1819,7 @@ Verbatim from [`packages/db/CLAUDE.md`](../../packages/db/CLAUDE.md), which keep
 
 ## Moved out 2026-11-03 (plan 101 wave 4c, the `CLAUDE.md` ceiling)
 
-- **`pool-sweep.ts`: an unanswered plain statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`; `0` has none; never a pin). One unref'd 1 s timer, armed only while statements are in flight. Age is ticks that FIRED, never a clock (`observe.test.ts`'s no-clock promise), so an answer unread in its socket is never judged late. `retire()` in `client.ts` is read-then-clear; `pool-retire.ts` closes in the background with `{ timeout: 1 }`, SECONDS. A miss only ever retires the pool it ran on. No breaker (`90-deferred.md`).
+- **`pool-sweep.ts`: an unanswered plain statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`; `0` has none; a pin's statements too since 2026-11-06, below). One unref'd 1 s timer, armed only while statements are in flight. Age is ticks that FIRED, never a clock (`observe.test.ts`'s no-clock promise), so an answer unread in its socket is never judged late. `retire()` in `client.ts` is read-then-clear; `pool-retire.ts` closes in the background with `{ timeout: 1 }`, SECONDS. A miss only ever retires the pool it ran on. No breaker (`90-deferred.md`).
 - **`pooler.ts` owns the pooler**: mode, `poolerFromEnv`, `POOLER_WAIT_MS`, `statementBound`/`lostStatementBound`, both factories. `postgresClient({ env })` is the one reader (`ROLE`, `DATABASE_POOLER`, `DATABASE_URL` from one source); everything after asks `client.pooler` (a replica takes the primary's). Never a detection (one pooler accepts `options` and drops them). Set: `connectionUrl` sends neither bound and no empty `options`; the sweep deadline adds `poolerWaitMs`. `transaction` refuses `migrate`/`replicator` at construction (`X_DB_POOLER_SESSION_REQUIRED`); the CLI's `startQueue` refuses `schema === 'apply'` too. `pooler.live.test.ts`.
 
 ## Partitioned tables (2026-11-06, plan 101 slice 39)
@@ -1859,3 +1859,21 @@ correct database terminally.
 - **Moved out of `CLAUDE.md` for the ceiling, same day:** the schema dump's embedded boots are
   `schema-dump.test.ts`, `schema-dump-fidelity.test.ts` and `schema-dump-partitioned.test.ts`;
   `dbDrift()` is the only one because `@ultimat3/entity`'s copy was deleted.
+
+## Pins are swept (2026-11-06)
+
+Before: the sweep judged plain statements only. A transaction's pinned connection kept no client
+deadline while the gate had room, so a write blackholed mid-transaction waited for the kernel
+(`tcp_retries2`, ~15 min) and `pg-blackhole` saw it answered by the HTTP deadline's `X_TIMEOUT`
+at ~30 s. Now `client.ts`'s `onPinned` hands every pinned statement to the same `pool-sweep.ts`
+timer, with its OWN deadline: `pool-pins.ts` tracks the `statement_timeout` in force on that
+connection — the role's, moved by an answered `set_config('statement_timeout', …)` / `SET [LOCAL]`
+(`setLocal`'s text and `withStatementTimeout`'s), back to the role's at `commit`/`rollback` — and
+the deadline is that bound plus `UNANSWERED_GRACE_MS` (and the pooler wait). A miss marks the pin
+dead: nothing more is sent on it, so the `ROLLBACK` that follows is refused at once
+(`X_DB_UNAVAILABLE`) instead of waiting a second bound, and the pool is retired as for a plain
+statement. A bound of `0` on the pin judges nothing. `pinsWedged` is deleted: with every pinned
+statement swept, a gate full of hung pins retires on the first miss. Proof:
+`packages/testing/src/pg-pin-unanswered.live.test.ts` (a write blackholed mid-transaction is
+`X_DB_UNAVAILABLE` near the bound, the pool is replaced; a pin whose own bound was raised keeps it),
+`pool-pins.test.ts`.

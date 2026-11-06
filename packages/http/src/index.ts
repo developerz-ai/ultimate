@@ -196,6 +196,7 @@ export {
   postgresRateLimitStore,
   SQL_RATE_LIMIT_TABLE,
 } from './rate-limit-postgres';
+export { RATE_LIMIT_STORE_DEADLINE_MS } from './rate-limit-store-deadline';
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
 export { UltimateRequest } from './request';

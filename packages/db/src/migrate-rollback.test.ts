@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
 import { type RecordingClient, recordingClient } from './fake';
 import { type LedgerRow, type Migration, migrate, migrationChecksum } from './migrate';
-import { ledgerAheadOfBuild } from './migrate-rollback';
+import { destructiveBit, ledgerAheadOfBuild } from './migrate-rollback';
 
 const migration = (id: string): Migration => ({
   id,
@@ -105,5 +105,78 @@ describe('migrate · a rollback to an older image', () => {
     expect(await conflictOf(() => migrate({ migrations: [posts, edited], client }))).toBe(
       'X_MIGRATION_CONFLICT',
     );
+  });
+});
+
+describe('migrate · a rollback over a destructive migration', () => {
+  const ALLOW = 'ROLLBACK_ALLOW_DESTRUCTIVE';
+  const dropped = '20260301000000_drop_legacy';
+  const added = '20260302000000_add_likes';
+  const flagged = (
+    id: string,
+    destructive: boolean | null,
+  ): LedgerRow & {
+    destructive: boolean | null;
+  } => ({ ...row(id, '1.6.0'), destructive });
+
+  beforeEach(() => {
+    delete Bun.env[ALLOW];
+  });
+
+  const codeOf = async (run: () => Promise<unknown>): Promise<{ code: string; fix: string }> => {
+    try {
+      await run();
+    } catch (error) {
+      const { code, fix } = error as { code: string; fix: string };
+      return { code, fix };
+    }
+    return expect.unreachable('expected a refusal, the migrator accepted the rollback');
+  };
+
+  test('a row the newer build marked destructive refuses before anything serves', async () => {
+    client.on(/from x_migrations/, {
+      rows: [row(posts), row(tags), flagged(dropped, true), flagged(added, false)],
+    });
+    const refusal = await codeOf(() => migrate({ migrations: [posts, tags], client }));
+    expect(refusal.code).toBe('X_MIGRATION_ROLLBACK_DESTRUCTIVE');
+    // The fix names the row to write into the override, never a placeholder the operator guesses.
+    expect(refusal.fix).toContain(`ROLLBACK_ALLOW_DESTRUCTIVE=${dropped}`);
+    expect(client.texts.some((text) => text === 'BEGIN')).toBe(false);
+  });
+
+  test('additive rows ahead are let through as before', async () => {
+    client.on(/from x_migrations/, { rows: [row(posts), row(tags), flagged(added, false)] });
+    const report = await migrate({ migrations: [posts, tags], client });
+    expect(report.ahead).toEqual([added]);
+  });
+
+  test('the override passes only the row it names', async () => {
+    const second = '20260303000000_drop_tags_body';
+    client.on(/from x_migrations/, {
+      rows: [row(posts), row(tags), flagged(dropped, true), flagged(second, true)],
+    });
+    Bun.env[ALLOW] = dropped;
+    const refusal = await codeOf(() => migrate({ migrations: [posts, tags], client }));
+    expect(refusal.code).toBe('X_MIGRATION_ROLLBACK_DESTRUCTIVE');
+    expect(refusal.fix).toContain(second);
+    // The fix names every destructive row, the one already allowed too: the variable is replaced whole.
+    expect(refusal.fix).toContain(`=${dropped},${second}`);
+
+    Bun.env[ALLOW] = `${dropped}, ${second}`;
+    const report = await migrate({ migrations: [posts, tags], client });
+    expect(report.ahead).toEqual([dropped, second]);
+  });
+
+  test('a null bit — a row written before the ledger kept one — keeps the warning, never refuses', async () => {
+    client.on(/from x_migrations/, {
+      rows: [row(posts), row(tags), flagged(dropped, null), row('20260304000000_older_ledger')],
+    });
+    const report = await migrate({ migrations: [posts, tags], client });
+    expect(report.ahead).toEqual([dropped, '20260304000000_older_ledger']);
+  });
+
+  test('destructiveBit is what the ledger records at apply', () => {
+    expect(destructiveBit({ ...posts, up: 'alter table "posts" drop column "body";' })).toBe(true);
+    expect(destructiveBit(posts)).toBe(false);
   });
 });

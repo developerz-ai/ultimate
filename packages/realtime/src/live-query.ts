@@ -21,7 +21,7 @@ import { reauthorizeSocket } from './live-reauth';
 import { resumeOnto } from './live-resume';
 import { type Charge, type SubscribeArgs, spendOnce } from './live-spend';
 import { liveTenantOf, windowId } from './live-tenant';
-import { fillWindow, type QueryEntry, queryEntry } from './query-window';
+import { fillWindow, noteTraceparent, type QueryEntry, queryEntry } from './query-window';
 import type { SyncSocket } from './socket';
 import { type Subscriber, SubscriberGate } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
@@ -171,6 +171,7 @@ export class LiveQueryRegistry {
       name: string;
       input: JsonValue;
       cursor?: LiveCursor | null;
+      traceparent?: string | undefined;
     },
     charge: Charge,
   ): Promise<{ subscription: LiveSubscription; frame: Frame }> {
@@ -184,6 +185,7 @@ export class LiveQueryRegistry {
     await definition.prepare?.(args.input);
 
     const entry = this.#entryFor(qid, definition, args.input, tenant);
+    noteTraceparent(entry, args.traceparent);
     try {
       // Charged where a read happens, never from the cursor's say-so (`live-spend.ts`).
       const pay = () => spendOnce(definition, args.socket, charge, this.#clock);

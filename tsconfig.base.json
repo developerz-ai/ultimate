@@ -9,6 +9,7 @@
     "paths": {
       "@ultimat3/admin/dev": ["./packages/admin/src/dev/index.ts"],
       "@ultimat3/admin/schema": ["./packages/admin/src/audit-schema.ts"],
+      "@ultimat3/admin/error-groups": ["./packages/admin/src/error-groups.ts"],
       "@ultimat3/mail/events": ["./packages/mail/src/events.ts"],
       "@ultimat3/mcp/schema": ["./packages/mcp/src/confirmation-schema.ts"],
       "@ultimat3/pwa/client": ["./packages/pwa/src/client.ts"],
@@ -16,6 +17,7 @@
       "@ultimat3/cli/serve": ["./packages/cli/src/serve-entry.ts"],
       "@ultimat3/core/page": ["./packages/core/src/page.ts"],
       "@ultimat3/core/outbound": ["./packages/core/src/outbound-subpath.ts"],
+      "@ultimat3/core/redis": ["./packages/core/src/redis-client.ts"],
       "@ultimat3/core/internal/error-status": ["./packages/core/src/error-status-declared.ts"],
       "@ultimat3/core/render-node": ["./packages/core/src/render-node.ts"],
       "@ultimat3/core/render-nodes": ["./packages/core/src/render-nodes.ts"],

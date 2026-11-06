@@ -148,6 +148,33 @@ describe('entity facts', () => {
     });
   });
 
+  test('a table becoming a view is breaking — every write to it is refused from then on', () => {
+    const at = 'entities.post.view';
+    const between = (before: Partial<Entity>, after: Partial<Entity>) =>
+      diffManifest(
+        fixtureManifest({ entities: post(before) }),
+        fixtureManifest({ entities: post(after) }),
+      );
+    const became = between({}, { view: { materialized: false } });
+    expect(became.breaking.find((c) => c.path === at)?.detail).toBe(
+      'became a view; every write is refused',
+    );
+    expect(
+      between({ view: { materialized: true } }, {}).additive.find((c) => c.path === at)?.detail,
+    ).toBe('became a table; writes are accepted');
+    // Stored or not is the refresh's concern: no consumer of the rows is refused either way.
+    expect(
+      between({ view: { materialized: false } }, { view: { materialized: true } }).internal.find(
+        (c) => c.path === at,
+      )?.detail,
+    ).toBe('view became materialized');
+    expect(
+      between({ view: { materialized: true } }, { view: { materialized: true } }).changes.filter(
+        (c) => c.path === at,
+      ),
+    ).toEqual([]);
+  });
+
   test('a shared reason declared, changed or dropped is additive, and reported', () => {
     const at = 'entities.post.shared';
     const between = (before: Partial<Entity>, after: Partial<Entity>) =>

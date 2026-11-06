@@ -105,6 +105,13 @@ pays for the control plane.
 | [`05-disaster-recovery.md`](./05-disaster-recovery.md) | backups you can restore, and the key without which they are noise |
 | [`06-runbooks.md`](./06-runbooks.md) | rollback, stuck deploys, image-pull failures, a leaked credential |
 
+Rehearse a runbook's failure before it is needed: `x drill <name> --json` (`x drill --list --json`
+for the eight) boots the app's roles on a scratch database with the test services up and plays one
+fault — a blackholed or restarting Postgres, a dead Redis or NATS, a killed or drained worker, a
+drained web role — red on any framework contract that did not hold, each finding with its `X_*`
+code. One node per role on one host: a multi-node bus, a real standby, S3 and a CDN are not drilled
+([Known gaps](../../wiki/Known-Gaps.md)).
+
 ## What Ultimate ships today
 
 | Artifact | State `As of 2026-08` |
@@ -119,7 +126,7 @@ pays for the control plane.
 | `/healthz` and `/readyz` on `web` and `sync` | shipped — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts). `worker`, `scheduler` and `replicator` open no HTTP socket; their only port is `/metrics` ([`01-kubernetes.md`](./01-kubernetes.md)) |
 | SIGTERM drain on every role | shipped — see [`../architecture/13-topology-runtime.md`](../architecture/13-topology-runtime.md) |
 | OTel-shaped tracing | **shipped, and exportable** — `otlpSpanExporter()` speaks OTLP/HTTP JSON to `OTEL_EXPORTER_OTLP_ENDPOINT`, head-based sampling included. The default stays a no-op, so nothing leaves the process until you wire it. gRPC `:4317` is refused; use the collector's `:4318`. No logs signal |
-| `/metrics` on any role | **shipped** — `METRICS_PATH` on `METRICS_PORT` (default 9090), never the app port. The chart declares the `metrics` containerPort on every role but `migrate`, publishes it on the Service, and ships a ServiceMonitor behind `serviceMonitor.enabled` (off by default: a cluster with no Prometheus operator has no such CRD) |
+| `/metrics` on any role | **shipped** — `METRICS_PATH` on `METRICS_PORT` (default 9090), never the app port. The chart declares the `metrics` containerPort on every role but `migrate`, publishes it on the Service, and ships a ServiceMonitor and a PrometheusRule of mechanism alerts, each rendered wherever the cluster serves the operator's kind (`serviceMonitor.enabled` / `alerts.enabled`: `auto`), so a cluster without the operator still installs; `x g chart-alerts` backfills an older app chart |
 | a custom-metrics adapter | **never shipped** — the chart's per-role HPAs target `rps` and `connections` as `Pods` metrics and `queue_demand` as an `External` one (every serving worker publishes the same number, so it is one series for the fleet — expose it as `max by (queue)`, never `sum`), and turning scraped series into those is the cluster's job, not the framework's |
 | `x logs` | listed as **planned** in `x --help` |
 

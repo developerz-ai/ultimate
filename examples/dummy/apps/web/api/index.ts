@@ -38,6 +38,7 @@ import * as sendSalesReceipt from '../app/contact/jobs/send-sales-receipt';
 import * as deliverDigest from '../app/digest/jobs/deliver-digest';
 import * as sendDigest from '../app/digest/jobs/send-digest';
 import * as nightlyDigest from '../app/digest/tasks/nightly-digest';
+import * as openErrorIssue from '../app/errors/jobs/open-error-issue';
 import * as purgeMcpConfirmations from '../app/mcp/jobs/purge-mcp-confirmations';
 import * as hourlyPurge from '../app/mcp/tasks/hourly-purge';
 import * as grantAvatarUpload from '../app/orgs/actions/grant-avatar-upload';
@@ -61,8 +62,10 @@ import * as summarizePosts from '../app/posts/actions/summarize-posts';
 import * as withdrawPost from '../app/posts/actions/withdraw-post';
 import * as postExcerpts from '../app/posts/backfills/post-excerpts';
 import * as commentPosted from '../app/posts/jobs/comment-posted';
+import * as dailyLikesRollup from '../app/posts/jobs/daily-likes';
 import * as exportPosts from '../app/posts/jobs/export-posts';
 import * as importPosts from '../app/posts/jobs/import-posts';
+import * as likeTotalsRefresh from '../app/posts/jobs/like-totals';
 import * as notifySubscribers from '../app/posts/jobs/notify-subscribers';
 import * as reviewDraftLater from '../app/posts/jobs/review-draft-later';
 import * as liveFeed from '../app/posts/live/live-feed';
@@ -70,11 +73,13 @@ import * as feedActivity from '../app/posts/queries/feed-activity';
 import * as orgPosts from '../app/posts/queries/org-posts';
 import * as postById from '../app/posts/queries/post-by-id';
 import * as postBySlug from '../app/posts/queries/post-by-slug';
+import * as postLikesByDay from '../app/posts/queries/post-likes-by-day';
 import * as postRecord from '../app/posts/queries/post-record';
 import * as postReview from '../app/posts/queries/post-review';
 import * as publicPost from '../app/posts/queries/public-post';
 import * as publicPostSlugs from '../app/posts/queries/public-post-slugs';
 import * as publicPosts from '../app/posts/queries/public-posts';
+import * as hourlyLikes from '../app/posts/tasks/hourly-likes';
 import * as answerPrompt from '../app/runs/actions/answer-prompt';
 import * as cancelRun from '../app/runs/actions/cancel-run';
 import * as connectSite from '../app/runs/actions/connect-site';
@@ -97,6 +102,9 @@ import * as postPublishedWebhook from '../app/webhooks/jobs/post-published-webho
 // `defineService(...)` and the channel declaration run on import — the same "importing IS the
 // boot" rule as the registration below, so `ctx.orgs`, `ctx.posts`, `ctx.runs` and `ctx.webhooks`
 // are installed wherever this module has run, including tests.
+// Postly's error sink, installed beside any reporter already there — every role loads this module,
+// so a worker's failures are grouped as a request's are.
+import '../app/errors/reporting';
 import '../app/orgs/service';
 import '../app/posts/channels';
 import '../app/posts/service';
@@ -143,6 +151,7 @@ export const api = defineApi({
     postRecord,
     postById,
     feedActivity,
+    postLikesByDay,
     postReview,
     publicPost,
     publicPosts,
@@ -160,6 +169,8 @@ export const api = defineApi({
     commentPosted,
     reviewDraftLater,
     postExcerpts,
+    dailyLikesRollup,
+    likeTotalsRefresh,
     onboardOrg,
     sendInvite,
     sendDigest,
@@ -172,8 +183,9 @@ export const api = defineApi({
     planPrices,
     planCatalog,
     settleUpgrade,
+    openErrorIssue,
   ],
-  tasks: [nightlyDigest, hourlyPurge],
+  tasks: [nightlyDigest, hourlyPurge, hourlyLikes],
   // A second door for machine callers, onto actions a browser already calls: same handler, same
   // policy, an org's bearer key instead of a session. `/api/runs/start` is `/v1/runs/start`, and
   // publishPost's pinned `/api/posts/:postId/publish` is `/v1/posts/:postId/publish`.

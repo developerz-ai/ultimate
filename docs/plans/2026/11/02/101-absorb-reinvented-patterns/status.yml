@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 70
-current_focus: "wave 7: the tenant proof's dynamic legs (40), reads, row security, identity (41), event wake, sagas, consumers, partitioned tables (39/41), the scraping wedge (25), agent context and checkpoints (27). Next: wave 8 — time series, job crash proof, redis outage, raw keyset, entity decode, and the owed items (checkpoint resume in the reference app, a standby in the test services)."
+percent: 77
+current_focus: "wave 8: time series and views (41), the job crash proof wired into the exercise pass (40), fault drills (40), Redis down as a slow miss (29), raw keyset paging (29), the entity decode plan (30), operations — vitals, error groups, the rollback refusal, live traces (41), chart alerts (39), the checkpoint resume and a physical standby. Next: wave 9 — subject data, repro, query plans (40), entity lifecycle (41), agent wire, MCP and AI cache, cassettes (39/41)."
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -402,8 +402,8 @@ slices:
   - file: 40-next-job-crash-proof.md
     tier: 5
     sweep: "21"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 41-add-consumers.md
     tier: 3
     sweep: "21"
@@ -417,13 +417,13 @@ slices:
   - file: 41-add-time-series.md
     tier: 1
     sweep: "22"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 27-agents-checkpoint.md
     tier: 4
     sweep: "23"
-    status: in_progress
-    percent: 90
+    status: complete
+    percent: 100
   - file: 27-agents-context-and-cache.md
     tier: 4
     sweep: "23"
@@ -432,18 +432,18 @@ slices:
   - file: 29-data-redis-outage.md
     tier: 0
     sweep: "23"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 29-data-raw-keyset.md
     tier: 1
     sweep: "23"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 30-perf-entity-decode.md
     tier: 2
     sweep: "23"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 25-pkg-scraping-wedge.md
     tier: 4
     sweep: "23"
@@ -452,18 +452,18 @@ slices:
   - file: 41-add-operations.md
     tier: 0
     sweep: "24"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-ops-chart-alerts.md
     tier: 5
     sweep: "24"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 40-next-fault-drills.md
     tier: 5
     sweep: "24"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 40-next-query-plans.md
     tier: 2
     sweep: "25"

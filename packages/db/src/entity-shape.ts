@@ -140,4 +140,9 @@ export interface EntityDescriptionLike {
    * does not (`retired.ts`). Absent is none, for the reason `invariants` is optional.
    */
   readonly retired?: readonly string[] | undefined;
+  /**
+   * `entity(name, { view: { sql } })`: a relation Postgres derives, emitted by `generate-view.ts`
+   * and handed to no table arm. Absent is a table, for the reason `invariants` is optional.
+   */
+  readonly view?: { readonly sql: string; readonly materialized?: true | undefined } | undefined;
 }

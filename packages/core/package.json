@@ -33,6 +33,7 @@
     "./page": "./src/page.ts",
     "./internal/error-status": "./src/error-status-declared.ts",
     "./outbound": "./src/outbound-subpath.ts",
+    "./redis": "./src/redis-client.ts",
     "./render-node": "./src/render-node.ts",
     "./render-nodes": "./src/render-nodes.ts"
   },

@@ -123,11 +123,16 @@ export async function writeGeneratedSeed(input: GeneratedSeedWrite): Promise<See
   }
 }
 
-/** Every registered entity, by name — the set the plan and the writer are both handed. */
+/**
+ * Every registered TABLE, by name — the set the plan and the writer are both handed. A view entity
+ * is left out: Postgres derives its rows, and a write to one is `X_ENTITY_VIEW_READ_ONLY`.
+ */
 export const registeredEntityCores = (): Readonly<Record<string, EntityCore>> =>
   Object.fromEntries(
     registeredEntities().flatMap((entry) =>
-      entry.core === undefined ? [] : [[entry.name, entry.core as EntityCore]],
+      entry.core === undefined || entry.core.$viewQuery !== null
+        ? []
+        : [[entry.name, entry.core as EntityCore]],
     ),
   );
 

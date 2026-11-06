@@ -1,12 +1,16 @@
-// Tier 2: shared cache over `Bun.redis` (no client dependency — the runtime ships one).
+// Tier 2: shared cache over core's `redisClient()` (no client dependency — the runtime ships one).
 // A tag -> keys SET is maintained alongside every write so `invalidateTags` is ONE round
 // trip via a server-side script, not a KEYS scan. KEYS is O(n) and blocks the server; a
 // framework that ships it as the invalidation path is shipping an outage.
 
 import type { Clock } from '@ultimat3/core';
 import { appVersion, logger, systemClock } from '@ultimat3/core';
+import type { DeadlineTimer } from '@ultimat3/core/outbound';
+import { redisClient } from '@ultimat3/core/redis';
 import { CacheDriverUnavailableError } from './errors';
 import type { FenceScope } from './fence';
+import type { DeadlinedRedis } from './redis-deadline';
+import { DEFAULT_REDIS_COMMAND_TIMEOUT_MS, withinDeadline } from './redis-deadline';
 import { bumpGenerations, sampleGenerations } from './redis-fence';
 import type { CacheTag } from './tags';
 import { parseTag, serializeTag } from './tags';
@@ -38,8 +42,20 @@ export interface RedisTierOptions {
    */
   readonly buildId?: string | null;
   readonly defaultTtlMs?: number;
-  /** Injected in tests; production reads `Bun.redis`. */
+  /**
+   * Injected in tests and for a second server; production takes `redisClient()` from
+   * `@ultimat3/core/redis` (`REDIS_URL`). A client handed in keeps its own reconnect behaviour and
+   * still gets the deadline.
+   */
   readonly client?: RedisLike;
+  /**
+   * How long one value-path command may take, in ms. Default `DEFAULT_REDIS_COMMAND_TIMEOUT_MS`
+   * (150). A miss is `X_CACHE_DRIVER_UNAVAILABLE` in `recentTierFailures()`, read as a cache miss,
+   * and parks the value path for `REDIS_PARK_MS`. A bust has its own, longer, unparked deadline.
+   */
+  readonly commandTimeoutMs?: number;
+  /** Injected so a test fires the deadline instead of waiting for it. */
+  readonly timer?: DeadlineTimer;
   /** Turns `PTTL`'s remaining life into the absolute `expiresAt` a hit reports. */
   readonly clock?: Clock;
   /** TTL spread, in `[0, 1)`. Default `DEFAULT_TTL_JITTER_FRACTION`; `0` disables it. */
@@ -132,19 +148,6 @@ const DELETE_BATCH = 128;
 /** Seconds a tag set outlives its newest member. See `TAG_MEMBER_SCRIPT`. */
 const TAG_TTL_GRACE_SECONDS = 60;
 
-function resolveClient(injected: RedisLike | undefined): RedisLike {
-  if (injected !== undefined) return injected;
-  const candidate = (Bun as unknown as { redis?: RedisLike }).redis;
-  if (candidate === undefined || typeof candidate.send !== 'function') {
-    throw new CacheDriverUnavailableError({
-      driver: 'redis',
-      cause: 'Bun.redis is not available (needs bun >= 1.3 and REDIS_URL)',
-      fix: 'set REDIS_URL in .env, or drop the redis tier from cache.tiers in app.config.ts',
-    });
-  }
-  return candidate;
-}
-
 const toStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((item) => String(item)) : [];
 
@@ -204,12 +207,27 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
     ...(options.jitterFraction === undefined ? {} : { jitterFraction: options.jitterFraction }),
     ...(options.rng === undefined ? {} : { rng: options.rng }),
   };
-  let client: RedisLike | undefined;
-
-  const conn = (): RedisLike => {
-    client ??= resolveClient(options.client);
-    return client;
+  const commandTimeoutMs = assertFiniteDurationMs(
+    'redis',
+    'commandTimeoutMs',
+    options.commandTimeoutMs ?? DEFAULT_REDIS_COMMAND_TIMEOUT_MS,
+  );
+  // Built at the first command, never at construction: a tier selected in config dials nothing
+  // until it is used.
+  let bounded: DeadlinedRedis | undefined;
+  const views = (): DeadlinedRedis => {
+    bounded ??= withinDeadline(options.client ?? redisClient(), {
+      commandTimeoutMs,
+      clock,
+      ...(options.timer === undefined ? {} : { timer: options.timer }),
+    });
+    return bounded;
   };
+  // A read, a fill and a fence sample: parked after a missed deadline, so a stalled store costs
+  // one deadline per `REDIS_PARK_MS`, not five per read.
+  const conn = (): RedisLike => views().value;
+  // A bust skips the park: skipped for a stall, it leaves stale rows serving until TTL.
+  const bustConn = (): RedisLike => views().bust;
 
   const valueKey = (key: string): string => `${ns}:c:${key}`;
   // `{entity}` is a Redis Cluster hash tag, not decoration: it is what makes a row's bucket and
@@ -369,10 +387,10 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
       // Before the buckets are read, and awaited: see `bumpGenerations` for why the order is the
       // guarantee. A refusal here rejects the bust into `report.errors` with nothing deleted, so
       // the retry it asks for repeats the whole thing.
-      await bumpGenerations(conn(), ns, tags);
+      await bumpGenerations(bustConn(), ns, tags);
       const replies = await Promise.all(
         perTag.map(({ read }) =>
-          conn().send('EVAL', [INVALIDATE_SCRIPT, String(read.length), ...read]),
+          bustConn().send('EVAL', [INVALIDATE_SCRIPT, String(read.length), ...read]),
         ),
       );
       // A member may sit in two tag sets; deleting it twice is harmless but reporting it twice
@@ -385,7 +403,7 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
         // `allSettled`, because which ones died decides what leaves the buckets below.
         const batch = members.slice(start, start + DELETE_BATCH);
         const settled = await Promise.allSettled(
-          batch.map((member) => conn().send('DEL', [member])),
+          batch.map((member) => bustConn().send('DEL', [member])),
         );
         settled.forEach((result, index) => {
           const member = batch[index];
@@ -402,7 +420,7 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
         const gone = [...new Set(toStrings(replies[i]))].filter((member) => deleted.has(member));
         for (const bucket of perTag[i]?.sweep ?? []) {
           for (let start = 0; start < gone.length; start += DELETE_BATCH) {
-            await conn().send('SREM', [bucket, ...gone.slice(start, start + DELETE_BATCH)]);
+            await bustConn().send('SREM', [bucket, ...gone.slice(start, start + DELETE_BATCH)]);
           }
         }
       }

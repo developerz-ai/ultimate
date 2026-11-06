@@ -158,6 +158,12 @@ export interface EntityFact {
   readonly invariants: readonly string[];
   /** `entity({ shared })`: why it belongs to no tenant. Absent when undeclared. */
   readonly shared?: string;
+  /**
+   * `entity({ view })`: a relation Postgres derives, so every write to it is refused and the admin
+   * lists it read-only. `materialized` stores the rows a `refreshView()` job recomputes. Absent on
+   * every table. The query itself is the schema dump's (`packages/db/schema/07_views/`).
+   */
+  readonly view?: { readonly materialized: boolean };
 }
 
 /** A declared bucket as the author wrote it — `toBucket`'s input, never its converted output. */

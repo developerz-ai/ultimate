@@ -1,7 +1,7 @@
-// A Redis queue on `Bun.redis` — no client dependency, the runtime ships one. The same contract as
-// the pg driver, held by `@ultimat3/testing`'s `jobDriverConformance`: every operation is one Lua
-// script (`driver-redis-scripts.ts`), so a claim, a settle and a renewal are each atomic on the
-// server the way a `driver-pg-sql.ts` statement is in one transaction. Its own entry,
+// A Redis queue on core's `redisClient()` — no client dependency, the runtime ships one. The same
+// contract as the pg driver, held by `@ultimat3/testing`'s `jobDriverConformance`: every operation
+// is one Lua script (`driver-redis-scripts.ts`), so a claim, a settle and a renewal are each atomic
+// on the server the way a `driver-pg-sql.ts` statement is in one transaction. Its own entry,
 // `@ultimat3/jobs/redis`: the barrel is on every role's boot path, and an app on Postgres loads none
 // of this.
 //
@@ -14,6 +14,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import { finiteCount, finiteOption, systemClock, uuidV7 } from '@ultimat3/core';
+import { redisClient } from '@ultimat3/core/redis';
 import { nowMs } from './clock';
 import type {
   ClaimedJob,
@@ -32,6 +33,7 @@ import {
   isJobState,
   nackState,
 } from './driver';
+import { typedRefusals } from './driver-redis-refusal';
 import {
   REDIS_ACK,
   REDIS_CLAIM,
@@ -43,10 +45,10 @@ import {
   REDIS_STATS,
 } from './driver-redis-scripts';
 import { redisStepStore } from './driver-redis-steps';
-import { DriverUnavailableError, JobDuplicateError } from './errors';
+import { JobDuplicateError } from './errors';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
 
-/** The slice of Bun's Redis client this driver uses — `Bun.redis` and `new Bun.RedisClient()`. */
+/** The slice of Bun's Redis client this driver uses — `redisClient()` and `new Bun.RedisClient()`. */
 export interface RedisSender {
   send(command: string, args: string[]): Promise<unknown>;
 }
@@ -55,7 +57,11 @@ export interface RedisSender {
 export const DEFAULT_REDIS_DONE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface RedisJobDriverOptions {
-  /** Injected in tests and for a second server; production reads `Bun.redis` (`REDIS_URL`). */
+  /**
+   * Injected in tests and for a second server; production takes `redisClient()` from
+   * `@ultimat3/core/redis` (`REDIS_URL`): while it is down every command refuses at once, as
+   * `X_DRIVER_UNAVAILABLE`. No deadline here: a stuck command has the request's.
+   */
   readonly client?: RedisSender;
   /** Key namespace, the hash tag every key carries. Default `x:jobs`. */
   readonly prefix?: string;
@@ -66,19 +72,6 @@ export interface RedisJobDriverOptions {
    * runs out of memory. Dead and failed rows are kept — they are the record of what went wrong.
    */
   readonly doneTtlMs?: number;
-}
-
-function resolveClient(injected: RedisSender | undefined): RedisSender {
-  if (injected !== undefined) return injected;
-  const ambient = (Bun as unknown as { redis?: RedisSender }).redis;
-  if (ambient === undefined || typeof ambient.send !== 'function') {
-    throw new DriverUnavailableError({
-      driver: 'redis',
-      cause: 'Bun.redis is not available, and no client was handed to redisJobDriver()',
-      fix: 'REDIS_URL=redis://127.0.0.1:6379 x dev — or hand one in: redisJobDriver({ client: new Bun.RedisClient(url) })',
-    });
-  }
-  return ambient;
 }
 
 /** A Lua reply as an array; anything else is the empty one. */
@@ -164,7 +157,7 @@ function answerOf(reply: readonly unknown[], at: number, runId: string): Enqueue
 }
 
 export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
-  const client = resolveClient(options.client);
+  const client = typedRefusals(options.client ?? redisClient());
   const clock = options.clock ?? systemClock;
   const ns = `{${options.prefix ?? 'x:jobs'}}`;
   const doneTtlMs = finiteCount(

@@ -1,13 +1,15 @@
 // The chart `x new` writes against the framework's own (`docker/helm/`). The two differ in prose and
-// in what the framework chart adds (a ServiceAccount, a ServiceMonitor), so bytes cannot be held
-// equal — but the PROBES a role gets, the SPEC of its Service and the Secret it reads are behaviour,
-// and so are a bounded /tmp and the NetworkPolicy — the framework chart gaining a replicator
-// readiness probe or a per-role Secret while the scaffold kept neither is the drift this refuses.
+// in what the framework chart adds (a ServiceAccount, a PodDisruptionBudget), so bytes cannot be
+// held equal — but the PROBES a role gets, the SPEC of its Service and the Secret it reads are
+// behaviour, and so are a bounded /tmp and the NetworkPolicy — the framework chart gaining a
+// replicator readiness probe or a per-role Secret while the scaffold kept neither is the drift this
+// refuses. The two monitoring templates ARE held byte-equal: both are one generator's output.
 
 import { expect, test } from 'bun:test';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { names } from './naming';
+import { helmFiles } from './scaffold-helm';
 import { helmTemplateFiles } from './scaffold-helm-templates';
 
 const CHART = join(import.meta.dir, '..', '..', '..', '..', 'docker', 'helm', 'templates');
@@ -78,4 +80,27 @@ test('every role`s NetworkPolicy has the spec the framework chart gives it', asy
   const spec = (lines: readonly string[]) => between(lines, /^spec:/, /^\{\{- end \}\}$/);
   expect(spec(scaffold)).toEqual(spec(chart));
   expect(spec(chart).join('\n')).toContain('port: metrics');
+});
+
+// The framework chart's copies are `helmMonitoringFiles(names('ultimate'))`, byte for byte: one rule
+// table, so a threshold or a series moved in the generator and not in docker/helm is red here.
+test('the scrape object and the alert rules are the generator`s own output', async () => {
+  for (const file of ['servicemonitor.yaml', 'alert-rules.yaml']) {
+    const chart = await Bun.file(join(CHART, file)).text();
+    expect({ [file]: chart }).toEqual({ [file]: generated(file) });
+  }
+});
+
+test('both charts default the monitoring switches the same way', async () => {
+  const keys = (text: string) => {
+    const parsed: unknown = Bun.YAML.parse(text);
+    const values = new Map(Object.entries(typeof parsed === 'object' && parsed ? parsed : {}));
+    return { serviceMonitor: values.get('serviceMonitor'), alerts: values.get('alerts') };
+  };
+  const scaffold = helmFiles(names('ultimate')).find(
+    (entry) => entry.path === 'docker/helm/values.yaml',
+  );
+  const chart = keys(await Bun.file(join(CHART, '..', 'values.yaml')).text());
+  expect(chart).toEqual(keys(String(scaffold?.contents ?? '')));
+  expect(chart).toMatchObject({ serviceMonitor: { enabled: 'auto' }, alerts: { enabled: 'auto' } });
 });

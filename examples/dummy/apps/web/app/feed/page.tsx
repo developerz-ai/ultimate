@@ -169,7 +169,11 @@ export const config = defineRoute({
   // server-stamped path pins read from `<meta name="ultimate-pins">` (`client-paths-pins.ts`) and
   // filled by `fill-wire.ts`, which refuses a `.`/`..` segment, and the session flag raised only
   // for a same-origin 401 (`session-lost.ts`) — raised 172.5kb → 177kb (30.0.0, plan 101 wave 5b).
-  budget: { js: '177kb' },
+  // measured: 182434 B (2026-11-06; x build --target static, against 181,077) — why:
+  // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
+  // `app/` only), and the realtime client +155 B, a live subscribe's `traceparent` so its
+  // snapshot joins the page's trace — raised 177kb → 178.5kb (plan 101, 41).
+  budget: { js: '178.5kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

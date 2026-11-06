@@ -16,7 +16,7 @@
  * decided the caller may read; what spans tenants is only ever a `status: 'published'` read.
  */
 
-import { type Comment, db, type Post, type PostReview } from '@postly/db';
+import { type Comment, db, type Post, type PostReview, type PostReviewRun } from '@postly/db';
 import {
   type MemberId,
   type OrgId,
@@ -425,3 +425,32 @@ export const reviewRows = async (orgId: OrgId, postId: PostId): Promise<PostRevi
   const review = await reviewOf(orgId, postId);
   return review === null ? [] : [review];
 };
+
+/** The review run in flight on a post, or `null` when none is open. */
+export const reviewRunOf = (orgId: OrgId, postId: PostId): Promise<PostReviewRun | null> =>
+  db.postReviewRuns.where({ orgId, postId }).one();
+
+/** Opens the post's run for `draft` with no checkpoint yet, replacing a run opened for another. */
+export const startReviewRun = async (row: {
+  readonly orgId: OrgId;
+  readonly postId: PostId;
+  readonly draft: string;
+}): Promise<void> => {
+  await db.postReviewRuns.upsertAll([{ ...row, checkpoint: null }], {
+    onConflict: ['orgId', 'postId'],
+  });
+};
+
+/**
+ * The run's latest checkpoint, written over the last. An UPDATE, never an upsert: a run nothing
+ * opened — `reviewDraft` called on its own — has no row, and writes nothing.
+ */
+export const checkpointReviewRun = (
+  orgId: OrgId,
+  postId: PostId,
+  checkpoint: PostReviewRun['checkpoint'],
+): Promise<number> => db.postReviewRuns.updateWhere({ orgId, postId }, { checkpoint });
+
+/** The run is over: its review is kept. */
+export const closeReviewRun = (orgId: OrgId, postId: PostId): Promise<number> =>
+  db.postReviewRuns.deleteWhere({ orgId, postId });

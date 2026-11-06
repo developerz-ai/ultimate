@@ -145,7 +145,10 @@ export const config = defineRoute({
   // path pins read from `<meta name="ultimate-pins">` (`client-paths-pins.ts`) and filled by
   // `fill-wire.ts`, which refuses a `.`/`..` segment — raised 76kb → 78kb (30.0.0, plan 101 wave
   // 5b).
-  budget: { js: '78kb' },
+  // measured: 80803 B (2026-11-06; x build --target static, against 79,601) — why:
+  // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
+  // `app/` only) — raised 78kb → 79.5kb (plan 101, 41).
+  budget: { js: '79.5kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

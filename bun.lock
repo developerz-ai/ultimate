@@ -124,6 +124,7 @@
         "@postly/mcp": "0.0.1",
         "@postly/ui": "0.0.1",
         "@ultimat3/action": "29.4.0",
+        "@ultimat3/admin": "29.4.0",
         "@ultimat3/ai": "29.4.0",
         "@ultimat3/auth": "29.4.0",
         "@ultimat3/core": "29.4.0",

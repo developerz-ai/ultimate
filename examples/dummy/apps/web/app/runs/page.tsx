@@ -139,7 +139,11 @@ export const config = defineRoute({
   // page boot +255 B, a replayed write's stored pin checked as a same-origin path before it is
   // sent (`pinned-wire.ts`), and the router +25 B, a navigation whose request throws at once
   // still clears its deadline (`navigation-deadline.ts`) — raised 192kb → 192.5kb (30.0.0).
-  budget: { js: '192.5kb' },
+  // measured: 198101 B (2026-11-06; x build --target static, against 196,744) — why:
+  // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
+  // `app/` only), and the realtime client +155 B, a live subscribe's `traceparent` so its
+  // snapshot joins the page's trace — raised 192.5kb → 194kb (plan 101, 41).
+  budget: { js: '194kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

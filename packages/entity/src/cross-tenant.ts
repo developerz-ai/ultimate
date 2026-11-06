@@ -20,6 +20,18 @@ export const CROSS_TENANT_SCOPE = 'tenancy:cross';
 
 const storage = asyncContext<string>('the cross-tenant reason');
 
+let witness: ((reason: string) => void) | undefined;
+
+/**
+ * Install the one process-wide witness of every scope opened, or remove it with `undefined`. The
+ * caller is `@ultimat3/testing`'s tenant proof: a job that crossed tenants under a declared reason
+ * is a sweep, one that crossed without one is a leak, and only the scope itself knows which. One
+ * witness, not a list (`setStatementObserver`'s rule), told only after the capability is proven.
+ */
+export function setCrossTenantObserver(next: ((reason: string) => void) | undefined): void {
+  witness = next;
+}
+
 /**
  * Run `fn` with the tenant guard lifted — every read and write it issues, at any depth and across
  * every `await`, may span tenants. For the three cases that genuinely have no single tenant: an
@@ -47,6 +59,7 @@ export function crossTenant<T>(reason: string, fn: () => T): T {
     "pass why the read spans tenants: crossTenant('nightly expiry sweeps every org', fn)",
   );
   assertCrossTenant(reason);
+  witness?.(reason);
   return storage.run(reason, fn);
 }
 

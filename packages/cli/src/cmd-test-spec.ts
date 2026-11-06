@@ -10,7 +10,7 @@ export const testSpec: CommandSpec = {
   name: 'test',
   summary:
     'run one test type — or the whole suite — across N workers, one isolated database per worker',
-  usage: `x test [${TEST_TYPES.join('|')}] [--filter path[,path…]] [--allow-empty] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--isolate] [--json] [-- <bun test flags>]`,
+  usage: `x test [${TEST_TYPES.join('|')}] [--filter path[,path…]] [--allow-empty] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--isolate] [--seed N] [--json] [-- <bun test flags>]`,
   positionalChoices: TEST_TYPES,
   // The one command that hands a tail to another tool — `bun test` — and the reason
   // `CommandSpec.passthrough` exists: `x test unit -- --coverage --bail` parsed both flags and
@@ -54,6 +54,12 @@ export const testSpec: CommandSpec = {
       name: 'base',
       type: 'string',
       summary: `--affected: git ref to diff against, merge-base style (default: ${DEFAULT_BASE})`,
+    },
+    {
+      name: 'seed',
+      type: 'string',
+      summary:
+        'replay one simulateJobs seed — the N an X_JOB_SIM_INVARIANT names — in every file the run selects (ULTIMATE_JOB_SIM_SEED)',
     },
     {
       name: 'dirty',

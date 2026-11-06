@@ -6,7 +6,6 @@
 
 import { describe, expect, test } from 'bun:test';
 import { appVersion, frozenClock } from '@ultimat3/core';
-import { CacheDriverUnavailableError } from './errors';
 import { lruTier } from './lru';
 import { namespaceFor, REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT, redisTier } from './redis';
 import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
@@ -234,22 +233,6 @@ describe('redisTier', () => {
 
     expect(await stack.read('k', () => Promise.resolve('loaded'), { ttlMs: 300_000 })).toBe('v');
     expect(lru.cache.get('k')?.expiresAt).toBe(15_000);
-  });
-
-  test('constructing with no client and no Bun.redis throws CacheDriverUnavailableError lazily', async () => {
-    // This sandbox has a real Bun.redis (a redis answers on the default port), so
-    // `resolveClient` would otherwise never reach its throwing branch. Stub the global to
-    // simulate "not configured" rather than skip the case — restore it unconditionally so no
-    // other test in this process (or file) observes the stub.
-    const bunWithRedis = Bun as unknown as { redis?: unknown };
-    const original = bunWithRedis.redis;
-    bunWithRedis.redis = undefined;
-    try {
-      const tier = redisTier();
-      await expect(tier.get('k')).rejects.toThrow(CacheDriverUnavailableError);
-    } finally {
-      bunWithRedis.redis = original;
-    }
   });
 });
 

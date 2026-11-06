@@ -130,3 +130,34 @@ export interface MoneyUnitRow {
  */
 export const estimateStatement = (table: string): SqlFragment =>
   sql`select reltuples::bigint as estimate from pg_class where oid = to_regclass(${table})`;
+
+/** What a series comes back as. Every name is fixed, so none can be a column's. */
+export interface SeriesRow {
+  readonly bucket_ms: unknown;
+  readonly bucket_count: unknown;
+  readonly bucket_value: unknown;
+}
+
+/**
+ * One row per bucket over exactly the rows `countStatement` would have counted with an instant in
+ * `on`: the three-argument `date_trunc`, with the unit AND the zone bound — a two-argument one
+ * truncates in the session's zone, which is the bug this statement exists to make unwritable. The
+ * bucket crosses as epoch milliseconds, as `min`/`max` over an instant does, never as session text
+ * — and as a `numeric`, not its text, so `group by 1 order by 1` orders instants, not strings.
+ * `limit` bounds the buckets, so a refusal costs one row more than the ceiling.
+ */
+export const seriesStatement = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+  shape: ReadShape,
+  series: { readonly on: string; readonly unit: string; readonly timeZone: string },
+  sumColumn: string | null,
+  limit: number,
+): SqlFragment => {
+  const on = columnRef(entity, series.on);
+  const bucket = sql`date_trunc(${series.unit}::text, ${on}, ${series.timeZone}::text)`;
+  const value = sumColumn === null ? sql`null` : sql`sum(${columnRef(entity, sumColumn)})::text`;
+  return sql`select extract(epoch from ${bucket}) * 1000 as bucket_ms, count(*) as bucket_count, ${value} as bucket_value from ${identifier(
+    entity.$table,
+  )} where ${conditions(entity, plan, shape)} and ${on} is not null group by 1 order by 1 limit ${limit}`;
+};

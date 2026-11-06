@@ -37,6 +37,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_WEBHOOK_SIGNATURE_INVALID',
   'X_WEBHOOK_SIGNATURE_STALE',
   'X_BEARER_MOUNT_INVALID',
+  'X_RATE_LIMIT_STORE_TIMEOUT',
 ] as const;
 
 export type HttpOwnedErrorCode = (typeof HTTP_OWNED_ERROR_CODES)[number];
@@ -71,6 +72,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_WEBHOOK_SIGNATURE_INVALID: 'the inbound webhook is not signed by the holder of this secret',
   X_WEBHOOK_SIGNATURE_STALE: 'the inbound webhook is signed correctly and is too old to accept',
   X_BEARER_MOUNT_INVALID: 'a bearer mount declaration cannot be served as written',
+  X_RATE_LIMIT_STORE_TIMEOUT: 'the shared rate-limit store did not answer inside its own deadline',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title

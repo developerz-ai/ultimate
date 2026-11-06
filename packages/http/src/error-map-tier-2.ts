@@ -123,4 +123,10 @@ export const TIER_2_ERROR_STATUS = {
   X_AUTH_CONSENT_INVALID: 422,
   // @ultimat3/auth — a verification token was issued or consumed for a purpose nothing declared
   X_VERIFICATION_PURPOSE_UNKNOWN: 400,
+  // @ultimat3/entity — a repository has no series
+  X_ENTITY_SERIES_UNSUPPORTED: 501,
+  // @ultimat3/entity — a time series asked for something no bucket can answer
+  X_ENTITY_SERIES_INVALID: 422,
+  // @ultimat3/entity — a view entity was asked to write a row
+  X_ENTITY_VIEW_READ_ONLY: 500,
 } satisfies Readonly<Record<string, number>>;

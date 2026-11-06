@@ -15,6 +15,7 @@ import {
   STATUS_TABLE,
   STATUS_TABLE_MAX_TIER,
   STATUS_TABLE_SLICES,
+  statusDecision,
   statusTableFor,
   WIKI_PAGE,
 } from './new-error-code';
@@ -122,16 +123,16 @@ describe('the HTTP status is decided in the same edit', () => {
     ]);
     const backlog = await read(dir, STATUS_BACKLOG);
     expect(backlog).toContain("  policy: ['X_ROLE_REDEFINED', 'X_POLICY_PROBE_ONLY'],");
-    // `http` owns the table and pins nothing: a group is created for it, before the close.
-    await mkdir(`${dir}/packages/http/src`, { recursive: true });
+    // `time` pins nothing yet: a group is created for it, before the close.
+    await mkdir(`${dir}/packages/time/src`, { recursive: true });
     await Bun.write(
-      `${dir}/packages/http/src/errors.ts`,
-      "export const HTTP_TITLES = {\n  X_A: 'a',\n};\n",
+      `${dir}/packages/time/src/errors.ts`,
+      "export const TIME_TITLES = {\n  X_A: 'a',\n};\n",
     );
     await newErrorCode(dir, [
-      'X_HTTP_PROBE_ONLY',
+      'X_TIME_PROBE_ONLY',
       '--package',
-      'http',
+      'time',
       '--title',
       't',
       '--cause',
@@ -141,7 +142,7 @@ describe('the HTTP status is decided in the same edit', () => {
       '--off-socket',
     ]);
     const after = await read(dir, STATUS_BACKLOG);
-    expect(after).toContain("  http: ['X_HTTP_PROBE_ONLY'],\n};");
+    expect(after).toContain("  time: ['X_TIME_PROBE_ONLY'],\n};");
     expect(transpiles(after)).toBe(true);
   });
 
@@ -175,6 +176,12 @@ describe('the HTTP status is decided in the same edit', () => {
       await read(dir, statusTableFor('money')),
       await read(dir, STATUS_BACKLOG),
     ]).toEqual(before);
+  });
+
+  test('http takes no --off-socket: its own test holds every code it owns to a row', () => {
+    expect(() => statusDecision('http', ['--off-socket'])).toThrow(/status row/);
+    expect(statusDecision('http', ['--status', '500'])).toEqual({ kind: 'row', status: 500 });
+    expect(statusDecision('db', ['--off-socket'])).toEqual({ kind: 'pin' });
   });
 
   test('a tier-5 package is outside the table: no flag is asked for, and one is refused', async () => {

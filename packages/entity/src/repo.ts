@@ -10,6 +10,7 @@
 import type { Page } from '@ultimat3/core';
 import type { AggregateFn } from './aggregate';
 import type { Predicate, SortKey } from './tenancy';
+import type { SeriesPoint, SeriesSpec } from './time-bucket';
 import type { IdOf, RowPatch, RowWrite } from './types';
 
 export interface Tx {
@@ -152,6 +153,16 @@ export interface Repo<T = unknown> {
    * `MoneyValue`; neither is ever a float.
    */
   aggregate(fn: AggregateFn, column: string, args?: FindManyArgs): Promise<unknown>;
+  /**
+   * One point per time bucket that holds rows, over exactly the rows `count(args)` counts with an
+   * instant in `spec.on` — truncated in `spec.timeZone` as Postgres' `date_trunc(unit, col, zone)`
+   * truncates (`time-bucket.ts`), ascending, refused past `MAX_GROUPS` buckets. `value` is a count
+   * (`number`) or a `sum` (decimal text, or a `MoneyValue`), never a float.
+   *
+   * Optional, like `lock`: a hand-written driver still compiles, and the typed handle answers
+   * `X_ENTITY_SERIES_UNSUPPORTED` for one without it.
+   */
+  series?(spec: SeriesSpec, args?: FindManyArgs): Promise<readonly SeriesPoint[]>;
   /**
    * The planner's own row estimate for the table — not a count, and never filtered. `null` when
    * the table has never been analysed, which is a fact and not an estimate.

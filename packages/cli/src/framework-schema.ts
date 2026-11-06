@@ -7,7 +7,12 @@
 // the one code path that needs it, and it surfaces as a Postgres `42P01` from inside a worker.
 
 import { SQL_AUDIT_TABLE, SQL_IDEMPOTENCY_TABLE } from '@ultimat3/action';
-import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from '@ultimat3/admin/schema';
+import {
+  ADMIN_AUDIT_TABLE,
+  ERROR_GROUPS_TABLE,
+  SQL_ADMIN_AUDIT_TABLE,
+  SQL_ERROR_GROUPS_TABLE,
+} from '@ultimat3/admin/schema';
 import {
   AUTH_SERVER_TABLES,
   AUTH_TABLE_NAMES,
@@ -159,6 +164,17 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/admin',
     tables: Object.freeze([ADMIN_AUDIT_TABLE]),
     ddl: Object.freeze([SQL_ADMIN_AUDIT_TABLE]),
+  }),
+  /**
+   * `errorGroupsSink`'s table — one row per error fingerprint, what `/admin/errors` lists and
+   * `postgresErrorGroupsStore()` upserts. Applied whether or not the app installs the sink, for
+   * every row's reason: turning it on must not be the deploy whose first error meets `42P01` —
+   * and a sink write that fails is only logged, so that outage would be silent. Same leaf subpath.
+   */
+  Object.freeze({
+    pkg: '@ultimat3/admin',
+    tables: Object.freeze([ERROR_GROUPS_TABLE]),
+    ddl: Object.freeze([SQL_ERROR_GROUPS_TABLE]),
   }),
   /**
    * `mcpConfirmations`' pending rows — what `postgresConfirmationStore()` reads and writes. Without

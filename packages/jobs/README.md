@@ -278,6 +278,21 @@ Step names are the replay key, so they must be deterministic and unique in a run
 duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control flow
 (`StepSuspension`), never a failure: it does not burn a retry attempt.
 
+What a crash does to an effect left outside a step is proven, not reviewed: `x exercise` kills
+every job it reaches at every step boundary (`crashProof`, `@ultimat3/testing`), and an effect a
+killed run makes more often than a clean one is `X_JOB_CRASH_DIVERGED`, red in `x verify`. A job
+test asks the same with `crashProof(job, input)`.
+[Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-crash-proof).
+
+## Rollups and materialized views are jobs
+
+`rollup({ name, into, table, key, lookback, bucket, source, map, tenant })` re-aggregates every
+bucket from the one holding `now - lookback` on, read from that bucket's first instant in
+`bucket.timeZone`, into the app's table with one `upsertAll` on `key` (a unique index on `into`, checked at
+declaration: `X_JOB_ROLLUP_INVALID`). `refreshView({ name, view, concurrently? })` refreshes a
+materialized view entity (`X_JOB_REFRESH_VIEW_INVALID`). Both are factories over `job()`; the
+schedule is the app's `task`. Reference: [Jobs and workflows](https://github.com/developerz-ai/ultimate/wiki/Jobs-And-Workflows#rollups-and-materialized-views).
+
 ## Backfills are jobs
 
 `backfill()` is a **factory over `job()`**, not a ninth primitive — one pass over every row a
@@ -996,20 +1011,30 @@ between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driv
 | Driver | Status | Backing | Use |
 |---|---|---|---|
 | `pg` | **default** | `SELECT ... FOR UPDATE SKIP LOCKED`, a partial unique index on `(name, coalesce(tenant_id, ''), idempotency_key)` over live rows (`x_jobs_name_tenant_idempotency_live_idx`), lease-based leader, `x_job_leases` | zero-infra start, most apps |
-| `redis` | complete, `As of 2026-10` | `Bun.redis`; one Lua script per operation, every key in one `{hash tag}` slot | a queue off the database; no `introspect`, `backfills` or `leases` |
+| `redis` | complete, `As of 2026-10` | core's `redisClient()` (`@ultimat3/core/redis`); one Lua script per operation, every key in one `{hash tag}` slot | a queue off the database; no `introspect`, `backfills` or `leases` |
 | `memory` | complete | in-process maps | `x dev`, tests |
 
 **`redisJobDriver({ client?, prefix?, clock?, doneTtlMs? })`** passes `@ultimat3/testing`'s
 `jobDriverConformance`, the suite the other two pass, and `driver-redis.live.test.ts` runs one
 script of operations on it and on the memory driver and compares every answer. Installed with
 `setJobDriver(redisJobDriver())` (or `ServeOptions.runtime.jobs`), imported from its own entry
-`@ultimat3/jobs/redis` so the barrel every role boots carries none of it; `Bun.redis` reads `REDIS_URL`.
+`@ultimat3/jobs/redis` so the barrel every role boots carries none of it; the client reads `REDIS_URL`.
 What it does not carry: `introspect` (so `x jobs show`/`retry`/`cancel` and queue pauses answer
 for Postgres only), `backfills`, and `leases` — a job declaring `concurrency` refuses
 `jobWorker().start()` (`X_JOB_CONCURRENCY_UNENFORCEABLE`). A `done` row and its steps expire
 after `doneTtlMs` (a week; `0` keeps them); `dead` and `failed` rows are kept. The outbox still
 stages in Postgres — the relay publishes committed rows onto it with their ids. The NATS stub
 deleted in 25.0.0 stays deleted.
+
+**Redis down refuses, it never waits** `As of 2026-11`. The driver takes core's `redisClient()`,
+not `Bun.redis`: no offline queue, so a command while disconnected is refused at once, and a
+reconnect loop that never gives up, so a restarted server is back on every pod with no restart.
+`Bun.redis` blocked an `enqueue` while it retried (31 s, measured on a stopped server), then
+stayed closed after its retries ran out. A refusal for want of a connection (`ERR_REDIS_CONNECTION_CLOSED`) is
+`X_DRIVER_UNAVAILABLE` (`driver-redis-refusal.ts`), on `enqueue` and on `claim` alike; nothing was
+queued, so the same call is safe to repeat. Catch it where a queued retry was implied. A server's
+own error reply passes through unmapped. There is no per-command deadline here — a stuck command
+has the request's. A `client` handed in keeps its own behaviour and still gets the mapping.
 
 The pg SQL lives verbatim in `src/driver-pg-*sql.ts` (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …)
 so an agent debugging a stuck queue can read and run the exact statement. The barrel exports

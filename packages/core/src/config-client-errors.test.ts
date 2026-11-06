@@ -16,12 +16,19 @@ const causeOf = (run: () => unknown): string => {
 
 describe('clientErrors — default, merge and refusal', () => {
   test('off by default, anonymous refused, 30 a minute', () => {
+    const vitals = { enabled: false, sampleRate: 0.1, surfaces: ['app' as const] };
     expect(defineConfig({ name: 'app' }).clientErrors).toEqual({
       enabled: false,
       anonymous: false,
       perMinute: 30,
+      vitals,
     });
-    expect(CLIENT_ERRORS_DEFAULTS).toEqual({ enabled: false, anonymous: false, perMinute: 30 });
+    expect(CLIENT_ERRORS_DEFAULTS).toEqual({
+      enabled: false,
+      anonymous: false,
+      perMinute: 30,
+      vitals,
+    });
   });
 
   test('the last layer that said a key wins it; one that said nothing keeps it', () => {
@@ -29,7 +36,7 @@ describe('clientErrors — default, merge and refusal', () => {
       { name: 'app', clientErrors: { enabled: true, perMinute: 10 } },
       { clientErrors: { anonymous: true } },
     );
-    expect(config.clientErrors).toEqual({ enabled: true, anonymous: true, perMinute: 10 });
+    expect(config.clientErrors).toMatchObject({ enabled: true, anonymous: true, perMinute: 10 });
   });
 
   test('perMinute: 0 is X_CONFIG_INVALID — a limit of nothing is a route that refuses everything', () => {
@@ -63,6 +70,69 @@ describe('clientErrors — default, merge and refusal', () => {
     );
     expect(cause).toStartWith('X_CONFIG_INVALID');
     expect(cause).toContain('webVitals');
+  });
+});
+
+describe('clientErrors.vitals — real-user timings, the same door', () => {
+  test('off by default, and on independently of error reports', () => {
+    const config = defineConfig({ name: 'app', clientErrors: { vitals: { enabled: true } } });
+    expect(config.clientErrors.enabled).toBe(false);
+    expect(config.clientErrors.vitals).toEqual({
+      enabled: true,
+      sampleRate: 0.1,
+      surfaces: ['app'],
+    });
+  });
+
+  test('merged key by key inside the block: an overlay naming one key keeps the others', () => {
+    const config = defineConfig(
+      { name: 'app', clientErrors: { vitals: { enabled: true, sampleRate: 0.5 } } },
+      { clientErrors: { vitals: { surfaces: ['app', 'site'] } } },
+    );
+    expect(config.clientErrors.vitals).toEqual({
+      enabled: true,
+      sampleRate: 0.5,
+      surfaces: ['app', 'site'],
+    });
+  });
+
+  test('a rate outside 0–1, or not a number, is refused by name', () => {
+    for (const sampleRate of [1.5, -0.1, Number.NaN, '0.5' as unknown as number]) {
+      const cause = causeOf(() =>
+        defineConfig({ name: 'app', clientErrors: { vitals: { sampleRate } } }),
+      );
+      expect(cause).toStartWith('X_CONFIG_INVALID');
+      expect(cause).toContain('clientErrors.vitals.sampleRate');
+    }
+    expect(
+      causeOf(() => defineConfig({ name: 'app', clientErrors: { vitals: { sampleRate: 0 } } })),
+    ).toBe('did not throw');
+  });
+
+  test('a surface outside app and site, or none at all, is refused by name', () => {
+    const unknown = causeOf(() =>
+      defineConfig({
+        name: 'app',
+        clientErrors: { vitals: { surfaces: ['admin' as unknown as 'app'] } },
+      }),
+    );
+    expect(unknown).toContain('clientErrors.vitals.surfaces');
+    expect(unknown).toContain('admin');
+    const none = causeOf(() =>
+      defineConfig({ name: 'app', clientErrors: { vitals: { surfaces: [] } } }),
+    );
+    expect(none).toContain('clientErrors.vitals.surfaces');
+  });
+
+  test('an unknown key inside vitals is refused by name', () => {
+    const cause = causeOf(() =>
+      defineConfig({
+        name: 'app',
+        clientErrors: { vitals: { lcp: true } as unknown as { enabled: boolean } },
+      }),
+    );
+    expect(cause).toStartWith('X_CONFIG_INVALID');
+    expect(cause).toContain('lcp');
   });
 });
 

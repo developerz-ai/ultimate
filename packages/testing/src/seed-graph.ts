@@ -69,7 +69,10 @@ export function seedGraph(
   const seed = finiteOption('seedGraph', 'seed', options.seed ?? DEFAULT_SEED);
   const tenantCount = finiteCount('seedGraph', 'tenants', options.tenants ?? 2, 1);
   const perTable = finiteCount('seedGraph', 'perTable', options.perTable ?? 3, 1);
-  const shapes = new Map(Object.values(entities).map((entity) => [entity.$name, shapeOf(entity)]));
+  // A view entity is a relation Postgres derives: no row is ever written to it, so it is no part of
+  // the graph (`X_ENTITY_VIEW_READ_ONLY` otherwise) — the tables it reads from carry the rows.
+  const tables = Object.values(entities).filter((entity) => entity.$describe().view === undefined);
+  const shapes = new Map(tables.map((entity) => [entity.$name, shapeOf(entity)]));
   const { order, deferred } = insertOrder(
     [...shapes.values()].map((shape) => ({
       name: shape.name,

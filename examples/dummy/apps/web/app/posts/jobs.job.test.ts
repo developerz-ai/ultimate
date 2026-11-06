@@ -22,7 +22,7 @@ import {
   tryMailDriver,
 } from '@ultimat3/mail';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
-import { jobTest } from '@ultimat3/testing';
+import { jobTest, simulateJobs } from '@ultimat3/testing';
 import { publishPost } from './actions/publish-post';
 import { exportPosts, postsExportPrefix } from './jobs/export-posts';
 import { importPosts } from './jobs/import-posts';
@@ -213,6 +213,54 @@ test('a blip on the third recipient re-sends the third, not the first two', asyn
     mail.restore();
   }
 });
+
+// The fanout under two workers and every fault `simulateJobs` plants — a worker killed, an answer
+// lost, a lease lapsed, a duplicate claim, the clock jumping — interleaved from a seed, over the
+// seeded org's real rows and the real mail job `send()` queues. The stated invariant: no run is
+// left in flight; a run that dead-lettered did so only because a fault exhausted it; and a fanout
+// that finished `done` mailed each opted-in member at least once. At least once and not exactly
+// once, by design: a lapsed lease re-runs a send whose record had not landed, which no queue can
+// prevent; the per-recipient step keeps that to one recipient. A failing seed names its replay:
+// `x test job --seed <n> --filter posts/jobs.job`.
+
+/** What a fault leaves on a row it exhausted: a dead connection, or the lease it never renewed. */
+const FAULTED = /X_DB_UNAVAILABLE|the lease lapsed on the final attempt/;
+
+jobTest(
+  'the fanout keeps its invariant under two workers and every fault kind',
+  async ({ seed }) => {
+    const { tenancy, ada, bruno } = await seed('dev').pick({
+      tenancy: 'post:tenancy', // Acme's; Kenji opted out of mail
+      ada: 'member:ada',
+      bruno: 'member:bruno',
+    });
+    const mailed = (effects: readonly { readonly key: string }[], email: string): number =>
+      effects.filter((effect) => effect.key.startsWith('mail:') && effect.key.endsWith(`→${email}`))
+        .length;
+    let finished = 0;
+    const report = await simulateJobs({
+      seeds: 5,
+      workers: 2,
+      jobs: [{ handle: notifySubscribers, input: { postId: tenancy.id, orgId: tenancy.orgId } }],
+      invariant: (state) => {
+        expect(state.runs.filter((run) => run.state !== 'done' && run.state !== 'dead')).toEqual(
+          [],
+        );
+        for (const run of state.runs.filter((one) => one.state === 'dead')) {
+          expect(run.lastError ?? '').toMatch(FAULTED);
+        }
+        const fanout = state.runs.find((run) => run.job === notifySubscribers.name);
+        if (fanout?.state !== 'done') return;
+        finished += 1;
+        expect(mailed(state.effects, ada.email)).toBeGreaterThanOrEqual(1);
+        expect(mailed(state.effects, bruno.email)).toBeGreaterThanOrEqual(1);
+      },
+    });
+    expect(report.seeds).toHaveLength(5);
+    // Never vacuous: a simulation in which no fanout ever finished proved nothing about mail.
+    expect(finished).toBeGreaterThan(0);
+  },
+);
 
 // `exportPosts` — `exportRows()` over the org's posts, run through the real queue the fixture
 // installs, onto the app's disk. What can fail: the artifact's location, its header, and the

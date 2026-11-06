@@ -121,9 +121,11 @@ export function consumer<Item, C>(definition: ConsumerDefinition<Item, C>): Cons
     idempotencyKey: () => `consumer:${name}:arm`,
     retry: DEFAULT_RETRY,
     ...queue,
-    async run({ ctx }) {
+    async run({ ctx, step }) {
       const keys = await definition.keys({ ctx });
-      const results = await enqueueMany(keys.map((key) => ({ key })));
+      // A step: an arm killed after its enqueue and before its ack replays the result rather than
+      // enqueuing the keys again behind a consumer that already finished.
+      const results = await step.run('start-keys', () => enqueueMany(keys.map((key) => ({ key }))));
       return { keys: keys.length, started: results.filter((result) => !result.deduped).length };
     },
   });

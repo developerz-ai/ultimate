@@ -75,6 +75,8 @@ A count reads no row, so it is not audited. Upgrading from a release that counte
 
 An unknown field, operator, sort, scope or parameter — or a value that is not the column's type (a number is decimal digits: no blank, hex or exponent; a date is one the calendar has) — is `X_ADMIN_FILTER_INVALID`: a 400 naming what the list answers, never the unfiltered list. The MCP list tool takes the same grammar (`scope`, `where: [{ field, op?, value }]`).
 
+**A view lists read-only.** An entity declared `view: { sql }` ([Entities and migrations](Entities-And-Migrations#views)) offers `list`, `detail` and `search` and nothing else: no `new` or `edit` route, no create, edit or delete button, no `admin.<entity>.create`/`update`/`delete` MCP tool — for an actor holding every permission too, because its rows are Postgres' to derive. An `operations` override naming a write on one is `X_ADMIN_VIEW_WRITE` at `defineAdmin`, before any route exists. `As of 2026-11`.
+
 Statements per list page: 1 for the rows (2 when the sort column is nullable, one more when a page ends inside one millisecond of an instant sort, and a page past its first adds the rest of the boundary's tie), 1 per counted scope, 1 per referenced resource per 200 ids (2 for one with more than 50 rows that a control picks from). A reference picker is a `<select>` up to 50 rows and the target's lookup screen above that — both work with scripting off.
 
 ## Detail, form, actions
@@ -130,6 +132,29 @@ An edit form carries the row's version (`_version`); a row someone changed after
 | Where it shows | the detail page's history card — `audit.entries({ entity, entityId, changes: true })`, keyset by `?history=`; `/admin/audit` (`audit:read`) for the whole trail, 100 per page, older pages by keyset. Both read only the actor's tenant's entries (`orgId`) when the actor has an org |
 | Searching the trail | `As of 2026-11`. `/admin/audit` is one native GET form: `?entity=` `?actor=` `?outcome=allowed\|denied\|failed` `?since=` `?until=` (ISO-8601 with an offset or `Z`, `YYYY-MM-DD` as that day's first UTC instant, or the form's `YYYY-MM-DDTHH:mm`, read as the UTC its label says; `until` exclusive). A store (`AuditQuery`) takes only the first two: a zoneless time is refused `?changes=1` `?before=<at>~<id>`. The older link carries the filters. Any other parameter — `?org=` included, the tenant is the actor's — or an unreadable value is a 400, `X_ADMIN_FILTER_INVALID`, never the unfiltered trail. `auditHref(path, request)` builds a link to a filtered trail. An entry links to its row when the resource is mounted and the actor may open it. No CSV: an `AdminCustomPage` with `exportRows()` composes one |
 | A copy elsewhere | `memoryAuditLog({ sinks })` / `postgresAuditLog({ sinks })` — each `AuditSink` gets a copy of every entry; a sink is write-only and never read back |
+
+## Errors
+
+`As of 2026-11`. `pages: errorGroupsPages({ store, navGroup? })` mounts `/admin/errors` — every error group an `errorGroupsSink` folded, newest-seen first, filterable by status — and `/admin/errors/:fingerprint`, one group's sample. Two `pages:` entries, not a new screen kind: the route table, the nav and the refusal audit are every custom page's.
+
+```ts
+import { defineAdmin, errorGroupsPages } from '@ultimat3/admin';
+import { postgresErrorGroupsStore } from '@ultimat3/admin/error-groups';
+
+const errorGroups = postgresErrorGroupsStore();
+
+export const admin = defineAdmin({
+  entities: [],
+  pages: errorGroupsPages({ store: errorGroups, navGroup: 'admin.group.ops' }),
+});
+```
+
+| Rule | Detail |
+|---|---|
+| Who | `admin:read` plus `errors:read` (`ERRORS_READ`). Grant it in the role map, or the `policy` step is `X_PERMISSION_UNGRANTED` |
+| The store | the one the app's sink writes (`@ultimat3/admin/error-groups`): `postgresErrorGroupsStore()` (`x_error_groups`, applied at boot), `memoryErrorGroupsStore()` in tests. Installing the sink → [Observability](Observability#error-groups) |
+| A row | code, source, operation, the cause's first line, first and last seen, count, status (`open`, `resolved`, `ignored`; a resolved group that recurs re-opens). The detail shows the redacted sample: release, environment, request and trace ids, meta, stack |
+| Labels | `admin.errors.*` keys in the app's catalogs: `title`, `detail.title`, `empty`, `missing`, `back`, `count`, `filter.status`, `status.<status>`, `field.<code\|count\|environment\|first\|last\|operation\|release\|request\|source\|status\|trace>` |
 
 ## The jobs dashboard
 

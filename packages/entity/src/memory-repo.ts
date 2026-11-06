@@ -8,19 +8,17 @@
 
 import { pageOf } from '@ultimat3/core';
 import { refuseAbandoned } from '@ultimat3/db';
-import { aggregateColumnOf } from './aggregate';
-import { foldAggregate } from './aggregate-fold';
 import { appendOnlyRepo } from './append-only';
 import { keyOf } from './batch-read';
 import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
 import { entityNow } from './clock';
 import { narrowRow } from './columns';
-import { countsFrom, groupColumnOf } from './count-by';
 import { cursorFor, kindOf, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { invariantViolated, notFound } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { lockKeyInput } from './lock-key';
+import { memoryAggregates } from './memory-aggregates';
 import { undoingBatch } from './memory-batch';
 import { memoryJournal } from './memory-journal';
 import { memoryLocks } from './memory-lock';
@@ -433,38 +431,7 @@ export const memoryRepo = <Row>(
       return select(args, 'count').found.length;
     },
 
-    async aggregate(fn, column, args = {}) {
-      // Refused before a row is read, and by the same function the Postgres driver calls: a column
-      // that has no aggregate is that mistake in both drivers or in neither.
-      const declared = aggregateColumnOf(entity, fn, column);
-      const { found } = select(args, fn);
-      return foldAggregate(entity, fn, column, declared.$meta.kind, found);
-    },
-
-    /**
-     * Exact here, and that is the honest answer rather than a shortcut: the estimate exists
-     * because `count(*)` walks every visible row of a real table, and this driver's rows are
-     * already an array whose length is free. Filters are refused in both drivers by `plan.ts`,
-     * so the two still answer the same QUESTION.
-     */
-    async approximateCount(args = {}) {
-      return select(args, 'approximateCount').found.length;
-    },
-
-    async countBy(column, args = {}) {
-      // Refused before a row is read, and by the same function the Postgres driver calls: a column
-      // a map cannot be keyed by is that mistake in both drivers or in neither.
-      groupColumnOf(entity, column, 'countBy');
-      const { found } = select(args, 'countBy');
-      const groups = new Map<unknown, number>();
-      for (const row of found) {
-        // `?? null`, so a property this row never carried lands in the same group Postgres puts a
-        // NULL row in — and `0`, `''` and `false` stay the values they are.
-        const value = field(row, column) ?? null;
-        groups.set(value, (groups.get(value) ?? 0) + 1);
-      }
-      return countsFrom(entity, column, 'countBy', [...groups]);
-    },
+    ...memoryAggregates(entity, select),
 
     // Asked before the wait, so another tenant's id never queues behind that tenant's holder, and
     // again after it, because the row may be gone by then: Postgres re-reads a row it waited for.

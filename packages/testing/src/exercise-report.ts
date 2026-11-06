@@ -54,6 +54,33 @@ export type TenantProof =
   | { readonly verdict: 'unproven'; readonly reason: string }
   | { readonly verdict: 'crossed'; readonly findings: readonly TenantFinding[] };
 
+/** One effect a run killed at `boundary` made a different number of times than a clean run. */
+export interface CrashFinding {
+  /** `charge`, `charge (started)`, `unwinding`, `compensate:charge`, `ack`. */
+  readonly boundary: string;
+  /** `forced-fail`: a `compensates: true` job made to fail for good, then unwound. */
+  readonly mode: 'clean' | 'forced-fail';
+  /** `row:posts:insert`, `mail:receipt→a@x.example`, `network:POST api.example/v1`, `enqueue:x`. */
+  readonly effect: string;
+  readonly clean: number;
+  readonly killed: number;
+  /** The last step the clean run had written before the effect; absent, before the first. */
+  readonly after?: string;
+}
+
+/** The crash proof's verdict on a reached job: killed at every step boundary (`crashProof`). */
+export type CrashProof =
+  | { readonly verdict: 'held'; readonly boundaries: number; readonly reruns: number }
+  | {
+      readonly verdict: 'diverged';
+      readonly boundaries: number;
+      /** Lost answers that reran a step: at-least-once, counted, never red. */
+      readonly reruns: number;
+      readonly findings: readonly CrashFinding[];
+    }
+  /** The proof itself could not finish: reported, never red. */
+  | { readonly verdict: 'unproven'; readonly reason: string };
+
 export interface ExerciseRecord {
   readonly kind: 'action' | 'query' | 'job';
   readonly name: string;
@@ -67,6 +94,8 @@ export interface ExerciseRecord {
   readonly override?: string;
   /** On every record that ran — absent only on `off` and `refused`. The fields above are A's. */
   readonly tenant?: TenantProof;
+  /** On a reached job only: its control's input, killed at every step boundary. */
+  readonly crash?: CrashProof;
 }
 
 /** What an effect carried, for the tenant proof's read half: searched, never reported as is. */

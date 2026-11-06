@@ -79,7 +79,7 @@ does when it is declared; read as a `Pods` metric it asked for N times the worke
 type needs an emitter, a scrape **and** a custom metrics adapter that turns the
 scraped series into the metric name the HPA asks for. The chart now ships the first two —
 container port `metrics` on every serving role, a Service that publishes it, and a `ServiceMonitor`
-behind `serviceMonitor.enabled` — but **not** the adapter, and `rps` in particular is a rate the
+wherever the cluster serves the operator's kind (`serviceMonitor.enabled: auto`) — but **not** the adapter, and `rps` in particular is a rate the
 adapter has to derive (`rate(http_requests_total[1m])`); no process emits a series with that name.
 The two adapter rules are that and `max by (queue) (queue_demand)`.
 Until prometheus-adapter (or equivalent) is installed and configured, those HPAs still read
@@ -125,21 +125,21 @@ gRPC needs HTTP/2 plus protobuf, which is a dependency and a second wire format
 
 ## Scrape config
 
-The chart ships it. Turn it on:
-
-```bash
-helm upgrade --install <release> docker/helm --set serviceMonitor.enabled=true
-```
+The chart ships it, and renders it by capability: `serviceMonitor.enabled` is `auto`, so the object
+appears on any cluster that serves `monitoring.coreos.com/v1/ServiceMonitor` and is skipped where
+nothing does. `true` forces it (and `helm install` fails without the CRD), `false` declines it.
 
 That renders one `ServiceMonitor` for the release —
 [`docker/helm/templates/servicemonitor.yaml`](../../docker/helm/templates/servicemonitor.yaml) —
 selecting every role's Service by `app.kubernetes.io/name` + `instance`, scraping the port **named**
-`metrics` at `/metrics`. `targetLabels: [app.kubernetes.io/component]` carries the role onto every
-series, which is what an alert and a metric adapter key on.
+`metrics` at `/metrics`. `targetLabels` carries the role (`app.kubernetes.io/component`) and the
+release (`app.kubernetes.io/instance`) onto every series, which is what the chart's alert rules and a
+metric adapter key on.
 
 | Decision | Why |
 |---|---|
-| Off by default | a cluster with no Prometheus operator has no `ServiceMonitor` CRD, and `helm install` fails on an unknown kind rather than skipping it |
+| `auto`, not on | a cluster with no Prometheus operator has no `ServiceMonitor` CRD, and `helm install` fails on an unknown kind rather than skipping it — so the chart asks `.Capabilities` first. `helm template` answers from `--api-versions`: an offline render (GitOps) gets the object only with `--api-versions monitoring.coreos.com/v1/ServiceMonitor` |
+| A value already `false` stays off | a deliberate value is honoured; only a missing key or `auto` asks the cluster |
 | Its own port (`metricsPort`, 9090), not the app's | `ingress.yaml` routes `/` to web, so `/metrics` on 3000 would be your route patterns and error rates on the internet |
 | A Service for **every** role, headless for the ones that take no traffic | `worker`, `scheduler` and `replicator` open no HTTP socket, and `queue_depth` belongs to one of them — a ServiceMonitor needs a Service to select |
 | The port **by name**, never the integer | an operator who moves `metricsPort` must not have to remember a second place; the ingress selects `http` by name for the same reason, which is what keeps `/metrics` off the internet |
@@ -151,7 +151,7 @@ uses a `serviceMonitorSelector`, put the labels it matches in `serviceMonitor.la
 Verify before believing it:
 
 ```bash
-helm template <release> docker/helm --set serviceMonitor.enabled=true | grep -A3 'name: metrics'
+helm template <release> docker/helm --api-versions monitoring.coreos.com/v1/ServiceMonitor | grep -A3 'name: metrics'
 kubectl port-forward deploy/<release>-ultimate-worker 9090:9090 && curl -s localhost:9090/metrics
 ```
 
@@ -292,8 +292,29 @@ a day later. Slow, but it is the difference between "we have no backups" being n
 
 ## Alerts on the app's own metrics
 
-`As of 2026-09-23` every series above is emitted and scrapable, so these are writable today; a row
-whose signal comes from outside the app names that source.
+**The chart ships the mechanism half.** `templates/alert-rules.yaml` is a `PrometheusRule`, rendered
+like the `ServiceMonitor` (`alerts.enabled: auto`), scoped to the release's namespace and instance.
+Each rule's `runbook_url` is `alerts.runbookBase` plus its anchor in
+[`06-runbooks.md`](./06-runbooks.md), and `alerts.rules.<alert>` overrides `threshold`, `for`,
+`severity` or `enabled` per rule. An app whose chart predates them gets both templates from
+`x g chart-alerts` (`x doctor` lists them missing); outside Kubernetes, `x g chart-alerts --print`
+prints the same rules as plain rule groups for any loader. One table in
+`packages/cli/src/templates/scaffold-helm-alerts.ts` feeds both, and `scripts/chart-alerts.test.ts`
+holds every expression to a series a package declares.
+
+| Rule | Fires on | Default |
+|---|---|---|
+| `UltimateQueueStalled` | `queue_oldest_ready_seconds` above the threshold | 300 s, for 5m, warning |
+| `UltimateDeadLetters` | `queue_dead_jobs` above zero | for 5m, warning |
+| `UltimateLeaseLost` | any `job_leases_lost_total` rate | for 5m, warning |
+| `UltimateFramesDropped` | any `channel_frames_dropped_total` rate | for 5m, warning |
+| `UltimateServerErrors` | the 5xx share of `http_requests_total` above the threshold | 5%, for 10m, critical |
+| `UltimateTargetDown` | `up == 0` for any role's scrape target | for 5m, critical |
+
+A latency target or an error budget is business, so none ships: write those beside the chart's. The
+table below is the rest of what is worth an alert, the rows above included; `As of 2026-09-23`
+every series in it is emitted and scrapable, and a row whose signal comes from outside the app
+names that source.
 `queue_depth` and `jobs_total` together are what tell a drained queue from a queue nothing is
 claiming — depth alone cannot. `job_leases_lost_total` deserves a rule of its own at any non-zero
 rate: each point is a job the queue re-delivered while this process was still running it.

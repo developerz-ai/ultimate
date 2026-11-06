@@ -14,7 +14,7 @@ import {
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { expectedQueryLoop } from './expected-loop';
 import { MIGRATION_LOCK_RETRIES } from './migrate-lock-retry';
-import { ledgerAheadOfBuild } from './migrate-rollback';
+import { destructiveBit, ledgerAheadOfBuild } from './migrate-rollback';
 import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
 import type { Migration } from './migration-ledger';
 import {
@@ -274,12 +274,15 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
                 sleep: options.lockRetrySleep,
                 random: options.lockRetryRandom,
               },
+              // The bit an OLDER build reads on a rollback (`migrate-rollback.ts`): recorded here,
+              // by the build that knows the SQL, because the one rolled back to never sees it.
               record: async (client) => {
                 const durationMs = Math.round(performance.now() - at);
                 await client.execute(sql`
-                insert into ${raw(LEDGER_TABLE)} (id, name, checksum, app_version, duration_ms)
+                insert into ${raw(LEDGER_TABLE)}
+                  (id, name, checksum, app_version, duration_ms, destructive)
                 values (${migration.id}, ${migration.name}, ${migrationChecksum(migration)},
-                        ${appVersion}, ${durationMs})
+                        ${appVersion}, ${durationMs}, ${destructiveBit(migration)})
               `);
               },
             });

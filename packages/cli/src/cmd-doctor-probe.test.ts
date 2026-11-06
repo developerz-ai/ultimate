@@ -184,6 +184,54 @@ describe('unit · x doctor · the command', () => {
   });
 });
 
+describe('unit · x doctor · the chart listing', () => {
+  // A chart `x new` wrote before the monitoring templates existed: scraped by nothing, alerting on
+  // nothing. A listing beside the verdict, with the one command that writes the two files.
+  test('a chart missing both monitoring templates gets the row and the fix', async () => {
+    const root = doctorAppRoot();
+    try {
+      mkdirSync(join(root, 'docker', 'helm', 'templates'), { recursive: true });
+      writeFileSync(join(root, 'docker', 'helm', 'Chart.yaml'), 'apiVersion: v2\nname: shop\n');
+      const ctx: CommandContext = {
+        args: parseArgs(['doctor', '--json'], [doctorCommand.spec]),
+        cwd: root,
+        runner: (command) => Promise.reject(new Error(`x doctor spawned ${command.join(' ')}`)),
+        env: {},
+        bunVersion: REQUIRED_BUN,
+      };
+      const missing = [
+        'docker/helm/templates/servicemonitor.yaml',
+        'docker/helm/templates/alert-rules.yaml',
+      ];
+      const listed = await doctorCommand.run(ctx);
+      expect(listed.data).toMatchObject({ chartAlerts: { missing, add: 'x g chart-alerts' } });
+      expect(listed.lines).toEqual(expect.arrayContaining(['  x g chart-alerts']));
+      writeFileSync(join(root, missing[0] as string), '# held\n');
+      writeFileSync(join(root, missing[1] as string), '# held\n');
+      const held = await doctorCommand.run(ctx);
+      expect(held.data).not.toHaveProperty('chartAlerts');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('an app with no chart is listed nothing', async () => {
+    const root = doctorAppRoot();
+    try {
+      const result = await doctorCommand.run({
+        args: parseArgs(['doctor', '--json'], [doctorCommand.spec]),
+        cwd: root,
+        runner: (command) => Promise.reject(new Error(`x doctor spawned ${command.join(' ')}`)),
+        env: {},
+        bunVersion: REQUIRED_BUN,
+      });
+      expect(result.data).not.toHaveProperty('chartAlerts');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 /** The smallest thing `findAppRoot` accepts, plus one subdirectory to be called from. */
 function doctorAppRoot(): string {
   const dir = mkdtempSync(join(tmpdir(), 'x-doctor-'));

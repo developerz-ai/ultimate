@@ -12,6 +12,7 @@ import { generateSpec } from './cmd-generate-spec';
 import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
 import { localiseCatalogs, namedOrAppLocales } from './generate-catalog-locales';
+import { refuseChartAlertsFlags, runChartAlerts } from './generate-chart-alerts';
 import { appDisk, plannedDisk } from './generate-disk';
 import { assertFeatureExists } from './generate-feature';
 import { assertSliceToRead } from './generate-feature-required';
@@ -72,8 +73,11 @@ export const generateCommand: CliCommand = {
     const root = requireAppRoot('g', ctx.cwd).dir;
     const kind = readKind(ctx.args.positionals[0]);
     refuseSignInFlags(kind, ctx.args);
+    refuseChartAlertsFlags(kind, ctx.args);
     // One sign-in per app, named by a flag rather than a `<name>`, and edits no other kind makes.
     if (kind === 'sign-in') return await runSignIn(ctx, root);
+    // One chart per app, named by its `Chart.yaml`: the same shape, for the same reason.
+    if (kind === 'chart-alerts') return await runChartAlerts(ctx, root);
     const name = readName(ctx.args.positionals[1], kind);
     const featureFlag = readFeature(flagString(ctx.args, 'feature'), kind);
     // Both flags are resolved before a single file is planned: a bad surface or a locale that is

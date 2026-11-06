@@ -16,7 +16,13 @@ import {
   serviceActor,
   withChildContext,
 } from '@ultimat3/core';
-import { type AnyQuery, queryHash, queryName, spendQueryLimit } from '@ultimat3/query';
+import {
+  type AnyQuery,
+  queryHash,
+  queryName,
+  spendQueryLimit,
+  traceLiveRead,
+} from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
@@ -172,7 +178,7 @@ export function liveQueryDefinition(
     prepare: async (input) => {
       await resolve(input);
     },
-    snapshot: async ({ input, tenant }): Promise<SnapshotResult> => {
+    snapshot: async ({ input, tenant, traceparent, phase }): Promise<SnapshotResult> => {
       const window = await resolve(input);
       // The position is taken BEFORE the rows: the rows are then at least that new, so the claim
       // is true. Taken after, a commit landing mid-read was claimed and missing — and every change
@@ -181,7 +187,13 @@ export function liveQueryDefinition(
       // a made-up one: a position the node never held becomes a ring floor every foreign cursor
       // is "inside", and the client that resumed there kept rows this node never patched.
       const lsn = options.lsn?.() ?? '';
-      return { rows: await readFor(options.ctx, tenant, () => window.read()), lsn };
+      // In a span joined to the subscriber's trace: the snapshot a subscribe asked for is its
+      // child, a re-run a change forced links to it (`traceLiveRead`). Inside the tenant's child
+      // context, so the span is the read's and nothing else's.
+      const rows = await readFor(options.ctx, tenant, () =>
+        traceLiveRead(name, phase ?? 'snapshot', traceparent, () => window.read()),
+      );
+      return { rows, lsn };
     },
     matcher: (input) => windows.get(queryHash(name, input))?.matcher ?? UNRESOLVED,
     // Read off the same resolved window as the matcher, so the scope the client keys rows under and

@@ -7,5 +7,6 @@ create table "x_migrations" (
   "applied_at" timestamp with time zone default now() not null,
   "app_version" text not null,
   "duration_ms" integer not null,
+  "destructive" boolean,
   constraint "x_migrations_pkey" PRIMARY KEY (id)
 );

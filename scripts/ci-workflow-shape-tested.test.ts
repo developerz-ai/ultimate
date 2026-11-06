@@ -23,6 +23,7 @@ const record = (value: unknown): Readonly<Record<string, unknown>> =>
 const REUSED = [
   'gate',
   'reference-app-verify',
+  'fault-drills',
   'scaffold-smoke',
   'container',
   'compose-deploy',

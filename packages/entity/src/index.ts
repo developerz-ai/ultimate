@@ -30,7 +30,7 @@ export type { DecimalOptions } from './columns-data';
 export { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 // `crossTenantReason` stays internal: an app that could read the flag would have a second way to
 // reason about tenant scope — branch on it — next to the one way, which is entering the scope.
-export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
+export { CROSS_TENANT_SCOPE, crossTenant, setCrossTenantObserver } from './cross-tenant';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
 export type { DescribeInput } from './describe';
@@ -108,6 +108,12 @@ export type { PreloadOptions } from './preload-ceiling';
 export { MAX_PRELOADED_ROWS } from './preload-ceiling';
 export type { Preloaded, ReadBuilder, Table } from './query';
 export { tableFor } from './query';
+export type {
+  ReadAggregates,
+  SeriesOptions,
+  SeriesValueOf,
+  TimestampKeys,
+} from './read-aggregates';
 // The client projection of an entity (plan 101): record type, record key, and the brand on
 // `$schema` that lets an action or query derive its record envelope from its output schema.
 // Value-light — no Postgres driver behind any of them — so a browser store may import them here.
@@ -198,6 +204,8 @@ export {
 } from './tenancy';
 // The scaffolded handle's driver under test: memory until `setDbClient` installs a client.
 export { testDriver } from './test-driver';
+export type { SeriesPoint, SeriesSpec, SeriesUnit, SeriesValue } from './time-bucket';
+export { bucketStart, SERIES_UNITS } from './time-bucket';
 export type { Move } from './transition';
 export type { TransitionObservation } from './transition-pins';
 export type {

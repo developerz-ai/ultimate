@@ -7,10 +7,13 @@ import { storeMode } from '@ultimat3/core';
 import { type Driver, database, postgresDriver, testDriver } from '@ultimat3/entity';
 import { comments } from './schema/comments';
 import { connections } from './schema/connections';
+import { dailyLikes } from './schema/daily-likes';
 import { likes } from './schema/likes';
 import { members } from './schema/members';
 import { orgs } from './schema/orgs';
 import { plans } from './schema/plans';
+import { postLikeTotals } from './schema/post-like-totals';
+import { postReviewRuns } from './schema/post-review-runs';
 import { postReviews } from './schema/post-reviews';
 import { posts } from './schema/posts';
 import { runEvents } from './schema/run-events';
@@ -55,10 +58,13 @@ export const driver = selectDriver(Bun.env);
 const entities = {
   comments,
   connections,
+  dailyLikes,
   likes,
   members,
   orgs,
   plans,
+  postLikeTotals,
+  postReviewRuns,
   postReviews,
   posts,
   runEvents,

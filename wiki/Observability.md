@@ -168,6 +168,7 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 | Log level | `LOG_LEVEL`, default `info` |
 | Secret redaction | a `Secret` is redacted by value before every other branch, at any depth → [Configuration](Configuration) |
 | Request context | the ALS context carries the request id every log line and span inherits |
+| Live queries | the realtime client puts a `traceparent` on the `subscribe` frame (`LiveClient({ traceparent })`); the snapshot that subscribe causes is the span `live.snapshot <query>`, a CHILD of it, and a re-read a change forces is `live.rerun <query>`, which LINKS to it and parents on the change. A value that is not a valid W3C header is ignored, never refused: telemetry never fails a subscribe. The page boot sends none (`As of 2026-11`): a browser holds no trace |
 | Request span name | `GET /r/:token` — the route PATTERN, never the concrete URL (a token in a path would reach every collector); `http.route` carries the same pattern, and an unmatched request is named by its method alone with `http.route: unmatched` (`As of 22.6.0`) |
 
 ## Browser failures
@@ -183,6 +184,62 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 | Report | `cause` = the browser's message; `stack` = the browser's stack, as sent (no source maps); `meta.clientBuild` beside the server's `release` tells a stale tab from a bug; `meta.kind`, `meta.island`; `scope.operation` = the matched `app/` route pattern, plus the island id when a page of this build declares that island — any other id is filed with no operation, so an invented id makes no new group; `scope.extra.path` = the path, never the query string. `errorFingerprint` groups on these: one island's fault on every `/posts/:id` is one group |
 | Credential | none in the browser: the tab posts to its own origin and the server forwards through the configured reporter |
 | Static export | no route to receive a report, so no exported document names the script and `x build` warns |
-| Not on this route | web vitals, source maps, a filter DSL — an app's own rules belong in its wrapped `ErrorReporter` |
+| Not on this route | source maps, a filter DSL — an app's own rules belong in its wrapped `ErrorReporter`. Timings are their own door, below |
+
+## Real-user timings
+
+`clientErrors.vitals: { enabled: true }` (`As of 2026-11`, off by default) measures what a user waited for, with no library: `PerformanceObserver` in the browser, one beacon per page view.
+
+| Concern | Rule |
+|---|---|
+| Config | `enabled` (default `false`), `sampleRate` (share of page views, 0–1, default `0.1`, decided once per view), `surfaces` (default `['app']`; `'site'` opts the static path in by name). A rate out of range or an unlisted surface refuses the config |
+| Timings | `lcp`, `fcp`, `inp`, `ttfb` (ms from navigation start) and `cls` (largest session window). CLOSED: any other name is dropped |
+| Script | `/x-client-vitals.js`, 1,202 B (633 B gzip) `As of 2026-11-06`, `defer` in `<head>`, on documents of a listed surface only |
+| Beacon | `navigator.sendBeacon('/_client-vitals')` on the first hide (`visibilitychange` → hidden, or `pagehide`), naming the path the view LOADED at |
+| Route | `POST /_client-vitals`. Same origin or dropped; body ≤ 4 KiB; 60 beacons a minute per address; anonymous — no actor on a timing. EVERY outcome is `204`, so a probe learns nothing |
+| Metrics | `web_vital_seconds{route, metric}` (histogram, seconds) and `web_vital_cls{route}`. `route` is the matched route PATTERN on a listed surface, never the URL; an unmatched path records nothing. A timing past 60 s, a CLS past 10 or a negative value is dropped |
+| Budgets | charged, never exempted: an `app/` route is weighed as served and pays the script; a `site/` page is exported carrying it when `site` is listed. On a static host its beacons go nowhere, and `x build` warns |
+| Storage | none. The metric is the record |
+
+## Error groups
+
+`errorGroupsSink` (`@ultimat3/admin/error-groups`, `As of 2026-11`) is an `ErrorReporter` that folds every report into its `errorFingerprint` group in `x_error_groups` — first seen, last seen, count, a redacted sample — and `/admin/errors` lists them (`errorGroupsPages`, permission `errors:read`).
+
+```ts
+import { errorGroupsSink, postgresErrorGroupsStore } from '@ultimat3/admin/error-groups';
+import { chainErrorReporters, configureErrorReporting, installedErrorReporter } from '@ultimat3/core';
+import { job, t } from '@ultimat3/jobs';
+
+// The app's own: which tracker, which title. Enqueued once per NEW group, fleet-wide.
+export const openErrorIssue = job({
+  input: t.object({
+    fingerprint: t.string,
+    code: t.string,
+    source: t.string,
+    operation: t.nullable(t.string),
+    message: t.string,
+    firstSeen: t.string,
+  }),
+  idempotencyKey: ({ fingerprint }) => `error-issue:${fingerprint}`,
+  tenant: 'none',
+  retry: { attempts: 3, backoff: 'exponential' },
+  async run({ input }) {
+    console.log('new error group', input.fingerprint);
+  },
+});
+
+export const errorGroups = postgresErrorGroupsStore();
+const sink = errorGroupsSink({ store: errorGroups, onNewGroup: openErrorIssue });
+configureErrorReporting({ reporter: chainErrorReporters(installedErrorReporter(), sink) });
+```
+
+| Concern | Rule |
+|---|---|
+| Composing | `chainErrorReporters(...)` from `@ultimat3/core`: every member gets every report, one that throws costs only itself, chains flatten. The container chains its `SENTRY_DSN` transport AFTER whatever the app installed — never over it |
+| "New", once | the upsert's `xmax = 0` decides, so N replicas reporting one new fault enqueue `onNewGroup` once. Which tracker, title and assignee are the app's job |
+| Transactions | written outside the request's transaction: a rollback never erases its own error |
+| Load | `perMinute` store writes per process (default 120); past it, reports are counted and written as one later. A failed write is logged and never re-enters the reporter |
+| Table | `x_error_groups`, applied at boot with every framework table (`@ultimat3/admin/schema`). Retention is the app's: `errorGroupsPurgeTarget(store, { olderThanMs })`, no default |
+| Stores | `postgresErrorGroupsStore()` for a fleet; `memoryErrorGroupsStore()` for tests — it forgets at restart and counts per replica |
 
 Running an app for real — the PaaS → Compose → Kubernetes ladder, secrets, dashboards, datastore sizing, DR and runbooks — is the operations manual: [`docs/ops/`](https://github.com/developerz-ai/ultimate/tree/main/docs/ops), and specifically [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md). Recommendations only; the framework depends on none of it.

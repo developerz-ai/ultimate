@@ -499,6 +499,38 @@
           "step": "Step"
         }
       }
+    },
+    "errors": {
+      "title": "Errors",
+      "detail": {
+        "title": "Error group"
+      },
+      "status": {
+        "open": "Open",
+        "resolved": "Resolved",
+        "ignored": "Ignored"
+      },
+      "field": {
+        "code": "Code",
+        "source": "Source",
+        "operation": "Operation",
+        "status": "Status",
+        "count": "Occurrences",
+        "first-seen": "First seen",
+        "last-seen": "Last seen",
+        "release": "Release",
+        "environment": "Environment",
+        "request": "Request",
+        "trace": "Trace"
+      },
+      "filter": {
+        "status": "Filter errors by status"
+      },
+      "empty": "No error groups match this filter.",
+      "count": "{count} occurrence",
+      "count_plural": "{count} occurrences",
+      "missing": "This error group no longer exists.",
+      "back": "Back to errors"
     }
   },
   "dev": {

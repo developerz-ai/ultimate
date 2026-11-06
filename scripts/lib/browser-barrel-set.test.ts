@@ -12,9 +12,11 @@ import { join } from 'node:path';
 import {
   browserBarrels,
   CLIENT_BARRELS,
+  excludedImports,
+  excludedPackages,
+  isBunOnlyPackage,
   isProgramPackage,
   packageFacts,
-  programImports,
   programPackages,
   seamPackages,
 } from './browser-barrel-set';
@@ -114,6 +116,48 @@ describe('the program half', () => {
   });
 });
 
+describe('the Bun-only half', () => {
+  /**
+   * The same source file in the set or out of it on one line of its BARREL: a library whose `"."`
+   * imports a Bun builtin has no browser build at all, so no browser evaluates its seam.
+   */
+  test('a barrel importing a Bun builtin takes a library out, and a deeper module does not', async () => {
+    const root = await tree('bun-only');
+    await Bun.write(join(root, 'packages/harness/package.json'), '{ "name": "@x/harness" }\n');
+    await Bun.write(
+      join(root, 'packages/harness/src/scope.ts'),
+      "import { asyncContext } from '@ultimat3/core';\nimport { test } from 'bun:test';\n",
+    );
+    await Bun.write(join(root, 'packages/harness/src/index.ts'), "export * from './scope';\n");
+    // A builtin below the barrel is not enough: the bundler reaches it, but the claim is about the
+    // entry, and a deeper one is the browser suite's finding to make, not this exclusion's.
+    expect(isBunOnlyPackage(root, 'harness')).toBe(false);
+    expect(browserBarrels(root)).toEqual(['harness']);
+
+    await Bun.write(
+      join(root, 'packages/harness/src/index.ts'),
+      "export { expect } from 'bun:test';\nexport * from './scope';\n",
+    );
+    expect(isBunOnlyPackage(root, 'harness')).toBe(true);
+    expect(isProgramPackage(root, 'harness')).toBe(false);
+    expect(excludedPackages(root)).toEqual(['harness']);
+    expect(seamPackages(root)).toEqual(['harness']);
+    expect(browserBarrels(root)).toEqual([]);
+  });
+
+  test('a library importing a Bun-only one is a reach, like a program', async () => {
+    const root = await tree('bun-only-reach');
+    await Bun.write(join(root, 'packages/harness/package.json'), '{ "name": "@x/harness" }\n');
+    await Bun.write(
+      join(root, 'packages/harness/src/index.ts'),
+      "export { expect } from 'bun:test';\n",
+    );
+    await Bun.write(join(root, 'packages/lib/package.json'), '{ "name": "@x/lib" }\n');
+    await Bun.write(join(root, 'packages/lib/src/a.ts'), "import { expect } from '@x/harness';\n");
+    expect(excludedImports(root)).toEqual([{ importer: 'lib', excluded: 'harness' }]);
+  });
+});
+
 describe('the reach rule, over a tree with a known answer', () => {
   const program = '{ "name": "@x/tool", "bin": { "tool": "./src/bin.ts" } }\n';
 
@@ -125,7 +169,7 @@ describe('the reach rule, over a tree with a known answer', () => {
     await Bun.write(join(root, 'packages/lib/src/a.ts'), "import { run } from '@x/tool';\n");
     // Two files, one finding: the reach is the package's, not the file's.
     await Bun.write(join(root, 'packages/lib/src/b.ts'), "export * from '@x/tool/deep/thing';\n");
-    expect(programImports(root)).toEqual([{ importer: 'lib', program: 'tool' }]);
+    expect(excludedImports(root)).toEqual([{ importer: 'lib', excluded: 'tool' }]);
   });
 
   test('a program reaching another program, and a test file, are nobody in a bundle', async () => {
@@ -138,7 +182,7 @@ describe('the reach rule, over a tree with a known answer', () => {
     await Bun.write(join(root, 'packages/other/src/a.ts'), "import '@x/tool';\n");
     await Bun.write(join(root, 'packages/lib/package.json'), '{ "name": "@x/lib" }\n');
     await Bun.write(join(root, 'packages/lib/src/a.test.ts'), "import '@x/tool';\n");
-    expect(programImports(root)).toEqual([]);
+    expect(excludedImports(root)).toEqual([]);
   });
 
   test('a name that merely CONTAINS a program name is not a reach', async () => {
@@ -146,32 +190,36 @@ describe('the reach rule, over a tree with a known answer', () => {
     await Bun.write(join(root, 'packages/tool/package.json'), program);
     await Bun.write(join(root, 'packages/lib/package.json'), '{ "name": "@x/lib" }\n');
     await Bun.write(join(root, 'packages/lib/src/a.ts'), "import '@x/toolkit';\n");
-    expect(programImports(root)).toEqual([]);
+    expect(excludedImports(root)).toEqual([]);
   });
 });
 
 /**
- * The soundness conditions of the exclusion, asserted on THIS tree. A program is out of the browser
- * set because no browser can reach it, and both of these are ways that could stop being true.
+ * The soundness conditions of the exclusion, asserted on THIS tree. A program or a Bun-only library
+ * is out of the browser set because no browser can reach it, and both of these are ways that could stop being true.
  */
-describe('a program stays out of every browser bundle', () => {
-  test('nothing that is not a program imports one', () => {
+describe('an excluded package stays out of every browser bundle', () => {
+  test('nothing that is not excluded imports one', () => {
     // A library importing `@ultimat3/cli` puts the CLI's modules back into a bundle graph nothing
     // here builds. The tier table forbids it independently; this is the same rule, derived.
-    expect(programImports(repoRoot())).toEqual([]);
+    expect(excludedImports(repoRoot())).toEqual([]);
   });
 
-  test('a program never IS a client barrel', () => {
+  test('an excluded package never IS a client barrel', () => {
     // The four barrels an app's island build reaches are bundled by name in
     // `scripts/browser-barrel.test.ts`, so a program appearing there would be excluded from one
     // half of that file and required to bundle by the other.
-    const programs = programPackages(repoRoot());
-    expect(CLIENT_BARRELS.filter((name) => programs.includes(name))).toEqual([]);
+    const excluded = excludedPackages(repoRoot());
+    expect(CLIENT_BARRELS.filter((name) => excluded.includes(name))).toEqual([]);
   });
 
-  test('the tree still holds a program, so the two rules above are not vacuous', () => {
+  test('the tree still holds a program and a Bun-only library, so the rules above are not vacuous', () => {
     // Not a pin on WHICH one: the day this repo ships no `bin` at all, the exclusion is inert and
     // this line is what says so out loud instead of leaving two green tautologies behind.
     expect(programPackages(repoRoot()).length).toBeGreaterThan(0);
+    const root = repoRoot();
+    expect(
+      excludedPackages(root).filter((dir) => isBunOnlyPackage(root, dir)).length,
+    ).toBeGreaterThan(0);
   });
 });

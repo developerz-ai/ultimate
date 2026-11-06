@@ -14,6 +14,7 @@ import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
 import { appUrlFindings } from './doctor-app-url';
 import { type AuthStorageFact, authStorageFindings, authStorageProbe } from './doctor-auth';
+import { chartAlertsProbe, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
 import type { OfflineFallbackFact } from './doctor-offline';
@@ -456,10 +457,15 @@ export const doctorCommand: CliCommand = {
       listed,
       probe.root === undefined ? [] : await coverageExcludesProbe(probe.root),
     );
+    // The third: the monitoring templates the app's chart predates (`doctor-chart-alerts.ts`).
+    const charted = withChartAlertsListing(
+      covered,
+      probe.root === undefined ? [] : chartAlertsProbe(probe.root),
+    );
     // A reminder, not a finding: the rolling rail is off until this is set (`doctor-rolling.ts`).
     return withPoolerReport(
       withRollingReminder(
-        covered,
+        charted,
         probe.root === undefined ? undefined : await rollingSinceProbe(probe.root),
       ),
       pooler,

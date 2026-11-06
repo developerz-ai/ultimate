@@ -28,6 +28,7 @@ import {
   taskFiles,
 } from './templates';
 import { adminCatalogFiles } from './templates/admin-catalog';
+import { helmMonitoringFiles } from './templates/scaffold-helm-alerts';
 import { oidcSignInFiles } from './templates/sign-in-oidc';
 import { passwordSignInFiles } from './templates/sign-in-password';
 
@@ -253,6 +254,10 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           : oidcSignInFiles(signIn.provider, shape),
       );
     }
+    case 'chart-alerts':
+      // `name` is the chart's own (`Chart.yaml`), which its helpers are named after. The values
+      // blocks are an edit to a file the app owns, so `generate-chart-alerts.ts` makes it.
+      return helmMonitoringFiles(names(options.name));
     case 'route':
       // `--locales` reaches the route generator too: its catalog entry is the route's title and
       // description, and a locale asked for on the command line is a locale that gets a file.

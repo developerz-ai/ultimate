@@ -3,12 +3,13 @@
 // is a declaration nothing can satisfy while `docker/helm/values.yaml` runs `replicas: 3`.
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
-import type { PgExecutor } from '@ultimat3/core';
+import type { PgExecutor, Scheduler } from '@ultimat3/core';
 import type { RateLimitDecision, RateLimitScope, RateLimitStore } from './rate-limit';
 import { rateLimitDecision } from './rate-limit';
 import { degradedFallback, isRateLimitStoreUnreachable } from './rate-limit-degrade';
 import { rateLimitStoreUnavailable } from './rate-limit-errors';
 import { rateLimitPeek, refilledTokens } from './rate-limit-peek';
+import { storeDeadline } from './rate-limit-store-deadline';
 
 /**
  * Installed by the boot, not by an app migration — the same rule `SQL_IDEMPOTENCY_TABLE` follows,
@@ -124,6 +125,14 @@ interface TakeRow {
 
 export interface PostgresRateLimitStoreOptions {
   readonly executor: PgExecutor;
+  /**
+   * How long one `take` or `peek` may wait for the database before this decision degrades to the
+   * pod's memory. Default `RATE_LIMIT_STORE_DEADLINE_MS` (250), measured in
+   * `rate-limit-store-deadline.ts`. The pool's own bound is the app's work's; this one is the limiter's.
+   */
+  readonly deadlineMs?: number | undefined;
+  /** Injection seam for that deadline; production passes none. */
+  readonly schedule?: Scheduler | undefined;
 }
 
 export interface PostgresRateLimitStore extends RateLimitStore {
@@ -165,6 +174,7 @@ export function postgresRateLimitStore(
   options: PostgresRateLimitStoreOptions,
 ): PostgresRateLimitStore {
   const exec = options.executor;
+  const deadline = storeDeadline(options.deadlineMs, options.schedule);
   // Where a decision is taken while the database is unreachable (`rate-limit-degrade.ts`). Still
   // `scope: 'shared'` below: the store IS the fleet's, and the degraded window is logged, bounded
   // by the outage, and a weaker limit rather than none.
@@ -181,13 +191,16 @@ export function postgresRateLimitStore(
     async take(key, bucket, cost, nowMs): Promise<RateLimitDecision> {
       let rows: readonly TakeRow[];
       try {
-        rows = await exec.query<TakeRow>(SQL_RATE_LIMIT_TAKE, [
-          key,
-          bucket.capacity,
-          bucket.refillPerSecond,
-          cost,
-          Math.floor(nowMs),
-        ]);
+        rows = await deadline.bound(
+          'take',
+          exec.query<TakeRow>(SQL_RATE_LIMIT_TAKE, [
+            key,
+            bucket.capacity,
+            bucket.refillPerSecond,
+            cost,
+            Math.floor(nowMs),
+          ]),
+        );
       } catch (error) {
         return degrade(error, nowMs, () => fallback.store.take(key, bucket, cost, nowMs));
       }
@@ -202,7 +215,7 @@ export function postgresRateLimitStore(
     async peek(key, bucket, nowMs) {
       let rows: readonly PeekRow[];
       try {
-        rows = await exec.query<PeekRow>(SQL_RATE_LIMIT_PEEK, [key]);
+        rows = await deadline.bound('peek', exec.query<PeekRow>(SQL_RATE_LIMIT_PEEK, [key]));
       } catch (error) {
         return degrade(error, nowMs, () => fallback.store.peek(key, bucket, nowMs));
       }

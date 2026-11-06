@@ -138,6 +138,9 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       })),
       invariants: entity.invariants.map((invariant) => invariant.name),
       ...(entity.shared === undefined ? {} : { shared: entity.shared }),
+      ...(entity.view === undefined || entity.view === null
+        ? {}
+        : { view: { materialized: entity.view.materialized === true } }),
     })),
     actions: describeActions().map((action) => ({
       name: action.name,

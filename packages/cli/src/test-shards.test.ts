@@ -392,6 +392,27 @@ describe('unit · reproduceFor', () => {
     );
   });
 
+  // The replayed simulation seed decides what every `simulateJobs` in the run did: a rerun without
+  // it draws the default seeds again and passes over the failure it was printed for.
+  test('--seed survives into the rerun, and round-trips through the real spec', () => {
+    const command = reproduceFor({ workers: 1, type: 'job', seed: 7 });
+    expect(command).toBe('x test job --workers 1 --seed 7');
+    const parsed = parseArgs(command.split(' ').slice(1), [testCommand.spec]);
+    expect(flagString(parsed, 'seed')).toBe('7');
+  });
+
+  test('a failed seeded run prints a fix carrying its seed', async () => {
+    const result = await runShards({
+      root: '/repo',
+      runner: recorder(true).runner,
+      files: corpus(2),
+      workers: 1,
+      type: 'job',
+      seed: 7,
+    });
+    expect(firstFix(result)).toBe('x test job --workers 1 --seed 7');
+  });
+
   test('a single quote is escaped the one way a single-quoted string allows', () => {
     // `'it'\''s slow'` — close, an escaped quote, reopen. Anything else truncates the argument.
     expect(reproduceFor({ workers: 1, filter: "it's slow" })).toBe(

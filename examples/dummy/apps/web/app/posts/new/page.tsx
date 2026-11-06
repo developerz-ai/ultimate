@@ -107,7 +107,10 @@ export const config = defineRoute({
   // (`navigation-deadline.ts`) and a timed-out `refresh()` that fails quietly
   // (`navigation-refresh.ts`), all of it; charged to every `app/` document — raised 31kb → 32kb
   // (30.0.0, plan 101 wave 5b).
-  budget: { js: '32kb' },
+  // measured: 33294 B (2026-11-06; x build --target static, against 32,092) — why:
+  // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
+  // `app/` only) — raised 32kb → 33kb (plan 101, 41).
+  budget: { js: '33kb' },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 

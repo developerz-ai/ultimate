@@ -1558,3 +1558,11 @@ Slices `39-jobs-event-wake.md` and `39-action-sagas.md`, plus the tenant-proof f
   and `enqueueMany`, before anything is staged. It used to queue, and the run acted as the
   payload's org for a caller in another. A run refuses a row already queued that way
   (`refuseRunTenant`), terminally, before the body. `tenant: 'none'` is never compared.
+
+## Moved out 2026-11-06 (plan 101 wave 7, the `CLAUDE.md` ceiling)
+
+Verbatim from `packages/jobs/CLAUDE.md`, "Rules — the driver and SQL", to make room for the Redis
+client's row (slice 29, Redis outage).
+
+- **`demand` is the seventh method, required.** `redisJobDriver` counts every running row: it keeps no worker registry, so no claimer is known to drain. **A draining worker's `queue_demand` goes to 0** (`stopAccepting`): `max by (queue)` would read a frozen value over every live worker's. `queue_depth` keeps its last value.
+- **The claim SEEKS** (`SQL_CLAIM`): one ordered scan per open queue for due rows (`x_jobs_claim_idx`, predicate word for word) and one for lapsed leases (`x_jobs_depth_idx`), then an outer `order by run_at limit`. `driver-pg-claim.live.test.ts` refuses a sort under `LockRows`. Dropped rows stay locked to the transaction's end: correct only because a claim autocommits.

@@ -71,6 +71,7 @@ servers a `services:` block cannot start.
 | `packages` | 2 | each unit tested and covered alone; `cli` in one shard, every other unit in the other (2026-11-05, below) |
 | `container` | 1 | unchanged |
 | `deploy-proof` | 1 | unchanged, `main` only |
+| `fault-drills` | 1 | `x drill` on `examples/dummy` against one Postgres: `pg-blackhole`, `worker-sigkill`, `web-sigterm` — added 2026-11-06, below |
 | `windows` | 1 | native Windows in PowerShell: lint, typecheck, a path-heavy unit subset, a scaffold smoke — added 2026-10-05, below |
 
 The pattern is the one `wiki/CI-Parallel-Gate.md` documents for an app: a matrix of parts, every
@@ -121,6 +122,7 @@ real work measured in tens of seconds, never a five-second suite paying a minute
 | `scaffold-smoke` | docs and wiki, by job id | no — the id is unchanged; the checks are `scaffold-smoke (demoapp)` and `scaffold-smoke (bareapp)` |
 | `packages`, `container`, `deploy-proof` | none | ids unchanged |
 | `windows` | none yet; `required` once green | new, 2026-10-05 |
+| `fault-drills` | none | new, 2026-11-06 |
 | branch protection | none: `main` is unprotected and has no rulesets (`gh api repos/developerz-ai/ultimate/branches/main/protection` → 404, `As of 2026-10-01`) | — |
 
 If `main` is ever protected, the one required check is `verify`.
@@ -161,6 +163,21 @@ Local, not CI: one box, 8 cores, pinned to four with `taskset -c 0-3`, shared wi
 | `cli` alone | 432 s, one process | 286 s, four workers; 793 s user CPU |
 
 The critical path moves from ~400 s to 250–290 s here. Not yet a CI number: the runner may be slower than this box, so `packages (1/2)` can still sit at the five-minute target. What is left is `cli`'s own tests — the `x upgrade` hop (30–72 s) and the scaffold `tsc` runs — not the gate.
+
+## Fault drills, 2026-11-06
+
+`fault-drills` asks one question no other job can: does the reference app keep the framework's
+declared behaviour while a dependency fails (plan 101 / 40, `x drill`). Not a gate part — the gate
+needs nothing, a drill needs a real Postgres — and reused through `tested` like every job a green
+PR run already answered.
+
+| Choice | Why |
+|---|---|
+| three of the eight drills | the 5-minute budget, measured locally 2026-11-06: `pg-blackhole` 67 s, `worker-sigkill` 49 s, `web-sigterm` 6 s. `pg-slow` 68 s and `pg-restart` 98 s held too; they run by hand |
+| `redis-down`, `nats-down` not run | `examples/dummy` declares no `redis` tier and an in-memory transport: refused `X_DRILL_SERVICE_MISSING`, never green over nothing |
+| Postgres alone | the only service the three dial |
+| one document per drill, uploaded | the `--json` verdict is the evidence; the log gets each summary and every finding's fix |
+| the reverted-fix proof is a test, not a CI drill | `packages/testing/src/drill-pg-blackhole.live.test.ts`, in the gate's `live` part: the unanswered-statement bound off through the pool's own seam turns `pg-blackhole` red |
 
 ## Windows, 2026-10-05
 
