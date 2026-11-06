@@ -125,6 +125,23 @@ describe('unit · what loadApp deliberately does not import', () => {
     expect(loaded.findings).toEqual([]);
   });
 
+  // `apps/<app>/exercise.ts` imports `@ultimat3/testing`, a devDependency: in a production image the
+  // boot scan would fail it on every start. `x exercise` reads it; nothing else does.
+  test('apps/<app>/exercise.ts is skipped; a module beside it is not', async () => {
+    const dir = tempRoot('x-app-load-exercise-');
+    await Bun.write(
+      join(dir, 'apps/web/exercise.ts'),
+      "import { defineExercise } from '@ultimat3/testing';\nexport const exercise = defineExercise({});\n",
+    );
+    await Bun.write(join(dir, 'apps/web/shared/format.ts'), 'export const x = 1;\n');
+
+    const loaded = await loadApp(dir);
+
+    expect(loaded.files).toEqual(['apps/web/shared/format.ts']);
+    // Unresolvable from /tmp: had it been imported, it would be a finding.
+    expect(loaded.findings).toEqual([]);
+  });
+
   // Row a: an app whose absolute path contains `.test.` loaded ZERO modules — every file matched
   // `absolute.includes('.test.')` — so manifest, db gen, policy and i18n all checked nothing.
   test('a root path CONTAINING .test. still loads the app', async () => {

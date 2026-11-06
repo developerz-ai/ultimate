@@ -8,6 +8,7 @@ import { indexBindingFindings } from './api-registration';
 import { generateSpec } from './cmd-generate-spec';
 import type { CommandContext } from './command';
 import { invocationOf } from './command';
+import { EXERCISE_FILE, exerciseWithEntries, signInExerciseEntries } from './exercise-registration';
 import { localiseCatalogs, namedOrAppLocales } from './generate-catalog-locales';
 import { appDisk, plannedDisk } from './generate-disk';
 import { generate } from './generate-files';
@@ -145,6 +146,14 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
     `${invocation}   # after renaming what apps/web/api/index.ts already binds under that name`,
   );
 
+  // The pass's half: what the written actions cannot run as generated, turned off with a reason.
+  const exerciseSource = await appDisk(root).read(EXERCISE_FILE);
+  const exerciseContents = exerciseWithEntries(
+    exerciseSource,
+    signInExerciseEntries(files.map((file) => file.path)),
+  );
+  const exerciseEdited = exerciseContents !== exerciseSource;
+
   if (flagBool(ctx.args, 'dry-run')) {
     const plan = await planWrites(root, files, force, invocation, label);
     const planned = new Map(
@@ -169,6 +178,7 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
               ...follow.edited,
               ...swap.replace.map((file) => file.path),
               ...(configEdited ? [APP_CONFIG] : []),
+              ...(exerciseEdited ? [EXERCISE_FILE] : []),
             ]),
           ];
     const removed = refused.length > 0 ? [] : [...swap.remove];
@@ -208,6 +218,7 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
     if (await file.exists()) await file.delete();
   }
   if (configEdited) await disk.write(APP_CONFIG, config.contents);
+  if (exerciseEdited) await disk.write(EXERCISE_FILE, exerciseContents);
   const follow = await followUpEdits(root, report.written, dbModule, disk);
   await formatWritten(root, report.written, ctx.runner);
   const refreshed = await appManifestIfAny(root);
@@ -216,6 +227,7 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
       ...report.written,
       ...swap.replace.map((file) => file.path),
       ...(configEdited ? [APP_CONFIG] : []),
+      ...(exerciseEdited ? [EXERCISE_FILE] : []),
       ...follow.edited,
       ...refreshed.written,
     ]),

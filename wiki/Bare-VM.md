@@ -86,7 +86,7 @@ warm Bun cache, `As of 2026-09-11`:
 | files written | 161 | 133 |
 | `bun run setup` | **6,802ms** | **5,135ms** |
 | `bun run check` | **5,389ms** | **3,909ms** |
-| the first `bun run check`'s verdict | **green, 20 of 20 steps**, `budgets` included | **green, 20 of 20 steps**, `budgets` included |
+| the first `bun run check`'s verdict | **green, every step**, `budgets` included | **green, every step**, `budgets` included |
 
 The cache is the variable to watch, not the box: a **cold** first install takes the `bun install`
 inside `bun run setup` to **12.0s** on the same machine.
@@ -100,7 +100,9 @@ the checkout, `As of 2026-09-12`:
 | files written | 161 | 133 |
 | `bun run setup` | **6,665ms** | **5,994ms** |
 | `bun run check` | **7,279ms** | **4,886ms** |
-| the first `bun run check`'s verdict | **green, 20 of 20 steps pass** | **green, 20 of 20 steps pass** |
+| the first `bun run check`'s verdict | **green, every step passes** | **green, every step passes** |
+
+On both dates the gate was 20 steps; `exercise` joined it in 2026-11, so a run today counts 21.
 
 `budgets` is green on that first pass on every one of those runs, because the gate builds before
 it weighs — nothing is waived to get there, and no printed `fix:` is followed before the verdict

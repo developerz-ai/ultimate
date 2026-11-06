@@ -27,6 +27,11 @@ export const VERIFY_STEP_NAMES = [
   'contract',
   'live',
   'job',
+  // Its own step, not a rider on `job` or `contract`: those ask whether the tests someone WROTE
+  // pass, and this asks what every primitive does when it actually runs with no test written — a
+  // different question with a different fix (an override in `apps/web/exercise.ts`). After `job`,
+  // the last suite it can stand beside without a browser; before `e2e`, the costliest.
+  'exercise',
   'e2e',
   'eval',
   'drift',

@@ -65,7 +65,7 @@ Run everything from the repo root.
 |---|---|
 | install | `bun install` |
 | fresh clone to running | `bun run setup` — idempotent; safe to re-run after every pull |
-| **the gate** | `bun run verify` — `x verify` at the repo root, 20 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. Green = shippable. The list is `VERIFY_STEP_NAMES` in `packages/cli/src/verify-step.ts` |
+| **the gate** | `bun run verify` — `x verify` at the repo root, 21 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. Green = shippable. The list is `VERIFY_STEP_NAMES` in `packages/cli/src/verify-step.ts` |
 | typecheck | `bun run typecheck` · start over: `bun run typecheck:clean` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included |
@@ -73,7 +73,7 @@ Run everything from the repo root.
 | test services | `docker compose -f docker/docker-compose.test.yml up -d --wait`, then `set -a; . docker/test-services.env; set +a` — in RAM, silent; unset, live suites skip |
 | test (one name) | `bun test packages/core/src/errors.test.ts -t '<name>'` — **always with a path**: a bare `-t` loads every test file into one process |
 | coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
-| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds both apps (`x build --target static`), then verifies. As of 2026-11 both `expectedRed` tables (`scripts/lib/gated-apps.ts`) are empty: every declared step must pass. `--unpin <app>:<step>` drops a future pin |
+| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds both apps (`x build --target static`), then verifies. As of 2026-11 both `expectedRed` tables (`scripts/lib/gated-apps.ts`) are empty: every step must pass. `--unpin <app>:<step>` drops a pin |
 | a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket)` — writes the registration, its `wiki/Error-Codes.md` row and its HTTP status decision together. Tier ≤ 4 takes exactly one of the two flags, tier 5 neither |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |

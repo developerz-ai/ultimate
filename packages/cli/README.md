@@ -20,7 +20,8 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x stop` | ends this checkout's `x dev`: the pid `.x/dev.lock` names, nothing else | returns once the next `x dev` can boot; `X_DEV_STOP_TIMEOUT` past `--timeout` |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
 | `x build --target prebuilt` | the store a container boots from: island chunks, compiled stylesheets | a `RUN` line in the image build, never run by hand |
-| `x verify` | **the gate** | 20 named steps, each with pass/fail + duration; `budgets` runs `x build --target static` first when its stats are missing or older than the source |
+| `x verify` | **the gate** | 21 named steps, each with pass/fail + duration; `budgets` runs `x build --target static` first when its stats are missing or older than the source |
+| `x exercise [<name>] [--seed n]` | every action, query and job run once on generated rows, no test written | a scratch database; `.x/exercise.json`; an `unreached` primitive is `X_CONTRACT_EXERCISE_UNREACHED` with the override to paste into `apps/web/exercise.ts` — the gate's `exercise` step |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
 | `x mcp serve` | `@ultimat3/mcp`'s 18 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
@@ -107,15 +108,15 @@ X_DB_DRIFT: schema differs from migrations
 
 ```sh
 x verify --json
-# {"ok":false,"command":"verify","summary":"1 of 20 steps failed","steps":[...]}
+# {"ok":false,"command":"verify","summary":"1 of 21 steps failed","steps":[...]}
 ```
 
 ## `x verify` steps
 
-`typecheck lint boundaries filesize package-shape errors unit contract live job e2e eval drift
-contract-diff budgets seo i18n policy manifest roadmap`
+`typecheck lint boundaries filesize package-shape errors unit contract live job exercise e2e eval
+drift contract-diff budgets seo i18n policy manifest roadmap`
 
-Twenty, in cost order, defined once as `VERIFY_STEP_NAMES` (`verify-step.ts`) — the summary
+21 steps, in cost order, defined once as `VERIFY_STEP_NAMES` (`verify-step.ts`) — the summary
 count above is projected from that list, and the framework repo's own gate (`bun run verify`)
 runs exactly it. A step with nothing to check here reports as skipped, never as
 passed. Never bails early: an agent fixing three things needs all three findings from one run.

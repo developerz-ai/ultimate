@@ -63,6 +63,13 @@ const APP_GLOBS = [
 const ENTRY_POINT = /^apps\/[^/]+\/(?:server|prerender)\.tsx?$/;
 
 /**
+ * `apps/<app>/exercise.ts` is `x exercise`'s input, read by that command alone. It imports
+ * `@ultimat3/testing`, a devDependency a production image does not install, so the boot scan that
+ * imported it would fail the module on every start.
+ */
+const EXERCISE_FILE = /^apps\/[^/]+\/exercise\.ts$/;
+
+/**
  * A `*.island.tsx` is a CLIENT entry point and is deliberately not imported here. It registers no
  * primitive — a page names it by specifier, never by import — and importing it would put the one
  * module the framework guarantees is outside the server's graph inside this process's, where a
@@ -212,7 +219,12 @@ export async function scanAppModules(root: string, options: ScanOptions): Promis
     // `~/work/my.test.app` matched `.test.` on every file and loaded none of them.
     const file = posixRelative(root, absolute);
     if (hasPathSegment(absolute, 'node_modules') || isTest(file)) continue;
-    if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
+    if (
+      ENTRY_POINT.test(file) ||
+      EXERCISE_FILE.test(file) ||
+      CLIENT_ENTRY_POINT.test(file) ||
+      STATES_FILE.test(file)
+    ) {
       continue;
     }
     if (options.include !== undefined && !(await options.include(absolute))) continue;

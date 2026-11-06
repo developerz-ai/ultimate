@@ -67,6 +67,7 @@ describe('unit · x verify', () => {
       'contract',
       'live',
       'job',
+      'exercise',
       'e2e',
       'eval',
       'drift',

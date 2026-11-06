@@ -47,12 +47,12 @@ setup complete — next: bun run dev
 ### Two shapes, one generator
 
 Counts are derived, never quoted here — `x new --dry-run --json | jq '.data.files | length'`, per
-shape. Measured on fresh scaffolds of this tree, `As of 2026-11-03`:
+shape. Measured on fresh scaffolds of this tree, `As of 2026-11-05`:
 
 | Invocation | `bun run setup && bun run verify` on run one |
 |---|---|
-| `bunx create-ultimate myapp` | **green, 19 of 20 steps pass** — `budgets` among them; `roadmap` skipped (a framework-repo step) |
-| `bunx create-ultimate myapp --no-example` | **green, 16 of 20 steps pass** — `live`, `job`, `e2e` skipped (no such test yet) and `roadmap` |
+| `bunx create-ultimate myapp` | **green, 20 of 21 steps pass** — `budgets` among them; `roadmap` skipped (a framework-repo step) |
+| `bunx create-ultimate myapp --no-example` | **green, 17 of 21 steps pass** — `live`, `job`, `e2e` skipped (no such test yet) and `roadmap` |
 
 `--no-example` omits the `post` feature slice and its route. Pick it when an agent is about to write the real feature anyway — [tutorial 2](Tutorial-02-First-Feature) starts there. Pick the default when you want a worked example to read.
 
@@ -67,7 +67,7 @@ fresh scaffold no such file exists yet, so the step runs `x build --target stati
 (into `.x/verify-static`, never over `.x/static`).
 
 The default scaffold, after `bun run setup`, with no `.x/build-stats.json` beforehand,
-`As of 2026-11-03`: the whole gate, in the order it runs:
+`As of 2026-11-03` (`exercise` measured 2026-11-05): the whole gate, in the order it runs:
 
 ```text
   ✓ typecheck          3064ms
@@ -80,6 +80,7 @@ The default scaffold, after `bun run setup`, with no `.x/build-stats.json` befor
   ✓ contract           1233ms  3 workers (budget 4.0 GB)
   ✓ live               840ms  serial
   ✓ job                345ms  1 of 3 workers (budget 4.0 GB)
+  ✓ exercise           1952ms
   ✓ e2e                12124ms  serial
   ✓ eval               91ms
   ✓ drift              1486ms
@@ -90,13 +91,15 @@ The default scaffold, after `bun run setup`, with no `.x/build-stats.json` befor
   ✓ policy             75ms
   ✓ manifest           1131ms
   - roadmap            0ms
-✓ 19 of 20 steps passed in …ms — 1 skipped: roadmap
+✓ 20 of 21 steps passed in …ms — 1 skipped: roadmap
 ```
 
 `-` is skipped, not passed: `roadmap` is a framework-repo step. The default scaffold ships its
 example slice with a live test, a job test and an e2e test, so `live`, `job` and `e2e` are ticks on
 run one; **with `--no-example`** there is no such test yet, and those three are dashes too. `contract` is **not** among them — the scaffold
-ships `apps/web/api/health.contract.test.ts`, which is what makes it a tick on run one. The summary
+ships `apps/web/api/health.contract.test.ts`, which is what makes it a tick on run one. Nor is
+`exercise`: it needs no test file — it runs every action, query and job the app registers, once,
+against seeded rows — and both shapes write the `apps/web/exercise.ts` it reads. The summary
 names every skip, so a gate that is green because a suite does not exist says so on the one line you
 read. [Tutorial 2](Tutorial-02-First-Feature) turns more of those dashes into ticks.
 

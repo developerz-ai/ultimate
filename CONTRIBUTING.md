@@ -12,7 +12,7 @@ may decide: [GOVERNANCE.md](GOVERNANCE.md). Conduct: [CODE_OF_CONDUCT.md](CODE_O
 
 ```sh
 bun run setup    # bun version check, install, .env.development.local, git hooks
-bun run verify   # the gate: 20 steps, one command, no --only and no --skip. Green = shippable
+bun run verify   # the gate: 21 steps, one command, no --only and no --skip. Green = shippable
 ```
 
 Requirements: **Bun >= 1.4.4** (`engines.bun` in `package.json`). Nothing else. No Node, no Docker,

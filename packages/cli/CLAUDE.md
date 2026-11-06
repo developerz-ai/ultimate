@@ -43,6 +43,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | File | Job |
 |---|---|
 | `verify-checks.ts` / `verify-step.ts` / `verify-run.ts` | the step list, the outcome shape, the run order (`BESIDE_SERIAL_SUITES`) |
+| `verify-exercise.ts` / `cmd-exercise.ts` / `exercise-*.ts` | `exercise`: `x exercise --json` as a child, red on its findings |
 | `verify-floor.ts` | `x.verify.json`: a floor step that ran zero tests is `X_VERIFY_SUITE_VANISHED` |
 | `coverage-floor.ts` / `coverage-lcov.ts` / `coverage-source.ts` / `verify-coverage-run.ts` | an APP's `unit` step holds `coverage` in `x.verify.json` over its whole source tree, in fixed slices, never `--parallel --coverage`; `coverage-lcov.ts` is the ONE lcov reader. Full rule: `docs/history/cli.md` |
 | `verify-deadline.ts` / `verify-stalled.ts` / `verify-progress.ts` | a step past its deadline is `X_VERIFY_STEP_TIMEOUT`: its children carry `ULTIMATE_VERIFY_STEP` and are killed by that tag; the finding names the test file `bun test` had not finished. Full rule: `docs/history/cli.md` |
@@ -127,12 +128,12 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `page-navigation.ts` | the client router for `navigation.client` surfaces — built, routed and named ONCE for `x dev`, the container and the static export; none opted in builds nothing |
 | `page-speculation.ts` | Speculation Rules for documents WITHOUT the router (`navigation.speculation`): an allow-list of pure-read pages. Full rule: `docs/history/cli.md` |
 | `static-document.ts` | a served `static` page: `304` on a matching `If-None-Match`, and (container only, `memoStatic`) the document kept after its first render. Never `x dev` — a save moves the stylesheet URL the kept document names |
-| `island-bundle.ts` / `island-store.ts` / `island-sources.ts` / `island-realtime.ts` / `island-realtime-state.ts` / `island-runtime.ts` / `solid-loader.ts` | islands: one `Bun.build` each, source-addressed; the image build writes a verified store, and an edit since the build is a rebuild, never the old chunk. Full rule: `docs/history/cli.md` |
-| `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI (`local-cli.ts` decides whether; `x upgrade` alone stays when the app's is strictly older — `upgrade-handover.test.ts`). Full rule: `docs/history/cli.md` |
+| `island-bundle.ts` / `island-store.ts` / `island-sources.ts` / `island-realtime.ts` / `island-realtime-state.ts` / `island-runtime.ts` / `solid-loader.ts` | islands: one `Bun.build` each, source-addressed; the image build writes a verified store, and an edit since the build is a rebuild, never the old chunk |
+| `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI (`local-cli.ts` decides whether; `x upgrade` alone stays when the app's is strictly older — `upgrade-handover.test.ts`) |
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store (`node_modules/.cache/ultimate`, never `.x/` — state, tmpfs): every role adopts its compiled stylesheets before importing the app; a boot that built an island or ran Sass logs `X_IMAGE_NOT_PREBUILT` once |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, the watcher, the reload, the lock, the port |
 | `cmd-stop.ts` / `cmd-stop-spec.ts` | `x stop`: the lock's pid only (its recorded start time must match), SIGTERM, then wait for pid gone and lock clear; Windows clears the lock (`drained: false`); `X_DEV_STOP_TIMEOUT` |
-| `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x` answers a loopback `Host` only (`X_DEV_HOST_REFUSED`, 421 — DNS rebinding); the SQL panel runs on a same-origin `POST /_x/db` only, through admin's `readOnlySql`. Full rule: `docs/history/cli.md` |
+| `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x` answers a loopback `Host` only (`X_DEV_HOST_REFUSED`, 421 — DNS rebinding); the SQL panel runs on a same-origin `POST /_x/db` only, through admin's `readOnlySql` |
 | `doctor-pooler.ts` / `runtime-statement-bound.ts` | the applied bound on demand (`data.statementBound`), a pooler's refusal as the one database finding; the one boot line, total. `startDb` hands `poolerFromEnv(env)` to both pools |
 
 ### Build and data
@@ -142,7 +143,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `cmd-build.ts` / `image-prepare.ts` | `x build`: static gate first; `docker` stamps `BUILD_ID`; `prebuilt` is the Dockerfile's own `RUN` — islands and stylesheets, written by the image's Bun at the image's paths, no gate and no subprocess |
 | `prerender.ts` / `measure-scope.ts` / `static-report.ts` | the static export; routes rendered only to weigh run inside a request as core's `measurementActor()`, with the app's API answered in process (`withInProcessFetch`) |
 | `sw-artifacts.ts` / `pwa-artifacts.ts` / `favicon.ts` | the service worker, the web manifest, `/favicon.ico` |
-| `cmd-db.ts` / `migrations.ts` / `db-generate.ts` / `db-branch.ts` / `db-seed.ts` / `db-backfill.ts` / `db-subscribes.ts` / `db-accept-created.ts` | one migration engine for `x db` and `ROLE=migrate` |
+| `cmd-db.ts` / `migrations.ts` / `db-generate.ts` / `db-branch.ts` / `db-seed.ts` / `db-seed-generate.ts` / `db-backfill.ts` / `db-subscribes.ts` / `db-accept-created.ts` | one migration engine for `x db` and `ROLE=migrate` |
 | `db-diagnostics.ts` | `x db diagnostics`: `startDb` (never `startQueue`, which applies the framework tables), `@ultimat3/db/diagnostics`'s `dbDiagnostics`, one table per section; exit 0 whatever it says; an embedded database `x dev` holds is `X_DEV_ALREADY_RUNNING` |
 | `db-schema-dump.ts` / `db-schema-refresh.ts` / `db-replay-engine.ts` / `migration-extensions.ts` / `db-object-drift.ts` | the schema dump: replay on a scratch database (full rule: history), written by `x db gen` and `x db migrate`. `migration-extensions.ts` is also what `runtime-queue.ts` links `x dev`'s database with |
 
@@ -151,14 +152,14 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | File | Job |
 |---|---|
 | `cmd-registries.ts` / `cmd-jobs.ts` / `cmd-tasks.ts` / `cmd-policy.ts` / `cmd-i18n.ts` | project a framework registry; each pairs CLI wiring with a facts module |
-| `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets`. Full rule: `docs/history/cli.md` |
+| `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` |
 | `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` | `x mcp serve`: 18 tools, two transports; a taken port is `X_PORT_IN_USE`; over HTTP a non-loopback Host is 421 `X_MCP_HOST_REFUSED` first, `GET`/`DELETE` http's 405. `mcp-test-run.ts` folds `bun test`'s `N errors` line and exit code into `tests.run` |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
 | `cmd-pr.ts` / `cmd-ci.ts` / `ci-runs.ts` / `ci-tested.ts` | GitHub through `gh`, parsed against a schema. Not gate steps. `x ci tested` is a pure predicate over three injected reads; every doubt is `tested: false`, exit 0 |
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for any code |
 | `cmd-docs.ts` / `docs-sources.ts` / `docs-section.ts` | `x docs`: the app's `@ultimat3` scope plus the CLI's own (Bun's isolated layout), the wiki at `<cli>/wiki` (tarball) or `<cli>/../../wiki` (checkout); `Page#anchor` prints a whole section |
 | `cmd-env-init.ts` / `env-production.ts` / `cmd-deploy-preflight.ts` | `x env init --production`, the one writer of `.env.production` (values from `cmd-deploy-compose.ts`); compose's pre-flight (`X_DEPLOY_ENV_MISSING`) and a failed step's container line |
-| `cmd-upgrade.ts` / `upgrade-*.ts` | `x upgrade`: one major per run; declares no `requiresApp` (`upgrade-root.ts`), and with no app runs the root's `typecheck`/`test` scripts and says so in `data.proof`; `upgrade-agents-link.ts`: `data.agentsMd`. Full rule: `docs/history/cli.md` |
+| `cmd-upgrade.ts` / `upgrade-*.ts` | `x upgrade`: one major per run; declares no `requiresApp` (`upgrade-root.ts`), and with no app runs the root's `typecheck`/`test` scripts and says so in `data.proof`; `upgrade-agents-link.ts`: `data.agentsMd` |
 | `cmd-deploy-verify.ts` / `deploy-verify-*.ts` | `x deploy verify`: the wait (samples, window, queues), the pure verdict, flags refused before a sample, the `--json` shape, the real sources (lazy, so the build verdict loads neither). `DATABASE_URL` from the env only, never `resolveServices` (full rule: history) |
 
 ## Adding a command

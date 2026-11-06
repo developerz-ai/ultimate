@@ -305,6 +305,7 @@ Timings, worker counts and the `slowest:` lines trimmed:
   ✓ contract
   ✓ live
   ✓ job
+  ✓ exercise
   ✓ e2e
   ✓ eval
   ✓ drift
@@ -315,7 +316,7 @@ Timings, worker counts and the `slowest:` lines trimmed:
   ✓ policy
   ✓ manifest
   - roadmap
-✓ 19 of 20 steps passed in …ms — 1 skipped: roadmap
+✓ 20 of 21 steps passed in …ms — 1 skipped: roadmap
 ```
 
 `live`, `job` and `e2e` were dashes in [tutorial 1](Tutorial-01-First-App); the slice's own typed tests are what they now run. `budgets` builds the site first when no current measurement exists, so it is green on the first run. `e2e` drives a real Chrome; on a machine without one its browser cases skip (`E2E_BROWSER_REQUIRED=1` makes that a refusal). `roadmap` reads `docs/idea/14-roadmap.md`, which an app does not have.
