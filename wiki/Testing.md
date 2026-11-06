@@ -298,7 +298,25 @@ e2eTest(
 | not markup | a non-`http(s)` URL (`about:blank`) and a document that is not HTML (JSON, an image) are not audited |
 | the page port | `E2eBrowserPage.accessibilityTree?(request)`. `cdpE2eTab` implements it with one `Accessibility.getFullAXTree` per read; a page passed to `installE2eDriver({ page })` without it fails every `e2eTest` with `X_TEST_FIXTURE_UNAVAILABLE`, never a silent pass |
 
-`As of 2026-11`, the audit runs inside `e2eTest` only. `x g route`'s generated `page.e2e.test.ts` is one, so it is audited; the tracked apps' and the packages' browser suites that drive a raw tab (`openE2eBrowser()`, `acceptanceBrowser()`) are not audited. Source: `packages/testing/src/e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (one test's run), `ax-node.ts` (the tree reader).
+**And every raw tab, `As of 2026-11-05`** (entry 88). A tab a suite drives itself (`browser.session.newTab()` off `openE2eBrowser()`, or the browser's first `page`) is read after each settled `goto` and `reload`, and once more at the test's end, and the findings fail that test from the preload's one `afterEach` — no suite opts in. A raw-tab test has no options slot, so its exceptions are a call, first in the body, before the navigation that lands on them:
+
+```ts
+import { test } from 'bun:test';
+import { allowA11y, openE2eBrowser } from '@ultimat3/testing';
+
+test('the vendor map renders', async () => {
+  allowA11y([{ role: 'image', selector: '#vendor-map img', because: 'the vendor embed sets no alt' }]);
+  const browser = await openE2eBrowser();
+  try {
+    const tab = await browser.session.newTab();
+    await tab.goto('http://localhost:3000/map');
+  } finally {
+    await browser.close();
+  }
+});
+```
+
+An entry covers the reads after the call and ends with the test; a blank `because` is refused, as in `e2eTest`. Each `goto` now spends five CDP deadlines, not three (`E2E_GOTO_MS`), for the audit's two reads. Source: `packages/testing/src/e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (one test's run), `e2e-a11y-tabs.ts` (raw tabs), `ax-node.ts` (the tree reader).
 
 ## Matchers
 
@@ -776,13 +794,15 @@ await insertSeedGraph(graph, writer);
 | tenancy | each child points at a parent of its **own** tenant; the entity a tenant column references holds one row per tenant, keyed by the tenant |
 | a cycle | broken at a nullable key: inserted `null`, set by an entry of `graph.updates` once its target exists. A cycle with no nullable key is `X_SEED_GRAPH_UNSATISFIED` |
 | values | read off the declaration, as `factoriesFor` reads them, and kept only if `$parse` accepts them |
-| rules | every invariant, the primary key, unique columns and unique indexes are kept; a partial unique is treated as total. A unique column that runs out of values ends its table early rather than refusing |
+| rules | every invariant, the primary key, unique columns and unique indexes are kept; a partial unique is treated as total. A unique column that runs out of values ends its table early — but a table-wide unique that runs out before every tenant holds a row is `X_SEED_GRAPH_UNSATISFIED` (`… runs out of values before tenant 2 of 2 holds a row`): that tenant's children would have no parent |
+| an unseeded target | a key — the tenant column included — whose target entity is not in the set is `X_SEED_GRAPH_UNSATISFIED` (`… which is not in the set seeded — pass it too`) |
+| soft delete | a soft-deleting table's `deletedAt` is `null` unless a factory builds it: seeded rows are live |
 | `factories` | `{ factories: { posts: myFactory } }` — what the factory builds wins, except keys and the tenant column, which stay the graph's |
 | determinism | defaults `tenants: 2`, `perTable: 3` (per tenant for a tenant-scoped table), `seed` the package's `DEFAULT_SEED`. Same seed, same bytes |
 | canaries | each row's generated text carries a token; `graph.canaries` lists it per row with the columns holding it, so a later read can say whose row it saw |
-| writing | `insertSeedGraph(graph, writer)`: every insert in order, then every update, sequentially |
+| writing | `insertSeedGraph(graph, writer)`: every insert in order, then every update, sequentially. `entitySeedWriter({ entities, client })` (Postgres or PGlite) or `entitySeedWriter({ entities, driver? })` (a driver; default `defaultDriver()`) writes through each entity's own repository. A row whose entity the writer was not given is `X_SEED_GRAPH_ENTITY_UNKNOWN` |
 
-`X_SEED_GRAPH_UNSATISFIED` names the table, the columns to supply and the `defineFactory` call. `As of 2026-11`, `seed-graph.live.test.ts` inserts both tracked apps' schemas into Postgres with no factory; PGlite parity is not tested. Source: `packages/testing/src/seed-graph*.ts`.
+`X_SEED_GRAPH_UNSATISFIED` names the table, the columns to supply and the `defineFactory` call. `As of 2026-11-05`, `seed-graph.live.test.ts` inserts both tracked apps' schemas into Postgres with no factory, and `seed-graph-pglite.test.ts` the same into PGlite, in the unit step. Source: `packages/testing/src/seed-graph*.ts`.
 
 ## Shared examples
 
@@ -853,6 +873,28 @@ writes nothing, so no transaction wraps it; it refuses a deploy the same way. Bo
 The generators emit the call with an actor (`x g action`, `x g resource`), holding the slice's grant: a hand-written `policy.ts`'s one literal
 `can('<perm>')`, or `{ off }` when its grant cannot be read.
 `@ultimat3/schema/sample`'s `arbitrary(schema, { seed, run })` is the draw, off the barrel.
+
+## The exercise pass
+
+The exercise assertion asks of one action, in a test someone wrote. `x exercise` asks of the whole
+app, with no test: every action, query and job, run once against generated rows. Same option
+shape, same unreached code. `As of 2026-11`.
+
+| Rule | |
+|---|---|
+| Database | a scratch one with the framework tables and every migration applied; never the developer's. The pass commits, so the tenant proof can read rows after the call |
+| Rows | a fresh pair of tenants per primitive; every table seeded off its declaration, parents first, same-tenant keys (`x db seed --generate`'s graph) |
+| Actor | the first of `x policy explain`'s actors the policy allows, in the primitive's tenant. None allowed is `refused`, by design |
+| Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
+| Room | network sealed, mail captured, jobs in memory, clock frozen. A call out is refused and counted, so the primitive is `unreached` |
+| Overrides | `apps/web/exercise.ts`: `export const exercise = defineExercise({ publishPost: { actor, input }, sendInvoice: { off: '<why>' } })`. Each value is `.contract({ exercise })`'s option. An unknown name is `X_DECLARATION_UNKNOWN`; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED` |
+| Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, statements, effects, ms, override? }` |
+| Gate | the `exercise` step, after `job`, runs `x exercise --json` as a child and is red on its findings. `unreached` is never sampled or skipped: it is a finding whose `fix:` is the entry to paste |
+
+```bash
+x exercise --json                 # the whole pass
+x exercise publishPost --json     # one primitive, after pasting its override
+```
 
 ## Memory, width and isolation
 
@@ -975,7 +1017,7 @@ The framework holds itself to the same constant: `bun run coverage` gates each p
 
 The single gate. Green means shippable.
 
-Twenty steps, one list, in cost order. **The gate is this command with no flag** — "green" has to
+21 steps, one list, in cost order. **The gate is this command with no flag** — "green" has to
 mean the same thing for everyone. `x verify --only <step>[,<step>…]` runs the named steps — several
 in one process — for an iteration loop and says `NOT A GATE RUN` in the summary and in `--json`
 (`data.notAGateRun`), writing no floor file;
@@ -999,6 +1041,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
 | `job` | step replay, idempotency dedupe, retry/backoff, concurrency, outbox atomicity |
+| `exercise` | an action, query or job that never reached its handler when `x exercise` ran it once on generated rows (`X_CONTRACT_EXERCISE_UNREACHED`, its fix the override to paste) → [The exercise pass](#the-exercise-pass). Skipped in a repo with no `app.config.ts` |
 | `e2e` | a real browser (raw CDP, no Playwright) against the app, spawned on a throwaway database, when Chrome is on the machine; otherwise its browser cases skip, or refuse under `E2E_BROWSER_REQUIRED=1` |
 | `eval` | a prompt scoring below its committed baseline, or a prompt with no eval at all |
 | `drift` | schema differs from migrations, or a migration is not reversible-or-marked |
@@ -1015,7 +1058,7 @@ Any failure fails the gate; flakes are failures.
 ```text
 $ x verify
   ✓ typecheck  ✓ lint  ✓ boundaries  ✓ filesize  ✓ package-shape  ✓ errors
-  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e  ✓ eval
+  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ exercise  ✓ e2e  ✓ eval
   ✗ drift
       X_DB_DRIFT: schema differs from migrations
         cause: table "posts" has column "publish_at" not present in any migration

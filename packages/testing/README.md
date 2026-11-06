@@ -30,9 +30,14 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `seed-graph-plan.ts` | the plan's types and `insertSeedGraph(graph, writer)` — every insert, then every deferred key, sequentially |
 | `seed-graph-values.ts` | one column's candidate values, off its declaration, kept only where `$parse` accepts them — `factoriesFor`'s source too |
 | `seed-graph-order.ts` · `seed-graph-row.ts` · `seed-graph-shape.ts` | insert order over `$references()` (a cycle broken at a nullable key) · one row solved against invariants and unique keys · what the graph reads off an entity, structurally |
-| `seed-graph-error.ts` | `X_SEED_GRAPH_UNSATISFIED`, its fix naming the `defineFactory` to write |
+| `seed-graph-error.ts` | `X_SEED_GRAPH_UNSATISFIED`, its fix naming the `defineFactory` to write; `X_SEED_GRAPH_ENTITY_UNKNOWN`, a plan and a writer built from two entity sets |
+| `seed-writer.ts` | `entitySeedWriter({ entities, client })` or `({ entities, driver? })` — the `SeedWriter` that writes a graph through each entity's own repository: Postgres or PGlite through a client, or a driver. `@ultimat3/entity` loads on the first write |
+| `exercise.ts` | `runExercisePass({ entities, writer, roles, seed?, overrides?, only? })` — every registered action, query and job once, each on its own committed tenant pair, one `ExerciseRecord` per primitive. What `x exercise` runs |
+| `define-exercise.ts` | `defineExercise({ <name>: { actor, input?, runs? } \| { off: '<why>' } }, { actor?: <entity> })` — an app's overrides (the second argument names the entity whose rows are the actors), `apps/web/exercise.ts`'s one export; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED`, an unknown name `X_DECLARATION_UNKNOWN` when the pass runs |
+| `exercise-actor.ts` · `exercise-input.ts` · `exercise-report.ts` | the first `x policy explain` actor the policy allows, minted in the primitive's tenant · the input: override, then a seeded id by field stem, then the minimal draw (`@ultimat3/schema/sample`, loaded dynamically) · the room one run executes in (network sealed, mail captured, clock frozen) and its record, `overrideLine` the entry to paste |
 | `e2e-a11y.ts` | the accessibility audit's rules: `NAMED_ROLES`, `auditTree`, the in-page probe for `<html lang>` and focus under `aria-hidden` |
 | `e2e-a11y-run.ts` | one `e2eTest`'s audit: read after every navigation and at the end, a reasoned `allow`, findings deduplicated per suite, `X_E2E_A11Y_VIOLATION` |
+| `e2e-a11y-tabs.ts` | the same audit on every raw tab a session builds, failed from the preload's `afterEach`; `allowA11y([{ role, selector, because }])` is its exception |
 | `ax-node.ts` | the one reader of the browser's accessibility nodes — `toAxNode` (one element, `x shot`'s) and `toAxTreeNodes` (a whole tree, the audit's) |
 | `factory-persist.ts` | `usePersister` — the one seam `create()` writes through |
 | `shared-examples.ts` | `sharedExamples` / `behavesLike` — one rule, many subjects |
@@ -290,8 +295,14 @@ test does not care about; `defineFactory` is for the rows it does.
 
 `seedGraph(entities, options)` is the same value source over a whole schema: every table, parents
 first, each child keyed to a parent of its own tenant, a cycle broken at a nullable key and set by an
-update. It returns a plan; `insertSeedGraph(graph, writer)` writes it. Rules and options:
+update. It returns a plan; `insertSeedGraph(graph, writer)` writes it, and `entitySeedWriter` is
+the writer over the app's own repositories. Rules and options:
 [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#a-whole-graph-seedgraph).
+
+`runExercisePass` is that graph put to work: every registered action, query and job, called once as
+an actor its policy allows, on rows it did not have to write. `x exercise` and the gate's `exercise`
+step drive it; an app only writes `apps/web/exercise.ts`'s `defineExercise({ … })` for what the pass
+cannot guess. [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-exercise-pass).
 
 ## Shared examples
 

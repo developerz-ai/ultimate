@@ -141,7 +141,7 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 
 ## `x verify`
 
-The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **20 steps**, in this order — `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](../../packages/cli/src/verify-step.ts) is the executable copy of the list, `VERIFY_STEPS` in [`cmd-verify.ts`](../../packages/cli/src/cmd-verify.ts) the implementations. A page stating another number fails `bun run scripts/gate-steps.ts`.
+The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **21 steps**, in this order — `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](../../packages/cli/src/verify-step.ts) is the executable copy of the list, `VERIFY_STEPS` in [`cmd-verify.ts`](../../packages/cli/src/cmd-verify.ts) the implementations. A page stating another number fails `bun run scripts/gate-steps.ts`.
 
 | # | Step | Fails on |
 |---|---|---|
@@ -151,20 +151,22 @@ The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **20 steps**
 | 4 | filesize | a source file past the ceiling |
 | 5 | package-shape | a package missing its declared exports, or version skew across the lockstep release |
 | 6 | errors | a `fix:` that names no command, an `X_*` code with no documented row |
-| 7–12 | unit · contract · live · job · e2e · eval | any failure; flakes are failures. A type with no files of its own is skipped — except `eval`, which also fails on a prompt with no eval |
-| 13 | **drift** | schema differs from migrations |
-| 14 | **contract-diff** | a breaking change to a published action/query without a version bump |
-| 15 | budgets | per-route JS bytes, precache size |
-| 16 | **seo** | an indexable `site/` route with no title, or no description a search result can render |
-| 17 | **i18n** | a string this app renders that resolves in no catalog, or a catalog nothing registers |
-| 18 | **policy** | a permission this app grants (`RoleDef.grants`) or requires (`RouteGuard.permission`) that it declares nowhere — the question that let a scaffold serve HTTP 500 `X_PERMISSION_UNKNOWN` under a green gate |
-| 19 | manifest | `x.manifest.json` differs from what the code produces, or `AGENTS.md` is absent |
-| 20 | roadmap | a milestone row with no status marker, or one marked ✅ whose named artifacts are not on disk ([`14-roadmap.md`](./14-roadmap.md)) |
+| 7–10 | unit · contract · live · job | any failure; flakes are failures. A type with no files of its own is skipped |
+| 11 | **exercise** | an action, query or job that never reached its handler as an allowed actor when `x exercise` ran it once on generated rows, with no test written — the fix is the override to paste into `apps/web/exercise.ts` |
+| 12–13 | e2e · eval | any failure; a type with no files of its own is skipped — except `eval`, which also fails on a prompt with no eval |
+| 14 | **drift** | schema differs from migrations |
+| 15 | **contract-diff** | a breaking change to a published action/query without a version bump |
+| 16 | budgets | per-route JS bytes, precache size |
+| 17 | **seo** | an indexable `site/` route with no title, or no description a search result can render |
+| 18 | **i18n** | a string this app renders that resolves in no catalog, or a catalog nothing registers |
+| 19 | **policy** | a permission this app grants (`RoleDef.grants`) or requires (`RouteGuard.permission`) that it declares nowhere — the question that let a scaffold serve HTTP 500 `X_PERMISSION_UNKNOWN` under a green gate |
+| 20 | manifest | `x.manifest.json` differs from what the code produces, or `AGENTS.md` is absent |
+| 21 | roadmap | a milestone row with no status marker, or one marked ✅ whose named artifacts are not on disk ([`14-roadmap.md`](./14-roadmap.md)) |
 
 A skipped step is never counted as a passing one. The summary carries both numbers and names the
-skips — `12 of 20 steps passed in 53224ms — 8 skipped: job, eval, drift, contract-diff, budgets, seo, i18n, policy` —
+skips — `12 of 21 steps passed in 53224ms — 9 skipped: job, exercise, eval, drift, contract-diff, budgets, seo, i18n, policy` —
 so a green gate that is green because the suite does not exist has to say so on the one line every
-reader sees. `all 20 steps passed` means twenty steps actually ran.
+reader sees. `all 21 steps passed` means twenty-one steps actually ran.
 
 **The floor: a step that once applied must keep applying.** Naming the skips makes them visible;
 `x.verify.json` is what makes one *fail*. It is hand-written and committed — `{ "steps": [...] }`,

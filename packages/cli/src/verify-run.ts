@@ -199,7 +199,7 @@ export const BESIDE_SERIAL_SUITES: ReadonlySet<VerifyStepName> = new Set<VerifyS
 ]);
 
 /** The consecutive run of steps the static group overlaps, in the order `VERIFY_STEP_NAMES` holds. */
-export const SERIAL_SUITES: readonly VerifyStepName[] = ['live', 'job', 'e2e', 'eval'];
+export const SERIAL_SUITES: readonly VerifyStepName[] = ['live', 'job', 'exercise', 'e2e', 'eval'];
 
 async function runStep(
   step: VerifyStep,

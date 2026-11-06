@@ -81,7 +81,7 @@ A convention that isn't a build error doesn't exist. A missing `description`, a 
 
 ### Is `x verify` really the only gate?
 
-Yes. CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check you cannot run locally. Twenty steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. No `--skip`; `--only <step>[,<step>…]` is an iteration loop that prints `NOT A GATE RUN`. See [Testing](Testing).
+Yes. CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check you cannot run locally. All 21 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. No `--skip`; `--only <step>[,<step>…]` is an iteration loop that prints `NOT A GATE RUN`. See [Testing](Testing).
 
 ### Why are there only eight primitives?
 

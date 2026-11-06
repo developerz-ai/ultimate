@@ -135,6 +135,25 @@ X_TENANCY_UNSCOPED: query is not scoped to a tenant
 | A reference stays inside its tenant | both ends scoped is a composite key in the database, refused alike for absent and foreign (`X_DB_FOREIGN_KEY_VIOLATION`). `references(() => x.id, { crossTenant: '<reason>' })` is the stated escape ([Same-tenant keys](Entities-And-Migrations#same-tenant-keys)) |
 | An agent actor cannot exceed its human | the actor is the signed-in user's session; no broad-rights service account |
 
+### The static tenant check
+
+**A table with no tenant column that hangs off a tenant-owned one is a finding**, `As of 2026-11-05`. The repository guard scopes only tables that carry the column, so a child row with a foreign key to a scoped parent and no tenant of its own is readable by id from another org. `x verify`'s `exercise` step walks every registered entity's references and reports each such entity:
+
+```
+X_ENTITY_TENANT_UNDECLARED: a child of a tenant-owned table has no tenant
+  cause: attachments has no tenant column and references attachments -> posts, which has one, and declares no shared reason: …
+  fix:   orgId: uuid().tenant()   # in entity('attachments', { columns }), then x db gen 'attachments tenant'; or shared: '<why it belongs to no tenant>' in that entity()
+```
+
+| Move | When |
+|---|---|
+| `orgId: uuid().tenant()`, then `x db gen '<table> tenant'` | the rows belong to an org. A table that already holds rows backfills the column: `x g backfill <name> --feature <slice>` |
+| `entity('<name>', { shared: '<why>' })` | the rows belong to no org — a price list, a catalog. A blank reason is refused at `entity()`; a `shared` entity is not walked through ([Entities](Entities-And-Migrations#shape)) |
+
+Reported in the `exercise` step, not `policy`: the policy step asks whether a permission exists. Source: `packages/cli/src/exercise-static.ts`.
+
+**Planned, not shipped:** the dynamic half — every action, query and job called as org B with org A's seeded ids, red on a canary of A's in the output or an effect (`X_TENANT_LEAK`) or on A's row changed (`X_TENANT_WRITE_CROSSED`). Neither code exists yet. Neither half walks a `route` `load` or a `task`: raw SQL there is outside the check.
+
 ## Testing denials
 
 Generated with the primitive, fails until filled in:

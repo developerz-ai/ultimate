@@ -52,13 +52,13 @@ makes this a documentation defect rather than a code one. Re-derive with
 
 ### The gate a beginner inherits
 
-The same 20 steps run in a scaffolded app and in this repo — `VERIFY_STEP_NAMES`
+The same 21 steps run in a scaffolded app and in this repo — `VERIFY_STEP_NAMES`
 ([`packages/cli/src/verify-step.ts:16`](../../packages/cli/src/verify-step.ts)), whole or not at all.
 On the scaffold above, `As of 2026-08-23`:
 
 | Run | Result |
 |---|---|
-| `bun run setup && bun run check` on a fresh scaffold (the pre-30.0 wrapper: `x build --target static`, then `x verify`) | the gate green on the **first** pass, **20 of 20 steps** with `budgets` among them. Measured on a WSL2 developer box — not a VM, not a CI runner — warm cache, `As of 2026-09-11`: `bun run setup` 6,802ms, `bun run check` 5,389ms; the `--no-example` shape 5,135ms and 3,909ms ([`wiki/Bare-VM.md`](../../wiki/Bare-VM.md)) |
+| `bun run setup && bun run check` on a fresh scaffold (the pre-30.0 wrapper: `x build --target static`, then `x verify`) | the gate green on the **first** pass, every step it then had with `budgets` among them. Measured on a WSL2 developer box — not a VM, not a CI runner — warm cache, `As of 2026-09-11`: `bun run setup` 6,802ms, `bun run check` 5,389ms; the `--no-example` shape 5,135ms and 3,909ms ([`wiki/Bare-VM.md`](../../wiki/Bare-VM.md)) |
 | `x verify` alone, on an app nobody has built | green on `budgets` too, `As of 30.0`: the step runs `x build --target static` itself when `.x/build-stats.json` is missing, of an earlier rule, or older than the newest source, so the scaffold ships no `bun run check`. Before 30.0 this row was red, `X_BUDGET_UNMEASURED` |
 | `lint` on run one | green, zero diagnostics across every source file the scaffold writes, `As of 2026-09-11`. It used to be **name-dependent** — the templates emit `@<app>/…` before `@ultimat3/…`, which `organizeImports` accepted only while the app name sorted first — until `sortedImports` closed that half ([`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md)) |
 
@@ -84,7 +84,7 @@ cannot retrofit cheaply.
 | declared one `policy` per operation | a fifth surface is one adapter, not a second authz system — the failure mode that killed this shape of framework before | [`02-primitives.md`](./02-primitives.md) |
 | declared an `action`, not a controller | HTTP, OpenAPI, typed client, job handle, MCP tool and tests stay in step by construction, and `contract-diff` fails the gate when they do not | [`packages/action/README.md`](../../packages/action/README.md) |
 | accepted the tier table | an import that would couple two subsystems is a build error, so a codebase with many authors cannot silently grow a cycle | `bun run boundaries`, [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) |
-| took `x verify` as the definition of done | one command, 20 steps, the same list in every app — no tribal checklist to hand a new team | [`packages/cli/src/verify-step.ts:16`](../../packages/cli/src/verify-step.ts) |
+| took `x verify` as the definition of done | one command, 21 steps, the same list in every app — no tribal checklist to hand a new team | [`packages/cli/src/verify-step.ts:16`](../../packages/cli/src/verify-step.ts) |
 | used the framework's errors | 552 `X_*` codes, each with a cause and an executable `fix:`, in the terminal, in `problem+json`, in the overlay and under `--json` | `bun run manifest` → `framework.manifest.json` |
 | ran `ROLE=web` on one box | the same image is every role; climbing is `ROLE`, env and replica counts | [`17-scale-ladder.md`](./17-scale-ladder.md) |
 | never wrote a driver | every seam takes yours — `ServeOptions.runtime` hands the boot a queue, storage, mail, transport, purge, rate-limit store or ISR store ([`packages/cli/src/runtime-overrides.ts:26`](../../packages/cli/src/runtime-overrides.ts)) | [`20-large-app-readiness.md`](./20-large-app-readiness.md) |
@@ -119,7 +119,7 @@ context, and an app whose infrastructure is already decided spends its context o
 | Not claimed | State `As of 2026-08-23` |
 |---|---|
 | that anyone has shipped a very large app on it | no adoption numbers, no production deployments, no testimonials — [`README.md`](../../README.md) says so and will until they exist |
-| that a tracked app is green | `examples/dummy` is pinned red on 4 of 20 steps, `dummy/social-media-clone` on 2 ([`scripts/lib/gated-apps.ts`](../../scripts/lib/gated-apps.ts)) |
+| that a tracked app is green | each tracked app gates against its own `expectedRed` pins, which only ever shrink — read them in [`scripts/lib/gated-apps.ts`](../../scripts/lib/gated-apps.ts), never as a count here |
 | that the top of the ladder is proven | milestone 11 is open: the demo app on Compose **and** Kubernetes from one image, rolling restart invisible, has not been run ([`14-roadmap.md`](./14-roadmap.md)) |
 | that offline-first is here | realtime tier 3 (local-first) has not shipped ([`03-realtime.md`](./03-realtime.md)) |
 | that the small end is free of holes | a fresh scaffold boots with `X_CONFIG_INVALID` warning that 7 policy-protected routes have no authenticator — the app supplies `configureAuthenticator()` ([`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md)) |

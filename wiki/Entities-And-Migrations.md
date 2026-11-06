@@ -64,6 +64,7 @@ The entity name is the first argument. Everything else is the init object:
 | `columns` | types + defaults + FKs. Money is `bigint` minor units + `char(3)` currency, never a float; timestamps are `timestamptz`, stored UTC |
 | `table` | the physical table, when it is not the entity's own name. For a schema this framework did not generate — see [Adopting an existing database](#adopting-an-existing-database) |
 | `tenant` | the tenant column. Omitted, it is inferred from `.tenant()` or a column named `orgId` — silence never means unscoped |
+| `shared` | `'<why its rows belong to no tenant>'` — for an entity with no tenant column whose references reach one that has a tenant (a price list every org's subscriptions point at). Without it the `exercise` step reports `X_ENTITY_TENANT_UNDECLARED`; blank is refused at `entity()` with the same code, and beside a tenant column it is `X_INVARIANT_VIOLATED`. See [Policies and authz](Policies-And-Authz#the-static-tenant-check) |
 | `invariants` | `(c) => [invariant(name, expr), …]` — named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible. `c` is typed from `columns`, so a typo is a compile error |
 | `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead. `concurrently: true` on an entry builds it with `create index concurrently` in a migration of its own, outside a transaction — for a big, hot table ([Indexes built concurrently](Migrations-And-Backfills#indexes-built-concurrently--expand--contract)) |
 | `primaryKey` | composite keys only — a single key is `.primaryKey()` on the column |
@@ -872,7 +873,7 @@ reverse, is `changed-primary-key`.
 | `missing-foreign-key` | no key points those columns at that table. Matched on **where the key points**, never on its name: a hand-written `constraint fk_posts_org` is the same constraint as a generated `posts_org_id_fkey` |
 | `changed-foreign-key` | new `As of 2026-08-19`. The key points where it was declared to point and one side's `on delete` rule is not the other's. Reported apart from `missing-foreign-key` because it is a different repair — the constraint is there, and what changed is what happens to the child rows. Its `fix:` is the **pair** as one `psql "$DATABASE_URL" -c '…'` command, not `x db migrate`: a rule cannot be altered in place, `add constraint` alone is `42710` on a name already taken, and no `x db gen` diff emits either statement. Both sides go through one normalisation, so the catalog's `c` and a snapshot's `cascade` agree, and Postgres' `a` (`no action`) on every undeclared key reads as no rule |
 
-There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s twenty steps — the list, in order, is in [Testing](Testing).
+There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s 21 steps — the list, in order, is in [Testing](Testing).
 
 ## Reversible or marked
 

@@ -339,6 +339,8 @@ const SCAFFOLD_FLOOR: readonly VerifyStepName[] = [
   'errors',
   'unit',
   'contract',
+  // Every app has an `app.config.ts` and primitives to run: `x new` writes `apps/web/exercise.ts`.
+  'exercise',
   'eval',
   'drift',
   'budgets',

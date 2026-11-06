@@ -10,6 +10,7 @@ import { dashboardFiles } from './scaffold-dashboard';
 import { demoOrgFiles } from './scaffold-demo-org';
 import { entryFiles } from './scaffold-entries';
 import { errorPageFiles } from './scaffold-errors';
+import { exerciseFiles } from './scaffold-exercise';
 import { httpFiles } from './scaffold-http';
 import { icon } from './scaffold-icon';
 import { rolesFiles } from './scaffold-roles';
@@ -407,6 +408,8 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     { path: 'apps/web/tsconfig.json', contents: tsconfig() },
     // The process a container starts and the artifact a CDN is handed — `scaffold-entries.ts`.
     ...entryFiles(),
+    // What `x exercise` cannot guess, empty until a finding says what to paste — `scaffold-exercise.ts`.
+    ...exerciseFiles(),
     { path: 'apps/web/site/icon.png', contents: icon() },
     // The landing page: hero, two calls to action, three feature cards — `scaffold-site.ts`.
     ...siteFiles(app),

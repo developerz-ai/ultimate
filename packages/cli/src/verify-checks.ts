@@ -45,6 +45,7 @@ import { quoteArg } from './shell-quote';
 import { readStaticReport } from './static-report';
 import { unknownToolGateFindings } from './tool-gate-names';
 import { measureIfStale } from './verify-budgets-build';
+import { exerciseStep } from './verify-exercise';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
 import { roleLoadFindings } from './verify-role-load';
 import type { VerifyStep } from './verify-step';
@@ -56,6 +57,9 @@ import { checkWorkspaceDependencies } from './workspace-graph';
 
 /** The one file that makes the `roadmap` step answerable, and therefore what `applies` reads. */
 const ROADMAP_FILE = join('docs', 'idea', '14-roadmap.md');
+
+/** Where `exercise` joins the suites: directly after `job`, as `VERIFY_STEP_NAMES` holds it. */
+const AFTER_JOB = TEST_STEPS.findIndex((step) => step.name === 'job') + 1;
 
 /** The whole contract, in cost order. Every check the framework knows how to make lives here. */
 export const VERIFY_STEPS: readonly VerifyStep[] = [
@@ -176,7 +180,9 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       };
     },
   },
-  ...TEST_STEPS,
+  ...TEST_STEPS.slice(0, AFTER_JOB),
+  exerciseStep,
+  ...TEST_STEPS.slice(AFTER_JOB),
   {
     name: 'drift',
     summary:

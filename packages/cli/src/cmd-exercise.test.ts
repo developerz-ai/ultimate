@@ -1,0 +1,142 @@
+// `x exercise` end to end on a fixture app: the real pass, on a real scratch database. A handler
+// that works is `reached`, one that throws is `unreached` and red with its override as the fix,
+// `<name>` runs one primitive, and `--json`'s data is byte for byte what `.x/exercise.json` holds.
+// Registries are process-global, so every test resets them.
+
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+// why: Bun ships no recursive delete.
+import { rm } from 'node:fs/promises';
+// why: Bun exposes no path-join primitive.
+import { join } from 'node:path';
+import { action, registerActions, resetActions, t } from '@ultimat3/action';
+import {
+  can,
+  clearPermissions,
+  clearRoles,
+  definePermissions,
+  defineRoles,
+} from '@ultimat3/policy';
+import { resetQueries } from '@ultimat3/query';
+import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
+import { REQUIRED_BUN } from './app-root';
+import { exerciseCommand, exerciseRoles } from './cmd-exercise';
+import type { CommandContext } from './command';
+import { EXERCISE_REPORT_FILE } from './exercise-findings';
+import type { FlagValue } from './parse';
+import { processRoot } from './process-root-fixture';
+
+const ROOT = processRoot(join(import.meta.dir, '..', '.exercise-fixture'));
+
+const contextFor = (positionals: readonly string[] = []): CommandContext => ({
+  args: {
+    command: 'exercise',
+    subcommand: undefined,
+    positionals,
+    flags: new Map<string, FlagValue>([['seed', '7']]),
+    json: true,
+    help: false,
+    passthrough: [],
+  },
+  cwd: ROOT,
+  runner: async () => ({
+    command: ['true'],
+    code: 0,
+    ok: true,
+    stdout: '',
+    stderr: '',
+    durationMs: 0,
+  }),
+  env: { ULTIMATE_STATE_DIR: join(ROOT, '.x') },
+  bunVersion: REQUIRED_BUN,
+});
+
+let broken = false;
+
+const register = (): void => {
+  definePermissions(['cx:write'] as const);
+  defineRoles({ writer: { grants: ['cx:write'] } });
+  registerActions({
+    cxWorks: action({
+      input: t.object({ title: t.string.min(1).max(20) }),
+      output: t.object({ ok: t.boolean }),
+      policy: can('cx:write'),
+      handle: async () => ({ ok: true }),
+    }),
+    cxToggle: action({
+      input: t.object({}),
+      output: t.object({ ok: t.boolean }),
+      policy: can('cx:write'),
+      handle: () =>
+        broken ? Promise.reject(new TypeError('mutated')) : Promise.resolve({ ok: true }),
+    }),
+  });
+};
+
+beforeAll(async () => {
+  await Bun.write(join(ROOT, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
+});
+afterAll(async () => {
+  await rm(ROOT, { recursive: true, force: true });
+});
+const clearDeclarations = (): void => {
+  resetActions();
+  resetQueries();
+  clearRoles();
+  clearPermissions();
+};
+// The pass seeds EVERY registered entity, and a neighbouring file in this process may have declared
+// one at module scope with no table in this fixture's migrations: emptied here, put back after.
+let restoreEntities: () => void = () => undefined;
+beforeEach(() => {
+  broken = false;
+  restoreEntities = isolateEntityRegistry();
+  clearDeclarations();
+  register();
+});
+afterEach(() => {
+  clearDeclarations();
+  restoreEntities();
+});
+
+const outcomes = (data: unknown): Record<string, string> =>
+  Object.fromEntries(
+    ((data as { records: { name: string; outcome: string }[] }).records ?? []).map((one) => [
+      one.name,
+      one.outcome,
+    ]),
+  );
+
+describe('unit · x exercise', () => {
+  test('every primitive reached is green, and --json is what .x/exercise.json holds', async () => {
+    const result = await exerciseCommand.run(contextFor());
+    // `toMatchObject`: the job registry is process-global, and a module another file imported may
+    // have registered one (`mail.send`) — the pass is right to run it too.
+    expect(outcomes(result.data)).toMatchObject({ cxToggle: 'reached', cxWorks: 'reached' });
+    expect(result.ok).toBe(true);
+    const written: unknown = await Bun.file(join(ROOT, EXERCISE_REPORT_FILE)).json();
+    expect(written).toEqual(JSON.parse(JSON.stringify(result.data)));
+    expect((written as { seed: number }).seed).toBe(7);
+  }, 60_000);
+
+  test('a mutated handler turns the run red, its fix the override to paste', async () => {
+    broken = true;
+    const result = await exerciseCommand.run(contextFor());
+    expect(outcomes(result.data)['cxToggle']).toBe('unreached');
+    expect(result.ok).toBe(false);
+    const [finding] = result.findings ?? [];
+    expect(finding?.code).toBe('X_CONTRACT_EXERCISE_UNREACHED');
+    expect(finding?.fix).toContain('cxToggle:');
+    expect(finding?.fix).toContain('x exercise cxToggle --json');
+  }, 60_000);
+
+  test('<name> runs that one primitive and nothing else', async () => {
+    const result = await exerciseCommand.run(contextFor(['cxWorks']));
+    expect(Object.keys(outcomes(result.data))).toEqual(['cxWorks']);
+  }, 60_000);
+
+  test('the actors are x policy explain’s, each moved into the tenant asked for', () => {
+    const actors = exerciseRoles('tenant-1');
+    expect(actors.map((one) => one.name)).toEqual(['anonymous', 'writer']);
+    expect(actors[1]?.actor?.orgId).toBe('tenant-1');
+  });
+});

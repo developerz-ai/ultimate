@@ -18,6 +18,7 @@ import { docsSpec } from './cmd-docs-spec';
 import { doctorSpec } from './cmd-doctor-spec';
 import { envSpec } from './cmd-env-spec';
 import { errorsSpec } from './cmd-errors-spec';
+import { exerciseSpec } from './cmd-exercise-spec';
 import { fixSpec } from './cmd-fix-spec';
 import { generateSpec } from './cmd-generate-spec';
 // Registered here, not by whichever command body happens to load: `dispatch` renders a CLI code's
@@ -102,6 +103,7 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(jobsSpec, async () => (await import('./cmd-jobs')).jobsCommand),
   lazy(tasksSpec, async () => (await import('./cmd-tasks')).tasksCommand),
   lazy(policySpec, async () => (await import('./cmd-policy')).policyCommand),
+  lazy(exerciseSpec, async () => (await import('./cmd-exercise')).exerciseCommand),
   lazy(i18nSpec, async () => (await import('./cmd-i18n')).i18nCommand),
   lazy(errorsSpec, async () => (await import('./cmd-errors')).errorsCommand),
   lazy(docsSpec, async () => (await import('./cmd-docs')).docsCommand),

@@ -19,7 +19,7 @@ export const dbSpec: CommandSpec = {
   name: 'db',
   summary: 'gen, migrate, reset, seed, studio, branch, backfill, diagnostics',
   usage:
-    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n]',
+    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n]',
   requiresApp: true,
   subcommands: DB_SUBCOMMANDS,
   // Declared from the constant `runBranchCommand` validates against, never a second literal: it
@@ -45,6 +45,26 @@ export const dbSpec: CommandSpec = {
       name: 'dry-run',
       type: 'boolean',
       summary: 'seed: report what each seed would write, and write nothing',
+      subcommands: ['seed'],
+    },
+    // Rows for every table off the entity declarations, with no seed written: the seed graph
+    // `x exercise` runs on. Fixture data, so `dev` only; production is refused whatever the tier.
+    {
+      name: 'generate',
+      type: 'boolean',
+      summary: 'seed: generated dev rows for every entity, parents first; never in production',
+      subcommands: ['seed'],
+    },
+    {
+      name: 'rows',
+      type: 'string',
+      summary: 'seed: with --generate, rows per table (per tenant when tenant-scoped; default 3)',
+      subcommands: ['seed'],
+    },
+    {
+      name: 'seed',
+      type: 'string',
+      summary: 'seed: with --generate, the integer the graph is drawn from — same seed, same rows',
       subcommands: ['seed'],
     },
     {

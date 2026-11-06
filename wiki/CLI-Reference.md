@@ -33,7 +33,7 @@ x version              # CLI version
 | `x stop [--timeout 30s]` | stop this checkout's `x dev` (the pid its `.x/dev.lock` names, nothing else) and return once the next `x dev` can boot | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill, diagnostics | shipped |
-| `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
+| `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 21 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example\|init]` | validate the process env against `envSchema`, regenerate `.env.example` from it, or write `.env.production` (`init --production`) | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x auth seal-mfa` | one-shot: seal every second-factor secret still stored in the clear | shipped |
@@ -49,6 +49,7 @@ x version              # CLI version
 | `x jobs` | list, show, retry, cancel, remove and promote jobs; pause and resume a queue · `drain` is **planned** | shipped |
 | `x tasks` | cron tasks, their timezone and their next run | shipped |
 | `x policy` | which clause decided a permission, and why | shipped |
+| `x exercise [<name>] [--seed n]` | run every action, query and job once on generated rows, with no test written; the gate's `exercise` step | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
 | `x clean [--dry-run]` | remove what test runs leave behind: migrated test templates, `.x/cache`, stray `.x` folders, stale probe databases | shipped |
@@ -462,12 +463,15 @@ the resolved environment takes: `reference` and `dev` everywhere, `reference` al
 | the reference data only, anywhere | `x db seed --tier reference --json` |
 | dev fixtures on a box whose `ULTIMATE_ENV` says production | `x db seed dev --tier dev --json` |
 | the same, with no argv to change (a release-phase container) | `ULTIMATE_SEED_TIER=dev x db seed --json` |
+| rows for every entity with no seed written, parents first, same-tenant keys | `x db seed --generate --rows 3 --seed 1 --json` |
 
 Naming the tier is both the selection and the consent, and that is why it is one word rather than
 two flags: a cluster that sets `ULTIMATE_ENV=production` on every box — staging included — would
 otherwise have to lie about the environment to load its own fixtures. A `dev` seed reached under
 `production` with neither the flag nor the variable is `X_CLI_BAD_FLAG` and a non-zero exit; the
 cause names both spellings and the `fix:` is the runnable one.
+
+`--generate` draws rows off the entity declarations alone — the seed graph `x exercise` runs on: `--rows` per table (per tenant when tenant-scoped, default 3), `--seed` the integer it is drawn from, so the same seed writes the same rows. Generated rows are `dev` fixtures with no natural key to replay against, so production refuses them **whatever tier is named** (`X_SEED_ENVIRONMENT`); `--dry-run` counts the plan and writes nothing. The pass reports as one row named `(generated)`.
 
 `--json` carries a row per seed — `{ file, name, tier, status, ms, inserted, updated, skipped }`,
 **slowest first** — plus the totals, because a seed run that got slow is diagnosed by which file
@@ -619,7 +623,7 @@ names them, so a gate that is green because a suite does not exist has to say so
 every reader sees:
 
 ```text
-✓ 19 of 20 steps passed in …ms — 1 skipped: roadmap
+✓ 20 of 21 steps passed in …ms — 1 skipped: roadmap
 ```
 
 `--json` carries the same fact twice: `steps[].skipped` per step, and `data.skipped` as the list of
@@ -713,7 +717,7 @@ compared — and rewrites the committed baselines on its way through.
 ```bash
 $ x verify --json
 {"ok":false,"command":"verify",
- "summary":"1 of 20 steps failed — 3 skipped: e2e, contract-diff, roadmap","steps":[
+ "summary":"1 of 21 steps failed — 3 skipped: e2e, contract-diff, roadmap","steps":[
   {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
     {"code":"X_BUDGET_EXCEEDED","cause":"/pricing ships 61.2kb of JS (minified, uncompressed) over a 40kb budget via site/pricing/page.tsx -> islands/post-form-04f75f18.js; charged: /islands/post-form-04f75f18.js 50123 B, inline scripts 855 B",
      "fix":"edit apps/web/site/pricing/page.tsx — set budget: { js: '62kb' } with // measured: 62682 B (x build --target static) — why: <the function it buys> directly above it; or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'",
@@ -1294,6 +1298,54 @@ occurrence that enqueued, never the scheduler's watermark — arming and skippin
 Every instant is rendered in the task's **own** `tz`, never a machine-local default: a `0 3 * * *` in `America/New_York` reads `2026-03-06T03:00:00-05:00` before the spring-forward and `2026-03-09T03:00:00-04:00` after it. Same wall clock, different instant — the ambiguity the required `tz` exists to remove.
 
 Errors: `X_DECLARATION_UNKNOWN` (with the nearest name as its fix), `X_CLI_BAD_FLAG`.
+
+## x exercise
+
+```bash
+x exercise [<name>] [--seed n] [--json]
+```
+
+Every action, query and job the app registers, run **once** against generated rows, with no test
+written. The question no written test answers: what does each primitive do when it actually runs?
+
+| Step | What happens |
+|---|---|
+| database | a scratch one — embedded, or a server named by `TEST_DATABASE_URL` when a migration needs an extension the embedded one cannot link — with the framework tables and every migration applied. Never the developer's own: the pass commits |
+| rows | a fresh pair of tenants per primitive, every table seeded off its declaration (`x db seed --generate`'s graph) |
+| actor | the first of `x policy explain`'s actors the primitive's policy allows, in its own tenant |
+| input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the minimal draw of its schema |
+| room | network sealed, mail captured, job queue in memory, clock frozen. A call out is refused, so the primitive is `unreached`, never sent |
+
+Each primitive ends `reached`, `refused` (no actor its policy allows — by design), `off` (an
+override with a reason) or `unreached`. `--json` and `.x/exercise.json` carry the same document:
+`{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, statements,
+effects, ms, override? }`. A `<name>` runs that one primitive; an unknown name is
+`X_DECLARATION_UNKNOWN`.
+
+`unreached` is red: `X_CONTRACT_EXERCISE_UNREACHED`, and its `fix:` is the entry to paste into
+`apps/web/exercise.ts` — the `exercise` option `.contract()` takes, one shape:
+
+```ts
+import type { Actor } from '@ultimat3/core';
+import { defineExercise } from '@ultimat3/testing';
+
+declare const author: Actor; // a signed-in actor the policy allows
+
+export const exercise = defineExercise({
+  publishPost: {
+    actor: author,
+    input: (drawn) => ({ ...(drawn as Record<string, unknown>), postId: '<a real id>' }),
+  },
+  sendInvoice: { off: 'charges a card through the payment provider' },
+});
+```
+
+A blank `off` reason is `X_CONTRACT_EXERCISE_UNDECLARED`; so is an `exercise.ts` with no single
+`defineExercise()` export. The gate's `exercise` step runs this command as a child and is red on
+exactly its findings, plus the static half of the tenant proof: an entity with no tenant column
+that references one with a tenant and declares no `shared` reason.
+
+Errors: `X_CONTRACT_EXERCISE_UNREACHED`, `X_CONTRACT_EXERCISE_UNDECLARED`, `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`.
 
 ## x policy
 

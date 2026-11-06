@@ -2,11 +2,11 @@
 
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
-Deps (15): `core`; `cache` `db` `i18n` `time`; `entity` `http` `policy`; `action` `jobs`
+Deps (16): `core` `schema`; `cache` `db` `i18n` `time`; `entity` `http` `policy`; `action` `jobs`
 `query` `realtime`; `mail` `pwa` `render`. Static in `.`: `cache`
 (`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
 (`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
-`action`, `http`, `mail`, `pwa`, `query`, `render`, `time` — no `mail` destructure, no mail
+`action`, `http`, `mail`, `pwa`, `query`, `render`, `schema` (`exercise-input.ts:16`), `time` — no `mail` destructure, no mail
 package; a `packages/core` import never loads `@ultimat3/entity`. `entity` exists for exactly
 one call, `nPlusOne()`: the strict fixture reports `x dev`'s error, with the `fix:` the schema's
 own relations spell — a second N+1 code here would be a second answer to one condition. Its one
@@ -23,7 +23,7 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | Self is not egress | a port core's `markListening()` announced passes through — a socket test never unseals |
 | Offline is a state, not a mock | `network.offline()` / `.drop()` fail every dial, loopback too, as `X_TEST_NETWORK_OFFLINE` before any mock: the app's offline path runs |
 | One way offline | the `network` fixture. `setNetworkState` is the gate's only writer and is not exported — setting it from a test body skips the fixture's disposal and leaves every later file offline |
-| The seal key is a test process's, and nobody's export | `test-seal-key.ts`: installed by the preload only when `NODE_ENV === 'test'` and neither `ULTIMATE_SECRETS_KEY` nor `.secrets.key` exists; `startE2eApp` hands it to the child by VALUE. Full rule: `docs/history/testing.md` |
+| The seal key is a test process's, and nobody's export | `test-seal-key.ts`: installed by the preload only when `NODE_ENV === 'test'` and neither `ULTIMATE_SECRETS_KEY` nor `.secrets.key` exists; `startE2eApp` hands it to the child by VALUE, and `x exercise` (a test process on a scratch database) to itself through `testSealKeyEnv`. Full rule: `docs/history/testing.md` |
 | `toEqualRow` never prints a server-only value | `matcher-row.ts` compares every OWN property (`toEqual` cannot see a `.sealed()` column — empty diff). Full rule: `docs/history/testing.md` |
 | No retries | a flake is fixed or deleted the day it flakes; there is no `retry: 3` |
 | A mutator's `local()` runs against `memoryLocalTx()` | `local-tx.ts`: keyed rows with the record store's rules (update invents nothing, `undefined` leaves a column, rows frozen). Never a hand-rolled table per test |
@@ -47,7 +47,9 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | `LOG_LEVEL` above `info` filters the TERMINAL | `quiet-logs.ts` pins the logger at `info` while core loads, so a collecting `setLogSink` still sees `warn` under `LOG_LEVEL=error`. It stays the preload's FIRST import |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
 | Fixtures | the preload registers the framework bag — an app registers only what it alone knows (`seed`, `actorFor`) |
-| Every `e2eTest` is audited | `e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (per-test run, `allow`, dedupe), `ax-node.ts` (the one AX reader); the full tree is read only in `cdp-e2e-page.ts` (`FULL_AX_TREE`, a convention). No switch; `allow` needs a non-blank `because` |
+| Every `e2eTest` is audited | `e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (per-test run, `allow`, dedupe), `ax-node.ts` (the one AX reader); the full tree is read only in `cdp-e2e-page.ts` (`FULL_AX_TREE`, a convention). No switch; `allow` needs a non-blank `because`. And every raw tab: `e2e-a11y-tabs.ts`, checked after each `goto`/`reload` and at the test's end from the preload's `afterEach`; exceptions are `allowA11y([{ role, selector, because }])` |
+| The exercise pass runs what is registered | `exercise.ts` (`runExercisePass`): every action, query and job once, its own tenant pair off one `seedGraph`, an actor `exercise-actor.ts` picks, 39's `runExercise` as the verdict. Rows COMMITTED. Overrides only via `defineExercise` (blank `off` refused) |
+| One seed writer | `entitySeedWriter({ entities, client \| driver })` (`seed-writer.ts`) writes through each entity's own repository; `entity` loads on the first write, so the barrel stays entity-free |
 | Factory values are DECLARED | `factoriesFor` and `seedGraph` share `seed-graph-values.ts`: default, enum, kind, through `$parse`, never the name. `seed-graph*.ts` type-import `entity` only |
 | e2e without a driver | `e2eTest` becomes `test.skip`; the gate reports the step SKIPPED (or `X_VERIFY_SUITE_VANISHED` when `x.verify.json` requires it), never passed |
 | The seam has an inverse | `resetE2eDriver()`: `useE2eDriver` writes MODULE scope, so a file that installs a browser undoes it |
@@ -90,13 +92,8 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | `mountIsland` AWAITS `mount` | `IslandEntry['mount']` returns `unknown`, not `void`, and the call is awaited |
 | Dispose STOPS the island, then restores the globals | when `mount` resolved to a function, `[Symbol.dispose]` calls it BEFORE `restore()` |
 | The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. Full rule: `docs/history/testing.md` |
-| `style` and `classList` RECORD | `FakeStyle` is one declaration map behind all four spellings compiled Solid uses (static attribute, `setProperty`, `cssText`, `removeAttribute`), so a test can assert the component set `--form-gap` |
-| `classList` is the class attribute | not a list of its own, so `classList.toggle` (compiled inline from `classList={{ … }}`) and `className` never answer one element two ways |
-| A `document` listener is the documentElement's | no bubbling: `document.addEventListener` registers on `documentElement`, and `fire(mounted.documentElement, 'keydown', …)` drives it. Every listener per type runs; removal is by function identity |
-| `querySelector` skips `this` | descendants only, as the DOM's does. Matching the element it is called on made a host `<div>` answer `find('div')` with the container the test built rather than the markup the island rendered |
+| The micro-DOM records and does not pretend | `style`/`classList` record, a `document` listener is the documentElement's, `querySelector` skips `this`, the box is 0 until written, `ResizeObserver` never fires itself, attaching a node moves it. Full rule: `docs/history/testing.md` |
 | The selector grammar is SMALL and REFUSES | `island-selector.ts`: compounds of tag, `#id`, `.class`, `[attr]`, `[attr="value"]`, joined by space or `>`. Anything else is `X_TEST_ISLAND_SELECTOR_UNSUPPORTED` with the offset, never an empty answer |
-| The box is 0 until a test writes it | `clientHeight`, `scrollTop`, `scrollHeight` and the rest are writable numbers, default 0; `getBoundingClientRect()` derives from the offset box |
-| `ResizeObserver` records and never fires on its own | `island-observers.ts`, one registry PER DOCUMENT. |
 | A mount installs process globals | so `MountedIsland` is `Disposable` and a `mount` that THROWS restores before it rethrows. A fake `document` left installed reaches every later FILE in the run |
 | `fire` answers whether a handler ran | a selector matching nothing and an island that attached no handler are the same silence otherwise — the second is a bug, the first a typo. |
 | A states file is PURE DATA, and it is enforced | `defineIslandStates` declares the states an island can be photographed in — error, empty, over-quota, read-only |
@@ -110,7 +107,6 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | The disk check is not in `defineIslandStates` | a declaration evaluates wherever it is imported from, so a rule that reads the filesystem at import time fails on the cwd rather than on the path. |
 | The island EXTENSION is not restated here | `.island.tsx` is `@ultimat3/render`'s `ISLAND_EXTENSION` and `render` is not a dependency of this package. |
 | A mount imports from its own temp DIRECTORY | `island-scratch.ts`: per mount (identical chunks stay two modules); removed on dispose, at the file boundary and in the run's `afterAll` — `exit` never fires under `bun test`. Never a `data:` URL (coverage panics past ~4 kB) |
-| Attaching a node MOVES it | `appendChild`, `insertBefore`, `replaceChild` detach it from its old parent first; `removeChild` clears `parentNode` |
 | Globals install in layers | `island-globals.ts`: a key's real DESCRIPTOR is saved by the first live mount, restored by the last, in any dispose order |
 | Which command shards | `bun test` is one process on one database — what a scaffolded app's `test` script runs |
 

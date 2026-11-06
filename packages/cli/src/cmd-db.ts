@@ -42,6 +42,7 @@ import {
   seedTotals,
   selectSeeds,
 } from './db-seed';
+import { runGeneratedSeed } from './db-seed-generate';
 import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
 import { MissingSubcommandError, UnknownCommandError } from './errors';
 import { withJobDriver } from './jobs-driver';
@@ -301,6 +302,7 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
  * `handle.enqueue()` a seeded write triggers. A second boot path would be a second answer.
  */
 async function runSeed(ctx: CommandContext, root: string): Promise<CommandResult> {
+  if (flagBool(ctx.args, 'generate')) return runGeneratedSeed(ctx, root);
   const environment = resolveEnvironment({ env: ctx.env });
   const requested = parseSeedTierFlag(
     flagString(ctx.args, 'tier') ?? ctx.env['ULTIMATE_SEED_TIER'],

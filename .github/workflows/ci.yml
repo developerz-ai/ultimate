@@ -166,6 +166,9 @@ jobs:
   #                                      two that can moved to the unit shards: ~50-60 s off this
   #                                      part, ~17-20 s onto each unit shard (112-197 s today).
   #
+  # `exercise` rides in `live`: at this root it is skipped (no `app.config.ts`, nothing registered),
+  # so it costs the part a file probe; the tracked apps run it in `reference-app-verify`.
+  #
   # `contract` and `job` moved out of `live` on 2026-10-03, when `live` was the slowest part, and
   # out of `e2e` on 2026-11-05, when it was. They read only TEST_DATABASE_URL, which every unit
   # shard already starts, and both are in `SHARDABLE_STEPS`: each shard runs a third of their files,
@@ -222,7 +225,7 @@ jobs:
             services: postgres
             urls: TEST_DATABASE_URL
           - part: live
-            only: lint,boundaries,filesize,package-shape,errors,live,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
+            only: lint,boundaries,filesize,package-shape,errors,live,exercise,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
             services: postgres postgres-logical postgres-tls pooler redis nats s3
             urls: TEST_DATABASE_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
           - part: e2e

@@ -62,7 +62,7 @@ or a line in `docs/gotchas.md` — **never a bare `TODO`**.
 |---|---|---|
 | fast | `bunx x test unit --filter <text>` | after each edit |
 | scoped | `bunx x test <type>` | before you believe a slice works |
-| **the gate** | `bun run verify` (= `x verify`, 20 steps) | once, before push, in the background |
+| **the gate** | `bun run verify` (= `x verify`, 21 steps) | once, before push, in the background |
 
 **Do NOT reflexively run `bun run verify`.** It is the pre-push gate, not the edit loop.
 
