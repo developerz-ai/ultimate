@@ -103,7 +103,7 @@ const newRunPage = (error = '', step: string | null = null): string =>
   documentOf(
     step === null ? 'New run' : `New run, step ${step}`,
     `${error === '' ? '' : `<p id="error">${error}</p>`}<form id="create" method="post">` +
-      '<input id="name" name="name" value=""><button id="submit">Create</button></form>' +
+      '<input id="name" name="name" aria-label="Name" value=""><button id="submit">Create</button></form>' +
       '<a id="cancel" href="/runs">Cancel</a> <a id="advanced" href="/runs/new/advanced">Advanced</a>' +
       // Relative: against the MODAL's URL it is `/runs/new?step=2`, against the page's `/runs?step=2`.
       ' <a id="step" href="?step=2">Step 2</a>',
@@ -202,7 +202,10 @@ const routes: Route[] = [
     '/runs/slow',
     () =>
       new Promise<Response>((resolve) => {
-        released = () => resolve(html(documentOf('Slow', '<input id="slow-field">', [], true)));
+        released = () =>
+          resolve(
+            html(documentOf('Slow', '<input id="slow-field" aria-label="Slow field">', [], true)),
+          );
       }),
     NAV,
   ),

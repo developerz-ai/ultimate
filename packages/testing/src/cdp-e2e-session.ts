@@ -9,6 +9,8 @@ import { cdpE2eTab } from './cdp-e2e-page';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
 import { isNetworkProbe, networkAgrees } from './cdp-network-probe';
 import { offlineScripts } from './cdp-offline-script';
+import type { AuditedTab } from './e2e-a11y-tabs';
+import { auditTab } from './e2e-a11y-tabs';
 
 export interface E2eSession {
   /** A new tab in the same profile — same cookies, same origin storage, same SharedWorker. */
@@ -311,13 +313,28 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
         });
       }
       const sessionId = await attached(targetId);
-      return cdpE2eTab({
+      // Every tab is audited: built here, so no suite can hold one the audit does not see. The
+      // tab is alive while the browser still knows its target — a closed one has no page to read.
+      let audit: AuditedTab | undefined;
+      const tab = cdpE2eTab({
         connection,
         sessionId,
         targetId,
         loadTimeoutMs: options.loadTimeoutMs,
         offline,
+        audit: {
+          navigated: () => audit?.navigated() ?? Promise.resolve(),
+          used: () => audit?.used(),
+          closed: () => audit?.closed(),
+        },
       });
+      audit = auditTab(tab, () =>
+        send('Target.getTargetInfo', { targetId }).then(
+          () => true,
+          () => false,
+        ),
+      );
+      return tab;
     },
     async addInitScript(source: string): Promise<void> {
       scripts.push(source);

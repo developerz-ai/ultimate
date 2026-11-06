@@ -63,6 +63,7 @@ beforeAll(() => {
 
   // Registered SECOND, so the post above stays `entities[0]` for every case that reads it.
   entity('sources_test_secret', {
+    shared: 'one credential store for the whole install',
     columns: {
       id: uuid().primaryKey(),
       title: text({ max: 80 }),
@@ -226,6 +227,13 @@ describe('the entity projection', () => {
     expect(byName.get('token_sealed')?.type).toBe('text');
     const title = byName.get('title') ?? expect.unreachable('no title column');
     expect(Object.hasOwn(title, 'sealed')).toBe(false);
+  });
+
+  test('a shared reason is carried; an entity that declared none carries no `shared` key', () => {
+    const entities = frameworkSources({ app: APP }).entities ?? [];
+    const secret = entities.find((one) => one.name === 'sources_test_secret');
+    expect(secret?.shared).toBe('one credential store for the whole install');
+    expect(Object.hasOwn(entities[0] ?? {}, 'shared')).toBe(false);
   });
 
   test('a column with no foreign key carries no `references` key at all', () => {

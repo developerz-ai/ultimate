@@ -551,6 +551,7 @@
         "@ultimat3/query": "29.4.0",
         "@ultimat3/realtime": "29.4.0",
         "@ultimat3/render": "29.4.0",
+        "@ultimat3/schema": "29.4.0",
         "@ultimat3/time": "29.4.0",
       },
     },

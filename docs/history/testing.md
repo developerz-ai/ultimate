@@ -343,3 +343,17 @@ Verbatim from [`packages/testing/CLAUDE.md`](../../packages/testing/CLAUDE.md), 
 | | |
 |---|---|
 | The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. `packages/ui/src/fake-dom-fixture.ts` is a second one for keyboard code, and `ui -> testing` is upward: not a copy to collapse. `bun test` has no DOM and no DOM library may be added |
+
+## Moved out 2026-11-05 (plan 101 wave 6b, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/testing/CLAUDE.md`](../../packages/testing/CLAUDE.md), which keeps them as one row, "The micro-DOM records and does not pretend".
+
+| | |
+|---|---|
+| `style` and `classList` RECORD | `FakeStyle` is one declaration map behind all four spellings compiled Solid uses (static attribute, `setProperty`, `cssText`, `removeAttribute`), so a test can assert the component set `--form-gap` |
+| `classList` is the class attribute | not a list of its own, so `classList.toggle` (compiled inline from `classList={{ … }}`) and `className` never answer one element two ways |
+| A `document` listener is the documentElement's | no bubbling: `document.addEventListener` registers on `documentElement`, and `fire(mounted.documentElement, 'keydown', …)` drives it. Every listener per type runs; removal is by function identity |
+| `querySelector` skips `this` | descendants only, as the DOM's does. Matching the element it is called on made a host `<div>` answer `find('div')` with the container the test built rather than the markup the island rendered |
+| The box is 0 until a test writes it | `clientHeight`, `scrollTop`, `scrollHeight` and the rest are writable numbers, default 0; `getBoundingClientRect()` derives from the offset box |
+| `ResizeObserver` records and never fires on its own | `island-observers.ts`, one registry PER DOCUMENT. |
+| Attaching a node MOVES it | `appendChild`, `insertBefore`, `replaceChild` detach it from its old parent first; `removeChild` clears `parentNode` |

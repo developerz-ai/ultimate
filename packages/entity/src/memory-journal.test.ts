@@ -23,6 +23,9 @@ const ids = async (repo: Listed): Promise<string[]> =>
 
 class Rollback extends TypeError {}
 
+/** One event-loop turn: every microtask the subject queued has run. */
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 1));
+
 /** `Tx.onCommit` is optional on the contract; the memory transactor always carries it. */
 const afterCommit = (tx: Tx, effect: () => void): void => {
   if (tx.onCommit === undefined) expect.unreachable('a memory Tx with no onCommit');
@@ -54,7 +57,7 @@ describe('an ambient memory transaction', () => {
     expect(await ids(repo)).toEqual(['gone:before', 'kept:before']);
   });
 
-  test('a nested transaction that COMMITS is a savepoint: its rows undone, its effects run', async () => {
+  test('a nested transaction that COMMITS is a savepoint: its rows undone, its effects dropped', async () => {
     const repo = memoryRepo(notes);
     let effects = 0;
     await rolledBack(() =>
@@ -67,7 +70,7 @@ describe('an ambient memory transaction', () => {
       }),
     );
     expect(await ids(repo)).toEqual([]);
-    expect(effects).toBe(1);
+    expect(effects).toBe(0);
   });
 
   test('a lock taken and released inside it does not stall the next write to that row', async () => {
@@ -102,5 +105,32 @@ describe('an ambient memory transaction', () => {
       expect(memoryJournal()).toBe(tx);
     });
     expect(memoryJournal()).toBeUndefined();
+  });
+});
+
+describe('a lock taken with no tx inside a memory transaction', () => {
+  test('is held to that transaction’s end, so another chain never reads or loses to its rollback', async () => {
+    const repo = memoryRepo(notes);
+    await repo.insert({ id: 'r', body: 'before' });
+    const locked = Promise.withResolvers<void>();
+    const end = Promise.withResolvers<void>();
+    const chainA = rolledBack(async () => {
+      await repo.lock?.('r', (row, tx) => repo.update(row.id, { body: 'A' }, { tx }));
+      locked.resolve();
+      await end.promise;
+    });
+    await locked.promise;
+    let seen: string | undefined;
+    const chainB = repo.lock?.('r', async (row, tx) => {
+      seen = row.body;
+      await repo.update(row.id, { body: 'B' }, { tx });
+    });
+    // A's transaction is still open: B is queued behind it, never inside its uncommitted row.
+    expect(await Promise.race([chainB, tick().then(() => 'waiting')])).toBe('waiting');
+    end.resolve();
+    await chainA;
+    await chainB;
+    expect(seen).toBe('before');
+    expect(await ids(repo)).toEqual(['r:B']);
   });
 });

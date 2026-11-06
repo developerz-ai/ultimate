@@ -80,6 +80,7 @@ export {
 export type { IndexInit } from './index-init';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
 export { assertInvariants, invariant, MAX_ASSERTED_ROWS } from './invariants';
+export { memoryJournal } from './memory-journal';
 // How Postgres compares two values of one column, decided by the column's declared KIND. Exported
 // because `@ultimat3/query`'s matcher and in-memory source ask the same question — and a second
 // answer there is how a live window and the database returned one read in two orders.

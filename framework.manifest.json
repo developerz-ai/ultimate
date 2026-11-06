@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "222e2358472e917221d1f5df02a8949f4c9a7df4bcd720a1d9a5021b1b2a3a46",
+  "buildId": "30f199fded3500c7434f384c74cef14297430e1ae2f23d880da51d1119270f3c",
   "tiers": {
     "0": [
       "core",
@@ -1691,6 +1691,11 @@
     },
     {
       "code": "X_ENTITY_SEALED_PREDICATE",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_TENANT_UNDECLARED",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },
@@ -4273,6 +4278,11 @@
       "code": "X_SEED_ENVIRONMENT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SEED_GRAPH_ENTITY_UNKNOWN",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_SEED_GRAPH_UNSATISFIED",

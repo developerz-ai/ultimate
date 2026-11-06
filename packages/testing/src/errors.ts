@@ -51,6 +51,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_PACE_INVALID',
   'X_SEED_GRAPH_UNSATISFIED',
   'X_E2E_A11Y_VIOLATION',
+  'X_SEED_GRAPH_ENTITY_UNKNOWN',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -94,6 +95,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_PACE_INVALID: 'ULTIMATE_TEST_PACE is not a number at or above 1',
   X_SEED_GRAPH_UNSATISFIED: 'no generated row satisfies a table',
   X_E2E_A11Y_VIOLATION: 'a page fails the accessibility audit',
+  X_SEED_GRAPH_ENTITY_UNKNOWN: 'a seed plan names an entity its writer was not given',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

@@ -215,7 +215,11 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   upsert and `deleteWhere` undo on refusal (`memory-batch.ts`); a soft delete under a JS-only rule is
   judged (`judgedRows`). `bulk-write-parity.test.ts`.
 - **`memoryTransactor().run` is ambient** (`memory-journal.ts`): a write naming no `tx` joins it; a nested
-  commit hands its undos up. `memory-journal.test.ts`.
+  commit hands its undos and effects up; a write after the root ended is `X_DB_TRANSACTION_CLOSED`; a
+  row lock taken with no tx is held to the root. `memory-journal.test.ts`, `memory-transactor.test.ts`.
+- **`shared: '<why>'` is the one way an untenanted child of a tenant-owned table says so**
+  (`assertShared`, `describe.ts`); the reach check is the CLI's `exercise-static.ts`
+  (`X_ENTITY_TENANT_UNDECLARED`), over `EntityDescription.shared`.
 - **A seed is replayable**: `SeedContext.insert` is one `upsertAll(…, { onMatch: 'nothing' })` per
   call; a generated PK the row does not name is refused. `upsert(entity, { by }, values)` keys on a
   natural key, reads first for the report, writes one `on conflict … do update`, preserves `createdAt`.

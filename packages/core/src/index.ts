@@ -368,6 +368,7 @@ export {
 export { ExerciseEnvironmentError, ExerciseUnscopedError } from './exercise-errors';
 // A contract exercise's one loop: `@ultimat3/action`'s and `@ultimat3/query`'s, one tier apart from neither.
 export type {
+  DrawnInput,
   ExerciseAttempt,
   ExerciseReport,
   ExerciseSubject,
@@ -375,6 +376,7 @@ export type {
 } from './exercise-run';
 export {
   assertExerciseScoped,
+  bindDrawn,
   EXERCISE_RUNS,
   EXERCISE_RUNS_MAX,
   exerciseDefect,

@@ -86,6 +86,10 @@ export {
   launchChrome,
   launchFoundChrome,
 } from './cdp-launch';
+// The exercise pass (plan 101 / 40, phase 2): an app's per-primitive overrides — 39's
+// `.contract({ exercise })` option, one shape — and the pass over every action, query and job.
+export type { ExerciseAppOptions, ExerciseOverride, ExerciseOverrides } from './define-exercise';
+export { defineExercise } from './define-exercise';
 // The island-state vocabulary. Pure data by design: a `*.island.states.ts` file is read by the
 // command that photographs the states, by the harness page and by a guard test — none of which has
 // a bundler, and only one of which has a browser.
@@ -118,6 +122,7 @@ export {
   E2eA11yUnavailableError,
   E2eA11yViolationError,
 } from './e2e-a11y-run';
+export { allowA11y } from './e2e-a11y-tabs';
 export type { E2eApp, E2eAppMode, StartE2eAppOptions } from './e2e-app';
 export { E2E_APP_START_MS, E2E_APP_STOP_MS, startE2eApp } from './e2e-app';
 export { E2E_ROOT_ENV, e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
@@ -160,6 +165,15 @@ export {
   TESTING_ERROR_TITLES,
   TestDatabaseUnavailableError,
 } from './errors';
+export type { ExercisePassOptions } from './exercise';
+export { runExercisePass } from './exercise';
+export type { ActorChoice, RoleGrants } from './exercise-actor';
+export type {
+  ExerciseEffect,
+  ExerciseOutcome,
+  ExerciseRecord,
+} from './exercise-report';
+export { overrideLine } from './exercise-report';
 export type {
   Association,
   AssociationMap,
@@ -356,7 +370,9 @@ export {
 // keys, values off each column's declaration. Types only from `@ultimat3/entity`, so no registry.
 export { seedGraph } from './seed-graph';
 export type { SeedGraphUnsatisfiedInput } from './seed-graph-error';
-export { SeedGraphUnsatisfiedError } from './seed-graph-error';
+// A seed graph written through each entity's own repository — a pinned client (Postgres, PGlite) or
+// the app's driver (memory, `testDriver()`). Loads `@ultimat3/entity` on its first write, not here.
+export { SeedGraphEntityUnknownError, SeedGraphUnsatisfiedError } from './seed-graph-error';
 export type {
   SeedCanary,
   SeedFactory,
@@ -369,6 +385,8 @@ export type {
 export { insertSeedGraph } from './seed-graph-plan';
 export type { SeedEntity } from './seed-graph-shape';
 export type { SeedColumn } from './seed-graph-values';
+export type { EntitySeedWriterOptions, SeedWriterTarget } from './seed-writer';
+export { entitySeedWriter } from './seed-writer';
 export type { SharedExamples } from './shared-examples';
 export { behavesLike, sharedExamples } from './shared-examples';
 export type {
@@ -390,6 +408,8 @@ export {
   workerId,
 } from './template-db';
 export { paced, TEST_PACE_ENV, TestPaceInvalidError, testPace } from './test-pace';
+// `x exercise` is a test process too: it hands itself the same key, judged by the same rule.
+export { testSealKeyEnv } from './test-seal-key';
 export type {
   E2eBody,
   E2eDriver,

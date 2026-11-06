@@ -11,6 +11,7 @@ import {
   integer,
   invariant,
   money,
+  SOFT_DELETE_COLUMN,
   text,
   timestamp,
   url,
@@ -19,6 +20,7 @@ import {
 import { defineFactory } from './factories';
 import { seedGraph } from './seed-graph';
 import { insertSeedGraph, type SeedRow, type SeedUpdate } from './seed-graph-plan';
+import { SEED_SOFT_DELETE_PROPERTY } from './seed-graph-shape';
 import { testName } from './test-types';
 
 const orgs = entity('sg_orgs', {
@@ -102,6 +104,21 @@ describe(testName('unit', 'seedGraph'), () => {
     const slug = graph.inserts[0]?.row['slug'];
     expect(String(slug)).toContain(graph.canaries[0]?.marker ?? '-');
     expect(graph.canaries[0]?.columns).toContain('slug');
+  });
+
+  test('a soft-deleting table seeds live rows: its deletedAt is null, not a generated instant', () => {
+    const notes = entity('sg_notes', {
+      columns: {
+        id: uuid().primaryKey(),
+        editedAt: timestamp().nullable(),
+        [SOFT_DELETE_COLUMN]: timestamp().nullable(),
+      },
+    });
+    expect(SEED_SOFT_DELETE_PROPERTY).toBe(SOFT_DELETE_COLUMN);
+    const rows = seedGraph({ notes }).inserts.map((insert) => insert.row);
+    expect(rows.map((row) => row[SOFT_DELETE_COLUMN])).toEqual([null, null, null]);
+    // Only the soft-delete column: any other nullable instant still gets a value.
+    expect(rows.every((row) => row['editedAt'] instanceof Date)).toBe(true);
   });
 
   test('a unique column that runs out of values ends its table early, it does not refuse', () => {
@@ -195,6 +212,42 @@ describe(testName('unit', 'seedGraph refusals'), () => {
     expect(() => seedGraph({ posts })).toThrow(
       expect.objectContaining({ code: 'X_SEED_GRAPH_UNSATISFIED' }),
     );
+  });
+
+  test('a tenant column whose target is outside the set refuses up front, like any reference', () => {
+    let caught: unknown;
+    try {
+      seedGraph({ members });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeUltimateError('X_SEED_GRAPH_UNSATISFIED');
+    expect(caught).toMatchObject({
+      cause: expect.stringContaining('orgId references sg_orgs, which is not in the set'),
+    });
+  });
+
+  test('a unique that runs out before a later tenant holds a row refuses, naming the column', () => {
+    const seats = entity('sg_seats', {
+      columns: {
+        id: uuid().primaryKey(),
+        orgId: uuid()
+          .references(() => orgs.id)
+          .tenant(),
+        seat: enumerated(['a', 'b'] as const).unique(),
+      },
+    });
+    let caught: unknown;
+    try {
+      seedGraph({ orgs, seats }, { tenants: 2, perTable: 3 });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeUltimateError('X_SEED_GRAPH_UNSATISFIED');
+    expect(caught).toMatchObject({
+      cause: expect.stringContaining('before tenant 2 of 2 holds a row'),
+      fix: expect.stringContaining('seat: …'),
+    });
   });
 
   test('a count that is not a whole positive number, or a seed that is not finite, refuses', () => {

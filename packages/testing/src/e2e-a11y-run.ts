@@ -1,6 +1,6 @@
-// One e2e test's accessibility audit: every settled navigation and the end of the body read the
-// page's tree and the probe, the findings a reasoned `allow` does not cover are collected, and the
-// test fails once, at the end, with every element named. The rules are `e2e-a11y.ts`'s.
+// One test's accessibility audit, for `e2eTest` and a raw tab (`e2e-a11y-tabs.ts`) alike: every
+// settled navigation and the test's end read the tree and the probe, findings no reasoned `allow`
+// covers are kept, and the test fails once with every element named. Rules: `e2e-a11y.ts`.
 // `X_E2E_A11Y_VIOLATION` is registered in `errors.ts`; its constructors live here.
 
 import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
@@ -26,17 +26,24 @@ export interface A11yOptions {
 const ALLOW_FIX =
   "e2eTest(name, body, { a11y: { allow: [{ role: 'button', selector: '#close', because: 'why this element is exempt' }] } })";
 
+/** Who audited the page — so the fix names the place THAT test can say `allow`. */
+export type A11yAuditor = 'e2eTest' | 'tab';
+
 /** A page in this test failed the audit. The cause lists every element, deduplicated. */
 export class E2eA11yViolationError extends UltimateError {
-  constructor(findings: readonly A11yFinding[]) {
+  constructor(findings: readonly A11yFinding[], auditor: A11yAuditor = 'e2eTest') {
     const listed = findings
       .map((f) => `${f.rule} ${f.role} ${renderCauseValue(f.html)} at ${renderCauseValue(f.url)}`)
       .join('; ');
     const role = renderFixLiteral(findings[0]?.role, "'<role>'");
+    const entry = `[{ role: ${role}, selector: '<css>', because: '<why>' }]`;
     super({
       code: 'X_E2E_A11Y_VIOLATION',
       cause: `${String(findings.length)} element(s) a screen reader cannot use — name each one (visible text, aria-label, <label for>, alt; alt="" for a decorative image; a <title>, <html lang>, nothing focusable under aria-hidden), or allow it with a reason: ${listed}`,
-      fix: `e2eTest(name, body, { a11y: { allow: [{ role: ${role}, selector: '<css>', because: '<why>' }] } })`,
+      fix:
+        auditor === 'tab'
+          ? `allowA11y(${entry}) — in the test, before the navigation that lands on it`
+          : `e2eTest(name, body, { a11y: { allow: ${entry} } })`,
       meta: { findings: findings.map(({ matches: _, ...told }) => told) },
     });
   }
@@ -107,19 +114,41 @@ export interface A11yRun {
   verdict(): void;
 }
 
+/** One test's findings over any number of pages: each `check(page)` reads one, `verdict` tells all. */
+export interface A11yPagesRun {
+  check(page: E2eBrowserPage): Promise<void>;
+  /** More reasoned exceptions for THIS run: they cover the reads after this call. */
+  allow(entries: readonly A11yAllow[]): void;
+  verdict(): void;
+}
+
 /**
- * One test's audit. `reported` is the SUITE's set: a finding another test already failed on is
- * not told twice, so a shared header with no name fails one test rather than every one.
+ * The pages an `e2eTest` runner audits itself, with its test's `allow`, until the test ends. The
+ * raw-tab audit (`e2e-a11y-tabs.ts`) stands down for these, so one navigation is never judged twice
+ * — once with the test's reasoned exceptions and once without them.
  */
-export function startA11yRun(
-  page: E2eBrowserPage,
-  allow: readonly A11yAllow[],
+const claimed = new Set<E2eBrowserPage>();
+
+export const claimedThisTest = (page: E2eBrowserPage): boolean => claimed.has(page);
+
+/** At a test's end: every page is the raw-tab audit's again. */
+export const releaseClaims = (): void => claimed.clear();
+
+/**
+ * Findings across pages, for one test. `reported` is the SUITE's set: a finding another test
+ * already failed on is not told twice, so a shared header with no name fails one test rather than
+ * every one.
+ */
+export function a11yPagesRun(
+  given: readonly A11yAllow[],
   reported: Set<string>,
-): A11yRun {
-  const selectors = [...new Set(allow.map((entry) => entry.selector))];
+  auditor: A11yAuditor = 'e2eTest',
+): A11yPagesRun {
+  const allow = [...given];
+  let selectors = [...new Set(allow.map((entry) => entry.selector))];
   const kept = new Map<string, A11yFinding>();
   return {
-    async check() {
+    async check(page) {
       let findings: readonly A11yFinding[];
       try {
         findings = await readPage(page, selectors);
@@ -134,10 +163,27 @@ export function startA11yRun(
         kept.set(key, finding);
       }
     },
+    allow(entries) {
+      allow.push(...entries);
+      selectors = [...new Set(allow.map((entry) => entry.selector))];
+    },
     verdict() {
       if (kept.size === 0) return;
       for (const key of kept.keys()) reported.add(key);
-      throw new E2eA11yViolationError([...kept.values()]);
+      const told = [...kept.values()];
+      kept.clear();
+      throw new E2eA11yViolationError(told, auditor);
     },
   };
+}
+
+/** One `e2eTest`'s audit of the one page it drives — claimed from the raw-tab audit until it ends. */
+export function startA11yRun(
+  page: E2eBrowserPage,
+  allow: readonly A11yAllow[],
+  reported: Set<string>,
+): A11yRun {
+  claimed.add(page);
+  const run = a11yPagesRun(allow, reported);
+  return { check: () => run.check(page), verdict: () => run.verdict() };
 }

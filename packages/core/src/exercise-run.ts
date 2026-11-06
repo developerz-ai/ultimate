@@ -11,6 +11,7 @@ import { isFixShellSafe, renderThrowable } from './error-render';
 import { isUltimateError } from './errors';
 import { ExerciseEnvironmentError, ExerciseUnscopedError } from './exercise-errors';
 import { fnv1a } from './fnv1a';
+import { isJsonObject } from './json-object';
 
 /** Runs per exercise by default: sixteen invocations, four of them on the IR's bounds. */
 export const EXERCISE_RUNS = 16;
@@ -160,3 +161,16 @@ export async function runExercise(subject: ExerciseSubject): Promise<ExerciseVer
   if (reached === 0) return { kind: 'unreached', outcomes };
   return { kind: 'pass', report: { runs, reached, refused, outcomes } };
 }
+
+/** A generated value an override binds into: an action's or a query's input is an object. */
+export type DrawnInput = Readonly<Record<string, unknown>>;
+
+/**
+ * An override's `input` as the loop's `bind`: typed over an object, so `(drawn) => ({ ...drawn,
+ * postId })` compiles as written. A value that drew no object is passed through, since nothing
+ * in it can be bound by name.
+ */
+export const bindDrawn = (
+  input: ((drawn: DrawnInput) => unknown) | undefined,
+): ((drawn: unknown) => unknown) | undefined =>
+  input === undefined ? undefined : (drawn) => (isJsonObject(drawn) ? input(drawn) : drawn);

@@ -13,6 +13,7 @@ import {
   installDeterminism,
   restoreCapturedDeterminism,
 } from '../packages/testing/src/determinism';
+import { installTabA11yAudit } from '../packages/testing/src/e2e-a11y-tabs';
 import { onFileBoundary } from '../packages/testing/src/file-boundary';
 import { registerFrameworkFixtures } from '../packages/testing/src/framework-fixtures';
 import '../packages/testing/src/matchers';
@@ -62,6 +63,10 @@ installRenderLoader();
 // The per-TEST half, the same one an app's preload installs: the jobs event bus STORES what it is
 // handed, so an answer one test published would resume the next test's waiting run.
 installPerTestReset();
+
+// The same raw-tab accessibility audit an app's preload installs: a tab a framework suite drives
+// itself fails its test on an unnamed control exactly as an `e2eTest` page does.
+installTabA11yAudit();
 
 // The per-FILE half, the same one an app's preload installs: the LIFECYCLE is one process' too, and
 // a drain is terminal. A file that drained the process — or that emitted a real SIGINT at it, as a

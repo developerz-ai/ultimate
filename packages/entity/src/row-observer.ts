@@ -16,6 +16,7 @@
 import { currentWriteOrigin } from '@ultimat3/core';
 import { currentTx, expectedQueryLoop } from '@ultimat3/db';
 import type { EntityCore } from './entity';
+import { memoryJournal } from './memory-journal';
 import { MAX_PAGE_SIZE } from './plan';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { sealedFields } from './sealed';
@@ -200,14 +201,15 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
   };
 
   /**
-   * Reported at COMMIT. The write may sit in a transaction — the caller's `options.tx`, or the
-   * ambient `withTransaction` a Postgres repository joins — and a change reported before COMMIT
+   * Reported at COMMIT. The write may sit in a transaction — the caller's `options.tx`, the
+   * ambient `withTransaction` a Postgres repository joins, or the ambient memory one — and a change reported before COMMIT
    * put a row in a live query that a rollback then erased (plan 101, 06 m). Outside a transaction
    * the write is already durable, so it is reported at once. The write origin is read NOW: it is
    * the request's, and the commit callback may run outside that request's scope.
    */
   const afterCommit = (options: RepoOptions | undefined, report: () => void): void => {
-    const tx: { onCommit?(effect: () => void): void } | undefined = options?.tx ?? currentTx();
+    const tx: { onCommit?(effect: () => void): void } | undefined =
+      options?.tx ?? currentTx() ?? memoryJournal();
     if (tx?.onCommit === undefined) report();
     else tx.onCommit(report);
   };

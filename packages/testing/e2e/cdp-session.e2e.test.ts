@@ -20,7 +20,7 @@ onconnect = (event) => {
   port.onmessage = () => fetch('/ping').then(() => port.postMessage('online'), () => port.postMessage('offline'));
 };`;
 
-const DOCUMENT = `<!doctype html><html><head><title>Session fixture</title></head><body>
+const DOCUMENT = `<!doctype html><html lang="en"><head><title>Session fixture</title></head><body>
 <p id="state">booting</p>
 <script>
   window.sawInit = window.__init === true;
@@ -41,7 +41,7 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', (event) => {
   if (new URL(event.request.url).pathname !== '/first-script') return;
-  event.respondWith(new Response('<!doctype html><script>window.firstOnLine = navigator.onLine;</script>', {
+  event.respondWith(new Response('<!doctype html><html lang="en"><title>First script</title><script>window.firstOnLine = navigator.onLine;</script>', {
     headers: { 'content-type': 'text/html', 'cross-origin-opener-policy': 'same-origin' },
   }));
 });`;
