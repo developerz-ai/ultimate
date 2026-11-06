@@ -3,7 +3,7 @@
 // `test-bare-error` and `test-fix-citations` — each answered green over files it never opened.
 
 import { expect, test } from 'bun:test';
-import { CORPUS_PATTERNS, corpus } from './corpus';
+import { CORPUS_PATTERNS, CORPUS_READ_BATCH, corpus } from './corpus';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 test(
@@ -22,3 +22,19 @@ test('source already reads e2e, so the two scopes agree on where tests live', ()
   expect(CORPUS_PATTERNS.source).toContain('packages/*/e2e/**/*.{ts,tsx}');
   expect(CORPUS_PATTERNS.tests).toContain('packages/*/e2e/**/*.test.{ts,tsx}');
 });
+
+test(
+  'a scope larger than one read batch comes back whole, each file beside its own path',
+  async () => {
+    const files = await corpus(repoRoot(), 'shipped');
+    // The repository is many batches; a batch boundary that shifted the texts would pair a path
+    // with its neighbour's source.
+    expect(files.length).toBeGreaterThan(CORPUS_READ_BATCH * 4);
+    for (const at of [0, CORPUS_READ_BATCH - 1, CORPUS_READ_BATCH, files.length - 1]) {
+      const file = files[at];
+      if (file === undefined) return expect.unreachable('the index is inside the scope');
+      expect(file.source).toBe(await Bun.file(`${repoRoot()}/${file.path}`).text());
+    }
+  },
+  REPO_SCAN_TIMEOUT_MS,
+);

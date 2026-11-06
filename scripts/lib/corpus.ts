@@ -100,8 +100,24 @@ async function readScope(root: string, scope: CorpusScope): Promise<readonly Cor
     }
   }
   const sorted = [...paths].sort();
-  const texts = await Promise.all(sorted.map((path) => Bun.file(`${root}/${path}`).text()));
-  return sorted.map((path, index) => corpusFile(path, texts[index] ?? ''));
+  return (await readBounded(root, sorted)).map((text, index) =>
+    corpusFile(sorted[index] ?? '', text),
+  );
+}
+
+/**
+ * How many files one scope holds open at once. All of them at once ran Windows out of handles
+ * (`EMFILE`) once the tree passed ~9,000 sources; the scan's answer never depended on the order.
+ */
+export const CORPUS_READ_BATCH = 64;
+
+async function readBounded(root: string, paths: readonly string[]): Promise<readonly string[]> {
+  const texts: string[] = [];
+  for (let at = 0; at < paths.length; at += CORPUS_READ_BATCH) {
+    const batch = paths.slice(at, at + CORPUS_READ_BATCH);
+    texts.push(...(await Promise.all(batch.map((path) => Bun.file(`${root}/${path}`).text()))));
+  }
+  return texts;
 }
 
 export const floorFor = (root: string, scope: CorpusScope): number =>
