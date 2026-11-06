@@ -2,12 +2,20 @@
 // session action setting its cookie) finds one, as the actor the pass chose.
 
 import { describe, expect, test } from 'bun:test';
+import type { Actor } from '@ultimat3/core';
 import { useContext } from '@ultimat3/core';
 import { useRequestContext } from '@ultimat3/http';
 import { withExerciseRequest } from './exercise-request';
 import { testName } from './test-types';
 
-const MEMBER = { kind: 'user', id: 'u-1', orgId: 'org-1', roles: ['member'] } as const;
+const MEMBER: Actor = {
+  kind: 'user',
+  id: 'u-1',
+  orgId: 'org-1',
+  roles: ['member'],
+  scopes: [],
+  permissions: [],
+};
 
 describe(testName('unit', 'exercise request'), () => {
   test('a handler reading the request finds one, carrying the chosen actor', async () => {
