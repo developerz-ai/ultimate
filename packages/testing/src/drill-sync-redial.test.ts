@@ -45,7 +45,7 @@ describe('startDrillSync with its own sleep', () => {
     first.fire('message', 'not json at all');
     first.fire('message', JSON.stringify({ type: 'replay-gap' }));
     first.fire('close');
-    while (sockets.length < 2) await Bun.sleep(1);
+    while (sockets.length < 2) await new Promise((resolve) => setImmediate(resolve));
     const second = sockets[1];
     if (second === undefined) return expect.unreachable('the lane re-dialled');
     // Re-dialled but not yet greeted: the lane is not back, and the gap before the drop counted.

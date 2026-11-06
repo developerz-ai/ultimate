@@ -14,12 +14,15 @@ describe('startDrillLoad with the wall clock', () => {
       lanes: 1,
       pauseMs: 1,
       requestBoundMs: 1_000,
-      fetch: async () => {
-        sent += 1;
-        return new Response('ok');
-      },
+      fetch: Object.assign(
+        async () => {
+          sent += 1;
+          return new Response('ok');
+        },
+        { preconnect: fetch.preconnect },
+      ),
     });
-    while (sent < 3) await Bun.sleep(1);
+    while (sent < 3) await new Promise((resolve) => setImmediate(resolve));
     const samples = await load.stop();
     expect(samples.length).toBeGreaterThanOrEqual(3);
     for (const sample of samples) {

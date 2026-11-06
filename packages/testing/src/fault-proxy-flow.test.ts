@@ -115,7 +115,8 @@ describe('faultProxy at its edges', () => {
     // The client stops reading, so the proxy's writes to it come back short and queue.
     client.pause();
     client.send('go');
-    while (proxy.counts().bytesDown < PAYLOAD_BYTES) await Bun.sleep(10);
+    while (proxy.counts().bytesDown < PAYLOAD_BYTES)
+      await new Promise((resolve) => setImmediate(resolve));
     expect(client.bytes()).toBe(0);
     client.resume();
     expect(await client.received(PAYLOAD_BYTES)).toBe(PAYLOAD_BYTES);

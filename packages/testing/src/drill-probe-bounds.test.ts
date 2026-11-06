@@ -35,7 +35,7 @@ describe('sampleStatus', () => {
         return answers[Math.min(probes, answers.length) - 1] ?? null;
       },
     });
-    while (probes < 3) await Bun.sleep(1);
+    while (probes < 3) await new Promise((resolve) => setImmediate(resolve));
     const samples = await sampler.stop();
     expect(samples.length).toBeGreaterThanOrEqual(3);
     expect(samples.slice(0, 3).map((sample) => sample.status)).toEqual([503, 200, 200]);

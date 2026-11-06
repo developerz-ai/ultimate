@@ -81,14 +81,14 @@ describe('simDriver', () => {
     const record = {
       runId: one.runId,
       name: 's1',
-      status: 'done' as const,
+      status: 'completed' as const,
       output: 1,
       startedAt: 1,
       attempts: 1,
     };
     await view.steps.put(record, { job: 'a', jobId: third.id, workerId: 'w1', claim: third.claim });
     expect(await base.steps.get(one.runId, 's1')).toMatchObject({ output: 1 });
-    expect(await view.steps.get(one.runId, 's1')).toMatchObject({ status: 'done' });
+    expect(await view.steps.get(one.runId, 's1')).toMatchObject({ status: 'completed' });
     expect(await view.steps.list(one.runId)).toHaveLength(1);
     await view.steps.del(one.runId, 's1');
     expect(await base.steps.get(one.runId, 's1')).toBeUndefined();
@@ -112,7 +112,7 @@ describe('simDriver', () => {
     ]);
     expect(rec.decided[1]?.names).toEqual(['b', 'c']);
     expect(rec.decided[4]).toEqual({ worker: 'w1', call: 'ack', jobId: first.id });
-    expect(rec.decided[6]).toMatchObject({ step: 's1', status: 'done', jobId: third.id });
+    expect(rec.decided[6]).toMatchObject({ step: 's1', status: 'completed', jobId: third.id });
     // A put made outside a claim names no job.
     expect(rec.decided[10]).not.toHaveProperty('jobId');
     expect(rec.landed).toHaveLength(rec.decided.length);
