@@ -16,10 +16,12 @@ imports them.
 
 | File | Owns |
 |---|---|
-| `src/tools.ts` | the three app-specific read tools + the server declaration |
+| `src/tools.ts` | the three app-specific read tools, `POSTLY_RECIPES` + the server declaration. `postlyMcp({ tools })` takes the tools only the app can build (`apps/web/mcp-tools.ts`'s `jobTool()`); a name this package already uses is `X_MCP_TOOL_DUPLICATE` |
 | `src/index.ts` | public exports |
 | `src/errors.ts` | `X_MCP_TOOL_UNSAFE` |
 | `src/tools.test.ts` | tool/action parity and the policy-identity assertion |
+| `src/recipes-replay.contract.test.ts` | every recipe followed through the server by an org owner (`replayRecipes`) |
+| `src/remote-self.contract.test.ts` | `mcpTools()` against this app's own MCP route: lock, call, the three refusals |
 
 ## Commands
 

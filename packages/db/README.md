@@ -76,6 +76,7 @@ await withTransaction(async (tx) => {
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
 | `dbDiagnostics()` / `DIAGNOSTICS_LIMIT` / `DIAGNOSTICS_TIMEOUT_MS` (from `@ultimat3/db/diagnostics`) | `As of 2026-11`: what the database is doing now, as seven sections (`blockers`, `activity`, `slowQueries`, `unusedIndexes`, `invalidIndexes`, `notValidConstraints`, `deadTuples`), each `{ available: true, rows }` or `{ available: false, code, reason, fix }` → [Diagnostics](#diagnostics). `x db diagnostics` prints it |
 | `setStatementObserver()` / `statementObserver()` | `As of 2026-08`: one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
+| `expectedSeqScan()` / `expectedSeqScanReason()` | `As of 2026-11`: the one way a hand-written statement says it reads its table whole — `x exercise`'s plan sweep lists it exempt with the reason instead of `X_QUERY_UNINDEXED`. Same shape as `expectedQueryLoop()`: required, non-blank, innermost wins. A small table says it once on the entity: `scan: '<why>'` |
 | `expectedQueryLoop()` / `expectedQueryLoopReason()` | `As of 2026-08`: the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `StatementEvent.expected` |
 | `withStatementAttribution()` / `statementAttribution()` | `As of 2026-08`: the `{ entity, op }` pair on `StatementEvent.attribution`, scoped exactly like `expectedQueryLoop()` — `@ultimat3/entity`'s `postgresRepo` is the one producer |
 | `STATEMENT_ATTRIBUTE` | `As of 2026-08`: `db.statement`, the OTel attribute each span carries its text under — declared here, read by `x dev`'s timeline |
@@ -96,6 +97,14 @@ trusted to remember the difference between a value and a fragment. So:
   `sql`/`raw` did not produce;
 - `raw(trusted)` is the one audited escape hatch, `identifier(name)` the safe way to interpolate
   a table or column, `literal(text)` for utility statements that reject bound parameters.
+
+## Failure bundles: `x_failures`
+
+`postgresFailureStore()` is the store `failureCapture` (`app.config.ts`) installs: every statement
+runs `outsideTransaction`, because the request that failed rolled its own transaction back.
+`find(id)` takes a bundle, request or trace id; `latest(fingerprint)` the newest of a group;
+`list({ code })` the summaries `x repro --list` prints. Retention has no default window:
+`failurePurgeTarget(store, { keepMs })` is a `purge()` target. The table is applied by the boot.
 
 ## Paging a raw join: `keyset()`
 

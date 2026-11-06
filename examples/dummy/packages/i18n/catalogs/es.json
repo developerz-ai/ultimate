@@ -57,7 +57,8 @@
         "send": "Enviar consulta",
         "sending": "Enviando tu consulta…",
         "sent": "Gracias: te enviamos una copia a tu bandeja de entrada.",
-        "failed": "No se pudo enviar. Inténtalo otra vez o escribe a sales@postly.example."
+        "failed": "No se pudo enviar. Inténtalo otra vez o escribe a sales@postly.example.",
+        "budget": "Presupuesto mensual (opcional)"
       }
     },
     "blog": {
@@ -100,6 +101,9 @@
       "draftNotice": "Es un borrador. Solo lo ve tu organización.",
       "publish": "Publicar",
       "publishing": "Publicando",
+      "summarize": "Resumir",
+      "summaryWriting": "Escribiendo un resumen…",
+      "summaryFailed": "No se pudo escribir el resumen. Inténtalo de nuevo.",
       "like": "Me gusta",
       "unlike": "Quitar me gusta",
       "likes_one": "{count} me gusta",
@@ -107,7 +111,8 @@
       "commentsHeading": "Comentarios",
       "commentsEmpty": "Aún no hay comentarios.",
       "commentPlaceholder": "Di algo útil",
-      "commentSubmit": "Comentar"
+      "commentSubmit": "Comentar",
+      "commentNumber_ordinal_other": "{ordinal}.º comentario"
     },
     "settings": {
       "metaTitle": "Ajustes",
@@ -126,7 +131,11 @@
       "pushLabel": "Avisarme en este navegador",
       "pushOn": "Este navegador recibirá un aviso cuando alguien comente tus publicaciones.",
       "pushDenied": "Las notificaciones están bloqueadas para este sitio — permítelas en los ajustes del navegador.",
-      "pushUnavailable": "Este navegador no puede recibir notificaciones de Postly."
+      "pushUnavailable": "Este navegador no puede recibir notificaciones de Postly.",
+      "role_select_owner": "{org} es tuya: su plan y su facturación los decides tú.",
+      "role_select_admin": "Administras {org} junto a quien la posee.",
+      "role_select_author": "Escribes para {org}.",
+      "role_select_other": "Lees {org}."
     },
     "runs": {
       "metaTitle": "Ejecuciones",
@@ -260,7 +269,8 @@
     "contactSales": {
       "subject": "Recibimos tu consulta de Postly",
       "body": "Gracias por preguntar por el plan {plan}, con precio en {currency}. Alguien de ventas responderá en un día laborable.",
-      "quote": "Escribiste: {message}"
+      "quote": "Escribiste: {message}",
+      "budget": "Presupuesto mensual"
     }
   },
   "digest": {
@@ -374,7 +384,8 @@
         "jobId": "ID del trabajo",
         "status": "Estado",
         "code": "Código",
-        "startedAt": "Iniciada el"
+        "startedAt": "Iniciada el",
+        "eventCount": "Eventos"
       },
       "scope": {
         "running": "En curso",

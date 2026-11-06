@@ -13,7 +13,7 @@ import {
   jsonSchemaOf,
 } from '@ultimat3/action';
 import { describeEntities, registeredEntities, sealedFields } from '@ultimat3/entity';
-import { describeJobs, registeredConsumers } from '@ultimat3/jobs';
+import { describeJobs, registeredConsumers, registeredSubjects } from '@ultimat3/jobs';
 import { describeQueries, getQuery, queryHttpPinOf } from '@ultimat3/query';
 import { describeChannels } from '@ultimat3/realtime/server';
 import { toWireOutputSchema } from '@ultimat3/schema';
@@ -26,6 +26,7 @@ import type {
   RouteFact,
   TaskFact,
 } from './schema';
+import type { SubjectFact } from './schema-subjects';
 import { declaredAdmins } from './sources-admin';
 
 export interface FrameworkSourcesInput {
@@ -112,6 +113,35 @@ function sealedColumns(): ReadonlyMap<string, ReadonlyMap<string, 'opaque' | 'lo
   );
 }
 
+/**
+ * One `defineSubject()`, projected: each treatment's KIND and its columns or reason — never the
+ * anonymized values, which are code (a function, a constant) and not a contract fact.
+ */
+function subjectFact(subject: ReturnType<typeof registeredSubjects>[number]): SubjectFact {
+  const tables = Object.entries(subject.init.tables).map(([entity, treatment]) =>
+    treatment === 'delete'
+      ? { entity, treatment: 'delete' as const }
+      : 'retain' in treatment
+        ? { entity, treatment: 'retain' as const, reason: treatment.retain }
+        : { entity, treatment: 'anonymize' as const, columns: Object.keys(treatment.anonymize) },
+  );
+  const links = Object.entries(subject.init.columns ?? {}).map(([entity, column]) => ({
+    entity,
+    column,
+  }));
+  return {
+    entity: subject.entity,
+    batch: subject.batch,
+    tables,
+    targets: (subject.init.targets ?? []).map((entry) =>
+      'target' in entry
+        ? { name: entry.target.name, retained: true }
+        : { name: entry.name, retained: false },
+    ),
+    ...(links.length === 0 ? {} : { links }),
+  };
+}
+
 export function frameworkSources(input: FrameworkSourcesInput): ManifestSources {
   const sealed = sealedColumns();
   return {
@@ -138,6 +168,7 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       })),
       invariants: entity.invariants.map((invariant) => invariant.name),
       ...(entity.shared === undefined ? {} : { shared: entity.shared }),
+      ...(entity.scan === undefined ? {} : { scan: entity.scan }),
       ...(entity.view === undefined || entity.view === null
         ? {}
         : { view: { materialized: entity.view.materialized === true } }),
@@ -232,5 +263,6 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       batch: consumer.batch,
       lags: consumer.lags,
     })),
+    subjects: registeredSubjects().map(subjectFact),
   };
 }

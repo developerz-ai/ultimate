@@ -4,6 +4,7 @@
  * back from and nothing to key it by but the address the visitor gave.
  */
 
+import { budgetText } from '@postly/domain';
 import { blocks, defineMail, type Infer, t } from '@ultimat3/mail';
 
 /**
@@ -16,6 +17,8 @@ export const SalesEnquiry = t.object({
   plan: t.string,
   currency: t.string,
   message: t.string,
+  /** What the visitor typed as their monthly budget, already read in their locale; `null` if blank. */
+  budget: t.nullable(t.money),
 });
 
 export type SalesEnquiry = Infer<typeof SalesEnquiry>;
@@ -24,9 +27,21 @@ export const salesReceiptEmail = defineMail<SalesEnquiry>({
   id: 'contact.sales-receipt',
   subject: 'mail.contactSales.subject',
   input: SalesEnquiry,
-  template: ({ data }) => [
+  template: ({ data, locale }) => [
     blocks.paragraph('mail.contactSales.body', { plan: data.plan, currency: data.currency }),
     blocks.paragraph('mail.contactSales.quote', { message: data.message }),
+    // Written in the RECIPIENT's locale, never echoed as typed: the receipt is the reading.
+    ...(data.budget === null
+      ? []
+      : [blocks.detail('mail.contactSales.budget', budgetText(data.budget, locale))]),
     blocks.paragraph('mail.signoff'),
   ],
+  // What `x mail preview contact.sales-receipt` and the `/_x` mail panel render, in every locale.
+  preview: {
+    email: 'ada@example.test',
+    plan: 'team',
+    currency: 'EUR',
+    message: 'We are twelve people and want to try the team plan.',
+    budget: { minor: 120000, currency: 'EUR' },
+  },
 });

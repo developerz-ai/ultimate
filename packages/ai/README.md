@@ -406,6 +406,16 @@ invocation is an ordinary one, marked so the model half streams. Two consequence
 | no `respond` tool is offered | a tool call is emitted whole, so forcing one leaves nothing to stream — the answer is prose, and its JSON parse is what a non-string `output` validates |
 | lazy | nothing is authorised, budgeted or sent until the first pull |
 
+### Streaming on the wire
+
+`llm()` declares `stream: LlmTextChunk` (`{ type: 'text', text }`), so its own route answers
+`text/event-stream` to the typed client's `summarize.stream(input)`: each text increment as the
+provider sends it, then `done` with the value that satisfied `output`. Same policy, budget, cache
+and span; the streamed turn is the one-attempt turn server-side `.stream()` takes. `thinking` never
+crosses the wire. Every other caller (JSON, MCP, `.job()`) gets the non-streamed call, repair turn
+included. `agent()` declares `stream: AgentChunk` the same way: per turn, `text`, `tool_call`,
+`tool_result` and `turn` facts, then `done`.
+
 ## `agent()` — the tool loop, also an action
 
 The second half of "no ninth primitive": a tool-using run is still one server-authoritative
@@ -602,6 +612,15 @@ export const kbAgent = agent({
 | chat completions | `api.openai.com` | any | none (automatic) | `prompt_cache_key` |
 | chat completions | anything else | any | none | — |
 
+An endpoint the table does not know is the app's to declare, on its provider:
+`openAiProvider({ baseUrl, models, promptCache: { rules: [{ model: 'anthropic/', marks: 'parts', session: 'x-session-id' }] } })`
+marks for a company gateway; `anthropicProvider({ baseUrl, models, promptCache: { rules: [{ model: '', marks: 'none', session: 'none' }] } })`
+stops marks to a proxy that rejects `cache_control`. A row (`ProviderCacheRow`) is `{ model, marks,
+session }`, read before the table, first match by model prefix; the pre-flight estimate follows it.
+The Messages wire speaks `blocks` or `none` and no session; chat-completions `parts` or `none`, and
+`x-session-id`, `prompt_cache_key` or `none`. Anything else is `X_AI_REQUEST_INVALID` when the
+provider is built.
+
 Usage: the chat-completions reader takes `prompt_tokens_details.cached_tokens` and
 `.cache_write_tokens` out of `prompt_tokens` (which includes both) and reports them as
 `cacheReadTokens` / `cacheWriteTokens`; a missing field is zero. `costOf` prices them at the model
@@ -614,7 +633,7 @@ ever sent.
 | Limit | Detail |
 |---|---|
 | `run.cost` and the ledger | one contract: cost is computed exactly and rounded up once. `AgentTurn.run.cost` is the run's summed usage priced once; `gateway.spent()` / `BudgetLedger.report().cost` is the exact cost of every recorded call summed, rounded once when read (`costExact` beside it). They agree for a run on built-in providers; a `Provider` that states no `costExact` is summed from its rounded `cost`. Budgets are enforced against the ledger |
-| the Anthropic row matches any host | an `anthropicProvider({ baseUrl })` behind a proxy still sends marks |
+| the Anthropic row matches any host | an `anthropicProvider({ baseUrl })` behind a proxy still sends marks, unless it declares a `marks: 'none'` row |
 | more than about 9 tool calls in one turn, on OpenRouter | only the tail is marked there and the provider looks back 20 blocks, so that turn's transcript is rewritten, not read |
 | a mark never lands on an empty or whitespace-only text block, and never makes a fifth | it moves back a block or is dropped; a raw caller's own marks are counted first |
 | `session` | OpenRouter header: 1 to 256 printable ASCII, else `X_AI_REQUEST_INVALID`. OpenAI `prompt_cache_key`: over 64 characters it is sent as `h:` + 62 hex of its SHA-256 |

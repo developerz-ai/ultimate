@@ -8,9 +8,11 @@ import {
   isUltimateError,
   jitterStatedDelay,
   renderThrowable,
+  singleLine,
   statedDelayMs,
 } from '@ultimat3/core';
 import { finiteDurationMs } from './clock';
+import { appendToOperatorLine, CALLER_FIX_SEPARATOR } from './failure-row';
 import type { Random, RetryDecision, RetryPolicy } from './retry';
 import { backoffDelayMs, DEFAULT_RETRY, nextRetry } from './retry';
 
@@ -118,25 +120,33 @@ export function rateLimitDeferralMs(
 }
 
 /**
- * A thrown value as a job ROW keeps it: core's rendering, plus the error's own `fix:`.
+ * A thrown value as a job ROW keeps it: core's rendering, plus the error's own `fix:`, plus — after
+ * `CALLER_FIX_SEPARATOR` — its declared `callerFix`, the one part `callerFailure` hands a caller.
  *
  * `renderThrowable` answers `<name>: <code>: <title> — <cause>` and stops there, so `lastError` —
  * the one failure field `x jobs show` prints — handed an operator a diagnosis with the instruction
- * cut off. Only a branded error's fix travels: any other `fix` property is somebody's data.
+ * cut off. Only a branded error's fixes travel: any other `fix` property is somebody's data. The
+ * operator's line is `singleLine`d whole, so a thrown message cannot write the separator's tab.
  */
 export function failureForRow(error: unknown): string {
-  const rendered = renderThrowable(error);
-  return isUltimateError(error) ? `${rendered} — fix: ${error.fix}` : rendered;
+  const rendered = singleLine(renderThrowable(error));
+  if (!isUltimateError(error)) return rendered;
+  const line = `${rendered} — fix: ${singleLine(error.fix)}`;
+  const callerFix = typeof error.callerFix === 'string' ? error.callerFix : undefined;
+  return callerFix === undefined ? line : `${line}${CALLER_FIX_SEPARATOR}${singleLine(callerFix)}`;
 }
 
 /**
  * What the job ROW records. `lastError` is the one failure field a row carries, so a dead letter
  * that stopped at attempt 1 of 5 has to explain itself there or `x jobs show` reads as a silent
- * early stop. Only the terminal verdict is appended: exhaustion is already legible from
- * `attempt === maxAttempts`.
+ * early stop. Only the terminal verdict is appended — to the operator's line, ahead of the caller's
+ * fix: exhaustion is already legible from `attempt === maxAttempts`.
  */
 export function recordedFailure(message: string, decision: JobRetryDecision): string {
   return decision.stoppedBy === 'terminal'
-    ? `${message} — not retried: this code is classified terminal, so every remaining attempt fails the same way`
+    ? appendToOperatorLine(
+        message,
+        ' — not retried: this code is classified terminal, so every remaining attempt fails the same way',
+      )
     : message;
 }

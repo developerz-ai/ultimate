@@ -111,6 +111,16 @@ export const postExport = can<PostScope>(
   ({ actor, input }) => memberOf(actor)?.orgId === input.orgId,
 );
 
+/**
+ * Restoring posts from an export file — `post:export`'s holder, inside their own org. The right to
+ * take the whole org's writing out is the right to put it back: one grant, not a second one that
+ * could be held without the first and restore a file its holder could never have made.
+ */
+export const postImport = can<PostScope>(
+  'post:export',
+  ({ actor, input }) => memberOf(actor)?.orgId === input.orgId,
+);
+
 /** Reading one post: membership in the post's org, nothing finer. Drafts stay inside the org. */
 export const postRead = can<PostScope>(
   'post:read',

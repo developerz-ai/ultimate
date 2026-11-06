@@ -35,6 +35,21 @@ Read tools are unrestricted in dev. Write tools (`db.migrate`, `tests.run` with 
 
 **LLM-generated context files measurably reduce task success.** A model writing "here is what this codebase does" produces confident, plausible, partly-wrong prose, and the next agent treats it as ground truth — errors compound and cannot be distinguished from facts. So: facts come from code (structured, verifiable, regenerated every build), conventions come from a human (short, opinionated, stable). Ultimate never generates prose documentation at runtime, and `x new` scaffolds `AGENTS.md` as a terse human-editable stub, not an essay.
 
+## The app as one typed graph
+
+`x.manifest.json` answers "what exists"; it never answered "what depends on what" — a route row
+names no query, an action row no entity. `x graph` joins the facts into one graph of a closed
+vocabulary (route, action, mutator, query, job, task, entity, permission, channel, cache tag, MCP
+tool, published operation, file, test), and every edge says how it is known: `declared` (a
+registry value), `import` (the module graph, type-only imports included) or `observed` (the last
+`x exercise` run). `x impact <file|primitive|entity> --json` is the question an agent asks before
+an edit: the routes, actions, queries, jobs, MCP tools, published operations, tests and budgets it
+reaches. No static call analysis — a guessed edge is worse than a missing one — and nothing stored:
+rebuilt from the loaded app per call. `x affected` in an app root names the test files a diff can
+break by import closure; a computed `import()` marks its file opaque and keeps its dependents in.
+Generic code graphs see files and symbols; this one can say "this action invalidates the tag this
+page reads", because here those are values, not conventions. `As of 2026-11`.
+
 ## Every action is an MCP tool
 
 ```ts

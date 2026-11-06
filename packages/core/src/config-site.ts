@@ -90,12 +90,19 @@ export interface SeoSitemapConfig {
 export interface SeoConfig {
   readonly robots: SeoRobotsConfig;
   readonly sitemap: SeoSitemapConfig;
+  /**
+   * `/llms.txt`: the `site/` pages' titles and descriptions for a language model. On by default,
+   * like the sitemap, over the same indexable pages; `false` serves an empty document and lifts the
+   * `seo` step's description rule (`X_SEO_LLMS_DESCRIPTION_MISSING`). Optional in the TYPE only.
+   */
+  readonly llms?: boolean | undefined;
 }
 
 /** `robots` is NESTED for `AiConfigInput`'s reason: `section` applies a patch one level deep. */
 export interface SeoConfigInput {
   readonly robots?: Input<SeoRobotsConfig> | undefined;
   readonly sitemap?: Input<SeoSitemapConfig> | undefined;
+  readonly llms?: boolean | undefined;
 }
 
 export interface SiteSections {
@@ -123,6 +130,11 @@ export function mergeSite(layers: readonly SiteSectionsInput[]): SiteSections {
       sitemap: layered<SeoSitemapConfig>(
         { extra: [], lastmod: 'none', sections: [], pageSize: SITEMAP_PAGE_SIZE_MAX },
         layers.map((layer) => layer.seo?.sitemap),
+      ),
+      // The last layer that says, else on.
+      llms: layers.reduce<boolean>(
+        (on, layer) => (layer.seo?.llms === undefined ? on : layer.seo.llms),
+        true,
       ),
     },
   };
@@ -196,4 +208,8 @@ export function siteIssues(config: SiteSections, issues: string[]): void {
     );
   }
   issues.push(...sitemapSectionIssues(config.seo.sitemap.sections, config.seo.sitemap.pageSize));
+  const llms: unknown = config.seo.llms;
+  if (llms !== undefined && typeof llms !== 'boolean') {
+    issues.push(`seo.llms must be true or false, not ${describeValue(llms)}`);
+  }
 }

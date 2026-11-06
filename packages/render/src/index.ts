@@ -256,3 +256,4 @@ export {
   surfaceAllows,
   surfaceOf,
 } from './surfaces';
+export { ZONE_SCRIPT_MAX_BYTES, zoneScript, zoneScriptBody } from './zone-script';

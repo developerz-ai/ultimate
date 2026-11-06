@@ -144,6 +144,20 @@ test('createPost derives the slug and the excerpt instead of trusting input', as
   expect(post.status).toBe('draft');
 });
 
+// The public blog's `/blog/{slug}` is one namespace across every org (`post_slug_unique`), so a
+// title another org already used is a refusal the caller can act on — never X_ERROR_UNDECLARED.
+test('createPost refuses a slug another post holds as X_POST_SLUG_TAKEN', async ({
+  seed,
+  actorFor,
+}) => {
+  const { author } = await seed('dev').pick({ author: 'member:bruno' });
+  const draft = { orgId: author.orgId, title: 'Taken twice', body: 'x'.repeat(60) };
+  await createPost.as(actorFor(author), draft);
+  await expect(createPost.as(actorFor(author), draft)).rejects.toBeUltimateError(
+    'X_POST_SLUG_TAKEN',
+  );
+});
+
 contractTest('every post action rejects input that is not a uuid', async () => {
   // Every payload below is valid except for exactly one id, and each action's fully valid payload
   // is asserted first. Without that control the case proves nothing: the old version rejected a

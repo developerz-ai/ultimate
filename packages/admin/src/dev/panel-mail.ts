@@ -1,8 +1,8 @@
 // Panel: Mail.
-// Kills: "what did that email actually look like, in that locale?" — every caught message,
-// rendered, grouped per locale so a missing translation is visible instead of inferred.
+// Kills: "what did that email actually look like, in that locale?" — every caught message, and
+// every declared template rendered from its `preview` in every locale with no flow triggered.
 
-import type { MailFact } from './facts';
+import type { MailFact, MailTemplateFact } from './facts';
 import type { DevPanel } from './panel';
 
 export interface MailPanelData {
@@ -14,14 +14,30 @@ export interface MailPanelData {
     readonly subject: string;
     readonly missing: readonly string[];
   }[];
+  /** Every declared mail, each with its preview rendered per locale (`defineMail({ preview })`). */
+  readonly templates: readonly MailTemplateFact[];
+  readonly selectedTemplate: MailTemplateFact | null;
+  /** A template's catalog keys a locale could not resolve — the gap before anything is sent. */
+  readonly templateGaps: readonly {
+    readonly id: string;
+    readonly locale: string;
+    readonly missing: readonly string[];
+  }[];
 }
+
+/** `?template=` names one; none named is the first; an unknown name is nothing, never the first. */
+const selectedOf = (
+  templates: readonly MailTemplateFact[],
+  wanted: string | null,
+): MailTemplateFact | null =>
+  (wanted === null ? templates[0] : templates.find((one) => one.id === wanted)) ?? null;
 
 export const mailPanel: DevPanel<MailPanelData> = {
   key: 'mail',
   titleKey: 'dev.panel.mail.title',
   questionKey: 'dev.panel.mail.question',
   async data(sources, params): Promise<MailPanelData> {
-    const all = await sources.mail();
+    const [all, templates] = await Promise.all([sources.mail(), sources.mailTemplates()]);
     const locale = params.get('locale');
     const messages = locale === null ? all : all.filter((mail) => mail.locale === locale);
     const wanted = params.get('id');
@@ -46,6 +62,15 @@ export const mailPanel: DevPanel<MailPanelData> = {
           missing: locales.filter((candidate) => !seen.has(candidate)),
         }))
         .filter((entry) => entry.missing.length > 0),
+      templates,
+      selectedTemplate: selectedOf(templates, params.get('template')),
+      templateGaps: templates.flatMap((template) =>
+        template.previews.flatMap((preview) =>
+          preview.ok && preview.missing.length > 0
+            ? [{ id: template.id, locale: preview.locale, missing: preview.missing }]
+            : [],
+        ),
+      ),
     };
   },
 };

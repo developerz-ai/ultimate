@@ -20,10 +20,15 @@ import type { McpConfirmations } from './confirmations';
 import { McpToolDuplicateError } from './errors';
 import { exposedPrimitives } from './exposed';
 import { toolsFrom, toolsListed } from './from-action';
+import { jobStatusPrimitive } from './job-status-tool';
+import { jobToolBrand } from './job-tool';
 import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
 import type { McpOAuth } from './oauth-metadata';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
+import type { McpRecipe } from './recipes';
+import { withRecipes } from './recipes-surface';
+import type { ExtraRecipes } from './recipes-tool';
 import type { AnyMcpTool } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
@@ -60,6 +65,19 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
   readonly queries?: readonly ListedPrimitive[];
   /** App-specific readable documents (a catalog export, a report). */
   readonly resources?: readonly McpResource[];
+  /**
+   * How-to recipes, each served as `docs://recipes/<name>` and through a read-only `docs` tool.
+   * Every step names a tool of THIS server and its example must pass that tool's input — checked
+   * here, so a renamed tool fails the boot instead of sending an agent to nothing. With recipes
+   * declared, `resources:` may not hold a `docs://recipes/` URI (`X_MCP_RECIPE_URI_RESERVED`).
+   */
+  readonly recipes?: readonly McpRecipe[];
+  /**
+   * The caller's OWN recipes beside `recipes:` — a tenant's runbooks — asked per request, listed
+   * by `docs` as `source: 'caller'` and on `resources/list` to that caller alone. Not checked at
+   * boot (they do not exist yet): one naming a tool the caller cannot call is simply not shown.
+   */
+  readonly extraRecipes?: ExtraRecipes;
   /** Prompts the app ships: a path to a versioned artifact, or the full descriptor. */
   readonly prompts?: readonly (string | McpPrompt)[];
   /**
@@ -229,7 +247,10 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
   const included =
     input.include === 'exposed' ? notNamed(toolsFrom(exposedPrimitives()), listed) : [];
   const written = handWritten(input.tools);
-  const named = [...listed, ...included, ...written];
+  // One `job_status` for every `jobTool()` here, projected beside them; an app tool already named
+  // that is a duplicate below, never a silent shadow.
+  const status = jobStatusFor(input.tools);
+  const named = [...listed, ...included, ...written, ...status];
   // Unique names FIRST: the scope map addresses tools by name, so a duplicate would make
   // "which tool did this scope gate?" unanswerable before the question is worth asking.
   //
@@ -239,15 +260,24 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     { source: 'actions:/queries:', tools: listed },
     { source: "include: 'exposed'", tools: included },
     { source: 'tools:', tools: written },
+    { source: 'jobTool()', tools: status },
   ]);
   // The `manifest` step reads these: a hand-written tool is in no registry, and a gate on one is real.
   noteToolNames(named.map((tool) => tool.name));
   // Scopes, then the gate: the gate wraps `handle`, which every resolve reaches last.
-  const projected = withConfirmations(withScopes(named, input.scopes), input.confirmations);
+  const exempt = new Set(status.map((tool) => tool.name));
+  const confirmed = withConfirmations(withScopes(named, input.scopes, exempt), input.confirmations);
+  // Recipes last, over the FINAL catalog: a step is checked against what a caller can call.
+  const {
+    tools: projected,
+    resources,
+    resourceSources,
+  } = withRecipes(confirmed, input.resources ?? [], input.recipes, input.extraRecipes);
 
   const config: McpServerInput = {
     tools: projected,
-    resources: input.resources ?? [],
+    resources,
+    ...(resourceSources.length === 0 ? {} : { resourceSources }),
     prompts: toPrompts(input.prompts ?? []),
     serverInfo: { name: input.name ?? 'ultimate-app', version: input.version ?? '0.0.0' },
     ...(input.surface === undefined ? {} : { surface: input.surface }),
@@ -289,6 +319,17 @@ function handWritten(
   if (tools === undefined) return [];
   if (Array.isArray(tools)) return tools as readonly AnyMcpTool[];
   return toolsFrom(appToolPrimitives(tools as Readonly<Record<string, AnyAppToolDefinition>>));
+}
+
+/** `job_status`, once, when the record holds any `jobTool()`; else nothing. */
+function jobStatusFor(
+  tools: readonly AnyMcpTool[] | AppTools<AppToolSchemas> | undefined,
+): readonly AnyMcpTool[] {
+  if (tools === undefined || Array.isArray(tools)) return [];
+  const brands = Object.values(tools as Readonly<Record<string, AnyAppToolDefinition>>)
+    .map((def) => jobToolBrand(def))
+    .filter((brand) => brand !== undefined);
+  return brands.length === 0 ? [] : toolsFrom([jobStatusPrimitive(brands)]);
 }
 
 function notNamed(

@@ -55,6 +55,7 @@ export {
   catalogMissingKeys,
   catalogsNeverRegistered,
   catalogUnregistered,
+  familyIncomplete,
   I18N_ERROR_CODES,
   I18N_ERROR_TITLES,
   I18nError,
@@ -77,6 +78,7 @@ export {
 } from './extract';
 export { FRAMEWORK_CATALOG } from './framework';
 export {
+  familyStems,
   type InterpolationValue,
   type InterpolationVars,
   interpolate,

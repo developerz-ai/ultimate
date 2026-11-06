@@ -60,6 +60,17 @@ export interface AgentCompaction {
   readonly compactions: number;
   /** The model that was asked for the summary. */
   readonly model: ModelId;
+  /**
+   * How the turns reached the summary call: `'messages'`, the run's own request up to the cut
+   * (it reads the cached prefix), or `'text'` when those did not fit the writer — re-sent as text,
+   * oldest tool results clipped to their first and last 1,000 characters, then left out. Absent
+   * when no call was built.
+   */
+  readonly summaryInput?: 'messages' | 'text';
+  /** On `'text'`: turns, oldest first, whose tool results were clipped or left out. */
+  readonly clipped?: number;
+  /** On `'text'`: of those, the turns whose tool results were left out entirely. */
+  readonly omitted?: number;
   /** The summary call's usage and cost; absent when no call was made. Already in the run's total. */
   readonly usage?: TokenUsage;
   readonly cost?: Money;

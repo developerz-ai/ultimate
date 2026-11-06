@@ -25,6 +25,7 @@ import type {
 import {
   actionPath,
   BUILD_ID_HEADER,
+  clientStream,
   clientTransport,
   FRAMEWORK_CODE,
   fillWire,
@@ -34,7 +35,7 @@ import {
   renderedActionPin,
 } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
-import type { Action } from './action';
+import type { Action, StreamAction } from './action';
 import { ContractDriftError, RemoteActionError } from './errors';
 import { ActionHttpPathInvalidError } from './errors-http';
 import type { ActionHttp } from './http-path';
@@ -62,17 +63,42 @@ export interface CallOptions {
   readonly retry?: ClientRetry;
 }
 
-/** `api.publishPost({ postId })` with both sides of the schema inferred. */
+/**
+ * `api.publishPost({ postId })` with both sides of the schema inferred; a stream-declaring action's
+ * method also carries `.stream(input)`, and only that one — the type is the gate.
+ */
 export type Client<TActions extends ActionMap> = {
-  readonly [K in keyof TActions]: TActions[K] extends Action<infer TIn, infer TOut>
-    ? ClientMethod<TIn, TOut>
-    : never;
+  readonly [K in keyof TActions]: TActions[K] extends StreamAction<
+    infer TIn,
+    infer TOut,
+    infer TChunk
+  >
+    ? StreamClientMethod<TIn, TOut, TChunk>
+    : TActions[K] extends Action<infer TIn, infer TOut>
+      ? ClientMethod<TIn, TOut>
+      : never;
 };
 
 export type ClientMethod<TIn extends StandardSchemaV1, TOut extends StandardSchemaV1> = (
   input: InferInput<TIn>,
   options?: CallOptions,
 ) => Promise<InferOutput<TOut>>;
+
+/**
+ * A stream-declaring action's method: the ordinary call, plus `.stream(input)` — each chunk as the
+ * server yields it, and the generator's RETURN value is the output. `POST` with
+ * `accept: text/event-stream` through core's `clientStream`, never `EventSource`.
+ */
+export type StreamClientMethod<
+  TIn extends StandardSchemaV1,
+  TOut extends StandardSchemaV1,
+  TChunk extends StandardSchemaV1,
+> = ClientMethod<TIn, TOut> & {
+  stream(
+    input: InferInput<TIn>,
+    options?: Omit<CallOptions, 'retry'>,
+  ): AsyncGenerator<InferOutput<TChunk>, InferOutput<TOut>, undefined>;
+};
 
 /** Core's one declaration, re-exported by name so `import type { FetchLike }` keeps resolving. */
 export type { FetchLike } from '@ultimat3/core';
@@ -148,7 +174,7 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
     retryAfterSeconds?: number,
   ): UltimateError | undefined => toUltimateError(text, status, name, retryAfterSeconds);
   // Erased at the wire seam; the response type is this action's by construction.
-  return (input, callOptions = {}) => {
+  const call: ClientMethod<TInput, TOutput> = (input, callOptions = {}) => {
     let wire: { readonly url: string; readonly body: unknown };
     try {
       wire = wireOf(name, base, path, input);
@@ -174,6 +200,27 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
       fetchImpl: options.fetch,
     }) as Promise<InferOutput<TOutput>>;
   };
+  // On every method, because the name-only `rpc` proxy cannot see a declaration: the TYPE offers
+  // it only where the action streams, and a server that does not stream answers JSON, which
+  // `clientStream` returns as the output. Never retried: a stream is not an idempotent replay.
+  async function* stream(
+    input: InferInput<TInput>,
+    callOptions: Omit<CallOptions, 'retry'> = {},
+  ): AsyncGenerator<unknown, InferOutput<TOutput>, undefined> {
+    // Inside the generator, so a refusal arrives on the first pull like every other one.
+    const { url, body } = wireOf(name, base, path, input);
+    return (yield* clientStream<unknown, InferOutput<TOutput>>({
+      url,
+      body,
+      headers: headersFor(options),
+      signal: callOptions.signal,
+      idempotencyKey: callOptions.idempotencyKey,
+      onResponse,
+      decodeError,
+      fetchImpl: options.fetch,
+    })) as InferOutput<TOutput>;
+  }
+  return Object.assign(call, { stream });
 }
 
 /**

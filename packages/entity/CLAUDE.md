@@ -23,11 +23,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `undefined` is ABSENT (only `null` clears); memory refuses a duplicate PK, a duplicate non-partial
   unique — index OR `c.unique([…])` invariant, the one list in `unique-constraints.ts` — and a PK
   patch onto another row with `X_DB_UNIQUE_VIOLATION` (partial uniques are not checked in memory);
-  `.transition()` filters on `singleKeyOf(entity)` and refuses an absent id (`X_NOT_FOUND`, no row
-  moved);
-  `decimal()`/`bigint()` store Postgres's spelling (never rounded); a seed `upsert` compares only named
-  columns; `text({ max })` counts code points; `integer()` holds int4, `bigint()` int8; a whole part
-  of `0` is no `numeric` digit; `url()` lower-cases its scheme and judges the STORED text.
+  each kind's stored spelling: `docs/history/entity.md`.
   `invariant-parity.test.ts` asks the app, the driver and the raw CHECK the same question.
 - **`min`/`max` over a `timestamptz` crosses as epoch ms** (`aggregate-time-parity.test.ts`). A whole
   row read under a non-UTC session still fails on PGlite — recorded, not fixed.
@@ -54,12 +50,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **`defaultDriver()`** is the process default; `Driver.reset?()` is optional (memory only), resets
   repositories in place. Test seam only.
 - **`testDriver()` (`test-driver.ts`) follows `@ultimat3/db`'s `dbClientInstalled()` on every call.**
-  A plain object of forwarders, never a `Proxy` (`observedRepo` spreads the repository, and a spread
-  Proxy copies the target it answered at load); it forwards the keys both repositories carry, so a
-  new `Repo` method needs no edit. `reset` empties memory only. `transactor().run` opens an
-  `asyncContext` holding the side it began on; a call inside it whose installed side differs rejects
-  `X_TEST_DRIVER_CLIENT_CHANGED`, never a synchronous throw. `test-driver.test.ts` fails a
-  resolve-once mutation.
+  A plain object of forwarders, never a `Proxy`; a side change inside `transactor().run` rejects
+  `X_TEST_DRIVER_CLIENT_CHANGED`. Full rule: `docs/history/entity.md`.
 - **A repository pinned to its own client joins a transaction opened ON that client** (`tx.origin`)
   **and refuses any other** (`X_REPO_CLIENT_PINNED`, in `client()` in `pg-driver.ts`); the fix names
   `setDbClient(client)` plus an unpinned repository.
@@ -76,16 +68,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `postgresDriver({ jitPreload: false })` — never an `app.config.ts` key. Shared pieces live in
   `batch-read.ts`.
 - **`preload(name, { max })` shares `batch-read.ts`, keeps no request cache and is BOUNDED**
-  (`preload-ceiling.ts`: default `MAX_PRELOADED_ROWS`, refused past it, never truncated). Tenancy is CARRIED only when
-  both entities are scoped by a column of that same name, else the related read refuses
-  (`X_TENANCY_UNSCOPED`). Reach is the `database()` call's `RelatedTables`; `select()` widens with each
-  preloaded relation's local key; attachment copies (`{ ...row }`); only `page()`/`all()`/`one()`
-  preload.
+  (`preload-ceiling.ts`: default `MAX_PRELOADED_ROWS`, refused past it, never truncated). Tenancy is CARRIED only between
+  entities scoped by a same-named column (`X_TENANCY_UNSCOPED`). Full rule: `docs/history/entity.md`.
 - **Every repository method attributes its statement** through `@ultimat3/db`'s
   `withStatementAttribution(entity.$name, op, send)` via `attributed(op, send)`, `op` declared once per
-  method and passed to the plan builders; `writeRows(op, …)` for the three inserts; `aggregate` names
-  the function. Never entered with no observer. A preloaded relation is attributed to the related
-  entity. `memoryRepo` sends no statement and reports one event per operation (`memory-observed.ts`), under the pair `postgresRepo` names, no SQL text, and one event for a microtask's point lookups in a request, as `coalesce.ts`. `pg-driver-attribution.test.ts` — one case per method.
+  method and passed to the plan builders; `memoryRepo` reports one event per operation (`memory-observed.ts`)
+  under the same pair. `pg-driver-attribution.test.ts` — one case per method. Full rule: `docs/history/entity.md`.
 - **The two N+1 codes are owned here** (`X_N_PLUS_ONE_QUERY`, `X_N_PLUS_ONE_WRITE`, `n-plus-one.ts`):
   it detects nothing, takes a `StatementLoop` verdict, and derives the fix from `relationMap()`
   (`preloadsFor()`), falling back to the `in` form. `N_PLUS_ONE_THRESHOLD` (5) is shared by `x dev`'s
@@ -96,16 +84,11 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   sort VALUES. **The tiebreak takes the LAST DECLARED key's direction**; `seekSql` sends a ROW
   comparison when every key sorts one way and the or-chain otherwise
   (`pg-driver-cursor.live.test.ts`).
-- **`inBatches(size)` is the same page in a loop** (`batch.ts`): the handle is its own iterator
-  (`close()` = `AsyncGenerator.return()`), `.cursor` is advanced before the yield, no empty batch, and
-  three refusals on the chain (size, `limit()` alongside, an order no cursor can carry — judged by
-  exported `totalOrder`).
+- **`inBatches(size)` is the same page in a loop** (`batch.ts`). Full rule: `docs/history/entity.md`.
 - **A grouped count means one thing in both drivers, written in `count-by.ts`**: both call
-  `groupColumnOf` before the statement and `countsFrom` after the rows. Groupable kinds are a closed
-  set (`uuid`, `text`, `char`, `boolean`, `integer`, `bigint`); the bound is a REFUSAL at
-  `MAX_GROUPS + 1`, never a truncation; absent is not `0`; NULL is one group keyed `null`; the order
-  is applied after the rows are in, never in SQL; `group_value` / `group_count` are fixed aliases.
-  The refusal names a groupable column of THIS entity, never `x entity explain`.
+  `groupColumnOf` before the statement and `countsFrom` after the rows. The bound is a REFUSAL at
+  `MAX_GROUPS + 1`, never a truncation; it names a groupable column of THIS entity, never
+  `x entity explain`. Full rule: `docs/history/entity.md`.
 - **The codec is `@ultimat3/core`'s**, reached through `cursorFor(entity, plan, row, id)` and
   `seekFrom(entity, plan)`; **`assertSeekable` runs in `planFor`**, before a statement exists, and refuses `jsonb`, `bytea`, `array` (`UNSEEKABLE`). A
   `timestamptz` sort key is refused when its `<column>$US` alias would pass 63 bytes. A cursor is bound
@@ -113,15 +96,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **A NULLABLE sort key orders** `asc nulls last` / `desc nulls first`; the cursor tags
   `~` for NULL and `!` for present; the seek reaches NULLs; a nullable key has no row comparison. Only a
   nullable PRIMARY-KEY column is refused. `pg-null-order.live.test.ts`.
-- **A `timestamp` cursor carries MICROSECONDS**: `seekPrecision` projects `(col at time zone
-  'UTC')::text as "<col>$US"`; `sortPrecision` reads it; the seek binds a six-digit ISO instant
-  (`col < $1::timestamptz`). `instant.ts` is where the two representations meet.
-  `pg-cursor-precision.live.test.ts`.
-- **The four aggregates** (`sum`, `avg`, `min`, `max`) share `aggregate.ts`
-  (`aggregate-fold.ts` memory, `aggregate-decode.ts` Postgres): never a float; `avg` at `AVG_SCALE` (6),
-  half away from zero; `null` for an empty set. Refused: `min`/`max` on text, `avg` over money
-  (`X_AGGREGATE_UNSUPPORTED`), mixed currency or scale (`X_AGGREGATE_MIXED_CURRENCY`, two causes, two fixes), a money total
-  past ±2^53. **`approximateCount()` is `reltuples`**; a filtered chain or tenant-scoped entity is
+- **A `timestamp` cursor carries MICROSECONDS** (`seekPrecision`, `instant.ts`). Full rule: `docs/history/entity.md`.
+- **The four aggregates** (`sum`, `avg`, `min`, `max`) share `aggregate.ts`:
+  never a float; `null` for an empty set; refusals `X_AGGREGATE_UNSUPPORTED`,
+  `X_AGGREGATE_MIXED_CURRENCY`. Full rule: `docs/history/entity.md`. **`approximateCount()` is `reltuples`**; a filtered chain or tenant-scoped entity is
   `X_APPROXIMATE_COUNT_FILTERED`; `null` for an unanalysed table.
 - **`series`, views**: `time-bucket.ts` (zone rules, measured), `view-repo.ts` (read-only); `time-bucket.test.ts`, `view-entity.test.ts`.
 - **`json()` / `arrayOf()` are filterable** (`contains`, `contained-by`, `overlaps`, `has-key`) with
@@ -196,10 +174,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   and at every plan (`X_TENANCY_CROSS_DENIED`), refused outside a request, blank reason `X_INVARIANT`.
 - **`deleteWhere` / `updateWhere` are the only filtered writes**: empty filter `X_WRITE_UNFILTERED`,
   empty patch `X_PATCH_EMPTY` (undefined values dropped first); soft delete respected; both return a
-  count; rows come back only when a JS-only invariant needs them (`hasJsOnlyInvariant`), counted first
-  and refused past `MAX_ASSERTED_ROWS` (50,000) in BOTH drivers; on Postgres that statement and its
-  judgement share a transaction (`judged-write.ts`, `update` too), so a refusal rolls back. `updateStatement`'s `returning` is
-  required.
+  count; a JS-only invariant is judged
+  in the statement's transaction (`judged-write.ts`), refused past `MAX_ASSERTED_ROWS`. Full rule: `docs/history/entity.md`.
 - **A write past a coded abort is refused on both drivers**: `refuseAbandoned()` in `writing()` and each `memoryRepo` write. `write-abandon.test.ts`.
 - **Every instant the write path stamps comes from `entityNow()`** (`clock.ts`, `ctx.clock`).
   **`touch()` in `touch.ts` is the ONE place `onUpdateNow()` columns are stamped.**
@@ -210,37 +186,45 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `kind: 'unique'` invariant); under `'update'` the tenant column must be in the target
   (`X_TENANCY_UNSCOPED`), a repeated target and an uneven batch are refused; NULL in the target
   collides with nothing; memory judges the whole batch first; past `MAX_BIND_PARAMETERS` it is several
-  statements in ONE transaction, a savepoint in an open one, on the pin (`bulk-write-send.ts`); one
-  chunk is autocommit. **`db.*.upsertAll` and `seed.upsert` overwrite what the caller NAMED**
-  (`overwrittenBy` before `$parse`, `UpsertArgs.overwrites`); a present `undefined` is absent. Memory's
-  upsert and `deleteWhere` undo on refusal (`memory-batch.ts`); a soft delete under a JS-only rule is
-  judged (`judgedRows`). `bulk-write-parity.test.ts`.
+  statements in ONE transaction (`bulk-write-send.ts`). **`db.*.upsertAll` and `seed.upsert`
+  overwrite what the caller NAMED** (`overwrittenBy`). Full rule: `docs/history/entity.md`.
 - **`memoryTransactor().run` is ambient** (`memory-journal.ts`): a write naming no `tx` joins it; a nested
   commit hands its undos and effects up; a write after the root ended is `X_DB_TRANSACTION_CLOSED`; a
   row lock taken with no tx is held to the root. `memory-journal.test.ts`, `memory-transactor.test.ts`.
 - **`shared: '<why>'` is the one way an untenanted child of a tenant-owned table says so**
   (`assertShared`, `describe.ts`); the reach check is the CLI's `exercise-static.ts`
   (`X_ENTITY_TENANT_UNDECLARED`), over `EntityDescription.shared`.
+- **`scan: '<why>'`**: a table read whole (`assertScan`).
 - **A seed is replayable**: `SeedContext.insert` is one `upsertAll(…, { onMatch: 'nothing' })` per
-  call; a generated PK the row does not name is refused. `upsert(entity, { by }, values)` keys on a
-  natural key, reads first for the report, writes one `on conflict … do update`, preserves `createdAt`.
-  **The environment guard is the CLI's** (`seedTiersFor`; `run()` stays permissive). **A dry run is
-  the real run rolled back** through `Driver.transactor()` (REQUIRED on the interface) — one rule,
-  never a per-verb lookup.
+  call; a generated PK the row does not name is refused. **A dry run is the real run rolled back**
+  (`Driver.transactor()`, REQUIRED). Full rule: `docs/history/entity.md`.
 - **`setRowObserver` reports committed row changes above the driver** — one per process (returns the
   replaced one), applied by `database()`, one comparison per write when unset, `before` only when the PK
   is `id`, a filtered write is `onBulk`. Not a second change-feed path.
 - **`appendOnly: true`** (`append-only.ts`): `appendOnlyRepo` wraps OUTSIDE `sealedRepo` in both
-  drivers (seed `upsert` appends, never rewrites); `update`/`delete`/`*Where` and an
-  `upsertAll` not `onMatch: 'nothing'` reject before any statement (`X_ENTITY_APPEND_ONLY`); a soft-delete,
-  `onUpdateNow()` or machine column is refused at declaration; `$describe().appendOnly` is `true` or
-  absent. No bypass, backfills included. `append-only{,-parity}.test.ts`.
+  drivers; every rewrite rejects before any statement (`X_ENTITY_APPEND_ONLY`). No bypass, backfills
+  included. Full rule: `docs/history/entity.md`.
 - **A state machine is the MECHANISM only** (`.transitions()` on `enumerated()`, a mapped
-  `TransitionTable<S>`): a terminal state is one with no outgoing moves; the move is ONE statement with
-  `from` in the predicate (`pg-transition.live.test.ts`: 1 winner of 20); `X_STATE_CONFLICT` is read
-  after the refusal from a tenant-scoped `findById`; no DDL beyond `enumerated()`'s CHECK; a machine
-  column may not be nullable; `whyNot` asks unknown → terminal → legal list. **`move.observed`
+  `TransitionTable<S>`): the move is ONE statement with
+  `from` in the predicate (`X_STATE_CONFLICT`). Full rule: `docs/history/entity.md`. **`move.observed`
   pins what a decision read** (#702, `transition-pins.ts`).
+
+## Do not regress — lifecycle (retain, history, counters)
+
+| Declaration | Here | The rule |
+|---|---|---|
+| `retain: { after, on }` | `retain.ts` | no default window; `on` a `timestamp()` some index STARTS with (`X_ENTITY_RETAIN_UNINDEXED`); refused beside `appendOnly` (`X_ENTITY_RETAIN_INVALID`). The sweep is `@ultimat3/jobs`' `retainTarget` |
+| `history: true` | `history.ts`, `history-actor.ts` | `<table>_history` is a REAL registered entity (`$historyOf`), tenant column copied without its key. Written by `@ultimat3/db`'s trigger; `stampHistoryActor` sets `x.actor`/`x.request` once per transaction, never on a pinned repository — no transaction records `null` |
+| `countedIn` on a key | `counter.ts` | the target is an `integer()` of the entity the key points at, by its single primary key (`X_ENTITY_COUNTS_INVALID`); resolved at describe time, memoised on `registryGeneration()` |
+| all three, described | `lifecycle.ts` | each `$describe()` key ABSENT unless declared, so no other entity's hash moves |
+| the memory driver | `memory-lifecycle.ts` | mirrors both triggers through the table's raw store, so a unit test answers what Postgres answers |
+
+- **Known gap: the row observer does not see trigger writes.** A history row and a counter move
+  are the trigger's (memory: `memoryLifecycle`'s raw store), never a repository write, so
+  `setRowObserver` reports neither; a live counter on PGlite or memory moves on the parent's next
+  write. The WAL replicator does report them. As of 2026-11.
+- **`read-capture.ts` is failure capture's read half**: `observedRepo`'s `findById`/`findMany` hand
+  rows to core's `recordFailureFact` — sealed properties dropped first; one check when off.
 
 ## Do not regress — sealed columns
 

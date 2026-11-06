@@ -435,6 +435,68 @@ export const importOrders = importRows({
 | no formula guard on the way in | the export prefixes `'` on `=`, `+`, `-`, `@`; an import cannot know the prefix was added, so it keeps it |
 | peak memory is a page, not the file | measured `As of 2026-11-03`: a 200 MB csv (190 × `pageBytes`) imported with the heap up 42 MB, a 20 MB one with it up 24 MB |
 
+## One person's data — `subjectExport()` and `subjectErase()`
+
+**Declare the person once; the framework finds every table holding something of theirs.**
+`defineSubject(entity, { driver, key, tables, targets?, columns? })` is a plain value both job
+factories take. The reach is walked from the foreign keys already declared, through every table
+the erase deletes, so a table added next month is `X_SUBJECT_TABLE_UNDECLARED` on `x verify` until
+it has a treatment. Opt in: no `defineSubject`, no check.
+
+```ts
+import type { Driver, EntityCore } from '@ultimat3/entity';
+import { defineSubject, subjectErase, subjectExport, t } from '@ultimat3/jobs';
+import { disk } from '@ultimat3/storage';
+
+declare const members: EntityCore;
+declare const driver: Driver;
+
+export const memberSubject = defineSubject<{ orgId: string; memberId: string }>(members, {
+  driver, // the app's own: tenancy, row observers and cache tags hold
+  key: (input) => input.memberId,
+  tables: {
+    members: { anonymize: { email: 'erased@example.invalid', name: '' } },
+    posts: { retain: 'published work belongs to the org' },
+    comments: 'delete',
+    likes: 'delete',
+  },
+});
+
+export const eraseMember = subjectErase({
+  name: 'members.erase',
+  input: t.object({ orgId: t.uuid, memberId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
+  subject: memberSubject,
+});
+
+export const exportMember = subjectExport({
+  name: 'members.export',
+  input: t.object({ orgId: t.uuid, memberId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
+  subject: memberSubject,
+  prefix: ({ orgId, memberId }) => `org/${orgId}/subjects/${memberId}`,
+  format: 'ndjson',
+  sink: () => disk(),
+});
+```
+
+| Rule | Why |
+|---|---|
+| every reached table states `'delete'`, `{ anonymize: { col: value } }` or `{ retain: '<why>' }` | nothing defaults: which law applies and what is kept is the app's. A blank reason, an unknown column, `null` on a not-null column, `'delete'` on an append-only or soft-delete entity: `X_SUBJECT_TREATMENT_INVALID` |
+| the walk continues only through deleted tables | the likes on a RETAINED post are not the person's; the likes on a deleted one go with it |
+| a kept row under a deleted parent is refused | it would block the delete (`restrict`) or be cascaded away; `'delete'`, or anonymize the key to `null` |
+| children first, the subject last; one step per page of parent keys | a killed run resumes at the page it stopped on; every write is an equality on one key, so a replay changes nothing twice |
+| a loop of deleted tables needs one nullable key | it is cleared first; none is `X_SUBJECT_CYCLE` |
+| a table with no foreign key to the person is invisible | list it: `columns: { audit_copies: 'memberId' }`, then it needs a treatment too |
+| framework data is a `targets:` entry | `authSubjectTarget` (`@ultimat3/auth`), `auditSubjectTarget` (`@ultimat3/action`, rewrites who acted, keeps the row), `storageSubjectTarget(disk, keysOf)` (`@ultimat3/storage`); `{ target, retain }` keeps one |
+| the export is one object per page per table plus `index.json` | each table's count, treatment and `retain` reason; sealed columns never leave |
+| one job per tenant | crossing tenants is the app's loop; queued job inputs and logs are out of reach (`x_jobs` ages out by `jobs-retention.ts`) |
+| who may ask is the app's action and policy | no route and no MCP tool ships; receipts, identity checks and deadlines are the app's |
+
+`x exercise` proves the declaration: `subjectProof` seeds every table with canaries, erases one
+generated person, and searches every stored row. Their value outside a `retain` is
+`X_SUBJECT_ERASE_INCOMPLETE`, naming the table and column.
+
 ## Rollups and materialized views
 
 Two factories over `job()`, two jobs, `As of 2026-11`. A time window over append-mostly rows is

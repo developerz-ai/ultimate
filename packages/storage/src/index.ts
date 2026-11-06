@@ -3,6 +3,8 @@
 
 export type { AcceptSignedUploadInput, SignedRequestInput } from './accept';
 export { acceptSignedUpload, readSignedObject, signedUploadConstraints } from './accept';
+export type { AcceptSignedPartInput } from './accept-part';
+export { acceptSignedPart } from './accept-part';
 export type {
   AttachmentTarget,
   DeleteVariantsInput,
@@ -102,10 +104,33 @@ export {
   uploadFailed,
   xmlBodyUnreadable,
 } from './errors';
+export { multipartUnsupported, partsInvalid, uploadUnknown } from './errors-multipart';
 export { alreadyPromoted, quarantined } from './errors-promote';
 export { rangeTooLarge, rangeUnsatisfiable } from './errors-range';
+export type {
+  AbortResult,
+  AbortStaleUploadsInput,
+  ExpireObjectsInput,
+  ExpireResult,
+  ObjectPurgeTargetInput,
+} from './expire';
+export { abortStaleUploads, expireObjects, objectPurgeTarget } from './expire';
 export type { GrantUploadInput, UploadGrant, UploadRequest } from './grant';
 export { grantUpload } from './grant';
+export type {
+  CompleteUploadInput,
+  GrantMultipartInput,
+  MultipartGrant,
+  SignPartInput,
+  UploadSessionInput,
+} from './grant-multipart';
+export {
+  abortUpload,
+  completeUpload,
+  grantMultipart,
+  listParts,
+  signPart,
+} from './grant-multipart';
 export type {
   ImageFit,
   ImageSize,
@@ -131,6 +156,14 @@ export {
   variantRevision,
   variantSourceOf,
 } from './image';
+export type {
+  CompletedPart,
+  MultipartCapability,
+  MultipartSession,
+  SignPartOptions,
+  UploadedPart,
+} from './multipart';
+export { MAX_PART_BYTES, MAX_PARTS, MIN_PART_BYTES, matchParts, partBytesFor } from './multipart';
 export type {
   LockedAction,
   ObjectLock,
@@ -162,6 +195,7 @@ export { assertPutStream, streamLimit } from './put-stream';
 export type { ByteRange, GetOptions } from './range';
 export { assertGetOptions, assertStreamRange, servedRange, streamedRange } from './range';
 export type {
+  SignedPart,
   SignedUrlConstraints,
   SignedUrlFailure,
   SignedUrlInput,
@@ -188,6 +222,12 @@ export {
 } from './signing-secret';
 export type { Storage, StorageConfig } from './storage';
 export { definedStorage, defineStorage, disk, resetStorage, storage } from './storage';
+export type {
+  StorageSubjectRef,
+  StorageSubjectTarget,
+  StorageSubjectTargetOptions,
+} from './subject-target';
+export { STORAGE_SUBJECT_COLUMNS, storageSubjectTarget } from './subject-target';
 export type {
   StoredHeadCandidate,
   UploadCandidate,
@@ -223,3 +263,13 @@ export {
   uploadFile,
   xhrSignedPut,
 } from './upload-client';
+export type {
+  MultipartUploadClient,
+  MultipartUploadInput,
+  UploadSessionRef,
+} from './upload-client-multipart';
+export {
+  DEFAULT_PART_THRESHOLD_BYTES,
+  PART_CONCURRENCY,
+  uploadInParts,
+} from './upload-client-multipart';

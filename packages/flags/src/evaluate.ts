@@ -6,7 +6,7 @@ import type { Actor } from '@ultimat3/core';
 import { flagExpired } from './errors';
 import type { Flag } from './flag';
 import { flagFor } from './registry';
-import { flagsClock, reportOnce } from './runtime';
+import { flagsClock, recordEvaluation, reportOnce } from './runtime';
 import type { FlagSubjects } from './subject';
 import { evaluateTargeting } from './targeting';
 
@@ -51,5 +51,5 @@ export function isEnabled(
 ): boolean {
   const flag = flagFor(key);
   reportIfOverdue(flag);
-  return evaluateTargeting(flag.key, flag.targeting, actor, subjects);
+  return recordEvaluation(flag.key, evaluateTargeting(flag.key, flag.targeting, actor, subjects));
 }

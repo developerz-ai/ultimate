@@ -110,6 +110,7 @@ async function writeSeoFiles(report: PrerenderReport): Promise<readonly string[]
     disallow: settings.disallow,
     robotsGroups: settings.robotsGroups,
     sitemap: settings.sitemap,
+    llms: settings.llms,
     root,
     pagesFor: (route) =>
       report.pages.filter((page) => page.route === route).map((page) => page.path),

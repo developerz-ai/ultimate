@@ -7,20 +7,29 @@ import type { IndexMethod } from '@ultimat3/db';
 import type { Schema } from '@ultimat3/schema';
 import { assertAppendOnlyColumns } from './append-only';
 import { assertTableName, bindColumn, columnName, moneyColumns } from './column';
-import { assertNotRetired, assertShared, describeEntity, describeReferences } from './describe';
+import {
+  assertNotRetired,
+  assertScan,
+  assertShared,
+  describeEntity,
+  describeReferences,
+} from './describe';
 import { rowParsers } from './entity-parse';
 import { parseEntityPatch } from './entity-patch';
 import { invariantViolated } from './errors';
 import type { InvariantColumns, Resolve } from './expr';
 import { invariantColumns } from './expr';
+import type { HistoryEntity, HistoryInit } from './history';
 import { distinctIndexes } from './index-identity';
 import type { IndexInit } from './index-init';
 import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant } from './invariants';
+import { describeLifecycle, lifecycleHistory } from './lifecycle';
 import { recordProjection } from './record-projection';
 import type { EntityDescription, ReferenceDescription } from './registry';
 import { registerEntity } from './registry';
+import { type Retain, type RetainInit, retainOf } from './retain';
 import { rowSchema } from './row-schema';
 import { sealedFields } from './sealed';
 import { assertSealedDeclaration } from './sealed-declaration';
@@ -57,6 +66,12 @@ export interface EntityInit<C extends ColumnMap> {
    * Without it `x verify`'s exercise step reports `X_ENTITY_TENANT_UNDECLARED`; blank is refused.
    */
   readonly shared?: string;
+  /**
+   * Why this table may be read by a sequential scan: a closed catalog that stays a handful of rows.
+   * Without it `x verify`'s exercise step reports a statement no index serves (`X_QUERY_UNINDEXED`)
+   * and a reference column no index leads with; blank is refused.
+   */
+  readonly scan?: string;
   /** Composite keys only — a single key is `uuid().primaryKey()` on the column itself. */
   readonly primaryKey?: readonly (keyof C & string)[];
   /**
@@ -100,6 +115,12 @@ export interface EntityInit<C extends ColumnMap> {
    * `X_ENTITY_VIEW_READ_ONLY`. `columns` name its output columns; `primaryKey` is the read identity.
    */
   readonly view?: ViewInit;
+  /** Rows older than `after` by `on` are swept by `purge({ entities: 'declared' })` (`retain.ts`). */
+  readonly retain?: RetainInit<keyof C & string>;
+  /** Every row change recorded into `<table>_history` by trigger (`history.ts`, `$history`). */
+  readonly history?: HistoryInit;
+  /** Set by `history.ts` on the history entity it declares: the parent's name. Never by hand. */
+  readonly historyOf?: string;
 }
 
 /**
@@ -120,6 +141,12 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   readonly $softDelete: boolean;
   /** `entity({ appendOnly: true })`: update and delete are refused, here and by the table. */
   readonly $appendOnly: boolean;
+  /** `entity({ retain })`, checked; `null` when rows are kept. */
+  readonly $retain: Retain | null;
+  /** `entity({ history: true })`: the history entity, registered beside this one; else `null`. */
+  readonly $history: HistoryEntity | null;
+  /** On a history entity, its parent's name; `null` everywhere else. */
+  readonly $historyOf: string | null;
   /** `entity({ view })`: the query a view is derived by, `null` on a table. Writes are refused. */
   readonly $viewQuery: ViewQuery | null;
   /** Property key of the tenant column, or `null`. Presence is what turns tenancy on. */
@@ -197,6 +224,7 @@ export const entity = <const C extends ColumnMap>(
   // column name could: `entity('t" (x int); drop table u; --')` emitted that `drop table` verbatim.
   const table = assertTableName(name, init.table ?? name);
   assertShared(name, table, init.shared, tenantColumn);
+  assertScan(name, init.scan);
   for (const [property, column] of entries) bindColumn(column, name, property, tenant, table);
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
@@ -347,6 +375,7 @@ export const entity = <const C extends ColumnMap>(
   // A foreign key's own index named again in `indexes` is one index, not two (`index-identity.ts`).
   const indexes = distinctIndexes(declared);
 
+  const retain = retainOf(name, init.retain, entries, indexes, appendOnly);
   const sealed = sealedFields({ $name: name, $table: table, $columns: init.columns });
   assertSealedDeclaration({
     name,
@@ -382,7 +411,9 @@ export const entity = <const C extends ColumnMap>(
       appendOnly,
       retired: init.retired,
       shared: init.shared,
+      scan: init.scan,
       view: viewQuery,
+      lifecycle: describeLifecycle(core as EntityCore, retain, init.historyOf),
     });
   assertNotRetired(name, entries, init.retired);
   const references = (): readonly ReferenceDescription[] => describeReferences(name, entries);
@@ -405,7 +436,7 @@ export const entity = <const C extends ColumnMap>(
     $tags: tags,
     $cacheTag: cacheTag,
     $softDelete: softDelete,
-    $appendOnly: appendOnly,
+    $appendOnly: appendOnly || init.historyOf !== undefined,
     $viewQuery: viewQuery,
     $tenantColumn: tenantColumn,
     $search: search,
@@ -426,6 +457,11 @@ export const entity = <const C extends ColumnMap>(
     $assert: (row) => assertInvariants(name, invariants, row),
     $describe: describe,
     $references: references,
+    $retain: retain,
+    // Assigned below, once this entity is registered: the history entity is declared after it.
+    $history: null,
+    // A history table is append-only to every repository: its rows are its trigger's to write.
+    $historyOf: init.historyOf ?? null,
   };
 
   registerEntity({
@@ -437,6 +473,10 @@ export const entity = <const C extends ColumnMap>(
     describe,
     references,
   });
+  const { history, historyOf } = init;
+  const lifecycle = { name, table, columns: init.columns, primaryKey, tenantColumn, appendOnly };
+  const historyEntity = lifecycleHistory({ ...lifecycle, history, historyOf });
+  if (historyEntity !== null) Object.assign(core, { $history: historyEntity });
   // The columns land on the entity itself so `orgs.id` is a column reference; every framework
   // member is `$`-prefixed, which is why a column may be called `name`.
   // `$schema` is restated so the result carries its real output type; it is the same object.

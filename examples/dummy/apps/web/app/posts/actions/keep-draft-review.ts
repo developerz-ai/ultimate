@@ -38,7 +38,7 @@ const resumeOrRun = async (
  * second review, the bar any write an `agentJob` makes has to clear.
  *
  * `postReviewKeep`: the author or an org admin, as publishing is, and only for themselves — the
- * member the review is FOR is the caller. No `mcp`: an agent asks with `requestDraftReview`.
+ * member the review is FOR is the caller. No `mcp`: an agent asks with `draftReview` (`apps/web/mcp-tools.ts`).
  *
  * And RESUMABLE: the post's review run (`post_review_runs`) holds `reviewDraft`'s latest
  * checkpoint, so an attempt the queue retries after its worker died continues from the last turn

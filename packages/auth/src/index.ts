@@ -403,6 +403,12 @@ export {
 /** A sign-out response's headers: the session cookie expired, and `Clear-Site-Data`. */
 export type { SignOutHeadersOptions } from './sign-out';
 export { SIGN_OUT_CLEAR_SITE_DATA, signOutHeaders } from './sign-out';
+export type {
+  AuthSubjectRef,
+  AuthSubjectTarget,
+  AuthSubjectTargetOptions,
+} from './subject-target';
+export { AUTH_SUBJECT_COLUMNS, authSubjectTarget } from './subject-target';
 
 export {
   AUTH_TABLE_NAMES,

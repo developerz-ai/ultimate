@@ -14,7 +14,7 @@ import { ROLES } from './roles';
 
 /**
  * The keys their own files default: `config-site.ts`, `-navigation`, `-islands`, `-mail`,
- * `-client-errors`, `-assets`.
+ * `-client-errors`, `-assets`, `-failure-capture`, `-time`.
  */
 type Sectioned =
   | 'name'
@@ -24,6 +24,8 @@ type Sectioned =
   | 'islands'
   | 'mail'
   | 'clientErrors'
+  | 'failureCapture'
+  | 'time'
   | 'assets';
 
 export function configDefaults(name: string): Omit<AppConfig, Sectioned> {

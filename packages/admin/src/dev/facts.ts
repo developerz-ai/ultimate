@@ -225,6 +225,30 @@ export interface MailFact {
   readonly sentAt: string;
 }
 
+/** One locale's render of a declared mail's `preview`, or the instruction its schema refused with. */
+export type MailTemplatePreviewFact =
+  | {
+      readonly locale: string;
+      readonly ok: true;
+      readonly subject: string;
+      readonly html: string;
+      readonly text: string;
+      /** Catalog keys this locale could not resolve: `send` would refuse these. */
+      readonly missing: readonly string[];
+    }
+  | {
+      readonly locale: string;
+      readonly ok: false;
+      readonly error: { readonly code: string; readonly cause: string; readonly fix: string };
+    };
+
+/** A declared mail (`defineMail`) and its preview in every locale; none when it declares none. */
+export interface MailTemplateFact {
+  readonly id: string;
+  readonly hasPreview: boolean;
+  readonly previews: readonly MailTemplatePreviewFact[];
+}
+
 export interface CacheEdgeFact {
   readonly tag: string;
   readonly dependents: readonly { readonly kind: string; readonly id: string }[];
@@ -270,6 +294,7 @@ export interface DevSources {
   drift(): Promise<readonly DriftFact[]>;
   runSql(sql: string): Promise<SqlResult>;
   mail(): Promise<readonly MailFact[]>;
+  mailTemplates(): Promise<readonly MailTemplateFact[]>;
   cacheGraph(): Promise<readonly CacheEdgeFact[]>;
   invalidations(): Promise<readonly InvalidationFact[]>;
   policyMatrix(): Promise<readonly PolicyFact[]>;

@@ -34,6 +34,7 @@ import type {
   TaskFact,
 } from './schema';
 import { MANIFEST_VERSION } from './schema';
+import type { SubjectFact } from './schema-subjects';
 
 export interface ManifestSources {
   readonly app: { readonly name: string; readonly version: string };
@@ -46,11 +47,24 @@ export interface ManifestSources {
   readonly mounts?: readonly MountFact[];
   readonly jobs?: readonly JobFact[];
   readonly consumers?: readonly ConsumerFact[];
+  readonly subjects?: readonly SubjectFact[];
   readonly tasks?: readonly TaskFact[];
   readonly policies?: readonly PolicyFact[];
   readonly locales?: readonly string[];
   readonly errorCodes?: readonly ErrorCodeFact[];
 }
+
+/** Every list in a subject in code-unit order, so declaration order is never a diff. */
+const normalizeSubject = (subject: SubjectFact): SubjectFact => ({
+  ...subject,
+  tables: sortBy(subject.tables, (t) => t.entity).map((t) =>
+    t.columns === undefined ? t : { ...t, columns: [...t.columns].sort() },
+  ),
+  targets: sortBy(subject.targets, (t) => t.name),
+  ...(subject.links === undefined
+    ? {}
+    : { links: sortBy(subject.links, (l) => `${l.entity}.${l.column}`) }),
+});
 
 export function buildManifest(sources: ManifestSources): Manifest {
   const routes = sortBy(sources.routes ?? [], (r) => r.url).map(normalizeRoute);
@@ -62,6 +76,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
   const mounts = sortBy(sources.mounts ?? [], (m) => m.prefix).map(normalizeMount);
   const jobs = sortBy(sources.jobs ?? [], (j) => j.name).map(normalizeJob);
   const consumers = sortBy(sources.consumers ?? [], (c) => c.name);
+  const subjects = sortBy(sources.subjects ?? [], (s) => s.entity).map(normalizeSubject);
   const tasks = sortBy(sources.tasks ?? [], (t) => t.name).map((t) => ({
     ...t,
     enqueues: [...t.enqueues].sort(),
@@ -100,6 +115,8 @@ export function buildManifest(sources: ManifestSources): Manifest {
     jobs,
     // `mounts`' rule: `[]` would stale the committed file of every app without a consumer.
     ...(consumers.length === 0 ? {} : { consumers }),
+    // The same rule: `[]` would stale every app that declares no subject.
+    ...(subjects.length === 0 ? {} : { subjects }),
     tasks,
     policies,
     permissions,

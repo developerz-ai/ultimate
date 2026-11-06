@@ -131,7 +131,11 @@ export const config = defineRoute({
   // contact-sales island +1,458 B, all of it: `rpc()` reading the server-stamped path pins read
   // from `<meta name="ultimate-pins">` (`client-paths-pins.ts`) and filled by `fill-wire.ts`, which
   // refuses a `.`/`..` segment — raised 28kb → 30kb (30.0.0, plan 101 wave 5b).
-  budget: { js: '30kb' },
+  // measured: 32140 B (2026-11-06; `x verify --only budgets`, against 29,932) — why: the
+  // contact-sales island +2,064 B, all of it: every `rpc` method carrying `.stream(input)` (core's
+  // `clientStream`, plan 101 slice 41), the typed client's one way to read a stream-declaring
+  // action as it is written — raised 30kb → 31.5kb.
+  budget: { js: '31.5kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every
@@ -249,6 +253,13 @@ export function Page(props: { readonly query: { currency?: string } }): JSX.Elem
               {/* No `maxlength` here on purpose: `contactSales` owns the length rule, and a
                   second copy in this file is the one that goes stale. */}
               <textarea name="message" rows="4" required />
+            </label>
+
+            <label class={styles.contactField}>
+              {t('site.pricing.contact.budget')}
+              {/* Text, never `type="number"`: a browser reads `1.234,56` with its own rules, and
+                  `contactSales` reads it in this page's locale instead (`parseAmount`). */}
+              <input type="text" name="budget" inputmode="decimal" autocomplete="off" />
             </label>
 
             {/* The currency the URL named, and the locale this render used — both facts the

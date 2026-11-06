@@ -190,6 +190,7 @@ test('every island in the app is measured, and each is classified by its own gra
     'apps/web/app/feed/feed.island.tsx',
     'apps/web/app/posts/[id]/like.island.tsx',
     'apps/web/app/posts/[id]/likes-badge.island.tsx',
+    'apps/web/app/posts/[id]/summary.island.tsx',
     'apps/web/app/runs/run-console.island.tsx',
     'apps/web/app/settings/settings.island.tsx',
     'apps/web/app/update-banner.island.tsx',
@@ -229,6 +230,8 @@ test('every island in the app is measured, and each is classified by its own gra
   expect(reachable.get('apps/web/site/pricing/contact-sales.island.tsx')).toEqual([
     '@ultimat3/action',
   ]);
+  // The summary streams `summarize` through the typed client's `.stream()` and nothing else.
+  expect(reachable.get('apps/web/app/posts/[id]/summary.island.tsx')).toEqual(['@ultimat3/action']);
 });
 
 test('the module retention is judged by is one a package still declares as a side effect', async () => {
@@ -248,8 +251,9 @@ test('every island reaching core keeps its side-effecting module, in both builds
     [...first.keys()].filter((file) => (reachable.get(file) ?? []).some(through)).sort();
   const expected = reaching((pkg) => pkg !== CONSTANTS_ONLY && pkg !== OWN_TITLES_ONLY);
   // Six until 27.6.0: `like` and `likes-badge` import realtime and nothing else, and realtime no
-  // longer brings core's barrel with it (`OWN_TITLES_ONLY`).
-  expect(expected).toHaveLength(4);
+  // longer brings core's barrel with it (`OWN_TITLES_ONLY`). Five from plan 101 wave 9: `summary`
+  // reaches the typed action client, as `settings` and `contact-sales` do.
+  expect(expected).toHaveLength(5);
   // The same two faces of the flap, on the module realtime anchors: every island reaching it.
   const realtime = reaching((pkg) => pkg === OWN_TITLES_ONLY);
   expect(realtime).toHaveLength(4);

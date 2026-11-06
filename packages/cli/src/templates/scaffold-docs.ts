@@ -33,6 +33,9 @@ There is no global \`x\`: every command here is \`bunx x …\`, the CLI this app
 Before stating or working around a framework limit, ask the installed framework:
 \`bunx x docs "<question>"\`, and \`bunx x errors explain <CODE>\` for an error code.
 
+Before an edit, ask what it reaches: \`bunx x impact <file> --json\` names the routes, actions,
+queries, jobs, MCP tools, published operations and tests it touches, each with provenance.
+
 | Rule | Detail | Refused by |
 |---|---|---|
 | One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. CI runs the same two commands as your terminal: \`bun run setup && bun run verify\` | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
@@ -128,6 +131,7 @@ Commands: \`bun run setup\`, \`bun run dev\`, \`bun run verify\`, \`bunx x g <pr
 | Tool | What it answers | How to reach it |
 |---|---|---|
 | \`x.manifest.json\` | every route, action, query, job and policy, generated — read it before searching the tree | \`bunx x manifest\` rewrites it |
+| \`bunx x impact <file|primitive> --json\` · \`bunx x graph --json\` | what an edit reaches, and the app as one graph (declared, import and observed edges) | rebuilt from the loaded app on every call |
 | \`.mcp.json\` | the dev tools over MCP: routes, schema, policies, the database, tests, the gate — \`bunx x mcp tools\` lists them | a client that reads \`.mcp.json\` starts it; from any other, run \`bunx @ultimat3/cli mcp serve --transport stdio\` here |
 | \`POST /mcp\` | this app's own tools — every action declaring \`mcp: { expose: true }\` — for a remote agent | \`apps/web/mcp.ts\`; under \`bun run dev\`, \`Authorization: Bearer dev-agent.admin\`, else an API key |
 | \`.claude/commands/feature.md\` | build or fix one thing end to end, done when \`bun run verify\` is green | plain markdown: any agent can read one and follow it |

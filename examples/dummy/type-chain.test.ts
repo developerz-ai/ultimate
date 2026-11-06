@@ -293,6 +293,8 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
       'apps/web/app/posts/jobs/import-posts.ts',
       'apps/web/app/posts/repo.ts',
       'apps/web/app/posts/repo.test.ts',
+      // The subject-erase test seeds a post per member, and `excerpt` is required on an insert.
+      'apps/web/app/settings/jobs/erase-member.test.ts',
       'packages/db/seeds/dev.ts',
       'scripts/test-setup.test.ts',
     ];
@@ -339,7 +341,9 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // `post-excerpts.ts`), and `post-excerpts.test.ts` stores and reads the column (2).
     // 28 as of 2026-11-03: `import-posts.ts` writes `excerpt: ''` on a restored post (1), and
     // `posts/jobs.job.test.ts` builds a post row that names it (1).
-    expect(introduced).toHaveLength(28);
+    // 30 as of 2026-11-06: `settings/jobs/erase-member.test.ts` inserts two posts built with
+    // `excerpt` (2), each insert its own diagnostic.
+    expect(introduced).toHaveLength(30);
 
     // `entity.ts`: the view's field list no longer names a real column (hop 4).
     expect(

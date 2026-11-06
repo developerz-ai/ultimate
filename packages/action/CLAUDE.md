@@ -6,8 +6,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 ## Boundary
 
 - May import: `core`, `schema` (t0), `cache`, `db`, `i18n`, `time` (t1), `entity`, `policy`, `http` (t2).
-  `entity` is a real edge since 21.0.0 (`record-wire.ts` → `hasEntityRows`/`rowsOf`), downward 3→2.
-  `db` is one since 2026-10-02, downward 3→1, through **`tx-scope.ts` only** (`currentTx`).
+  `entity` through `record-wire.ts`; `db` through **`tx-scope.ts` only**. Full rule: `docs/history/action.md`.
 - Never import: `query`, `jobs`, `realtime` (sideways), or any tier 4-5 package.
 - Never re-implement authz, validation or caching — call `policy`, `schema`, `cache`.
 
@@ -34,6 +33,9 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `client.ts` | typed RPC client (browser-safe: no server imports) — dispatches through core's `clientTransport` |
 | `record-wire.ts` | the record envelope on the HTTP projection: `carriesRecords` (from the output schema), the enveloped 200, and its OpenAPI shape. Server-only — `client.ts` never imports it |
 | `wire-issues.ts` | the ONE reader of a problem document's `issues` member — an untrusted array back into `@ultimat3/schema`'s `ValidationIssue` shape |
+| `action-stream.ts` | `streamingDef`: a `stream`-declaring `handle` (an async generator) DRAINED, each chunk parsed by `stream` (`X_ACTION_STREAM_INVALID`, `errors-stream.ts`); `chunksRead()` |
+| `http-stream.ts` | `accept: text/event-stream` → `event: chunk`… then ONE `done` or `error`; a refusal before the handler is the ordinary problem response |
+| `audit-subject-target.ts` | `auditSubjectTarget()`: `x_audit` as a subject-erase target — overwrites who acted and the input, never deletes the row |
 | `transition.ts` | `transition()`: a MUTATOR factory over one entity column's state machine. Declares no error code — entity's three propagate |
 | — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, imported from core — `src/index.ts` re-exports only the `ClientFlight`/`ClientRetry` types. There is no local copy and must not be one |
 | `job-handle.ts` | the `.job()` projection: an action as a queueable payload. **Not** consumed by `@ultimat3/jobs` — see Invariants |
@@ -65,7 +67,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 
 - Every surface goes through `invoke`: the policy's actor half (`guardActionBeforeInput`, 403 before the
   parse), parse input, evaluate policy, handle, parse output. A second
-  execution path is the one unforgivable change here.
+  execution path is the one unforgivable change here. A 5xx keeps a bundle only under core's
+  `withFailureCapture` (`execute`); off, it runs bare.
 - **An explicit `ctx` is INSTALLED, never merely passed** — the ambient context (which
   `@ultimat3/entity`'s tenant guard reads) must be the identity `guardAction()` decided about.
   `invoke-context.test.ts` asserts ambient, `options.actor` and `options.ctx` are one caller.
@@ -87,18 +90,10 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **`registerAction` guards the derived PATH as well as the name** (`X_ACTION_PATH_DUPLICATE`; a
   second index cleared by `resetActions`).
 - **A path is the app's `pathStyle` or the action's pin, never a third answer** (`http-path.ts`). A pin may be a template: `derivePath(name)` refuses one, `actionHttpPath(name, params)` fills it.
-  `'resource'` stays the default (changing it moves every URL). `defineApi` sets the style FIRST and
-  `configureActionPathStyle` re-derives every seated action (the module scan may have seated them
-  under the default). `derivePath(name)` is pin-aware through `installPinLookup` — handed down by
-  `registry.ts`, never imported up (cycle through `action.ts`). browser `rpc()` reads the `ultimate-pins` stamp;
-  a server takes `action.client()`.
+  `'resource'` stays the default. Full rule: `docs/history/action.md`.
 - **The style is stated ONCE, on the server**; a browser reads `<meta name="ultimate-path-style">` through core's `actionPath(name)`. Full rule: `docs/history/action.md`.
-- **`Merge` in `define-api.ts` never recurses over the module list.** `Head & Merge<Rest>` is not
-  a tail call: it cost one instantiation level per MODULE and answered TS2589 at the 48th entry of
-  one list, whatever each exported (#534). The list is read as a union and intersected in one
-  step. `client-scale-pins.ts` is the build error; `client-scale.contract.test.ts` compiles real
-  `action()`/`query()` modules through `defineApi`'s `const` inference; `@ultimat3/query` pins
-  `QueryClient` itself.
+- **`Merge` in `define-api.ts` never recurses over the module list.** `client-scale-pins.ts` is the
+  build error. Full rule: `docs/history/action.md`.
 - **`defineApi({ openapi })` opts into the complete document; absent, `openapi.json`'s bytes are
   unchanged** — an upgrade must not make a committed contract stale by itself.
 - Registration names the action the app exported, in place. Naming an already-named action is the
@@ -117,20 +112,24 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   built from the registrars' results, never the modules' exports.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts` asserts identity).
 - **`transition()` is a mutator factory that decides nothing about the machine**: entity's three
-  codes propagate; `from` is REQUIRED (it is the UPDATE's predicate); `conflict: 'server-wins'` fixed;
-  `audit` off unless declared; `id` is the key `output.id` declares (`keySchemaOf`), never a fixed
-  `t.uuid`; `row` goes to `mutator()` as declared, never loaded here (#687); **the rule's reads
-  are pinned in the move** (#702, `transition-observe.ts`: `def.row`, `def.handle` share `input`).
-- **A lookup table is read with `Object.hasOwn`** (`IRREGULAR` in `naming.ts`; `BY_FORMAT` is
-  `@ultimat3/schema`'s `sample-draw.ts`) — caller- or provider-supplied keys.
+  codes propagate; `from` is REQUIRED (it is the UPDATE's predicate); **the rule's reads are pinned in
+  the move** (`transition-observe.ts`). Full rule: `docs/history/action.md`.
+- **A lookup table is read with `Object.hasOwn`** (`IRREGULAR` in `naming.ts`).
 - **`handlerReached(target)` in `invoke.ts` is a private per-declaration counter, never on the
   barrel.** `exercise.ts` reads it to tell a run that reached `handle` from one stopped before it.
-- **The exercise has no bypass.** The actor is `exercise.actor`; with none, a guarded action is
-  `X_CONTRACT_EXERCISE_UNDECLARED` and a public one runs as `null`. `X_TEST_NETWORK_SEALED` is
-  checked before the verdict, because it maps to no status. A coded 5xx, `X_OUTPUT_INVALID` or an
-  uncoded throw is `X_CONTRACT_DEFECT`.
+- **The exercise has no bypass.** A coded 5xx, `X_OUTPUT_INVALID` or an uncoded
+  throw is `X_CONTRACT_DEFECT`. Full rule: `docs/history/action.md`.
 
 ## Invariants — the wire
+
+- **A streaming action is still ONE action through `invoke`** (`StreamAction`, `action({ stream })`):
+  `invoke` stores the declaration draining, so MCP, `.job()`, `.as()` and JSON get the RETURN value.
+  Only the first draining handler of THE declaration a stream was opened for gets the sink;
+  `chunksRead()` is `true` there alone, so a costly chunk is produced only when read.
+- **`.stream(input)` is on every typed-client method; the TYPE offers it only where the action
+  streams** (`StreamClientMethod`; the `rpc` proxy cannot see a declaration). `POST` through core's
+  `clientStream`, never `EventSource`; never retried (`retry` is not an option); a JSON answer is
+  the output.
 
 - **A `:param` pin's values come from the router's decoded params, merged into the input before
   `invoke`** (`toRoute` → core's `mergePathParams`). A body naming the key differently is
@@ -150,15 +149,9 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **`conflict` is core's `ConflictPolicy`, over ROWS**; `custom(merge)` builds
   `{ kind: 'custom', merge(localRow, serverRow) }`; core's `resolveConflict` is the one resolver.
 - **`X_INPUT_INVALID` carries the rejections twice**: the line in `cause`
-  (`formatIssues(issues).join('; ')`, pinned by `validate.test.ts`) and `meta.issues` structured.
-  The rendering stays out of `InputInvalidError` (browser-reachable). **`toValidationIssues`** keeps
-  four members, never a library's raw issue (it may carry the value). `issuesFromWire` rebuilds
-  member by member, all-or-nothing, bounded by `MAX_WIRE_ISSUES`. **`X_OUTPUT_INVALID` keeps the line alone.**
+  (`formatIssues(issues).join('; ')`, pinned by `validate.test.ts`) and `meta.issues` structured. Full rule: `docs/history/action.md`. **`X_OUTPUT_INVALID` keeps the line alone.**
 - **The client keeps the server's code and marks it remote** (`RemoteActionError`, `meta.origin:
-  'remote'`), only for an `X_SCREAMING_SNAKE` code. It never synthesizes a docs URL: the server's
-  `http(s)` `docs`/`type` (as an ordered pair), else this build's registered link, else
-  `ERROR_DOCS_URL`.
-  `meta.requestId` is the document's root member, through core's `withRequestId` (`rpc-refusal.test.ts`). `REPLAYED_HEADER` is core's; `http.ts` imports it, the barrel no longer re-exports it.
+  'remote'`), only for an `X_SCREAMING_SNAKE` code. It never synthesizes a docs URL. Full rule: `docs/history/action.md`.
 - **Both clients inject `traceparent`** before the caller's headers; an incomplete span sends nothing.
 - `serializeOpenApi` output is byte-stable: sorted keys, sorted registry, no clock. `client.ts` stays
   free of server imports.
@@ -169,15 +162,12 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **`tagKeys` is `@ultimat3/cache`'s and `toBucket` is `@ultimat3/http`'s** (imported, never
   re-exported; `toBucket` raises `X_RATE_LIMIT_INVALID`). Never restore a local copy.
 - **`rateLimit:` is spent ONCE, inside `invoke`** (`rate-limit-gate.ts`), so HTTP, MCP, the agent tool and `.job()` share one bucket; `surface: 'server'` spends nothing. Full rule: `docs/history/action.md`.
-- **`deprecated:` is a compat WINDOW** — headers on every response including failures, a
-  `rel="successor-version"` link via `derivePath`, `deprecated: true` in OpenAPI,
-  `deprecated_calls_total`. Rendered ONCE at projection (`X_ACTION_DEPRECATION_INVALID` at mount).
-  Twinned in `@ultimat3/query`.
+- **`deprecated:` is a compat WINDOW**, rendered ONCE at projection
+  (`X_ACTION_DEPRECATION_INVALID`); twinned in `@ultimat3/query`. Full rule: `docs/history/action.md`.
 - **The span wraps `execute` whole** (including `def.row()`), with bounded attributes plus the
   namespaced idempotency key (never a metric label). `telemetry.test.ts`.
 - **`policyCapability` is a display label; `policyPermissions` (`ActionDescriptor.permissions`) is
-  what a report matches on** (a `not()` clause contributes its permissions). Both are
-  `@ultimat3/policy`'s, imported from there.
+  what a report matches on**; both `@ultimat3/policy`'s.
 - **MCP exposure is core's `isMcpExposed`** (`describeAction`, `x-ultimate.mcpTool`); **a tool's
   NAME is the export name verbatim** (`mcp-surface.test.ts`). `ActionFact.mcp` in the app manifest
   carries only `{ expose, description? }`.
@@ -197,12 +187,10 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `bun build --target=browser --minify`, one entry importing from `@ultimat3/action` — **the ONE
   table for these figures** (`packages/core/CLAUDE.md` points here):
 
-  | Entry | `As of 2026-11`, Bun 1.4.4, one entry over the working tree |
+  | Entry | `As of 2026-11-06`, Bun 1.4.4, one entry over the working tree |
   |---|---|
-  | `rpc` | 27,472 B: pinned paths (wave 5b) add `fillWire` +758 B, `renderedActionPin` +619 B (each stubbed out) |
-  | `rpc` + core's `clientFlight` | 35,921 B (the same +1,377 B) |
-
-  Without both, `rpc` is 26,095 B: +3,672 B over 2026-11-02's 22,423 B is waves 3–5a (`issueRuleFacts`…).
+  | `rpc` | 29,291 B: `.stream` (core's `clientStream`, through `dispatchStream`) +1,746 B over the 27,545 B before it; pinned paths (wave 5b) `fillWire` +758 B, `renderedActionPin` +619 B (each stubbed out) |
+  | `rpc` + core's `clientFlight` | 38,054 B |
 
 - **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
   titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do
@@ -239,9 +227,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   reservation is ONE `insert … on conflict` statement. The CLI boot installs it.
 - **Inside a transaction the SETTLE commits with the write, on BOTH stores** (`liveTransaction()`). `idempotency-parity.test.ts`. Full rule: `docs/history/action.md`.
 - **The deadline is `reclaimAfterMs: () => number`, REQUIRED on the Postgres store** and read per
-  reservation — the app's `requestTimeoutMs` through `requestDeadlineMs` (`request-deadline.ts`,
-  http's own default, never a number here). **`origin: () => object` is required too**: a
-  transaction on another database settles on the pool. A FINISHED scope's handle binds nothing.
+  reservation (`requestDeadlineMs`, never a number here); `origin: () => object` is required too. Full rule: `docs/history/action.md`.
 
 ## Invariants — cache and audit
 
@@ -249,25 +235,18 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   absorbs a refusing fan-out and logs through core's `logger`, never rendering the tags. A replay
   skips the bust. **A started handler busts, thrown or not.**
 - **The bust waits for the ROOT commit** when a transaction is open (`openCommitScope().onCommit`):
-  dropped on rollback, never fired before the rows are durable. A straggler past its scope gets
-  `DbTx.onCommit`'s own answer, as entity's row observer does. `cache-gate-tx.test.ts` (PGlite).
+  dropped on rollback, never fired before the rows are durable. Full rule: `docs/history/action.md`.
 - **The OpenAPI contract assertion reads the registry-wide document** and compares `operationId`
   — one built from the action alone could not fail. **`Problem` is `toProblem`'s members**, no
   `code` pattern (`openapi-problem.test.ts`), checked both ways; `retry` is an enum of core's `ERROR_RETRY_KINDS`.
 - **The policy contract test asserts `ActionDeniedError` and sends valid input** (`sampleInput` from
-  the input IR). Only `X_INPUT_INVALID` (and `X_AUDIT_SINK_MISSING`, the one refusal before the parse)
-  becomes `X_CONTRACT_DRIFT`; everything else keeps its own code; a non-`UltimateError` is rethrown.
-  `contract-test.contract.test.ts`.
+  the input IR). Full rule: `docs/history/action.md`.
 - **The audit seam ships the mechanism and none of the row**: `audit: true` wraps `execute`, so a
-  DENIED attempt is recorded. No audit entity, retention, hash chain or "who" convention. The
-  vocabulary matches `@ultimat3/admin`'s by name (tier 5, no edge); admin's `AuditSink` is a known
-  duplicate that unifying would need core for.
+  DENIED attempt is recorded. No audit entity, retention, hash chain or "who" convention. Full rule: `docs/history/action.md`.
 - **`invoke` masks `trace.input` with `maskSensitive(def.input, …, REDACTED)` only when `audit: true`**;
   `registerAction` calls `assertNoSensitiveOutput` on `output`. `wire-issues.ts` and
   `PROBLEM_SCHEMA` carry `rule` and `params` (the four members stay `required`).
-- **A durable sink writes what `audit-input.ts` allows**: input redacted through core's
-  `isRedactedKey` (the table `defineEnv({ secret: true })` extends) plus `isSecret` by value, and
-  always JSON-representable (named markers, cycle detection; `toJSON` never called).
+- **A durable sink writes what `audit-input.ts` allows**. Full rule: `docs/history/action.md`.
 - **The `Ctx` is never walked**: `postgresAuditSink` reads an allow-list (`requestId`, `traceId`,
   `locale`, `tz`, `buildId`, `role`, actor `id`/`kind`/`orgId`/`onBehalfOf`) and keeps
   `failure.code`, never the error.

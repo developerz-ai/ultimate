@@ -409,6 +409,7 @@ The container gzips a public text answer of 1 KiB to 256 KiB with a declared len
 | a private answer (`private`, `no-store`, `no-cache`), and any signed-in answer that is not `immutable` | identity, always. BREACH: a coded length would measure a secret beside attacker input |
 | a handler streaming public text it must not buffer | sets `cache-control: no-transform`, or declares no `content-length` |
 | a `stream()` body | never read: it declares no length |
+| an action's `text/event-stream` answer (`stream:`, `llm()`, `agent()`) | never coded or buffered: the type is off the list, it is `no-store`, and it sends `x-accel-buffering: no` for an nginx in front |
 
 Rule and figures: [`docs/architecture/16-build-pipeline.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/16-build-pipeline.md#what-is-compressed).
 

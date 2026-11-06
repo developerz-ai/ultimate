@@ -5,6 +5,7 @@ import { nearestName, singleLine } from '@ultimat3/core';
 // a plausible-sounding explanation an agent would then act on.
 
 import type { ErrorExplanation } from '@ultimat3/mcp';
+import { withRecent } from './cmd-errors-recent';
 import { errorsSpec } from './cmd-errors-spec';
 import type { CliCommand, CommandContext } from './command';
 import type { ErrorCatalog } from './error-catalog';
@@ -14,6 +15,7 @@ import { ErrorCodeUnknownError, MissingPositionalError } from './errors';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
+import { flagBool } from './parse';
 
 export { ERRORS_SUBCOMMANDS } from './cmd-errors-spec';
 
@@ -106,6 +108,8 @@ export const errorsCommand: CliCommand = {
         example: 'x errors list --json',
       });
     }
+    // `--recent`: what THIS app has seen of the code — groups and the bundles `x repro` replays.
+    if (flagBool(ctx.args, 'recent')) return withRecent(ctx, code, explainOne(code));
     return explainOne(code);
   },
 };

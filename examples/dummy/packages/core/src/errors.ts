@@ -46,6 +46,9 @@ export const SeatsExceeded = defineError<{
   status: 409,
   cause: (d) => `plan "${d.plan}" allows ${d.limit} seats; ${d.requested} requested`,
   fix: 'call upgradePlan before inviteMember, or remove a member first',
+  // The how-to an agent reads next: `packages/mcp/src/tools.ts` serves it, and the load check
+  // refuses this link the day that recipe is renamed (`X_MCP_RECIPE_UNKNOWN`).
+  docs: 'docs://recipes/make-room-for-a-member',
 });
 
 export const NotAnUpgrade = defineError<{ readonly from: string; readonly to: string }>({

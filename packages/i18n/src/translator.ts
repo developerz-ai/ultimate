@@ -12,6 +12,10 @@ import type { Locale } from './locales';
 export interface TranslateVars extends InterpolationVars {
   /** Present ⇒ plural selection runs against the locale's CLDR categories. */
   count?: number;
+  /** Present ⇒ `<key>_ordinal_<category>` by CLDR's ordinal rules, then `<key>_ordinal_other`. */
+  ordinal?: number;
+  /** Present ⇒ `<key>_select_<value>`, then `<key>_select_other`: gender, role, any closed set. */
+  select?: string;
 }
 
 /** Suffixes `selectPluralKey` probes: the CLDR categories plus the two-form shortcut. */
@@ -22,6 +26,13 @@ type PluralStem<TKey extends string> = TKey extends `${infer TStem}_${PluralSuff
   ? TStem
   : never;
 
+/** `invite_select_female_one` → `invite`; `place_ordinal_two` → `place`. */
+type FamilyStem<TKey extends string> = TKey extends `${infer TStem}_select_${string}`
+  ? TStem
+  : TKey extends `${infer TStem}_ordinal_${string}`
+    ? TStem
+    : never;
+
 /** Recursion budget — an unresolved generic catalog would otherwise never bottom out. */
 type Depth = [never, 0, 1, 2, 3, 4, 5, 6, 7];
 
@@ -30,7 +41,7 @@ type CatalogPaths<TCatalog, TDepth extends number = 8> = [Depth[TDepth]] extends
   ? never
   : {
       [TKey in keyof TCatalog & string]: TCatalog[TKey] extends string
-        ? TKey | PluralStem<TKey>
+        ? TKey | PluralStem<TKey> | FamilyStem<TKey>
         : `${TKey}.${CatalogPaths<TCatalog[TKey], Depth[TDepth]> & string}`;
     }[keyof TCatalog & string];
 
@@ -77,7 +88,9 @@ export function catalogTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOC
       hasExact(key) ||
       hasExact(`${key}_other`) ||
       hasExact(`${key}_plural`) ||
-      hasExact(`${key}_one`),
+      hasExact(`${key}_one`) ||
+      hasExact(`${key}_select_other`) ||
+      hasExact(`${key}_ordinal_other`),
     raw: (key: string): string | undefined => (hasExact(key) ? catalog[key] : undefined),
     keys: (): string[] => Object.keys(catalog).sort(),
     locale,

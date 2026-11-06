@@ -14,8 +14,8 @@ import type { Policy } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
 import { assertOverridesKnown, unknownDeclaration } from './define-exercise';
-import type { ActorRows, RoleGrants } from './exercise-actor';
-import { asSeededRow, chooseActor } from './exercise-actor';
+import type { RoleGrants } from './exercise-actor';
+import { chooseActor } from './exercise-actor';
 import { proveCrash } from './exercise-crash';
 import type { IdLookup, Sampler } from './exercise-input';
 import {
@@ -35,6 +35,7 @@ import type {
 } from './exercise-report';
 import { openExerciseRoom, overrideLine } from './exercise-report';
 import { withExerciseRequest } from './exercise-request';
+import { actorRowsOf, attachSweeps, seated, sizedCall } from './exercise-sweeps';
 import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
 import { seedPass, tenantPair } from './seed-graph-pass';
@@ -139,14 +140,6 @@ async function subjectsOf(): Promise<readonly Subject[]> {
   ];
 }
 
-/** The seeded rows of the entity `defineExercise(…, { actor })` named, or none. */
-const actorRowsOf = (options: ExercisePassOptions, graph: SeedGraph): ActorRows | undefined => {
-  const name = options.overrides?.actorEntity;
-  const entity = options.entities.find((one) => one.$name === name);
-  if (entity === undefined) return undefined;
-  return { entity, rows: graph.inserts.filter((row) => row.entity === entity.$name) };
-};
-
 const isOff = (overrides: ExerciseOverrides | undefined, name: string): boolean => {
   const override = overrides?.entries.get(name);
   return override !== undefined && 'off' in override;
@@ -244,10 +237,6 @@ interface Prepared {
   readonly bindInput: ((drawn: unknown) => unknown) | undefined;
 }
 
-/** The actor of `chosen`, seated as a row of the app's actor entity in `tenant` when it names one. */
-const seated = (actor: Actor | null, tenant: string, rows: ActorRows | undefined) =>
-  rows === undefined ? actor : asSeededRow(actor, tenant, rows);
-
 /** A's positive control: 39's loop, as the pass has always run it. */
 async function control(
   run: Prepared,
@@ -263,7 +252,7 @@ async function control(
   let lastInput: unknown;
   let output: unknown;
   let executions: readonly JobExecution[] = [];
-  room.begin();
+  room.begin(name);
   const started = performance.now();
   const verdict = await runExercise({
     name,
@@ -313,7 +302,7 @@ async function attack(
   room: ExerciseRoom,
 ): Promise<LegAnswer> {
   await using jobs = await testJobs();
-  room.begin();
+  room.begin(subject.name);
   let output: unknown;
   // Every `crossTenant()` B's call opened: a job's declared sweep is told from a leak by it alone.
   // Loaded here, never at the top: the barrel stays entity-free (`seed-writer.ts`'s rule).
@@ -420,19 +409,40 @@ export async function runExercisePass(
   const sampler = await loadSampler();
   // Not `Math.random`: the frozen RNG answers the same sequence in every process.
   const passSeed = options.seed ?? (crypto.getRandomValues(new Uint32Array(1))[0] as number);
-  await using room = await openExerciseRoom();
+  const room = await openExerciseRoom();
   const live = chosen.filter((subject) => !isOff(options.overrides, subject.name));
-  // Seeded before the first primitive runs: a failure here is the pass's, never one primitive's.
-  const graph = await seedPass(options.entities, options.writer, {
-    primitives: live.length,
-    seed: passSeed,
-  });
   const records: ExerciseRecord[] = [];
-  // In order, one at a time: the seams the room installs are the process's, not the primitive's.
-  for (const subject of chosen) {
-    const index = live.indexOf(subject);
-    const pair = tenantPair(graph, Math.max(0, index));
-    records.push(await exerciseOne(subject, options, pair, graph, room, sampler));
+  let graph: SeedGraph;
+  try {
+    // Seeded before the first primitive runs: a failure here is the pass's, never one primitive's.
+    graph = await seedPass(options.entities, options.writer, {
+      primitives: live.length,
+      seed: passSeed,
+    });
+    // In order, one at a time: the seams the room installs are the process's, not the primitive's.
+    for (const subject of chosen) {
+      const index = live.indexOf(subject);
+      const pair = tenantPair(graph, Math.max(0, index));
+      records.push(await exerciseOne(subject, options, pair, graph, room, sampler));
+    }
+  } catch (error) {
+    await room[Symbol.asyncDispose]();
+    throw error;
   }
-  return records;
+  // The sweeps: every reached primitive again at two sizes, then every statement planned.
+  const reached = new Set(records.filter((r) => r.outcome === 'reached').map((r) => r.name));
+  return attachSweeps(records, {
+    subjects: chosen.filter((subject) => reached.has(subject.name)),
+    entities: options.entities,
+    writer: options.writer,
+    main: graph,
+    seed: passSeed,
+    room,
+    setup: (subject, sized, tenant, self) => {
+      const full = chosen.find((one) => one.name === subject.name);
+      return full === undefined
+        ? undefined
+        : sizedCall(full, options, sampler, { graph: sized, tenant, self });
+    },
+  });
 }

@@ -24,6 +24,7 @@ defineAppMcp({ include: 'exposed' });
 | `queue.depth` | `dev:read` | pending / running / failed per queue |
 | `manifest.read` | `dev:read` | `x.manifest.json` verbatim |
 | `errors.explain` | `dev:read` | stable `X_*` code → cause + exact fix command + docs |
+| `graph.query` | `dev:read` | `{ node }` → what a change to a file or primitive reaches (`x impact`'s answer); `{ from, to }` → the chain of edges linking two nodes (`x graph --from --to`). The CLI answers through `DevCapabilities.queryGraph`: the graph is `@ultimat3/manifest`'s |
 | `db.query` | `db:read` | **read-only, enforced four ways** — SELECT-only role, `BEGIN READ ONLY`, one-statement parse, 5s/1000-row/256 KiB caps |
 | `db.migrate` | `db:migrate` | **branch DB only** — refuses production and any non-branch target |
 | `tests.run` | `dev:test` | runs the suite (executes project code) |
@@ -573,6 +574,53 @@ The action's own input never sees the key. A non-idempotent tool does not advert
 it (`X_INPUT_INVALID`, as an `isError` result). An argument, not `params._meta`: `_meta` is for host metadata and a
 model-driven client cannot set it. An idempotent action whose input already names `idempotencyKey`
 is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot.
+
+## Long tools: `jobTool()` and `job_status`
+
+`tools: { exportPosts: jobTool({ job, policy, description, result, input?, jobInput?, inlineMs? }) }`
+enqueues at once under the caller — `jobInput(input, ctx)` builds the job's input from the tool's
+and the caller's (a member id off the request, never an argument) — waits up to `inlineMs`
+(default 5,000, ceiling 25,000; also a count of 250 ms polls, so a clock that never moves still
+ends it), then answers
+`{ status: 'done', result }` — the app's `result` query, run AS the caller — or
+`{ status: 'running', jobId, poll: { tool: 'job_status', arguments: { jobId } } }`. One
+`job_status` is projected beside any job tool; another actor's, another org's and an unknown id
+read the same not-found. A failed job crosses as its code — the code it was THROWN with, read from
+the head of the row's `lastError` by `@ultimat3/jobs`' `callerFailure`, `X_INTERNAL` for an uncoded
+throw — plus the error's declared `callerFix` when it has one; never the developer `fix` or the row's
+text.
+A driver without `introspect` is `X_MCP_JOB_TOOL_INVALID`.
+
+## Recipes and the `docs` tool
+
+| Declare | What it does |
+|---|---|
+| `recipes: [{ name, title, description, steps: [{ tool, why, example? }], notes? }]` | each served as `docs://recipes/<name>` (`text/markdown`) and through a read-only `docs` tool. Every step's tool must be in the catalog (`X_MCP_RECIPE_TOOL_UNKNOWN`), every example must pass its input (`X_MCP_RECIPE_EXAMPLE_INVALID`), at boot, all offenders at once |
+| `recipes: await markdownRecipes({ dir })` | one `*.md` per recipe, body served verbatim. Name = file name; `---` `title:` / `description:` frontmatter, else the first `# ` heading and paragraph. A ```` ```call ```` fence — `tool {"arg": "value"}` — is a step, checked like one; a whole `"<name>"` value is a placeholder, any value at boot. A `docs://recipes/` link in the text that names no recipe is `X_MCP_RECIPE_LINK_DANGLING` |
+| `extraRecipes: (caller) => recipes` | the caller's own (a tenant's runbooks), asked per request: on `docs` as `source: 'caller'`, on `resources/list` and `resources/read` to that caller alone. Not boot-checked; one naming a tool the caller cannot call is not shown |
+
+`docs({})` lists what this caller can follow; `docs({ name })` / `docs({ uri })` reads one;
+`docs({ q })` inlines the best match (3 points a word in name or title, 2 in description, 1 in the
+body) and names the nearest names on a miss — never an empty answer while a recipe is visible. A
+recipe is visible only when every step's tool is visible to the caller and its scope is on the
+token; hidden and unknown are the same not-found. An `UltimateError`'s `docs://recipes/<name>` is
+checked at load (`X_MCP_RECIPE_UNKNOWN`). In a contract test, `replayRecipes(server, recipes, {
+caller, placeholders })` CALLS every fenced example through the server and reads every link: no
+such tool, refused arguments, a refusing policy or a dangling link fails it.
+
+`McpResource.read(caller)` takes the caller the gates admitted, and `mcpServer({ resourceSources })`
+lists resources per caller — what `extraRecipes` is built on.
+
+## Consuming another server: `mcpTools()` and `mcpClient()`
+
+| Piece | Rule |
+|---|---|
+| `mcpTools({ name, url, auth, allow, policy, lock })` | one `action` per allowed remote tool, named `<name>_<tool>`, under the APP's `resource:verb` permission (`policy: 'docs:search'` — a predicate over the remote's input would read nothing), rate limit and confirmation gate. `allow` is required; nothing is discovered at run time |
+| `tools.lock.json` | what a person reviewed: per tool, the description, input schema and `readOnly` (a person sets it; `false` keeps the gate binding). `x mcp lock <name>` writes it; `--check` compares. An allowed tool the lock lacks refuses at declaration; a live drift is `X_MCP_REMOTE_TOOL_CHANGED` before the first call, and the `manifest` step of `x verify` runs the check for every declared server (an unreachable server is a warning) |
+| `notifications/tools/list_changed` | heard on any response stream, and — for a legacy session — on the `GET` stream the client holds open for the server's own messages (one per session, detached from the request, `listenMs` long, default 5 min, re-opened by the next call; a `405` is a server without one, never asked again; `client.close()` ends it). The next call re-lists and is held to the lock again — a changed tool is refused, never trusted silently |
+| output | `{ untrusted, isError }`: the remote's text inside `<untrusted source="mcp:<name>/<tool>">`, middle cut past `maxResultChars` |
+| `mcpClient({ name, url, dial, deadlineMs, auth })` | over core's `outbound()`; modern era first, the legacy handshake when the server refuses it for its era. A text-only result is a success. `X_MCP_REMOTE_REFUSED`'s `meta.failure` tells `transport` / `status` / `rpc` / `malformed` apart; a tool's own `isError` is a result. A 401 is `X_MCP_REMOTE_AUTH_REQUIRED` with `meta.resourceMetadata` |
+| `mcpOAuthClient({ clientId, clientName, redirectUri, scopes? })` | the upstream's OAuth: `begin(serverUrl)` reads RFC 9728 then RFC 8414 metadata and answers `{ authorizeUrl, handshake }` (PKCE S256 from `@ultimat3/auth`, `resource` per RFC 8707); `exchange(handshake, { code, state })` and `refresh(handshake, token)` answer `{ accessToken, refreshToken, expiresIn }`. `clientId` is the HTTPS URL this app serves `metadata()` at (a client ID metadata document). Keep the handshake server-side; return the token from `auth` |
 
 ## Errors
 

@@ -92,7 +92,13 @@ export {
   registerLayout,
   token,
 } from './layout';
-export type { AnyMailDefinition, MailDefinition, MailInit, SendOptions } from './mail';
+export type {
+  AnyMailDefinition,
+  MailDefinition,
+  MailInit,
+  MailPreview,
+  SendOptions,
+} from './mail';
 export {
   defineMail,
   mailFor,
@@ -103,6 +109,9 @@ export {
   send,
   sendById,
 } from './mail';
+export type { MailPreviewResult, PreviewOptions } from './preview';
+export { PREVIEW_RECIPIENT, previewableMailIds, previewMail } from './preview';
+export { previewMissing } from './preview-check';
 export type { RenderableMail, RenderedMail, RenderOptions } from './render';
 export { renderMail, textOf } from './render';
 export type { RetainedMime, RetainedMimeEntry, RetainMimeOptions } from './retain-mime';

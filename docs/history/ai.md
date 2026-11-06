@@ -819,8 +819,30 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   once per turn: `force` lifts the ratio so the refused request scales past the room (the refusal is
   a lower bound), compacts regardless of the trigger and re-sends; a second refusal, a compaction
   that fails, or `compact: 'off'` is `X_AGENT_CONTEXT_EXHAUSTED` with the provider's text on
-  `meta.refused`. Limit: the forced summary call is the refused request less the kept turns, so with
-  a small `keepTurns` it does not fit either and the run stops — `compact.model` is the way out.
+  `meta.refused`. Limit then: the forced summary call is the refused request less the kept turns, so
+  with small kept turns it did not fit either and the run stopped — lifted by the text fallback below.
+- **The summary call's text fallback (2026-11-06).** From opencode
+  [`b60984d`](https://github.com/sst/opencode/tree/b60984d68ad959524bd1036b00d6ebf8f473fd07)'s
+  overflow fallback (`flattenMessage`, `clip`, `TRANSCRIPT_CLIP = 2_000`). When the messages form
+  does not fit the writer's room, `agent-compact-request.ts` sends the same tools, system and first
+  message, then the older turns as one text block (`agent-compact-text.ts`), shortened oldest first
+  with every turn at a level before any reaches the next: whole → tool results clipped to their first
+  and last 1,000 characters → tool results left out (tool inputs clipped). The least shortening that
+  fits is found by bisection over the 2n+1 states, sizes monotone by construction (a level never
+  longer than the one before). Taken one level shorter than opencode: no `USER_ONLY`/`OMITTED`
+  level — a turn is never dropped from the summary input, so "never a truncation" still holds of what
+  the summary covers; too long even then is the failure it always was. No shrink-step retries
+  (0.85 → 0.35) on a refused summary call: the forced path already lifts the measured ratio from the
+  refusal, so the form is chosen on a lower bound — a refusal of the summary call stays a failed
+  attempt. The run's transcript is untouched (clipping is the summary call's input alone); the event
+  says `summaryInput: 'messages' | 'text'` with `clipped`/`omitted` turn counts. Head and tail, not
+  pi's head only: a tool result's end is where its error, its count or its last row is.
+- **Evaluated, not adopted for the normal path.** Pruning old tool outputs in place (older opencode's
+  `prune`, gone in `b60984d`): it rewrites the cached prefix on every prune, so each turn after one
+  pays input for the whole transcript again — the opposite of a prefix cache. pi's summary input
+  ([`e12dbfc`](https://github.com/badlogic/pi-mono/tree/e12dbfc9299049dc2e7a974612fec32001a7ba8a),
+  `serializeConversation`, results cut to 2,000 head-only, always as text): a separate request that
+  reads no cache. Ultimate sends the messages form whenever it fits and falls back only when not.
 - **Known limits.** On the chat-completions wire an agent with `tools: []` offers only `respond`, which
   is then forced (`tool_choice`), so its summary call answers no text and the run falls back; and the
   estimate is ~4 characters a token until the first turn reports, which is why `at` defaults below 1. Not per run (`limits()`), not
@@ -1024,3 +1046,149 @@ beside the framework (310 and 776 LOC). Decisions:
   misdeclared eval, never a 0). Any other failed agent run scores 0 and records its code. The scope
   is not exported: no public override of `agent({ tools })`. An agent eval needs a registered agent
   (`agentFactsOf`); a `named()` twin is refused (`X_INVARIANT`).
+
+### Prompt-cache rows a provider declares (2026-11, plan 101 slice 39)
+
+- **Why.** `PROMPT_CACHE_RULES` names four hosts; anything else gets nothing. Right as a default —
+  a field a self-hosted server never heard of can be a 400 — but it left no way to state what the
+  app knows: `promptCacheRule('openai', 'https://llm.internal/v1', 'family/x')` answered `none`, so
+  a company gateway fronting a marking family paid full price for its prefix every turn, and a
+  proxy on the Messages wire that rejects `cache_control` had only `promptCache: 'off'` per call.
+- **A row on the provider, not a second switch.** `GenerateRequest.promptCache` asks WHETHER to
+  cache; `anthropicProvider({ promptCache: { rules } })` / `openAiProvider(…)` say how THIS
+  endpoint is told. A row is `{ model, marks, session }` — no `wire`, no `host`: the provider is
+  both. Precedence: the provider's rows (first match by model prefix), then the table, then
+  nothing. One lookup, `promptCacheRule(wire, baseUrl, model, rows)`, read by the body, the
+  session header and `marksPromptCache` alike, so the budget reserves the write rate exactly where
+  a mark is sent.
+- **Screened at construction** (`prompt-cache-rows.ts`): a mark or session carrier the wire
+  cannot speak (`parts` or a session on the Messages wire, `blocks` on chat-completions) is
+  `X_AI_REQUEST_INVALID` at boot, never a 400 on every hinted call.
+- **Out: a longer TTL.** `CACHE_MARK` is the 5-minute rate `costOf` prices; a 1-hour mark needs a
+  price row first. Both reference agents below send one.
+
+### What other agents do: caching and compaction, compared (2026-11-06)
+
+Read from source, not run: [sst/opencode `b60984d`](https://github.com/sst/opencode/tree/b60984d68ad959524bd1036b00d6ebf8f473fd07)
+(`packages/ai/src/cache-policy.ts`, `packages/core/src/session/compaction.ts`,
+`packages/core/src/plugin/provider/prompt-cache-key.ts`),
+[badlogic/pi-mono `e12dbfc`](https://github.com/badlogic/pi-mono/tree/e12dbfc9299049dc2e7a974612fec32001a7ba8a)
+(`packages/ai/src/providers/compat-schema.ts`, `packages/coding-agent/src/core/compaction/`,
+`cache-warmer.ts`), [OpenHands/software-agent-sdk `8dc712f`](https://github.com/OpenHands/software-agent-sdk/tree/8dc712f618c01d730c453a87a8a3969859c53e69)
+(`openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py`).
+
+| Question | opencode | pi | OpenHands | Ultimate |
+|---|---|---|---|---|
+| Who decides how an endpoint is told to cache | route allowlist + model-id heuristics; a declared `compatibility.cacheFormat` overrides both | auto-detected from provider and URL; per-model `compat` (`cacheControlFormat`, `sessionAffinityFormat`, `promptCacheKeyMode`) overrides | the LLM layer | `PROMPT_CACHE_RULES` by wire, host, model prefix; a provider's `promptCache.rules` overrides (this slice) |
+| Breakpoints (Anthropic) | last tool, first and last system part, tail message (cap 4, a caller's own counted first) | system, last tool, last message | — | stable system block + last block of the last two messages (3; a caller's own counted first, cap 4) |
+| Gemini / OpenAI behind a gateway | no marks (Gemini reads only the last; a tail mark is a write per step) | no marks | — | no marks (`none` rows) |
+| TTL | `5m`/`1h`/`24h` per request | long retention per model | — | 5 minutes only, the rate `costOf` prices |
+| Compaction trigger | reserve `max(16k, 15%)` of the window, or a configured buffer | `window − 16,384` reserve | event count or token limit | `at` 0.8 of `window − maxTokens`, on the estimate scaled by the measured ratio |
+| What is kept verbatim | the newest `keep` tokens | the newest ~20k tokens, cut at a user or assistant message, never a tool result | the first `keep_first` events | the first message (the task) and `keepTurns` whole turns |
+| Summary request and the cache | the whole conversation unchanged + one instruction, to read its cache | a separate summarisation request | a separate summarisation request | the run's own request up to the cut + one instruction, same tools, system and session |
+| On a provider's "too long" | shrink steps 0.85 → 0.35; history re-sent as TEXT, oldest exchanges shortened first (tool outputs clipped to 2k head+tail, then removed, then user text only) | — | hard reset, context scaled 0.8, up to 5 retries | one forced compaction — its summary call as text, shortened as opencode's, when the messages do not fit — then `X_AGENT_CONTEXT_EXHAUSTED` |
+| Tool output in the summary input | clipped per level | 2,000 characters, head kept | — | whole when the messages form fits; else text, clipped to 2,000 (head + tail), then left out, oldest first |
+| Old tool outputs pruned in place | no (pruning would rewrite the cached prefix every turn) | no | observation masking is a separate condenser | no — the prefix stays byte-identical until a compaction |
+| Cache warming | — | refresh before expiry when the expected saving is ≥ $0.05 | — | no |
+
+- **Adopted:** the endpoint fact as a row on the provider (both opencode and pi let a declaration
+  outrank detection — this slice). **Already the same:** never marking Gemini/OpenAI through a
+  gateway; the summary call reusing the run's prefix (opencode's shape); a caller's own marks
+  counted against the cap; no in-place pruning of old outputs.
+- **Not adopted, with the reason.** A tool-definition breakpoint: tools precede the system prompt,
+  so the stable-system mark already covers them, and an agent's stable system part does not change
+  between runs. A 1-hour TTL: a price row first. Cache warming: a speculative billed call no
+  request asked for — an app can schedule one as a job. A Qwen-on-OpenRouter row (opencode marks
+  system + tail for `qwen/`): unverified against OpenRouter's page here; an app declares it as a
+  provider row.
+- **Adopted after (2026-11-06):** opencode `b60984d`'s overflow fallback — the summary call's
+  turns re-sent as text, oldest tool outputs clipped to 2,000 characters (head + tail), then left
+  out — in `agent-compact-request.ts` / `agent-compact-text.ts`; it lifts the limit that the forced
+  summary call could overflow too. Record: [Auto-compaction](#auto-compaction-2026-10).
+
+## Moved out for plan 101's wave 9 (`As of 2026-11-06`)
+
+Verbatim from [`packages/ai/CLAUDE.md`](../../packages/ai/CLAUDE.md), which keeps each rule in one line and points here.
+
+### `mcp` is the same tier (the tool projection)
+
+`mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`, never
+imported: same contract, same *decision* (`isMcpExposed` from `@ultimat3/core`, never a local
+`=== true`), same NAME (`action.name` verbatim, never derived) and the same TOOL —
+`asProjectableAction` and mcp's `primitiveFromAction` are two copies the tier table forces, held
+equal by `scripts/ai-mcp-tool-parity.test.ts` (name, description, exposure, the whole input schema
+incl. `tool-idempotency.ts`'s reserved `idempotencyKey`, the policy verdict, the replay). A field
+one adds, the other adds.
+
+### One breaker per provider
+
+`failed()` fires once per exhausted pass; a coded
+  throw settles through the breaker's `judge` (a caller's abort gives the probe back); a
+  non-retryable failure is `succeeded()`. Every settle carries the `admit()` ticket, so only the
+  probe closes or frees a half-open breaker. A stream takes the first admitted provider and records
+  on its first chunk or throw (`gateway-breaker.test.ts`).
+
+### Apps bring their own models and providers (M12, 25.0.0)
+
+- **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** The
+  registry starts EMPTY; a model resolves declaration → prompt → `Gateway.defaultModel`
+  (`resolveModel` / `modelForCall`), none is `X_AI_MODEL_UNRESOLVED` (no gateway at all:
+  `X_AI_GATEWAY_MISSING`). `vendor-neutral.test.ts` proves it; no fix line names a vendor id.
+
+### The reasoning controls are PER MODEL
+
+Adding a model is a row the app
+  registers. `disableThinkingUpTo: 'never'` refuses `thinking: 'disabled'` at every effort;
+  `disabledThinking: 'between_tools'` is the wire spelling of the same declaration
+  (`model-rules.test.ts`, over the fixture rows).
+
+### `agentJob()` composes `job()`
+
+No result is kept: wrap an ACTION that runs the
+  agent and writes, target bound from its input — never a model-aimed write tool; every write
+  idempotent (unenforceable). **`actor`** re-resolves who it acts FOR each attempt (a served worker:
+  ANONYMOUS) via `impersonate`; off-tenant is TERMINAL `X_JOB_TENANT_MISMATCH`.
+
+### `.run()`/`.continue()` are the SAME action
+
+The handle is SIGNED (`sealTranscript`: the
+  cursor secret, own label) and bound to agent, model, tool names and `orgId`; screened before
+  anything is loaded. `maxTurns`/`tokensPerRun` are cumulative — the remainder is the ceiling,
+  NEVER a ledger debit. A failure seals an updated handle onto the error (`transcriptOf`);
+  `onCheckpoint` gets one between turns, sealed only when declared.
+
+### Media blocks are screened once
+
+—
+  malformed is `X_AI_REQUEST_INVALID`, untakeable (role, the row's `input`, the wire) is
+  `X_AI_CONTENT_UNSUPPORTED`; never dropped, never approximated (`provider-parity-content.test.ts`).
+
+### `compact` (the summary call)
+
+: the summary call is the
+  run's own request up to a cut BETWEEN turns (the cached prefix, same session), billed, not a turn;
+  system, tools, kept turns byte-identical; failed → whole, or `X_AGENT_CONTEXT_EXHAUSTED`, never
+  truncated ([why](../../docs/history/ai.md#auto-compaction-2026-10)).
+
+### Both wire formats answer the same question the same way
+
+: an in-band
+  `error` in a 200 throws (`throwInBandError`); a `refusal` detail forces `stopReason: 'refusal'`; a
+  tool call's `input` is parsed (`parseToolArguments`); the credential is scrubbed from `detail`.
+
+### `ModelId` is `string`
+
+Re-registering REPLACES
+  the spec and keeps its rung; registration order is the ladder within a `family`
+  (`moreCapableThan`); `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
+
+### `temperature`/`seed`
+
+—
+  else left out (never refused; `llm.sampling.ignored`); no `seed` on the Anthropic wire; in
+  `promptCacheKey` only when set.
+
+### `embedBatched` and `remoteEmbedder()`
+
+One `remoteEmbedder()` for every vendor; vectors L2-normalised; a wrong width is
+  `X_VECTOR_DIM_MISMATCH`.

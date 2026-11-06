@@ -12,7 +12,7 @@ import {
   renderFixShellArg,
 } from '@ultimat3/core';
 import type { ExerciseRecord } from '@ultimat3/testing';
-import { tenantProofFindings } from '@ultimat3/testing';
+import { planSweepFindings, tenantProofFindings } from '@ultimat3/testing';
 import type { Finding } from './output';
 import { renderTable } from './table';
 
@@ -118,6 +118,8 @@ export const exerciseFindings = (records: readonly ExerciseRecord[]): readonly F
   ...records.filter((one) => one.outcome === 'unreached').map(unreachedFinding),
   ...tenantProofFindings(records).map((one) => ({ ...one, docs: ERROR_DOCS_URL })),
   ...records.flatMap(crashFindings),
+  // The plan and scale sweeps: a statement no index serves, a shape that grows with the rows.
+  ...planSweepFindings(records).map((one) => ({ ...one, docs: ERROR_DOCS_URL })),
 ];
 
 export interface ExerciseReport {

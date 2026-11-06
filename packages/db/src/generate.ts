@@ -15,6 +15,7 @@ import { appendOnlyBackfillRefused, appendOnlyPlan } from './generate-append-onl
 import { type RowSecurityOption, rowSecurityInput } from './generate-row-security';
 import { snapshotOf } from './generate-snapshot';
 import { assembleSteps } from './generate-steps';
+import { recordTriggers, triggerPlan } from './generate-triggers';
 import { splitViews, viewPlan } from './generate-view';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
@@ -402,6 +403,8 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
 
   // After every table exists, so a `create table` in this same migration is already above it.
   appendOnlyPlan(plan, options.entities, current, created);
+  // History, its guard and counters, the same way: after every table they name exists.
+  triggerPlan(plan, options.entities, current);
   // Then each tenant table's policy, both directions (`row-security-plan.ts`), on tables that exist.
   const rowSecurity = rowSecurityInput(options.entities, current, options.rowSecurity);
   rowSecurityPlan(plan, rowSecurity);
@@ -444,14 +447,17 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
     // ends have been retyped back, which is every other statement in the script.
     down: [...viewed.before.down, ...preAlters.down, ...plan.down, ...viewed.after.down].reverse(),
     concurrent,
-    snapshot: recordRetired(
-      snapshotOf(
-        [...options.entities, ...views],
-        replicaIdentityFullAfter(replicaIdentity),
-        rowSecurityAfter(rowSecurity),
+    snapshot: recordTriggers(
+      recordRetired(
+        snapshotOf(
+          [...options.entities, ...views],
+          replicaIdentityFullAfter(replicaIdentity),
+          rowSecurityAfter(rowSecurity),
+        ),
+        options.entities,
+        current,
       ),
       options.entities,
-      current,
     ),
     unrendered,
     ...(droppedUnretired ? { rollingUnsafe: true } : {}),

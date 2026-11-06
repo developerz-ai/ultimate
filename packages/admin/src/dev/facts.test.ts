@@ -33,6 +33,7 @@ describe('DevSources has exactly one implementation shape, and two implementatio
     'drift',
     'runSql',
     'mail',
+    'mailTemplates',
     'cacheGraph',
     'invalidations',
     'policyMatrix',

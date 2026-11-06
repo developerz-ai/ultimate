@@ -13,6 +13,7 @@ import {
 import { jsonResponse, methodNotAllowed, toProblem } from '@ultimat3/http';
 import { mcpHostRefused, mcpHttpRoute, type StdioTransportInput, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
+import { mcpLock } from './cmd-mcp-lock';
 import { DEFAULT_PORT, mcpSpec } from './cmd-mcp-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
@@ -223,6 +224,7 @@ export const mcpCommand: CliCommand = {
   spec: mcpSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('mcp', ctx.cwd).dir;
+    if (ctx.args.subcommand === 'lock') return mcpLock(ctx, root);
     const transport = flagString(ctx.args, 'transport') ?? 'stdio';
     // Validated before the app is loaded: a typo must not cost a boot to report.
     if (!isTransport(transport)) {

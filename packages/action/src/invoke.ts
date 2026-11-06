@@ -15,14 +15,18 @@ import {
   actorOf,
   anonymousActor,
   ctxOf,
+  failureCaptureActive,
   isUltimateError,
   REDACTED,
+  recordFailureInput,
   runWithContext,
   tryUseContext,
   useContext,
   withChildContext,
+  withFailureCapture,
   withSpan,
 } from '@ultimat3/core';
+import { statusFor } from '@ultimat3/http';
 import { maskSensitive } from '@ultimat3/schema';
 import type { AnyAction, AnyActionDef, InvokeOptions } from './action';
 import type { AuditRecord } from './audit';
@@ -206,6 +210,20 @@ async function execute(
   options: InvokeOptions,
   trace: InvokeTrace,
 ): Promise<unknown> {
+  // A 5xx keeps a replayable bundle when `failureCapture` is on (`x repro`); off, `run` runs bare.
+  return withFailureCapture('action', name, statusFor, () =>
+    traced(def, name, raw, ctx, options, trace),
+  );
+}
+
+async function traced(
+  def: AnyActionDef,
+  name: string,
+  raw: unknown,
+  ctx: Ctx,
+  options: InvokeOptions,
+  trace: InvokeTrace,
+): Promise<unknown> {
   return withSpan(`action.${name}`, async (span) => {
     span.setAttributes({
       'ultimate.primitive': 'action',
@@ -288,6 +306,7 @@ async function perform(
   if (spentEarly) await spend();
 
   const input = await parseActionInput(def.input, raw, name);
+  if (failureCaptureActive()) recordFailureInput(maskSensitive(def.input, input, REDACTED));
   // The audit record's copy, `.sensitive()` fields masked by THIS action's own schema — never a
   // key table, so a `cardPan` flagged here changes nothing another action records or stores.
   if (def.audit === true) trace.input = maskSensitive(def.input, input, REDACTED);

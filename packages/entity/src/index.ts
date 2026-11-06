@@ -28,6 +28,8 @@ export {
 } from './columns';
 export type { DecimalOptions } from './columns-data';
 export { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
+export type { Counter } from './counter';
+export { countersOf, describeCounter } from './counter';
 // `crossTenantReason` stays internal: an app that could read the flag would have a second way to
 // reason about tenant scope — branch on it — next to the one way, which is entering the scope.
 export { CROSS_TENANT_SCOPE, crossTenant, setCrossTenantObserver } from './cross-tenant';
@@ -79,6 +81,7 @@ export {
   stateTransitionIllegal,
   stateUndeclared,
 } from './feature-errors';
+export type { HistoryColumns, HistoryEntity, HistoryInit } from './history';
 export type { IndexInit } from './index-init';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
 export { assertInvariants, invariant, MAX_ASSERTED_ROWS } from './invariants';
@@ -150,6 +153,7 @@ export type {
   Tx,
   UpsertArgs,
 } from './repo';
+export type { Retain, RetainInit } from './retain';
 export type { RowBulkChange, RowChange, RowChangeOp, RowObserver } from './row-observer';
 export { observedRepo, rowObserver, setRowObserver } from './row-observer';
 export { rowSecuritySettings } from './row-security-settings';

@@ -3,8 +3,10 @@
 // built-in catalog in the same flat-key/loud-miss shape as @ultimat3/i18n instead of importing
 // one. Missing keys render as ⟦key⟧, never as English fallback.
 
+import { CLIENT_MESSAGES } from './messages-client';
 import { DB_MESSAGES } from './messages-db';
 import { GATE_MESSAGES } from './messages-gate';
+import { REPRO_MESSAGES } from './messages-repro';
 import { SHOT_MESSAGES } from './messages-shot';
 import { UPGRADE_MESSAGES } from './messages-upgrade';
 
@@ -132,6 +134,9 @@ const CATALOG = {
     '{count} locale-parity finding(s) across {locales} locale(s) — a slot or an untranslated copy against {reference}',
   'cli.i18n.synced': 'synced {locale} from {from} — {added} key(s) added, {total} total',
   'cli.i18n.unused': '{count} key(s) defined in {locale} and never used:',
+  'cli.mail.preview.missing':
+    '{id}: {missing} of {locales} locale(s) miss a key — see data.previews[].missing',
+  'cli.mail.preview.ok': '{id}: rendered in {locales} locale(s), every key resolved',
   'cli.jobs.backfillNoCursor': 'no cursor yet',
   'cli.jobs.cancelled': 'job {id} cancelled — {state}',
   'cli.jobs.backfillRow': '{name} — {rows} row(s) so far, cursor {cursor}',
@@ -156,6 +161,8 @@ const CATALOG = {
   'cli.manifest.wrote': 'manifest written to {path} ({routes} routes, {actions} actions)',
   'cli.mcp.serving': 'mcp {transport} serving {tools} tools',
   'cli.mcp.scopes': '  scopes {scopes}',
+  'cli.mcp.locked': 'mcp lock: {server} — {tools} tool(s) written to {file}',
+  'cli.mcp.lock_current': 'mcp lock: {server} matches {file}',
   // `bun run setup` and nothing else: the scaffold ships it (`bin/setup.ts`), `README.md` and
   // the generated `ci.yml` both name it, and it is the only spelling that is right on a fresh clone — it
   // installs, writes `.env.development.local`, runs `x db gen "initial"` (the scaffold writes no
@@ -248,6 +255,8 @@ const CATALOG = {
   'cli.secrets.dropped':
     'dropped retired master key {kid} from {path} — {count} retired key(s) still declared',
   'cli.secrets.ring': 'retired master key(s) that still open sealed values: {kids}',
+  ...CLIENT_MESSAGES,
+  ...REPRO_MESSAGES,
   ...DB_MESSAGES,
   ...SHOT_MESSAGES,
   ...UPGRADE_MESSAGES,

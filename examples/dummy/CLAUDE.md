@@ -220,7 +220,8 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   review is `postReviewKeep` — the publishing right, owns-or-org-admin, for oneself — never
   `post:read`, which a reader holds. `reviewDraftLater = agentJob(keepDraftReview, { actor })`
   re-reads the member who asked on every attempt (`ctx.orgs.actingFor`); `requestDraftReview`
-  queues it; `postReview` reads it back. Declared BESIDE what it wraps (it reads it at module
+  queues it for the UI, and `draftReview` (`apps/web/mcp-tools.ts`, a `jobTool`) is an agent's one
+  MCP path to it; `postReview` reads it back. Declared BESIDE what it wraps (it reads it at module
   scope), so `api/index.ts` hands `postActions` to the `jobs` list too.
 - **Outbound webhooks are `app/webhooks/`.** `webhook()` is the mechanism; which endpoints exist
   (`webhook_endpoints`, `secret` sealed), the ledger (`ledger.ts` over `webhook_deliveries`) and

@@ -3,11 +3,14 @@
 // spawned is test-shards.ts — this file only turns argv into their inputs, so a parsing bug can
 // never be read as a sharding one. `--affected` is the one narrowing decided here rather than
 // there, because it is a fact about a git diff and not about a path: what the diff touches is
-// `affected.ts`, and this file only maps that answer onto the paths discovery yields.
+// `affected.ts` (workspaces) and, in an app root, `affected-tests.ts` (import closure); this file
+// only maps that answer onto the paths discovery yields.
 
 import { JOB_SIM_SEED_ENV, TEST_TYPES } from '@ultimat3/testing';
 import type { AffectedScope } from './affected';
 import { affectedScope, affectedScopeJson, DEFAULT_BASE, inScope } from './affected';
+import type { AppNarrowing } from './affected-tests';
+import { appTestScope, narrowToApp } from './affected-tests';
 import { testSpec } from './cmd-test-spec';
 import type { CliCommand, CommandContext } from './command';
 import { ok } from './command';
@@ -19,6 +22,7 @@ import type { CommandResult, JsonValue } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
 import { quoteArg } from './shell-quote';
+import type { TestFile } from './test-select';
 import {
   discoverTests,
   missingSelection,
@@ -130,13 +134,40 @@ const asObject = (value: JsonValue | undefined): Readonly<Record<string, JsonVal
     : {};
 
 /**
- * The scope, carried onto whatever the shards reported. `--json` is what an agent reads, and a
- * narrowed run that does not say what it narrowed to is indistinguishable from a full one.
+ * The scope as `--json` carries it: the workspace answer, plus — in an app root — which test files
+ * the import closure selected and why (`tests`). A narrowed run that does not say what it narrowed
+ * to is indistinguishable from a full one.
  */
-const withScope = (result: CommandResult, scope: AffectedScope): CommandResult => ({
+const scopeJson = (scope: AffectedScope, app: AppNarrowing<TestFile> | undefined): JsonValue =>
+  app === undefined
+    ? affectedScopeJson(scope)
+    : { ...asObject(affectedScopeJson(scope)), tests: app.json };
+
+/** The scope, carried onto whatever the shards reported. */
+const withScope = (result: CommandResult, scope: JsonValue): CommandResult => ({
   ...result,
-  data: { ...asObject(result.data), affected: affectedScopeJson(scope) },
+  data: { ...asObject(result.data), affected: scope },
 });
+
+/**
+ * In an app root the diff narrows by import closure — `selectTests`, the rule `x affected` reports
+ * as `data.tests` — since every slice shares the `apps/web` workspace. Outside one, by workspace.
+ */
+async function narrowAffected(
+  discovered: readonly TestFile[],
+  cwd: string,
+  scope: AffectedScope,
+): Promise<{ readonly files: readonly TestFile[]; readonly json: JsonValue }> {
+  const inApp = await appTestScope(cwd, scope.root, scope.plan.changed);
+  if (inApp === undefined) {
+    return {
+      files: discovered.filter((file) => inScope(file.path, scope.prefixes)),
+      json: scopeJson(scope, undefined),
+    };
+  }
+  const narrowed = narrowToApp(discovered, cwd, inApp);
+  return { files: narrowed.kept, json: scopeJson(scope, narrowed) };
+}
 
 /** The selection that matched nothing, as one phrase for `cli.test.empty`. */
 const describeSelection = (missing: { type?: string; filter?: string }): string =>
@@ -171,11 +202,10 @@ export const testCommand: CliCommand = {
       }
       throw new NoTestFilesError({ root: ctx.cwd, ...missing });
     }
-    const selected =
-      scope === undefined
-        ? discovered
-        : discovered.filter((file) => inScope(file.path, scope.prefixes));
-    if (scope !== undefined && selected.length === 0) {
+    const narrowed =
+      scope === undefined ? undefined : await narrowAffected(discovered, ctx.cwd, scope);
+    const selected = narrowed === undefined ? discovered : narrowed.files;
+    if (scope !== undefined && narrowed !== undefined && selected.length === 0) {
       // Green, and it spawns nothing — a `.md`-only diff genuinely re-checks nothing, and failing
       // a build for editing a doc is the wrong answer. It never reads as "the suite passed": the
       // summary counts the files that ran (zero) and `data.affected` names the diff it asked about,
@@ -186,7 +216,7 @@ export const testCommand: CliCommand = {
         data: {
           ...(type === undefined ? {} : { type }),
           files: 0,
-          affected: affectedScopeJson(scope),
+          affected: narrowed.json,
         },
       });
     }
@@ -226,7 +256,7 @@ export const testCommand: CliCommand = {
       // changes what a run measures, and the reproduce line carries it back out.
       ...(ctx.args.passthrough.length === 0 ? {} : { passthrough: ctx.args.passthrough }),
     });
-    return scope === undefined ? result : withScope(result, scope);
+    return narrowed === undefined ? result : withScope(result, narrowed.json);
   },
 };
 

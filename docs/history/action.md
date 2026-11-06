@@ -773,3 +773,106 @@ Verbatim from [`packages/action/CLAUDE.md`](../../packages/action/CLAUDE.md), wh
   rollback of an attempt a retry replaced); the autocommit one only logs. Only a tx-bound
   `in-flight` record is reclaimed past the deadline — never an autocommit one.
   `idempotency-parity.test.ts` (memory + PGlite), `idempotency-postgres.live.test.ts`.
+
+## Moved out for plan 101's wave 9 (`As of 2026-11-06`)
+
+Verbatim from [`packages/action/CLAUDE.md`](../../packages/action/CLAUDE.md), which keeps each rule in one line and points here.
+
+### `Merge` in `define-api.ts`
+
+`Head & Merge<Rest>` is not
+  a tail call: it cost one instantiation level per MODULE and answered TS2589 at the 48th entry of
+  one list, whatever each exported (#534). The list is read as a union and intersected in one
+  step. `client-scale-pins.ts` is the build error; `client-scale.contract.test.ts` compiles real
+  `action()`/`query()` modules through `defineApi`'s `const` inference; `@ultimat3/query` pins
+  `QueryClient` itself.
+
+### A path is the app's `pathStyle` or the action's pin
+
+`'resource'` stays the default (changing it moves every URL). `defineApi` sets the style FIRST and
+  `configureActionPathStyle` re-derives every seated action (the module scan may have seated them
+  under the default). `derivePath(name)` is pin-aware through `installPinLookup` — handed down by
+  `registry.ts`, never imported up (cycle through `action.ts`). browser `rpc()` reads the `ultimate-pins` stamp;
+  a server takes `action.client()`.
+
+### `transition()` is a mutator factory
+
+`conflict: 'server-wins'` fixed;
+  `audit` off unless declared; `id` is the key `output.id` declares (`keySchemaOf`), never a fixed
+  `t.uuid`; `row` goes to `mutator()` as declared, never loaded here (#687); **the rule's reads
+  are pinned in the move** (#702, `transition-observe.ts`: `def.row`, `def.handle` share `input`).
+
+### `X_INPUT_INVALID` carries the rejections twice
+
+The rendering stays out of `InputInvalidError` (browser-reachable). **`toValidationIssues`** keeps
+  four members, never a library's raw issue (it may carry the value). `issuesFromWire` rebuilds
+  member by member, all-or-nothing, bounded by `MAX_WIRE_ISSUES`.
+
+### The client keeps the server's code
+
+It never synthesizes a docs URL: the server's
+  `http(s)` `docs`/`type` (as an ordered pair), else this build's registered link, else
+  `ERROR_DOCS_URL`.
+  `meta.requestId` is the document's root member, through core's `withRequestId` (`rpc-refusal.test.ts`). `REPLAYED_HEADER` is core's; `http.ts` imports it, the barrel no longer re-exports it.
+
+### Boundary (when each edge arrived)
+
+`entity` is a real edge since 21.0.0 (`record-wire.ts` → `hasEntityRows`/`rowsOf`), downward 3→2.
+  `db` is one since 2026-10-02, downward 3→1, through **`tx-scope.ts` only** (`currentTx`).
+
+### The exercise has no bypass
+
+The actor is `exercise.actor`; with none, a guarded action is
+  `X_CONTRACT_EXERCISE_UNDECLARED` and a public one runs as `null`. `X_TEST_NETWORK_SEALED` is
+  checked before the verdict, because it maps to no status. A coded 5xx, `X_OUTPUT_INVALID` or an
+  uncoded throw is `X_CONTRACT_DEFECT`.
+
+### `deprecated:` is a compat WINDOW
+
+— headers on every response including failures, a
+  `rel="successor-version"` link via `derivePath`, `deprecated: true` in OpenAPI,
+  `deprecated_calls_total`. Rendered ONCE at projection (`X_ACTION_DEPRECATION_INVALID` at mount).
+  Twinned in `@ultimat3/query`.
+
+### The deadline is `reclaimAfterMs`
+
+— the app's `requestTimeoutMs` through `requestDeadlineMs` (`request-deadline.ts`,
+  http's own default, never a number here). **`origin: () => object` is required too**: a
+  transaction on another database settles on the pool. A FINISHED scope's handle binds nothing.
+
+### The audit seam ships the mechanism
+
+No audit entity, retention, hash chain or "who" convention. The
+  vocabulary matches `@ultimat3/admin`'s by name (tier 5, no edge); admin's `AuditSink` is a known
+  duplicate that unifying would need core for.
+
+### `rpc` bytes (the earlier baseline)
+
+Without both, `rpc` is 26,095 B: +3,672 B over 2026-11-02's 22,423 B is waves 3–5a (`issueRuleFacts`…).
+
+### The policy contract test
+
+Only `X_INPUT_INVALID` (and `X_AUDIT_SINK_MISSING`, the one refusal before the parse)
+  becomes `X_CONTRACT_DRIFT`; everything else keeps its own code; a non-`UltimateError` is rethrown.
+  `contract-test.contract.test.ts`.
+
+### A durable sink writes what `audit-input.ts` allows
+
+: input redacted through core's
+  `isRedactedKey` (the table `defineEnv({ secret: true })` extends) plus `isSecret` by value, and
+  always JSON-representable (named markers, cycle detection; `toJSON` never called).
+
+### The bust waits for the ROOT commit
+
+A straggler past its scope gets
+  `DbTx.onCommit`'s own answer, as entity's row observer does. `cache-gate-tx.test.ts` (PGlite).
+
+### `policyCapability` / `policyPermissions`
+
+(a `not()` clause contributes its permissions). Both are
+  `@ultimat3/policy`'s, imported from there.
+
+### A lookup table is read with `Object.hasOwn`
+
+(`IRREGULAR` in `naming.ts`; `BY_FORMAT` is
+  `@ultimat3/schema`'s `sample-draw.ts`) — caller- or provider-supplied keys.

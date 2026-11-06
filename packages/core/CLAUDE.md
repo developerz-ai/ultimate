@@ -19,7 +19,7 @@ change to every package.
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from `async-context.ts`, in **every** package — never `new AsyncLocalStorage` |
-| Exports | explicit in `src/index.ts`; no `export *`. FIVE public subpaths. `./page` (`page.ts`): the page handle, the principal fence and the page's shared names, because any barrel import retains the error registry (~7.6 kB); `page-bundle.test.ts` pins the retained set and a 1.5 kB ceiling, and nothing that constructs an error may join it. `./outbound` (`outbound-subpath.ts`): server-only, reads `Bun.dns`. `./redis` (`redis-client.ts`): server-only, the one Redis client (`Bun.RedisClient`, `redis-subpath.test.ts`). `./render-node` (`render-node.ts`): the node brands, a leaf with no import, read by `render`. `./render-nodes` (`render-nodes.ts`): the test walker, imported by no non-test source (`render-nodes-subpath.test.ts`). One INTERNAL subpath, `./internal/error-status` (`error-status-declared.ts`, the app half of the status table): imported by `define-error.ts` and `@ultimat3/http` only, refused on the barrel by `error-status-declared.test.ts`. `src/exports/` groups three subjects; every name is still written out in `index.ts` |
+| Exports | explicit in `src/index.ts`; no `export *`. FIVE public subpaths (`./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one INTERNAL (`./internal/error-status`); nothing that constructs an error joins `./page` (`page-bundle.test.ts`, 1.5 kB). Full rule: `docs/history/core.md` |
 | Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
 | Type claims | `type-pins.ts`, never a `.test.ts` — `tsconfig.json` excludes tests |
 
@@ -59,7 +59,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | Concept | Owner | Note |
 |---|---|---|
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never a second env var |
-| one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`). `deprecation` holds `successorLink` and `successorPathOf`, so `rel="successor-version"` is spelt in one file; `aws-sigv4`'s `presignAwsUrl` shares `signAwsRequest`'s derivation (`signatureOver`), held equal to `Bun.S3Client`'s presign by `aws-sigv4-presign.test.ts` |
+| one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`). Full rule: `docs/history/core.md` |
 | what this process does | `roles.ts` (`ROLE`) | |
 | how a route renders, caches offline and hydrates | `route-vocabulary.ts` (`RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it |
 | which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments. Full rule: `docs/history/core.md` |
@@ -78,7 +78,8 @@ top-level `UltimateError` use in `error-codes.ts`.
 | which HTTP statuses are worth repeating | `retryable-status.ts` | `>= 500` plus 408, 409, 425, 429 |
 | how long this request has left | `request-budget.ts` (`Ctx.deadlineAt`, `REQUEST_TIMEOUT_HEADER`) | `@ultimat3/http`'s `startDeadline` is the one writer of the instant; `traceHeaders()` the one writer of the header. A spent budget sends nothing, never `0` |
 | the above, composed into one typed-client call | `client-flight.ts` + `client-wire.ts` | shared by `@ultimat3/action` and `@ultimat3/query` (both tier 3), re-exported by both. Declares no code of its own. A gate slot per ATTEMPT; the wait holds none, ends on `bump()` or the caller's abort |
-| the browser's one HTTP function, records envelope, per-tab handle and principal fence | `client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `client-retry-after.ts`, `client-paths.ts`, `record-envelope.ts`, `record-sink.ts`, `client-scope.ts` | `pageClient()` is the ONE `globalThis` write (`Symbol.for('ultimate.client')`); the scope's listeners live ON the handle. `clientTransport` never value-imports `clientFlight` or `traceHeaders()`: trace/budget headers reach it through the page handle's OUTBOUND SLOT (`outbound-headers.ts`). `isSuperseded` answers both `X_SUPERSEDED` and `X_CLIENT_SCOPE_CHANGED`. The fence never `bump()`s a caller's flight. A write never dedupes; a read dedupes only with a caller's `flight`. `pageClient()` reads `<meta name="ultimate-scope">` (`CLIENT_SCOPE_META`) once: content = principal, empty = anonymous (`null`), absent = UNSCOPED (`undefined`, nothing persisted). `actionPath(name)` with no `style` reads the document's `<meta name="ultimate-path-style">` (`renderedActionPathStyle()`; `CLIENT_PATH_STYLE_META` in `page-meta.ts`) and falls back to `'resource'`. A refusal's `Retry-After` and body `title` are read HERE (`client-retry-after.ts`, `remoteTitleOf`). Bytes: `page-bundle.test.ts`; `rpc`'s and `queryClient`'s in `action`'s and `query`'s CLAUDE.md `REPLAYED_HEADER` sits beside `IDEMPOTENCY_HEADER` in `client-dispatch.ts`; `withRequestId` and `withStatedDelay` are the one rule per wire key for both decoders |
+| a stream-declaring action, read in the browser | `client-stream.ts` | `clientStream`: `POST` with `accept: text/event-stream` through `client-dispatch.ts`'s `dispatchStream` (the ONE browser `fetch`; body handed back unread), never `EventSource` (cannot POST, skips the credentials rule); `clientTransport`'s credentials, headers, caller's signal, session fence and problem decode; a `chunk` frame yields, `done` returns, `error` throws its problem. Never retried |
+| the browser's one HTTP function, records envelope, per-tab handle and principal fence | `client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `client-retry-after.ts`, `client-paths.ts`, `record-envelope.ts`, `record-sink.ts`, `client-scope.ts` | `pageClient()` is the ONE `globalThis` write (`Symbol.for('ultimate.client')`); `clientTransport` never value-imports `clientFlight` or `traceHeaders()` (the OUTBOUND SLOT, `outbound-headers.ts`). A write never dedupes. Full rule: `docs/history/core.md` |
 | a write's public name | `write-digest.ts` (`writeDigest`, `isWriteDigest`, also on `./page`) + `write-origin.ts` (`withWriteOrigin`, `currentWriteOrigin`, `WRITE_ORIGIN_WAL_PREFIX`, server-only) | SHA-256 of an idempotency key, 32 hex; carried action → entity → WAL → realtime `records` frame. A malformed value runs the work unnamed: a label, never a gate |
 | which row survives a conflict | `conflict-policy.ts` (`ConflictPolicy`, `resolveConflict`, `Row`) | read by `action`'s mutator and `realtime`'s rebase |
 | where a visitor's light/dark choice is stored | `theme-storage.ts` (`THEME_STORAGE_KEY`, also on `./page`) | render's boot script reads it, ui's toggle writes it — both tier 4, so the one literal lives here. Persisted in browsers: never respelled |
@@ -88,7 +89,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | may a caller read this 5xx `cause`? | `public-cause.ts` (`hasPublicCause`) | one table for http, mcp, ai. `registerPublicCause` is `@ultimat3/http`'s `registerProblemMeta` writing it — never an app's door |
 | is this field a credential? | `logger.ts` (`isRedactedKey`) | exact keys + `CREDENTIAL_NAME`; a bare `token` suffix is NOT one (`idempotencyToken`, `maxTokens`). Log line, monitor envelope and `action`'s audit ask it |
 | a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one, greppable, way out |
-| an `Intl` formatter cache, and the screen in front of it | `intl-cache.ts` (`cachedFormatter`, `canonicalLocale`, `assertLocale`, `MAX_CACHED_FORMATTERS`, `MAX_LOCALE_EXCERPT`) | a locale arrives from a header: refuse a non-tag (`X_LOCALE_INVALID`), key canonically AND bound the cache — never a copy of any of the three. The cause quotes at most `MAX_LOCALE_EXCERPT` (35) code points; the whole tag rides in `meta.locale` |
+| an `Intl` formatter cache, and the screen in front of it | `intl-cache.ts` (`cachedFormatter`, `canonicalLocale`, `assertLocale`, `MAX_CACHED_FORMATTERS`, `MAX_LOCALE_EXCERPT`) | a locale arrives from a header: refuse a non-tag (`X_LOCALE_INVALID`), key canonically AND bound the cache — never a copy of any of the three. |
 | the text direction of a locale | `locale-direction.ts` (`directionOf`, `isRtl`, `Direction`) | import from here, never `@ultimat3/i18n`; here so `@ultimat3/ui` skips the i18n barrel |
 | the committed encrypted values | `secrets.ts` (envelope) + `secrets-store.ts` (files, `installSecrets`) | plaintext is a flat map of ENV NAMES; there is no `secrets.get()` |
 | ONE sealed value | `seal.ts` (`seal`, `open`, `openText`, `sealAll`) + `seal-keys.ts` (the ring) + `seal-errors.ts` | the framework's one AES call above the envelope: `entity`'s sealed column and `scraping`'s stored session call it, never WebCrypto. `purpose` is required and is AAD |
@@ -101,11 +102,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 - **`intl-cache.ts`'s bound and canonical key are two halves of one rule** and live in one file:
   validating and keying are one `getCanonicalLocales` call. Never build an `Intl` formatter on a
   caller string without both.
-- **`secrets-errors.ts`'s command lines are screened**: paths through `renderFixShellArg`; a
-  variable name must match `/^[A-Z_][A-Z0-9_]*$/` or the line degrades to prose;
-  `X_SECRETS_KEY_MISMATCH`'s command carries no key id (it is read from a file). Its seven codes
-  register through `registerErrorCodes()`, so `resetErrorCodes()` drops them — take
-  `errorCodeSnapshot()` first. The envelope's `kid` lets *wrong key* and *edited file* be two codes.
+- **`secrets-errors.ts`'s command lines are screened** (`renderFixShellArg`; a bad variable name degrades to prose). Full rule: `docs/history/core.md`.
 - **`seal.ts` adds no variable for the CURRENT key** (`findMasterKey()`). The wire form `x1.<keyId>.<iv>.<ciphertext+tag>` and the AAD string are persisted data: a change is `x2`, never an edit. Full rule: `docs/history/core.md`.
 - **`schema-error-codes.ts` registers `@ultimat3/schema`'s codes** (schema cannot call core), and
   derives their retry classification from the same set. It is a `SIDE_EFFECTS_ANCHORS` entry.
@@ -160,6 +157,14 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - **`errorFingerprint` (`error-fingerprint.ts`) is a function, never an `ErrorReport` field**:
   `code`, `source`, `scope.operation`, plus the top app frame for `X_INTERNAL` only. Never `cause`,
   `meta`, ids or `release`. Total over hostile getters; the Sentry envelope's `fingerprint`.
+- **Failure capture is OFF by default** (`config-failure-capture.ts`, `failureCapture.enabled`;
+  `x dev` forces it on): with no `FailureStore` installed nothing allocates. The OUTER
+  `invoke`/`runQuery` opens one buffer (`withFailureCapture`, `failure-capture.ts`); seams record
+  into it (`recordFailureFact`: entity reads, flag answers), masked and path-listed by
+  `captureValue` (`failure-capture-mask.ts`). A 5xx HOLDS the buffer on the thrown value, a 4xx
+  never; `reportError` releases it keyed by `errorFingerprint` over the same report
+  (`failure-capture-flush.ts`). Caps: `perHour` 5 per fingerprint per process, `maxRows` 50,
+  `maxBytes` 64 KiB — past one, stored `truncated`. A refused save is a log line, never awaited.
 - **Three OTLP variables, three codes** — `X_OTLP_ENDPOINT_INVALID`, `X_OTLP_HEADERS_INVALID`,
   `X_OTLP_PROTOCOL_UNSUPPORTED`. A header KEY is in the cause/fix/meta; its VALUE never is.
 - `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`. `'browser'`: only cli's `client-errors-routes.ts`, one `X_CLIENT_ERROR` per report.

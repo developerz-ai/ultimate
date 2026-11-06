@@ -7,6 +7,7 @@
 // `workspace-graph.ts` — the `cmd-jobs.ts` / `jobs-report.ts` split, repeated.
 
 import { affectedScope } from './affected';
+import { appTestScope } from './affected-tests';
 import { affectedSpec } from './cmd-affected-spec';
 import type { CliCommand, CommandContext } from './command';
 import { msg } from './messages';
@@ -31,6 +32,8 @@ export const AFFECTED_MESSAGE_KEYS = [
   'cli.affected.rootWide',
   'cli.affected.dirty',
   'cli.test.affected.none',
+  'cli.affected.tests',
+  'cli.affected.testsAll',
 ] as const;
 
 export const affectedCommand: CliCommand = {
@@ -46,6 +49,7 @@ export const affectedCommand: CliCommand = {
       command: 'affected',
     });
     const params = { base: selection.base, changed: plan.changed.length };
+    const tests = await appTestScope(ctx.cwd, root, plan.changed);
     const table = renderTable(
       HEADER,
       plan.workspaces.map((workspace) => [workspace.name, workspace.dir]),
@@ -62,6 +66,16 @@ export const affectedCommand: CliCommand = {
         dir: workspace.dir,
       })),
       paths: plan.workspaces.map((workspace) => workspace.dir),
+      ...(tests === undefined
+        ? {}
+        : {
+            tests: {
+              app: tests.app,
+              all: tests.all,
+              forcing: [...tests.forcing],
+              files: [...tests.tests],
+            },
+          }),
     };
     return {
       // An empty answer is a fact, not a failure: a `.md`-only diff genuinely re-checks nothing,
@@ -76,6 +90,15 @@ export const affectedCommand: CliCommand = {
           : msg('cli.affected.count', { ...params, count: plan.workspaces.length }),
       lines: [
         ...(selection.dirty ? [msg('cli.affected.dirty')] : []),
+        ...(tests === undefined
+          ? []
+          : [
+              tests.all
+                ? msg('cli.affected.testsAll', {
+                    files: `${tests.forcing.slice(0, 3).join(', ')}${tests.forcing.length > 3 ? ` (+${tests.forcing.length - 3})` : ''}`,
+                  })
+                : msg('cli.affected.tests', { count: tests.tests.length }),
+            ]),
         ...(plan.rootWide.length === 0
           ? []
           : [msg('cli.affected.rootWide', { files: plan.rootWide.join(', ') })]),

@@ -1877,3 +1877,82 @@ statement swept, a gate full of hung pins retires on the first miss. Proof:
 `packages/testing/src/pg-pin-unanswered.live.test.ts` (a write blackholed mid-transaction is
 `X_DB_UNAVAILABLE` near the bound, the pool is replaced; a pin whose own bound was raised keeps it),
 `pool-pins.test.ts`.
+
+## Moved out for plan 101's wave 9 (`As of 2026-11-06`)
+
+Verbatim from [`packages/db/CLAUDE.md`](../../packages/db/CLAUDE.md), which keeps each rule in one line and points here.
+
+### `pool-gate.ts`
+
+- **`pool-gate.ts` is the one count of `max`** (`takeSlot`/`freeSlot`), per pool: a statement holds a slot until it settles, a pin until `release()`, a statement ON a pin none. A wait past `acquireTimeoutMs` is `X_DB_POOL_EXHAUSTED`; `enter` answers `undefined` on a free slot so a send stays in the caller's turn. `reserveWithin` keeps its timer for `Bun.SQL`'s own queue. `close()` refuses who is queued; a retirement hands them to the next pool, unsent.
+
+### `idleInTransactionMs`
+
+- **`idleInTransactionMs` is sent beside `statement_timeout`.** `25P03` stays `X_DB_STATEMENT_FAILED`, its fix naming the slow await; `08P01` with `unsupported startup parameter` is `X_DB_POOLER_OPTIONS_REFUSED`. `statementBound` reads `pg_settings` (ms), `lostStatementBound` judges: no pooler, any difference; a pooler, only a `0` on a role with a bound. Fix text lives in the leaf `pooler-fix.ts` (no cycle). `client-idle-tx.live.test.ts`.
+
+### Read replicas
+
+- **Read replicas are opt-in twice**: a pool when `DATABASE_REPLICA_URL` names one (`default-client.ts`), and a read only inside `withReplicaReads(fn)` (`replica-scope.ts`). `withTransaction` stays on the primary; `isPlainRead` is an allow-list. The breaker is core's `breaker({ name: 'db.replica' })`: `parked` means `state() === 'open'`, routing calls `admit()` last, and after the cooldown one read probes the replica (`replica-client-probe.test.ts`). Full rule: `docs/history/db.md`.
+
+### `db-diagnostics.ts`
+
+- **`db-diagnostics.ts` is `dbDiagnostics()`, on its own entry `@ultimat3/db/diagnostics`** (`diagnostics-entry.test.ts`): facts, never a verdict (`checkDb` stays `/readyz`'s).
+  Seven catalog reads (`db-diagnostics-sql.ts`), sequential, each through `readOnlyQuery` (2 s,
+  cursor-capped), one failing alone as `{ available: false, code, reason, fix }`; the single throw
+  is the `select 1` probe. A client-side deadline per section (3 s) and per command (15 s,
+  `db-diagnostics-deadline.ts`), because PGlite cannot interrupt a statement. No statement reads a
+  user table; session SQL leaves through `redactQueryText` (`db-diagnostics-redact.ts`, over
+  `noiseAt`); rows are typed in `db-diagnostics-rows.ts`.
+
+### `pglite-extensions.ts` and `pglite-snapshot.ts`
+
+- **`pglite-extensions.ts` is the one linker** (`linkPgliteExtensions` → `{ linked, missing }`):
+  `contrib/<name>` then the package root; the name is data (read from migration text), screened
+  by `pgliteExtensionExport` before it reaches a specifier; `plpgsql` is built in, never missing.
+  Only a not-found import is `missing`; a bundle that throws is `X_DB_UNAVAILABLE`.
+- **`pglite-snapshot.ts`**: `snapshotDir` makes a `memory://` boot a restore. Key = PGlite version
+  (unreadable = no cache), never the extension set. One file, checksum in its header; unsound or
+  unopenable → deleted and rebuilt; unreadable → a miss. Temp name + `rename`. Uncompressed.
+
+### `appendOnly: true`
+
+- **`appendOnly: true` is a trigger** (`generate-append-only.ts`): one `create or replace` function
+  (SQLSTATE `23001`, message leads `X_ENTITY_APPEND_ONLY`) and a fixed-name `ultimate_append_only`
+  `before update or delete … for each row`; recorded `true` or absent; no `truncate`. Drift:
+  enabled `triggerNames` (`drift-append-only.ts`, `X_APPEND_ONLY_TRIGGER_MISSING`).
+
+### `pool-gauge.ts`
+
+- **`pool-gauge.ts` derives `db_pool_max` / `db_pool_in_use` / `db_pool_waiting` from DEMAND**
+  (`Bun.SQL` publishes no occupancy). `client.ts` is the one counter: `run()` from send to settle, a
+  pin from ask to release; a statement ON a pin is not counted again. Declared on the first pool.
+
+### `rolling.ts`
+
+- **`rolling.ts` decides WHAT a previous release trips over**: a closed list, a token walk that keeps quoted names (`stripSqlNoise` blanks them), per `alter table` subcommand. `markerLines` (`marker-line.ts`) reads `-- retires`/`-- contracts`. A retire in the same file is not earlier. `rolling-errors.ts` holds every `X_MIGRATION_ROLLING_UNSAFE`.
+
+### What cannot be rendered (the schema dump)
+
+- **What cannot be rendered is named** (`unrenderedRows`, a closed list → `unrendered.sql`; a trigger
+  on an unrendered relation is named by the fold). A kind rendered later leaves that list in the
+  same diff. Never render a partition as a plain table (`partition-order.ts`). `generated` carries
+  `stored`/`virtual`.
+
+### `close()` is bounded
+
+- **`close()` is BOUNDED by the driver's own `{ timeout }` in SECONDS** (`drainTimeoutMs / 1000`; `0`
+  sends none); the verdict is elapsed `performance.now()` (`X_DB_DRAIN_TIMEOUT`). It clears the
+  cached driver before awaiting the teardown. `pool-drain{,.live}.test.ts`.
+
+### `client.listen`
+
+- **`client.listen` is ONE session beside the pool** (`listen.ts`; `Bun.SQL.listen`, PGlite's
+  `listen` under a turn), never a reserved pin. `onListening` fires on every re-dial; a channel is
+  refused unless it is a plain identifier. `listen.test.ts`, `listen.live.test.ts`.
+
+### `-- transaction: false`
+
+- **`-- transaction: false` runs a migration outside a transaction** (`concurrent-index.ts`, a marker
+  on `up` that governs `down`): a concurrent statement bare and unbounded, any other in its own tx; an
+  INVALID index holding a concurrent build's name is dropped first. A concurrent statement in a
+  transactional migration is `X_MIGRATION_CONCURRENT_IN_TRANSACTION`, before `BEGIN`.

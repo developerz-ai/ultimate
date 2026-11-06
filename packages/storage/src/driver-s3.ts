@@ -34,6 +34,7 @@ import { isAbsentObject } from './driver-s3-absent';
 import { buildClient, dated, type S3ClientLike, type S3ListResultLike } from './driver-s3-client';
 import { signedCopy } from './driver-s3-copy';
 import { needsSignedPut, readObjectLock, signedPut } from './driver-s3-lock';
+import { s3Multipart } from './driver-s3-multipart-session';
 import { s3SignedUrl } from './driver-s3-presign';
 import { putS3Stream } from './driver-s3-put-stream';
 import { readS3Range } from './driver-s3-range';
@@ -201,7 +202,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
   const lostPut = (key: string, bytes: Uint8Array, attributes: PutOptions | undefined) =>
     settleLostPut(statOf, { driver: DRIVER_NAME, key, bytes, attributes }, refusedWrite(key));
 
-  return {
+  const disk: StorageDriver = {
     name: DRIVER_NAME,
     registerAs(name: string): void {
       diskName = name;
@@ -465,4 +466,8 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       return s3SignedUrl(options, (safe) => conn().file(safe), key, urlOptions);
     },
   };
+  // Attached in place: the capability presigns and stats through the disk it belongs to.
+  return Object.assign(disk, {
+    multipart: s3Multipart({ wire: options, driver: disk, refusedWrite }),
+  });
 }

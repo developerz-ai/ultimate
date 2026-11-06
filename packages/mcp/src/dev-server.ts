@@ -10,6 +10,8 @@
 // packages of this same tier, and the shell-side capabilities (db, tests, logs) belong to
 // the CLI, so this file defines the interface and the CLI satisfies it.
 
+import type { DevGraphHost } from './dev-graph-tool';
+import { graphTool } from './dev-graph-tool';
 import type { UiInteractInput, UiInteractResult } from './dev-ui-interact';
 import { uiInteractTools } from './dev-ui-interact';
 import type {
@@ -130,8 +132,11 @@ export interface DevIntrospection {
   jobInspect(name: string): unknown;
 }
 
-/** Shell-side capabilities. Satisfied by the CLI, which owns the process and the DB. */
-export interface DevCapabilities {
+/**
+ * Shell-side capabilities. Satisfied by the CLI, which owns the process and the DB — and the app
+ * graph (`queryGraph`, from `DevGraphHost`), which is `@ultimat3/manifest`'s, a tier beside this one.
+ */
+export interface DevCapabilities extends DevGraphHost {
   readonly database: DatabaseTarget;
   /**
    * Run one already-parsed read-only statement under layers 1–2 (a SELECT-only role, a
@@ -228,6 +233,9 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
     read('manifest.read', 'The generated x.manifest.json as text.', NO_ARGS, async () =>
       textResult(await host.readManifest()),
     ),
+
+    // What an edit reaches, before it is made: `x impact` / `x graph --from --to` as a tool.
+    graphTool(host, DEV_SCOPES.read),
 
     read(
       'errors.explain',

@@ -13,6 +13,7 @@ import {
   signAwsRequest,
   systemClock,
 } from '@ultimat3/core';
+import type { SignedPart } from './signed-url';
 
 /** The slice of `fetch` this file uses; injected in tests so no socket is ever opened. */
 export type S3FetchLike = (
@@ -135,10 +136,17 @@ export async function presignBoundPut(
   key: string,
   contentLength: number,
   expiresInSeconds: number,
+  part?: SignedPart | undefined,
 ): Promise<string> {
+  const url = s3ObjectUrl(options, key);
+  // A part of an open upload: S3's own UploadPart, its two parameters inside the signature.
+  if (part !== undefined) {
+    url.searchParams.set('partNumber', String(part.partNumber));
+    url.searchParams.set('uploadId', part.uploadId);
+  }
   const presigned = await presignAwsUrl({
     method: 'PUT',
-    url: s3ObjectUrl(options, key),
+    url,
     expiresInSeconds,
     headers: { 'content-length': String(contentLength) },
     credentials: s3Credentials(options),

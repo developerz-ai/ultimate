@@ -328,7 +328,7 @@ Timings, worker counts and the `slowest:` lines trimmed:
 bunx x mcp serve --transport http --port 9229
 ```
 
-18 tools, one catalog, the same on `stdio` and `http` — 13 framework tools (`routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain`, `db.query`, `db.migrate`, `tests.run`, `verify.run`, `logs.tail`) and five that look at the UI (`ui.shot`, `ui.island`, `ui.inspect`, `ui.interact`, `ui.diff`). `bunx x mcp tools` prints them with their scopes.
+19 tools, one catalog, the same on `stdio` and `http` — 14 framework tools (`routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain`, `db.query`, `db.migrate`, `tests.run`, `verify.run`, `logs.tail`, `graph.query`) and five that look at the UI (`ui.shot`, `ui.island`, `ui.inspect`, `ui.interact`, `ui.diff`). `bunx x mcp tools` prints them with their scopes.
 
 `createTodo` reaches an agent's tool list through the app's own surface in `packages/mcp/src/index.ts` (`defineAppMcp({ include: 'exposed' })`), carrying `mcp: { expose: true }` and **the action's own policy** as its authorization. Full model: [MCP and AI](MCP-And-AI).
 

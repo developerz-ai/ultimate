@@ -49,27 +49,22 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **Sibling nested scopes take turns** (`TxState.children`; savepoints are a stack) under a deadline
   (`sibling-turn.ts`, `siblingWaitMs`, `X_DB_SIBLING_SCOPE_TIMEOUT`). A nested
   `isolation`/`readOnly`/`deferrable`/foreign `client` is `X_INVARIANT`.
-- **`close()` is BOUNDED by the driver's own `{ timeout }` in SECONDS** (`drainTimeoutMs / 1000`; `0`
-  sends none); the verdict is elapsed `performance.now()` (`X_DB_DRAIN_TIMEOUT`). It clears the
-  cached driver before awaiting the teardown. `pool-drain{,.live}.test.ts`.
+- **`close()` is BOUNDED by the driver's own `{ timeout }` in SECONDS** (`X_DB_DRAIN_TIMEOUT`). Full rule: `docs/history/db.md`.
 - **`dbClientInstalled()` reads `installed`, a flag only `setDbClient` writes**, never `ambient`, which
   the lazy default also fills: a unit test that sent one statement through `db()` must not flip
   entity's `testDriver()` onto a pool nobody asked for.
-- **`client.listen` is ONE session beside the pool** (`listen.ts`; `Bun.SQL.listen`, PGlite's
-  `listen` under a turn), never a reserved pin. `onListening` fires on every re-dial; a channel is
-  refused unless it is a plain identifier. `listen.test.ts`, `listen.live.test.ts`.
-- **`pool-gauge.ts` derives `db_pool_max` / `db_pool_in_use` / `db_pool_waiting` from DEMAND**
-  (`Bun.SQL` publishes no occupancy). `client.ts` is the one counter: `run()` from send to settle, a
-  pin from ask to release; a statement ON a pin is not counted again. Declared on the first pool.
+- **`client.listen` is ONE session beside the pool** (`listen.ts`), never a reserved pin. Full rule: `docs/history/db.md`.
+- **`pool-gauge.ts` derives `db_pool_*` from DEMAND** (`Bun.SQL` publishes no occupancy); `client.ts`
+  is the one counter. Full rule: `docs/history/db.md`.
 - **`client.ts` connects, holds the client and the ambient `db()`**, and opens no socket at import;
   `pool-profile.ts`, `connection-url.ts`, `bun-sql.ts`, `pool-reserve.ts`, `db-health.ts` (`checkDb`),
   `statement-funnel.ts` (`sendOn`/`runOn`), `pool-gate.ts`, `pool-sweep.ts`, `pool-retire.ts`,
   `pool-listeners.ts` and `pool-timer.ts` hold the rest.
-- **`pool-gate.ts` is the one count of `max`** (`takeSlot`/`freeSlot`), per pool: a statement holds a slot until it settles, a pin until `release()`, a statement ON a pin none. A wait past `acquireTimeoutMs` is `X_DB_POOL_EXHAUSTED`; `enter` answers `undefined` on a free slot so a send stays in the caller's turn. `reserveWithin` keeps its timer for `Bun.SQL`'s own queue. `close()` refuses who is queued; a retirement hands them to the next pool, unsent.
+- **`pool-gate.ts` is the one count of `max`** (`takeSlot`/`freeSlot`), per pool; a wait past `acquireTimeoutMs` is `X_DB_POOL_EXHAUSTED`. Full rule: `docs/history/db.md`.
 - **`pool-sweep.ts`: an unanswered statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`), pooled or pinned; age is ticks that fired, never a clock. Full rule: `docs/history/db.md`.
 - **`pool-pins.ts`: a pin is swept against ITS bound** (a `statement_timeout` it set; the role's after `COMMIT`/`ROLLBACK`); after a miss it sends nothing. `reserve()` passes `reserveWithin` what the gate left of one budget. **`pool-listeners.ts` holds `client.listen`** and re-dials every session on a retirement, with backoff.
 - **`pooler.ts` owns the pooler**: `postgresClient({ env })` is the one reader; everything after asks `client.pooler`. Never a detection. `pooler.live.test.ts`. Full rule: `docs/history/db.md`.
-- **`idleInTransactionMs` is sent beside `statement_timeout`.** `25P03` stays `X_DB_STATEMENT_FAILED`, its fix naming the slow await; `08P01` with `unsupported startup parameter` is `X_DB_POOLER_OPTIONS_REFUSED`. `statementBound` reads `pg_settings` (ms), `lostStatementBound` judges: no pooler, any difference; a pooler, only a `0` on a role with a bound. Fix text lives in the leaf `pooler-fix.ts` (no cycle). `client-idle-tx.live.test.ts`.
+- **`idleInTransactionMs` is sent beside `statement_timeout`**; a pooler refusing it is `X_DB_POOLER_OPTIONS_REFUSED`. Full rule: `docs/history/db.md`.
 - **`libpq-options.ts` merges the framework's `options` into the operator's**: the framework wins
   on the names it sets, the operator keeps the rest; emitted for all six roles.
 - **`DATABASE_URL`'s scheme is screened at boot** (`POSTGRES_SCHEMES`: `postgres:`, `postgresql:`); the
@@ -97,6 +92,10 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`expected-loop.ts` is the ONLY suppression**: `expectedQueryLoop(reason, fn)`, innermost reason,
   blank is `X_INVARIANT`; the funnel stamps `expected`; it suppresses a verdict, never a statement.
   The framework's own loops declare themselves (`migrate()`, `rollback()`, admin's `search.ts`).
+  Sibling: `expectedSeqScan` (plan sweep's exemption).
+- **`failure-store-pg.ts` writes `x_failures` through `outsideTransaction`** — the 5xx rolled the
+  request's transaction back. Table applied by the boot (`FRAMEWORK_SCHEMA`) whether capture is on
+  or not; bundles only (counts are `x_error_groups`'). `failurePurgeTarget` has no default window.
 - `@ultimat3/jobs` never imports this package; its statements pass the observer through
   `dbExecutor` (`db-executor.ts`, the ONE `PgExecutor` builder; the CLI binds it), unattributed.
 
@@ -107,12 +106,10 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `recordingClient` stubs the lock as `locked: true`.
 - **`lock_timeout` is the migration's** (`SET LOCAL` inside each migration's transaction, from the
   `migrate` profile's 3 s). `migration-step.ts` applies a script.
-- **`-- transaction: false` runs a migration outside a transaction** (`concurrent-index.ts`, a marker
-  on `up` that governs `down`): a concurrent statement bare and unbounded, any other in its own tx; an
-  INVALID index holding a concurrent build's name is dropped first. A concurrent statement in a
-  transactional migration is `X_MIGRATION_CONCURRENT_IN_TRANSACTION`, before `BEGIN`.
+- **`-- transaction: false` runs a migration outside a transaction** (`concurrent-index.ts`); a
+  concurrent statement in a transactional one is `X_MIGRATION_CONCURRENT_IN_TRANSACTION`. Full rule: `docs/history/db.md`.
 - **`migrate-lock-retry.ts` sends again on `X_DB_LOCK_TIMEOUT`**. Full rule: `docs/history/db.md`.
-- **`rolling.ts` decides WHAT a previous release trips over**: a closed list, a token walk that keeps quoted names (`stripSqlNoise` blanks them), per `alter table` subcommand. `markerLines` (`marker-line.ts`) reads `-- retires`/`-- contracts`. A retire in the same file is not earlier. `rolling-errors.ts` holds every `X_MIGRATION_ROLLING_UNSAFE`.
+- **`rolling.ts` decides WHAT a previous release trips over** (a closed list); `rolling-errors.ts` holds every `X_MIGRATION_ROLLING_UNSAFE`. Full rule: `docs/history/db.md`.
 - **The advisory lock is held by one pinned session, and `migrate()`/`rollback()` run every statement
   on it.** `lock: false` reserves nothing and takes no lock; no shipped path passes it
   (`migrate-pin.test.ts`). `migrate.live.test.ts` pins concurrent and failed-midway runs.
@@ -149,13 +146,18 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`REPLICA IDENTITY FULL` is a PARAMETER** (`GenerateOptions.replicaIdentityFull`, from the CLI's
   `db-generate.ts`; `replica-identity.ts`): recorded `true` or absent, as a union; last in `up`; an
   undeclared name skipped; `down` reverts it unless this migration created the table.
-- **`appendOnly: true` is a trigger** (`generate-append-only.ts`): one `create or replace` function
-  (SQLSTATE `23001`, message leads `X_ENTITY_APPEND_ONLY`) and a fixed-name `ultimate_append_only`
-  `before update or delete … for each row`; recorded `true` or absent; no `truncate`. Drift:
-  enabled `triggerNames` (`drift-append-only.ts`, `X_APPEND_ONLY_TRIGGER_MISSING`).
+- **`appendOnly: true` is a trigger** (`generate-append-only.ts`, `ultimate_append_only`); drift is
+  `X_APPEND_ONLY_TRIGGER_MISSING` (`drift-append-only.ts`). Full rule: `docs/history/db.md`.
 - **A foreign key is `alter table … add constraint`** after every table statement (`foreign-key-plan.ts`); a table drop's bucket runs first, children-first (`drop-order.ts`). Full rule: `docs/history/db.md`.
 - **`same-tenant.ts`**: `sameTenant` is `foreignKeysOf`'s composite; `withSameTenantIndexes` opens `generateMigration` and `snapshotOf`, idempotent. `set null (a)` is the rule's spelling everywhere (`introspectSchema()` off `pg_get_constraintdef`, never `confdelsetcols`). `foreign-key-plan.test.ts`. Why: `docs/history/db.md` (2026-11-02).
 - **The deferred step holds keys too** (`concurrent-plan.ts`, phases in `stepStatements`: index builds, `keys`, `validate`, `contractKeys`, `contract`; `down` reversed: restore old key, drop new key, drop index). Full rule: `docs/history/db.md`.
+- **Lifecycle triggers are one list per table** (`generate-triggers.ts`: `declaredTriggers`,
+  `triggerPlan`, `recordTriggers`): `history` → `ultimate_history` + `ultimate_history_guard`
+  (`generate-history.ts`), each `countedIn` → `ultimate_count_<crc32>` on the CHILD
+  (`generate-counter.ts`). Triggers, not the repository: only a trigger sees `updateWhere`, a cascade
+  and raw SQL. Recorded on the snapshot; a NEW counter is recounted in the same migration. Drift:
+  `drift-triggers.ts` (`X_LIFECYCLE_TRIGGER_MISSING`; `retain` on a partitioned table is
+  `X_ENTITY_RETAIN_INVALID`).
 - **Views**: `generate-view.ts`.
 - **`retired.ts`: a retired column**. Full rule: `docs/history/db.md`.
 - **`entity-shape.ts` holds the `*Like` interfaces** (every later field optional).
@@ -205,10 +207,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`renderSchemaDump()` is pure**; `schema-dump-table.ts` spells one table. `quoted()` escapes any
   catalog name — `identifier()` refuses whitespace and `"`, which a migration may have created.
 - **`x_` owner → `framework/` twin** (`FRAMEWORK_TABLE_PREFIX`). No list is handed in.
-- **What cannot be rendered is named** (`unrenderedRows`, a closed list → `unrendered.sql`; a trigger
-  on an unrendered relation is named by the fold). A kind rendered later leaves that list in the
-  same diff. Never render a partition as a plain table (`partition-order.ts`). `generated` carries
-  `stored`/`virtual`.
+- **What cannot be rendered is named** (`unrenderedRows` → `unrendered.sql`); never render a
+  partition as a plain table (`partition-order.ts`). Full rule: `docs/history/db.md`.
 - **`loadSchemaDump()`**: one transaction, `check_function_bodies` off, a savepoint per file, and
   only `42P01`/`42883`/`42704` are retried. Its refusal is `X_SCHEMA_DUMP_DRIFT` (`dump-drift.ts`).
 - **`object-drift.ts`**: `unexpectedObjects(live, expected)` compares IDENTITY (kind, table, name,
@@ -216,28 +216,23 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **No app path here.** Where the dump lives, which engine replays, and when it is written are
   `@ultimat3/cli`'s (`db-schema-dump.ts`). `schema-load.contract.test.ts` reads the reference app's
   migrations as text and runs on Postgres when `TEST_DATABASE_URL` is set.
-- **`pglite-extensions.ts` is the one linker** (`linkPgliteExtensions` → `{ linked, missing }`):
-  `contrib/<name>` then the package root; the name is data (read from migration text), screened
-  by `pgliteExtensionExport` before it reaches a specifier; `plpgsql` is built in, never missing.
-  Only a not-found import is `missing`; a bundle that throws is `X_DB_UNAVAILABLE`.
-- **`pglite-snapshot.ts`**: `snapshotDir` makes a `memory://` boot a restore. Key = PGlite version
-  (unreadable = no cache), never the extension set. One file, checksum in its header; unsound or
-  unopenable → deleted and rebuilt; unreadable → a miss. Temp name + `rename`. Uncompressed.
+- **`pglite-extensions.ts` is the one linker** (`linkPgliteExtensions`); a name read from migration
+  text is screened by `pgliteExtensionExport` before it reaches a specifier. Full rule: `docs/history/db.md`.
+- **`pglite-snapshot.ts`**: `snapshotDir` makes a `memory://` boot a restore, keyed by PGlite version. Full rule: `docs/history/db.md`.
 
 ## Branches, replicas, read-only
 
 - **`reapBranches` sweeps branches of THIS database**: the marker is `ultimate:branch:<base>:<iso>`,
   split on the ISO tail; an older one-segment marker or an unparseable `createdAt` is skipped, never
   dropped. `@ultimat3/cli`'s `ls`/`drop` scope by name prefix.
-- **Read replicas are opt-in twice**: a pool when `DATABASE_REPLICA_URL` names one (`default-client.ts`), and a read only inside `withReplicaReads(fn)` (`replica-scope.ts`). `withTransaction` stays on the primary; `isPlainRead` is an allow-list. The breaker is core's `breaker({ name: 'db.replica' })`: `parked` means `state() === 'open'`, routing calls `admit()` last, and after the cooldown one read probes the replica (`replica-client-probe.test.ts`). Full rule: `docs/history/db.md`.
+- **Read replicas are opt-in twice**: a pool when `DATABASE_REPLICA_URL` names one (`default-client.ts`), and a read only inside `withReplicaReads(fn)` (`replica-scope.ts`). `withTransaction` stays on the primary; `isPlainRead` is an allow-list; the breaker is core's (`db.replica`). Full rule: `docs/history/db.md`.
+- **Read-your-writes is one comparison** (`replica-position.ts`): `pg_current_wal_insert_lsn()`
+  after the write, never `pg_current_wal_lsn()` (it trails under `synchronous_commit = off`), vs the
+  standby's `pg_last_wal_replay_lsn()`, sampled once per `POSITION_CACHE_MS`. Unknown = primary.
 - **This package owns no "is this SQL a write?" lexer.** Layers: `ensureReadOnlyRole()`, `readOnlyQuery()` (one statement; it throws), then `@ultimat3/mcp`. Full rule: `docs/history/db.md`.
-- **`db-diagnostics.ts` is `dbDiagnostics()`, on its own entry `@ultimat3/db/diagnostics`** (`diagnostics-entry.test.ts`): facts, never a verdict (`checkDb` stays `/readyz`'s).
-  Seven catalog reads (`db-diagnostics-sql.ts`), sequential, each through `readOnlyQuery` (2 s,
-  cursor-capped), one failing alone as `{ available: false, code, reason, fix }`; the single throw
-  is the `select 1` probe. A client-side deadline per section (3 s) and per command (15 s,
-  `db-diagnostics-deadline.ts`), because PGlite cannot interrupt a statement. No statement reads a
-  user table; session SQL leaves through `redactQueryText` (`db-diagnostics-redact.ts`, over
-  `noiseAt`); rows are typed in `db-diagnostics-rows.ts`.
+- **`db-diagnostics.ts` is `dbDiagnostics()`, on its own entry `@ultimat3/db/diagnostics`**: facts,
+  never a verdict (`checkDb` stays `/readyz`'s); a section fails alone; no statement reads a user
+  table. Full rule: `docs/history/db.md`.
 
 ```bash
 bun test                      # from packages/db

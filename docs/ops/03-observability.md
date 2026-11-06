@@ -198,6 +198,26 @@ same issue. A reporter of your own groups on the same call.
 To send somewhere else, implement `ErrorReporter` and call `configureErrorReporting({ reporter })`
 in the app entry. `memoryErrorReporter()` is the one to use in tests.
 
+### Failure bundles (`failureCapture`)
+
+Off by default — storing what a user sent is the app's decision. `failureCapture: { enabled: true }`
+in `app.config.ts` (`x dev`: always on) keeps, for a 5xx at `invoke`/`runQuery`, a bundle in
+`x_failures`: the parsed input (`.sensitive()` and secret-named keys masked, and listed), the actor
+without its facts, the flags evaluated, the rows repositories answered (sealed columns never), the
+failure's instant and build. Written at `reportError`, keyed by the report's own `errorFingerprint`
+— the key `x_error_groups` counts under — on its own connection outside the request's rolled-back
+transaction; a store that refuses is a `warn` line, never a changed response.
+
+| Bound | Default | Key |
+|---|---|---|
+| bundles per fingerprint per hour, per process | 5 | `failureCapture.perHour` |
+| rows per bundle (past it: `truncated: true`) | 50 | `failureCapture.maxRows` |
+| bytes per bundle (rows dropped first, never the input) | 65,536 | `failureCapture.maxBytes` |
+
+Retention is the app's, with no default window: `failurePurgeTarget(postgresFailureStore(), {
+keepMs })` in a `purge()` sweep. Who reads: whoever holds `DATABASE_URL` — `x repro --list`,
+`x repro <requestId> --write --verify`, `x errors explain <CODE> --recent`.
+
 ## The baseline alert set
 
 Every expression below is running in production. The `for:` durations are the ones that survived

@@ -37,7 +37,16 @@ describe('loadSiteSettings', () => {
       disallow: ['/panel'],
       robotsGroups: [],
       sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
+      llms: true,
     });
+  });
+
+  test('reads seo.llms: false — /llms.txt off', async () => {
+    await Bun.write(
+      join(ROOT, 'llms', 'app.config.ts'),
+      "export const config = { name: 'demo', seo: { llms: false } };\n",
+    );
+    expect((await loadSiteSettings(join(ROOT, 'llms'))).llms).toBe(false);
   });
 
   test('reads seo.robots.groups', async () => {

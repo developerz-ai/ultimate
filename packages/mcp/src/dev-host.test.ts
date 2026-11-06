@@ -182,6 +182,7 @@ describe('devMcpServer', () => {
       'db.migrate',
       'db.query',
       'errors.explain',
+      'graph.query',
       'jobs.inspect',
       'logs.tail',
       'manifest.read',
@@ -201,6 +202,7 @@ describe('devMcpServer', () => {
     expect(server.tools.verbClass('db.migrate')).toBe('write');
     expect(server.tools.verbClass('ui.shot')).toBe('write');
     expect(server.tools.verbClass('routes.list')).toBe('read');
+    expect(server.tools.verbClass('graph.query')).toBe('read');
   });
 
   test('resources are opt-in: none by default, and only the ones a provider was given for', () => {

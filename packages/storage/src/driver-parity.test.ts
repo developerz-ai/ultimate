@@ -16,12 +16,24 @@ import { mkdtemp, rm } from 'node:fs/promises';
 // temporary directory is.
 import { tmpdir } from 'node:os';
 import { frozenClock, isUltimateError, NotImplementedError } from '@ultimat3/core';
+import { acceptSignedPart } from './accept-part';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { RUNS_AS_ROOT, withUndeletable } from './driver-local-fixture';
+import { memoryStorageDriver } from './driver-memory';
 import { s3Driver } from './driver-s3';
 import { bytesOf, catchError, codeOf, FAKE_ENV, FakeS3Client, s3Error } from './driver-s3-fixture';
+import {
+  abortUpload,
+  completeUpload,
+  grantMultipart,
+  listParts,
+  type MultipartGrant,
+  signPart,
+} from './grant-multipart';
+import { MIN_PART_BYTES } from './multipart';
 import { SIGNED_URL_PARAMS } from './signed-url';
+import { uploadPolicy } from './upload';
 
 const KEY = 'org/org-1/a.txt';
 
@@ -263,6 +275,102 @@ describe('a signed PUT binds its size on both disks, in the form each disk can',
       ] as const) {
         expect(anyCodeOf(await catchError(() => disk.signedUrl(KEY, options)))).toBe('X_INVARIANT');
       }
+    }
+  });
+});
+
+describe('an upload in parts behaves alike on every disk', () => {
+  // Part one is S3's 5 MiB floor; part two is the tail. Local and memory take a part through the
+  // `/_storage` PUT's decision (`acceptSignedPart`); s3's goes to the provider at its presigned URL.
+  const SIZE = MIN_PART_BYTES + 3;
+  const file = new Uint8Array(SIZE).map((_, at) => at % 251);
+  const request = { filename: 'film.mp4', contentType: 'video/mp4', size: SIZE };
+  const policy = uploadPolicy({ maxBytes: SIZE, allowedContentTypes: ['video/mp4'] });
+  const disks = (): readonly (readonly [string, StorageDriver])[] => [
+    ['local', local],
+    ['memory', memoryStorageDriver({ signingSecret: 'test-secret', clock })],
+    ['s3', s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV, clock })],
+  ];
+  const sendPart = async (disk: StorageDriver, url: string, bytes: Uint8Array): Promise<void> => {
+    if (disk.name === 's3') {
+      const sent = await fake.fetch(url, { method: 'PUT', headers: {}, body: bytes.slice() });
+      expect(sent.status).toBe(200);
+      return;
+    }
+    await acceptSignedPart({ url, disk, orgId: 'org-1', bytes });
+  };
+  const partOf = (n: number): Uint8Array =>
+    file.slice((n - 1) * MIN_PART_BYTES, Math.min(n * MIN_PART_BYTES, SIZE));
+  const upload = async (disk: StorageDriver, grant: MultipartGrant, n: number): Promise<void> => {
+    const bytes = partOf(n);
+    const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
+    await sendPart(
+      disk,
+      await signPart({ ...session, partNumber: n, size: bytes.byteLength }),
+      bytes,
+    );
+  };
+  const open = (disk: StorageDriver) => grantMultipart({ disk, orgId: 'org-1', request, policy });
+
+  test('a part round-trip, then complete, lands the whole file and closes the session', async () => {
+    for (const [name, disk] of disks()) {
+      const grant = await open(disk);
+      expect([name, grant.partBytes, grant.maxParts]).toEqual([name, MIN_PART_BYTES, 2]);
+      await upload(disk, grant, 1);
+      await upload(disk, grant, 2);
+      const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
+      expect((await listParts(session)).map((part) => [part.partNumber, part.size])).toEqual([
+        [1, MIN_PART_BYTES],
+        [2, 3],
+      ]);
+      const parts = [{ partNumber: 1 }, { partNumber: 2 }];
+      const object = await completeUpload({ ...session, parts, policy });
+      expect([name, object.size]).toEqual([name, SIZE]);
+      expect([name, (await disk.get(grant.key)).bytes.byteLength]).toEqual([name, SIZE]);
+      expect(await disk.multipart?.listUploads('org/org-1/')).toEqual([]);
+    }
+  });
+
+  test('a dropped part is resumed: complete is refused until it lands, and then only it is sent', async () => {
+    for (const [name, disk] of disks()) {
+      const grant = await open(disk);
+      const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
+      await upload(disk, grant, 1);
+      const parts = [{ partNumber: 1 }, { partNumber: 2 }];
+      const early = await catchError(() => completeUpload({ ...session, parts }));
+      expect([name, codeOf(early)]).toEqual([name, 'X_STORAGE_PARTS_INVALID']);
+      const landed = (await listParts(session)).map((part) => part.partNumber);
+      expect([name, landed]).toEqual([name, [1]]);
+      await upload(disk, grant, 2);
+      const object = await completeUpload({ ...session, parts });
+      expect([name, object.size]).toEqual([name, SIZE]);
+    }
+  });
+
+  test('abort leaves nothing: no session, no parts, no object', async () => {
+    for (const [name, disk] of disks()) {
+      const grant = await open(disk);
+      const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
+      await upload(disk, grant, 1);
+      await abortUpload(session);
+      await abortUpload(session);
+      expect([name, await disk.multipart?.listUploads()]).toEqual([name, []]);
+      expect([name, await disk.stat(grant.key)]).toEqual([name, undefined]);
+      const gone = await catchError(() => listParts(session));
+      expect([name, codeOf(gone)]).toEqual([name, 'X_STORAGE_UPLOAD_UNKNOWN']);
+    }
+    expect(fake.openUploads()).toEqual([]);
+    expect(
+      await Array.fromAsync(new Bun.Glob('.meta/.multipart/*/*').scan({ cwd: root, dot: true })),
+    ).toEqual([]);
+  });
+
+  test("another tenant's session is refused before the disk is asked", async () => {
+    for (const [name, disk] of disks()) {
+      const grant = await open(disk);
+      const foreign = { disk, orgId: 'org-2', key: grant.key, uploadId: grant.uploadId };
+      const refused = await catchError(() => signPart({ ...foreign, partNumber: 1, size: 3 }));
+      expect([name, codeOf(refused)]).toEqual([name, 'X_STORAGE_ORG_MISMATCH']);
     }
   });
 });

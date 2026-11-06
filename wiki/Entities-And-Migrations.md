@@ -65,6 +65,7 @@ The entity name is the first argument. Everything else is the init object:
 | `table` | the physical table, when it is not the entity's own name. For a schema this framework did not generate — see [Adopting an existing database](#adopting-an-existing-database) |
 | `tenant` | the tenant column. Omitted, it is inferred from `.tenant()` or a column named `orgId` — silence never means unscoped |
 | `shared` | `'<why its rows belong to no tenant>'` — for an entity with no tenant column whose references reach one that has a tenant (a price list every org's subscriptions point at). Without it the `exercise` step reports `X_ENTITY_TENANT_UNDECLARED`; blank is refused at `entity()` with the same code, and beside a tenant column it is `X_INVARIANT_VIOLATED`. See [Policies and authz](Policies-And-Authz#the-static-tenant-check) |
+| `scan` | `'<why it stays small>'` — a bounded table (`'a closed catalog of 8 rows'`) the `exercise` step's plan sweep may see read whole. Without it a sequential scan of it is `X_QUERY_UNINDEXED`; blank is `X_INVARIANT_VIOLATED`. See [Testing](Testing#the-plan-and-scale-sweeps) |
 | `invariants` | `(c) => [invariant(name, expr), …]` — named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible. `c` is typed from `columns`, so a typo is a compile error |
 | `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead. `concurrently: true` on an entry builds it with `create index concurrently` in a migration of its own, outside a transaction — for a big, hot table ([Indexes built concurrently](Migrations-And-Backfills#indexes-built-concurrently--expand--contract)) |
 | `primaryKey` | composite keys only — a single key is `.primaryKey()` on the column |
@@ -887,6 +888,52 @@ embed: { field: 'body', model: 'text-embedding-3-large' },
 | Search | one hybrid `query` fusing pgvector cosine + Postgres FTS with Reciprocal Rank Fusion; weights are config |
 
 More in [MCP and AI](MCP-And-AI).
+
+## Lifecycle: retention, history, counters
+
+Three declarations on the entity, each compiled to a trigger or a purge target, each replacing a hand-written one. As of 2026-11.
+
+| Declaration | Compiles to | Refused when |
+|---|---|---|
+| `retain: { after: '90d', on: 'createdAt' }` | a `PurgeTarget` per entity — batched, cross-tenant `delete … where created_at < now - after` | no window (`X_ENTITY_RETAIN_INVALID`), `on` not an indexed `timestamp()` (`X_ENTITY_RETAIN_UNINDEXED`), beside `appendOnly`, or on a table the catalog holds partitioned (drift, `X_ENTITY_RETAIN_INVALID`: detach partitions in a `task`) |
+| `history: true` · `history: { retain: { after: '365d' } }` | `<table>_history (id, <tenant>, row_id, op, at, actor_id, request_id, before, after)` — a registered entity (`posts.$history`), written by the `ultimate_history` trigger, guarded by `ultimate_history_guard` | a composite primary key, `appendOnly` (`X_INVARIANT_VIOLATED`) |
+| `references(() => posts.id, { countedIn: () => posts.likeCount })` | a trigger on the child moving `posts.like_count` by one in the write's own transaction | the column is no `integer()`, or the key points at no single primary key (`X_ENTITY_COUNTS_INVALID`) |
+
+```ts
+import { entity, integer, timestamp, uuid } from '@ultimat3/entity';
+
+export const posts = entity('posts', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), likeCount: integer().default(0) },
+  history: { retain: { after: '365d' } },
+});
+export const likes = entity('likes', {
+  columns: {
+    id: uuid().primaryKey(),
+    postId: uuid().references(() => posts.id, { countedIn: () => posts.likeCount }),
+    createdAt: timestamp().defaultNow(),
+  },
+  indexes: [{ on: ['createdAt'] }],
+  retain: { after: '90d', on: 'createdAt' },
+});
+```
+
+- **Retention is a promise `x verify` checks.** A `retain` no `purge()` covers is `X_ENTITY_RETAIN_UNSWEPT` in the `manifest` step. `purge({ entities: 'declared' })` covers every one, history tables included, and needs no line per entity.
+- **History is recorded by trigger**, so `updateWhere`, a cascade and raw SQL are recorded too. An update that changes nothing records nothing; a change to a counted column alone records nothing. `.sealed()` columns stay ciphertext in the images. `actor_id`/`request_id` are what the WRITE'S transaction set (`x.actor`, `x.request`): the repository sets them before its first write to a history entity inside a transaction; an autocommit write records `null`, never a guess. Update of a history row is refused always; delete only under `x.purge` naming that table, which the retention sweep sets (`X_ENTITY_APPEND_ONLY`, SQLSTATE `23001`). Reading it is an ordinary, tenant-scoped, cursor-paged read: `database({ posts, postsHistory: posts.$history })`.
+- **A counter locks its parent row.** A hot parent serializes its writers; where that matters, `countBy` plus a cache is the alternative. A soft-deleted child is not counted. A new counter's migration recounts once, so an existing table starts true; `x db recount posts.likeCount` reports drift and `--write` repairs it.
+- **A counter's write is the trigger's, not the repository's.** The WAL replicator reports it; the in-process row observer (`setRowObserver`, what `x dev` on PGlite and the memory driver feed live queries from) does not, so a live view of the counter on those does not move until the parent row is written again. A counter a page shows live stays the mutator's job until that observer reports trigger writes. As of 2026-11.
+- **Memory answers as Postgres does**: the memory driver records history and moves counters in its repository (`counter.test.ts`, `history.test.ts` are the parity tables).
+- Drift names a missing or disabled lifecycle trigger: `X_LIFECYCLE_TRIGGER_MISSING`, its fix the statements that re-create it.
+
+## One person's data reaches through the foreign keys
+
+`defineSubject(members, { tables })` (`@ultimat3/jobs`) reads the keys every `references()` already
+declares: each entity with a key into the subject — or into a table its erase deletes — needs a
+treatment, `'delete'`, `{ anonymize: { col: value } }` or `{ retain: '<why>' }`. **A table added
+with a key to the subject and no line there is red on `x verify`** (`X_SUBJECT_TABLE_UNDECLARED`,
+naming the path). A table holding the person's key with no `references()` is invisible to the
+walk until `columns: { <table>: '<column>' }` lists it. `'delete'` on an `appendOnly` or
+soft-delete entity is refused: one keeps every row, the other every value. Long form:
+[Jobs and Workflows](Jobs-And-Workflows#one-persons-data--subjectexport-and-subjecterase).
 
 ## Views
 

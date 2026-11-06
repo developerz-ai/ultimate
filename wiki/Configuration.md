@@ -32,7 +32,7 @@ export const config = defineConfig({
 
 Everything derivable from code is **not** in this file — routes, actions, policies, jobs, tags all live in the generated `x.manifest.json`. Inspect the resolved config with `x config show --json`.
 
-`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly these keys `As of 2026-10-06`: `name`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `notify`, `ai`, `drain`, `health`, `site`, `seo`, `navigation`, `islands`, `mail`, `clientErrors`, `assets`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `budgets`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
+`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly these keys `As of 2026-10-06`: `name`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `notify`, `ai`, `drain`, `health`, `site`, `seo`, `navigation`, `islands`, `mail`, `clientErrors`, `assets`, `failureCapture`, `time`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `budgets`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
 
 **The shape is closed**, `As of 25.0.0`: a key `defineConfig` does not declare — at any depth, in `app.config.ts` or any `config/*.ts` overlay — is refused at boot with `X_CONFIG_INVALID`, naming the full path and the nearest real key (`drian is not an app.config.ts key — did you mean drain?`, fix `rename drian to drain in app.config.ts`). Before 25.0.0 `section()` copied an unknown key through and nothing read it, so a typo or a JS config that skipped the compiler was a switch with no wire. A key an earlier major **deleted** gets its own refusal first, naming the major and the replacement (`REMOVED_CONFIG_KEYS` in [`packages/core/src/config-removed.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-removed.ts)). The known keys are the defaults' own plus `SECTION_KEYS` in [`packages/core/src/config-keys.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-keys.ts) — the members with no default (`pwa.id`, `pwa.shortcuts[]`, `pwa.colors`, `mail.retainMime`, `navigation`), each row checked against its interface by `tsc`. The only positions whose keys an app chooses are `OPEN_CONFIG_PATHS`: the locale-keyed manifest texts (`pwa.description`, a shortcut's `name`/`shortName`/`description`, a screenshot's `src`/`label`). A key written as `undefined` is a layer not saying, and is never refused.
 
@@ -391,6 +391,23 @@ export const config = defineConfig({ name: 'my-app', clientErrors: { enabled: tr
 | `clientErrors.anonymous` | `boolean` | `false` | `true` accepts a report with no signed-in actor, limited per address. Off, an anonymous report is `401`: crash text is input to whoever reads the monitor |
 | `clientErrors.perMinute` | `number` | `30` | reports one actor (or, anonymous, one address) may file per minute, spent on the app's rate-limit store. A whole number ≥ 1, else `X_CONFIG_INVALID` |
 
+## `failureCapture`
+
+```ts
+import { defineConfig } from '@ultimat3/core';
+
+export const config = defineConfig({ name: 'my-app', failureCapture: { enabled: true } });
+```
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `failureCapture.enabled` | `boolean` | `false` | **read** by every role's boot: on, a 5xx at `invoke`/`runQuery` stores a replayable bundle in `x_failures` for `x repro` (input masked, actor, flags, the rows read). `x dev` turns it on whatever this says. Storing user input is the app's decision |
+| `failureCapture.perHour` | `number` | `5` | bundles kept per error fingerprint per hour, per process. A whole number ≥ 1 |
+| `failureCapture.maxRows` | `number` | `50` | captured rows per bundle; past it the bundle says `truncated: true` |
+| `failureCapture.maxBytes` | `number` | `65536` | bytes per bundle; rows go first, never the input |
+
+Retention has no default: hand `failurePurgeTarget(postgresFailureStore(), { keepMs })` to a `purge()`.
+
 ## `http`
 
 **Not an `app.config.ts` block, and never was.** `AppConfigInput` has no `http` key. `@ultimat3/core` is tier 0 and cannot hold `@ultimat3/http`'s types, so an `http` block here would be a **second declaration** of `HttpConfigInput` in a package that can never check it against the real one. An app declares its half with `configureHttp()`, at module scope in a file under `apps/*/` — the same seam `configureAuthenticator()` and `defineStorage()` are, and for the same reason.
@@ -613,6 +630,20 @@ One live field, and `ai.mcp` is where the app's own MCP surface is configured �
 | ~~`ai.modelEnv`~~ | — | — | **Deleted in 8.0.0.** It named the env key holding the model id "so no model string is baked into the image", and its only reader was `defineConfig`'s own merge: `@ultimat3/ai` reads env for API keys only, and the model was a compile-time default (`DEFAULT_MODEL`, itself deleted in 25.0.0 — an app names its model on the prompt or on `llm({ model })`). The one thing the key existed to prevent is what it delivered. Refused at boot since 25.0.0 (`ai.modelEnv was removed in 8.0.0`). Migration: delete the key and pass `model`, reading your own env key if you want one |
 
 `ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: `defineCatalogs({ default, locales })` is the whole surface.
+
+## `time`
+
+```ts
+import { defineConfig } from '@ultimat3/core';
+
+export const config = defineConfig({ name: 'my-app', time: { detect: true } });
+```
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `time.detect` | `boolean` | `false` | **read** by `x dev` and the container's web role: on, every `app/` document carries a 153 B inline script (admitted by its CSP hash) writing `x_timezone_detected` from the browser's `Intl` zone, which `@ultimat3/http` reads as the lowest-ranked zone source. Never on `site/`. A non-boolean → `X_CONFIG_INVALID` |
+
+No default zone is a key here, and none ever is: the process default is `configureTime({ defaultZone })`, and every format call names its zone → [Timezones and dates](Timezones-And-Dates).
 
 ## `drain`
 

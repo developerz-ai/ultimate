@@ -21,6 +21,7 @@ import {
   SQL_AUTH_SERVER_TABLES,
   SQL_TOTP_REPLAY_TABLE,
 } from '@ultimat3/auth';
+import { FAILURES_TABLE, SQL_FAILURES_TABLE } from '@ultimat3/db';
 import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
 import { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from '@ultimat3/mcp/schema';
@@ -175,6 +176,16 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/admin',
     tables: Object.freeze([ERROR_GROUPS_TABLE]),
     ddl: Object.freeze([SQL_ERROR_GROUPS_TABLE]),
+  }),
+  /**
+   * `failureCapture`'s bundles — what `postgresFailureStore()` writes on a 5xx and `x repro` reads.
+   * Applied whether or not capture is on, for every row's reason: turning it on must not be the
+   * deploy whose first failure meets `42P01`, and a capture write that fails is only logged.
+   */
+  Object.freeze({
+    pkg: '@ultimat3/db',
+    tables: Object.freeze([FAILURES_TABLE]),
+    ddl: Object.freeze([SQL_FAILURES_TABLE]),
   }),
   /**
    * `mcpConfirmations`' pending rows — what `postgresConfirmationStore()` reads and writes. Without

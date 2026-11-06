@@ -77,7 +77,11 @@ export async function putS3Stream(wire: S3WireOptions, input: S3PutStreamInput):
     }
     if (held > 0) await sendPart();
     const open = uploadId;
-    await completeS3Upload(target, open, etags).catch(async (lost: unknown) => {
+    await completeS3Upload(
+      target,
+      open,
+      etags.map((etag, at) => ({ partNumber: at + 1, etag })),
+    ).catch(async (lost: unknown) => {
       if (isAnswered(lost)) throw lost;
       // Settled here, abort included, so the catch below must not abort a second time.
       uploadId = undefined;

@@ -1,4 +1,4 @@
-// `x db gen|migrate|reset|seed|studio|branch|backfill|diagnostics` — everything that touches the
+// `x db gen|migrate|reset|seed|studio|branch|backfill|diagnostics|recount` — everything that touches the
 // database. One subcommand per line and no fall-through: a word this file does not know is refused,
 // never re-read as an argument to the last branch. `branch` is `cmd-db-branch.ts`, `diagnostics`
 // is `db-diagnostics.ts`.
@@ -18,6 +18,7 @@ import { postgresDriver } from '@ultimat3/entity';
 import { requireAppRoot } from './app-root';
 import { runBackfillCommand } from './cmd-db-backfill';
 import { runBranchCommand } from './cmd-db-branch';
+import { runRecountCommand } from './cmd-db-recount';
 import { DB_SUBCOMMANDS, dbSpec } from './cmd-db-spec';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
@@ -75,6 +76,7 @@ export const dbCommand: CliCommand = {
     if (sub === 'backfill') return runBackfillCommand(ctx, root);
     if (sub === 'branch') return runBranchCommand(ctx, root);
     if (sub === 'diagnostics') return runDiagnostics(ctx, root);
+    if (sub === 'recount') return runRecountCommand(ctx, root);
 
     // Never a fall-through. This used to end `return runBranch(ctx, root, argument ?? 'preview')`,
     // so ANY subcommand the parser had not already refused was reinterpreted as a branch NAME and

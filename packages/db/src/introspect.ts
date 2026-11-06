@@ -178,6 +178,22 @@ export interface TableDescription {
    * and forced, `[]` otherwise (`row-security-catalog.ts`). Absent means nobody asked the catalog.
    */
   readonly policyNames?: readonly string[] | undefined;
+  /**
+   * The lifecycle triggers a migration installed on this table — history, its guard, counters
+   * (`generate-triggers.ts`). The SNAPSHOT's half, absent when none; the catalog's is `triggerNames`.
+   */
+  readonly triggers?: readonly TriggerRecord[] | undefined;
+  /**
+   * That the entity declares `retain` (`drift-triggers.ts` refuses it on a partitioned parent).
+   * SNAPSHOT-only, `true` or absent for `appendOnly`'s reason.
+   */
+  readonly retain?: true | undefined;
+}
+
+/** One installed trigger: its name, and the statements that install it — the drift repair too. */
+export interface TriggerRecord {
+  readonly name: string;
+  readonly install: readonly string[];
 }
 
 /**

@@ -1,7 +1,7 @@
-// Single responsibility: the one way to declare that a loop of statements is deliberate, so a
-// statement-level diagnostic reports the loops nobody argued for and stays quiet about the rest.
-// A scope with a written reason — never a comment pragma and never a config list of exempt call
-// sites (axiom 1), because both put the argument somewhere other than the loop it defends.
+// Single responsibility: the one way to declare a loop of statements deliberate, or a statement a
+// whole-table read, so a diagnostic reports only what nobody argued for. A scope with a written
+// reason — never a comment pragma nor a config list of exempt call sites (axiom 1): both put the
+// argument somewhere other than the statement it defends.
 
 // The reason has to outlive every `await` inside the scope and a module-scope variable would be
 // shared by two concurrent loops, so it needs an async context — opened through core's one lazy
@@ -51,4 +51,34 @@ export function expectedQueryLoop<T>(reason: string, fn: () => T): T {
  */
 export function expectedQueryLoopReason(): string | undefined {
   return storage.get();
+}
+
+const scans = asyncContext<string>('the expected-seq-scan reason');
+
+/**
+ * Run `fn` with every statement it issues marked as one that must read its table whole, carrying
+ * `reason`. The plan sweep `x exercise` runs reads it off each statement it saw, and lists the
+ * statement as exempt with the reason instead of `X_QUERY_UNINDEXED` — for a hand-written report
+ * over every row, never for a lookup that lacks its index. A table that is small by nature says so
+ * once, on the entity: `entity('plans', { scan: '<why>' })`. Same shape as `expectedQueryLoop`:
+ * required, non-blank, innermost wins, and a verdict suppressed — the statement still runs.
+ *
+ * ```ts
+ * await expectedSeqScan('the nightly digest reads every subscription once', () =>
+ *   db().query(sql`select id, email from subscriptions where active`),
+ * );
+ * ```
+ */
+export function expectedSeqScan<T>(reason: string, fn: () => T): T {
+  assert(
+    reason.trim() !== '',
+    'expectedSeqScan() was given a blank reason, so the scan it exempts carries no argument',
+    "pass why the statement must read the whole table: expectedSeqScan('the nightly digest reads every row once', fn)",
+  );
+  return scans.run(reason, fn);
+}
+
+/** The innermost `expectedSeqScan` reason in force, or `undefined` outside every scope. */
+export function expectedSeqScanReason(): string | undefined {
+  return scans.get();
 }

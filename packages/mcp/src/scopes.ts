@@ -44,6 +44,11 @@ export type McpScopes = Readonly<Record<string, readonly string[]>>;
 export function withScopes(
   tools: readonly AnyMcpTool[],
   scopes: McpScopes | undefined,
+  /**
+   * Reads the framework projected itself and gates per row or per caller (`job_status`, the
+   * recipes' `docs`): no scope covers them, because a scope would gate what the row gate decides.
+   */
+  exempt: ReadonlySet<string> = new Set(),
 ): readonly AnyMcpTool[] {
   if (scopes === undefined) return tools;
 
@@ -70,7 +75,9 @@ export function withScopes(
   }
 
   const uncovered = tools
-    .filter((tool) => tool.scope === undefined && !required.has(tool.name))
+    .filter(
+      (tool) => tool.scope === undefined && !required.has(tool.name) && !exempt.has(tool.name),
+    )
     .map((tool) => tool.name)
     .sort();
   if (uncovered.length > 0) throw new McpScopeUncoveredError({ uncovered });

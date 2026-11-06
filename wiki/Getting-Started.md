@@ -60,7 +60,7 @@ Measured on a fresh scaffold, `As of 2026-08-23`.
 | Mail | `/_x` inbox | captured, never sent |
 | Redis (the shared cache tier) | not started | the scaffold's `cache.tiers` is `['request-memo', 'lru']`; adding `'redis'` is what builds the shared rung |
 | `/_x` dev panel | `http://localhost:3000/_x` | 11 panels: routes, timeline, live, jobs, db, mail, cache, policy, manifest, services, boundaries |
-| MCP server | `x mcp serve` | 18 dev tools over `stdio` or `http` (13 framework tools plus five `ui.*`). **Not started by `x dev`** — `/mcp` on the dev server is 404 |
+| MCP server | `x mcp serve` | 19 dev tools over `stdio` or `http` (14 framework tools plus five `ui.*`). **Not started by `x dev`** — `/mcp` on the dev server is 404 |
 | Landing page | `apps/web/site/page.tsx` | `render: 'static'`, `hydrate: 'never'`, `budget: { js: '0kb' }`, real meta + JSON-LD |
 | Dashboard | `apps/web/app/dashboard/page.tsx` | `render: 'stream'`, `hydrate: 'visible'`, `budget: { js: '64kb' }` (one island, the theme toggle), behind `policy: { permission: 'dashboard:read' }`. A `<Hole>` is the next read it does not wait for ([Routes and render modes](Routes-And-Render-Modes#what-a-hole-does)) |
 | Admin app | `apps/admin/` | one `ssr` page; your actions reach an agent through `mcp: { expose: true }` and `x mcp serve`, not through this app |

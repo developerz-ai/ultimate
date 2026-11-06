@@ -8,7 +8,8 @@
 // change, once, and the next turn writes the new, shorter prefix.
 //
 // Never a truncation: a summary that cannot be had leaves the transcript whole, and a whole
-// transcript that does not fit is `X_AGENT_CONTEXT_EXHAUSTED` before it is sent. The trigger reads
+// transcript that does not fit is `X_AGENT_CONTEXT_EXHAUSTED` before it is sent. Only the summary
+// call's INPUT is ever shortened (./agent-compact-request), when the turns do not fit it whole. The trigger reads
 // the estimate scaled by what the provider REPORTED (./agent-compact-measure); a provider that
 // refuses a request anyway (`X_AI_CONTEXT_OVERFLOW`) gets one forced compaction, then that code.
 
@@ -16,26 +17,18 @@ import type { Ctx, Span } from '@ultimat3/core';
 import { stringField, throwIfAborted } from '@ultimat3/core';
 import type { AgentCompaction, CompactPlan } from './agent-compact-def';
 import { promptMeasure } from './agent-compact-measure';
+import type { SummaryInput, SummarySplit } from './agent-compact-request';
+import { blocksOf, COMPACTED_MARK, summaryCall } from './agent-compact-request';
 import { AgentContextExhaustedError } from './agent-errors';
 import type { RunDeadline } from './agent-guards';
 import type { Gateway } from './gateway';
 import type { ModelId } from './models';
 import { modelSpec } from './models';
-import type {
-  AiContentBlock,
-  AiMessage,
-  GenerateRequest,
-  GenerateResult,
-  TokenUsage,
-} from './provider';
+import type { AiMessage, GenerateRequest, GenerateResult, TokenUsage } from './provider';
 import { estimateInputTokens, estimateTextTokens, isTruncated } from './provider';
 import { runMeter } from './run-meter';
 
-/** How a compacted first message's summary block starts — the marker a later compaction reads. */
-export const COMPACTED_MARK = '[compacted:';
-
-/** What the summary call is asked, appended to the last message it is sent. */
-export const SUMMARY_INSTRUCTION = `${COMPACTED_MARK} instruction] This conversation is about to be shortened to fit the context window: everything after the task in the first message, any earlier summary included, will be replaced by the summary you write now. Summarise it for yourself — what you did, every tool you called and what it returned (keep exact ids, numbers, names and quotes you will still need), what you concluded, and what remains to do. Do not call any tool. Reply with the summary as plain text only.`;
+export { COMPACTED_MARK, SUMMARY_INSTRUCTION } from './agent-compact-request';
 
 /** The run's own stops: thrown as themselves from the summary call, never read as its failure. */
 const RUN_STOPS: ReadonlySet<string> = new Set([
@@ -118,6 +111,13 @@ export function compactor(input: CompactorInput): Compactor {
       'agent.compact.summarised_turns': event.summarised,
       'agent.compact.kept_turns': event.kept,
       ...(event.reason === undefined ? {} : { 'agent.compact.reason': event.reason }),
+      ...(event.summaryInput === undefined
+        ? {}
+        : {
+            'agent.compact.summary_input': event.summaryInput,
+            'agent.compact.clipped_turns': event.clipped ?? 0,
+            'agent.compact.omitted_turns': event.omitted ?? 0,
+          }),
       ...(event.cost === undefined ? {} : { 'llm.cost.minor': event.cost.minor }),
     });
     await input.onCompact?.(event);
@@ -134,6 +134,8 @@ export function compactor(input: CompactorInput): Compactor {
     const facts = { turn, before, limit, model: writer };
     const split = splitTurns(messages, plan.keepTurns);
     const kept = split === undefined ? Math.floor(messages.length / 2) : plan.keepTurns;
+    // How the turns reached the summary call, once one is built — reported on either outcome.
+    let shape: SummaryInput | undefined;
     const failed = async (
       reason: string,
       summarised: number,
@@ -147,6 +149,7 @@ export function compactor(input: CompactorInput): Compactor {
         summarised,
         kept,
         compactions: count,
+        ...inputFacts(shape),
         ...(call === undefined ? {} : { usage: call.usage, cost: call.cost }),
       });
       // Still fits: the run goes on whole. Compaction is how a run stays under the window, never
@@ -167,10 +170,22 @@ export function compactor(input: CompactorInput): Compactor {
       return failed(`there is no turn older than the last ${plan.keepTurns} to summarise`, 0);
     }
     const summarised = split.older.length / 2;
-    const request = summaryRequest(base, writer, plan.maxSummaryTokens, split);
-    if (measured(request) > roomOf(writer, plan.maxSummaryTokens)) {
-      return failed(`the turns to summarise do not fit model "${writer}" either`, summarised);
+    const room = roomOf(writer, plan.maxSummaryTokens);
+    const call = summaryCall(
+      base,
+      writer,
+      plan.maxSummaryTokens,
+      split,
+      (r) => measured(r) <= room,
+    );
+    if (call === undefined) {
+      return failed(
+        `the turns to summarise do not fit model "${writer}" even as text with every tool result left out`,
+        summarised,
+      );
     }
+    const { request } = call;
+    shape = call.input;
     throwIfAborted(input.ctx);
     input.deadline.check();
     input.assertCost(request);
@@ -214,6 +229,7 @@ export function compactor(input: CompactorInput): Compactor {
       summarised,
       kept,
       compactions: count,
+      ...inputFacts(shape),
       usage: result.usage,
       cost: result.cost,
     });
@@ -232,11 +248,7 @@ export function compactor(input: CompactorInput): Compactor {
   };
 }
 
-interface Split {
-  /** The first user message: the rendered prompt, and any earlier summary. */
-  readonly head: AiMessage;
-  /** Whole turns — an assistant message and the user message answering it — oldest first. */
-  readonly older: readonly AiMessage[];
+interface Split extends SummarySplit {
   /** The last `keepTurns` turns, verbatim. */
   readonly kept: readonly AiMessage[];
 }
@@ -256,31 +268,6 @@ function splitTurns(messages: readonly AiMessage[], keepTurns: number): Split | 
 }
 
 /**
- * The run's own request up to the cut, plus the instruction — the same tools, system and cache
- * hint, so the provider reads the prefix an earlier turn wrote. A different summary model takes
- * none of the run model's reasoning controls: one it lacks would be `X_AI_REQUEST_INVALID`.
- */
-function summaryRequest(
-  base: GenerateRequest,
-  writer: ModelId,
-  maxTokens: number,
-  split: Split,
-): GenerateRequest {
-  const messages = withInstruction([split.head, ...split.older]);
-  if (writer === base.model) return { ...base, messages, maxTokens };
-  const { effort: _effort, thinking: _thinking, ...rest } = base;
-  return { ...rest, model: writer, messages, maxTokens };
-}
-
-/** Roles must alternate, and the older turns end on a user message: the instruction joins it. */
-function withInstruction(messages: readonly AiMessage[]): readonly AiMessage[] {
-  const last = messages.at(-1);
-  const text = { type: 'text' as const, text: SUMMARY_INSTRUCTION };
-  if (last === undefined) return [{ role: 'user', content: SUMMARY_INSTRUCTION }];
-  return [...messages.slice(0, -1), { role: 'user', content: [...blocksOf(last), text] }];
-}
-
-/**
  * The first message, rebuilt: the prompt as it was sent (an earlier summary dropped — the new one
  * covers it), then the summary, marked. The model reads it as its own notes, said to be so.
  */
@@ -292,8 +279,11 @@ function compactedHead(head: AiMessage, turns: number, summary: string): AiMessa
   return { role: 'user', content: [...prompt, { type: 'text', text: note }] };
 }
 
-function blocksOf(message: AiMessage): readonly AiContentBlock[] {
-  return typeof message.content === 'string'
-    ? [{ type: 'text', text: message.content }]
-    : message.content;
+/** The event's facts about the summary call's input: its form, and how far text was shortened. */
+function inputFacts(
+  shape: SummaryInput | undefined,
+): Pick<AgentCompaction, 'summaryInput' | 'clipped' | 'omitted'> {
+  if (shape === undefined) return {};
+  if (shape.form === 'messages') return { summaryInput: 'messages' };
+  return { summaryInput: 'text', clipped: shape.clipped, omitted: shape.omitted };
 }

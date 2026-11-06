@@ -18,6 +18,7 @@ import { currentTx, expectedQueryLoop } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { memoryJournal } from './memory-journal';
 import { MAX_PAGE_SIZE } from './plan';
+import { readRecorder } from './read-capture';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { sealedFields } from './sealed';
 import type { IdOf, RowPatch } from './types';
@@ -243,8 +244,23 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
   // Spread first, exactly as `examples/dummy`'s own capturing driver does: a repository may carry
   // members `Repo` does not name — `memoryRepo`'s `reset()` is one — and a wrapper that listed only
   // the interface would silently drop them.
+  // The read half of failure capture (`read-capture.ts`): one check when no captured call is open.
+  const read = readRecorder(name, sealed);
+
   return {
     ...repo,
+
+    findById: async (id, options) => {
+      const row = await repo.findById(id, options);
+      if (row !== null) read([row]);
+      return row;
+    },
+
+    findMany: async (args) => {
+      const page = await repo.findMany(args);
+      read(page.rows);
+      return page;
+    },
 
     insert: async (values: Row, options?: RepoOptions): Promise<Row> => {
       const stored = await repo.insert(values, options);

@@ -48,7 +48,8 @@ export const testSpec: CommandSpec = {
     {
       name: 'affected',
       type: 'boolean',
-      summary: 'only the workspaces a diff touches, and everything that depends on one of them',
+      summary:
+        'only the tests a diff can break: in an app root, the test files whose import closure meets it (data.affected.tests says which and why); elsewhere, the workspaces it touches and everything depending on them',
     },
     {
       name: 'base',

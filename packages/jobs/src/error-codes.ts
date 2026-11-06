@@ -64,6 +64,9 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_STEP_NOT_RESOLVABLE',
   'X_JOB_ROLLUP_INVALID',
   'X_JOB_REFRESH_VIEW_INVALID',
+  'X_SUBJECT_TABLE_UNDECLARED',
+  'X_SUBJECT_TREATMENT_INVALID',
+  'X_SUBJECT_CYCLE',
 ] as const;
 
 /**
@@ -143,6 +146,10 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_STEP_NOT_RESOLVABLE: 'the step is not an unknown once outcome an operator can resolve',
   X_JOB_ROLLUP_INVALID: 'a rollup declaration cannot be run',
   X_JOB_REFRESH_VIEW_INVALID: 'a refreshView declaration names no materialized view it can refresh',
+  X_SUBJECT_TABLE_UNDECLARED:
+    'a table reaches the declared subject and defineSubject gives it no treatment',
+  X_SUBJECT_TREATMENT_INVALID: 'a defineSubject treatment cannot be carried out',
+  X_SUBJECT_CYCLE: 'the subject erase has no deletion order',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -219,4 +226,8 @@ registerErrorRetry({
   X_JOB_COMPENSATION_FAILED: 'terminal',
   // The body that enqueued itself does so on every attempt: the repair is deleting the call.
   X_CONSUMER_SELF_ENQUEUE: 'terminal',
+  // A subject's plan is read off the declarations: the same entities plan the same way every time.
+  X_SUBJECT_TABLE_UNDECLARED: 'terminal',
+  X_SUBJECT_TREATMENT_INVALID: 'terminal',
+  X_SUBJECT_CYCLE: 'terminal',
 });

@@ -140,6 +140,8 @@ export class FakeS3Client implements S3ClientLike {
     string,
     { key: string; type: string | undefined; parts: Map<number, Uint8Array> }
   >();
+  /** What a ListMultipartUploads reports as every open upload's `Initiated`. */
+  uploadsInitiated = '2026-07-26T12:00:00.000Z';
   openUploads(): readonly string[] {
     return [...this.uploads.keys()];
   }
@@ -271,10 +273,26 @@ export class FakeS3Client implements S3ClientLike {
         `<InitiateMultipartUploadResult><UploadId>${uploadId}</UploadId></InitiateMultipartUploadResult>`,
       );
     }
+    if (init.method === 'GET' && url.searchParams.has('uploads')) {
+      const prefix = url.searchParams.get('prefix') ?? '';
+      const open = [...this.uploads].filter(([, upload]) => upload.key.startsWith(prefix));
+      return new Response(
+        `<ListMultipartUploadsResult><IsTruncated>false</IsTruncated>${open
+          .map(([id, { key }]) => `<Upload><Key>${key}</Key><UploadId>${id}</UploadId>`)
+          .map((row) => `${row}<Initiated>${this.uploadsInitiated}</Initiated></Upload>`)
+          .join('')}</ListMultipartUploadsResult>`,
+      );
+    }
     const uploadId = url.searchParams.get('uploadId');
     if (uploadId === null) return undefined;
     const upload = this.uploads.get(uploadId);
     if (upload === undefined) return xmlError('NoSuchUpload', 'The upload does not exist', 404);
+    if (init.method === 'GET') {
+      const rows = [...upload.parts].sort(([a], [b]) => a - b);
+      const part = ([n, bytes]: [number, Uint8Array]): string =>
+        `<Part><PartNumber>${n}</PartNumber><ETag>&quot;${md5Of(bytes)}&quot;</ETag><Size>${bytes.byteLength}</Size></Part>`;
+      return new Response(`<ListPartsResult>${rows.map(part).join('')}</ListPartsResult>`);
+    }
     if (init.method === 'DELETE') {
       this.uploads.delete(uploadId);
       return new Response(null, { status: 204 });

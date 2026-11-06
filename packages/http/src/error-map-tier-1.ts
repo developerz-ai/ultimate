@@ -96,4 +96,12 @@ export const TIER_1_ERROR_STATUS = {
   X_STORAGE_WRITE_OUTCOME_UNKNOWN: 500,
   // @ultimat3/db — a keyset page holds a null in one of its sort keys
   X_KEYSET_NULL_KEY: 500,
+  // @ultimat3/storage — this disk cannot take an upload in parts
+  X_STORAGE_MULTIPART_UNSUPPORTED: 501,
+  // @ultimat3/storage — no open multipart upload has that id
+  X_STORAGE_UPLOAD_UNKNOWN: 404,
+  // @ultimat3/storage — the parts named do not match the parts stored
+  X_STORAGE_PARTS_INVALID: 422,
+  // @ultimat3/money — a typed amount could not be read in this locale
+  X_MONEY_INPUT_INVALID: 422,
 } satisfies Readonly<Record<string, number>>;

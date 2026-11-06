@@ -6,13 +6,16 @@
  * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
  */
 
-import { BILLING_CURRENCIES, PLAN_CODES, SUPPORTED_LOCALES } from '@postly/domain';
+import { BILLING_CURRENCIES, PLAN_CODES, SUPPORTED_LOCALES, typedBudget } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
 import { contactSubmit } from '../../../shared/policies';
 import { sendSalesReceipt } from '../jobs/send-sales-receipt';
 
 /** Long enough for a real question, short enough that the row and the idempotency key stay sane. */
 export const ENQUIRY_MAX = 2_000;
+
+/** A typed amount, symbol and separators included: nobody's budget is longer than this. */
+const BUDGET_TEXT_MAX = 40;
 
 export const contactSales = action({
   // The plan and the currency are enumerations off the catalog, not free text: the page renders
@@ -23,6 +26,11 @@ export const contactSales = action({
     currency: t.enumerated(...BILLING_CURRENCIES),
     message: t.string.min(1).max(ENQUIRY_MAX),
     locale: t.enumerated(...SUPPORTED_LOCALES),
+    /**
+     * The monthly budget as the visitor TYPED it — `1.234,56` on the Spanish page — so it is text,
+     * read in `locale` by the handler. Never a number field: a browser's parse of `1.234` is 1.234.
+     */
+    budget: t.string.max(BUDGET_TEXT_MAX).optional(),
   }),
   /**
    * A receipt, not the enquiry echoed back. The visitor is anonymous, so there is nothing here
@@ -55,6 +63,10 @@ export const contactSales = action({
    */
   rateLimit: { limit: 5, windowMs: 600_000 },
   async handle({ input }) {
+    // Read here, in the visitor's locale, so a typo is a 422 on THIS request (`X_MONEY_INPUT_INVALID`)
+    // the form can show — not a receipt minutes later quoting a number they never meant.
+    const typed = input.budget?.trim() ?? '';
+    const budget = typed === '' ? null : typedBudget(typed, input.currency, input.locale);
     // Enqueued rather than sent inline: mail renders in the worker role, in the recipient's
     // locale, and the visitor's answer must not wait on an SMTP round trip.
     await sendSalesReceipt.enqueue({
@@ -63,6 +75,7 @@ export const contactSales = action({
       currency: input.currency,
       message: input.message,
       locale: input.locale,
+      budget,
     });
     return { received: true };
   },

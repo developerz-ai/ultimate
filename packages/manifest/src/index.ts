@@ -44,6 +44,19 @@ export {
   ManifestDriftError,
   ManifestFactInvalidError,
 } from './errors';
+export type { ModuleFacts, ObservedEdge } from './graph';
+export { buildGraph, findNode, impactOf, nodeId, pathBetween } from './graph';
+export type {
+  AppGraph,
+  EdgeProvenance,
+  GraphEdge,
+  GraphNode,
+  GraphNodeKind,
+  GraphPath,
+  Impact,
+  ImpactEntry,
+} from './graph-schema';
+export { GRAPH_NODE_KINDS, GRAPH_VERSION } from './graph-schema';
 export type {
   ActionFact,
   AdminFact,
@@ -66,6 +79,12 @@ export type {
   TaskFact,
 } from './schema';
 export { isCompatible, isManifest, MANIFEST_VERSION } from './schema';
+export type {
+  SubjectFact,
+  SubjectTableFact,
+  SubjectTargetFact,
+  SubjectTreatmentFact,
+} from './schema-subjects';
 export type { FrameworkSourcesInput } from './sources';
 export { frameworkSources } from './sources';
 export type { VerifyContractInput, VerifyContractResult } from './verify';

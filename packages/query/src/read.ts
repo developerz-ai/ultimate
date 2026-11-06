@@ -12,16 +12,20 @@ import {
   anonymousActor,
   assert,
   ctxOf,
+  failureCaptureActive,
   finiteOption,
   logger,
   REDACTED,
+  recordFailureInput,
   runWithContext,
   tryUseContext,
   useContext,
   withChildContext,
+  withFailureCapture,
   withSpan,
 } from '@ultimat3/core';
 import { withStatementTimeout } from '@ultimat3/db';
+import { statusFor } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { formatPath, maskSensitive, validateAsync } from '@ultimat3/schema';
 import type { ReadAudit, ReadTrace } from './audit-gate';
@@ -92,12 +96,15 @@ export function runQuery(
   raw: unknown,
   options: QueryOptions = {},
 ): Promise<readonly object[]> {
-  return asActor(options, (ctx) => {
-    const audit = auditFor(target, ctx, options);
-    return audit === null
-      ? readRows(target, raw, ctx, options, null)
-      : audited(audit, () => readRows(target, raw, ctx, options, audit.trace));
-  });
+  // A 5xx keeps a replayable bundle when `failureCapture` is on (`x repro`); off, it reads bare.
+  return asActor(options, (ctx) =>
+    withFailureCapture('query', queryName(target), statusFor, () => {
+      const audit = auditFor(target, ctx, options);
+      return audit === null
+        ? readRows(target, raw, ctx, options, null)
+        : audited(audit, () => readRows(target, raw, ctx, options, audit.trace));
+    }),
+  );
 }
 
 /**
@@ -372,6 +379,7 @@ async function admit(
     });
   }
   const input = await validate(def.input, raw, name);
+  if (failureCaptureActive()) recordFailureInput(maskSensitive(def.input, input, REDACTED));
   // The audit record's copy, masked by THIS read's own schema — never a key table (`action`'s rule).
   if (trace !== null) trace.input = maskSensitive(def.input, input, REDACTED);
   if (unenforced === undefined) {

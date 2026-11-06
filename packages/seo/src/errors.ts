@@ -20,6 +20,7 @@ export const SEO_ERROR_CODES = {
   imageQueryInvalid: 'X_IMAGE_QUERY_INVALID',
   linkInvalid: 'X_SEO_LINK_INVALID',
   sitemapEntryInvalid: 'X_SITEMAP_ENTRY_INVALID',
+  llmsDescriptionMissing: 'X_SEO_LLMS_DESCRIPTION_MISSING',
 } as const;
 
 export type SeoErrorCode = (typeof SEO_ERROR_CODES)[keyof typeof SEO_ERROR_CODES];
@@ -46,6 +47,7 @@ registerErrorCodes({
   X_SITEMAP_ENTRY_INVALID: {
     title: 'a sitemap entry carries a lastmod or a locale the sitemap cannot write',
   },
+  X_SEO_LLMS_DESCRIPTION_MISSING: { title: 'a page listed in llms.txt has no description' },
 });
 
 export interface SeoErrorInit {

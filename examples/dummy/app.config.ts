@@ -73,6 +73,11 @@ export const config = defineConfig({
   // a document rendered for nobody, and a new principal is always a full navigation.
   navigation: { client: ['app'] },
 
+  // A new visitor's `app/` pages render in their own zone from the second page on: each `app/`
+  // document carries a 153 B script writing `x_timezone_detected` from the browser's `Intl` zone,
+  // ranked below a saved member zone and the zone cookie a picker writes. `site/` never carries it.
+  time: { detect: true },
+
   // A browser failure on an `app/` page — a window error, an unhandled rejection, an island whose
   // `mount()` threw — reaches the same `ErrorReporter` a server failure does, as `source: 'browser'`.
   // Signed-in members only (`anonymous` stays false) at 30 reports a minute each; `site/` pages
@@ -83,6 +88,12 @@ export const config = defineConfig({
   // (the default), so the marketing pages still ship no byte of it; charged to each app route's
   // budget as served.
   clientErrors: { enabled: true, vitals: { enabled: true } },
+
+  // A 5xx from an action or a query keeps a replayable bundle in `x_failures` — the input with its
+  // `.sensitive()` and secret-named fields masked, the actor, the flags it evaluated and the rows
+  // it read — so `x repro <requestId> --write --verify` turns it into a failing test. Retention is
+  // the app's: a `failurePurgeTarget(store, { keepMs })` in a `purge()` sweep.
+  failureCapture: { enabled: true },
 });
 
 /**

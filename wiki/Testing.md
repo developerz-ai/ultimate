@@ -124,6 +124,36 @@ expect(second?.body).toBe(first?.body);
 - `answer`: a handler, or a list of `Response | Error` answered in order with the last repeated. An `Error` is thrown. An empty list is `X_INVARIANT`.
 - `requestLog()`: `{ method, url, headers, body }[]`, in call order, refused calls and socket dials included, unredacted. Header names are lowercase. `body` is UTF-8 text or `null`; a `ReadableStream` on its way to a real server is never read and logs `null`. A stream body or a `Request`'s own is captured beside the call, never ahead of the answer: it is in the entry once it ends, `null` until then.
 
+**A vendor's answers, recorded once** — `cassette(dir, name, options)`, `As of 2026-11`. Replay is
+`mockFetch`: each recorded URL becomes one route answered in call order, so anything else is still
+`X_TEST_NETWORK_SEALED`. Recording is by hand.
+
+```ts
+import { cassette, expect } from '@ultimat3/testing';
+
+declare function refund(): Promise<{ status: number }>; // yours: the code under test
+
+await using _tape = cassette(import.meta.dir, 'refund-flow', {
+  record: { hosts: ['api.vendor.test'] },
+});
+expect((await refund()).status).toBe(200);
+```
+
+| Mode | What happens |
+|---|---|
+| replay (default) | reads `<dir>/__cassettes__/<name>.json`; no file is `X_CASSETTE_MISSING`; an entry never asked for fails at dispose, `X_CASSETTE_UNUSED` (`meta.unused`) |
+| `ULTIMATE_CASSETTE=record bun test <file>` | lets `record.hosts` through the seal for the cassette's life, and writes at dispose. `CI` set, no `record.hosts`, or a dial to another host is `X_CASSETTE_RECORD_REFUSED` |
+
+| What is written | Rule |
+|---|---|
+| request | never: assert what was sent with `requestLog()` |
+| response headers | `content-type`, `retry-after`, `ratelimit-*` only |
+| credential-named keys | masked as `[redacted]` in JSON bodies at any depth and in URL queries; a masked URL still matches the real request on replay |
+| `redact(text)` | the app's rule, after the masking, on each URL and text body; a `[redacted]` it puts in a URL matches any one segment on replay |
+| the secret scan | last, over the exact bytes: every credential-named env var's value and `secrets: []`, raw, JSON-escaped, percent-encoded, base64, base64url, and raw inside a base64 body. A hit writes nothing: `X_CASSETTE_SECRET` names the key and the byte offset, never the value. Values under 8 characters are skipped; a hashed or split value is not caught |
+| bodies | text as text, anything else base64; keys sorted; temp file then rename; a body that fails to read writes nothing |
+| streams | recorded whole, replayed as one body: a chunk-boundary test stays hand-written |
+
 Locale and zone are declared per test when the behavior under test depends on them — see [Timezones and dates](Timezones-And-Dates) and [I18n](I18n).
 
 ## The six test types
@@ -1005,6 +1035,28 @@ reruns the one job and names the effect to move:
 
 ```bash
 x exercise chargeOrder --json   # in job("chargeOrder"): wrap the "row:payments:insert" made after step "create" in step.run('<name>', async () => …)
+```
+
+### The plan and scale sweeps
+
+**After every primitive ran, two sweeps, with no flag to turn either off**, `As of 2026-11`.
+Source: `packages/testing/src/scale-sweep*.ts`, `plan-oracle.ts`, `plan-sweep*.ts`.
+
+| Sweep | What | Red |
+|---|---|---|
+| scale | every reached primitive once more in a tenant at 2 rows a table, once in one at 8; per statement shape, the counts compared | a shape sent more often at 8: `X_QUERY_SCALES_WITH_ROWS`, fix `preload()` or `expectedQueryLoop('<why>', fn)` |
+| plans | every distinct statement whose first relation is an app table, `PREPARE`d and explained as a generic plan with `enable_seqscan`, `enable_bitmapscan`, `enable_sort` off, in a read-only transaction | `Seq Scan`, or an index scan with no `Index Cond` no `Limit` stops: `X_QUERY_UNINDEXED`. `Sort` under `Limit`: `X_QUERY_SORT_UNSERVED`. Each prints `indexes: [{ on: [...] }]` |
+
+With the planner's scans and sorts disabled it picks one only when no index can answer, so the
+verdict reads the schema on empty tables — no volume, no statistics. Never red: `scale.verdict`
+`flat` (a declared loop listed in `expected` with its reason) or `unproven` (a call that did not
+answer at both sizes); a statement whose equality pins a unique key; one a partial index serves once
+its value is bound; one under `expectedSeqScan('<why>', fn)` or on an entity with `scan: '<why>'`
+(`plans.exempt`); one generic planning refuses (`plans.unplannable`). A server below Postgres 12:
+`X_QUERY_PLAN_UNAVAILABLE`.
+
+```bash
+x db gen posts-orgId-createdAt-id-index   # after indexes: [{ on: ['orgId', 'createdAt', 'id'] }] in entity("posts")
 ```
 
 ## Memory, width and isolation

@@ -27,6 +27,8 @@ export const MAIL_ERROR_CODES = [
   'X_MAIL_EVENT_INVALID',
   'X_MAIL_EVENT_PROVIDER_UNREACHABLE',
   'X_MAIL_KEY_MISSING',
+  'X_MAIL_PREVIEW_INVALID',
+  'X_MAIL_PREVIEW_MISSING',
 ] as const;
 
 export type MailErrorCode = (typeof MAIL_ERROR_CODES)[number];
@@ -46,6 +48,8 @@ export const MAIL_ERROR_TITLES: Readonly<Record<MailErrorCode, string>> = {
   X_MAIL_EVENT_INVALID: 'a delivery notification is not a shape this receiver reads',
   X_MAIL_EVENT_PROVIDER_UNREACHABLE: 'an SNS endpoint the receiver needed did not answer',
   X_MAIL_KEY_MISSING: 'a mail rendered a key or slot with no value in its locale',
+  X_MAIL_PREVIEW_INVALID: "a mail's declared preview fails its own input schema",
+  X_MAIL_PREVIEW_MISSING: 'this mail declares no preview',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

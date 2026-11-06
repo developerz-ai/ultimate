@@ -8,6 +8,7 @@ create table "runs" (
   "status" text not null,
   "code" text,
   "started_at" timestamp with time zone default now() not null,
+  "event_count" integer default 0 not null,
   constraint "runs_pkey" PRIMARY KEY (id),
   constraint "runs_code_check" CHECK ((char_length(code) <= 64)),
   constraint "runs_job_id_check" CHECK ((char_length(job_id) <= 64)),

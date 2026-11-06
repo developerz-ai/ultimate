@@ -35,6 +35,8 @@ by the CLI, not imported.
 | `diff-rows.ts` | a read's row, member by member: removed, retyped or no longer required is breaking, added is additive. Never `canonicalJson` inequality: an entity gaining a column would flip every `rows: X.$schema` read |
 | `diff-mounts.ts` | a bearer mount's cut, per (scope, name): the one classifier that sees a held token's 404, because the primitive stays registered |
 | `diff-consumers.ts` | the `consumers` section: a consumer removed is breaking (its stream is never read again, nothing throws); every field that moved is internal |
+| `graph.ts` / `graph-schema.ts` | the app graph: `buildGraph` (pure — manifest + injected `ModuleFacts` + observed edges; never a registry or a file), `impactOf`, `pathBetween`, `findNode`. Never written to `x.manifest.json`: a contract that churned on every import. Every edge carries its provenance |
+| `schema-subjects.ts` / `diff-subjects.ts` | the `subjects` section (`defineSubject()`): a subject removed, or a table's treatment moving from `retain`/`anonymize` to `delete`, is breaking; a subject or table added is additive; the anonymized VALUES are code and never projected |
 
 ## Invariants
 
@@ -171,7 +173,7 @@ by the CLI, not imported.
   `before` is a file parsed off disk, so an older or hand-trimmed manifest can carry an absent or
   non-boolean value that `!==` would classify from; and the fact `sources.ts` publishes has to be
   the answer `@ultimat3/mcp`'s catalog gives, or the gate demands a major bump for a tool that never existed.
-- **`consumers` follows `mounts`' rule** (`As of 2026-11`): written only when one is declared, `?? []` on both sides in `diff.ts`.
+- **`consumers` follows `mounts`' rule** (`As of 2026-11`): written only when one is declared, `?? []` on both sides in `diff.ts`. So does `subjects`.
 - **`mounts` is written only when there is one** (`As of 2026-11`), unlike `channels` and `admin`, so an app without a mount keeps its bytes; `diff.ts` reads `?? []` on BOTH sides because the key is absent after the last mount leaves. **`QueryFact.rows` present before and absent after is breaking** (the 200 turns untyped; `before` carrying it proves its writer knew the field); absent before is additive.
 
 ## Commands

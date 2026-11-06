@@ -31,7 +31,11 @@ export function resolvePreferences(
   });
   ctx.tz = resolveTimeZone({
     cookie: readCookie(cookies, config.tz.cookie),
+    // Documented as a source (`?tz=` for share links) and never read until 2026-11, as `?locale=`.
+    query: ctx.url.searchParams.get('tz'),
     header: request.header(config.tz.header),
+    // A document navigation sends no header: this is the browser's zone on a first `app/` page.
+    detected: readCookie(cookies, config.tz.detectedCookie),
     user: ctx.actor.tz ?? null,
   }).zone;
   ctx.headers.set('content-language', ctx.locale);

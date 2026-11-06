@@ -22,7 +22,7 @@ import. The CLI wires it.
 | `server-resources.ts` | `resources/read`'s three outcomes, audited, provider in a `try` |
 | `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
-| `dev-server.ts` | 13 of the 18 dev tools (`routes.list` … `logs.tail`); `ui.shot`, `ui.island`, `ui.inspect`, `ui.diff` are `dev-ui-tools.ts`, `ui.interact` `dev-ui-interact.ts`. Depends only on an injected `DevHost` |
+| `dev-server.ts` | 13 of the 19 dev tools (`routes.list` … `logs.tail`); `ui.shot`, `ui.island`, `ui.inspect`, `ui.diff` are `dev-ui-tools.ts`, `ui.interact` `dev-ui-interact.ts`, `graph.query` `dev-graph-tool.ts`. Depends only on an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself; it keeps the order |
 | `transport-http-answers.ts` | the pre-dispatch answers (401, 403 not-an-agent / origin, 421, 429) and the per-address failure meter |
@@ -43,6 +43,7 @@ import. The CLI wires it.
 | `list-params.ts` | `listParams` whitelist → the schema `manage_resource` enforces (flat keys: `status_eq`) |
 | `meta-errors.ts` · `framework-error.ts` | meta boot refusals · a thrown value read and rendered (split from `server.ts`) |
 | `server-voice.ts` · `surface-budget.ts` | `instructions`, `errorAudience`, the invalid-args RESULT · `tools/list`/`list_resources` size, measured and budgeted |
+| `job-*` · `recipe*` · `remote-*` | `jobTool`/`job_status` · `recipes:`/`docs` · `mcpTools`/`mcpClient`/`tools.lock.json` — [history](../../docs/history/mcp.md) |
 
 ## Invariants
 
@@ -153,8 +154,7 @@ import. The CLI wires it.
   the line is written, then the decision handed on, unawaited; a throwing hook changes no answer
   (`mcp.audit-hook.failed`). Core's `AuditSink` = what a primitive DID; `onAudit` = what the gate
   decided, refused tokens included (`mcp.auth.<reason>`). The route reads `server.audit`.
-- **A `--` comment ends at the first CR *or* LF — Postgres' own boundary set** (`readonly-sql.ts`,
-  `endOfLineComment`). A scanner stopping at LF alone read `select 1;--\rupdate …` as one read.
+- **A `--` comment ends at the first CR *or* LF** (`readonly-sql.ts`): why in `docs/history/mcp.md`.
 - `security.test.ts` and `app-security.test.ts` are the executable contract for all of the
   above — the first over hand-built tools (each gate in isolation), the second over what an app
   actually declares (`defineAppMcp` projecting real actions and queries). Extend them, never

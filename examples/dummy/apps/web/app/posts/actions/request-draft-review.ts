@@ -18,6 +18,9 @@ import { postPublish } from '../policy';
  * Ask for a kept review in the background — the author's or an org admin's right, as publishing
  * is (`postPublish`, on the row loaded before the guard). The member is the caller's own, read off
  * the actor — never a field of the input — and the run is enqueued in this request's transaction.
+ *
+ * No `mcp`: an agent asks with `draftReview` (`apps/web/mcp-tools.ts`), the `jobTool()` over the
+ * same job — one MCP path to it, which also answers the review back, never a second tool here.
  */
 export const requestDraftReview = action({
   input: t.object({ postId: t.uuid, orgId: t.uuid }),
@@ -26,7 +29,6 @@ export const requestDraftReview = action({
   // Closed: see `publishPost`.
   errors: [OrgNotFound.code],
   row: ({ input: { postId: id }, ctx }) => ctx.posts.authorship(postId(id)),
-  mcp: { expose: true, description: 'Queue a review of your draft; read it back with postReview' },
   async handle({ input, ctx }) {
     const me = await ctx.orgs.me();
     const queued = await reviewDraftLater.enqueue({ ...input, memberId: me.id });

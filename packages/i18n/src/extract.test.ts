@@ -245,6 +245,45 @@ describe('auditCatalogs \u00B7 reference', () => {
     expect(report.ok).toBe(true);
   });
 
+  test('select and ordinal families: used by their stem, owed by stem, and _other required', () => {
+    const report = auditCatalogs({
+      extraction: extractKeys("t('invite', { select, count }); t('place', { ordinal: n });"),
+      catalogs: {
+        en: {
+          invite_select_female_one: 'a',
+          invite_select_other_one: 'b',
+          place_ordinal_one: '{ordinal}st',
+          place_ordinal_other: '{ordinal}th',
+        },
+        tr: { invite_select_other: 'x', place_ordinal_other: '{ordinal}.' },
+        de: { invite_select_female: 'sie', place_ordinal_other: '{ordinal}.' },
+      },
+      reference: 'en',
+    });
+    const audit = (locale: string) => report.locales.find((each) => each.locale === locale);
+    expect(audit('en')).toMatchObject({ missing: [], unused: [], incomplete: [] });
+    expect(audit('tr')).toMatchObject({ missing: [], unused: [], incomplete: [] });
+    expect(audit('de')?.incomplete).toEqual(['invite_select_other']);
+    expect(report.ok).toBe(false);
+    expect(() => assertCatalogsComplete(report)).toThrow('X_I18N_FAMILY_INCOMPLETE');
+  });
+
+  test('a key source names itself is no family member, so it owes no _other', () => {
+    const report = auditCatalogs({
+      extraction: extractKeys("t('theme_select_label'); t('rank_ordinal_hint', { count });"),
+      catalogs: {
+        en: {
+          theme_select_label: 'Theme',
+          rank_ordinal_hint_one: 'a',
+          rank_ordinal_hint_other: 'b',
+        },
+      },
+      reference: 'en',
+    });
+    expect(report.locales[0]?.incomplete).toEqual([]);
+    expect(report.ok).toBe(true);
+  });
+
   test('a suffix that is no plural category is its own key, not a stem', () => {
     const report = auditCatalogs({
       extraction: none,

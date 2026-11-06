@@ -244,11 +244,13 @@ describe('writeSiteSeo — the static export', () => {
       '/sitemaps/blog-2.xml',
       '/sitemaps/ciudades-1.xml',
       '/robots.txt',
+      '/llms.txt',
     ]);
     for (const file of seo.sitemaps) {
       expect(await Bun.file(join(out, file.path)).text()).toBe(file.xml);
     }
     expect(await Bun.file(join(out, 'robots.txt')).text()).toBe(seo.robots);
+    expect(await Bun.file(join(out, 'llms.txt')).text()).toBe(seo.llms);
     // Every child the index names is a file on disk.
     for (const loc of locs(await Bun.file(join(out, 'sitemap.xml')).text())) {
       expect(await Bun.file(join(out, new URL(loc).pathname)).exists()).toBe(true);

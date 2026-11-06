@@ -57,7 +57,8 @@
         "send": "Send enquiry",
         "sending": "Sending your enquiry…",
         "sent": "Thanks — a copy is on its way to your inbox.",
-        "failed": "That did not send. Try again, or write to sales@postly.example."
+        "failed": "That did not send. Try again, or write to sales@postly.example.",
+        "budget": "Monthly budget (optional)"
       }
     },
     "blog": {
@@ -100,6 +101,9 @@
       "draftNotice": "This is a draft. Only your organisation can see it.",
       "publish": "Publish",
       "publishing": "Publishing",
+      "summarize": "Summarise",
+      "summaryWriting": "Writing a summary…",
+      "summaryFailed": "The summary could not be written. Try again.",
       "like": "Like",
       "unlike": "Remove like",
       "likes_one": "{count} like",
@@ -107,7 +111,11 @@
       "commentsHeading": "Comments",
       "commentsEmpty": "No comments yet.",
       "commentPlaceholder": "Say something useful",
-      "commentSubmit": "Comment"
+      "commentSubmit": "Comment",
+      "commentNumber_ordinal_one": "{ordinal}st comment",
+      "commentNumber_ordinal_two": "{ordinal}nd comment",
+      "commentNumber_ordinal_few": "{ordinal}rd comment",
+      "commentNumber_ordinal_other": "{ordinal}th comment"
     },
     "settings": {
       "metaTitle": "Settings",
@@ -126,7 +134,11 @@
       "pushLabel": "Notify me in this browser",
       "pushOn": "This browser will be notified when someone comments on your posts.",
       "pushDenied": "Notifications are blocked for this site — allow them in your browser settings.",
-      "pushUnavailable": "This browser cannot receive notifications from Postly."
+      "pushUnavailable": "This browser cannot receive notifications from Postly.",
+      "role_select_owner": "You own {org}: its plan and its billing are yours.",
+      "role_select_admin": "You run {org} with its owner.",
+      "role_select_author": "You write for {org}.",
+      "role_select_other": "You read {org}."
     },
     "runs": {
       "metaTitle": "Runs",
@@ -260,7 +272,8 @@
     "contactSales": {
       "subject": "We got your Postly enquiry",
       "body": "Thanks for asking about the {plan} plan, priced in {currency}. Someone from sales replies within one working day.",
-      "quote": "You wrote: {message}"
+      "quote": "You wrote: {message}",
+      "budget": "Monthly budget"
     }
   },
   "digest": {
@@ -374,7 +387,8 @@
         "jobId": "Job ID",
         "status": "Status",
         "code": "Code",
-        "startedAt": "Started at"
+        "startedAt": "Started at",
+        "eventCount": "Events"
       },
       "scope": {
         "running": "Running",

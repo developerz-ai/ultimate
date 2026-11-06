@@ -107,6 +107,21 @@ an hour later is not refused by the signature window. Declaring it is its regist
 mounts its route. `api/` holds no route file.
 `SES_CONFIGURATION_SET` names the SES configuration set sent on every message (`ConfigurationSetName`) — the set whose event destination publishes to that SNS topic.
 
+## Previews
+
+`As of 2026-11-06`. `defineMail({ preview })` declares the data a template is checked by: a value,
+parsed by `input` where it is written (`X_MAIL_PREVIEW_INVALID`), or `(locale) => data`, parsed at
+each render. Never production rows. `x mail preview <id> [--locale <tag>] [--tz <zone>] [--out <dir>] [--json]`
+renders it per locale with nothing sent, naming every key a locale lacks; `x verify`'s `i18n` step
+renders every declared preview in every locale, so a preview is also a test. `previewMail(id,
+{ locale })` is the same render for a host. A mail with none: `X_MAIL_PREVIEW_MISSING`.
+
+The `/_x` mail panel lists every registered mail beside the caught ones (`templates`): each declared
+`preview` rendered in each of the app's locales, dates in UTC, with the keys a locale lacks as
+`templateGaps` and a preview its schema refuses shown as that refusal. A mail with no `preview` is
+listed with `hasPreview: false`. `?template=<id>` selects one; `x dev`'s panel and its `--json`
+payload are the same facts.
+
 ## Framework mails
 
 `welcome`, `verify-email`, `reset-password`, `invite`, `mfa-enrolled`, `security-alert` —

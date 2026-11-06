@@ -178,15 +178,17 @@ export function clientVitalsSurface(
 }
 
 /**
- * The document heads both browser scripts compose into — for `DocumentOptions`, spread. The one
+ * The document heads the browser scripts compose into — for `DocumentOptions`, spread. The one
  * place `x dev` and the container combine them, so the two cannot name different scripts. A key
- * is absent rather than `''` when nothing rides it.
+ * is absent rather than `''` when nothing rides it. `zone` (`time.detect`, `zone-boot.ts`) is an
+ * `app/` tag only: a `site/` page is a file, and a file cannot answer in the visitor's zone.
  */
 export function clientScriptHeads(
   errors: { readonly head: string } | undefined,
   vitals: ClientVitalsSurfaceMount | undefined,
+  zone?: { readonly head: string } | undefined,
 ): { readonly appHead?: string; readonly siteHead?: string } {
-  const appHead = (errors?.head ?? '') + (vitals?.appHead ?? '');
+  const appHead = (zone?.head ?? '') + (errors?.head ?? '') + (vitals?.appHead ?? '');
   const siteHead = vitals?.siteHead ?? '';
   return {
     ...(appHead === '' ? {} : { appHead }),

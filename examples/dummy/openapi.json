@@ -1,6 +1,45 @@
 {
   "components": {
     "schemas": {
+      "AbortPostsImportInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "uploadId": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "key",
+          "uploadId"
+        ],
+        "type": "object"
+      },
+      "AbortPostsImportOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "aborted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "aborted"
+        ],
+        "type": "object"
+      },
       "AddWebhookEndpointInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -125,6 +164,91 @@
         },
         "required": [
           "runId"
+        ],
+        "type": "object"
+      },
+      "CompletePostsImportInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "key must be one grantPostsImport minted: org/<orgId>/imports/posts/<importId>/<name>",
+        "properties": {
+          "key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "etag": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "partNumber": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "partNumber"
+              ],
+              "type": "object"
+            },
+            "maxItems": 10000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "uploadId": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "key",
+          "uploadId",
+          "parts"
+        ],
+        "type": "object",
+        "x-ultimate-refinements": [
+          {
+            "message": "key must be one grantPostsImport minted: org/<orgId>/imports/posts/<importId>/<name>",
+            "name": "key-is-a-posts-import",
+            "path": [
+              "key"
+            ]
+          }
+        ]
+      },
+      "CompletePostsImportOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "importId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "importId",
+          "key",
+          "size"
         ],
         "type": "object"
       },
@@ -287,6 +411,11 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "budget": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
           "currency": {
             "enum": [
               "USD",
@@ -612,6 +741,91 @@
           "method",
           "contentType",
           "maxBytes",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "GrantPostsImportInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "orgId",
+          "filename",
+          "contentType",
+          "size"
+        ],
+        "type": "object"
+      },
+      "GrantPostsImportOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "expiresAt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "importId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxParts": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "partBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "uploadId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "importId",
+          "key",
+          "uploadId",
+          "partBytes",
+          "maxParts",
+          "contentType",
+          "size",
           "expiresAt"
         ],
         "type": "object"
@@ -952,6 +1166,61 @@
           "authorName"
         ],
         "type": "object"
+      },
+      "ListPostsImportPartsInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "uploadId": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "key",
+          "uploadId"
+        ],
+        "type": "object"
+      },
+      "ListPostsImportPartsOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "etag": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "partNumber": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "size": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "partNumber",
+            "etag",
+            "size"
+          ],
+          "type": "object"
+        },
+        "type": "array"
       },
       "MemberAvatarInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1304,6 +1573,77 @@
         ],
         "type": "object"
       },
+      "RequestMemberErasureInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "RequestMemberErasureOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "type": "object"
+      },
+      "RequestMemberExportInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "RequestMemberExportOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "exportId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prefix": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "exportId",
+          "prefix"
+        ],
+        "type": "object"
+      },
       "RequestPostsExportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -1643,6 +1983,58 @@
           "theme",
           "digestOptIn",
           "createdAt"
+        ],
+        "type": "object"
+      },
+      "SignPostsImportPartInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "partNumber": {
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "uploadId": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "key",
+          "uploadId",
+          "partNumber",
+          "size"
+        ],
+        "type": "object"
+      },
+      "SignPostsImportPartOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
         ],
         "type": "object"
       },
@@ -5321,7 +5713,7 @@
             "description": "X_BODY_INVALID"
           }
         },
-        "summary": "Queue a review of your draft; read it back with postReview",
+        "summary": "requestDraftReview",
         "tags": [
           "draft-reviews"
         ],
@@ -5329,7 +5721,7 @@
           "capability": "post:publish",
           "idempotent": false,
           "invalidates": [],
-          "mcpTool": "requestDraftReview",
+          "mcpTool": null,
           "rateLimit": null
         }
       }
@@ -5354,6 +5746,12 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReviewDraftOutput"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "description": "event: chunk | done | error; data: one JSON value",
+                  "type": "string"
                 }
               }
             },
@@ -5399,6 +5797,186 @@
           "idempotent": false,
           "invalidates": [],
           "mcpTool": "reviewDraft",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/member-erasures/request": {
+      "post": {
+        "operationId": "requestMemberErasure",
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestMemberErasureInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestMemberErasureOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "requestMemberErasure",
+        "tags": [
+          "member-erasures"
+        ],
+        "x-ultimate": {
+          "capability": "org:administer",
+          "idempotent": true,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/member-exports/request": {
+      "post": {
+        "operationId": "requestMemberExport",
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestMemberExportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestMemberExportOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "requestMemberExport",
+        "tags": [
+          "member-exports"
+        ],
+        "x-ultimate": {
+          "capability": "org:administer",
+          "idempotent": true,
+          "invalidates": [],
+          "mcpTool": null,
           "rateLimit": null
         }
       }
@@ -5727,6 +6305,351 @@
         }
       }
     },
+    "/api/posts-import-parts/list": {
+      "post": {
+        "operationId": "listPostsImportParts",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListPostsImportPartsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPostsImportPartsOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "listPostsImportParts",
+        "tags": [
+          "posts-import-parts"
+        ],
+        "x-ultimate": {
+          "capability": "post:export",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts-import-parts/sign": {
+      "post": {
+        "operationId": "signPostsImportPart",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignPostsImportPartInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignPostsImportPartOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "signPostsImportPart",
+        "tags": [
+          "posts-import-parts"
+        ],
+        "x-ultimate": {
+          "capability": "post:export",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts-imports/abort": {
+      "post": {
+        "operationId": "abortPostsImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbortPostsImportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbortPostsImportOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "abortPostsImport",
+        "tags": [
+          "posts-imports"
+        ],
+        "x-ultimate": {
+          "capability": "post:export",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts-imports/complete": {
+      "post": {
+        "operationId": "completePostsImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletePostsImportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletePostsImportOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "completePostsImport",
+        "tags": [
+          "posts-imports"
+        ],
+        "x-ultimate": {
+          "capability": "post:export",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts-imports/grant": {
+      "post": {
+        "operationId": "grantPostsImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantPostsImportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantPostsImportOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "grantPostsImport",
+        "tags": [
+          "posts-imports"
+        ],
+        "x-ultimate": {
+          "capability": "post:export",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
     "/api/posts/create": {
       "post": {
         "operationId": "createPost",
@@ -5771,6 +6694,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_POST_SLUG_TAKEN"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_POST_SLUG_TAKEN",
+            "x-ultimate-errors": [
+              "X_POST_SLUG_TAKEN"
+            ]
           },
           "422": {
             "content": {
@@ -7062,6 +8011,12 @@
                 "schema": {
                   "$ref": "#/components/schemas/SummarizeOutput"
                 }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "description": "event: chunk | done | error; data: one JSON value",
+                  "type": "string"
+                }
               }
             },
             "description": "ok"
@@ -7405,6 +8360,12 @@
       "name": "drafts"
     },
     {
+      "name": "member-erasures"
+    },
+    {
+      "name": "member-exports"
+    },
+    {
       "name": "members"
     },
     {
@@ -7418,6 +8379,12 @@
     },
     {
       "name": "posts-exports"
+    },
+    {
+      "name": "posts-import-parts"
+    },
+    {
+      "name": "posts-imports"
     },
     {
       "name": "preferences"

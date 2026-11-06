@@ -31,8 +31,21 @@ export interface McpResource {
   readonly scope?: string;
   /** Who may see and read it — OUTCOME 1. Absent = everyone. Same `McpVisibility` as a tool's. */
   readonly visibleTo?: McpVisibility;
-  /** Read on demand — a resource is never eagerly materialised at boot. */
-  read(): Promise<string> | string;
+  /**
+   * Read on demand — a resource is never eagerly materialised at boot. Handed the caller the gates
+   * already admitted, so a body may vary by caller (a tenant's own docs); a reader that takes no
+   * argument is the same document for everyone.
+   */
+  read(caller: McpCaller): Promise<string> | string;
+}
+
+/**
+ * Resources whose LIST depends on the caller — a tenant's own documents. Asked per request, after
+ * the fixed resources: a URI the fixed list holds is never shadowed by one of these. Each listed
+ * resource still passes `visibleTo` and `scope`, the gates every resource takes.
+ */
+export interface McpResourceSource {
+  list(caller: McpCaller): Promise<readonly McpResource[]> | readonly McpResource[];
 }
 
 /** The gates that run before a resource is read. The tool surface's `ToolResolution` twin. */
@@ -196,6 +209,50 @@ export class ResourceRegistry {
     return this;
   }
 
+  private readonly sources: McpResourceSource[] = [];
+
+  /** A per-caller list, consulted after the fixed resources (`McpResourceSource`). */
+  addSource(source: McpResourceSource): this {
+    this.sources.push(source);
+    return this;
+  }
+
+  /** This caller's resources from every source, minus any URI the fixed list already holds. */
+  private async sourced(caller: McpCaller): Promise<readonly McpResource[]> {
+    const out = new Map<string, McpResource>();
+    for (const source of this.sources) {
+      for (const resource of await source.list(caller)) {
+        if (!this.resources.has(resource.uri) && !out.has(resource.uri)) {
+          out.set(resource.uri, resource);
+        }
+      }
+    }
+    return [...out.values()];
+  }
+
+  /** `list(caller)` plus the per-caller sources: what `resources/list` answers. */
+  async listFor(caller: McpCaller): Promise<readonly ResourceListEntry[]> {
+    if (this.sources.length === 0) return this.list(caller);
+    const extra = (await this.sourced(caller)).filter((r) => visibleToCaller(r, caller));
+    return [...this.list(caller), ...extra.map(listEntry)].sort(byUri);
+  }
+
+  /** `resolve`, falling back to the per-caller sources for a URI the fixed list does not hold. */
+  async resolveFor(uri: string, caller: McpCaller): Promise<ResourceResolution> {
+    const fixed = this.resolve(uri, caller);
+    if (fixed.kind !== 'not-found' || this.resources.has(uri) || this.sources.length === 0) {
+      return fixed;
+    }
+    const resource = (await this.sourced(caller)).find((r) => r.uri === uri);
+    if (resource === undefined || !visibleToCaller(resource, caller)) {
+      return { kind: 'not-found', uri };
+    }
+    if (resource.scope !== undefined && !caller.scopes.has(resource.scope)) {
+      return { kind: 'scope-denied', uri, scope: resource.scope };
+    }
+    return { kind: 'ok', resource };
+  }
+
   /**
    * Sorted by URI: a stable list is diffable between two boots. Role-filtered when a caller is
    * supplied, exactly as `ToolRegistry.list` is — `resources/list` answered every URI to every
@@ -204,14 +261,7 @@ export class ResourceRegistry {
   list(caller?: McpCaller): readonly ResourceListEntry[] {
     const all = [...this.resources.values()];
     const visible = caller === undefined ? all : all.filter((r) => visibleToCaller(r, caller));
-    return visible
-      .map((r) => ({
-        uri: r.uri,
-        name: r.name,
-        description: r.description,
-        mimeType: r.mimeType,
-      }))
-      .sort((a, b) => (a.uri < b.uri ? -1 : a.uri > b.uri ? 1 : 0));
+    return visible.map(listEntry).sort(byUri);
   }
 
   /**
@@ -230,13 +280,34 @@ export class ResourceRegistry {
     return { kind: 'ok', resource };
   }
 
-  /** Raw read with NO gate applied — the resolver owns the gates, as it does for a tool. */
-  async read(uri: string): Promise<ResourceContents | undefined> {
+  /**
+   * Raw read with NO gate applied — the resolver owns the gates, as it does for a tool. `caller` is
+   * the one the resolver admitted, handed to the reader.
+   */
+  async read(uri: string, caller: McpCaller): Promise<ResourceContents | undefined> {
     const resource = this.resources.get(uri);
     if (resource === undefined) return undefined;
-    return { uri, mimeType: resource.mimeType, text: await resource.read() };
+    return readResource(resource, caller);
   }
 }
+
+/** One resolved resource's contents, read as `caller`. */
+export async function readResource(
+  resource: McpResource,
+  caller: McpCaller,
+): Promise<ResourceContents> {
+  return { uri: resource.uri, mimeType: resource.mimeType, text: await resource.read(caller) };
+}
+
+const listEntry = (r: McpResource): ResourceListEntry => ({
+  uri: r.uri,
+  name: r.name,
+  description: r.description,
+  mimeType: r.mimeType,
+});
+
+const byUri = (a: ResourceListEntry, b: ResourceListEntry): number =>
+  a.uri < b.uri ? -1 : a.uri > b.uri ? 1 : 0;
 
 /** JSON Schema for a tool that takes one resource URI — reused by app surfaces. */
 export const URI_ARG_SCHEMA: JsonSchema = {

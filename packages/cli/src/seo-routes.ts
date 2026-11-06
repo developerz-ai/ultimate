@@ -1,5 +1,5 @@
-// `GET /robots.txt`, `GET /sitemap.xml` and its parts (`/sitemaps/<n>.xml`) from a running web
-// role — the files the static export writes, for a deploy that serves its pages from a container.
+// `GET /robots.txt`, `GET /llms.txt`, `GET /sitemap.xml` and its parts (`/sitemaps/<n>.xml`) from a
+// running web role — the files the static export writes, for a deploy that serves from a container.
 // Mounted by `x dev` and `runRole` alike, before the app's pages, for `style-routes.ts`' reason.
 
 import {
@@ -12,7 +12,7 @@ import {
 } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
-import { SITEMAP_PARTS_DIR } from '@ultimat3/seo';
+import { LLMS_PATH, SITEMAP_PARTS_DIR } from '@ultimat3/seo';
 import { quoteArg } from './shell-quote';
 import { NO_SITE_SETTINGS, publicOrigin, type SiteSettings } from './site-config';
 import type { SiteSeo } from './site-seo';
@@ -74,7 +74,7 @@ interface Memo {
 }
 
 /** A placeholder for the one statement between building a first memo and starting its enumeration. */
-const NO_ANSWER: SiteSeo = { robots: '', sitemaps: [] };
+const NO_ANSWER: SiteSeo = { robots: '', sitemaps: [], llms: '' };
 
 export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
   const environment: Environment =
@@ -87,6 +87,7 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
       robotsGroups: options.site?.robotsGroups ?? [],
       ...(options.site === undefined ? {} : { sitemap: options.site.sitemap }),
       ...(options.root === undefined ? {} : { root: options.root }),
+      ...(options.site?.llms === undefined ? {} : { llms: options.site.llms }),
     });
   // One answer per origin. A FIRST enumeration is single-flight and awaited; failed, it is dropped,
   // so the next request asks again rather than serving the failure for an hour.
@@ -191,6 +192,18 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
         applyCacheHeaders(
           textResponse((await answer(request)).robots, {
             headers: { 'content-type': 'text/plain; charset=utf-8' },
+          }),
+          SEO_CACHE,
+        ),
+    },
+    {
+      method: 'GET',
+      path: LLMS_PATH,
+      meta: { name: 'seo.llms', auth: 'public', tags: ['seo'] },
+      handler: async (request: UltimateRequest): Promise<Response> =>
+        applyCacheHeaders(
+          textResponse((await answer(request)).llms, {
+            headers: { 'content-type': 'text/markdown; charset=utf-8' },
           }),
           SEO_CACHE,
         ),

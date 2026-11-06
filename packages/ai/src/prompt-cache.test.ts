@@ -48,6 +48,39 @@ describe('the rule table', () => {
     expect(rule('openai', 'not a url', CLAUDE)).toEqual(['none', 'none']);
   });
 
+  test("a provider's rows come first, then the table, then nothing", () => {
+    const rule = (...args: Parameters<typeof promptCacheRule>) => {
+      const { marks, session } = promptCacheRule(...args);
+      return [marks, session];
+    };
+    const gateway = 'https://llm.internal/v1';
+    const proxy = 'https://proxy.internal';
+    // The two probes: an unnamed gateway gets nothing, a proxy on the Messages wire gets blocks.
+    expect(rule('openai', gateway, 'family/x')).toEqual(['none', 'none']);
+    expect(rule('anthropic', proxy, 'x')).toEqual(['blocks', 'none']);
+    // A row flips each.
+    const marking = { model: 'family/', marks: 'parts', session: 'x-session-id' } as const;
+    expect(rule('openai', gateway, 'family/x', [marking])).toEqual(['parts', 'x-session-id']);
+    const declined = { model: '', marks: 'none', session: 'none' } as const;
+    expect(rule('anthropic', proxy, 'x', [declined])).toEqual(['none', 'none']);
+    // First match wins, by model prefix.
+    const keyed = { model: 'family/x', marks: 'none', session: 'prompt_cache_key' } as const;
+    expect(rule('openai', gateway, 'family/x', [keyed, marking])).toEqual([
+      'none',
+      'prompt_cache_key',
+    ]);
+    expect(rule('openai', gateway, 'family/y', [keyed, marking])).toEqual([
+      'parts',
+      'x-session-id',
+    ]);
+    // No row matching: the table still answers, and NO_RULE is still the last answer.
+    expect(rule('openai', 'https://openrouter.ai/api/v1', CLAUDE, [marking])).toEqual([
+      'parts',
+      'x-session-id',
+    ]);
+    expect(rule('openai', gateway, 'other/z', [marking])).toEqual(['none', 'none']);
+  });
+
   test('the two system parts read as one text, stable first', () => {
     expect(systemText(undefined)).toBe('');
     expect(systemText('s')).toBe('s');

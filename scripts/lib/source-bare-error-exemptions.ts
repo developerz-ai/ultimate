@@ -71,19 +71,19 @@ export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] =
   },
   {
     path: 'packages/storage/src/driver-s3-fixture.ts',
-    line: 181,
+    line: 183,
     reason:
       'the fake S3 losing a signed answer: Bun fetch rejects a dropped socket with exactly this TypeError, and the driver under test must read that foreign error, not a coded one',
   },
   {
     path: 'packages/storage/src/driver-s3-fixture.ts',
-    line: 375,
+    line: 393,
     reason:
       'the same fake dropping a write before it lands: the TypeError Bun fetch rejects with, handed to the driver under test',
   },
   {
     path: 'packages/storage/src/driver-s3-fixture.ts',
-    line: 387,
+    line: 405,
     reason:
       'the same fake dropping the answer after the write landed: the TypeError Bun fetch rejects with, handed to the driver under test',
   },

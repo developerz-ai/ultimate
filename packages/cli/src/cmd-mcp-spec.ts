@@ -8,14 +8,33 @@ export const DEFAULT_PORT = 9229;
 export const mcpSpec: CommandSpec = {
   name: 'mcp',
   summary: 'serve the dev tools: routes, schema, policies, db, queues, logs, tests, verify',
-  usage: 'x mcp tools | x mcp serve [--transport stdio|http] [--port 9229] [--json]',
+  usage:
+    'x mcp tools | x mcp serve [--transport stdio|http] [--port 9229] | x mcp lock <name> [--check] [--json]',
   requiresApp: true,
-  subcommands: ['serve', 'tools'],
+  subcommands: ['serve', 'tools', 'lock'],
   // No default, deliberately: `wiki/CLI-Reference.md` already says to write `x mcp serve` rather
   // than a bare `x mcp`, and the parser's old first-element guess made the bare form START A
   // SERVER — the one thing a word typed by mistake must not do. Refusing enforces the guidance.
   flags: [
-    { name: 'transport', type: 'string', summary: 'stdio | http', default: 'stdio' },
-    { name: 'port', type: 'string', summary: 'HTTP port', default: String(DEFAULT_PORT) },
+    {
+      name: 'transport',
+      type: 'string',
+      summary: 'stdio | http',
+      default: 'stdio',
+      subcommands: ['serve', 'tools'],
+    },
+    {
+      name: 'port',
+      type: 'string',
+      summary: 'HTTP port',
+      default: String(DEFAULT_PORT),
+      subcommands: ['serve', 'tools'],
+    },
+    {
+      name: 'check',
+      type: 'boolean',
+      summary: 'compare the remote server to tools.lock.json, write nothing',
+      subcommands: ['lock'],
+    },
   ],
 };

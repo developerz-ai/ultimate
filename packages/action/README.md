@@ -169,6 +169,25 @@ Importing `rpc` alone from this package is **19,671 B** minified for the browser
 what the delta is). `ClientFlight` is a TYPE inside `client.ts` and never a value, which is what
 keeps the second number off the first caller's bill.
 
+## Streaming — `stream:`
+
+An action may answer in pieces before it answers. `stream: <chunk schema>` beside an
+`async *handle` whose yields are chunks and whose **return** is the output. One route, chosen by
+`accept`; no channel, no `EventSource`, no second primitive.
+
+| Caller | Gets |
+|---|---|
+| `accept: text/event-stream` on its route | `event: chunk` per yield (each parsed by `stream` first), then one `done` (the output) or `error` (the problem document); `x-accel-buffering: no`, never compressed |
+| JSON, MCP, `.job()`, `.as()`, a direct call | the generator drained: the output alone, one contract |
+| the typed client | `api.sayWords.stream(input)` — an `AsyncGenerator` of chunks whose return is the output, through core's `clientStream` (POST, the page's credentials, the same problem decode). Typed on a stream-declaring method only (`StreamClientMethod`); never retried |
+| the handler itself | `chunksRead()` — `true` only while a caller reads the chunks; `llm()` streams its one-attempt turn then, and is the repairing call otherwise |
+
+A refusal before `handle` starts (policy, input, rate limit) is the ordinary problem response, not
+a stream. A chunk its schema refuses, or `stream:` beside a handle that is not a generator, is
+`X_ACTION_STREAM_INVALID`: one `error` frame, then close. A client that leaves cancels the body and
+aborts `ctx.signal`. Every typed-client method carries `.stream`, because the name-only `rpc` proxy
+cannot see a declaration: +2,064 B per island that uses `rpc` (measured 2026-11-06).
+
 ## Path derivation
 
 One rule per app, declared once — `defineApi({ http: { pathStyle } })` — plus a per-action pin.
@@ -873,6 +892,15 @@ setAuditSink({
   },
 });
 ```
+
+## The audit trail, for a subject export or erase
+
+`auditSubjectTarget({ executor, actor?, placeholder? })` is `x_audit` as a `defineSubject({ targets
+})` entry (`@ultimat3/jobs`). The export pages the rows the subject acted in, or was acted for, by
+id (`AUDIT_SUBJECT_COLUMNS`); the erase never deletes a trail row — it overwrites `actor_id` and
+`on_behalf_of_id` with `placeholder` (`'erased'`) and `input` with `null`, a bounded batch per
+statement. `actor` defaults to the subject's key. Keeping the person too is the app's call:
+`{ target, retain: '<why>' }`.
 
 ## Contract tests
 

@@ -9,6 +9,7 @@
 // though every other field here is a plain literal: the manifest's `render` field means the same
 // thing as the route's, and two spellings of one closed set is what `'spa'` escaped through.
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
+import type { SubjectFact } from './schema-subjects';
 
 /**
  * Bumped when a reader built for the previous version would be WRONG, not merely incomplete:
@@ -158,6 +159,8 @@ export interface EntityFact {
   readonly invariants: readonly string[];
   /** `entity({ shared })`: why it belongs to no tenant. Absent when undeclared. */
   readonly shared?: string;
+  /** `entity({ scan })`: why the table may be read whole. Absent when undeclared. */
+  readonly scan?: string;
   /**
    * `entity({ view })`: a relation Postgres derives, so every write to it is refused and the admin
    * lists it read-only. `materialized` stores the rows a `refreshView()` job recomputes. Absent on
@@ -378,6 +381,8 @@ export interface Manifest {
   readonly jobs: readonly JobFact[];
   /** Absent for a file older than the section AND for an app with no consumer — `mounts`' rule. */
   readonly consumers?: readonly ConsumerFact[];
+  /** Absent for a file older than the section AND for an app with no subject — `mounts`' rule. */
+  readonly subjects?: readonly SubjectFact[];
   readonly tasks: readonly TaskFact[];
   readonly policies: readonly PolicyFact[];
   readonly permissions: readonly string[];
@@ -438,6 +443,7 @@ export function isManifest(value: unknown): value is Manifest {
   if (m['admin'] !== undefined && !Array.isArray(m['admin'])) return false;
   if (m['mounts'] !== undefined && !Array.isArray(m['mounts'])) return false;
   if (m['consumers'] !== undefined && !Array.isArray(m['consumers'])) return false;
+  if (m['subjects'] !== undefined && !Array.isArray(m['subjects'])) return false;
   return isAppIdentity(m['app']);
 }
 

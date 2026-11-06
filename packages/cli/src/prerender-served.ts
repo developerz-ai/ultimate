@@ -12,13 +12,17 @@ import { pageSync } from './page-sync';
 import type { VitalsBuild } from './prerender-vitals';
 import { realtimeConfigOf } from './runtime-realtime';
 import { PAGE_BOOT_BASE_PATH } from './worker-bundle';
+import { zoneBoot } from './zone-boot';
 
 /** What a served-document measurement adds: to the document's options, and to the measurer's. */
 export interface ServedMeasure {
   readonly document: {
     readonly sync?: ClientSyncHead;
     readonly persisted?: () => readonly string[];
-    /** `/x-client-vitals.js`, when `clientErrors.vitals` lists `app`: served, so charged. */
+    /**
+     * `/x-client-vitals.js`, when `clientErrors.vitals` lists `app`, and the zone script when
+     * `time.detect` is on: served, so charged — both are the app's opt-in.
+     */
     readonly appHead?: string;
   };
   readonly measure: MeasureOptions;
@@ -38,17 +42,14 @@ export async function servedMeasure(
   islands: IslandBundle,
   vitals: VitalsBuild = {},
 ): Promise<ServedMeasure> {
-  const sync = await pageSync(
-    root,
-    process.env,
-    buildId,
-    realtimeConfigOf(await loadAppConfig(root)),
-  );
+  const config = await loadAppConfig(root);
+  const sync = await pageSync(root, process.env, buildId, realtimeConfigOf(config));
+  const appHead = (zoneBoot(config?.time)?.head ?? '') + (vitals.appHead ?? '');
   return {
     document: {
       ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
-      ...(vitals.appHead === undefined ? {} : { appHead: vitals.appHead }),
+      ...(appHead === '' ? {} : { appHead }),
     },
     measure: {
       served: new Map([

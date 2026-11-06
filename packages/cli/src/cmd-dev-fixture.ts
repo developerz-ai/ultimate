@@ -14,7 +14,7 @@
 //   apps/web/site/pricing/*     a static page with its own stylesheet, under the CSP `x dev` sends
 import { resetActions } from '@ultimat3/action';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
-import { resetJobs, resetTasks } from '@ultimat3/jobs';
+import { resetJobs, resetPurgeCoverage, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
 import { resetQueries } from '@ultimat3/query';
 import type { Frame } from '@ultimat3/realtime';
@@ -183,6 +183,9 @@ export const resetRegistries = (): void => {
   clearEntities();
   clearRoutes();
   resetJobs();
+  // A loaded app's `purge({ entities: 'declared' })` covers every retain entity a later file
+  // declares, so `X_ENTITY_RETAIN_UNSWEPT` went silent in whichever test ran after one.
+  resetPurgeCoverage();
   resetTasks();
   clearPermissions();
   clearRoles();

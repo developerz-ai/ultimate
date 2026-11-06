@@ -5,6 +5,7 @@
 // `backfill-ledger.test.ts` the ledger on its own and `backfill-throttle.test.ts` the pacing.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { expectedQueryLoopReason } from '@ultimat3/db';
 import { memoryRepo, tableFor } from '@ultimat3/entity';
 import { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
 import {
@@ -84,6 +85,33 @@ describe('one pass', () => {
 
     expect(report).toEqual({ name: 'nothing-to-do', batches: 0, rows: 0, skipped: false });
     expect((await pass.steps()).map((record) => record.name)).toEqual(['batch:0']);
+  });
+
+  test('a page is handled inside a declared loop: its writes grow with the page by definition', async () => {
+    const pass = harness({ batch: 3, name: 'loop-pass' });
+    const table = tableFor(rows, memoryRepo(rows, [{ id: 'r1', orgId: ORG, title: 'a' }]));
+    const heard: (string | undefined)[] = [];
+    const sweep = backfill<Row>({
+      tenant: 'none',
+      name: 'heard-loop',
+      batch: 3,
+      source: () => table.where({ orgId: ORG }),
+      handle: () => {
+        heard.push(expectedQueryLoopReason());
+      },
+    });
+    const runner = stepRunner({ runId: RUN_ID, jobName: 'heard', store: pass.store });
+    await sweep.run({
+      input: {},
+      step: runner.step,
+      ctx,
+      attempt: 1,
+      finalAttempt: false,
+      progress: () => undefined,
+      jobId: 'job-3',
+      runId: RUN_ID,
+    });
+    expect(heard).toEqual([expect.stringContaining('a backfill writes every row it visits')]);
   });
 
   test('checkpoints a bounded cursor and a count — never the page', async () => {

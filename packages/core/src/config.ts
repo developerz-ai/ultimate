@@ -11,6 +11,7 @@ import * as assetsSection from './config-assets';
 import * as clientErrors from './config-client-errors';
 import { countIssue } from './config-count';
 import { configDefaults } from './config-defaults';
+import * as failureCapture from './config-failure-capture';
 import { BASE_FIX, CACHE_TIER_FIX } from './config-fixes';
 import { type DrainConfig, type HealthConfig, readinessModeIssue } from './config-health';
 import type { IslandsConfig, IslandsSectionInput } from './config-islands';
@@ -33,6 +34,7 @@ import {
 } from './config-shape';
 import type { SeoConfig, SiteConfig, SiteSectionsInput } from './config-site';
 import { mergeSite, siteIssues } from './config-site';
+import * as timeSection from './config-time';
 import { drainIssues } from './drain-deadline';
 import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
@@ -183,16 +185,10 @@ export interface JobsConfig {
 }
 
 /**
- * No `heartbeatMs`. It was declared here, defaulted to 15_000, and read by NOTHING — deleted
- * 2026-08-19. The socket beat is `new LiveClient({ heartbeatMs })`, browser code that cannot read
- * server config, and the presence beat is DERIVED (`PresenceRegistry.heartbeatMs` is
- * `max(1000, floor(ttlMs / 3))`). A second knob is a second number that can disagree with the one
- * it is a fraction of, and a knob nothing reads is a knob nothing enforces — axioms 1 and 3.
- *
- * No `tier` either (deleted 2026-08-23): no file read it, so `tier: 'local-first'` bought nothing.
- * An app's realtime tier is what it DECLARES — a `channel()` topic, a `live: true` query, a local
- * store — never a config key. `transport`, `urlEnv` and the two per-actor caps (read by the `sync`
- * role into its registry and node) are the fields code reads.
+ * No `heartbeatMs` (deleted 2026-08-19) and no `tier` (deleted 2026-08-23): read by nothing. The
+ * socket beat is `new LiveClient({ heartbeatMs })`, the presence beat is derived, and an app's
+ * realtime tier is what it DECLARES (a `channel()`, a `live: true` query) — never a config key.
+ * `transport`, `urlEnv` and the two per-actor caps are the fields code reads.
  */
 export interface RealtimeConfig {
   readonly enabled: boolean;
@@ -232,6 +228,8 @@ export interface AppConfig {
   readonly mail: MailConfig;
   readonly assets: assetsSection.AssetsConfig;
   readonly clientErrors: clientErrors.ClientErrorsConfig;
+  readonly failureCapture: failureCapture.FailureCaptureConfig;
+  readonly time: timeSection.AppTimeConfig;
 }
 
 /**
@@ -251,7 +249,9 @@ export interface AppConfigInput
     IslandsSectionInput,
     MailSectionInput,
     assetsSection.AssetsSectionInput,
-    clientErrors.ClientErrorsSectionInput {
+    clientErrors.ClientErrorsSectionInput,
+    failureCapture.FailureCaptureSectionInput,
+    timeSection.TimeSectionInput {
   readonly name: string;
   readonly theme?: Input<ThemeConfig> | undefined;
   readonly auth?: Input<AuthConfig> | undefined;
@@ -327,12 +327,9 @@ function validate(config: AppConfig): void {
   if (config.realtime.transport === 'nats' && config.realtime.urlEnv === undefined) {
     issues.push(`realtime.transport "nats" requires realtime.urlEnv`);
   }
-  // BOTH RETENTION WINDOWS OR NEITHER — `undefined` is a real value here (never swept) and the
-  // only other legal one is a positive, finite count of milliseconds. Zero is refused rather than
-  // read as "immediately": a sweep at age 0 deletes every row the instant it is written, which is
-  // an inbox that silently receives nothing, and nobody types it on purpose. `describeValue`
-  // rather than `${…}`: this validator is the boundary a JS app's untyped config crosses, so the
-  // value here is `unknown` in practice however the interface types it.
+  // `undefined` (never swept) or a positive, finite count of ms. Zero is refused, never read as
+  // "immediately": a sweep at age 0 is an inbox that silently receives nothing. `describeValue`:
+  // this is the boundary a JS app's untyped config crosses, so the value is `unknown` in practice.
   for (const key of INBOX_RETENTION_KEYS) {
     const ms: unknown = config.notify[key];
     if (ms === undefined) continue;
@@ -353,6 +350,8 @@ function validate(config: AppConfig): void {
   mailIssues(config, issues);
   assetsSection.assetsIssues(config, issues);
   clientErrors.clientErrorsIssues(config, issues);
+  failureCapture.failureCaptureIssues(config, issues);
+  timeSection.timeIssues(config, issues);
 
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
@@ -451,6 +450,8 @@ function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
     ...mergeMail(layers),
     ...assetsSection.mergeAssets(layers),
     ...clientErrors.mergeClientErrors(layers),
+    ...failureCapture.mergeFailureCapture(layers),
+    ...timeSection.mergeTime(layers),
   };
 }
 

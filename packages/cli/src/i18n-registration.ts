@@ -15,6 +15,7 @@ import {
   catalogRegistrationGaps,
   catalogsNeverRegistered,
   catalogUnregistered,
+  familyIncomplete,
   pluralVariantsOf,
   registeredLocales,
 } from '@ultimat3/i18n';
@@ -26,6 +27,7 @@ import type { DuplicateProbe } from './duplicate-packages';
 import { duplicateCause, duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
 import { auditApp } from './i18n-audit';
 import { localeParityFindings } from './i18n-locale-parity';
+import { mailPreviewFindings } from './mail-preview-findings';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { CATALOG_ROOT, catalogPath } from './templates/locales';
@@ -278,12 +280,21 @@ export function withPlaceholdersMissing(
  * the same finding, and a second construction of it is two renderers of one fact waiting to drift.
  */
 export function missingKeyFindings(report: ExtractReport): readonly Finding[] {
-  return report.locales
+  const missing = report.locales
     .filter((audit) => audit.missing.length > 0)
     .map((audit) => ({
       ...findingFrom(catalogMissingKeys(audit.locale, audit.missing)),
       at: catalogPath(audit.locale),
     }));
+  // A select or ordinal family with no `_other` renders `⟦key⟧` for every value it does not name:
+  // the same loud miss, one family wide, so the same gate refuses it.
+  const incomplete = report.locales
+    .filter((audit) => audit.incomplete.length > 0)
+    .map((audit) => ({
+      ...findingFrom(familyIncomplete(audit.locale, audit.incomplete)),
+      at: catalogPath(audit.locale),
+    }));
+  return [...missing, ...incomplete];
 }
 
 /**
@@ -302,5 +313,7 @@ export async function catalogFindings(root: string): Promise<readonly Finding[]>
     ...missingKeyFindings(withPlaceholdersMissing(report, catalogs)),
     ...registration.findings,
     ...localeParityFindings(catalogs),
+    // The app is loaded by the audit above, so every `defineMail({ preview })` is registered.
+    ...mailPreviewFindings(Object.keys(catalogs)),
   ];
 }

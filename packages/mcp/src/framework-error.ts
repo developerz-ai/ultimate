@@ -15,6 +15,7 @@ import {
   stringField,
 } from '@ultimat3/core';
 import { statusFor } from '@ultimat3/http';
+import { screenRecipeLink } from './recipe-links';
 
 export interface FrameworkError {
   readonly code: string;
@@ -64,9 +65,15 @@ export function asFrameworkError(error: unknown): FrameworkError | undefined {
     // above, so the substitute is the one command that explains exactly this code.
     fix: stringField(error, 'fix') ?? `x errors explain ${code}`,
     ...(callerFix === undefined ? {} : { callerFix }),
-    ...(docs === undefined || docs === '' || docs === ERROR_DOCS_URL ? {} : { docs }),
+    // A recipe link nothing serves is dropped (and logged): an agent is never sent nowhere.
+    ...(docs === undefined || docs === '' || docs === ERROR_DOCS_URL
+      ? {}
+      : withLink(screenRecipeLink(docs, code))),
   };
 }
+
+const withLink = (docs: string | undefined): { readonly docs?: string } =>
+  docs === undefined ? {} : { docs };
 
 /**
  * The fixed sentence a remote caller reads in place of a hidden cause. The real one is in the

@@ -223,7 +223,15 @@ describe('site and seo', () => {
     expect(config.seo).toEqual({
       robots: { disallow: [], groups: [] },
       sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
+      llms: true,
     });
+  });
+
+  test('seo.llms is on unless a layer turns it off, and only a boolean is accepted', () => {
+    expect(defineConfig({ name: 'app', seo: { llms: false } }).seo.llms).toBe(false);
+    expect(() => defineConfig({ name: 'app', seo: { llms: 'no' as unknown as boolean } })).toThrow(
+      'seo.llms must be true or false',
+    );
   });
 
   test('a declared site favicon is carried on config.site', () => {

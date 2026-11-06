@@ -9,9 +9,12 @@ import { AiRequestInvalidError } from './errors';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { modelSpec } from './models';
 import { toOpenAiMessages, toOpenAiTools, toolChoiceFor } from './openai-messages';
+import type { PromptCacheRule, ProviderCacheRow } from './prompt-cache';
 import { OPENAI_CACHE_KEY_MAX, promptCacheRule, SESSION_KEY_MAX } from './prompt-cache';
 import type { GenerateRequest } from './provider';
 import { samplingBody } from './sampling';
+
+type CacheRule = Pick<PromptCacheRule, 'marks' | 'session'>;
 
 export interface ChatCompletionBodyInput {
   readonly request: GenerateRequest;
@@ -22,6 +25,8 @@ export interface ChatCompletionBodyInput {
   readonly stream: boolean;
   /** The endpoint, for `PROMPT_CACHE_RULES` — which host this is decides what a cache hint sends. */
   readonly baseUrl?: string | undefined;
+  /** The provider's own screened rows (`promptCache.rules`), read before the table. */
+  readonly cacheRows?: readonly ProviderCacheRow[];
 }
 
 /**
@@ -38,7 +43,7 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
   const spec = modelSpec(model);
   assertMediaContent(request.messages, { provider, model });
   const hint = request.promptCache;
-  const rule = promptCacheRule('openai', input.baseUrl, model);
+  const rule = promptCacheRule('openai', input.baseUrl, model, input.cacheRows);
   const marked = hint !== undefined && rule.marks === 'parts';
   const body: Record<string, unknown> = {
     model,
@@ -71,15 +76,17 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
   return body;
 }
 
-/** The headers a cache hint adds for this endpoint and model: OpenRouter's stickiness key, or none. */
+/**
+ * The headers a cache hint adds under this request's resolved rule: OpenRouter's stickiness key,
+ * or none.
+ */
 export function sessionHeaders(
   request: GenerateRequest,
-  model: ModelId,
-  baseUrl: string | undefined,
+  rule: CacheRule,
 ): Readonly<Record<string, string>> {
   const session = request.promptCache?.session;
   if (session === undefined) return {};
-  if (promptCacheRule('openai', baseUrl, model).session !== 'x-session-id') return {};
+  if (rule.session !== 'x-session-id') return {};
   return { 'x-session-id': sessionKey(session) };
 }
 

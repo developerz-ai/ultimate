@@ -36,8 +36,10 @@ export async function s3SignedUrl(
   const safe = assertSafeKey(key);
   const contentLength = signedByteBound('s3', urlOptions);
   if (urlOptions?.contentLength !== undefined && contentLength !== undefined) {
-    return presignBoundPut(wire, safe, contentLength, seconds);
+    return presignBoundPut(wire, safe, contentLength, seconds, urlOptions?.part);
   }
+  // A part names its exact size or nothing: Bun's presign below would drop it and sign a whole PUT.
+  if (urlOptions?.part !== undefined) throw uploadSizeUndeclared(safe, undefined);
   // A ceiling bounds a PUT; a read has no body, and the local disks ignore it there too.
   if (urlOptions?.method === 'PUT' && urlOptions.maxBytes !== undefined) {
     throw uploadSizeUndeclared(safe, undefined);

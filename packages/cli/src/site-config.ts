@@ -26,6 +26,8 @@ export interface SiteSettings {
    * `SiteSettings` literal written before it existed still compiles.
    */
   readonly favicon?: SiteFavicon | undefined;
+  /** `seo.llms` — `/llms.txt` on (the default) or off. Optional for `robotsGroups`' reason. */
+  readonly llms?: boolean | undefined;
 }
 
 export const NO_SITE_SETTINGS: SiteSettings = {
@@ -34,6 +36,7 @@ export const NO_SITE_SETTINGS: SiteSettings = {
   robotsGroups: [],
   sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
   favicon: undefined,
+  llms: true,
 };
 
 const trimSlash = (origin: string): string => origin.replace(/\/+$/, '');
@@ -48,6 +51,7 @@ export async function loadSiteSettings(root: string): Promise<SiteSettings> {
     robotsGroups: [...(config.seo.robots.groups ?? [])],
     sitemap: config.seo.sitemap,
     favicon,
+    llms: config.seo.llms !== false,
   };
 }
 

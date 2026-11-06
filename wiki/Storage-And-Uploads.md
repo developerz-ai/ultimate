@@ -150,6 +150,42 @@ The local disk signs with `STORAGE_SIGNING_SECRET`. The shipped development secr
 **only** in `development` or `test`; a process that names no environment is treated as production
 and refused at construction (`X_ENV_MISSING`).
 
+## A large upload, in parts, that resumes
+
+`As of 2026-11-06`. **Past `partThresholdBytes` (64 MiB) a file goes up in parts, and a dropped
+connection costs one part, not the file.** One PUT restarts from byte 0 and S3 refuses a single PUT
+over 5 GiB. Five server functions, each wrapped in the app's own `action()` as `grantUpload` is,
+every one held to the actor's org:
+
+| Call | Answers |
+|---|---|
+| `grantMultipart({ disk, orgId, request, policy, partBytes? })` | `{ key, uploadId, partBytes, maxParts, contentType, size, expiresAt }`: `grantUpload`'s refusals, then a session. `partBytes` is what 10,000 parts need for `size`, never under 5 MiB |
+| `signPart({ disk, orgId, key, uploadId, partNumber, size })` | a PUT URL whose length is signed. s3: S3's own `UploadPart`, presigned by core's signer. Local: `/_storage/<disk>/<key>?x-upload=…&x-part=…`, both inside the HMAC |
+| `listParts({ disk, orgId, key, uploadId })` | `{ partNumber, etag, size }[]`, the resume |
+| `completeUpload({ disk, orgId, key, uploadId, parts, policy })` | the object. Each named part must have landed, ascending, every one but the last at least 5 MiB (`X_STORAGE_PARTS_INVALID`); the etags are the disk's own, so no bucket CORS has to expose `ETag`. A total past `policy.maxBytes` aborts and is `X_STORAGE_TOO_LARGE` |
+| `abortUpload({ disk, orgId, key, uploadId })` | nothing left: no session, no part |
+
+```ts
+import type { MultipartUploadClient, UploadGrant, UploadRequest, UploadSource } from '@ultimat3/storage';
+import { uploadFile } from '@ultimat3/storage';
+
+declare const file: UploadSource;
+declare const grantPoster: (request: UploadRequest) => Promise<UploadGrant>;
+declare const video: MultipartUploadClient; // the app's five action calls, plus `resume`/`onGrant`
+
+const { key } = await uploadFile({ file, grant: grantPoster, multipart: video });
+```
+
+Four parts in flight, each retried with core's backoff. `onProgress` counts confirmed bytes.
+`resume: grant` (the one `onGrant` handed over, persisted by the caller) lists what landed and sends
+only what is missing. A cancelled `signal` aborts the session; any other failure leaves it open for
+the resume. The upload stays under `pending/` until `promoteAttachment`, which sniffs a head window,
+so a completed 2 GiB upload is never read whole. On s3 no part passes through the app; on the local
+disks the one `PUT /_storage` route takes a part URL as well as a grant's.
+
+A disk whose driver has no `multipart` (a third-party one) is `X_STORAGE_MULTIPART_UNSUPPORTED`; a
+session that was completed, aborted or never opened is `X_STORAGE_UPLOAD_UNKNOWN`.
+
 ## Which disks `/_storage` and `/media` serve
 
 `As of 2026-09-24` (#524): **the app's own.** Both routes read the process's one registry per
@@ -323,5 +359,22 @@ encode `png`, `jpeg` and `webp`; `avif` is key and `srcset` math only. `variantK
 `srcsetDescriptors()` and `fitDimensions()` are pure, which is how [SEO](SEO) builds `srcset`
 without decoding a byte.
 
-Every `X_STORAGE_*` code is in [Error codes](Error-Codes). Encryption at rest, lifecycle rules and
-storage classes are **bucket** configuration, not the framework's (axiom 7).
+## Expiry — `expireObjects` and `abortStaleUploads`
+
+`As of 2026-11-06`. **The window is the app's, at the call; the sweep runs on every disk.** A local
+disk has no bucket rule, and an abandoned upload's parts bill until something aborts them.
+
+| Call | Does |
+|---|---|
+| `expireObjects({ disk, prefix, olderThanMs, keep?, clock? })` | deletes every object under `prefix` past the window. `{ deleted, failed, spared }`: undated, kept or new is spared, a locked object is `failed` and never forced. An empty `prefix` (the whole disk) is refused |
+| `abortStaleUploads({ disk, olderThanMs, prefix?, match? })` | aborts every session opened before the window: `{ aborted, failed, spared }` |
+| `objectPurgeTarget({ name, disk, prefix, match?, olderThanMs })` | both, as one target of the app's `purge()` job (`@ultimat3/jobs`), on the job's clock. No timer in storage. `match(key)` scopes both sweeps under `prefix`: a per-tenant layout (`org/<id>/imports/…` beside `org/<id>/member/…/avatar`) is one kind of file no single prefix names, so `prefix: 'org/', match: (key) => /^org\/[^/]+\/imports\//.test(key)` sweeps every org's imports and spares the avatar beside each |
+
+A person's stored objects are a subject target: `storageSubjectTarget(() => disk(), keysOf, {
+name? })` lists the keys `keysOf(subject)` names (a list, or a prefix the app lists) for
+`subjectExport()` and deletes them for `subjectErase()`. Which keys are the person's is the app's;
+there is no listing by owner. [Jobs and Workflows](Jobs-And-Workflows#one-persons-data--subjectexport-and-subjecterase).
+
+Every `X_STORAGE_*` code is in [Error codes](Error-Codes). Encryption at rest, bucket lifecycle
+rules and storage classes stay **bucket** configuration, the operator's (axiom 7): `expireObjects`
+is the sweep an app runs, not a rule the framework writes to a bucket.

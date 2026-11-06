@@ -13,7 +13,8 @@ import type { RateLimitDecision } from '@ultimat3/http';
 import { declaredStatusFor } from '@ultimat3/http';
 import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
-import type { ClientMethod, ClientOptions } from './client';
+import { streamingDef } from './action-stream';
+import type { ClientMethod, ClientOptions, StreamClientMethod } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
 import { facadeFor } from './facade';
 import type { OpenApiOperation } from './http';
@@ -122,6 +123,24 @@ export interface ActionDef<
   handle(args: ActionHandlerArgs<TInput>): Promise<InferOutput<TOutput>> | InferOutput<TOutput>;
 }
 
+/**
+ * An action that answers in pieces before it answers: `stream` is the schema every yielded chunk
+ * is parsed by, and `handle` an async generator whose RETURN value is the output. An ordinary call
+ * (MCP, `.job()`, `.as()`, a JSON request) drains it and answers the output alone; a request with
+ * `accept: text/event-stream` is sent each chunk as it is yielded (`http-stream.ts`).
+ */
+export interface StreamActionDef<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TChunk extends StandardSchemaV1,
+  TRow = unknown,
+> extends Omit<ActionDef<TInput, TOutput, TRow>, 'handle'> {
+  readonly stream: TChunk;
+  handle(
+    args: ActionHandlerArgs<TInput>,
+  ): AsyncGenerator<InferInput<TChunk>, InferOutput<TOutput>, undefined>;
+}
+
 export interface InvokeOptions {
   /** Explicit context. Omitted means "take the ambient request context". */
   readonly ctx?: Ctx;
@@ -213,6 +232,7 @@ export interface AnyActionDef {
   readonly idempotent?: boolean;
   readonly errors?: readonly string[];
   readonly audit?: boolean;
+  readonly stream?: StandardSchemaV1;
   row?(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
   handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
 }
@@ -272,12 +292,37 @@ export interface Action<
   job(): ActionJobHandle<TInput, TOutput>;
 }
 
+/**
+ * An action that declared `stream`: the same action, whose typed client also carries
+ * `.stream(input)` yielding `TChunk`. The chunk schema is not lifted onto the action — `llm()`'s
+ * server-side `.stream()` method owns that member name — so `TChunk` lives in `client()`'s type.
+ */
+export interface StreamAction<
+  TInput extends StandardSchemaV1 = StandardSchemaV1,
+  TOutput extends StandardSchemaV1 = StandardSchemaV1,
+  TChunk extends StandardSchemaV1 = StandardSchemaV1,
+> extends Action<TInput, TOutput> {
+  named(name: string): StreamAction<TInput, TOutput, TChunk>;
+  client(options: ClientOptions): StreamClientMethod<TInput, TOutput, TChunk>;
+}
+
 /** The fluent half of an action: lifted declaration plus one method per projection. */
 export type ActionFacade<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1> = Pick<
   Action<TInput, TOutput>,
   'input' | 'output' | 'policy' | 'mcp' | 'as' | 'openapi' | 'client' | 'job' | 'contract'
 >;
 
+export function action<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TChunk extends StandardSchemaV1 = StandardSchemaV1,
+  TRow = unknown,
+>(def: StreamActionDef<TInput, TOutput, TChunk, TRow>): StreamAction<TInput, TOutput, TChunk>;
+export function action<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TRow = unknown,
+>(def: ActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput>;
 export function action<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
@@ -313,6 +358,11 @@ export function nameAction<A extends AnyAction>(target: A, name: string): A {
   return target;
 }
 
+/** The one member a stream-declaring definition adds, read through the erased `ActionDef`. */
+interface StreamFields {
+  readonly stream?: StandardSchemaV1;
+}
+
 function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1, TRow>(
   def: ActionDef<TInput, TOutput, TRow>,
   name: string,
@@ -333,8 +383,12 @@ function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1
   });
   // `name` on a function is non-writable, so Object.assign cannot set it.
   Object.defineProperty(self, 'name', { value: name, configurable: true });
-  // The declaration goes to `invoke.ts` and stays there: `handle` has no other reader.
-  stashDef(self, def);
+  // The declaration goes to `invoke.ts` and stays there: `handle` has no other reader. A
+  // stream-declaring one is stored draining (`action-stream.ts`), so `invoke` stays one path.
+  stashDef(
+    self,
+    streamingDef(def as ActionDef<TInput, TOutput, TRow> & StreamFields, () => name),
+  );
   return self;
 }
 

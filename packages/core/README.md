@@ -666,6 +666,7 @@ reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'P
 | Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEnvelope(report, { dsn, eventId })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |
 | `errorReport(error, options)` | the normalisation on its own, for a transport's test or a surface that enriches before sending |
 | `errorFingerprint(report)` | 16 hex, which reports are one fault: `code`, `source`, `scope.operation`, and for `X_INTERNAL` the top application frame (function and root-relative path, no line). Never `cause`, `meta`, an id or `release`. Total; the Sentry envelope sends it as `fingerprint` |
+| `setFailureStore(store)` / `withFailureCapture(primitive, name, statusOf, run)` / `recordFailureFact(fact)` | the 5xx bundle `x repro` replays (`failureCapture` in `app.config.ts`). No store, no buffer. A 5xx is held on the thrown value and stored at `reportError` under its `errorFingerprint`; masked input listed in `masked` |
 
 `As of 2026-08` four packages call `reportError`, seven call sites in all: `@ultimat3/http`'s
 `stages.ts` (`status >= 500` only), `@ultimat3/jobs`' `executeJob` — the one frame still holding the

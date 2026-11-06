@@ -1,4 +1,4 @@
-// `robots.txt` and `sitemap.xml`, off the route table: ONE answer for the static export
+// `robots.txt`, `sitemap.xml` and `llms.txt`, off the route table: ONE answer for the static export
 // (`apps/web/prerender.ts` writes it into the artifact) and the running web role (`seo-routes.ts`
 // serves it), so a crawler reads the same two files from a CDN and from a container.
 
@@ -6,12 +6,13 @@ import type { Environment, SeoRobotsGroup, SeoSitemapConfig } from '@ultimat3/co
 import { UltimateError } from '@ultimat3/core';
 import { localizedPath, unlocalizedPath } from '@ultimat3/i18n';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
-import type { RouteEntry } from '@ultimat3/render';
+import type { PrerenderEntry, RouteEntry } from '@ultimat3/render';
 import { routeEntries } from '@ultimat3/render';
 import { enumeratePrerenderEntries, fillPath } from '@ultimat3/render/server';
 import type { RouteRecord, SitemapFile, SitemapPage } from '@ultimat3/seo';
 import { buildRobots, buildSitemap, isDynamic } from '@ultimat3/seo';
 import { readSiteMeta } from './seo-meta';
+import { siteLlms } from './site-llms';
 import { lastmodOf } from './sitemap-lastmod';
 
 export const ROBOTS_PATH = '/robots.txt';
@@ -47,6 +48,8 @@ export interface SiteSeoOptions {
   readonly sitemap?: SiteSeoSitemap | undefined;
   /** The app root the route files are relative to — read for `lastmod: 'git' | 'mtime'`. */
   readonly root?: string | undefined;
+  /** `seo.llms` from `app.config.ts`. Omitted: on, like the sitemap. */
+  readonly llms?: boolean | undefined;
 }
 
 /**
@@ -72,6 +75,8 @@ export class SitemapExtraInvalidError extends UltimateError {
 
 export interface SiteSeo {
   readonly robots: string;
+  /** `/llms.txt`: empty outside production and under `seo.llms: false`. */
+  readonly llms: string;
   /** Every sitemap file: `/sitemap.xml` alone, or the index at that path first and its parts after. */
   readonly sitemaps: readonly SitemapFile[];
 }
@@ -89,8 +94,9 @@ const isPublicSite = (entry: RouteEntry): boolean =>
 const pagesOf = async (
   entry: RouteEntry,
   options: SiteSeoOptions,
+  enumerate: Enumerate,
 ): Promise<readonly SitemapPage[]> => {
-  const said = (await enumeratePrerenderEntries(entry)).map(
+  const said = (await enumerate(entry)).map(
     (page): SitemapPage => ({
       path: fillPath(entry.pattern.source, page.params),
       ...(page.lastmod === undefined ? {} : { lastmod: page.lastmod }),
@@ -147,6 +153,7 @@ async function publicSiteRoutes(
   options: SiteSeoOptions,
   stamp: Stamp,
   locales: readonly string[],
+  enumerate: Enumerate,
 ): Promise<readonly RouteRecord[]> {
   const indexed = await indexability(locales);
   return routeEntries()
@@ -158,13 +165,27 @@ async function publicSiteRoutes(
       render: entry.config.render,
       ...indexed(entry.path),
       ...(isDynamic(entry.path) || entry.config.prerender !== undefined
-        ? { prerender: () => pagesOf(entry, options) }
+        ? { prerender: () => pagesOf(entry, options, enumerate) }
         : {}),
       ...stamp(entry.file),
     }));
 }
 
 type Stamp = (file: string) => { readonly lastmod?: string };
+
+/** `enumeratePrerenderEntries`, asked once per route per answer: the sitemap and `llms.txt` share it. */
+type Enumerate = (entry: RouteEntry) => Promise<readonly PrerenderEntry[]>;
+
+const enumerateOnce = (): Enumerate => {
+  const asked = new Map<RouteEntry, Promise<readonly PrerenderEntry[]>>();
+  return (entry) => {
+    const known = asked.get(entry);
+    if (known !== undefined) return known;
+    const answer = enumeratePrerenderEntries(entry);
+    asked.set(entry, answer);
+    return answer;
+  };
+};
 
 /**
  * The app's `seo.sitemap.extra` paths as records, each resolved to the route that answers it — the
@@ -216,8 +237,9 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
     const lastmod = lastmodOf(file, settings.lastmod, root);
     return lastmod === undefined ? {} : { lastmod };
   };
+  const enumerate = enumerateOnce();
   const routes = [
-    ...(await publicSiteRoutes(options, stamp, locales)),
+    ...(await publicSiteRoutes(options, stamp, locales, enumerate)),
     ...extraRoutes(settings.extra, stamp),
   ];
   const sitemap = await buildSitemap(routes, {
@@ -245,5 +267,15 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
     ...(options.robotsGroups === undefined ? {} : { groups: options.robotsGroups }),
     ...(options.environment === undefined ? {} : { environment: options.environment }),
   });
-  return { robots, sitemaps };
+  // The same pages, default locale, less what `robots.txt` keeps crawlers out of (`site-llms.ts`).
+  const llms = await siteLlms({
+    baseUrl: options.baseUrl,
+    environment: options.environment,
+    enabled: options.llms,
+    disallow: options.disallow,
+    pagesFor: options.pagesFor,
+    defaultLocale,
+    enumerate,
+  });
+  return { robots, sitemaps, llms };
 }

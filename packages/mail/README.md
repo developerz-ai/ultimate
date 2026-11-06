@@ -195,8 +195,16 @@ export const resend = resendEventReceiver({ secret: env['RESEND_WEBHOOK_SECRET']
 ## Framework mails
 
 Registered by importing them — the import IS the registration. `FRAMEWORK_MAILS` is the list, and
-`registeredMails()` / `registeredMailIds()` answer for an app's own mails as well. There is no
-`x mail` command; a host that wants to list or preview a mail calls those and `renderMessage()`.
+`registeredMails()` / `registeredMailIds()` answer for an app's own mails as well.
+
+## Previews — `defineMail({ preview })`
+
+`As of 2026-11-06`. Sample data a template is checked by, in every locale, with no flow triggered
+and never production rows. A value is parsed by `input` at definition (`X_MAIL_PREVIEW_INVALID`);
+`(locale) => data` is parsed at each render. `previewMail(id, { locale, tz? })` answers
+`{ subject, html, text, misses }` and sends nothing; `x mail preview <id> [--locale] [--out]` is
+it on the command line, and `x verify`'s `i18n` step renders every declared preview in every
+locale, so a miss a `send` would refuse is red at the gate. No preview: `X_MAIL_PREVIEW_MISSING`.
 
 | id | Input |
 |---|---|

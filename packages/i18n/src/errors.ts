@@ -10,6 +10,7 @@ export const I18N_ERROR_CODES = [
   'X_CATALOG_MISSING_KEYS',
   'X_CATALOG_INVALID',
   'X_CATALOG_UNREGISTERED',
+  'X_I18N_FAMILY_INCOMPLETE',
 ] as const;
 
 export type I18nErrorCode = (typeof I18N_ERROR_CODES)[number];
@@ -19,6 +20,7 @@ export const I18N_ERROR_TITLES: Readonly<Record<I18nErrorCode, string>> = {
   X_CATALOG_MISSING_KEYS: 'a catalog is missing keys used in source',
   X_CATALOG_INVALID: 'a catalog entry is malformed',
   X_CATALOG_UNREGISTERED: 'a shipped catalog never reached the runtime registry',
+  X_I18N_FAMILY_INCOMPLETE: 'a select or ordinal family has no _other',
 };
 
 // Titles must be registered for format() to render the contract's first line. Every code above is
@@ -57,6 +59,15 @@ export function catalogMissingKeys(locale: string, keys: readonly string[]): I18
     code: 'X_CATALOG_MISSING_KEYS',
     cause: `packages/i18n/catalogs/${locale}.json is missing ${keys.length} key(s) source names or the reference locale defines: ${shown.join(', ')}${suffix}`,
     fix: `x i18n sync ${locale}   # writes each key above as ⟦key⟧ — replace every one with the real string`,
+  });
+}
+
+/** A select or ordinal family with no `_other`: a value it does not name renders `⟦key⟧`. */
+export function familyIncomplete(locale: string, owed: readonly string[]): I18nError {
+  return new I18nError({
+    code: 'X_I18N_FAMILY_INCOMPLETE',
+    cause: `packages/i18n/catalogs/${locale}.json defines a select or ordinal family with no _other, so a value it does not name renders the loud miss: ${shownKeys(owed)}`,
+    fix: `x i18n check --json   # then add each key named here (${owed[0] ?? '<key>_select_other'}) to packages/i18n/catalogs/${locale}.json`,
   });
 }
 

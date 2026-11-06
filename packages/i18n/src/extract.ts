@@ -6,7 +6,7 @@
 
 import { stripComments } from '@ultimat3/core';
 import { type Catalog, catalogKeys } from './catalog';
-import { catalogMissingKeys } from './errors';
+import { catalogMissingKeys, familyIncomplete } from './errors';
 import { PLURAL_CATEGORIES } from './interpolate';
 import type { Locale } from './locales';
 
@@ -34,6 +34,8 @@ export interface LocaleAudit {
   locale: Locale;
   missing: string[];
   unused: string[];
+  /** Select and ordinal families with no `_other`: `<family>_other` is what each one owes. */
+  incomplete: string[];
 }
 
 export interface ExtractReport {
@@ -146,7 +148,11 @@ export interface AuditInput {
 export function auditCatalogs(input: AuditInput): ExtractReport {
   const used = [...new Set(input.extraction.usages.map((usage) => usage.key))].sort();
   const ignore = input.ignoreUnused ?? [];
-  const referenced = catalogKeys(input.catalogs[input.reference ?? ''] ?? {}).map(stemOf);
+  // By family stem too: a locale with no grammatical gender owes `invite`, and its lone
+  // `invite_select_other` answers it — never every value the reference names.
+  const referenced = catalogKeys(input.catalogs[input.reference ?? ''] ?? {}).map((key) =>
+    familyStemOf(stemOf(key)),
+  );
   const required = [...new Set([...used, ...referenced])].sort();
 
   const locales: LocaleAudit[] = Object.keys(input.catalogs)
@@ -155,10 +161,18 @@ export function auditCatalogs(input: AuditInput): ExtractReport {
       const catalog = input.catalogs[locale] ?? {};
       const missing = required.filter((key) => !definesKey(catalog, key));
       const usedWithVariants = new Set(used.flatMap(variantsOf));
+      const usedSet = new Set(used);
+      // A family member is used when its stem is: `t('invite', { select })` reads every one.
       const unused = catalogKeys(catalog).filter(
-        (key) => !usedWithVariants.has(key) && !isIgnored(key, ignore),
+        (key) =>
+          !usedWithVariants.has(key) && !usedSet.has(familyStemOf(key)) && !isIgnored(key, ignore),
       );
-      return { locale, missing, unused };
+      return {
+        locale,
+        missing,
+        unused,
+        incomplete: incompleteFamilies(catalogKeys(catalog), usedSet),
+      };
     });
 
   return {
@@ -167,7 +181,7 @@ export function auditCatalogs(input: AuditInput): ExtractReport {
     usages: input.extraction.usages,
     dynamic: input.extraction.dynamic,
     locales,
-    ok: locales.every((audit) => audit.missing.length === 0),
+    ok: locales.every((audit) => audit.missing.length === 0 && audit.incomplete.length === 0),
   };
 }
 
@@ -175,6 +189,7 @@ export function auditCatalogs(input: AuditInput): ExtractReport {
 export function assertCatalogsComplete(report: ExtractReport): void {
   for (const audit of report.locales) {
     if (audit.missing.length > 0) throw catalogMissingKeys(audit.locale, audit.missing);
+    if (audit.incomplete.length > 0) throw familyIncomplete(audit.locale, audit.incomplete);
   }
 }
 
@@ -198,7 +213,43 @@ export async function extractFromFiles(
 }
 
 function definesKey(catalog: Catalog, key: string): boolean {
-  return variantsOf(key).some((candidate) => Object.hasOwn(catalog, candidate));
+  return (
+    variantsOf(key).some((candidate) => Object.hasOwn(catalog, candidate)) ||
+    catalogKeys(catalog).some((defined) => familyStemOf(defined) === key)
+  );
+}
+
+const FAMILY = /_(select|ordinal)_/;
+
+/** `invite_select_female_one` → `invite`; a key in no family is its own. */
+function familyStemOf(key: string): string {
+  const match = FAMILY.exec(key);
+  return match === null || match.index === 0 ? key : key.slice(0, match.index);
+}
+
+/**
+ * Every family prefix (`invite_select`, `place_ordinal`, `invite_select_female_ordinal`) whose
+ * `_other` — bare or plural-suffixed — the catalog does not define: a value the family does not
+ * name would render the loud miss. Answered as the key owed, `<prefix>_other`. A key source names
+ * itself (`t('theme_select_label')`) is an ordinary key that happens to spell `_select_`, never a
+ * family member: it owes no `theme_select_other`.
+ */
+function incompleteFamilies(keys: readonly string[], named: ReadonlySet<string>): string[] {
+  const defined = new Set(keys);
+  const owed = new Set<string>();
+  for (const key of keys) {
+    if (named.has(stemOf(key))) continue;
+    for (const match of key.matchAll(/_(select|ordinal)_/g)) {
+      if (match.index === 0) continue;
+      const prefix = key.slice(0, match.index + match[0].length - 1);
+      const other = `${prefix}_other`;
+      const present =
+        variantsOf(other).some((candidate) => defined.has(candidate)) ||
+        keys.some((candidate) => candidate.startsWith(`${other}_`));
+      if (!present) owed.add(other);
+    }
+  }
+  return [...owed].sort();
 }
 
 function variantsOf(key: string): string[] {

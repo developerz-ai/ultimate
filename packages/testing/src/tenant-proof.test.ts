@@ -77,27 +77,22 @@ describe(testName('unit', 'tenant proof: every planted hole is crossed'), () => 
 
   test('a write by input id is X_TENANT_WRITE_CROSSED naming the table and A’s row', async () => {
     const findings = expectCrossed(await proveOne('tpRenameFile'), 'tpRenameFile', 'action');
-    const renamed = await renamedTo('https://renamed.example.test/by-caller');
-    expect(renamed).toHaveLength(1);
-    expect(findings).toContainEqual({
-      code: 'X_TENANT_WRITE_CROSSED',
-      leg: 'before',
-      table: 'tp_files',
-      id: String(renamed[0]),
-    });
+    // The scale sweep calls each reached primitive again in tenants of its own, so their own rows
+    // are renamed too: A's row is the one the finding names, and it is among them.
+    const renamed = (await renamedTo('https://renamed.example.test/by-caller')).map(String);
+    const crossed = findings.find((one) => one.code === 'X_TENANT_WRITE_CROSSED');
+    expect(crossed).toMatchObject({ leg: 'before', table: 'tp_files' });
+    expect(renamed).toContain(String(crossed?.id));
   });
 
   test('the same write from a job body is crossed, named as the job', async () => {
     const findings = expectCrossed(await proveOne('tpRenameFileJob'), 'tpRenameFileJob', 'job');
-    const renamed = await renamedTo('https://renamed.example.test/by-worker');
-    expect(renamed).toHaveLength(1);
-    expect(findings).toContainEqual(
-      expect.objectContaining({
-        code: 'X_TENANT_WRITE_CROSSED',
-        table: 'tp_files',
-        id: renamed[0],
-      }),
-    );
+    // The scale sweep calls each reached primitive again in tenants of its own, so their own rows
+    // are renamed too: A's row is the one the finding names, and it is among them.
+    const renamed = (await renamedTo('https://renamed.example.test/by-worker')).map(String);
+    const crossed = findings.find((one) => one.code === 'X_TENANT_WRITE_CROSSED');
+    expect(crossed).toMatchObject({ table: 'tp_files' });
+    expect(renamed).toContain(String(crossed?.id));
   });
 });
 
@@ -178,15 +173,12 @@ describe(testName('unit', 'tenant proof: raw SQL, on PGlite'), () => {
     'a raw-SQL update by input id is crossed, naming the table and the row',
     async () => {
       const findings = expectCrossed(await proveSql('tpsRawWrite', 2), 'tpsRawWrite', 'action');
-      const overwritten = await overwrittenDocs();
-      expect(overwritten).toHaveLength(1);
-      expect(findings).toContainEqual(
-        expect.objectContaining({
-          code: 'X_TENANT_WRITE_CROSSED',
-          table: 'tps_docs',
-          id: overwritten[0],
-        }),
-      );
+      // The scale sweep calls each reached primitive again in tenants of its own, so their own rows
+      // are renamed too: A's row is the one the finding names, and it is among them.
+      const overwritten = (await overwrittenDocs()).map(String);
+      const crossed = findings.find((one) => one.code === 'X_TENANT_WRITE_CROSSED');
+      expect(crossed).toMatchObject({ table: 'tps_docs' });
+      expect(overwritten).toContain(String(crossed?.id));
     },
     PGLITE_MS,
   );

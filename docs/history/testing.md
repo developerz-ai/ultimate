@@ -365,3 +365,115 @@ Verbatim from [`packages/testing/CLAUDE.md`](../../packages/testing/CLAUDE.md), 
 | | |
 |---|---|
 | The baseline is not a hook | measured on Bun 1.3.14 the order is onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload `beforeEach`, so a preload hook cannot sample before the file's own `beforeAll` |
+
+## Moved out for plan 101's wave 9 (`As of 2026-11-06`)
+
+Verbatim from [`packages/testing/CLAUDE.md`](../../packages/testing/CLAUDE.md), which keeps each rule in one line and points here.
+
+### Deps (why `entity` is reached at all)
+
+`entity` serves two calls, the
+tenant witness and `nPlusOne()`: the strict fixture reports `x dev`'s error, with the `fix:` the schema's
+own relations spell — a second N+1 code here would be a second answer to one condition. Its one
+static import: `registry-isolation.ts`, own entry point, off the barrel.
+
+### Slot, not prototype
+
+| Slot, not prototype | the brand is cross-realm on purpose: `instanceof RealDate` misses a `node:vm` or worker Date, and `Object.prototype.toString` is spoofable by `Symbol.toStringTag: 'Date'`. Only the slot is both |
+
+### The budget is counted in LOOKS / A FIXED interval
+
+| The budget is counted in LOOKS, not milliseconds | this package freezes `Date.now()`, so a deadline computed from the clock never expires and the loop spins forever. `attemptsFor(budget)` is `1 + floor(timeout / interval)` |
+| A FIXED interval, and never a curve | doubling the gap makes the last look land long after the state changed, and the caller's deadline is the contract. |
+
+### Wrong receiver throws / message thunk
+
+| Wrong receiver throws, wrong value returns | a matcher handed a page where a locator belongs is not FALSE, it is unanswerable — `pass: false` would read as "the element was hidden". A wrong-shaped receiver is a coded throw |
+| A matcher MESSAGE is a thunk, and never `JSON.stringify` | `result(pass, () => …)` — `expect.extend` reads `message()` only on the wrong verdict, and the string used to be built EAGERLY. |
+
+### Permissions are still REPLACED at a file boundary
+
+| Permissions are still REPLACED at a file boundary, and it is measured | an app's `definePermissions()` reached only by a dynamic `loadApp()` is dropped at that file's boundary exactly as catalogs were; the union rule would leak `permissions.test.ts`'s declarations into every later file. Open, its own piece of work (history) |
+
+### The browser-backed e2e driver (why it moved)
+
+It was in `@ultimat3/cli`, on the argument that the adapter joined `testing`'s `PageLike` to
+`@ultimat3/scraping`'s browser and only `cli` could import both. That stopped being true when the
+browser became RAW CDP (below): the driver needs `@ultimat3/core` and Bun, nothing else, so it
+lives beside the `PageLike` it implements. `cli` imports it over the declared `cli -> testing` edge.
+
+### The island fixture's whole-chain proof
+
+The whole-chain proof — real Babel, real Solid, a real island —
+is `examples/dummy/apps/web/app/settings/settings.island.test.ts`; `fixture-island.test.ts` pins
+this package's own contract against modules written in the idiom `babel-preset-solid` emits, with
+no bundler, because a test here cannot import one.
+
+### An island needs a BUILDER, not an import
+
+| An island needs a BUILDER, not an import | `buildIslands` is `@ultimat3/cli`'s and both packages are tier 5; the one declared edge is `cli → testing`, so the reverse is a `bun run boundaries` failure. |
+
+### The disk check is not in `defineIslandStates`
+
+| The disk check is not in `defineIslandStates` | a declaration evaluates wherever it is imported from, so a rule that reads the filesystem at import time fails on the cwd rather than on the path. |
+
+### The island EXTENSION is not restated here
+
+| The island EXTENSION is not restated here | `.island.tsx` is `@ultimat3/render`'s `ISLAND_EXTENSION` and `render` is not a dependency of this package. |
+
+### Props are JSON or they are refused
+
+| they ride `data-x-props`, which `@ultimat3/render`'s `emitIslandProps` `JSON.stringify`s, so anything else is a prop the component never receives. |
+
+### Unreadable is not pure
+
+| Unreadable is not pure | a computed specifier — ``import(`./${name}.island`)``, `require(SPEC)` — is refused as `IslandStatesOpaqueImportError` rather than passed. |
+
+### Guarded state is boot state / Filled and CLEARED
+
+| Guarded state is boot state | only the two registries whose honest invariant is "clean when the file ends" — `declareTags` and `registerTier` are boot installs. |
+| Filled and CLEARED are different questions | and the row above answers only the first. "Idiomatic to leave filled" is about the leak REPORT |
+
+### `subscribe` (the four rows)
+
+| `subscribe` is a whole `sync` node | `live-node.ts` assembles what `x dev --role sync` assembles minus the listener — real `LiveQueryRegistry`, real `liveQueryDefinition` bridge, real per-subscriber gate, real cursor |
+| What `subscribe` does NOT hold | a client store, an offline queue or a rebase log — so `feed.local()` answers `undefined` rather than the server row. |
+| Draining is a macrotask yield | `message` runs in a floating async task, so `settled()` yields with `setImmediate` until the frame count stops moving |
+| A lone subscriber cannot resume | the retained window is the registry's ENTRY and the entry is dropped when its last subscriber goes, so a reconnect with nobody else holding it re-snapshots |
+
+### One threshold, one error / Strict is opt-in
+
+A fixture nobody names is a fixture nobody built, so there is no `strict: true` and no suite-wide switch |
+| One threshold, one error | `N_PLUS_ONE_THRESHOLD` and `nPlusOne()` are `@ultimat3/entity`'s. A copy here would fail a different loop than the one `x dev` warns about |
+
+### A mount imports from its own temp DIRECTORY
+
+| A mount imports from its own temp DIRECTORY | `island-scratch.ts`: per mount (identical chunks stay two modules); removed on dispose, at the file boundary and in the run's `afterAll` — `exit` never fires under `bun test`. Never a `data:` URL (coverage panics past ~4 kB) |
+
+### The frozen instant and the seed are screened
+
+`installDeterminism({ now })`, `setFrozenClock`, `withFrozenClock` and `advanceClock` go through one
+`instantMs`: an unreadable instant would make `Date.now()` answer `NaN` for every later file. The
+seed is screened too — `seed >>> 0` maps `NaN`, `0.5` and `2 ** 32` onto seed 0 silently.
+`finiteOption`/`finiteCount` from `@ultimat3/core` are the one form; `determinism-bounds.test.ts`
+holds both sides.
+
+### One `mockFetch` (the cassette clause, now its own row)
+
+`cassette()`: a file of its routes; records by hand, never in `CI`, secret-scanned |
+
+### The seal key is a test process's
+
+; `startE2eApp` hands it to the child by VALUE, and `x exercise` (a test process on a scratch database) to itself through `testSealKeyEnv`. Full rule: `docs/history/testing.md` |
+
+### `cdp-e2e-session.ts`
+
+: every target auto-attached at browser level and PAUSED until its Network domain is on (a SharedWorker opens its socket at start-up) |
+
+### `e2e-app.ts`
+
+: reset + seed + spawn on a THROWAWAY `ULTIMATE_STATE_DIR` and free ports a browser opens (`free-port.ts`), `/readyz`-gated, spawned through the app's own `@ultimat3/cli` bin (`xBin`); `stop()` removes the directory |
+
+### Loose in, strict out
+
+`findIslandStates` resolves `Settings`, `settings`, `settings.island.tsx` and the full path to one manifest, and refuses a name nothing answers to by listing EVERY valid one |

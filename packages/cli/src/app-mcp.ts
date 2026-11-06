@@ -16,9 +16,11 @@ import type { Route } from '@ultimat3/http';
 import { jsonResponse, originListed, selfOrigin } from '@ultimat3/http';
 import {
   type AppMcp,
+  assertRecipeLinks,
   McpAppUnmountedError,
   McpPathDuplicateError,
   PROTECTED_RESOURCE_WELL_KNOWN,
+  servedRecipes,
 } from '@ultimat3/mcp';
 import { loadAppConfig } from './app-config-load';
 
@@ -103,6 +105,9 @@ export async function appMcpMount(root: string): Promise<AppMcpMount> {
     const module = (await import(join(root, file))) as Record<string, unknown>;
     const endpoints = endpointsOf(module[APP_MCP_EXPORT]);
     if (endpoints === undefined) continue;
+    // Every endpoint is built by now: an error's declared `docs://recipes/` link must name a recipe
+    // one of them serves (`X_MCP_RECIPE_UNKNOWN`), the union and never one endpoint alone.
+    assertRecipeLinks(servedRecipes());
     return mountEndpoints(endpoints, file);
   }
   return {

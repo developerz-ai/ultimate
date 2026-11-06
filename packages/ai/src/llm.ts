@@ -21,17 +21,22 @@
  * same rules.
  */
 
-import type { Action, InvokeOptions } from '@ultimat3/action';
-import { action } from '@ultimat3/action';
+import type { InvokeOptions, StreamAction } from '@ultimat3/action';
+import { action, chunksRead } from '@ultimat3/action';
 import type { Ctx, Span, SpanAttributes } from '@ultimat3/core';
 import { finiteCount, withSpan } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
-import { formatIssues, validateAsync } from '@ultimat3/schema';
+import { formatIssues, t, validateAsync } from '@ultimat3/schema';
 import { runTotal } from './agent-usage';
 import { LlmTruncatedError } from './answer-errors';
 import type { BudgetLimits } from './budget';
 import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
-import { LlmOutputInvalidError, LlmRefusedError, LlmStreamInvalidError } from './errors';
+import {
+  AiTransportError,
+  LlmOutputInvalidError,
+  LlmRefusedError,
+  LlmStreamInvalidError,
+} from './errors';
 import type { Gateway } from './gateway';
 import { openCache } from './llm-cache';
 import type { LlmBudget, LlmDef } from './llm-def';
@@ -64,12 +69,20 @@ const DEFAULT_MAX_TOKENS = 4_096;
 export type { LlmBudget, LlmCall, LlmDef, LlmVarsArgs } from './llm-def';
 
 /**
+ * What `llm()`'s route streams to a caller asking for `text/event-stream`: the answer's text, as it
+ * arrives. `thinking` never crosses the wire — reasoning is for the server's own `.stream()`
+ * consumer to decide about, not for a browser to render by default. The final frame is `done`,
+ * the value that satisfied `output`.
+ */
+export const LlmTextChunk = t.object({ type: t.literal('text'), text: t.string });
+
+/**
  * An `action` with one extra way to be called. Every projection an action has, it has — its MCP tool,
  * `.openapi()`, `.client()`, `.job()`, `.contract()` — plus a transport for the case an action's
  * single return value cannot serve: text on a screen before the answer is finished.
  */
 export interface LlmAction<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>
-  extends Action<TInput, TOutput> {
+  extends StreamAction<TInput, TOutput, typeof LlmTextChunk> {
   /**
    * The same call, delivered as it arrives. Runs the action's policy, input parse, budget scope,
    * semantic cache and span exactly as calling it would — the invocation IS an ordinary one,
@@ -106,12 +119,30 @@ export function llm<
   // a call that cannot answer.
   finiteCount('llm', 'maxTokens', def.maxTokens ?? DEFAULT_MAX_TOKENS, 1);
   const sampling = screenSampling('llm', def);
-  const built = action<TInput, TOutput>({
+  const built = action<TInput, TOutput, typeof LlmTextChunk>({
     input: def.input,
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
-    handle: (args) => generate(def, respond, sampling, args),
+    // Declared, so the route answers `text/event-stream` when asked. Drained (MCP, `.job()`, JSON,
+    // a direct call) it is the non-streaming call, repair turn included; only a caller READING the
+    // chunks gets the one-attempt streamed turn, exactly as server-side `.stream()` does.
+    stream: LlmTextChunk,
+    async *handle(args) {
+      if (!chunksRead()) return await generate(def, respond, sampling, args);
+      const chunks = llmStream<InferOutput<TOutput>>((sink) =>
+        withLlmSink(sink, () => generate(def, respond, sampling, args)),
+      );
+      for await (const chunk of chunks) {
+        if (chunk.type === 'text') yield { type: 'text' as const, text: chunk.text };
+        else if (chunk.type === 'done') return chunk.value;
+      }
+      // `llmStream` ends with `done` or throws; reaching here is a sink that closed early.
+      throw new AiTransportError({
+        provider: 'gateway',
+        detail: 'the streamed answer ended without its value',
+      });
+    },
   });
   return streamable(built);
 }
@@ -126,7 +157,7 @@ export function llm<
  * The original is captured first, or the override would call itself.
  */
 function streamable<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
-  target: Action<TInput, TOutput>,
+  target: StreamAction<TInput, TOutput, typeof LlmTextChunk>,
 ): LlmAction<TInput, TOutput> {
   const rename = target.named.bind(target);
   const self: LlmAction<TInput, TOutput> = Object.assign(target, {

@@ -34,7 +34,8 @@ export function diffEntities(
     );
     changes.push(...diffColumns(path, entity, next));
     changes.push(...diffInvariants(`${path}.invariants`, entity.invariants, next.invariants));
-    changes.push(...diffShared(`${path}.shared`, entity.shared, next.shared));
+    changes.push(...diffReason('shared', `${path}.shared`, entity.shared, next.shared));
+    changes.push(...diffReason('scan', `${path}.scan`, entity.scan, next.scan));
     changes.push(...diffView(`${path}.view`, entity.view, next.view));
   }
   for (const entity of after) {
@@ -77,10 +78,12 @@ function diffInvariants(
 }
 
 /**
- * `shared` is a reason, never a constraint: no row is refused and no field moves on any wire, so
- * every move is additive. Reported all the same — a reviewer reads why a table belongs to no tenant.
+ * `shared` and `scan` are reasons, never constraints: no row is refused and no field moves on any
+ * wire, so every move is additive. Reported all the same — a reviewer reads why a table belongs to
+ * no tenant, or why it may be read whole.
  */
-function diffShared(
+function diffReason(
+  label: 'shared' | 'scan',
   path: string,
   before: string | undefined,
   after: string | undefined,
@@ -88,10 +91,10 @@ function diffShared(
   if (before === after) return [];
   const detail =
     before === undefined
-      ? `shared declared: ${after}`
+      ? `${label} declared: ${after}`
       : after === undefined
-        ? 'shared reason dropped'
-        : `shared reason ${before} -> ${after}`;
+        ? `${label} reason dropped`
+        : `${label} reason ${before} -> ${after}`;
   return [{ kind: 'additive', path, detail }];
 }
 

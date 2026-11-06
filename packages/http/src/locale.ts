@@ -4,7 +4,7 @@
 // lived here and all three disagreed with their owner about the same request.
 
 import { LOCALE_COOKIE } from '@ultimat3/i18n';
-import { TIMEZONE_HEADER } from '@ultimat3/time';
+import { TIMEZONE_DETECTED_COOKIE, TIMEZONE_HEADER } from '@ultimat3/time';
 
 export interface LocaleConfig {
   /** Cookie the client sets when the user picks a locale explicitly. */
@@ -15,6 +15,8 @@ export interface TimeZoneConfig {
   /** Header the client sets from `Intl.DateTimeFormat().resolvedOptions().timeZone`. */
   readonly header: string;
   readonly cookie: string;
+  /** The zone script's guess (`@ultimat3/render`'s `zoneScript`): never the chosen `cookie`. */
+  readonly detectedCookie: string;
 }
 
 /**
@@ -31,4 +33,5 @@ export const DEFAULT_LOCALE_CONFIG: LocaleConfig = {
 export const DEFAULT_TZ_CONFIG: TimeZoneConfig = {
   header: TIMEZONE_HEADER,
   cookie: 'x_timezone',
+  detectedCookie: TIMEZONE_DETECTED_COOKIE,
 };

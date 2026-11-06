@@ -75,6 +75,7 @@ const routeSet = (): readonly Route[] => {
 const urlFor = (name: string): string | undefined => {
   const urls: Readonly<Record<string, string>> = {
     'seo.robots': '/robots.txt',
+    'seo.llms': '/llms.txt',
     'seo.sitemap': '/sitemap.xml',
     'seo.sitemapPart': '/sitemaps/1.xml',
     'assets.manifest': '/manifest.webmanifest',
