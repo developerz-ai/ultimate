@@ -23,18 +23,24 @@ async function until(ready: () => Promise<boolean> | boolean, limitMs: number): 
 describe.skipIf(!hasRedis)('live · redisClient · a killed connection', () => {
   // A path of its own, so this file's client is not one another suite in the process holds.
   const target = `${url ?? ''}/0`;
-  const admin = new Bun.RedisClient(url ?? '');
+  // Built on first use, never in the describe body: `describe.skipIf` still runs that body, and an
+  // empty URL throws `Invalid URL format` before the skip applies (CI's coverage run strips it).
+  let opened: Bun.RedisClient | undefined;
+  const admin = (): Bun.RedisClient => {
+    opened ??= new Bun.RedisClient(url ?? '');
+    return opened;
+  };
 
   afterAll(() => {
     redisClient(target).close();
-    admin.close();
+    opened?.close();
   });
 
   test('refuses at once while disconnected, then answers again with no restart', async () => {
     const client = redisClient(target);
     await until(() => client.connected, 2_000);
     const id = String((await client.send('CLIENT', ['ID'])) as unknown);
-    expect(Number((await admin.send('CLIENT', ['KILL', 'ID', id])) as unknown)).toBe(1);
+    expect(Number((await admin().send('CLIENT', ['KILL', 'ID', id])) as unknown)).toBe(1);
     await until(() => !client.connected, 2_000);
 
     const started = performance.now();
