@@ -3478,26 +3478,6 @@
               "minLength": 1,
               "type": "string"
             }
-          },
-          {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
-            "in": "query",
-            "name": "_first",
-            "required": false,
-            "schema": {
-              "maximum": 10000,
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          {
-            "description": "the nextCursor a previous page answered; needs _first",
-            "in": "query",
-            "name": "_after",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -3505,59 +3485,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "items": {},
-                      "type": "array"
-                    },
-                    {
-                      "oneOf": [
-                        {
-                          "properties": {
-                            "hasMore": {
-                              "const": true
-                            },
-                            "nextCursor": {
-                              "type": "string"
-                            }
-                          }
-                        },
-                        {
-                          "properties": {
-                            "hasMore": {
-                              "const": false
-                            },
-                            "nextCursor": {
-                              "type": "null"
-                            }
-                          }
-                        }
-                      ],
-                      "properties": {
-                        "hasMore": {
-                          "description": "whether another page follows",
-                          "type": "boolean"
-                        },
-                        "nextCursor": {
-                          "description": "the signed cursor for the next page — send it as _after; null exactly when hasMore is false",
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "rows": {
-                          "items": {},
-                          "type": "array"
-                        }
-                      },
-                      "required": [
-                        "rows",
-                        "nextCursor",
-                        "hasMore"
-                      ],
-                      "type": "object"
-                    }
-                  ]
+                  "type": "object"
                 }
               }
             },
@@ -3571,7 +3499,7 @@
                 }
               }
             },
-            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+            "description": "X_INPUT_INVALID"
           },
           "403": {
             "content": {
@@ -3582,6 +3510,16 @@
               }
             },
             "description": "policy denied"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_NOT_FOUND — the read matched no row for this input"
           }
         },
         "summary": "Read one published post by slug",
@@ -3594,6 +3532,7 @@
           ],
           "capability": "feed:read",
           "live": false,
+          "single": true,
           "tool": "postBySlug"
         }
       }
@@ -3635,6 +3574,15 @@
             "description": "the nextCursor a previous page answered; needs _first",
             "in": "query",
             "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ETag of an answer this caller already holds; a match is 304 with no body.",
+            "in": "header",
+            "name": "If-None-Match",
             "required": false,
             "schema": {
               "type": "string"
@@ -3887,6 +3835,12 @@
             },
             "description": "ok",
             "headers": {
+              "ETag": {
+                "description": "A strong validator of this answer, for this caller. Send it as If-None-Match.",
+                "schema": {
+                  "type": "string"
+                }
+              },
               "x-ultimate-records": {
                 "description": "Always `1`: the body is a record envelope and the operation answer is `data`.",
                 "required": true,
@@ -3898,6 +3852,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "description": "not modified — the If-None-Match validator still names this answer"
           },
           "400": {
             "content": {

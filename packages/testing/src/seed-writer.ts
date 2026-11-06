@@ -1,14 +1,88 @@
 // `entitySeedWriter`: the `SeedWriter` that writes a seed graph through each entity's own
 // repository, so a seed takes the same writes the app makes — Postgres through a pinned client, or
-// the driver the app reads through (memory, `testDriver()`). `@ultimat3/entity` loads on the first
-// write, never on import: this module is on the barrel, and the barrel stays entity-free.
+// the driver the app reads through (memory, `testDriver()`). It reads rows back too, as digests by
+// primary key: the tenant proof's write half (`snapshot`).
+//
+// `@ultimat3/entity` loads on the first write, never on import: this module is on the barrel, and
+// the barrel stays entity-free.
 
-import type { DbClient } from '@ultimat3/db';
+import type { DbClient, SqlFragment } from '@ultimat3/db';
+import { identifier, join, sql } from '@ultimat3/db';
 import type { Driver, EntityCore, Repo } from '@ultimat3/entity';
 import { SeedGraphEntityUnknownError } from './seed-graph-error';
 import type { SeedRow, SeedUpdate, SeedWriter } from './seed-graph-plan';
 
 type SeedRepo = Repo<Record<string, unknown>>;
+
+/** Stable text for one row: keys sorted, an instant as ISO, bytes as hex — never insertion order. */
+const stable = (value: unknown): unknown => {
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Uint8Array) {
+    return Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  if (typeof value === 'bigint') return value.toString();
+  if (Array.isArray(value)) return value.map(stable);
+  if (typeof value !== 'object' || value === null) return value;
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort()
+      .map((key) => [key, stable(record[key])]),
+  );
+};
+
+const digestRow = (row: unknown): string =>
+  new Bun.CryptoHasher('md5').update(JSON.stringify(stable(row))).digest('hex');
+
+/** The physical columns of an entity's primary key, in key order. */
+const keyColumns = (entity: EntityCore): readonly string[] => {
+  const columns = entity.$describe().columns;
+  return entity.$primaryKey.map(
+    (property) => columns.find((column) => column.property === property)?.column ?? property,
+  );
+};
+
+/**
+ * `md5(t::text)` per row, by primary key, through the client — the whole stored row, columns no
+ * entity declares included. One statement per table for a one-column key, one per row for a
+ * composite one. Unscoped on purpose: the question is whether the row changed, not who may read it.
+ */
+async function snapshotOnClient(
+  client: DbClient,
+  rows: readonly SeedRow[],
+  entities: readonly EntityCore[],
+): Promise<readonly (string | null)[]> {
+  const out: (string | null)[] = rows.map(() => null);
+  const byEntity = new Map<EntityCore, number[]>();
+  entities.forEach((entity, i) => {
+    byEntity.set(entity, [...(byEntity.get(entity) ?? []), i]);
+  });
+  for (const [entity, indexes] of byEntity) {
+    const table = identifier(entity.$table);
+    const columns = keyColumns(entity);
+    const keyAt = (i: number, at: number) => String(rows[i]?.row[entity.$primaryKey[at] as string]);
+    const [single] = columns;
+    if (columns.length === 1 && single !== undefined) {
+      const key = identifier(single);
+      const found = await client.query<{ k: string; h: string }>(
+        sql`select ${key}::text as k, md5(t::text) as h from ${table} t where ${key}::text = any(${indexes.map((i) => keyAt(i, 0))}::text[])`,
+      );
+      const digests = new Map(found.map((one) => [one.k, one.h]));
+      for (const i of indexes) out[i] = digests.get(keyAt(i, 0)) ?? null;
+      continue;
+    }
+    for (const i of indexes) {
+      const terms: SqlFragment[] = columns.map(
+        (column, at) => sql`${identifier(column)}::text = ${keyAt(i, at)}`,
+      );
+      const one = await client.one<{ h: string }>(
+        sql`select md5(t::text) as h from ${table} t where ${join(terms, ' and ')}`,
+      );
+      out[i] = one?.h ?? null;
+    }
+  }
+  return out;
+}
 
 /** Where the rows go. One or the other, never both: two answers to one question is a compile error. */
 export type SeedWriterTarget =
@@ -75,6 +149,32 @@ export function entitySeedWriter(options: EntitySeedWriterOptions): SeedWriter {
     async update(update) {
       const { entity, repo } = await repoFor(update.entity);
       await repo.updateWhere({ ...update.key }, { ...update.patch }, scope(entity, update));
+    },
+    async snapshot(rows) {
+      const entities = await Promise.all(
+        rows.map(async (row) => (await repoFor(row.entity)).entity),
+      );
+      // Postgres hashes the whole stored row (`md5(t::text)`), columns no entity declares included.
+      if (options.client !== undefined) return snapshotOnClient(options.client, rows, entities);
+      return Promise.all(
+        rows.map(async (row, i) => {
+          const entity = entities[i] as EntityCore;
+          const { repo } = await repoFor(row.entity);
+          const where = entity.$primaryKey.map((property) => ({
+            column: property,
+            op: 'eq' as const,
+            value: row.row[property],
+          }));
+          const page = await repo.findMany({
+            where,
+            limit: 1,
+            includeDeleted: true,
+            ...scope(entity, row),
+          });
+          const found = page.rows[0];
+          return found === undefined ? null : digestRow(found);
+        }),
+      );
     },
   };
 }

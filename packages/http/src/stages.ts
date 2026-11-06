@@ -269,6 +269,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         secFetchSite: request.header('sec-fetch-site'),
         hasAuthorizationHeader: request.header('authorization') !== null,
         anonymous: isAnonymous(ctx.actor),
+        cookieless: ctx.route?.meta.csrf === 'cookieless',
         cors: config.cors,
         config: config.csrf,
       });

@@ -267,6 +267,18 @@ describe('queues() and jobRuns()', () => {
       durationMs: 400,
       error: 'boom',
     });
+
+    // A `once` step's two saga states: begun with no outcome is running; cleared runs again.
+    for (const [name, status] of [
+      ['charge-card', 'started'],
+      ['reserve-stock', 'cleared'],
+    ] as const) {
+      await driver.steps.put({ runId, name, status, startedAt: 2_000, attempts: 1 });
+    }
+    const traced = (await defaultDevSources().jobRuns()).find((run) => run.id === withStep.id);
+    const statusOf = (name: string) => traced?.steps.find((step) => step.name === name)?.status;
+    expect(statusOf('charge-card')).toBe('running');
+    expect(statusOf('reserve-stock')).toBe('pending');
   });
 
   test('a job with no queue at all refuses rather than reporting an empty queue list', async () => {

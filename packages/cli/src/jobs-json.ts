@@ -13,6 +13,7 @@ import type {
   StepTrace,
   WorkerRecord,
 } from '@ultimat3/jobs';
+import { consumerRow } from '@ultimat3/jobs';
 import type { JsonValue } from './output';
 
 function stepTraceToJson(step: StepTrace): JsonValue {
@@ -46,6 +47,12 @@ export function backfillToJson(progress: BackfillProgress): JsonValue {
     completedAt: progress.completedAt,
     durationMs: progress.durationMs,
   };
+}
+
+/** A consumer run's row, spelled out field by field for the reason `backfillToJson` is. */
+export function consumerToJson(trace: JobTrace): JsonValue {
+  const row = consumerRow(trace);
+  return row === null ? null : { key: row.key, lastBatchAt: row.lastBatchAt, lag: row.lag };
 }
 
 export function jobTraceToJson(trace: JobTrace): JsonValue {
@@ -82,6 +89,9 @@ export function jobTraceToJson(trace: JobTrace): JsonValue {
     // `null` for every job that is not a `backfill()` pass. Dropped, `x jobs show <id> --json`
     // would answer "how far has it got" with silence for the one job kind that can say.
     backfill: trace.backfill === null ? null : backfillToJson(trace.backfill),
+    // `null` for every job that is not a `consumer()` run: its key, when it last committed a batch,
+    // and its lag when the declaration has a `lag()` — read off the run's own progress.
+    consumer: consumerToJson(trace),
   };
 }
 

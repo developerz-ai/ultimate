@@ -1239,9 +1239,9 @@ A name nothing registered is `X_DECLARATION_UNKNOWN`, whose `fix` names the near
 ## x jobs
 
 ```bash
-x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|pause <queue>|resume <queue>
-       |drain] [--queue q] [--state s] [--name n] [--limit n] [--after cursor]
-       [--from-step name] [--reason text] [--json]
+x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|resolve-step <id> <step>
+       |pause <queue>|resume <queue>|drain] [--queue q] [--state s] [--name n] [--limit n]
+       [--after cursor] [--from-step name] [--reason text] [--ran|--not-ran] [--output json] [--json]
 ```
 
 | Subcommand | Does |
@@ -1252,11 +1252,12 @@ x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|pause <qu
 | `cancel <id>` | stop a job that has not finished — the way to end a runaway `backfill()` sweep. `--reason <text>` is recorded on the job. Re-reads the row after cancelling, so **exit 0 means it is genuinely stopped**: a job that already finished, an id no queue holds, and a driver with no `introspect.cancel` all raise `X_JOB_NOT_CANCELLABLE` rather than reporting success |
 | `delete <id>` | delete one job and its step records. An unknown id is `X_JOB_UNKNOWN`; a **running** job is refused with `X_JOB_NOT_REMOVABLE`, whose fix is `x jobs cancel <id> --json` — deleting the row under a body does not stop the body |
 | `promote <id>` | make a job waiting on its run time — delayed at enqueue, or backing off before a retry — due now. Anything else (due, running, finished, suspended in a `step.sleep`) is `X_JOB_NOT_PROMOTABLE`, naming the state |
+| `resolve-step <id> <step>` | answer a `once` step whose outcome is unknown (`X_STEP_OUTCOME_UNKNOWN`): `--ran --output '<json>'` records it `completed` — a replay returns that JSON, default `null` — and `--not-ran` records it `cleared`, so the next run calls it again. Exactly one of the two. Refused on a running job, or a step that did not start-and-not-complete (`X_STEP_NOT_RESOLVABLE`). Answers the job's trace; then `x jobs retry <id>` |
 | `pause <queue>` | no worker claims from the queue; enqueues still land. A row every worker's next claim reads, so it holds **fleet-wide within one poll interval**. Idempotent. Answers the paused list as the queue now holds it |
 | `resume <queue>` | undo it |
 | `drain` | **planned**, `As of 25.0.0`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs list --json`. Postgres is the one durable job driver, so there is nowhere to drain to. Its two former `--to` values, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs on every method — a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back — and 25.0.0 deleted both stubs and the unreachable drain body. 25.0.0 also deleted the `--to` and `--dry-run` flags: the parser refuses them as unknown |
 
-`show`, `retry`, `cancel`, `delete` and `promote` each take **one id positional**; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `list` only. A bare `x jobs` is `list`. One verb each, no alias: `ls` and `rm` are `X_CLI_UNKNOWN_COMMAND` since 26.0.0.
+`show`, `retry`, `cancel`, `delete` and `promote` each take **one id positional**, `resolve-step` an id and a step name; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `list` only. A bare `x jobs` is `list`. One verb each, no alias: `ls` and `rm` are `X_CLI_UNKNOWN_COMMAND` since 26.0.0.
 
 ```bash
 x jobs cancel 019ff1c5-0000-7000-8000-000000000001 --reason "wrong tenant" --json

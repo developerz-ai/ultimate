@@ -18,7 +18,7 @@ import type { QueryClientMethodOf, QueryClientOptions } from './client';
 import type { QueryContractTest, QueryContractTestOptions } from './contract-test';
 import type { DownloadQuery, DownloadQueryDef, QueryDownload } from './download';
 import { assertDownloadDef, buildDownloadQuery } from './download';
-import { QueryCacheTtlInvalidError, QuerySingleInvalidError } from './errors';
+import { QuerySingleInvalidError } from './errors';
 import { facadeFor } from './facade';
 import { assertQueryHttp, type QueryHttp } from './http-pin';
 import { assertEncodableInput } from './input-shape';
@@ -26,6 +26,7 @@ import type { LiveQuery, ToLiveOptions } from './live';
 import type { Page, PaginateArgs } from './pagination';
 import type { QueryPolicy, QuerySurface } from './policy-gate';
 import { hasDef, queryName, runQuery, stashDef } from './read';
+import { assertDownloadFreshness, assertFreshness } from './read-freshness';
 import type { SqlSource } from './source';
 import { assertSubscribes } from './subscribes';
 
@@ -38,6 +39,12 @@ export interface QueryCache {
    * every read of that query forever. Omitted takes `DEFAULT_READ_CACHE_TTL_MS`.
    */
   readonly ttlMs?: number;
+  /**
+   * Lifetime of a `null` answer, when it should be shorter than `ttlMs`: a `single: true` lookup
+   * that misses 40 ms before its row lands otherwise says "does not exist" for the whole `ttlMs`.
+   * Only `single: true` answers `null` — an empty list is a list. Positive and finite, as `ttlMs`.
+   */
+  readonly negativeTtlMs?: number;
   /**
    * Who a cached answer may be handed back to. **Defaults to `actor`**, and that default is the
    * mechanism: a read that declares nothing gets the narrowest key, which is always correct.
@@ -104,6 +111,20 @@ export interface QueryDef<
   readonly rows?: StandardSchemaV1<unknown, TRow>;
   sql(input: InferOutput<TInput>, ctx: Ctx): SqlSource<TRow>;
   readonly cache?: QueryCache;
+  /**
+   * Answer `GET` with an `ETag` and `private, no-cache`, and a matching `If-None-Match` with a
+   * bodiless 304 — after the policy and the rate limit, since a 304 is still a read of the caller's
+   * rows. Opt-in because it moves the answer from `no-store` to the browser's disk. Refused on a
+   * `live` read (`X_QUERY_ETAG_INVALID`): its cursor is its validator.
+   */
+  readonly etag?: true;
+  /**
+   * This read's own statement bound, in ms, tighter than the role's `statement_timeout`. The source
+   * runs inside `withStatementTimeout`, a transaction — so **a bounded read never reaches a
+   * replica**. Above the role's bound is `X_DB_STATEMENT_BOUND_INVALID`; firing is
+   * `X_DB_STATEMENT_TIMEOUT`. Not a whole positive number: `X_QUERY_TIMEOUT_INVALID`.
+   */
+  readonly timeoutMs?: number;
   readonly mcp?: McpExposureDeclaration;
   /** Burst and refill for THIS read's route, in the limiter's own vocabulary. */
   readonly rateLimit?: QueryRateLimit;
@@ -222,6 +243,8 @@ export interface AnyQueryDef {
   readonly rows?: StandardSchemaV1;
   sql(input: unknown, ctx: Ctx): SqlSource<object>;
   readonly cache?: QueryCache;
+  readonly etag?: true;
+  readonly timeoutMs?: number;
   readonly mcp?: McpExposureDeclaration;
   readonly rateLimit?: QueryRateLimit;
   readonly deprecated?: Deprecation;
@@ -339,10 +362,11 @@ export function query<
   assertEncodableInput(def.input);
   if (!isDownloadDef(def)) assertQueryHttp(def.http, def.input);
   if (isDownloadDef(def)) {
+    assertDownloadFreshness(def);
     assertDownloadDef(def);
     return buildDownloadQuery(def, '', describeQuery);
   }
-  assertCacheTtl(def.cache);
+  assertFreshness(def);
   assertSubscribes(def.subscribes, def.live);
   // A JS caller or generated code can write `single: 'yes'`; truthiness would read it as `true`
   // on the route and `false` in the type, so anything but a boolean is refused where it is written.
@@ -361,18 +385,6 @@ function isDownloadDef<TInput extends StandardSchemaV1>(
   def: QueryDef<TInput, object, boolean> | DownloadQueryDef<TInput>,
 ): def is DownloadQueryDef<TInput> {
   return 'download' in def && def.download !== undefined;
-}
-
-/**
- * The same rule, for the same reason: a lease every `CacheTier` refuses is wrong for every read of
- * this query, so it fails on the line that wrote it rather than on the first request. Positive and
- * finite is `assertTtl`'s bar in `@ultimat3/cache`, restated as a refusal and never as a second
- * resolution — there is no "never expires" to fall back to.
- */
-function assertCacheTtl(cache: QueryCache | undefined): void {
-  const ttlMs = cache?.ttlMs;
-  if (ttlMs === undefined) return;
-  if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new QueryCacheTtlInvalidError(ttlMs);
 }
 
 /**

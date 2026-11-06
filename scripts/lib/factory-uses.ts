@@ -62,12 +62,13 @@ export function codeOf(source: string, keepStrings = false): string {
  * a primitive, registered under its export name by `defineApi`'s module scan, so a call that is
  * not an exported declaration — nested in a function, behind an `if (false)`, discarded — builds
  * nothing the app serves. A type position cannot hold a call, and `typeof hive` is not one.
+ * Explicit type arguments (`consumer<In, Out>({ … })`) are still that call.
  */
 export function usesFactory(source: string, factory: string, pkg: string): boolean {
   const local = valueImportsOf(codeOf(source, true), pkg).get(factory);
   if (local === undefined) return false;
   const declared = new RegExp(
-    `^export\\s+const\\s+[\\w$]+(?:\\s*:[^=]+)?\\s*=\\s*${local}\\s*\\(`,
+    `^export\\s+const\\s+[\\w$]+(?:\\s*:[^=]+)?\\s*=\\s*${local}\\s*(?:<[^;()]*>\\s*)?\\(`,
     'm',
   );
   return declared.test(codeOf(source));

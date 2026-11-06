@@ -9,6 +9,7 @@
 
 import type { Secret } from '@ultimat3/core';
 import { isSecret, revealSecret } from '@ultimat3/core';
+import { providerFailure } from './context-overflow';
 import { costOf, exactCostOf } from './cost';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
@@ -125,6 +126,7 @@ class OpenAiProvider implements Provider {
     if (requiresStreaming({ ...request, model })) return this.assemble(request);
     const { baseUrl } = this.config;
     const response = await this.send(
+      model,
       chatCompletionBody({ request, model, stream: false, provider: this.name, baseUrl }),
       false,
       request.signal,
@@ -138,6 +140,7 @@ class OpenAiProvider implements Provider {
     const model = resolveModel('provider', request.model);
     const { baseUrl } = this.config;
     const response = await this.send(
+      model,
       chatCompletionBody({ request, model, stream: true, provider: this.name, baseUrl }),
       true,
       request.signal,
@@ -202,6 +205,7 @@ class OpenAiProvider implements Provider {
    * if it were a message would read as an empty, successful answer.
    */
   private async send(
+    model: ModelId,
     body: Record<string, unknown>,
     streaming: boolean,
     signal: AbortSignal | undefined,
@@ -228,8 +232,10 @@ class OpenAiProvider implements Provider {
       ...(signal === undefined ? {} : { signal }),
     });
     if (!response.ok) {
-      throw new AiTransportError({
+      // An overflow or the transport's code — `context-overflow.ts` decides, for both wires.
+      throw providerFailure({
         provider: this.name,
+        model,
         status: response.status,
         // The endpoint's own message, with the credential scrubbed out of it — `error-body.ts`
         // says why, and both providers call the same pair.

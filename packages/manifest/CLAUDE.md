@@ -34,6 +34,7 @@ by the CLI, not imported.
 | `docs-tokens.ts` | pure: the query/name splitter and the one-suffix stem both sides of `docs-search` share |
 | `diff-rows.ts` | a read's row, member by member: removed, retyped or no longer required is breaking, added is additive. Never `canonicalJson` inequality: an entity gaining a column would flip every `rows: X.$schema` read |
 | `diff-mounts.ts` | a bearer mount's cut, per (scope, name): the one classifier that sees a held token's 404, because the primitive stays registered |
+| `diff-consumers.ts` | the `consumers` section: a consumer removed is breaking (its stream is never read again, nothing throws); every field that moved is internal |
 
 ## Invariants
 
@@ -170,6 +171,7 @@ by the CLI, not imported.
   `before` is a file parsed off disk, so an older or hand-trimmed manifest can carry an absent or
   non-boolean value that `!==` would classify from; and the fact `sources.ts` publishes has to be
   the answer `@ultimat3/mcp`'s catalog gives, or the gate demands a major bump for a tool that never existed.
+- **`consumers` follows `mounts`' rule** (`As of 2026-11`): written only when one is declared, `?? []` on both sides in `diff.ts`.
 - **`mounts` is written only when there is one** (`As of 2026-11`), unlike `channels` and `admin`, so an app without a mount keeps its bytes; `diff.ts` reads `?? []` on BOTH sides because the key is absent after the last mount leaves. **`QueryFact.rows` present before and absent after is breaking** (the 200 turns untyped; `before` carrying it proves its writer knew the field); absent before is additive.
 
 ## Commands

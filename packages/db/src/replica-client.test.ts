@@ -323,3 +323,29 @@ describe('a statement the replica answered with a refusal of the statement itsel
     },
   );
 });
+
+describe('a position behind, while half-open', () => {
+  test('the read goes to the primary and the probe stays unspent for the next caught-up read', async () => {
+    const primary = recordingClient();
+    let down = true;
+    const base = recordingClient().on(/pg_last_wal_replay_lsn/, { rows: [{ lsn: '0/10' }] });
+    const replica: typeof base = {
+      ...base,
+      query: (fragment) =>
+        down ? Promise.reject(new TypeError('connection refused')) : base.query(fragment),
+    };
+    const clock = fakeClock();
+    const client = replicatedClient(primary, replica, { clock, breakerCooldownMs: 1_000 });
+    for (let n = 0; n < 3; n += 1) await withReplicaReads(() => client.query(sql`select 1`));
+    expect(client.stats.parked).toBe(true);
+    clock.advance(1_000);
+    down = false;
+
+    // Behind: the primary's, and `admit()` was never asked, so the half-open probe is still there.
+    await withReplicaReads(() => client.query(sql`select 2`), { minPosition: 0x20n });
+    expect(client.stats.replica).toBe(0);
+    await withReplicaReads(() => client.query(sql`select 3`));
+    expect(client.stats.replica).toBe(1);
+    expect(client.stats.parked).toBe(false);
+  });
+});

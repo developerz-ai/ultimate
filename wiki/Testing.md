@@ -640,6 +640,37 @@ unitTest('a session cookie resolves the member it was issued to', async () => {
 `configureAuthenticator()`'s function is handed — a real request over a real context, no server,
 no cast. `cookies` and `bearer` win over the same header spelled in `headers`. `As of 2026-10`.
 
+## Testing a sign-in against an identity provider
+
+`As of 2026-11`. `fakeIdentityProvider({ users, issuer?, clientId?, clock? })` is an OpenID provider
+served through `mockFetch`, no socket: `/.well-known/openid-configuration`, a JWKS from a key it
+generates, `/authorize` approving as the chosen user, `/token` (PKCE checked) and `/userinfo`.
+
+```ts
+import { discoverOAuthProvider, registerOAuthProvider } from '@ultimat3/auth';
+import { expect, fakeIdentityProvider, unitTest } from '@ultimat3/testing';
+
+unitTest('the provider registers from its own discovery document', async () => {
+  const idp = await fakeIdentityProvider({ users: [{ sub: 'ada', email: 'ada@corp.test' }] });
+  const provider = registerOAuthProvider(
+    await discoverOAuthProvider({ id: 'corp', issuer: idp.issuer }),
+  );
+  expect(provider.jwksUri).toBe(idp.jwksUri);
+  idp.tamper({ wrongKey: true }); // every token from here on fails the signature check
+});
+```
+
+| Member | Does |
+|---|---|
+| `issuer` · `clientId` · `clientSecret` · `jwksUri` | what the app's provider registration and credentials take; `issuer` defaults to `https://idp.test`, `clientId` to `fake-client` |
+| `signInAs(sub)` | who `/authorize` approves as next; the first user until called |
+| `tamper({ wrongAudience?, expired?, wrongKey?, noEmailVerified? })` | every token minted after it is broken that way; `tamper({})` restores honesty |
+| `idToken({ sub, nonce? })` | a signed id token, for a test that skips the redirect leg |
+
+Each tamper is refused by `@ultimat3/auth`'s real `verifyIdToken` with the code a real provider's
+broken token gets (`packages/testing/src/fake-identity-provider.test.ts`). An unknown `sub` and an
+empty `users` are `X_INVARIANT`.
+
 ## Log lines under test
 
 | `LOG_LEVEL` | The terminal shows | A `setLogSink` a test installs receives |
@@ -784,14 +815,14 @@ const posts = entity('posts', {
 const graph = seedGraph({ orgs, posts }, { tenants: 2, perTable: 3, seed: 7 });
 // graph.order is ['orgs', 'posts']: one org per tenant, three posts in each
 
-declare const writer: SeedWriter; // insert(row) and update(update), over your driver
+declare const writer: SeedWriter; // insert, update and snapshot, over your driver
 await insertSeedGraph(graph, writer);
 ```
 
 | Rule | What it does |
 |---|---|
 | order | parents before children, over the entities' own `$references()` |
-| tenancy | each child points at a parent of its **own** tenant; the entity a tenant column references holds one row per tenant, keyed by the tenant |
+| tenancy | each child points at a parent of its **own** tenant; the entity a tenant column references holds one row per tenant, keyed by the tenant. A table with no tenant column whose references reach a tenant-owned one, and no `shared` reason, is seeded per tenant too, under its own tenant's parent — `row.tenant` is that parent's tenant |
 | a cycle | broken at a nullable key: inserted `null`, set by an entry of `graph.updates` once its target exists. A cycle with no nullable key is `X_SEED_GRAPH_UNSATISFIED` |
 | values | read off the declaration, as `factoriesFor` reads them, and kept only if `$parse` accepts them |
 | rules | every invariant, the primary key, unique columns and unique indexes are kept; a partial unique is treated as total. A unique column that runs out of values ends its table early — but a table-wide unique that runs out before every tenant holds a row is `X_SEED_GRAPH_UNSATISFIED` (`… runs out of values before tenant 2 of 2 holds a row`): that tenant's children would have no parent |
@@ -801,6 +832,7 @@ await insertSeedGraph(graph, writer);
 | determinism | defaults `tenants: 2`, `perTable: 3` (per tenant for a tenant-scoped table), `seed` the package's `DEFAULT_SEED`. Same seed, same bytes |
 | canaries | each row's generated text carries a token; `graph.canaries` lists it per row with the columns holding it, so a later read can say whose row it saw |
 | writing | `insertSeedGraph(graph, writer)`: every insert in order, then every update, sequentially. `entitySeedWriter({ entities, client })` (Postgres or PGlite) or `entitySeedWriter({ entities, driver? })` (a driver; default `defaultDriver()`) writes through each entity's own repository. A row whose entity the writer was not given is `X_SEED_GRAPH_ENTITY_UNKNOWN` |
+| `snapshot(rows)` | **required** on a `SeedWriter`: one digest per row, read back by primary key, in the order given; `null` for a row gone. Soft-deleted rows are read too. `entitySeedWriter` answers `md5(t::text)` per row over a client — the whole stored row, undeclared columns included — and an md5 of the row's sorted JSON over a driver. The tenant proof's write half |
 
 `X_SEED_GRAPH_UNSATISFIED` names the table, the columns to supply and the `defineFactory` call. `As of 2026-11-05`, `seed-graph.live.test.ts` inserts both tracked apps' schemas into Postgres with no factory, and `seed-graph-pglite.test.ts` the same into PGlite, in the unit step. Source: `packages/testing/src/seed-graph*.ts`.
 
@@ -883,18 +915,53 @@ shape, same unreached code. `As of 2026-11`.
 | Rule | |
 |---|---|
 | Database | a scratch one with the framework tables and every migration applied; never the developer's. The pass commits, so the tenant proof can read rows after the call |
-| Rows | a fresh pair of tenants per primitive; every table seeded off its declaration, parents first, same-tenant keys (`x db seed --generate`'s graph) |
+| Rows | one seed graph for the pass, a fresh pair of tenants per primitive in it — the first the actor's (A), the second the tenant proof's intruder (B); every table seeded off its declaration, parents first, same-tenant keys (`x db seed --generate`'s graph) |
 | Actor | the first of `x policy explain`'s actors the policy allows, in the primitive's tenant. None allowed is `refused`, by design |
 | Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
 | Room | network sealed, mail captured, jobs in memory, clock frozen. A call out is refused and counted, so the primitive is `unreached` |
 | Overrides | `apps/web/exercise.ts`: `export const exercise = defineExercise({ publishPost: { actor, input }, sendInvoice: { off: '<why>' } })`. Each value is `.contract({ exercise })`'s option. An unknown name is `X_DECLARATION_UNKNOWN`; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED` |
-| Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, statements, effects, ms, override? }` |
-| Gate | the `exercise` step, after `job`, runs `x exercise --json` as a child and is red on its findings. `unreached` is never sampled or skipped: it is a finding whose `fix:` is the entry to paste |
+| Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, statements, effects, ms, override?, tenant? }`. The fields before `tenant` are A's call. The human table's `tenant` column is the verdict, `-` where none ran |
+| Gate | the `exercise` step, after `job`, runs `x exercise --json` as a child and is red on its findings: `X_CONTRACT_EXERCISE_UNREACHED`, `X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`, and — on a whole pass, not `x exercise <name>` — `X_ENTITY_TENANT_UNDECLARED`. `unreached` is never sampled or skipped: it is a finding whose `fix:` is the entry to paste |
 
 ```bash
 x exercise --json                 # the whole pass
 x exercise publishPost --json     # one primitive, after pasting its override
 ```
+
+### The tenant proof
+
+**Every action, query and job is attacked from another tenant, around its own call**, `As of
+2026-11`. Tenant B, holding the same role, sends exactly A's first input — A's seeded ids bound in.
+Source: `packages/testing/src/tenant-proof.ts`, `tenant-canary.ts`, `tenant-proof-report.ts`.
+
+| Leg | Who | Why there |
+|---|---|---|
+| `before` | B, with A's ids | a deleting action would leave B nothing to reach after A ran |
+| control | A, its own call — the pass's ordinary run, the record's `outcome` | the positive control: a B that saw nothing proves only that A's call works |
+| `after` | B again, same input | catches a cache entry A filled under a key missing the tenant |
+
+| Half | Oracle |
+|---|---|
+| read | B's output, every captured mail (addresses, subject, text, html, unsubscribe url), every outbound call's url and body, every job B's call queued (its input; the primitive's own job excepted) — searched for a mark of A's: a row's canary, or a seeded key part ≥ 8 characters (`MIN_TAINT_ID_LENGTH`) no other tenant's row shares. A mark B's own input carried is no find: echoing the id B was handed proves nothing. Object keys are searched too |
+| write | `snapshot()` over every row seeded for A — a child with no tenant column included — before and after each B leg. A digest that moved, or a row gone, is crossed |
+
+B's actor is chosen as A's was, in B's tenant, with `tenancy:cross` stripped from its scopes: an
+attack holding the escape would only prove the escape works. B being refused is never judged —
+only what came back and what changed.
+
+| Verdict | When — first match wins | Red |
+|---|---|---|
+| `crossed` | any finding, from either leg | yes: `X_TENANT_LEAK` (a path, `output.items[0].url`, `effect.mail[0].to`) or `X_TENANT_WRITE_CROSSED` (table and A's row id) |
+| `unproven` | A's own call was not `reached` | no — the record is already `unreached`, which is |
+| `public` | the policy admits an anonymous caller with an empty input: read half skipped, write half kept | no |
+| `unproven` | a query whose A answer held none of A's marks: B's empty answer proves nothing | no |
+| `proven` | otherwise | no |
+
+`off` and `refused` records carry no `tenant`. A job has no policy, so it is never `public`. A
+finding prints paths, tables and seeded ids, never a bound value. The fix on each:
+`x exercise <name> --json`, then read or write the row through the repository scoped to
+`ctx.actor`. What this does not walk — a `route` `load`, a `task` — is
+[Policies and authz](Policies-And-Authz#the-dynamic-tenant-proof).
 
 ## Memory, width and isolation
 
@@ -1041,7 +1108,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
 | `job` | step replay, idempotency dedupe, retry/backoff, concurrency, outbox atomicity |
-| `exercise` | an action, query or job that never reached its handler when `x exercise` ran it once on generated rows (`X_CONTRACT_EXERCISE_UNREACHED`, its fix the override to paste) → [The exercise pass](#the-exercise-pass). Skipped in a repo with no `app.config.ts` |
+| `exercise` | an action, query or job that never reached its handler when `x exercise` ran it once on generated rows (`X_CONTRACT_EXERCISE_UNREACHED`, its fix the override to paste); one that handed tenant B tenant A's data or changed A's row (`X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`); a tenantless child of a tenant-owned table (`X_ENTITY_TENANT_UNDECLARED`) → [The exercise pass](#the-exercise-pass). Skipped in a repo with no `app.config.ts` |
 | `e2e` | a real browser (raw CDP, no Playwright) against the app, spawned on a throwaway database, when Chrome is on the machine; otherwise its browser cases skip, or refuse under `E2E_BROWSER_REQUIRED=1` |
 | `eval` | a prompt scoring below its committed baseline, or a prompt with no eval at all |
 | `drift` | schema differs from migrations, or a migration is not reversible-or-marked |

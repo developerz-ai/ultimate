@@ -24,6 +24,7 @@ export { bearerMount, bearerTokenOf, mountedPath } from './bearer-mount';
 /** One `Range:` reader for every route that answers bytes — `/_storage`, site assets, a download. */
 export type { RequestedRange } from './byte-range';
 export { byteWindow, contentRangeOf, parseByteRange, RANGE_UNSATISFIABLE } from './byte-range';
+export { PRIVATE_REVALIDATE } from './cache-policy';
 export { COMPRESS_MAX_BYTES, COMPRESS_MIN_BYTES, isCompressibleType } from './compress';
 export type { HttpConfig, HttpConfigInput } from './config';
 export { defineHttpConfig, MAX_PROXY_HOPS } from './config';

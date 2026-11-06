@@ -52,6 +52,7 @@ export type {
   AdminScopeFact,
   ChannelFact,
   ColumnFact,
+  ConsumerFact,
   EntityFact,
   ErrorCodeFact,
   JobFact,

@@ -169,9 +169,13 @@ export type { ExercisePassOptions } from './exercise';
 export { runExercisePass } from './exercise';
 export type { ActorChoice, RoleGrants } from './exercise-actor';
 export type {
+  EffectPayload,
   ExerciseEffect,
   ExerciseOutcome,
   ExerciseRecord,
+  TenantFinding,
+  TenantLeg,
+  TenantProof,
 } from './exercise-report';
 export { overrideLine } from './exercise-report';
 export type {
@@ -189,6 +193,13 @@ export type { Persister } from './factory-persist';
 export { clearPersister, persisterInstalled, usePersister } from './factory-persist';
 export type { EntityRegistry, FactoryRegistry } from './factory-registry';
 export { factoriesFor } from './factory-registry';
+export type {
+  FakeIdentityProvider,
+  FakeIdentityProviderInput,
+  FakeIdpTamper,
+  FakeIdpUser,
+} from './fake-identity-provider';
+export { fakeIdentityProvider } from './fake-identity-provider';
 export type { TestClock, TestDuration } from './fixture-clock';
 export { testClock } from './fixture-clock';
 export type {
@@ -407,6 +418,10 @@ export {
   urlFor,
   workerId,
 } from './template-db';
+// The tenant proof's dynamic legs (plan 101 / 40): B with A's ids, A, B again. The report builders
+// are what `x exercise` prints; `tenancy:cross` is `@ultimat3/entity`'s `CROSS_TENANT_SCOPE`.
+export type { TenantProofFinding } from './tenant-proof-report';
+export { tenantFindingLines, tenantProofFindings } from './tenant-proof-report';
 export { paced, TEST_PACE_ENV, TestPaceInvalidError, testPace } from './test-pace';
 // `x exercise` is a test process too: it hands itself the same key, judged by the same rule.
 export { testSealKeyEnv } from './test-seal-key';

@@ -12,6 +12,9 @@
       "path": "../action"
     },
     {
+      "path": "../auth"
+    },
+    {
       "path": "../core"
     },
     {

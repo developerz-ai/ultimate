@@ -65,6 +65,12 @@ const SCHEMA = `
   create function touch() returns trigger language plpgsql as
     $$ begin new.title := new.title; return new; end $$;
   create trigger posts_touch before update on posts for each row execute function touch();
+  alter table posts enable row level security;
+  alter table posts force row level security;
+  create policy posts_tenant on posts
+    using (org_id = nullif(current_setting('x.tenant', true), '')::uuid)
+    with check (org_id = nullif(current_setting('x.tenant', true), '')::uuid);
+  create policy posts_titled on posts as restrictive for select to public using (title <> '');
 `;
 
 const paths = (files: readonly SchemaDumpFile[]): readonly string[] => files.map((f) => f.path);
@@ -391,6 +397,8 @@ describe('the schema dump · the real embedded database', () => {
         'A_table',
         'a_table',
         'b_table',
+        'events',
+        'events_2026',
         'parent',
       ]);
     });
@@ -399,13 +407,13 @@ describe('the schema dump · the real embedded database', () => {
       const catalog = await introspectCatalog({ client });
       expect(catalog.unrendered).toEqual([
         { kind: 'composite type', name: 'pair', table: null },
-        { kind: 'partition or inheritance child', name: 'child', table: null },
-        { kind: 'partition or inheritance child', name: 'events_2026', table: null },
-        { kind: 'partitioned table', name: 'events', table: null },
-        { kind: 'row security', name: 'b_table', table: 'b_table' },
-        { kind: 'row security policy', name: 'only_mine', table: 'b_table' },
+        // A partitioned table and its partitions are rendered (`schema-dump-partitioned.test.ts`).
+        { kind: 'inheritance child', name: 'child', table: null },
         { kind: 'rule', name: 'quiet', table: 'b_table' },
       ]);
+      // Row security is rendered now (`catalog-policies.ts`), so it is read, never named here.
+      expect(catalog.rowSecurity).toEqual([{ table: 'b_table', enabled: true, forced: false }]);
+      expect(catalog.policies.map((policy) => policy.name)).toEqual(['only_mine']);
     });
 
     test('an object an extension owns is not app schema', async () => {

@@ -33,6 +33,7 @@ Every projection is a method on the job — `onboardOrg.enqueue({ orgId })`, nev
 | `onboardOrg.enqueue(input, options?)` | the enqueue | resolves the ambient jobs facade, so it **joins the caller's transaction** when the app installed the outbox. One call site works in a request handler, a job, a script and a test. Answers `{ id, runId, deduped }` — the job's own ids, allocated when the row is staged, so an action can name the run it started without leaving the transaction. `options.runId` names the run instead: a lowercase uuid, or the enqueue is refused with `X_ID_INVALID` before anything is staged or queued |
 | `onboardOrg.enqueueMany(inputs, options?)` | many of one job, in bulk | the same facade and the same transaction, ONE round trip per 1,000 inputs on every driver — one statement on Postgres (or on the outbox, staged), one Lua script on Redis — where a loop of `enqueue` is one per input (1,000 rows: 18 ms against 1.1 s, Postgres, 2026-11-02) — and the loop is `X_N_PLUS_ONE_WRITE` in `x dev` and the `statements` fixture, whose `fix:` names this call. Answers one `{ id, runId, deduped }` per input, in input order; two inputs sharing a key are one job, the second `deduped`. One `options` for the batch, without `runId`. Every refusal comes before the first write: past `MAX_ENQUEUE_BATCH` (10,000) is `X_JOB_ENQUEUE_BATCH_TOO_LARGE` (page the source with `backfill()`), an empty key in any input refuses the call. Staged in a transaction it commits or vanishes whole; outside one it is atomic per 1,000, so wrap it in `withTransaction` for all-or-nothing |
 | `.as(actor, input, options?)` | the same enqueue, on someone's behalf | fills `tenantId` from the actor's org, so per-tenant concurrency and rate limits apply. `null` — or an actor with no org — leaves `tenantId` unset: the limiter's own shared bucket, not a fake org id on the row. It **queues; it never runs inline** |
+| the declared tenant is checked at enqueue | `enqueue`, `.as` and `enqueueMany` | a payload whose `tenant(input)` names org A, enqueued with `tenantId` B, by `.as(actorOfB, …)`, or under an ambient actor of org B, is `X_JOB_TENANT_MISMATCH` before anything is queued. A row already queued that way is refused at its run, terminally, before the body. An actor with no org, and `tenant: 'none'`, are never compared. The ambient check's one escape is `crossTenant('<why>', fn)` by an actor holding `tenancy:cross`; an explicit `tenantId` or `.as()` is never admitted |
 | `.run(args)` | the handler itself | the worker calls it. App code does not — see below |
 | `.parse(raw)` | the payload check | a raw queue payload against the declared `input` |
 | `.idempotencyKeyFor(input)` | the dedupe key | whatever the declared `idempotencyKey` returned. An empty string throws `X_INVARIANT` at the call — an empty key makes every enqueue look like a duplicate of every other |
@@ -76,8 +77,10 @@ External brokers are not exempted: the outbox table stays the transactional reco
 | API | Semantics |
 |---|---|
 | `step.run(name, fn)` | executes `fn` once ever. Result persisted under `(jobId, name)`. On replay, returns the stored result without calling `fn`. **It answers what it stored, on the first run too**, and its type says so (`StepOutput<T>`, the JSON form): a `Date` is a string, so a body writes `new Date(value)` at the read; a miss stored from `undefined` is `null`, so compare `=== null`; a `bigint` or a cycle is `X_STEP_OUTPUT_UNSERIALIZABLE`, terminal. Return a cursor or a small plain view, not a page of rows. `fn` receives an `AbortSignal` — this step's ceiling and the run's cancellation, whichever fires first |
+| `step.run(name, fn, { compensate })` | `compensate(output, { signal })` undoes the step if the run fails **for good** — never on a retry, a cancel, a drain or a suspension. Needs `job({ compensates: true })`, else `X_JOB_DECLARATION_INVALID`. See [Compensation](#compensation) |
+| `step.run(name, fn, { once: true })` | at most once, ever: `started` is persisted **before** `fn`; a replay finding it (or `failed`) without `completed` stops with terminal `X_STEP_OUTCOME_UNKNOWN` and never calls `fn`. `x jobs resolve-step <id> <step> --ran --output '<json>'` or `--not-ran`, then `x jobs retry <id>` |
 | `step.sleep(duration)` | persists a wake time, releases the worker, and the job resumes in a fresh process. No held connection, no timer in memory. `'3d'` is safe |
-| `step.waitForEvent(name, event, { schema, match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the payload parsed by the required `schema`, or `undefined` on a timeout. A payload the schema refuses is `X_JOB_EVENT_INVALID`, terminal, on a hit or a replay. `publishEvent` inside a transaction commits and rolls back with it. "After the wait began" is read off the event bus's own clock — the database's, on the stored bus — so a worker whose clock runs ahead still sees an event published a moment later |
+| `step.waitForEvent(name, event, { schema, match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the payload parsed by the required `schema`, or `undefined` on a timeout. A payload the schema refuses is `X_JOB_EVENT_INVALID`, terminal, on a hit or a replay. `publishEvent` inside a transaction commits and rolls back with it. "After the wait began" is read off the event bus's own clock — the database's, on the stored bus — so a worker whose clock runs ahead still sees an event published a moment later. **On the Postgres bus the publish wakes its waiters in the same statement** (as booted over the app's own queue): the run resumes on the worker's next pass, and the backstop poll is 15 min (96 replays per 24 h wait, was 2,880). Any other bus polls every 30 s. A declared `eventPoll` wins either way |
 
 **The step is the retry unit, not the job.** A failure in `nudge` re-enters `run`, replays `provision` and `welcome-email` from storage in microseconds, and retries only `nudge`. That is why an onboarding flow can retry on day 3 without re-provisioning or re-emailing.
 
@@ -87,7 +90,47 @@ External brokers are not exempted: the outbox table stays the transactional reco
 | Names stable across deploys | renaming a step invalidates its stored result — it re-runs |
 | Step results must be serializable | persisted through the driver's `steps` store (`StepStore.put`) |
 | No step inside a loop with a computed name | non-deterministic names break replay; enumerate them |
-| Non-idempotent external call inside a step | wrap with the provider's idempotency header, keyed off `${jobId}:${stepName}` |
+| Non-idempotent external call inside a step | wrap with the provider's idempotency header, keyed off `${jobId}:${stepName}` — or, with no key to send, `{ once: true }` |
+| `unwinding` and `compensate:*` are the framework's | `X_JOB_DECLARATION_INVALID` on `run`, `sleep` and `waitForEvent`, for every job |
+
+## Compensation
+
+Charge, reserve, ship: the third fails for good, the first two are undone. `try { … } catch { refund }` is wrong — it refunds on attempt 1 of a retryable failure, before the retry that ships.
+
+```ts
+import { job, t } from '@ultimat3/jobs';
+
+type Order = { readonly orgId: string; readonly orderId: string };
+declare function charge(order: Order): Promise<{ id: string }>;
+declare function refund(chargeId: string): Promise<void>;
+declare function reserve(order: Order): Promise<{ id: string }>;
+declare function release(reservationId: string): Promise<void>;
+declare function ship(order: Order): Promise<void>;
+
+export const checkout = job({
+  input: t.object({ orgId: t.uuid, orderId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
+  idempotencyKey: ({ orderId }) => `checkout:${orderId}`,
+  compensates: true,
+  retry: { attempts: 3 },
+  run: async ({ input, step }) => {
+    await step.run('charge', () => charge(input), { compensate: (c) => refund(c.id) });
+    await step.run('reserve', () => reserve(input), { compensate: (r) => release(r.id) });
+    await step.run('ship', () => ship(input));
+  },
+});
+```
+
+| Rule | Behaviour |
+|---|---|
+| when | only once the run has failed **for good** — attempts spent, or a terminal code |
+| order | last-in first-out, each as step `compensate:<name>`: a replay skips what ran |
+| durable | step `unwinding` is written before the first compensator; seen on any later attempt, the body replays only to re-register its compensators and the run unwinds. `x jobs retry` continues the unwind, never the forward path |
+| crash on the final attempt | the row carries 2 attempts past `retry.attempts` (`UNWIND_MARGIN`, shown in `x jobs show` as `maxAttempts`); the claim re-offers it and it unwinds. Two more lapses bury it, `unwinding` visible |
+| a compensator throws | the row goes back while the unwind has attempts; then dead with `X_JOB_COMPENSATION_FAILED` naming the step. Fix it, `x jobs retry <id>` |
+| `once` + `compensate` | an unknown outcome stops the unwind at once (`X_JOB_COMPENSATION_FAILED`): resolve the step, then retry |
+| the row's error | the original failure; the unwind is in the steps `x jobs show` lists |
+| determinism | a body that branches on non-step state can register different compensators on replay — the same rule as every replay |
 
 ## The deadline cancels
 
@@ -184,6 +227,60 @@ Refused where it is written:
 | any `concurrency` on a driver with no lease store | `jobWorker().start()` | `X_JOB_CONCURRENCY_UNENFORCEABLE` |
 
 `x jobs show <id> --json` reports the key a run counts under as `concurrencyKey`; the manifest's job row carries `concurrency: { limit, keyed, whenBusy }`.
+
+### Consumers — `consumer()`
+
+Reading a queue, a change stream or a vendor's cursor. A factory over `job()` plus a supervising `task()`, never a ninth primitive. It assembles what a hand-rolled consumer has to remember, and none of it can be left out:
+
+```ts
+import { consumer } from '@ultimat3/jobs';
+
+interface VendorOrder { readonly id: string; readonly cursor: string }
+declare const vendor: {
+  stream(account: string, cursor: string | null, signal: AbortSignal): AsyncIterable<VendorOrder>;
+  behind(account: string, cursor: string | null): Promise<number>;
+};
+declare const accounts: { connected(): Promise<readonly string[]> };
+declare const orders: { upsertAll(rows: readonly VendorOrder[]): Promise<void> };
+declare const cursors: {
+  of(key: string): Promise<string | null>;
+  save(key: string, next: string): Promise<void>;
+};
+
+export const syncOrders = consumer<VendorOrder, string>({
+  name: 'sync-orders',                                   // REQUIRED: a durable queue key
+  tenant: ({ key }) => key,                              // or 'none'
+  keys: () => accounts.connected(),                      // what should be running: one, or one per account
+  open: ({ key, cursor, signal }) => vendor.stream(key, cursor, signal), // the app's AsyncIterable
+  handle: async ({ items }) => {
+    await orders.upsertAll(items);
+    return items[items.length - 1]?.cursor ?? '';       // the cursor past this batch
+  },
+  cursor: { load: (key) => cursors.of(key), save: (key, next) => cursors.save(key, next) },
+  batch: 100,
+  rearm: '1m',
+  lag: ({ key, cursor }) => vendor.behind(key, cursor),
+});
+```
+
+| What it does | How |
+|---|---|
+| one running body per key | `concurrency: { key, limit: 1, whenBusy: 'wait' }`; parallelism is more keys |
+| one live row per key | `idempotencyKey: consumer:<name>:<key>` |
+| no timeout | a run ends when its stream ends (a normal return) or a drain stops it. `timeout` is `X_CONSUMER_INVALID` |
+| the re-arm | `.supervisor`, a task `<name>.supervisor` at `rearm` (whole minutes dividing an hour, UTC), enqueues `<name>.arm`, which asks `keys` and enqueues each. A no-op while a key runs (deduped), a restart once it has not. Registered at declaration |
+| cursor and effect commit together | `handle` returns the cursor past its batch; the framework calls `cursor.save(key, next)` in the **same** `withTransaction` as `handle` (the ambient `db()` client) |
+| drain | the run's `signal` aborts (`X_DRAINING`); the turn in hand commits or rolls back; the attempt is not counted; the cursor stays on the last committed batch |
+| an upstream throw | the job's `retry` and dead-letter, as any job; the next arm restarts a dead key |
+| a partly filled batch | commits after `CONSUMER_LINGER_MS` (50) without a next item, so a quiet stream never holds items read and uncommitted |
+| lag | `lag({ key, cursor })`, optional: `progress(done, done + lag)` on the run. `x jobs show <id> --json` → `consumer: { key, lastBatchAt, lag }` |
+
+**Delivery is at least once**: a drained, failed or crashed batch is delivered again, so `handle` must be idempotent per item — item ids are the app's. `keys` runs under `tenant: 'none'`: a tenant-scoped read there needs the app's own `crossTenant(reason, fn)`. Transports ship none: any broker is the app's dependency behind `open`.
+
+| Refused | Code |
+|---|---|
+| no `cursor.load`/`cursor.save`, a `timeout`, a `batch` that is not a whole number ≥ 1, a `rearm` that is not whole minutes dividing an hour | `X_CONSUMER_INVALID`, at `consumer()` |
+| `handle` or `open` calling the consumer's own `.enqueue` — a self-enqueue dedupes onto the running row and arms nothing | `X_CONSUMER_SELF_ENQUEUE`, terminal |
 
 ### The final attempt
 

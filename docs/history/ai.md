@@ -779,7 +779,8 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   silent: `onCompact`, the `agent.compact` span event, the handle's `compacted` count.
 - **Before the call, on the estimate.** `promptTokens` is the gateway's `estimateInputTokens` plus the
   tool definitions it does not count (sent on every turn). The room is `contextWindow` less
-  `maxTokens`, because the completion shares the window. After a 400 there is no request left to fix.
+  `maxTokens`, because the completion shares the window. (This section first said "after a 400 there
+  is no request left to fix" — false: the loop still holds the transcript. See the 2026-11 entry.)
 - **The cache decided the shape.** A provider cache is a prefix match over tools → system → messages,
   so tools, the system prompt and its stable block are never touched. The summary call is the run's
   OWN request up to the cut plus one instruction — same tools, system and hint — so it reads the
@@ -804,9 +805,25 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 - **The handle.** It stores the compacted messages (what was sent) and a signed `compacted` count,
   ABSENT at zero so a run that never compacted writes the handle it always did; `TRANSCRIPT_VERSION`
   is unchanged and older handles verify.
+- **Measured, then forced (2026-11, plan 101 slice 27).** The estimate alone failed exactly where it
+  mattered: a probe at window 3,000 with dense tool results (~1.3 characters a token) reported 2,061
+  tokens at call 5 on an estimate of 670, never compacted, and met `prompt is too long` at call 7 as
+  `X_AI_PROVIDER_UNAVAILABLE` — the retryable transport code, so a job re-bought every turn. Now:
+  `agent-compact-measure.ts` keeps `max(1, reported / estimate)` per run (input + cache read + cache
+  write over `promptTokens` of the same request); a turn reporting zero keeps the last ratio, so a
+  provider that never reports compacts where it always did. Per run and unsigned: a continuation's
+  first turn estimates plainly. A 400/413 whose message matches `CONTEXT_OVERFLOW_PHRASES`
+  (`context-overflow.ts`, both wires through `providerFailure`) is `X_AI_CONTEXT_OVERFLOW`,
+  registered `terminal`, carrying a zero `meta.billed` so the meter settles it instead of counting it
+  unsettled; the gateway rethrows it on the spot like every coded refusal. `agent-send.ts` catches it
+  once per turn: `force` lifts the ratio so the refused request scales past the room (the refusal is
+  a lower bound), compacts regardless of the trigger and re-sends; a second refusal, a compaction
+  that fails, or `compact: 'off'` is `X_AGENT_CONTEXT_EXHAUSTED` with the provider's text on
+  `meta.refused`. Limit: the forced summary call is the refused request less the kept turns, so with
+  a small `keepTurns` it does not fit either and the run stops — `compact.model` is the way out.
 - **Known limits.** On the chat-completions wire an agent with `tools: []` offers only `respond`, which
   is then forced (`tool_choice`), so its summary call answers no text and the run falls back; and the
-  estimate is ~4 characters a token, which is why `at` defaults below 1. Not per run (`limits()`), not
+  estimate is ~4 characters a token until the first turn reports, which is why `at` defaults below 1. Not per run (`limits()`), not
   in `describeAgents()`.
 
 ## Evals, retrieval, fix lines
@@ -980,3 +997,30 @@ Provider prompt caching, as the agent notes stated it:
 ### The agent arm of `defineEval` (2026-11, plan 101 slice 27)
 
 `X_EVAL_MISSING` required an eval for every prompt, agents' included, and `runEval` sent the rendered prompt in one request with no tools — so an agent's template ("answer through the respond tool") was scored in a request that offered none, and the number described something the agent never ran. Three adopters had built around it (183 LOC of harness; a comment naming the limit; 30 tool-selection eval files). The agent arm runs `agent.run()` per case under an eval-private async scope that carries the gateway `assert` was handed and the tool doubles; `aiGateway` reads it, `runLlmToolCall` resolves the doubles. Decisions: one `defineEval`, never `defineAgentEval`; an undoubled call throws (scoring it 0 would let a recording accept a case that reached a real tool); any other failure scores 0 so a loop or `X_AGENT_MAX_TURNS` is a regression, not a crashed suite; no `maxTokens` on the agent arm (the agent's declared ceiling is part of what is measured); harvesting production failures stays the app's script (`transcriptOf`); no cassette (`90-deferred.md`). The baseline key stays the prompt hash, so a model change is a new prompt version.
+
+### `onCheckpoint` (2026-11, plan 101 slice 27)
+
+A worker that dies mid-run throws nothing, so `transcriptOf(error)` had nothing to carry and the
+next attempt re-bought every turn and re-ran every tool. Two adopters built the store-and-resume half
+beside the framework (310 and 776 LOC). Decisions:
+
+- **A hook, not an option.** `onCheckpoint(event, { input, ctx })` after a turn's tool results or
+  its correction land, before the next turn is bought; never after the answer (`.run()` returns
+  that handle). `args` because where a handle lives is the app's row, and the event alone cannot say
+  which row; no `agentJob({ checkpoint })` store.
+- **The same handle.** Sealed by `sealTranscript`, so a tampered or cross-tenant copy is refused by
+  the existing screen and resume is the existing `.continue()`; `maxTurns`/`tokensPerRun` count on
+  from it, a compaction's rewrite and its signed count are in the next checkpoint.
+- **Paid only when declared** (`sealTranscript` over 1.9M characters averages 10.6 ms). Awaited; a
+  throw fails the run, as `onTurn`'s does — a checkpoint that silently stopped reads as one that works.
+- **The limit, stated.** A worker dying DURING a tool batch re-asks the model for that turn, so those
+  tools may run again: at-least-once still binds; the replay shrinks from the run to one turn. No
+  store of open tool calls — the screen refuses an unanswered `tool_use` by design.
+
+### Moved out 2026-11-06 (plan 101 slice 27, the `CLAUDE.md` ceiling)
+
+- **An eval never runs a real tool.** Inside the eval scope `runLlmToolCall` answers a call with the
+  eval's double, outside its `try`; no double is `X_EVAL_TOOL_UNDOUBLED`, rethrown by the eval (a
+  misdeclared eval, never a 0). Any other failed agent run scores 0 and records its code. The scope
+  is not exported: no public override of `agent({ tools })`. An agent eval needs a registered agent
+  (`agentFactsOf`); a `named()` twin is refused (`X_INVARIANT`).

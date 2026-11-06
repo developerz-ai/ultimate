@@ -58,6 +58,10 @@ export const AI_ERROR_RETRY = {
   // A run whose transcript outgrew the window outgrows it again: the attempt starts from the same
   // input, takes the same turns and reaches the same size. The fix is `compact` or the model.
   X_AGENT_CONTEXT_EXHAUSTED: 'terminal',
+  // A provider refused the request as over the window: the same request overflows on every
+  // attempt and every provider. Was the transport code, `retryable`, until 2026-11 — an `agentJob`
+  // re-bought every turn of the run to reach the same 400 three times.
+  X_AI_CONTEXT_OVERFLOW: 'terminal',
 } as const satisfies Readonly<Partial<Record<AiErrorCode, ErrorRetry>>>;
 
 // `Partial`, so the table may be a subset — but every key is still checked against the declared set,

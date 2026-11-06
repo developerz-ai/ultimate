@@ -10,6 +10,7 @@ import type { PgExecutor } from '@ultimat3/core';
 import { finiteOption, logger, uuidV7 } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
+import { SQL_EVENT_PUBLISH_WAKE } from './driver-pg-event-wake-sql';
 import {
   SQL_EVENT_FIND,
   SQL_EVENT_LIST,
@@ -38,6 +39,13 @@ export interface PostgresEventBusOptions {
   readonly defaultTtl?: DurationInput;
   /** Rows returned by `list()`. Diagnostics only; `find()` is what a step uses. */
   readonly listLimit?: number;
+  /**
+   * Publish with `SQL_EVENT_PUBLISH_WAKE`: the runs parked on the event are made due in the
+   * publishing statement, and their queues told at commit. Only over the database the queue's
+   * `x_jobs` lives in, so boot sets it for `postgresJobDriver` alone: another driver keeps no
+   * rows here, a wake would find none, and its waiters keep the 30 s poll. Default `false`.
+   */
+  readonly wakes?: boolean;
 }
 
 export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
@@ -51,6 +59,8 @@ export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
   );
   const listLimit = finiteOption('the pg event bus', 'listLimit', options.listLimit ?? 1_000);
   const exec = options.executor;
+  const wakes = options.wakes === true;
+  const publishStatement = wakes ? SQL_EVENT_PUBLISH_WAKE : SQL_EVENT_PUBLISH;
 
   // Awaited and never fired-and-forgotten: it was `void`ed with nothing calling it, so the table
   // only grew. A failure REJECTS — the caller is the retention sweep's step, which retries.
@@ -61,6 +71,7 @@ export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
 
   return {
     stored: true,
+    wakes,
     async now() {
       const rows = await exec.query<{ now: number | string }>(SQL_EVENT_NOW, []);
       return Number(rows[0]?.now);
@@ -75,7 +86,7 @@ export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
       const rows = await exec.query<{
         published_at: number | string;
         expires_at: number | string;
-      }>(SQL_EVENT_PUBLISH, [
+      }>(publishStatement, [
         id,
         name,
         JSON.stringify(payload ?? null),

@@ -125,9 +125,13 @@ function tableOf(value: unknown): TableDescription | undefined {
   // `appendOnly` by the same rule: `true` or nothing, `false` normalised away.
   const appendOnly = value['appendOnly'];
   if (!(appendOnly === undefined || bool(appendOnly))) return undefined;
+  // `rowSecurity` by the same rule once more.
+  const rowSecurity = value['rowSecurity'];
+  if (!(rowSecurity === undefined || bool(rowSecurity))) return undefined;
   const flags = {
     ...(identity === true ? { replicaIdentityFull: true as const } : {}),
     ...(appendOnly === true ? { appendOnly: true as const } : {}),
+    ...(rowSecurity === true ? { rowSecurity: true as const } : {}),
   };
   const raw = value['checks'];
   if (raw === undefined) {

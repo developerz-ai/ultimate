@@ -32,7 +32,7 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
       '`permissions.ts`, `fields.ts` and `dev/data.ts` index closed tables by an `AdminOperation`, a `FieldType`, a `ColumnKind` and a run/step status. Three of the thirteen shipped instances were in `admin/dev/`, so this is the package to drain first.',
   },
   auth: {
-    count: 3,
+    count: 1,
     reason:
       '`verify.ts` indexes by a `VerificationPurpose` and `tokens.ts` by a base64url character its own regex produced. Three of the thirteen were here.',
   },

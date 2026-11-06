@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { describeEntities } from '@ultimat3/entity';
 import type { NamedActor } from '@ultimat3/policy';
 import type { ExerciseRecord, SeedEntity } from '@ultimat3/testing';
-import { entitySeedWriter, runExercisePass } from '@ultimat3/testing';
+import { entitySeedWriter, runExercisePass, tenantFindingLines } from '@ultimat3/testing';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { exerciseSpec } from './cmd-exercise-spec';
@@ -93,7 +93,9 @@ async function exercise(
       records.length === 0
         ? msg('cli.exercise.none')
         : msg('cli.exercise.summary', { ...report.counts, file: EXERCISE_REPORT_FILE }),
-    lines: renderExerciseTable(records).map((line) => `  ${line}`),
+    lines: [...renderExerciseTable(records), ...tenantFindingLines(records)].map(
+      (line) => `  ${line}`,
+    ),
     findings,
     data: report as unknown as JsonValue,
   };

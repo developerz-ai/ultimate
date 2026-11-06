@@ -36,6 +36,8 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_QUERY_DOWNLOAD_TOKEN_INVALID: 'a download URL carries a token this app did not mint for it',
   X_QUERY_DOWNLOAD_TOKEN_EXPIRED: 'a download URL is past its expiry',
   X_QUERY_HTTP_PATH_INVALID: "a query's pinned http.path is not a valid path template",
+  X_QUERY_ETAG_INVALID: 'etag: true on a read that has its own validator',
+  X_QUERY_TIMEOUT_INVALID: 'a read declares a timeoutMs that is not a whole positive number of ms',
 };
 
 /**
@@ -167,12 +169,12 @@ export class QueryInputUnencodableError extends UltimateError {
  * the cause describes the declaration, exactly as `X_QUERY_INPUT_UNENCODABLE` does.
  */
 export class QueryCacheTtlInvalidError extends UltimateError {
-  constructor(ttlMs: number) {
+  constructor(ttlMs: number, field: 'ttlMs' | 'negativeTtlMs' = 'ttlMs') {
     super({
       code: 'X_QUERY_CACHE_TTL_INVALID',
-      cause: `a query declares cache.ttlMs as ${ttlMs}, and every cache tier refuses a lease that is not positive and finite`,
-      fix: 'set `cache: { ttlMs: 60_000 }` to a positive whole number of milliseconds, or drop ttlMs to take the read cache default',
-      meta: { ttlMs },
+      cause: `a query declares cache.${field} as ${ttlMs}, and every cache tier refuses a lease that is not positive and finite`,
+      fix: `set \`cache: { ${field}: ${field === 'ttlMs' ? '60_000' : '1_000'} }\` to a positive whole number of milliseconds, or drop ${field} to take the default`,
+      meta: { ttlMs, field },
     });
   }
 }

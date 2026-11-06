@@ -138,6 +138,33 @@ A hand-written migration with `create index concurrently`, `drop index concurren
 `reindex … concurrently` and no `-- transaction: false` line is refused before `BEGIN`:
 `X_MIGRATION_CONCURRENT_IN_TRANSACTION`.
 
+## Partitioned tables
+
+Rule: a partitioned table is a table. Declare it as an entity, `x db gen`, then hand-edit the
+generated `create table`'s closing `);` to `) partition by range ("at");`. `As of 2026-11-06`.
+No `entity({ partition })`: attach, default partition and retention are the app's choices.
+
+| Question | Answer |
+|---|---|
+| Primary key | must hold the partition key — `primaryKey: ['id', 'at']`. Postgres refuses any unique index that does not (`0A000`) |
+| Drift | the PARENT is judged: columns, key, indexes, checks, triggers. A partition is not app schema (`pg_class.relispartition`), so next month's is no `unexpected-table` and its `fix:` is never `drop table`. A key Postgres clones per partition (`conparentid <> 0`) is not counted. `introspectSchema()` marks the parent `partitioned: true` |
+| A reference INTO one | no `.references()`. A one-column key is `42830` (no unique index on `id` alone can exist) and a same-tenant key's `(org_id, id)` index is `0A000`. Hand-write the composite key into the migration — `alter table "notes" add constraint "notes_event_fkey" foreign key ("event_id", "event_at") references "events" ("id", "at");` — drift judges declared keys only, so it is no finding. The repository's tenant filter still holds on reads; the database does not enforce the same tenant |
+| Retention | `detach`, then `drop`, in the app's own job — never `retain`, never a `delete` |
+| Next month | an app `task` on a monthly cron (`tz: 'UTC'`) enqueuing a job that runs the statement below, `if not exists` so a double fire is a no-op |
+| `create index concurrently` | refused on a parent (`0A000`): `X_MIGRATION_CONCURRENT_PARTITIONED`, whose fix is the sequence — each partition concurrently, the parent `on only`, then `alter index … attach partition`, in a `-- transaction: false` migration |
+| Schema dump | rendered: the parent with `partition by`, each partition `partition of … for values` in the parent's file. A partition's attached indexes, cloned keys and cloned triggers are not written: the parent's recreate them |
+
+The statements the job runs (pinned by `packages/db/src/partition-recipe.test.ts`):
+
+```sql
+-- next month: idempotent
+create table if not exists "events_2026_12" partition of "events"
+  for values from ('2026-12-01') to ('2027-01-01');
+-- retention: the month leaves the table first, then its rows go with it
+alter table "events" detach partition "events_2026_11";
+drop table "events_2026_11";
+```
+
 ## The schema dump
 
 Rule: the current schema is committed SQL under `packages/db/schema/` — written by `x db gen` and `x db migrate`, never by hand, and held equal to the migrations by `x verify`'s `drift` step (`X_SCHEMA_DUMP_DRIFT`). `As of 2026-10`. Source: [`packages/db/src/introspect-catalog.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/introspect-catalog.ts), [`schema-dump.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/schema-dump.ts), [`schema-load.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/schema-load.ts).
@@ -147,13 +174,14 @@ Rule: the current schema is committed SQL under `packages/db/schema/` — writte
 | `01_extensions/` | `create extension if not exists` | extension |
 | `02_types/` | enums, domains | type |
 | `03_sequences/` | sequences no column owns | sequence |
-| `04_tables/` | columns, defaults, generated and identity columns, primary key, unique, check; a `serial` column's sequence; `replica identity` | table |
+| `04_tables/` | columns, defaults, generated and identity columns, primary key, unique, check; a `serial` column's sequence; `replica identity`; `partition by`, and each partition after its parent | table — a partition rides in its root's file |
 | `05_indexes/` | indexes no constraint backs | table |
 | `06_foreign_keys/` | `alter table … add constraint` | table |
 | `07_views/` | views; materialized views with their indexes | view |
 | `08_functions/` | functions and procedures, overloads together | name |
 | `09_triggers/` | triggers, and a non-default enabled state | table |
-| `framework/<same nine>/` | the framework's own tables — `x_jobs`, `x_users`, `x_migrations`, … | — |
+| `10_policies/` | `enable` / `force row level security`, then each policy with every clause (`As of 2026-11-06`) | table |
+| `framework/<same ten>/` | the framework's own tables — `x_jobs`, `x_users`, `x_migrations`, … | — |
 | `unrendered.sql` | comment lines naming what the dump cannot spell | — |
 
 - **One producer.** A scratch database, framework tables applied, every migration replayed, then read out of `pg_catalog`. Never the dev database: a table made by hand there is not in the dump. No `pg_dump`.
@@ -184,7 +212,7 @@ When it is owed: from the first migration. An app with no migration and no dump 
 
 Limits, stated:
 
-- **Rendered:** the nine kinds above. **Named in `unrendered.sql`, not rendered:** partitioned tables and their partitions, inheritance children, foreign tables, composite and range types, aggregates, row-security policies and the row-security flag (`force row level security` beside it), rules, and — `As of 2026-10-02` — extended statistics (`create statistics`), a column whose `storage` departs from its type's, a materialized view created `with no data`, and a trigger on a relation the dump does not create (a partitioned table: it used to be filed under `09_triggers/` and the load refused the whole dump). A generated column is spelled `stored` or `virtual` as the catalog says. A dump that names one makes no load-equals-replay claim, and the step does not ask.
+- **Rendered:** the ten kinds above — row security and its policies since `As of 2026-11-06`. **Named in `unrendered.sql`, not rendered:** inheritance children, foreign tables, composite and range types, aggregates, a policy on a relation the dump does not create, rules, and — `As of 2026-10-02` — extended statistics (`create statistics`), a column whose `storage` departs from its type's, a materialized view created `with no data`, and a trigger on a relation the dump does not create (an inheritance child: it used to be filed under `09_triggers/` and the load refused the whole dump). Partitioned tables and their partitions are rendered, `As of 2026-11-06` ([Partitioned tables](#partitioned-tables)). A generated column is spelled `stored` or `virtual` as the catalog says. A dump that names one makes no load-equals-replay claim, and the step does not ask.
 - **Neither rendered nor named:** comments, grants, owners, publications, statistics objects, event triggers, collations, operators, casts.
 - **Bytes are promised per engine major.** `pg_get_*def` spellings move between Postgres majors. On the embedded engine the major is the installed PGlite's (0.5.8 is PostgreSQL 18), pinned by the lockfile. An app on the server engine pins its own: the same major in CI as on the laptops that run `x db gen`, or the `drift` step reports the difference.
 - **`x db reset` still replays.** Loading the dump builds the schema faster in isolation (reference app: 159 ms → 74 ms) and is under 3% of a reset, which is one embedded-database boot.
@@ -314,6 +342,45 @@ backfill<Row>({
 ```
 
 `source` returns a `ReadBuilder` — the same chain type [Batching and preloading](Batching-And-Preloading) documents `preload()`/`inBatches()` on — so tenancy, soft delete, the projection and every `.preload()` on it mean exactly what they mean anywhere else. It is read fresh each attempt and never enqueued, so what a run visits cannot drift from what was declared. `handle` is deliberately handed no `step`: a step name minted inside a per-batch body would collide with itself on the second batch. `BackfillBatch<Row>` carries `rows`, `ctx`, `signal` (the run's cancellation composed with this batch's own ceiling) and `index` (0-based position, also the step name — `batch:<index>`).
+
+### A remote source — `pages`, and a pass per scope
+
+`pages` beside `source`, exactly one of the two. One page is one durable step that checkpoints `{ cursor, rows: n }` and never the rows, so a pass killed mid-page asks for **that** page again and no earlier one. `next: null` ends the pass; an empty page that does not move the cursor ends it too. `rate` paces the vendor. `count` is optional — a remote may not know.
+
+```ts
+import { backfill, t } from '@ultimat3/jobs';
+
+interface Invoice { readonly vendorId: string }
+declare const vendor: {
+  invoices(
+    account: string,
+    cursor: string | null,
+    signal: AbortSignal,
+  ): Promise<{ readonly items: readonly Invoice[]; readonly nextCursor?: string }>;
+};
+declare const invoices: { upsertAll(rows: readonly Invoice[]): Promise<void> };
+
+export const syncInvoices = backfill<Invoice, { readonly accountId: string }>({
+  name: 'sync-invoices',
+  tenant: ({ input }) => input.accountId,
+  input: t.object({ accountId: t.string }),
+  scope: ({ accountId }) => accountId,               // one pass and one ledger per account
+  pages: async ({ cursor, signal, input }) => {
+    const page = await vendor.invoices(input.accountId, cursor, signal);
+    return { rows: page.items, next: page.nextCursor ?? null };
+  },
+  handle: ({ rows }) => invoices.upsertAll(rows),
+});
+await syncInvoices.enqueue({ input: { accountId: 'acct-1' } });
+```
+
+| With `scope` | |
+|---|---|
+| ledger row and live idempotency key | `<name>:<scope(input)>` — two scopes, two ledgers, never deduped onto each other |
+| `x db backfill --pending` | one row per scope the ledger holds; a scope never run is not listed — which accounts should sync is the app's |
+| an unscoped declaration | byte-identical to before: key and ledger name are `<name>` |
+
+Refused at `backfill()`, before the name is taken: both or neither of `source` and `pages`, or `input` with no `scope` — `X_BACKFILL_SOURCE_INVALID`. The checksum covers `pages` exactly as it covers `source`.
 
 ### Idempotency — `handle` is at least once
 

@@ -180,6 +180,8 @@ export {
   PROTECTED_RESOURCE_WELL_KNOWN,
   protectedResourceMetadata,
 } from './oauth-metadata';
+export type { McpAuthorizationServer, McpAuthorizationServerOptions } from './oauth-server';
+export { mcpAuthorizationServer } from './oauth-server';
 export type { ListedPrimitive } from './projectable';
 export { asProjectable, toRowsOutputSchema } from './projectable';
 export type { QueryLimits, QueryResult, QueryRows } from './query-limits';

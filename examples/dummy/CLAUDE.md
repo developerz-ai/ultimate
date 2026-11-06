@@ -334,12 +334,11 @@ The two guards measured here, and their repairs, are recorded in
   owns the key and the signature. Nothing here builds an object key by hand.
 - `app/auth/login.ts` is the whole of "log in with GitHub" — `defineAuth` + `oauthLogin`, and the
   three decisions an app owns: `providers`, `link` and where a signed-in member lands. Its two
-  route descriptors are **declared and driven by `login.test.ts`, but not served**, and that is a
-  framework gap rather than a shortcut here: an app's HTTP surface is composed in
-  `packages/cli/src/serve.ts` out of actions, queries, assets, storage, islands and page routes,
-  and there is no seam by which an app contributes a raw `Route` — `configureAuthenticator()` is
-  the only app-installed hook of that shape. So `start`/`callback` stay exported and unmounted
-  until that seam exists.
+  route descriptors are **declared and driven by `login.test.ts`, but not yet served**. The seam
+  they waited for exists now: `apps/web/runtime.ts` exports `runtime.routes`, which `serve-web.ts`
+  mounts as the app's plain routes, and the partner authorization server
+  (`app/partners/oauth.ts`) is served through it (As of 2026-11). Mounting `start`/`callback` there
+  is the app work still owed.
 
   **Two things blocked a Postly session and one of them is now closed** (`As of 2026-08-25`). The
   second was the schema: `PostgresAuthAdapter` reads `x_users`, `x_sessions`, `x_accounts`,
@@ -352,7 +351,7 @@ The two guards measured here, and their repairs, are recorded in
   (`packages/cli/src/framework-schema.ts`), applied by `applySchema` — which is on every boot path
   there is, `ROLE=migrate` included — so `postlyAuth()`'s default adapter has tables to read.
 
-  **What is left is the raw-`Route` seam alone.** Until it lands `start`/`callback` are unserved,
+  **What is left is mounting `start`/`callback` in `runtime.routes`.** Until then they are unserved,
   which is why `configureAuthenticator()` is still uncalled, `ctx.auth` is still undeclared, and
   `app/auth/demo-actor.ts` still answers every development request as a declared viewer — its own
   warning says "this app mounts no sign-in route", and that sentence is now the whole of it.

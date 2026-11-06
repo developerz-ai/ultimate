@@ -13,6 +13,17 @@ import { asyncContext } from '@ultimat3/core';
  */
 export interface ReplicaScope {
   wrote: boolean;
+  /**
+   * The WAL position an EARLIER request's write produced, carried back by its caller. A replica
+   * serves a read in this scope only once it has replayed past it (`replica-position.ts`). Absent:
+   * no earlier write this caller knows of, and a caught-up replica is not asked about.
+   */
+  readonly minPosition?: bigint | undefined;
+}
+
+export interface ReplicaReadsOptions {
+  /** Parsed by `parsePosition` from the request — never a raw cookie value. */
+  readonly minPosition?: bigint | undefined;
 }
 
 const scope = asyncContext<ReplicaScope>('the replica read scope');
@@ -30,12 +41,22 @@ const scope = asyncContext<ReplicaScope>('the replica read scope');
  * mode of "nobody opened one" is today's behaviour rather than a wrong answer.
  *
  * Nesting is one scope, not two: an inner `withReplicaReads` inside a scope that has already
- * written must not un-write it. The innermost call reuses the store it finds.
+ * written must not un-write it. The innermost call reuses the store it finds, `minPosition` too.
+ *
+ * `fn` receives the scope so the opener can ask, once `fn` settles, whether it wrote — the boot
+ * reads it to hand the caller the position its write produced.
  */
-export function withReplicaReads<T>(fn: () => T): T {
+export function withReplicaReads<T>(
+  fn: (scope: ReplicaScope) => T,
+  options: ReplicaReadsOptions = {},
+): T {
   const open = scope.get();
-  if (open !== undefined) return fn();
-  return scope.run({ wrote: false }, fn);
+  if (open !== undefined) return fn(open);
+  const fresh: ReplicaScope =
+    options.minPosition === undefined
+      ? { wrote: false }
+      : { wrote: false, minPosition: options.minPosition };
+  return scope.run(fresh, () => fn(fresh));
 }
 
 /** The scope in flight, or `undefined` — which is every caller that never opened one. */

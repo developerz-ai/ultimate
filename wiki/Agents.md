@@ -146,6 +146,7 @@ export const supportAgent = agent({
 | `mcp` | no | not exposed | exposes the agent itself as a tool |
 | `onTurn` | no | — | one call per completed turn, awaited |
 | `onCompact` | no | — | one call per compaction attempt, awaited → [Auto-compaction](#auto-compaction-compact) |
+| `onCheckpoint` | no | — | `(event, { input, ctx })` between turns, with a signed handle to resume from, awaited → [Checkpoints](#checkpoints-oncheckpoint) |
 
 ## Tools are real actions
 
@@ -534,7 +535,7 @@ export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: 
 
 ## Auto-compaction (`compact`)
 
-`As of 2026-10`. Every turn re-sends the whole transcript, so a long tool loop grows until it no longer fits the model's context window. Before each turn, `agent()` estimates that turn's request — the gateway's prompt estimate plus the tool definitions — against the model row's `contextWindow` less `maxTokens` (the room). Over `at` of the room, ONE model call summarises every turn older than the last `keepTurns`, and the turn is sent compacted:
+`As of 2026-10`. Every turn re-sends the whole transcript, so a long tool loop grows until it no longer fits the model's context window. Before each turn, `agent()` estimates that turn's request — the gateway's prompt estimate plus the tool definitions, scaled by what the provider reported for the last turn — against the model row's `contextWindow` less `maxTokens` (the room). Over `at` of the room, ONE model call summarises every turn older than the last `keepTurns`, and the turn is sent compacted:
 
 | Before | After |
 |---|---|
@@ -553,7 +554,8 @@ export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: 
 
 | Rule | Detail |
 |---|---|
-| decided before the call, never after a 400 | a request the window cannot take is compacted first, or refused |
+| decided before the call, on the measurement | `As of 2026-11` the estimate is scaled by `max(1, reported / estimated)` of the last turn (input + cache read + cache write): four characters a token is wrong by 3x on dense JSON and non-Latin text. A turn reporting zero keeps the last ratio; per run, never signed |
+| a provider refusal anyway | `X_AI_CONTEXT_OVERFLOW` (a 400/413 saying the prompt outgrew the window) gets **one forced compaction** and the same turn re-sent. A second refusal, a compaction that fails, or `compact: 'off'` is `X_AGENT_CONTEXT_EXHAUSTED` with the provider's text on `meta.refused`. The refusal billed nothing and is not a turn |
 | the summary call is the run's own request up to the cut, plus one instruction | same gateway, tools, system and `promptCache` hint: it reads the prefix the turn that ended at the cut already cached, and on OpenRouter carries the same `x-session-id` — for a DeepSeek or Gemini model too, which the host caches implicitly |
 | billed to the run | same ledger (`budget.tokensPerRun`), `costPerRun` checked before it, counted in `usage`, `onTurn`'s `run` and `meta.billed`. A budget refusal, a deadline or an abort is thrown as itself |
 | not a turn | `maxTurns` and `onTurn` count the loop alone |
@@ -562,7 +564,47 @@ export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: 
 | the handle | `.run()`'s `transcript` and `transcriptOf(error)` hold the compacted messages and a signed `compacted` count (absent at zero, so a run that never compacted writes the handle it always did); `.continue()` resumes from it and compacts on its own turns |
 | observed | `onCompact({ turn, outcome, reason, before, after, limit, summarised, kept, compactions, model, usage, cost })` — awaited, a throw fails the run — and an `agent.compact` span event with the same facts |
 
-Limits: the estimate is about four characters a token, which is why `at` defaults below 1; on the chat-completions wire an agent with `tools: []` offers only `respond`, which is then forced, so its summary call answers no text and the run falls back to whole.
+Limits: the estimate is about four characters a token until the first turn reports, which is why `at` defaults below 1; a forced summary call is the refused request less the kept turns, so with a small `keepTurns` it may not fit either (`compact.model` with a larger window is the way out); on the chat-completions wire an agent with `tools: []` offers only `respond`, which is then forced, so its summary call answers no text and the run falls back to whole.
+
+## Checkpoints (`onCheckpoint`)
+
+`As of 2026-11`. A worker that dies mid-run throws nothing, so `transcriptOf(error)` has nothing to carry and the next attempt re-buys every turn. `onCheckpoint` hands the app a signed handle **between** turns — after a turn's tool results (or its correction) land, before the next turn is bought; never after the answer, which `.run()` returns.
+
+```ts
+import type { AgentAction, AgentTranscript } from '@ultimat3/ai';
+import type { Ctx } from '@ultimat3/core';
+import { stringField } from '@ultimat3/core';
+import type { t } from '@ultimat3/schema';
+
+type Review = ReturnType<typeof t.object<{ verdict: typeof t.string }>>;
+type In = ReturnType<typeof t.object<{ postId: typeof t.string }>>;
+declare const reviewer: AgentAction<In, Review>; // declared with onCheckpoint → saveProgress
+declare function progress(postId: string): Promise<AgentTranscript | undefined>;
+
+// The action an agentJob() runs: resume from the stored handle, else start.
+export async function review(ctx: Ctx, input: { postId: string }) {
+  const stored = await progress(input.postId);
+  try {
+    if (stored === undefined) return await reviewer.run(input, { ctx });
+    return await reviewer.continue(input, { transcript: stored, user: 'Carry on.' }, { ctx });
+  } catch (error) {
+    // A prompt bump, a model change or a secret rotation invalidates a stored handle by design.
+    if (stringField(error, 'code') !== 'X_AGENT_TRANSCRIPT_INVALID') throw error;
+    return reviewer.run(input, { ctx });
+  }
+}
+```
+
+| Rule | Detail |
+|---|---|
+| the event | `{ turn, transcript, run }` — the same signed, bound handle `.run()` returns, so an edited or cross-tenant copy is refused by the same screen (`X_AGENT_TRANSCRIPT_INVALID`) |
+| the second argument | the run's own `{ input, ctx }`, as `vars()` gets them: where the handle lives is the app's row, stored as tool results may be |
+| resuming | the existing `.continue(input, { transcript, user })`. `maxTurns`, `tokensPerRun` and `costPerRun` count from the handle; `deadlineMs` is per call |
+| awaited; a throw fails the run | as `onTurn`'s: a checkpoint that silently stopped reads exactly like one that works |
+| cost | sealed only when declared; a run without the hook is byte-identical |
+| after a compaction | the next checkpoint holds the compacted messages and the signed `compacted` count |
+| plain calls too | the hook reads no session; a plain call checkpoints like `.run()` |
+| the limit | a worker dying **during** a tool batch re-asks the model for that turn, so those tools may run again. [The at-least-once rule](#the-at-least-once-trap) still binds; the replay shrinks from the whole run to one turn. No store of open tool calls: the screen refuses an unanswered `tool_use` by design |
 
 ## Per-run picks (`offerTools`, `model`, `limits`)
 
@@ -844,7 +886,8 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 | `X_AGENT_MAX_TURNS` | the loop used every turn calling tools and never answered | tell the template when to stop and answer through the respond tool, then bump its version |
 | `X_AGENT_TOOL_LOOP` | consecutive turns made the same tool calls and read the same results | `maxRepeatedToolCalls: 5` on the agent, only for a tool that really is polled; otherwise tell the template what to do when the result does not change, then bump its version |
 | `X_AGENT_DEADLINE` | the run outlived its declared `deadlineMs` | `deadlineMs: 300_000` on the agent, once a trace shows the run converging; otherwise lower `maxTurns` |
-| `X_AGENT_CONTEXT_EXHAUSTED` | the next request would not fit the model's context window and [compaction](#auto-compaction-compact) could not bring it under. Refused before it is sent | `compact: { at: 0.6, keepTurns: 2 }` on the agent; or lower `maxToolResultChars`, or a model with a larger `contextWindow` |
+| `X_AGENT_CONTEXT_EXHAUSTED` | the next request would not fit the model's context window and [compaction](#auto-compaction-compact) could not bring it under. Refused before it is sent — or after the provider refused it twice (`meta.refused`) | `compact: { at: 0.6, keepTurns: 2 }` on the agent; or lower `maxToolResultChars`, or a model with a larger `contextWindow` |
+| `X_AI_CONTEXT_OVERFLOW` | a provider refused a request as over the model's window (400/413 and its own wording). Never retried, `terminal` for a job; `agent()` compacts once and re-sends before it stops as `X_AGENT_CONTEXT_EXHAUSTED` | `compact: { at: 0.6, keepTurns: 2 }` on the agent; or a shorter prompt, or a model with a larger `contextWindow` |
 | `X_LLM_OUTPUT_INVALID` | every turn's answer failed the `output` schema | describe the shape in the template and bump its version, or widen `output` |
 | `X_LLM_REFUSED` | the provider's classifiers declined; `stopDetails.category` names why | set `model:` to the more capable one the thrown `fix:` names, or edit the template and bump its version |
 | `X_LLM_TRUNCATED` | a turn hit `maxTokens` before finishing — read before the answer, so nothing truncated is ever validated or run. A tool call cut off mid-arguments is this code too, streamed or not | raise `maxTokens:` on the declaration, or drop fields from `output`. A model that reasons spends the same ceiling on reasoning: a measured 28,000-character answer used 12,954 output tokens |

@@ -65,15 +65,45 @@ export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
   const graceMs = finiteCount('the scrape watchdog', 'graceMs', init.graceMs ?? DEFAULT_GRACE_MS);
   const controller = new AbortController();
   let lastTouch = init.clock.monotonic();
-  // TWO latches, not one. `stopped` ends the watch loop; `shuttingDown` guards the teardown. They
-  // were the same flag, so a fire — which sets `stopped` — made `shutdown()` return on its first
-  // line and NEVER call `quit()`. `localBrowser()` hid it, because the fire's `kill()` still
-  // reaches a pid; `remoteBrowser()` is `driver-cdp.ts`'s primary path, `browser.process()` is
-  // `null` there, and `browser.close()` is then the only thing that ends the paid remote session.
+  // TWO latches, not one. `stopped` ends the watch loop; the memoised `teardown` below guards
+  // the quit. They were the same flag, so a fire — which sets `stopped` — made `shutdown()`
+  // return on its first line and NEVER call `quit()`. `localBrowser()` hid it, because the fire's
+  // `kill()` still reaches a pid; `remoteBrowser()` is `driver-cdp.ts`'s primary path,
+  // `browser.process()` is `null` there, and `browser.close()` is then the only thing that ends
+  // the paid remote session.
   let stopped = false;
-  let shuttingDown = false;
   let fired = false;
 
+  const ceilinged = async (): Promise<void> => {
+    let quit = false;
+    // A ceiling, not a hope: whichever finishes first wins, and if it is the clock the process
+    // is killed. `browser.close()` on a wedged renderer never returns.
+    await Promise.race([
+      init.quit().then(
+        () => {
+          quit = true;
+        },
+        () => {
+          quit = false;
+        },
+      ),
+      // The ceiling's own sleep is caught for the same reason the quit is: this runs in
+      // `runScrape`'s `finally`, `close()` is documented never to throw, and a clock that
+      // rejected here would replace the run's real failure with a teardown one. A ceiling that
+      // cannot be timed has already expired, which lands on `kill()` — the safe direction.
+      init.clock.sleep(graceMs).catch(() => undefined),
+    ]);
+    if (!quit) init.kill();
+  };
+
+  // ONE teardown, shared by the fire and `shutdown()`: the polite quit raced against the ceiling,
+  // then the kill. Memoised, so a fire followed by the run's own `close()` quits once and kills at
+  // most twice (the fire's, and the ceiling's) rather than starting a second race.
+  let teardown: Promise<void> | undefined;
+  const end = (): Promise<void> => {
+    teardown ??= ceilinged();
+    return teardown;
+  };
   const watch = async (): Promise<void> => {
     while (!stopped) {
       await init.clock.sleep(WATCH_POLL_MS);
@@ -84,8 +114,19 @@ export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
       // Kill FIRST, abort second. The abort is what the awaiting code sees; the kill is what
       // makes the socket it is blocked on close. Reversing them leaves the run cancelled and the
       // browser alive, which is the zombie half of the same incident.
-      init.kill();
-      controller.abort(wedged(init.what, idleMs));
+      // `finally`: a throwing `kill()` still ends the run — `stopped` is already set, so the loop's
+      // catch below would return early and leave the run unaborted behind a dead guard.
+      try {
+        init.kill();
+      } finally {
+        // And the QUIT, now, not at unwind. On an attached browser the kill above reaches nothing —
+        // `process()` is `null` — and a call blocked on the socket (`evaluate` takes no signal) never
+        // unwinds to `close()`. Closing the browser is what rejects it. Unawaited: the abort below
+        // must not wait out a hung quit; `shutdown()` awaits this same promise. Its only rejection
+        // is a throwing `kill()`, which `shutdown()` hands its caller exactly as before.
+        void end().catch(() => undefined);
+        controller.abort(wedged(init.what, idleMs));
+      }
     }
   };
   // Never floating. `ScrapeClock` is a seam an app implements and `init.kill()` comes from a
@@ -109,28 +150,8 @@ export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
       lastTouch = init.clock.monotonic();
     },
     async shutdown(): Promise<void> {
-      if (shuttingDown) return;
-      shuttingDown = true;
       stopped = true;
-      let quit = false;
-      // A ceiling, not a hope: whichever finishes first wins, and if it is the clock the process
-      // is killed. `browser.close()` on a wedged renderer never returns.
-      await Promise.race([
-        init.quit().then(
-          () => {
-            quit = true;
-          },
-          () => {
-            quit = false;
-          },
-        ),
-        // The ceiling's own sleep is caught for the same reason the quit is: this runs in
-        // `runScrape`'s `finally`, `close()` is documented never to throw, and a clock that
-        // rejected here would replace the run's real failure with a teardown one. A ceiling that
-        // cannot be timed has already expired, which lands on `kill()` — the safe direction.
-        init.clock.sleep(graceMs).catch(() => undefined),
-      ]);
-      if (!quit) init.kill();
+      await end();
     },
   };
 }

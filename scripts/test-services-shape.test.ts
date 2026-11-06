@@ -98,6 +98,16 @@ const BINDS: Readonly<Record<string, readonly string[]>> = {
   'postgres-tls-certs': ['.:/docker:ro', './.tls:/docker/.tls'],
 };
 
+/**
+ * The service URLs a suite reads that NO test service can answer, each with why: the suite skips,
+ * named, everywhere — so it is declared here rather than read as a gap. A row whose URL the env
+ * file now writes, or that no suite reads, is refused below: the table only shrinks to the truth.
+ */
+const UNSUPPLIED: Readonly<Record<string, string>> = {
+  TEST_STANDBY_URL:
+    'a physical standby of TEST_DATABASE_URL the suite pauses (pg_wal_replay_pause): compose starts none',
+};
+
 /** The compose service whose published port a URL dials, or nothing. */
 const serviceAt = (url: URL): string | undefined =>
   services.find(([, spec]) => (spec.ports ?? []).some((port) => hostPort(port) === url.port))?.[0];
@@ -367,10 +377,18 @@ describe('unit · test services · a suite finds each one where it was started',
         return at === undefined ? [] : [[name, at] as const];
       }),
     );
-    const gaps = serviceCoverageGaps(suites, parts, serves);
+    const gaps = serviceCoverageGaps(suites, parts, serves).filter(
+      (gap) => UNSUPPLIED[gap.url] === undefined,
+    );
 
     expect(
       gaps.map((gap) => `${gap.suite} reads ${gap.url}, which no part running its step exports`),
     ).toEqual([]);
+    // The exemption is for a URL no service answers and some suite reads — never a way past a gap.
+    const read = new Set(suites.flatMap((suite) => suite.required));
+    for (const url of Object.keys(UNSUPPLIED)) {
+      expect(urls.has(url), `${url} is in ${ENV_FILE}: drop its UNSUPPLIED row`).toBe(false);
+      expect(read.has(url), `no suite reads ${url}: drop its UNSUPPLIED row`).toBe(true);
+    }
   });
 });

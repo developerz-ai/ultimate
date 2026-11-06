@@ -6,6 +6,7 @@ import type { Ctx } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { AgentCompaction, AgentCompactOption } from './agent-compact-def';
+import type { AgentCheckpoint } from './agent-continue';
 import type { AgentSystem } from './agent-system';
 import type { AgentRunUsage } from './agent-usage';
 import type { LlmBudget } from './llm';
@@ -173,6 +174,14 @@ export interface AgentDef<
    * throw fails the run. Also an `agent.compact` span event.
    */
   onCompact?(event: AgentCompaction): void | Promise<void>;
+  /**
+   * Called after each turn whose tool results (or correction) landed, before the next turn is
+   * bought — never after the answer, which `.run()` returns. Its `transcript` is a signed handle:
+   * store it, and a worker that died resumes with `.continue(input, { transcript, user })` instead
+   * of re-buying every turn. Awaited; a throw fails the run. Sealed only when declared. `args` is
+   * the run's own input and context, as `vars()` gets them: where the handle goes is the app's row.
+   */
+  onCheckpoint?(event: AgentCheckpoint, args: AgentVarsArgs<TInput>): void | Promise<void>;
 }
 
 /** One completed model turn, as an observer sees it. Facts only — no transcript, no actor. */

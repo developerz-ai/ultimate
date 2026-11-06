@@ -467,6 +467,39 @@ so `billedOf(error)` reads it. A meter, not a ledger: it refuses nothing.
 
 `agent()` returns an `AgentAction`: the action, plus `.run(input, opts)` → `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to a stored transcript and resumes the loop. The transcript is re-sent byte for byte (the provider's prompt cache reads it back; no tool re-runs); `maxTurns` and `budget.tokensPerRun` are cumulative; the handle is signed, bound to the agent, model, tools and tenant, and screened (`X_AGENT_TRANSCRIPT_INVALID`); a failed call leaves an updated one on the error (`transcriptOf(error)`), which is the one a job stores. Full contract: [Agents → Continuing a run](https://github.com/developerz-ai/ultimate/wiki/Agents#continuing-a-run-run--continue).
 
+`onCheckpoint(event, { input, ctx })` hands the app the same signed handle **between** turns — after a
+turn's tool results (or its correction) land, before the next turn is bought, never after the answer
+(`.run()` returns that one). Store `event.transcript` on the run's own row; the next attempt calls
+`.continue(input, { transcript, user })` and pays only for the turns left. Awaited; a throw fails
+the run; sealed only when declared. A worker dying DURING a tool batch re-asks that turn, so its
+tools may run again — at-least-once still binds.
+
+```ts
+import type { AgentAction, AgentTranscript } from '@ultimat3/ai';
+import type { Ctx } from '@ultimat3/core';
+import { stringField } from '@ultimat3/core';
+import type { t } from '@ultimat3/schema';
+
+type Review = ReturnType<typeof t.object<{ verdict: typeof t.string }>>;
+type In = ReturnType<typeof t.object<{ postId: typeof t.string }>>;
+// Declared with onCheckpoint: ({ transcript }, { input }) => saveProgress(input.postId, transcript)
+declare const reviewer: AgentAction<In, Review>;
+declare function progress(postId: string): Promise<AgentTranscript | undefined>;
+
+// The action an agentJob() runs: resume from the stored handle, else start.
+export async function review(ctx: Ctx, input: { postId: string }) {
+  const stored = await progress(input.postId);
+  try {
+    if (stored === undefined) return await reviewer.run(input, { ctx });
+    return await reviewer.continue(input, { transcript: stored, user: 'Carry on.' }, { ctx });
+  } catch (error) {
+    // A prompt bump or a model change invalidates a stored handle by design: start fresh.
+    if (stringField(error, 'code') !== 'X_AGENT_TRANSCRIPT_INVALID') throw error;
+    return reviewer.run(input, { ctx });
+  }
+}
+```
+
 ### Auto-compaction
 
 ```ts
@@ -491,15 +524,17 @@ export const researcher = agent({
 });
 ```
 
-Before each turn, the gateway's estimate of that turn's request is compared with the model row's
-`contextWindow` less `maxTokens`. Over `at` of it, ONE model call summarises every turn older than
+Before each turn, the gateway's estimate of that turn's request — scaled by what the provider
+reported for the last one — is compared with the model row's `contextWindow` less `maxTokens`. Over `at` of it, ONE model call summarises every turn older than
 the last `keepTurns`; the summary joins the first user message (after the prompt, verbatim, marked
 `[compacted: …]`), the kept turns follow byte for byte, and the turn is sent.
 
 | Rule | Why |
 |---|---|
 | default **`'auto'`**; `'off'` never compacts and never checks | a summary changes what the model sees, but only above `at` of the window, where the alternative is a run lost to a 400 after every turn was paid for. Below it a run is byte-identical to `'off'` — requests and handle — and it is never silent: `onCompact`, the `agent.compact` span event, the handle's `compacted` |
-| triggered on the **estimate of the next request** — the gateway's prompt estimate plus the tool definitions — over `at` × (`contextWindow` − `maxTokens`), before the call | after a 400 there is no request left to fix; `maxTokens` is reserved because the completion shares the window |
+| triggered on the **estimate of the next request** — the gateway's prompt estimate plus the tool definitions — over `at` × (`contextWindow` − `maxTokens`), before the call | `maxTokens` is reserved because the completion shares the window |
+| the estimate is **scaled by the measurement**: after each turn, `max(1, (inputTokens + cacheReadTokens + cacheWriteTokens) / estimate)` of that turn's request; `before`/`after` report the scaled figure | four characters a token is wrong by 3x on dense JSON and non-Latin text, and a run walked past the window it was meant to compact before. A turn reporting zero keeps the last ratio (a provider that never reports compacts where it always did); below 1 is ignored; per run, never signed — a continuation's first turn estimates plainly |
+| a provider that refuses the turn anyway (**`X_AI_CONTEXT_OVERFLOW`**) gets **one forced compaction** and the same turn re-sent; a second refusal, a compaction that cannot be had, or `compact: 'off'` is `X_AGENT_CONTEXT_EXHAUSTED` with the provider's text on `meta.refused` | the loop still holds the transcript after that 400. The refusal billed nothing (`meta.billed` at zero), is not a turn, and is never retried by the gateway: the same request overflows on every provider |
 | the system prompt, its stable block and the tools are **never touched** | a provider cache is a prefix match over tools → system → messages: they are the part every turn and every run shares, so they are still read at the cache rate after a compaction. Only the messages are rewritten, once |
 | the summary call is the run's **own request** up to the cut, plus one instruction — same gateway, tools, system and `promptCache` hint | it reads the prefix the turn that ended at the cut already cached instead of paying for it again; on OpenRouter the same `x-session-id` routes it to the provider holding that cache (`compact.model` trades that read for a cheaper writer) |
 | the cut falls **between turns**: the prompt and the last `keepTurns` (4, at least 1) turns are verbatim | a turn is an assistant message and the user message answering every `tool_use` in it, so no call is ever separated from its result (a 400 on every provider); the model keeps its task as written and the results it just asked for |
@@ -512,7 +547,8 @@ the last `keepTurns`; the summary joins the first user message (after the prompt
 
 | Limit | Detail |
 |---|---|
-| the estimate | ~4 characters a token, which is why `at` defaults below 1 |
+| the estimate | ~4 characters a token until the first turn reports, which is why `at` defaults below 1 |
+| the forced compaction | its summary call is the refused request less the kept turns: with a tiny `keepTurns` it may not fit either — `compact.model` with a larger window is the way out |
 | `tools: []` on the chat-completions wire | only `respond` is offered, so it is forced, the summary call answers no text and the run falls back to whole |
 | per run | `compact` is the declaration's; `limits()` does not take it, `describeAgents()` does not publish it |
 
@@ -1081,7 +1117,8 @@ fail-closed `terminal` default.
 | `X_AGENT_TOOL_UNDECLARED` | an `agent()` run's `offerTools()` named a tool its declaration does not list |
 | `X_AGENT_TOOL_LOOP` | an `agent()` made the same tool calls and read the same results `maxRepeatedToolCalls` turns in a row |
 | `X_AGENT_DEADLINE` | an `agent()` outlived its declared `deadlineMs` |
-| `X_AGENT_CONTEXT_EXHAUSTED` | an `agent()`'s next request would not fit its model's context window, and compaction could not bring it under; refused before it is sent |
+| `X_AGENT_CONTEXT_EXHAUSTED` | an `agent()`'s next request would not fit its model's context window, and compaction could not bring it under — refused before it is sent, or after the provider refused it twice (`meta.refused`) |
+| `X_AI_CONTEXT_OVERFLOW` | a provider answered 400/413 saying the prompt outgrew the model's window; never retried, `terminal` for a job. `llm()` and `generate()` raise it as itself; `agent()` compacts once first |
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
 | `X_VECTOR_DIM_MISMATCH` | a vector's length disagrees with the store |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave the tenant it was bound to |

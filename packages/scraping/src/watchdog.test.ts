@@ -54,6 +54,20 @@ describe('unit · the inactivity watchdog', () => {
     expect((guard.signal.reason as { code?: string }).code).toBe('X_SCRAPE_WEDGED');
   });
 
+  test('a kill that THROWS still aborts the run with X_SCRAPE_WEDGED', async () => {
+    const guard = createWedgeGuard({
+      clock: testScrapeClock(),
+      what: 'scrape "orders"',
+      idleMs: 1_000,
+      quit: () => Promise.resolve(),
+      // A driver's kill failing is INPUT here: a parse that throws, not this test's verdict.
+      kill: () => JSON.parse('{'),
+    });
+    await untilFired(guard);
+    for (let tick = 0; tick < 20 && !guard.signal.aborted; tick += 1) await settled();
+    expect((guard.signal.reason as { code?: string } | undefined)?.code).toBe('X_SCRAPE_WEDGED');
+  });
+
   test('a run that keeps touching is never killed', async () => {
     const clock = testScrapeClock();
     let killed = 0;
@@ -254,5 +268,69 @@ describe('unit · a guard that can no longer watch', () => {
     });
     await guard.shutdown();
     expect(killed).toBe(1);
+  });
+});
+
+/**
+ * The fire IS the teardown. On `remoteBrowser()` the kill reaches nothing (`process()` is `null`),
+ * and a `quit()` that waited for `shutdown()` waited for the run to unwind — which a call blocked on
+ * the socket never does. One adopter's run drove the site for minutes after its guard fired.
+ */
+describe('unit · the fire closes the browser, not the unwind', () => {
+  test('a fire with a no-op kill runs the quit once, and a later shutdown adds none', async () => {
+    let quits = 0;
+    const guard = createWedgeGuard({
+      clock: testScrapeClock(),
+      what: 'scrape "orders"',
+      idleMs: 1_000,
+      quit: async (): Promise<void> => {
+        quits += 1;
+      },
+      kill: () => undefined,
+    });
+    await untilFired(guard);
+    expect(guard.fired).toBe(true);
+    expect(quits).toBe(1);
+    await guard.shutdown();
+    expect(quits).toBe(1);
+  });
+
+  test('a hung quit after a fire gets a second kill at graceMs, without any shutdown', async () => {
+    let killed = 0;
+    const guard = createWedgeGuard({
+      clock: testScrapeClock(),
+      what: 'scrape "orders"',
+      idleMs: 1_000,
+      graceMs: 5_000,
+      quit: () => new Promise<void>(() => undefined),
+      kill: () => {
+        killed += 1;
+      },
+    });
+    await untilFired(guard);
+    expect(killed).toBe(1);
+    for (let tick = 0; tick < 5; tick += 1) await settled();
+    expect(killed).toBe(2);
+    // And the shutdown that follows shares that teardown rather than starting a third kill.
+    await guard.shutdown();
+    expect(killed).toBe(2);
+  });
+
+  test('the kill still precedes the abort, and the quit starts before the abort is seen', async () => {
+    const order: string[] = [];
+    const guard = createWedgeGuard({
+      clock: testScrapeClock(),
+      what: 'scrape "orders"',
+      idleMs: 1_000,
+      quit: async (): Promise<void> => {
+        order.push('quit');
+      },
+      kill: () => {
+        order.push('kill');
+      },
+    });
+    guard.signal.addEventListener('abort', () => order.push('abort'));
+    await untilFired(guard);
+    expect(order).toEqual(['kill', 'quit', 'abort']);
   });
 });

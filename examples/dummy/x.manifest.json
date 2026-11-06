@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "9f2fecb60224bca9",
+  "buildId": "d60ff5cd1b7bd95d",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1092,6 +1092,25 @@
           "type": "text",
           "nullable": false,
           "primaryKey": false
+        }
+      ],
+      "invariants": []
+    },
+    {
+      "name": "stream_cursors",
+      "table": "stream_cursors",
+      "columns": [
+        {
+          "name": "position",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "stream",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": true
         }
       ],
       "invariants": []
@@ -5761,6 +5780,15 @@
   ],
   "mounts": [
     {
+      "prefix": "/partner",
+      "scopes": {
+        "posts:read": [
+          "publicPost",
+          "publicPosts"
+        ]
+      }
+    },
+    {
       "prefix": "/v1",
       "scopes": {
         "post:publish": [
@@ -5810,6 +5838,70 @@
       "queue": "default",
       "retry": {
         "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "billing.plan-catalog",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "force": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "billing.plan-prices",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": [],
+      "concurrency": {
+        "limit": 1,
+        "keyed": true,
+        "whenBusy": "wait"
+      }
+    },
+    {
+      "name": "billing.plan-prices.arm",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
         "backoff": "exponential"
       },
       "steps": []
@@ -6440,9 +6532,60 @@
         "backoff": "exponential"
       },
       "steps": []
+    },
+    {
+      "name": "settleUpgrade",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "team",
+              "business"
+            ]
+          }
+        },
+        "required": [
+          "orgId",
+          "plan"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    }
+  ],
+  "consumers": [
+    {
+      "name": "billing.plan-prices",
+      "queue": "default",
+      "supervisor": "billing.plan-prices.supervisor",
+      "arm": "billing.plan-prices.arm",
+      "rearm": "* * * * *",
+      "batch": 100,
+      "lags": true
     }
   ],
   "tasks": [
+    {
+      "name": "billing.plan-prices.supervisor",
+      "cron": "* * * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "billing.plan-prices.arm"
+      ]
+    },
     {
       "name": "hourlyPurge",
       "cron": "23 * * * *",
@@ -6759,6 +6902,10 @@
     },
     {
       "code": "X_BILLING_EVENT_UNREADABLE",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_BILLING_INVOICE_REFUSED",
       "package": "apps/web"
     },
     {

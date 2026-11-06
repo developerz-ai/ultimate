@@ -129,6 +129,13 @@ describe('checkCsrf', () => {
     );
   });
 
+  // `meta.csrf: 'cookieless'` exempts the caller nothing authenticated, never a resolved one.
+  test('a cookieless route passes an anonymous cross-site write and judges a signed-in one', () => {
+    const forged = { secFetchSite: 'cross-site', origin: 'https://evil.test' } as const;
+    expect(checkCsrf(input({ ...forged, anonymous: true, cookieless: true })).ok).toBe(true);
+    expect(checkCsrf(input({ ...forged, anonymous: false, cookieless: true })).ok).toBe(false);
+  });
+
   test("mode: 'off' judges nothing", () => {
     expect(checkCsrf(input({ config: { mode: 'off' }, secFetchSite: 'cross-site' })).ok).toBe(true);
   });

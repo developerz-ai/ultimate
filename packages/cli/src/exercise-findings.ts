@@ -7,6 +7,7 @@
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderCauseValue, renderFixShellArg } from '@ultimat3/core';
 import type { ExerciseRecord } from '@ultimat3/testing';
+import { tenantProofFindings } from '@ultimat3/testing';
 import type { Finding } from './output';
 import { renderTable } from './table';
 
@@ -57,8 +58,15 @@ const unreachedFinding = (record: ExerciseRecord): Finding => {
   };
 };
 
-export const exerciseFindings = (records: readonly ExerciseRecord[]): readonly Finding[] =>
-  records.filter((one) => one.outcome === 'unreached').map(unreachedFinding);
+/**
+ * Unreached primitives, then the tenant proof's crossed ones: tenant B handed A's data or changed
+ * A's row. `unproven` is reported on the record and never red — the pass could not ask, which is
+ * not an answer.
+ */
+export const exerciseFindings = (records: readonly ExerciseRecord[]): readonly Finding[] => [
+  ...records.filter((one) => one.outcome === 'unreached').map(unreachedFinding),
+  ...tenantProofFindings(records).map((one) => ({ ...one, docs: ERROR_DOCS_URL })),
+];
 
 export interface ExerciseReport {
   readonly seed: number | null;
@@ -76,7 +84,7 @@ const RANK: readonly Outcome[] = ['unreached', 'refused', 'off', 'reached'];
 
 export const renderExerciseTable = (records: readonly ExerciseRecord[]): readonly string[] =>
   renderTable(
-    ['primitive', 'kind', 'outcome', 'code', 'statements', 'effects', 'ms'],
+    ['primitive', 'kind', 'outcome', 'tenant', 'code', 'statements', 'effects', 'ms'],
     records
       .toSorted(
         (left, right) =>
@@ -87,6 +95,7 @@ export const renderExerciseTable = (records: readonly ExerciseRecord[]): readonl
         one.name,
         one.kind,
         one.outcome,
+        one.tenant?.verdict ?? '-',
         one.code ?? '-',
         String(one.statements),
         String(one.effects.length),

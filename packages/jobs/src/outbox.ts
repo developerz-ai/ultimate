@@ -37,6 +37,7 @@ import type { JobHandle } from './job';
 import type { EnqueueManyOptions } from './job-enqueue-many';
 import { enqueueMany } from './job-enqueue-many';
 import { resolveClaimLeaseMs } from './outbox-lease';
+import { refuseEnqueueTenant } from './tenant';
 
 export interface OutboxRecord {
   /** The outbox row's id AND the id of the job its publish creates: allocated once, at stage. */
@@ -308,6 +309,8 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       // answers an empty string is one lock shared by every run of the job, and the caller of
       // this enqueue is the only one who can still be told (`X_JOB_DECLARATION_INVALID`).
       handle.concurrencyKeyFor(input);
+      // A payload naming one org, enqueued for — or by an actor of — another (`tenant.ts`).
+      refuseEnqueueTenant(handle.name, handle.tenantFor(input), options.tenantId);
       const tx = options.outbox === false ? undefined : currentTx();
 
       if (tx === undefined) {

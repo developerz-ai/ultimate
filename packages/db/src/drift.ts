@@ -5,7 +5,7 @@
 
 import { baseClient, type DbClient } from './client';
 import { APPEND_ONLY_DRIFT_CODE, compareAppendOnly } from './drift-append-only';
-import type { DriftDifference } from './drift-findings';
+import type { DriftDifference, DriftKind } from './drift-findings';
 import {
   changedColumn,
   changedForeignKey,
@@ -21,7 +21,8 @@ import {
   unexpectedTable,
   unknownSchema,
 } from './drift-findings';
-import { DbError } from './errors';
+import { compareRowSecurity, ROW_SECURITY_DRIFT_CODE } from './drift-row-security';
+import { DbError, type DbErrorCode } from './errors';
 import { foreignKeyTarget, onDeleteRule } from './foreign-key';
 import { indexMethodOf } from './index-method';
 import {
@@ -250,6 +251,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
   differences.push(...compareForeignKeys(live, expected));
   differences.push(...compareValidated(live, expected));
   differences.push(...compareAppendOnly(live, expected));
+  differences.push(...compareRowSecurity(live, expected));
   return differences;
 }
 
@@ -272,10 +274,16 @@ export function diffSchema(live: SchemaDescription, expected: SchemaDescription)
   return { ok: differences.length === 0, differences };
 }
 
+/** The kinds that carry their own code — the guarantee each names is the entity's, not a column's. */
+const OWN_CODE: ReadonlyMap<DriftKind, DbErrorCode> = new Map<DriftKind, DbErrorCode>([
+  ['missing-append-only-trigger', APPEND_ONLY_DRIFT_CODE],
+  ['missing-row-security', ROW_SECURITY_DRIFT_CODE],
+  ['unexpected-row-security', ROW_SECURITY_DRIFT_CODE],
+]);
+
 export function driftError(difference: DriftDifference): DbError {
   return new DbError({
-    // One kind carries its own code — the guarantee it names is the entity's, not a column's.
-    code: difference.kind === 'missing-append-only-trigger' ? APPEND_ONLY_DRIFT_CODE : 'X_DB_DRIFT',
+    code: OWN_CODE.get(difference.kind) ?? 'X_DB_DRIFT',
     cause: difference.cause,
     fix: difference.fix,
     meta: { kind: difference.kind, table: difference.table, column: difference.column },

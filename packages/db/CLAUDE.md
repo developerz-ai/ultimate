@@ -185,10 +185,12 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   together (`unnest(a, b) with ordinality`), pinned by `introspect-embedded.test.ts`.
 - **`appTables()`** excludes all of `x_` for drift; `introspectSchema()` alone excludes
   `x_migrations` by default. **`app-relation.ts`**: `nonAppRelations(client, schema)` — extension
-  ownership from `pg_depend` (`deptype = 'e'`) plus views, materialised views and foreign tables —
+  ownership (`pg_depend`, `deptype = 'e'`), views, materialised views, foreign tables, partitions —
   merged into `excluded` unconditionally.
-- **`dbDrift()` lives in `drift-errors.ts`** (it needs `shellInertIdentifier`) and is the only one —
-  `@ultimat3/entity`'s copy is deleted. `errors.ts` registers `DB_ERROR_TITLES` unconditionally.
+- **A partitioned parent is a table, a partition is not**; a concurrent build on one is
+  `X_MIGRATION_CONCURRENT_PARTITIONED`. `docs/history/db.md` (2026-11-06).
+- **`dbDrift()` lives in `drift-errors.ts`** (it needs `shellInertIdentifier`), the only one.
+  `errors.ts` registers `DB_ERROR_TITLES` unconditionally.
 - **`not-valid-constraint`** (`compareValidated`): `notValidNames` is catalog-only (`convalidated`, absent when none), judged on the declared side, foreign keys by where they point; the fix is the validate statement (`repair`).
 - `drift-findings.ts` holds every `DriftDifference` constructor and `DriftKind`; `drift.ts` keeps the
   comparisons.
@@ -204,7 +206,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`x_` owner → `framework/` twin** (`FRAMEWORK_TABLE_PREFIX`). No list is handed in.
 - **What cannot be rendered is named** (`unrenderedRows`, a closed list → `unrendered.sql`; a trigger
   on an unrendered relation is named by the fold). A kind rendered later leaves that list in the
-  same diff. Never render a partition as a plain table. `generated` carries `stored`/`virtual`.
+  same diff. Never render a partition as a plain table (`partition-order.ts`). `generated` carries
+  `stored`/`virtual`.
 - **`loadSchemaDump()`**: one transaction, `check_function_bodies` off, a savepoint per file, and
   only `42P01`/`42883`/`42704` are retried. Its refusal is `X_SCHEMA_DUMP_DRIFT` (`dump-drift.ts`).
 - **`object-drift.ts`**: `unexpectedObjects(live, expected)` compares IDENTITY (kind, table, name,
@@ -219,7 +222,6 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`pglite-snapshot.ts`**: `snapshotDir` makes a `memory://` boot a restore. Key = PGlite version
   (unreadable = no cache), never the extension set. One file, checksum in its header; unsound or
   unopenable → deleted and rebuilt; unreadable → a miss. Temp name + `rename`. Uncompressed.
-- **Embedded boots for dump tests**: `schema-dump.test.ts` and `schema-dump-fidelity.test.ts`.
 
 ## Branches, replicas, read-only
 

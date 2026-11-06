@@ -35,6 +35,7 @@ export const KEY_ORDER = [
   'admin',
   'mounts',
   'jobs',
+  'consumers',
   'tasks',
   'policies',
   'permissions',

@@ -50,20 +50,22 @@ export type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve-t
 export async function runMigrations(options: ServeOptions): Promise<MigratedApp> {
   // `'apply'`, never the stamp-first default: this IS the step that applies, and an operator
   // re-running it is how a dropped framework table comes back.
-  const queue = await startQueue(
-    resolveServices(options.root, options.env),
-    options.runtime,
-    options.env,
-    'apply',
-  );
+  const services = resolveServices(options.root, options.env);
+  const queue = await startQueue(services, options.runtime, options.env, 'apply');
   try {
     const migrations = await readMigrations(options.root);
+    // PGlite with `database.rowSecurity`: the app's migrations run as `x_migrator` for their scope.
+    // Behind `await import()` and only embedded: a container's migrate graph never loads it.
+    const release =
+      services.db.mode === 'embedded'
+        ? await (await import('./row-security-boot')).migrateAsMigrator(options.root)
+        : undefined;
     const report = await migrate({
       migrations,
       ...(options.env['APP_VERSION'] === undefined
         ? {}
         : { appVersion: options.env['APP_VERSION'] }),
-    });
+    }).finally(() => release?.());
     logger.info('ultimate migrate applied', {
       applied: report.applied.length,
       available: migrations.length,

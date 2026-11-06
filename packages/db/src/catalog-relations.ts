@@ -26,6 +26,11 @@ export interface TableRow {
   readonly replica_identity: string;
   readonly replica_index: string | null;
   readonly options: string | null;
+  /** `pg_get_partkeydef` — `RANGE (at)` — on a partitioned table; `null` on any other. */
+  readonly partition_key: string | null;
+  /** The table this one is a partition of, and its bound (`FOR VALUES …`, `DEFAULT`); else `null`. */
+  readonly partition_of: string | null;
+  readonly partition_bound: string | null;
 }
 
 export interface ColumnRow {
@@ -69,9 +74,10 @@ export interface IndexRow {
 }
 
 /**
- * Plain tables only. A partition, an inheritance child and a partitioned parent are `relkind`
- * `r`/`p` rows a `create table (…)` cannot rebuild, so they are named by `unrenderedRows`
- * (`catalog-objects.ts`) instead of rendered wrong here.
+ * Plain tables, partitioned tables and their partitions. An inheritance child that is not a
+ * partition is a row a `create table (…)` cannot rebuild, so it is named by `unrenderedRows`
+ * (`catalog-objects.ts`) instead of rendered wrong here. A partition's bound is the server's own
+ * `pg_get_expr` text: a `timestamptz` bound is spelled in the session's `TimeZone`.
  */
 export const tableRows = (client: DbClient, schema: string): Promise<readonly TableRow[]> =>
   client.query<TableRow>(sql`
@@ -85,13 +91,20 @@ export const tableRows = (client: DbClient, schema: string): Promise<readonly Ta
         join pg_class i on i.oid = x.indexrelid
         where x.indrelid = c.oid and x.indisreplident
       ) as replica_index,
-      array_to_string(c.reloptions, ', ') as options
+      array_to_string(c.reloptions, ', ') as options,
+      pg_get_partkeydef(c.oid) as partition_key,
+      (
+        select p.relname
+        from pg_inherits h
+        join pg_class p on p.oid = h.inhparent
+        where h.inhrelid = c.oid and c.relispartition
+      ) as partition_of,
+      case when c.relispartition then pg_get_expr(c.relpartbound, c.oid) end as partition_bound
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = ${schema}
-      and c.relkind = 'r'
-      and not c.relispartition
-      and not exists (select 1 from pg_inherits h where h.inhrelid = c.oid)
+      and c.relkind in ('r', 'p')
+      and (c.relispartition or not exists (select 1 from pg_inherits h where h.inhrelid = c.oid))
       and ${notExtensionOwned('pg_class', 'c.oid')}
   `);
 
@@ -114,13 +127,15 @@ export const columnRows = (client: DbClient, schema: string): Promise<readonly C
     join pg_type t on t.oid = a.atttypid
     left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
     left join pg_collation co on co.oid = a.attcollation
-    where n.nspname = ${schema} and c.relkind = 'r' and a.attnum > 0 and not a.attisdropped
+    where n.nspname = ${schema} and c.relkind in ('r', 'p') and a.attnum > 0 and not a.attisdropped
   `);
 
 /**
  * Every constraint a table carries, foreign keys included — the fold routes those to their own
  * directory. `contype = 'n'` (a NOT NULL recorded as a constraint, Postgres 18) is left out: the
  * column's own `not null` already says it, and reading it would make the dump differ by server.
+ * A constraint a partition holds from its parent — a key's clone (`conparentid`), an inherited
+ * check (`not conislocal`) — is left out too: the parent's own statement recreates it.
  */
 export const constraintRows = (
   client: DbClient,
@@ -136,6 +151,7 @@ export const constraintRows = (
     join pg_class c on c.oid = k.conrelid
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = ${schema} and k.contype in ('p', 'u', 'c', 'x', 'f')
+      and k.conparentid = 0 and k.conislocal
   `);
 
 /** `::text` on every bound: a `bigint` is a string on one driver and a number on the other. */
@@ -164,7 +180,11 @@ export const sequenceRows = (client: DbClient, schema: string): Promise<readonly
     where n.nspname = ${schema} and ${notExtensionOwned('pg_class', 'c.oid')}
   `);
 
-/** Indexes no constraint backs, on a table or a materialized view. */
+/**
+ * Indexes no constraint backs, on a table, a partitioned table or a materialized view. A
+ * partition's index ATTACHED to its parent's (a `pg_inherits` row of its own) is left out: the
+ * parent's index, built on load, builds it.
+ */
 export const indexRows = (client: DbClient, schema: string): Promise<readonly IndexRow[]> =>
   client.query<IndexRow>(sql`
     select
@@ -176,9 +196,10 @@ export const indexRows = (client: DbClient, schema: string): Promise<readonly In
     join pg_class t on t.oid = x.indrelid
     join pg_namespace n on n.oid = t.relnamespace
     where n.nspname = ${schema}
-      and t.relkind in ('r', 'm')
+      and t.relkind in ('r', 'm', 'p')
       and not exists (
         select 1 from pg_constraint k
         where k.conindid = x.indexrelid and k.contype in ('p', 'u', 'x')
       )
+      and not exists (select 1 from pg_inherits h where h.inhrelid = x.indexrelid)
   `);

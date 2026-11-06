@@ -101,21 +101,22 @@ describe('dbDiagnostics', () => {
     const client = recordingClient();
     await dbDiagnostics({ client });
     const expected = [
-      [
-        'BEGIN READ ONLY',
-        `SET LOCAL statement_timeout = ${DIAGNOSTICS_TIMEOUT_MS}`,
-        'select 1',
-        'ROLLBACK',
-      ],
+      ['BEGIN READ ONLY', 'select set_config($1, $2, true)', 'select 1', 'ROLLBACK'],
       ...SECTIONS.map((statement) => [
         'BEGIN READ ONLY',
-        `SET LOCAL statement_timeout = ${DIAGNOSTICS_TIMEOUT_MS}`,
+        'select set_config($1, $2, true)',
         squash(`DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR ${statement}`),
         `FETCH FORWARD ${DIAGNOSTICS_LIMIT} FROM ultimate_read_cursor`,
         'ROLLBACK',
       ]),
     ].flat();
     expect(client.texts).toEqual(expected);
+    const bounds = client.statements.filter((s) => s.text.startsWith('select set_config'));
+    expect(bounds.map((s) => s.values)).toEqual(
+      expected
+        .filter((text) => text.startsWith('select set_config'))
+        .map(() => ['statement_timeout', String(DIAGNOSTICS_TIMEOUT_MS)]),
+    );
   });
 
   test('limit is the cursor fetch, and a limit that is not a count is refused unsent', async () => {

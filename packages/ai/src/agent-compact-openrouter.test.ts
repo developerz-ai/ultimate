@@ -48,6 +48,8 @@ function openRouter(reads: number): Sent[] {
         usage,
       });
     }
+    // A loop turn reports no prompt: the measured ratio stays 1, so the trigger is the estimate's.
+    const reported = { ...usage, prompt_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } };
     turns += 1;
     const call =
       turns <= reads
@@ -63,7 +65,7 @@ function openRouter(reads: number): Sent[] {
           finish_reason: 'tool_calls',
         },
       ],
-      usage,
+      usage: reported,
     });
   };
   resetAiRuntime();

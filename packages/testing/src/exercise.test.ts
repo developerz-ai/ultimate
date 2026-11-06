@@ -34,6 +34,8 @@ const writer: SeedWriter = {
     else await driver.repo(notes).insert(row as never);
   },
   update: async () => undefined,
+  // The write half reads nothing here: `tenant-proof.test.ts` proves it on a real store.
+  snapshot: async (rows) => rows.map(() => 'unchanged'),
 };
 const roles = (tenant: string): readonly NamedActor[] => [
   { name: 'anonymous', actor: null },

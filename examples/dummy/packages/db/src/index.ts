@@ -28,6 +28,8 @@ export type { RunEvent, RunEventKind } from './schema/run-events';
 export { RUN_EVENT_KINDS, RUN_EVENT_MESSAGE_MAX, RunUsage, runEvents } from './schema/run-events';
 export type { Run, RunStatus } from './schema/runs';
 export { LIVE_RUN_STATUSES, RUN_IDENT_MAX, RUN_STATUSES, runs } from './schema/runs';
+export type { StreamCursor } from './schema/stream-cursors';
+export { STREAM_NAME_MAX, streamCursors } from './schema/stream-cursors';
 export type { WebhookDelivery } from './schema/webhook-deliveries';
 export {
   WEBHOOK_ERROR_MAX,

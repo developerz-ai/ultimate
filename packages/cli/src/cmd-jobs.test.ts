@@ -24,6 +24,7 @@ describe('unit · x jobs spec', () => {
       'cancel',
       'delete',
       'promote',
+      'resolve-step',
       'pause',
       'resume',
       'drain',
@@ -32,7 +33,18 @@ describe('unit · x jobs spec', () => {
     expect(jobsCommand.spec.name).toBe('jobs');
     expect(jobsCommand.spec.requiresApp).toBe(true);
     expect(jobsCommand.spec.flags?.map((flag) => flag.name).sort()).toEqual(
-      ['after', 'from-step', 'limit', 'name', 'queue', 'reason', 'state'].sort(),
+      [
+        'after',
+        'from-step',
+        'limit',
+        'name',
+        'not-ran',
+        'output',
+        'queue',
+        'ran',
+        'reason',
+        'state',
+      ].sort(),
     );
   });
 });

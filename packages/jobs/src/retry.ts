@@ -86,6 +86,32 @@ export function isFinalAttempt(policy: RetryPolicy, attempt: number): boolean {
   return attempt >= policy.attempts;
 }
 
+/**
+ * The attempts a `compensates: true` job is ENQUEUED with past its policy's own: room for the
+ * claim to re-offer a row whose lease lapsed on the final attempt, so its compensators still run.
+ * `isFinalAttempt` keeps reading the policy, so the body's `finalAttempt` and the retry decision
+ * are unchanged; only the row's `max_attempts` — what the claim buries by — carries the margin.
+ */
+export const UNWIND_MARGIN = 2;
+
+/** `max_attempts` for a row of this job: the policy's, plus `UNWIND_MARGIN` when it compensates. */
+export function enqueuedAttempts(policy: RetryPolicy, compensates: boolean): number {
+  return compensates ? policy.attempts + UNWIND_MARGIN : policy.attempts;
+}
+
+/**
+ * An attempt past the policy's last: only a `compensates` job reaches one, and only by the claim
+ * re-offering a lapsed lease. It unwinds — it never runs forward — whatever its steps say.
+ */
+export function isUnwindAttempt(policy: RetryPolicy, attempt: number): boolean {
+  return attempt > policy.attempts;
+}
+
+/** The last attempt an unwind may take: past it, a failing compensator is dead-lettered. */
+export function isFinalUnwindAttempt(policy: RetryPolicy, attempt: number): boolean {
+  return attempt >= policy.attempts + UNWIND_MARGIN;
+}
+
 /** The one place that decides retry vs dead-letter. Drivers never re-derive this. */
 export function nextRetry(policy: RetryPolicy, attempt: number, random?: Random): RetryDecision {
   if (isFinalAttempt(policy, attempt)) {

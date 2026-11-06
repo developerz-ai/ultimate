@@ -31,7 +31,11 @@ const collecting = (): { writer: SeedWriter; rows: SeedRow[] } => {
   const rows: SeedRow[] = [];
   return {
     rows,
-    writer: { insert: async (row) => void rows.push(row), update: async () => undefined },
+    writer: {
+      insert: async (row) => void rows.push(row),
+      update: async () => undefined,
+      snapshot: async (asked) => asked.map(() => null),
+    },
   };
 };
 
@@ -79,6 +83,7 @@ describe(testName('unit', 'seedPass'), () => {
           ? Promise.reject(new TypeError('a trigger said no'))
           : Promise.resolve(),
       update: async () => undefined,
+      snapshot: async (asked) => asked.map(() => null),
     };
     const failure = await failureOf(() => seedPass(entities, writer, { primitives: 1, seed: 1 }));
     expect(isUltimateError(failure) && failure.code).toBe('X_SEED_GRAPH_UNSATISFIED');
@@ -94,6 +99,7 @@ describe(testName('unit', 'seedPass'), () => {
     const writer: SeedWriter = {
       insert: () => Promise.reject(missing),
       update: async () => undefined,
+      snapshot: async (asked) => asked.map(() => null),
     };
     const failure = await failureOf(() => seedPass(entities, writer, { primitives: 1, seed: 1 }));
     expect(failure).toBe(missing);

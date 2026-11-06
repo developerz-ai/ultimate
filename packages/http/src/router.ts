@@ -12,6 +12,7 @@
 // (`X_ROUTE_CONFLICT`) rather than a coin flip.
 import type { Actor, RenderMode } from '@ultimat3/core';
 import type { RequestContext } from './context';
+import { assertRouteCsrf } from './csrf';
 import { routeConflict } from './errors';
 import type { Bucket } from './rate-limit';
 import type { UltimateRequest } from './request';
@@ -120,6 +121,13 @@ export interface RouteMeta {
     request: UltimateRequest,
     ctx: RequestContext,
   ) => Promise<Actor | null> | Actor | null;
+  /**
+   * `'cookieless'`: the `csrf` stage does not judge this route while its caller is anonymous —
+   * an RFC 6749 token, revocation or registration endpoint, client-authenticated or PKCE-bound,
+   * that a cross-origin client is MEANT to POST to. Only with `authenticate` declared
+   * (`X_CONFIG_INVALID` from `httpRouter`), so the app's cookie authenticator never runs here.
+   */
+  readonly csrf?: 'cookieless';
 }
 
 export type RouteHandler = (
@@ -172,6 +180,7 @@ export const httpRouter = (routes: readonly Route[]): RouteTable => {
     // not on the response path — `cacheControl` is total there by design, so the alternative is a
     // log line once per request and a response that quietly falls back to heuristic caching.
     assertRouteCache(route.meta.cache, route.meta.name, route.path);
+    assertRouteCsrf(route.meta, route.path);
     let current = root;
     const segments = pathSegments(route.path);
     for (const [index, segment] of segments.entries()) {

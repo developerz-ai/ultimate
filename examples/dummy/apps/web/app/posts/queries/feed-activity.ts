@@ -15,6 +15,9 @@ export const feedActivity = query({
   input: t.object({ orgId: t.uuid }),
   policy: feedRead,
   cache: { tags: [tag.post], ttlMs: 60_000 },
+  // A count, so the read that grows with the org: it gives up at 2 s, not the web role's 10 s, and
+  // a slow aggregate costs the badge alone. Bounded in a transaction, so it never reads a replica.
+  timeoutMs: 2_000,
   mcp: { expose: true, description: 'How many posts this org has published' },
   sql: ({ orgId }) =>
     from<ActivitySummary>('posts', () => repo.activitySummary(toOrgId(orgId)))

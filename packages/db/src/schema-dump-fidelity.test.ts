@@ -62,21 +62,22 @@ describe('the schema dump · fidelity', () => {
 
   test('a trigger on a relation the dump does not create is named, never filed', async () => {
     await apply(`
-      create table events (id int, k int) partition by range (k);
+      create table base (id int);
+      create table heir () inherits (base);
       create table plain (id int primary key);
       create function noop() returns trigger language plpgsql as $$ begin return new; end $$;
-      create trigger events_touch before insert on events for each row execute function noop();
+      create trigger heir_touch before insert on heir for each row execute function noop();
       create trigger plain_touch before insert on plain for each row execute function noop();
     `);
     const before = await dump();
-    // The plain table's trigger is still rendered; the partitioned one's has no table to load on.
+    // The plain table's trigger is still rendered; the inheritance child's has no table to load on.
     expect(before.map((entry) => entry.path).filter((path) => path.startsWith('09_'))).toEqual([
       '09_triggers/plain.sql',
     ]);
-    expect(await unrendered()).toContain('trigger events_touch on events');
+    expect(await unrendered()).toContain('trigger heir_touch on heir');
 
     await reset();
-    // It threw `X_SCHEMA_DUMP_DRIFT`: `09_triggers/events.sql` named a table no file creates.
+    // It threw `X_SCHEMA_DUMP_DRIFT`: `09_triggers/heir.sql` named a table no file creates.
     await loadSchemaDump({ client, files: before });
   });
 
@@ -95,7 +96,7 @@ describe('the schema dump · fidelity', () => {
     expect(await dump()).toEqual(before);
   });
 
-  test('what the dump cannot spell is named: statistics, forced RLS, storage, an unpopulated view', async () => {
+  test('what the dump cannot spell is named: statistics, storage, an unpopulated view', async () => {
     await apply(`
       create table facts (id int primary key, a int, b text);
       alter table facts enable row level security;
@@ -107,7 +108,8 @@ describe('the schema dump · fidelity', () => {
     `);
     const named = await unrendered();
     expect(named).toContain('extended statistics facts_ab on facts');
-    expect(named).toContain('forced row security facts on facts');
+    // Forced row security is rendered (`10_policies/`), so it is no longer named.
+    expect(named.join('\n')).not.toContain('row security');
     expect(named).toContain('column storage b on facts');
     expect(named).toContain('unpopulated materialized view empty_counts');
     // Only the departures: a default storage and a populated view are what the dump already says.

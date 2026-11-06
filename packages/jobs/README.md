@@ -178,6 +178,15 @@ author has nothing to wrap and the pass opens the scope itself. See the backfill
 Omitting the field is a type error, and
 `X_JOB_TENANT_REQUIRED` for generated code and JS callers.
 
+**The declared tenant is checked at the enqueue.** A payload whose `tenant(input)` names org A,
+enqueued with `tenantId` B — explicitly, or by `.as(actorOfB, …)` — or under an ambient actor of
+org B, is `X_JOB_TENANT_MISMATCH` before anything is staged, on `enqueue` and `enqueueMany`. A row
+already queued that way is refused at its run, terminally, before the body. An actor with no org,
+and `tenant: 'none'`, are never compared. The ambient half has one escape, `@ultimat3/entity`'s:
+inside `crossTenant('<why>', () => onboardOrg.enqueue({ orgId: newOrg }))`, by an actor holding
+`tenancy:cross`, the enqueue is admitted (read through entity's own write guard, re-proved at the
+call). An explicit `tenantId` or `.as()` that contradicts the payload is never admitted.
+
 A single boot-supplied service actor would have closed the same hole with one identity for every
 job in the app — which is a cross-tenant read waiting for the first job that takes an org id in its
 input. The tenant is a fact about the work, so the job declares it.
@@ -187,6 +196,8 @@ input. The tenant is a fact about the work, so the job declares it.
 | Call | Behaviour |
 |---|---|
 | `step.run(name, fn)` | runs once ever; result persisted before the next step starts, and it answers what it persisted: `StepOutput<T>`, the JSON form, on every attempt. `fn` receives an `AbortSignal` |
+| `step.run(name, fn, { compensate })` | `compensate(output, { signal })` undoes it if the run fails FOR GOOD; needs `job({ compensates: true })` |
+| `step.run(name, fn, { once: true })` | at most once: `started` persisted before `fn`; a replay without `completed` is terminal `X_STEP_OUTCOME_UNKNOWN` |
 | `step.sleep(name, '3d')` | suspends the run, requeues it for the wake time |
 | `step.sleep('3d')` | same, step name derived from the duration |
 | `step.waitForEvent(name, event, { schema, match, timeout })` | suspends until `publishEvent()` matches; answers the payload parsed by the required `schema` |
@@ -219,6 +230,49 @@ after it asked.
 again before declaring a timeout, so a worker running ahead of the database still matches an event
 published after it asked and does not give up early. `eventsPurgeTarget(bus)` is the bus as a
 `purge()` target: `purgeExpired()` is awaited and answers the rows it removed.
+
+**A publish wakes its waiters** on `postgresEventBus({ executor, wakes: true })` — what boot
+installs over its own `postgresJobDriver`: `SQL_EVENT_PUBLISH_WAKE` inserts the event, makes every
+`suspended` run with a matching `waiting` step due, and notifies each of their queues, in ONE
+statement (a rollback undoes all three; `x_job_steps_waiting_idx` keeps it a seek). A waiting step
+then parks for `WAKING_EVENT_POLL_MS` (15 min) — the backstop and the timeout's clock — instead of
+`DEFAULT_EVENT_POLL_MS` (30 s), and asks `find` once more after writing `waiting`, so an event
+committed in between is not left to the backstop. A declared `eventPoll` wins.
+
+### Compensation and `once`
+
+```ts
+import { job, t } from '@ultimat3/jobs';
+
+type Order = { readonly orgId: string; readonly orderId: string };
+declare function charge(order: Order): Promise<{ id: string }>;
+declare function refund(chargeId: string): Promise<void>;
+declare function ship(order: Order): Promise<void>;
+declare const vendor: { pay(order: Order): Promise<void> };
+
+export const checkout = job({
+  input: t.object({ orgId: t.uuid, orderId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
+  idempotencyKey: ({ orderId }) => `checkout:${orderId}`,
+  compensates: true,
+  retry: { attempts: 3 },
+  run: async ({ input, step }) => {
+    await step.run('charge', () => charge(input), { compensate: (c) => refund(c.id) });
+    await step.run('ship', () => ship(input));
+    await step.run('payout', () => vendor.pay(input), { once: true });
+  },
+});
+```
+
+| Rule | Behaviour |
+|---|---|
+| when | only once the run fails for good (`!decision.retry`); never a retry, cancel, drain or suspension |
+| order | last-in first-out, each as step `compensate:<name>`, so a replay skips what ran |
+| durable | `unwinding` is written first; any later attempt replays to its first incomplete step (`UnwindReached`) and unwinds — `x jobs retry` too |
+| crash on the final attempt | rows are enqueued with `UNWIND_MARGIN` (2) attempts past `retry.attempts` (`enqueuedAttempts`); the claim re-offers the lapsed row and it unwinds |
+| a compensator throws | handed back while the unwind has attempts; then dead, `X_JOB_COMPENSATION_FAILED` |
+| `once` unknown | `x jobs resolve-step <id> <step> --ran --output '<json>'` or `--not-ran` (`resolveJobStep`), then `x jobs retry <id>` |
+| reserved | `unwinding`, `compensate:*` as a body's step name: `X_JOB_DECLARATION_INVALID` |
 
 Step names are the replay key, so they must be deterministic and unique in a run — a
 duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control flow
@@ -264,6 +318,13 @@ without a statement, and the iteration reopens at the cursor they left behind.
 | `batch` is refused at declaration | `0`, `1.5` and a `NaN` from an env var fail the build, not the fourth attempt |
 | `rate` throttles, and there is no way off | a sweep shares its pool with the requests the app is still serving; to go faster raise the number |
 | the pause is spent **inside** the step | a resumed attempt replays 500 checkpoints and re-pays none of their pauses |
+
+### A remote source, and one pass per scope
+
+`pages: async ({ ctx, cursor, signal, input }) => ({ rows, next })` beside `source` — exactly one
+of the two, or `X_BACKFILL_SOURCE_INVALID`. One page per step, checkpointed `{ cursor, rows: n }`;
+`next: null` ends the pass. `input` + `scope(input)` makes one pass per scope: the ledger row and
+the live idempotency key are `<name>:<scope>`. An `input` with no `scope` is refused.
 
 ### The throttle
 
@@ -391,6 +452,44 @@ surface. That is what makes the `backfill` deploy role a trigger rather than a g
 the new pods serve, puts the sweeps on the queue and exits, and a slow UPDATE never holds a release
 open against a database still serving the previous build. `--all` isolates per name and continues
 past a failure, so one wedged cleanup cannot block every later one forever.
+
+## Consumers are jobs too
+
+`consumer()` reads a queue, a change stream or a vendor's cursor: a factory over `job()` plus a
+`.supervisor` `task()`. One running body per key, `idempotencyKey: consumer:<name>:<key>`, no
+timeout, the cursor saved in the batch's own transaction, the drain honoured.
+
+```ts
+import { consumer } from '@ultimat3/jobs';
+
+interface Order { readonly id: string }
+declare const feed: { since(cursor: string | null, signal: AbortSignal): AsyncIterable<Order> };
+declare function upsertOrders(rows: readonly Order[]): Promise<void>;
+declare const cursors: {
+  of(key: string): Promise<string | null>;
+  save(key: string, next: string): Promise<void>;
+};
+
+export const syncOrders = consumer<Order, string>({
+  name: 'sync-orders',
+  tenant: 'none',
+  keys: () => ['orders'],
+  open: ({ cursor, signal }) => feed.since(cursor, signal),     // the app's AsyncIterable
+  handle: async ({ items }) => {
+    await upsertOrders(items);
+    return items[items.length - 1]?.id ?? '';
+  },
+  cursor: { load: (key) => cursors.of(key), save: (key, next) => cursors.save(key, next) },
+});
+```
+
+| Rule | Why |
+|---|---|
+| `handle` returns the next cursor; the framework saves it in the same `withTransaction` | cursor and effect commit together or not at all |
+| `.supervisor` (`<name>.supervisor`, every `rearm`, UTC) enqueues `<name>.arm`, which enqueues each of `keys()` | a live key's re-arm is deduped; a settled or dead one restarts from its saved cursor |
+| a self-`.enqueue` from inside the run is `X_CONSUMER_SELF_ENQUEUE` | it would dedupe onto the running row and arm nothing |
+| no `cursor`, a `timeout`, a bad `batch` or `rearm` is `X_CONSUMER_INVALID` | refused at declaration |
+| at least once per item | a drained or failed batch is delivered again: `handle` is idempotent per item |
 
 ## Retention sweeps are jobs too
 
@@ -760,7 +859,8 @@ them, so no `job()` could ask for either):
 |---|---|---|
 | `timeout` | the whole attempt — aborts `ctx.signal`, then fails it | no attempt deadline |
 | `stepTimeout` | ONE `step.run` — aborts that step's signal, then fails the step | no per-step ceiling |
-| `eventPoll` | how long a `step.waitForEvent` (its `schema` required) parks between polls | 30s |
+| `eventPoll` | how long a `step.waitForEvent` (its `schema` required) parks between polls | 30s; 15 min on a waking bus |
+| `compensates` | `step.run(…, { compensate })` is legal; rows carry `UNWIND_MARGIN` more attempts | false |
 
 A zero or negative `stepTimeout` / `eventPoll` is refused at declaration, the way `concurrency: 0`
 is: `withStepTimeout` reads `<= 0` as "no ceiling at all", which is the opposite of what the author

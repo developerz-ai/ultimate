@@ -232,6 +232,13 @@ async function guardNavigation(url: string, ctx: PageContext): Promise<void> {
 export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePage {
   const state: PageState = { tainted: false };
   const frame = frameOver(() => Promise.resolve(target), ctx, state, target.url());
+  // The page-level verbs hold their target rather than resolving it, so they skip `watched()` —
+  // and a minutes-long capture or cookie read then looked like a dead browser to the watchdog.
+  // Every one that reaches the browser goes through this instead.
+  const reported = (): ScrapeTarget => {
+    ctx.onActivity?.();
+    return target;
+  };
   const capture = async (
     kind: 'screenshot' | 'pdf',
     options: CaptureRequest | undefined,
@@ -248,7 +255,8 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
       fullPage: options?.fullPage,
       ...(options?.clip === undefined ? {} : { clip: options.clip }),
     };
-    return kind === 'screenshot' ? target.screenshot(request) : target.pdf(request);
+    const reached = reported();
+    return kind === 'screenshot' ? reached.screenshot(request) : reached.pdf(request);
   };
   return {
     ...frame,
@@ -274,24 +282,30 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     // party implements, and a driver that THROWS from its promise-typed `download()` would escape
     // past this page's caller `.catch()` if the forward were a bare arrow.
     async download(options?: DownloadRequest): Promise<ScrapeDownloadFile> {
-      return await target.download({ timeoutMs: options?.timeout ?? ctx.defaultTimeoutMs });
+      return await reported().download({ timeoutMs: options?.timeout ?? ctx.defaultTimeoutMs });
     },
     // `async`, for `download()`'s reason: `ScrapeTarget` is the seam a third party implements, and
     // a driver that throws synchronously from a promise-typed method would escape `.catch()`.
     async offline(enabled: boolean): Promise<void> {
-      await target.setOfflineMode(enabled);
+      await reported().setOfflineMode(enabled);
     },
     // `async`, for `offline()`'s reason: a driver that throws synchronously from a promise-typed
     // method would escape the caller's `.catch()`.
     async colorScheme(scheme: ColorScheme): Promise<void> {
-      await target.setColorScheme(scheme);
+      await reported().setColorScheme(scheme);
     },
     // `async`, for `offline()`'s reason.
     async prepare(expression: string): Promise<void> {
-      await target.prepare(expression);
+      await reported().prepare(expression);
     },
-    cookies: (): Promise<readonly ScrapeCookie[]> => target.cookies(),
-    session: () => target.session(),
+    cookies: (): Promise<readonly ScrapeCookie[]> => reported().cookies(),
+    session: () => reported().session(),
+    // The app's own statement that work is happening on a channel this page cannot see — its own
+    // CDP session, a long warm-up. The watchdog's clock only: no usage is counted, because no
+    // navigation or request was made through the framework.
+    activity: (): void => {
+      ctx.onActivity?.();
+    },
     // Redacted BY VALUE on the way out, the same pass `html()` makes. A console line and a request
     // URL are two of the four surfaces `secrets.ts` names, and neither had a redaction caller: a
     // login endpoint fetched with the password in its query string, or a site that logs the

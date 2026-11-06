@@ -38,6 +38,9 @@ describe('tableOf', () => {
     replica_identity: 'd',
     replica_index: null,
     options: null,
+    partition_key: null,
+    partition_of: null,
+    partition_bound: null,
     ...overrides,
   });
   const column = (

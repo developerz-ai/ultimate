@@ -158,4 +158,6 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_ORIGIN_REFUSED: 403,
   // @ultimat3/mcp — an MCP request named a Host that is not this machine
   X_MCP_HOST_REFUSED: 421,
+  // @ultimat3/ai — a provider refused a request as longer than the model context window
+  X_AI_CONTEXT_OVERFLOW: 500,
 } satisfies Readonly<Record<string, number>>;

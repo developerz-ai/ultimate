@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "30f199fded3500c7434f384c74cef14297430e1ae2f23d880da51d1119270f3c",
+  "buildId": "1d8eea93cda68592ba975f6efb303276d611e74bc544eb292ccdb90e57593e72",
   "tiers": {
     "0": [
       "core",
@@ -445,6 +445,11 @@
       "at": "packages/ai/src/error-codes.ts"
     },
     {
+      "code": "X_AI_CONTEXT_OVERFLOW",
+      "owner": "ai",
+      "at": "packages/ai/src/error-codes.ts"
+    },
+    {
       "code": "X_AI_EMBEDDER_INVALID",
       "owner": "ai",
       "at": "packages/ai/src/error-codes.ts"
@@ -575,12 +580,27 @@
       "at": "packages/action/src/error-titles.ts"
     },
     {
+      "code": "X_AUTH_CONSENT_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_AUTH_GRANT_DISABLED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
       "code": "X_AUTH_LIMITER_NOT_SHARED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },
     {
       "code": "X_AUTH_LIMITER_POLICY_MISMATCH",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_AUTH_SERVER_INVALID",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },
@@ -623,6 +643,11 @@
       "code": "X_BACKFILL_SLICE_ENTITY",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_BACKFILL_SOURCE_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
     },
     {
       "code": "X_BACKFILL_STALLED",
@@ -1025,6 +1050,16 @@
       "at": "scripts/config-readers.ts"
     },
     {
+      "code": "X_CONSUMER_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_CONSUMER_SELF_ENQUEUE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
       "code": "X_CONTRACT_DEFECT",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
@@ -1235,6 +1270,16 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_DB_ROW_SECURITY_BYPASSED",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_DB_ROW_SECURITY_DRIFT",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_DB_SCHEMA_STALE",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -1256,6 +1301,11 @@
     },
     {
       "code": "X_DB_SIBLING_SCOPE_TIMEOUT",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_DB_STATEMENT_BOUND_INVALID",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },
@@ -2315,6 +2365,11 @@
       "at": "packages/jobs/src/error-codes.ts"
     },
     {
+      "code": "X_JOB_COMPENSATION_FAILED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
       "code": "X_JOB_CONCURRENCY_UNENFORCEABLE",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
@@ -2901,6 +2956,11 @@
     },
     {
       "code": "X_MIGRATION_CONCURRENT_IN_TRANSACTION",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_CONCURRENT_PARTITIONED",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },
@@ -3505,6 +3565,11 @@
       "at": "packages/query/src/errors.ts"
     },
     {
+      "code": "X_QUERY_ETAG_INVALID",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_FOREIGN",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
@@ -3558,6 +3623,11 @@
       "code": "X_QUERY_SUBSCRIBES_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_QUERY_TIMEOUT_INVALID",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
     },
     {
       "code": "X_QUERY_UNREGISTERED",
@@ -4590,6 +4660,16 @@
       "at": "packages/jobs/src/error-codes.ts"
     },
     {
+      "code": "X_STEP_NOT_RESOLVABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_STEP_OUTCOME_UNKNOWN",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
       "code": "X_STEP_OUTPUT_UNSERIALIZABLE",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
@@ -4793,6 +4873,16 @@
       "code": "X_TENANCY_UNSCOPED",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_TENANT_LEAK",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TENANT_WRITE_CROSSED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_TEST_APP_NOT_BOOTED",
@@ -5298,6 +5388,16 @@
       "code": "X_VECTOR_UNSCOPED",
       "owner": "ai",
       "at": "packages/ai/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFICATION_PURPOSE_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_VERIFICATION_PURPOSE_UNKNOWN",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
     },
     {
       "code": "X_VERIFY_FAILED",

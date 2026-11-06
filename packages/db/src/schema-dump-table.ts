@@ -49,19 +49,34 @@ function columnClause(column: CatalogColumn): string {
 }
 
 /**
+ * `create table`, or for a partition `create table … partition of <parent> [(constraints)] <bound>`
+ * — a partition's columns are its parent's, so only the constraints it holds of its own are
+ * spelled. `partition by` follows either on a partitioned table, Postgres' clause order.
+ */
+function createTable(table: CatalogTable): string {
+  const name = quoted(table.name);
+  const head = table.unlogged ? 'create unlogged table' : 'create table';
+  const by = table.partitionBy === undefined ? '' : ` partition by ${table.partitionBy}`;
+  const options = table.options === null ? '' : ` with (${table.options})`;
+  const constraints = table.constraints.map((line) => `  ${constraintClause(line)}`);
+  if (table.partitionOf !== undefined) {
+    const { table: parent, bound } = table.partitionOf;
+    const body = constraints.length === 0 ? '' : ` (\n${constraints.join(',\n')}\n)`;
+    return `${head} ${name} partition of ${quoted(parent)}${body} ${bound}${by}${options};`;
+  }
+  const body = [...table.columns.map((column) => `  ${columnClause(column)}`), ...constraints];
+  return [`${head} ${name} (`, body.join(',\n'), `)${by}${options};`].join('\n');
+}
+
+/**
  * The statements of one table, in the order they must run: a `serial` column's default names its
  * sequence, so the sequence comes first and is handed to the column only once the table exists.
  */
 export function tableStatements(table: CatalogTable): readonly string[] {
   const name = quoted(table.name);
-  const body = [...table.columns.map(columnClause), ...table.constraints.map(constraintClause)].map(
-    (line) => `  ${line}`,
-  );
-  const head = table.unlogged ? 'create unlogged table' : 'create table';
-  const tail = table.options === null ? ');' : `) with (${table.options});`;
   const statements = [
     ...table.sequences.map(createSequence),
-    [`${head} ${name} (`, body.join(',\n'), tail].join('\n'),
+    createTable(table),
     ...table.sequences.map(
       (sequence) =>
         `alter sequence ${quoted(sequence.name)} owned by ${name}.${quoted(sequence.column)};`,

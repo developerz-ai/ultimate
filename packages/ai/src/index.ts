@@ -8,6 +8,7 @@ export { agent } from './agent';
 export type { AgentCompaction, AgentCompactOption, AgentCompactRule } from './agent-compact-def';
 export type {
   AgentAction,
+  AgentCheckpoint,
   AgentContinuation,
   AgentRun,
   AgentTranscript,
@@ -81,6 +82,7 @@ export {
 } from './content-blocks';
 export type { ContentRefusal } from './content-errors';
 export { AiContentUnsupportedError } from './content-errors';
+export { AiContextOverflowError } from './context-overflow';
 export { COST_SCALE_DIGITS, costScale, exactCostOf, roundUpCost } from './cost';
 export type { EchoProvider, EchoProviderInput } from './echo-provider';
 export { echoProvider } from './echo-provider';

@@ -6,6 +6,7 @@
 import { assert, finiteCount, nanoid } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { DbError, serializationExhausted } from './errors';
+import { setLocal } from './local-settings';
 import { createTurnQueue, type TurnQueue } from './pglite-turns';
 import { markScopeWrote } from './replica-scope';
 import { SIBLING_SCOPE_WAIT_MS, siblingTurn } from './sibling-turn';
@@ -15,6 +16,7 @@ import { serializationRetryDelayMs } from './transaction-backoff';
 import { commitUnknown, siblingScopeTimeout, transactionAborted } from './transaction-errors';
 import { refuseAbandoned, refuseIfFinished, storage, type TxMark } from './transaction-guard';
 import { beginStatement, type DbTx, type TransactionOptions } from './transaction-options';
+import { transactionSettings } from './transaction-settings';
 
 export interface TxState {
   readonly tx: DbTx;
@@ -322,6 +324,9 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
   let commitSent = false;
   try {
     await connection.execute(raw(beginStatement(options)));
+    // Row security's tenant, local to this transaction: inside the BEGIN, so it ends with it.
+    const settings = transactionSettings();
+    if (settings !== undefined) await setLocal(connection, settings);
     const result = await storage.run(state, () => fn(tx));
     // Refused before the COMMIT is sent: the server would answer it `ROLLBACK` with no error. The
     // funnels read that tag too (`commit-tag.ts`), for an abort this scope's handle never saw.

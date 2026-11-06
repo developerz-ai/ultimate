@@ -17,16 +17,11 @@
 // what a database is.
 
 import type { DbClient, PoolProfile, PostgresClient } from '@ultimat3/db';
-import {
-  POOLER_ENV,
-  postgresClient,
-  REPLICA_URL_ENV,
-  replicatedClient,
-  withReplicaReads,
-} from '@ultimat3/db';
+import { POOLER_ENV, postgresClient, REPLICA_URL_ENV, replicatedClient } from '@ultimat3/db';
 import type { Middleware } from '@ultimat3/http';
 import type { ServiceBinding } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
+import { positionStage } from './runtime-replica-position';
 
 export type ReplicaEnv = Readonly<Record<string, string | undefined>>;
 
@@ -82,13 +77,17 @@ export function attachReplica(
  * every later read in it to the primary, which is what read-your-writes means. `compose()` wraps
  * each route handler, and every read and write a request makes happens inside one.
  *
+ * The same frame carries read-your-writes ACROSS requests: the position a write produced goes back
+ * as a cookie and a header, and the next request's reads wait for a replica that has replayed it
+ * (`runtime-replica-position.ts`).
+ *
  * EMPTY when no replica is configured, and that is the whole cost argument: a homework app
  * installs no middleware, allocates no scope object and enters no `AsyncLocalStorage` run per
  * request. With one configured, the list is a single frame.
  */
 export function replicaMiddleware(binding: ServiceBinding, env: ReplicaEnv): readonly Middleware[] {
   if (replicaUrlFor(binding, env) === undefined) return [];
-  return [(request, ctx, next) => withReplicaReads(() => next(request, ctx))];
+  return [positionStage()];
 }
 
 /**

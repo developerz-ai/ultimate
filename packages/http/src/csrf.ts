@@ -40,6 +40,11 @@ export interface CsrfCheckInput {
    * evidence is judged exactly as a credentialed one. See `checkCsrf` for the one thing it buys.
    */
   readonly anonymous: boolean;
+  /**
+   * The route declared `meta.csrf: 'cookieless'` (and so its own authenticator). Exempt only
+   * while `anonymous`: a caller that something DID authenticate is judged as any other.
+   */
+  readonly cookieless?: boolean | undefined;
   readonly cors: CorsConfig;
   readonly config: CsrfConfig;
 }
@@ -65,6 +70,9 @@ export const checkCsrf = (input: CsrfCheckInput): CsrfVerdict => {
   if (SAFE_METHODS.has(input.method)) return { ok: true };
   if (input.hasAuthorizationHeader) return { ok: true };
   if (input.anonymous && input.origin === null && input.secFetchSite === null) return { ok: true };
+  // No cookie can make this request anyone's, and no cookie is minted by it: a cross-origin
+  // client posting a code and its verifier is the endpoint's whole purpose, not a forgery.
+  if (input.anonymous && input.cookieless === true) return { ok: true };
 
   // The rule itself is core's, shared with the sync node's upgrade: one answer to "did this
   // come from this app?" on every surface an ambient credential reaches.
@@ -113,3 +121,21 @@ export const csrfBlocked = (
         cause: `${pathname} refused a write it could not show came from this app: ${reason}`,
         fix: "call it with an Authorization header instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
       });
+
+/**
+ * `meta.csrf: 'cookieless'` is a claim about the route's credential, so it holds only where the
+ * route names that credential itself: without `meta.authenticate` the app's cookie authenticator
+ * runs there, and the exemption would wave through the forged write this stage exists to refuse.
+ */
+export const assertRouteCsrf = (
+  meta: { readonly name: string; readonly csrf?: 'cookieless'; readonly authenticate?: unknown },
+  path: string,
+): void => {
+  if (meta.csrf !== 'cookieless' || meta.authenticate !== undefined) return;
+  throw new HttpError({
+    code: 'X_CONFIG_INVALID',
+    cause: `route ${meta.name} (${path}) declares csrf: 'cookieless' but no meta.authenticate, so the app's configureAuthenticator() — the session cookie — still decides who calls it`,
+    fix: `meta: { csrf: 'cookieless', authenticate: () => null }   # on the route declaring ${meta.name}, or its own non-cookie credential; or drop csrf: 'cookieless'`,
+    meta: { route: meta.name, path, option: 'csrf' },
+  });
+};

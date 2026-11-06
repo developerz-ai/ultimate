@@ -8,7 +8,6 @@
 import type { Actor, Ctx } from '@ultimat3/core';
 import { runWithContext } from '@ultimat3/core';
 import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
-import type { BackfillInput } from './backfill';
 import type { JobTenant } from './tenant';
 import { NO_JOB_TENANT } from './tenant';
 
@@ -55,7 +54,7 @@ const withCrossTenant = (actor: Actor): Actor =>
  */
 export function withBackfillScope<T>(
   name: string,
-  tenant: JobTenant<BackfillInput>,
+  tenant: JobTenant<never>,
   ctx: Ctx,
   pass: (ctx: Ctx) => Promise<T>,
 ): Promise<T> {

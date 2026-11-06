@@ -1,6 +1,6 @@
 // Single responsibility: the refusals a MIGRATION earns — the lock it could not take, a ledger that
 // disagrees with this build, a plan that cannot be reversed, a plan that destroys rows without
-// saying so, a snapshot that was never written, and a view standing in a retype's way. Split out of
+// saying so, a snapshot never written, a view in a retype's way, a concurrent build. Split out of
 // `errors.ts` only because that file reached the 500-line ceiling, exactly as `invariant-errors.ts`
 // was: every code below is still declared, titled and registered there, and `DbError` is still the
 // one class. One direction only — nothing here is imported back.
@@ -175,4 +175,30 @@ export const migrationConcurrentInTransaction = (id: string, statement: string):
     // one the shell-argument screen cannot tell from caller input.
     fix: `sed -i '1i -- transaction: false' packages/db/migrations/${renderFixShellArg(id, '<id>')}.sql   # before it is applied — or move the statement into a migration of its own`,
     meta: { id },
+  });
+
+/**
+ * A concurrent index build on a PARTITIONED parent, which Postgres refuses (`0A000`) — reached as
+ * a bare `X_DB_STATEMENT_FAILED` that named the refusal and not the sequence that replaces it.
+ * `sourceError` keeps the server's own error, SQLSTATE included. The sequence is pg_dump's: each
+ * partition built concurrently, the parent's index `on only` (instant, no rows), then attached.
+ */
+export const migrationConcurrentPartitioned = (
+  id: string,
+  statement: string,
+  sourceError: unknown,
+): DbError =>
+  new DbError({
+    code: 'X_MIGRATION_CONCURRENT_PARTITIONED',
+    cause:
+      `migration "${id}" builds an index concurrently on a partitioned table, which Postgres ` +
+      `refuses (0A000): ${statementExcerpt(statement)}`,
+    // Three pieces, each opening with the statement it is: the parent's index is attached to,
+    // never built over, so `on only` is instant and valid once every partition's is attached.
+    fix:
+      'CREATE INDEX CONCURRENTLY <index>_<partition> ON <partition> (<columns>);   # per partition, then ' +
+      'CREATE INDEX <index> ON ONLY <parent> (<columns>);   # then, per partition, ' +
+      'ALTER INDEX <index> ATTACH PARTITION <index>_<partition>;   # in a -- transaction: false migration',
+    meta: { id, sqlState: '0A000' },
+    sourceError,
   });

@@ -143,6 +143,11 @@ export const SCREENING_CALLEES: readonly FiniteScreen[] = [
     screens:
       'render/src/finite-status.ts — an HTTP status, which new Response() throws a RangeError on',
   },
+  {
+    callee: 'lifetimeSeconds',
+    screens:
+      'auth/src/authorization-server-config.ts — a token lifetime, Number.isSafeInteger and at least 1',
+  },
 ];
 
 /**

@@ -83,7 +83,7 @@ asserts the order. Ordering rules worth restating:
 |---|---|
 | admit second | a stopped or saturated process refuses before any work — no route match, no auth, no body; a DRAINING one serves and closes the connection |
 | auth before rate-limit | limiter keys per actor/tenant, not per NAT address. A request that FAILS `auth: 'required'` leaves here, so this stage spends `rateLimit.defaultBucket` for it under `unauthenticated\|ip:<address>` — one key per address across every route, the bearer mount's bad tokens included; a signed-in caller behind that address spends nothing from it |
-| csrf after auth | it has to know who is calling: a bearer caller is exempt (not ambient); an anonymous write is judged like a signed-in one once it carries `Origin` or `sec-fetch-site`, because a forged sign-in lands the visitor in the attacker's account. Anonymous with neither header — a webhook, a server-to-server call — passes |
+| csrf after auth | it has to know who is calling: a bearer caller is exempt (not ambient); an anonymous write is judged like a signed-in one once it carries `Origin` or `sec-fetch-site`, because a forged sign-in lands the visitor in the attacker's account. Anonymous with neither header — a webhook, a server-to-server call — passes. A route declaring `meta.csrf: 'cookieless'` (an RFC 6749 token endpoint) passes an anonymous caller; it needs its own `meta.authenticate`, or `httpRouter` refuses it `X_CONFIG_INVALID` |
 | csrf before body | a forged write never makes the server allocate its payload |
 | rate-limit before body | a limited request never allocates its payload |
 | body before authz | policies take parsed input as their subject |

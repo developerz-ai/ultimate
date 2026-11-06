@@ -10,6 +10,7 @@ import { setStatementObserver } from '@ultimat3/db';
 import type { OverlayNotice, RequestContext } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import { loadSignInPath } from './app-auth';
+import { loadAppConfig } from './app-config-load';
 import { appManifest } from './app-manifest';
 import type { StalePin } from './app-reload-graph';
 import { enableReloadTracking } from './app-reload-graph';
@@ -29,6 +30,7 @@ import type { Finding } from './output';
 import { plainRoutes } from './plain-routes';
 import type { RunningRoles } from './role-start';
 import { DEV_ROLES, startRoles } from './role-start';
+import { armRowSecurity, rowSecurityDeclared } from './row-security-boot';
 import type { DevServices } from './runtime-bindings';
 import { resolveServices, withRealtimeEvents } from './runtime-bindings';
 import { attachedIsr } from './runtime-isr';
@@ -176,6 +178,10 @@ async function bootDev(
     appFindings: app.findings,
     islands: await buildIslands(options.root),
   };
+  // `serve-boot.ts`'s guard, at its point: after the app's modules, before any role serves. On
+  // PGlite the boot serves as `x_app`; on an external database a role that bypasses is refused.
+  const declared = rowSecurityDeclared(await loadAppConfig(options.root));
+  acquired.push(await armRowSecurity(declared, { embedded: services.db.mode === 'embedded' }));
   // The manifest's build id is a content hash of every fact below it, so a dev document's
   // `x-ultimate-build` header names the exact shape the client was served against. Pinned at
   // boot on purpose: the header is handed to the HTTP config and the render modes once, and a

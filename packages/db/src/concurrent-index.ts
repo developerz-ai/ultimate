@@ -5,6 +5,7 @@
 
 import { hasMarkerLine } from './marker-line';
 import { IDENTIFIER_CHAR, noiseAt } from './sql-scan';
+import { sqlState } from './sqlstate';
 import { statementsOf } from './statement-split';
 
 /**
@@ -99,6 +100,25 @@ export function isConcurrentIndexStatement(statement: string): boolean {
   }
   if (first === 'drop') return second === 'index' && third === 'concurrently';
   return first === 'reindex' && reindexIsConcurrent(statement);
+}
+
+/** `feature_not_supported` — what Postgres answers a concurrent build on a partitioned parent. */
+const FEATURE_NOT_SUPPORTED = '0A000';
+
+/**
+ * Whether `error` is Postgres refusing THIS statement as a concurrent build on a partitioned table:
+ * a `create [unique] index concurrently` answered `0A000`. Read off the SQLSTATE, never the
+ * message, which follows the server's `lc_messages`. `migration-step.ts` turns it into
+ * `X_MIGRATION_CONCURRENT_PARTITIONED`, whose fix is the sequence that replaces the build.
+ */
+export function isPartitionedBuildRefusal(statement: string, error: unknown): boolean {
+  const [first, second, third, fourth] = leadingTokens(statement, 4).map((token) => token.word);
+  const build =
+    first === 'create' &&
+    (second === 'unique'
+      ? third === 'index' && fourth === 'concurrently'
+      : second === 'index' && third === 'concurrently');
+  return build && sqlState(error) === FEATURE_NOT_SUPPORTED;
 }
 
 /** The values that switch a boolean `REINDEX` option OFF — Postgres' own spellings of false. */

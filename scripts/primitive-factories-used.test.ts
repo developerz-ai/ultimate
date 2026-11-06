@@ -103,6 +103,9 @@ describe('unit · the use scan itself can fail', () => {
     const counts = (body: string): boolean => usesFactory(imported + body, 'hive', '@ultimat3/ai');
     expect(counts('export const fan = hive({});')).toBe(true);
     expect(counts('export const fan: Action<I, O> = hive({});')).toBe(true);
+    // Explicit type arguments are still the call (`consumer<VendorPrice, number>({ … })`).
+    expect(counts('export const fan = hive<In, Out>({});')).toBe(true);
+    expect(counts('export const fan = hive<Map<K, V>>({});')).toBe(true);
     // A call spelled inside a string or a template literal.
     expect(counts("const s = 'export const fan = hive({})';")).toBe(false);
     expect(counts('const s = `\nexport const fan = hive({})\n`;')).toBe(false);

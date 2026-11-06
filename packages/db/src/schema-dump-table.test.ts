@@ -114,3 +114,36 @@ describe('tableStatements', () => {
     expect(last({ kind: 'default' })).toStartWith('create table');
   });
 });
+
+describe('a partitioned table and its partitions', () => {
+  test('the parent is an ordinary `create table` with `partition by` after its columns', () => {
+    expect(tableStatements(table({ name: 'events', partitionBy: 'RANGE (at)' }))).toEqual([
+      'create table "events" (\n  "id" uuid not null\n) partition by RANGE (at);',
+    ]);
+  });
+
+  test('a partition names its parent and bound, never the columns it holds of the parent', () => {
+    const partition = table({
+      name: 'events_2026_11',
+      partitionOf: { table: 'events', bound: "FOR VALUES FROM ('2026-11-01') TO ('2026-12-01')" },
+    });
+    expect(tableStatements(partition)).toEqual([
+      'create table "events_2026_11" partition of "events" ' +
+        "FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');",
+    ]);
+  });
+
+  test('a sub-partitioned partition carries its own key; its own constraint rides in parentheses', () => {
+    const partition = table({
+      name: 'events_2026_12',
+      partitionOf: { table: 'events', bound: 'DEFAULT' },
+      partitionBy: 'LIST (kind)',
+      constraints: [{ name: 'only_known', definition: "CHECK ((kind <> ''::text))" }],
+    });
+    expect(tableStatements(partition)).toEqual([
+      'create table "events_2026_12" partition of "events" (\n' +
+        `  constraint "only_known" CHECK ((kind <> ''::text))\n` +
+        ') DEFAULT partition by LIST (kind);',
+    ]);
+  });
+});

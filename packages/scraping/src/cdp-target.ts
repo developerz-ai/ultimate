@@ -91,6 +91,13 @@ const isStructuralRefusal = (thrown: unknown): boolean =>
  */
 export interface CdpTargetInit extends CdpArmInit {
   readonly browser: CdpBrowserLike;
+  /**
+   * Why the session was ended from OUTSIDE the call, if it was — the fired wedge guard's reason.
+   * A thunk, because the guard is built after the target. Read before a failure is re-labelled:
+   * the fire closes the socket, so a call pending on it rejects, and that rejection is the fire's
+   * consequence. Labelled `X_SCRAPE_BROWSER_UNREACHABLE` it hides the cause and its fix.
+   */
+  readonly ended?: (() => unknown) | undefined;
 }
 
 export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
@@ -141,6 +148,8 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     try {
       return await run();
     } catch (thrown) {
+      const ended = init.ended?.();
+      if (ended !== undefined) throw ended;
       live();
       if (isStructuralRefusal(thrown)) throw thrown;
       throw browserUnreachable(`${CDP_DRIVER} ${what}`, thrown);

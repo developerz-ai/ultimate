@@ -9,9 +9,11 @@
 import { SQL_AUDIT_TABLE, SQL_IDEMPOTENCY_TABLE } from '@ultimat3/action';
 import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from '@ultimat3/admin/schema';
 import {
+  AUTH_SERVER_TABLES,
   AUTH_TABLE_NAMES,
   AUTH_TABLES,
   SQL_AUTH_LIMIT_TABLES,
+  SQL_AUTH_SERVER_TABLES,
   SQL_TOTP_REPLAY_TABLE,
 } from '@ultimat3/auth';
 import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
@@ -112,6 +114,16 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/auth',
     tables: AUTH_TABLE_NAMES,
     ddl: AUTH_TABLES,
+  }),
+  /**
+   * `authorizationServer()`'s clients, codes, grants, tokens and device codes — what
+   * `postgresAuthServerStore()` reads. Applied whether or not the app runs a server, for every
+   * row's reason: enabling it must not be the deploy that discovers the tables were never created.
+   */
+  Object.freeze({
+    pkg: '@ultimat3/auth',
+    tables: AUTH_SERVER_TABLES,
+    ddl: Object.freeze([SQL_AUTH_SERVER_TABLES]),
   }),
   /**
    * The delivery ledger is what stops a replayed notifier job sending twice, and it is the entry

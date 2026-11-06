@@ -13,6 +13,7 @@ import {
   systemClock,
 } from '@ultimat3/core';
 import { type DbClient, type DbConnection, isReservable, type ReservableClient } from './client';
+import { POSITION_CACHE_MS, primaryPosition, replayReader } from './replica-position';
 import { isPlainRead } from './replica-route';
 import { markScopeWrote, replicaScope } from './replica-scope';
 import type { SqlFragment } from './sql';
@@ -33,12 +34,19 @@ export interface ReplicatedClientOptions {
   /** Consecutive replica failures before it is parked. */
   readonly breakerFailures?: number | undefined;
   readonly breakerCooldownMs?: number | undefined;
+  /** How long one reading of the replica's replay position is reused. Default 50 ms. */
+  readonly positionCacheMs?: number | undefined;
   /** Injection seam; production passes neither. */
   readonly clock?: Clock | undefined;
 }
 
 export interface ReplicatedClient extends DbClient {
   readonly stats: ReplicaStats;
+  /**
+   * The primary's WAL position NOW, read on the primary and never routed. Asked once, after a
+   * request that wrote has committed, so the caller can carry it to the next request.
+   */
+  primaryPosition(): Promise<bigint | undefined>;
 }
 
 /**
@@ -104,9 +112,19 @@ export function replicatedClient(
   // cooldown ONE read probes the replica and the rest take the primary until it answers.
   const gate = breaker({ name: 'db.replica', failures: limit, cooldownMs: cooldown, clock });
   const parked = (): boolean => gate.state() === 'open';
+  const replay = replayReader(
+    replica,
+    clock,
+    finiteCount(
+      'replicatedClient',
+      'positionCacheMs',
+      options.positionCacheMs ?? POSITION_CACHE_MS,
+      0,
+    ),
+  );
 
   /** The breaker's ticket when the statement goes to the replica, else `undefined`. */
-  function nodeIsReplica(text: string): BreakerTicket | undefined {
+  async function nodeIsReplica(text: string): Promise<BreakerTicket | undefined> {
     const scope = replicaScope();
     // No scope: nobody declared these reads replica-safe, so this is a single-pool client.
     if (scope === undefined) return undefined;
@@ -119,12 +137,18 @@ export function replicatedClient(
     // replica is behind by an unbounded amount — streaming lag is not a number this tier can know
     // — so "the row I just inserted" is the one question a standby is guaranteed to answer wrong.
     if (scope.wrote) return undefined;
+    // Read-your-writes ACROSS requests: an earlier request's write the replica has not replayed yet.
+    // Before `admit()`, never after: `admit()` spends the half-open probe, and a read then sent to
+    // the primary for being behind would strand the probe until it lapsed.
+    if (scope.minPosition !== undefined && !(await replay.caughtUp(scope.minPosition))) {
+      return undefined;
+    }
     // Last, so only a statement about to reach the replica consumes the half-open probe.
     return gate.admit();
   }
 
   async function send<T>(fragment: SqlFragment, on: (client: DbClient) => Promise<T>): Promise<T> {
-    const ticket = nodeIsReplica(fragment.text);
+    const ticket = await nodeIsReplica(fragment.text);
     if (ticket === undefined) {
       primaryCount += 1;
       return on(primary);
@@ -167,6 +191,7 @@ export function replicatedClient(
         parked: parked(),
       };
     },
+    primaryPosition: () => primaryPosition(primary),
     query: <T>(fragment: SqlFragment) => send(fragment, (client) => client.query<T>(fragment)),
     one: <T>(fragment: SqlFragment) => send(fragment, (client) => client.one<T>(fragment)),
     execute: (fragment: SqlFragment) => send(fragment, (client) => client.execute(fragment)),
@@ -178,6 +203,7 @@ export function replicatedClient(
     get stats(): ReplicaStats {
       return base.stats;
     },
+    primaryPosition: base.primaryPosition,
     reserve: (): Promise<DbConnection> => primary.reserve(),
   };
   return reservable;

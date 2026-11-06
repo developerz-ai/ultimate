@@ -40,6 +40,8 @@ const coded = (writer: SeedWriter): SeedWriter => ({
     writer.insert(row).catch((error: unknown) => Promise.reject(refused(row, error))),
   update: (update) =>
     writer.update(update).catch((error: unknown) => Promise.reject(refused(update, error))),
+  // A read, not a write: nothing a database refuses here is the generated row's fault.
+  snapshot: (rows) => writer.snapshot(rows),
 });
 
 /** The tenant pair primitive `index` (0-based, in run order) acts in. */

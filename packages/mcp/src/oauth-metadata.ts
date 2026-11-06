@@ -1,8 +1,8 @@
 // OAuth 2.0 Protected Resource Metadata (RFC 9728) for the MCP endpoint — the framework half of
 // the MCP authorization spec (2025-06-18, unchanged in 2025-11-25): a 401 names where the metadata
 // lives (`WWW-Authenticate: Bearer resource_metadata="…"`), and the metadata names the
-// authorization server(s) a client goes to for a token. The authorization server itself is the
-// APP's — its consent page, its token endpoint, its revocation list — never this package's.
+// authorization server(s) a client goes to for a token. The server itself is `@ultimat3/auth`'s
+// `authorizationServer`, bound to one endpoint by `mcpAuthorizationServer` (`oauth-server.ts`).
 
 import { McpOAuthInvalidError } from './errors-transport';
 

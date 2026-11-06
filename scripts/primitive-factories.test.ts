@@ -206,6 +206,7 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
       '@ultimat3/ai.hive:action',
       '@ultimat3/ai.llm:action',
       '@ultimat3/jobs.backfill:job',
+      '@ultimat3/jobs.consumer:job',
       '@ultimat3/jobs.exportRows:job',
       '@ultimat3/jobs.importRows:job',
       '@ultimat3/jobs.purge:job',

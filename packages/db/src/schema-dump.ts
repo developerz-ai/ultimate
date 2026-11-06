@@ -5,6 +5,8 @@
 
 import type { CatalogDescription, CatalogType } from './catalog';
 import { FRAMEWORK_TABLE_PREFIX } from './drift';
+import { inLoadOrder } from './partition-order';
+import { policyStatement, rowSecurityStatements } from './schema-dump-policies';
 import { constraintClause, createSequence, quoted, tableStatements } from './schema-dump-table';
 import { literal } from './sql';
 
@@ -25,6 +27,7 @@ export const SCHEMA_DUMP_KINDS = [
   '07_views',
   '08_functions',
   '09_triggers',
+  '10_policies',
 ] as const;
 
 export type SchemaDumpKind = (typeof SCHEMA_DUMP_KINDS)[number];
@@ -108,8 +111,9 @@ function collect(catalog: CatalogDescription): Buckets {
   for (const sequence of catalog.sequences) {
     out.add('03_sequences', sequence.name, sequence.name, createSequence(sequence));
   }
-  for (const table of catalog.tables) {
-    out.add('04_tables', table.name, table.name, ...tableStatements(table));
+  // A partition rides in its root's file, after its parent (`partition-order.ts`).
+  for (const { table, file } of inLoadOrder(catalog.tables)) {
+    out.add('04_tables', file, file, ...tableStatements(table));
   }
   for (const view of catalog.views) {
     const head = view.materialized ? 'create materialized view' : 'create view';
@@ -143,6 +147,13 @@ function collect(catalog: CatalogDescription): Buckets {
       const statement = `alter table ${on} ${state} ${quoted(trigger.name)};`;
       out.add('09_triggers', trigger.table, trigger.table, statement);
     }
+  }
+  // Last: a policy may call any function and name any table above it. Flags before policies.
+  for (const entry of catalog.rowSecurity) {
+    out.add('10_policies', entry.table, entry.table, ...rowSecurityStatements(entry));
+  }
+  for (const policy of catalog.policies) {
+    out.add('10_policies', policy.table, policy.table, policyStatement(policy));
   }
   return out;
 }

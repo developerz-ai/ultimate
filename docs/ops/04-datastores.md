@@ -94,7 +94,8 @@ ceiling**, not after: an autoscaler that scales `web` to 30 asks for 600 connect
 | the standby refuses a statement (`25006`) | re-run on the primary — exactly-once, because only plain reads are routed there and a refused statement never executed. Latency, never an error |
 | the standby is down | the first three reads pay a doubled round trip, then the breaker parks it for **10 seconds** and every read goes to the primary. It re-tries after the cooldown |
 | the URL points at a **writable** node | the safety net is gone. `25006` is what catches a statement the classifier could not vouch for; against a writable node a misroute becomes a write on the wrong server, silently. Point it at a standby or do not set it |
-| replication lag | not a number this framework reads. Read-your-writes is closed by SCOPE (one write pins the rest of the scope to the primary), not by waiting on an LSN — so a read in a *different* scope can still see a lagging standby |
+| replication lag | closed twice. Inside a request, by SCOPE: one write pins the rest of the scope to the primary. ACROSS requests, by position (`As of 2026-11`): a request that wrote answers with the primary's `pg_current_wal_lsn()` as a `__Host-x-pos` cookie and an `x-ultimate-position` header (30 s); the next request carrying either reads the standby only once its `pg_last_wal_replay_lsn()` (cached per process for 50 ms) has passed it. Behind, unknown or forged: the primary. Write, redirect, read shows the row |
+| a bounded read (`query({ timeoutMs })`) | always the primary: it runs in a read-only transaction, and a transaction is pinned there |
 
 Watch `client.stats` (`replica`, `primary`, `fallbacks`, `parked`) and the `db.replica_fallback`
 warning. A non-zero `fallbacks` that is not a deploy is the standby telling you something.
@@ -172,6 +173,30 @@ Three more pooler lessons, each paid for:
 The blunt conclusion: **direct-to-primary is a legitimate answer** for a single-instance database
 with headroom in `max_connections`. A pooler is a second stateful component in the critical path of
 every query; add it when the connection arithmetic above says you need it, not by default.
+
+### Roles under row security (`As of 2026-11-06`)
+
+With `database.rowSecurity: true` in `app.config.ts` (off by default) Postgres refuses another
+tenant's row on its own, under the repository's check — but only to a role it does not exempt. So
+the database needs two roles, and which is which is the deployment's job.
+
+| Role | Attributes | Runs | Framework name |
+|---|---|---|---|
+| migrator | `nosuperuser bypassrls`, owns every table | `ROLE=migrate`, `x db migrate` | `x_migrator` on PGlite and the test services |
+| app | `nosuperuser nobypassrls`, owns nothing, DML grants only | every serving role: `web`, `worker`, `scheduler`, `sync` | `x_app` on PGlite and the test services |
+
+| Where | Who picks the roles |
+|---|---|
+| PGlite (`x dev`, `x db migrate` with no `DATABASE_URL`) | the framework: it creates both, the migrate step holds `x_migrator` (taking over what PGlite's superuser already owned in `public`), and `x dev` serves as `x_app` |
+| test services | `acquireWorkerDatabase({ rowSecurity: true })`: migrated as `x_migrator`, the suite's URL is `x_app` |
+| production | **the operator.** The names are yours; the boot never reads one. `ROLE=migrate`'s `DATABASE_URL` is the migrator, every serving role's is the app role. Grants on every table, the `x_*` ones included, are yours too (`alter default privileges for role <migrator> … to <app>`) |
+
+`X_DB_ROW_SECURITY_BYPASSED` is the boot refusing to serve as a role Postgres would exempt — a
+superuser, a `bypassrls` role, or the owner of a tenant table — because under that role every
+policy refuses nothing and the guard would be a decoration. Not a crash to retry: point the serving
+role's `DATABASE_URL` at the app role, or `psql "$DATABASE_URL" -c 'alter role <role> nosuperuser
+nobypassrls'`. `x doctor` connects as `DATABASE_URL` and reports the same verdict without booting.
+The migrator is exempt on purpose: a backfill or a constraint validate must still see every row.
 
 ## Dragonfly (Redis-compatible cache)
 

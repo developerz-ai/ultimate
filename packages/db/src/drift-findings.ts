@@ -28,6 +28,9 @@ export type DriftKind =
   | 'not-valid-constraint'
   // Constructed in `drift-append-only.ts`: an `appendOnly` table whose refusing trigger is gone.
   | 'missing-append-only-trigger'
+  // Constructed in `drift-row-security.ts`: a tenant policy missing, or present unrecorded.
+  | 'missing-row-security'
+  | 'unexpected-row-security'
   // Constructed in `object-drift.ts`: a trigger, function, view, type or sequence in the live
   // database that replaying the migrations does not create.
   | 'unexpected-object';

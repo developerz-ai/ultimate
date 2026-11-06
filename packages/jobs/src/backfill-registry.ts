@@ -25,6 +25,8 @@ export type BackfillCount = (args: { readonly ctx: Ctx }) => Promise<number> | n
 /** Everything `backfill()` knows that a `JobHandle` has no field for. */
 export interface BackfillOrigin {
   readonly checksum: string;
+  /** One pass per `scope(input)`: its ledger rows are `<name>:<scope>`, never `<name>`. */
+  readonly scoped: boolean;
   /** A migration id, checked against `x_migrations` by whoever can read it. See `backfill.ts`. */
   readonly requires: string | undefined;
   /** Absent means every environment — never an implied "production only". See `backfill.ts`. */
@@ -45,6 +47,8 @@ export interface BackfillDeclaration {
   readonly requires: string | null;
   readonly environments: readonly Environment[] | null;
   readonly counts: boolean;
+  /** Its passes are keyed `<name>:<scope>`; `x db backfill` lists one row per scope it has run. */
+  readonly scoped: boolean;
 }
 
 const origin = new WeakMap<object, BackfillOrigin>();
@@ -82,6 +86,7 @@ export function declarationOf(handle: AnyJobHandle): BackfillDeclaration | undef
     requires: source.requires ?? null,
     environments: source.environments ?? null,
     counts: source.count !== undefined,
+    scoped: source.scoped,
   };
 }
 

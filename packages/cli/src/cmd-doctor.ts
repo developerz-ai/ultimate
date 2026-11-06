@@ -21,6 +21,7 @@ import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
 import type { PoolerFact } from './doctor-pooler';
 import { NO_POOLER_FACT, poolerFindings, poolerProbe, withPoolerReport } from './doctor-pooler';
 import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
+import { rowSecurityProbe } from './doctor-row-security';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeyFindings, sealedKeysProbe } from './doctor-sealed';
 import { PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
@@ -104,6 +105,8 @@ export interface DoctorProbe {
   authStorage(): Promise<AuthStorageFact>;
   /** The statement bound the session really reads, and what a pooler refused (`doctor-pooler.ts`). */
   pooler(): Promise<PoolerFact>;
+  /** With `database.rowSecurity` on, whether the serving role is exempt (`doctor-row-security.ts`). */
+  rowSecurity?(): Promise<readonly Finding[]>;
 }
 
 /** What `x doctor` reads about the embedded database, without opening it. */
@@ -272,6 +275,9 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // where there is no `DATABASE_URL`, and that silence IS the bare-VM configuration.
   const embedded = embeddedDatabaseFinding(await probe.embeddedDatabase());
   if (embedded !== undefined) findings.push(embedded);
+  // Asked only of a database that answered: an unreachable one is already the finding above.
+  const reachable = pooler.refused === undefined && database === null;
+  if (reachable) findings.push(...((await probe.rowSecurity?.()) ?? []));
   findings.push(...(await probe.drift()));
   // Last, and it is why `X_CLI_UNEXPECTED`'s `fix: x doctor --json` is not a dead end on the path an
   // author reaches it from: `x db gen` throwing `X_MIGRATION_SNAPSHOT_MISSING` used to be a
@@ -414,6 +420,8 @@ export function probeFor(
       root === undefined ? { columns: undefined, keys: undefined } : sealedKeysProbe(root),
     authStorage: () => authStorageProbe(process.env['DATABASE_URL'], env),
     pooler: () => poolerProbe(process.env['DATABASE_URL'], env),
+    rowSecurity: async () =>
+      root === undefined ? [] : rowSecurityProbe(root, process.env['DATABASE_URL'], env),
   };
 }
 

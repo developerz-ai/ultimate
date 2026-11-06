@@ -37,6 +37,17 @@ const sources: ManifestSources = {
   entities: [{ name: 'post', table: 'posts', columns: [], invariants: [] }],
   actions: [publishPost],
   mounts: [{ prefix: '/v1', scopes: { 'post:write': ['publishPost'] } }],
+  consumers: [
+    {
+      name: 'ledgerFeed',
+      queue: 'default',
+      supervisor: 'ledgerFeed.supervisor',
+      arm: 'ledgerFeed.arm',
+      rearm: '* * * * *',
+      batch: 100,
+      lags: false,
+    },
+  ],
   locales: ['en'],
 };
 
@@ -84,6 +95,7 @@ describe('manifestJson', () => {
       'admin',
       'mounts',
       'jobs',
+      'consumers',
       'tasks',
       'policies',
       'permissions',

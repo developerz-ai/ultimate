@@ -17,6 +17,7 @@ const declaration = (
   requires: null,
   environments: null,
   counts: false,
+  scoped: false,
   ...over,
 });
 
@@ -60,6 +61,30 @@ describe('unit · declared minus completed', () => {
     });
     expect(report.rows[0]?.state).toBe('completed');
     expect(report.pending).toEqual([]);
+  });
+
+  test('a scoped declaration lists one row per scope it has run, and owns those ledger names', () => {
+    const report = pendingBackfills({
+      declarations: [declaration('sync-invoices', { scoped: true })],
+      runs: [
+        run('sync-invoices:acct-2', 'failed'),
+        run('sync-invoices:acct-1', 'completed'),
+        run('sync-invoices-old', 'completed'),
+      ],
+      environment: 'production',
+    });
+    expect(report.rows.map((row) => [row.name, row.state])).toEqual([
+      ['sync-invoices:acct-1', 'completed'],
+      ['sync-invoices:acct-2', 'failed'],
+    ]);
+    expect(report.orphaned).toEqual(['sync-invoices-old']);
+    // Scopes are app data: with none run, the declaration alone is never the alarm.
+    const unrun = pendingBackfills({
+      declarations: [declaration('sync-invoices', { scoped: true })],
+      runs: [],
+      environment: 'production',
+    });
+    expect(unrun.rows).toEqual([]);
   });
 
   test('a pass in flight is progress, never the alarm', () => {

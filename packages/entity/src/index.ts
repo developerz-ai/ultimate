@@ -34,6 +34,8 @@ export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
 export type { DescribeInput } from './describe';
+export type { TenantColumnDescription } from './describe-tenancy';
+export { describeTenancy } from './describe-tenancy';
 export type { Entity, EntityCore, EntityInit } from './entity';
 export { entity, SOFT_DELETE_COLUMN } from './entity';
 // The vocabulary an EXISTING schema needs. Separate from the blessed builders on purpose: those
@@ -144,6 +146,7 @@ export type {
 } from './repo';
 export type { RowBulkChange, RowChange, RowChangeOp, RowObserver } from './row-observer';
 export { observedRepo, rowObserver, setRowObserver } from './row-observer';
+export { rowSecuritySettings } from './row-security-settings';
 export type { RecordsByKey, RecordsByType } from './rows-of';
 export { hasEntityRows, projectionsIn, rowsOf } from './rows-of';
 // Sealed columns. `sealedFields` is what a manifest or `x doctor` reads to say which columns are

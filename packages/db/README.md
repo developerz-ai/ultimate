@@ -61,7 +61,7 @@ await withTransaction(async (tx) => {
 | `recordRetired()` | `As of 2026-11-02`: `snapshotOf` one step on, keeping a retired column and what hangs off it on the record. `x db gen` and the `drift` step both read through it, so they cannot disagree about one |
 | `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructiveMigration()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
 | `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a reader sees the operation and not the prose. Shared by `readOnlyQuery()` and the destructive rail |
-| `introspectSchema()` | live schema → `SchemaDescription`. **App tables only**, `As of 2026-08-24`: a relation an extension owns (`pg_depend`, `deptype = 'e'`) and anything that is not an ordinary or partitioned table are excluded before the fold, and an explicit `exclude` cannot bring them back |
+| `introspectSchema()` | live schema → `SchemaDescription`. **App tables only**, `As of 2026-08-24`: a relation an extension owns (`pg_depend`, `deptype = 'e'`) and anything that is not an ordinary or partitioned table are excluded before the fold, and an explicit `exclude` cannot bring them back. **A partition is not app schema either** (`relispartition`, `As of 2026-11-06`): its parent is judged — keys, indexes, checks, triggers — and carries `partitioned: true`; a key Postgres clones per partition (`conparentid <> 0`) is not read |
 | `introspectCatalog()` / `CatalogDescription` / `emptyCatalog()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: the WHOLE schema in the catalog's own spelling — extensions, enum and domain types, sequences, tables, indexes, foreign keys, views, functions, triggers — sorted in code-unit order, plus `unrendered`: what exists and the dump cannot spell. Comparable only to another reading of itself; `introspectSchema()` stays the entity-vocabulary reading a snapshot is diffed in |
 | `renderSchemaDump()` / `SchemaDumpFile` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: a catalog → the schema dump's files. Pure and byte-deterministic. [The schema dump](#the-schema-dump) |
 | `loadSchemaDump()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: build a schema from those files, in one transaction, retrying a file that names something not created yet |
@@ -216,6 +216,30 @@ entity('runs', {
 To drop an index on a hot table: delete it from the entity's `indexes`, `x db gen "drop <name>"`,
 commit what it writes, ship. The drop is its own non-transactional migration.
 
+## Reads with their own settings
+
+| API | |
+|---|---|
+| `setLocal(tx, settings)` / `readLocal(tx, names)` | the framework's ONE `set_config` caller: `select set_config($1, $2, true)`, parameter-bound and transaction-local, so a value ends with its transaction and a pooled connection hands nothing on (`read-transaction.test.ts` greps the tree for a second one) |
+| `withReadTransaction(fn, { settings, client })` | `withTransaction(fn, { readOnly: true, client })`, then `setLocal`. Inside an open transaction it joins it, applies the settings, runs `fn` and puts the prior values back |
+| `withStatementTimeout(ms, fn, { client })` | one read's own `statement_timeout`, transaction-local. Refused above the bound already in force, and non-positive (`X_DB_STATEMENT_BOUND_INVALID`); firing is `X_DB_STATEMENT_TIMEOUT`. A transaction is the primary's, so a bounded read never reaches a replica |
+| `setTransactionSettings(provider)` | the settings every ROOT transaction sets right after `BEGIN` — row security's tenant. One provider; unset costs one comparison |
+
+## Row security (`As of 2026-11`, mechanism)
+
+| API | |
+|---|---|
+| `enableRowSecuritySql(table, column, type)` / `dropRowSecuritySql(table)` | `enable` + `force` + one `ultimate_tenant` policy: `using` and `with check` both `column = nullif(current_setting('x.tenant', true), '')::type or current_setting('x.cross', true) = 'on'`. Unset matches nothing |
+| `rowSecurityPlan(plan, input)` / `rowSecurityAfter(input)` | what `x db gen` emits per tenant table when the flag flips, both directions, grants to the app role |
+| `rowSecureClient(client)` | a statement sent outside a transaction while the provider has a tenant is wrapped: `BEGIN [READ ONLY]`, `set_config`, the statement, `COMMIT` |
+| `assertRowSecurityBinds(client)` / `rowSecurityRole(client)` | `X_DB_ROW_SECURITY_BYPASSED` for a superuser, a `bypassrls` role, or the owner of an unforced table — Postgres exempts all three |
+| `ensureRowSecurityRoles(client)` / `assumeRole(client, role)` | `x_app` (`nosuperuser nobypassrls`) and `x_migrator` (`bypassrls`, owns tables), with default privileges from one to the other. `rowSecurityRolesSql()` is the same list as text |
+| `serveAsAppRole(client)` | PGlite's superuser session: the roles, DML on every existing table and sequence to `x_app`, then `set role x_app` |
+| `generateMigration({ rowSecurity: { enabled, tenants } })` | `x db gen`: the policy per tenant table, typed off the column, recorded `rowSecurity: true` on the snapshot; off drops it |
+| `rowSecurityDifferences(entities, snapshot, option)` / `rowSecurityDrift(d)` | the flag against the migrations, `X_DB_ROW_SECURITY_DRIFT`. `checkDrift` raises the same code from `policyNames` (catalog: an enabled AND forced table's policies) |
+
+This layer catches forgetting, not hostile SQL in the app's own process: a raw `set_config('x.cross', 'on', true)` lifts it.
+
 ## Read replicas
 
 Opt in twice, and the second one is why it is safe.
@@ -246,6 +270,7 @@ await withReplicaReads(async () => {
 | read-your-writes | one write anywhere in the scope, at any depth, across any `await`, and every later read in it is the primary's |
 | a transaction | always the primary — `reserve()` is delegated there, so BEGIN, the body and COMMIT are one connection on one server. A `readOnly: true` transaction leaves the scope clean |
 | eligibility | `select` / `table` / `values` / a read-only `with`, minus locking reads, `select … into` and the functions a standby answers instead of refusing (`pg_advisory_lock`, `set_config`, `nextval`). Everything else is the primary's |
+| across requests (`As of 2026-11`) | `withReplicaReads(fn, { minPosition })`: a read goes to the standby only once its `pg_last_wal_replay_lsn()` has passed `minPosition` — sampled once per `positionCacheMs` (50 ms) per client, checked BEFORE the breaker's `admit()` so a read sent to the primary for being behind never spends the half-open probe. Unknown or `null` is the primary. `parsePosition` / `formatPosition` / `primaryPosition` (`replica-position.ts`); `ReplicatedClient.primaryPosition()` reads the primary's WAL position. The boot carries it as `__Host-x-pos` + `x-ultimate-position` |
 | a replica that fails | the statement is re-run on the primary — exactly-once, because only plain reads are sent there and a `25006` refusal never executed. Three failures in a row park it for ten seconds |
 | observability | `client.stats` (`replica`, `primary`, `fallbacks`, `parked`), and a `db.replica_fallback` warning per fallback |
 
@@ -253,9 +278,7 @@ await withReplicaReads(async () => {
 a classifier that cannot be complete; pointed at a writable node a misroute becomes a write on the
 wrong server, silently.
 
-**Nothing opens the scope for you yet.** `withReplicaReads` is tier 1 and ships first; wrapping a
-request in it is the app's call — or one line in the HTTP pipeline — so until that lands no
-production traffic is routed.
+**The boot opens the scope per request** (`@ultimat3/cli`'s `runtime-replica-position.ts`) when `DATABASE_REPLICA_URL` is set.
 
 ## The drift contract
 
@@ -381,8 +404,13 @@ object kind, numbered in the order a database is built in, one file per named ob
 - A name becomes a file name with everything outside `[A-Za-z0-9_-]` percent-encoded.
 - A file over 500 lines (`SCHEMA_DUMP_MAX_LINES`, the `filesize` ceiling) is split `<name>.1.sql`, `<name>.2.sql`;
   `loadSchemaDump()` joins the parts in numeric order.
-- What cannot be spelled — partitions, inheritance, foreign tables, composite and range types,
-  aggregates, row-security policies (and `force row level security`), rules, extended statistics,
+- A partitioned table is rendered with `partition by`, each partition `partition of … for values` in
+  its root's file, parent first (`partition-order.ts`); a partition's attached indexes, cloned keys
+  and cloned triggers are not, the parent's recreate them. `As of 2026-11-06`.
+- Row security is `10_policies/<table>.sql`: `enable`, `force`, then each policy with every clause
+  (`catalog-policies.ts`, `schema-dump-policies.ts`). `As of 2026-11-06`.
+- What cannot be spelled — inheritance children, foreign tables, composite and range types,
+  aggregates, a policy on a relation the dump does not create, rules, extended statistics,
   a column's non-default `storage`, a materialized view created `with no data`, and a trigger on
   a relation the dump does not create — is named in `unrendered.sql` as comments.
 - A generated column is spelled `stored` or `virtual` (Postgres 18), as `attgenerated` says.

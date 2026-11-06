@@ -70,7 +70,8 @@ one adds, the other adds.
 | `prompt-cache.ts` | PROVIDER prompt caching: `SystemParts`, `PromptCacheHint`, `PROMPT_CACHE_RULES` (sources in its header) |
 | `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
 | `agent-per-run.ts` / `agent-run-limits.ts` | one run's `offerTools()`/`model()`/`limits()`, narrow only; `costPerRun` |
-| `agent-compact-def.ts` / `agent-compact.ts` | `compact`'s declaration and event; the trigger, the cut, the summary call |
+| `agent-compact-def.ts` / `agent-compact.ts` / `-measure.ts` | `compact`'s declaration and event; trigger, cut, summary call; the reported ratio |
+| `agent-send.ts` / `context-overflow.ts` / `agent-checkpoint.ts` | a turn sent, an overflow compacted once; `X_AI_CONTEXT_OVERFLOW`'s phrases; `onCheckpoint` |
 | `agent-continue.ts` / `agent-turn.ts` | `.run()` / `.continue()`, the transcript handle and its screen; one turn's report and refusals |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
 | `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish (its consumer has to be `cli`, tier 5) |
@@ -153,7 +154,7 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 - **The gateway's reads of a provider's throw are total**: `isRetryable` fails closed; the line goes
   through `renderThrowable`.
 - **`X_AI_PROVIDER_UNAVAILABLE` is the one code classified `retryable`** (`AI_ERROR_RETRY`);
-  `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Six
+  `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Nine
   deterministic failures are `terminal` (`errors-retry.ts`); the rest stay UNREGISTERED on purpose.
 - **One breaker per provider** (`gateway-providers.ts`, `DEFAULT_GATEWAY_BREAKER` `{ failures: 5,
   cooldownMs: 30_000 }`, `breaker: 'off'` declines). `failed()` fires once per exhausted pass; a coded
@@ -163,7 +164,8 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   on its first chunk or throw (`gateway-breaker.test.ts`).
 - **The retry SCHEDULE is core's (`backoffDelay`, `isRetryableStatus`); the LOOP is this package's** —
   core's `retry()` retries unclassified throws, so it would retry a 400 (`gateway-backoff.test.ts`).
-- Every non-2xx and every in-band `error` frame is `AiTransportError` with a real `status`.
+- Every non-2xx and in-band `error` frame is `AiTransportError` with a real `status` — but a
+  window overflow (`providerFailure`).
 - **Both wire formats answer the same question the same way** (`provider-parity.test.ts`): an in-band
   `error` in a 200 throws (`throwInBandError`); a `refusal` detail forces `stopReason: 'refusal'`; a
   tool call's `input` is parsed (`parseToolArguments`); the credential is scrubbed from `detail`.
@@ -245,8 +247,10 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   agent may claim, once (a nested agent starts fresh). The handle is SIGNED (`sealTranscript`: the
   cursor secret, own label) and bound to agent, model, tool names and `orgId`; screened before
   anything is loaded. `maxTurns`/`tokensPerRun` are cumulative — the remainder is the ceiling,
-  NEVER a ledger debit. A failure seals an updated handle onto the error (`transcriptOf`).
-- **`compact` (default `'auto'`) acts BEFORE a turn, never after a 400**: the summary call is the
+  NEVER a ledger debit. A failure seals an updated handle onto the error (`transcriptOf`);
+  `onCheckpoint` gets one between turns, sealed only when declared.
+- **`compact` (default `'auto'`) acts BEFORE a turn on the MEASURED estimate; an overflow gets one
+  forced compaction and a re-send**: the summary call is the
   run's own request up to a cut BETWEEN turns (the cached prefix, same session), billed, not a turn;
   system, tools, kept turns byte-identical; failed → whole, or `X_AGENT_CONTEXT_EXHAUSTED`, never
   truncated ([why](../../docs/history/ai.md#auto-compaction-2026-10)).
@@ -272,11 +276,7 @@ In brief ([full text](../../docs/history/ai.md#evals-retrieval-fix-lines)): no f
 retrieval is hybrid only; an unbound store read under an org actor is `X_VECTOR_UNSCOPED`;
 `postgresVectorStore()` filters tenant and policy in SQL on every statement; `scoped()` TIGHTENS.
 
-- **An eval never runs a real tool.** Inside the eval scope `runLlmToolCall` answers a call with the
-  eval's double, outside its `try`; no double is `X_EVAL_TOOL_UNDOUBLED`, rethrown by the eval (a
-  misdeclared eval, never a 0). Any other failed agent run scores 0 and records its code. The scope
-  is not exported: no public override of `agent({ tools })`. An agent eval needs a registered agent
-  (`agentFactsOf`); a `named()` twin is refused (`X_INVARIANT`).
+- **An eval never runs a real tool**: no double is `X_EVAL_TOOL_UNDOUBLED` (history, 2026-11-06).
 
 ## Commands
 

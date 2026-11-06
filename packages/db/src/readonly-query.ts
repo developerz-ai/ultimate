@@ -6,6 +6,7 @@
 import { finiteCount } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { multipleStatements } from './errors';
+import { setLocal } from './local-settings';
 import { identifier, raw, sql } from './sql';
 import { stripSqlNoise } from './sql-noise';
 import { statementsOf } from './statement-split';
@@ -96,9 +97,8 @@ export async function readOnlyQuery<T>(
   // against an exhausted pool answered with the pool's error — or waited for a connection it was
   // never going to use — in place of the `X_INVARIANT` naming the option that was wrong.
   //
-  // Clamped and truncated to an integer: the result is a JS number the caller never touches
-  // as text, so there is nothing here for `raw()` to inject — `SET LOCAL` can't bind `$n`
-  // parameters, which is why this can't go through `sql` the normal, parameterised way.
+  // Clamped to a whole number, then sent through `setLocal`, the one parameter-bound writer of a
+  // transaction-local setting — never as spliced `SET LOCAL` text, a second path to the same bound.
   // REFUSED rather than normalised: `NaN` used to take the default silently, so a config typo
   // ran under a timeout nobody wrote. Only an explicit 0 disables the layer, which is why the
   // floor is 0 and not 1; the hour ceiling is a clamp on a number that IS one.
@@ -130,7 +130,7 @@ export async function readOnlyQuery<T>(
       // every request the pool serves afterwards. Caveat: embedded PGlite applies the setting
       // but is single-threaded WASM, so it cannot interrupt a running scan; on a real server
       // the timeout fires. Layers 1 and 3 do not depend on it.
-      await connection.execute(raw(`SET LOCAL statement_timeout = ${ms}`));
+      await setLocal(connection, { statement_timeout: String(ms) });
       guards.push(`timeout:${ms}ms`);
     }
 

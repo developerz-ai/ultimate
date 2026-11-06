@@ -297,6 +297,23 @@ export interface JobFact {
   readonly onSettled?: true;
 }
 
+/**
+ * One `consumer()` — a job plus its `.supervisor` task, both also listed under `jobs` and `tasks`.
+ * This row is what neither of those says: that the two are one declaration, how often every key
+ * is re-armed, and the batch a cursor commits with.
+ */
+export interface ConsumerFact {
+  readonly name: string;
+  readonly queue: string;
+  readonly supervisor: string;
+  readonly arm: string;
+  /** The supervisor's cron, in UTC. */
+  readonly rearm: string;
+  readonly batch: number;
+  /** Whether a `lag` is declared, so a run reports how far behind its key is. */
+  readonly lags: boolean;
+}
+
 export interface TaskFact {
   readonly name: string;
   readonly cron: string;
@@ -353,6 +370,8 @@ export interface Manifest {
    */
   readonly mounts?: readonly MountFact[];
   readonly jobs: readonly JobFact[];
+  /** Absent for a file older than the section AND for an app with no consumer — `mounts`' rule. */
+  readonly consumers?: readonly ConsumerFact[];
   readonly tasks: readonly TaskFact[];
   readonly policies: readonly PolicyFact[];
   readonly permissions: readonly string[];
@@ -412,6 +431,7 @@ export function isManifest(value: unknown): value is Manifest {
   if (m['channels'] !== undefined && !Array.isArray(m['channels'])) return false;
   if (m['admin'] !== undefined && !Array.isArray(m['admin'])) return false;
   if (m['mounts'] !== undefined && !Array.isArray(m['mounts'])) return false;
+  if (m['consumers'] !== undefined && !Array.isArray(m['consumers'])) return false;
   return isAppIdentity(m['app']);
 }
 

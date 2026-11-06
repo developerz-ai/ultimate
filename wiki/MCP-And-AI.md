@@ -353,10 +353,44 @@ export const mcp = defineAppMcp({
 | several endpoints | each serves its own path-inserted document (RFC 9728 §3.1) — `/.well-known/oauth-protected-resource/mcp/admin` for `POST /mcp/admin` — with its own `resource` and `scopes_supported`, and its 401 names that document; the root document stays endpoint #0's |
 | origin | `ctx.https` + host as the pipeline resolved them, so a TLS-terminating ingress yields `https://…` |
 
-The authorization server (`/.well-known/oauth-authorization-server`, `/oauth/authorize`,
-`/oauth/token`) is the app's: consent is a page, and the endpoints whose wire format RFC 6749/8414
-fixes are plain routes from `apps/<app>/runtime.ts` → `runtime.routes`. Without `oauth`, the 401 is
-`Bearer realm="ultimate-mcp"` as before. Bad block: `X_MCP_OAUTH_INVALID` at definition.
+The authorization server is `mcpAuthorizationServer` (`As of 2026-11`): `@ultimat3/auth`'s
+`authorizationServer` ([Auth](Auth#authorization-server)) bound to this endpoint. One call, one
+consent page:
+
+```ts
+// apps/web/mcp-oauth.ts
+import { postgresAuthServerStore } from '@ultimat3/auth';
+import type { Actor, PgExecutor } from '@ultimat3/core';
+import type { McpScopes } from '@ultimat3/mcp';
+import { defineAppMcp, mcpAuthorizationServer } from '@ultimat3/mcp';
+
+declare const executor: PgExecutor;
+declare const MCP_SCOPES: McpScopes;             // the scope → tool names map, as above
+declare function agentFor(subject: string): Promise<Actor | null>;
+
+export const as = mcpAuthorizationServer({
+  issuer: 'https://www.example.com',
+  resource: 'https://www.example.com/mcp',
+  store: postgresAuthServerStore({ executor }),
+  consentPath: '/oauth/consent',
+  lifetimes: { accessSeconds: 600, refreshIdleDays: 30 },
+  scopes: Object.keys(MCP_SCOPES),
+  registration: 'dynamic',                    // omitted: metadata-document client ids only
+  actor: (grant) => agentFor(grant.subject),  // per call: a removed member is refused at once
+});
+export const mcp = defineAppMcp({ include: 'exposed', scopes: MCP_SCOPES, oauth: as.oauth, resolveToken: as.resolveToken });
+// apps/web/runtime.ts: routes: [...as.routes]
+```
+
+| What | Answer |
+|---|---|
+| `resource` | every grant binds to it, a request naming none included; `resolveToken` refuses a token bound to anything else, or to nothing |
+| `oauth` | `{ authorizationServers: [issuer], resource, scopesSupported: scopes }` for `defineAppMcp` |
+| audit | each server decision is one `mcp.auth.<event>` line — `issued`, `refused`, `revoked` at `info`; `code-replayed`, `refresh-replayed`, `grant-disabled` at `warn` |
+| the protocol | none of it here: every rule is `authorizationServer`'s, so a hand-written server and plain `oauth:` keep working |
+
+Without `oauth`, the 401 is `Bearer realm="ultimate-mcp"` as before. Bad block:
+`X_MCP_OAUTH_INVALID` at definition.
 
 ## Three outcomes, deliberately different
 

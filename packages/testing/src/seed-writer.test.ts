@@ -112,6 +112,34 @@ describe(testName('unit', 'entitySeedWriter'), () => {
     expect(seen).toEqual([{ entity: 'sw_orgs', op: 'insert', orgId: 'pinned' }]);
   });
 
+  test('a snapshot digests each row: equal unchanged, new after a write, null once gone', async () => {
+    const driver = memoryDriver();
+    const writer = entitySeedWriter({ entities: schema, driver });
+    const graph = seedGraph(schema, { tenants: 2, perTable: 2, seed: 5 });
+    await insertSeedGraph(graph, writer);
+    const [one, other] = graph.tenants as [string, string];
+    const mine = graph.inserts.filter((row) => row.tenant === one && row.entity !== 'sw_orgs');
+    const before = await writer.snapshot(mine);
+    expect(before.every((digest) => typeof digest === 'string')).toBe(true);
+    expect(new Set(before).size).toBe(before.length);
+    expect(await writer.snapshot(mine)).toEqual(before);
+
+    const [team, player] = [
+      mine.find((row) => row.entity === 'sw_teams'),
+      mine.find((row) => row.entity === 'sw_players'),
+    ];
+    const repoOf = (target: EntityCore) => driver.repo(target) as Repo<Record<string, unknown>>;
+    await repoOf(teams).update(String(team?.row['id']), { name: 'renamed' }, { orgId: one });
+    await repoOf(players).delete(String(player?.row['id']), { orgId: one });
+    const after = await writer.snapshot(mine);
+    const changed = mine.flatMap((row, i) => (after[i] === before[i] ? [] : [row.row['id']]));
+    expect(changed.sort()).toEqual([team?.row['id'], player?.row['id']].sort());
+    expect(after[mine.indexOf(player as (typeof mine)[number])]).toBeNull();
+    // The other tenant's rows are read under their own tenant, untouched.
+    const theirs = graph.inserts.filter((row) => row.tenant === other && row.entity !== 'sw_orgs');
+    expect((await writer.snapshot(theirs)).every((digest) => digest !== null)).toBe(true);
+  });
+
   test('an entity the writer was not handed is refused, naming the set it was', async () => {
     const writer = entitySeedWriter({ entities: { orgs }, driver: memoryDriver() });
     let caught: unknown;

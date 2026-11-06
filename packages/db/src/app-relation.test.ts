@@ -60,4 +60,11 @@ describe('nonAppRelations', () => {
     // Ordinary and partitioned tables are the app's; they leave only by extension ownership.
     expect(text).toContain("c.relkind in ('r', 'p', 'v', 'm', 'f')");
   });
+
+  test('a partition is disqualified by the catalog, never by a name like `_2026_11`', async () => {
+    const client = recordingClient();
+    await nonAppRelations(client, 'public');
+    // Its parent is what migrations declare; counted, every partition was `unexpected-table`.
+    expect(textOf(client)).toContain('or c.relispartition');
+  });
 });

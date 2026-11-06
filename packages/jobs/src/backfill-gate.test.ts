@@ -16,6 +16,7 @@ const declaration = (over: Partial<BackfillDeclaration> = {}): BackfillDeclarati
   requires: null,
   environments: null,
   counts: false,
+  scoped: false,
   ...over,
 });
 

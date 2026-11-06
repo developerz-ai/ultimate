@@ -9,6 +9,7 @@ import { t } from '@ultimat3/schema';
 import type { AgentCompaction, AgentCompactOption, AgentTurn } from './agent';
 import { agent } from './agent';
 import { SUMMARY_INSTRUCTION } from './agent-compact';
+import type { AgentCheckpoint } from './agent-continue';
 import type { AgentBudget } from './agent-def';
 import { exactCostOf } from './cost';
 import { echoProvider } from './echo-provider';
@@ -69,8 +70,13 @@ export function registerCompactModels(): void {
   });
 }
 
+/**
+ * A loop turn's report: no input counted, the provider that reports zero — so the measured ratio
+ * stays 1 and these suites test the trigger as estimated. `agent-compact-measured.test.ts` owns
+ * the measurement.
+ */
 export const USAGE: TokenUsage = {
-  inputTokens: 1_000,
+  inputTokens: 0,
   outputTokens: 100,
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
@@ -197,6 +203,7 @@ export interface Declared {
   /** Reuse one prompt across declarations, so two handles can be compared byte for byte. */
   readonly prompt?: ReturnType<typeof promptFor>;
   readonly onCompact?: (event: AgentCompaction) => void;
+  readonly onCheckpoint?: (event: AgentCheckpoint) => void;
 }
 
 let seq = 0;
@@ -230,6 +237,7 @@ export function declare(
     ...(extra.promptCache === undefined ? {} : { promptCache: extra.promptCache }),
     onCompact: extra.onCompact ?? ((event) => void events.push(event)),
     onTurn: (turn) => void turns.push(turn),
+    ...(extra.onCheckpoint === undefined ? {} : { onCheckpoint: extra.onCheckpoint }),
   }).named(`compacting${seq}`);
 }
 

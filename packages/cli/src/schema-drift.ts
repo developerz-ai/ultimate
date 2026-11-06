@@ -32,6 +32,7 @@ import {
 } from './drift-replica-identity';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 import type { Finding } from './output';
+import { appRowSecurity, type RowSecurityWanted, rowSecurityFindings } from './row-security-wanted';
 import { diffDeclaredSchema, type SchemaDifference } from './schema-diff';
 
 /**
@@ -145,6 +146,7 @@ export async function checkSnapshotDrift(
   root: string,
   declared: DeclaredEntities = appEntities,
   identity: ReplicaIdentityWanted = appReplicaIdentity,
+  rowSecurity: RowSecurityWanted = appRowSecurity,
 ): Promise<readonly Finding[]> {
   if (!existsSync(join(root, DB_PACKAGE))) return [];
   const entities = await declared(root);
@@ -159,15 +161,20 @@ export async function checkSnapshotDrift(
   if ('finding' in wanted) return [wanted.finding];
   // `recordRetired`, the step `x db gen` takes after `snapshotOf`: a retired column stays on the
   // record though no entity declares it, and that is the design rather than a difference.
+  // Its own code, ahead of the generic diff: a flipped flag moves no entity and no source hash.
+  const policies = rowSecurityFindings(entities, recorded, await rowSecurity(root));
   const differences = diffDeclaredSchema(
     recordRetired(snapshotOf(entities, wanted.tables), entities, recorded),
     recorded,
   );
-  if (differences.length === 0) return [];
+  if (differences.length === 0) return policies;
   // `recorded` and not the entities alone: whether an `assert` is a LOSS depends on whether a
   // migration recorded a CHECK for it, which only the sidecar knows.
   const unrendered = unrenderedOf(entities, recorded);
-  return differences.map((difference) => findingFor(difference, repairFix(unrendered, difference)));
+  return [
+    ...policies,
+    ...differences.map((difference) => findingFor(difference, repairFix(unrendered, difference))),
+  ];
 }
 
 /**
@@ -186,8 +193,9 @@ export async function checkMigrationDrift(
   declared: DeclaredEntities = appEntities,
   hashDrift: (root: string) => Promise<readonly Finding[]> = checkSourceDrift,
   identity: ReplicaIdentityWanted = appReplicaIdentity,
+  rowSecurity: RowSecurityWanted = appRowSecurity,
 ): Promise<readonly Finding[]> {
-  const snapshot = await checkSnapshotDrift(root, declared, identity);
+  const snapshot = await checkSnapshotDrift(root, declared, identity, rowSecurity);
   if (snapshot.length > 0) return snapshot;
   return hashDrift(root);
 }

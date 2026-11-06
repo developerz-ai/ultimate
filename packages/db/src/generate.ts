@@ -4,14 +4,16 @@
 // field. Every generated migration must be reversible; a drop that loses data refuses instead.
 
 import { systemClock } from '@ultimat3/core';
-import { checkClauses, checkPlan, declaredChecks } from './check-ddl';
+import { checkClauses, checkPlan } from './check-ddl';
 import { alterColumnInPlace, retypeOverDefault, wantedDefault } from './column-alter';
 import { defaultExpression } from './column-default';
 import { type ConcurrentPlan, emptyConcurrentPlan } from './concurrent-plan';
 import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
-import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
+import { type ConstraintPlans, foreignKeyPlan, type Plan } from './foreign-key-plan';
 import { appendOnlyBackfillRefused, appendOnlyPlan } from './generate-append-only';
+import { type RowSecurityOption, rowSecurityInput } from './generate-row-security';
+import { snapshotOf } from './generate-snapshot';
 import { assembleSteps } from './generate-steps';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
@@ -33,6 +35,7 @@ import type { MovedAside } from './retype-dependents';
 import { moveDependentsAside } from './retype-dependents';
 import { moveKeysAside, retypedColumns, retypedIn } from './retype-keys';
 import { columnDropNotRetired } from './rolling-errors';
+import { rowSecurityAfter, rowSecurityPlan } from './row-security-plan';
 import { withSameTenantIndexes } from './same-tenant';
 import { identifier } from './sql';
 import { sqlType } from './sql-type';
@@ -61,67 +64,6 @@ function columnClause(column: ColumnDescriptionLike): string {
   // every table exists (`foreignKeyPlan`) — inline it must point at a table that already exists, and
   // entity registration order is the app's import order, which says nothing about that.
   return parts.join(' ');
-}
-
-/** No table subscribed to, which is what every caller outside `generateMigration` describes. */
-const NONE: ReadonlySet<string> = new Set();
-
-export function snapshotOf(
-  entities: readonly EntityDescriptionLike[],
-  replicaIdentityFull: ReadonlySet<string> = NONE,
-): SchemaDescription {
-  const tables = [...withSameTenantIndexes(entities)]
-    .sort((a, b) => (a.table < b.table ? -1 : 1))
-    .map((entity): TableDescription => {
-      const columns: ColumnDescription[] = [...entity.columns]
-        .sort((a, b) => (a.column < b.column ? -1 : 1))
-        .map((column, index) => ({
-          name: column.column,
-          dataType: sqlType(column.kind),
-          nullable: !column.notNull,
-          default: defaultExpression(column),
-          position: index + 1,
-          // Only when one was declared — absent stays absent, so no snapshot written before this
-          // field existed gains a key and no app's sidecar regenerates over a fact already true.
-          ...(column.generated === undefined ? {} : { generated: column.generated }),
-        }));
-      const checks = declaredChecks(entity);
-      return {
-        schema: 'public',
-        name: entity.table,
-        columns,
-        primaryKey: [...entity.primaryKey],
-        // Whole, never partly: a snapshot that recorded the name and dropped the predicate made
-        // the next generation blind to a `where` or an `order` changing, and a partial index
-        // silently kept as a total one is a constraint the entity no longer declares.
-        //
-        // `declaredIndexes`, so a `unique` invariant's index is recorded exactly like an entity's
-        // own — a statement emitted and not recorded is `42P07` on the very next `x db gen`.
-        indexes: declaredIndexes(entity).map((index) => ({
-          name: index.name,
-          columns: [...index.columns],
-          unique: index.unique,
-          primary: false,
-          where: index.where,
-          order: index.order,
-          // Only when one was declared. Writing `using: 'btree'` out for every index would rewrite
-          // every sidecar in every app on the next `x db gen` — a diff on every file for a fact
-          // that was already true, which `indexMethodOf` reads out of the absence anyway.
-          ...(index.using === undefined ? {} : { using: index.using }),
-        })),
-        foreignKeys: foreignKeysOf(entity),
-        // Absent, never `[]`, on a table declaring none: a sidecar that predates this field must
-        // read as "nothing recorded" so the next generation adds the constraints the database is
-        // genuinely missing — the rule `using` and `generated` already state one field up.
-        ...(checks.length === 0 ? {} : { checks }),
-        // The same rule once more: `true` or absent, never `false`. This is what makes the ALTER
-        // beside it a one-time statement rather than a line every `x db gen` writes again.
-        ...(replicaIdentityFull.has(entity.table) ? { replicaIdentityFull: true as const } : {}),
-        // `true` or absent once more — the record that makes the trigger a one-time statement.
-        ...(entity.appendOnly === true ? { appendOnly: true as const } : {}),
-      };
-    });
-  return { tables };
 }
 
 function createTable(entity: EntityDescriptionLike): readonly string[] {
@@ -258,6 +200,8 @@ function diffTable(
   checkPlan(entity, live, plan, rebuilt, moved.checks, concurrent);
 }
 
+export { snapshotOf } from './generate-snapshot';
+
 export interface GenerateOptions {
   readonly entities: readonly EntityDescriptionLike[];
   /** The schema migrations already declare — `expectedSchema(migrations, ledger)`. */
@@ -283,6 +227,12 @@ export interface GenerateOptions {
    * is the one caller that can answer it.
    */
   readonly replicaIdentityFull?: readonly string[] | undefined;
+  /**
+   * `database.rowSecurity` and each tenant table's column (`describeTenancy()`): a parameter for
+   * `replicaIdentityFull`'s reason — a config fact no entity carries. Absent is off, so a recorded
+   * policy is dropped: `@ultimat3/cli`'s `db-generate.ts` passes it on every run.
+   */
+  readonly rowSecurity?: RowSecurityOption | undefined;
 }
 
 export interface GeneratedMigration {
@@ -449,6 +399,9 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
 
   // After every table exists, so a `create table` in this same migration is already above it.
   appendOnlyPlan(plan, options.entities, current, created);
+  // Then each tenant table's policy, both directions (`row-security-plan.ts`), on tables that exist.
+  const rowSecurity = rowSecurityInput(options.entities, current, options.rowSecurity);
+  rowSecurityPlan(plan, rowSecurity);
 
   // Dead last in `up`, and it is the only placement that is right for every arm: the table has to
   // exist, and a `create table` in this same migration is the reason it might not. It is ordered
@@ -486,7 +439,11 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
     down: [...preAlters.down, ...plan.down].reverse(),
     concurrent,
     snapshot: recordRetired(
-      snapshotOf(options.entities, replicaIdentityFullAfter(replicaIdentity)),
+      snapshotOf(
+        options.entities,
+        replicaIdentityFullAfter(replicaIdentity),
+        rowSecurityAfter(rowSecurity),
+      ),
       options.entities,
       current,
     ),

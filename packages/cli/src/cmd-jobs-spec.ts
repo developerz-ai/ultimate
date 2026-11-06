@@ -14,6 +14,7 @@ export const JOBS_SUBCOMMANDS = [
   'cancel',
   'delete',
   'promote',
+  'resolve-step',
   'pause',
   'resume',
   'drain',
@@ -24,9 +25,9 @@ export const jobsSpec: CommandSpec = {
   // Never ENDING in "(planned)": that suffix is how `x help` and the planned-table tests tell a
   // planned COMMAND from a shipped one, and `x jobs` ships — only its `drain` does not.
   summary:
-    'list, show, retry, cancel, delete and promote jobs; pause and resume a queue (drain is planned)',
+    'list, show, retry, cancel, delete and promote jobs; resolve a step; pause and resume a queue (drain is planned)',
   usage:
-    'x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|pause <queue>|resume <queue>|drain] [--queue q] [--state s] [--name n] [--limit n] [--after cursor] [--from-step name] [--reason text] [--json]',
+    'x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|resolve-step <id> <step>|pause <queue>|resume <queue>|drain] [--queue q] [--state s] [--name n] [--limit n] [--after cursor] [--from-step name] [--reason text] [--ran|--not-ran] [--output json] [--json]',
   requiresApp: true,
   subcommands: JOBS_SUBCOMMANDS,
   // The bare `x jobs` lists; it never retries, cancels or drains anything.
@@ -56,6 +57,24 @@ export const jobsSpec: CommandSpec = {
       type: 'string',
       summary: 'cancel: why, recorded on the job',
       subcommands: ['cancel'],
+    },
+    {
+      name: 'ran',
+      type: 'boolean',
+      summary: 'resolve-step: the step happened — record --output as its answer',
+      subcommands: ['resolve-step'],
+    },
+    {
+      name: 'not-ran',
+      type: 'boolean',
+      summary: 'resolve-step: the step did not happen — the next run calls it again',
+      subcommands: ['resolve-step'],
+    },
+    {
+      name: 'output',
+      type: 'string',
+      summary: 'resolve-step: with --ran, the JSON a replay of the step returns (default null)',
+      subcommands: ['resolve-step'],
     },
   ],
 };

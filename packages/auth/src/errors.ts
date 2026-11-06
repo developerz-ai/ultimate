@@ -31,6 +31,11 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_AUTH_LIMITER_POLICY_MISMATCH',
   'X_MFA_SECRET_UNSEALED',
   'X_AUTH_SIGN_IN_UNCONFIGURED',
+  'X_AUTH_SERVER_INVALID',
+  'X_AUTH_CONSENT_INVALID',
+  'X_AUTH_GRANT_DISABLED',
+  'X_VERIFICATION_PURPOSE_INVALID',
+  'X_VERIFICATION_PURPOSE_UNKNOWN',
 ] as const;
 
 /**
@@ -79,6 +84,12 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_MFA_SECRET_UNSEALED: 'a stored totp secret is not sealed, so it is never read as one',
   X_AUTH_SIGN_IN_UNCONFIGURED:
     'a people-facing role started with no sign-in settings outside development and test',
+  X_AUTH_SERVER_INVALID: 'the authorization server was configured with a field it cannot run on',
+  X_AUTH_CONSENT_INVALID: 'a consent was approved for a request the authorization server refuses',
+  X_AUTH_GRANT_DISABLED: 'a token request named a grant this authorization server does not enable',
+  X_VERIFICATION_PURPOSE_INVALID: 'a verification purpose was declared twice or without a template',
+  X_VERIFICATION_PURPOSE_UNKNOWN:
+    'a verification token was issued or consumed for a purpose nothing declared',
 };
 
 // Registered unconditionally, in one call: a second package claiming a code auth owns has to fail

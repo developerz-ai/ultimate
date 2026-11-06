@@ -21,6 +21,11 @@ export interface SeedGraphOptions {
 export interface SeedRow {
   readonly entity: string;
   readonly table: string;
+  /**
+   * The tenant instance the row belongs to: its tenant column's, the root row's own, or — for a
+   * child with no tenant column and no `shared` reason — the tenant of the parent it hangs off.
+   * `null` only for a row of no tenant. The tenant proof's per-instance id list is this field.
+   */
   readonly tenant: string | null;
   /** As INSERTED: a key deferred to break a cycle is null here and set by an update. */
   readonly row: Readonly<Record<string, unknown>>;
@@ -34,7 +39,11 @@ export interface SeedUpdate {
   readonly patch: Readonly<Record<string, unknown>>;
 }
 
-/** One per row: the marker its text columns carry, so a later read can say whose row it saw. */
+/**
+ * One per row: the marker its text columns carry, so a later read can say whose row it saw. One
+ * marker per ROW, every text column carrying it: a find names the path, the row is the marker's.
+ * A column whose format cannot hold it (uuid, enum, a short char) is absent from `columns`.
+ */
 export interface SeedCanary {
   readonly entity: string;
   readonly tenant: string | null;
@@ -49,6 +58,7 @@ export interface SeedGraph {
   readonly order: readonly string[];
   readonly inserts: readonly SeedRow[];
   readonly updates: readonly SeedUpdate[];
+  /** One per insert, in the same order: `canaries[i]` is `inserts[i]`'s. */
   readonly canaries: readonly SeedCanary[];
 }
 
@@ -56,6 +66,12 @@ export interface SeedGraph {
 export interface SeedWriter {
   insert(row: SeedRow): Promise<void>;
   update(update: SeedUpdate): Promise<void>;
+  /**
+   * Each row read back by its primary key, as one digest per row in the order given — `null` for
+   * a row no longer there. Equal digests mean an unchanged row; the tenant proof's write half
+   * compares two snapshots. Soft-deleted rows are read too, so a soft delete is a change.
+   */
+  snapshot(rows: readonly SeedRow[]): Promise<readonly (string | null)[]>;
 }
 
 /** Writes the plan in order: every insert, then every deferred key. Sequential, so it replays. */

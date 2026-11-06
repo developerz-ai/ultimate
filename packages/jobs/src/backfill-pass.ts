@@ -14,14 +14,16 @@
 // a report an operator reads and the record that a completed name has already been swept.
 
 import { appVersion, assert, logger, renderThrowable, resolveEnvironment } from '@ultimat3/core';
-import type { BatchIterator } from '@ultimat3/entity';
-import type { BackfillDefinition, BackfillInput, BackfillReport } from './backfill';
+import type { BackfillInput, BackfillReport } from './backfill-definition';
 import { BackfillStalledError } from './backfill-errors';
 import { checkBackfillEnvironment } from './backfill-gate';
 import type { BackfillLedger, BackfillRun } from './backfill-ledger';
 import { decideBackfill } from './backfill-ledger';
 import type { Pacer } from './backfill-rate';
+import { pageReader } from './backfill-reader';
 import { withBackfillScope } from './backfill-scope';
+import type { AnyBackfill } from './backfill-source';
+import { ledgerNameFor } from './backfill-source';
 import { jobDriver } from './driver';
 import type { JobRunArgs } from './job';
 import { isStepSuspension } from './steps';
@@ -36,15 +38,12 @@ interface Checkpoint {
   readonly rows: number;
 }
 
-/** One live iteration and the pull that advances it. Rebuilt when the checkpoints disagree. */
-interface Iteration<Row> {
-  readonly batches: BatchIterator<Row>;
-  readonly pull: AsyncIterator<readonly Row[]>;
-}
+/** What a run's payload carries: `force`, and the input a scoped pass is keyed by. */
+type PassInput = BackfillInput & { readonly input?: unknown };
 
 /** Everything about the backfill that is fixed at declaration, hashed, sized and paced once. */
 export interface BackfillPlan<Row> {
-  readonly definition: BackfillDefinition<Row>;
+  readonly definition: AnyBackfill<Row>;
   readonly size: number;
   readonly checksum: string;
   /** The declared `rate`, already an interval. Built at declaration for the reason `size` is. */
@@ -115,12 +114,13 @@ async function markFailed(
  * to close.
  */
 async function assertConverged<Row>(
-  definition: BackfillDefinition<Row>,
-  ctx: JobRunArgs<BackfillInput>['ctx'],
+  definition: AnyBackfill<Row>,
+  ctx: JobRunArgs<PassInput>['ctx'],
+  input: unknown,
   swept: number,
 ): Promise<void> {
   if (definition.count === undefined) return;
-  const remaining = await definition.count({ ctx });
+  const remaining = await definition.count({ ctx, input });
   // Parsed, not trusted: `count()` is app code feeding a framework decision, and both `NaN > 0`
   // and `-1 > 0` are FALSE — an unchecked bad number reads as "converged" and writes the completed
   // ledger row that stops the next deploy ever re-running this sweep. The one failure mode this
@@ -142,11 +142,14 @@ async function assertConverged<Row>(
  */
 export async function backfillPass<Row>(
   plan: BackfillPlan<Row>,
-  args: JobRunArgs<BackfillInput>,
+  args: JobRunArgs<PassInput>,
 ): Promise<BackfillReport> {
   const { definition, size, checksum, pace } = plan;
   const { step, runId } = args;
-  const name = definition.name;
+  const input = args.input.input;
+  // The LEDGER's name: the declaration's, or `<name>:<scope>` for a scoped pass — so two scopes
+  // keep two histories, and an unscoped pass writes exactly what it always wrote.
+  const name = ledgerNameFor(definition.name, definition.scope, args.input);
   // Before the ledger is even opened: a sweep this deploy may not run must leave no row saying it
   // started. Enforced here and not only in `x db backfill`, because app code that calls
   // `.enqueue()` directly never passes through a command — a rail only the CLI holds is a
@@ -157,7 +160,11 @@ export async function backfillPass<Row>(
   // nothing must not start failing over a variable it never reads.
   const declaredEnvironments = definition.environments;
   if (declaredEnvironments !== undefined && declaredEnvironments.length > 0) {
-    const mismatch = checkBackfillEnvironment(name, declaredEnvironments, resolveEnvironment());
+    const mismatch = checkBackfillEnvironment(
+      definition.name,
+      declaredEnvironments,
+      resolveEnvironment(),
+    );
     if (mismatch !== undefined) throw mismatch;
   }
   // Absent on a driver that ships no ledger, which runs the pass with no bookkeeping rather than
@@ -214,24 +221,7 @@ export async function backfillPass<Row>(
       let cursor: string | null = null;
       let rows = 0;
       let batches = 0;
-      let live: Iteration<Row> | undefined;
-
-      /**
-       * The iteration positioned at `cursor`, opened on the first batch this attempt actually runs so
-       * a resumed pass sends no statement for a page it already handled.
-       *
-       * `batches.cursor` IS where the next statement starts, so comparing it with the checkpoint's is
-       * the whole staleness test — and it is not academic: `retryFromStep` re-opens ONE step in the
-       * middle of a finished run, which moves the checkpoints somewhere this iteration is not. Rebuilt
-       * from the checkpoint rather than read from wherever the old one was parked.
-       */
-      const iterate = async (): Promise<Iteration<Row>> => {
-        if (live !== undefined && live.batches.cursor === cursor) return live;
-        await live?.batches.close();
-        const opened = definition.source({ ctx }).after(cursor).inBatches(size);
-        live = { batches: opened, pull: opened[Symbol.asyncIterator]() };
-        return live;
-      };
+      const reader = pageReader(definition, ctx, size, input);
 
       try {
         for (let index = 0; ; index += 1) {
@@ -252,16 +242,16 @@ export async function backfillPass<Row>(
               // The signal is the run's cancellation composed with this step's ceiling, so a cancelled
               // pass unwinds out of the wait instead of sitting in a timer nobody is waiting for.
               await pace.wait({ signal, step: stepName });
-              const iteration = await iterate();
-              const next = await iteration.pull.next();
-              if (next.done === true) return { cursor: null, rows: 0 };
+              const page = await reader.read(cursor, signal);
+              // An exhausted chain, or a remote page with nothing on it: no body, no ledger write.
+              if (page.rows.length === 0) return { cursor: page.next, rows: 0 };
               if (!recording) {
                 recording = true;
                 await open();
               }
-              await definition.handle({ rows: next.value, ctx, signal, index });
+              await definition.handle({ rows: page.rows, ctx, signal, index, input });
               swept = true;
-              return { cursor: iteration.batches.cursor, rows: next.value.length };
+              return { cursor: page.next, rows: page.rows.length };
             }),
             stepName,
           );
@@ -288,7 +278,7 @@ export async function backfillPass<Row>(
         // this converge", asked once, where the answer is finally decidable. Inside the `try` so the
         // ledger records the attempt as `failed`: a pass that left rows behind must not write the
         // completed row that stops the next deploy re-running it.
-        if (recording) await assertConverged(definition, ctx, rows);
+        if (recording) await assertConverged(definition, ctx, input, rows);
       } catch (error) {
         // Control flow, not a failure: a suspended run is parked and will be back on this step.
         if (!isStepSuspension(error) && recording) await markFailed(ledger, runId, rows);
@@ -296,7 +286,7 @@ export async function backfillPass<Row>(
       } finally {
         // Whatever the iteration holds belongs to this attempt, and an attempt that failed, was
         // cancelled or finished is done with it either way.
-        await live?.batches.close();
+        await reader.close();
       }
 
       if (recording) await ledger?.finish(runId, { status: 'completed', rows });

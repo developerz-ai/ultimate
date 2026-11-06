@@ -32,6 +32,36 @@ const rotate = <T>(values: readonly T[], by: number): T[] =>
 const keyOf = (entity: SeedEntity, row: Readonly<Record<string, unknown>>) =>
   Object.fromEntries(entity.$primaryKey.map((property) => [property, row[property]]));
 
+/**
+ * Every entity whose rows belong to one tenant: a tenant column, a tenant root, or — with neither —
+ * a reference path to one that is not cut by `shared`. The last kind is seeded per tenant under
+ * its own tenant's parent, so the tenant proof has a row of each instance to attack it through.
+ */
+function ownedByTenant(
+  shapes: ReadonlyMap<string, EntityShape>,
+  roots: ReadonlyMap<string, string>,
+): ReadonlySet<string> {
+  const owned = new Set<string>();
+  for (const shape of shapes.values()) {
+    if (roots.has(shape.name) || shape.entity.$tenantColumn !== null) owned.add(shape.name);
+  }
+  // A fixpoint over references: a grandchild is owned through its owned child.
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const shape of shapes.values()) {
+      if (owned.has(shape.name) || shape.entity.$describe().shared !== undefined) continue;
+      const reaches = [...shape.references.values()].some(
+        (reference) => reference.targetEntity !== shape.name && owned.has(reference.targetEntity),
+      );
+      if (reaches) {
+        owned.add(shape.name);
+        grew = true;
+      }
+    }
+  }
+  return owned;
+}
+
 export function seedGraph(
   entities: Readonly<Record<string, SeedEntity>>,
   options: SeedGraphOptions = {},
@@ -57,8 +87,8 @@ export function seedGraph(
       roots.set(reference.targetEntity, reference.targetProperty);
     }
   }
-  const scoped = (name: string): boolean =>
-    roots.has(name) || (shapes.get(name)?.entity.$tenantColumn ?? null) !== null;
+  const owned = ownedByTenant(shapes, roots);
+  const scoped = (name: string): boolean => owned.has(name);
   for (const factory of Object.values(options.factories ?? {})) factory.reset();
 
   const placed = new Map<string, Placed[]>();

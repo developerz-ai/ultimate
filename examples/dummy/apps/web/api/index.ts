@@ -30,6 +30,9 @@ import { defineApi } from '@ultimat3/action';
 // a transition and an `llm()`/`agent()`/`hive()` call are actions; a backfill, a notifier, a
 // scrape, a webhook delivery, an export and an `agentJob()` are jobs.
 import * as endSession from '../app/auth/actions/end-session';
+import * as planCatalog from '../app/billing/backfills/plan-catalog';
+import * as planPrices from '../app/billing/jobs/plan-prices';
+import * as settleUpgrade from '../app/billing/jobs/settle-upgrade';
 import * as contactSales from '../app/contact/actions/contact-sales';
 import * as sendSalesReceipt from '../app/contact/jobs/send-sales-receipt';
 import * as deliverDigest from '../app/digest/jobs/deliver-digest';
@@ -43,6 +46,7 @@ import * as memberAvatar from '../app/orgs/actions/member-avatar';
 import * as upgradePlan from '../app/orgs/actions/upgrade-plan';
 import * as onboardOrg from '../app/orgs/jobs/onboard-org';
 import * as sendInvite from '../app/orgs/jobs/send-invite';
+import { PARTNER_SCOPES, resolvePartnerToken } from '../app/partners/oauth';
 import * as createComment from '../app/posts/actions/create-comment';
 import * as createPost from '../app/posts/actions/create-post';
 import * as keepDraftReview from '../app/posts/actions/keep-draft-review';
@@ -165,12 +169,22 @@ export const api = defineApi({
     purgeMcpConfirmations,
     postPublishedWebhook,
     billingEventsReceiver,
+    planPrices,
+    planCatalog,
+    settleUpgrade,
   ],
   tasks: [nightlyDigest, hourlyPurge],
   // A second door for machine callers, onto actions a browser already calls: same handler, same
   // policy, an org's bearer key instead of a session. `/api/runs/start` is `/v1/runs/start`, and
   // publishPost's pinned `/api/posts/:postId/publish` is `/v1/posts/:postId/publish`.
-  http: { mounts: [{ prefix: '/v1', scopes: ORG_KEY_SCOPES, resolveToken: resolveOrgKey }] },
+  // And one for a partner's machine: the public blog's reads, behind a client-credentials token
+  // from Postly's own authorization server (`app/partners/oauth.ts`) instead of an org key.
+  http: {
+    mounts: [
+      { prefix: '/v1', scopes: ORG_KEY_SCOPES, resolveToken: resolveOrgKey },
+      { prefix: '/partner', scopes: PARTNER_SCOPES, resolveToken: resolvePartnerToken },
+    ],
+  },
 });
 
 /** What the typed client is shaped from — imported as a TYPE only by `shared/client.ts`. */
