@@ -15,6 +15,7 @@ import {
   unrenderedRows,
   viewRows,
 } from './catalog-objects';
+import { policiesOf, policyRows, rowSecurityOf, rowSecurityRows } from './catalog-policies';
 import {
   columnRows,
   constraintRows,
@@ -23,6 +24,7 @@ import {
   tableRows,
 } from './catalog-relations';
 import { type DbClient, db } from './client';
+import { indexDefinitionOf } from './partition-order';
 
 export interface IntrospectCatalogOptions {
   readonly client?: DbClient | undefined;
@@ -60,7 +62,7 @@ async function typesOf(client: DbClient, schema: string): Promise<readonly Catal
 }
 
 /**
- * Eleven round trips, sequential: a pinned transaction connection answers one statement at a
+ * Fifteen round trips, sequential: a pinned transaction connection answers one statement at a
  * time, and this runs once per `x db gen`, never per request.
  */
 export async function introspectCatalog(
@@ -77,11 +79,15 @@ export async function introspectCatalog(
   const functions = await functionRows(client, schema);
   const triggers = await triggerRows(client, schema);
   const unrendered = await unrenderedRows(client, schema);
+  const security = await rowSecurityRows(client, schema);
+  const policies = await policyRows(client, schema);
   const known = new Set(tables.map((table) => table.name));
+  // A policy loads only onto a table the dump creates — the rule `loadable` states for a trigger.
+  const onKnown = (row: { readonly table_name: string }): boolean => known.has(row.table_name);
   const materialized = new Set(views.filter((view) => view.kind === 'm').map((view) => view.name));
-  // A trigger loads only onto a relation the dump creates: a plain table, or a view (`instead
-  // of`). One on a partitioned table or a partition was filed under `09_triggers/` for a table no
-  // file creates, and the load refused the whole dump with `X_SCHEMA_DUMP_DRIFT`.
+  // A trigger loads only onto a relation the dump creates: a table, or a view (`instead of`). One
+  // on an inheritance child was filed under `09_triggers/` for a table no file creates, and the
+  // load refused the whole dump with `X_SCHEMA_DUMP_DRIFT`.
   const viewNames = new Set(views.map((view) => view.name));
   const loadable = (trigger: { readonly table_name: string }): boolean =>
     known.has(trigger.table_name) || viewNames.has(trigger.table_name);
@@ -99,10 +105,14 @@ export async function introspectCatalog(
     tables: tables
       .map((table) => tableOf(table, columns, constraints, sequences))
       .sort(by((table) => table.name)),
-    // An index on a relation this reading does not render (a partition) has nowhere to load.
+    // An index on a relation this reading does not render (an inheritance child) has nowhere to load.
     indexes: indexes
       .filter((index) => known.has(index.table_name) || materialized.has(index.table_name))
-      .map((row) => ({ table: row.table_name, name: row.name, definition: row.definition }))
+      .map((row) => ({
+        table: row.table_name,
+        name: row.name,
+        definition: indexDefinitionOf(row.definition),
+      }))
       .sort(
         by(
           (index) => index.table,
@@ -148,8 +158,17 @@ export async function introspectCatalog(
           (trigger) => trigger.name,
         ),
       ),
+    rowSecurity: rowSecurityOf(security.filter(onKnown)),
+    policies: policiesOf(policies.filter(onKnown)),
     unrendered: [
       ...unrendered,
+      ...policies
+        .filter((policy) => !onKnown(policy))
+        .map((policy) => ({
+          kind: 'row security policy',
+          name: policy.name,
+          table_name: policy.table_name,
+        })),
       // Named rather than dropped, the rule `CatalogUnrendered` states.
       ...triggers
         .filter((trigger) => !loadable(trigger))

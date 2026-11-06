@@ -223,6 +223,9 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
  * and passed — so the isolation this gate runs per unit to prove was proved by nothing.
  * Measured: a probe asserting `1 === 2` in `packages/money` left `--package money` green.
  */
+/** How much of a failed run's end the cause carries when no line names the failure. */
+const UNNAMED_TAIL_LINES = 20;
+
 export function suiteFailure(
   name: string,
   exitCode: number,
@@ -231,13 +234,21 @@ export function suiteFailure(
   if (exitCode === 0) return undefined;
   const unit = unitOf(name);
   const lines = stderr.split('\n').map((line) => line.trim());
-  const failed = lines.filter((line) => /^\(fail\)|^error:|\btimed out\b/.test(line)).slice(0, 12);
+  const failed = lines
+    .filter((line) => /^\(fail\)|^error:|^::error\b|\btimed out\b/.test(line))
+    .slice(0, 12);
   // The assertion's own diff — what the test RECEIVED — is the half that names the cause; a CI
   // flake reported as `error: expect(received).toEqual(expected)` alone cannot be root-caused.
   const diff = lines.filter((line) => /^(?:[-+]\s|Expected:|Received:)/.test(line)).slice(0, 24);
+  // Nothing named: an unhandled error between tests, a crash, a non-zero exit with every test
+  // green. The run's own last lines are then the only evidence, and CI keeps no other copy.
+  const tail =
+    failed.length === 0 && diff.length === 0
+      ? lines.filter((line) => line !== '').slice(-UNNAMED_TAIL_LINES)
+      : [];
   return {
     code: 'X_TEST_FAILED',
-    cause: `bun test ${unit.test} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}${diff.length > 0 ? ` — the assertion's diff: ${diff.join(' | ')}` : ''}`,
+    cause: `bun test ${unit.test} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}${diff.length > 0 ? ` — the assertion's diff: ${diff.join(' | ')}` : ''}${tail.length > 0 ? ` — exit ${String(exitCode)}, and the run ended: ${tail.join(' | ')}` : ''}`,
     fix: `run bun test ${unit.test} and fix what it reports — a suite green only beside other packages depends on something another package registered first`,
   };
 }
@@ -327,11 +338,16 @@ async function measure(root: string, name: string, workers: number): Promise<Cov
   const proc = Bun.spawn([...testCommand(unit, dir, workers)], {
     cwd: root,
     env: unitEnv(Bun.env, serviceKeys(root)),
-    stdout: 'ignore',
+    // Both read: under GitHub Actions Bun reports a failing test as an `::error` annotation on
+    // stdout, so stderr alone named three failures as "3 tests failed:" and nothing else.
+    stdout: 'pipe',
     stderr: 'pipe',
   });
-  const stderr = await new Response(proc.stderr).text();
-  const failure = suiteFailure(name, await proc.exited, stderr);
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  const failure = suiteFailure(name, await proc.exited, `${stdout}\n${stderr}`);
   if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {

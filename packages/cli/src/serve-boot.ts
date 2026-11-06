@@ -7,11 +7,13 @@
 
 import type { DrainConfig, LifecycleOptions, Role } from '@ultimat3/core';
 import { configureLifecycle, logger, UltimateError } from '@ultimat3/core';
+import { loadAppConfig } from './app-config-load';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
 import type { Finding } from './output';
 import { loadAppForRole, roleLoadFor } from './role-load';
 import { startRoles } from './role-start';
+import { armRowSecurity, rowSecurityDeclared } from './row-security-boot';
 import { resolveServices } from './runtime-bindings';
 import { busLabel } from './runtime-bus';
 import { warnIfIdempotencyProcessScoped } from './runtime-idempotency-scope';
@@ -151,6 +153,12 @@ async function bootRoles(boot: {
     logger.error('ultimate app module failed to load', { role, ...finding });
   }
   refuseHalfLoadedApp(role, loaded.findings);
+  // After the app's modules and before any role serves: a role Postgres exempts from row security is
+  // refused here (`X_DB_ROW_SECURITY_BYPASSED`), never discovered on another tenant's first read.
+  // PGlite's one session is a superuser: there the boot serves as `x_app` instead of refusing.
+  const embedded = runtime.services.db.mode === 'embedded';
+  const declared = rowSecurityDeclared(await loadAppConfig(options.root));
+  acquired.push(await armRowSecurity(declared, { embedded }));
   // After the app's modules: an app swaps the store at import time, after `startServices`.
   warnIfIdempotencyProcessScoped();
   const buildId = await buildIdFor(options, role);

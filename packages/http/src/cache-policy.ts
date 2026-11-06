@@ -10,6 +10,14 @@ import type { Route } from './router';
 /** The one answer for an identified request, whoever asked. */
 export const PRIVATE_CACHE: CacheHint = { mode: 'private', maxAgeSeconds: 0 };
 
+/**
+ * A response the CALLER's browser may keep, but must revalidate before every use: what a read
+ * declared `etag: true` answers. Written by the handler as a header, not a `CacheHint` — a hint has
+ * no `no-cache` directive, and `max-age=0` lets a browser serve the copy stale when offline. The
+ * stage leaves it alone (`offersSharedCache` is false), and `replayableExchange` admits the 304.
+ */
+export const PRIVATE_REVALIDATE = 'private, no-cache';
+
 // `public` or an `s-maxage` is an OFFER to a shared cache; `immutable` withdraws the question,
 // because it asserts the body is a function of the URL alone — which is what a content-addressed
 // island chunk or image is, and demoting those would re-download every chunk on every navigation

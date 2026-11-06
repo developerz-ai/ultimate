@@ -5,6 +5,17 @@
 
 import { nonAppRelations } from './app-relation';
 import { type DbClient, db } from './client';
+import {
+  type CheckRow,
+  type ColumnRow,
+  type ForeignKeyRow,
+  type IndexRow,
+  notValidOf,
+  onDeleteOf,
+  type TriggerNameRow,
+} from './introspect-rows';
+import { partitionedTables } from './partitioned-tables';
+import { type PolicyNameRow, policyNameRows } from './row-security-catalog';
 import { sql } from './sql';
 
 export interface ColumnDescription {
@@ -149,6 +160,24 @@ export interface TableDescription {
    * Written by `introspectSchema()` always, `[]` included; absent means nobody asked the catalog.
    */
   readonly triggerNames?: readonly string[] | undefined;
+  /**
+   * That the catalog holds this table as a PARTITIONED parent (`relkind = 'p'`). A catalog reading,
+   * `true` or absent, never on a sidecar: a partitioned table is declared by a hand edit to the
+   * generated `create table`, which no entity records, and drift compares what still holds on the
+   * parent — columns, keys, indexes. Absent on every ordinary table, so an unpartitioned app's
+   * descriptions are unchanged. Its partitions are Postgres' and appear in no description.
+   */
+  readonly partitioned?: true | undefined;
+  /**
+   * That a migration gave this table the tenant policy, enabled and forced (`row-security-plan.ts`).
+   * The SNAPSHOT's half, `true` or absent for `appendOnly`'s reason; the catalog's is `policyNames`.
+   */
+  readonly rowSecurity?: true | undefined;
+  /**
+   * The CATALOG's half of `rowSecurity`: the policies on the table when its row security is enabled
+   * and forced, `[]` otherwise (`row-security-catalog.ts`). Absent means nobody asked the catalog.
+   */
+  readonly policyNames?: readonly string[] | undefined;
 }
 
 export interface SchemaDescription {
@@ -168,86 +197,7 @@ export interface IntrospectOptions {
   readonly exclude?: readonly string[] | undefined;
 }
 
-interface ColumnRow {
-  readonly table_name: string;
-  readonly column_name: string;
-  readonly data_type: string;
-  readonly is_nullable: string;
-  readonly column_default: string | null;
-  readonly ordinal_position: number;
-}
-
-interface IndexRow {
-  readonly table_name: string;
-  readonly index_name: string;
-  readonly is_unique: boolean;
-  readonly is_primary: boolean;
-  readonly columns: readonly string[];
-  readonly predicate: string | null;
-  readonly descending: boolean;
-  readonly method?: string | undefined;
-}
-
-interface ForeignKeyRow {
-  readonly table_name: string;
-  readonly constraint_name: string;
-  readonly columns: readonly string[];
-  readonly referenced_table: string;
-  readonly referenced_columns: readonly string[];
-  readonly on_delete: string | null;
-  /** `set null (a, b)`'s list as the server prints it. Postgres 15+; `null` for any other rule. */
-  readonly set_null_columns?: string | null | undefined;
-  readonly validated?: boolean | undefined;
-}
-
-/**
- * A key's rule in the spelling a description holds, list included. The list reads the definition
- * text, not `confdelsetcols`, which is a column only Postgres 15+ has: this query runs against
- * whatever an operator points it at. The server quotes a reserved word and a description never
- * does, so each name is unquoted or `user` is a permanent `changed-foreign-key`.
- */
-const unquotedName = (name: string): string => {
-  const trimmed = name.trim();
-  return trimmed.startsWith('"') && trimmed.endsWith('"')
-    ? trimmed.slice(1, -1).replaceAll('""', '"')
-    : trimmed;
-};
-
-const onDeleteOf = (row: ForeignKeyRow): string | null =>
-  row.set_null_columns == null
-    ? row.on_delete
-    : `set null (${row.set_null_columns.split(',').map(unquotedName).join(', ')})`;
-
-/** A CHECK constraint's NAME. There is deliberately no column for its definition — see `checkNames`. */
-interface CheckRow {
-  readonly table_name: string;
-  readonly constraint_name: string;
-  readonly validated?: boolean | undefined;
-}
-
-/** An enabled trigger's NAME — the half of `appendOnly` the catalog can answer. */
-interface TriggerNameRow {
-  readonly table_name: string;
-  readonly trigger_name: string;
-}
-
 const byName = (a: { name: string }, b: { name: string }): number => (a.name < b.name ? -1 : 1);
-
-/** Absent when none: `false` only, so a row a fake client wrote without the field is not one. */
-const notValidOf = (
-  rows: readonly {
-    readonly table_name: string;
-    readonly constraint_name: string;
-    readonly validated?: boolean | undefined;
-  }[],
-  table: string,
-): { readonly notValidNames?: readonly string[] } => {
-  const names = rows
-    .filter((row) => row.table_name === table && row.validated === false)
-    .map((row) => row.constraint_name)
-    .sort();
-  return names.length === 0 ? {} : { notValidNames: names };
-};
 
 export async function introspectSchema(
   options: IntrospectOptions = {},
@@ -321,7 +271,7 @@ export async function introspectSchema(
     join pg_am am on am.oid = i.relam
     cross join lateral unnest(ix.indkey::smallint[]) with ordinality as k(attnum, ord)
     left join pg_attribute a on a.attrelid = t.oid and a.attnum = k.attnum and k.attnum > 0
-    where n.nspname = ${schema} and t.relkind = 'r' and k.ord <= ix.indnkeyatts
+    where n.nspname = ${schema} and t.relkind in ('r', 'p') and k.ord <= ix.indnkeyatts
     group by
       t.relname, i.relname, ix.indisunique, ix.indisprimary, ix.indpred, ix.indrelid,
       ix.indexrelid, am.amname
@@ -333,6 +283,8 @@ export async function introspectSchema(
   // two-column key came back as four source columns against four referenced ones, duplicated and
   // misaligned. Ordered by `k.ord` (the constraint's own key position), never by `attnum`, for the
   // same reason `indkey` orders the index query: `references t (y, x)` is not `references t (x, y)`.
+  // `conparentid = 0`: a key into a partitioned table makes Postgres add one clone per partition
+  // (`notes_event_fkey_1`, `_2`, …), each a fact of the partitioning and never of a migration.
   const foreignKeys = await client.query<ForeignKeyRow>(sql`
     select
       src.relname as table_name,
@@ -350,7 +302,7 @@ export async function introspectSchema(
     cross join lateral unnest(c.conkey, c.confkey) with ordinality as k(src_attnum, tgt_attnum, ord)
     join pg_attribute sa on sa.attrelid = src.oid and sa.attnum = k.src_attnum
     join pg_attribute ta on ta.attrelid = tgt.oid and ta.attnum = k.tgt_attnum
-    where c.contype = 'f' and n.nspname = ${schema}
+    where c.contype = 'f' and n.nspname = ${schema} and c.conparentid = 0
     group by c.oid, src.relname, c.conname, tgt.relname, c.confdeltype, c.convalidated
     order by src.relname, c.conname
   `);
@@ -365,7 +317,7 @@ export async function introspectSchema(
     from pg_constraint c
     join pg_class src on src.oid = c.conrelid
     join pg_namespace n on n.oid = src.relnamespace
-    where c.contype = 'c' and n.nspname = ${schema} and src.relkind = 'r'
+    where c.contype = 'c' and n.nspname = ${schema} and src.relkind in ('r', 'p')
     order by src.relname, c.conname
   `);
 
@@ -377,11 +329,24 @@ export async function introspectSchema(
     join pg_class src on src.oid = t.tgrelid
     join pg_namespace n on n.oid = src.relnamespace
     where not t.tgisinternal and t.tgenabled in ('O', 'A')
-      and n.nspname = ${schema} and src.relkind = 'r'
+      and n.nspname = ${schema} and src.relkind in ('r', 'p')
     order by src.relname, t.tgname
   `);
 
-  return buildSchema(schema, excluded, columns, indexes, foreignKeys, checks, triggers);
+  const partitioned = await partitionedTables(client, schema);
+  const policies = await policyNameRows(client, schema);
+
+  return buildSchema(
+    schema,
+    excluded,
+    columns,
+    indexes,
+    foreignKeys,
+    checks,
+    triggers,
+    partitioned,
+    policies,
+  );
 }
 
 /** Pure, so the row -> description mapping is testable without a database. */
@@ -394,6 +359,9 @@ export function buildSchema(
   checks: readonly CheckRow[] = [],
   /** Absent leaves `triggerNames` off every table: nobody asked the catalog. */
   triggers?: readonly TriggerNameRow[],
+  partitioned: readonly string[] = [],
+  /** Absent leaves `policyNames` off every table, as `triggers` does `triggerNames`. */
+  policies?: readonly PolicyNameRow[],
 ): SchemaDescription {
   const names = [...new Set(columns.map((row) => row.table_name))]
     .filter((name) => !excluded.includes(name))
@@ -452,6 +420,15 @@ export function buildSchema(
             triggerNames: triggers
               .filter((row) => row.table_name === name)
               .map((row) => row.trigger_name)
+              .sort(),
+          }),
+      ...(partitioned.includes(name) ? { partitioned: true as const } : {}),
+      ...(policies === undefined
+        ? {}
+        : {
+            policyNames: policies
+              .filter((row) => row.table_name === name)
+              .map((row) => row.policy_name)
               .sort(),
           }),
     };

@@ -61,6 +61,47 @@ export {
   UserSchema,
   VerificationSchema,
 } from './auth';
+export type { AuthorizationServer } from './authorization-server';
+export { AUTH_CODE_TTL_MS, authorizationServer } from './authorization-server';
+export type {
+  RegisterClientInput,
+  RegisteredClient,
+} from './authorization-server-clients';
+export type {
+  AuthorizationServerOptions,
+  AuthServerEvent,
+  AuthServerLifetimes,
+} from './authorization-server-config';
+export type { PostgresAuthServerStoreOptions } from './authorization-server-postgres';
+export { postgresAuthServerStore } from './authorization-server-postgres';
+export type { ReadRequestResult } from './authorization-server-request';
+export { AUTH_SERVER_METADATA_WELL_KNOWN } from './authorization-server-routes';
+export { AUTH_SERVER_TABLES, SQL_AUTH_SERVER_TABLES } from './authorization-server-schema';
+export type {
+  AuthServerStore,
+  DeviceDecision,
+  RefreshRotation,
+} from './authorization-server-store';
+export { memoryAuthServerStore } from './authorization-server-store';
+export type {
+  AuthCodeRecord,
+  AuthGrantRecord,
+  AuthorizationRequest,
+  AuthServerClient,
+  AuthServerGrant,
+  AuthTokenKind,
+  AuthTokenRecord,
+  ClientAuthMethod,
+  DeviceCodeRecord,
+  DeviceStatus,
+  ResolvedGrant,
+} from './authorization-server-types';
+export { DEVICE_GRANT } from './authorization-server-types';
+export type {
+  AuthServerHttpContext,
+  AuthServerHttpRequest,
+  AuthServerRoute,
+} from './authorization-server-wire';
 export { type PostgresAuthAdapter, postgresAuthAdapter } from './builtin-adapter';
 /** The opaque per-principal id a per-request document hands the page's client store. */
 export type { ClientScopeOptions } from './client-scope';
@@ -93,6 +134,7 @@ export {
   sessionUnknown,
   signInUnconfigured,
 } from './errors';
+export type { DeviceReading } from './grant-device';
 export { currentActor, requireActor } from './guards';
 export type { IdTokenClaims, VerifyIdTokenInput } from './id-token';
 export {
@@ -196,6 +238,12 @@ export type {
   TokenEndpointAuth,
 } from './oauth';
 export { assertOAuthCallback, beginOAuth, pkcePair } from './oauth';
+export type {
+  OAuthBearerCaller,
+  OAuthBearerResolverOptions,
+  OAuthTokenSource,
+} from './oauth-bearer-resolver';
+export { oauthBearerResolver } from './oauth-bearer-resolver';
 export {
   BUILTIN_OAUTH_PROVIDER_IDS,
   BUILTIN_OAUTH_PROVIDERS,
@@ -364,18 +412,25 @@ export {
   randomToken,
   sha256Hex,
 } from './tokens';
+export type { VerificationPurposeDef } from './verification-purposes';
+export { verificationPurposeNames } from './verification-purposes';
 export type {
   ConsumeVerificationInput,
+  DefineVerificationPurposeInput,
   IssuedVerification,
   IssueVerificationInput,
   MailSender,
   VerificationPurpose,
+  VerificationPurposeHandle,
   VerificationRuntime,
 } from './verify';
 export {
   consumeVerification,
   DEFAULT_VERIFICATION_TTL_MS,
+  defineVerificationPurpose,
+  emailVerification,
   issueVerification,
+  passwordReset,
   VERIFICATION_PURPOSES,
   VERIFICATION_TEMPLATES,
 } from './verify';

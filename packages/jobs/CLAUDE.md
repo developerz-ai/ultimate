@@ -6,8 +6,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 
 - May import: `core`, `schema`, `entity`, `policy`, `cache`, `time` — and `db`, for
   `expectedQueryLoop` (`steps.ts` declares the per-step write one-per-step to the N+1 detector),
-  `outsideTransaction` (`execute.ts`) and `refuseAbandoned` (`outbox.ts`). No client is ever taken
-  from it. Never `render`, `ui`. `http` only from `webhook-receiver*.ts`, for the route
+  `outsideTransaction` (`execute.ts`), `refuseAbandoned` (`outbox.ts`) and `withTransaction`
+  (`consumer-loop.ts`: a batch and its cursor commit together) — the ONE place a client is taken
+  from it, the ambient `db()`. Never `render`, `ui`. `http` only from `webhook-receiver*.ts`, for the route
   (`Route`/`Bucket` types, `DEFAULT_WEBHOOK_BODY_LIMIT`, `HttpError`, `jsonResponse`).
 - Consumers: `action` (`<job>.enqueue`, via the ambient jobs facade), `cli`, `mcp`, `admin`.
 - External deps: none. Postgres access goes through the injected `PgExecutor` (`@ultimat3/core`'s,
@@ -143,11 +144,11 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`x jobs cancel` binds to `cancelJob(driver, id, reason?)`, which refuses** a finished job or a
   driver with no `cancel` (`X_JOB_NOT_CANCELLABLE`).
 
-## Rules — the operator surface; idle cost and the wake
+## Rules — long form in `docs/history/jobs.md`
 
-Moved whole to `docs/history/jobs.md`, "Moved out 2026-11-03 (plan 101 wave 4a)": every operator
-verb is a `JobIntrospection` member on BOTH drivers; an idle round touches no store, and the poll is
-the guarantee, the wake an optimisation.
+- "Moved out 2026-11-03": operator verbs on BOTH drivers; an idle round touches no store.
+- "Plan 101 wave 6c": compensate ONLY failed for good; `once` writes `started` BEFORE `fn`; a
+  waking publish is ONE statement; payload org = enqueue org (`X_JOB_TENANT_MISMATCH`).
 
 ## Rules — the outbox
 
@@ -203,11 +204,14 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `backfill-pending.ts` | declared minus completed, per environment: the alarm `--pending` reads |
 | `backfill-rate.ts` | the `rate` throttle: batches/sec as an interval, and the cancellable wait |
 | `backfill-inspect.ts` | the ledger projected for `x db backfill`, `x jobs`, `/_x` and MCP |
-| `backfill-errors.ts` | the seven `X_BACKFILL_*` classes; the codes stay declared in `error-codes.ts` |
+| `backfill-errors.ts` | the eight `X_BACKFILL_*` classes; the codes stay declared in `error-codes.ts` |
+| `backfill-definition.ts` / `backfill-source.ts` / `backfill-reader.ts` | the declaration types; exactly one of `source`/`pages`, the `<name>:<scope>` ledger key; reading either |
+| `consumer.ts` / `consumer-loop.ts` / `consumer-types.ts` | `consumer()` — a job + `.supervisor` task; one run's turns; the shapes |
+| `consumer-registry.ts` / `consumer-guard.ts` / `consumer-errors.ts` | the `origin` stamp + `registeredConsumers`; the self-enqueue refusal; `X_CONSUMER_*` |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements; an `action-job` projection is `X_ACTION_JOB_UNBRIDGED` |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
-| `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
-| `steps-timeout.ts` / `steps-suspension.ts` | a step's ceiling; `StepSuspension` and the timed-out marker |
+| `steps.ts` / `-core.ts` / `-wait.ts` / `-unwind.ts` | replay runner; shared core; `waitForEvent`; compensation |
+| `steps-timeout.ts` / `steps-suspension.ts` | a step's ceiling; `StepSuspension`, `UnwindReached`, timeout marker |
 | `steps-api.ts` / `steps-store.ts` / `steps-output.ts` | `StepApi`, `EventLookup`; `StepRecord`, `StepFence`, `StepStore`; what a step answers, `StepOutput` and `jsonForm` |
 | `type-pins.ts` | compile-time pins for `StepOutput` and `waitForEvent` |
 | `outbox.ts` | staging in a `Tx`, the store seam, the ambient `JobsFacade` slot |
@@ -229,6 +233,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled` |
 | `retry.ts` | the dead-letter decision, and this package's option names over core's `backoffDelay` — no curve of its own |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
+| `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
 | `execute.ts` / `run-deadline.ts` | `executeJob` — one claimed job run and settled; the run's deadline: cancel, then fail |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `renewal-timer.ts` | the renewal interval and its `stopped()` latch |
@@ -262,7 +267,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `driver-pg-outbox-sql.ts` | the `x_outbox` statements |
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |
 | `errors-tenant.ts` | `JobTenantMismatchError` |
-| `errors-steps.ts` | `StepOutputUnserializableError`, `JobEventInvalidError` |
+| `errors-steps.ts` / `errors-saga.ts` / `step-resolve.ts` | step, saga + `once` refusals; `resolveStep` |
 | `worker-queue-demand.ts` | the `queue_demand` gauge: `driver.demand()`, skipped when `stats()` shows no work, retracted to 0 at the drain |
 | `driver-pg-demand-sql.ts` | `QUEUE_DEMAND_ROWS` and `SQL_QUEUE_DEMAND`; the scaler fixture's `SQL_SCALER_DEMAND` reads the same predicate |
 | `driver-pg-claim-sql.ts` | `SQL_CLAIM` and why it seeks; re-exported from `driver-pg-sql.ts` |

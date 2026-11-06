@@ -13,7 +13,7 @@ import {
   jsonSchemaOf,
 } from '@ultimat3/action';
 import { describeEntities, registeredEntities, sealedFields } from '@ultimat3/entity';
-import { describeJobs } from '@ultimat3/jobs';
+import { describeJobs, registeredConsumers } from '@ultimat3/jobs';
 import { describeQueries, getQuery, queryHttpPinOf } from '@ultimat3/query';
 import { describeChannels } from '@ultimat3/realtime/server';
 import { toWireOutputSchema } from '@ultimat3/schema';
@@ -218,6 +218,16 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
           }),
       // The same rule: only a job that declares the hook carries the key.
       ...(job.onSettled ? { onSettled: true as const } : {}),
+    })),
+    // Field by field, for the reason above: `kind` is the declaration's tag, not a fact.
+    consumers: registeredConsumers().map((consumer) => ({
+      name: consumer.name,
+      queue: consumer.queue,
+      supervisor: consumer.supervisor,
+      arm: consumer.arm,
+      rearm: consumer.rearm,
+      batch: consumer.batch,
+      lags: consumer.lags,
     })),
   };
 }

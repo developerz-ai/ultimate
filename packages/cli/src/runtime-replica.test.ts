@@ -3,9 +3,9 @@
 // `@ultimat3/db`'s own replicated client so every assertion is about which NODE a statement landed
 // on rather than about which function was called.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import type { DbClient } from '@ultimat3/db';
-import { REPLICA_URL_ENV, recordingClient, replicatedClient, sql } from '@ultimat3/db';
+import { REPLICA_URL_ENV, recordingClient, replicatedClient, setDbClient, sql } from '@ultimat3/db';
 import type { Middleware, RequestContext, UltimateRequest } from '@ultimat3/http';
 import type { ServiceBinding } from './runtime-bindings';
 import {
@@ -43,12 +43,15 @@ const runThrough = async (
     await handler();
     return new Response('');
   };
-  const request = {} as UltimateRequest;
+  // No position carried: the frame reads both, and both answer nothing.
+  const request = { header: () => null, cookie: () => null } as unknown as UltimateRequest;
   const ctx = {} as RequestContext;
   const first = middleware[0];
   if (first === undefined) await inner();
   else await first(request, ctx, inner);
 };
+
+afterEach(() => setDbClient(undefined));
 
 const routed = (): {
   primary: ReturnType<typeof recordingClient>;
@@ -57,7 +60,10 @@ const routed = (): {
 } => {
   const primary = recordingClient();
   const replica = recordingClient();
-  return { primary, replica, client: replicatedClient(primary, replica) };
+  const client = replicatedClient(primary, replica);
+  // The ambient client, as the boot installs it: the position frame reads the primary through it.
+  setDbClient(client);
+  return { primary, replica, client };
 };
 
 describe('unit · which boots get a standby at all', () => {
@@ -116,7 +122,12 @@ describe('unit · with a replica configured, a request routes', () => {
       await client.query(sql`select * from posts where id = ${'p1'}`);
     });
     expect(replica.texts).toEqual([]);
-    expect(primary.texts).toHaveLength(2);
+    // The two statements, then the position the frame reads once the request has written.
+    expect(primary.texts).toEqual([
+      'insert into posts (id) values ($1)',
+      'select * from posts where id = $1',
+      'select pg_current_wal_insert_lsn()::text as lsn',
+    ]);
   });
 
   // Without a scope the same client is a single-pool one. This is the state the framework shipped

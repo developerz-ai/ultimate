@@ -20,6 +20,7 @@ import { replicaIdentityTables } from './db-subscribes';
 import { reconcileSchemaHash, writeSchemaHash } from './drift';
 import { hashFileName, MIGRATIONS_DIR, readMigrations, snapshotFileName } from './migrations';
 import type { Finding } from './output';
+import { appRowSecurity, type RowSecurityWanted } from './row-security-wanted';
 
 export interface GenerateMigrationOptions {
   readonly name: string;
@@ -27,6 +28,8 @@ export interface GenerateMigrationOptions {
   readonly allowDestructive?: boolean | undefined;
   /** `x db gen "…" --rolling-unsafe`. A drop never retired, for an app that stops before it starts. */
   readonly rollingUnsafe?: boolean | undefined;
+  /** `database.rowSecurity` and the tenant columns. The app's own unless a test injects one. */
+  readonly rowSecurity?: RowSecurityWanted | undefined;
 }
 
 /**
@@ -128,6 +131,7 @@ export async function generateAppMigration(
     current,
     name: options.name,
     replicaIdentityFull,
+    rowSecurity: await (options.rowSecurity ?? appRowSecurity)(root),
     ...(options.allowDestructive === true ? { allowDestructive: true } : {}),
     ...(options.rollingUnsafe === true ? { rollingUnsafe: true } : {}),
   });

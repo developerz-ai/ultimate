@@ -29,7 +29,8 @@ import {
   pageLimit,
   parseJobCursor,
 } from './introspection';
-import type { StepStore } from './steps';
+import { assertResolvable, resolvedRecord } from './step-resolve';
+import type { StepRecord, StepStore } from './steps';
 
 export interface MemoryQueueState {
   readonly jobs: Map<string, JobRecord>;
@@ -153,6 +154,18 @@ export function memoryOperator(state: MemoryQueueState): MemoryOperator {
       return before === undefined
         ? matching.slice(0, limit)
         : matching.slice(Math.max(0, matching.length - limit));
+    },
+
+    async resolveStep(jobId, step, resolution) {
+      const before = jobs.get(jobId);
+      const record = before === undefined ? undefined : await state.steps.get(before.runId, step);
+      // Read again after the await, as `SQL_STEP_RESOLVE` reads the row it writes under: a claim
+      // that landed in between makes the job a worker's.
+      const job = jobs.get(jobId);
+      assertResolvable('memory', jobId, step, job, record);
+      const resolved = resolvedRecord(record as StepRecord, resolution, nowMs(clock));
+      await state.steps.put(resolved);
+      return resolved;
     },
 
     async remove(jobId) {

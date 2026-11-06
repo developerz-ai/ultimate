@@ -8,7 +8,14 @@ import { setDbClient } from '@ultimat3/db';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
-import { backfill, memoryJobDriver, resetJobDriver, resetJobs, setJobDriver } from '@ultimat3/jobs';
+import {
+  backfill,
+  memoryJobDriver,
+  resetJobDriver,
+  resetJobs,
+  setJobDriver,
+  t,
+} from '@ultimat3/jobs';
 import {
   pendingReport,
   readAppliedMigrations,
@@ -240,6 +247,42 @@ describe('unit · runBackfills', () => {
 
     const forced = await runBackfills({ ...args, force: true });
     expect(forced[0]?.action).toBe('enqueued');
+  });
+
+  test('--all skips a scoped pass: its <name>:<scope> rows are no declaration to enqueue', async () => {
+    // A scoped declaration reports one row per scope it has RUN, and a failed one is `failed` —
+    // pending. Taken as a target, `<name>:<scope>` named no declaration and `--all` answered
+    // X_BACKFILL_UNKNOWN for a sweep that exists; its scope's input lives on that run's queue row,
+    // so the retry is `x jobs retry`, never an enqueue this command could make up.
+    const driver = memoryJobDriver();
+    setJobDriver(driver);
+    backfill<{ readonly id: string }, { readonly account: string }>({
+      name: 'sync-invoices',
+      tenant: 'none',
+      input: t.object({ account: t.string }),
+      scope: (input) => input.account,
+      pages: async () => ({ rows: [], next: null }),
+      handle: () => undefined,
+    });
+    declareSweep('normalize-titles');
+    await seed(driver, { runId: 'run_s', name: 'sync-invoices:acct-1', rows: 2, finish: 'failed' });
+
+    const report = await pendingReport(driver, 'production');
+    expect(report.pending.map((row) => row.name)).toEqual([
+      'normalize-titles',
+      'sync-invoices:acct-1',
+    ]);
+
+    const rows = await runBackfills({
+      driver,
+      names: 'all',
+      write: true,
+      force: true,
+      environment: 'production',
+      appliedMigrations: undefined,
+    });
+    expect(rows.map((row) => row.name)).toEqual(['normalize-titles']);
+    expect(rows.map((row) => row.finding?.code ?? null)).toEqual([null]);
   });
 
   test('a sweep this environment may not run is excluded from --all, never enqueued', async () => {

@@ -129,7 +129,7 @@ X_TENANCY_UNSCOPED: query is not scoped to a tenant
 | Rule | Detail |
 |---|---|
 | Every query is tenant-scoped or it fails | the predicate comes from `ctx.actor.orgId` via the repo, never hand-written per call site |
-| Cache keys include tenant + policy scope | framework-generated; a hand-built key is a rejected PR, so a cache hit cannot cross tenants |
+| Cache keys include tenant + policy scope | framework-generated. A hand-built key missing the tenant is no build error, a convention — but on a primitive the exercise pass reaches it is `X_TENANT_LEAK` on the proof's `after` leg ([below](#the-dynamic-tenant-proof)) |
 | Live queries scope in the matcher | not as a post-filter, so a cross-tenant row never enters the fanout path |
 | Vector and FTS search filter in SQL | similarity search cannot leak across tenants |
 | A reference stays inside its tenant | both ends scoped is a composite key in the database, refused alike for absent and foreign (`X_DB_FOREIGN_KEY_VIOLATION`). `references(() => x.id, { crossTenant: '<reason>' })` is the stated escape ([Same-tenant keys](Entities-And-Migrations#same-tenant-keys)) |
@@ -152,7 +152,63 @@ X_ENTITY_TENANT_UNDECLARED: a child of a tenant-owned table has no tenant
 
 Reported in the `exercise` step, not `policy`: the policy step asks whether a permission exists. Source: `packages/cli/src/exercise-static.ts`.
 
-**Planned, not shipped:** the dynamic half — every action, query and job called as org B with org A's seeded ids, red on a canary of A's in the output or an effect (`X_TENANT_LEAK`) or on A's row changed (`X_TENANT_WRITE_CROSSED`). Neither code exists yet. Neither half walks a `route` `load` or a `task`: raw SQL there is outside the check.
+### The dynamic tenant proof
+
+**Every action, query and job is called as org B with org A's seeded ids, and red if anything of A's
+comes back or any row of A's changes**, `As of 2026-11`. It runs inside `x exercise` and the
+gate's `exercise` step, around each primitive's own call: B, then A, then B again. Full mechanics:
+[The tenant proof](Testing#the-tenant-proof).
+
+| Checks | How |
+|---|---|
+| a read past the guard — a tenantless child by id, raw SQL by input id, `crossTenant()` under a policy that is not public, a service actor minted from the input | A's row canary, or an id of A's B was not handed, in B's output |
+| an effect past the guard — a mail to A's address, an outbound body, an enqueued job's input | the same marks, in the effect's payload |
+| a cache key without the tenant | the second B leg, after A filled the entry |
+| a write by input id — update, delete, soft delete | a digest of each of A's seeded rows, before and after each B leg |
+
+```
+X_TENANT_LEAK: another tenant's row reached a call's output or effect
+  cause: action readAttachment, called by tenant B with tenant A's ids before A ran, handed back A's seeded data at output.url: …
+  fix:   x exercise readAttachment --json — then read the row behind output.url through the repository scoped to ctx.actor, never by the input id alone
+```
+
+| Not a failure | Why |
+|---|---|
+| `public` | the policy admits an anonymous caller: what it returns, anyone may read. The read half is skipped; a crossed **write** is still red |
+| `unproven` | A's own call was not reached (that record is already red as `X_CONTRACT_EXERCISE_UNREACHED`), or a query answered A none of A's rows — B's empty answer then proves nothing |
+
+B holds the role A held, minus `tenancy:cross`. **Not checked**: a `route` `load` and a `task`
+are not walked, so raw SQL there is outside the proof; neither is another user in the **same**
+org — ownership is a per-app row predicate, a denial test's job (below).
+
+### The database's own guard — row security (`As of 2026-11-06`)
+
+A second enforcer for the same `tenant:` declaration, below the repository: Postgres row level security, so a raw `sql`, a report or a hand-written join cannot read another tenant's row either. Off by default — it costs a transaction per bare statement and a role split.
+
+```ts
+// app.config.ts — the whole app, every tenant table. Per-entity would leave the holes this closes.
+import { defineConfig } from '@ultimat3/core';
+
+export const config = defineConfig({ name: 'my-app', database: { rowSecurity: true } });
+```
+
+Then `x db gen "row security"`, commit the migration and `packages/db/schema/`, `x db migrate`.
+
+| Piece | Rule |
+|---|---|
+| switch | `database.rowSecurity: true`, nothing per entity or per query. `'true'` is `X_CONFIG_INVALID` |
+| migration | `x db gen` writes the policy once per `tenant:` table (`describeTenancy()` names its column), recorded as `rowSecurity: true` on the snapshot; flag off drops each. `x_*` and `shared:` tables get none |
+| drift | the flag against the newest snapshot, no database: `X_DB_ROW_SECURITY_DRIFT`, fix `x db gen "row security"`. After `x db migrate`, the same code for a recorded policy the catalog lacks (or holds unforced), or one it holds unrecorded |
+| schema dump | `10_policies/<table>.sql`: `enable`, `force`, each policy with every clause. A test database loaded from the dump enforces the policy |
+| roles, test services | `acquireWorkerDatabase({ rowSecurity: true, migrate })` migrates as `x_migrator` and hands the suite a URL serving as `x_app` |
+| roles, PGlite | its one session is a superuser; the migrate step (`x db migrate`, `ROLE=migrate`) holds `x_migrator` and takes over what the superuser owned in `public`; `x dev` and a served role switch to `x_app` at boot (`serveAsAppRole`) and grant it DML on every table already there |
+| roles, production | the operator's: `DATABASE_URL` of a serving role is a `nosuperuser nobypassrls` role owning nothing; `ROLE=migrate`'s owns the tables. Grants on tables, the `x_*` ones included, are the operator's too |
+| `x doctor` | with the flag on, connects as `DATABASE_URL` and names `X_DB_ROW_SECURITY_BYPASSED`; the drift half rides the drift probe |
+| policy | `enable` + `force row level security`, one `ultimate_tenant` policy: `org_id = nullif(current_setting('x.tenant', true), '')::<type> or current_setting('x.cross', true) = 'on'`, as `using` AND `with check`. Unset fails closed: no rows |
+| the tenant | set per transaction through `setLocal` — `select set_config($1, $2, true)`, parameter-bound and local, so a pooled connection hands nothing on (pooler transaction mode is safe). `crossTenant()` sets `x.cross` |
+| bare statements | wrapped in one transaction: `BEGIN`, `set_config`, the statement, `COMMIT` |
+| who is subject | a role that is `nosuperuser nobypassrls` and owns no table. Anything else is `X_DB_ROW_SECURITY_BYPASSED` at boot. The migrator (`bypassrls`) owns the tables, so a backfill still sees every row |
+| limits | catches forgetting, not hostile SQL already in the process: a raw `set_config('x.cross', 'on', true)` lifts it. A `crossTenant()` opened inside an open transaction does not reach it — its settings were fixed at `BEGIN` |
 
 ## Testing denials
 

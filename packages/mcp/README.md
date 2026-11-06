@@ -457,6 +457,15 @@ PUBLIC origin (`handle(request, { origin })`, which the boot fills from `ctx.htt
 path; `scopes_supported` to the `scopes` map's keys. Issuers must be https (http on loopback):
 `X_MCP_OAUTH_INVALID`. The authorization server is the app's own routes.
 
+## OAuth: `mcpAuthorizationServer`
+
+`As of 2026-11`. `mcpAuthorizationServer({ issuer, resource, store, consentPath, lifetimes, scopes,
+actor, … })` is `@ultimat3/auth`'s `authorizationServer` bound to one endpoint: every grant binds to
+`resource` (a request naming none included), `resolveToken` refuses any other, `oauth` is the block
+`defineAppMcp({ oauth })` advertises, and each server decision is an `mcp.auth.<event>` line.
+Spread `routes` into `runtime.routes`; write one consent page. Every protocol rule is auth's — see
+[wiki MCP and AI](https://github.com/developerz-ai/ultimate/wiki/MCP-And-AI#oauth-discovery-for-remote-connectors).
+
 ## Human confirmation: `mcpConfirmations`
 
 A factory over `action`, never a ninth primitive: what it returns IS the decision action

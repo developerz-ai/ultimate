@@ -32,6 +32,28 @@ export type ExerciseEffect =
 
 export type ExerciseOutcome = 'reached' | 'refused' | 'unreached' | 'off';
 
+/** B's call before A's positive control, and after it. */
+export type TenantLeg = 'before' | 'after';
+
+export interface TenantFinding {
+  readonly code: 'X_TENANT_LEAK' | 'X_TENANT_WRITE_CROSSED';
+  readonly leg: TenantLeg;
+  /** LEAK: where A's canary or id was found, e.g. 'output.items[0].url' or 'effect.mail[0].to' */
+  readonly path?: string;
+  /** WRITE_CROSSED: the table and the primary key of A's changed row */
+  readonly table?: string;
+  readonly id?: string;
+}
+
+/** The tenant proof's verdict on one primitive: B attacked A's rows twice, around A's own call. */
+export type TenantProof =
+  | { readonly verdict: 'proven' }
+  /** The policy admits anonymous: read half skipped, write half kept and clean. */
+  | { readonly verdict: 'public'; readonly reason: string }
+  /** A's positive control was not reached, so B's clean answer proves nothing. */
+  | { readonly verdict: 'unproven'; readonly reason: string }
+  | { readonly verdict: 'crossed'; readonly findings: readonly TenantFinding[] };
+
 export interface ExerciseRecord {
   readonly kind: 'action' | 'query' | 'job';
   readonly name: string;
@@ -43,6 +65,15 @@ export interface ExerciseRecord {
   readonly ms: number;
   /** For an `unreached` one: the line to paste into `defineExercise({ … })`. */
   readonly override?: string;
+  /** On every record that ran — absent only on `off` and `refused`. The fields above are A's. */
+  readonly tenant?: TenantProof;
+}
+
+/** What an effect carried, for the tenant proof's read half: searched, never reported as is. */
+export interface EffectPayload {
+  /** `effect.mail[0]`, `effect.network[1]`, `effect.enqueue[0]`. */
+  readonly path: string;
+  readonly value: unknown;
 }
 
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
@@ -80,6 +111,8 @@ export interface Observed {
   readonly effects: readonly ExerciseEffect[];
   /** Calls out the seal refused: each makes the primitive `unreached`, whatever it answered. */
   readonly refusedHosts: readonly string[];
+  /** Each mail's addresses and text, each call out's url and body — a sealed one included. */
+  readonly payloads: readonly EffectPayload[];
 }
 
 export interface ExerciseRoom extends AsyncDisposable {
@@ -143,7 +176,27 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
         ),
       ];
       const refusedHosts = calls.filter((call) => !local(call.url)).map((c) => hostOf(c.url));
-      return { statements, effects, refusedHosts };
+      const payloads: EffectPayload[] = [
+        ...mail.outbox().map(({ message }, i) => ({
+          path: `effect.mail[${i}]`,
+          value: {
+            to: message.to,
+            cc: message.cc,
+            bcc: message.bcc,
+            replyTo: message.replyTo,
+            subject: message.subject,
+            text: message.text,
+            html: message.html,
+            unsubscribeUrl: message.unsubscribeUrl,
+          },
+        })),
+        // Headers left out: a bearer token is not A's row, and a header is no row's text.
+        ...calls.map((call, i) => ({
+          path: `effect.network[${i}]`,
+          value: { url: call.url, body: call.body },
+        })),
+      ];
+      return { statements, effects, refusedHosts, payloads };
     },
     [Symbol.asyncDispose]: async (): Promise<void> => {
       // Each restore runs whatever the one before it did: a throw must not strand a seam.

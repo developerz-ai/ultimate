@@ -31,6 +31,8 @@ export const liveFeed = query({
 | `errors` | no — `x g query` writes `errors: []` | the 4xx codes a reader may branch on, closed: an action's rule ([Actions](Actions#declared-refusals-errors)), judged around `sql` and the source's `execute`. Undeclared in a test or dev run is `X_ERROR_UNDECLARED`; `.contract()` scans `sql`'s own source; `openapi.json` and the MCP tool name each code. `As of 2026-11` |
 | `audit` | no — default `false` | `true` records every call in the installed `AuditSink` — allowed, denied, failed, and a memo or cache hit (`replayed: true`). See [Audit](#audit-who-saw-what) |
 | `http.path` | no | pins the read's URL in place of `/_x/query/<kebab>`: `http: { path: '/orders/:id' }`. Lowercase static segments and `:param`s, never `/_x`; each `:param` a REQUIRED `t.string` key of `input:` (`X_QUERY_HTTP_PATH_INVALID` at `query()`, as is an `http.method` other than `'GET'`). The URL's value joins the search string before the input is parsed; a search string naming the key differently is **400** `X_HTTP_PATH_INPUT_CONFLICT`. `client()` fills the URL; `queryClient` by name cannot see a pin. `openapi.json` publishes `{id}` `in: path`, the key gone from the query parameters. `As of 2026-11` |
+| `etag` | no | `true` answers `GET` with a strong `ETag` (a SHA-256 of the body and the actor's authority, so one actor's validator never matches another's) and `cache-control: private, no-cache`; a matching `If-None-Match` is a bodiless **304**, decided AFTER the policy and the rate limit — a 304 is still a read of that person's rows, so a denied caller is 403 and the 304 spends the bucket. Opt-in: it moves the answer from `no-store` to the browser's disk. `openapi.json` documents the header, the `ETag` and the 304. On a `live` read, or beside `download`, `X_QUERY_ETAG_INVALID`. `As of 2026-11` |
+| `timeoutMs` | no | this read's own `statement_timeout`, tighter than the role's: the source runs inside `withStatementTimeout` (`@ultimat3/db`), one read-only transaction with a transaction-local bound. **A `timeoutMs` read skips replicas** — a transaction is pinned to the primary. Firing is `X_DB_STATEMENT_TIMEOUT`; above the bound in force is `X_DB_STATEMENT_BOUND_INVALID` (a read cannot extend what the role was sized for); not a whole positive number, `X_QUERY_TIMEOUT_INVALID` at `query()`. `As of 2026-11` |
 | `download` | no | `{ handle, expiresInMs? }` in place of `sql`: the read answers a FILE at a short-lived signed URL. Every rows field beside it is `X_QUERY_DOWNLOAD_INVALID`. See [A file at a signed URL](#a-file-at-a-signed-url--download) |
 | cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
 
@@ -104,11 +106,43 @@ Mounted for every registered query by `x dev` and by a container, from one compo
 | Input | the search string, coerced at the boundary (`t.number` from `"12"`) then validated by the query's own schema. Repeated keys are an array, and keys are sorted so one input is one URL. The typed client sends a `Date` as its ISO instant and nothing for an empty array; the route reads a **required** array nobody sent as `[]`, so `{ tags: [] }` arrives (`As of 2026-10`). An optional or defaulted array keeps the schema's own answer for absence — `[]` passed to one arrives as absent |
 | Bad input | **400** `X_INPUT_INVALID`, with `x queries show <name> --json` as the fix — the same code and line every other surface of that read answers |
 | Authz | evaluated once, inside the read, from the parsed input. `auth: 'public'` only for `allow()` — anything else is `required`, and an anonymous caller is 401 before the policy is reached |
-| Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge |
+| Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge. `etag: true` is the declared exception: `private, no-cache` and a 304 for a held validator. The browser's own cache revalidates, so `useQuery` needs no code |
 | Failures | `application/problem+json` carrying the code, cause and fix. A non-framework throw is the server's 500, never dressed as a read failure |
 | A page | `?_first=20` answers `.page()`'s own envelope — `{ rows, nextCursor, hasMore }` — and `&_after=<nextCursor>` continues it. Without a control the answer is the bare array. The keys carry an underscore because `first` is a legal input member (a listing's own page size); declaring `_first` or `_after` as input is `X_QUERY_INPUT_UNENCODABLE`. A size outside 1–10,000 or an `_after` without `_first` is **400** `X_INPUT_INVALID`; a cursor that is not this read's is **400** `X_CURSOR_INVALID`. `As of 2026-09`. **A declared `.limit()` is the size of the listing** (`As of 2026-10`): `_first` pages inside it and never past it, the last page inside it answers `hasMore: false` and `nextCursor: null`, and a read meant to be paged to the end declares no limit |
 | In `openapi.json` | every read, as a `GET` path item: the input as `in: query` parameters, then `_first` and `_after`, and a `200` that is `oneOf` the rows and the envelope, each row carrying the `rows:` members inline. A `single: true` read: the input parameters only, a `200` that is the row (one object when no `rows:` is declared), a `404`, and `x-ultimate.single: true`. A bearer mount's document carries the same operation at its prefix |
 | One object | `single: true` answers the row itself, or **404** `X_NOT_FOUND` — see below |
+
+### A read with a validator — `etag: true`
+
+```ts
+// `postRecord` in examples/dummy: the like island re-reads it on every load of /posts/{id}.
+import { can } from '@ultimat3/policy';
+import { from, query, t } from '@ultimat3/query';
+
+interface PostRow {
+  readonly id: string;
+  readonly orgId: string;
+  readonly likeCount: number;
+}
+declare const posts: readonly PostRow[];
+
+export const postRecord = query({
+  input: t.object({ orgId: t.uuid, postId: t.uuid }),
+  policy: can('post:read'),
+  etag: true,
+  sql: ({ orgId, postId }) =>
+    from<PostRow>('posts', posts).where({ orgId, id: postId }).orderBy('id').limit(1),
+});
+// GET /_x/query/post-record?…                      → 200, ETag: "…", cache-control: private, no-cache
+// GET /_x/query/post-record?…  If-None-Match: "…"  → 304, no body (same actor, same bytes)
+```
+
+| Fact | Rule |
+|---|---|
+| Who sends `If-None-Match` | the browser, from its own cache, on every reuse — `useQuery` and `queryClient` carry no code for it. An API client sends the `ETag` it holds |
+| Proved | `examples/dummy/apps/web/e2e/read-revalidates.e2e.test.ts`: across a real reload, the read reaches the server and crosses the wire as headers only (`transferSize` 300), the island still handed the whole body |
+| When to declare it | a read re-asked while its answer rarely moves — a seed read, a poll. Not a read whose rows must never touch the device's disk |
+| Not with | `live: true` (its cursor is its validator) or `download:` — `X_QUERY_ETAG_INVALID` at `query()` |
 
 ### A read of one object — `single: true`
 

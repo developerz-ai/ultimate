@@ -199,7 +199,14 @@ async function startJobs(
   );
   // The open transaction's connection, as the outbox beside it: an answer belongs to the unit of
   // work that gave it, so a refusal that rolls back never resumes the run waiting on it.
-  const events = postgresEventBus({ executor: dbExecutor(() => currentTx() ?? client) });
+  //
+  // `wakes` only when the queue in hand is the boot's own `postgresJobDriver`: the wake is an update
+  // of `x_jobs` on this database, and an override driver (Redis) keeps no rows here — its waiters
+  // keep the 30 s poll. Waking, a parked wait's backstop is 15 min instead.
+  const events = postgresEventBus({
+    executor: dbExecutor(() => currentTx() ?? client),
+    wakes: overrides?.jobs === undefined,
+  });
   setEventBus(events);
   const idempotency = postgresIdempotencyStore({
     executor,

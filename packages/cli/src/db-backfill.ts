@@ -271,9 +271,15 @@ export async function runBackfills(input: BackfillRunInput): Promise<readonly Ba
   // mapped its rows instead, `--all` would have found zero targets, exited 0 and reported that
   // nothing needed sweeping — the silent success this slice exists to remove, reintroduced by an
   // identity check nobody could see from here.
+  //
+  // A scoped pass's rows are `<name>:<scope>`, and no declaration carries that name: the input its
+  // scope came from is on that run's queue row, so this command cannot enqueue it again — the
+  // retry is `x jobs retry <id>`, which `--pending` names by `last-run-id`. Kept out rather than
+  // reported as `X_BACKFILL_UNKNOWN` about a sweep that exists.
   const targets =
     input.names === 'all'
       ? report.rows
+          .filter((row) => byName.get(row.name)?.scoped === false)
           .filter((row) =>
             input.force ? row.state !== 'excluded' : isPendingBackfillState(row.state),
           )

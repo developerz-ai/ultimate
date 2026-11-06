@@ -19,6 +19,10 @@ Read order is **1 → 2 → 3 → origin**. A tier is never consulted for a requ
 
 **A cache key is framework-generated, never hand-built.** `As of 2026-08` it is the query name, a fingerprint of the parsed input, and the read's sorted tag keys — `cacheKeyFor` in `@ultimat3/query`. The actor is **not** one of its parts, so what separates one tenant's entry from another's is the **input**: `feed({ orgId })` is one key per org. Policy still runs on every read before a tier is consulted, but it decides whether *this* caller may ask — not which rows the entry holds. So a read whose answer differs by actor for the same input must not declare `cache:`; tier 1 is keyed by `Ctx` identity and already separates it.
 
+**A null holds for its own lease.** `query({ single: true, cache: { ttlMs, negativeTtlMs } })`: a `single` read that matched no row is stored as `null` and kept `negativeTtlMs`, so a lookup that missed 40 ms before its row landed says "does not exist" for that long and not for the whole `ttlMs`. Only `single: true` answers `null` — an empty list is a list and keeps `ttlMs`. Non-positive or non-finite is `X_QUERY_CACHE_TTL_INVALID` at `query()`, the tiers' own rule. `As of 2026-11`
+
+**A read may answer 304.** `query({ etag: true })` adds tier 4 to a read: `private, no-cache`, a strong `ETag`, and a bodiless 304 for a held validator — after the policy and the rate limit ([Queries](Queries-And-Live-Queries#fields)).
+
 | Tier | Opt-out / requirement |
 |---|---|
 | 1 | always on; no configuration |

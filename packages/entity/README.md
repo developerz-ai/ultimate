@@ -1046,6 +1046,12 @@ string or a path parameter — it is `X_TENANCY_ACTOR_MISMATCH`, refused rather 
 overridden, with both values in the cause. `in` on the tenant column is judged the same way: a set
 containing the actor's org is still a set that is not it.
 
+**The database can hold the same line.** `database.rowSecurity: true` in `app.config.ts` gives
+every tenant table a forced Postgres policy over this same column (`x db gen "row security"`), so a
+raw `sql` read of another tenant's row returns nothing. `describeTenancy()` is the projection the
+generator reads — `{ table, column }` per tenant entity, physical names, beside `describeEntities()`
+rather than on it, so no schema hash moves. Rules: [Policies and authz](../../wiki/Policies-And-Authz.md#the-databases-own-guard--row-security-as-of-2026-11-06).
+
 **A reference stays inside its tenant.** Both ends scoped makes `references()` a composite key:
 `(org_id, post_id) -> posts (org_id, id)`, so a row naming another org's post is refused by the
 database with `X_DB_FOREIGN_KEY_VIOLATION`, the code and the text a dangling id gets. Memory refuses

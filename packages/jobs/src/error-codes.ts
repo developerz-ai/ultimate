@@ -56,6 +56,12 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_WEBHOOK_RECEIVER_INVALID',
   'X_WEBHOOK_RECEIVER_UNAVAILABLE',
   'X_WEBHOOK_EVENT_ID_INVALID',
+  'X_JOB_COMPENSATION_FAILED',
+  'X_STEP_OUTCOME_UNKNOWN',
+  'X_CONSUMER_INVALID',
+  'X_CONSUMER_SELF_ENQUEUE',
+  'X_BACKFILL_SOURCE_INVALID',
+  'X_STEP_NOT_RESOLVABLE',
 ] as const;
 
 /**
@@ -126,6 +132,13 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
     'an inbound webhook could not be queued, so it was not acknowledged',
   X_WEBHOOK_EVENT_ID_INVALID:
     'the event id a webhook receiver verified is not one it can key a job by',
+  X_JOB_COMPENSATION_FAILED: 'a compensator could not undo its step',
+  X_STEP_OUTCOME_UNKNOWN: 'a once step started and never completed',
+  X_CONSUMER_INVALID: 'a consumer() declaration cannot be run as declared',
+  X_CONSUMER_SELF_ENQUEUE: 'a consumer enqueued itself from inside its own run',
+  X_BACKFILL_SOURCE_INVALID:
+    'a backfill() declares both or neither of source and pages, or input with no scope',
+  X_STEP_NOT_RESOLVABLE: 'the step is not an unknown once outcome an operator can resolve',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -193,4 +206,13 @@ registerErrorRetry({
   X_JOB_EVENT_INVALID: 'terminal',
   // The same list is the same length on every attempt: the repair is the caller's slicing.
   X_JOB_ENQUEUE_BATCH_TOO_LARGE: 'terminal',
+  // A step name the framework reserves, or `compensate` on a job without `compensates: true`: the
+  // body is the same on every attempt, so the repair is the declaration.
+  X_JOB_DECLARATION_INVALID: 'terminal',
+  // Only a person or the vendor can say whether a `once` step ran (`x jobs resolve-step`).
+  X_STEP_OUTCOME_UNKNOWN: 'terminal',
+  // The unwind's own attempts are spent, or it met an unknown `once` step: the repair is a person.
+  X_JOB_COMPENSATION_FAILED: 'terminal',
+  // The body that enqueued itself does so on every attempt: the repair is deleting the call.
+  X_CONSUMER_SELF_ENQUEUE: 'terminal',
 });

@@ -101,10 +101,19 @@ export class AgentContextExhaustedError extends UltimateError {
     limit: number;
     /** Why compaction did not bring it under. */
     reason: string;
+    /**
+     * What the provider said when it refused the request as over the window
+     * (`X_AI_CONTEXT_OVERFLOW`): the run was SENT, and the refusal is the measurement.
+     */
+    refused?: string;
   }) {
+    const size =
+      input.refused === undefined
+        ? `next request is estimated at ${input.estimate} prompt tokens, over the ${input.limit} model "${input.model}" has room for (contextWindow less maxTokens)`
+        : `request was refused by the provider as over model "${input.model}"'s context window (${input.refused}); ${input.limit} tokens is its room (contextWindow less maxTokens)`;
     super({
       code: 'X_AGENT_CONTEXT_EXHAUSTED',
-      cause: `agent "${input.agent}"'s next request is estimated at ${input.estimate} prompt tokens, over the ${input.limit} model "${input.model}" has room for (contextWindow less maxTokens), and compaction could not bring it under: ${input.reason}`,
+      cause: `agent "${input.agent}"'s ${size}, and compaction could not bring it under: ${input.reason}`,
       fix: 'compact: { at: 0.6, keepTurns: 2 }   # on the agent — compact earlier and keep fewer turns verbatim; or lower maxToolResultChars, or run on a model whose registerModel row has a larger contextWindow',
       meta: {
         agent: input.agent,
@@ -112,6 +121,7 @@ export class AgentContextExhaustedError extends UltimateError {
         estimate: input.estimate,
         limit: input.limit,
         reason: input.reason,
+        ...(input.refused === undefined ? {} : { refused: input.refused }),
       },
     });
   }

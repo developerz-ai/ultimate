@@ -43,6 +43,10 @@ export const MemberView = t.object({
 
 export type MemberView = Infer<typeof MemberView>;
 
+/** The invited member, and the single-use link `invite-token.ts` minted for their address. */
+export const InviteMail = MemberView.extend({ link: t.string });
+export type InviteMail = Infer<typeof InviteMail>;
+
 /**
  * What the org is charged today, what it will pay monthly, and what was credited back.
  *

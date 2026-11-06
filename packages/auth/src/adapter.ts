@@ -178,7 +178,7 @@ export interface AccountStore {
 
 export interface AuthVerification {
   readonly id: string;
-  /** `email-verify` | `password-reset` — see `verify.ts`. */
+  /** A declared purpose's name — `email-verify`, `password-reset` or any `defineVerificationPurpose`. */
   readonly purpose: string;
   /** The email address the token was issued for. */
   readonly identifier: string;

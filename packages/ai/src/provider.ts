@@ -6,6 +6,7 @@
 import type { Money } from '@ultimat3/money';
 import type { AiMediaBlock } from './content-blocks';
 import { assertMediaContent, blockText, mediaTokenEstimate } from './content-blocks';
+import { providerFailure } from './context-overflow';
 import { costOf, exactCostOf } from './cost';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
@@ -281,7 +282,7 @@ export class AnthropicProvider implements Provider {
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     const model = this.modelOf(request);
     if (requiresStreaming({ ...request, model })) return this.assemble(request);
-    const response = await this.send({ ...this.body(request), stream: false }, request.signal);
+    const response = await this.send(model, request, false);
     const raw = (await response.json()) as Record<string, unknown>;
     return parseMessage(model, raw);
   }
@@ -304,7 +305,7 @@ export class AnthropicProvider implements Provider {
    */
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const model = this.modelOf(request);
-    const response = await this.send({ ...this.body(request), stream: true }, request.signal);
+    const response = await this.send(model, request, true);
     if (response.body === null) {
       throw new AiTransportError({
         provider: this.name,
@@ -366,10 +367,9 @@ export class AnthropicProvider implements Provider {
    * carrying its status, because the gateway decides whether to retry from that status and a
    * body parsed as if it were a message would read as an empty, successful answer.
    */
-  private async send(
-    body: Record<string, unknown>,
-    signal: AbortSignal | undefined,
-  ): Promise<Response> {
+  private async send(model: ModelId, request: GenerateRequest, stream: boolean): Promise<Response> {
+    const body = { ...this.body(request), stream };
+    const { signal } = request;
     const apiKey = this.config.apiKey ?? Bun.env[API_KEY_ENV];
     if (apiKey === undefined || apiKey === '') {
       throw new AiKeyMissingError({ provider: this.name, envVar: API_KEY_ENV });
@@ -390,8 +390,10 @@ export class AnthropicProvider implements Provider {
       ...(signal === undefined ? {} : { signal }),
     });
     if (!response.ok) {
-      throw new AiTransportError({
+      // An overflow or the transport's code — `context-overflow.ts` decides, for both wires.
+      throw providerFailure({
         provider: this.name,
+        model,
         status: response.status,
         // The endpoint's own message, with the credential scrubbed out of it — the same rule the
         // OpenAI-format provider follows, and for the same reason: a proxy echoing the request

@@ -126,6 +126,8 @@ export const functionRows = (client: DbClient, schema: string): Promise<readonly
 
 /**
  * `not tgisinternal`: a foreign key's own enforcement triggers are the constraint's, not the app's.
+ * `tgparentid = 0`: a partition's clone of its parent's trigger (Postgres 13+, `tgisinternal`
+ * false — measured on 18) is recreated by the parent's own `create trigger`.
  * A trigger on an extension-owned table is skipped with its table: the dump creates no such table,
  * so its `09_triggers/` file could never load.
  */
@@ -141,6 +143,7 @@ export const triggerRows = (client: DbClient, schema: string): Promise<readonly 
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = ${schema}
       and not t.tgisinternal
+      and t.tgparentid = 0
       and ${notExtensionOwned('pg_class', 'c.oid')}
   `);
 
@@ -149,11 +152,11 @@ export const triggerRows = (client: DbClient, schema: string): Promise<readonly 
  * here is a kind the dump admits it does not carry, and a kind rendered later leaves this list in
  * the same diff.
  *
- * The last four are facts ABOUT an object the dump does render, and each was absent from both the
- * dump and this list: `create statistics`, `force row level security` (a second flag beside
- * `relrowsecurity`), a column whose `set storage` departs from its type's own, and a materialized
- * view created `with no data` — which the dump's `create materialized view` would populate. A
- * load-equals-replay check cannot see any of them, because both sides are this same reading.
+ * The last three are facts ABOUT an object the dump does render, and each was absent from both the
+ * dump and this list: `create statistics`, a column whose `set storage` departs from its type's
+ * own, and a materialized view created `with no data` — which the dump's `create materialized
+ * view` would populate. A load-equals-replay check cannot see any of them, because both sides are
+ * this same reading. Row security and its policies left this list for `catalog-policies.ts`.
  *
  * A trigger on a relation the dump does not create is the one kind NOT read here: which relations
  * are rendered is the fold's answer, so `introspectCatalog` names those itself.
@@ -166,20 +169,18 @@ export const unrenderedRows = (
     select kind, name, table_name from (
       select
         case
-          when c.relkind = 'p' then 'partitioned table'
           when c.relkind = 'f' then 'foreign table'
           when c.relkind = 'c' then 'composite type'
-          else 'partition or inheritance child'
+          else 'inheritance child'
         end as kind,
         c.relname as name,
         null::text as table_name,
         c.relnamespace as namespace
       from pg_class c
       where (
-          c.relkind in ('p', 'f', 'c')
-          or (c.relkind = 'r' and (
-            c.relispartition or exists (select 1 from pg_inherits h where h.inhrelid = c.oid)
-          ))
+          c.relkind in ('f', 'c')
+          or (c.relkind = 'r' and not c.relispartition
+            and exists (select 1 from pg_inherits h where h.inhrelid = c.oid))
         )
         and ${notExtensionOwned('pg_class', 'c.oid')}
       union all
@@ -191,14 +192,6 @@ export const unrenderedRows = (
       from pg_proc p
       where p.prokind = 'a' and ${notExtensionOwned('pg_proc', 'p.oid')}
       union all
-      select 'row security policy', pol.polname, c.relname, c.relnamespace
-      from pg_policy pol
-      join pg_class c on c.oid = pol.polrelid
-      union all
-      select 'row security', c.relname, c.relname, c.relnamespace
-      from pg_class c
-      where c.relrowsecurity
-      union all
       select 'rule', r.rulename, c.relname, c.relnamespace
       from pg_rewrite r
       join pg_class c on c.oid = r.ev_class
@@ -207,10 +200,6 @@ export const unrenderedRows = (
       select 'extended statistics', s.stxname, c.relname, s.stxnamespace
       from pg_statistic_ext s
       join pg_class c on c.oid = s.stxrelid
-      union all
-      select 'forced row security', c.relname, c.relname, c.relnamespace
-      from pg_class c
-      where c.relforcerowsecurity
       union all
       select 'column storage', a.attname, c.relname, c.relnamespace
       from pg_attribute a

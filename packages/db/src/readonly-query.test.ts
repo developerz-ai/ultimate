@@ -18,11 +18,16 @@ describe('readOnlyQuery', () => {
 
     expect(client.texts).toEqual([
       'BEGIN READ ONLY',
-      `SET LOCAL statement_timeout = ${READONLY_TIMEOUT_MS}`,
+      'select set_config($1, $2, true)',
       'select 1',
       'ROLLBACK',
     ]);
     expect(result.guards).toEqual(['txn:read-only', `timeout:${READONLY_TIMEOUT_MS}ms`]);
+    // The bound travels as a parameter through `setLocal`, never spliced into the text.
+    expect(client.statements[1]?.values).toEqual([
+      'statement_timeout',
+      String(READONLY_TIMEOUT_MS),
+    ]);
   });
 
   test('a role is set after the timeout and before the statement', async () => {
@@ -31,7 +36,7 @@ describe('readOnlyQuery', () => {
 
     expect(client.texts).toEqual([
       'BEGIN READ ONLY',
-      `SET LOCAL statement_timeout = ${READONLY_TIMEOUT_MS}`,
+      'select set_config($1, $2, true)',
       'SET LOCAL ROLE "ultimate_readonly"',
       'select 1',
       'ROLLBACK',
@@ -118,11 +123,7 @@ describe('readOnlyQuery', () => {
     };
 
     await expect(readOnlyQuery('select 1', { client: failing })).rejects.toBe(boom);
-    expect(calls).toEqual([
-      'BEGIN READ ONLY',
-      `SET LOCAL statement_timeout = ${READONLY_TIMEOUT_MS}`,
-      'ROLLBACK',
-    ]);
+    expect(calls).toEqual(['BEGIN READ ONLY', 'select set_config($1, $2, true)', 'ROLLBACK']);
   });
 
   test('maxRows fetches through a cursor declared after the role, inside the transaction', async () => {
@@ -135,7 +136,7 @@ describe('readOnlyQuery', () => {
 
     expect(client.texts).toEqual([
       'BEGIN READ ONLY',
-      `SET LOCAL statement_timeout = ${READONLY_TIMEOUT_MS}`,
+      'select set_config($1, $2, true)',
       'SET LOCAL ROLE "ultimate_readonly"',
       'DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select * from events',
       'FETCH FORWARD 101 FROM ultimate_read_cursor',
@@ -210,7 +211,7 @@ describe('readOnlyQuery', () => {
     expect(pins).toEqual({ reserves: 1, releases: 1 });
     expect(recorder.texts).toEqual([
       'BEGIN READ ONLY',
-      `SET LOCAL statement_timeout = ${READONLY_TIMEOUT_MS}`,
+      'select set_config($1, $2, true)',
       'select 1',
       'ROLLBACK',
     ]);

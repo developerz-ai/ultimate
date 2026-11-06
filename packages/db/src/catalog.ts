@@ -90,6 +90,14 @@ export interface CatalogTable {
   readonly constraints: readonly CatalogConstraint[];
   readonly sequences: readonly CatalogOwnedSequence[];
   readonly replicaIdentity: CatalogReplicaIdentity;
+  /** `pg_get_partkeydef` — `RANGE (at)` — on a partitioned table. Absent on any other. */
+  readonly partitionBy?: string | undefined;
+  /**
+   * On a partition: the table it is a partition of and its bound as the server spells it
+   * (`FOR VALUES FROM (…) TO (…)`, `DEFAULT`). Absent on any other. A partition's columns and the
+   * constraints it holds from its parent are the parent's, so the dump spells neither.
+   */
+  readonly partitionOf?: { readonly table: string; readonly bound: string } | undefined;
 }
 
 /** An index no constraint backs; a constraint's own index is created by the constraint. */
@@ -130,9 +138,31 @@ export interface CatalogTrigger {
   readonly enabled: string;
 }
 
+/** A table whose row security is enabled or forced — two flags, each its own `alter table`. */
+export interface CatalogRowSecurity {
+  readonly table: string;
+  readonly enabled: boolean;
+  /** `force`: the table's owner is bound too. Without it an owner sees every row. */
+  readonly forced: boolean;
+}
+
+/** A row-security policy, every clause spelled: a clause left out is a default two servers may differ on. */
+export interface CatalogPolicy {
+  readonly table: string;
+  readonly name: string;
+  readonly permissive: boolean;
+  /** `all`, `select`, `insert`, `update` or `delete`. */
+  readonly command: string;
+  /** Role names, `public` for the `0` grantee; sorted. */
+  readonly roles: readonly string[];
+  /** `pg_get_expr` verbatim, or `null` when the clause is absent. */
+  readonly using: string | null;
+  readonly withCheck: string | null;
+}
+
 /**
  * An object in the schema that the dump has no statement for. Named rather than dropped: a dump
- * that silently omitted a row-security policy would load into a database that is not the one the
+ * that silently omitted an object would load into a database that is not the one the
  * migrations build, and the load-equals-replay check could not see it, because both sides of that
  * comparison would be blind in the same place.
  */
@@ -155,6 +185,8 @@ export interface CatalogDescription {
   readonly views: readonly CatalogView[];
   readonly functions: readonly CatalogFunction[];
   readonly triggers: readonly CatalogTrigger[];
+  readonly rowSecurity: readonly CatalogRowSecurity[];
+  readonly policies: readonly CatalogPolicy[];
   readonly unrendered: readonly CatalogUnrendered[];
 }
 
@@ -170,5 +202,7 @@ export const emptyCatalog = (schema = 'public'): CatalogDescription => ({
   views: [],
   functions: [],
   triggers: [],
+  rowSecurity: [],
+  policies: [],
   unrendered: [],
 });

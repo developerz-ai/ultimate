@@ -10,10 +10,14 @@ import {
   firstConcurrentStatement,
   isConcurrentIndexStatement,
   isNonTransactional,
+  isPartitionedBuildRefusal,
 } from './concurrent-index';
 import { refuseDependentViews } from './dependent-view';
 import { type LockRetryPolicy, withLockRetry } from './migrate-lock-retry';
-import { migrationConcurrentInTransaction } from './migration-errors';
+import {
+  migrationConcurrentInTransaction,
+  migrationConcurrentPartitioned,
+} from './migration-errors';
 import { raw, sql } from './sql';
 import { statementsOf } from './statement-split';
 import { withTransaction } from './transaction';
@@ -129,7 +133,13 @@ async function applyOutsideTransaction(session: DbClient, step: MigrationStep): 
   for (const statement of statementsOf(step.script)) {
     if (isConcurrentIndexStatement(statement)) {
       await dropInvalidLeftover(session, statement);
-      await session.execute(raw(statement));
+      await session.execute(raw(statement)).catch((error: unknown) => {
+        // `0A000` on a partitioned parent: the instruction is the sequence that replaces it.
+        if (isPartitionedBuildRefusal(statement, error)) {
+          throw migrationConcurrentPartitioned(step.id, statement, error);
+        }
+        throw error;
+      });
       continue;
     }
     // Postgres refuses these inside a transaction (25001): autocommitted, as the marker promises.

@@ -1,6 +1,6 @@
 # @postly/db
 
-Eight entities, their migrations, the cache-tag graph, and the deterministic dev seed.
+Thirteen entities, their migrations, the cache-tag graph, and the deterministic dev seed.
 
 **Schema only.** No business logic, no policy decisions, no HTTP. An entity declares columns,
 indexes, and invariants; anything that decides *whether* something may happen lives in

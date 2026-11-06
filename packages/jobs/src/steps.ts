@@ -5,32 +5,41 @@
 //
 // Suspension (sleep / waitForEvent) unwinds the run by throwing a StepSuspension. The worker
 // catches it and re-queues the job for `resumeAt` instead of holding a process for three days.
+// `waitForEvent` is `steps-wait.ts`; compensation, `steps-unwind.ts`; both over `steps-core.ts`.
 
 import type { Clock } from '@ultimat3/core';
 import { finiteOption, isUltimateError, logger, renderThrowable } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
-import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
-import { formatIssues, validateAsync } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
 import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
-import { JobEventInvalidError } from './errors-steps';
+import {
+  isReservedStepName,
+  StepCompensateUndeclaredError,
+  StepNameReservedError,
+  StepOutcomeUnknownError,
+  UNWINDING_STEP,
+} from './errors-saga';
 import { createRunSignal } from './run-signal';
-import type { EventLookup, StepApi, WaitForEventOptions } from './steps-api';
+import type { EventLookup, StepApi, StepRunOptions } from './steps-api';
+import { DEFAULT_EVENT_POLL_MS, WAKING_EVENT_POLL_MS } from './steps-api';
+import type { RunnerCore } from './steps-core';
 import type { StepOutput } from './steps-output';
 import { jsonForm } from './steps-output';
 import type { StepFence, StepRecord, StepStore } from './steps-store';
-import {
-  isStepSuspension,
-  isWaitTimedOut,
-  StepSuspension,
-  WAIT_TIMED_OUT,
-  waitFloor,
-  waitFloorOf,
-} from './steps-suspension';
+import { isStepSuspension, StepSuspension, UnwindReached } from './steps-suspension';
 import { withStepTimeout } from './steps-timeout';
+import { compensationStack } from './steps-unwind';
+import { waitForEventStep } from './steps-wait';
 
-export type { EventLookup, StepApi, WaitForEventOptions } from './steps-api';
+export type {
+  CompensateContext,
+  EventLookup,
+  StepApi,
+  StepRunOptions,
+  WaitForEventOptions,
+} from './steps-api';
+export { DEFAULT_EVENT_POLL_MS, WAKING_EVENT_POLL_MS } from './steps-api';
 export type { StepOutput } from './steps-output';
 export type { StepFence, StepRecord, StepStatus, StepStore } from './steps-store';
 export { isStepStatus, STEP_STATUSES } from './steps-store';
@@ -44,8 +53,19 @@ export interface StepRunnerOptions {
   readonly fence?: StepFence;
   readonly clock?: Clock;
   readonly events?: EventLookup;
-  /** How long a waiting step stays parked between event polls. Default 30s. */
+  /**
+   * How long a waiting step stays parked between event polls. Default `DEFAULT_EVENT_POLL_MS`
+   * (30 s), or `WAKING_EVENT_POLL_MS` (15 min) when `events.wakes`: a publish then brings the run
+   * forward, and the poll is only the backstop. A value set here wins either way.
+   */
   readonly eventPollMs?: number;
+  /** The job declares `compensates: true`: `step.run(…, { compensate })` is legal. */
+  readonly compensates?: boolean;
+  /**
+   * This attempt is past the policy's last (`isUnwindAttempt`): the run is unwinding whether or
+   * not `unwinding` was written — the final attempt crashed before it could be.
+   */
+  readonly unwind?: boolean;
   /** Per-step ceiling; the job-level timeout is enforced by the worker. */
   readonly stepTimeoutMs?: number;
   /**
@@ -73,6 +93,13 @@ export interface StepRunner {
   usedNames(): readonly string[];
   /** Names that were served from storage instead of executed. Bounded the same way. */
   replayedNames(): readonly string[];
+  /** Whether the run is unwinding: `options.unwind`, or `unwinding` found among its steps. */
+  unwinding(): Promise<boolean>;
+  /**
+   * Run this attempt's registered compensators, last-in first-out (`steps-unwind.ts`). Answers
+   * the failure the run unwinds from — the one already recorded, else `failure`.
+   */
+  unwind(failure: string): Promise<string>;
 }
 
 /** Stands in for an absent run signal, so the fence has one shape and no `undefined` branch. */
@@ -98,7 +125,12 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
   const used: string[] = [];
   const replayed: string[] = [];
   const clock = options.clock;
-  const pollMs = finiteOption('step.waitForEvent', 'eventPollMs', options.eventPollMs ?? 30_000);
+  const pollMs = finiteOption(
+    'step.waitForEvent',
+    'eventPollMs',
+    options.eventPollMs ??
+      (options.events?.wakes === true ? WAKING_EVENT_POLL_MS : DEFAULT_EVENT_POLL_MS),
+  );
   // `job()` refuses a non-finite `stepTimeout` at declaration (`job.ts`); screened again here, where
   // it is read, because this runner is also built directly and `withStepTimeout` reads a `NaN`
   // ceiling as none at all — the backstop `pollMs` above already is.
@@ -150,6 +182,8 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
   };
 
   const claimName = (name: string): void => {
+    // Refused for EVERY job, so one that gains `compensates` later cannot meet a step it wrote.
+    if (isReservedStepName(name)) throw new StepNameReservedError({ job: jobName, step: name });
     // The Set decides, the array only reports. `Array.includes` made a long run quadratic —
     // `backfill({ batch: 50 })` over a million rows is 20,000 steps and ~200M string compares.
     if (claimed.has(name)) throw new StepDuplicateError({ job: jobName, step: name });
@@ -221,17 +255,25 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
 
   const now = (): number => nowMs(clock);
 
-  async function run<T>(
-    name: string,
-    fn: (signal: AbortSignal) => Promise<T> | T,
-  ): Promise<StepOutput<T>> {
-    claimName(name);
-    const existing = await load(name);
-    if (existing?.status === 'completed') {
-      trace(replayed, name);
-      return existing.output as StepOutput<T>;
-    }
+  /**
+   * The run is unwinding: this attempt is past the policy's last, or `unwinding` is among the
+   * steps the first `load` hydrated. Sticky — once true for an attempt it stays true.
+   */
+  let unwindMode = options.unwind === true;
+  const unwinding = async (): Promise<boolean> => {
+    if (!unwindMode) unwindMode = (await hydrate()).has(UNWINDING_STEP);
+    return unwindMode;
+  };
 
+  /**
+   * One step body, run under its ceiling and recorded: `completed` before it returns, `failed` on
+   * the way out. Shared by `step.run` and by every compensator (`steps-unwind.ts`).
+   */
+  const execute = async <T>(
+    name: string,
+    existing: StepRecord | undefined,
+    fn: (signal: AbortSignal) => Promise<T> | T,
+  ): Promise<StepOutput<T>> => {
     const startedAt = existing?.startedAt ?? now();
     const attempts = (existing?.attempts ?? 0) + 1;
     // The step's own ceiling, folded into the run's cancellation so the body reads ONE signal and
@@ -276,8 +318,7 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
     } catch (error) {
       if (isStepSuspension(error)) throw error;
       // The failure is this run's own history, so it is recorded on the way out — unless the
-      // attempt was cancelled, in which case the history is no longer ours to write. The original
-      // error is what the caller has to see, never one raised by the bookkeeping.
+      // attempt was cancelled, in which case the history is no longer ours to write.
       if (!cancelled()) {
         // Deliberately NOT through `put`: the caller has to see the original error, never one
         // raised by the bookkeeping. The hydrated view is updated by hand for the same reason.
@@ -306,6 +347,68 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
       // settled leaves its signal in whatever state it ended in.
       composed?.dispose();
     }
+  };
+
+  const core: RunnerCore = {
+    runId,
+    jobName,
+    events: options.events,
+    pollMs,
+    claim: claimName,
+    load,
+    put,
+    now,
+    replayed: (name) => trace(replayed, name),
+    forwardOnly: async (name) => {
+      if (await unwinding()) throw new UnwindReached(name);
+    },
+  };
+  const compensations = compensationStack(core, execute);
+
+  async function run<T>(
+    name: string,
+    fn: (signal: AbortSignal) => Promise<T> | T,
+    runOptions: StepRunOptions<T> = {},
+  ): Promise<StepOutput<T>> {
+    const { compensate, once = false } = runOptions;
+    if (compensate !== undefined && options.compensates !== true) {
+      throw new StepCompensateUndeclaredError({ job: jobName, step: name });
+    }
+    claimName(name);
+    const undo =
+      compensate === undefined
+        ? undefined
+        : (output: StepOutput<T>) => async (signal: AbortSignal) => {
+            // A compensator's answer is not the run's to keep: `null` is what its step records.
+            await compensate(output, { signal });
+            return null;
+          };
+    const existing = await load(name);
+    if (existing?.status === 'completed') {
+      trace(replayed, name);
+      const output = existing.output as StepOutput<T>;
+      if (undo !== undefined) compensations.done(name, undo(output));
+      return output;
+    }
+    // `started` or `failed` and never `completed`: a crash or a throw, and nobody knows which side
+    // of the side effect it stopped on. `cleared` is an operator's "it did not run".
+    const unknown = once && (existing?.status === 'started' || existing?.status === 'failed');
+    if (unknown && undo !== undefined) compensations.unknown(name);
+    await core.forwardOnly(name);
+    if (unknown) throw new StepOutcomeUnknownError({ job: jobName, step: name });
+    if (once) {
+      // BEFORE `fn`: from here on, a replay cannot tell whether `fn` ran, and so never runs it.
+      await put({
+        runId,
+        name,
+        status: 'started',
+        startedAt: existing?.startedAt ?? now(),
+        attempts: existing?.attempts ?? 0,
+      });
+    }
+    const output = await execute(name, once ? await load(name) : existing, fn);
+    if (undo !== undefined) compensations.done(name, undo(output));
+    return output;
   }
 
   async function sleep(a: string | DurationInput, b?: DurationInput): Promise<void> {
@@ -319,6 +422,7 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
       trace(replayed, name);
       return;
     }
+    await core.forwardOnly(name);
 
     const at = now();
     if (existing?.status === 'sleeping' && existing.wakeAt !== undefined) {
@@ -342,128 +446,17 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
     throw new StepSuspension({ step: name, resumeAt: wakeAt, reason: 'sleep' });
   }
 
-  async function waitForEvent<S extends StandardSchemaV1>(
-    name: string,
-    event: string,
-    waitOptions: WaitForEventOptions<S>,
-  ): Promise<InferOutput<S> | undefined> {
-    /** The store keeps the raw payload; a hit and a replay parse it alike, so both see one value. */
-    const answer = async (payload: unknown): Promise<InferOutput<S>> => {
-      const parsed = await validateAsync(waitOptions.schema, payload);
-      if (parsed.issues === undefined) return parsed.value;
-      const issues = formatIssues(parsed.issues);
-      throw new JobEventInvalidError({ job: jobName, step: name, event, issues });
-    };
-
-    claimName(name);
-    const existing = await load(name);
-    if (existing?.status === 'completed') {
-      trace(replayed, name);
-      return isWaitTimedOut(existing.output) ? undefined : answer(existing.output);
-    }
-
-    const at = now();
-    // A NEW wait is stamped by the bus, whose clock stamps every `publishedAt` it is compared
-    // with; the runner's own only when there is no bus to ask. A re-poll keeps what it persisted.
-    const startedAt = existing?.startedAt ?? (await options.events?.now()) ?? at;
-    const deadline =
-      startedAt +
-      finiteDurationMs(waitOptions.timeout ?? 86_400_000, 'step.waitForEvent', 'timeout');
-    const correlationKey = waitOptions.match;
-
-    const floor = waitFloorOf(existing?.output);
-    const parked = {
-      runId,
-      name,
-      status: 'waiting',
-      startedAt,
-      event,
-      attempts: (existing?.attempts ?? 0) + 1,
-      ...(correlationKey === undefined ? {} : { correlationKey }),
-    } as const;
-
-    const hit = await options.events?.find(event, correlationKey, floor ?? startedAt);
-    if (hit !== undefined) {
-      // The form a replay will parse, so a hit cannot answer what its replay refuses.
-      const stored = jsonForm(hit.payload, { job: jobName, step: name });
-      // Parsed before it is recorded: a refused event is not this step's answer, on any attempt.
-      const value = await answer(stored).catch(async (refusal: unknown) => {
-        // The original error is what the caller sees; without the floor a retry is refused again.
-        await put({ ...parked, output: waitFloor(hit.publishedAt + 1), wakeAt: at }).catch(
-          (unwritten: unknown) =>
-            logger.warn('jobs.step.floor-unrecorded', {
-              job: jobName,
-              step: name,
-              error: renderThrowable(unwritten),
-            }),
-        );
-        throw refusal;
-      });
-      await put({
-        runId,
-        name,
-        status: 'completed',
-        output: stored,
-        startedAt,
-        completedAt: at,
-        event,
-        attempts: (existing?.attempts ?? 0) + 1,
-        ...(correlationKey === undefined ? {} : { correlationKey }),
-      });
-      return value;
-    }
-
-    // `deadline` is on the BUS's clock, so the bus calls the timeout: asked only once this runner
-    // believes the time is up, which costs a wait one statement at its end. A runner AHEAD of the
-    // bus used to give up early by the skew — on an answer still inside its window. (A runner
-    // BEHIND waits the skew longer; knowing that sooner would cost a round trip on every poll.)
-    let remaining = deadline - at;
-    if (remaining <= 0) remaining = deadline - ((await options.events?.now()) ?? at);
-    if (remaining <= 0) {
-      if (waitOptions.required === true) {
-        throw new JobTimeoutError({
-          job: jobName,
-          step: name,
-          timeoutMs: finiteDurationMs(
-            waitOptions.timeout ?? 86_400_000,
-            'step.waitForEvent',
-            'timeout',
-          ),
-          fix: `step.waitForEvent('${name}', '${event}', { timeout: '1h' })   # raises the wait's timeout; or make the publisher of "${event}" send it sooner`,
-        });
-      }
-      logger.warn('jobs.step.wait-timeout', { job: jobName, step: name, event });
-      await put({
-        runId,
-        name,
-        status: 'completed',
-        output: WAIT_TIMED_OUT,
-        startedAt,
-        completedAt: at,
-        event,
-        attempts: (existing?.attempts ?? 0) + 1,
-      });
-      return undefined;
-    }
-
-    const resumeAt = at + Math.min(remaining, pollMs);
-    await put({
-      ...parked,
-      wakeAt: resumeAt,
-      ...(floor === undefined ? {} : { output: waitFloor(floor) }),
-    });
-    throw new StepSuspension({ step: name, resumeAt, reason: 'event' });
-  }
-
   const step: StepApi = {
     run,
     sleep: sleep as StepApi['sleep'],
-    waitForEvent,
+    waitForEvent: waitForEventStep(core),
   };
 
   return {
     step,
     usedNames: () => [...used],
     replayedNames: () => [...replayed],
+    unwinding,
+    unwind: (failure) => compensations.unwind(failure),
   };
 }

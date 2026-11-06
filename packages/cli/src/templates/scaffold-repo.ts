@@ -207,7 +207,8 @@ export const config = defineConfig({
   // Locales are declared by the catalogs (\`defineCatalogs\` in \`packages/i18n/src/index.ts\`); no
   // zone or currency default exists — every format call names its zone, every \`Money\` its currency.
   // Env KEYS, never the value: the same image deploys to every environment. The database is
-  // configured entirely from the environment — \`DATABASE_URL\` and \`DATABASE_POOL_MAX\`.
+  // configured from the environment — \`DATABASE_URL\` and \`DATABASE_POOL_MAX\`. Off by default,
+  // \`database: { rowSecurity: true }\` adds the database's own tenant guard under the repository's.
   // The tiers ARE the cache selection: add 'redis' to build the shared rung, which reads
   // \`REDIS_URL\` and refuses the boot when it is unset.
   cache: { tiers: ['request-memo', 'lru'] },

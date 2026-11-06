@@ -188,6 +188,7 @@ const CATALOG = {
   'cli.jobs.removed': 'job {id} removed — it was {state}',
   'cli.jobs.resumed': 'queue {queue} resumed',
   'cli.jobs.retried': 'job {id} re-queued — {state}',
+  'cli.jobs.stepResolved': 'job {id} step {step} resolved — {status}; next: x jobs retry {id}',
   'cli.jobs.shown': 'job {id} — {state}, attempt {attempt} of {attempts}',
   'cli.manifest.blocked': 'manifest not written — {count} module(s) did not load',
   'cli.manifest.fresh': 'manifest is fresh',

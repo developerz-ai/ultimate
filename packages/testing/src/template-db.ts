@@ -5,6 +5,7 @@
 
 import { renderThrowable } from '@ultimat3/core';
 import { TestDatabaseUnavailableError } from './errors';
+import { prepareRowSecurity, rowSecurityUrls } from './template-db-roles';
 
 export type DbKind = 'postgres' | 'pglite';
 
@@ -20,6 +21,8 @@ export interface TemplateDbConfig {
   readonly templateName?: string;
   /** Applied into the template under an advisory lock, which every worker's clone also holds. */
   readonly migrate?: (url: string) => Promise<void>;
+  /** `database.rowSecurity`: migrate as `x_migrator`, hand the worker a URL that serves as `x_app`. */
+  readonly rowSecurity?: boolean | undefined;
 }
 
 export interface WorkerDatabase {
@@ -150,7 +153,10 @@ export async function acquireWorkerDatabase(
       // server that is not a fresh CI container. Migrations are idempotent and the advisory lock
       // serialises them, so a failure here is a real failure and `alreadyExists` (a substring match
       // on the message) would read `relation "x_jobs" already exists` as success.
-      if (config.migrate !== undefined) await config.migrate(urlFor(adminUrl, template));
+      const roles = config.rowSecurity === true;
+      if (roles) await prepareRowSecurity(connect, urlFor(adminUrl, template));
+      const migrateUrl = rowSecurityUrls(roles, urlFor(adminUrl, template)).migrate;
+      if (config.migrate !== undefined) await config.migrate(migrateUrl);
       // INSIDE the lock: `CREATE DATABASE … TEMPLATE` waits 5 s for every session on the template
       // to leave, then refuses — and the next worker's migration opens one the moment the lock is
       // free. Measured: a clone outside it failed whenever that migration ran past 5 s.
@@ -171,7 +177,7 @@ export async function acquireWorkerDatabase(
     kind: 'postgres',
     worker,
     database,
-    url: urlFor(adminUrl, database),
+    url: rowSecurityUrls(config.rowSecurity === true, urlFor(adminUrl, database)).serve,
     drop: async () => {
       const cleanup = connect(adminUrl);
       await cleanup.exec(dropSql(database));

@@ -9,7 +9,16 @@
  * record makes `stepRun`'s `existing?.status === 'completed'` false, which RE-EXECUTES a step
  * this file promises runs once.
  */
-export const STEP_STATUSES = ['completed', 'sleeping', 'waiting', 'failed'] as const;
+export const STEP_STATUSES = [
+  'completed',
+  'sleeping',
+  'waiting',
+  'failed',
+  // A `once` step's record BEFORE its `fn` runs. Read back with no `completed`, it is an unknown
+  // outcome (`X_STEP_OUTCOME_UNKNOWN`); `cleared` is an operator's "it did not run": run it again.
+  'started',
+  'cleared',
+] as const;
 
 export type StepStatus = (typeof STEP_STATUSES)[number];
 
@@ -21,7 +30,10 @@ export interface StepRecord {
   readonly runId: string;
   readonly name: string;
   readonly status: StepStatus;
-  /** The memoized return value. Present only when `status === 'completed'`. */
+  /**
+   * The memoized return value. Present when `status === 'completed'` — and on a `waiting` record
+   * holding its search floor (`waitFloor`).
+   */
   readonly output?: unknown;
   readonly startedAt: number;
   readonly completedAt?: number;

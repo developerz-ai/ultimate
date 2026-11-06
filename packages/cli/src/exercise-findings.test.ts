@@ -80,4 +80,25 @@ describe('unit · exercise findings', () => {
     expect(lines).toHaveLength(RECORDS.length + 1);
     expect(lines[1]).toContain('publishPost');
   });
+
+  test('a crossed tenant verdict is red, one finding per leak; unproven and public are not', () => {
+    const tenanted: readonly ExerciseRecord[] = [
+      record({
+        name: 'readPost',
+        kind: 'query',
+        tenant: {
+          verdict: 'crossed',
+          findings: [{ code: 'X_TENANT_LEAK', leg: 'before', path: 'output.title' }],
+        },
+      }),
+      record({ name: 'inbox', kind: 'query', tenant: { verdict: 'unproven', reason: 'empty' } }),
+      record({ name: 'health', tenant: { verdict: 'public', reason: 'anonymous' } }),
+    ];
+    const findings = exerciseFindings(tenanted);
+    expect(findings.map((one) => [one.code, one.at])).toEqual([
+      ['X_TENANT_LEAK', 'query readPost'],
+    ]);
+    expect(findings[0]?.fix).toStartWith('x exercise readPost --json');
+    expect(renderExerciseTable(tenanted).join('\n')).toContain('crossed');
+  });
 });

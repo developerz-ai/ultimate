@@ -5,11 +5,9 @@
 // a deadline here means CANCEL: the nack that follows makes the job claimable again, so a body
 // still running past it would be a second copy of one job, racing the attempt that replaced it.
 
-import type { Actor, Clock, Ctx, ServiceBag } from '@ultimat3/core';
+import type { Clock, Ctx } from '@ultimat3/core';
 import {
-  anonymousActor,
   failureStack,
-  isUltimateError,
   logger,
   renderThrowable,
   reportError,
@@ -23,9 +21,12 @@ import type { ClaimedJob, JobDriver, SettleBy } from './driver';
 import { claimOf } from './driver';
 import { JobAbortedError } from './errors';
 import { eventBus } from './events';
+import { callerActor, callerServices, callerSignal, drainedBy } from './execute-ctx';
+import type { UnwindSettleOptions } from './execute-unwind';
+import { unwindAndSettle } from './execute-unwind';
 import type { AnyJobHandle } from './job';
 import { createProgressReporter } from './progress';
-import { isFinalAttempt } from './retry';
+import { isFinalAttempt, isUnwindAttempt } from './retry';
 import type { JobStopReason } from './retry-classification';
 import {
   failureForRow,
@@ -38,7 +39,8 @@ import { createRunSignal } from './run-signal';
 import { announceSettled, settledCode } from './settled';
 import type { EventLookup, StepRecord } from './steps';
 import { isStepSuspension, stepRunner } from './steps';
-import { jobRunActor } from './tenant';
+import { isUnwindReached } from './steps-suspension';
+import { jobRunActor, refuseRunTenant } from './tenant';
 
 /**
  * How one attempt ended. `interrupted` is the worker's drain cutting the attempt short: the job is
@@ -58,42 +60,6 @@ export type JobOutcome =
   | 'dropped'
   | 'interrupted'
   | 'refused';
-
-/** Stands in for a caller with nothing to cancel, so the composition below has one shape. */
-const NEVER_ABORTED = new AbortController().signal;
-
-/**
- * `Ctx.signal` is non-optional in the type and `ctxOf` always sets it — but a context can
- * still arrive across a cast (`@ultimat3/http`'s `asCtx`, a test's `{} as Ctx`) without one, and
- * a job that crashed on a missing field would be a far worse answer than a job with no caller to
- * follow. Read it, do not assume it.
- */
-function callerSignal(ctx: Ctx): AbortSignal {
-  return ctx.signal instanceof AbortSignal ? ctx.signal : NEVER_ABORTED;
-}
-
-/**
- * The same defensive read, for the same reason: `Ctx.actor` is non-optional in the type and
- * `ctxOf` always sets it, but `WorkerOptions.context()` is the app's own function and a
- * cast context (`{} as Ctx`) reaches here without one. Anonymous is the honest stand-in — it
- * carries no org, so the job's declared tenant is the only thing that can put one on the run.
- */
-function callerActor(ctx: Ctx): Actor {
-  const actor: Actor | undefined = ctx.actor;
-  return actor === undefined ? anonymousActor() : actor;
-}
-
-const NO_SERVICES: ServiceBag = Object.freeze({});
-
-/**
- * The same defensive read a third time, and this one is load-bearing rather than merely kind:
- * `withChildContext` ITERATES the parent's bag to decide what carries forward, so a cast context
- * with no `services` would fail the run with a `TypeError` before the body ever started.
- */
-function callerServices(ctx: Ctx): ServiceBag {
-  const services: ServiceBag | undefined = ctx.services;
-  return services === undefined ? NO_SERVICES : services;
-}
 
 export interface JobExecution {
   readonly outcome: JobOutcome;
@@ -167,6 +133,10 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // no `job()` can reach — which both of these were until 2026-08.
     ...(handle.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: handle.stepTimeoutMs }),
     ...(handle.eventPollMs === undefined ? {} : { eventPollMs: handle.eventPollMs }),
+    // Compensation is the job's declaration; an attempt past the policy's last is the claim
+    // re-offering a final attempt that crashed, and unwinds whatever its steps say.
+    compensates: handle.compensates,
+    unwind: handle.compensates && isUnwindAttempt(handle.retry, claimed.attempt),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     events: options.events ?? eventBus(),
   });
@@ -223,6 +193,22 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     return { ...outcome, steps, replayed: runner.replayedNames() };
   };
 
+  /** Everything `unwindAndSettle` needs of this attempt — built only when a run unwinds. */
+  const unwinder = (): UnwindSettleOptions => ({
+    driver,
+    claimed,
+    handle,
+    runner,
+    ctx,
+    startedAt,
+    by,
+    landed,
+    settle,
+    run: { scope: inRunScope, input: parsed },
+    drained: () => drainedBy(signal),
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
+  });
+
   try {
     // Raised INSIDE the try so it takes the one failure path below — classified, nacked, logged
     // and reported exactly as if the body had thrown it — and the body never starts.
@@ -231,7 +217,10 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     parsed = { value: input };
     // The job's DECLARED tenant, on the actor the body runs as. `tenant: 'none'` strips the org
     // rather than inheriting the worker's, so a tenant-scoped read inside such a job fails closed.
-    const runActor = jobRunActor(callerActor(ctx), handle.tenantFor(input));
+    const declared = handle.tenantFor(input);
+    // A row queued for one org whose payload names another: refused before the body, terminally.
+    refuseRunTenant(handle.name, declared, claimed.tenantId);
+    const runActor = jobRunActor(callerActor(ctx), declared);
     // Installed as the AMBIENT context and not only handed over as a parameter. This is the whole
     // of the fix: `@ultimat3/entity`'s tenant guard derives from `tryUseContext()`, so a ctx passed
     // as an argument was read by nobody — `actorTenant` answered `undefined`, `scopedPlan` derived
@@ -266,6 +255,12 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     result = await (handle.timeoutMs === undefined
       ? work
       : raceTimeout(work, handle.timeoutMs, handle.name, cancel));
+    // An unwinding run's replay that RETURNED is still unwinding: the decision is durable.
+    // `return await`, at every unwind: the `finally` below ends the attempt, and the compensators
+    // must run — and write — before it does.
+    if (handle.compensates && (await runner.unwinding())) {
+      return await unwindAndSettle(unwinder(), undefined);
+    }
   } catch (error) {
     // Before ANY settle: the last value a body reported is written while the row is still this
     // worker's, which is the only time `recordProgress`'s fence lets it land.
@@ -292,6 +287,15 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     }
 
     const message = renderThrowable(error);
+    // Unwinding already: the replay stopped at its first incomplete step (`UnwindReached`) or
+    // ended any other way. Never retried forward — a drain still hands the attempt back.
+    if (
+      handle.compensates &&
+      !drainedBy(signal) &&
+      (isUnwindReached(error) || (await runner.unwinding().catch(() => false)))
+    ) {
+      return await unwindAndSettle(unwinder(), undefined);
+    }
     if (drainedBy(signal)) {
       // The worker's drain told this body to stop, and it did. Whatever it stopped WITH is the
       // framework's doing — the reason itself back from `fetch`, `throwIfAborted`'s `X_ABORTED`,
@@ -372,6 +376,10 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // "do not keep" was re-claimed and re-run forever with its attempt counter climbing.
     const dropped = !decision.retry && !decision.deadLetter;
     const recorded = recordedFailure(failureForRow(error), decision);
+    // Failed for good, and the job undoes its steps: compensators first, the dead letter after.
+    if (!decision.retry && handle.compensates) {
+      return await unwindAndSettle(unwinder(), { thrown: error, recorded, stop });
+    }
     const stack = failureStack(error);
     const settled = landed(
       await driver.nack(claimed.id, {
@@ -483,13 +491,4 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     steps: [],
     replayed: [],
   });
-}
-
-/**
- * The run was cancelled by the worker's drain: the code `JobDrainedError` carries, read off the
- * signal. The FIRST reason wins on a controller, so a timeout that fired before the drain still
- * reports as a timeout — the drain only claims an attempt it ended.
- */
-function drainedBy(signal: AbortSignal): boolean {
-  return signal.aborted && isUltimateError(signal.reason) && signal.reason.code === 'X_DRAINING';
 }

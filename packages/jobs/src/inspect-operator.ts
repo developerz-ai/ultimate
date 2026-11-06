@@ -1,12 +1,13 @@
-// The operator verbs `x jobs` and a dashboard bind to: remove, promote, pause, resume. Each one
-// refuses LOUDLY rather than answering "nothing happened" — an operator clearing a queue has to
+// The operator verbs `x jobs` and a dashboard bind to: remove, promote, pause, resume, resolve a
+// step. Each one refuses LOUDLY rather than answering "nothing happened" — an operator has to
 // know whether the job is gone or was never theirs to remove. Apart from `inspect.ts`, which is
 // the read side.
 
 import { NotImplementedError } from '@ultimat3/core';
 import type { JobDriver, JobRecord } from './driver';
 import { JobNotPromotableError } from './errors-operator';
-import type { JobIntrospection, PausedName } from './introspection';
+import type { JobIntrospection, PausedName, StepResolution } from './introspection';
+import type { StepRecord } from './steps-store';
 
 function operatorOf(driver: JobDriver): JobIntrospection {
   if (driver.introspect === undefined) {
@@ -46,4 +47,24 @@ export async function resumeQueue(
   const operator = operatorOf(driver);
   await operator.resumeQueue(queue);
   return operator.pausedQueues();
+}
+
+/**
+ * A person's answer to `X_STEP_OUTCOME_UNKNOWN`: the resolved record. Then `x jobs retry <id>`.
+ * A driver with no `resolveStep` is refused as one with no operator surface at all.
+ */
+export function resolveJobStep(
+  driver: JobDriver,
+  jobId: string,
+  step: string,
+  resolution: StepResolution,
+): Promise<StepRecord> {
+  const operator = operatorOf(driver);
+  if (operator.resolveStep === undefined) {
+    throw new NotImplementedError({
+      cause: `the "${driver.name}" jobs driver keeps no step records an operator can resolve: its introspect has no resolveStep`,
+      fix: 'setJobDriver(postgresJobDriver())   # at boot: the pg and memory drivers implement resolveStep — then x jobs resolve-step <id> <step> --ran --output <json>',
+    });
+  }
+  return operator.resolveStep(jobId, step, resolution);
 }

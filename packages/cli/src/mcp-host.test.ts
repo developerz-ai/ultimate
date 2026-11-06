@@ -227,7 +227,7 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
     const answer = await readOnlyRows(db, 'select id from posts', limits, READONLY_ROLE);
     expect(db.texts).toEqual([
       'BEGIN READ ONLY',
-      `SET LOCAL statement_timeout = ${limits.timeoutMs}`,
+      'select set_config($1, $2, true)',
       `SET LOCAL ROLE "${READONLY_ROLE}"`,
       'DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select id from posts',
       `FETCH FORWARD ${limits.maxRows + 1} FROM ultimate_read_cursor`,

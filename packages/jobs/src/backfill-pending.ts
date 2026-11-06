@@ -97,6 +97,36 @@ function stateOf(
   return newest.status === 'running' ? 'running' : 'failed';
 }
 
+/** One declaration judged against the ledger rows under one ledger name. */
+function judged(
+  declaration: BackfillDeclaration,
+  name: string,
+  under: readonly BackfillProgress[],
+  environment: Environment,
+): BackfillStateRow {
+  const newest = under[0];
+  const completed = under.find((run) => run.status === 'completed');
+  return {
+    name,
+    state: stateOf(declaration, under, completed, environment),
+    checksum: declaration.checksum,
+    ledgerChecksum: newest?.checksum ?? null,
+    changed: completed !== undefined && completed.checksum !== declaration.checksum,
+    requires: declaration.requires,
+    environments: declaration.environments,
+    lastRunId: newest?.runId ?? null,
+    rows: newest?.rows ?? null,
+  };
+}
+
+/**
+ * The ledger names a scoped declaration owns: `<name>:<scope>`. A scope is app data — an account,
+ * a vendor — that the framework cannot enumerate, so a scoped declaration reports one row per scope
+ * it has RUN and is never `pending` on its own: "which accounts should have synced" is the app's.
+ */
+const scopesOf = (name: string, ledgerNames: Iterable<string>): string[] =>
+  [...ledgerNames].filter((ledgerName) => ledgerName.startsWith(`${name}:`)).sort();
+
 export function pendingBackfills(input: {
   readonly declarations: readonly BackfillDeclaration[];
   /** Every `x_backfills` row, newest first — `inspectBackfills`' own order, unfiltered. */
@@ -104,24 +134,17 @@ export function pendingBackfills(input: {
   readonly environment: Environment;
 }): BackfillPendingReport {
   const byName = groupByName(input.runs);
-  const rows = input.declarations.map((declaration): BackfillStateRow => {
-    const under = byName.get(declaration.name) ?? [];
-    const newest = under[0];
-    const completed = under.find((run) => run.status === 'completed');
-    return {
-      name: declaration.name,
-      state: stateOf(declaration, under, completed, input.environment),
-      checksum: declaration.checksum,
-      ledgerChecksum: newest?.checksum ?? null,
-      changed: completed !== undefined && completed.checksum !== declaration.checksum,
-      requires: declaration.requires,
-      environments: declaration.environments,
-      lastRunId: newest?.runId ?? null,
-      rows: newest?.rows ?? null,
-    };
+  const owned = new Set<string>();
+  const rows = input.declarations.flatMap((declaration): BackfillStateRow[] => {
+    const names = declaration.scoped
+      ? scopesOf(declaration.name, byName.keys())
+      : [declaration.name];
+    for (const name of names) owned.add(name);
+    return names.map((name) =>
+      judged(declaration, name, byName.get(name) ?? [], input.environment),
+    );
   });
-  const declared = new Set(input.declarations.map((declaration) => declaration.name));
-  const orphaned = [...byName.keys()].filter((name) => !declared.has(name)).sort();
+  const orphaned = [...byName.keys()].filter((name) => !owned.has(name)).sort();
   return {
     environment: input.environment,
     rows,

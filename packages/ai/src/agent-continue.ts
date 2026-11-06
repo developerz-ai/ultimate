@@ -83,6 +83,19 @@ export interface TranscriptBinding {
   readonly org: string | null;
 }
 
+/**
+ * `onCheckpoint`'s event: the run so far as a handle, after turn `turn`'s tool results or its
+ * correction landed and before turn `turn + 1` is bought. The same signed, bound shape a finished
+ * run returns, so `.continue(input, { transcript, user })` resumes from it and the screen refuses
+ * an edited or cross-tenant copy as it refuses any other.
+ */
+export interface AgentCheckpoint {
+  readonly turn: number;
+  readonly transcript: AgentTranscript;
+  /** The run's total so far, continuations included. */
+  readonly run: AgentRunUsage;
+}
+
 /** What `.run()` and `.continue()` resolve to: the validated answer and the handle to go on from. */
 export interface AgentRun<TOutput> {
   readonly output: TOutput;

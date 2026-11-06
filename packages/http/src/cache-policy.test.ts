@@ -3,7 +3,12 @@
 // person by a cache neither of them can see.
 import { describe, expect, test } from 'bun:test';
 import { anonymousActor, userActor } from '@ultimat3/core';
-import { defaultCache } from './cache-policy';
+import {
+  defaultCache,
+  offersSharedCache,
+  PRIVATE_REVALIDATE,
+  replayableExchange,
+} from './cache-policy';
 import { cacheControl } from './response';
 import type { Route } from './router';
 
@@ -36,5 +41,16 @@ describe('defaultCache', () => {
     const hint = defaultCache(route('public'), userActor({ id: 'u1' }));
     expect(hint.mode).toBe('private');
     expect(cacheControl(hint)).not.toContain('s-maxage');
+  });
+});
+
+describe('PRIVATE_REVALIDATE — a declared read with a validator', () => {
+  test('is the caller`s to keep and revalidate, never an offer to a shared cache', () => {
+    expect(PRIVATE_REVALIDATE).toBe('private, no-cache');
+    expect(offersSharedCache(PRIVATE_REVALIDATE)).toBe(false);
+  });
+
+  test('its 304 is a replayable exchange, so the stage does not rewrite it to no-store', () => {
+    expect(replayableExchange('GET', 304)).toBe(true);
   });
 });

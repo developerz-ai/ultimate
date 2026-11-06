@@ -194,6 +194,11 @@ create table if not exists x_job_events (
 create index if not exists x_job_events_lookup_idx
   on x_job_events (name, published_at);
 
+-- The steps parked on an event, which is what a waking publish reads. Partial, so it holds only
+-- the open waits: without it each publish is a scan of every step ever written.
+create index if not exists x_job_steps_waiting_idx
+  on x_job_steps (event) where status = 'waiting';
+
 -- What the body last reported through progress, as one value: done, total, note and the instant.
 -- A column and not a table, because it is read with the row and dies with it. Added by alter
 -- because x_jobs shipped without it.

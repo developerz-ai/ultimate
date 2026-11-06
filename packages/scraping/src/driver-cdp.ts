@@ -88,6 +88,7 @@ async function opened(
   browser: CdpBrowserLike,
   init: SessionInit,
   wiring: SessionWiring,
+  ended: () => unknown,
 ): Promise<ScrapeTarget> {
   try {
     const page = await browser.newPage();
@@ -105,7 +106,13 @@ async function opened(
       const { username, password } = splitCredentials(wiring.proxy);
       await page.authenticate({ username, password });
     }
-    const target = await cdpTarget({ page, browser, rules: init.rules, clock: init.clock });
+    const target = await cdpTarget({
+      page,
+      browser,
+      rules: init.rules,
+      clock: init.clock,
+      ended,
+    });
     if (init.restore !== undefined) await target.restore(init.restore);
     return target;
   } catch (thrown) {
@@ -140,7 +147,10 @@ async function sessionOver(
   // `runScrape`'s `finally { session.close() }` never runs for a session `open()` did not return,
   // so a tab limit, a refused interception or a restore that threw left a real Chrome process —
   // or a remote session somebody is billing for — running per attempt, unattributed.
-  const target = await opened(browser, init, wiring);
+  // Late-bound: the target is built before the guard that can end it. Until the guard exists no
+  // fire can have happened, so a failure inside `opened()` keeps its own label.
+  let ended = (): unknown => undefined;
+  const target = await opened(browser, init, wiring, () => ended());
   const guard = createWedgeGuard({
     clock: init.clock,
     what: `scrape "${init.name}"`,
@@ -158,6 +168,7 @@ async function sessionOver(
       child?.kill(9);
     },
   });
+  ended = () => (guard.fired ? guard.signal.reason : undefined);
   const onActivity = (): void => {
     guard.touch();
     init.onActivity?.();

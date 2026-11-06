@@ -7,7 +7,7 @@
  */
 
 import { blocks, defineMail } from '@ultimat3/mail';
-import { MemberView, OrgView } from './entity';
+import { InviteMail, OrgView } from './entity';
 
 export const welcomeEmail = defineMail<OrgView>({
   id: 'org.welcome',
@@ -34,14 +34,14 @@ export const nudgeEmail = defineMail<OrgView>({
   ],
 });
 
-export const inviteEmail = defineMail<MemberView>({
+export const inviteEmail = defineMail<InviteMail>({
   id: 'org.invite',
   subject: 'mail.invite.subject',
-  input: MemberView,
+  input: InviteMail,
   template: ({ data, t }) => [
     blocks.heading('mail.greeting', { name: data.name }),
     blocks.paragraph('mail.invite.body', { role: t(`orgs.roles.${data.role}`) }),
-    blocks.button('mail.invite.cta', '/feed'),
+    blocks.button('mail.invite.cta', data.link),
     blocks.paragraph('mail.signoff'),
   ],
 });

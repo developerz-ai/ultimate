@@ -423,6 +423,7 @@
       "version": "29.4.0",
       "dependencies": {
         "@ultimat3/action": "29.4.0",
+        "@ultimat3/auth": "29.4.0",
         "@ultimat3/core": "29.4.0",
         "@ultimat3/db": "29.4.0",
         "@ultimat3/entity": "29.4.0",
@@ -475,6 +476,7 @@
       "dependencies": {
         "@ultimat3/cache": "29.4.0",
         "@ultimat3/core": "29.4.0",
+        "@ultimat3/db": "29.4.0",
         "@ultimat3/entity": "29.4.0",
         "@ultimat3/http": "29.4.0",
         "@ultimat3/policy": "29.4.0",

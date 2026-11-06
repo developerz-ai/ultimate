@@ -573,6 +573,12 @@ clear the stamp: the rows are invisible to every read and no re-seed brings them
 replay that looked idempotent left a demo's feed permanently empty. Inside a seed the call is
 therefore `X_INVARIANT_VIOLATED` naming `x db reset`, which is the only wipe such an entity has.
 
+**A generated seed follows ownership, not just the tenant column.** `x db seed --generate` and the
+exercise pass write `@ultimat3/testing`'s `seedGraph`: a table with no tenant column whose
+references reach a tenant-owned one — and no `shared` reason — gets its rows per tenant, each under
+its own tenant's parent, so the tenant proof has a row of each org to attack through. A `shared`
+entity is seeded once and is not walked through ([A whole graph](Testing#a-whole-graph-seedgraph)).
+
 ## Column types
 
 The blessed set is a decision the framework made for a table it was going to create. The wide set

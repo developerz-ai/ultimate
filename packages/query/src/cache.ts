@@ -199,8 +199,15 @@ export function readThrough<T>(
   ttlMs: number | null,
   run: () => Promise<T>,
   tags: readonly CacheTag[] = [],
+  negativeTtlMs: number | null = null,
 ): Promise<T> {
-  return readOnce(ctx, key, () => fill(ctx.clock, key, ttlMs, tags, run));
+  return readOnce(ctx, key, () => fill(ctx.clock, key, { ttlMs, negativeTtlMs }, tags, run));
+}
+
+/** The two leases a filled entry may take: a value's, and a `null`'s when it differs. */
+interface Leases {
+  readonly ttlMs: number | null;
+  readonly negativeTtlMs: number | null;
 }
 
 /**
@@ -216,11 +223,16 @@ export function readThrough<T>(
 function fill<T>(
   clock: Clock,
   key: string,
-  ttlMs: number | null,
+  { ttlMs, negativeTtlMs }: Leases,
   tags: readonly CacheTag[],
   run: () => Promise<T>,
 ): Promise<T> {
   // `null` is "the caller named none", never "never": every tier refuses a non-positive `ttlMs`
   // and none has an immortal entry to offer, so omitting it falls to the tier's own default.
-  return stackFor(clock).read(key, run, { ...(ttlMs === null ? {} : { ttlMs }), tags });
+  // `negativeTtlMs` is the stack's to apply (`ttlOptionsFor`): it alone knows the load was a null.
+  return stackFor(clock).read(key, run, {
+    ...(ttlMs === null ? {} : { ttlMs }),
+    ...(negativeTtlMs === null ? {} : { negativeTtlMs }),
+    tags,
+  });
 }

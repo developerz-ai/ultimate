@@ -328,3 +328,28 @@ select (select count(*) from moved)::int as fired, q.id, q.run_id, q.idempotency
   from (select 1) as one
   left join queued q on true
 `.trim();
+
+/**
+ * `resolveStep`, ONE write: the step becomes `completed` with `$4` (ran) or `cleared` (did not),
+ * only while its job is held by no worker and the step started or failed without completing. The
+ * job is read in the same statement, so a claim that lands first wins and nothing is written.
+ *
+ * $1 job id, $2 step name, $3 'completed' or 'cleared', $4 the output (jsonb text).
+ */
+export const SQL_STEP_RESOLVE = `
+with job as (
+  select run_id from x_jobs where id = $1::uuid and state <> 'running'
+)
+update x_job_steps s
+   set status       = $3,
+       output       = $4::jsonb,
+       completed_at = case when $3 = 'completed' then statement_timestamp() else null end,
+       error        = null
+  from job
+ where s.run_id = job.run_id and s.name = $2 and s.status in ('started', 'failed')
+returning s.run_id, s.name, s.status, s.output, s.attempts, s.error,
+          (extract(epoch from s.started_at)   * 1000)::bigint as started_at,
+          (extract(epoch from s.completed_at) * 1000)::bigint as completed_at,
+          (extract(epoch from s.wake_at)      * 1000)::bigint as wake_at,
+          s.event, s.correlation_key
+`.trim();

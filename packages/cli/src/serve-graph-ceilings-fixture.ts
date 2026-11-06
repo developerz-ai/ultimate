@@ -132,8 +132,20 @@
  * (`core/src/client-paths-pins.ts`) through the core barrel. No existing module newly reached.
  * raised 747 → 748, measured 748 (2026-11-05, plan 101 wave 6a): `entity/src/memory-journal.ts`, the
  * memory store's ambient transaction, which the memory repo and transactor now read. Nothing else.
+ * raised 748 → 804, measured 804 (2026-11-06, plan 101 wave 7): 54 new files and 2 existing modules
+ * newly reached — one is `http/src/set-cookie.ts`, the one `setCookie` the replica position cookie
+ * now writes through. `authorizationServer()` (21, `auth/src/{authorization-server*,grant-*,
+ * token-endpoints,oauth-bearer-resolver,verification-purposes}.ts`) through the auth barrel that
+ * `framework-schema.ts` reads for `AUTH_TABLES` and the five `x_oauth_*` tables; row security and
+ * fresher reads in db (17: `row-security*`, `row-secure-client`, `transaction-settings`,
+ * `local-settings`, `read-transaction`, `statement-bound`, `replica-position`,
+ * `drift-row-security`, `generate-row-security`, `generate-snapshot`, `introspect-rows`,
+ * `partitioned-tables`), entity's `describe-tenancy` and `row-security-settings`; jobs' consumer,
+ * saga and event-wake modules (14: `consumer*`, `errors-saga`, `steps-{unwind,wait}`,
+ * `execute-{ctx,unwind}`, `driver-pg-event-wake-sql`, `step-resolve`, `backfill-{source,reader}`)
+ * through the jobs barrel; `cli/src/runtime-replica-position.ts`.
  */
-export const MIGRATE_CEILING = 748;
+export const MIGRATE_CEILING = 804;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -286,8 +298,10 @@ export const MIGRATE_CEILING = 748;
  * raised 1089 → 1092, measured 1092 (2026-11-05, plan 101 wave 5b): `MIGRATE_CEILING`'s 2, plus
  * `render/src/client-pins-tag.ts`, the document's `ultimate-pins` meta.
  * raised 1092 → 1093, measured 1093 (2026-11-05, plan 101 wave 6a): `MIGRATE_CEILING`'s 1.
+ * raised 1093 → 1151, measured 1151 (2026-11-06, plan 101 wave 7): `MIGRATE_CEILING`'s 56, plus
+ * `cli/src/row-security-boot.ts` (the boot's role check) and `query/src/http-etag.ts` (a read's 304).
  */
-export const SERVING_ROLE_CEILING = 1093;
+export const SERVING_ROLE_CEILING = 1151;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -430,5 +444,8 @@ export const SERVING_ROLE_CEILING = 1093;
  * raised 1232 → 1236, measured 1236 (2026-11-05, plan 101 wave 5b): `SERVING_ROLE_CEILING`'s 3,
  * plus `cli/src/page-pins.ts`, which collects the pins a rendered document stamps.
  * raised 1236 → 1237, measured 1237 (2026-11-05, plan 101 wave 6a): `MIGRATE_CEILING`'s 1.
+ * raised 1237 → 1296, measured 1296 (2026-11-06, plan 101 wave 7): `SERVING_ROLE_CEILING`'s 58,
+ * plus `mcp/src/oauth-server.ts` (`mcpAuthorizationServer`), through the MCP barrel the web role
+ * mounts.
  */
-export const WEB_ROLE_CEILING = 1237;
+export const WEB_ROLE_CEILING = 1296;

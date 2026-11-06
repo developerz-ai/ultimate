@@ -328,6 +328,7 @@ describe('the newest migration records the schema this chain creates', () => {
       'posts',
       'run_events',
       'runs',
+      'stream_cursors',
       'webhook_deliveries',
       'webhook_endpoints',
     ]);

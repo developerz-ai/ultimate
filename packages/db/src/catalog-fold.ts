@@ -112,5 +112,10 @@ export function tableOf(
         }),
       ),
     replicaIdentity: replicaIdentityOf(row),
+    // Absent, never `null`, on an ordinary table: its description is what it was before these.
+    ...(row.partition_key === null ? {} : { partitionBy: row.partition_key }),
+    ...(row.partition_of === null || row.partition_bound === null
+      ? {}
+      : { partitionOf: { table: row.partition_of, bound: row.partition_bound } }),
   };
 }

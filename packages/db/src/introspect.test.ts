@@ -222,6 +222,32 @@ describe('buildSchema', () => {
   });
 });
 
+describe('buildSchema · partitioned', () => {
+  const column = (table: string) => ({
+    table_name: table,
+    column_name: 'id',
+    data_type: 'uuid',
+    is_nullable: 'NO',
+    column_default: null,
+    ordinal_position: 1,
+  });
+
+  test('`partitioned: true` on a named parent only, absent everywhere else', () => {
+    const schema = buildSchema(
+      'public',
+      [],
+      [column('events'), column('posts')],
+      [],
+      [],
+      [],
+      undefined,
+      ['events'],
+    );
+    expect(findTable(schema, 'events')?.partitioned).toBe(true);
+    expect(findTable(schema, 'posts')).not.toHaveProperty('partitioned');
+  });
+});
+
 describe('findTable', () => {
   test('returns undefined for a table the schema does not carry', () => {
     const schema = buildSchema('public', [], [], [], []);
@@ -230,7 +256,7 @@ describe('findTable', () => {
 });
 
 describe('introspect', () => {
-  test('sends six catalog queries and folds their rows through buildSchema', async () => {
+  test('sends eight catalog queries and folds their rows through buildSchema', async () => {
     const client = recordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
@@ -280,9 +306,12 @@ describe('introspect', () => {
       rows: [{ table_name: 'posts', trigger_name: 'ultimate_append_only' }],
     });
 
+    // The seventh names the partitioned parents (`partitioned-tables.ts`), the eighth the binding
+    // policies (`row-security-catalog.ts`); none of either here.
     const schema = await introspectSchema({ client });
 
-    expect(client.statements).toHaveLength(6);
+    expect(client.statements).toHaveLength(8);
+    expect(findTable(schema, 'posts')).not.toHaveProperty('partitioned');
     const posts = findTable(schema, 'posts');
     expect(posts?.columns).toHaveLength(1);
     expect(posts?.primaryKey).toEqual(['id']);
@@ -426,7 +455,7 @@ describe('introspect', () => {
 
     const schema = await introspectSchema();
 
-    expect(client.statements).toHaveLength(6);
+    expect(client.statements).toHaveLength(8);
     expect(schema.tables.map((t) => t.name)).toEqual(['posts']);
   });
 });

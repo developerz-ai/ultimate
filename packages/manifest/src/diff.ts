@@ -15,6 +15,7 @@ import { diffAdmins } from './diff-admin';
 import type { ManifestChange } from './diff-change';
 import { diffNamedSet } from './diff-change';
 import { diffChannels } from './diff-channels';
+import { diffConsumers } from './diff-consumers';
 import { diffEntities } from './diff-entities';
 import { diffMounts } from './diff-mounts';
 import { diffActions, diffQueries } from './diff-operations';
@@ -58,6 +59,8 @@ export function diffManifest(before: Manifest, after: Manifest): ManifestDiff {
   changes.push(...diffRoutes(before.routes, after.routes));
   changes.push(...diffJobs(before.jobs, after.jobs));
   changes.push(...diffTasks(before.tasks, after.tasks));
+  // `mounts`' `?? []` on both sides: the key is absent before the first consumer and after the last.
+  changes.push(...diffConsumers(before.consumers ?? [], after.consumers ?? []));
   changes.push(...diffEntities(before.entities, after.entities));
   changes.push(...diffPolicies(before.policies, after.policies));
   changes.push(...diffErrorCodes(before.errorCodes, after.errorCodes));

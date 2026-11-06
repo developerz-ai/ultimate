@@ -31,7 +31,10 @@ import * as repo from '../repo';
 export const postBySlug = query({
   input: t.object({ orgId: t.uuid, slug: t.string }),
   policy: feedRead,
-  cache: { tags: [tag.post], ttlMs: 300_000 },
+  // One post or 404. The 404 is held for 5 s, not the row's 5 min: a slug asked for just before its
+  // post lands — a link shared the moment it is published — is "absent" for seconds, never minutes.
+  single: true,
+  cache: { tags: [tag.post], ttlMs: 300_000, negativeTtlMs: 5_000 },
   mcp: { expose: true, description: 'Read one published post by slug' },
   sql: ({ orgId, slug }) =>
     from<PostView>('posts', () => repo.publishedBySlugInOrg(toOrgId(orgId), slug))

@@ -172,10 +172,11 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * OAuth discovery for remote MCP clients (the MCP authorization spec, RFC 9728): the route's 401
    * says `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"`,
    * and the boot serves that document (and the root one) naming `authorizationServers`. The
-   * authorization server — consent, `/oauth/token` — is the app's own routes.
+   * authorization server is `mcpAuthorizationServer(...)`: its `routes` go in `runtime.routes`,
+   * its consent page is the app's, and its `oauth` and `resolveToken` are handed in here.
    *
    * ```ts
-   * oauth: { authorizationServers: ['https://www.example.com'], resourceName: 'Example' },
+   * oauth: as.oauth, resolveToken: as.resolveToken,
    * ```
    */
   readonly oauth?: McpOAuth | undefined;

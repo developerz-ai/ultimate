@@ -576,6 +576,13 @@ tier registered with a frozen clock is drivable end to end — and omitting it i
 for its own default. `@ultimat3/cache`'s tiers refuse a non-positive `ttlMs` and have no immortal
 entry to offer, so there is no "never" to spell.
 
+`cache: { negativeTtlMs }` is a `null`'s own lease: a `single: true` read that matched nothing is
+stored as `null` and the stack keeps it `negativeTtlMs`. An empty list is a list, and keeps `ttlMs`.
+
+`etag: true` answers `private, no-cache` with a strong `ETag` and a bodiless 304 for a held one —
+`@ultimat3/http`'s `notModified`, after the policy and the rate limit (`http-etag.ts`).
+`timeoutMs` runs the source inside `@ultimat3/db`'s `withStatementTimeout`: always the primary.
+
 The memo entry is the read **in flight**, not its value, so "twice" covers reads that race as
 well as reads that follow: five holes rendering concurrently share one execution and one tier
 round trip. A rejection is evicted — a failed read is not the request's answer.

@@ -23,7 +23,7 @@ A scrape is a **`job`**, not a ninth primitive. `scrape()` returns a `JobHandle`
 | Usage on every result | `ScrapeReport.usage` — a measurement, never a quota |
 | The silent-green alarm | `expect: { minRows, maxDrop }` — a scrape that returns nothing fails instead of succeeding |
 | Offline testing | two drivers that never touch the network, pinned against the real one by a parity suite |
-| Wedge watchdog | kills a browser that has gone silent, after a graceful quit |
+| Wedge watchdog | ends a run whose browser has gone silent: kills the process and closes the browser at the fire, an attached one too |
 
 ## The declaration
 
@@ -97,6 +97,16 @@ One interface, three drivers, no driver type in it.
 | `accessibility(selector, { max })` | what a screen reader is told about each match — the browser's **computed** role and name, after ARIA and label association, at most `max` (default 25) nodes. Refused with `X_NOT_IMPLEMENTED` on the offline drivers and on a frame of the real one, never answered from `role=` on the tag: a `<div onclick>` computing no role *is* the finding |
 | `console()` / `network()` | bounded rings, 200 entries each |
 | `pageErrors()` / `pageErrorsDropped()` | uncaught exceptions, a **third** ring — not console lines |
+| `activity()` | tells the wedge watchdog the run is working on a channel this page cannot see — your own CDP session, a long warm-up. Every verb above already reports; this touches the idle clock only and counts no usage. On every driver |
+
+**The wedge watchdog ends the run at the fire, on every driver** (`As of 2026-11`). Past
+`watchdog.idleMs` with no activity it kills the OS process, starts the graceful close under
+`graceMs` (a second kill past it), then aborts with `X_SCRAPE_WEDGED`. On `remoteBrowser()` there
+is no process to kill, and a call blocked on the socket — `evaluate` takes no signal — never unwound
+to `close()`: the run kept driving the site for minutes. Closing the browser is what rejects that
+call, and it rejects as `X_SCRAPE_WEDGED`, not `X_SCRAPE_BROWSER_UNREACHABLE`. A run that drives the
+browser through its own channel calls `page.activity()` between steps rather than routing
+keep-alives through `page.evaluate`.
 
 **A frame verb acts on the frame, and this had to be fixed.** `frame()` returns a target that
 overrides every verb addressing a document — `click`, `type`, `select`, `clear`, `query`. Until

@@ -203,7 +203,7 @@ export const wedged = (what: string, idleMs: number): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_WEDGED',
     cause: `${what} produced no browser activity for ${String(idleMs)}ms, so the process was killed`,
-    fix: 'raise watchdog: { idleMs } on the scrape() definition if the site is genuinely this slow, otherwise re-run — the browser was killed and its session is gone',
+    fix: 'raise watchdog: { idleMs } on the scrape() definition if the site is genuinely this slow, or call page.activity() from the channel the framework cannot see (your own CDP session, a warm-up), otherwise re-run — the browser was closed and its session is gone',
     meta: { what, idleMs },
   });
 

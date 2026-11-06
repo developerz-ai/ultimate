@@ -233,3 +233,32 @@ The inherited-key defect in `validate-args.ts` (`constructor`, `toString`, `hasO
 Read from the spec on 2026-11-02: the current revision `2026-07-28` drops `initialize`; version, client info and capabilities ride in each request's `_meta`, `server/discover` is mandatory, and the compatibility matrix says a modern client on a legacy server **fails** — only a dual-era client falls back. Probes through `route.handle` that day: `initialize` offering `2025-11-25` or `2025-03-26` answered `2025-06-18` both times; `resources/templates/list` was `-32601` while `resources` was advertised; `MCP-Protocol-Version: garbage` was a 200; `Origin: https://evil.example` with a token was a 200 (the spec requires 403); `x mcp serve` answered GET and DELETE `404` (the spec says 405).
 
 Decisions: the era is per request, never per connection (no session state exists to hold one). A `_meta` version naming a LEGACY revision is served as that revision rather than refused — `-32022`'s `supported` lists the legacy revisions, so refusing them in `_meta` would loop a client retrying from that list. `Origin` is core's `proveSameOrigin` (honouring `http.cors.origins`), never a list of this package's own; an audit reproduced that a Host-derived self origin admits a DNS-rebound page, so `x mcp serve` checks the Host as `/_x` does (421). `MCP_PROTOCOL_VERSION` was deleted rather than repointed, because a constant that silently changed era would mislead every caller that compiled. No `allowedOrigins` option: `POST /mcp` sends no CORS headers (`cli/src/app-mcp.ts`), so a browser client cannot read an answer today, and non-browser clients send no `Origin`; the option arrives with the first browser client. `ttlMs: 0` / `cacheScope: 'private'` because every list is filtered per caller; a longer TTL is a later knob, with evidence. Not shipped and not advertised: `subscriptions/listen`, multi-round-trip input, the tasks extension, `x-mcp-header`, SSE responses — long work stays `.job()` plus a query.
+
+### 2026-11: the authorization server moves in (plan 101, item 41)
+
+Reversed: `app-tools.ts`'s "the authorization server — consent, `/oauth/token` — is the app's own
+routes". Measured before the reversal: four copies in adopting apps (1,636 LOC on this framework,
+1,068, 1,139, 1,548) and a fifth run as a separate service, each holding the same RFC-fixed rules
+— exact redirect match, S256 only, single-use codes, refresh rotation with replay revocation,
+RFC 8707 resource binding, RFC 9207 `iss`. The same for a bank and a blog, so mechanism (axiom 8).
+
+Decisions:
+
+- **The server is `@ultimat3/auth`'s, from birth** (`authorization-server*.ts`): a public API, an
+  integration or a CLI needs the same wire, and `bearerMount` already takes any resolver. This
+  package holds only `oauth-server.ts`, the `resource`-binding wrapper and its `mcp.auth.<event>`
+  lines. No `X_MCP_OAUTH_*` code: the refusals are auth's.
+- **auth imports nothing from http** (same tier): `routes` are plain objects that assign to
+  http's `Route` by structure and `oauthBearerResolver` returns a `BearerResolver` by structure.
+  The assignment is compiled, without a cast, in `oauth-bearer-mount.contract.test.ts` — here,
+  because mcp is the lowest package that may import both.
+- **The wrapper defaults the resource.** A client naming no `resource` gets a grant bound to the
+  endpoint, never an unbound one; `resolveToken` refuses unbound and foreign tokens alike. Auth's
+  own default stays unbound (a resolver with no `resource` accepts it).
+- **No `McpAuditEvent` arm.** The server's decisions are log lines (`mcp.auth.issued`, `…refused`,
+  `…revoked` at info; `…code-replayed`, `…refresh-replayed`, `…grant-disabled` at warn) and the
+  app's `onEvent`. Widening `McpAuditEvent` would break every exhaustive `switch` over `onAudit`
+  for an event the gate did not decide.
+- **Tokens are opaque, hashed at rest** (`xat_`/`xrt_` prefixes, 32 random bytes), never a JWT, so
+  `revoke` holds on the next lookup. Lists are space-joined text in Postgres: scope-tokens and URIs
+  hold no space, and no array parameter has to cross `Bun.SQL`.

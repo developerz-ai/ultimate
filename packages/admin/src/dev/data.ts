@@ -122,6 +122,10 @@ const STEP_STATUS: Readonly<Record<StepStatus, JobStepFact['status']>> = {
   sleeping: 'sleeping',
   waiting: 'pending',
   failed: 'failed',
+  // A `once` step whose `fn` began and recorded no outcome: in flight, or unknown until an operator
+  // says so with `x jobs resolve-step`. `cleared` is that operator's "it did not run": it runs again.
+  started: 'running',
+  cleared: 'pending',
 };
 
 /**

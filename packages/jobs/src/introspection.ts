@@ -7,6 +7,7 @@
 import { finiteCount } from '@ultimat3/core';
 import type { ClaimIdentity, JobRecord, JobState } from './driver';
 import { JobPageInvalidError } from './errors-operator';
+import type { StepRecord } from './steps-store';
 
 /** Rows one `list()` call may answer. A page, never a table: a dashboard walks with `after`. */
 export const MAX_JOB_PAGE = 200;
@@ -98,6 +99,14 @@ export function pageLimit(subject: string, limit: number | undefined): number {
   }
   return asked;
 }
+
+/** What a person found out about a `once` step: it ran (and answered `output`), or it did not. */
+export type StepResolution =
+  | { readonly ran: true; readonly output: unknown }
+  | { readonly ran: false };
+
+/** The step statuses an operator may resolve: a `once` step that began and never completed. */
+export const RESOLVABLE_STEP_STATUSES: ReadonlySet<string> = new Set(['started', 'failed']);
 
 /** Which rows a bulk call addresses. `state` is REQUIRED: "every job" is never one call. */
 export interface BulkFilter {
@@ -247,6 +256,14 @@ export interface JobIntrospection {
    * `runAt` is due now. `filter.state` must be `ready` (a retry backing off) or `delayed`.
    */
   promoteMany(filter: BulkFilter): Promise<BulkResult>;
+  /**
+   * Answer a `once` step whose outcome is unknown (`X_STEP_OUTCOME_UNKNOWN`): `ran` writes it
+   * `completed` with `output`, so a replay returns it; not `ran` writes `cleared`, so the next run
+   * calls `fn` again. ONE write, fenced to a job no worker holds and a step that `started` or
+   * `failed`; anything else is `X_STEP_NOT_RESOLVABLE`, an unknown id `X_JOB_NOT_FOUND`. Optional,
+   * as `cancel` is: a driver may keep no step records an operator can reach.
+   */
+  resolveStep?(jobId: string, step: string, resolution: StepResolution): Promise<StepRecord>;
   /** A paused queue is never claimed, by any worker; enqueues still land. Idempotent. */
   pauseQueue(queue: string): Promise<void>;
   resumeQueue(queue: string): Promise<void>;

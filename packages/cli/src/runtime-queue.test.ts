@@ -8,7 +8,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { getIdempotencyStore } from '@ultimat3/action';
 import { POOL_MAX_ENV, REPLICA_URL_ENV, raw, setDbClient, withTransaction } from '@ultimat3/db';
 import { configureHttp, resetHttpConfig } from '@ultimat3/http';
-import { eventBus, jobDriver, resetJobDriver } from '@ultimat3/jobs';
+import { eventBus, jobDriver, memoryJobDriver, resetJobDriver } from '@ultimat3/jobs';
 import { resolveServices } from './runtime-bindings';
 import type { RunningQueue } from './runtime-queue';
 import { startDb, startQueue } from './runtime-queue';
@@ -43,6 +43,8 @@ describe('startQueue', () => {
 
       expect(jobDriver()).toBe(queue.jobs);
       expect(eventBus()).toBe(queue.events);
+      // Over the boot's own `postgresJobDriver`, a publish wakes its waiters in the same statement.
+      expect(queue.events.wakes).toBe(true);
 
       await queue.stop();
       running = undefined;
@@ -53,6 +55,18 @@ describe('startQueue', () => {
       // The event bus too (s2-cli #8): left installed, `publishEvent` and `step.waitForEvent` ran
       // over the closed pool for the rest of the process.
       expect(eventBus()).not.toBe(queue.events);
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  // A driver handed in by the app keeps no `x_jobs` rows on this database, so a wake would find
+  // none: the bus stays a poller and its waiters keep the 30 s backstop.
+  test(
+    'an override driver gets a bus that does not wake',
+    async () => {
+      const queue = await startQueue(resolveServices(ROOT, {}), { jobs: memoryJobDriver() });
+      running = queue;
+      expect(queue.events.wakes).toBe(false);
     },
     BOOT_TIMEOUT_MS,
   );

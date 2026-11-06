@@ -31,10 +31,13 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `seed-graph-values.ts` | one column's candidate values, off its declaration, kept only where `$parse` accepts them — `factoriesFor`'s source too |
 | `seed-graph-order.ts` · `seed-graph-row.ts` · `seed-graph-shape.ts` | insert order over `$references()` (a cycle broken at a nullable key) · one row solved against invariants and unique keys · what the graph reads off an entity, structurally |
 | `seed-graph-error.ts` | `X_SEED_GRAPH_UNSATISFIED`, its fix naming the `defineFactory` to write; `X_SEED_GRAPH_ENTITY_UNKNOWN`, a plan and a writer built from two entity sets |
-| `seed-writer.ts` | `entitySeedWriter({ entities, client })` or `({ entities, driver? })` — the `SeedWriter` that writes a graph through each entity's own repository: Postgres or PGlite through a client, or a driver. `@ultimat3/entity` loads on the first write |
-| `exercise.ts` | `runExercisePass({ entities, writer, roles, seed?, overrides?, only? })` — every registered action, query and job once, each on its own committed tenant pair, one `ExerciseRecord` per primitive. What `x exercise` runs |
+| `seed-writer.ts` | `entitySeedWriter({ entities, client })` or `({ entities, driver? })` — the `SeedWriter` that writes a graph through each entity's own repository: Postgres or PGlite through a client, or a driver. `@ultimat3/entity` loads on the first write. `snapshot(rows)`, required on every `SeedWriter`, reads rows back as one digest each (`md5(t::text)` over a client), `null` for a row gone |
+| `exercise.ts` | `runExercisePass({ entities, writer, roles, seed?, overrides?, only? })` — every registered action, query and job once, each on its own committed tenant pair, one `ExerciseRecord` per primitive, the tenant proof's verdict on its `tenant`. What `x exercise` runs |
 | `define-exercise.ts` | `defineExercise({ <name>: { actor, input?, runs? } \| { off: '<why>' } }, { actor?: <entity> })` — an app's overrides (the second argument names the entity whose rows are the actors), `apps/web/exercise.ts`'s one export; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED`, an unknown name `X_DECLARATION_UNKNOWN` when the pass runs |
 | `exercise-actor.ts` · `exercise-input.ts` · `exercise-report.ts` | the first `x policy explain` actor the policy allows, minted in the primitive's tenant · the input: override, then a seeded id by field stem, then the minimal draw (`@ultimat3/schema/sample`, loaded dynamically) · the room one run executes in (network sealed, mail captured, clock frozen) and its record, `overrideLine` the entry to paste |
+| `tenant-proof.ts` | internal (`CROSS_TENANT_SCOPE` is `@ultimat3/entity`'s): `proveTenant` — B with A's ids, A's own call, B again; each B leg between two snapshots of A's rows. `withoutCrossTenant` strips `tenancy:cross` (`CROSS_TENANT_SCOPE`) from B; `publicReason` decides `public` |
+| `tenant-canary.ts` | internal: `tenantTaint` — one tenant's rows, ids and marks (row canaries, key parts of `MIN_TAINT_ID_LENGTH` 8 or more no other tenant shares); `findTaint` — every path holding one |
+| `tenant-proof-report.ts` | `tenantProofFindings` — one coded finding per crossing (`X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`), `tenantFindingLines` the human lines. Paths, tables and seeded ids, never a bound value |
 | `e2e-a11y.ts` | the accessibility audit's rules: `NAMED_ROLES`, `auditTree`, the in-page probe for `<html lang>` and focus under `aria-hidden` |
 | `e2e-a11y-run.ts` | one `e2eTest`'s audit: read after every navigation and at the end, a reasoned `allow`, findings deduplicated per suite, `X_E2E_A11Y_VIOLATION` |
 | `e2e-a11y-tabs.ts` | the same audit on every raw tab a session builds, failed from the preload's `afterEach`; `allowA11y([{ role, selector, because }])` is its exception |
@@ -304,6 +307,23 @@ an actor its policy allows, on rows it did not have to write. `x exercise` and t
 step drive it; an app only writes `apps/web/exercise.ts`'s `defineExercise({ … })` for what the pass
 cannot guess. [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-exercise-pass).
 
+Around each call the pass runs the tenant proof: the pair's second tenant (B, same role, no
+`tenancy:cross`) sends A's own input before A's call and again after it. A canary or unhanded id of
+A's in B's output, mail, outbound body or enqueued job input is `X_TENANT_LEAK`; a digest of A's
+seeded row that moved across a B leg is `X_TENANT_WRITE_CROSSED`. Both are red in `x exercise`.
+`ExerciseRecord.tenant` is a `TenantProof`:
+
+| `verdict` | When — first match wins |
+|---|---|
+| `crossed` | any `TenantFinding` (`code`, `leg: 'before' \| 'after'`, `path` or `table` + `id`) |
+| `unproven` | A's own call was not `reached` |
+| `public` | the policy admits an anonymous caller: read half skipped, write half kept |
+| `unproven` | a query whose A answer held none of A's rows |
+| `proven` | otherwise |
+
+Absent on `off` and `refused` records. Only `crossed` is red.
+[Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-tenant-proof).
+
 ## Shared examples
 
 ```ts
@@ -536,6 +556,37 @@ The answer is the hook's own parameter list (`Parameters<Authenticator>`), so a 
 gains is a compile error in the test. The context is the one the `auth` stage sees: its actor is
 still anonymous, because resolving it is the function under test. `@ultimat3/http` is imported
 inside the function.
+
+## Testing a sign-in against an identity provider
+
+`As of 2026-11`. `fakeIdentityProvider({ users, issuer?, clientId?, clock? })` is an OpenID provider
+served through `mockFetch`, no socket: `/.well-known/openid-configuration`, a JWKS from a key it
+generates, `/authorize` approving as the chosen user, `/token` (PKCE checked) and `/userinfo`.
+
+```ts
+import { discoverOAuthProvider, registerOAuthProvider } from '@ultimat3/auth';
+import { expect, fakeIdentityProvider, unitTest } from '@ultimat3/testing';
+
+unitTest('the provider registers from its own discovery document', async () => {
+  const idp = await fakeIdentityProvider({ users: [{ sub: 'ada', email: 'ada@corp.test' }] });
+  const provider = registerOAuthProvider(
+    await discoverOAuthProvider({ id: 'corp', issuer: idp.issuer }),
+  );
+  expect(provider.jwksUri).toBe(idp.jwksUri);
+  idp.tamper({ wrongKey: true }); // every token from here on fails the signature check
+});
+```
+
+| Member | Does |
+|---|---|
+| `issuer` · `clientId` · `clientSecret` · `jwksUri` | what the app's provider registration and credentials take; `issuer` defaults to `https://idp.test`, `clientId` to `fake-client` |
+| `signInAs(sub)` | who `/authorize` approves as next; the first user until called |
+| `tamper({ wrongAudience?, expired?, wrongKey?, noEmailVerified? })` | every token minted after it is broken that way; `tamper({})` restores honesty |
+| `idToken({ sub, nonce? })` | a signed id token, for a test that skips the redirect leg |
+
+Each tamper is refused by `@ultimat3/auth`'s real `verifyIdToken` with the code a real provider's
+broken token gets (`packages/testing/src/fake-identity-provider.test.ts`). An unknown `sub` and an
+empty `users` are `X_INVARIANT`.
 
 ## Running a mutator's local half
 
@@ -882,6 +933,8 @@ fails on a page that simply has not painted yet.
 `X_TEST_ISLAND_STATES_AMBIGUOUS` `X_TEST_ISLAND_STATE_ID_INVALID` `X_TEST_ISLAND_STATE_DUPLICATE`
 `X_TEST_ISLAND_STATE_JSON_INVALID` `X_TEST_ISLAND_STATE_CLOCK_INVALID`
 `X_TEST_ISLAND_STATE_STUB_INVALID` `X_SEED_GRAPH_UNSATISFIED` `X_E2E_A11Y_VIOLATION`
+`X_SEED_GRAPH_ENTITY_UNKNOWN` `X_TENANT_LEAK` `X_TENANT_WRITE_CROSSED` — the last two are findings
+`x exercise` returns, never thrown
 
 ### Error classes
 

@@ -1,6 +1,6 @@
 // Single responsibility: name the relations in a schema that are NOT app schema, so introspection
-// never puts them in a snapshot and drift can never report one. Two disqualifications, one
-// question: an object an extension owns, and an object that is not a table at all.
+// never puts them in a snapshot and drift can never report one. Three disqualifications, one
+// question: an object an extension owns, an object that is not a table at all, and a partition.
 
 import type { DbClient } from './client';
 import { sql } from './sql';
@@ -27,6 +27,10 @@ interface NonAppRelationRow {
  * `x db gen` diff emits `create view` and no snapshot records one, so counting them as app schema
  * can only ever produce a finding an author has no way to clear.
  *
+ * **A partition is Postgres' (`relispartition`)**, a sub-partition included: the PARENT is what a
+ * migration declares, and each month's child is created by the app's own task. Counted as app
+ * schema, every partition was `unexpected-table` with `drop table` as its fix — a month of rows.
+ *
  * Excluding by NAME is safe because `pg_class` names are unique within a namespace: a name on this
  * list cannot also be an app table in the same schema.
  */
@@ -42,6 +46,7 @@ export async function nonAppRelations(
       and c.relkind in ('r', 'p', 'v', 'm', 'f')
       and (
         c.relkind in ('v', 'm', 'f')
+        or c.relispartition
         or exists (
           select 1
           from pg_depend d

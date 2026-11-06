@@ -21,6 +21,7 @@ import { admitsAnonymous, policyCapability } from '@ultimat3/policy';
 import { coerceQuery } from '@ultimat3/schema';
 import { toDownloadRoute } from './download-http';
 import { QueryDeprecationInvalidError, QueryInputInvalidError } from './errors';
+import { withValidator } from './http-etag';
 import { servedQueryPath } from './http-pin';
 import { absentArraysOf } from './input-shape';
 import { PAGE_FIRST_KEY, pageControlsOf } from './page-controls';
@@ -47,8 +48,14 @@ export function toQueryRoute(target: AnyQuery): Route {
   const path = servedQueryPath(name, defOf(target).http);
   const pinned = templateParams(path).length > 0;
   const owner = `query "${name}"`;
+  const etagged = defOf(target).etag === true;
 
   const handler = async (request: UltimateRequest): Promise<Response> => {
+    const answered = await answerRead(request);
+    return etagged ? withValidator(request, answered) : answered;
+  };
+
+  const answerRead = async (request: UltimateRequest): Promise<Response> => {
     if (sunsetting !== undefined) {
       recordDeprecatedCall('query', name);
       // On the CONTEXT, before anything can fail: the pipeline's `response` stage merges
@@ -147,6 +154,8 @@ export function toQueryRoute(target: AnyQuery): Route {
     // one actor's rows to the next caller of that URL, so a read is `no-store` and a
     // shared cache is something a CDN in front of the app configures knowingly. The tags
     // ride along so a purge can still name the read the tier keys by.
+    // `etag: true` is the declared exception: its handler writes `private, no-cache` itself
+    // (`http-etag.ts`), which the stage leaves alone, and this hint is never reached.
     cache: { mode: 'no-store', tags: tagKeys(target.cache?.tags ?? []) },
     tags: ['query'],
     // The read spends its own declared bucket on every surface (`read.ts`), so the stage spends

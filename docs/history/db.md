@@ -1821,3 +1821,41 @@ Verbatim from [`packages/db/CLAUDE.md`](../../packages/db/CLAUDE.md), which keep
 
 - **`pool-sweep.ts`: an unanswered plain statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`; `0` has none; never a pin). One unref'd 1 s timer, armed only while statements are in flight. Age is ticks that FIRED, never a clock (`observe.test.ts`'s no-clock promise), so an answer unread in its socket is never judged late. `retire()` in `client.ts` is read-then-clear; `pool-retire.ts` closes in the background with `{ timeout: 1 }`, SECONDS. A miss only ever retires the pool it ran on. No breaker (`90-deferred.md`).
 - **`pooler.ts` owns the pooler**: mode, `poolerFromEnv`, `POOLER_WAIT_MS`, `statementBound`/`lostStatementBound`, both factories. `postgresClient({ env })` is the one reader (`ROLE`, `DATABASE_POOLER`, `DATABASE_URL` from one source); everything after asks `client.pooler` (a replica takes the primary's). Never a detection (one pooler accepts `options` and drops them). Set: `connectionUrl` sends neither bound and no empty `options`; the sweep deadline adds `poolerWaitMs`. `transaction` refuses `migrate`/`replicator` at construction (`X_DB_POOLER_SESSION_REQUIRED`); the CLI's `startQueue` refuses `schema === 'apply'` too. `pooler.live.test.ts`.
+
+## Partitioned tables (2026-11-06, plan 101 slice 39)
+
+Before: `introspect.ts` read `relkind = 'r'` only, so a partitioned parent (`p`) had no key and no
+index, every partition was an `unexpected-table` whose `fix:` ran `drop table` — a month of rows —
+and a key into the parent read once more per partition. `x db migrate`'s `checkDrift` failed a
+correct database terminally.
+
+- **The parent is the table.** Every `introspect.ts` query reads `relkind in ('r', 'p')`;
+  `partitioned-tables.ts` names the parents, which carry `partitioned: true` (catalog only, absent
+  otherwise, never on a sidecar). `nonAppRelations()` excludes every `relispartition` row, a
+  sub-partition included. Foreign keys read `conparentid = 0`: Postgres clones `notes_fkey_1`, `_2`…
+  per partition. Pinned: `introspect-partitioned.test.ts`, `drift-partitioned.test.ts` (a missing
+  key or index on the parent is still found), `partitioned.live.test.ts` (Postgres 17).
+- **Declared by a hand edit**, never `entity({ partition })`: `) partition by range ("at");` on the
+  generated `create table`. The key must hold the partition key. A reference INTO one cannot be a
+  `.references()`: one column is `42830`, a same-tenant `(org_id, id)` index `0A000`; the recipe is a
+  hand-written composite key, which drift (declared side only) does not judge. Recipe and its pin:
+  `wiki/Migrations-And-Backfills.md#partitioned-tables`, `partition-recipe.test.ts`.
+- **`X_MIGRATION_CONCURRENT_PARTITIONED`**: `create [unique] index concurrently` answered `0A000`
+  (by SQLSTATE, never the message — `lc_messages`), mapped in `migration-step.ts`'s
+  non-transactional loop with the server error as `sourceError`. Fix: each partition concurrently,
+  the parent `on only`, then `alter index … attach partition`. `concurrent-partitioned.test.ts`
+  runs that sequence and finds the parent's index valid.
+- **The dump renders them.** `tableRows` reads `pg_get_partkeydef` and, on a partition, its parent
+  and `pg_get_expr(relpartbound)`; `schema-dump-table.ts` spells `partition of <parent> [(own
+  constraints)] <bound> [partition by …]`; `partition-order.ts` files every partition in its ROOT's
+  `04_tables/` file, breadth first after its parent (name order would create `a_2026_11` before
+  `events`). Skipped as the parent recreates them: a key's clone (`conparentid`), an inherited check
+  (`not conislocal`), an attached index (its own `pg_inherits` row), a cloned trigger
+  (`tgparentid`; on Postgres 18 a clone is NOT `tgisinternal`, measured). `pg_get_indexdef` spells a
+  parent's index `ON ONLY`, which would load invalid and build no partition's: `indexDefinitionOf`
+  drops the `ONLY`. `unrendered.sql` loses `partitioned table` and `partition`; `partition or
+  inheritance child` is now `inheritance child`. A `timestamptz` bound is spelled in the session
+  `TimeZone`, so the bytes are the scratch engine's (PGlite: UTC). `schema-dump-partitioned.test.ts`.
+- **Moved out of `CLAUDE.md` for the ceiling, same day:** the schema dump's embedded boots are
+  `schema-dump.test.ts`, `schema-dump-fidelity.test.ts` and `schema-dump-partitioned.test.ts`;
+  `dbDrift()` is the only one because `@ultimat3/entity`'s copy was deleted.

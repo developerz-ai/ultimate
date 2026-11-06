@@ -133,6 +133,13 @@ export interface ScrapePage extends ScrapeFrame {
   download(options?: DownloadRequest): Promise<ScrapeDownloadFile>;
   cookies(): Promise<readonly ScrapeCookie[]>;
   /**
+   * Tell the wedge watchdog the run is working on a channel this page cannot see — the app's own
+   * CDP session, a long warm-up. Every verb here already reports; this is for the work that does
+   * not go through one. Touches the watchdog's idle clock only and counts no usage. Present on
+   * every driver, so a run body never branches on which one it has.
+   */
+  activity(): void;
+  /**
    * Cut the BROWSER's network, or restore it — what a PWA's offline behaviour has to be tested
    * against. Refused with `X_NOT_IMPLEMENTED` on a driver that has no browser: patching `fetch`
    * in the test process cannot reach a browser's own requests, so a driver that quietly answered

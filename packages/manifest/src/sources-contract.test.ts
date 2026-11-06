@@ -1,10 +1,11 @@
-// The two contract facts a read and a mount publish, projected from the REAL registries: a `rows:`
+// The contract facts a read, a mount and a consumer publish, projected from the REAL registries: a `rows:`
 // the same wire schema the OpenAPI document and the MCP tool carry, a mount only what a token
 // reaches. A registry of its own, so the sibling `sources.test.ts`'s exact name lists stay exact.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { defineApi, resetActions, t } from '@ultimat3/action';
 import { clearRegistry as clearEntities, entity, text, uuid } from '@ultimat3/entity';
+import { consumer, resetJobs, resetTasks } from '@ultimat3/jobs';
 import { allow } from '@ultimat3/policy';
 import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
@@ -106,5 +107,43 @@ describe('Manifest.mounts', () => {
   test('an app that declared none has no section', () => {
     expect(frameworkSources({ app: APP }).mounts).toEqual([]);
     expect(manifestJson(buildManifest(frameworkSources({ app: APP })))).not.toContain('mounts');
+  });
+});
+
+describe('Manifest.consumers', () => {
+  afterEach(() => {
+    resetJobs();
+    resetTasks();
+  });
+
+  test('one row per consumer(), naming its supervisor and arm, and no function', () => {
+    consumer<number, number>({
+      name: 'scFeed',
+      tenant: 'none',
+      keys: () => ['only'],
+      open: async function* () {},
+      handle: () => 0,
+      cursor: { load: () => null, save: () => undefined },
+      rearm: '5m',
+      batch: 25,
+    });
+    const sources = frameworkSources({ app: APP });
+    expect(sources.consumers).toEqual([
+      {
+        name: 'scFeed',
+        queue: 'default',
+        supervisor: 'scFeed.supervisor',
+        arm: 'scFeed.arm',
+        rearm: '*/5 * * * *',
+        batch: 25,
+        lags: false,
+      },
+    ]);
+    expect(manifestJson(buildManifest(sources))).toContain('"consumers"');
+  });
+
+  test('an app that declared none has no section', () => {
+    expect(frameworkSources({ app: APP }).consumers).toEqual([]);
+    expect(manifestJson(buildManifest(frameworkSources({ app: APP })))).not.toContain('consumers');
   });
 });

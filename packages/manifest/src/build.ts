@@ -22,6 +22,7 @@ import type {
   ActionFact,
   AdminFact,
   ChannelFact,
+  ConsumerFact,
   EntityFact,
   ErrorCodeFact,
   JobFact,
@@ -44,6 +45,7 @@ export interface ManifestSources {
   readonly admin?: readonly AdminFact[];
   readonly mounts?: readonly MountFact[];
   readonly jobs?: readonly JobFact[];
+  readonly consumers?: readonly ConsumerFact[];
   readonly tasks?: readonly TaskFact[];
   readonly policies?: readonly PolicyFact[];
   readonly locales?: readonly string[];
@@ -59,6 +61,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
   const admin = sortBy(sources.admin ?? [], (a) => a.basePath).map(normalizeAdmin);
   const mounts = sortBy(sources.mounts ?? [], (m) => m.prefix).map(normalizeMount);
   const jobs = sortBy(sources.jobs ?? [], (j) => j.name).map(normalizeJob);
+  const consumers = sortBy(sources.consumers ?? [], (c) => c.name);
   const tasks = sortBy(sources.tasks ?? [], (t) => t.name).map((t) => ({
     ...t,
     enqueues: [...t.enqueues].sort(),
@@ -95,6 +98,8 @@ export function buildManifest(sources: ManifestSources): Manifest {
     // Only when there is one: `[]` would stale the committed file of every app without a mount.
     ...(mounts.length === 0 ? {} : { mounts }),
     jobs,
+    // `mounts`' rule: `[]` would stale the committed file of every app without a consumer.
+    ...(consumers.length === 0 ? {} : { consumers }),
     tasks,
     policies,
     permissions,

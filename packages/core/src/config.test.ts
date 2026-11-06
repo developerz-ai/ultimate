@@ -9,7 +9,7 @@ describe('defineConfig', () => {
 
     expect(config.theme).toEqual({ defaultMode: 'system' });
     expect(config.pwa.enabled).toBe(false);
-    expect(config.database).toEqual({ driver: 'postgres', ssl: false });
+    expect(config.database).toEqual({ driver: 'postgres', ssl: false, rowSecurity: false });
     expect(config.jobs.queues).toEqual(['myapp-default']);
     expect(config.ai.mcp).toEqual({ expose: true });
     expect(Object.isFrozen(config)).toBe(true);
@@ -184,8 +184,17 @@ describe('cache tiers name rungs the ladder can actually build', () => {
 // never read by `tsc` and asserts nothing.
 describe('database config carries only what something reads', () => {
   test('the fields that remain still default and still overlay', () => {
-    expect(defineConfig({ name: 'myapp' }).database).toEqual({ driver: 'postgres', ssl: false });
+    expect(defineConfig({ name: 'myapp' }).database).toEqual({
+      driver: 'postgres',
+      ssl: false,
+      rowSecurity: false,
+    });
     expect(defineConfig({ name: 'myapp', database: { ssl: true } }).database.ssl).toBe(true);
+    expect(defineConfig({ name: 'myapp', database: { rowSecurity: true } }).database).toEqual({
+      driver: 'postgres',
+      ssl: false,
+      rowSecurity: true,
+    });
   });
 });
 
@@ -398,6 +407,7 @@ describe('defineConfig · a mistyped value is X_CONFIG_INVALID naming its key, n
     ['roles', { roles: ['websrv'] }],
     ['jobs.backoff', { jobs: { backoff: 'linear' } }],
     ['database.ssl', { database: { ssl: 'false' } }],
+    ['database.rowSecurity', { database: { rowSecurity: 'true' } }],
     ['realtime.enabled', { realtime: { enabled: 'false' } }],
     ['database.driver', { database: { driver: 'mysql' } }],
     ['theme', { theme: 'dark' }],

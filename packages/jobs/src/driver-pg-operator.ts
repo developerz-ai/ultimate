@@ -21,16 +21,20 @@ import {
   SQL_PAUSE,
   SQL_PAUSED,
   SQL_RESUME,
+  SQL_STEP_RESOLVE,
   SQL_TASK_FIRE_RECORD,
   SQL_TASK_FIRES,
   SQL_WORKER_ANNOUNCE,
   SQL_WORKER_FORGET,
   SQL_WORKERS,
 } from './driver-pg-operator-sql';
-import type { JobRow } from './driver-pg-rows';
-import { num, toJobRecord } from './driver-pg-rows';
+import type { JobRow, StepRow } from './driver-pg-rows';
+import { num, toJobRecord, toStepRecord } from './driver-pg-rows';
+import { SQL_STEP_GET } from './driver-pg-sql';
 import { JOBS_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { JobNotRemovableError } from './errors-operator';
+import { JobNotFoundError } from './errors-requeue';
+import { StepNotResolvableError } from './errors-saga';
 import type {
   BulkFilter,
   BulkResult,
@@ -47,6 +51,7 @@ import {
   pageLimit,
   parseJobCursor,
 } from './introspection';
+import { assertResolvable } from './step-resolve';
 
 export type PgOperatorMembers = Omit<
   JobIntrospection,
@@ -150,6 +155,32 @@ export function pgOperator(
         ],
       );
       return rows.map(toJobRecord);
+    },
+
+    async resolveStep(jobId, step, resolution) {
+      // Read first, so an id nobody queued — or no uuid at all — is `X_JOB_NOT_FOUND` as on memory.
+      const before = await job(jobId);
+      if (before === undefined) throw new JobNotFoundError({ jobId, driver: 'pg' });
+      const rows = await exec().query<StepRow>(SQL_STEP_RESOLVE, [
+        jobId,
+        step,
+        resolution.ran ? 'completed' : 'cleared',
+        resolution.ran ? JSON.stringify(resolution.output ?? null) : null,
+      ]);
+      const written = rows[0];
+      if (written !== undefined) return toStepRecord(written);
+      // Nothing written: say why, from what the rows hold now — the memory driver's refusals.
+      const current = await job(jobId);
+      const found = await exec().query<StepRow>(SQL_STEP_GET, [before.runId, step]);
+      const record = found[0] === undefined ? undefined : toStepRecord(found[0]);
+      assertResolvable('pg', jobId, step, current, record);
+      // Resolvable now and not a moment ago: a worker held the job, and has let go since.
+      throw new StepNotResolvableError({
+        jobId,
+        step,
+        state: 'running',
+        status: record?.status ?? 'missing',
+      });
     },
 
     async remove(jobId) {

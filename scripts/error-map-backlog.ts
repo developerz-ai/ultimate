@@ -68,6 +68,10 @@ export const OFF_SOCKET: Pins = {
     'X_MIGRATION_ROLLING_UNSAFE',
     'X_DB_POOLER_SESSION_REQUIRED',
     'X_DB_STATEMENT_BOUND_LOST',
+    'X_DB_STATEMENT_BOUND_INVALID',
+    'X_MIGRATION_CONCURRENT_PARTITIONED',
+    'X_DB_ROW_SECURITY_BYPASSED',
+    'X_DB_ROW_SECURITY_DRIFT',
   ],
   // tier 1 — a flag declared twice, at registration.
   flags: ['X_FLAG_DUPLICATE'],
@@ -85,6 +89,9 @@ export const OFF_SOCKET: Pins = {
     'X_AUTH_LIMITER_POLICY_MISMATCH',
     'X_OAUTH_PROVIDER_DUPLICATE',
     'X_AUTH_SIGN_IN_UNCONFIGURED',
+    'X_AUTH_SERVER_INVALID',
+    'X_AUTH_GRANT_DISABLED',
+    'X_VERIFICATION_PURPOSE_INVALID',
   ],
   // tier 2 — the N+1 pair: dev notices surfaced by the overlay, never thrown at a caller.
   entity: [
@@ -117,7 +124,6 @@ export const OFF_SOCKET: Pins = {
     'X_JOB_SLOT_LOST',
     'X_JOB_TIMEOUT',
     'X_STEP_DUPLICATE',
-    'X_JOB_TENANT_MISMATCH',
     'X_STEP_OUTPUT_UNSERIALIZABLE',
     'X_JOB_EVENT_INVALID',
     'X_IMPORT_HEADER_MISMATCH',
@@ -125,6 +131,12 @@ export const OFF_SOCKET: Pins = {
     'X_IMPORT_TOO_MANY_ERRORS',
     'X_JOB_ENQUEUE_BATCH_TOO_LARGE',
     'X_WEBHOOK_RECEIVER_INVALID',
+    'X_JOB_COMPENSATION_FAILED',
+    'X_STEP_OUTCOME_UNKNOWN',
+    'X_CONSUMER_INVALID',
+    'X_CONSUMER_SELF_ENQUEUE',
+    'X_BACKFILL_SOURCE_INVALID',
+    'X_STEP_NOT_RESOLVABLE',
   ],
   // tier 3 — judged at `query()`, where the declaration is written, or on a live read: a
   // WebSocket subscription carrying a `kind`, not a request carrying a status (`live.ts`).
@@ -135,6 +147,8 @@ export const OFF_SOCKET: Pins = {
     'X_QUERY_SUBSCRIBES_DRIFT',
     'X_QUERY_SUBSCRIBES_INVALID',
     'X_QUERY_DOWNLOAD_INVALID',
+    'X_QUERY_ETAG_INVALID',
+    'X_QUERY_TIMEOUT_INVALID',
   ],
   // tier 3 — the sync node's own vocabulary, answered on a WebSocket frame that carries a
   // `kind` and not a status; the HTTP upgrade has none of these. Revisit the day a frame kind

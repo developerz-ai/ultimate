@@ -1,8 +1,8 @@
-// `x jobs list|show|retry|cancel|delete|promote|pause|resume` — introspect and recover the job queue,
-// bound to `@ultimat3/jobs`'s own introspection so the CLI, `/_x` and MCP report identically;
-// `drain` is planned (`cmd-planned.ts`): Postgres is the one durable driver. CLI wiring only:
-// the driver-injected logic is `jobs-report.ts`, the `--json` shapes `jobs-json.ts`, the table
-// `jobs-table.ts`, and getting hold of the queue at all is `jobs-driver.ts` — shared with `x db`.
+// `x jobs list|show|retry|cancel|delete|promote|resolve-step|pause|resume` — introspect and
+// recover the job queue, bound to `@ultimat3/jobs`'s own introspection so the CLI, `/_x` and MCP
+// report identically; `drain` is planned (`cmd-planned.ts`): Postgres is the one durable driver.
+// CLI wiring only: the driver-injected logic is `jobs-report.ts`, the `--json` shapes
+// `jobs-json.ts`, the table `jobs-table.ts`, the queue `jobs-driver.ts` — shared with `x db`.
 
 import { renderFixShellArg } from '@ultimat3/core';
 import type { JobDriver } from '@ultimat3/jobs';
@@ -16,6 +16,7 @@ import {
 } from '@ultimat3/jobs';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
+import { runResolveStep } from './cmd-jobs-resolve';
 import { jobsSpec } from './cmd-jobs-spec';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
@@ -250,7 +251,7 @@ async function runPause(
 }
 
 /** The subcommands that answer a `JobTrace`. `list`, `delete`, `promote` and the rest read rows only. */
-const TRACE_SUBCOMMANDS: ReadonlySet<string> = new Set(['show', 'retry', 'cancel']);
+const TRACE_SUBCOMMANDS: ReadonlySet<string> = new Set(['show', 'retry', 'cancel', 'resolve-step']);
 
 export const jobsCommand: CliCommand = {
   spec: jobsSpec,
@@ -274,6 +275,9 @@ export const jobsCommand: CliCommand = {
       if (sub === 'cancel') return runCancel(driver, ctx);
       if (sub === 'delete') return runDelete(driver, ctx);
       if (sub === 'promote') return runPromote(driver, ctx);
+      if (sub === 'resolve-step') {
+        return runResolveStep(driver, ctx, requireIdPositional(ctx, sub, driver));
+      }
       if (sub === 'pause' || sub === 'resume') return runPause(driver, ctx, sub);
       return runList(driver, ctx);
     });

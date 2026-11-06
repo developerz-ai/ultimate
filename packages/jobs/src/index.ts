@@ -18,7 +18,11 @@ export type {
   BackfillBatch,
   BackfillDefinition,
   BackfillInput,
+  BackfillPage,
+  BackfillPages,
   BackfillReport,
+  ScopedBackfillDefinition,
+  ScopedBackfillInput,
 } from './backfill';
 export { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
 export {
@@ -27,6 +31,7 @@ export {
   BackfillMigrationPendingError,
   BackfillPendingError,
   BackfillRunningError,
+  BackfillSourceInvalidError,
   BackfillStalledError,
   BackfillUnknownError,
 } from './backfill-errors';
@@ -75,6 +80,29 @@ export type { AnnounceExhaustedOptions, ExhaustedCounts } from './claim-exhauste
 export { announceExhausted } from './claim-exhausted';
 export type { JobConcurrency, KeyedConcurrency, WhenBusy } from './concurrency';
 export { MAX_CONCURRENCY_KEY_LENGTH, WHEN_BUSY } from './concurrency';
+export { consumer } from './consumer';
+export { ConsumerInvalidError, ConsumerSelfEnqueueError } from './consumer-errors';
+export {
+  CONSUMER_LINGER_MS,
+  CONSUMER_PROGRESS_NOTE,
+  DEFAULT_CONSUMER_BATCH,
+} from './consumer-loop';
+// `stampConsumer` is deliberately absent, for the reason `stampBackfill` is.
+export type { ConsumerDeclaration, ConsumerRow } from './consumer-registry';
+export {
+  consumerDeclarationOf,
+  consumerRow,
+  isConsumer,
+  registeredConsumers,
+} from './consumer-registry';
+export type {
+  ConsumerBatch,
+  ConsumerCursor,
+  ConsumerDefinition,
+  ConsumerHandle,
+  ConsumerInput,
+  ConsumerReport,
+} from './consumer-types';
 export type { JobConcurrencyDescriptor, JobDescriptor } from './describe';
 export type {
   AckOptions,
@@ -154,6 +182,15 @@ export {
   JobPageInvalidError,
 } from './errors-operator';
 export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
+export {
+  COMPENSATE_PREFIX,
+  JobCompensationFailedError,
+  StepCompensateUndeclaredError,
+  StepNameReservedError,
+  StepNotResolvableError,
+  StepOutcomeUnknownError,
+  UNWINDING_STEP,
+} from './errors-saga';
 export { JobEventInvalidError, StepOutputUnserializableError } from './errors-steps';
 export { JobTenantMismatchError } from './errors-tenant';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
@@ -218,7 +255,13 @@ export {
   inspectQueues,
   retryFromStep,
 } from './inspect';
-export { pauseQueue, promoteJob, removeJob, resumeQueue } from './inspect-operator';
+export {
+  pauseQueue,
+  promoteJob,
+  removeJob,
+  resolveJobStep,
+  resumeQueue,
+} from './inspect-operator';
 export type {
   BulkFilter,
   BulkResult,
@@ -230,6 +273,7 @@ export type {
   JobIntrospection,
   JobProgress,
   PausedName,
+  StepResolution,
   TaskFire,
   WorkerAnnouncement,
   WorkerRecord,
@@ -320,7 +364,16 @@ export type { PgListener, QueueWake, QueueWakeOptions } from './queue-wake';
 export { startQueueWake } from './queue-wake';
 export type { IntervalScheduler } from './renewal-timer';
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
-export { backoffDelayMs, DEFAULT_RETRY, isFinalAttempt, nextRetry, retrySchedule } from './retry';
+export {
+  backoffDelayMs,
+  DEFAULT_RETRY,
+  enqueuedAttempts,
+  isFinalAttempt,
+  isUnwindAttempt,
+  nextRetry,
+  retrySchedule,
+  UNWIND_MARGIN,
+} from './retry';
 export type { JobRetryDecision, JobStopReason } from './retry-classification';
 export { failureForRow, nextRetryForError } from './retry-classification';
 export type {
@@ -350,23 +403,27 @@ export { fireThroughDriver, memorySchedulerState } from './scheduler-state';
 export type { JobCompleted, JobFailed, JobSettled } from './settled';
 export { ON_SETTLED_ATTEMPTS, ON_SETTLED_TIMEOUT_MS } from './settled';
 export type {
+  CompensateContext,
   EventLookup,
   StepApi,
   StepFence,
   StepRecord,
   StepRunner,
   StepRunnerOptions,
+  StepRunOptions,
   StepStatus,
   StepStore,
   WaitForEventOptions,
 } from './steps';
 export {
+  DEFAULT_EVENT_POLL_MS,
   isStepStatus,
   isStepSuspension,
   MAX_TRACE_NAMES,
   STEP_STATUSES,
   StepSuspension,
   stepRunner,
+  WAKING_EVENT_POLL_MS,
 } from './steps';
 export { memoryStepStore } from './steps-memory';
 export type { StepOutput } from './steps-output';

@@ -104,21 +104,20 @@ export interface NotifyConfig {
 export const INBOX_RETENTION_KEYS = ['inboxReadRetentionMs', 'inboxUnreadRetentionMs'] as const;
 /**
  * Deliberately thin. `urlEnv`, `poolSize` and `schema` were removed 2026-08 because **nothing
- * read them** — the only reader of any `config.database.*` field in the repo was this file's own
- * validator, and each of the three was unfixable where it sat:
- *
- * `poolSize` was a dead second spelling of `DATABASE_POOL_MAX`; `client.ts` reads `DATABASE_URL`
- * as a literal, so no `urlEnv` could be honoured; nothing emits `SET search_path` for `schema`.
- *
- * Wiring them instead would need a tier-0 → tier-1 read the tier table forbids. Deleting is axiom
- * 3 applied to configuration: a value that produces neither a build error nor a runtime effect is
- * worse than no field, because an SRE sets `poolSize: 3`, redeploys, and nothing changes.
+ * read them**: `poolSize` was a dead second spelling of `DATABASE_POOL_MAX`, `client.ts` reads
+ * `DATABASE_URL` as a literal, and nothing emits `SET search_path`. A value that produces neither
+ * a build error nor a runtime effect is worse than no field (axiom 3).
  */
 const DATABASE_DRIVERS = ['postgres'] as const;
 
 export interface DatabaseConfig {
   readonly driver: (typeof DATABASE_DRIVERS)[number];
   readonly ssl: boolean;
+  /**
+   * Every `tenant:` table carries a forced policy (`x db gen`) the serving role must be subject to
+   * (`X_DB_ROW_SECURITY_BYPASSED`). Off by default: a transaction per bare statement is not free.
+   */
+  readonly rowSecurity: boolean;
 }
 
 /**
@@ -306,6 +305,7 @@ function validate(config: AppConfig): void {
     countIssue('cache.defaultTtlMs', config.cache.defaultTtlMs, 0),
     oneOfIssue('database.driver', config.database.driver, DATABASE_DRIVERS),
     booleanIssue('database.ssl', config.database.ssl),
+    booleanIssue('database.rowSecurity', config.database.rowSecurity),
     oneOfIssue('theme.defaultMode', config.theme.defaultMode, THEME_MODES),
     // `null` is the documented "no redirect"; a path that is said must be one a browser can follow.
     config.auth.signInPath === null

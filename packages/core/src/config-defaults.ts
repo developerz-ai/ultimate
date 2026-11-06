@@ -39,7 +39,7 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
       colors: undefined,
     },
     roles: [...ROLES],
-    database: { driver: 'postgres', ssl: false },
+    database: { driver: 'postgres', ssl: false, rowSecurity: false },
     cache: { defaultTtlMs: 60_000, tiers: ['request-memo', 'lru'] },
     jobs: {
       queues: [`${name}-default`],

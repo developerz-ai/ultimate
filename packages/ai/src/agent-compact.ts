@@ -8,17 +8,26 @@
 // change, once, and the next turn writes the new, shorter prefix.
 //
 // Never a truncation: a summary that cannot be had leaves the transcript whole, and a whole
-// transcript that does not fit is `X_AGENT_CONTEXT_EXHAUSTED` before it is sent.
+// transcript that does not fit is `X_AGENT_CONTEXT_EXHAUSTED` before it is sent. The trigger reads
+// the estimate scaled by what the provider REPORTED (./agent-compact-measure); a provider that
+// refuses a request anyway (`X_AI_CONTEXT_OVERFLOW`) gets one forced compaction, then that code.
 
 import type { Ctx, Span } from '@ultimat3/core';
 import { stringField, throwIfAborted } from '@ultimat3/core';
 import type { AgentCompaction, CompactPlan } from './agent-compact-def';
+import { promptMeasure } from './agent-compact-measure';
 import { AgentContextExhaustedError } from './agent-errors';
 import type { RunDeadline } from './agent-guards';
 import type { Gateway } from './gateway';
 import type { ModelId } from './models';
 import { modelSpec } from './models';
-import type { AiContentBlock, AiMessage, GenerateRequest, GenerateResult } from './provider';
+import type {
+  AiContentBlock,
+  AiMessage,
+  GenerateRequest,
+  GenerateResult,
+  TokenUsage,
+} from './provider';
 import { estimateInputTokens, estimateTextTokens, isTruncated } from './provider';
 import { runMeter } from './run-meter';
 
@@ -55,6 +64,17 @@ export interface CompactorInput {
 export interface Compactor {
   /** The messages the next turn sends: as given, compacted, or refused. */
   fit(messages: readonly AiMessage[], turn: number): Promise<readonly AiMessage[]>;
+  /** A turn answered: its reported input corrects every later estimate of this run. */
+  observe(usage: TokenUsage, request: GenerateRequest): void;
+  /**
+   * The provider refused `messages` as over the window (`refusal` is what it said): compact
+   * regardless of the trigger, or throw `X_AGENT_CONTEXT_EXHAUSTED`. Never returns them as given.
+   */
+  force(
+    messages: readonly AiMessage[],
+    turn: number,
+    refusal: string,
+  ): Promise<readonly AiMessage[]>;
   /** Compactions so far, continuations included — what the handle's `compacted` carries. */
   count(): number;
 }
@@ -84,6 +104,9 @@ export function compactor(input: CompactorInput): Compactor {
   // itself: each attempt is a billed call, and one that just failed is tried again only when the
   // run can no longer go on without it — never once per turn while it still fits.
   let trigger = plan.at * limit;
+  // Reported over estimated, per run: a continuation's first turn estimates plainly.
+  const measure = promptMeasure();
+  const measured = (request: GenerateRequest): number => measure.scale(promptTokens(request));
 
   const report = async (event: AgentCompaction): Promise<void> => {
     span.addEvent('agent.compact', {
@@ -100,12 +123,14 @@ export function compactor(input: CompactorInput): Compactor {
     await input.onCompact?.(event);
   };
 
-  const fit = async (
+  /** `refusal` set: forced by a provider's overflow, so a failure can never go on whole. */
+  const attempt = async (
     messages: readonly AiMessage[],
     turn: number,
+    refusal: string | undefined,
   ): Promise<readonly AiMessage[]> => {
-    const before = promptTokens({ ...base, messages });
-    if (before <= trigger) return messages;
+    const before = measured({ ...base, messages });
+    if (refusal === undefined && before <= trigger) return messages;
     const facts = { turn, before, limit, model: writer };
     const split = splitTurns(messages, plan.keepTurns);
     const kept = split === undefined ? Math.floor(messages.length / 2) : plan.keepTurns;
@@ -127,13 +152,14 @@ export function compactor(input: CompactorInput): Compactor {
       // Still fits: the run goes on whole. Compaction is how a run stays under the window, never
       // a condition of running — the turns that fit are not refused for a summary that failed.
       trigger = limit;
-      if (before <= limit) return messages;
+      if (refusal === undefined && before <= limit) return messages;
       throw new AgentContextExhaustedError({
         agent: input.agent,
         model,
         estimate: before,
         limit,
         reason,
+        ...(refusal === undefined ? {} : { refused: refusal }),
       });
     };
 
@@ -142,7 +168,7 @@ export function compactor(input: CompactorInput): Compactor {
     }
     const summarised = split.older.length / 2;
     const request = summaryRequest(base, writer, plan.maxSummaryTokens, split);
-    if (promptTokens(request) > roomOf(writer, plan.maxSummaryTokens)) {
+    if (measured(request) > roomOf(writer, plan.maxSummaryTokens)) {
       return failed(`the turns to summarise do not fit model "${writer}" either`, summarised);
     }
     throwIfAborted(input.ctx);
@@ -172,7 +198,7 @@ export function compactor(input: CompactorInput): Compactor {
     }
     if (summary === '') return failed('the summary call answered no text', summarised, result);
     const compacted = [compactedHead(split.head, summarised, summary), ...split.kept];
-    const after = promptTokens({ ...base, messages: compacted });
+    const after = measured({ ...base, messages: compacted });
     if (after >= before) {
       return failed('the summary was no shorter than the turns it replaced', summarised, result);
     }
@@ -194,7 +220,16 @@ export function compactor(input: CompactorInput): Compactor {
     return compacted;
   };
 
-  return { fit, count: () => count };
+  return {
+    fit: (messages, turn) => attempt(messages, turn, undefined),
+    observe: (usage, request) => measure.observe(usage, promptTokens(request)),
+    force: (messages, turn, refusal) => {
+      // The provider counted more than the room: every estimate from here on is at least that.
+      measure.overflowed(promptTokens({ ...base, messages }), limit);
+      return attempt(messages, turn, refusal);
+    },
+    count: () => count,
+  };
 }
 
 interface Split {

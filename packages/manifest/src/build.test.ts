@@ -450,3 +450,30 @@ describe('the mounts section', () => {
     expect(buildManifest({ app, mounts: [] }).buildId).toBe(none.buildId);
   });
 });
+
+// `mounts`' rule, for the same reason: an app without a consumer keeps its committed bytes.
+describe('the consumers section', () => {
+  const app = { name: 'acme', version: '1.0.0' };
+  const row = (name: string) => ({
+    name,
+    queue: 'default',
+    supervisor: `${name}.supervisor`,
+    arm: `${name}.arm`,
+    rearm: '* * * * *',
+    batch: 100,
+    lags: false,
+  });
+
+  test('sorted by name: declaration order moves no byte', () => {
+    const forward = buildManifest({ app, consumers: [row('b'), row('a')] });
+    const backward = buildManifest({ app, consumers: [row('a'), row('b')] });
+    expect(manifestJson(forward)).toBe(manifestJson(backward));
+    expect(forward.consumers?.map((consumer) => consumer.name)).toEqual(['a', 'b']);
+  });
+
+  test('no consumer writes no key, so an app without one keeps its bytes and its buildId', () => {
+    const none = buildManifest({ app });
+    expect('consumers' in none).toBe(false);
+    expect(buildManifest({ app, consumers: [] }).buildId).toBe(none.buildId);
+  });
+});

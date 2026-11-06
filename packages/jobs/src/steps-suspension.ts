@@ -58,6 +58,27 @@ export function waitFloorOf(output: unknown): number | undefined {
   return typeof floor === 'number' ? floor : undefined;
 }
 
+/**
+ * What an incomplete step throws while the run is UNWINDING: the body replays only to re-register
+ * its compensators, and the first step that never completed is where the forward path stops. The
+ * `StepSuspension` shape, and private: `executeJob` reads it, then calls `runner.unwind()`.
+ */
+export class UnwindReached extends Error {
+  static readonly brand = 'ultimate.jobs.unwind-reached';
+  readonly brand: string = UnwindReached.brand;
+  readonly step: string;
+
+  constructor(step: string) {
+    super(`step "${step}" never completed, and the run is unwinding`);
+    this.name = 'UnwindReached';
+    this.step = step;
+  }
+}
+
+export function isUnwindReached(error: unknown): error is UnwindReached {
+  return error instanceof Error && (error as { brand?: unknown }).brand === UnwindReached.brand;
+}
+
 export function isStepSuspension(error: unknown): error is StepSuspension {
   return error instanceof Error && (error as { brand?: unknown }).brand === StepSuspension.brand;
 }

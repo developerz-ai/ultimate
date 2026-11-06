@@ -27,6 +27,7 @@ import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
 import { signalEnqueued } from './enqueue-signal';
+import { enqueuedAttempts } from './retry';
 import type { LeaderElection } from './scheduler-leader';
 import { soleLeader } from './scheduler-leader';
 import { defaultCronResolver, latestOccurrence, occurrencesIn } from './scheduler-occurrences';
@@ -158,7 +159,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
         // Occurrence-scoped key: belt to the watermark's braces across a deploy that still has
         // the old two-step fire in flight.
         idempotencyKey: `${handle.name}:${occurrenceMs}:${handleForJob.idempotencyKeyFor(input)}`,
-        maxAttempts: handleForJob.retry.attempts,
+        maxAttempts: enqueuedAttempts(handleForJob.retry, handleForJob.compensates),
         runAt: occurrenceMs,
       };
     });

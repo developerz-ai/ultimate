@@ -50,6 +50,10 @@ export const DB_OWNED_ERROR_CODES = [
   'X_DB_POOLER_OPTIONS_REFUSED',
   'X_DB_POOLER_SESSION_REQUIRED',
   'X_DB_STATEMENT_BOUND_LOST',
+  'X_DB_STATEMENT_BOUND_INVALID',
+  'X_MIGRATION_CONCURRENT_PARTITIONED',
+  'X_DB_ROW_SECURITY_BYPASSED',
+  'X_DB_ROW_SECURITY_DRIFT',
 ] as const;
 
 /**
@@ -111,6 +115,11 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_DB_POOLER_SESSION_REQUIRED:
     'this role needs one backend per session, and a transaction pooler gives it none',
   X_DB_STATEMENT_BOUND_LOST: "the session's statement bound is not the role's",
+  X_DB_STATEMENT_BOUND_INVALID:
+    'a statement bound is not a whole positive number of ms under the role bound',
+  X_MIGRATION_CONCURRENT_PARTITIONED: 'a concurrent index build names a partitioned table',
+  X_DB_ROW_SECURITY_BYPASSED: 'row security is on and the serving role is exempt from it',
+  X_DB_ROW_SECURITY_DRIFT: 'a tenant table and database.rowSecurity disagree about its policy',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails

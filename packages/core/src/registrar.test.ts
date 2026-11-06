@@ -118,6 +118,7 @@ describe('PRIMITIVE_FACTORIES', () => {
       '@ultimat3/ai#hive',
       '@ultimat3/ai#llm',
       '@ultimat3/jobs#backfill',
+      '@ultimat3/jobs#consumer',
       '@ultimat3/jobs#exportRows',
       '@ultimat3/jobs#importRows',
       '@ultimat3/jobs#purge',

@@ -15,6 +15,7 @@ import { postReviews } from './schema/post-reviews';
 import { posts } from './schema/posts';
 import { runEvents } from './schema/run-events';
 import { runs } from './schema/runs';
+import { streamCursors } from './schema/stream-cursors';
 import { webhookDeliveries } from './schema/webhook-deliveries';
 import { webhookEndpoints } from './schema/webhook-endpoints';
 
@@ -62,6 +63,7 @@ const entities = {
   posts,
   runEvents,
   runs,
+  streamCursors,
   webhookDeliveries,
   webhookEndpoints,
 };

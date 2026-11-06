@@ -329,6 +329,12 @@ bound threw away, so a count taken from one is never quietly a floor.
 | `page.pageErrors()` / `page.pageErrorsDropped()` | `PageError[]` — what the page THREW and nobody caught, with the `stack` when the exception carried one |
 | `page.network()` / `page.networkDropped()` | `NetworkEntry[]` — every request, refusals included |
 
+None of the three reads is activity; every verb that reaches the browser is, `cookies()`,
+`session()`, `screenshot()` and `pdf()` included. Work on a channel the page cannot see — the app's
+own CDP session, a long warm-up — is reported with `page.activity()`: the wedge watchdog's idle
+clock only, no usage counted. When the watchdog fires it closes the browser then, not at unwind,
+so a call blocked on an attached browser's socket rejects as `X_SCRAPE_WEDGED`.
+
 All three are **redacted by value** on the way out, the same pass `page.html()` makes: a login
 endpoint fetched with the password in its query string, or a site that logs the credential it
 rejected, would otherwise put the value in `page.network()`/`page.console()` verbatim and from

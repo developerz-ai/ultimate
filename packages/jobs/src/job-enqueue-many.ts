@@ -13,6 +13,7 @@ import { signalEnqueued, signalStaged } from './enqueue-signal';
 import { JobEnqueueBatchTooLargeError, OutboxNoTxError } from './errors';
 import type { JobHandle } from './job';
 import type { EnqueueOptions, OutboxDeps, OutboxRecord, OutboxStore } from './outbox';
+import { refuseEnqueueTenant } from './tenant';
 
 /**
  * The most inputs one call takes. A list longer than this is a table, and a table is paged by a
@@ -77,6 +78,7 @@ export async function enqueueMany<I>(
   // Allocated here on both paths, so the answer needs no read per row.
   const rows = inputs.map((input) => {
     handle.concurrencyKeyFor(input);
+    refuseEnqueueTenant(handle.name, handle.tenantFor(input), options.tenantId);
     const idempotencyKey = handle.idempotencyKeyFor(input);
     return { input, facts: { id: uuidV7(), runId: uuidV7(), idempotencyKey, at, trace } };
   });

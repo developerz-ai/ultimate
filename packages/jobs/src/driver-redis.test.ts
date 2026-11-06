@@ -389,4 +389,19 @@ describe('redisJobDriver', () => {
       { ...record, output: null },
     ]);
   });
+
+  // `once` writes `started` before its `fn`, an operator writes `cleared`: both are JSON in the
+  // run's hash like any status, and both are read back — never dropped as unknown.
+  test('the started and cleared statuses round-trip through the step hash', async () => {
+    const stored = (name: string, status: string) =>
+      JSON.stringify({ runId: 'r1', name, status, startedAt: 1, attempts: 0 });
+    const { client } = recording({
+      HVALS: [stored('send', 'started'), stored('notify', 'cleared')],
+    });
+    const steps = redisJobDriver({ client, clock: clock(), prefix: 'p' }).steps;
+    expect((await steps.list('r1')).map((each) => [each.name, each.status])).toEqual([
+      ['send', 'started'],
+      ['notify', 'cleared'],
+    ]);
+  });
 });

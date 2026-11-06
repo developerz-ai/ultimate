@@ -84,6 +84,31 @@ describe(testName('unit', 'seedGraph'), () => {
     }
   });
 
+  test('a child with no tenant column seeds per tenant, under its parent; a shared one does not', () => {
+    const files = entity('sg_files', {
+      columns: { id: uuid().primaryKey(), postId: uuid().references(() => posts.id), url: url() },
+    });
+    const marks = entity('sg_marks', {
+      columns: { id: uuid().primaryKey(), fileId: uuid().references(() => files.id) },
+    });
+    const tags = entity('sg_tags', {
+      columns: { id: uuid().primaryKey(), postId: uuid().references(() => posts.id) },
+      shared: 'a tag names a post across every org',
+    });
+    const graph = seedGraph({ ...schema, files, marks, tags }, { tenants: 2, perTable: 2 });
+    const tenantOf = new Map(graph.inserts.map((row) => [row.row['id'], row.tenant]));
+    const of = (name: string) => graph.inserts.filter((row) => row.entity === name);
+    expect(of('sg_files')).toHaveLength(4);
+    for (const file of of('sg_files')) {
+      expect(file.tenant).not.toBeNull();
+      expect(tenantOf.get(file.row['postId'])).toBe(file.tenant);
+    }
+    // Two hops down, the same tenant: the walk follows references, not just the first one.
+    for (const mark of of('sg_marks')) expect(tenantOf.get(mark.row['fileId'])).toBe(mark.tenant);
+    expect(of('sg_marks').every((mark) => mark.tenant !== null)).toBe(true);
+    expect(of('sg_tags').map((tag) => tag.tenant)).toEqual([null, null]);
+  });
+
   test('a value comes from the declaration: enum values, money parts, a url, a kept rule', () => {
     const graph = seedGraph(schema, { perTable: 2 });
     for (const { row, entity: name } of graph.inserts) {
@@ -158,6 +183,7 @@ describe(testName('unit', 'seedGraph cycles'), () => {
     await insertSeedGraph(graph, {
       insert: async (row) => void written.push(row),
       update: async (update) => void written.push(update),
+      snapshot: async (rows) => rows.map(() => null),
     });
     expect(written).toEqual([...graph.inserts, ...graph.updates]);
   });

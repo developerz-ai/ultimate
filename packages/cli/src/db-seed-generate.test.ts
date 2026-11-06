@@ -77,6 +77,7 @@ describe('unit · x db seed --generate', () => {
         written.push(row);
       },
       update: async () => {},
+      snapshot: async (rows) => rows.map(() => null),
     };
     const row = await writeGeneratedSeed({ graph, writer, transaction, dryRun: false });
     expect(row).toMatchObject({ name: GENERATED_SEED, tier: 'dev', status: 'ok', finding: null });
@@ -92,6 +93,7 @@ describe('unit · x db seed --generate', () => {
         calls += 1;
       },
       update: async () => {},
+      snapshot: async (rows) => rows.map(() => null),
     };
     const row = await writeGeneratedSeed({ graph, writer, transaction, dryRun: true });
     expect(calls).toBe(0);
@@ -110,6 +112,7 @@ describe('unit · x db seed --generate', () => {
         });
       },
       update: async () => {},
+      snapshot: async (rows) => rows.map(() => null),
     };
     const row = await writeGeneratedSeed({ graph, writer, transaction, dryRun: false });
     expect(row.status).toBe('failed');

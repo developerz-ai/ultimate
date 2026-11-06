@@ -82,7 +82,8 @@ export const AccountSchema = t.object({
 
 export const VerificationSchema = t.object({
   id: t.string,
-  purpose: t.enum(['email-verify', 'password-reset']),
+  // Open: any `defineVerificationPurpose` name, so a declared invite row parses as its own data.
+  purpose: t.string,
   identifier: t.email,
   expiresAt: t.date,
   consumedAt: t.optional(t.date),

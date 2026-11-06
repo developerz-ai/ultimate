@@ -40,6 +40,7 @@ export const AI_ERROR_CODES = [
   'X_AGENT_CONTEXT_EXHAUSTED',
   'X_AI_SCRIPT_EXHAUSTED',
   'X_EVAL_TOOL_UNDOUBLED',
+  'X_AI_CONTEXT_OVERFLOW',
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -82,6 +83,7 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AGENT_CONTEXT_EXHAUSTED: "an agent's next request would not fit its model's context window",
   X_AI_SCRIPT_EXHAUSTED: 'a scriptedProvider was called more times than it has turns',
   X_EVAL_TOOL_UNDOUBLED: 'an agent eval called a tool with no double',
+  X_AI_CONTEXT_OVERFLOW: 'a provider refused a request as longer than the model context window',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Unconditional and

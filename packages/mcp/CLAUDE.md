@@ -1,9 +1,10 @@
 # @ultimat3/mcp — boundary
 
-Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity policy http action
-query jobs realtime`. **Never** `render manifest ai pwa ui admin testing cli`.
+Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity policy http auth
+action query jobs realtime`. **Never** `render manifest ai pwa ui admin testing cli`.
 
-`@ultimat3/http` is a DIRECT dependency (`transport-http.ts`, the rate limiter).
+`@ultimat3/http` is a DIRECT dependency (`transport-http.ts`, the rate limiter). So is
+`@ultimat3/auth` (`oauth-server.ts`): the authorization server is auth's; this package binds it.
 
 Same-tier data (routes, manifest, policy catalog) arrives as an **injected thunk**, never an
 import. The CLI wires it.
@@ -27,7 +28,8 @@ import. The CLI wires it.
 | `transport-http-answers.ts` | the pre-dispatch answers (401, 403 not-an-agent / origin, 421, 429) and the per-address failure meter |
 | `audit-hook.ts` | `onAudit`; `resolveToken`'s 2nd arg is http's `RequestFacts` (`seen.address` only, never `x-forwarded-for`), re-exported as `McpRequestFacts` |
 | `confirmations.ts` · `confirmation-*.ts` | `mcpConfirmations`: a factory over `action` (view/decide) · the gate on `handle` · stores · DDL · codes |
-| `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`); the authorization server is the app's |
+| `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`) |
+| `oauth-server.ts` | `mcpAuthorizationServer`: `@ultimat3/auth`'s `authorizationServer` bound to one endpoint's `resource` (default and required by `resolveToken`), its `oauth` block, `mcp.auth.<event>` lines. No protocol rule lives here |
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |

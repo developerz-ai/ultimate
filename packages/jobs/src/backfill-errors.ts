@@ -1,4 +1,4 @@
-// The seven `X_BACKFILL_*` codes, apart from `errors.ts` for the reason `driver-pg-rows.ts` is
+// The eight `X_BACKFILL_*` codes, apart from `errors.ts` for the reason `driver-pg-rows.ts` is
 // apart from `driver-pg.ts`: one file, one job, and `errors.ts` was over the 500-line ceiling
 // `x verify`'s `filesize` step enforces. The registry is `error-codes.ts` — `JOB_OWNED_ERROR_CODES`,
 // `JOB_ERROR_TITLES` and the single `registerErrorCodes()` call — because a package's codes are
@@ -125,6 +125,22 @@ export class BackfillUnknownError extends UltimateError {
           ? `no backfill named "${input.backfill}" is declared, and this app declares none at all`
           : `no backfill named "${input.backfill}" is declared (declared: ${input.known.join(', ')})`,
       fix: 'x db backfill --pending --json',
+    });
+  }
+}
+
+/**
+ * A declaration whose rows cannot be read as written: both or neither of `source` and `pages`, or
+ * an `input` with no `scope` to key one pass per input. Refused at declaration, before the name is
+ * taken, so the corrected declaration still can be.
+ */
+export class BackfillSourceInvalidError extends UltimateError {
+  constructor(input: { backfill: string; problem: string; fix: string }) {
+    super({
+      code: 'X_BACKFILL_SOURCE_INVALID',
+      cause: `backfill "${input.backfill}" ${input.problem}`,
+      fix: input.fix,
+      meta: { backfill: input.backfill },
     });
   }
 }

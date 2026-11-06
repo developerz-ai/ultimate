@@ -5,6 +5,7 @@
  * payload, and none of them can become a second read path or a second authz path.
  */
 
+import type { CacheTag } from '@ultimat3/cache';
 import type { Ctx } from '@ultimat3/core';
 import {
   actorOf,
@@ -20,6 +21,7 @@ import {
   withChildContext,
   withSpan,
 } from '@ultimat3/core';
+import { withStatementTimeout } from '@ultimat3/db';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { formatPath, maskSensitive, validateAsync } from '@ultimat3/schema';
 import type { ReadAudit, ReadTrace } from './audit-gate';
@@ -219,9 +221,16 @@ async function readRowsIn(
   // Whether THIS call executed, for the audit record: a memo or tier hit never calls `read`, and
   // its record says so (`replayed: true`) rather than being skipped.
   if (trace !== null) trace.replayed = true;
+  // `timeoutMs` runs the source inside its own bounded read transaction — on the primary, since a
+  // transaction is pinned there. Inside `judgedRead`, so a fired bound is judged like any refusal.
+  const bound = def.timeoutMs;
+  const execute =
+    bound === undefined
+      ? () => source.execute()
+      : () => withStatementTimeout(bound, () => source.execute());
   const read = (): Promise<readonly object[]> => {
     if (trace !== null) trace.replayed = false;
-    return judgedRead(target, name, () => source.execute());
+    return judgedRead(target, name, execute);
   };
   // The source came from this query's own `sql()`, so its rows are TRow throughout —
   // which is what the typed overload above states, and this body never has to assert.
@@ -244,13 +253,41 @@ async function readRowsIn(
   // the process — a paginated feed over 10k tenants is 10k immortal entries.
   return def.cache === undefined
     ? await readOnce(ctx, key, read)
-    : await readThrough(
-        ctx,
-        key,
-        finiteOption('the read cache', 'ttlMs', def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS),
-        read,
-        tags,
-      );
+    : await readThroughLeased(ctx, key, def, read, tags);
+}
+
+/**
+ * The tier read with both leases. Only a `single: true` read can answer "none": its miss is stored
+ * as `null`, so the stack gives it `negativeTtlMs` — and an empty LIST stays a list with `ttlMs`.
+ */
+async function readThroughLeased(
+  ctx: Ctx,
+  key: string,
+  def: AnyQueryDef,
+  read: () => Promise<readonly object[]>,
+  tags: readonly CacheTag[],
+): Promise<readonly object[]> {
+  const ttlMs = finiteOption(
+    'the read cache',
+    'ttlMs',
+    def.cache?.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS,
+  );
+  const negativeTtlMs = def.cache?.negativeTtlMs;
+  if (def.single !== true || negativeTtlMs === undefined) {
+    return readThrough(ctx, key, ttlMs, read, tags);
+  }
+  const held = await readThrough(
+    ctx,
+    key,
+    ttlMs,
+    async (): Promise<readonly object[] | null> => {
+      const rows = await read();
+      return rows.length === 0 ? null : rows;
+    },
+    tags,
+    negativeTtlMs,
+  );
+  return held ?? [];
 }
 
 async function buildSource(

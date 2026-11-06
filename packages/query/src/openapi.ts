@@ -30,6 +30,7 @@ import { nodeToJsonSchema, toWireOutputSchema, tryIntrospect } from '@ultimat3/s
 import { DOWNLOAD_GRANT_PARAM } from './download-token';
 import { servedQueryPath } from './http-pin';
 import { withDeclaredErrors } from './openapi-errors';
+import { withValidatorDoc } from './openapi-etag';
 import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import type { AnyQuery } from './query';
 import { defOf, queryName } from './read';
@@ -118,6 +119,11 @@ const pathOf = (target: AnyQuery): string => servedQueryPath(queryName(target), 
 export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknown> {
   const name = queryName(target);
   if (target.download === true) return downloadOperation(target, name);
+  const operation = rowsOperation(target, name);
+  return defOf(target).etag === true ? { ...withValidatorDoc(operation) } : operation;
+}
+
+function rowsOperation(target: AnyQuery, name: string): Record<string, unknown> {
   if (target.single === true) return singleOperation(target, name);
   const answers = { oneOf: listAnswers(rowOf(target)) };
   return {

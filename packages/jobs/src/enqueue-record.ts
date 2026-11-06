@@ -7,6 +7,7 @@ import type { EnqueueRequest } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import type { JobHandle } from './job';
 import type { EnqueueOptions, OutboxRecord } from './outbox';
+import { enqueuedAttempts } from './retry';
 
 /**
  * The W3C `traceparent` of the span this enqueue is happening inside, or `undefined` outside a
@@ -74,7 +75,7 @@ export function stagedRecord<I>(
     queue: options.queue ?? handle.queue ?? DEFAULT_QUEUE,
     input,
     idempotencyKey: facts.idempotencyKey,
-    maxAttempts: handle.retry.attempts,
+    maxAttempts: enqueuedAttempts(handle.retry, handle.compensates),
     runAt: options.runAt ?? facts.at,
     stagedAt: facts.at,
     // Stamped at STAGE time and not at publish time: the relay runs after commit, in its own
@@ -96,7 +97,7 @@ export function directRequest<I>(
     queue: options.queue ?? handle.queue,
     input,
     idempotencyKey: facts.idempotencyKey,
-    maxAttempts: handle.retry.attempts,
+    maxAttempts: enqueuedAttempts(handle.retry, handle.compensates),
     runAt: options.runAt ?? facts.at,
     ...(facts.runId === undefined ? {} : { runId: facts.runId }),
     ...optional(options, facts.trace),

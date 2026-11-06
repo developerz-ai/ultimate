@@ -49,6 +49,9 @@ export const postRecord = query({
   input: t.object({ orgId: t.uuid, postId: t.uuid }),
   policy: postRead,
   rows: posts.$schema,
+  // The like island re-reads this on every load of `/posts/{id}` and once a minute after: an
+  // unchanged post is a bodiless 304 off the browser's own cache, so `useQuery` needs no code.
+  etag: true,
   sql: ({ orgId, postId }, ctx) =>
     from<Post>('posts', () =>
       repo.recordById(toOrgId(orgId), toPostId(postId), readerOf(ctx.actor)),

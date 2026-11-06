@@ -8,6 +8,7 @@ import {
   firstConcurrentStatement,
   isConcurrentIndexStatement,
   isNonTransactional,
+  isPartitionedBuildRefusal,
   NO_TRANSACTION_MARKER,
 } from './concurrent-index';
 
@@ -96,5 +97,28 @@ describe('unit · statements Postgres refuses inside a transaction block', () =>
       'alter table "t" add column "a" text;\ncreate index concurrently "x" on "t" ("a");';
     expect(firstConcurrentStatement(script)).toBe('create index concurrently "x" on "t" ("a")');
     expect(firstConcurrentStatement('create index "x" on "t" ("a");')).toBeUndefined();
+  });
+});
+
+describe('unit · a concurrent build refused on a partitioned parent', () => {
+  // The server's error as PGlite raises it: SQLSTATE on `code`, provenance on `severity`.
+  const refused = { severity: 'ERROR', code: '0A000', message: 'cannot create index on …' };
+  const build = 'create index concurrently if not exists "events_kind_idx" on "events" ("kind")';
+
+  test('`0A000` on a `create [unique] index concurrently` is that refusal', () => {
+    expect(isPartitionedBuildRefusal(build, refused)).toBe(true);
+    expect(isPartitionedBuildRefusal('CREATE UNIQUE INDEX CONCURRENTLY k ON e (id)', refused)).toBe(
+      true,
+    );
+  });
+
+  test('another state, or another concurrent statement, is not', () => {
+    expect(isPartitionedBuildRefusal(build, { ...refused, code: '23505' })).toBe(false);
+    expect(isPartitionedBuildRefusal('drop index concurrently "events_kind_idx"', refused)).toBe(
+      false,
+    );
+    expect(isPartitionedBuildRefusal('reindex index concurrently "events_kind_idx"', refused)).toBe(
+      false,
+    );
   });
 });

@@ -7,8 +7,7 @@
 
 import { memberId as toMemberId, orgId as toOrgId } from '@postly/domain';
 import { job, t } from '@ultimat3/jobs';
-import { send } from '@ultimat3/mail';
-import { inviteEmail } from '../mail';
+import { mailInvite } from '../invite-token';
 
 export const sendInvite = job({
   /**
@@ -28,8 +27,10 @@ export const sendInvite = job({
     const member = await step.run('load-member', () =>
       ctx.orgs.memberIn(toOrgId(input.orgId), toMemberId(input.memberId)),
     );
-    await step.run('send', () =>
-      send(inviteEmail, member, { to: member.email, locale: member.locale }),
-    );
+    // The token is minted inside the step that mails it: a retried send mints a fresh one, which
+    // replaces the first, so the link in the inbox is always the live one.
+    await step.run('send', async () => {
+      await mailInvite(member);
+    });
   },
 });

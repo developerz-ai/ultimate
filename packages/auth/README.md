@@ -590,16 +590,41 @@ const verification = await consumeVerification(runtime, {
 
 | Name | Is |
 |---|---|
-| `VERIFICATION_PURPOSES` | `['email-verify', 'password-reset']` — the whole set, and `VerificationPurpose` is derived from it |
+| `VERIFICATION_PURPOSES` | `['email-verify', 'password-reset']` — the two built in. `VerificationPurpose` is `string` (`As of 2026-11`): any declared name |
+| `defineVerificationPurpose({ name, template, ttlMs, identifier? })` | `{ name, issue, consume }` on the same code path — an invite, an email change, an account deletion. Twice or with no template: `X_VERIFICATION_PURPOSE_INVALID`. `emailVerification` and `passwordReset` are the built-in instances |
 | `VERIFICATION_TEMPLATES` | purpose → **catalog key** (`auth.email-verify`, `auth.password-reset`), never copy: the body lives in the app's i18n catalog |
 | `DEFAULT_VERIFICATION_TTL_MS` | 24 h for `email-verify`, 1 h for `password-reset` — a reset link is a password |
 | `MailSender` | the injected port: `send(template, to, data, locale)`. `@ultimat3/mail` is tier 4 and this package is tier 2, so the app wires it |
 | `issueVerification(runtime, input)` | `{ token, expiresAt }`. The token comes back for a test or a CLI; production only ever mails it |
-| `consumeVerification(runtime, input)` | the `AuthVerification` row, or `X_UNAUTHENTICATED`. Unknown, spent, expired and mismatched are one answer |
+| `consumeVerification(runtime, input)` | the `AuthVerification` row, or `X_UNAUTHENTICATED`. Unknown, spent, expired and mismatched are one answer. An undeclared purpose on either door is `X_VERIFICATION_PURPOSE_UNKNOWN` |
 
 One live token per `(purpose, identifier)`. A wrong guess destroys nothing: the store's
 `takeVerification(purpose, identifier, tokenHash)` matches before it consumes, so an
 unauthenticated POST with any token cannot kill the victim's live link.
+
+## Authorization server
+
+`authorizationServer({ issuer, store, consentPath, lifetimes, scopes, … })` (`As of 2026-11`) — an
+OAuth 2.1 server: authorization code + PKCE (S256 only), refresh rotation with replay revocation,
+`client_credentials`, the device grant, RFC 7009/7662/7591/8414/8707/9207. `routes` go in
+`runtime.routes`; the consent and device pages are the app's (`readRequest`/`approve`/`deny`,
+`readDevice`/`approveDevice`/`denyDevice`). `oauthBearerResolver(server, { actor, resource? })` is
+the `resolveToken`. Stores: `memoryAuthServerStore()`, `postgresAuthServerStore({ executor })`
+over `SQL_AUTH_SERVER_TABLES`, which the boot applies. Full table and the rule each test holds:
+[wiki Auth](https://github.com/developerz-ai/ultimate/wiki/Auth#authorization-server).
+
+| File | Job |
+|---|---|
+| `authorization-server.ts` | the factory and the consent calls |
+| `authorization-server-config.ts` | options, screened once (`X_AUTH_SERVER_INVALID`) |
+| `authorization-server-request.ts` | screening an authorize request — pure |
+| `authorization-server-clients.ts` · `-register.ts` | metadata-document and registered clients, secrets · RFC 7591 |
+| `authorization-server-tokens.ts` | opaque hashed tokens, PKCE, `resolve` |
+| `grant-authorization-code.ts` · `grant-client-credentials.ts` · `grant-device.ts` | the grants |
+| `token-endpoints.ts` | revocation, introspection |
+| `authorization-server-routes.ts` · `-wire.ts` | the routes · the structural `Route` shape, forms, client auth, RFC 6749 JSON |
+| `authorization-server-store.ts` · `-postgres*.ts` · `-schema.ts` | the contract + memory · Postgres · DDL |
+| `oauth-bearer-resolver.ts` | grant → `{ actor, scopes }`, per call |
 
 ## Revocation, offboarding and access review
 

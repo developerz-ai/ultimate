@@ -4,8 +4,10 @@
 // by every job is the cross-tenant read this declaration exists to make impossible.
 
 import type { Actor } from '@ultimat3/core';
-import { assert } from '@ultimat3/core';
+import { assert, isUltimateError, renderFixShellArg, tryUseContext } from '@ultimat3/core';
+import { assertRowTenant, ORG_COLUMN } from '@ultimat3/entity';
 import { JobTenantRequiredError } from './errors';
+import { JobTenantMismatchError } from './errors-tenant';
 
 /** The literal a job spells when it belongs to no tenant. */
 export const NO_JOB_TENANT = 'none';
@@ -58,4 +60,70 @@ export function jobTenantFor<I>(job: string, tenant: JobTenant<I>, input: I): st
 export function jobRunActor(actor: Actor, orgId: string | undefined): Actor {
   if (actor.orgId === orgId) return actor;
   return Object.freeze({ ...actor, orgId });
+}
+
+/**
+ * The enqueue's half of the rule: a job whose payload names org A is refused when the enqueue says
+ * org B — an explicit `tenantId`, the org `handle.as(actor, …)` stamped, or the AMBIENT actor's
+ * org when one is present. It used to queue, and the run then acted as A for a caller in B.
+ * `tenant: 'none'` declares no org, so there is nothing to disagree with. The ambient half alone
+ * has one escape, entity's: a proven `crossTenant(reason, fn)` (`crossTenantAdmits`).
+ */
+export function refuseEnqueueTenant(
+  job: string,
+  declared: string | undefined,
+  tenantId: string | undefined,
+): void {
+  if (declared === undefined) return;
+  if (tenantId !== undefined && tenantId !== declared) {
+    throw new JobTenantMismatchError({
+      job,
+      reason: `was enqueued for org "${tenantId}" while its payload names org "${declared}", so its run would act for an org the enqueuer is not in`,
+      fix: `${job}.enqueue(input)   # from the org the payload names — an actor of "${declared}" — or with input naming "${tenantId}"`,
+    });
+  }
+  const ambient = tryUseContext()?.actor?.orgId;
+  if (ambient !== undefined && ambient !== declared && !crossTenantAdmits(job, declared)) {
+    throw new JobTenantMismatchError({
+      job,
+      reason: `was enqueued by an actor of org "${ambient}" while its payload names org "${declared}"`,
+      fix: `${job}.enqueue(input)   # from an actor of "${declared}", with input naming "${ambient}", or inside crossTenant('<why>', () => ${job}.enqueue(input)) by an actor holding tenancy:cross`,
+    });
+  }
+}
+
+/**
+ * Whether an enclosing `crossTenant(reason, fn)` admits a payload naming `declared` — asked of
+ * `@ultimat3/entity`'s own write guard, the one place that proof is read: the payload's org is a
+ * tenant value the ambient actor is writing. Inside a proven scope the guard re-proves
+ * `tenancy:cross` and passes (a swapped-in actor without it is `X_TENANCY_CROSS_DENIED`, thrown
+ * through); outside, its mismatch is the answer `false`. Called only once the ambient org is known
+ * to differ, so outside a scope it always disagrees. The explicit `tenantId` half is never admitted:
+ * that row would be queued for one org and refused at its run, which reads no proof.
+ */
+function crossTenantAdmits(job: string, declared: string): boolean {
+  try {
+    assertRowTenant(job, ORG_COLUMN, 'enqueue', { [ORG_COLUMN]: declared });
+    return true;
+  } catch (error) {
+    if (isUltimateError(error) && error.code === 'X_TENANCY_ACTOR_MISMATCH') return false;
+    throw error;
+  }
+}
+
+/**
+ * The run's half, for a row queued before the enqueue refused it: the org the row was queued for
+ * against the org its payload declares. Terminal — the same row disagrees on every attempt.
+ */
+export function refuseRunTenant(
+  job: string,
+  declared: string | undefined,
+  queuedFor: string | undefined,
+): void {
+  if (declared === undefined || queuedFor === undefined || queuedFor === declared) return;
+  throw new JobTenantMismatchError({
+    job,
+    reason: `was queued for org "${queuedFor}" while its payload names org "${declared}"`,
+    fix: `x jobs list --name ${renderFixShellArg(job, '<job>')} --state dead --json   # this row is dead: re-enqueue it from an actor of the org its payload names, never x jobs retry it`,
+  });
 }

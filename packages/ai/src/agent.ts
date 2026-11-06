@@ -26,6 +26,7 @@ import type { Ctx } from '@ultimat3/core';
 import { throwIfAborted, withSpan } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
+import { checkpointer } from './agent-checkpoint';
 import type { Compactor } from './agent-compact';
 import { compactor } from './agent-compact';
 import type { CompactPlan } from './agent-compact-def';
@@ -47,6 +48,8 @@ import { runDeadline, toolLoopGuard } from './agent-guards';
 import type { Adapted, PerRun } from './agent-per-run';
 import { project, resolvePerRun } from './agent-per-run';
 import { assertRunCost } from './agent-run-limits';
+import type { TurnSend } from './agent-send';
+import { sendTurn } from './agent-send';
 import { sameSystem, systemOf } from './agent-system';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
 import { assertAnswerable, observeTurn } from './agent-turn';
@@ -280,6 +283,30 @@ async function run<
       const count = compacting?.count() ?? prior?.compacted ?? 0;
       return count > 0 ? { compacted: count } : {};
     };
+    const turnSend: TurnSend = {
+      agent: name,
+      model,
+      base,
+      compacting,
+      send: (request) => {
+        assertCost(request);
+        return deadline.guard(meter.call(gateway.generate(request))).catch((error: unknown) => {
+          // The caller left mid-call: the aborted socket reads as a provider failure, which is
+          // RETRYABLE. Say what happened instead.
+          throwIfAborted(args.ctx);
+          throw error;
+        });
+      },
+    };
+    // Seals and hands over a handle between turns — `undefined`, and free, without the hook.
+    const checkpoint = checkpointer(def.onCheckpoint?.bind(def), args, binding, span);
+    const landed = (turn: number, messages: readonly AiMessage[], model: string) =>
+      checkpoint?.({
+        turn,
+        messages,
+        run: runTotal(model, prior?.usage, meter.total(), meter.below()),
+        compacted: compacting?.count() ?? prior?.compacted ?? 0,
+      });
     // Where a failure would resume from: the request in flight, and the turns answered so far.
     const at = { messages: [] as readonly AiMessage[], turns: prior?.turns ?? 0 };
     const loop = async (): Promise<InferOutput<TOutput>> => {
@@ -302,20 +329,16 @@ async function run<
         // budget, runs every remaining tool's side effects, and discards the answer.
         throwIfAborted(args.ctx);
         deadline.check();
-        // Before the request exists, never after a 400: a turn the window cannot take is
-        // compacted first, or refused (`X_AGENT_CONTEXT_EXHAUSTED`) without being sent.
+        // Before the request exists: a turn the window cannot take is compacted first, or refused
+        // (`X_AGENT_CONTEXT_EXHAUSTED`) without being sent. A provider that refuses it anyway
+        // gets one forced compaction and a re-send (`sendTurn`).
         if (compacting !== undefined) messages = await compacting.fit(messages, turn);
         at.messages = messages;
-        const request: GenerateRequest = { ...base, messages };
-        assertCost(request);
-        const result = await deadline
-          .guard(meter.call(gateway.generate(request)))
-          .catch((error: unknown) => {
-            // The caller left mid-call: the aborted socket reads as a provider failure, which is
-            // RETRYABLE. Say what happened instead.
-            throwIfAborted(args.ctx);
-            throw error;
-          });
+        const sent = await sendTurn(turnSend, messages, turn, (shorter) => {
+          at.messages = shorter;
+        });
+        messages = sent.messages;
+        const { result } = sent;
         at.turns = turn;
         const requested = result.toolCalls.filter((call) => call.name !== RESPOND);
         // The same turn's `respond` calls, kept rather than forgotten: they are never RUN, but
@@ -387,6 +410,7 @@ async function run<
             // becomes an `X_AI_PROVIDER_UNAVAILABLE`.
             toolResultTurn(results, chars, answers, redact),
           ];
+          await landed(turn, messages, result.model);
           continue;
         }
 
@@ -413,6 +437,7 @@ async function run<
         rejected = formatIssues(parsed.issues);
         issues = rejected.join('; ');
         messages = [...messages, assistantTurn(result), repairTurn(answers, issues)];
+        await landed(turn, messages, result.model);
       }
 
       at.messages = messages;

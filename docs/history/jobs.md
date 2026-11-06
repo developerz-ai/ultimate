@@ -1482,3 +1482,79 @@ Long form: `docs/history/jobs.md`, "the cross-process wake".
 - **The event bus has ONE clock**: `postgresEventBus` takes no `clock`; `EventLookup.now()` is
   REQUIRED, stamps a NEW wait, and calls the TIMEOUT (asked once the runner thinks time is up).
   `purgeExpired()` is awaited and counted; `eventsPurgeTarget(bus)` is its `PurgeTarget`.
+
+## Plan 101 wave 6c — compensation, `once`, the event wake, the enqueue tenant check (2026-11-06)
+
+Slices `39-jobs-event-wake.md` and `39-action-sagas.md`, plus the tenant-proof finding.
+
+### A published event wakes its waiter
+
+- **`SQL_EVENT_PUBLISH_WAKE` is ONE statement** (`driver-pg-event-wake-sql.ts`): insert the event,
+  set `run_at = statement_timestamp()` on every `suspended` run with a `waiting` step on this
+  event whose key is this event's or absent, and `pg_notify` each DISTINCT queue of the woken rows
+  — none when nothing woke. A rollback undoes all three; the NOTIFY is delivered at commit.
+  `j.run_at > statement_timestamp()` is what makes a second concurrent publish wake nobody: it
+  blocks on the row lock, re-checks after the first commit, and finds the row already due.
+- **`x_job_steps_waiting_idx`** — `(event) where status = 'waiting'`. Without it each publish is a
+  scan of every step ever written. Its build locks `x_job_steps` writes while `SQL_JOBS_TABLE`
+  applies; proportional to the table, partial so cheap to keep.
+- **`postgresEventBus({ wakes: true })`** only from `runtime-queue.ts`, and only when the boot's
+  driver is its own `postgresJobDriver` (`overrides.jobs === undefined`): another driver keeps no
+  `x_jobs` rows here. `EventLookup.wakes` is optional; absent is false.
+- **The backstop follows the bus**: `WAKING_EVENT_POLL_MS` (15 min, 96 replays per 24 h wait)
+  when it wakes, `DEFAULT_EVENT_POLL_MS` (30 s) otherwise; a declared `eventPoll` wins either way.
+- **Publish before park**: a waking runner asks `find` once more after writing `waiting`. An
+  event committed after that second read meets a `running` row, which the wake leaves alone; the
+  backstop answers it. `events-wake-race.live.test.ts` drives both windows on two sessions.
+- **The probe's five rows are tests** (`events-wake.live.test.ts`): matching key and keyless
+  wake; another key, another event, a running row do not.
+
+### Durable compensation
+
+- **`job({ compensates: true })` + `step.run(name, fn, { compensate })`.** `compensate` on a job
+  without `compensates` is `X_JOB_DECLARATION_INVALID` at the call (now classified terminal).
+- **Only when FAILED FOR GOOD**: `executeJob` calls `unwindAndSettle` (`execute-unwind.ts`) where
+  `!decision.retry` — never on a retry, cancel, drain or suspension. Compensators run last-in
+  first-out, each as ordinary step `compensate:<name>`, so a replay skips what ran. A
+  compensator's own return value is not kept: its step records `null`.
+- **`unwinding` is written before the first compensator**, holding the failure as `{ error }`. Seen
+  on hydration, the run is in unwind mode on any attempt: the body replays only to re-register
+  closures, the first incomplete step throws `UnwindReached` (`steps-suspension.ts`), then the
+  unwind runs. A replay that returns, or throws anything else, still unwinds. So `x jobs retry` of
+  an unwound run continues the unwind and never runs forward — deliberate.
+- **Crash on the final attempt**: the row is enqueued with `max_attempts = attempts +
+  UNWIND_MARGIN` (2) — `enqueuedAttempts`, on the direct, staged and scheduler paths —
+  while `isFinalAttempt` keeps reading `handle.retry`, so `finalAttempt` and the retry decision
+  are unchanged. The claim re-offers the lapsed row; an attempt past `retry.attempts`
+  (`isUnwindAttempt`) unwinds with `LEASE_LAPSED_FINAL_ATTEMPT` as the failure. A lapse on every
+  margin attempt is buried by `SQL_CLAIM` as before, `unwinding` visible.
+- **A failing compensator** hands the row back (counted, `backoffDelayMs`) until
+  `isFinalUnwindAttempt` (`attempt >= attempts + UNWIND_MARGIN`); `last_error` keeps the original
+  failure meanwhile. Past it: dead with `X_JOB_COMPENSATION_FAILED` naming the step. Done well:
+  dead (or `failed` for `deadLetter: false`) with the original failure.
+- **`return await unwindAndSettle(…)`** at every call site: `executeJob`'s `finally` aborts the
+  attempt, and a bare `return` let it run before the compensators wrote (`X_ABORTED`).
+- **Reserved names**: `unwinding` and `compensate:*` are refused on `run`, `sleep` and
+  `waitForEvent` for every job (`StepNameReservedError`), so a job gaining `compensates` later
+  cannot meet a step it already wrote.
+
+### At-most-once steps
+
+- **`step.run(name, fn, { once: true })` writes `started` BEFORE `fn`.** A replay finding
+  `started` or `failed` without `completed` throws terminal `X_STEP_OUTCOME_UNKNOWN` and never
+  calls `fn`. `STEP_STATUSES` gains `started` and `cleared` — pass-through on all three stores.
+- **`resolveStep(jobId, step, { ran: true, output } | { ran: false })`** — an optional
+  `JobIntrospection` member, implemented by memory and pg; one write fenced to a job no worker
+  holds and a step that `started` or `failed` (`SQL_STEP_RESOLVE`), else `X_STEP_NOT_RESOLVABLE`.
+  `cleared` re-runs. `x jobs resolve-step <id> <step> --ran [--output json] | --not-ran`.
+- **With `compensate`**: an unknown `once` step registers as unknown; the unwind reaching it stops
+  at once with `X_JOB_COMPENSATION_FAILED` (`meta.outcome: 'unknown'`), never retried.
+
+### The enqueue's tenant
+
+- **A job declaring `tenant: (input) => …` is refused at enqueue** (`refuseEnqueueTenant`,
+  `X_JOB_TENANT_MISMATCH`) when its payload's org differs from `options.tenantId` (which
+  `handle.as(actor, …)` fills) or from the ambient actor's org when one is present — on `enqueue`
+  and `enqueueMany`, before anything is staged. It used to queue, and the run acted as the
+  payload's org for a caller in another. A run refuses a row already queued that way
+  (`refuseRunTenant`), terminally, before the body. `tenant: 'none'` is never compared.
