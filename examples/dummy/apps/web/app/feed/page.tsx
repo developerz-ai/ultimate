@@ -173,7 +173,11 @@ export const config = defineRoute({
   // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
   // `app/` only), and the realtime client +155 B, a live subscribe's `traceparent` so its
   // snapshot joins the page's trace — raised 177kb → 178.5kb (plan 101, 41).
-  budget: { js: '178.5kb' },
+  // measured: 183252 B (2026-11-06; x build --target static, against 182,784) — why: the inline
+  // time-zone script +153 B (`time.detect`, the visitor's own zone from the next request) and the
+  // page boot +665 B (82,123 B), this wave's changes to the client runtime every `app/` page
+  // boots — raised 178.5kb → 179kb (plan 101 wave 9).
+  budget: { js: '179kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

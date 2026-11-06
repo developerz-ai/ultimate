@@ -142,6 +142,13 @@ export async function signedUploadConstraints(
 export async function acceptSignedUpload(input: AcceptSignedUploadInput): Promise<StorageObject> {
   const constraints = await constraintsFor(input, 'PUT');
   const key = constraints.key;
+  // A part URL writes one part of an open upload, never the object: `acceptSignedPart` takes it.
+  if (constraints.part !== undefined) {
+    throw signedUrlRejected(
+      'part',
+      `"${key}" was signed for one part of an upload, not the object`,
+    );
+  }
 
   // A PUT signed with no content type bounds nothing — any bytes, any type, at that key. The
   // grant always sets one, so this is a hand-rolled URL, and refusing is the only fail-closed

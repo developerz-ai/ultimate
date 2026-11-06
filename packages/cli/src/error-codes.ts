@@ -3,6 +3,8 @@
 // the CLI is the surface an agent reads first — a failure here has to be actionable without a doc
 // lookup or a second round-trip. The classes that throw these codes live in `./errors`.
 import { registerErrorCodes } from '@ultimat3/core';
+import type { CliShotErrorCode } from './error-codes-shot';
+import { CLI_SHOT_ERROR_CODES, CLI_SHOT_ERROR_TITLES } from './error-codes-shot';
 
 /** Codes this package declares and owns. */
 export const CLI_OWNED_ERROR_CODES = [
@@ -161,34 +163,6 @@ export const CLI_OWNED_ERROR_CODES = [
   // source-level fix, and an agent following it here edits a file that is already right — the
   // repair is an install, and only `duplicate-packages.ts` can see that.
   'X_PACKAGE_DUPLICATED',
-  'X_SHOT_BROWSER_MISSING',
-  // `ui.shot` (the dev MCP server): a route it will not photograph, and why.
-  'X_UI_SHOT_ROUTE_UNKNOWN',
-  'X_UI_SHOT_ROUTE_UNBUDGETED',
-  // `ui.interact`: the four ways a step list is refused. All four REFUSE rather than trim or skip
-  // — a step dropped, a keystroke swallowed or a navigation followed changes what the picture is of.
-  'X_UI_INTERACT_STEPS_INVALID',
-  'X_UI_INTERACT_SECRET_FIELD',
-  'X_UI_INTERACT_LEFT_APP',
-  'X_UI_INTERACT_STEP_FAILED',
-  // `ui.diff`: the three ways two captures fail to become a comparison. The path gate is what
-  // lets a file-reading tool sit under `dev:read` — it reads `.x/shot/` and nothing else.
-  'X_UI_DIFF_PATH_OUTSIDE',
-  'X_UI_DIFF_FILE_MISSING',
-  'X_UI_DIFF_SIZE_MISMATCH',
-  // `x shot --island` — one code per way a component's named state fails to become a picture.
-  // The last of the four is the one that gates: it is checked against the expansion computed
-  // before a browser existed, so a capture loop that swallowed a failure cannot exit 0.
-  'X_SHOT_ISLAND_STATES_EMPTY',
-  'X_SHOT_ISLAND_UNPHOTOGRAPHABLE',
-  'X_SHOT_ISLAND_UNSTUBBED_REQUEST',
-  'X_SHOT_ISLAND_MISSING',
-  // The raw-CDP shot page's own refusals (`cdp-shot-errors.ts` holds the classes): which host it
-  // may open, which element it was pointed at, and which key it was asked to press.
-  'X_SHOT_HOST_REFUSED',
-  'X_SHOT_ELEMENT_MISSING',
-  'X_SHOT_ELEMENT_UNREADY',
-  'X_SHOT_KEY_INVALID',
   'X_GH_UNAVAILABLE',
   'X_GH_NOT_AUTHENTICATED',
   'X_GH_COMMAND_FAILED',
@@ -263,6 +237,15 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_APP_MODULE_LOAD_FAILED',
   'X_CHART_MISSING',
   'X_ENTITY_VIEW_DRIFT',
+  'X_CLIENT_SPEC_UNSUPPORTED',
+  'X_CLIENT_STALE',
+  'X_CLIENT_EDITED',
+  'X_GRAPH_NODE_UNKNOWN',
+  'X_CLIENT_SPEC_INVALID',
+  'X_REPRO_UNKNOWN',
+  'X_REPRO_NOT_REPRODUCED',
+  'X_REPRO_CAPTURE_OFF',
+  'X_ENTITY_RETAIN_UNSWEPT',
 ] as const;
 
 /**
@@ -296,17 +279,23 @@ export const CLI_BORROWED_ERROR_CODES = [
 ] as const;
 
 /** Every code the CLI can throw: the ones it owns plus the one it borrows. */
-export const CLI_ERROR_CODES = [...CLI_OWNED_ERROR_CODES, ...CLI_BORROWED_ERROR_CODES] as const;
+export const CLI_ERROR_CODES = [
+  ...CLI_OWNED_ERROR_CODES,
+  ...CLI_SHOT_ERROR_CODES,
+  ...CLI_BORROWED_ERROR_CODES,
+] as const;
 
-export type CliOwnedErrorCode = (typeof CLI_OWNED_ERROR_CODES)[number];
+/** The codes listed in THIS file — the ones `CLI_ERROR_TITLES` below must title. */
+type CliListedErrorCode = (typeof CLI_OWNED_ERROR_CODES)[number];
+export type CliOwnedErrorCode = CliListedErrorCode | CliShotErrorCode;
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
 
 /**
  * Registered titles, so `x errors list` enumerates the CLI's codes alongside every other
  * package's instead of leaving a hole an agent has to read source to fill. Typed over
- * `CliOwnedErrorCode`, so adding a code without a title is a build error.
+ * `CliListedErrorCode`, so adding a code without a title is a build error.
  */
-export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
+export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_CLI_UNKNOWN_COMMAND: 'not a command in the registry',
   X_CLI_BAD_FLAG: 'unknown flag, missing value, or a value the command refuses',
   X_VERIFY_FAILED: 'at least one x verify step failed',
@@ -380,24 +369,6 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
   X_WORKSPACE_DEP_UNDECLARED: 'a workspace imports another workspace it does not declare',
   X_PACKAGE_DUPLICATED: 'two copies of one registry-holding framework package are installed',
-  X_SHOT_BROWSER_MISSING: '`x shot` has no browser to launch',
-  X_UI_SHOT_ROUTE_UNKNOWN: 'a ui.* tool was asked for a path no route answers',
-  X_UI_SHOT_ROUTE_UNBUDGETED: 'a ui.* tool refused a route that declares no budget.js',
-  X_UI_INTERACT_STEPS_INVALID: 'a ui.interact step list is over its bounds or malformed',
-  X_UI_INTERACT_SECRET_FIELD: 'ui.interact refused to type into a password field',
-  X_UI_INTERACT_LEFT_APP: 'a ui.interact step navigated off the dev server origin',
-  X_UI_INTERACT_STEP_FAILED: 'a ui.interact step raised a scraping error',
-  X_UI_DIFF_PATH_OUTSIDE: 'ui.diff was handed a path that does not resolve inside .x/shot/',
-  X_UI_DIFF_FILE_MISSING: 'ui.diff was handed a capture that is not on disk',
-  X_UI_DIFF_SIZE_MISMATCH: 'ui.diff was handed two captures of different sizes',
-  X_SHOT_ISLAND_STATES_EMPTY: 'an island states file declares no manifest',
-  X_SHOT_ISLAND_UNPHOTOGRAPHABLE: 'the island never reached a state worth photographing',
-  X_SHOT_ISLAND_UNSTUBBED_REQUEST: 'the island requested something no state stub answers',
-  X_SHOT_ISLAND_MISSING: 'a declared island picture is not on disk',
-  X_SHOT_HOST_REFUSED: "x shot was asked to open a host outside the run's allow list",
-  X_SHOT_ELEMENT_MISSING: 'no element matched the selector before the deadline',
-  X_SHOT_ELEMENT_UNREADY: 'the element matched and never became ready to act on',
-  X_SHOT_KEY_INVALID: 'a key chord the browser cannot press',
   X_GH_UNAVAILABLE: 'the GitHub CLI is not runnable from here',
   X_GH_NOT_AUTHENTICATED: 'gh holds no credentials for this host',
   X_GH_COMMAND_FAILED: 'a gh invocation exited non-zero',
@@ -482,12 +453,26 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
     'an app module failed to load, so the role refused to serve a partial app',
   X_CHART_MISSING: 'x g chart-alerts found no Helm chart to write into',
   X_ENTITY_VIEW_DRIFT: "a view entity's columns disagree with the view its migration created",
+  X_CLIENT_SPEC_UNSUPPORTED: 'x client met an OpenAPI construct its compiler refuses',
+  X_CLIENT_STALE: 'a generated client is older than the document it was compiled from',
+  X_CLIENT_EDITED: 'a generated client file was changed by hand',
+  X_GRAPH_NODE_UNKNOWN: 'x graph or x impact was asked about a node the app graph does not hold',
+  X_CLIENT_SPEC_INVALID: 'x client was handed a document that is not OpenAPI 3.0 or 3.1',
+  X_REPRO_UNKNOWN: 'x repro was given an id nothing holds',
+  X_REPRO_NOT_REPRODUCED: 'a written repro test did not fail the way the original did',
+  X_REPRO_CAPTURE_OFF: 'x repro was given a request id while failure capture is off',
+  X_ENTITY_RETAIN_UNSWEPT: 'an entity declares retain and no purge() sweeps it',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws
 // X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
 registerErrorCodes(
-  Object.fromEntries(Object.entries(CLI_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+  Object.fromEntries(
+    Object.entries({ ...CLI_ERROR_TITLES, ...CLI_SHOT_ERROR_TITLES }).map(([code, title]) => [
+      code,
+      { title },
+    ]),
+  ),
 );
 
 // This file exports NO `docsFor(code)`, and adding one back is the defect. A CLI error passes no

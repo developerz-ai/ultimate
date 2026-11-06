@@ -1,7 +1,7 @@
 /**
- * One dispatch of a `clientTransport` request: the `RequestInit`, the fence's abort for a read,
- * the network fault's code, and the ok/error split — nothing about how many times it happens
- * (the flight's) or what the answer means (the transport's).
+ * One dispatch of a `clientTransport` request — or of `clientStream`'s, whose body is handed back
+ * unread: the `RequestInit`, the fence's abort for a read, the network fault's code, and the
+ * ok/error split — nothing about how many times it happens (the flight's) or what it means.
  */
 
 import type { ClientFlight, ClientRetry } from './client-flight';
@@ -109,29 +109,15 @@ export async function dispatch(
   const fence = read ? abortable([req.signal, flightSignal]) : undefined;
   const signal = fence === undefined ? req.signal : fence.signal;
   try {
-    const response = await onTheWire(req, read, () =>
+    const retryable = read || req.idempotencyKey !== undefined;
+    const response = await onTheWire(req, retryable, () =>
       (req.fetchImpl ?? browserFetch)(req.url, initOf(req, signal)),
     );
     await req.onResponse?.(response);
     // Read as TEXT once: a body is a single-use stream, and the failure path wants it too.
-    const text = response.status === 204 ? '' : await onTheWire(req, read, () => response.text());
-    if (!response.ok) {
-      const stated = retryAfterSecondsOf(
-        response.headers.get('retry-after'),
-        response.headers.get('date'),
-      );
-      const refusal =
-        req.decodeError?.(response.status, text, stated) ??
-        problemError(response.status, text, req.url, stated);
-      // Only the principal this request was issued for can have lost its session. The answer's
-      // own URL, so a same-origin call redirected elsewhere is judged by where it was refused.
-      const scope = pageClient().scope;
-      if (scope.epoch === issued) {
-        const url = response.url === '' ? req.url : response.url;
-        noteRefusal({ status: response.status, url, code: refusal.code }, scope.principal);
-      }
-      throw refusal;
-    }
+    const text =
+      response.status === 204 ? '' : await onTheWire(req, retryable, () => response.text());
+    if (!response.ok) throw refusalOf(req, response, text, issued);
     return {
       text,
       enveloped: response.headers.get(RECORDS_HEADER) === '1',
@@ -146,6 +132,68 @@ export async function dispatch(
   }
 }
 
+/** What `clientStream` sends: a write's request, never a raw body, a flight or a retry. */
+export type StreamDispatch = Pick<
+  TransportRequest,
+  | 'url'
+  | 'body'
+  | 'headers'
+  | 'signal'
+  | 'idempotencyKey'
+  | 'decodeError'
+  | 'onResponse'
+  | 'fetchImpl'
+>;
+
+/**
+ * A streamed answer's dispatch: the same `POST` init, credentials, outbound headers and refusal
+ * fence as `dispatch`, bounded by the caller's signal, and the 2xx `Response` handed back with
+ * its body UNREAD for the caller to consume frame by frame. A write, so no read fence, and never
+ * retryable — even keyed: a stream is not an idempotent replay.
+ */
+export async function dispatchStream(req: StreamDispatch): Promise<Response> {
+  const post: TransportRequest = {
+    ...req,
+    method: 'POST',
+    headers: { accept: 'text/event-stream', ...req.headers },
+  };
+  const issued = pageClient().scope.epoch;
+  const response = await onTheWire(post, false, () =>
+    (req.fetchImpl ?? browserFetch)(req.url, initOf(post, req.signal)),
+  );
+  await req.onResponse?.(response);
+  if (!response.ok) {
+    throw refusalOf(post, response, await onTheWire(post, false, () => response.text()), issued);
+  }
+  return response;
+}
+
+/**
+ * A non-2xx answer as the caller's refusal, noted against the session it was issued for: only
+ * that principal can have lost it. The answer's own URL, so a same-origin call redirected
+ * elsewhere is judged by where it was refused.
+ */
+function refusalOf(
+  req: TransportRequest,
+  response: Response,
+  text: string,
+  issued: number,
+): UltimateError {
+  const stated = retryAfterSecondsOf(
+    response.headers.get('retry-after'),
+    response.headers.get('date'),
+  );
+  const refusal =
+    req.decodeError?.(response.status, text, stated) ??
+    problemError(response.status, text, req.url, stated);
+  const scope = pageClient().scope;
+  if (scope.epoch === issued) {
+    const url = response.url === '' ? req.url : response.url;
+    noteRefusal({ status: response.status, url, code: refusal.code }, scope.principal);
+  }
+  return refusal;
+}
+
 /**
  * The network's half of a dispatch, and only that half. `fetch` — and a body read cut mid-stream —
  * rejects with a bare `TypeError` when no response arrived; that is `failure: 'network'`. A caller's
@@ -155,7 +203,7 @@ export async function dispatch(
  */
 async function onTheWire<T>(
   req: TransportRequest,
-  read: boolean,
+  retryable: boolean,
   work: () => Promise<T>,
 ): Promise<T> {
   try {
@@ -165,7 +213,7 @@ async function onTheWire<T>(
     throw transportFailed(
       'network',
       `${req.method} ${req.url} produced no response — the network refused or dropped it`,
-      read || req.idempotencyKey !== undefined ? 'retryable' : undefined,
+      retryable ? 'retryable' : undefined,
       { url: req.url, method: req.method },
       error,
     );

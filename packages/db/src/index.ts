@@ -77,9 +77,12 @@ export type { RowSecurityDifference } from './drift-row-security';
 export { rowSecurityDifferences, rowSecurityDrift } from './drift-row-security';
 export type {
   ColumnDescriptionLike,
+  CounterDescriptionLike,
   EntityDescriptionLike,
+  HistoryDescriptionLike,
   IndexDescriptionLike,
   InvariantDescriptionLike,
+  RetainDescriptionLike,
 } from './entity-shape';
 export type { DbErrorCode, DbErrorInit } from './errors';
 export {
@@ -98,12 +101,39 @@ export {
   serializationExhausted,
   sqlUnsafe,
 } from './errors';
-export { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
+export {
+  expectedQueryLoop,
+  expectedQueryLoopReason,
+  expectedSeqScan,
+  expectedSeqScanReason,
+} from './expected-loop';
+export type { FailureSummary, PostgresFailureStore } from './failure-store-pg';
+export {
+  FAILURES_TABLE,
+  failurePurgeTarget,
+  MAX_FAILURE_LIST,
+  postgresFailureStore,
+  SQL_FAILURES_TABLE,
+} from './failure-store-pg';
 export type { RecordedStatement, RecordingClient, StubResponse } from './fake';
 export { recordingClient } from './fake';
 export type { GeneratedMigration, GenerateOptions } from './generate';
 export { generateMigration, migrationStamp, slugify, snapshotOf } from './generate';
+export {
+  counterTrigger,
+  counterTriggerName,
+  recountDriftSql,
+  recountSql,
+} from './generate-counter';
+export {
+  ACTOR_SETTING,
+  HISTORY_GUARD_TRIGGER,
+  HISTORY_TRIGGER,
+  PURGE_SETTING,
+  REQUEST_SETTING,
+} from './generate-history';
 export type { RowSecurityOption, TenantColumnLike } from './generate-row-security';
+export { declaredTriggers } from './generate-triggers';
 export type { IndexMethod } from './index-method';
 export {
   declaredMethod,
@@ -120,6 +150,7 @@ export type {
   IntrospectOptions,
   SchemaDescription,
   TableDescription,
+  TriggerRecord,
   ViewDescription,
 } from './introspect';
 export { buildSchema, findTable, introspectSchema } from './introspect';
@@ -132,6 +163,7 @@ export {
 export { constraintExpressionUnsafe, constraintNameUnsafe } from './invariant-errors';
 export type { Keyset, KeysetKey, KeysetKind, KeysetOptions, KeysetRow } from './keyset';
 export { keyset } from './keyset';
+export { retainInvalid } from './lifecycle-errors';
 export type { DbSubscription, ListeningClient } from './listen';
 export { canListen } from './listen';
 export type { LocalSettings } from './local-settings';

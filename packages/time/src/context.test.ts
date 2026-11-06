@@ -2,7 +2,13 @@
 // and that what comes back is the canonical name — a header casing must not fork a formatter cache.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { configureTime, currentTimeZone, resolveTimeZone, timeConfig } from './context';
+import {
+  configureTime,
+  currentTimeZone,
+  resolveTimeZone,
+  TIMEZONE_DETECTED_COOKIE,
+  timeConfig,
+} from './context';
 import { UTC } from './zones';
 
 const OVERRIDES = { defaultZone: 'Europe/Berlin', order: ['user', 'header', 'query'] as const };
@@ -60,9 +66,43 @@ describe('configureTime', () => {
   });
 
   test('leaves the order alone and returns the merged config', () => {
+    // Restored to what it WAS, never to a restated literal: a literal here would hide a change to
+    // the shipped default from every test that runs after this one.
+    const shipped = timeConfig().order;
     const merged = configureTime({ order: ['header'] });
     expect(merged.order).toEqual(['header']);
     expect(merged.defaultZone).toBe(UTC);
-    configureTime({ order: ['user', 'cookie', 'query', 'header'] });
+    configureTime({ order: shipped });
+  });
+});
+
+// A document navigation sends no `x-timezone`, so a new visitor's first `app/` page rendered in
+// UTC. The browser's own zone arrives as a cookie the inline zone script writes — a GUESS, ranked
+// below everything a person chose and below the header a client sent on purpose.
+describe('the detected zone', () => {
+  test('is the last source in the default order', () => {
+    expect(timeConfig().order).toEqual(['user', 'cookie', 'query', 'header', 'detected']);
+    expect(TIMEZONE_DETECTED_COOKIE).toBe('x_timezone_detected');
+  });
+
+  test('answers a visitor nothing else resolves for', () => {
+    expect(resolveTimeZone({ detected: 'Asia/Kolkata' })).toEqual({
+      zone: 'Asia/Kolkata',
+      source: 'detected',
+    });
+  });
+
+  test('loses to the chosen cookie and to the header', () => {
+    expect(resolveTimeZone({ cookie: 'Europe/Paris', detected: 'Asia/Kolkata' }).source).toBe(
+      'cookie',
+    );
+    expect(resolveTimeZone({ header: 'America/Lima', detected: 'Asia/Kolkata' }).source).toBe(
+      'header',
+    );
+  });
+
+  test('an invalid guess is skipped, never thrown, and canonicalized when valid', () => {
+    expect(resolveTimeZone({ detected: 'Mars/Olympus' }).source).toBe('default');
+    expect(resolveTimeZone({ detected: 'asia/kolkata' }).zone).toBe('Asia/Kolkata');
   });
 });

@@ -757,6 +757,18 @@ await db.entries.update(first.id, { amountMinor: 0 }).catch((refused: unknown) =
 | Tenancy | unchanged — the refusal comes first and judges no tenant; an insert is scoped exactly as on any entity |
 | The seam | `appendOnlyRepo(entity, repo)`, wrapped outside `sealedRepo` by both drivers — so `database()`, a seed's `driver.repo()` and a hand-held `postgresRepo(entity)` agree. A driver written outside this package returns through `appendOnlyRepo(entity, sealedRepo(entity, repo))` |
 
+## Retention, history and counters
+
+Three declarations, each a trigger or a purge target `x db gen` and `purge()` compile — full rules in `wiki/Entities-And-Migrations.md#lifecycle-retention-history-counters`.
+
+| Declaration | Does |
+|---|---|
+| `retain: { after: '90d', on: 'createdAt' }` | `purge({ entities: 'declared' })` (`@ultimat3/jobs`) deletes older rows in batches, across tenants. The window is required; `on` is an indexed `timestamp()` (`X_ENTITY_RETAIN_UNINDEXED`); never beside `appendOnly` (`X_ENTITY_RETAIN_INVALID`). `$retain` is the checked declaration. `x verify` refuses one no purge covers (`X_ENTITY_RETAIN_UNSWEPT`) |
+| `history: true` · `{ retain: { after } }` | `<table>_history`, a registered entity (`$history`; it carries `$historyOf`), written by trigger with a before and after image of every change — `updateWhere`, cascades and raw SQL included. Its repository refuses every rewrite (`X_ENTITY_APPEND_ONLY`), the table too, except a retention sweep's delete |
+| `references(() => posts.id, { countedIn: () => posts.likeCount })` | the child's trigger keeps the parent's `integer()` equal to its row count, in the write's transaction; a soft-deleted child is not counted. Declared on the key because the child already names its parent: a thunk on the parent naming the child would make each declaration the other's type. `X_ENTITY_COUNTS_INVALID` when the target is no integer or the key points at no single primary key |
+
+Memory parity: the memory driver records history and moves counters in its repository (`memory-lifecycle.ts`); `history.test.ts` and `counter.test.ts` are the parity tables.
+
 ## Writing many rows
 
 Each call is all or nothing, `As of 2026-11-02`.
@@ -1078,6 +1090,13 @@ it, `x verify`'s `exercise` step reports `X_ENTITY_TENANT_UNDECLARED` for each u
 whose references reach, directly or through others, a tenant-columned one: a row of one tenant
 readable by id from another. A blank reason is `X_ENTITY_TENANT_UNDECLARED` at `entity()`, and
 `shared` beside a tenant column is `X_INVARIANT_VIOLATED`. A `shared` entity is not walked through.
+
+**A table read whole says why.** `x verify`'s `exercise` step plans every statement the pass sent
+with no index but the declared ones: a sequential scan is `X_QUERY_UNINDEXED`, a limited read that
+sorts is `X_QUERY_SORT_UNSERVED`, each printing the `indexes: [{ on: [...] }]` line to add.
+`entity('plans', { columns, scan: 'a closed catalog of 8 rows' })` is the one way a bounded table
+opts out; blank is `X_INVARIANT_VIOLATED`. A hand-written statement that must scan is
+`expectedSeqScan('<why>', fn)` from `@ultimat3/db`.
 
 **A read-modify-write takes a lock.** `db.posts.lock(id, (row, tx) => …)` holds the row for the
 callback and `db.posts.lockKey(key, (tx) => …)` holds a key of this table and tenant. A transaction

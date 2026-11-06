@@ -5,10 +5,16 @@
 
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
-import { describeEntities } from '@ultimat3/entity';
+import { describeEntities, registeredEntities } from '@ultimat3/entity';
+import { registeredSubjects } from '@ultimat3/jobs';
 import type { NamedActor } from '@ultimat3/policy';
 import type { ExerciseRecord, SeedEntity } from '@ultimat3/testing';
-import { entitySeedWriter, runExercisePass, tenantFindingLines } from '@ultimat3/testing';
+import {
+  entitySeedWriter,
+  planSweepLines,
+  runExercisePass,
+  tenantFindingLines,
+} from '@ultimat3/testing';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { exerciseSpec } from './cmd-exercise-spec';
@@ -25,6 +31,7 @@ import {
 } from './exercise-findings';
 import { readExerciseOverrides } from './exercise-overrides';
 import { entityTenantFindings } from './exercise-static';
+import { subjectFindings, subjectProofFindings } from './exercise-subject';
 import { readIntFlag } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
@@ -66,6 +73,12 @@ async function exercise(
   const overrides = await readExerciseOverrides(root);
   const cores = registeredEntityCores();
   const entities: readonly SeedEntity[] = Object.values(cores);
+  // Static before any row: a subject whose plan is refused is not proved, it is reported.
+  const subjectStatic =
+    only === undefined ? subjectFindings(registeredSubjects(), registeredEntities()) : [];
+  const proved = registeredSubjects().filter(
+    (subject) => only === undefined && !subjectStatic.some((f) => f.at === subject.entity),
+  );
   const records: readonly ExerciseRecord[] = await withExerciseDatabase(root, ctx.env, (client) =>
     runExercisePass({
       entities,
@@ -76,6 +89,14 @@ async function exercise(
       roles: exerciseRoles,
     }),
   );
+  // The subject proof (`exercise-subject.ts`) on a scratch database of its own: the pass's rows
+  // are committed, and a second seed graph beside them collides on every small unique domain.
+  const subjectProofs =
+    proved.length === 0
+      ? []
+      : await withExerciseDatabase(root, ctx.env, (client) =>
+          subjectProofFindings(proved, cores, client),
+        );
   const report = exerciseReport(records, seed);
   // The whole pass, not a one-primitive run's slice of it, is what the file is for — but a
   // one-primitive run is still a fact worth keeping, so it is written either way.
@@ -85,6 +106,8 @@ async function exercise(
     // The static half of the tenant proof (`exercise-static.ts`): the pass's own question,
     // asked of the declarations before any row is written.
     ...(only === undefined ? entityTenantFindings(describeEntities()) : []),
+    ...subjectStatic,
+    ...subjectProofs,
     ...exerciseFindings(records),
   ];
   return {
@@ -98,6 +121,7 @@ async function exercise(
       ...renderExerciseTable(records),
       ...tenantFindingLines(records),
       ...crashFindingLines(records),
+      ...planSweepLines(records),
     ].map((line) => `  ${line}`),
     findings,
     data: report as unknown as JsonValue,

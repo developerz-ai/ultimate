@@ -11,6 +11,7 @@ import { authSpec } from './cmd-auth-spec';
 import { buildSpec } from './cmd-build-spec';
 import { ciSpec } from './cmd-ci-spec';
 import { cleanSpec } from './cmd-clean-spec';
+import { clientSpec } from './cmd-client-spec';
 import { dbSpec } from './cmd-db-spec';
 import { deploySpec } from './cmd-deploy-spec';
 import { devSpec } from './cmd-dev-spec';
@@ -22,12 +23,15 @@ import { errorsSpec } from './cmd-errors-spec';
 import { exerciseSpec } from './cmd-exercise-spec';
 import { fixSpec } from './cmd-fix-spec';
 import { generateSpec } from './cmd-generate-spec';
+import { graphSpec } from './cmd-graph-spec';
 // Registered here, not by whichever command body happens to load: `dispatch` renders a CLI code's
 // title for a refusal raised before any body is imported.
 import './error-codes';
 import { createHelpCommand, createVersionCommand } from './cmd-help';
 import { i18nSpec } from './cmd-i18n-spec';
+import { impactSpec } from './cmd-impact-spec';
 import { jobsSpec } from './cmd-jobs-spec';
+import { mailSpec } from './cmd-mail-spec';
 import { manifestSpec } from './cmd-manifest-spec';
 import { mcpSpec } from './cmd-mcp-spec';
 import { newSpec } from './cmd-new-spec';
@@ -35,6 +39,7 @@ import { plannedCommands } from './cmd-planned';
 import { policySpec } from './cmd-policy-spec';
 import { prSpec } from './cmd-pr-spec';
 import { actionsSpec, entitiesSpec, queriesSpec } from './cmd-registries-spec';
+import { reproSpec } from './cmd-repro-spec';
 import { routesSpec } from './cmd-routes-spec';
 import { secretsSpec } from './cmd-secrets-spec';
 import { shotSpec } from './cmd-shot-spec';
@@ -107,7 +112,9 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(exerciseSpec, async () => (await import('./cmd-exercise')).exerciseCommand),
   lazy(drillSpec, async () => (await import('./cmd-drill')).drillCommand),
   lazy(i18nSpec, async () => (await import('./cmd-i18n')).i18nCommand),
+  lazy(mailSpec, async () => (await import('./cmd-mail')).mailCommand),
   lazy(errorsSpec, async () => (await import('./cmd-errors')).errorsCommand),
+  lazy(reproSpec, async () => (await import('./cmd-repro')).reproCommand),
   lazy(docsSpec, async () => (await import('./cmd-docs')).docsCommand),
   lazy(fixSpec, async () => (await import('./cmd-fix')).fixCommand),
   lazy(affectedSpec, async () => (await import('./cmd-affected')).affectedCommand),
@@ -115,6 +122,9 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(prSpec, async () => (await import('./cmd-pr')).prCommand),
   lazy(ciSpec, async () => (await import('./cmd-ci')).ciCommand),
   lazy(upgradeSpec, async () => (await import('./cmd-upgrade')).upgradeCommand),
+  lazy(clientSpec, async () => (await import('./cmd-client')).clientCommand),
+  lazy(graphSpec, async () => (await import('./cmd-graph')).graphCommand),
+  lazy(impactSpec, async () => (await import('./cmd-impact')).impactCommand),
 ];
 
 /**

@@ -971,6 +971,15 @@ evaluated, and `postgresAuthAdapter()` takes the process's database client, whic
 later. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is an
 `ApiKeyVerifyStore` (an `ApiKeyStore` that can also `findUserById`).
 
+## A person's identity, for a subject export or erase
+
+`authSubjectTarget({ executor, user })` is the identity tables as a `defineSubject({ targets })`
+entry (`@ultimat3/jobs`). `user(subject)` names the `x_users.id` the subject is
+(`({ row }) => String(row.userId)`), or `undefined` for none. The export carries the `x_users` row
+(`AUTH_SUBJECT_COLUMNS`) — never `password_hash`, `mfa_secret` or a recovery digest; the erase
+deletes the user (sessions and accounts cascade), their API keys and pending verifications. A
+user in several orgs is erased from all of them: list it `{ target, retain }` when that is wrong.
+
 ## Errors
 
 | Code | When |

@@ -15,11 +15,14 @@ import type { RequestContext, Route } from '@ultimat3/http';
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import type { Storage, UploadGrant } from '@ultimat3/storage';
 import {
+  completeUpload,
   DEFAULT_SIGNED_URL_BASE,
   defineStorage,
+  grantMultipart,
   grantUpload,
   localDriver,
   resetStorage,
+  signPart,
   uploadPolicy,
 } from '@ultimat3/storage';
 import { servedStorage, storageRoutes } from './runtime-storage';
@@ -193,5 +196,29 @@ describe('unit · /_storage serves the APP’s disks (#524)', () => {
       isShared: () => false,
     };
     expect(servedStorage(host).diskNames).toEqual(['object']);
+  });
+});
+
+describe('a part URL on the local disk', () => {
+  test('the one PUT route stores the part, and the object exists only once completed', async () => {
+    const disk = storage.disk('uploads');
+    const policy = uploadPolicy({ maxBytes: 1024, allowedContentTypes: ['image/png'] });
+    const request = { filename: 'a.png', contentType: 'image/png', size: PNG.byteLength };
+    const grant = await grantMultipart({ disk, orgId: 'org-1', request, policy });
+    const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
+    const url = await signPart({ ...session, partNumber: 1, size: PNG.byteLength });
+    const partGrant: UploadGrant = { ...grant, url, method: 'PUT', maxBytes: PNG.byteLength };
+
+    const response = await put(partGrant, { body: PNG });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ partNumber: 1, size: PNG.byteLength });
+    expect(await disk.exists(grant.key)).toBe(false);
+
+    const object = await completeUpload({ ...session, parts: [{ partNumber: 1 }], policy });
+    expect(object.size).toBe(PNG.byteLength);
+    expect(await disk.exists(grant.key)).toBe(true);
+    // The part URL wrote a part, once: replayed after the Complete, there is no session for it.
+    const replay = await put(partGrant, { body: PNG }).catch((error: unknown) => error);
+    expect(replay).toBeUltimateError('X_STORAGE_UPLOAD_UNKNOWN');
   });
 });

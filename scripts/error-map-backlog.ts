@@ -73,12 +73,19 @@ export const OFF_SOCKET: Pins = {
     'X_DB_ROW_SECURITY_BYPASSED',
     'X_DB_ROW_SECURITY_DRIFT',
     'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
+    'X_ENTITY_RETAIN_INVALID',
+    'X_LIFECYCLE_TRIGGER_MISSING',
   ],
   // tier 1 — a flag declared twice, at registration.
   flags: ['X_FLAG_DUPLICATE'],
   // tier 1 — catalog faults, raised by the build and by `x i18n`. The request-time one is
   // `X_LOCALE_UNSUPPORTED`, which has a row.
-  i18n: ['X_CATALOG_INVALID', 'X_CATALOG_MISSING_KEYS', 'X_CATALOG_UNREGISTERED'],
+  i18n: [
+    'X_CATALOG_INVALID',
+    'X_CATALOG_MISSING_KEYS',
+    'X_CATALOG_UNREGISTERED',
+    'X_I18N_FAMILY_INCOMPLETE',
+  ],
   // tier 1 — `registerCurrency`'s refusals and nothing else raises them. `REGISTERED` is per
   // PROCESS: a request-driven registration lands on one replica and leaves the others answering
   // `X_CURRENCY_UNKNOWN`, so it is broken before a status could describe it. A currency that
@@ -101,6 +108,8 @@ export const OFF_SOCKET: Pins = {
     'X_LOCK_UNSUPPORTED',
     'X_TEST_DRIVER_CLIENT_CHANGED',
     'X_ENTITY_TENANT_UNDECLARED',
+    'X_ENTITY_RETAIN_UNINDEXED',
+    'X_ENTITY_COUNTS_INVALID',
   ],
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],
@@ -111,6 +120,7 @@ export const OFF_SOCKET: Pins = {
     'X_CONTRACT_DEFECT',
     'X_CONTRACT_EXERCISE_UNREACHED',
     'X_CONTRACT_EXERCISE_UNDECLARED',
+    'X_ACTION_STREAM_INVALID',
   ],
   // tier 3 — the worker's own runtime vocabulary. A job runs with no socket attached and
   // `ROLE=worker` opens no HTTP port. `X_JOB_CLAIM_QUEUES_EMPTY`: every shipped caller of
@@ -140,6 +150,9 @@ export const OFF_SOCKET: Pins = {
     'X_STEP_NOT_RESOLVABLE',
     'X_JOB_ROLLUP_INVALID',
     'X_JOB_REFRESH_VIEW_INVALID',
+    'X_SUBJECT_TABLE_UNDECLARED',
+    'X_SUBJECT_TREATMENT_INVALID',
+    'X_SUBJECT_CYCLE',
   ],
   // tier 3 — judged at `query()`, where the declaration is written, or on a live read: a
   // WebSocket subscription carrying a `kind`, not a request carrying a status (`live.ts`).
@@ -185,7 +198,12 @@ export const OFF_SOCKET: Pins = {
   // which no served app installs.
   ai: ['X_AI_SCRIPT_EXHAUSTED', 'X_EVAL_TOOL_UNDOUBLED'],
   // tier 4 — a mail declared twice, at registration.
-  mail: ['X_MAIL_DUPLICATE', 'X_MAIL_KEY_MISSING'],
+  mail: [
+    'X_MAIL_DUPLICATE',
+    'X_MAIL_KEY_MISSING',
+    'X_MAIL_PREVIEW_INVALID',
+    'X_MAIL_PREVIEW_MISSING',
+  ],
   // tier 4 — build-time only: the manifest emitter and the `AGENTS.md` rules, all on `x verify`.
   manifest: [
     'X_AGENTS_MD_MISSING',
@@ -219,6 +237,13 @@ export const OFF_SOCKET: Pins = {
     'X_MCP_CONFIRMATION_TOOL_UNKNOWN',
     'X_MCP_EFFECT_UNDECLARED',
     'X_MCP_EFFECT_CONFLICT',
+    'X_MCP_REMOTE_TOOL_CHANGED',
+    'X_MCP_JOB_TOOL_INVALID',
+    'X_MCP_RECIPE_TOOL_UNKNOWN',
+    'X_MCP_RECIPE_EXAMPLE_INVALID',
+    'X_MCP_RECIPE_UNKNOWN',
+    'X_MCP_RECIPE_URI_RESERVED',
+    'X_MCP_RECIPE_LINK_DANGLING',
   ],
   // tier 4 — the service worker and the PWA manifest: build-time rules, faults raised in the
   // BROWSER, where there is no response to give a status to, and the VAPID pair refused at BOOT,
@@ -282,6 +307,7 @@ export const OFF_SOCKET: Pins = {
     'X_SCRAPE_YIELD_HISTORY_MISSING',
   ],
   schema: ['X_SCHEMA_BOUNDS_INVALID', 'X_SCHEMA_SENSITIVE_OUTPUT'],
+  seo: ['X_SEO_LLMS_DESCRIPTION_MISSING'],
 };
 
 /** Undecided, shrink-only: `scripts/lib/error-map-undecided.ts`, re-exported here. */

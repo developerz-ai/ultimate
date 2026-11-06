@@ -151,8 +151,17 @@
  * the Redis client and its deadline (`core/src/redis-client.ts`, `cache/src/redis-deadline.ts`),
  * the limiter's store deadline (`http/src/rate-limit-store-deadline.ts`), `core/src/
  * error-reporter-chain.ts` and `admin/src/error-groups-schema.ts` (the framework table's DDL).
+ * raised 822 → 852, measured 852 (2026-11-06, plan 101 wave 9): 30 new files, no existing module
+ * newly reached — failure capture (`core/src/{failure-capture,failure-capture-flush,
+ * failure-capture-mask,config-failure-capture}.ts`, `db/src/failure-store-pg.ts`,
+ * `entity/src/read-capture.ts`), `core/src/config-time.ts`, entity lifecycle
+ * (`entity/src/{retain,history,history-actor,counter,lifecycle,memory-lifecycle}.ts`,
+ * `db/src/{generate-history,generate-counter,generate-triggers,drift-triggers,lifecycle-errors}.ts`,
+ * `jobs/src/purge-entities.ts`), subject data (`jobs/src/subject{,-errors,-jobs,-plan,-select,
+ * -erase-pass,-export-pass}.ts`, `auth/src/subject-target.ts`), `jobs/src/failure-row.ts`, and
+ * streaming (`action/src/{action-stream,http-stream}.ts`) — each through its package's barrel.
  */
-export const MIGRATE_CEILING = 822;
+export const MIGRATE_CEILING = 852;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -310,8 +319,18 @@ export const MIGRATE_CEILING = 822;
  * raised 1151 → 1174, measured 1174 (2026-11-06, plan 101 wave 8): `MIGRATE_CEILING`'s 18, plus
  * `query/src/live-trace.ts` (a live read's spans) and the CLI catalog split at its line ceiling,
  * `cli/src/messages-{db,gate,shot,upgrade}.ts`, which `messages.ts` composes.
+ * raised 1174 → 1221, measured 1221 (2026-11-06, plan 101 wave 9): `MIGRATE_CEILING`'s 30, plus
+ * resumable uploads and expiry (`storage/src/{accept-part,grant-multipart,multipart-staged,
+ * errors-multipart,expire,subject-target,upload-client-multipart,driver-local-multipart,
+ * driver-memory-multipart,driver-s3-multipart-session}.ts`), mail previews
+ * (`mail/src/preview{,-check}.ts`), `seo/src/llms.ts`, `render/src/zone-script.ts`,
+ * `cli/src/failure-capture-boot.ts` and the catalog split `cli/src/messages-{client,repro}.ts`.
+ * No existing module newly reached.
+ * raised 1221 → 1223, measured 1223 (2026-11-06, plan 101 wave 9): `storage/src/driver-local.ts`
+ * split at its line ceiling into `driver-local-{list,remove}.ts`, which every role reaches through
+ * the storage barrel.
  */
-export const SERVING_ROLE_CEILING = 1174;
+export const SERVING_ROLE_CEILING = 1223;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -459,5 +478,12 @@ export const SERVING_ROLE_CEILING = 1174;
  * mounts.
  * raised 1296 → 1321, measured 1321 (2026-11-06, plan 101 wave 8): `SERVING_ROLE_CEILING`'s 23,
  * plus `cli/src/client-vitals-{route,script}.ts`, the page-vitals beacon and its script.
+ * raised 1321 → 1390, measured 1390 (2026-11-06, plan 101 wave 9): `SERVING_ROLE_CEILING`'s 47,
+ * plus `cli/src/{site-llms,zone-boot}.ts` and the MCP barrel's new modules the web role mounts —
+ * `mcp/src/{job-tool,job-tool-errors,job-status-tool,recipes,recipes-tool,recipes-surface,
+ * recipe-errors,recipe-links,recipe-markdown,recipe-replay,recipe-search,remote-client,
+ * remote-errors,remote-listen,remote-lock,remote-oauth,remote-schema,remote-tools,remote-wire,
+ * dev-graph-tool}.ts`. No existing module newly reached.
+ * raised 1390 → 1392, measured 1392 (2026-11-06, plan 101 wave 9): `SERVING_ROLE_CEILING`'s 2.
  */
-export const WEB_ROLE_CEILING = 1321;
+export const WEB_ROLE_CEILING = 1392;

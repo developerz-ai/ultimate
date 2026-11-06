@@ -44,6 +44,15 @@ export const MCP_ERROR_CODES = [
   'X_MCP_HEADER_MISMATCH',
   'X_MCP_ORIGIN_REFUSED',
   'X_MCP_HOST_REFUSED',
+  'X_MCP_REMOTE_TOOL_CHANGED',
+  'X_MCP_REMOTE_REFUSED',
+  'X_MCP_JOB_TOOL_INVALID',
+  'X_MCP_RECIPE_TOOL_UNKNOWN',
+  'X_MCP_RECIPE_EXAMPLE_INVALID',
+  'X_MCP_RECIPE_UNKNOWN',
+  'X_MCP_RECIPE_URI_RESERVED',
+  'X_MCP_REMOTE_AUTH_REQUIRED',
+  'X_MCP_RECIPE_LINK_DANGLING',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -93,6 +102,15 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_HEADER_MISMATCH: 'an MCP request header is absent or disagrees with the body',
   X_MCP_ORIGIN_REFUSED: 'an MCP request came from a browser page on another origin',
   X_MCP_HOST_REFUSED: 'an MCP request named a Host that is not this machine',
+  X_MCP_REMOTE_TOOL_CHANGED: "a remote MCP server's tool no longer matches tools.lock.json",
+  X_MCP_REMOTE_REFUSED: 'a remote MCP server failed or refused the call',
+  X_MCP_JOB_TOOL_INVALID: 'jobTool() was declared with something it cannot run',
+  X_MCP_RECIPE_TOOL_UNKNOWN: 'an MCP recipe step names a tool this server does not project',
+  X_MCP_RECIPE_EXAMPLE_INVALID: "an MCP recipe step's example fails its tool's input",
+  X_MCP_RECIPE_UNKNOWN: 'an error links to a docs://recipes/ URI no recipe serves',
+  X_MCP_RECIPE_URI_RESERVED: 'docs://recipes/ is owned by recipes:',
+  X_MCP_REMOTE_AUTH_REQUIRED: 'a remote MCP server needs authorization this app does not hold',
+  X_MCP_RECIPE_LINK_DANGLING: 'a recipe links to a docs://recipes/ URI no recipe serves',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

@@ -34,3 +34,21 @@ unitTest('the island’s server shell is the saved row, one <dl> of three rows',
   expect(rows).toHaveLength(3);
   expect(rows[0]?.props['children']).toBe(locale);
 });
+
+/** Every `<Text>` line the header draws, as text, for one demo member in one locale. */
+const headerLines = (name: 'ada' | 'kenji' | 'bruno', locale: string): string[] =>
+  runWithContext(ctxOf({ actor: demoActorFor(name), locale }), () =>
+    byComponent(renderNodes(Page, {}, { components: 'keep' }), 'Text').map((node) =>
+      String(node.props['children']),
+    ),
+  );
+
+// The role line is a `select` family: one sentence per role, the unlisted role taking `_other` —
+// a reader is never told they own the workspace, and each locale words its own grammar.
+unitTest('the header says what the member’s role lets them do, per role and per locale', () => {
+  expect(headerLines('ada', 'en')).toContain(
+    'You own Acme Editorial: its plan and its billing are yours.',
+  );
+  expect(headerLines('kenji', 'en')).toContain('You read Acme Editorial.');
+  expect(headerLines('bruno', 'es')).toContain('Escribes para Acme Editorial.');
+});

@@ -57,9 +57,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - **`postgresAuthLimiter` is the shared limiter: ONE row per key in `x_auth_lockouts`, holding the
   instants still inside the window** (`attempts_ms bigint[]` — a sliding window). The take is one
   `insert … on conflict do update` reading the window off `x_auth_lockouts.<column>`, never a CTE
-  and never a second table: only the row the statement locks is re-read after a wait. `admitted`
-  is a column because `returning` cannot see the old row; no row back is never an admission. A
-  live lockout is never rewritten. `PgExecutor` (`@ultimat3/core`'s, re-exported) is structural:
+  and never a second table: only the row the statement locks is re-read after a wait. No row back is never an
+  admission; a live lockout is never rewritten. Full rule: `docs/history/auth.md`. `PgExecutor` (`@ultimat3/core`'s, re-exported) is structural:
   the pool is the host's.
 - **`configureAuthLimiters` is the HOST's install point and takes a FACTORY**, called with the
   RESOLVED policy once per bucket; the comparison still runs on what comes back. Precedence:
@@ -82,15 +81,12 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - **`oauthProviderUnknown(provider, supported)` scopes its list to its reader**: the route passes
   `BUILTIN_OAUTH_PROVIDER_IDS` (an anonymous caller), `providerFor()` passes `oauthProviderIds()`.
 - **`verifyIdToken({ keys })` is required, with no default.** `'token-endpoint-tls'` is the OIDC
-  Core 3.1.3.7 exemption and `exchangeOAuthCode` is its only entitled caller — and since 26.0.0
-  it defaults to the provider's `providerJwks` whenever there is a `jwksUri`, using the exemption
-  only for a provider with none or when the caller names it (`idTokenKeys`). `HS256` and
+  Core 3.1.3.7 exemption and `exchangeOAuthCode` is its only entitled caller; it defaults to
+  `providerJwks` whenever there is a `jwksUri`. `HS256` and
   `alg: none` are refused in `decodeJwtHeader`. It checks `nbf` and `azp` too.
 - **`resolveGrants` is a seam, never a group-to-role table**, called on EVERY login. Absent leaves
-  the row alone. A user created with no roles and no org logs a warning.
-  Its second argument (`OAuthGrantContext`, `oauth-grant-context.ts`, #670) is the token set, the
-  whole verified id-token payload and a LAZY, once-per-login, `sub`-checked `userinfo()` — read
-  through `oauth-profile.ts`'s `userinfoBody`, never a second userinfo reader.
+  the row alone. A user created with no roles and no org logs a warning. Its second argument is
+  `OAuthGrantContext`; never a second userinfo reader. Full rule: `docs/history/auth.md`.
 - **`verifySession` writes at most once per `idleSlideMs`** (default `idleTtlMs / 20`). Never cache
   the USER row — `authenticate` re-reads it every request so a revoked role bites on the next one.
   In `observed`, `null` is an ANSWER (clears the stored value) and `undefined` is silence.
@@ -107,14 +103,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `order by created_at desc limit 1`); `consumeVerification` still compares in constant time.
   `consumed_at` is the adapter's `Clock`, bound, never `now()`.
 - **Foreign text in a `cause:` goes through `renderCauseValue`, in a `fix:` through
-  `renderFixLiteral`, and in a shell `fix:` through `renderFixShellArg`.** Foreign here:
-  `providerDetail()`'s return, `claims.iss`, `accountLocked`'s `key` (an `org:` key is never
-  rendered at all — it was looked up from the caller's address), and every OAuth endpoint URL
-  in a command position (`jwks.ts`, `oauth-profile.ts`, `oauth-exchange.ts`,
-  `oauth-discovery.ts`) — the registry is filled by an issuer's own discovery document. A LINE
-  that would not run degrades to prose: `jwks.ts`'s `readTheKeySet(tail)` decides with core's
-  `isFixShellSafe`. `oauth-discovery.ts` still owes that repair (it keeps `auth` on
-  `FIX_SHELL_ARG_PINS`). `${provider}` is registry-validated boot config, not foreign.
+  `renderFixLiteral`, and in a shell `fix:` through `renderFixShellArg`.** A line that would
+  not run degrades to prose (core's `isFixShellSafe`); `oauth-discovery.ts` still owes it. Full rule: `docs/history/auth.md`.
 - Cookies are read through `@ultimat3/core`'s `readCookie` (`readSessionCookie`, the oauth
   handshake), which never throws on a malformed value (`decodeURIComponent('%')`).
   They are WRITTEN through its `serializeSetCookie`, never a literal (`bun run set-cookie-literals`,
@@ -142,20 +132,14 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `providerDetail(response, 'coded-only')` (that request carries `client_secret`).
 - **`x_users.mfa_secret` is SEALED** (`mfa-secret.ts`, purpose `auth:x_users.mfa_secret`):
   `saveTotpSecret` writes, `openTotpSecret` reads and REFUSES a value core's `isSealed` does not
-  recognise (`X_MFA_SECRET_UNSEALED`, fix `x auth seal-mfa --json`). No plaintext fallback, ever —
-  `sealMfaSecrets` is the one-shot — each write a compare-and-set (`replaceMfaSecret`), a row that
-  changed underneath is `skipped` — and `x doctor` counts what is left. Whether a value is sealed is
-  `isSealed`'s to say, never a `like` in an adapter (`listUsersWithMfaSecret` returns them all).
+  recognise (`X_MFA_SECRET_UNSEALED`, fix `x auth seal-mfa --json`). No plaintext fallback, ever. Full rule: `docs/history/auth.md`.
 - **`providerJwks` memoises only the DEFAULT client**; a caller supplying options gets its own.
 - **A JWKS refresh is single-flighted through core's `singleFlight` with
   `deadlineMs = timeoutMs * 2`**; eviction frees the key, never the work, and a `generationFence`
   generation check (read, never `guard`) stops a superseded refresh overwriting the cache.
   `schedule` is injectable.
-- **A failed JWKS refresh is rated and survivable, in `keyFor`, above the transport**: no fetch
-  inside `JWKS_FAILURE_COOLDOWN_MS` of a failure, on either path; a key held answers until
-  `fetchedAt + ttl + JWKS_STALE_IF_ERROR_MS` (the set's age, so failing again never extends it),
-  logged `auth.jwks.stale_served` once per failed fetch; everything else is the last failure
-  rethrown. Constants, no option (`jwks-outage.test.ts`).
+- **A failed JWKS refresh is rated and survivable, in `keyFor`, above the transport** (`JWKS_FAILURE_COOLDOWN_MS`,
+  `JWKS_STALE_IF_ERROR_MS`; constants, no option). Full rule: `docs/history/auth.md`.
 - **A success clears the ACCOUNT bucket and nothing else** — clearing the address bucket made the
   limiter inert against stuffing. A password proven with a second factor still owed clears
   NOTHING: `completeMfa` is what clears, or a repeat of the first leg wipes the wrong codes.
@@ -195,16 +179,9 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   (borrowed from http, in `AUTH_BORROWED_ERROR_CODES`). The pool is core's `flightGate`, the
   refusal auth's own through core's `overflow:` seam. `configureKdfGate()` is the ONE install point
   and deliberately not a `defineAuth` key.
-- **MFA's second leg is `completeMfa(auth, challenge, code)`** (`mfa-challenge.ts`). `login()`
-  ends in `X_MFA_REQUIRED` whose `meta.challenge` is a `seal()` value (purpose
-  `auth:mfa-challenge`: user id, nonce, expiry on the server's clock, `MFA_CHALLENGE_TTL_MS`) —
-  `meta`, never `cause`, and never a bare user id: a second leg keyed by one is unauthenticated by
-  construction. The code is reserved against the same three buckets before it is compared, and a
-  spent step is refused through `auth.totpReplay.claim`, called only after the code verified. It
-  needs the app's master key (`X_SEAL_KEY_MISSING`). No route ships: the handler decides how the
-  challenge travels. Anything that is not six digits is a RECOVERY CODE: hashed
-  (`recoveryCodeHash`) and consumed by `adapter.consumeRecoveryCode` — one conditional UPDATE, so
-  single-use is storage's guarantee. There is no read-then-write redemption helper.
+- **MFA's second leg is `completeMfa(auth, challenge, code)`** (`mfa-challenge.ts`). `X_MFA_REQUIRED`'s
+  `meta.challenge` is a `seal()` value, never a bare user id; the code is reserved against the three
+  buckets before it is compared; a recovery code is consumed by one conditional UPDATE. Full rule: `docs/history/auth.md`.
 - **`mfa.required` is the literal `false`, and `defineAuth` refuses a `true`** (`X_CONFIG_INVALID`).
   `mfa.issuer` is read by `enrolTotp(auth, { account })`.
 - **A TOTP secret that decodes to zero bytes is NO key**: `verifyTotp` returns the generic failure
@@ -262,6 +239,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
 | `sign-out.ts` | `signOutHeaders({ session? })` — the expired session cookie plus `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), never `"cookies"`. Secure contexts only |
+| `subject-target.ts` | `authSubjectTarget({ executor, user })`: the identity tables as a `defineSubject({ targets })` entry, structural (`@ultimat3/jobs` imports nothing from here). Export = `AUTH_SUBJECT_COLUMNS` (never `password_hash`, `mfa_secret`, a recovery digest); erase = api keys, pending verifications, then the user (sessions, accounts cascade). Three idempotent statements, no transaction of its own |
 | `client-scope.ts` | `clientScopeOf(actor)`, the OPAQUE id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`, else a per-process key and one warning) over kind, id, impersonator; `''` anonymous |
 
 ```bash

@@ -270,9 +270,33 @@ describe('unit · the generatable list is the generators own output', () => {
     },
   };
 
+  // The lifecycle triggers — history and its guard, a counter with its recount, append-only — so
+  // the corpus carries `create or replace function`, `create trigger`, `drop trigger if exists`,
+  // the cross-tenant `set_config` and the recount `update`. Without them `x db gen` wrote a
+  // migration its own rail then asked an 11-statement `-- ungeneratable:` header for (2026-11).
+  const lifecycle: EntityDescriptionLike = {
+    name: 'Org',
+    table: 'orgs',
+    primaryKey: ['id'],
+    columns: [id, column('post_count', { kind: 'integer', notNull: true, hasDefault: true })],
+    indexes: [],
+    history: { table: 'orgs_history', key: 'id', tenant: null, ignore: ['post_count'] },
+    counts: [
+      { column: 'post_count', key: 'id', table: 'posts', references: 'org_id', softDelete: null },
+    ],
+  };
+  const ledger: EntityDescriptionLike = {
+    name: 'Ledger',
+    table: 'ledger',
+    primaryKey: ['id'],
+    columns: [id],
+    indexes: [],
+    appendOnly: true,
+  };
+
   const corpus = (): readonly string[] => {
     const migration = generateMigration({
-      entities: [posts, fresh, plainView, totals],
+      entities: [posts, fresh, plainView, totals, lifecycle, ledger],
       current: before,
       name: 'every form',
       now: new Date('2026-01-01T00:00:00.000Z'),
@@ -357,5 +381,17 @@ describe('unit · an existing column moved in place, and its hand-written follow
     expect(ungeneratableStatements(up)).toEqual([
       `update "payouts" set "period" = '2026-09' where "period" is null`,
     ]);
+  });
+});
+
+describe('unit · a trigger written by hand', () => {
+  test('an unquoted trigger function, its trigger and a plain update are still counted', () => {
+    // The lifecycle forms match the generator's quoted, whole-statement shape and nothing wider.
+    const up = [
+      'create or replace function audit_row() returns trigger language plpgsql as $$ begin return null; end; $$;',
+      'create trigger audit after insert on posts for each row execute function audit_row();',
+      `update "posts" set "like_count" = 0;`,
+    ].join('\n');
+    expect(ungeneratableStatements(up)).toHaveLength(3);
   });
 });

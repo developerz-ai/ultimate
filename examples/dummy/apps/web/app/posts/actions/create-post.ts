@@ -11,6 +11,7 @@
 import { tag } from '@postly/db';
 import { action, t } from '@ultimat3/action';
 import { CreatePostInput, PostView } from '../entity';
+import { PostSlugTaken } from '../errors';
 import { postCreate } from '../policy';
 
 export const createPost = action({
@@ -19,8 +20,8 @@ export const createPost = action({
   input: CreatePostInput.extend({ orgId: t.uuid }),
   output: PostView,
   policy: postCreate,
-  // Closed: see `publishPost`.
-  errors: [],
+  // Closed: see `publishPost`. A slug is unique across every org, so a taken one is a refusal.
+  errors: [PostSlugTaken.code],
   cache: { invalidates: [tag.feed] },
   mcp: { expose: true, description: 'Create a draft post in the actor’s organisation' },
   async handle({ input, ctx }) {

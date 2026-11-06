@@ -1,5 +1,5 @@
 /**
- * `{var}` substitution and CLDR plural-form selection.
+ * `{var}` substitution and key selection: CLDR plurals, ordinals and `select` families.
  * Pure string work: it never reads a catalog and never resolves a locale.
  */
 
@@ -103,9 +103,41 @@ export function selectPluralKey(
   return key;
 }
 
+/** A `select` value that can be part of a key: anything else selects nothing, never a stray key. */
+const SELECT_VALUE = /^[A-Za-z0-9-]{1,32}$/;
+
+/**
+ * The family stems `t(key, { select, ordinal })` reads, most specific first: `select` picks
+ * `<key>_select_<value>` then `<key>_select_other`; `ordinal` picks `<key>_ordinal_<category>` (CLDR's
+ * ORDINAL rules: `en` 1 one, 2 two, 3 few, 4 other, 11 other) then `<key>_ordinal_other`. Both
+ * compose, select outermost: `invite_select_female_ordinal_one`. Empty when neither var selects.
+ */
+export function familyStems(
+  key: string,
+  vars: InterpolationVars | undefined,
+  locale: string,
+): string[] {
+  const select = vars?.['select'];
+  const ordinal = vars?.['ordinal'];
+  const selects = typeof select === 'string' && SELECT_VALUE.test(select);
+  const ordinals = typeof ordinal === 'number' && Number.isFinite(ordinal);
+  if (!selects && !ordinals) return [];
+  let stems = [key];
+  if (selects) stems = [...new Set([`${key}_select_${select}`, `${key}_select_other`])];
+  if (ordinals) {
+    const category = ordinalRulesFor(locale).select(ordinal);
+    stems = stems.flatMap((stem) => [
+      ...new Set([`${stem}_ordinal_${category}`, `${stem}_ordinal_other`]),
+    ]);
+  }
+  return stems;
+}
+
 /**
  * The catalog entry one `t(key, vars)` reads. The ONE selection: `t()` and `recordingTranslator`
- * both call it, so a new selecting var is added here and neither can answer differently.
+ * both call it, so a new selecting var is added here and neither can answer differently. A family
+ * (`select`, `ordinal`) is asked first, each stem with `count`'s plural chain when there is one; a
+ * family the catalog does not define falls through to the key's own plural, as before.
  */
 export function selectMessageKey(
   key: string,
@@ -114,9 +146,13 @@ export function selectMessageKey(
   has: (candidate: string) => boolean,
 ): string {
   const count = vars?.['count'];
-  if (typeof count === 'number' && Number.isFinite(count)) {
-    return selectPluralKey(key, count, locale, has);
+  const counted = typeof count === 'number' && Number.isFinite(count);
+  for (const stem of familyStems(key, vars, locale)) {
+    const candidates = counted ? pluralKeyCandidates(stem, count, locale) : [stem];
+    const found = candidates.find(has);
+    if (found !== undefined) return found;
   }
+  if (counted) return selectPluralKey(key, count, locale, has);
   return key;
 }
 
@@ -126,6 +162,19 @@ export function pluralVariantsOf(key: string): string[] {
 }
 
 const rulesCache = new Map<string, Intl.PluralRules>();
+const ordinalCache = new Map<string, Intl.PluralRules>();
+
+/** `pluralRulesFor`'s bound and canonical key, for CLDR's ordinal rules: "1st", "2nd", "3rd". */
+function ordinalRulesFor(locale: string): Intl.PluralRules {
+  const tag = canonicalLocale(locale) ?? 'en';
+  return cachedFormatter(ordinalCache, tag, () => {
+    try {
+      return new Intl.PluralRules(tag, { type: 'ordinal' });
+    } catch {
+      return new Intl.PluralRules('en', { type: 'ordinal' });
+    }
+  });
+}
 
 /**
  * Bounded and canonically keyed, because `locale` reaches here from an `Accept-Language` header

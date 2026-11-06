@@ -8,7 +8,7 @@
 // caught failure, while a flag is evaluated on every request.
 
 import type { Clock, UltimateError } from '@ultimat3/core';
-import { finiteCount, reportError, systemClock } from '@ultimat3/core';
+import { finiteCount, recordFailureFact, reportError, systemClock } from '@ultimat3/core';
 
 /**
  * One hour. Small enough that an overdue flag shows up the same day, large enough that a flag read
@@ -79,6 +79,15 @@ export function reportOnce(key: string, build: () => UltimateError): boolean {
   // because the monitor is down.
   reportError(build(), { source: 'process', severity: 'warning', scope: { operation: key } });
   return true;
+}
+
+/**
+ * What an evaluation answered, into the failure buffer when a captured call is in flight — so
+ * `x repro` replays the branch the failing request took. Off, one `undefined` check in core.
+ */
+export function recordEvaluation(key: string, on: boolean): boolean {
+  recordFailureFact({ kind: 'flag', key, value: on });
+  return on;
 }
 
 /** Test-only, and the counterpart to every other reset in the framework. */

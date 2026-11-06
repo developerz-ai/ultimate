@@ -15,6 +15,14 @@ export interface MemoryTable {
   readonly entity: EntityCore;
   /** The stored row whose `property` holds `value`, or `undefined`. */
   find(property: string, value: unknown): unknown;
+  /**
+   * A trigger's write, below every seam as the statement inside a Postgres trigger is: store `row`
+   * as given, or replace the stored `before` with `after`. `memory-lifecycle.ts` is the one caller.
+   */
+  readonly raw?: {
+    store(row: unknown, undo: (fn: () => void) => void): void;
+    replace(before: unknown, after: unknown, undo: (fn: () => void) => void): void;
+  };
 }
 
 /** One per driver, keyed by entity name: what a reference names (`Binding.table`). */

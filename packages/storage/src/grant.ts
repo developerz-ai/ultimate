@@ -60,14 +60,21 @@ export interface GrantUploadInput {
   readonly uploadId?: (() => string) | undefined;
 }
 
+/** What every grant decides before it signs: the key, the type and size the policy accepted. */
+export interface GrantedUpload {
+  readonly key: string;
+  readonly contentType: string;
+  readonly size: number;
+  readonly expiresInMs: number;
+  readonly now: number;
+}
+
 /**
- * Refuses before it signs. A URL only exists for a request the policy already accepted, so an
- * over-limit or disallowed upload costs one round trip instead of a full transfer. The signature
- * then carries the size on every disk, so the client cannot widen it: at the provider's PUT on s3
- * (403 on any other length), and at `acceptSignedUpload` on the local disks. The content type is
- * signed only on a disk that signs its own URLs; on s3, `promoteAttachment` sniffs it.
+ * The refusals both grants share — `grantUpload`'s one PUT and `grantMultipart`'s parts — so a
+ * request one refuses the other refuses too: the key derived, never the client's; the type held to
+ * the allowlist; the size to the policy; the window screened.
  */
-export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant> {
+export function decideGrant(caller: string, input: GrantUploadInput): GrantedUpload {
   const policy = input.policy ?? uploadPolicy();
   const clock = input.clock ?? systemClock;
   const declared = normalizeContentType(input.request.contentType);
@@ -88,29 +95,33 @@ export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant>
   if (size > policy.maxBytes) throw tooLarge(key, size, policy.maxBytes);
 
   // Refused here as well as in the presigner one call down: `expiresAt: now + NaN` is `NaN` in the
-  // grant this function RETURNS, and the message a caller can act on names `grantUpload`'s
-  // own option rather than `buildSignedUrl`'s.
-  // `=== undefined`, never `??`, for the reason `buildSignedUrl` states: `??` coalesces on `null`
-  // too, so an explicit one took the default instead of this refusal.
+  // grant this function RETURNS, and the message a caller can act on names the grant's own option
+  // rather than `buildSignedUrl`'s. `=== undefined`, never `??`, for the reason `buildSignedUrl`
+  // states: `??` coalesces on `null` too, so an explicit one took the default instead.
   const expiresInMs = finiteCount(
-    'grantUpload',
+    caller,
     'expiresInMs',
     input.expiresInMs === undefined ? DEFAULT_SIGNED_URL_TTL_MS : input.expiresInMs,
     1,
   );
+  return { key, contentType: declared, size, expiresInMs, now: clock.now().getTime() };
+}
+
+/**
+ * Refuses before it signs. A URL only exists for a request the policy already accepted, so an
+ * over-limit or disallowed upload costs one round trip instead of a full transfer. The signature
+ * then carries the size on every disk, so the client cannot widen it: at the provider's PUT on s3
+ * (403 on any other length), and at `acceptSignedUpload` on the local disks. The content type is
+ * signed only on a disk that signs its own URLs; on s3, `promoteAttachment` sniffs it.
+ */
+export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant> {
+  const { key, contentType, size, expiresInMs, now } = decideGrant('grantUpload', input);
   const url = await input.disk.signedUrl(key, {
     method: 'PUT',
     maxBytes: size,
     contentLength: size,
-    contentType: declared,
+    contentType,
     expiresInMs,
   });
-  return {
-    key,
-    url,
-    method: 'PUT',
-    contentType: declared,
-    maxBytes: size,
-    expiresAt: clock.now().getTime() + expiresInMs,
-  };
+  return { key, url, method: 'PUT', contentType, maxBytes: size, expiresAt: now + expiresInMs };
 }

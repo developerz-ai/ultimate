@@ -212,6 +212,30 @@ With no `sections` the output is byte-for-byte what it was: one urlset at `/site
 a cap (50,000 URLs, or 50 MB) the index with parts `/sitemaps/1.xml`, `/sitemaps/2.xml`, …
 (`SITEMAP_PARTS_DIR`). A part the index does not name is a 404, `no-store`. `As of 2026-10`.
 
+## `llms.txt`
+
+`As of 2026-11-06`. **A third file of the same answer, on by default like the sitemap.**
+`/llms.txt` lists the indexable `site/` pages a sitemap lists, by their `meta` title and
+description, in path order, under the home page's title and description:
+
+```
+# Postly
+
+> Posts for teams.
+
+- [Pricing](https://postly.example/pricing): Plans, per seat.
+```
+
+| Rule | |
+|---|---|
+| served | `GET /llms.txt` from the web role (`text/markdown`, the sitemap's hour of cache); the static export writes the same bytes (`writeSiteSeo`) |
+| listed | public, indexable `site/` pages, in the default locale, less `seo.robots.disallow`. A dynamic route (or one with a `load`) is expanded through `prerender()` page by page, each line the title and description that page's own `meta` gives it through its `load` — the export lists only the pages it emitted, as the sitemap does; a page whose `meta` says `robots: { index: false }` is left out. `prerender()` runs once per answer for the sitemap and this file together |
+| outside production | an empty document, for `robots.txt`'s reason |
+| opt out | `seo: { llms: false }` in `app.config.ts`: an empty document everywhere |
+| build error | while on, a listed page with no `meta.description` is `X_SEO_LLMS_DESCRIPTION_MISSING` in the `seo` step. The step reads `meta` without a database, so it checks the pages whose `meta` needs no `load`; an expanded page with no description is listed by its title alone |
+
+The repository's own `llms.txt` is a separate, hand-kept file and is not this.
+
 **Beyond `site/`, and `<lastmod>`** (`As of 22.10`) — `seo.sitemap` in `app.config.ts`:
 
 ```ts

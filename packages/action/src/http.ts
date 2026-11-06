@@ -28,9 +28,11 @@ import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import { jsonResponse, publishRateLimit, redirect, takeRedirect, toBucket } from '@ultimat3/http';
 import { admitsAnonymous, policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { ActionRateLimit, AnyAction } from './action';
+import { withChunkSink } from './action-stream';
 import { ActionDeprecationInvalidError } from './errors';
 import { ActionDeprecationSuccessorInvalidError } from './errors-http';
 import { actionPathStyle, methodOfHttp, pathParametersOf, servedActionRoute } from './http-path';
+import { EVENT_STREAM, streamAnswer, wantsEventStream } from './http-stream';
 import { actionName, defOf, invoke } from './invoke';
 import {
   inputSchemaName,
@@ -107,6 +109,7 @@ function projectRoute(
   // never on the first request that tries to spend it.
   if (def.rateLimit !== undefined) toBucket(name, def.rateLimit);
   const enveloped = carriesRecords(target.output);
+  const streams = def.stream !== undefined;
 
   const handler = async (req: UltimateRequest): Promise<Response> => {
     if (sunsetting !== undefined) {
@@ -130,18 +133,25 @@ function projectRoute(
     // The header NAMES the write whatever the declaration, idempotent or not: a page sends one
     // with every mutation, and the `records` frames its rows produce carry the digest so that
     // page can tell its own echo from somebody else's change (`@ultimat3/core`'s write origin).
-    const result = await withWriteOrigin(await writeOriginOf(req), () =>
-      invoke(target, raw, {
-        surface: 'http',
-        idempotencyKey: key,
-        onReplay: () => {
-          replayed = true;
-        },
-        clientAddress: req.ctx.ip,
-        onRateLimit: (decision) =>
-          publishRateLimit(req.ctx, decision, useContext().now().getTime()),
-      }),
-    );
+    const origin = await writeOriginOf(req);
+    const call = (): Promise<unknown> =>
+      withWriteOrigin(origin, () =>
+        invoke(target, raw, {
+          surface: 'http',
+          idempotencyKey: key,
+          onReplay: () => {
+            replayed = true;
+          },
+          clientAddress: req.ctx.ip,
+          onRateLimit: (decision) =>
+            publishRateLimit(req.ctx, decision, useContext().now().getTime()),
+        }),
+      );
+    // The same invocation, its chunks sent as they are yielded: one route, chosen by `accept`.
+    if (streams && wantsEventStream(req.header('accept'))) {
+      return streamAnswer(def, (sink) => withChunkSink(sink, call));
+    }
+    const result = await call();
     // The one thing an action's return value cannot say. `setRedirect()` inside the handler
     // is how a `<form method="post">` gets an answer a browser follows — a `Location` on the
     // 200 this used to always return is a header browsers ignore, so a JS-less form left the
@@ -259,7 +269,14 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
             headers: RECORDS_OPENAPI_HEADER,
             content: { 'application/json': { schema: recordEnvelopeSchema({ $ref: outputRef }) } },
           }
-        : { description: 'ok', content: { 'application/json': { schema: { $ref: outputRef } } } },
+        : {
+            description: 'ok',
+            content: {
+              'application/json': { schema: { $ref: outputRef } },
+              // A stream-declaring action answers the same route as SSE when asked for it.
+              ...(def.stream === undefined ? {} : { [EVENT_STREAM]: STREAM_CONTENT }),
+            },
+          },
       // BOTH, because they are two different failures and this operation published only one of
       // them while the route answered only the other. `X_INPUT_INVALID` is the body that parsed
       // and failed THIS action's declared schema — the primitive's own code, identical over MCP,
@@ -341,6 +358,11 @@ function rateLimitMeta(
   toBucket(name, limit);
   return { limit: limit.limit, windowMs: limit.windowMs };
 }
+
+/** `accept: text/event-stream`: `chunk` frames, then one `done` (the output) or `error` (a problem). */
+const STREAM_CONTENT: Record<string, unknown> = {
+  schema: { type: 'string', description: 'event: chunk | done | error; data: one JSON value' },
+};
 
 const IDEMPOTENCY_PARAMETER: Record<string, unknown> = {
   name: 'Idempotency-Key',

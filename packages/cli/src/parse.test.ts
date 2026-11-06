@@ -72,7 +72,7 @@ describe('unit · parseArgs', () => {
     const refusing = SPECS_SHIPPED.filter(
       (spec) => (spec.subcommands ?? []).length > 0 && spec.defaultSubcommand === undefined,
     ).map((spec) => spec.name);
-    expect(refusing.sort()).toEqual(['auth', 'db', 'mcp', 'pr']);
+    expect(refusing.sort()).toEqual(['auth', 'client', 'db', 'mcp', 'pr']);
   });
 
   // `--json` is axiom 4: every command and every error answers in machine-readable form, so

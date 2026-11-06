@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { staticDevSources } from './data';
-import type { MailFact } from './facts';
+import type { MailFact, MailTemplateFact } from './facts';
 import { mailPanel } from './panel-mail';
 
 const mail = (over: Partial<MailFact> & Pick<MailFact, 'id' | 'subject' | 'locale'>): MailFact => ({
@@ -103,5 +103,81 @@ describe('the catalog gap', () => {
     expect((await data('locale=en')).missingLocales).toEqual(
       (await data()).missingLocales as never,
     );
+  });
+});
+
+// The templates list: every declared mail, rendered from its `preview` in every locale with no flow
+// triggered — so a template is checked in five locales without sending five mails.
+describe('the declared templates', () => {
+  const rendered = (locale: string, missing: readonly string[] = []) => ({
+    locale,
+    ok: true as const,
+    subject: `Welcome (${locale})`,
+    html: `<p>${locale}</p>`,
+    text: locale,
+    missing,
+  });
+  const TEMPLATES: readonly MailTemplateFact[] = [
+    {
+      id: 'welcome',
+      hasPreview: true,
+      previews: [rendered('en'), rendered('es', ['mail.welcome.body'])],
+    },
+    { id: 'receipt', hasPreview: false, previews: [] },
+  ];
+  const withTemplates = (params = ''): ReturnType<typeof mailPanel.data> =>
+    mailPanel.data(
+      staticDevSources({
+        mail: () => Promise.resolve(MESSAGES),
+        mailTemplates: () => Promise.resolve(TEMPLATES),
+      }),
+      new URLSearchParams(params),
+    );
+
+  test('lists every template beside the caught mail, previews per locale', async () => {
+    const panel = await withTemplates();
+    expect(panel.templates.map((template) => template.id)).toEqual(['welcome', 'receipt']);
+    expect(panel.templates[0]?.previews.map((preview) => preview.locale)).toEqual(['en', 'es']);
+    expect(panel.messages).toHaveLength(MESSAGES.length);
+  });
+
+  test('a preview that cannot resolve a key in a locale is named as a gap', async () => {
+    expect((await withTemplates()).templateGaps).toEqual([
+      { id: 'welcome', locale: 'es', missing: ['mail.welcome.body'] },
+    ]);
+  });
+
+  test('a template with no preview is listed as one, so the panel can ask for it', async () => {
+    expect((await withTemplates()).templates.find((one) => one.id === 'receipt')).toEqual({
+      id: 'receipt',
+      hasPreview: false,
+      previews: [],
+    });
+  });
+
+  test('?template= selects one; an unknown id selects nothing', async () => {
+    expect((await withTemplates('template=receipt')).selectedTemplate?.id).toBe('receipt');
+    expect((await withTemplates('template=nope')).selectedTemplate).toBeNull();
+    expect((await withTemplates()).selectedTemplate?.id).toBe('welcome');
+  });
+
+  test('a preview that failed its schema carries the instruction, not an empty render', async () => {
+    const failed: MailTemplateFact = {
+      id: 'broken',
+      hasPreview: true,
+      previews: [
+        {
+          locale: 'en',
+          ok: false,
+          error: { code: 'X_MAIL_PREVIEW_INVALID', cause: 'bad', fix: 'correct it' },
+        },
+      ],
+    };
+    const panel = await mailPanel.data(
+      staticDevSources({ mailTemplates: () => Promise.resolve([failed]) }),
+      new URLSearchParams(),
+    );
+    expect(panel.templates[0]?.previews[0]).toMatchObject({ ok: false });
+    expect(panel.templateGaps).toEqual([]);
   });
 });

@@ -26,7 +26,17 @@ import {
 } from '@postly/core';
 import { type OrgId, orgId, PLAN_CODES, seatLimit } from '@postly/domain';
 import type { Actor } from '@ultimat3/core';
-import { type AppMcp, type DefineAppMcpInput, defineAppMcp, t } from '@ultimat3/mcp';
+import {
+  type AnyAppToolDefinition,
+  type AppMcp,
+  type AppToolSchemas,
+  type AppTools,
+  type DefineAppMcpInput,
+  defineAppMcp,
+  type McpRecipe,
+  McpToolDuplicateError,
+  t,
+} from '@ultimat3/mcp';
 import { confirmAgentPublish } from './confirmations';
 
 /**
@@ -42,95 +52,152 @@ const actingOrg = (actor: Actor): OrgId => {
 };
 
 /**
- * The server, around what only this package writes — the name, the prompt artifact and the tools
- * that are not actions — plus whatever of the registry and the gate the caller asks for. One literal
- * inside the call, so every handler keeps its contextual types.
+ * The how-to `X_BILLING_SEATS_EXCEEDED` links to. Each step names a tool below and its example
+ * is checked against that tool's input at build: rename `planQuote` and this server refuses to
+ * build (`X_MCP_RECIPE_TOOL_UNKNOWN`) instead of sending an agent to a tool that is gone.
  */
-const build = (registry: Pick<DefineAppMcpInput, 'include' | 'confirmations'>): AppMcp =>
+export const POSTLY_RECIPES: readonly McpRecipe[] = [
+  {
+    name: 'make-room-for-a-member',
+    title: 'Make room for a new member',
+    description: 'The plan is full: see the seats, then price the next plan before anyone pays.',
+    steps: [
+      { tool: 'seatReport', why: 'how many seats are used, and the plan limit', example: {} },
+      {
+        tool: 'planQuote',
+        why: 'what the next plan costs for the rest of this period — it charges nothing',
+        example: { plan: 'business' },
+      },
+    ],
+    notes: 'Moving plans spends money: a person approves upgradePlan, never the agent alone.',
+  },
+];
+
+/** Infers each tool's input from its own schema, exactly as `defineAppMcp`'s `tools:` does. */
+const ownTools = <S extends AppToolSchemas>(tools: AppTools<S>): AppTools<S> => tools;
+
+/** The tools no action covers, written here because only this package composes them. */
+const POSTLY_TOOLS = ownTools({
+  /** Read-only. Answers "what will I get tonight, and when?" without waiting until tonight. */
+  digestPreview: {
+    description:
+      'Preview the acting member’s next digest: delivery instant in their timezone and the posts it would contain. Read-only, sends nothing.',
+    input: t.object({}),
+    policy: 'member:self',
+    /** Read-only. `destructive` defaults to true, so a read tool must say so. */
+    destructive: false,
+    async handle({ ctx }) {
+      // The member ROW, not the actor and not `ctx.tz`: the digest promises "09:00 where you
+      // are" and `members.tz` is the column the scheduler reads, so a preview off any other
+      // zone is a preview of a delivery that will not happen. `ctx.actor.tz` did not exist —
+      // core's `Actor` carries id, roles, scopes and tenant, and an app's own columns are never
+      // on it.
+      const member = await ctx.orgs.me();
+      const at = nextDigestAt(ctx.now(), member.tz);
+      // The delivery's own window, to the millisecond: `previousDigestAt`, not
+      // `at - 86_400_000`, or this preview disagrees with tonight's mail on the two days a
+      // year the member's clock moves. A preview that is not the digest is not a preview.
+      const posts = await ctx.posts.publishedSince(
+        orgId(member.orgId),
+        previousDigestAt(at, member.tz),
+      );
+      return {
+        deliverAt: at.toISOString(),
+        localDate: localDateIn(at, member.tz),
+        zone: member.tz,
+        posts: posts.map((post) => ({ id: post.id, title: post.title })),
+      };
+    },
+  },
+
+  /** Three reads an agent would otherwise stitch together, and get subtly wrong. */
+  seatReport: {
+    description:
+      'Seats used, seats remaining and the plan limit for the acting organisation. Read-only.',
+    input: t.object({}),
+    policy: 'org:administer',
+    /** Read-only. `destructive` defaults to true, so a read tool must say so. */
+    destructive: false,
+    async handle({ ctx }) {
+      const org = await ctx.orgs.byId(actingOrg(ctx.actor));
+      return {
+        plan: org.planCode,
+        limit: seatLimit(org.planCode),
+        used: org.seatsUsed,
+        remaining: seatsRemaining(org.planCode, org.seatsUsed),
+      };
+    },
+  },
+
+  /**
+   * Deliberately separate from `upgradePlan`: an agent must be able to answer "what would this
+   * cost?" without the tool that spends money being the only way to find out.
+   */
+  planQuote: {
+    description:
+      'Quote a prorated upgrade in minor units for the acting organisation. Charges nothing — use upgradePlan to actually move.',
+    input: t.object({ plan: t.enumerated(...PLAN_CODES) }),
+    policy: 'org:administer',
+    /** Read-only. `destructive` defaults to true, so a read tool must say so. */
+    destructive: false,
+    async handle({ input, ctx }) {
+      const org = await ctx.orgs.byId(actingOrg(ctx.actor));
+      // The real period, off the calendar. It quoted `15` of `30` for every org on every day
+      // until 2026-08, so a quote taken on the 2nd of February charged half a month — and no
+      // month is 30 days in a zone that moves its clocks. The zone is the request's (`ctx.tz`),
+      // which is the only one this app has: an org row carries no billing zone.
+      return quoteUpgrade({
+        from: org.planCode,
+        to: input.plan,
+        currency: org.billingCurrency,
+        ...billingPeriodAt(ctx.now(), ctx.tz),
+      });
+    },
+  },
+});
+
+/**
+ * The tools the APP declares over what only it can import — a `jobTool()` runs one of its jobs, and
+ * a job lives in `apps/web`, which this package may not import (`X_BOUNDARY_PACKAGE_TO_APP`). So
+ * the app hands them in (`apps/web/mcp-tools.ts`) and they sit beside this package's own, in one
+ * catalog under one set of checks: a name taken twice is `X_MCP_TOOL_DUPLICATE` at build.
+ */
+export interface PostlyMcpApp {
+  readonly tools?: Readonly<Record<string, AnyAppToolDefinition>>;
+}
+
+/** The app's tools, refused by name when one would replace a tool of this package's. */
+function appTools(app: PostlyMcpApp): Readonly<Record<string, AnyAppToolDefinition>> {
+  const tools = app.tools ?? {};
+  for (const name of Object.keys(tools)) {
+    if (Object.hasOwn(POSTLY_TOOLS, name)) {
+      throw new McpToolDuplicateError({
+        name,
+        declaredBy: ['@postly/mcp', 'apps/web/mcp-tools.ts'],
+      });
+    }
+  }
+  return tools;
+}
+
+/**
+ * The server, around what only this package writes — the name, the prompt artifact and the tools
+ * that are not actions — plus whatever of the registry and the gate the caller asks for, and the
+ * tools the app hands in.
+ */
+const build = (
+  registry: Pick<DefineAppMcpInput, 'include' | 'confirmations'>,
+  app: PostlyMcpApp = {},
+): AppMcp =>
   defineAppMcp({
     name: 'postly',
     ...registry,
     /** Exposes the versioned prompt artifact so an agent can read what the model was told. */
     prompts: ['apps/web/app/posts/prompts/summarize.v5.md'],
+    /** The how-tos above, checked against this server's catalog when it builds. */
+    recipes: POSTLY_RECIPES,
 
-    tools: {
-      /** Read-only. Answers "what will I get tonight, and when?" without waiting until tonight. */
-      digestPreview: {
-        description:
-          'Preview the acting member’s next digest: delivery instant in their timezone and the posts it would contain. Read-only, sends nothing.',
-        input: t.object({}),
-        policy: 'member:self',
-        /** Read-only. `destructive` defaults to true, so a read tool must say so. */
-        destructive: false,
-        async handle({ ctx }) {
-          // The member ROW, not the actor and not `ctx.tz`: the digest promises "09:00 where you
-          // are" and `members.tz` is the column the scheduler reads, so a preview off any other
-          // zone is a preview of a delivery that will not happen. `ctx.actor.tz` did not exist —
-          // core's `Actor` carries id, roles, scopes and tenant, and an app's own columns are never
-          // on it.
-          const member = await ctx.orgs.me();
-          const at = nextDigestAt(ctx.now(), member.tz);
-          // The delivery's own window, to the millisecond: `previousDigestAt`, not
-          // `at - 86_400_000`, or this preview disagrees with tonight's mail on the two days a
-          // year the member's clock moves. A preview that is not the digest is not a preview.
-          const posts = await ctx.posts.publishedSince(
-            orgId(member.orgId),
-            previousDigestAt(at, member.tz),
-          );
-          return {
-            deliverAt: at.toISOString(),
-            localDate: localDateIn(at, member.tz),
-            zone: member.tz,
-            posts: posts.map((post) => ({ id: post.id, title: post.title })),
-          };
-        },
-      },
-
-      /** Three reads an agent would otherwise stitch together, and get subtly wrong. */
-      seatReport: {
-        description:
-          'Seats used, seats remaining and the plan limit for the acting organisation. Read-only.',
-        input: t.object({}),
-        policy: 'org:administer',
-        /** Read-only. `destructive` defaults to true, so a read tool must say so. */
-        destructive: false,
-        async handle({ ctx }) {
-          const org = await ctx.orgs.byId(actingOrg(ctx.actor));
-          return {
-            plan: org.planCode,
-            limit: seatLimit(org.planCode),
-            used: org.seatsUsed,
-            remaining: seatsRemaining(org.planCode, org.seatsUsed),
-          };
-        },
-      },
-
-      /**
-       * Deliberately separate from `upgradePlan`: an agent must be able to answer "what would this
-       * cost?" without the tool that spends money being the only way to find out.
-       */
-      planQuote: {
-        description:
-          'Quote a prorated upgrade in minor units for the acting organisation. Charges nothing — use upgradePlan to actually move.',
-        input: t.object({ plan: t.enumerated(...PLAN_CODES) }),
-        policy: 'org:administer',
-        /** Read-only. `destructive` defaults to true, so a read tool must say so. */
-        destructive: false,
-        async handle({ input, ctx }) {
-          const org = await ctx.orgs.byId(actingOrg(ctx.actor));
-          // The real period, off the calendar. It quoted `15` of `30` for every org on every day
-          // until 2026-08, so a quote taken on the 2nd of February charged half a month — and no
-          // month is 30 days in a zone that moves its clocks. The zone is the request's (`ctx.tz`),
-          // which is the only one this app has: an org row carries no billing zone.
-          return quoteUpgrade({
-            from: org.planCode,
-            to: input.plan,
-            currency: org.billingCurrency,
-            ...billingPeriodAt(ctx.now(), ctx.tz),
-          });
-        },
-      },
-    },
+    tools: { ...POSTLY_TOOLS, ...appTools(app) },
   });
 
 /**
@@ -142,13 +209,16 @@ const build = (registry: Pick<DefineAppMcpInput, 'include' | 'confirmations'>): 
  * import order, not a dependency. As a function the order is the caller's, stated where it is
  * called — after `apps/web/api` has registered (the app's boot, or its test preload).
  */
-export const postlyMcp = (): AppMcp =>
-  build({
-    /** Every `mcp: { expose: true }` declaration in the app, with its policy unchanged. */
-    include: 'exposed',
-    /** `publishPost` waits for a person: `./confirmations.ts`. */
-    confirmations: confirmAgentPublish,
-  });
+export const postlyMcp = (app: PostlyMcpApp = {}): AppMcp =>
+  build(
+    {
+      /** Every `mcp: { expose: true }` declaration in the app, with its policy unchanged. */
+      include: 'exposed',
+      /** `publishPost` waits for a person: `./confirmations.ts`. */
+      confirmations: confirmAgentPublish,
+    },
+    app,
+  );
 
 /**
  * The hand-written tools alone, with no registry read and no gate — what `tools.test.ts` asserts

@@ -12,6 +12,11 @@
 import { clientTransport } from '@ultimat3/core';
 import { tooLarge, uploadFailed } from './errors';
 import type { UploadGrant, UploadRequest } from './grant';
+import {
+  type MultipartUploadClient,
+  partThresholdOf,
+  uploadInParts,
+} from './upload-client-multipart';
 
 export interface UploadProgress {
   readonly loaded: number;
@@ -144,6 +149,11 @@ export interface UploadFileInput {
    * package has no way to know which route it was projected onto.
    */
   readonly grant: (request: UploadRequest) => Promise<UploadGrant>;
+  /**
+   * The parts form, beside `grant` — which answers one signed PUT and cannot carry parts. A file
+   * over `partThresholdBytes` (64 MiB) goes up in parts, resumable; at or under it, `grant` as before.
+   */
+  readonly multipart?: MultipartUploadClient | undefined;
   readonly onProgress?: ((progress: UploadProgress) => void) | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly put?: SignedPut | undefined;
@@ -162,6 +172,17 @@ export interface UploadedFile {
  * that was always going to be refused.
  */
 export async function uploadFile(input: UploadFileInput): Promise<UploadedFile> {
+  const multipart = input.multipart;
+  if (multipart !== undefined && input.file.size > partThresholdOf(multipart)) {
+    const grant = await uploadInParts({
+      file: input.file,
+      client: multipart,
+      put: input.put ?? defaultSignedPut(),
+      ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    });
+    return { key: grant.key, contentType: grant.contentType, size: input.file.size };
+  }
   const grant = await input.grant({
     filename: input.file.name,
     contentType: input.file.type,

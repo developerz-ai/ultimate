@@ -8,6 +8,7 @@ import type { RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { jsonResponse, NO_STORE } from '@ultimat3/http';
 import type { Storage } from '@ultimat3/storage';
 import {
+  acceptSignedPart,
   acceptSignedUpload,
   DEFAULT_MAX_UPLOAD_BYTES,
   DEFAULT_SIGNED_URL_BASE,
@@ -60,6 +61,14 @@ async function acceptUpload(
   );
   const read = await readWithinLimit(request.raw.body, ceiling);
   if ('over' in read) throw tooLarge(constraints.key, read.over, ceiling);
+
+  // A part URL (`signPart` on a local disk) writes one part into its open session — never the
+  // object, which `completeUpload` assembles. The signature says which, so the one PUT route
+  // serves both: a second route on the same path could only shadow this one.
+  if (constraints.part !== undefined) {
+    const part = await acceptSignedPart({ url, disk, orgId, bytes: read.bytes });
+    return jsonResponse(part, { status: 200 });
+  }
 
   const stored = await acceptSignedUpload({
     url,

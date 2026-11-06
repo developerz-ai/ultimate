@@ -35,8 +35,11 @@ export type {
   AnyAction,
   InvokeOptions,
   McpDescriptorMeta,
+  StreamAction,
+  StreamActionDef,
 } from './action';
 export { action, describeAction, isAction } from './action';
+export { chunksRead } from './action-stream';
 /**
  * The app's API as a whole — `defineApi({ http: { pathStyle, mounts }, openapi })` — read back by
  * the boot (bearer mounts) and `x manifest` (the complete and per-mount documents).
@@ -68,6 +71,12 @@ export { DEFAULT_MAX_AUDIT_RECORDS, memoryAuditSink } from './audit-memory';
 export type { PostgresAuditSink, PostgresAuditSinkOptions } from './audit-postgres';
 export { postgresAuditSink, SQL_AUDIT_TABLE } from './audit-postgres';
 export type {
+  AuditSubjectRef,
+  AuditSubjectTarget,
+  AuditSubjectTargetOptions,
+} from './audit-subject-target';
+export { AUDIT_SUBJECT_COLUMNS, auditSubjectTarget } from './audit-subject-target';
+export type {
   ActionLike,
   ActionMap,
   CallOptions,
@@ -75,6 +84,7 @@ export type {
   ClientMethod,
   ClientOptions,
   FetchLike,
+  StreamClientMethod,
 } from './client';
 export { rpc } from './client';
 export type { ContractTest, ContractTestOptions } from './contract-test';
@@ -114,6 +124,7 @@ export {
   ActionPathStyleInvalidError,
   OpenApiConfigInvalidError,
 } from './errors-http';
+export { ActionStreamInvalidError } from './errors-stream';
 export type {
   ExerciseActorOptions,
   ExerciseOffOptions,
@@ -136,6 +147,7 @@ export {
   actionPathStyle,
   forgetHandedOutActionPaths,
 } from './http-path';
+export { EVENT_STREAM } from './http-stream';
 /**
  * The idempotency seam. `withIdempotency` and `IDEMPOTENCY_HEADER` are both public, so a plain
  * mutating `route` can reserve-and-replay exactly as an action does — `idempotencyKeyFor` is the

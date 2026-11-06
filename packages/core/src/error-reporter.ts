@@ -9,6 +9,7 @@ import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from './
 import { renderThrowable } from './error-render';
 import { failureStack } from './error-stack';
 import { toUltimateError } from './errors';
+import { releaseHeldFailure } from './failure-capture-flush';
 import { logger } from './logger';
 import type { Role } from './roles';
 import { currentSpanContext, type SpanResource, serviceResource } from './telemetry';
@@ -207,6 +208,9 @@ export function errorReport(error: unknown, options: ReportErrorOptions): ErrorR
  * must not turn one failure into two, and the surface that caught this has already logged it.
  */
 export function reportError(error: unknown, options: ReportErrorOptions): void {
+  // First, and whatever `enabled` says: a 5xx `invoke` held its bundle on this value, and this is
+  // where it learns its group (`failure-capture-flush.ts`). Nothing held costs one `WeakMap` read.
+  releaseHeldFailure(error, () => errorReport(error, options));
   if (!enabled) return;
   try {
     reporter.report(errorReport(error, options));

@@ -33,6 +33,18 @@ export type { AxNode, AxTreeNode } from './ax-node';
 export { toAxNode, toAxTreeNodes } from './ax-node';
 export type { BudgetStoreLike } from './budget-store-conformance';
 export { budgetStoreConformance } from './budget-store-conformance';
+// Recorded vendor answers, replayed through `mockFetch` with the network sealed; recorded only by
+// hand (`ULTIMATE_CASSETTE=record`, never under CI), with the written bytes scanned for secrets.
+export type { Cassette, CassetteOptions } from './cassette';
+export { CASSETTE_ENV, cassette } from './cassette';
+export type { RecordRefusal, UnusedEntry } from './cassette-errors';
+export {
+  CassetteMissingError,
+  CassetteRecordRefusedError,
+  CassetteSecretError,
+  CassetteUnusedError,
+} from './cassette-errors';
+export type { CassetteEntry, CassetteFile } from './cassette-format';
 // The browser-backed e2e driver and the raw-CDP browser under it — moved here from
 // `@ultimat3/cli` in 22.0.0. `installE2eDriver` is the ONE entry point an app's test preload calls;
 // `openE2eBrowserIfAvailable()` answers `undefined` on a machine with no Chrome, so a
@@ -391,6 +403,16 @@ export type { VisibleOptions } from './matcher-visible';
 export type { MatcherResult } from './matchers';
 export { matchersInstalled, recordSteps } from './matchers';
 export type { MockHandler, MockRoute } from './mock-route';
+// The plan and scale sweeps (plan 101 / 40-next-query-plans): every statement the pass sent planned
+// with no index but the declared ones, every reached primitive again at 2 and 8 rows a table.
+export type { PlanTableColumns, PlanVerdict, PlanVerdictCode } from './plan-oracle';
+export { judgePlan, planRoot } from './plan-oracle';
+export type { PlanExempt, PlanProof, SentStatement } from './plan-sweep';
+export { QueryPlanUnavailableError, sweepPlans } from './plan-sweep';
+export type { PlanFinding } from './plan-sweep-fix';
+export { planFindings } from './plan-sweep-fix';
+export type { SweepFinding } from './plan-sweep-report';
+export { planSweepFindings, planSweepLines } from './plan-sweep-report';
 // `isolateEntityRegistry` is deliberately NOT here — it is `@ultimat3/testing/registry-isolation`.
 // This barrel is what a `packages/core` test imports for `expect` alone, and a static re-export
 // evaluates the module it names: that one would load `@ultimat3/entity` and its process-global
@@ -405,9 +427,14 @@ export { captureProcessRegistries, restoreProcessRegistries } from './registry-s
 // functions, so a tier-0 test importing this barrel for `expect` still loads no renderer.
 export type { RenderedRoute, RenderedView, RouteModule, RouteRequest } from './render-view';
 export { renderRoute, renderView } from './render-view';
+// What a test `x repro --write` generated calls: a captured request or a dead job, replayed.
+export type { JobFailure, ReproduceOptions, ReproOutcome } from './repro';
+export { reproduce, reproJob } from './repro';
 export type { LoggedRequest } from './request-log';
 export type { DatabaseSnapshot } from './reusable-database';
 export { restoreDatabase, reusableDatabase, snapshotDatabase } from './reusable-database';
+export type { ScaleProof, ScaleShape, StatementTally } from './scale-sweep';
+export { judgeScale, SCALE_SIZES } from './scale-sweep';
 export type { NetworkSnapshot, NetworkState } from './sealed-network';
 // `setNetworkState` is deliberately not here: it is the offline gate's one writer, and a test that
 // called it directly would bypass the `network` fixture's disposal and leave the whole process
@@ -448,6 +475,9 @@ export type { EntitySeedWriterOptions, SeedWriterTarget } from './seed-writer';
 export { entitySeedWriter } from './seed-writer';
 export type { SharedExamples } from './shared-examples';
 export { behavesLike, sharedExamples } from './shared-examples';
+export type { SubjectProofOptions, SubjectProofResult } from './subject-proof';
+export { subjectProof } from './subject-proof';
+export { SubjectEraseIncompleteError } from './subject-proof-error';
 export type {
   DisposableWorkerDatabase,
   SqlRunner,

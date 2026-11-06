@@ -3,7 +3,12 @@
 // whole domain without importing it — and what makes a duplicate name a build error rather
 // than a silent last-one-wins.
 
-import type { IndexMethod } from '@ultimat3/db';
+import type {
+  CounterDescriptionLike,
+  HistoryDescriptionLike,
+  IndexMethod,
+  RetainDescriptionLike,
+} from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { entityDuplicate } from './entity-error';
 import type { InvariantKind } from './invariants';
@@ -155,11 +160,21 @@ export interface EntityDescription {
   readonly retired?: readonly string[] | undefined;
   /** `entity({ shared: '<why>' })`: why a row referencing a tenant's belongs to no tenant. */
   readonly shared?: string | undefined;
+  /** `entity({ scan: '<why>' })`: why the plan sweep may see this table scanned. */
+  readonly scan?: string | undefined;
   /**
    * `entity({ view: { sql } })`: a relation Postgres derives. Absent on a table. `x db gen` emits
    * it (`@ultimat3/db`'s `generate-view.ts`), admin lists it read-only.
    */
   readonly view?: { readonly sql: string; readonly materialized?: true } | undefined;
+  /** `entity({ history: true })`: where its trigger records. Absent otherwise. `x db gen` reads it. */
+  readonly history?: HistoryDescriptionLike;
+  /** `countedIn` keys pointing at it: the counters its children's triggers keep. */
+  readonly counts?: readonly CounterDescriptionLike[];
+  /** `entity({ retain })`: the window and the physical column a purge sweeps by. */
+  readonly retain?: RetainDescriptionLike;
+  /** On a history entity: its parent's name. */
+  readonly historyOf?: string;
 }
 
 export interface RegistryEntry {

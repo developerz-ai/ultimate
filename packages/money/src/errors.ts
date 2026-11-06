@@ -15,6 +15,7 @@ export const MONEY_ERROR_CODES = [
   'X_ALLOCATION_INVALID',
   'X_RATE_MISSING',
   'X_MONEY_SCALE_INVALID',
+  'X_MONEY_INPUT_INVALID',
 ] as const;
 
 export type MoneyErrorCode = (typeof MONEY_ERROR_CODES)[number];
@@ -28,6 +29,7 @@ export const MONEY_ERROR_TITLES: Readonly<Record<MoneyErrorCode, string>> = {
   X_ALLOCATION_INVALID: 'split ratios or part count are unusable',
   X_RATE_MISSING: 'no FX rate for the pair',
   X_MONEY_SCALE_INVALID: 'a Money.scale that is not a usable decimal exponent',
+  X_MONEY_INPUT_INVALID: 'a typed amount could not be read in this locale',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -38,11 +40,17 @@ registerErrorCodes(
 );
 
 export class MoneyError extends UltimateError {
-  constructor(init: { code: MoneyErrorCode; cause: string; fix: string }) {
+  constructor(init: {
+    code: MoneyErrorCode;
+    cause: string;
+    fix: string;
+    meta?: Readonly<Record<string, unknown>>;
+  }) {
     super({
       code: init.code,
       cause: init.cause,
       fix: init.fix,
+      ...(init.meta === undefined ? {} : { meta: init.meta }),
     });
   }
 }

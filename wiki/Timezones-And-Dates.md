@@ -21,13 +21,27 @@ A `Intl.DateTimeFormat` or `toLocaleString` call with no `timeZone` option is a 
 import { currentTimeZone } from '@ultimat3/time';
 ```
 
+`resolveTimeZone` reads, first valid IANA name wins, canonicalized; an invalid one is skipped, never thrown. As of 2026-11:
+
 | Source | Precedence |
 |---|---|
-| `user.timeZone` on the profile | 1 — explicit user setting |
-| Session-detected zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`, sent at sign-in) | 2 |
-| Org / tenant default zone | 3 |
-| `app.config.ts` `time.defaultZone` | 4 |
+| the member's saved zone (`actor.tz`) | 1 — what a person chose |
+| `x_timezone` cookie, written by a zone picker | 2 — chosen |
+| `?tz=Europe/Berlin` | 3 — share links, email previews |
+| `x-timezone` header, sent by a client from `Intl` | 4 — what the browser is installed as |
+| `x_timezone_detected` cookie, written by the zone script under `time.detect` | 5 — a guess, never written over a pick |
+| `configureTime({ defaultZone })` | 6 — `UTC` unless the app says otherwise |
 | Process `TZ` | never |
+
+### Detecting a new visitor's zone
+
+A document navigation sends no `x-timezone`, so a new visitor's server-rendered `app/` pages render in the default zone. `time: { detect: true }` in `app.config.ts` (off by default: it writes a cookie) puts a 153 B inline script on every `app/` document — never on `site/` — that writes `x_timezone_detected` from `Intl.DateTimeFormat().resolvedOptions().timeZone`. The first paint stays the default; every page after it is in the visitor's zone. The script is admitted by its own CSP hash, and it never touches the chosen `x_timezone` cookie.
+
+```ts
+import { defineConfig } from '@ultimat3/core';
+
+export const config = defineConfig({ name: 'my-app', time: { detect: true } });
+```
 
 The zone rides the ALS request context alongside the locale, so `format*` helpers take neither argument. Jobs and scheduled tasks carry the enqueueing actor's zone in the payload — a worker has no request and must not invent one.
 

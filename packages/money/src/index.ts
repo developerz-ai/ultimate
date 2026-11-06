@@ -87,6 +87,7 @@ export {
   toDecimalString,
   zero,
 } from './money';
+export { type ParseAmountOptions, parseAmount } from './parse-input';
 export { rescale } from './rescale';
 export {
   DEFAULT_ROUNDING,

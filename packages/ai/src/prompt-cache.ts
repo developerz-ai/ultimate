@@ -41,7 +41,8 @@
 //
 // Two limits of the rows below, stated rather than hidden:
 //   - the `anthropic` row matches ANY host an `anthropicProvider({ baseUrl })` is pointed at — a
-//     proxy speaking that wire is assumed to speak its `cache_control` too;
+//     proxy speaking that wire is assumed to speak its `cache_control` too, unless the provider
+//     declares a `marks: 'none'` row for it;
 //   - the `parts` row marks the tail only, so the next turn finds this turn's entry through the
 //     20-position lookback alone. A turn that appends more blocks than that — more than about 9
 //     tool calls in ONE turn, each a `tool_use` and a `tool_result` — misses it and is billed as a
@@ -49,6 +50,7 @@
 //
 // The table is DATA: a new host or model family is a row. Unknown endpoints get NOTHING — a field
 // a self-hosted server has never heard of is a 400 on some of them, and a mark is never worth that.
+// What the app knows about its own endpoint is a row too, on the provider (`ProviderCacheRow`).
 
 /**
  * A system prompt in two parts. `stable` is byte-identical across runs — rules, a knowledge-base
@@ -142,17 +144,37 @@ export const PROMPT_CACHE_RULES: readonly PromptCacheRule[] = [
   { wire: 'openai', host: 'api.openai.com', model: '', marks: 'none', session: 'prompt_cache_key' },
 ];
 
+/**
+ * A row an app declares on its provider (`anthropicProvider({ promptCache: { rules } })`): what
+ * this package cannot know about an endpoint the app runs — a company gateway fronting a marking
+ * family, a proxy that 400s on `cache_control`. The provider IS the wire and the host, so a row
+ * names neither. Screened at construction against what the wire speaks (./prompt-cache-rows).
+ */
+export type ProviderCacheRow = Pick<PromptCacheRule, 'model' | 'marks' | 'session'>;
+
+/** The provider option: rows read before `PROMPT_CACHE_RULES`, first match wins. */
+export interface ProviderPromptCache {
+  readonly rules: readonly ProviderCacheRow[];
+}
+
 const NO_RULE: Pick<PromptCacheRule, 'marks' | 'session'> = { marks: 'none', session: 'none' };
 
 /** OpenAI's own endpoint, which is what an `openAiProvider()` with no `baseUrl` talks to. */
 const DEFAULT_OPENAI_HOST = 'api.openai.com';
 
-/** The rule for one request. Total: a base URL that does not parse matches no host. */
+/**
+ * The rule for one request. Total: a base URL that does not parse matches no host. The provider's
+ * own `rows` come first — the app's statement about its endpoint outranks this package's guess —
+ * then the table, then nothing.
+ */
 export function promptCacheRule(
   wire: CacheWire,
   baseUrl: string | undefined,
   model: string,
+  rows: readonly ProviderCacheRow[] = [],
 ): Pick<PromptCacheRule, 'marks' | 'session'> {
+  const own = rows.find((row) => model.startsWith(row.model));
+  if (own !== undefined) return { marks: own.marks, session: own.session };
   const host = baseUrl === undefined ? DEFAULT_OPENAI_HOST : hostOf(baseUrl);
   const found = PROMPT_CACHE_RULES.find(
     (rule) =>

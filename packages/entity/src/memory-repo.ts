@@ -21,6 +21,7 @@ import { lockKeyInput } from './lock-key';
 import { memoryAggregates } from './memory-aggregates';
 import { undoingBatch } from './memory-batch';
 import { memoryJournal } from './memory-journal';
+import { memoryLifecycle } from './memory-lifecycle';
 import { memoryLocks } from './memory-lock';
 import { compareByKind, matchesPredicate } from './memory-match';
 import { observedMemoryRepo } from './memory-observed';
@@ -85,7 +86,21 @@ export const memoryRepo = <Row>(
       }
       return undefined;
     },
+    raw: {
+      store: (row, undo) => {
+        const key = storeKey(row);
+        rows.set(key, row as Row);
+        undo(() => rows.delete(key));
+      },
+      replace: (before, after, undo) => {
+        const key = storeKey(before);
+        rows.set(key, after as Row);
+        undo(() => rows.set(key, before as Row));
+      },
+    },
   });
+  /** The trigger half: history and counters, after every stored change (`memory-lifecycle.ts`). */
+  const changed = memoryLifecycle(entity as EntityCore, tables);
   const judgeReferences = sameTenantJudge(entity, tables);
   const locks = memoryLocks();
   /** One guard for every write, as `postgresRepo`'s `writing()`: async, so a refusal rejects. */
@@ -165,6 +180,7 @@ export const memoryRepo = <Row>(
     if (clash !== undefined) throw uniqueViolation(entity, clash);
     const moved = from !== undefined && from !== key ? rows.get(from) : undefined;
     const previous = rows.get(key);
+    const prior = from === undefined ? previous : (moved ?? previous);
     (options?.tx ?? memoryJournal())?.onRollback(() => {
       if (previous === undefined) rows.delete(key);
       else rows.set(key, previous);
@@ -172,6 +188,7 @@ export const memoryRepo = <Row>(
     });
     if (moved !== undefined && from !== undefined) rows.delete(from);
     rows.set(key, row);
+    changed(prior, row, options?.tx ?? memoryJournal());
     return row;
   };
 
@@ -362,6 +379,7 @@ export const memoryRepo = <Row>(
         const key = storeKey(current);
         (options?.tx ?? memoryJournal())?.onRollback(() => rows.set(key, current));
         rows.delete(key);
+        changed(current, undefined, options?.tx ?? memoryJournal());
       });
     }),
 
@@ -390,6 +408,7 @@ export const memoryRepo = <Row>(
           const key = storeKey(row);
           tx.onRollback(() => rows.set(key, row));
           rows.delete(key);
+          changed(row, undefined, tx);
         }
       });
       return doomed.length;

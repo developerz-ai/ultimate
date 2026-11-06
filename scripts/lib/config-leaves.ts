@@ -26,6 +26,8 @@ export const CONFIG_FILES = [
   'packages/core/src/config-mail.ts',
   'packages/core/src/config-assets.ts',
   'packages/core/src/config-client-errors.ts',
+  'packages/core/src/config-failure-capture.ts',
+  'packages/core/src/config-time.ts',
 ] as const;
 export const CONFIG_FILE = CONFIG_FILES[0];
 export const ROOT_INTERFACE = 'AppConfig';

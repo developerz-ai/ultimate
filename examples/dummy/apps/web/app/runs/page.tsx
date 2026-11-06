@@ -143,7 +143,11 @@ export const config = defineRoute({
   // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
   // `app/` only), and the realtime client +155 B, a live subscribe's `traceparent` so its
   // snapshot joins the page's trace — raised 192.5kb → 194kb (plan 101, 41).
-  budget: { js: '194kb' },
+  // measured: 201102 B (2026-11-06; `x verify --only budgets`, against 198,101) — why: the
+  // run console's `rpc` +2,068 B, every typed-client method carrying `.stream(input)` (core's
+  // `clientStream`, plan 101 slice 41: a stream-declaring action read as it is written); the other
+  // +933 B is the page boot, 82,123 B here, not this change — raised 194kb → 196.5kb.
+  budget: { js: '196.5kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

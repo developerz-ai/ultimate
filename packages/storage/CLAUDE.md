@@ -40,11 +40,13 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 |---|---|
 | `driver.ts` | `StorageDriver` contract (11 methods; `registerAs`/`verifySigned`/`retentionOf` optional), `assertPutOptions`, + bounded `toBytes`/`sha256Base64`/`etagOf` |
 | `byte-pump.ts` / `put-stream.ts` | the one counting read, `put()`'s and `putStream`'s; the `putStream` screen and limit |
-| `multipart.ts` / `driver-s3-multipart.ts` / `driver-s3-put-stream.ts` | part arithmetic; the four signed calls; the pump |
+| `multipart.ts` / `driver-s3-multipart*.ts` / `driver-s3-put-stream.ts` | part arithmetic + `MultipartCapability`; the six signed calls + s3's capability; the pump |
+| `grant-multipart.ts` / `upload-client-multipart.ts` / `accept-part.ts` / `multipart-staged.ts` | uploads in parts: server calls, browser, local part PUT, local/memory sessions |
+| `expire.ts` | `expireObjects`, `abortStaleUploads`, `objectPurgeTarget` |
 | `driver-local-stream.ts` / `driver-s3-sse.ts` / `errors-stream.ts` | the staged local stream; the s3 SSE refusal; the stream codes |
 | `driver-s3-settle.ts` | a lost Complete/PUT answer, settled by a stat (size + S3's etag of the bytes sent: MD5, or MD5-of-part-MD5s `-N`), then for multipart by an abort (204 = was open, nothing stored; 404 = completed, stat again). Neither settles: `X_STORAGE_WRITE_OUTCOME_UNKNOWN`, never `X_STORAGE_PUT_FAILED`. Plain `put()` settles the same way (`settleLostPut`); `isAnswered` (coded, or Bun's `S3Error`) is what counts as the provider answering |
 | `range.ts` | `get(key, { range })`: screen + `servedRange` (`errors-range.ts`); s3's one-GET read is `driver-s3-range.ts` |
-| `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
+| `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars; listing is `driver-local-list.ts` (`Bun.Glob`, cursor, `listFailed`), removal `driver-local-remove.ts` (a refused unlink vs one already gone) |
 | `driver-local-write.ts` | the local WRITE: staged under `.meta/.tmp/`, renamed marker → sidecar → bytes, `X_STORAGE_KEY_CONFLICT` / `X_STORAGE_PUT_FAILED`, the per-key queue |
 | `driver-local-read.ts` | `headObject`: sidecar + pending marker → trusted, re-checked, or untyped |
 | `driver-local-sidecar.ts` | the sidecar shape and its one parser |
@@ -71,6 +73,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `attachment.ts` | `pending/` → row promotion, the `quarantine/` segment, `sweepOrphans` and `deleteVariants` |
 | `errors-sniff.ts` | the two `X_STORAGE_TYPE_REJECTED` refusals only a bounded sniff reaches: too much leading whitespace, XML past the window |
 | `upload-client.ts` | the browser half: grant → PUT with progress → key. No `Bun.*`, no `node:` |
+| `subject-target.ts` | `storageSubjectTarget(disk, keysOf)` — structural `SubjectTarget`: the app names the keys, export lists, erase deletes |
 
 ```bash
 bun test                      # from packages/storage
@@ -160,7 +163,7 @@ Gotchas:
 - **`serverSideEncryption` is declared and refused by BOTH drivers.** Bun exposes `acl`,
   `storageClass` and `type` and nothing for `x-amz-server-side-encryption*`, and a POSIX file is
   not encrypted at all. Refusing on the dev disk too is deliberate: a `put()` that works in `x dev`
-  and throws in production is two rules. Lifecycle, storage classes and replication stay out
+  and throws in production is two rules. Bucket lifecycle (the app sweeps with `expire.ts`), storage classes and replication stay out
   entirely — bucket-side, terraform's, axiom 7.
 - **Quarantine is `pending/quarantine/`, INSIDE the pending prefix.** So `sweepOrphans` collects a
   never-scanned upload with no second prefix to walk, and `isPendingKey` stays true for it.

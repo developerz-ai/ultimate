@@ -275,10 +275,19 @@ shipped driver refuses it (`X_NOT_IMPLEMENTED`) with the out-of-band command in 
 `x-amz-server-side-encryption*`; a local disk writes plain files. A typed refusal an engineer
 meets at the call site beats a silent absence discovered during a security review.
 
-Encryption at rest is therefore a **bucket default**, and so are lifecycle rules, storage classes
-and cross-region replication: all four are bucket-side configuration and belong to terraform, not
-to the framework (axiom 7 — zero platform primitives). Ultimate half-building any of them would
-be a second place to look for the same setting.
+Encryption at rest is therefore a **bucket default**, and so are bucket lifecycle rules, storage
+classes and cross-region replication: all four are bucket-side configuration and belong to
+terraform, not to the framework (axiom 7 — zero platform primitives). Ultimate half-building any of
+them would be a second place to look for the same setting.
+
+What the app sweeps itself, on every disk, is `expire.ts` (`As of 2026-11-06`): the window is the
+app's and required at the call.
+
+| Call | Answers |
+|---|---|
+| `expireObjects({ disk, prefix, olderThanMs, keep?, clock? })` | `{ deleted, failed, spared }`. Undated is spared, a locked object is `failed`, never forced; an empty `prefix` is refused |
+| `abortStaleUploads({ disk, olderThanMs, prefix?, match? })` | `{ aborted, failed, spared }` over the disk's open upload sessions |
+| `objectPurgeTarget({ name, disk, prefix, match?, olderThanMs })` | `@ultimat3/jobs`' `PurgeTarget`, structurally: both sweeps as one target of the app's `purge()`. `match(key)` narrows both to one kind of file under every tenant (`org/<id>/imports/`) |
 
 ## Keys
 
@@ -413,6 +422,23 @@ no bytes, and the signed `maxBytes` caps the body read. Then it calls `acceptSig
 policy built from the grant's own signed type and ceiling. The routes serve `definedStorage()`,
 the process's one registry, which is the app's `defineStorage` when it declared one (#524).
 
+## Uploads in parts — `grantMultipart`, `signPart`, `listParts`, `completeUpload`, `abortUpload`
+
+`As of 2026-11-06`. Resumable, and past S3's 5 GiB single PUT. Same policy gate as `grantUpload`
+(`decideGrant`, one function), every call held to the actor's org. `StorageDriver.multipart` is
+optional (`MultipartCapability`, `multipart.ts`); every shipped disk has one: s3 over its signed
+wire (`driver-s3-multipart*.ts`), local and memory over a part store (`multipart-staged.ts`), whose
+part URLs carry `x-upload`/`x-part` inside the HMAC and land through `acceptSignedPart`. In the
+browser, `uploadFile({ file, grant, multipart })` switches at `partThresholdBytes` (64 MiB): four
+parts in flight, each retried with core's `retry`, `resume: grant` sends only what `listParts`
+lacks. `completeUpload` reads the etags on the server, so no bucket CORS exposes `ETag`.
+
+| Code | When |
+|---|---|
+| `X_STORAGE_MULTIPART_UNSUPPORTED` | the driver has no `multipart` |
+| `X_STORAGE_UPLOAD_UNKNOWN` | the session was never opened, or is completed or aborted |
+| `X_STORAGE_PARTS_INVALID` | a named part is missing, out of order, has another etag, or is under 5 MiB and not the last |
+
 ## Attachments and orphans
 
 An upload happens **before** the row it belongs to exists, so it lands at
@@ -456,6 +482,14 @@ await promoteAttachment({ disk, key: released, orgId, target, policy });
 
 Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan, so
 `sweepOrphans` collects it with no second prefix to walk.
+
+## A person's objects, for a subject export or erase
+
+`storageSubjectTarget(() => disk(), keysOf, { name? })` is a `defineSubject({ targets })` entry
+(`@ultimat3/jobs`): `keysOf(subject)` answers the person's keys (a list, or `disk().list({ prefix })`
+over a prefix the app owns). The export lists each object that exists (`STORAGE_SUBJECT_COLUMNS`);
+the erase deletes them in bounded batches. There is no listing by owner: a key the app does not
+name is not found.
 
 ## Errors
 

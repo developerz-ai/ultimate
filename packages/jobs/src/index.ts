@@ -219,6 +219,8 @@ export {
   exportPartKey,
   memoryExportSink,
 } from './export-sink';
+export type { CallerFailure } from './failure-row';
+export { callerFailure } from './failure-row';
 export { IDLE_POLL_CEILING_MS } from './idle-backoff';
 export type { ImportDefinition, ImportReport } from './import';
 export {
@@ -360,6 +362,13 @@ export type {
 } from './purge';
 export { DEFAULT_PURGE_CRON, purge } from './purge';
 export type { PurgeBatching } from './purge-batches';
+export type { PurgeEntities } from './purge-entities';
+export {
+  resetPurgeCoverage,
+  retainedEntities,
+  retainTarget,
+  unsweptEntities,
+} from './purge-entities';
 export type { PgListener, QueueWake, QueueWakeOptions } from './queue-wake';
 export { startQueueWake } from './queue-wake';
 export type { RefreshViewDefinition, RefreshViewReport } from './refresh-view';
@@ -438,6 +447,39 @@ export {
 } from './steps';
 export { memoryStepStore } from './steps-memory';
 export type { StepOutput } from './steps-output';
+export type {
+  RetainedTarget,
+  Subject,
+  SubjectInit,
+  SubjectRef,
+  SubjectTarget,
+  SubjectTargetEntry,
+  SubjectTargetPage,
+  SubjectTreatment,
+} from './subject';
+export { DEFAULT_SUBJECT_BATCH, defineSubject, registeredSubjects, resetSubjects } from './subject';
+export type { SubjectEraseReport, SubjectTally } from './subject-erase-pass';
+export {
+  SubjectCycleError,
+  SubjectTableUndeclaredError,
+  SubjectTreatmentInvalidError,
+} from './subject-errors';
+export type { SubjectExportReport, SubjectIndexEntry } from './subject-export-pass';
+export type { SubjectExportDefinition, SubjectJobDefinition } from './subject-jobs';
+export {
+  plannedSubject,
+  subjectErase,
+  subjectEraseTables,
+  subjectExport,
+} from './subject-jobs';
+export type {
+  SubjectPlan,
+  SubjectPlanInput,
+  SubjectStep,
+  SubjectUnlink,
+  SubjectVia,
+} from './subject-plan';
+export { planSubject } from './subject-plan';
 export type {
   CatchUpPolicy,
   TaskDefinition,

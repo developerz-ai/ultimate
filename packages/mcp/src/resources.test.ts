@@ -2,8 +2,9 @@
 // naming rule (name + version suffix comes from the filename, never restated).
 
 import { describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, userActor } from '@ultimat3/core';
 import { promptListEntry } from './prompts-get';
+import type { McpCaller } from './registry';
 import type { FrameworkResourceProviders, McpResource } from './resources';
 import {
   frameworkResources,
@@ -13,6 +14,8 @@ import {
   toPrompts,
   URI_ARG_SCHEMA,
 } from './resources';
+
+const CALLER: McpCaller = { actor: userActor({ id: 'u1' }), scopes: new Set<string>() };
 
 describe('promptFromPath', () => {
   test('the name is the filename, version suffix included, extension stripped', () => {
@@ -107,7 +110,7 @@ describe('frameworkResources', () => {
     });
     expect(calls).toBe(0);
     const manifest = resources.find((r) => r.uri === RESOURCE_URIS.manifest);
-    expect(await manifest?.read()).toBe('body');
+    expect(await manifest?.read(CALLER)).toBe('body');
     expect(calls).toBe(1);
   });
 });
@@ -145,7 +148,7 @@ describe('ResourceRegistry', () => {
       mimeType: 'application/json',
       read: async () => '{"ok":true}',
     });
-    expect(await registry.read('ultimate://async')).toEqual({
+    expect(await registry.read('ultimate://async', CALLER)).toEqual({
       uri: 'ultimate://async',
       mimeType: 'application/json',
       text: '{"ok":true}',
@@ -154,7 +157,7 @@ describe('ResourceRegistry', () => {
 
   test('read of an unknown uri returns undefined, never throws', async () => {
     const registry = new ResourceRegistry();
-    expect(await registry.read('ultimate://missing')).toBeUndefined();
+    expect(await registry.read('ultimate://missing', CALLER)).toBeUndefined();
   });
 
   test('registering the same uri twice is refused, as it is for a tool name', () => {

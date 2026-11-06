@@ -37,8 +37,10 @@ import {
 } from './driver';
 import type { LocalDriverOptions } from './driver-local';
 import { keyInTheWay } from './driver-memory-conflict';
+import { memoryPartStore } from './driver-memory-multipart';
 import { checksumMismatch, getTooLarge, keyConflict, objectNotFound, putFailed } from './errors';
 import { objectChanged } from './errors-promote';
+import { withStagedMultipart } from './multipart-staged';
 import {
   assertObjectLockOptions,
   isLocked,
@@ -163,176 +165,185 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
     return hit;
   };
 
-  return {
-    name: DRIVER_NAME,
+  return withStagedMultipart(
+    {
+      name: DRIVER_NAME,
 
-    get signedUrlBase(): string {
-      return baseUrl;
-    },
+      get signedUrlBase(): string {
+        return baseUrl;
+      },
 
-    registerAs(diskName: string): void {
-      registered = diskName;
-      if (options.baseUrl === undefined) baseUrl = signedUrlBaseFor(diskName);
-    },
+      registerAs(diskName: string): void {
+        registered = diskName;
+        if (options.baseUrl === undefined) baseUrl = signedUrlBaseFor(diskName);
+      },
 
-    objects(): ReadonlyMap<string, Uint8Array> {
-      return new Map([...stored].map(([key, value]) => [key, value.bytes.slice()]));
-    },
+      objects(): ReadonlyMap<string, Uint8Array> {
+        return new Map([...stored].map(([key, value]) => [key, value.bytes.slice()]));
+      },
 
-    async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
-      const safe = assertSafeKey(key);
-      // The same refusal both shipped disks make: a `put()` that succeeds in a test and throws in
-      // production is a gap an app meets on the worst day.
-      if (putOptions?.serverSideEncryption !== undefined) {
-        throw new NotImplementedError({
-          cause:
-            'server-side encryption on the memory driver (it holds bytes in a Map) is not implemented by this driver — drop serverSideEncryption from put() and encrypt the disk itself: an s3Driver over a bucket with a default KMS rule',
-          fix: 'put(key, body)',
+      async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
+        const safe = assertSafeKey(key);
+        // The same refusal both shipped disks make: a `put()` that succeeds in a test and throws in
+        // production is a gap an app meets on the worst day.
+        if (putOptions?.serverSideEncryption !== undefined) {
+          throw new NotImplementedError({
+            cause:
+              'server-side encryption on the memory driver (it holds bytes in a Map) is not implemented by this driver — drop serverSideEncryption from put() and encrypt the disk itself: an s3Driver over a bucket with a default KMS rule',
+            fix: 'put(key, body)',
+          });
+        }
+        assertPutOptions(DRIVER_NAME, putOptions);
+        assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
+        const bytes = await toBytes(body, {
+          driver: DRIVER_NAME,
+          key: safe,
+          maxBytes: maxPutBytes,
         });
-      }
-      assertPutOptions(DRIVER_NAME, putOptions);
-      assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
-      const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });
-      const claimed = putOptions?.checksum;
-      if (claimed !== undefined) {
-        const actual = sha256Base64(bytes);
-        if (claimed !== actual) throw checksumMismatch(safe, claimed, actual);
-      }
-      return commit(safe, bytes, putOptions);
-    },
+        const claimed = putOptions?.checksum;
+        if (claimed !== undefined) {
+          const actual = sha256Base64(bytes);
+          if (claimed !== actual) throw checksumMismatch(safe, claimed, actual);
+        }
+        return commit(safe, bytes, putOptions);
+      },
 
-    /** A `Map` holds bytes, so "unbuffered" has no meaning here. The contract is the rest of it. */
-    async putStream(
-      key: string,
-      body: ReadableStream<Uint8Array>,
-      streamOptions: PutStreamOptions,
-    ): Promise<StorageObject> {
-      const safe = assertSafeKey(key);
-      const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
-      refuseOverwrite(safe, 'overwrite');
-      const chunks: Uint8Array[] = [];
-      const limit = streamLimit(DRIVER_NAME, safe, maxBytes);
-      await pumpBounded(body, limit, (chunk) => {
-        chunks.push(chunk);
-      }).catch((error: unknown) => {
-        if (isUltimateError(error)) throw error;
-        throw putFailed(
-          registered,
-          safe,
-          error,
-          'await disk.putStream(key, stream, { maxBytes })   # with a fresh stream',
-        );
-      });
-      return commit(safe, new Uint8Array(Bun.concatArrayBuffers(chunks)), streamOptions);
-    },
+      /** A `Map` holds bytes, so "unbuffered" has no meaning here. The contract is the rest of it. */
+      async putStream(
+        key: string,
+        body: ReadableStream<Uint8Array>,
+        streamOptions: PutStreamOptions,
+      ): Promise<StorageObject> {
+        const safe = assertSafeKey(key);
+        const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
+        refuseOverwrite(safe, 'overwrite');
+        const chunks: Uint8Array[] = [];
+        const limit = streamLimit(DRIVER_NAME, safe, maxBytes);
+        await pumpBounded(body, limit, (chunk) => {
+          chunks.push(chunk);
+        }).catch((error: unknown) => {
+          if (isUltimateError(error)) throw error;
+          throw putFailed(
+            registered,
+            safe,
+            error,
+            'await disk.putStream(key, stream, { maxBytes })   # with a fresh stream',
+          );
+        });
+        return commit(safe, new Uint8Array(Bun.concatArrayBuffers(chunks)), streamOptions);
+      },
 
-    async stat(key: string): Promise<StorageObject | undefined> {
-      const hit = stored.get(assertSafeKey(key));
-      return hit && snapshot(hit.object);
-    },
+      async stat(key: string): Promise<StorageObject | undefined> {
+        const hit = stored.get(assertSafeKey(key));
+        return hit && snapshot(hit.object);
+      },
 
-    async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
-      const safe = assertSafeKey(key);
-      assertGetOptions(DRIVER_NAME, getOptions);
-      const hit = found(safe);
-      const range = getOptions?.range;
-      if (range !== undefined) {
-        const served = servedRange(DRIVER_NAME, safe, range, hit.bytes.byteLength, maxGetBytes);
-        const bytes = hit.bytes.slice(served[0], served[1] + 1);
-        return { object: snapshot(hit.object), bytes, range: served };
-      }
-      // The local disk's refusal, so a suite on this disk meets the ceiling production has.
-      if (hit.bytes.byteLength > maxGetBytes) {
-        throw getTooLarge(DRIVER_NAME, safe, hit.bytes.byteLength, maxGetBytes);
-      }
-      return { object: snapshot(hit.object), bytes: hit.bytes.slice() };
-    },
+      async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
+        const safe = assertSafeKey(key);
+        assertGetOptions(DRIVER_NAME, getOptions);
+        const hit = found(safe);
+        const range = getOptions?.range;
+        if (range !== undefined) {
+          const served = servedRange(DRIVER_NAME, safe, range, hit.bytes.byteLength, maxGetBytes);
+          const bytes = hit.bytes.slice(served[0], served[1] + 1);
+          return { object: snapshot(hit.object), bytes, range: served };
+        }
+        // The local disk's refusal, so a suite on this disk meets the ceiling production has.
+        if (hit.bytes.byteLength > maxGetBytes) {
+          throw getTooLarge(DRIVER_NAME, safe, hit.bytes.byteLength, maxGetBytes);
+        }
+        return { object: snapshot(hit.object), bytes: hit.bytes.slice() };
+      },
 
-    async stream(key: string): Promise<ReadableStream<Uint8Array>> {
-      const hit = found(assertSafeKey(key));
-      return new Blob([hit.bytes.slice()]).stream();
-    },
+      async stream(key: string): Promise<ReadableStream<Uint8Array>> {
+        const hit = found(assertSafeKey(key));
+        return new Blob([hit.bytes.slice()]).stream();
+      },
 
-    async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
-      const safe = assertSafeKey(key);
-      assertStreamRange(DRIVER_NAME, range);
-      const hit = found(safe);
-      const [first, last] = streamedRange(DRIVER_NAME, safe, range, hit.bytes.byteLength);
-      return new Blob([hit.bytes.slice(first, last + 1)]).stream();
-    },
+      async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
+        const safe = assertSafeKey(key);
+        assertStreamRange(DRIVER_NAME, range);
+        const hit = found(safe);
+        const [first, last] = streamedRange(DRIVER_NAME, safe, range, hit.bytes.byteLength);
+        return new Blob([hit.bytes.slice(first, last + 1)]).stream();
+      },
 
-    async copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject> {
-      // Both keys before either lookup, as the other two disks do: an unsafe destination is the
-      // refusal whether or not the source exists.
-      const [from_, destination] = [assertSafeKey(from), assertSafeKey(to)];
-      const source = found(from_);
-      if (options?.ifMatch !== undefined && source.object.etag !== options.ifMatch) {
-        throw objectChanged(from_, options.ifMatch, source.object.etag);
-      }
-      refuseConflict(destination);
-      refuseOverwrite(destination, 'copy onto');
-      const object: StorageObject = {
-        ...source.object,
-        key: destination,
-        lastModified: clock.now(),
-      };
-      stored.set(destination, { bytes: source.bytes.slice(), object: snapshot(object) });
-      return snapshot(object);
-    },
+      async copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject> {
+        // Both keys before either lookup, as the other two disks do: an unsafe destination is the
+        // refusal whether or not the source exists.
+        const [from_, destination] = [assertSafeKey(from), assertSafeKey(to)];
+        const source = found(from_);
+        if (options?.ifMatch !== undefined && source.object.etag !== options.ifMatch) {
+          throw objectChanged(from_, options.ifMatch, source.object.etag);
+        }
+        refuseConflict(destination);
+        refuseOverwrite(destination, 'copy onto');
+        const object: StorageObject = {
+          ...source.object,
+          key: destination,
+          lastModified: clock.now(),
+        };
+        stored.set(destination, { bytes: source.bytes.slice(), object: snapshot(object) });
+        return snapshot(object);
+      },
 
-    async delete(key: string): Promise<void> {
-      const safe = assertSafeKey(key);
-      const lock = lockAt(safe);
-      if (lock !== undefined) {
-        throw new ObjectLockedError({ disk: registered, key: safe, action: 'delete', lock });
-      }
-      stored.delete(safe);
-    },
+      async delete(key: string): Promise<void> {
+        const safe = assertSafeKey(key);
+        const lock = lockAt(safe);
+        if (lock !== undefined) {
+          throw new ObjectLockedError({ disk: registered, key: safe, action: 'delete', lock });
+        }
+        stored.delete(safe);
+      },
 
-    async retentionOf(key: string): Promise<ObjectLock> {
-      const lock = found(assertSafeKey(key)).lock;
-      return lock === undefined ? { legalHold: false } : structuredClone(lock);
-    },
+      async retentionOf(key: string): Promise<ObjectLock> {
+        const lock = found(assertSafeKey(key)).lock;
+        return lock === undefined ? { legalHold: false } : structuredClone(lock);
+      },
 
-    async exists(key: string): Promise<boolean> {
-      return stored.has(assertSafeKey(key));
-    },
+      async exists(key: string): Promise<boolean> {
+        return stored.has(assertSafeKey(key));
+      },
 
-    async list(listOptions?: ListOptions): Promise<Page<StorageListEntry>> {
-      const prefix = listOptions?.prefix ?? '';
-      assertListOptions(listOptions);
-      const limit = resolveListLimit(listOptions?.limit);
-      const cursor = listOptions?.cursor ?? undefined;
-      // Code-unit order and "the cursor is the last key of the page before" — the local disk's own.
-      const keys = [...stored.keys()]
-        .filter((key) => key.startsWith(prefix) && (cursor === undefined || key > cursor))
-        .sort();
-      const page = keys.slice(0, limit);
-      const objects = page.flatMap((key) => {
-        const hit = stored.get(key);
-        return hit === undefined ? [] : [snapshot(hit.object)];
-      });
-      return pageOf(objects, keys.length > page.length ? (page.at(-1) ?? null) : null);
-    },
+      async list(listOptions?: ListOptions): Promise<Page<StorageListEntry>> {
+        const prefix = listOptions?.prefix ?? '';
+        assertListOptions(listOptions);
+        const limit = resolveListLimit(listOptions?.limit);
+        const cursor = listOptions?.cursor ?? undefined;
+        // Code-unit order and "the cursor is the last key of the page before" — the local disk's own.
+        const keys = [...stored.keys()]
+          .filter((key) => key.startsWith(prefix) && (cursor === undefined || key > cursor))
+          .sort();
+        const page = keys.slice(0, limit);
+        const objects = page.flatMap((key) => {
+          const hit = stored.get(key);
+          return hit === undefined ? [] : [snapshot(hit.object)];
+        });
+        return pageOf(objects, keys.length > page.length ? (page.at(-1) ?? null) : null);
+      },
 
-    async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
-      return buildSignedUrl({
-        secret,
-        key: assertSafeKey(key),
-        method: urlOptions?.method,
-        expiresInMs: urlOptions?.expiresInMs,
-        maxBytes: signedByteBound(DRIVER_NAME, urlOptions),
-        contentType: urlOptions?.contentType,
-        baseUrl,
-        clock,
-      });
-    },
+      async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
+        return buildSignedUrl({
+          secret,
+          key: assertSafeKey(key),
+          method: urlOptions?.method,
+          expiresInMs: urlOptions?.expiresInMs,
+          maxBytes: signedByteBound(DRIVER_NAME, urlOptions),
+          contentType: urlOptions?.contentType,
+          part: urlOptions?.part,
+          baseUrl,
+          clock,
+        });
+      },
 
-    async verifySigned(input: {
-      readonly url: string;
-      readonly clock?: Clock | undefined;
-    }): Promise<SignedUrlVerification> {
-      return verifySignedUrl({ url: input.url, secret, baseUrl, clock: input.clock ?? clock });
+      async verifySigned(input: {
+        readonly url: string;
+        readonly clock?: Clock | undefined;
+      }): Promise<SignedUrlVerification> {
+        return verifySignedUrl({ url: input.url, secret, baseUrl, clock: input.clock ?? clock });
+      },
     },
-  };
+    memoryPartStore(),
+    clock,
+  );
 }

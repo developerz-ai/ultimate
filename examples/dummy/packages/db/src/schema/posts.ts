@@ -1,6 +1,8 @@
 /**
  * The thing the app is about. `likeCount` is denormalised so the feed's live query stays
- * bounded and deterministic; the `likePost` mutator owns keeping it true.
+ * bounded and deterministic; the `likePost` mutator owns keeping it true — a write the live feed
+ * sees, where a `countedIn` trigger's write reaches no in-process row observer. Every change to a
+ * post is recorded into `posts_history` (`history`), kept for a year.
  */
 
 import { EXCERPT_MAX, POST_STATUSES, SLUG_MAX, SLUG_PATTERN, TITLE_MAX } from '@postly/domain';
@@ -56,6 +58,7 @@ export const posts = entity('posts', {
    * a member's feed is theirs to see, and every other record is re-read on the next page.
    */
   persist: true,
+  history: { retain: { after: '365d' } },
   invariants: (c) => [
     /**
      * The PATTERN, not the predicate — `matches(SLUG_PATTERN)` renders `slug ~ '…'` into a real
@@ -107,6 +110,16 @@ export const posts = entity('posts', {
     /** The feed's exact access path: tenant, then reverse chronological, bounded. */
     { on: ['orgId', 'publishedAt'], order: 'desc', where: (c) => c.status.eq('published') },
     { on: ['authorId'] },
+    /**
+     * An org's posts, newest first (`orgPosts`, `liveFeed`): the plan sweep found the limited read
+     * sorting every post of the org. `id` breaks the tie, so the order is the index's own.
+     */
+    { on: ['orgId', 'createdAt', 'id'] },
+    /**
+     * The public blog across every org (`publicPosts`, `publicPostSlugs`): `status` is a bound
+     * parameter, so the partial index above — its predicate a literal — serves no generic plan.
+     */
+    { on: ['status', 'publishedAt', 'id'] },
   ],
 });
 

@@ -9,6 +9,7 @@ import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { SITEMAP_MAX_URLS } from '@ultimat3/seo';
 import { appRoutes } from './runtime-render';
 import { seoRoutes } from './seo-routes';
+import { NO_SITE_SETTINGS } from './site-config';
 import { siteSeo } from './site-seo';
 
 const BUILD_ID = 'seo-under-test';
@@ -145,6 +146,36 @@ describe('seoRoutes, served by the web role', () => {
     const body = await (await server.fetch(new Request('http://x/robots.txt'))).text();
     expect(body).toContain('Disallow: /');
     expect(body).not.toContain('Sitemap:');
+  });
+
+  test('GET /llms.txt serves the bytes the static export writes: indexable site pages only', async () => {
+    site();
+    const server = serve(PRODUCTION);
+    const response = await server.fetch(new Request('http://10.0.0.7:3000/llms.txt'));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/markdown');
+    const served = await response.text();
+    const exported = await siteSeo({
+      baseUrl: 'https://www.example.com',
+      environment: 'production',
+    });
+    expect(served).toBe(exported.llms);
+    expect(served).toContain('- [Page](https://www.example.com/pricing): a page');
+    // `noindex`, behind a policy, and `app/`: none is listed.
+    for (const absent of ['/thanks', '/members', '/dashboard'])
+      expect(served).not.toContain(absent);
+    const staging = serve({ ULTIMATE_ENV: 'staging', APP_URL: 'https://staging.example.com' });
+    expect(await (await staging.fetch(new Request('http://x/llms.txt'))).text()).toBe('');
+  });
+
+  test('seo.llms: false answers an empty document in production too', async () => {
+    site();
+    const off = httpServer({
+      routes: [...seoRoutes({ env: PRODUCTION, site: { ...NO_SITE_SETTINGS, llms: false } })],
+      role: 'web',
+      config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
+    });
+    expect(await (await off.fetch(new Request('http://x/llms.txt'))).text()).toBe('');
   });
 
   test('with no APP_URL the static build`s SITE_ORIGIN is the origin, then the request`s', async () => {

@@ -48,15 +48,20 @@ import * as upgradePlan from '../app/orgs/actions/upgrade-plan';
 import * as onboardOrg from '../app/orgs/jobs/onboard-org';
 import * as sendInvite from '../app/orgs/jobs/send-invite';
 import { PARTNER_SCOPES, resolvePartnerToken } from '../app/partners/oauth';
+import * as abortPostsImport from '../app/posts/actions/abort-posts-import';
+import * as completePostsImport from '../app/posts/actions/complete-posts-import';
 import * as createComment from '../app/posts/actions/create-comment';
 import * as createPost from '../app/posts/actions/create-post';
+import * as grantPostsImport from '../app/posts/actions/grant-posts-import';
 import * as keepDraftReview from '../app/posts/actions/keep-draft-review';
 import * as likePost from '../app/posts/actions/like-post';
+import * as listPostsImportParts from '../app/posts/actions/list-posts-import-parts';
 import * as movePostStatus from '../app/posts/actions/move-post-status';
 import * as publishPost from '../app/posts/actions/publish-post';
 import * as requestDraftReview from '../app/posts/actions/request-draft-review';
 import * as requestPostsExport from '../app/posts/actions/request-posts-export';
 import * as reviewDraft from '../app/posts/actions/review-draft';
+import * as signPostsImportPart from '../app/posts/actions/sign-posts-import-part';
 import * as summarize from '../app/posts/actions/summarize';
 import * as summarizePosts from '../app/posts/actions/summarize-posts';
 import * as withdrawPost from '../app/posts/actions/withdraw-post';
@@ -67,6 +72,7 @@ import * as exportPosts from '../app/posts/jobs/export-posts';
 import * as importPosts from '../app/posts/jobs/import-posts';
 import * as likeTotalsRefresh from '../app/posts/jobs/like-totals';
 import * as notifySubscribers from '../app/posts/jobs/notify-subscribers';
+import * as purgeImports from '../app/posts/jobs/purge-imports';
 import * as reviewDraftLater from '../app/posts/jobs/review-draft-later';
 import * as liveFeed from '../app/posts/live/live-feed';
 import * as feedActivity from '../app/posts/queries/feed-activity';
@@ -86,15 +92,21 @@ import * as connectSite from '../app/runs/actions/connect-site';
 import * as issueRunKey from '../app/runs/actions/issue-run-key';
 import * as revokeRunKey from '../app/runs/actions/revoke-run-key';
 import * as startRun from '../app/runs/actions/start-run';
+import * as purgeRetained from '../app/runs/jobs/purge-retained';
 import * as syncConnection from '../app/runs/jobs/sync-connection';
 import { ORG_KEY_SCOPES, resolveOrgKey } from '../app/runs/keys';
 import * as liveRunEvents from '../app/runs/live/live-run-events';
 import * as runConnections from '../app/runs/queries/run-connections';
+import * as hourlyRetention from '../app/runs/tasks/hourly-retention';
+import * as requestMemberErasure from '../app/settings/actions/request-member-erasure';
+import * as requestMemberExport from '../app/settings/actions/request-member-export';
 import * as savePreferences from '../app/settings/actions/save-preferences';
 import * as setTheme from '../app/settings/actions/set-theme';
 import * as subscribePush from '../app/settings/actions/subscribe-push';
 import * as toggleDigestOptIn from '../app/settings/actions/toggle-digest-opt-in';
 import * as unsubscribePush from '../app/settings/actions/unsubscribe-push';
+import * as eraseMember from '../app/settings/jobs/erase-member';
+import * as exportMember from '../app/settings/jobs/export-member';
 import * as addWebhookEndpoint from '../app/webhooks/actions/add-webhook-endpoint';
 import * as removeWebhookEndpoint from '../app/webhooks/actions/remove-webhook-endpoint';
 import * as billingEventsReceiver from '../app/webhooks/jobs/billing-events-receiver';
@@ -124,6 +136,12 @@ export const api = defineApi({
     withdrawPost,
     createComment,
     requestPostsExport,
+    // An export file coming back in parts: the five calls `uploadFile({ multipart })` makes.
+    grantPostsImport,
+    signPostsImportPart,
+    listPostsImportParts,
+    completePostsImport,
+    abortPostsImport,
     summarize,
     summarizePosts,
     reviewDraft,
@@ -136,6 +154,8 @@ export const api = defineApi({
     issueRunKey,
     revokeRunKey,
     savePreferences,
+    requestMemberExport,
+    requestMemberErasure,
     subscribePush,
     unsubscribePush,
     addWebhookEndpoint,
@@ -178,14 +198,18 @@ export const api = defineApi({
     sendSalesReceipt,
     syncConnection,
     purgeMcpConfirmations,
+    purgeRetained,
+    purgeImports,
     postPublishedWebhook,
     billingEventsReceiver,
     planPrices,
     planCatalog,
     settleUpgrade,
     openErrorIssue,
+    exportMember,
+    eraseMember,
   ],
-  tasks: [nightlyDigest, hourlyPurge, hourlyLikes],
+  tasks: [nightlyDigest, hourlyPurge, hourlyLikes, hourlyRetention],
   // A second door for machine callers, onto actions a browser already calls: same handler, same
   // policy, an org's bearer key instead of a session. `/api/runs/start` is `/v1/runs/start`, and
   // publishPost's pinned `/api/posts/:postId/publish` is `/v1/posts/:postId/publish`.

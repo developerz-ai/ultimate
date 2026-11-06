@@ -7,10 +7,7 @@ import {
   type Clock,
   finiteCount,
   type Page,
-  pageOf,
   type ResolveEnvironmentOptions,
-  renderFixShellArg,
-  stringField,
   systemClock,
 } from '@ultimat3/core';
 import {
@@ -32,6 +29,8 @@ import {
   signedByteBound,
   toBytes,
 } from './driver';
+import { listLocalPage } from './driver-local-list';
+import { localPartStore } from './driver-local-multipart';
 import {
   etagOfFile,
   headObject,
@@ -39,6 +38,7 @@ import {
   readObjectRange,
   readSidecar,
 } from './driver-local-read';
+import { removeIfPresent } from './driver-local-remove';
 import { lockOfSidecar, type Sidecar, sidecarLock } from './driver-local-sidecar';
 import { putLocalStream } from './driver-local-stream';
 import {
@@ -50,8 +50,9 @@ import {
   refuseUnsupportedPut,
   sidecarPathOf,
 } from './driver-local-write';
-import { checksumMismatch, deleteFailed, getTooLarge, listFailed, objectNotFound } from './errors';
+import { checksumMismatch, getTooLarge, objectNotFound } from './errors';
 import { objectChanged } from './errors-promote';
+import { withStagedMultipart } from './multipart-staged';
 import {
   assertObjectLockOptions,
   isLocked,
@@ -59,7 +60,7 @@ import {
   ObjectLockedError,
   requestedLock,
 } from './object-lock';
-import { assertSafeKey, META_DIR } from './path';
+import { assertSafeKey } from './path';
 import { assertPutStream, type PutStreamOptions } from './put-stream';
 import {
   assertGetOptions,
@@ -118,23 +119,6 @@ export interface LocalDriverOptions {
   readonly queue?: KeyedQueue | undefined;
 }
 
-/** `ENOENT` is the one delete failure that means "already in the desired state". */
-const isMissingFile = (error: unknown): boolean => stringField(error, 'code') === 'ENOENT';
-
-/**
- * A directory at an object's path is OTHER keys' parent (`c` beside `c/d`), never an object: no
- * bytes are stored at the key, so deleting it is deleting an absent key. Asked only after an
- * unlink failed, because the errno for "that is a directory" is `EISDIR` on Linux and `EPERM` on
- * macOS — the stat is the portable answer.
- */
-const isDirectory = async (path: string): Promise<boolean> =>
-  Bun.file(path)
-    .stat()
-    .then(
-      (stats) => stats.isDirectory(),
-      () => false,
-    );
-
 export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
   // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in a
@@ -190,306 +174,252 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     }
   };
 
-  /** Removes one path, or reports WHY it could not — a swallowed refusal is a false erasure. */
-  const removeIfPresent = async (path: string, key: string): Promise<void> => {
-    try {
-      await Bun.file(path).delete();
-    } catch (error) {
-      if (isMissingFile(error) || (await isDirectory(path))) return;
-      throw deleteFailed(
-        DRIVER_NAME,
-        key,
-        error,
-        // Screened: a key may carry `$(…)` and a root is configuration, and a fix: is pasted.
-        `make the disk root writable by this process, then retry: ls -ld ${renderFixShellArg(root, "'<the disk root>'")} && rm -f ${renderFixShellArg(path, "'<the object file>'")}`,
-      );
-    }
-  };
+  return withStagedMultipart(
+    {
+      name: DRIVER_NAME,
 
-  return {
-    name: DRIVER_NAME,
+      /** A getter, not a captured string: `registerAs` runs after the driver is constructed. */
+      get signedUrlBase(): string {
+        return baseUrl;
+      },
 
-    /** A getter, not a captured string: `registerAs` runs after the driver is constructed. */
-    get signedUrlBase(): string {
-      return baseUrl;
-    },
+      registerAs(diskName: string): void {
+        registered = diskName;
+        if (options.baseUrl === undefined) baseUrl = signedUrlBaseFor(diskName);
+      },
 
-    registerAs(diskName: string): void {
-      registered = diskName;
-      if (options.baseUrl === undefined) baseUrl = signedUrlBaseFor(diskName);
-    },
-
-    async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
-      const safe = assertSafeKey(key);
-      refuseUnsupportedPut(putOptions);
-      assertPutOptions(DRIVER_NAME, putOptions);
-      assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
-      const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });
-      const claimed = putOptions?.checksum;
-      if (claimed !== undefined) {
-        const actual = sha256Base64(bytes);
-        if (claimed !== actual) throw checksumMismatch(safe, claimed, actual);
-      }
-      const lastModified = clock.now();
-      const sidecar: Sidecar = {
-        contentType: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE,
-        etag: etagOf(bytes),
-        cacheControl: putOptions?.cacheControl,
-        metadata: putOptions?.metadata,
-        // The write's instant, on the injected clock, recorded for every later read to report.
-        lastModified: lastModified.toISOString(),
-        ...sidecarLock(requestedLock(putOptions)),
-      };
-      await oneAtATime(safe, async () => {
-        await refuseOverwrite(safe, 'overwrite');
-        await commitObject({ root, key: safe, disk: registered, body: bytes, sidecar });
-      });
-      return {
-        key: safe,
-        size: bytes.byteLength,
-        contentType: sidecar.contentType,
-        etag: sidecar.etag,
-        lastModified,
-        ...(sidecar.cacheControl === undefined ? {} : { cacheControl: sidecar.cacheControl }),
-        ...(sidecar.metadata === undefined ? {} : { metadata: sidecar.metadata }),
-      };
-    },
-
-    async putStream(
-      key: string,
-      body: ReadableStream<Uint8Array>,
-      streamOptions: PutStreamOptions,
-    ): Promise<StorageObject> {
-      const safe = assertSafeKey(key);
-      const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
-      const input = { root, key: safe, disk: registered, body, maxBytes, clock };
-      return putLocalStream(input, streamOptions, (then) =>
-        oneAtATime(safe, async () => {
-          await refuseOverwrite(safe, 'overwrite');
-          await then();
-        }),
-      );
-    },
-
-    async stat(key: string): Promise<StorageObject | undefined> {
-      const entry = await measured(assertSafeKey(key));
-      return entry && { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
-    },
-
-    async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
-      const safe = assertSafeKey(key);
-      assertGetOptions(DRIVER_NAME, getOptions);
-      const range = getOptions?.range;
-      // Queued behind this key's writers: an object is two files, and a read between a put()'s
-      // renames is a pair in doubt this process has no need to meet.
-      return oneAtATime(safe, async () => {
-        const file = Bun.file(filePath(safe));
-        if (!(await file.exists())) throw objectNotFound(registered, safe);
-        if (range !== undefined) {
-          const served = servedRange(DRIVER_NAME, safe, range, file.size, maxGetBytes);
-          const bytes = await readObjectRange(root, safe, registered, served);
-          // A doubt is settled by streaming the WHOLE file through the hash, never by buffering it:
-          // the range is the only part of this object the read may hold.
-          const entry = await headObject(root, safe, () => etagOfFile(root, safe, registered));
-          if (entry === undefined) throw objectNotFound(registered, safe);
-          const object = { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
-          return { object, bytes, range: served };
-        }
-        if (file.size > maxGetBytes) throw getTooLarge(DRIVER_NAME, safe, file.size, maxGetBytes);
-        const bytes = await readObjectBytes(root, safe, registered);
-        // Settled against the bytes this read ALREADY holds: hashed only for a sidecar-less object
-        // or a pair in doubt, and then exactly once.
-        const entry = await headObject(root, safe, () => etagOf(bytes));
-        if (entry === undefined) throw objectNotFound(registered, safe);
-        return {
-          object: { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE },
-          bytes,
-        };
-      });
-    },
-
-    async stream(key: string): Promise<ReadableStream<Uint8Array>> {
-      const safe = assertSafeKey(key);
-      const file = Bun.file(filePath(safe));
-      if (!(await file.exists())) throw objectNotFound(registered, safe);
-      return file.stream();
-    },
-
-    async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
-      const safe = assertSafeKey(key);
-      assertStreamRange(DRIVER_NAME, range);
-      const file = Bun.file(filePath(safe));
-      if (!(await file.exists())) throw objectNotFound(registered, safe);
-      const [first, last] = streamedRange(DRIVER_NAME, safe, range, file.size);
-      return file.slice(first, last + 1).stream();
-    },
-
-    /** A real file copy — `Bun.write` from a `BunFile` never routes the bytes through the heap. */
-    async copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject> {
-      const source = assertSafeKey(from);
-      const destination = assertSafeKey(to);
-      // Measured AND read in one turn on both keys. Measured in the source's turn and read in the
-      // destination's, a put() of the source in between committed its NEW bytes under the OLD
-      // etag and type — a pair no marker flags, so every later `get()` of the copy trusted it.
-      return inTurnOfBoth(oneAtATime, source, destination, async () => {
-        // Measured, not merely read: a sidecar carrying `etag: ''` or a torn source's borrowed
-        // type is the same durable lie. The hash is streamed, and only for a pair in doubt.
-        const entry = await headObject(root, source, () => etagOfFile(root, source, registered));
-        if (entry === undefined) throw objectNotFound(registered, source);
-        if (options?.ifMatch !== undefined && entry.etag !== options.ifMatch) {
-          throw objectChanged(source, options.ifMatch, entry.etag);
+      async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
+        const safe = assertSafeKey(key);
+        refuseUnsupportedPut(putOptions);
+        assertPutOptions(DRIVER_NAME, putOptions);
+        assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
+        const bytes = await toBytes(body, {
+          driver: DRIVER_NAME,
+          key: safe,
+          maxBytes: maxPutBytes,
+        });
+        const claimed = putOptions?.checksum;
+        if (claimed !== undefined) {
+          const actual = sha256Base64(bytes);
+          if (claimed !== actual) throw checksumMismatch(safe, claimed, actual);
         }
         const lastModified = clock.now();
         const sidecar: Sidecar = {
-          contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
-          etag: entry.etag,
-          cacheControl: entry.cacheControl,
-          metadata: entry.metadata,
+          contentType: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE,
+          etag: etagOf(bytes),
+          cacheControl: putOptions?.cacheControl,
+          metadata: putOptions?.metadata,
+          // The write's instant, on the injected clock, recorded for every later read to report.
           lastModified: lastModified.toISOString(),
+          ...sidecarLock(requestedLock(putOptions)),
         };
-        await refuseOverwrite(destination, 'copy onto');
-        await commitObject({
-          root,
-          key: destination,
-          disk: registered,
-          body: Bun.file(filePath(source)),
-          sidecar,
-        }).catch(async (error: unknown) => {
-          // The queue is this process's: another process can still take the source mid-copy.
-          if (!(await Bun.file(filePath(source)).exists()))
-            throw objectNotFound(registered, source);
-          throw error;
+        await oneAtATime(safe, async () => {
+          await refuseOverwrite(safe, 'overwrite');
+          await commitObject({ root, key: safe, disk: registered, body: bytes, sidecar });
         });
-        return { ...entry, key: destination, contentType: sidecar.contentType, lastModified };
-      });
-    },
+        return {
+          key: safe,
+          size: bytes.byteLength,
+          contentType: sidecar.contentType,
+          etag: sidecar.etag,
+          lastModified,
+          ...(sidecar.cacheControl === undefined ? {} : { cacheControl: sidecar.cacheControl }),
+          ...(sidecar.metadata === undefined ? {} : { metadata: sidecar.metadata }),
+        };
+      },
 
-    async delete(key: string): Promise<void> {
-      const safe = assertSafeKey(key);
-      // Idempotent by contract: a missing key is already in the desired state. A REFUSED unlink
-      // is not — a read-only mount or a root this process cannot write reports the bytes gone
-      // when they are still on disk, which is the one lie an erasure sweep must never repeat.
-      await oneAtATime(safe, async () => {
-        const lock = await lockAt(safe);
-        if (lock !== undefined) {
-          throw new ObjectLockedError({
-            disk: registered,
-            key: safe,
-            action: 'delete',
-            lock,
-            sidecar: metaPath(safe),
-          });
-        }
-        await removeIfPresent(filePath(safe), safe);
-        await removeIfPresent(metaPath(safe), safe);
-        await removeIfPresent(`${root}/${pendingPathOf(safe)}`, safe);
-      });
-    },
-
-    async exists(key: string): Promise<boolean> {
-      return Bun.file(filePath(assertSafeKey(key))).exists();
-    },
-
-    /** From the sidecar, as recorded — a lapsed retention is still reported, as S3 reports it. */
-    async retentionOf(key: string): Promise<ObjectLock> {
-      const safe = assertSafeKey(key);
-      return oneAtATime(safe, async () => {
-        if (!(await Bun.file(filePath(safe)).exists())) throw objectNotFound(registered, safe);
-        return lockOfSidecar(await readSidecar(root, safe));
-      });
-    },
-
-    async list(listOptions?: ListOptions): Promise<Page<StorageListEntry>> {
-      const prefix = listOptions?.prefix ?? '';
-      assertListOptions(listOptions);
-      const limit = resolveListLimit(listOptions?.limit);
-      const cursor = listOptions?.cursor ?? undefined;
-      const keys: string[] = [];
-      try {
-        // `dot: true`, and it is load-bearing: without it a glob matches no dot-prefixed entry, so
-        // every object whose key has one — `.hidden.txt`, `org/o1/pending/.x.png`, the
-        // `.metadata/a.json` `path.test.ts` pins as legal — was absent from the listing while
-        // `put`/`get`/`exists` handled it normally and the s3 listing returned it. `sweepOrphans`
-        // pages through `list()`, so those objects were swept as if they did not exist: a false
-        // erasure report by omission, which is what the classification below exists to prevent.
-        for await (const entry of new Bun.Glob('**/*').scan({
-          cwd: root,
-          onlyFiles: true,
-          dot: true,
-        })) {
-          const key = entry.replaceAll('\\', '/');
-          // The real filter now, not a second line of defence: the glob above yields the sidecar
-          // tree, and this is the one thing keeping `.meta/<key>.json` out of the object
-          // namespace. Folded like `assertSafeKey`'s reservation — `.META/` and `.meta/` are one
-          // directory on APFS and NTFS, and listing a key `get()` would refuse is the worse half.
-          if (key.toLowerCase().startsWith(`${META_DIR}/`)) continue;
-          if (!key.startsWith(prefix)) continue;
-          // The cursor IS the last key of the previous page — lexicographic order keeps it stable.
-          if (cursor !== undefined && key <= cursor) continue;
-          keys.push(key);
-        }
-      } catch (error) {
-        // A disk nobody has written to yet has no directory: an empty listing, not an error.
-        if (isMissingFile(error)) return pageOf([], null);
-        // Everything else is a refusal, and a bare `catch` reported all of them as "this disk is
-        // empty" — `EACCES` on the root, `ENOTDIR` on a root that is a file, an I/O error on the
-        // mount. `sweepOrphans` walks `list()`, so that swallow certified an unreadable prefix as
-        // having no orphans: the same false report `delete()`'s `.catch(() => undefined)` used to
-        // make, one call to the left.
-        throw listFailed(
-          DRIVER_NAME,
-          prefix,
-          error,
-          `make the disk root readable by this process, then retry: ls -ld ${renderFixShellArg(root, "'<the disk root>'")}`,
+      async putStream(
+        key: string,
+        body: ReadableStream<Uint8Array>,
+        streamOptions: PutStreamOptions,
+      ): Promise<StorageObject> {
+        const safe = assertSafeKey(key);
+        const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
+        const input = { root, key: safe, disk: registered, body, maxBytes, clock };
+        return putLocalStream(input, streamOptions, (then) =>
+          oneAtATime(safe, async () => {
+            await refuseOverwrite(safe, 'overwrite');
+            await then();
+          }),
         );
-      }
-      keys.sort();
-      const page = keys.slice(0, limit);
-      const objects: StorageListEntry[] = [];
-      for (const key of page) {
-        const object = await head(key);
-        if (object !== undefined) objects.push(object);
-      }
-      // The cursor is minted only when a key PAST the page exists — `keys` is every match, so a
-      // full last page answers no cursor. `limit` is a positive integer, so a page with more after
-      // it always HAS a last key: the `?? null` is the type's, not a second condition. It used to
-      // be one, and `limit: 0` fell through it — an empty page reported as complete.
-      return pageOf(objects, keys.length > page.length ? (page.at(-1) ?? null) : null);
-    },
+      },
 
-    async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
-      return buildSignedUrl({
-        secret,
-        key: assertSafeKey(key),
-        method: urlOptions?.method,
-        expiresInMs: urlOptions?.expiresInMs,
-        maxBytes: signedByteBound(DRIVER_NAME, urlOptions),
-        contentType: urlOptions?.contentType,
-        baseUrl,
-        clock,
-      });
-    },
+      async stat(key: string): Promise<StorageObject | undefined> {
+        const entry = await measured(assertSafeKey(key));
+        return entry && { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
+      },
 
-    /**
-     * The mint above, run backwards, on the same three values from the same closure: `secret`,
-     * `baseUrl` and `clock`. That is the whole reason it belongs here rather than in a caller — a
-     * route holding this disk can now accept an upload without ever being handed the key, and
-     * before this member existed there was no way for one to verify at all, which is why the
-     * shipped `PUT` half of `/_storage` was never mounted.
-     *
-     * Never throws: `verifySignedUrl` returns a reason, and `accept.ts` owns which reason becomes
-     * which error. A driver that decided that here would be a second error taxonomy.
-     */
-    async verifySigned(input: {
-      readonly url: string;
-      readonly clock?: Clock | undefined;
-    }): Promise<SignedUrlVerification> {
-      return verifySignedUrl({
-        url: input.url,
-        secret,
-        baseUrl,
-        clock: input.clock ?? clock,
-      });
+      async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
+        const safe = assertSafeKey(key);
+        assertGetOptions(DRIVER_NAME, getOptions);
+        const range = getOptions?.range;
+        // Queued behind this key's writers: an object is two files, and a read between a put()'s
+        // renames is a pair in doubt this process has no need to meet.
+        return oneAtATime(safe, async () => {
+          const file = Bun.file(filePath(safe));
+          if (!(await file.exists())) throw objectNotFound(registered, safe);
+          if (range !== undefined) {
+            const served = servedRange(DRIVER_NAME, safe, range, file.size, maxGetBytes);
+            const bytes = await readObjectRange(root, safe, registered, served);
+            // A doubt is settled by streaming the WHOLE file through the hash, never by buffering it:
+            // the range is the only part of this object the read may hold.
+            const entry = await headObject(root, safe, () => etagOfFile(root, safe, registered));
+            if (entry === undefined) throw objectNotFound(registered, safe);
+            const object = { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
+            return { object, bytes, range: served };
+          }
+          if (file.size > maxGetBytes) throw getTooLarge(DRIVER_NAME, safe, file.size, maxGetBytes);
+          const bytes = await readObjectBytes(root, safe, registered);
+          // Settled against the bytes this read ALREADY holds: hashed only for a sidecar-less object
+          // or a pair in doubt, and then exactly once.
+          const entry = await headObject(root, safe, () => etagOf(bytes));
+          if (entry === undefined) throw objectNotFound(registered, safe);
+          return {
+            object: { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE },
+            bytes,
+          };
+        });
+      },
+
+      async stream(key: string): Promise<ReadableStream<Uint8Array>> {
+        const safe = assertSafeKey(key);
+        const file = Bun.file(filePath(safe));
+        if (!(await file.exists())) throw objectNotFound(registered, safe);
+        return file.stream();
+      },
+
+      async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
+        const safe = assertSafeKey(key);
+        assertStreamRange(DRIVER_NAME, range);
+        const file = Bun.file(filePath(safe));
+        if (!(await file.exists())) throw objectNotFound(registered, safe);
+        const [first, last] = streamedRange(DRIVER_NAME, safe, range, file.size);
+        return file.slice(first, last + 1).stream();
+      },
+
+      /** A real file copy — `Bun.write` from a `BunFile` never routes the bytes through the heap. */
+      async copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject> {
+        const source = assertSafeKey(from);
+        const destination = assertSafeKey(to);
+        // Measured AND read in one turn on both keys. Measured in the source's turn and read in the
+        // destination's, a put() of the source in between committed its NEW bytes under the OLD
+        // etag and type — a pair no marker flags, so every later `get()` of the copy trusted it.
+        return inTurnOfBoth(oneAtATime, source, destination, async () => {
+          // Measured, not merely read: a sidecar carrying `etag: ''` or a torn source's borrowed
+          // type is the same durable lie. The hash is streamed, and only for a pair in doubt.
+          const entry = await headObject(root, source, () => etagOfFile(root, source, registered));
+          if (entry === undefined) throw objectNotFound(registered, source);
+          if (options?.ifMatch !== undefined && entry.etag !== options.ifMatch) {
+            throw objectChanged(source, options.ifMatch, entry.etag);
+          }
+          const lastModified = clock.now();
+          const sidecar: Sidecar = {
+            contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
+            etag: entry.etag,
+            cacheControl: entry.cacheControl,
+            metadata: entry.metadata,
+            lastModified: lastModified.toISOString(),
+          };
+          await refuseOverwrite(destination, 'copy onto');
+          await commitObject({
+            root,
+            key: destination,
+            disk: registered,
+            body: Bun.file(filePath(source)),
+            sidecar,
+          }).catch(async (error: unknown) => {
+            // The queue is this process's: another process can still take the source mid-copy.
+            if (!(await Bun.file(filePath(source)).exists()))
+              throw objectNotFound(registered, source);
+            throw error;
+          });
+          return { ...entry, key: destination, contentType: sidecar.contentType, lastModified };
+        });
+      },
+
+      async delete(key: string): Promise<void> {
+        const safe = assertSafeKey(key);
+        // Idempotent by contract: a missing key is already in the desired state. A REFUSED unlink
+        // is not — a read-only mount or a root this process cannot write reports the bytes gone
+        // when they are still on disk, which is the one lie an erasure sweep must never repeat.
+        await oneAtATime(safe, async () => {
+          const lock = await lockAt(safe);
+          if (lock !== undefined) {
+            throw new ObjectLockedError({
+              disk: registered,
+              key: safe,
+              action: 'delete',
+              lock,
+              sidecar: metaPath(safe),
+            });
+          }
+          await removeIfPresent(root, filePath(safe), safe);
+          await removeIfPresent(root, metaPath(safe), safe);
+          await removeIfPresent(root, `${root}/${pendingPathOf(safe)}`, safe);
+        });
+      },
+
+      async exists(key: string): Promise<boolean> {
+        return Bun.file(filePath(assertSafeKey(key))).exists();
+      },
+
+      /** From the sidecar, as recorded — a lapsed retention is still reported, as S3 reports it. */
+      async retentionOf(key: string): Promise<ObjectLock> {
+        const safe = assertSafeKey(key);
+        return oneAtATime(safe, async () => {
+          if (!(await Bun.file(filePath(safe)).exists())) throw objectNotFound(registered, safe);
+          return lockOfSidecar(await readSidecar(root, safe));
+        });
+      },
+
+      async list(listOptions?: ListOptions): Promise<Page<StorageListEntry>> {
+        assertListOptions(listOptions);
+        return listLocalPage({
+          root,
+          prefix: listOptions?.prefix ?? '',
+          cursor: listOptions?.cursor ?? undefined,
+          limit: resolveListLimit(listOptions?.limit),
+          head,
+        });
+      },
+
+      async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
+        return buildSignedUrl({
+          secret,
+          key: assertSafeKey(key),
+          method: urlOptions?.method,
+          expiresInMs: urlOptions?.expiresInMs,
+          maxBytes: signedByteBound(DRIVER_NAME, urlOptions),
+          contentType: urlOptions?.contentType,
+          part: urlOptions?.part,
+          baseUrl,
+          clock,
+        });
+      },
+
+      /**
+       * The mint above, run backwards, on the same three values from the same closure: `secret`,
+       * `baseUrl` and `clock`. That is the whole reason it belongs here rather than in a caller — a
+       * route holding this disk can now accept an upload without ever being handed the key, and
+       * before this member existed there was no way for one to verify at all, which is why the
+       * shipped `PUT` half of `/_storage` was never mounted.
+       *
+       * Never throws: `verifySignedUrl` returns a reason, and `accept.ts` owns which reason becomes
+       * which error. A driver that decided that here would be a second error taxonomy.
+       */
+      async verifySigned(input: {
+        readonly url: string;
+        readonly clock?: Clock | undefined;
+      }): Promise<SignedUrlVerification> {
+        return verifySignedUrl({
+          url: input.url,
+          secret,
+          baseUrl,
+          clock: input.clock ?? clock,
+        });
+      },
     },
-  };
+    localPartStore(root),
+    clock,
+  );
 }

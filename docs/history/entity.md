@@ -1482,3 +1482,104 @@ Verbatim from [`packages/entity/CLAUDE.md`](../../packages/entity/CLAUDE.md), wh
   `preload.ts`, `select()` in `query.ts`, `touch()` in `touch.ts`. `sealRow` reads each sealed property BY NAME,
   so a row passed back whole is written whole. A required one missing on insert is `sealedMissing`
   (`X_INVARIANT_VIOLATED`, from `$parse` and from the seam), naming the spread. `sealed.test.ts`.
+
+## Moved out for plan 101's wave 9 (`As of 2026-11-06`)
+
+Verbatim from [`packages/entity/CLAUDE.md`](../../packages/entity/CLAUDE.md), which keeps each rule in one line and points here.
+
+### `testDriver()`
+
+A plain object of forwarders, never a `Proxy` (`observedRepo` spreads the repository, and a spread
+  Proxy copies the target it answered at load); it forwards the keys both repositories carry, so a
+  new `Repo` method needs no edit. `reset` empties memory only. `transactor().run` opens an
+  `asyncContext` holding the side it began on; a call inside it whose installed side differs rejects
+  `X_TEST_DRIVER_CLIENT_CHANGED`, never a synchronous throw. `test-driver.test.ts` fails a
+  resolve-once mutation.
+
+### Every repository method attributes its statement
+
+`writeRows(op, …)` for the three inserts; `aggregate` names
+  the function. Never entered with no observer. A preloaded relation is attributed to the related
+  entity. `memoryRepo` sends no statement and reports one event per operation (`memory-observed.ts`), under the pair `postgresRepo` names, no SQL text, and one event for a microtask's point lookups in a request, as `coalesce.ts`. `pg-driver-attribution.test.ts` — one case per method.
+
+### A many-row write is one statement
+
+statements in ONE transaction, a savepoint in an open one, on the pin (`bulk-write-send.ts`); one
+  chunk is autocommit. **`db.*.upsertAll` and `seed.upsert` overwrite what the caller NAMED**
+  (`overwrittenBy` before `$parse`, `UpsertArgs.overwrites`); a present `undefined` is absent. Memory's
+  upsert and `deleteWhere` undo on refusal (`memory-batch.ts`); a soft delete under a JS-only rule is
+  judged (`judgedRows`). `bulk-write-parity.test.ts`.
+
+### A grouped count
+
+Groupable kinds are a closed
+  set (`uuid`, `text`, `char`, `boolean`, `integer`, `bigint`); the bound is a REFUSAL at
+  `MAX_GROUPS + 1`, never a truncation; absent is not `0`; NULL is one group keyed `null`; the order
+  is applied after the rows are in, never in SQL; `group_value` / `group_count` are fixed aliases.
+
+### `appendOnly: true`
+
+- **`appendOnly: true`** (`append-only.ts`): `appendOnlyRepo` wraps OUTSIDE `sealedRepo` in both
+  drivers (seed `upsert` appends, never rewrites); `update`/`delete`/`*Where` and an
+  `upsertAll` not `onMatch: 'nothing'` reject before any statement (`X_ENTITY_APPEND_ONLY`); a soft-delete,
+  `onUpdateNow()` or machine column is refused at declaration; `$describe().appendOnly` is `true` or
+  absent. No bypass, backfills included. `append-only{,-parity}.test.ts`.
+
+### `write-parity.test.ts` (the per-kind list)
+
+`.transition()` filters on `singleKeyOf(entity)` and refuses an absent id (`X_NOT_FOUND`, no row
+  moved);
+  `decimal()`/`bigint()` store Postgres's spelling (never rounded); a seed `upsert` compares only named
+  columns; `text({ max })` counts code points; `integer()` holds int4, `bigint()` int8; a whole part
+  of `0` is no `numeric` digit; `url()` lower-cases its scheme and judges the STORED text.
+
+### The four aggregates
+
+(`aggregate-fold.ts` memory, `aggregate-decode.ts` Postgres): never a float; `avg` at `AVG_SCALE` (6),
+  half away from zero; `null` for an empty set. Refused: `min`/`max` on text, `avg` over money
+  (`X_AGGREGATE_UNSUPPORTED`), mixed currency or scale (`X_AGGREGATE_MIXED_CURRENCY`, two causes, two fixes), a money total
+  past ±2^53.
+
+### `preload(name, { max })`
+
+Tenancy is CARRIED only when
+  both entities are scoped by a column of that same name, else the related read refuses
+  (`X_TENANCY_UNSCOPED`). Reach is the `database()` call's `RelatedTables`; `select()` widens with each
+  preloaded relation's local key; attachment copies (`{ ...row }`); only `page()`/`all()`/`one()`
+  preload.
+
+### A seed is replayable
+
+`upsert(entity, { by }, values)` keys on a
+  natural key, reads first for the report, writes one `on conflict … do update`, preserves `createdAt`.
+  **The environment guard is the CLI's** (`seedTiersFor`; `run()` stays permissive). **A dry run is
+  the real run rolled back** through `Driver.transactor()` (REQUIRED on the interface) — one rule,
+  never a per-verb lookup.
+
+### `deleteWhere` / `updateWhere`
+
+rows come back only when a JS-only invariant needs them (`hasJsOnlyInvariant`), counted first
+  and refused past `MAX_ASSERTED_ROWS` (50,000) in BOTH drivers; on Postgres that statement and its
+  judgement share a transaction (`judged-write.ts`, `update` too), so a refusal rolls back. `updateStatement`'s `returning` is
+  required.
+
+### A state machine is the MECHANISM only
+
+a terminal state is one with no outgoing moves; the move is ONE statement with
+  `from` in the predicate (`pg-transition.live.test.ts`: 1 winner of 20); `X_STATE_CONFLICT` is read
+  after the refusal from a tenant-scoped `findById`; no DDL beyond `enumerated()`'s CHECK; a machine
+  column may not be nullable; `whyNot` asks unknown → terminal → legal list.
+
+### `inBatches(size)`
+
+(`batch.ts`): the handle is its own iterator
+  (`close()` = `AsyncGenerator.return()`), `.cursor` is advanced before the yield, no empty batch, and
+  three refusals on the chain (size, `limit()` alongside, an order no cursor can carry — judged by
+  exported `totalOrder`).
+
+### A `timestamp` cursor carries MICROSECONDS
+
+: `seekPrecision` projects `(col at time zone
+  'UTC')::text as "<col>$US"`; `sortPrecision` reads it; the seek binds a six-digit ISO instant
+  (`col < $1::timestamptz`). `instant.ts` is where the two representations meet.
+  `pg-cursor-precision.live.test.ts`.

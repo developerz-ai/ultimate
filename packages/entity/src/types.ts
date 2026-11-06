@@ -63,6 +63,13 @@ export interface ReferenceOptions {
    * same-tenant it is refused: a reason for nothing.
    */
   readonly crossTenant?: string;
+  /**
+   * The parent's `integer()` column the database keeps equal to the number of rows pointing at it,
+   * by a trigger on THIS table in the same transaction as the write (`counter.ts`). Declared here,
+   * on the key, because the child already names its parent — a thunk on the parent naming the child
+   * would make the two declarations each other's type and neither could be inferred.
+   */
+  readonly countedIn?: () => AnyColumn;
 }
 
 /**
@@ -169,6 +176,11 @@ export interface ColumnMeta {
    * that seals and opens; everything else reads it to refuse (`sealed-declaration.ts`).
    */
   readonly sealed?: SealedMeta;
+  /**
+   * `references(() => posts.id, { countedIn: () => posts.likeCount })`: the parent integer the
+   * database keeps equal to the number of rows pointing there. `counter.ts` reads it.
+   */
+  readonly countedIn?: () => AnyColumn;
 }
 
 /** What `.sealed(options)` declared, resolved. */

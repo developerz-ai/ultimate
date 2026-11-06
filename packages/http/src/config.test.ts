@@ -89,7 +89,7 @@ describe('defineHttpConfig', () => {
   // `ctx.locale` to `'en'` forever.
   test('holds header and cookie names only, never a supported set or a default', () => {
     expect(Object.keys(DEFAULT_LOCALE_CONFIG).sort()).toEqual(['cookie']);
-    expect(Object.keys(DEFAULT_TZ_CONFIG).sort()).toEqual(['cookie', 'header']);
+    expect(Object.keys(DEFAULT_TZ_CONFIG).sort()).toEqual(['cookie', 'detectedCookie', 'header']);
   });
 
   test('tz merges input over DEFAULT_TZ_CONFIG', () => {

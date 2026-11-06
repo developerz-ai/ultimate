@@ -58,6 +58,9 @@ export const SECTION_PACKAGE: Readonly<Record<string, string>> = {
   // why: `AppConfig.clientErrors` is the browser-error intake both boots mount
   // (`client-errors-routes.ts`); no package is named `clientErrors`.
   clientErrors: 'cli',
+  // why: `AppConfig.failureCapture` is handed to core's capture limits by the web boot
+  // (`failure-capture-boot.ts`); no package is named `failureCapture`.
+  failureCapture: 'cli',
   theme: 'ui',
 };
 

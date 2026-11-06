@@ -68,7 +68,7 @@ The framework ships no default model and no catalogue row (25.0.0): every id is 
 | Do agent tool calls run in parallel? | Yes — every tool of **one turn**, concurrently and unbounded. Turns themselves are serial → [Tools of one turn run concurrently](#tools-of-one-turn-run-concurrently) |
 | How do I stop paying full price for the same long prompt every turn? | Nothing — `agent()` asks the provider to cache each turn's prefix by default. Put text every run shares in `system().stable` → [Provider prompt caching](#provider-prompt-caching) |
 | What stops an agent that loops, or hangs, with nobody watching? | `maxRepeatedToolCalls` (default 3) and `deadlineMs` → [Unattended runs](#unattended-runs) |
-| How do I show progress while an agent is thinking? | `onTurn`, called once per completed turn. There is **no `.stream()`** on an agent → [Progress](#progress-onturn) |
+| How do I show progress while an agent is thinking? | Ask its route for `accept: text/event-stream`: each turn's `text`, `tool_call`, `tool_result` and `turn` arrive as chunks, then `done`. Server-side, `onTurn` → [Progress](#progress-onturn) |
 
 ## A worked example
 
@@ -413,12 +413,19 @@ export const kbAgent = agent({
 | `openAiProvider()` | `api.openai.com` (the default) | any | none — caching is automatic | `prompt_cache_key` body field |
 | `openAiProvider()` | any other `baseUrl` | any | none | nowhere |
 
+**Your own endpoint is a row on its provider**, read before the table, first match by model prefix
+(`As of 2026-11`): `openAiProvider({ …, promptCache: { rules: [{ model: 'anthropic/', marks: 'parts', session: 'x-session-id' }] } })`
+for a company gateway fronting a marking family; `anthropicProvider({ …, promptCache: { rules: [{ model: '', marks: 'none', session: 'none' }] } })`
+for a proxy that rejects `cache_control`. The budget's estimate follows the row. A mark or session
+carrier the wire cannot speak — `parts` or a session on the Messages wire, `blocks` on
+chat-completions — is `X_AI_REQUEST_INVALID` when the provider is built.
+
 | Rule | Detail |
 |---|---|
 | The stable block must be the same **bytes** | a cache is a prefix match. A timestamp, a request id or an unsorted list in `stable` is a full-price write on every call — put it in `run` |
 | Below the model's minimum nothing is cached | 512 to 4,096 tokens depending on the model (`ModelSpec.cacheMinimumTokens`); a shorter prefix is processed uncached, with no error |
 | `session` is a routing key, not a secret | on OpenRouter it leaves the process in a header: 1 to 256 printable ASCII characters, else `X_AI_REQUEST_INVALID`. On OpenAI a key over 64 characters is sent as a hash of itself (`h:` + 62 hex) — the same key always groups the same requests. OpenAI's guide states no maximum; 64 is a conservative ceiling `As of 2026-10` |
-| The Anthropic row matches any host | `anthropicProvider({ baseUrl })` pointed at a proxy still sends `cache_control`: a server speaking that wire is assumed to speak its marks |
+| The Anthropic row matches any host | `anthropicProvider({ baseUrl })` pointed at a proxy still sends `cache_control`: a server speaking that wire is assumed to speak its marks, unless the provider declares a `marks: 'none'` row |
 | Never an empty block, never a fifth mark | a mark moves back past an empty or whitespace-only text block, or is not sent; marks a raw request already carries count against the vendor's four, and the framework's are dropped first — the message before the tail, then the system block, then the tail |
 | More than about 9 tool calls in **one** turn, on OpenRouter | that turn's transcript is not read back: only the tail is marked there, the provider looks back 20 blocks from it, and each call adds two. The next turn pays a write for the transcript; the stable system block still reads |
 | No routing preference is ever sent | OpenRouter skips sticky routing when a request orders its providers, and a cache lives on one upstream |
@@ -559,12 +566,13 @@ export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: 
 | the summary call is the run's own request up to the cut, plus one instruction | same gateway, tools, system and `promptCache` hint: it reads the prefix the turn that ended at the cut already cached, and on OpenRouter carries the same `x-session-id` — for a DeepSeek or Gemini model too, which the host caches implicitly |
 | billed to the run | same ledger (`budget.tokensPerRun`), `costPerRun` checked before it, counted in `usage`, `onTurn`'s `run` and `meta.billed`. A budget refusal, a deadline or an abort is thrown as itself |
 | not a turn | `maxTurns` and `onTurn` count the loop alone |
-| a failed summary — no text, cut off, refused, unreachable, no shorter | the run goes on **whole** while the request still fits; over the room it is `X_AGENT_CONTEXT_EXHAUSTED` (500, `terminal` for a job), before anything is sent. Never a truncated transcript |
+| turns too long for the summary call itself | `As of 2026-11`. When the run's own request up to the cut does not fit the summary model's room (`contextWindow` less `maxSummaryTokens`), the same tools, system and first message are sent with the turns to summarise as **text**, shortened oldest first until it fits: each tool result clipped to its first and last 1,000 characters (`SUMMARY_CLIP_CHARS`), then — once every turn is clipped — left out, oldest first. No turn is ever dropped, and only the summary call's input is shortened: the run's transcript and kept turns stay the bytes they were. After opencode's overflow fallback |
+| a failed summary — no text, cut off, refused, unreachable, no shorter, or too long even with every tool result left out | the run goes on **whole** while the request still fits; over the room it is `X_AGENT_CONTEXT_EXHAUSTED` (500, `terminal` for a job), before anything is sent. Never a truncated transcript |
 | after a failed attempt | the next one waits until the request no longer fits — each attempt is a billed call |
 | the handle | `.run()`'s `transcript` and `transcriptOf(error)` hold the compacted messages and a signed `compacted` count (absent at zero, so a run that never compacted writes the handle it always did); `.continue()` resumes from it and compacts on its own turns |
-| observed | `onCompact({ turn, outcome, reason, before, after, limit, summarised, kept, compactions, model, usage, cost })` — awaited, a throw fails the run — and an `agent.compact` span event with the same facts |
+| observed | `onCompact({ turn, outcome, reason, before, after, limit, summarised, kept, compactions, model, summaryInput, clipped, omitted, usage, cost })` — `summaryInput` is `'messages'` (the cached prefix) or `'text'`, with `clipped`/`omitted` turns — awaited, a throw fails the run — and an `agent.compact` span event with the same facts |
 
-Limits: the estimate is about four characters a token until the first turn reports, which is why `at` defaults below 1; a forced summary call is the refused request less the kept turns, so with a small `keepTurns` it may not fit either (`compact.model` with a larger window is the way out); on the chat-completions wire an agent with `tools: []` offers only `respond`, which is then forced, so its summary call answers no text and the run falls back to whole.
+Limits: the estimate is about four characters a token until the first turn reports, which is why `at` defaults below 1; a summary written from clipped tool results knows only their ends, which the transcript block tells the model; on the chat-completions wire an agent with `tools: []` offers only `respond`, which is then forced, so its summary call answers no text and the run falls back to whole.
 
 ## Checkpoints (`onCheckpoint`)
 
@@ -693,7 +701,7 @@ onTurn: ({ turn, maxTurns, model, toolCalls, stopReason, usage, cost }) => {
 | Always on the span too | the same facts land as an `agent.turn` event, so a run that declares no hook is still readable in a trace |
 | Per turn, not per token | tokens on a screen is a different contract |
 
-**There is no `.stream()` on an agent.** `agent()` returns a plain `Action`; only `llm()` returns an `LlmAction`, and that streamed half is one turn deep by construction. A tool call arrives whole — there is nothing to stream between the model deciding to call a tool and the tool answering — so per-turn is the finest granularity a tool loop has.
+**An agent streams per turn, on its own route** (As of 2026-11). `agent()` declares `stream: AgentChunk`: a request with `accept: text/event-stream` gets `event: chunk` frames — `{ type: 'text' | 'tool_call' | 'tool_result' | 'turn' }`, ids pairing a call with its result, no arguments or tool output — then one `done` (the answer) or `error` (the problem). Every other surface (JSON, MCP, `.job()`, `.run()`) drains it and gets the answer alone. A tool call arrives whole, so per-turn is the finest granularity a tool loop has; budget and `maxTurns` are unchanged.
 
 ## `hive()` — many members, one action
 
@@ -911,7 +919,7 @@ Full list: [Error codes](Error-Codes).
 - Tools of one turn run concurrently and are paired positionally; turns are serial.
 - A budget refuses, never truncates, and the ceiling holds under parallelism because the reservation debits before the call.
 - `ctx.signal` unwinds the run at every turn boundary, before every tool batch, and on the socket.
-- `onTurn` observes and cannot steer. There is no `.stream()` on an agent.
+- `onTurn` observes and cannot steer. The streamed route carries the same facts per turn.
 - Every turn asks the provider to cache its prefix unless `promptCache: 'off'`; what is sent is a row in `PROMPT_CACHE_RULES`, never an `if`.
 - A run that repeats itself is stopped (`X_AGENT_TOOL_LOOP`); a run with a `deadlineMs` is stopped at it (`X_AGENT_DEADLINE`).
 - A run nearing its context window is compacted before the turn that would not fit — tools, system and the last turns byte for byte — or refused (`X_AGENT_CONTEXT_EXHAUSTED`); never truncated.

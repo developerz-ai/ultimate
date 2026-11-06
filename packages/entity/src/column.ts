@@ -235,6 +235,7 @@ export const makeColumn = <T, Optional extends boolean>(
         index: true,
         ...(options.onDelete === undefined ? {} : { onDelete: options.onDelete }),
         ...(options.crossTenant === undefined ? {} : { crossTenant: options.crossTenant }),
+        ...(options.countedIn === undefined ? {} : { countedIn: options.countedIn }),
       },
       parse,
       optional,

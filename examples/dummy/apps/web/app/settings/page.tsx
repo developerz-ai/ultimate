@@ -148,7 +148,10 @@ export const config = defineRoute({
   // measured: 80803 B (2026-11-06; x build --target static, against 79,601) — why:
   // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
   // `app/` only) — raised 78kb → 79.5kb (plan 101, 41).
-  budget: { js: '79.5kb' },
+  // measured: 83136 B (2026-11-06; `x verify --only budgets`, against 80,803) — why: the
+  // settings island's `rpc` +2,065 B, every typed-client method carrying `.stream(input)` (core's
+  // `clientStream`, plan 101 slice 41); the rest is the inline runtime — raised 79.5kb → 82kb.
+  budget: { js: '82kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
@@ -178,6 +181,8 @@ export function Page(): JSX.Element {
       <Stack gap={6} class={styles.page}>
         <header>
           <h1>{t('app.settings.heading')}</h1>
+          {/* A `select` family: one sentence per role, so each locale words its own grammar. */}
+          <Text>{t('app.settings.role', { select: member.role, org: actor.org.name })}</Text>
           <Text tone="muted">{t('app.settings.intro')}</Text>
         </header>
 

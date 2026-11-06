@@ -33,7 +33,7 @@ One panel per file. Each kills one question, and each is available as `--json` �
 | `live` | what does each subscriber receive, and **why** — the matcher's decision trace |
 | `jobs` | a ring of the recent runs by state (`DonutChart`), then the admin's own jobs overview (`/admin/jobs`'s component) over this process's queue; the payload — queue depth, step traces, retry-from-step target, dead letter — folded under it |
 | `db` | psql in a tab (read-only twice: `assertReadOnly` refuses DML, and `readOnlySql(client)` — what a host wires as `runSql` — runs it in a `BEGIN READ ONLY` transaction with a timeout and `DEV_SQL_MAX_ROWS`), schema + drift (`null` unless a host wires the check) |
-| `mail` | caught mail, rendered, per locale, with the locale gaps listed |
+| `mail` | caught mail, rendered, per locale, with the locale gaps listed; beside it every declared mail's `preview` rendered per locale (`mailTemplates`, the host's source: `x dev` wires it) |
 | `cache` | the tag graph — what invalidated what, and which tags are orphans |
 | `policy` | the permission matrix per actor, every cell carrying its trace |
 | `manifest` | emitted `x.manifest.json` diffed against the committed one |

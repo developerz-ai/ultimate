@@ -20,6 +20,7 @@ The whole catalog, spelled exactly as each tool must be called; `bunx x mcp tool
 | `queue.depth` | pending, running and failed counts per queue | tailing a worker to see if it keeps up |
 | `manifest.read` | the whole `x.manifest.json`, as text | ten separate reads |
 | `errors.explain` | `X_*` code → cause, exact fix command, docs URL | web search |
+| `graph.query` | `{ node }` (a file path, a primitive name or a node id) → every route, action, query, job, MCP tool, published operation, test and budget a change to it reaches, each with the provenance of the edges that reached it — `x impact`'s answer. `{ from, to }` → the chain of edges linking two nodes — `x graph --from --to`'s. An unknown name is `X_GRAPH_NODE_UNKNOWN` naming the nearest three; any other combination of arguments is an `isError` naming the two shapes. Rebuilt per call, so it answers for the code as it is now | grepping importers before an edit, and missing the route that reads it through a query |
 | `db.query` | **read-only** SQL, 100-row default and 1000-row maximum, `EXPLAIN` on request | inventing a query and hoping |
 | `db.migrate` | apply pending migrations **in a branch DB only** | mutating the dev database |
 | `tests.run` | run the suite or a substring filter, structured results | parsing terminal output |
@@ -33,7 +34,7 @@ The whole catalog, spelled exactly as each tool must be called; `bunx x mcp tool
 
 | Class | Tools | Exposure |
 |---|---|---|
-| read | `routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain`, `ui.diff` | scope `dev:read`, unrestricted in dev — `ui.diff` reads files, and sits here because it reads only `.x/shot/` (resolve + prefix check, symlinks resolved) and launches nothing |
+| read | `routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain`, `graph.query`, `ui.diff` | scope `dev:read`, unrestricted in dev — `ui.diff` reads files, and sits here because it reads only `.x/shot/` (resolve + prefix check, symlinks resolved) and launches nothing |
 | gated read | `db.query`, `logs.tail` | scope `db:read` / `dev:logs` |
 | executes code | `tests.run`, `verify.run`, `ui.shot`, `ui.island`, `ui.inspect`, `ui.interact` | scope `dev:test`; all six declare `destructive: true`, so none is metered as read chatter — the four `ui.*` tools launch a browser |
 | write | `db.migrate` | scope `db:migrate`, **branch environments only** |
@@ -391,6 +392,81 @@ export const mcp = defineAppMcp({ include: 'exposed', scopes: MCP_SCOPES, oauth:
 
 Without `oauth`, the 401 is `Bearer realm="ultimate-mcp"` as before. Bad block:
 `X_MCP_OAUTH_INVALID` at definition.
+
+### Long tools: `jobTool()` and `job_status`
+
+A tool whose work outlives a client's timeout. `tools: { reindex: jobTool({ job, policy, description, result, input?, jobInput?, inlineMs? }) }`.
+
+| Fact | Rule |
+|---|---|
+| Durable | enqueues at once (`job.as(caller)`); never an in-process promise |
+| Input | the tool's `input` (default: the job's); `jobInput(input, ctx)` builds the job's from it and the caller — a member id read off the request, never an argument an agent fills in |
+| Inline | polls `introspect.job(id)` every 250 ms up to `inlineMs` (default 5,000, ceiling 25,000), honours `ctx.signal`. Also bounded by the poll count, so a clock that does not move still ends the wait. `inlineMs: 0` answers `running` at once — right for a model run |
+| Answers | `done` + the `result` query's rows, read **as the caller** · `running` + `poll: { tool: 'job_status', arguments: { jobId } }` · `failed` + the code it was thrown with (`X_INTERNAL` for an uncoded throw, as HTTP answers one), never the row's text |
+| `job_status` | projected once beside any job tool; no scope (gated per row); another actor, another org and an unknown id are the same `X_JOB_NOT_FOUND` |
+| Dedupe | the job's own `idempotencyKey`: a repeated call attaches to the live run |
+| Refused | `X_MCP_JOB_TOOL_INVALID`: not a `job()` handle, `inlineMs` out of range, a driver with no `introspect` |
+
+The reference app's `draftReview` (`examples/dummy/apps/web/mcp-tools.ts`) queues `reviewDraftLater` for the caller's own member and reads `postReview` back; `mcp-tools.contract.test.ts` drives it over the wire.
+
+### Recipes: `docs://recipes/<name>` and the `docs` tool
+
+`defineAppMcp({ recipes: [{ name, title, description, steps: [{ tool, why, example? }], notes? }] })`.
+
+| Fact | Rule |
+|---|---|
+| Checked at boot | every `step.tool` is in the final catalog (`X_MCP_RECIPE_TOOL_UNKNOWN`), every `example` passes that tool's input (`X_MCP_RECIPE_EXAMPLE_INVALID`) — all offenders in one boot |
+| Served | an `McpResource` (`text/markdown`, rendered from the structure) and a read-only `docs({ name? })` tool |
+| Visibility | only to a caller who can see every step's tool and holds its scope; hidden = unknown, byte for byte |
+| The prefix | with `recipes:`, `resources:` may not hold `docs://recipes/` (`X_MCP_RECIPE_URI_RESERVED`) |
+| Error links | `defineError({ docs: 'docs://recipes/<name>' })` must name a recipe some endpoint serves — `X_MCP_RECIPE_UNKNOWN` at mount; a throw-site link to none is dropped from the render and logged |
+
+**From a markdown folder.** `recipes: await markdownRecipes({ dir: join(import.meta.dir, 'docs') })` reads one `*.md` per recipe and serves its body verbatim. The file name is the recipe name. `title:` and `description:` come from `---` frontmatter, else from the first `# ` heading and the paragraph under it. A fence tagged `call` holds one step, `tool {"arg": "value"}`, and is checked at boot like any `step.example`. A whole `"<postId>"` value is a placeholder, so any value passes at boot. A `docs://recipes/<name>` link in the text that names no recipe is `X_MCP_RECIPE_LINK_DANGLING`.
+
+**Searching.** `docs({})` lists what this caller can follow. `docs({ name })` and `docs({ uri })` read one recipe. `docs({ q })` inlines the best match, scoring 3 for each word in the name or title, 2 in the description and 1 in the body. On a miss it names the nearest recipes, so a caller with any visible recipe never gets an empty answer.
+
+**Per caller.** `extraRecipes: (caller) => recipes` adds the caller's own recipes, such as a tenant's runbooks. They are listed as `source: 'caller'` on `docs`, and on `resources/list` and `resources/read` to that caller only. They are not checked at boot. A recipe that names a tool the caller cannot call is not shown.
+
+**Replayed.** In a contract test, `await replayRecipes(server, recipes, { caller, placeholders })` calls every step's example through the real server as `caller` and reads every link. Three answers fail it with `X_MCP_RECIPE_EXAMPLE_INVALID`: no such tool, refused arguments, and a policy that refuses that caller. A dangling link fails it with `X_MCP_RECIPE_LINK_DANGLING`. A tool's own refusal (`X_NOT_FOUND` for a sample id) counts as the tool working. The reference app replays its recipes as an org owner: `examples/dummy/packages/mcp/src/recipes-replay.contract.test.ts`.
+
+### Consuming another server: `mcpTools()`
+
+Remote MCP tools as this app's actions — the app's `policy`, rate limit, confirmation gate and manifest row; one tool list for an agent.
+
+| Fact | Rule |
+|---|---|
+| Declared | `mcpTools({ name, url, auth, allow, policy, lock })` → `tools: Map<remoteName, Action>`, action names `<name>_<tool>`. `policy` is an app `resource:verb` permission, as a hand-written tool takes: the input is the remote's schema, so a predicate over it would decide nothing |
+| Reviewed | `allow` is required; `lock` is the committed `tools.lock.json` written by `x mcp lock <name>`; `x mcp lock <name> --check` writes nothing and fails on drift |
+| Drift | a missing, re-described or re-shaped tool is `X_MCP_REMOTE_TOOL_CHANGED` — at declaration against the lock, before the first call against the live server |
+| Wire | `outbound()` (`dial: 'public'` by default, deadline, size cap); modern era first, then legacy `initialize` + `Mcp-Session-Id`; JSON or SSE answers |
+| Untrusted | the answer arrives as `{ untrusted, isError }`, fenced `<untrusted source="mcp:<name>/<tool>">`, middle-cut past `maxResultChars` |
+| Read-only | only when a reviewer sets `readOnly: true` in the lock — the remote's hint is never trusted |
+| Failure | `X_MCP_REMOTE_REFUSED` (502), the cause names the status |
+
+**Five outcomes of a call.** `meta.failure` tells them apart without reading a cause:
+
+| Outcome | What the caller gets |
+|---|---|
+| success, text only | `{ isError: false, text }`. No `structuredContent` and no output schema is still a success |
+| the tool's own `isError: true` | a RESULT `{ isError: true, text }`, handed to the model like any tool result |
+| no answer (DNS, connect, deadline) | `X_MCP_REMOTE_REFUSED`, `meta.failure: 'transport'`. An abort from the caller's own signal passes through as `X_ABORTED` |
+| an HTTP status | `X_MCP_REMOTE_REFUSED`, `meta.failure: 'status'`, `meta.status` |
+| a JSON-RPC `error` | `X_MCP_REMOTE_REFUSED`, `meta.failure: 'rpc'`, `meta.rpcCode` |
+| a body that is no JSON-RPC answer | `X_MCP_REMOTE_REFUSED`, `meta.failure: 'malformed'` |
+| `401` | `X_MCP_REMOTE_AUTH_REQUIRED`, `meta.resourceMetadata` from the `WWW-Authenticate` challenge (RFC 9728) when the server sent one |
+
+**Streaming.** A server may answer any POST as JSON or as `text/event-stream`. The client reads the answer with its own id out of the stream, and acts on any `notifications/tools/list_changed` riding with it. A legacy (2025-era) session also gets one long-lived `GET` stream for the server's own messages. It is opened after `initialize`, detached from the request that opened it, and lives `listenMs` (default 5 minutes) before the next call opens another. A `405` means the server offers no such stream, and the client never asks again. `client.close()` ends it. A modern server is stateless, so its changes ride response streams only. Either way, a change makes the next call re-list and hold the list to the lock again.
+
+**OAuth to the upstream.** `mcpOAuthClient({ clientId, clientName, redirectUri, scopes? })` is the client half of the MCP authorization spec:
+
+1. `begin(serverUrl)` reads the server's RFC 9728 protected-resource document, then its authorization server's RFC 8414 metadata. It answers `{ authorizeUrl, handshake }`, with PKCE S256 from `@ultimat3/auth` and `resource` per RFC 8707.
+2. Redirect the person to `authorizeUrl`. Keep `handshake` server-side, in the person's session.
+3. On the callback, `exchange(handshake, { code, state })` answers `{ accessToken, refreshToken, expiresIn }`. `refresh(handshake, refreshToken)` answers the same shape.
+4. Store the tokens per connection. Return the access token from `mcpTools({ auth })`, which is read on every call, so a rotated token is never cached.
+
+`clientId` is the HTTPS URL at which this app serves `metadata()` (a client ID metadata document), or an id the authorization server issued when the app was registered by hand. A `401` mid-session is `X_MCP_REMOTE_AUTH_REQUIRED`: run the handshake again.
+
+**Proved on itself.** `examples/dummy/packages/mcp/src/remote-self.contract.test.ts` points `mcpTools()` at the reference app's own MCP route. It locks the live list, calls `seatReport`, and meets three refusals: the remote policy's `X_FORBIDDEN` as a result, a stolen token as `X_MCP_REMOTE_AUTH_REQUIRED`, and a schema moved since the lock as `X_MCP_REMOTE_TOOL_CHANGED`.
 
 ## Three outcomes, deliberately different
 

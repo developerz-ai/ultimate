@@ -36,6 +36,28 @@ export {
   sentryEnvelope,
   sentryErrorReporter,
 } from '../error-reporter-sentry';
+export type {
+  FailureActor,
+  FailureBundle,
+  FailureCaptureLimits,
+  FailureFact,
+  FailurePrimitive,
+  FailureRead,
+  FailureStore,
+  HeldFailure,
+} from '../failure-capture';
+export {
+  failureCaptureActive,
+  failureCaptureLimits,
+  installedFailureStore,
+  recordFailureFact,
+  recordFailureInput,
+  setFailureStore,
+  withFailureCapture,
+} from '../failure-capture';
+export { resetFailureCaptureWindows, settleFailureCaptures } from '../failure-capture-flush';
+export type { CapturedValue } from '../failure-capture-mask';
+export { captureValue } from '../failure-capture-mask';
 export type { LogFields, Logger, LoggerOptions, LogLevel } from '../logger';
 export {
   isRedactedKey,

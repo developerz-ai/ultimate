@@ -20,6 +20,7 @@ const TOOL_NAMES = [
   'db.migrate',
   'db.query',
   'errors.explain',
+  'graph.query',
   'jobs.inspect',
   'logs.tail',
   'manifest.read',
@@ -79,6 +80,9 @@ function fakeHost(database: DatabaseTarget, calls: HostCalls): DevHost {
       return '{}';
     },
     explainError: () => undefined,
+    async queryGraph() {
+      return {};
+    },
     async verify() {
       return { ok: true, steps: [] };
     },
@@ -154,7 +158,7 @@ describe('unit · the dev tool catalog', () => {
   test('every dev tool is reachable by the local caller, by name', () => {
     const server = serverFor(BRANCH, noCalls());
     expect(server.tools.names(localCaller())).toEqual([...TOOL_NAMES]);
-    expect(TOOL_NAMES).toHaveLength(18);
+    expect(TOOL_NAMES).toHaveLength(19);
   });
 
   test('exactly the mutating tools bill the write bucket', () => {

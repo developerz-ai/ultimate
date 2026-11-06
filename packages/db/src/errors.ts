@@ -56,6 +56,8 @@ export const DB_OWNED_ERROR_CODES = [
   'X_DB_ROW_SECURITY_DRIFT',
   'X_KEYSET_NULL_KEY',
   'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
+  'X_ENTITY_RETAIN_INVALID',
+  'X_LIFECYCLE_TRIGGER_MISSING',
 ] as const;
 
 /**
@@ -125,6 +127,10 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_KEYSET_NULL_KEY: 'a keyset page holds a null in one of its sort keys',
   X_MIGRATION_ROLLBACK_DESTRUCTIVE:
     'a rollback would serve an older build over a destructive migration',
+  X_ENTITY_RETAIN_INVALID:
+    'entity({ retain }) has no window, sits beside appendOnly, or is on a partitioned table',
+  X_LIFECYCLE_TRIGGER_MISSING:
+    'a history or counter trigger the migrations created is missing from the database',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails

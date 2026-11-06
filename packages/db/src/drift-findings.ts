@@ -28,6 +28,10 @@ export type DriftKind =
   | 'not-valid-constraint'
   // Constructed in `drift-append-only.ts`: an `appendOnly` table whose refusing trigger is gone.
   | 'missing-append-only-trigger'
+  // Constructed in `drift-triggers.ts`: a history, guard or counter trigger gone, or a retain table
+  // the catalog holds partitioned.
+  | 'missing-lifecycle-trigger'
+  | 'retain-partitioned'
   // Constructed in `drift-row-security.ts`: a tenant policy missing, or present unrecorded.
   | 'missing-row-security'
   | 'unexpected-row-security'

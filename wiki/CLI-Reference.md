@@ -43,6 +43,7 @@ x version              # CLI version
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
 | `x routes` | every served route: pages, then actions, queries and runtime.ts routes | shipped |
 | `x mcp serve` · `x mcp tools` | serve the framework MCP tools over stdio or HTTP · list them | shipped |
+| `x mcp lock <name> [--check]` | fetch the remote MCP server `mcpTools({ name })` names and write its allowed tools to `tools.lock.json` · `--check` writes nothing and fails on drift (`X_MCP_REMOTE_TOOL_CHANGED`) | shipped |
 | `x doctor` | environment, versions, drift, the newest migration's snapshot sidecar, ports, PWA prerequisites — each with a fix | shipped |
 | `x help` / `x version` | catalogue and version | shipped |
 | `x actions` / `x queries` / `x entities` | introspect the declaration registries | shipped |
@@ -52,9 +53,12 @@ x version              # CLI version
 | `x exercise [<name>] [--seed n]` | run every action, query and job once on generated rows, with no test written; the gate's `exercise` step | shipped |
 | `x drill [<name>] [--list] [--budget-ms n]` | the app's `web` and `worker` roles as real processes on real Postgres, Redis and NATS, each dependency faulted through a proxy or each role signalled, red on any framework contract that does not hold. Not a gate step: it needs the services | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
+| `x mail preview <id>` | render a mail's declared `preview` in every locale, nothing sent | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
 | `x clean [--dry-run]` | remove what test runs leave behind: migrated test templates, `.x/cache`, stray `.x` folders, stale probe databases | shipped |
 | `x affected` | the workspaces a diff can have broken, transitively | shipped |
+| `x graph [--from <a> --to <b>]` · `x impact <file\|primitive\|entity>` | the app as one typed graph, each edge `declared`, `import` or `observed` · what an edit reaches | shipped |
+| `x client vendor <name>` · `x client customer --out <dir>` | one OpenAPI compiler, two clients: a third party's document into `apps/web/clients/<name>/` (`outbound()` + `t` schemas), or the app's own published document into a client with no framework import | shipped |
 | `x shot <route>` | photograph one route from a real browser, plus a `verdict.json` a picture cannot carry | shipped |
 | `x pr review\|resolve\|reply` | inline review threads — the ones `gh pr view --comments` does not show | shipped |
 | `x ci` | the workflow runs for this branch, and the findings inside the failed step's log; `x ci tested`: whether a push reuses a green PR run | shipped |
@@ -452,6 +456,7 @@ x db gen "add publish_at" | migrate | reset | studio
 | `backfill --pending` | every backfill the app **declared**, minus the ones that completed | the alarm: a sweep merged and never enqueued had no ledger row and was invisible everywhere. **Non-zero exit** when anything is unswept, so a cron reads the code and not the table |
 | `backfill <name>` / `backfill --all` | gate one sweep (or every pending one) and enqueue it | **dry run by default** — `--write` is never implied. `--write` enqueues; the workers perform the pass, because the queue is a job's execution surface. `--all` isolates per name and continues past a failure, exiting non-zero naming each |
 | `diagnostics` | what the database is doing now: `blockers` (each waiting `pid` and the `blockedBy` pid holding it, at `data.blockers.rows[]`), `activity`, `slowQueries`, `unusedIndexes`, `invalidIndexes`, `notValidConstraints`, `deadTuples` | **facts, never a verdict: exit 0** whatever they say. The one failure is a connection that never opens, `X_DB_UNAVAILABLE`. Every section is one catalog read in its own `BEGIN READ ONLY` with a 2 s `statement_timeout`, capped at `--limit` rows (default 20, at most 1000). A section that fails is `{ available: false, code, reason, fix }` in place and the other six still answer; `slowQueries` is unavailable until an operator installs `pg_stat_statements` (never on the embedded database). No user table is read; session SQL is printed with every literal as `?`; a credential in a reason is masked. **Whoever runs it sees the redacted SQL of every session on the app's database role** (every role, when it holds `pg_read_all_stats`): statement shape and identifiers, never values. `unusedIndexes` skips unique and primary indexes and carries `statsAgeSeconds` and `replica`. Opens the database without applying the framework tables; an embedded one `x dev` holds is refused (`X_DEV_ALREADY_RUNNING`). `--json`: `data.<section>`. Arbitrary read-only SQL is `db.query` over [`x mcp serve`](MCP-And-AI) |
+| `recount <entity>.<column>` | compare a `countedIn` counter with the true count of its child rows | **dry run by default**: lists the drifted rows (at most 50, the count whole) and exits non-zero with `X_LIFECYCLE_TRIGGER_MISSING` when any drifted. `--write` sets them in one cross-tenant transaction and exits 0. An unknown `<entity>.<column>` is `X_CLI_BAD_FLAG`. `--json`: `data` = `{ target, write, drifted, rows }` |
 
 A bare `x db backfill` is `X_CLI_BAD_FLAG` naming a shape that works: the four answer four different questions, and defaulting to one of them is the ambiguity axiom 1 refuses.
 
@@ -1119,7 +1124,7 @@ x mcp serve [--transport stdio|http] [--port 9229] [--json]
 | `--transport` | string | `stdio` | `stdio` for an editor client, `http` for a socket |
 | `--port` | string | `9229` | HTTP port when `--transport http`. `9229` is also the inspector's default; a taken port is `X_PORT_IN_USE`, naming the next one |
 
-Serves `@ultimat3/mcp`'s dev server — 18 tools, one catalog, the same on both transports. Every
+Serves `@ultimat3/mcp`'s dev server — 19 tools, one catalog, the same on both transports. Every
 tool declares a scope; the local developer's caller carries all five, and an HTTP caller carries
 whatever its bearer token was issued.
 
@@ -1138,6 +1143,7 @@ whatever its bearer token was issued.
 | `tests.run` | run the suite, structured results — an error outside any test (`1 error` beside `0 fail`) or a non-zero exit is a failure, never `failed: 0` | `dev:test` |
 | `verify.run` | run `x verify`, structured per-step result | `dev:test` |
 | `logs.tail` | last N log lines, optionally for one role | `dev:logs` |
+| `graph.query` | `{ node }`: what a change to a file or primitive reaches (`x impact`); `{ from, to }`: the edges linking two nodes (`x graph --from --to`) | `dev:read` |
 | `ui.shot` | photograph one route at a named viewport, light or dark; PNG path plus verdict. Launches a browser | `dev:test` |
 | `ui.island` | photograph an island in every state its `*.island.states.ts` declares, as `x shot --island` does | `dev:test` |
 | `ui.inspect` | DOM, computed-style and accessibility facts for a bounded set of selectors, in one navigation | `dev:test` |
@@ -1439,7 +1445,29 @@ x i18n [check|add <locale>|sync <locale>] [--json]
 
 Catalogs are one flat file per locale under `packages/i18n/catalogs/`. `check` reports three things separately: `missing` (a gap, and an exit code), `unused` (defined and never called), and `dynamic` — a `t(`plans.${plan}.name`)` the extractor cannot resolve. A dynamic call contributes its static head as a runtime-key prefix, so a key only ever reached that way is never listed unused; an expression with no static head contributes nothing, because a guessed prefix would suppress real gaps.
 
-Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_CATALOG_INVALID`, `X_GENERATE_CONFLICT` (`add` over an existing catalog), `X_CLI_BAD_FLAG`, `X_SCAFFOLD_PATH_ESCAPE`.
+Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_I18N_FAMILY_INCOMPLETE` (a `_select_`/`_ordinal_` family with no `_other`), `X_CATALOG_INVALID`, `X_GENERATE_CONFLICT` (`add` over an existing catalog), `X_CLI_BAD_FLAG`, `X_SCAFFOLD_PATH_ESCAPE`.
+
+## x mail
+
+```bash
+x mail preview <id> [--locale <tag>] [--tz <zone>] [--out <dir>] [--json]
+```
+
+`As of 2026-11-06`. Renders the mail's `defineMail({ preview })` data through `renderMessage`'s own
+path, with nothing sent. No `--locale`: every locale the app routes.
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| *(positional)* | mail id | — | the `defineMail({ id })` to render |
+| `--locale` | string | every routed locale | one locale |
+| `--tz` | IANA zone | `UTC` | every date in the body; never the machine's zone (`X_TIMEZONE_INVALID`) |
+| `--out` | string | — | write `<id>.<locale>.html` and `<id>.<locale>.txt` there |
+
+`--json`: `data.tz` is the zone rendered in; `data.previews[]` is `{ locale, subject, missing, files }`; `missing` names every catalog
+key the locale cannot resolve, and any is a non-zero exit. `x verify`'s `i18n` step renders every
+declared preview in every locale the same way, so a preview is a test too.
+
+Errors: `X_MAIL_PREVIEW_MISSING`, `X_MAIL_PREVIEW_INVALID`, `X_MAIL_TEMPLATE_UNKNOWN`, `X_CLI_BAD_FLAG`.
 
 ## x test
 
@@ -1456,13 +1484,15 @@ x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empt
 | `--allow-empty` | boolean | off | a selection that matches no test file exits **0**, spawns nothing, and says so (`no test file matches … — 0 test file(s) ran`, `data.files: 0`, `data.empty: true`) instead of `X_TEST_NO_FILES`. For a runner that computes the selection; a hand-typed typo stays red without it |
 | `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
 | `--workers` | string | `ceil(cpus * 1.5)`, held to 60% of free memory at 1.5 GiB a worker | worker count, 1 to 64; each worker gets its own template-cloned database |
-| `--affected` | boolean | off | narrow the selection to the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
+| `--affected` | boolean | off | narrow the selection to the tests the diff can break: in an app root, by import closure (the files `x affected` reports as `data.tests`); elsewhere, the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
 | `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |
 | `--seed` | string | — | replay one `simulateJobs` seed, the `N` an `X_JOB_SIM_INVARIANT` names: handed to every `bun test` child as `ULTIMATE_JOB_SIM_SEED`, which runs that seed alone. A uint32, else `X_CLI_BAD_FLAG`. The shard reproduce line does not carry it yet |
 | `-- <args>` | tail | — | handed to `bun test` verbatim, before the file list — `x test unit -- --coverage --bail`. The reproduce line carries it back. **`x test` is the only command that reads a `--` tail**: every other one refuses it (`X_CLI_BAD_FLAG`) rather than dropping it, which is what all of them did until 2026-09 |
 
 The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES` (green with `--allow-empty`); an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.
+
+**In an app root `--affected` narrows by import closure, `As of 2026-11`** — every slice shares the `apps/web` workspace, so the workspace answer ran the whole app. The rule is `x affected`'s `data.tests`, never a second one: a test runs when its imports reach a changed file, transitively; a changed file the import graph cannot speak for (`app.config.ts`, `package.json`, a catalog, anything outside the app) runs every test; a discovered test outside the scanned globs always runs. `data.affected.tests` carries `{ app, all, reason, forcing, files: [{ path, why }] }` — `reason` is `closure: N changed file(s)` or `all: <forcing files>`, `why` is `closure`, `all` or `unmapped`. Outside an app root, `data.affected` has no `tests` and the workspace scope is unchanged.
 
 `--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failure's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to run at all and a rerun without it selects the whole corpus.
 
@@ -1553,6 +1583,67 @@ Three rules the set obeys:
 **`--base` is the default and `--dirty` is opt-in, which is the reverse of the obvious design.** This repo runs several agents concurrently in **one checkout** (no worktrees), so a working-tree diff returns every agent's uncommitted work at once and the "affected" set quietly expands to nearly the whole monorepo — narrowing nothing while reading as though it did. A ref diff is stable under that. `--dirty` is the right answer for one developer iterating alone.
 
 **Typecheck is deliberately not scoped.** `bun run typecheck` is `tsc -b`, a project build over a shared `.tsbuildinfo`, so a "scoped" typecheck is either the whole project anyway or a weaker check. The time is in the tests, which is what `x test --affected` narrows.
+
+## x graph · x impact
+
+```bash
+x graph [--from <node> --to <node>] [--json]
+x impact <file|primitive|entity> [--json]
+```
+
+The app as one graph, rebuilt per call from the loaded app (`As of 2026-11`). Nodes: `route`,
+`action`, `mutator`, `query`, `job`, `task`, `entity`, `permission`, `channel`, `tag`, `mcpTool`,
+`operation`, `file`, `test`, each id `<kind>:<name>`. An edge is `from` depends on `to`, with its
+provenance:
+
+| Provenance | Source | Edges |
+|---|---|---|
+| `declared` | `x.manifest.json`'s facts, from the registries | `requires` (permission), `invalidates` / `reads-tag` / `revalidates` (cache tag), `exposes` (MCP tool), `publishes` (OpenAPI operation), `references` (entity), `enqueues` (task → job), `reads` (channel → entity) |
+| `import` | the module graph: every app file's imports, type-only included; the test preload is an import of every test | `imports`, `declared-in` (primitive → its file, matched by identity against the registries) |
+| `observed` | `.x/exercise.json`, when newer than `x.manifest.json` | `writes` / `reads` (entity), `enqueues` (job) |
+
+`x impact` answers `{ routes, actions, queries, jobs, mcpTools, publishedOperations, tests, budgets,
+opaque, provenance }`, each entry with the provenances of the path that reached it. A non-empty
+`publishedOperations` means `contract-diff` will have an opinion. A file with a computed `import()`
+is `opaque`: it and its dependents are in every answer. `x graph --from a --to b` prints the
+shortest chain of edges, or none known and the provenances searched. A name, id or path that is
+no node is `X_GRAPH_NODE_UNKNOWN` with the nearest three. Queries carry no MCP fact in the
+manifest, so a query's `mcpTools` is reached only through an action that imports it.
+
+**`x affected` in an app root** adds `data.tests`: the test files whose import closure meets the
+diff (`all: true` with `forcing` when a changed file is read rather than imported — `app.config.ts`,
+`package.json`, a catalog, anything outside the app).
+
+## x client
+
+```bash
+x client vendor <name> [--from <file|url>] [--only <tag,…>] [--json]
+x client customer --out <dir> [--mount <prefix>] [--only <tag,…>] [--package <name>] [--json]
+```
+
+One compiler (`$ref`, objects, arrays, enums, `const`, `oneOf`/`anyOf`, `allOf`, nullable), two emitters. `As of 2026-11`.
+
+| Subcommand | Reads | Writes | The client |
+|---|---|---|---|
+| `vendor <name>` | `--from` (a file, or an https URL read through `outbound({ dial: 'public' })`); omitted, the committed `source.json` | `apps/web/clients/<name>/{source.json,schemas.ts,client.ts}` | `create<Name>Client({ baseUrl, dial, deadlineMs, headers?, deps? })`: one `outbound()` call per operation, input parsed with `t` before a byte leaves, the answer through `answer.json(schema)` |
+| `customer` | the committed `openapi.json`, or the file a bearer mount declares (`--mount /v1` needs `openapi:` on that mount) | `<dir>/{index.ts,types.ts}`, plus `package.json` with `--package` | `createClient({ baseUrl, headers?, fetch? })`: plain `fetch`, no import beyond `./types`; a non-2xx is `ProblemError`, `refusalOf(error, 'op')` narrows it to the codes the operation declares; a `Retry-After` on 429/503 is waited out once (at most 60 s) |
+
+| Flag | Meaning |
+|---|---|
+| `--from` | `vendor` only. A path from the current directory or an https URL. Written to `source.json` as two-space JSON, so the next regeneration is offline |
+| `--only` | keep operations carrying one of these tags; a construct the compiler refuses outside them is never read. A regeneration with no `--only` keeps the tags the stamp records. Matching nothing is `X_CLI_BAD_FLAG` |
+| `--out` | `customer` only, required |
+| `--mount` | `customer` only: a declared bearer mount's prefix |
+| `--package` | `customer` only: a `package.json` named so; publishing is yours |
+
+| Failure | Code |
+|---|---|
+| a construct it does not read (`not`, `if`/`then`/`else`, `patternProperties`, a non-JSON body, a cookie parameter, a typed `additionalProperties` beside `properties`) | `X_CLIENT_SPEC_UNSUPPORTED`, the JSON pointer in the cause |
+| not OpenAPI 3.0 or 3.1 | `X_CLIENT_SPEC_INVALID` |
+| a vendor answer that fails its declared shape | `X_OUTBOUND_BODY_INVALID` (core's), the field in `meta.issues` |
+| a documented vendor non-2xx | `X_OUTBOUND_REFUSED`, `meta.status` |
+
+**The stamp is the build error.** Every generated `.ts` opens with `// @x-client {command, source, sourceHash, bodyHash}`. The gate's `drift` step reads it back under `apps/*/clients/` and the source globs: the source document's parsed content moved is `X_CLIENT_STALE` (fix: the stamp's own command), the body's bytes moved is `X_CLIENT_EDITED`. Reformatting `source.json` changes nothing; the `.ts` files carry `biome-ignore-all format`. Names come from `operationId`, so a `contract-diff` red is a customer's client breaking. `rpc` stays the client inside the app's own repo.
 
 ## x shot
 
@@ -1691,8 +1782,11 @@ It reads `latestOpinionatedReviews`, not `reviews(last: n)`: the most recent rev
 ## x errors
 
 ```bash
-x errors [explain <CODE>|list] [--json]
+x errors [explain <CODE> [--recent]|list] [--json]
 ```
+
+`--recent` (in an app) adds what THIS app has seen of the code: its groups in `x_error_groups`
+(count, first and last seen) and the bundles `x_failures` holds, each with its `x repro` line.
 
 The [Error codes](Error-Codes) table, programmatically. Runs outside an app: triaging a code must not need an app root.
 
@@ -1710,6 +1804,28 @@ carries. A code raised at more than one site gets one of them, named in the `fix
 command rather than quoting the line. `docs` is `ERROR_DOCS_URL`, the same URL for every code.
 
 `list` enumerates every registered code, and names under `data.unavailable` any package this process could not import — a list silently missing codes is worse than one that says which. An unregistered code is `X_ERROR_CODE_UNKNOWN` with the nearest real code as its fix; the command never invents an explanation.
+
+## x repro
+
+```bash
+x repro <jobId|requestId|traceId|fingerprint> [--write] [--verify] [--json]
+x repro --list [--code X_…] [--json]
+x repro --from <file> [--write] [--verify] [--json]
+```
+
+A production failure becomes a failing test. `As of 2026-11`.
+
+| Subject | Read from | Written as |
+|---|---|---|
+| a dead job (`x_jobs` id) | its row and its steps — capture off or on | `repro/repro-<id>.job.test.ts`: `reproJob(runJobs, …)` replays the completed steps from their stored output and runs once more |
+| a captured 5xx (request id, trace id, bundle id, or a fingerprint's newest) | `x_failures`, written when `failureCapture.enabled` (`x dev`: always) | `repro/repro-<id>.contract.test.ts`: `reproduce(bundle, { driver })` seeds the rows the call read, freezes the clock at the failure, invokes as the actor |
+
+The written test is RED until the fault is fixed. `--verify` runs it: `data.reproduced` is true
+when it failed with the captured code; otherwise the answer is `X_REPRO_NOT_REPRODUCED`, naming
+the masked fields and the captured build — a fault in the database or a different build replays
+green. Masked input (`.sensitive()`, secret-named keys) and masked columns are stood in for from
+the schema. `--list` reads the bundles with each group's count and last sighting. An id nothing
+holds is `X_REPRO_UNKNOWN`; a request id with capture off is `X_REPRO_CAPTURE_OFF`.
 
 ## x docs
 

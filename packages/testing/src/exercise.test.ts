@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { action, registerActions, t } from '@ultimat3/action';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
+import { expectedQueryLoop } from '@ultimat3/db';
 import { database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import type { NamedActor } from '@ultimat3/policy';
@@ -104,7 +105,34 @@ const expPassAdmin = action({
   policy: can('exp-admin:do'),
   handle: () => ({ ok: true }),
 });
+/** Every note, then each one again by id: one statement per row — an N+1 no test names. */
+const readEach = async () => {
+  const page = await driver.repo(notes).findMany();
+  for (const row of page.rows) await driver.repo(notes).findById(row.id);
+  return { ok: true };
+};
+const expScaleLoop = action({
+  input: t.object({}),
+  output: Ok,
+  policy: can('exp-note:read'),
+  handle: readEach,
+});
+const expScaleFlat = action({
+  input: t.object({}),
+  output: Ok,
+  policy: can('exp-note:read'),
+  handle: async () => ({ ok: (await driver.repo(notes).findMany()).rows.length >= 0 }),
+});
+const expScaleDeclared = action({
+  input: t.object({}),
+  output: Ok,
+  policy: can('exp-note:read'),
+  handle: () => expectedQueryLoop('one lookup per note, each on its primary key', readEach),
+});
 registerActions({
+  expScaleDeclared,
+  expScaleFlat,
+  expScaleLoop,
   expPassAdmin,
   expPassCallsOut,
   expPassCreate,
@@ -281,5 +309,36 @@ describe(testName('unit', 'runExercisePass'), () => {
     const unreached = await one('expPassJob', { expPassJob: { actor: null, input: () => ({}) } });
     expect(unreached.outcome).toBe('unreached');
     expect(unreached.crash).toBeUndefined();
+  });
+});
+
+describe(testName('unit', 'runExercisePass · scale sweep'), () => {
+  test('a loop over rows in a handler is red with no test naming it: its shape grows 2 -> 8', async () => {
+    const record = await one('expScaleLoop');
+    expect(record.outcome).toBe('reached');
+    expect(record.scale?.verdict).toBe('grows');
+    const shapes = record.scale?.verdict === 'grows' ? record.scale.shapes : [];
+    expect(shapes.map((shape) => shape.fingerprint)).toEqual(['exp_notes.findById']);
+    expect(shapes[0]?.large).toBeGreaterThan(shapes[0]?.small ?? Number.POSITIVE_INFINITY);
+  });
+
+  test('one read of the list is flat at both sizes', async () => {
+    expect((await one('expScaleFlat')).scale).toEqual({ verdict: 'flat', expected: [] });
+  });
+
+  test('a loop under expectedQueryLoop passes, its reason reported', async () => {
+    const scale = (await one('expScaleDeclared')).scale;
+    expect(scale?.verdict).toBe('flat');
+    expect(scale?.verdict === 'flat' ? scale.expected : []).toEqual([
+      expect.objectContaining({
+        fingerprint: 'exp_notes.findById',
+        reason: 'one lookup per note, each on its primary key',
+      }),
+    ]);
+  });
+
+  test('only a reached primitive is swept at two sizes', async () => {
+    expect((await one('expPassThrows')).scale).toBeUndefined();
+    expect((await one('expPassAdmin')).scale).toBeUndefined();
   });
 });

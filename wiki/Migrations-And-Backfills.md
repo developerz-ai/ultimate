@@ -505,6 +505,10 @@ Backfills are therefore **never** wired into `runMigrations()`. The `backfill` c
 
 Position in the plan is **necessary and not sufficient**: `docker compose up -d` returns when a container has started, not when the app inside it serves. The barrier that makes "after" true is declarative — the `backfill` service carries `depends_on: { web: { condition: service_healthy } }`, which `docker compose run` honours. `As of 2026-08` that service ships with the barrier in both committed compose files: [`docker/docker-compose.prod.yml`](https://github.com/developerz-ai/ultimate/blob/main/docker/docker-compose.prod.yml) and the one `x new` scaffolds. In the scaffolded app the condition is satisfied by the image's own `HEALTHCHECK` on `/healthz`, so an app that removes it also removes the barrier.
 
+### `x db recount` — a counter, repaired
+
+`x db recount <entity>.<column>` compares a `countedIn` counter with the count of child rows and lists the drifted rows; `--write` sets them in one cross-tenant transaction. A counter drifts only while its trigger was missing (`X_LIFECYCLE_TRIGGER_MISSING`). As of 2026-11 the repair is one statement, not a paced `backfill()` pass.
+
 ### `x g backfill` — the generator
 
 Scaffolds a working pair, never a stub: `x g backfill <name> --feature <slice>` writes `<slice>/backfills/<name>.ts` — a `backfill()` declaration reading the feature's own table through `tableFor(entity, postgresRepo(entity))`, sweeping with `.where({ orgId })` guarded by an `assert` that the actor carries one, and writing back through `upsertAll` — plus `<name>.test.ts` asserting the declaration (name, retry, idempotency key), the manifest projection, and that the row transform is genuinely idempotent — `expect(<name>Row(once)).toEqual(once)`, deep value equality, since a transform that returns a fresh object every pass is still idempotent and `===` would fail it — and actually enqueues/dedupes against a memory job driver. A generated no-op handler that checkpoints a page it never wrote would report rows swept that nobody touched, which is why the template ships a real (if trivial) row transform rather than a `throw new Error(…)`.

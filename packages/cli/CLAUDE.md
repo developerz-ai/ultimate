@@ -153,7 +153,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 |---|---|
 | `cmd-registries.ts` / `cmd-jobs.ts` / `cmd-tasks.ts` / `cmd-policy.ts` / `cmd-i18n.ts` | project a framework registry; each pairs CLI wiring with a facts module |
 | `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` |
-| `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` | `x mcp serve`: 18 tools, two transports; a taken port is `X_PORT_IN_USE`; over HTTP a non-loopback Host is 421 `X_MCP_HOST_REFUSED` first, `GET`/`DELETE` http's 405. `mcp-test-run.ts` folds `bun test`'s `N errors` line and exit code into `tests.run` |
+| `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` | `x mcp serve`: 19 tools, two transports; a taken port is `X_PORT_IN_USE`; over HTTP a non-loopback Host is 421 `X_MCP_HOST_REFUSED` first, `GET`/`DELETE` http's 405. `mcp-test-run.ts` folds `bun test`'s `N errors` line and exit code into `tests.run` |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
 | `cmd-pr.ts` / `cmd-ci.ts` / `ci-runs.ts` / `ci-tested.ts` | GitHub through `gh`, parsed against a schema. Not gate steps. `x ci tested` is a pure predicate over three injected reads; every doubt is `tested: false`, exit 0 |
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for any code |

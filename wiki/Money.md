@@ -267,6 +267,26 @@ import { formatMoney } from '@ultimat3/money';
 
 `toDecimal` is for machine consumers (CSV, API payloads, accounting exports). `formatMoney` is for humans. They are not interchangeable.
 
+## An amount a person typed — `parseAmount`
+
+`As of 2026-11-06`. `parseAmount(text, { currency, locale })` reads the separators and digits of
+the person's locale off `Intl.NumberFormat`, then hands the digits to `fromDecimal` as a string:
+no float, ever.
+
+| Text | Locale | Currency | Answer |
+|---|---|---|---|
+| `1.234,56` | `de-DE` | EUR | 123456 |
+| `1 234,56` (any space) | `fr-FR` | EUR | 123456 |
+| `12,34,567.89` | `hi-IN` | INR | 123456789 |
+| `١٬٢٣٤٫٥٦` | `ar-EG` | EGP | 123456 |
+| `1,234` | `en-US` | USD | 123400 |
+| `1,234` | `de-DE` | EUR | refused: three fraction digits, EUR has two |
+| `1.5` | `de-DE` | EUR | refused: `.` does not group as `de-DE` groups |
+
+The locale's currency symbol and the currency code are ignored, a sign is `-` or the locale's
+minus. Every refusal is `X_MONEY_INPUT_INVALID` (422), whose cause names the character: re-prompt
+the person, never round or guess.
+
 ## Where money appears in the framework
 
 | Site | Shape |

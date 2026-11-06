@@ -62,6 +62,15 @@ const LikesBadge = island({
   props: ['postId', 'likeCount', 'likes'],
 });
 
+/**
+ * `summarize` read as it is written: an `llm()` declares `stream`, so the island asks the action's
+ * own route for `text/event-stream` and shows each token as it lands (`summary.island.tsx`).
+ */
+const Summary = island({
+  src: './summary.island.tsx',
+  props: ['postId', 'orgId', 'writingLabel', 'failedLabel'],
+});
+
 /** The layout's update banner — an island of THIS route, so it is declared here. */
 const Banner = updateBannerIsland('../../update-banner.island.tsx');
 
@@ -139,8 +148,17 @@ export const config = defineRoute({
    * all `pollEvery`'s timer, the once-a-minute repair read behind an at-most-once channel; the page
    * boot +1,437, a pinned read's URL and the session flag; the router +1,409, `refresh()` keeping
    * the same visitor's focus.
+   *
+   * raised 173kb → 209.5kb, measured 214,059 B (2026-11-06, plan 101 slice 41; the same sum, from
+   * `buildIslands` and `x verify --only budgets`' charges on the routes it weighs) — the like
+   * control 44,182 + the count 23,574 + the summary 30,272 + the banner 710 + the page boot 82,123
+   * + the router 29,570 + `/x-client-vitals.js` 1,202 + the inline runtime 2,426.
+   * why: +30,272 B is the summary island: `summarize` read token by token through the typed
+   * client's `.stream()` — `rpc`, core's transport and `clientStream`, which no other island on
+   * this page carried. The other +6,760 B is the page boot, the router and the vitals beacon
+   * growing since 2026-11-05 on every `app/` route, not this island.
    */
-  budget: { js: '173kb' },
+  budget: { js: '209.5kb' },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.
@@ -205,6 +223,25 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
 
           <div class={styles.body}>{props.data.body}</div>
 
+          {/*
+            The server's half: a button that cannot stream without scripting (disabled until the
+            island mounts), the region the tokens land in, and the status line.
+          */}
+          <Summary
+            postId={props.data.id}
+            orgId={props.data.orgId}
+            writingLabel={t('app.post.summaryWriting')}
+            failedLabel={t('app.post.summaryFailed')}
+          >
+            <Button type="button" disabled>
+              {t('app.post.summarize')}
+            </Button>
+            <p data-role="summary" aria-live="polite" />
+            <Text tone="muted">
+              <span data-role="status" />
+            </Text>
+          </Summary>
+
           <div class={styles.actions}>
             {/*
               The island's wrapper, and what the server puts inside it: the count it already read
@@ -253,8 +290,10 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
         >
           <ul class={styles.list}>
             <For each={props.data.comments}>
-              {(comment) => (
+              {(comment, index) => (
                 <li>
+                  {/* An `ordinal` family: "2nd comment", "2.º comentario" — CLDR's rules per locale. */}
+                  <Text tone="muted">{t('app.post.commentNumber', { ordinal: index() + 1 })}</Text>
                   <Text>{comment.body}</Text>
                   <RelativeTime value={comment.createdAt} timeZone={viewer.zone} />
                 </li>

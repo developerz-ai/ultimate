@@ -4,10 +4,17 @@
 
 import { isSelfOrigin, peerAddressClass } from '@ultimat3/core';
 import type { StatementObserver } from '@ultimat3/db';
-import { setStatementObserver, statementObserver } from '@ultimat3/db';
+import {
+  expectedSeqScanReason,
+  setStatementObserver,
+  statementFingerprint,
+  statementObserver,
+} from '@ultimat3/db';
 import type { RowObserver } from '@ultimat3/entity';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import { testMail } from './fixture-mail';
+import type { PlanProof, SentStatement } from './plan-sweep';
+import type { ScaleProof, StatementTally } from './scale-sweep';
 import {
   captureNetwork,
   isNetworkSealed,
@@ -96,6 +103,10 @@ export interface ExerciseRecord {
   readonly tenant?: TenantProof;
   /** On a reached job only: its control's input, killed at every step boundary. */
   readonly crash?: CrashProof;
+  /** Every statement it sent, planned with no index but the declared ones (`plan-sweep.ts`). */
+  readonly plans?: PlanProof;
+  /** On a reached primitive: its statement shapes at 2 and at 8 rows a table (`scale-sweep.ts`). */
+  readonly scale?: ScaleProof;
 }
 
 /** What an effect carried, for the tenant proof's read half: searched, never reported as is. */
@@ -142,11 +153,16 @@ export interface Observed {
   readonly refusedHosts: readonly string[];
   /** Each mail's addresses and text, each call out's url and body — a sealed one included. */
   readonly payloads: readonly EffectPayload[];
+  /** Each statement shape and how often, the `expectedQueryLoop` ones told apart. */
+  readonly shapes: readonly StatementTally[];
 }
 
 export interface ExerciseRoom extends AsyncDisposable {
-  begin(): void;
+  /** `subject`: the primitive the statements until `end()` are sent for — what the plan sweep reads. */
+  begin(subject?: string): void;
   end(): Observed;
+  /** Every distinct statement text sent between a `begin(subject)` and its `end()`, so far. */
+  sent(): ReadonlyMap<string, SentStatement>;
 }
 
 export async function openExerciseRoom(): Promise<ExerciseRoom> {
@@ -162,11 +178,29 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
   const mail = await testMail();
   let statements = 0;
   let logFrom = 0;
+  let subject: string | undefined;
   const rows: string[] = [];
+  const shapes = new Map<string, { count: number; unexpected: number; expected?: string }>();
+  const sent = new Map<string, { primitives: Set<string>; scan?: string }>();
   const previousStatements = statementObserver();
   const counting: StatementObserver = {
-    onStatement: () => {
+    onStatement: (event) => {
       statements += 1;
+      const fingerprint = statementFingerprint(event);
+      const shape = shapes.get(fingerprint) ?? { count: 0, unexpected: 0 };
+      shape.count += 1;
+      if (event.expected === undefined) shape.unexpected += 1;
+      else shape.expected = event.expected;
+      shapes.set(fingerprint, shape);
+      if (subject === undefined) return;
+      // Whitespace collapsed, so one builder's two indentations are one statement to plan.
+      const text = event.text.replace(/\s+/g, ' ').trim();
+      const one = sent.get(text) ?? { primitives: new Set<string>() };
+      one.primitives.add(subject);
+      // Read here, in the sender's own async context: the scope is the statement's, not the room's.
+      const scan = expectedSeqScanReason();
+      if (scan !== undefined) one.scan = scan;
+      sent.set(text, one);
     },
   };
   setStatementObserver(counting);
@@ -179,8 +213,10 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
   const previousRows = setRowObserver(rowObserver);
 
   return {
-    begin: () => {
+    begin: (name) => {
+      subject = name;
       statements = 0;
+      shapes.clear();
       rows.length = 0;
       mail.clear();
       logFrom = requestLog().length;
@@ -225,8 +261,11 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
           value: { url: call.url, body: call.body },
         })),
       ];
-      return { statements, effects, refusedHosts, payloads };
+      subject = undefined;
+      const tallies = [...shapes].map(([fingerprint, shape]) => ({ fingerprint, ...shape }));
+      return { statements, effects, refusedHosts, payloads, shapes: tallies };
     },
+    sent: () => sent,
     [Symbol.asyncDispose]: async (): Promise<void> => {
       // Each restore runs whatever the one before it did: a throw must not strand a seam.
       try {

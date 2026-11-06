@@ -151,6 +151,8 @@ export { MAX_RETRY_AFTER_SECONDS, retryAfterSecondsOf } from './client-retry-aft
  */
 export type { ClientScope } from './client-scope';
 export { onRescope, rescope } from './client-scope';
+export type { StreamRequest } from './client-stream';
+export { clientStream } from './client-stream';
 export { clientTransport } from './client-transport';
 /** What a typed client puts on the wire. `retryForStatus` is what fills a failure's `retry`. */
 export type { WireAnswer } from './client-wire';
@@ -192,6 +194,12 @@ export {
   CLIENT_VITALS_DEFAULTS,
   CLIENT_VITALS_SURFACES,
 } from './config-client-errors';
+export type {
+  FailureCaptureConfig,
+  FailureCaptureSection,
+  FailureCaptureSectionInput,
+} from './config-failure-capture';
+export { FAILURE_CAPTURE_DEFAULTS } from './config-failure-capture';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
 export type { IslandsConfig, IslandsSection, IslandsSectionInput } from './config-islands';
@@ -259,6 +267,8 @@ export {
   sectionPatterns,
   sitemapSectionIssues,
 } from './config-sitemap';
+export type { AppTimeConfig, TimeSection, TimeSectionInput } from './config-time';
+export { TIME_DEFAULTS } from './config-time';
 export type { ConflictPolicy, ResolveConflictOptions, Row } from './conflict-policy';
 export { resolveConflict } from './conflict-policy';
 export type {
@@ -454,6 +464,7 @@ export {
 } from './exports/error-contract';
 export type {
   AttributeValue,
+  CapturedValue,
   Counter,
   ErrorReport,
   ErrorReporter,
@@ -461,8 +472,16 @@ export type {
   ErrorScope,
   ErrorSeverity,
   ErrorSource,
+  FailureActor,
+  FailureBundle,
+  FailureCaptureLimits,
+  FailureFact,
+  FailurePrimitive,
+  FailureRead,
+  FailureStore,
   Gauge,
   GaugeOptions,
+  HeldFailure,
   Histogram,
   HistogramOptions,
   HistogramPoint,
@@ -512,6 +531,7 @@ export type {
 export {
   alwaysOffSampler,
   alwaysOnSampler,
+  captureValue,
   chainErrorReporters,
   collectMetrics,
   configureErrorReporting,
@@ -532,9 +552,12 @@ export {
   errorReport,
   errorReportersOf,
   exportMetrics,
+  failureCaptureActive,
+  failureCaptureLimits,
   gauge,
   histogram,
   installedErrorReporter,
+  installedFailureStore,
   isRedactedKey,
   jobs,
   LOG_LEVELS,
@@ -569,6 +592,8 @@ export {
   REDACTED,
   ratioSampler,
   recordConnection,
+  recordFailureFact,
+  recordFailureInput,
   recordJob,
   recordLeaseLost,
   recordQueueDepth,
@@ -578,6 +603,7 @@ export {
   requestDuration,
   requests,
   resetErrorReporting,
+  resetFailureCaptureWindows,
   resetMetrics,
   resetTelemetry,
   SCALING_METRICS,
@@ -585,13 +611,16 @@ export {
   sentryEnvelope,
   sentryErrorReporter,
   serviceResource,
+  setFailureStore,
   setLoggerContextFields,
   setLogStream,
+  settleFailureCaptures,
   startMetricExport,
   startSpan,
   structuredLogger,
   traceparent,
   tryOtlpEndpoint,
+  withFailureCapture,
   withSpan,
   withSpanContext,
 } from './exports/observability';

@@ -185,6 +185,20 @@ describe('logs.tail reads the dev log off disk', () => {
   });
 });
 
+describe('graph.query answers from the app graph x impact reads', () => {
+  test('a name that is no node is X_GRAPH_NODE_UNKNOWN, with the command that lists them', async () => {
+    const { text, isError } = resultOf(await call('graph.query', { node: 'noSuchPrimitive' }));
+    expect(isError).toBe(true);
+    expect(text).toContain('X_GRAPH_NODE_UNKNOWN');
+    expect(text).toContain('x graph --json');
+  });
+
+  test('a path between two names that are no nodes refuses the same way', async () => {
+    const { text } = resultOf(await call('graph.query', { from: 'nowhere', to: 'nothing' }));
+    expect(text).toContain('X_GRAPH_NODE_UNKNOWN');
+  });
+});
+
 describe('manifest.read prefers the committed file', () => {
   test('the generated file on disk is handed back verbatim', async () => {
     const committed = '{\n  "buildId": "committed-by-x-manifest"\n}';

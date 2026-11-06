@@ -696,6 +696,28 @@ heap up 42 MB, a 20 MB one with it up 24 MB — a page and the garbage behind it
 `ImportSource` is a seam for `ExportSink`'s reason; `scripts/export-sink.test.ts` compiles
 `StorageDriver` into both. `memoryImportSource()` is the test source.
 
+## One person's data is a job too
+
+`defineSubject(entity, { driver, key, tables, targets?, columns?, batch? })` declares the person
+once; `subjectExport({ name, input, tenant, subject, sink, prefix, format })` and
+`subjectErase({ name, input, tenant, subject })` are factories over `job()` that take it. The
+reach is planned when a run starts (`planSubject`, pure), from every registered entity's foreign
+keys, continued only through tables the erase deletes; the first refusal of the declaration
+throws before a row is touched (`X_SUBJECT_TABLE_UNDECLARED`, `X_SUBJECT_TREATMENT_INVALID`,
+`X_SUBJECT_CYCLE`, all terminal).
+
+| Piece | Does |
+|---|---|
+| `subject-plan.ts` | reach, children-first order, loop-closing keys to clear first, every refusal |
+| `subject-select.ts` | a table's rows of the subject a page of parent keys at a time, through `database()` over the app's driver |
+| `subject-erase-pass.ts` | targets (fresh subject row each step), cleared keys, then each table; one step per page, each write `deleteWhere`/`updateWhere` on one key |
+| `subject-export-pass.ts` | one object per page per table and target, `index.json` last; sealed columns left out, instants as ISO UTC |
+| `subjectEraseTables(subject, key, step)` | the table passes alone, under the caller's context — what `@ultimat3/testing`'s `subjectProof` drives |
+
+`SubjectTarget` (`name`, `columns`, `exportPage`, `erase`) is structural, as `PurgeTarget` is:
+`authSubjectTarget`, `auditSubjectTarget` and `storageSubjectTarget` satisfy it from their own
+packages. `{ target, retain: '<why>' }` exports a target and never erases it.
+
 ## Outbound webhooks are jobs too
 
 `webhook()` is a factory over `job()` and delivers **one event to one endpoint**. Retry with

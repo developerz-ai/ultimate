@@ -297,6 +297,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A supplied signing secret against `DEV_SIGNING_SECRET`, the SHIPPED DEV CONSTANT, so `localDriver()` can refuse it outside development — a published literal, no byte an attacker does not already hold.',
   },
+  'packages/testing/src/subject-proof.ts: parent[via.parentKey] === row[via.property]': {
+    // why: new with `subjectProof()` in plan 101 wave 9.
+    count: 1,
+    reason:
+      'Follows a foreign key through GENERATED SEED ROWS: `parentKey` is the referenced COLUMN NAME (`SubjectVia.parentKey`, e.g. `id`), and both sides are seed values `seedGraph` just made — a join in a test proof, not an authentication decision.',
+  },
   'packages/time/src/cron-parse.ts: list.indexOf(token)': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `time` package row.
     count: 1,

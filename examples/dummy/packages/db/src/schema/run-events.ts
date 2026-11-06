@@ -65,7 +65,10 @@ export const runEvents = entity('run_events', {
       .references(() => orgs.id, { onDelete: 'cascade' })
       .tenant(),
     /** The JOB's run id: the one identity the prompt handler, the body and the answer all hold. */
-    runId: uuid().references(() => runs.id, { onDelete: 'cascade' }),
+    runId: uuid().references(() => runs.id, {
+      onDelete: 'cascade',
+      countedIn: () => runs.eventCount,
+    }),
     seq: integer(),
     kind: enumerated(RUN_EVENT_KINDS),
     at: timestamp().defaultNow(),
@@ -80,7 +83,9 @@ export const runEvents = entity('run_events', {
     invariant('run_event_seq_from_one', c.seq.atLeast(1)),
     invariant('run_event_seq_unique', c.unique(['runId', 'seq'])),
   ],
-  indexes: [{ on: ['orgId', 'runId', 'seq'] }],
+  indexes: [{ on: ['orgId', 'runId', 'seq'] }, { on: ['at'] }],
+  /** A run's trace is worth a quarter: past it, `purgeRetained` deletes the rows in batches. */
+  retain: { after: '90d', on: 'at' },
 });
 
 export type RunEvent = typeof runEvents.$row;

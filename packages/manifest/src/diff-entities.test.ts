@@ -196,6 +196,26 @@ describe('entity facts', () => {
     );
   });
 
+  test('a scan reason declared, changed or dropped is additive, and reported', () => {
+    const at = 'entities.post.scan';
+    const between = (before: Partial<Entity>, after: Partial<Entity>) =>
+      diffManifest(
+        fixtureManifest({ entities: post(before) }),
+        fixtureManifest({ entities: post(after) }),
+      );
+    const declared = between({}, { scan: 'a closed catalog of 8 rows' });
+    expect(declared.hasBreaking).toBe(false);
+    expect(declared.additive.find((c) => c.path === at)?.detail).toBe(
+      'scan declared: a closed catalog of 8 rows',
+    );
+    expect(between({ scan: 'a' }, { scan: 'b' }).additive.find((c) => c.path === at)?.detail).toBe(
+      'scan reason a -> b',
+    );
+    expect(between({ scan: 'a' }, {}).additive.find((c) => c.path === at)?.detail).toBe(
+      'scan reason dropped',
+    );
+  });
+
   test('an unchanged entity reports nothing of its own', () => {
     expect(diff(post()).changes.filter((c) => c.path.startsWith('entities.'))).toEqual([]);
   });

@@ -106,7 +106,6 @@ downstream app on Ultimate and of systems built without it; no row is a defect i
 | a server-first dialog, menu and combobox with a small enhancer | ~2,200 app-side lines; 13 catalog components at 0 imports | HTML first, a small controller second |
 | `QueryRef` derived from the declaration | [Queries and live queries](Queries-And-Live-Queries) "Not derived" row | — |
 | a `task` that runs without a companion job; a boot hook | 35 task/job pairs, 2 boot stand-ins | recurring tasks that name a command; initializers |
-| a failure bundle an agent can act on | built by hand in two surveyed systems | the error page: trace, request, a console |
 | batches with completion callbacks, debounce, priority, job expiry, argument encryption | each present in a surveyed job system; none asked for by the proving case | batches and limiters in established job systems; queue priorities |
 | proxy inventory, captcha, OTP relay | product features of a scraping service — the app's, by [axiom 8](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/19-mechanism-not-convention.md) | — |
 

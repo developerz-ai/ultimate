@@ -691,3 +691,31 @@ Gotchas:
   with the socket still open for `drain.readinessGraceMs`, ADDED to `deadlineMs` (a chart's
   `terminationGracePeriodSeconds` must exceed the sum — 5 s + 25 s by default). Unset: 0 in
   development/test, 5000 everywhere else including a process naming no environment (fail closed).
+
+## Moved out for plan 101's wave 9 (`As of 2026-11-06`)
+
+Verbatim from [`packages/core/CLAUDE.md`](../../packages/core/CLAUDE.md), which keeps each rule in one line and points here.
+
+### the browser's one HTTP function (the `client-transport.ts` row's note)
+
+`pageClient()` is the ONE `globalThis` write (`Symbol.for('ultimate.client')`); the scope's listeners live ON the handle. `clientTransport` never value-imports `clientFlight` or `traceHeaders()`: trace/budget headers reach it through the page handle's OUTBOUND SLOT (`outbound-headers.ts`). `isSuperseded` answers both `X_SUPERSEDED` and `X_CLIENT_SCOPE_CHANGED`. The fence never `bump()`s a caller's flight. A write never dedupes; a read dedupes only with a caller's `flight`. `pageClient()` reads `<meta name="ultimate-scope">` (`CLIENT_SCOPE_META`) once: content = principal, empty = anonymous (`null`), absent = UNSCOPED (`undefined`, nothing persisted). `actionPath(name)` with no `style` reads the document's `<meta name="ultimate-path-style">` (`renderedActionPathStyle()`; `CLIENT_PATH_STYLE_META` in `page-meta.ts`) and falls back to `'resource'`. A refusal's `Retry-After` and body `title` are read HERE (`client-retry-after.ts`, `remoteTitleOf`). Bytes: `page-bundle.test.ts`; `rpc`'s and `queryClient`'s in `action`'s and `query`'s CLAUDE.md `REPLAYED_HEADER` sits beside `IDEMPOTENCY_HEADER` in `client-dispatch.ts`; `withRequestId` and `withStatedDelay` are the one rule per wire key for both decoders
+
+### Exports (the subpaths)
+
+FIVE public subpaths. `./page` (`page.ts`): the page handle, the principal fence and the page's shared names, because any barrel import retains the error registry (~7.6 kB); `page-bundle.test.ts` pins the retained set and a 1.5 kB ceiling, and nothing that constructs an error may join it. `./outbound` (`outbound-subpath.ts`): server-only, reads `Bun.dns`. `./redis` (`redis-client.ts`): server-only, the one Redis client (`Bun.RedisClient`, `redis-subpath.test.ts`). `./render-node` (`render-node.ts`): the node brands, a leaf with no import, read by `render`. `./render-nodes` (`render-nodes.ts`): the test walker, imported by no non-test source (`render-nodes-subpath.test.ts`). One INTERNAL subpath, `./internal/error-status` (`error-status-declared.ts`, the app half of the status table): imported by `define-error.ts` and `@ultimat3/http` only, refused on the barrel by `error-status-declared.test.ts`. `src/exports/` groups three subjects; every name is still written out in `index.ts`
+
+### one-home helpers (the row's note)
+
+never copied (`X_HELPER_COPY`). `deprecation` holds `successorLink` and `successorPathOf`, so `rel="successor-version"` is spelt in one file; `aws-sigv4`'s `presignAwsUrl` shares `signAwsRequest`'s derivation (`signatureOver`), held equal to `Bun.S3Client`'s presign by `aws-sigv4-presign.test.ts`
+
+### `secrets-errors.ts`'s command lines
+
+- **`secrets-errors.ts`'s command lines are screened**: paths through `renderFixShellArg`; a
+  variable name must match `/^[A-Z_][A-Z0-9_]*$/` or the line degrades to prose;
+  `X_SECRETS_KEY_MISMATCH`'s command carries no key id (it is read from a file). Its seven codes
+  register through `registerErrorCodes()`, so `resetErrorCodes()` drops them — take
+  `errorCodeSnapshot()` first. The envelope's `kid` lets *wrong key* and *edited file* be two codes.
+
+### `intl-cache.ts` (the row's note)
+
+The cause quotes at most `MAX_LOCALE_EXCERPT` (35) code points; the whole tag rides in `meta.locale`

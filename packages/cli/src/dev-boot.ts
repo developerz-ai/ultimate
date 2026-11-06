@@ -24,6 +24,7 @@ import { devRebuilder } from './dev-rebuild';
 import { devRouteTable } from './dev-route-table';
 import { createTraceRecorder } from './dev-traces';
 import { watchTree } from './dev-watch-tree';
+import { armFailureCapture } from './failure-capture-boot';
 import { buildIslands } from './island-bundle';
 import { FRAME_STYLE } from './island-harness';
 import type { Finding } from './output';
@@ -180,8 +181,14 @@ async function bootDev(
   };
   // `serve-boot.ts`'s guard, at its point: after the app's modules, before any role serves. On
   // PGlite the boot serves as `x_app`; on an external database a role that bypasses is refused.
-  const declared = rowSecurityDeclared(await loadAppConfig(options.root));
-  acquired.push(await armRowSecurity(declared, { embedded: services.db.mode === 'embedded' }));
+  const appConfig = await loadAppConfig(options.root);
+  acquired.push(
+    await armRowSecurity(rowSecurityDeclared(appConfig), {
+      embedded: services.db.mode === 'embedded',
+    }),
+  );
+  // ON in `x dev` whatever `app.config.ts` says: a 5xx here is one `x repro <requestId>` away.
+  acquired.push(armFailureCapture(appConfig, { force: true }));
   // The manifest's build id is a content hash of every fact below it, so a dev document's
   // `x-ultimate-build` header names the exact shape the client was served against. Pinned at
   // boot on purpose: the header is handed to the HTTP config and the render modes once, and a
@@ -217,19 +224,21 @@ async function bootDev(
   // ttl); attached, so a tag bust reaches it too. Released with the roles.
   const { isr, release: releaseIsr } = attachedIsr({ buildId });
   acquired.push(releaseIsr);
-  const { routes, theme, speculation, inlineStyles, mcpPath, mcpPaths } = await devRouteTable({
-    isr,
-    root: options.root,
-    env: options.env,
-    buildId,
-    storage: runtime.storage,
-    dashboard,
-    islands: () => state.islands,
-    realtime: runtime.realtime,
-    rateLimitStore: appRuntime?.rateLimitStore ?? runtime.rateLimitStore,
-    appRoutes: plainRoutes(appRuntime?.routes),
-    images: appRuntime?.images,
-  });
+  const { routes, theme, speculation, zone, inlineStyles, mcpPath, mcpPaths } = await devRouteTable(
+    {
+      isr,
+      root: options.root,
+      env: options.env,
+      buildId,
+      storage: runtime.storage,
+      dashboard,
+      islands: () => state.islands,
+      realtime: runtime.realtime,
+      rateLimitStore: appRuntime?.rateLimitStore ?? runtime.rateLimitStore,
+      appRoutes: plainRoutes(appRuntime?.routes),
+      images: appRuntime?.images,
+    },
+  );
 
   // The app's `apps/<app>/runtime.ts`, composed exactly as `runRole` composes a caller's
   // `runtime`: the replica scope in front, the app's own middleware behind it. Before this the
@@ -254,7 +263,11 @@ async function bootDev(
     // The `/_x` shell, the harness's frame, the app's own error pages and its brand — the inline
     // bodies this process serves; the app's surfaces are content-hashed files `'self'` admits.
     inlineStyles: [await devShellStyle(), FRAME_STYLE, ...inlineStyles],
-    inlineScripts: [theme.cspSource, ...(speculation === undefined ? [] : [speculation.cspSource])],
+    inlineScripts: [
+      theme.cspSource,
+      ...(speculation === undefined ? [] : [speculation.cspSource]),
+      ...(zone === undefined ? [] : [zone.cspSource]),
+    ],
     // The overlay renders this request's own loops under the error it is already showing.
     // `serve.ts` boots through the same `startRoles` and passes nothing (axiom 6).
     devNotices: (ctx: RequestContext): readonly OverlayNotice[] =>

@@ -22,6 +22,8 @@ export const DB_MESSAGES = {
   /** The empty cell in an `x db branch list` column — a value, not a column key. */
   'cli.db.branch.unknown': '-',
   'cli.db.diagnostics.done': '{available} of {total} diagnostic section(s) answered',
+  'cli.db.recount.drift': '{target}: {count} row(s) drifted from the true count',
+  'cli.db.recount.repaired': '{target}: {count} row(s) set to the true count',
   'cli.db.diagnostics.section': '{section}: {count} row(s)',
   'cli.db.diagnostics.unavailable': '{section}: unavailable, {code} — {reason}  fix: {fix}',
   'cli.db.gen.failed': 'migration not generated',

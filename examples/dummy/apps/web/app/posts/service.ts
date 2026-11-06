@@ -14,9 +14,9 @@ import {
   orgId as toOrgId,
 } from '@postly/domain';
 import type { AgentTranscript } from '@ultimat3/ai';
-import { defineService, keyedFingerprint } from '@ultimat3/core';
+import { defineService, isUltimateError, keyedFingerprint } from '@ultimat3/core';
 import type { CommentView, CreatePostInput, DraftReview, PostView, ReviewView } from './entity';
-import { PostNotFound } from './errors';
+import { PostNotFound, PostSlugTaken } from './errors';
 import type { PostRow } from './policy';
 import {
   authorshipOf,
@@ -113,15 +113,24 @@ export const postsService = defineService('posts', (ctx) => {
 
     /** Excerpt and slug are derived, never accepted verbatim: both are load-bearing forever. */
     async createDraft(input: CreatePostInput): Promise<PostView> {
-      return insertDraft({
-        orgId: tenantId(),
-        authorId: authorId(),
-        // A caller's slug is normalised like a derived one: `My Post` is `my-post`, never a 422.
-        slug: slugify(input.slug ?? input.title),
-        title: input.title,
-        excerpt: excerptOf(input.body),
-        body: input.body,
-      });
+      // A caller's slug is normalised like a derived one: `My Post` is `my-post`, never a 422.
+      const slug = slugify(input.slug ?? input.title);
+      try {
+        return await insertDraft({
+          orgId: tenantId(),
+          authorId: authorId(),
+          slug,
+          title: input.title,
+          excerpt: excerptOf(input.body),
+          body: input.body,
+        });
+      } catch (error) {
+        // The id is generated, so the slug is the one unique a new draft can collide on.
+        if (isUltimateError(error) && error.code === 'X_DB_UNIQUE_VIOLATION') {
+          throw new PostSlugTaken(slug);
+        }
+        throw error;
+      }
     },
 
     /**

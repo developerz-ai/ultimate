@@ -1,14 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
 import {
+  familyStems,
   interpolate,
   PLURAL_CATEGORIES,
   placeholdersOf,
   pluralCategory,
   pluralKeyCandidates,
   pluralVariantsOf,
+  selectMessageKey,
   selectPluralKey,
 } from './interpolate';
+import { catalogTranslator } from './translator';
 
 describe('interpolate', () => {
   test('substitutes and escapes braces', () => {
@@ -221,5 +224,51 @@ describe('the plural-rules cache', () => {
       expect(pluralCategory(1, 'EN-x-RULES-WARM')).toBe('one');
       expect(built).toEqual([]);
     });
+  });
+});
+
+describe('select and ordinal families — the one key selection', () => {
+  const catalog = catalogTranslator(
+    {
+      place_ordinal_one: '{ordinal}st',
+      place_ordinal_two: '{ordinal}nd',
+      place_ordinal_few: '{ordinal}rd',
+      place_ordinal_other: '{ordinal}th',
+      invite_select_female_one: 'she invited one',
+      invite_select_female_other: 'she invited {count}',
+      invite_select_other_one: 'they invited one',
+      invite_select_other_other: 'they invited {count}',
+      role_select_admin: 'administrator',
+      role_select_other: 'member',
+    },
+    'en',
+  );
+
+  test('en ordinals: 1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st, 22nd', () => {
+    const rendered = [1, 2, 3, 4, 11, 12, 13, 21, 22].map((ordinal) =>
+      catalog('place', { ordinal }),
+    );
+    expect(rendered).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd']);
+  });
+
+  test('select picks the value, then _select_other; and composes with count', () => {
+    expect(catalog('role', { select: 'admin' })).toBe('administrator');
+    expect(catalog('role', { select: 'guest' })).toBe('member');
+    expect(catalog('invite', { select: 'female', count: 1 })).toBe('she invited one');
+    expect(catalog('invite', { select: 'female', count: 3 })).toBe('she invited 3');
+    expect(catalog('invite', { select: 'male', count: 3 })).toBe('they invited 3');
+  });
+
+  test('a select value that cannot be a key segment selects nothing', () => {
+    expect(selectMessageKey('role', { select: '../admin' }, 'en', () => true)).toBe('role');
+    expect(familyStems('role', { select: '' }, 'en')).toEqual([]);
+    expect(familyStems('place', { ordinal: Number.NaN }, 'en')).toEqual([]);
+  });
+
+  test('a family the catalog lacks falls through to the plain key and its plurals', () => {
+    const has = (key: string) => key === 'items_other';
+    expect(selectMessageKey('items', { select: 'female', count: 2 }, 'en', has)).toBe(
+      'items_other',
+    );
   });
 });

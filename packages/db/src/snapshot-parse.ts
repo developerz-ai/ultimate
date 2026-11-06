@@ -10,6 +10,7 @@ import type {
   IndexDescription,
   SchemaDescription,
   TableDescription,
+  TriggerRecord,
   ViewDescription,
 } from './introspect';
 
@@ -106,6 +107,12 @@ function all<T>(value: unknown, one: (item: unknown) => T | undefined): readonly
   return parsed;
 }
 
+function trigger(value: unknown): TriggerRecord | undefined {
+  if (!isRow(value)) return undefined;
+  const { name, install } = value;
+  return str(name) && strings(install) ? { name, install } : undefined;
+}
+
 function tableOf(value: unknown): TableDescription | undefined {
   if (!isRow(value)) return undefined;
   const { schema, name, primaryKey } = value;
@@ -129,7 +136,15 @@ function tableOf(value: unknown): TableDescription | undefined {
   // `rowSecurity` by the same rule once more.
   const rowSecurity = value['rowSecurity'];
   if (!(rowSecurity === undefined || bool(rowSecurity))) return undefined;
+  const retain = value['retain'];
+  if (!(retain === undefined || bool(retain))) return undefined;
+  // Absent is none recorded; anything present must be a list of `{ name, install }`.
+  const rawTriggers = value['triggers'];
+  const triggers = rawTriggers === undefined ? undefined : all(rawTriggers, trigger);
+  if (rawTriggers !== undefined && triggers === undefined) return undefined;
   const flags = {
+    ...(retain === true ? { retain: true as const } : {}),
+    ...(triggers === undefined ? {} : { triggers }),
     ...(identity === true ? { replicaIdentityFull: true as const } : {}),
     ...(appendOnly === true ? { appendOnly: true as const } : {}),
     ...(rowSecurity === true ? { rowSecurity: true as const } : {}),

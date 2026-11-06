@@ -30,6 +30,11 @@ answers the canonical spelling (or `undefined`), and `assertTimeZone` / `resolve
 return it. Anything reading a zone off a request header should canonicalize before caching on it:
 4,096 casings of `Europe/Berlin` used to mint 4,096 permanent `Intl.DateTimeFormat`s, 31 MB.
 
+**The request's zone, in order:** `user`, `cookie` (a picker's `x_timezone`), `query` (`?tz=`),
+`header` (`x-timezone`), `detected` (`TIMEZONE_DETECTED_COOKIE`, `x_timezone_detected`), then the
+`configureTime` default. `detected` is what `@ultimat3/render`'s `zoneScript` writes on `app/`
+documents under `time: { detect: true }`: a guess, below everything chosen, never written over it.
+
 **A zone is `Area/Location`, or `UTC`.** Nothing else. `CET`, `EST5EDT` and `+02:00` name no
 jurisdiction and carry no DST rule; the single-label `backward` links (`Japan`, `GB`, `Eire`) are
 refused with them, because no rule keeps the first group out and lets the second in. Write the

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ce00cce55d675f8ed8a1f805b4f8460c529865e85b092930537ce74ec56970cc",
+  "buildId": "1842e3330341712df5c6b81d618d67eca144dbcb2d2169b3d173070d44214d9d",
   "tiers": {
     "0": [
       "core",
@@ -291,6 +291,11 @@
     },
     {
       "code": "X_ACTION_POLICY_MISSING",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_ACTION_STREAM_INVALID",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
     },
@@ -855,6 +860,26 @@
       "at": "packages/cache/src/errors.ts"
     },
     {
+      "code": "X_CASSETTE_MISSING",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_CASSETTE_RECORD_REFUSED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_CASSETTE_SECRET",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_CASSETTE_UNUSED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_CATALOG_CARRIER_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/catalog-keys.ts"
@@ -1000,6 +1025,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_CLIENT_EDITED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_CLIENT_ERROR",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -1013,6 +1043,21 @@
       "code": "X_CLIENT_SCOPE_CHANGED",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_CLIENT_SPEC_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CLIENT_SPEC_UNSUPPORTED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CLIENT_STALE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_CLIENT_TRANSPORT_FAILED",
@@ -1745,6 +1790,11 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_ENTITY_COUNTS_INVALID",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_ENTITY_DUPLICATE",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
@@ -1753,6 +1803,21 @@
       "code": "X_ENTITY_OPERATOR_UNKNOWN",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_RETAIN_INVALID",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_ENTITY_RETAIN_UNINDEXED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_RETAIN_UNSWEPT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ENTITY_SEALED_IN_VIEW",
@@ -2170,6 +2235,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_GRAPH_NODE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_GUARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2218,6 +2288,11 @@
       "code": "X_HTTP_PATH_INPUT_CONFLICT",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_I18N_FAMILY_INCOMPLETE",
+      "owner": "i18n",
+      "at": "packages/i18n/src/errors.ts"
     },
     {
       "code": "X_ID_INVALID",
@@ -2590,6 +2665,11 @@
       "at": "packages/core/src/lifecycle-errors.ts"
     },
     {
+      "code": "X_LIFECYCLE_TRIGGER_MISSING",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_LINT_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2726,6 +2806,16 @@
     },
     {
       "code": "X_MAIL_LOCALE_MISSING",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
+      "code": "X_MAIL_PREVIEW_INVALID",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
+      "code": "X_MAIL_PREVIEW_MISSING",
       "owner": "mail",
       "at": "packages/mail/src/errors.ts"
     },
@@ -2870,6 +2960,11 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_JOB_TOOL_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_LIST_PARAMS_INVALID",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -2911,6 +3006,46 @@
     },
     {
       "code": "X_MCP_RATE_LIMITED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_RECIPE_EXAMPLE_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_RECIPE_LINK_DANGLING",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_RECIPE_TOOL_UNKNOWN",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_RECIPE_UNKNOWN",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_RECIPE_URI_RESERVED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_REMOTE_AUTH_REQUIRED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_REMOTE_REFUSED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_REMOTE_TOOL_CHANGED",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
@@ -3073,6 +3208,11 @@
       "code": "X_MIGRATION_VIEW_DEPENDS",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MONEY_INPUT_INVALID",
+      "owner": "money",
+      "at": "packages/money/src/errors.ts"
     },
     {
       "code": "X_MONEY_NOT_INTEGER",
@@ -3670,9 +3810,19 @@
       "at": "packages/realtime/src/error-titles.ts"
     },
     {
+      "code": "X_QUERY_PLAN_UNAVAILABLE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_POLICY_MISSING",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_SCALES_WITH_ROWS",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_QUERY_SINGLE_INVALID",
@@ -3683,6 +3833,11 @@
       "code": "X_QUERY_SLICE_ENTITY",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_QUERY_SORT_UNSERVED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_QUERY_SUBSCRIBES_DRIFT",
@@ -3703,6 +3858,11 @@
       "code": "X_QUERY_TIMEOUT_INVALID",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_UNINDEXED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_QUERY_UNREGISTERED",
@@ -3953,6 +4113,21 @@
       "code": "X_REPO_CLIENT_PINNED",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_REPRO_CAPTURE_OFF",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_REPRO_NOT_REPRODUCED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_REPRO_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ROADMAP_FILE_MISSING",
@@ -4455,6 +4630,11 @@
       "at": "packages/seo/src/errors.ts"
     },
     {
+      "code": "X_SEO_LLMS_DESCRIPTION_MISSING",
+      "owner": "seo",
+      "at": "packages/seo/src/errors.ts"
+    },
+    {
       "code": "X_SEO_META_MISSING",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
@@ -4507,47 +4687,47 @@
     {
       "code": "X_SHOT_BROWSER_MISSING",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHOT_ELEMENT_MISSING",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHOT_ELEMENT_UNREADY",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHOT_HOST_REFUSED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHOT_ISLAND_MISSING",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHOT_ISLAND_STATES_EMPTY",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHOT_ISLAND_UNPHOTOGRAPHABLE",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHOT_ISLAND_UNSTUBBED_REQUEST",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHOT_KEY_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_SHUTDOWN_TIMEOUT",
@@ -4790,6 +4970,11 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_MULTIPART_UNSUPPORTED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
       "code": "X_STORAGE_NOT_FOUND",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
@@ -4811,6 +4996,11 @@
     },
     {
       "code": "X_STORAGE_ORG_MISMATCH",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_PARTS_INVALID",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },
@@ -4870,6 +5060,11 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_UPLOAD_UNKNOWN",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
       "code": "X_STORAGE_URL_EXPIRED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
@@ -4898,6 +5093,26 @@
       "code": "X_STYLES_GLOBAL_MISSING",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_SUBJECT_CYCLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_SUBJECT_ERASE_INCOMPLETE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_SUBJECT_TABLE_UNDECLARED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_SUBJECT_TREATMENT_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
     },
     {
       "code": "X_SUBSCRIPTION_ID_TAKEN",
@@ -5332,17 +5547,17 @@
     {
       "code": "X_UI_DIFF_FILE_MISSING",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UI_DIFF_PATH_OUTSIDE",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UI_DIFF_SIZE_MISMATCH",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UI_FORM_PATH_INVALID",
@@ -5352,22 +5567,22 @@
     {
       "code": "X_UI_INTERACT_LEFT_APP",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UI_INTERACT_SECRET_FIELD",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UI_INTERACT_STEP_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UI_INTERACT_STEPS_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UI_INVALID_VALUE",
@@ -5387,12 +5602,12 @@
     {
       "code": "X_UI_SHOT_ROUTE_UNBUDGETED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UI_SHOT_ROUTE_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-shot.ts"
     },
     {
       "code": "X_UNAUTHENTICATED",

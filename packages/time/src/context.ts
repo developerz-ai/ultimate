@@ -11,6 +11,13 @@ import { assertTimeZone, type TimeZone, UTC } from './zones';
 /** Header a client sets from `Intl.DateTimeFormat().resolvedOptions().timeZone`. */
 export const TIMEZONE_HEADER = 'x-timezone';
 
+/**
+ * Cookie `@ultimat3/render`'s zone script writes from the same `Intl` call, on `app/` documents: a
+ * document navigation sends no header, so without it a new visitor's first pages render in UTC.
+ * Never the chosen cookie — a guess written there would erase the visitor's own pick.
+ */
+export const TIMEZONE_DETECTED_COOKIE = 'x_timezone_detected';
+
 export interface TimeZoneSources {
   /** `user.timeZone` — an explicit preference beats a browser guess. */
   user?: string | null;
@@ -20,6 +27,8 @@ export interface TimeZoneSources {
   query?: string | null;
   /** `x-timezone` request header. */
   header?: string | null;
+  /** `x_timezone_detected`, the zone script's guess — below the header a client sent on purpose. */
+  detected?: string | null;
 }
 
 export type TimeZoneSourceName = keyof TimeZoneSources;
@@ -39,9 +48,15 @@ export interface TimeConfig {
  * Explicit before inferred, the same rule `@ultimat3/i18n`'s locale order states: `Accept-Language`
  * and `x-timezone` are what the browser was installed as, while the user row, the cookie and the
  * query are what a person *chose*. A zone picker that wrote a cookie the header always outranked
- * would appear to do nothing.
+ * would appear to do nothing. `detected` is last: a script's guess, written with no request asking.
  */
-const DEFAULT_ORDER: readonly TimeZoneSourceName[] = ['user', 'cookie', 'query', 'header'];
+const DEFAULT_ORDER: readonly TimeZoneSourceName[] = [
+  'user',
+  'cookie',
+  'query',
+  'header',
+  'detected',
+];
 
 let config: TimeConfig = { defaultZone: UTC, order: DEFAULT_ORDER };
 

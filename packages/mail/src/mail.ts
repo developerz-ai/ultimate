@@ -15,6 +15,7 @@ import { assertHeaderSafe } from './header-safety';
 import { mailIdempotencyKey } from './idempotency';
 import { sendMailJob } from './job';
 import { BASE_LAYOUT } from './layout';
+import { assertPreview } from './preview-check';
 import { type RenderableMail, renderMail } from './render';
 import { applyMailTransform } from './transform';
 
@@ -25,7 +26,12 @@ export interface MailDefinition<I> extends RenderableMail<I> {
   readonly template: MailTemplate<I>;
   readonly input: StandardSchemaV1<unknown, I>;
   readonly layout: string;
+  /** Sample data a preview renders: never production rows. */
+  readonly preview?: MailPreview<I> | undefined;
 }
+
+/** A preview's data, or a function of the locale for copy that differs by language. */
+export type MailPreview<I> = I | ((locale: string) => I);
 
 export interface MailInit<I> {
   readonly id: string;
@@ -34,6 +40,12 @@ export interface MailInit<I> {
   readonly input: StandardSchemaV1<unknown, I>;
   /** Defaults to the framework's `base` layout. */
   readonly layout?: string | undefined;
+  /**
+   * What `x mail preview` and the `/_x` mail panel render, in every locale, with no flow
+   * triggered. Type-checked against `input` here, and a value is parsed by it at definition
+   * (`X_MAIL_PREVIEW_INVALID`); a function is parsed at each render.
+   */
+  readonly preview?: MailPreview<I> | undefined;
 }
 
 export interface SendOptions {
@@ -70,18 +82,24 @@ export interface AnyMailDefinition {
   readonly layout: string;
   readonly input: StandardSchemaV1<unknown, unknown>;
   readonly template: MailTemplate<never>;
+  readonly preview?: unknown;
 }
 
 const registry = new Map<string, AnyMailDefinition>();
 
 export function defineMail<I>(init: MailInit<I>): MailDefinition<I> {
   if (registry.has(init.id)) throw mailDuplicate(init.id);
+  // A value is checked where it is written; a function of the locale, at each render.
+  if (init.preview !== undefined && typeof init.preview !== 'function') {
+    assertPreview(init.id, init.input, init.preview);
+  }
   const definition: MailDefinition<I> = {
     id: init.id,
     subject: init.subject,
     template: init.template,
     input: init.input,
     layout: init.layout ?? BASE_LAYOUT,
+    ...(init.preview === undefined ? {} : { preview: init.preview }),
   };
   registry.set(init.id, definition);
   return definition;
@@ -117,6 +135,18 @@ export function renderMessage<I>(
   options: SendOptions,
 ): MailMessage {
   return renderChecked(mail, data, options).message;
+}
+
+/**
+ * Render without delivering, with the misses a preview shows instead of refusing on: the `/_x`
+ * panel and `x mail preview` (`preview.ts`) read this, `send` never does.
+ */
+export function renderWithMisses<I>(
+  mail: MailDefinition<I>,
+  data: I,
+  options: SendOptions,
+): { readonly message: MailMessage; readonly misses: readonly TranslationMiss[] } {
+  return renderChecked(mail, data, options);
 }
 
 function renderChecked<I>(

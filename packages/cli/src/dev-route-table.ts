@@ -40,6 +40,7 @@ import { serviceWorkerRoutes } from './sw-routes';
 import type { ThemeBoot } from './theme-boot';
 import { loadThemeMode, themeBoot } from './theme-boot';
 import { loadThemeBrand } from './theme-brand';
+import { type ZoneBoot, zoneBoot } from './zone-boot';
 
 export interface DevRouteTableInput {
   readonly root: string;
@@ -74,6 +75,8 @@ export interface DevRouteTable {
   readonly theme: ThemeBoot;
   /** The speculation rules, admitted the same way — `undefined` when no document carries any. */
   readonly speculation: PageSpeculation | undefined;
+  /** The zone script (`time.detect`), admitted the same way — `undefined` when the app left it off. */
+  readonly zone: ZoneBoot | undefined;
   /**
    * Every inline `<style>` body these routes put in a document: the app's error pages' and its
    * brand's (`theme-brand.ts`) — what `startRoles({ inlineStyles })` hashes into `style-src`.
@@ -142,7 +145,9 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   // `serve-boot.ts`'s answer: the app's declared disks when it has any, read per request.
   const served = servedStorage(input.storage);
   // `clientErrors.enabled` or nothing: off, the route is a 404 and no document names the script.
-  const reporting = (await loadAppConfig(input.root))?.clientErrors;
+  const appConfig = await loadAppConfig(input.root);
+  const reporting = appConfig?.clientErrors;
+  const zone = zoneBoot(appConfig?.time);
   const clientErrors = clientErrorsSurface(reporting, input.buildId);
   // Real-user timings: their own switch (`clientErrors.vitals.enabled`), the same door.
   const vitals = clientVitalsSurface(reporting?.vitals);
@@ -215,7 +220,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       ...(pwa === undefined
         ? {}
         : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
-      ...clientScriptHeads(clientErrors, vitals),
+      ...clientScriptHeads(clientErrors, vitals, zone),
     }),
   ];
 
@@ -223,6 +228,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     routes,
     theme,
     speculation,
+    zone,
     inlineStyles,
     mcpPath: mcpMount.path,
     mcpPaths: mcpMount.paths,

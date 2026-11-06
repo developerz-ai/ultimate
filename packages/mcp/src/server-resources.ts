@@ -11,6 +11,7 @@ import type { McpEra } from './protocol-era';
 import { resourceNotFoundCode } from './protocol-era';
 import type { McpCaller } from './registry';
 import type { ResourceRegistry } from './resources';
+import { readResource } from './resources';
 import type { JsonRpcRequest, JsonRpcResponse } from './wire';
 import {
   errorResponse,
@@ -50,7 +51,7 @@ export async function resourcesRead(
     return errorResponse(id, INVALID_PARAMS, 'resources/read params.uri must be a string');
   }
 
-  const resolved = on.resources.resolve(uri, caller);
+  const resolved = await on.resources.resolveFor(uri, caller);
   switch (resolved.kind) {
     // OUTCOME 1. Absent AND hidden collapse to one answer with no `data`: this branch used to
     // return `available: [...every uri]`, so one wrong guess enumerated the whole catalog. No
@@ -91,13 +92,9 @@ export async function resourcesRead(
   // request unanswered and every later request on that buffer never processed. Same shape
   // `toolsCall` uses above, for the same reason.
   try {
-    const contents = await on.resources.read(uri);
-    if (contents === undefined) {
-      // The resolver said `ok` and the registry then had nothing: a bug here, not a walk, so it
-      // is `failed` in the log while the caller still gets the same not-found it would have.
-      on.audit.resourceRead({ uri, outcome: 'failed', caller });
-      return errorResponse(id, resourceNotFoundCode(era), `resource not found: ${uri}`);
-    }
+    // The resource the resolver admitted, read AS that caller: a per-caller source's resource is
+    // in no fixed map, and a body may vary by who asked.
+    const contents = await readResource(resolved.resource, caller);
     on.audit.resourceRead({ uri, outcome: 'ok', caller });
     return resultResponse(id, { contents: [contents] });
   } catch (error) {

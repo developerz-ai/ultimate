@@ -4,7 +4,7 @@
 // a 2GB executable. Verification never throws and never short-circuits on expiry before the
 // signature, so a forged URL can never learn "the signature was fine, just late".
 
-import { type Clock, finiteCount, systemClock, timingSafeEqual } from '@ultimat3/core';
+import { assert, type Clock, finiteCount, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { SignedUrlMethod } from './driver';
 import { assertSafeKey, isSafeKey } from './path';
 
@@ -31,7 +31,19 @@ export const SIGNED_URL_PARAMS = {
   maxBytes: 'x-max',
   contentType: 'x-ct',
   signature: 'x-sig',
+  uploadId: 'x-upload',
+  partNumber: 'x-part',
 } as const;
+
+/** The session and part a part URL writes into — inside the signature, so neither can be edited. */
+export interface SignedPart {
+  readonly uploadId: string;
+  readonly partNumber: number;
+}
+
+/** `MAX_PARTS` restated as the parse's bound: `multipart.ts` imports this module's types. */
+const MAX_SIGNED_PART = 10_000;
+const SIGNED_UPLOAD_ID = /^[A-Za-z0-9._~-]{1,128}$/;
 
 export interface SignedUrlConstraints {
   readonly key: string;
@@ -40,6 +52,8 @@ export interface SignedUrlConstraints {
   readonly expiresAt: number;
   readonly maxBytes: number | undefined;
   readonly contentType: string | undefined;
+  /** Present on a part URL only: a single PUT and a part are two capabilities, never one. */
+  readonly part?: SignedPart | undefined;
 }
 
 export interface SignedUrlInput {
@@ -50,6 +64,8 @@ export interface SignedUrlInput {
   readonly expiresInMs?: number | undefined;
   readonly maxBytes?: number | undefined;
   readonly contentType?: string | undefined;
+  /** Mint a part URL of an open upload (`MultipartCapability.signPart` on the local disks). */
+  readonly part?: SignedPart | undefined;
   readonly baseUrl?: string | undefined;
   readonly clock?: Clock | undefined;
 }
@@ -92,14 +108,19 @@ export function signedUrlBasePath(baseUrl: string): string {
  * origin is deliberately outside it: the verifying route is handed a path.
  */
 export function canonicalRequest(constraints: SignedUrlConstraints, basePath: string): string {
+  const part = constraints.part;
+  // A part signs under its own version line, so no single-PUT string can ever read as a part's:
+  // the two domains share no canonical form, and a single URL's bytes are what they always were.
+  const tail = part === undefined ? [] : [part.uploadId, String(part.partNumber)];
   return [
-    SIGNED_URL_VERSION,
+    part === undefined ? SIGNED_URL_VERSION : `${SIGNED_URL_VERSION}-part`,
     basePath,
     constraints.method,
     constraints.key,
     String(constraints.expiresAt),
     constraints.maxBytes === undefined ? '' : String(constraints.maxBytes),
     constraints.contentType ?? '',
+    ...tail,
   ].join('\n');
 }
 
@@ -163,6 +184,7 @@ export async function buildSignedUrl(input: SignedUrlInput): Promise<string> {
     // one while `acceptSignedUpload`'s `unconstrained` refusal (which tests `undefined`) stayed
     // silent. One spelling for "no content type", here and at the parse below.
     contentType: input.contentType === '' ? undefined : input.contentType,
+    ...(input.part === undefined ? {} : { part: assertSignedPart(input.part) }),
   };
   const params = new URLSearchParams();
   params.set(SIGNED_URL_PARAMS.method, constraints.method);
@@ -172,6 +194,10 @@ export async function buildSignedUrl(input: SignedUrlInput): Promise<string> {
   }
   if (constraints.contentType !== undefined) {
     params.set(SIGNED_URL_PARAMS.contentType, constraints.contentType);
+  }
+  if (constraints.part !== undefined) {
+    params.set(SIGNED_URL_PARAMS.uploadId, constraints.part.uploadId);
+    params.set(SIGNED_URL_PARAMS.partNumber, String(constraints.part.partNumber));
   }
   const base = trimBase(input.baseUrl ?? DEFAULT_SIGNED_URL_BASE);
   params.set(
@@ -232,13 +258,44 @@ function parseConstraints(url: URL, base: string): SignedUrlConstraints | Signed
   // An EMPTY `x-ct` is malformed, never "no content type": absent and empty share one canonical
   // string, so accepting it let `&x-ct=` be appended to a URL signed with none and still verify.
   if (rawContentType === '') return 'malformed';
+  const part = parsePart(url);
+  if (part === 'malformed') return part;
   return {
     key,
     method,
     expiresAt,
     maxBytes,
     contentType: rawContentType ?? undefined,
+    ...(part === undefined ? {} : { part }),
   };
+}
+
+const isSignedPart = (part: SignedPart): boolean =>
+  SIGNED_UPLOAD_ID.test(part.uploadId) &&
+  Number.isSafeInteger(part.partNumber) &&
+  part.partNumber >= 1 &&
+  part.partNumber <= MAX_SIGNED_PART;
+
+/** The mint's screen: a part this module could not parse back is a URL dead on arrival. */
+function assertSignedPart(part: SignedPart): SignedPart {
+  assert(
+    isSignedPart(part),
+    `buildSignedUrl was handed a part that is not an upload id and a part number 1..${MAX_SIGNED_PART}`,
+    "buildSignedUrl({ secret, key, method: 'PUT', part: { uploadId: crypto.randomUUID(), partNumber: 1 } })",
+  );
+  return { uploadId: part.uploadId, partNumber: part.partNumber };
+}
+
+/** Both parameters or neither; one alone is a URL this module never minted. */
+function parsePart(url: URL): SignedPart | 'malformed' | undefined {
+  const uploadId = url.searchParams.get(SIGNED_URL_PARAMS.uploadId);
+  const rawNumber = url.searchParams.get(SIGNED_URL_PARAMS.partNumber);
+  if (uploadId === null && rawNumber === null) return undefined;
+  if (uploadId === null || rawNumber === null || !/^[1-9][0-9]{0,4}$/.test(rawNumber)) {
+    return 'malformed';
+  }
+  const part = { uploadId, partNumber: Number(rawNumber) };
+  return isSignedPart(part) ? part : 'malformed';
 }
 
 export async function verifySignedUrl(input: VerifySignedUrlInput): Promise<SignedUrlVerification> {

@@ -41,14 +41,12 @@ describe.skipIf(adminUrl === '')('live · tenant proof, the hash leg on Postgres
 
   test('a raw update by input id is X_TENANT_WRITE_CROSSED, naming tps_docs and the row', async () => {
     const findings = crossed(await proveSql('tpsRawWrite', 7));
-    const overwritten = await overwrittenDocs();
-    expect(overwritten).toHaveLength(1);
-    expect(findings).toContainEqual({
-      code: 'X_TENANT_WRITE_CROSSED',
-      leg: 'before',
-      table: 'tps_docs',
-      id: String(overwritten[0]),
-    });
+    // The scale sweep calls the primitive again in tenants of its own, overwriting their rows too:
+    // A's row is the one the finding names, and it is among them.
+    const overwritten = (await overwrittenDocs()).map(String);
+    const write = findings.find((one) => one.code === 'X_TENANT_WRITE_CROSSED');
+    expect(write).toMatchObject({ leg: 'before', table: 'tps_docs' });
+    expect(overwritten).toContain(String(write?.id));
   }, 60_000);
 
   test('the scoped read of the same table is proven: the hash leg sees no change', async () => {

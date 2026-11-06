@@ -102,7 +102,7 @@ meta: ({ post }) => ({ /* ... */ ld: ld.Article(post) })
 | `sitemap.xml` | all indexable routes + `prerender()` results | `lastmod` from the entity's `updatedAt`; auto-split at 50k URLs into a sitemap index |
 | `robots.txt` | route `robots` fields + `app.config.ts` | sitemap reference included |
 | `rss.xml` / `atom.xml` / `feed.json` | routes tagged as feed items | one declaration, three formats |
-| `llms.txt` | `site/` route titles + descriptions | machine-readable site summary for agents |
+| `llms.txt` | `site/` route titles + descriptions | machine-readable site summary for agents; served and exported beside the sitemap, `seo.llms: false` opts out |
 | `404` / `500` | required routes | missing one is a build error |
 
 Nothing here is a plugin. Deleting a route removes it from the sitemap in the same build.

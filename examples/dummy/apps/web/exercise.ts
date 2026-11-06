@@ -23,6 +23,15 @@ export const exercise = defineExercise(
       actor: author,
       input: (drawn) => ({ ...drawn, to: 'scheduled' }),
     },
+    // A slug is unique across EVERY org (`post_slug_unique`) and the draw's title is one constant,
+    // so each tenant's call — the pass's, then the scale sweep's two — names its own, by its org.
+    createPost: {
+      actor: author,
+      input: (drawn) => ({ ...drawn, slug: `exercise-${String(drawn['orgId'])}` }),
+    },
+    // `budget` is text the visitor typed, read in `locale` (`typedBudget`): a drawn string is
+    // mostly no amount at all, a 422 the form shows. Digits alone read the same in every locale.
+    contactSales: { actor: null, input: (drawn) => ({ ...drawn, budget: '1200' }) },
     // `free` is every seeded org's plan, so the draw's `free` -> `free` is not an upgrade.
     upgradePlan: { actor: owner, input: (drawn) => ({ ...drawn, plan: 'business' }) },
     // The worker asserts the date shape the schema leaves a string (`send-digest.ts:28`).
@@ -52,6 +61,16 @@ export const exercise = defineExercise(
     memberAvatar: { off: NO_STORAGE },
     'posts.export': { off: NO_STORAGE },
     'posts.import': { off: NO_STORAGE },
+    'posts.imports.purge': { off: NO_STORAGE },
+    grantPostsImport: { off: NO_STORAGE },
+    signPostsImportPart: { off: NO_STORAGE },
+    listPostsImportParts: { off: NO_STORAGE },
+    completePostsImport: { off: NO_STORAGE },
+    abortPostsImport: { off: NO_STORAGE },
+    // Both reach the avatars target or the export sink, a disk; the erase's tables are proved on
+    // their own by the subject proof (`subjectProof`), which needs none.
+    'members.export': { off: NO_STORAGE },
+    'members.erase': { off: NO_STORAGE },
     subscribePush: { off: NO_PUSH },
     unsubscribePush: { off: NO_PUSH },
     'post.commented': { off: NO_PUSH },

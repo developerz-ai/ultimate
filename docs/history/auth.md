@@ -638,3 +638,64 @@ a current fact: the rules that still hold are in that file, and where the two di
   synchronous and could not be made atomic across a network: a guard with async methods answered a
   truthy `Promise`, locking every account out, and the default memory guard let one code sign in
   once per replica. A boot now installs `postgresTotpReplayGuard` (`x_totp_steps`).
+
+## Moved out for plan 101's wave 9 (`As of 2026-11-06`)
+
+Verbatim from [`packages/auth/CLAUDE.md`](../../packages/auth/CLAUDE.md), which keeps each rule in one line and points here.
+
+### Foreign text in a `cause:` / `fix:`
+
+Foreign here:
+  `providerDetail()`'s return, `claims.iss`, `accountLocked`'s `key` (an `org:` key is never
+  rendered at all — it was looked up from the caller's address), and every OAuth endpoint URL
+  in a command position (`jwks.ts`, `oauth-profile.ts`, `oauth-exchange.ts`,
+  `oauth-discovery.ts`) — the registry is filled by an issuer's own discovery document. A LINE
+  that would not run degrades to prose: `jwks.ts`'s `readTheKeySet(tail)` decides with core's
+  `isFixShellSafe`. `oauth-discovery.ts` still owes that repair (it keeps `auth` on
+  `FIX_SHELL_ARG_PINS`). `${provider}` is registry-validated boot config, not foreign.
+
+### MFA's second leg
+
+`login()`
+  ends in `X_MFA_REQUIRED` whose `meta.challenge` is a `seal()` value (purpose
+  `auth:mfa-challenge`: user id, nonce, expiry on the server's clock, `MFA_CHALLENGE_TTL_MS`) —
+  `meta`, never `cause`, and never a bare user id: a second leg keyed by one is unauthenticated by
+  construction. The code is reserved against the same three buckets before it is compared, and a
+  spent step is refused through `auth.totpReplay.claim`, called only after the code verified. It
+  needs the app's master key (`X_SEAL_KEY_MISSING`). No route ships: the handler decides how the
+  challenge travels. Anything that is not six digits is a RECOVERY CODE: hashed
+  (`recoveryCodeHash`) and consumed by `adapter.consumeRecoveryCode` — one conditional UPDATE, so
+  single-use is storage's guarantee. There is no read-then-write redemption helper.
+
+### `x_users.mfa_secret` is SEALED
+
+No plaintext fallback, ever —
+  `sealMfaSecrets` is the one-shot — each write a compare-and-set (`replaceMfaSecret`), a row that
+  changed underneath is `skipped` — and `x doctor` counts what is left. Whether a value is sealed is
+  `isSealed`'s to say, never a `like` in an adapter (`listUsersWithMfaSecret` returns them all).
+
+### A failed JWKS refresh is rated and survivable
+
+: no fetch
+  inside `JWKS_FAILURE_COOLDOWN_MS` of a failure, on either path; a key held answers until
+  `fetchedAt + ttl + JWKS_STALE_IF_ERROR_MS` (the set's age, so failing again never extends it),
+  logged `auth.jwks.stale_served` once per failed fetch; everything else is the last failure
+  rethrown. Constants, no option (`jwks-outage.test.ts`).
+
+### `verifyIdToken({ keys })` (since 26.0.0)
+
+— and since 26.0.0
+  it defaults to the provider's `providerJwks` whenever there is a `jwksUri`, using the exemption
+  only for a provider with none or when the caller names it (`idTokenKeys`).
+
+### `postgresAuthLimiter` (the take)
+
+`admitted`
+  is a column because `returning` cannot see the old row; no row back is never an admission. A
+  live lockout is never rewritten.
+
+### `resolveGrants`' second argument
+
+Its second argument (`OAuthGrantContext`, `oauth-grant-context.ts`, #670) is the token set, the
+  whole verified id-token payload and a LAZY, once-per-login, `sub`-checked `userinfo()` — read
+  through `oauth-profile.ts`'s `userinfoBody`, never a second userinfo reader.

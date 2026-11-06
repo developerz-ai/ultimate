@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 77
-current_focus: "wave 8: time series and views (41), the job crash proof wired into the exercise pass (40), fault drills (40), Redis down as a slow miss (29), raw keyset paging (29), the entity decode plan (30), operations — vitals, error groups, the rollback refusal, live traces (41), chart alerts (39), the checkpoint resume and a physical standby. Next: wave 9 — subject data, repro, query plans (40), entity lifecycle (41), agent wire, MCP and AI cache, cassettes (39/41)."
+percent: 87
+current_focus: "wave 9: subject data, repro (capture, x repro; the dummy e2e proves the chain on a database fault, reproduced:false), query plans and scale sweeps in x exercise, entity lifecycle (retain, history, trigger counters; no counts where, no $history(id), recount in one transaction), agent wire and MCP (remote OAuth client, markdown recipes, docs search, job tool callerFix, graph.query), AI prompt cache, cassettes, API clients and the app graph, resumable uploads, locale and content. Next: wave 10 — page capture, adopt shapes and proof, perf gate (30), ops CI (33), docs site, test-file boundary and false greens, the UI slices (23, 38)."
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -467,63 +467,63 @@ slices:
   - file: 40-next-query-plans.md
     tier: 2
     sweep: "25"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 40-next-subject-data.md
     tier: 0
     sweep: "25"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 40-next-repro.md
     tier: 0
     sweep: "25"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
   - file: 41-add-entity-lifecycle.md
     tier: 1
     sweep: "25b"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 85
   - file: 41-add-agent-wire.md
     tier: 0
     sweep: "26"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-mcp-inline-then-job.md
     tier: 3
     sweep: "26"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-mcp-recipes.md
     tier: 4
     sweep: "26"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-ai-prompt-cache.md
     tier: 4
     sweep: "26"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-testing-cassettes.md
     tier: 5
     sweep: "26"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 41-add-api-clients.md
     tier: 0
     sweep: "27"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 41-add-uploads.md
     tier: 0
     sweep: "27"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 41-add-locale-and-content.md
     tier: 0
     sweep: "27"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 41-add-page-capture.md
     tier: 1
     sweep: "28"
@@ -532,8 +532,8 @@ slices:
   - file: 40-next-app-graph.md
     tier: 4
     sweep: "28"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 42-adopt-shapes.md
     tier: 5
     sweep: "28"

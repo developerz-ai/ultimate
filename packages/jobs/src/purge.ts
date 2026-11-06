@@ -18,6 +18,7 @@ import type { DurationInput } from './clock';
 import { nowMs } from './clock';
 import type { JobHandle } from './job';
 import { job } from './job';
+import { entityTargets, type PurgeEntities, recordPurgeCoverage } from './purge-entities';
 import type { RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
 
@@ -83,7 +84,13 @@ export interface PurgeDefinition {
    * does not exist until later. An empty list is a pass that removes nothing, which is the honest
    * answer for a process whose boot has already stopped.
    */
-  targets(): readonly PurgeTarget[];
+  targets?(): readonly PurgeTarget[];
+  /**
+   * Entities whose `retain` this sweep keeps, beside `targets`: `'declared'` is every registered
+   * entity declaring one, history tables included (`purge-entities.ts`). Read per attempt, as
+   * `targets` is. What `x verify` reads to refuse a `retain` no purge covers.
+   */
+  readonly entities?: PurgeEntities;
   /**
    * The clock every target is measured against. Defaults to the system clock, and it must be the
    * SAME clock the stores write their instants from — see `PurgeTarget.purgeExpired`.
@@ -100,6 +107,7 @@ export const DEFAULT_PURGE_CRON = '23 * * * *';
 
 export function purge(definition: PurgeDefinition): JobHandle<PurgeInput> {
   const clock = definition.clock;
+  recordPurgeCoverage(definition.entities);
 
   return job<PurgeInput>({
     ...(definition.name === undefined ? {} : { name: definition.name }),
@@ -119,7 +127,7 @@ export function purge(definition: PurgeDefinition): JobHandle<PurgeInput> {
       // against instants a round trip apart, which is the same class of mismatch as reading the
       // server's clock — smaller, and just as unnecessary.
       const at = nowMs(clock);
-      const targets = definition.targets();
+      const targets = [...(definition.targets?.() ?? []), ...entityTargets(definition.entities)];
       const names = new Set(targets.map((target) => target.name));
       // Refused before the first delete, not discovered at the second step: `step.run` raises
       // `X_STEP_DUPLICATE` on the repeat, which dead-letters a sweep AFTER it has already emptied

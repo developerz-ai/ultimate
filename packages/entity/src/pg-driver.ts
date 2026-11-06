@@ -25,6 +25,7 @@ import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound, repoClientPinned } from './errors';
+import { stampHistoryActor } from './history-actor';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { judgedWrite } from './judged-write';
@@ -148,6 +149,7 @@ export const postgresRepo = <Row>(
   const writing = async <T>(send: () => Promise<T>): Promise<T> => {
     refuseAbandoned();
     forgetPreloaded(entity.$name);
+    await stampHistoryActor(entity, config.client !== undefined);
     return taggedWrite(config.client !== undefined, send);
   };
 

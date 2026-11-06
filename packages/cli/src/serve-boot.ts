@@ -8,6 +8,7 @@
 import type { DrainConfig, LifecycleOptions, Role } from '@ultimat3/core';
 import { configureLifecycle, logger, UltimateError } from '@ultimat3/core';
 import { loadAppConfig } from './app-config-load';
+import { armFailureCapture } from './failure-capture-boot';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
 import type { Finding } from './output';
@@ -157,8 +158,10 @@ async function bootRoles(boot: {
   // refused here (`X_DB_ROW_SECURITY_BYPASSED`), never discovered on another tenant's first read.
   // PGlite's one session is a superuser: there the boot serves as `x_app` instead of refusing.
   const embedded = runtime.services.db.mode === 'embedded';
-  const declared = rowSecurityDeclared(await loadAppConfig(options.root));
-  acquired.push(await armRowSecurity(declared, { embedded }));
+  const appConfig = await loadAppConfig(options.root);
+  acquired.push(await armRowSecurity(rowSecurityDeclared(appConfig), { embedded }));
+  // `failureCapture.enabled`: a 5xx keeps a replayable bundle for `x repro` (off by default).
+  acquired.push(armFailureCapture(appConfig));
   // After the app's modules: an app swaps the store at import time, after `startServices`.
   warnIfIdempotencyProcessScoped();
   const buildId = await buildIdFor(options, role);

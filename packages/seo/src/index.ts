@@ -76,6 +76,8 @@ export {
 } from './ld';
 export type { HeadLink, HeadLinkAs, HeadLinkRel } from './links';
 export { linkProblem } from './links';
+export type { LlmsSite } from './llms';
+export { buildLlmsTxt, LLMS_PATH, llmsDescriptionIssues } from './llms';
 export type { LocalizedPage, MetaLocalization } from './locale-tags';
 export { hreflangTag, ogLocaleTag } from './locale-tags';
 export type {

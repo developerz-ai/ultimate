@@ -145,4 +145,47 @@ export interface EntityDescriptionLike {
    * and handed to no table arm. Absent is a table, for the reason `invariants` is optional.
    */
   readonly view?: { readonly sql: string; readonly materialized?: true | undefined } | undefined;
+  /**
+   * `entity({ history: true })`: every row change is recorded into `history.table` by a trigger
+   * (`generate-history.ts`). Absent is no history, for the reason `invariants` is optional.
+   */
+  readonly history?: HistoryDescriptionLike | undefined;
+  /**
+   * `references(…, { countedIn })` on a child key: counters the database keeps on this table
+   * (`generate-counter.ts`). Absent is none.
+   */
+  readonly counts?: readonly CounterDescriptionLike[] | undefined;
+  /** `entity({ retain })`: rows older than the window are swept by `purge()`. Absent is kept. */
+  readonly retain?: RetainDescriptionLike | undefined;
+}
+
+/** Where a table's row images go, and what its trigger needs to write one. Physical names. */
+export interface HistoryDescriptionLike {
+  /** The history table: `<table>_history`, an entity of its own. */
+  readonly table: string;
+  /** The parent's single primary-key column, recorded as `row_id`. */
+  readonly key: string;
+  /** The parent's tenant column, copied onto every history row, or `null`. */
+  readonly tenant: string | null;
+  /** Columns whose change alone records nothing: the counters the database keeps. */
+  readonly ignore: readonly string[];
+}
+
+/** One counter, physical names: `<this table>.<column>` counts `<table>` rows by `<references>`. */
+export interface CounterDescriptionLike {
+  readonly column: string;
+  /** The parent's key column the child's foreign key points at. */
+  readonly key: string;
+  /** The child table the trigger sits on. */
+  readonly table: string;
+  /** The child's foreign-key column. */
+  readonly references: string;
+  /** The child's soft-delete column: a stamped row is not counted. `null` when it has none. */
+  readonly softDelete: string | null;
+}
+
+/** `retain: { after, on }`, with `on` physical. */
+export interface RetainDescriptionLike {
+  readonly after: string;
+  readonly on: string;
 }

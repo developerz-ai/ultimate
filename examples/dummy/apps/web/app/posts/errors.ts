@@ -22,3 +22,18 @@ export const PostNotFound = defineError<string>({
     'by another org is a denial, never a 404 by accident',
   fix: 'psql "$DATABASE_URL" -c "SELECT id, slug FROM posts WHERE org_id = \'<ctx.actor.orgId>\'"',
 });
+
+/**
+ * 409: the public blog's `/blog/{slug}` is one namespace across every org (`post_slug_unique`),
+ * and a draft's slug is derived from its title — so two orgs' same title is a refusal the caller
+ * acts on, not the database's 23505 escaping as `X_ERROR_UNDECLARED`.
+ */
+export const PostSlugTaken = defineError<string>({
+  code: 'X_POST_SLUG_TAKEN',
+  title: 'another post already holds this slug',
+  status: 409,
+  cause: (slug) =>
+    `slug ${JSON.stringify(slug)} is held by another post — /blog/{slug} is one namespace ` +
+    'across every org, so a slug is unique in all of them',
+  fix: "createPost({ ...input, slug: '<an-unused-slug>' })   # or a title that slugifies differently",
+});

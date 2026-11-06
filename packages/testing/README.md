@@ -27,6 +27,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `factories.ts` | `defineFactory` — seeded rows, traits, associations, `build` vs `create` |
 | `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, each value read off its column's declaration (default, enum, kind, money, nullability) through `$parse`, never off its name |
 | `seed-graph.ts` | `seedGraph(entities, { tenants, perTable, seed, factories })` — rows for every table with no factory written: parents first, same-tenant keys, every declared rule kept. Pure, same seed same bytes |
+| `repro.ts` | `reproduce(bundle, { driver })` and `reproJob(runJobs, failure)` — what a test `x repro --write` generated calls: captured reads seeded, clock frozen at the failure, the same actor and input (masked fields stood in from the schema); a dead job's completed steps replayed from storage |
 | `seed-graph-plan.ts` | the plan's types and `insertSeedGraph(graph, writer)` — every insert, then every deferred key, sequentially |
 | `seed-graph-values.ts` | one column's candidate values, off its declaration, kept only where `$parse` accepts them — `factoriesFor`'s source too |
 | `seed-graph-order.ts` · `seed-graph-row.ts` · `seed-graph-shape.ts` | insert order over `$references()` (a cycle broken at a nullable key) · one row solved against invariants and unique keys · what the graph reads off an entity, structurally |
@@ -38,6 +39,8 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `tenant-proof.ts` | internal (`CROSS_TENANT_SCOPE` is `@ultimat3/entity`'s): `proveTenant` — B with A's ids, A's own call, B again; each B leg between two snapshots of A's rows. `withoutCrossTenant` strips `tenancy:cross` (`CROSS_TENANT_SCOPE`) from B; `publicReason` decides `public` |
 | `tenant-canary.ts` | internal: `tenantTaint` — one tenant's rows, ids and marks (row canaries, key parts of `MIN_TAINT_ID_LENGTH` 8 or more no other tenant shares); `findTaint` — every path holding one |
 | `exercise-crash.ts` | internal: `proveCrash` — a job the pass reached, run through `crashProof` with its control's input and actor, after the tenant proof; the `CrashProof` on `ExerciseRecord.crash` |
+| `scale-sweep.ts` · `scale-sweep-graph.ts` · `scale-sweep-run.ts` · `exercise-sweeps.ts` | `judgeScale(small, large)`, pure · one tenant at a size, its rows of no tenant pointed at the pass's own · the two sized runs · both sweeps after the pass, onto each record's `scale` and `plans` |
+| `plan-oracle.ts` · `plan-sweep.ts` · `plan-sweep-fix.ts` · `plan-sweep-report.ts` | `judgePlan(answer, tables)`, pure: the red nodes · `sweepPlans(client, sent, entities)`: `PREPARE` + `explain execute` in a read-only transaction · verdict to `indexes:` line · the coded findings `x exercise` prints |
 | `job-crash-proof.ts` | `crashProof(handle, input, { context?, seed? })` — one clean run, then the worker killed at every step boundary it crossed, then each answer lost; `{ boundaries, divergences, reruns }`, a divergence carrying its `X_JOB_CRASH_DIVERGED` |
 | `job-simulate.ts` | `simulateJobs({ seed?, seeds, jobs, workers, faults, invariant })` — seeded races on the shared simulated driver; `X_JOB_SIM_INVARIANT`, `X_JOB_SIM_NONDETERMINISTIC`; `x test job --seed <n>` replays one |
 | `fault-proxy.ts` | `faultProxy({ target })` — a Bun TCP proxy whose mode switches mid-run: `pass`, `delay(ms)`, `blackhole` (bytes held, never dropped), `reset`, `refuse` |
@@ -346,6 +349,25 @@ hold them, and the proof runs after the control so its runs meet the rows the co
 Absent on every record but a reached job.
 [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-crash-proof).
 
+Then the two sweeps, with no flag to turn either off. **Scale:** every reached primitive is called
+once more in a tenant seeded at 2 rows a table and once in one at 8 (`scale-sweep*.ts`); a statement
+shape sent more often at 8 is a loop over rows, `ExerciseRecord.scale` `grows`, red as
+`X_QUERY_SCALES_WITH_ROWS`. Under `expectedQueryLoop(reason, fn)` it is `flat`, the loop listed in
+`expected` with its reason; a call that did not answer at both sizes is `unproven`, never red.
+**Plans:** every distinct statement the pass sent whose first relation is an app table is planned
+on the gate's database with `enable_seqscan`, `enable_bitmapscan` and `enable_sort` off — a generic
+plan, so empty tables answer what the schema can serve (`plan-sweep.ts`, `plan-oracle.ts`):
+
+| Red node | Code | Fix printed |
+|---|---|---|
+| `Seq Scan` on an app table, or an index scan with no `Index Cond` that no `Limit` stops | `X_QUERY_UNINDEXED` | `indexes: [{ on: [...] }]` by property, the tenant first when the statement compares it; or `scan: '<why>'` on the entity |
+| `Sort` under a `Limit` | `X_QUERY_SORT_UNSERVED` | the same, the order's columns after the equality ones |
+
+Not red: a statement whose equality pins a unique key, one a partial index serves once its value is
+bound, one sent inside `expectedSeqScan(reason, fn)` or on an entity that declared `scan` (listed in
+`plans.exempt`), one generic planning refuses (`plans.unplannable`). A server below Postgres 12 is
+`X_QUERY_PLAN_UNAVAILABLE`, never a pass. [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-plan-and-scale-sweeps).
+
 ## Shared examples
 
 ```ts
@@ -483,6 +505,36 @@ expect(requestLog().map((call) => call.headers['authorization'])).toEqual([BEARE
 | Never ahead of the answer | a stream body or a `Request`'s own is captured beside the call, so a mock answering 413 at once is not held to the stream's end: it is in the entry once it ends, `null` until then |
 | A socket dial | logs `method: 'WEBSOCKET'` or `'CONNECT'`, empty `headers`, `body: null` |
 | A pinned dial | an address-literal URL carrying a `host` header also matches a route on that name: `mockFetch('https://vendor.test/a', …)` answers `https://203.0.113.9/a` with `host: vendor.test`. The log keeps the URL dialled |
+
+**A vendor's answers, recorded once** — `cassette(dir, name, options)`, `As of 2026-11`. Replay is
+`mockFetch`: each recorded URL becomes one route answered in call order, so anything else is still
+`X_TEST_NETWORK_SEALED`. Recording is by hand.
+
+```ts
+import { cassette, expect } from '@ultimat3/testing';
+
+declare function refund(): Promise<{ status: number }>; // yours: the code under test
+
+await using _tape = cassette(import.meta.dir, 'refund-flow', {
+  record: { hosts: ['api.vendor.test'] },
+});
+expect((await refund()).status).toBe(200);
+```
+
+| Mode | What happens |
+|---|---|
+| replay (default) | reads `<dir>/__cassettes__/<name>.json`; no file is `X_CASSETTE_MISSING`; an entry never asked for fails at dispose, `X_CASSETTE_UNUSED` (`meta.unused`) |
+| `ULTIMATE_CASSETTE=record bun test <file>` | lets `record.hosts` through the seal for the cassette's life, and writes at dispose. `CI` set, no `record.hosts`, or a dial to another host is `X_CASSETTE_RECORD_REFUSED` |
+
+| What is written | Rule |
+|---|---|
+| request | never: assert what was sent with `requestLog()` |
+| response headers | `content-type`, `retry-after`, `ratelimit-*` only |
+| credential-named keys | masked as `[redacted]` in JSON bodies at any depth and in URL queries; a masked URL still matches the real request on replay |
+| `redact(text)` | the app's rule, after the masking, on each URL and text body; a `[redacted]` it puts in a URL matches any one segment on replay |
+| the secret scan | last, over the exact bytes: every credential-named env var's value and `secrets: []`, raw, JSON-escaped, percent-encoded, base64, base64url, and raw inside a base64 body. A hit writes nothing: `X_CASSETTE_SECRET` names the key and the byte offset, never the value. Values under 8 characters are skipped; a hashed or split value is not caught |
+| bodies | text as text, anything else base64; keys sorted; temp file then rename; a body that fails to read writes nothing |
+| streams | recorded whole, replayed as one body: a chunk-boundary test stays hand-written |
 
 **Three dials are sealed, and only three** — `fetch`, `new WebSocket(url)` and `Bun.connect({ hostname,
 port })`, behind one gate: one allow-list (`allowHost('host[:port]')`), one offline state, one
@@ -944,6 +996,15 @@ e2eTest('the feed paints, and says so when the socket drops', async ({ page }) =
 
 `expect(await locator.isVisible()).toBe(true)` still works and is a **different** assertion: it
 fails on a page that simply has not painted yet.
+
+## Proving a subject erase
+
+`subjectProof(subject, { entities, writer, read, seed? })` seeds every table with canaries
+(`seedGraph`), erases one generated person through the erase's own table passes, and reads every
+stored row back: a seeded value of theirs outside a declared `retain`, or a row the erase deletes
+still stored, is `X_SUBJECT_ERASE_INCOMPLETE` naming the table and column. A declaration the plan
+refuses comes back as its own problems, nothing seeded. `x exercise` runs it for every
+`defineSubject()`, on a scratch database of its own.
 
 ## Errors
 

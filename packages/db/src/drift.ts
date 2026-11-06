@@ -22,6 +22,7 @@ import {
   unknownSchema,
 } from './drift-findings';
 import { compareRowSecurity, ROW_SECURITY_DRIFT_CODE } from './drift-row-security';
+import { compareTriggers, LIFECYCLE_DRIFT_CODE, RETAIN_DRIFT_CODE } from './drift-triggers';
 import { DbError, type DbErrorCode } from './errors';
 import { foreignKeyTarget, onDeleteRule } from './foreign-key';
 import { indexMethodOf } from './index-method';
@@ -252,6 +253,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
   differences.push(...compareValidated(live, expected));
   differences.push(...compareAppendOnly(live, expected));
   differences.push(...compareRowSecurity(live, expected));
+  differences.push(...compareTriggers(live, expected));
   return differences;
 }
 
@@ -279,6 +281,8 @@ const OWN_CODE: ReadonlyMap<DriftKind, DbErrorCode> = new Map<DriftKind, DbError
   ['missing-append-only-trigger', APPEND_ONLY_DRIFT_CODE],
   ['missing-row-security', ROW_SECURITY_DRIFT_CODE],
   ['unexpected-row-security', ROW_SECURITY_DRIFT_CODE],
+  ['missing-lifecycle-trigger', LIFECYCLE_DRIFT_CODE],
+  ['retain-partitioned', RETAIN_DRIFT_CODE],
 ]);
 
 export function driftError(difference: DriftDifference): DbError {

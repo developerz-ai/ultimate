@@ -49,3 +49,9 @@ unitTest('a complete form is trimmed into exactly the action’s input', () => {
     locale: 'es',
   });
 });
+
+// The budget travels AS TYPED: reading `1.234,56` is the action's job, in the page's locale.
+unitTest('a typed budget is carried as text, and a blank one not at all', () => {
+  expect(enquiryFrom([...full, ['budget', ' 1.234,56 ']])?.budget).toBe('1.234,56');
+  expect(enquiryFrom([...full, ['budget', '  ']])).not.toHaveProperty('budget');
+});

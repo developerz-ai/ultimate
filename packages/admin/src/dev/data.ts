@@ -22,6 +22,7 @@ import type {
   LiveQueryFact,
   LiveSubscriberFact,
   MailFact,
+  MailTemplateFact,
   ManifestFact,
   PolicyFact,
   QueueFact,
@@ -54,6 +55,7 @@ export function staticDevSources(facts: Partial<DevSources> = {}): DevSources {
     runSql:
       facts.runSql ?? ((): Promise<SqlResult> => empty({ columns: [], rows: [], elapsedMs: 0 })),
     mail: facts.mail ?? ((): Promise<readonly MailFact[]> => empty([])),
+    mailTemplates: facts.mailTemplates ?? ((): Promise<readonly MailTemplateFact[]> => empty([])),
     cacheGraph: facts.cacheGraph ?? ((): Promise<readonly CacheEdgeFact[]> => empty([])),
     invalidations: facts.invalidations ?? ((): Promise<readonly InvalidationFact[]> => empty([])),
     policyMatrix: facts.policyMatrix ?? ((): Promise<readonly PolicyFact[]> => empty([])),
@@ -339,6 +341,9 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
 
     runSql: unwired<SqlResult>('runSql', 'db'),
     mail: unwired<readonly MailFact[]>('mail', 'mail'),
+    // The mail registry and the app's locales are the host's: `x dev` renders each declared
+    // `preview` through `@ultimat3/mail`, which this package does not depend on.
+    mailTemplates: unwired<readonly MailTemplateFact[]>('mailTemplates', 'mail'),
 
     /**
      * The tag graph is read through `dependentsOf`, one entity tag at a time: the cache owns

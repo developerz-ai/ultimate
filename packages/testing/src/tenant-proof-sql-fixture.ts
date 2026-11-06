@@ -56,6 +56,9 @@ export async function useSql(db: DbClient): Promise<void> {
     lock: false,
   });
   current = db;
+  // Registered here, not at module scope: a file that imported this fixture first had its
+  // registrations reset at its own file boundary, and a cached module never registers twice.
+  registerActions(TPS_ACTIONS);
 }
 
 export const releaseSql = (): void => {
@@ -73,7 +76,7 @@ const missing = (): never => {
 const byDoc = t.object({ tpsDocId: t.uuid });
 const Body = t.object({ body: t.string });
 
-registerActions({
+const TPS_ACTIONS = {
   /** Hole 2: raw SQL by the input id, no tenant predicate. */
   tpsRawRead: action({
     input: byDoc,
@@ -108,7 +111,7 @@ registerActions({
       return doc === null ? missing() : { body: doc.body };
     },
   }),
-});
+};
 
 /** One pass over one SQL primitive. `seed` differs per call: the rows are committed. */
 export async function proveSql(only: string, seed: number): Promise<ExerciseRecord> {

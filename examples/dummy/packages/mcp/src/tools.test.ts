@@ -9,6 +9,7 @@
  */
 
 import { describeActions } from '@ultimat3/action';
+import { agentActor } from '@ultimat3/core';
 import { defineAppMcp, t } from '@ultimat3/mcp';
 import { expect, test } from '@ultimat3/testing';
 import { postlyHandWrittenMcp } from './tools';
@@ -63,4 +64,33 @@ test('a read tool is not metered as destructive, and every tool carries a schema
     expect(tool.description.length).toBeGreaterThan(0);
     expect(tool.inputSchema).toBeDefined();
   }
+});
+
+test('the recipe X_BILLING_SEATS_EXCEEDED links to is served, and names only tools this server has', async () => {
+  const { SeatsExceeded } = await import('@postly/core');
+  const link = new SeatsExceeded({ plan: 'team', limit: 5, requested: 6 }).docs;
+  expect(link).toBe('docs://recipes/make-room-for-a-member');
+  const mcp = postlyHandWrittenMcp();
+  expect(mcp.tools.map((tool) => bare(tool.name))).toContain('docs');
+  const docs = mcp.tools.find((tool) => bare(tool.name) === 'docs');
+  const listed = await docs?.handle(
+    {},
+    { actor: agentActor({ id: 'agent-1' }), scopes: new Set() },
+  );
+  expect(JSON.stringify(listed)).toContain('make-room-for-a-member');
+});
+
+test('a tool the app hands in may not take a name this package already uses', async () => {
+  const { postlyMcp } = await import('./tools');
+  const shadow = {
+    description: 'A second planQuote, which would replace the one that never charges.',
+    input: t.object({}),
+    policy: 'org:administer' as const,
+    destructive: false,
+    handle: () => Promise.resolve({}),
+  };
+  expect(() => postlyMcp({ tools: { planQuote: shadow } })).toThrow(/X_MCP_TOOL_DUPLICATE/);
+  expect(
+    postlyMcp({ tools: { planQuoteShadow: shadow } }).tools.map((tool) => tool.name),
+  ).toContain('planQuoteShadow');
 });

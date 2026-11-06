@@ -64,6 +64,7 @@ beforeAll(() => {
   // Registered SECOND, so the post above stays `entities[0]` for every case that reads it.
   entity('sources_test_secret', {
     shared: 'one credential store for the whole install',
+    scan: 'one row per install',
     columns: {
       id: uuid().primaryKey(),
       title: text({ max: 80 }),
@@ -241,6 +242,13 @@ describe('the entity projection', () => {
     const secret = entities.find((one) => one.name === 'sources_test_secret');
     expect(secret?.shared).toBe('one credential store for the whole install');
     expect(Object.hasOwn(entities[0] ?? {}, 'shared')).toBe(false);
+  });
+
+  test('a scan reason is carried; an entity that declared none carries no `scan` key', () => {
+    const entities = frameworkSources({ app: APP }).entities ?? [];
+    const secret = entities.find((one) => one.name === 'sources_test_secret');
+    expect(secret?.scan).toBe('one row per install');
+    expect(Object.hasOwn(entities[0] ?? {}, 'scan')).toBe(false);
   });
 
   test('a view entity says it is one, and whether it is stored; a table carries no `view` key', () => {

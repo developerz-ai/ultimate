@@ -50,6 +50,8 @@ import { project, resolvePerRun } from './agent-per-run';
 import { assertRunCost } from './agent-run-limits';
 import type { TurnSend } from './agent-send';
 import { sendTurn } from './agent-send';
+import type { EmitChunk } from './agent-stream';
+import { AgentChunk, streamOf } from './agent-stream';
 import { sameSystem, systemOf } from './agent-system';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
 import { assertAnswerable, observeTurn } from './agent-turn';
@@ -122,13 +124,17 @@ export function agent<
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
-    handle: async (args) =>
-      run(
-        def,
-        respond,
-        await resolvePerRun(def, { ...declared, adapted: adapt() }, args),
-        { sampling, owner, compact },
-        args,
+    // Streamed: an ordinary call drains it to the answer; `accept: text/event-stream` sees each turn.
+    stream: AgentChunk,
+    handle: (args) =>
+      streamOf(async (emit) =>
+        run(
+          def,
+          respond,
+          await resolvePerRun(def, { ...declared, adapted: adapt() }, args),
+          { sampling, owner, compact, emit },
+          args,
+        ),
       ),
   });
   // A thunk, resolved when the manifest asks: every name in the row is stamped at boot, and this
@@ -165,6 +171,7 @@ async function run<
     readonly sampling: Sampling;
     readonly owner: object;
     readonly compact: CompactPlan | undefined;
+    readonly emit: EmitChunk;
   },
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
@@ -207,7 +214,7 @@ async function run<
   const system = systemOf(prompt.system, extra, redact);
   const promptCache = promptCacheHint(def.promptCache, 'auto', args);
   const repeated = toolLoopGuard(name, bounds.maxRepeatedToolCalls);
-  const sampling = fixed.sampling;
+  const { sampling, emit } = fixed;
   const { maxTurns, maxToolResultChars: chars } = bounds;
 
   return withSpan('ai.agent', async (span) => {
@@ -361,6 +368,7 @@ async function run<
           ...(rejected === undefined ? {} : { repairOf: rejected }),
           run: runTotal(result.model, prior?.usage, meter.total(), meter.below()),
         });
+        if (result.text !== '') emit({ type: 'text', turn, text: result.text });
         assertAnswerable(result, name, base);
         // Before a tool runs and before the answer is read: a turn cut off at the ceiling carries
         // arguments that stop wherever the ceiling fell — `{}` on both wires for a call that never
@@ -387,6 +395,8 @@ async function run<
           // first cannot be paired with a slow tool's call.
           throwIfAborted(args.ctx);
           deadline.check();
+          for (const call of requested)
+            emit({ type: 'tool_call', turn, id: call.id, name: call.name });
           const results: readonly LlmToolResult[] = await deadline.guard(
             // Inside the deadline's scope, so each tool's own `ctx.signal` carries it.
             deadline.scope(() =>
@@ -396,6 +406,17 @@ async function run<
             ),
           );
           calls += requested.length;
+          results.forEach((done, index) => {
+            const name = requested[index]?.name ?? '';
+            emit({
+              type: 'tool_result',
+              turn,
+              id: done.toolUseId,
+              name,
+              isError: done.isError === true,
+            });
+          });
+          emit({ type: 'turn', turn, maxTurns });
           rejected = undefined;
           // Before the next turn is bought: the same calls with the same results cannot lead
           // anywhere a further turn would not also lead.
@@ -434,6 +455,7 @@ async function run<
         }
         // A wrong shape gets another turn like any other, because unlike `llm()` this loop has
         // turns left by construction — and unlike a tool result, the correction is the message.
+        emit({ type: 'turn', turn, maxTurns });
         rejected = formatIssues(parsed.issues);
         issues = rejected.join('; ');
         messages = [...messages, assistantTurn(result), repairTurn(answers, issues)];

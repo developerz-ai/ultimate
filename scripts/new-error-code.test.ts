@@ -137,8 +137,10 @@ describe('a registry kept as frozen declarations, not titles', () => {
     expect(await read(dir, WIKI_PAGE)).toContain('| `X_SCHEMA_PROBE` | a probe |');
     // The pin joins schema's OFF_SOCKET group — never schema's UNDECIDED group. Opening a group a
     // package lacks is `new-error-code-status.test.ts`'s `time` case.
-    expect(await read(dir, STATUS_BACKLOG)).toContain(
-      "  schema: ['X_SCHEMA_BOUNDS_INVALID', 'X_SCHEMA_SENSITIVE_OUTPUT', 'X_SCHEMA_PROBE'],\n};",
+    const backlog = await read(dir, STATUS_BACKLOG);
+    const offSocket = backlog.slice(backlog.indexOf('export const OFF_SOCKET'));
+    expect(offSocket.slice(0, offSocket.indexOf('\n};\n'))).toContain(
+      "  schema: ['X_SCHEMA_BOUNDS_INVALID', 'X_SCHEMA_SENSITIVE_OUTPUT', 'X_SCHEMA_PROBE'],\n",
     );
   });
 

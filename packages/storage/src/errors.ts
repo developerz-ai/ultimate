@@ -36,6 +36,9 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_OBJECT_CHANGED',
   'X_STORAGE_UPLOAD_SIZE_UNDECLARED',
   'X_STORAGE_WRITE_OUTCOME_UNKNOWN',
+  'X_STORAGE_MULTIPART_UNSUPPORTED',
+  'X_STORAGE_UPLOAD_UNKNOWN',
+  'X_STORAGE_PARTS_INVALID',
 ] as const;
 
 /**
@@ -83,6 +86,9 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_UPLOAD_SIZE_UNDECLARED: 'an upload grant was asked for without the size of the file',
   X_STORAGE_WRITE_OUTCOME_UNKNOWN:
     'a write was sent and its answer lost, and the disk could not say whether it landed',
+  X_STORAGE_MULTIPART_UNSUPPORTED: 'this disk cannot take an upload in parts',
+  X_STORAGE_UPLOAD_UNKNOWN: 'no open multipart upload has that id',
+  X_STORAGE_PARTS_INVALID: 'the parts named do not match the parts stored',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws

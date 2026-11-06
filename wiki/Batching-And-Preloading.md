@@ -125,6 +125,7 @@ Each code carries its own `fix:` line, computed from the call that raised it —
 | `X_TENANCY_UNSCOPED` (upsert) | `entity` | the collision is judged on columns that exclude the tenant column, so another tenant's row would match | `<entity>.upsertAll(rows, { onConflict: ['orgId', …] })   # or onMatch: 'nothing'` |
 | `X_N_PLUS_ONE_QUERY` | `entity` | `<subject>` ran `<n>` times in one request — one read per row | `db.<entity>.preload('<relation>')`, or `db.<entity>.andWhere('id', 'in', ids).all()` |
 | `X_N_PLUS_ONE_WRITE` | `entity` | `<subject>` ran `<n>` times in one request — one write per row | `db.<entity>.insertAll(rows)` (or `upsertAll`/`updateWhere`/`deleteWhere`), or `expectedQueryLoop('<why one per row is optimal>', fn)` |
+| `X_QUERY_SCALES_WITH_ROWS` | `testing` | `x exercise`'s scale sweep: `<primitive>` sent `<shape>` `<n>`× at 2 rows a table and `<m>`× at 8 — a loop no test named ([Testing](Testing#the-plan-and-scale-sweeps)) | `x exercise <primitive> --json   # after preload() …, or expectedQueryLoop('<why>', fn)` |
 | `X_WRITE_UNFILTERED` | `entity` | `<entity>.<op>()` named no filter columns — an empty filter would reach every row | `<entity>.<op>({ <primary key columns> }, …)`; a deliberate whole-table write is `x db gen "<name>"` |
 | `X_PATCH_EMPTY` | `entity` | `<entity>.<op>()` named no columns to write | `<entity>.<op>(filter, { <column>: <value> })   # pick a column from: <the entity's columns>` |
 

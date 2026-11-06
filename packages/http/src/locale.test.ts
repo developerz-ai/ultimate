@@ -4,7 +4,7 @@
 // asserted in `@ultimat3/i18n` and `@ultimat3/time`; the request path is `locale-stage.test.ts`.
 import { describe, expect, test } from 'bun:test';
 import { LOCALE_COOKIE } from '@ultimat3/i18n';
-import { TIMEZONE_HEADER } from '@ultimat3/time';
+import { TIMEZONE_DETECTED_COOKIE, TIMEZONE_HEADER } from '@ultimat3/time';
 import { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG } from './locale';
 
 describe('the request-scoped config', () => {
@@ -14,5 +14,7 @@ describe('the request-scoped config', () => {
   test('names come from the owning packages, never from a literal here', () => {
     expect(DEFAULT_LOCALE_CONFIG.cookie).toBe(LOCALE_COOKIE);
     expect(DEFAULT_TZ_CONFIG.header).toBe(TIMEZONE_HEADER);
+    // The zone script writes `@ultimat3/time`'s name; a literal here would be read by nothing.
+    expect(DEFAULT_TZ_CONFIG.detectedCookie).toBe(TIMEZONE_DETECTED_COOKIE);
   });
 });

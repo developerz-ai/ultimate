@@ -19,6 +19,8 @@ export const sendSalesReceipt = job({
     currency: t.string,
     message: t.string,
     locale: t.locale,
+    /** Read from the visitor's text by the action, in their locale; `null` when they left it blank. */
+    budget: t.nullable(t.money),
   }),
   /**
    * One receipt per DISTINCT enquiry, so a double-clicked submit is one mail. Every field the
@@ -30,8 +32,8 @@ export const sendSalesReceipt = job({
    * The address stays legible and the rest is hashed: a key is an index value, and a
    * 2,000-character body in it is a queue row nobody can read and an index nobody can use.
    */
-  idempotencyKey: ({ email, plan, currency, message, locale }) =>
-    `sales-receipt:${email}:${Bun.hash(`${plan}|${currency}|${locale}|${message}`).toString(36)}`,
+  idempotencyKey: ({ email, plan, currency, message, locale, budget }) =>
+    `sales-receipt:${email}:${Bun.hash(`${plan}|${currency}|${locale}|${budget?.minor ?? ''}|${message}`).toString(36)}`,
   /**
    * A sales enquiry arrives from an anonymous visitor who is in no org yet, and the body reads no
    * table at all — it renders the payload and mails it. `'none'` is the honest answer, and it fails
@@ -46,6 +48,7 @@ export const sendSalesReceipt = job({
       plan: input.plan,
       currency: input.currency,
       message: input.message,
+      budget: input.budget,
     };
     await step.run('receipt', () =>
       send(salesReceiptEmail, enquiry, { to: input.email, locale: input.locale }),

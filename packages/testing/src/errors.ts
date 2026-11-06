@@ -59,6 +59,15 @@ export const TESTING_ERROR_CODES = [
   'X_JOB_SIM_NONDETERMINISTIC',
   'X_DRILL_FAILED',
   'X_DRILL_SERVICE_MISSING',
+  'X_SUBJECT_ERASE_INCOMPLETE',
+  'X_QUERY_UNINDEXED',
+  'X_QUERY_SORT_UNSERVED',
+  'X_QUERY_SCALES_WITH_ROWS',
+  'X_QUERY_PLAN_UNAVAILABLE',
+  'X_CASSETTE_MISSING',
+  'X_CASSETTE_UNUSED',
+  'X_CASSETTE_SECRET',
+  'X_CASSETTE_RECORD_REFUSED',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -111,6 +120,17 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_JOB_SIM_NONDETERMINISTIC: 'one simulateJobs seed produced two different traces',
   X_DRILL_FAILED: 'a fault drill property did not hold',
   X_DRILL_SERVICE_MISSING: 'a fault drill needs a service that is not there',
+  X_SUBJECT_ERASE_INCOMPLETE: 'a value of the subject survived subjectErase',
+  X_QUERY_UNINDEXED: 'a statement no index can serve: the planner can only scan the table',
+  X_QUERY_SORT_UNSERVED: 'a limited read sorts its rows: no index serves the order',
+  X_QUERY_SCALES_WITH_ROWS:
+    'a statement shape runs once per row: its count grows with the rows seeded',
+  X_QUERY_PLAN_UNAVAILABLE:
+    'the database could not answer a generic plan, so no statement was judged',
+  X_CASSETTE_MISSING: 'a cassette replayed with no recording on disk',
+  X_CASSETTE_UNUSED: 'a cassette entry was never replayed',
+  X_CASSETTE_SECRET: 'a cassette about to be written holds a secret value',
+  X_CASSETTE_RECORD_REFUSED: 'a cassette recording was refused',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

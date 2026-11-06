@@ -48,6 +48,7 @@ export const ACTION_ERROR_TITLES: Readonly<Record<string, string>> = {
   X_CONTRACT_DEFECT: 'a generated legal input made a handler fail',
   X_CONTRACT_EXERCISE_UNREACHED: 'no generated run reached the handler',
   X_CONTRACT_EXERCISE_UNDECLARED: '.contract() on a non-public action names no exercise',
+  X_ACTION_STREAM_INVALID: 'a streaming action broke its stream contract',
 };
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"

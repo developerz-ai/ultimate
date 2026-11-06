@@ -49,17 +49,20 @@ export const memoryDriver = (): Driver => {
   const resets: (() => void)[] = [];
   // The repositories as a same-tenant reference reads them: below the sealing and tenant seams.
   const stored: MemoryTables = new Map();
+  const repo = <Row>(entity: EntityCore<Row>): Repo<Row> => {
+    const existing = repos.get(entity.$name);
+    // Keyed by entity name and only ever written from that same entity, so the row type a
+    // caller asks for is the one that was stored.
+    if (existing !== undefined) return existing as Repo<Row>;
+    const created = memoryRepo<Row>(entity, [], stored);
+    repos.set(entity.$name, created);
+    resets.push(() => created.reset());
+    // Its history table beside it, as the migration creates both: the parent's writes land there.
+    if (entity.$history !== null) repo(entity.$history);
+    return created;
+  };
   return {
-    repo<Row>(entity: EntityCore<Row>): Repo<Row> {
-      const existing = repos.get(entity.$name);
-      // Keyed by entity name and only ever written from that same entity, so the row type a
-      // caller asks for is the one that was stored.
-      if (existing !== undefined) return existing as Repo<Row>;
-      const created = memoryRepo<Row>(entity, [], stored);
-      repos.set(entity.$name, created);
-      resets.push(() => created.reset());
-      return created;
-    },
+    repo,
     reset() {
       for (const reset of resets) reset();
     },

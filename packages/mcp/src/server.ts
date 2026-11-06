@@ -33,7 +33,7 @@ import type {
   ToolResolution,
 } from './registry';
 import { ToolRegistry } from './registry';
-import type { McpPrompt, McpResource } from './resources';
+import type { McpPrompt, McpResource, McpResourceSource } from './resources';
 import { ResourceRegistry } from './resources';
 import { resourcesRead } from './server-resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
@@ -58,6 +58,8 @@ export type { McpWire } from './wire';
 export interface McpServerInput {
   readonly tools?: readonly AnyMcpTool[];
   readonly resources?: readonly McpResource[];
+  /** Resources listed per caller (a tenant's own docs), after the fixed ones. */
+  readonly resourceSources?: readonly McpResourceSource[];
   readonly prompts?: readonly McpPrompt[];
   readonly serverInfo?: ServerInfo;
   /** `'flat'` (the default): one tool per primitive. See `McpSurfaceOption`. */
@@ -87,6 +89,7 @@ export interface McpServerInput {
 export function mcpServer(input: McpServerInput = {}): McpServer {
   const tools = new ToolRegistry().registerAll(input.tools ?? []);
   const resources = new ResourceRegistry().registerAll(input.resources ?? []);
+  for (const source of input.resourceSources ?? []) resources.addSource(source);
   const meta = MetaSurface.build({
     surface: input.surface,
     groups: input.groups,
@@ -207,7 +210,7 @@ export class McpServer {
       case 'tools/call':
         return this.toolsCall(body, caller);
       case 'resources/list':
-        return resultResponse(id, { resources: this.resources.list(caller) });
+        return resultResponse(id, { resources: await this.resources.listFor(caller) });
       case 'resources/read':
         return resourcesRead(
           { resources: this.resources, audit: this.audit, audience: this.voice.errorAudience },

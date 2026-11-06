@@ -14,6 +14,7 @@
 // a report an operator reads and the record that a completed name has already been swept.
 
 import { appVersion, assert, logger, renderThrowable, resolveEnvironment } from '@ultimat3/core';
+import { expectedQueryLoop, expectedSeqScan } from '@ultimat3/db';
 import type { BackfillInput, BackfillReport } from './backfill-definition';
 import { BackfillStalledError } from './backfill-errors';
 import { checkBackfillEnvironment } from './backfill-gate';
@@ -27,6 +28,11 @@ import { ledgerNameFor } from './backfill-source';
 import { jobDriver } from './driver';
 import type { JobRunArgs } from './job';
 import { isStepSuspension } from './steps';
+
+/** Why a backfill's page read and its count read every row: the sweep is the job. */
+const BACKFILL_SCAN = 'a backfill visits every row once, in key order';
+/** Why the scale sweep is told a page's writes grow with the page: the rows ARE the work. */
+const BACKFILL_LOOP = 'a backfill writes every row it visits; a page of N rows is N rows of work';
 
 /** Every batch is a step, and this is the name it is checkpointed under. See `backfillPass()`. */
 const STEP_PREFIX = 'batch:';
@@ -119,8 +125,9 @@ async function assertConverged<Row>(
   input: unknown,
   swept: number,
 ): Promise<void> {
-  if (definition.count === undefined) return;
-  const remaining = await definition.count({ ctx, input });
+  const count = definition.count;
+  if (count === undefined) return;
+  const remaining = await expectedSeqScan(BACKFILL_SCAN, () => count({ ctx, input }));
   // Parsed, not trusted: `count()` is app code feeding a framework decision, and both `NaN > 0`
   // and `-1 > 0` are FALSE — an unchecked bad number reads as "converged" and writes the completed
   // ledger row that stops the next deploy ever re-running this sweep. The one failure mode this
@@ -242,14 +249,20 @@ export async function backfillPass<Row>(
               // The signal is the run's cancellation composed with this step's ceiling, so a cancelled
               // pass unwinds out of the wait instead of sitting in a timer nobody is waiting for.
               await pace.wait({ signal, step: stepName });
-              const page = await reader.read(cursor, signal);
+              // A backfill visits every row once, in key order: the scan is the point, and the query-plan
+              // sweep is told so rather than asked to index a column no read filters on.
+              const page = await expectedSeqScan(BACKFILL_SCAN, () => reader.read(cursor, signal));
               // An exhausted chain, or a remote page with nothing on it: no body, no ledger write.
               if (page.rows.length === 0) return { cursor: page.next, rows: 0 };
               if (!recording) {
                 recording = true;
                 await open();
               }
-              await definition.handle({ rows: page.rows, ctx, signal, index, input });
+              // Its writes grow with the page by definition — every row visited is a row of work —
+              // so the scale sweep hears the reason instead of judging a loop it was asked to run.
+              await expectedQueryLoop(BACKFILL_LOOP, () =>
+                definition.handle({ rows: page.rows, ctx, signal, index, input }),
+              );
               swept = true;
               return { cursor: page.next, rows: page.rows.length };
             }),

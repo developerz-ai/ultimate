@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "98193ad889dc83d7",
+  "buildId": "3cc2cf50e1349522",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "178.5kb"
+        "js": "179kb"
       }
     },
     {
@@ -517,7 +517,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "173kb"
+        "js": "209.5kb"
       }
     },
     {
@@ -545,7 +545,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "30kb"
+        "js": "31.5kb"
       }
     },
     {
@@ -556,7 +556,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "194kb"
+        "js": "196.5kb"
       }
     },
     {
@@ -567,7 +567,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "79.5kb"
+        "js": "82kb"
       }
     }
   ],
@@ -1127,6 +1127,69 @@
       ]
     },
     {
+      "name": "posts_history",
+      "table": "posts_history",
+      "columns": [
+        {
+          "name": "actor_id",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "after",
+          "type": "jsonb",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false,
+          "hasDefault": true
+        },
+        {
+          "name": "before",
+          "type": "jsonb",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "hasDefault": true
+        },
+        {
+          "name": "op",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "request_id",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "row_id",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": []
+    },
+    {
       "name": "run_events",
       "table": "run_events",
       "columns": [
@@ -1210,6 +1273,13 @@
           "nullable": false,
           "primaryKey": false,
           "references": "connections.id"
+        },
+        {
+          "name": "event_count",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "id",
@@ -1421,6 +1491,56 @@
   ],
   "actions": [
     {
+      "name": "abortPostsImport",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "uploadId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "orgId",
+          "key",
+          "uploadId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "aborted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "aborted"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "addWebhookEndpoint",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1580,6 +1700,102 @@
       "mcp": {
         "expose": true,
         "description": "Cancel a run that is queued or in flight"
+      }
+    },
+    {
+      "name": "completePostsImport",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "uploadId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "partNumber": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "etag": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "partNumber"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 10000
+          }
+        },
+        "required": [
+          "orgId",
+          "key",
+          "uploadId",
+          "parts"
+        ],
+        "additionalProperties": false,
+        "description": "key must be one grantPostsImport minted: org/<orgId>/imports/posts/<importId>/<name>",
+        "x-ultimate-refinements": [
+          {
+            "name": "key-is-a-posts-import",
+            "message": "key must be one grantPostsImport minted: org/<orgId>/imports/posts/<importId>/<name>",
+            "path": [
+              "key"
+            ]
+          }
+        ]
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "importId",
+          "key",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
       }
     },
     {
@@ -1795,6 +2011,11 @@
               "en",
               "es"
             ]
+          },
+          "budget": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
           }
         },
         "required": [
@@ -2042,7 +2263,9 @@
         "expose": true,
         "description": "Create a draft post in the actor’s organisation"
       },
-      "errors": []
+      "errors": [
+        "X_POST_SLUG_TAKEN"
+      ]
     },
     {
       "name": "endSession",
@@ -2153,6 +2376,102 @@
       "policy": "member:self",
       "permissions": [
         "member:self"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
+      "name": "grantPostsImport",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "orgId",
+          "filename",
+          "contentType",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uploadId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "partBytes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "maxParts": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "importId",
+          "key",
+          "uploadId",
+          "partBytes",
+          "maxParts",
+          "contentType",
+          "size",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
       ],
       "cacheInvalidates": [],
       "mcp": {
@@ -2556,6 +2875,72 @@
       ]
     },
     {
+      "name": "listPostsImportParts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "uploadId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "orgId",
+          "key",
+          "uploadId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "partNumber": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "etag": {
+              "type": "string",
+              "minLength": 1
+            },
+            "size": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "partNumber",
+            "etag",
+            "size"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "memberAvatar",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2891,12 +3276,106 @@
       ],
       "cacheInvalidates": [],
       "mcp": {
-        "expose": true,
-        "description": "Queue a review of your draft; read it back with postReview"
+        "expose": false
       },
       "errors": [
         "X_ORG_NOT_FOUND"
       ]
+    },
+    {
+      "name": "requestMemberErasure",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "memberId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "org:administer",
+      "permissions": [
+        "org:administer"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      },
+      "errors": []
+    },
+    {
+      "name": "requestMemberExport",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "memberId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "exportId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prefix": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "exportId",
+          "prefix"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "org:administer",
+      "permissions": [
+        "org:administer"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      },
+      "errors": []
     },
     {
       "name": "requestPostsExport",
@@ -3304,6 +3783,69 @@
         "description": "Set the acting member’s theme"
       },
       "mutator": true
+    },
+    {
+      "name": "signPostsImportPart",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "uploadId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "partNumber": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "orgId",
+          "key",
+          "uploadId",
+          "partNumber",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
     },
     {
       "name": "startRun",
@@ -5160,7 +5702,8 @@
           ],
           "sorts": [
             "id",
-            "startedAt"
+            "startedAt",
+            "eventCount"
           ],
           "scopes": [
             {
@@ -5185,7 +5728,8 @@
                 "jobId",
                 "status",
                 "code",
-                "startedAt"
+                "startedAt",
+                "eventCount"
               ]
             }
           ],
@@ -5196,7 +5740,8 @@
                 "connectionId",
                 "jobId",
                 "status",
-                "code"
+                "code",
+                "eventCount"
               ]
             }
           ],
@@ -6404,6 +6949,67 @@
       "steps": []
     },
     {
+      "name": "members.erase",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "memberId"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "members.export",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "exportId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "memberId",
+          "exportId"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "notifySubscribers",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6646,6 +7252,22 @@
       "steps": []
     },
     {
+      "name": "postly.retain.purge",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "posts.daily-likes",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6734,6 +7356,22 @@
             ]
           }
         ]
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "posts.imports.purge",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
       },
       "queue": "default",
       "retry": {
@@ -6938,6 +7576,40 @@
           "locale": {
             "type": "string",
             "format": "bcp47-locale"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "minor": {
+                    "type": "integer",
+                    "description": "amount in minor units, never a float",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "currency": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
+                  "scale": {
+                    "type": "integer",
+                    "description": "decimal places `minor` counts; absent means the currency’s own",
+                    "minimum": 0,
+                    "maximum": 15
+                  }
+                },
+                "required": [
+                  "minor",
+                  "currency"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "integer minor units plus an ISO 4217 currency code"
           }
         },
         "required": [
@@ -6945,7 +7617,8 @@
           "plan",
           "currency",
           "message",
-          "locale"
+          "locale",
+          "budget"
         ],
         "additionalProperties": false
       },
@@ -7000,6 +7673,45 @@
       "lags": true
     }
   ],
+  "subjects": [
+    {
+      "entity": "members",
+      "batch": 200,
+      "tables": [
+        {
+          "entity": "comments",
+          "treatment": "delete"
+        },
+        {
+          "entity": "likes",
+          "treatment": "delete"
+        },
+        {
+          "entity": "members",
+          "treatment": "anonymize",
+          "columns": [
+            "email",
+            "name"
+          ]
+        },
+        {
+          "entity": "post_reviews",
+          "treatment": "delete"
+        },
+        {
+          "entity": "posts",
+          "treatment": "retain",
+          "reason": "published work belongs to the org; its author row is anonymized"
+        }
+      ],
+      "targets": [
+        {
+          "name": "avatars",
+          "retained": false
+        }
+      ]
+    }
+  ],
   "tasks": [
     {
       "name": "billing.plan-prices.supervisor",
@@ -7024,6 +7736,15 @@
       "tz": "UTC",
       "enqueues": [
         "postly.mcp.purge"
+      ]
+    },
+    {
+      "name": "hourlyRetention",
+      "cron": "23 * * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "postly.retain.purge",
+        "posts.imports.purge"
       ]
     },
     {
@@ -7162,6 +7883,8 @@
       "enforcedIn": [
         "action:addWebhookEndpoint",
         "action:removeWebhookEndpoint",
+        "action:requestMemberErasure",
+        "action:requestMemberExport",
         "action:upgradePlan"
       ]
     },
@@ -7192,7 +7915,12 @@
     {
       "permission": "post:export",
       "enforcedIn": [
-        "action:requestPostsExport"
+        "action:abortPostsImport",
+        "action:completePostsImport",
+        "action:grantPostsImport",
+        "action:listPostsImportParts",
+        "action:requestPostsExport",
+        "action:signPostsImportPart"
       ]
     },
     {
@@ -7398,6 +8126,10 @@
     },
     {
       "code": "X_POST_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_POST_SLUG_TAKEN",
       "package": "apps/web"
     },
     {

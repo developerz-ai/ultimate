@@ -70,8 +70,12 @@ export function seedGraph(
   const tenantCount = finiteCount('seedGraph', 'tenants', options.tenants ?? 2, 1);
   const perTable = finiteCount('seedGraph', 'perTable', options.perTable ?? 3, 1);
   // A view entity is a relation Postgres derives: no row is ever written to it, so it is no part of
-  // the graph (`X_ENTITY_VIEW_READ_ONLY` otherwise) — the tables it reads from carry the rows.
-  const tables = Object.values(entities).filter((entity) => entity.$describe().view === undefined);
+  // the graph (`X_ENTITY_VIEW_READ_ONLY` otherwise) — the tables it reads from carry the rows. A
+  // history table is the same from this side: its trigger writes every row, from the parent's.
+  const tables = Object.values(entities).filter((entity) => {
+    const described = entity.$describe();
+    return described.view === undefined && described.historyOf === undefined;
+  });
   const shapes = new Map(tables.map((entity) => [entity.$name, shapeOf(entity)]));
   const { order, deferred } = insertOrder(
     [...shapes.values()].map((shape) => ({

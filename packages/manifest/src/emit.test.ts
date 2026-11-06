@@ -48,6 +48,14 @@ const sources: ManifestSources = {
       lags: false,
     },
   ],
+  subjects: [
+    {
+      entity: 'member',
+      batch: 200,
+      tables: [{ entity: 'member', treatment: 'delete' }],
+      targets: [],
+    },
+  ],
   locales: ['en'],
 };
 
@@ -96,6 +104,7 @@ describe('manifestJson', () => {
       'mounts',
       'jobs',
       'consumers',
+      'subjects',
       'tasks',
       'policies',
       'permissions',

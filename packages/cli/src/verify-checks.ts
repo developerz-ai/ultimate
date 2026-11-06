@@ -8,7 +8,7 @@ import { APP_CONFIG_FILE, ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest } from '@ultimat3/manifest';
 import { AGENTS_MD_FILENAME, MANIFEST_FILENAME, verifyContract } from '@ultimat3/manifest';
 import type { MetaIssue } from '@ultimat3/seo';
-import { validateMeta } from '@ultimat3/seo';
+import { llmsDescriptionIssues, validateMeta } from '@ultimat3/seo';
 import { checkAgentsMd } from './app-agents-md';
 import { readAppSources } from './app-boundaries';
 import { envExampleFindings } from './app-env';
@@ -17,6 +17,7 @@ import { policyFindings } from './app-permissions';
 import { asyncPageFindings } from './async-pages';
 import { appBoundaryFindings } from './boundary-findings';
 import { checkBudgets, readBuildStats } from './budgets';
+import { checkClientDrift } from './client-emit-drift';
 import { checkDestructiveMigrations } from './db-destructive';
 import { checkRollingMigrations } from './db-rolling';
 import { checkUngeneratableMigrations } from './db-ungeneratable';
@@ -35,13 +36,16 @@ import {
   manifestMissingFindings,
   manifestStaleness,
 } from './manifest-staleness';
+import { mcpLockFindings } from './mcp-lock-findings';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { findingFrom } from './output';
+import { retainUnsweptFindings } from './retain-sweep';
 import { checkMigrationDrift } from './schema-drift';
 import { checkSchemaDump } from './schema-dump-drift';
 import { scanSiteMeta } from './seo-meta';
 import { quoteArg } from './shell-quote';
+import { loadSiteSettings } from './site-config';
 import { readStaticReport } from './static-report';
 import { unknownToolGateFindings } from './tool-gate-names';
 import { measureIfStale } from './verify-budgets-build';
@@ -211,6 +215,9 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         // The fifth: what the previous release would trip over during a roll. Off until the app
         // sets `rollingSince` in `x.verify.json`, since an applied migration cannot gain a marker.
         ...(await checkRollingMigrations(ctx.root)),
+        // The sixth: a generated client (`x client`) against its own stamp — a source document that
+        // moved (`X_CLIENT_STALE`) or a body edited by hand (`X_CLIENT_EDITED`). No database.
+        ...(await checkClientDrift(ctx.root)),
       ]),
   },
   {
@@ -310,12 +317,17 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // such key), so canonical checks are skipped rather than run against an origin this file
       // invented. `seo-meta.ts` spells out why that is the honest half.
       const report = validateMeta(scan.records);
+      // `/llms.txt` lists these pages by description: while it is on, a page without one is red.
+      const llms =
+        (await loadSiteSettings(ctx.root)).llms === false
+          ? []
+          : llmsDescriptionIssues(scan.records);
       // The scan filled the route table, so the advice costs no second load. Rides here because
       // this is the step about public, shared-cache pages; it never fails it.
       const warnings = await isrQueryAdvice(ctx.root);
       return {
-        ok: scan.findings.length === 0 && report.ok,
-        findings: [...scan.findings, ...report.issues.map(seoFinding)],
+        ok: scan.findings.length === 0 && report.ok && llms.length === 0,
+        findings: [...scan.findings, ...[...report.issues, ...llms].map(seoFinding)],
         ...(warnings.length === 0 ? {} : { warnings }),
       };
     },
@@ -375,14 +387,18 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // Started first and awaited last: it is a child process, and it runs beside the rest.
       const roleLoad = app ? roleLoadFindings(ctx.root, ctx.runner) : Promise.resolve([]);
       const drift = await driftFindings(ctx.root);
+      // Every `mcpTools()` against `tools.lock.json`: the `x mcp lock --check` of each, at once.
+      const remote = app ? await mcpLockFindings(ctx.root) : { findings: [], warnings: [] };
       const findings = [
         ...(app ? await withLoadFindings(ctx.root, drift) : drift),
         // An app only: the framework monorepo declares no `defineApi`, so it has no list to be in.
         ...(existsSync(join(ctx.root, APP_CONFIG_FILE))
           ? [
               ...(await unregisteredJobFindings(ctx.root)),
+              ...(await retainUnsweptFindings(ctx.root)),
               ...(await readJobBudgetFindings(ctx.root)),
               ...(await unknownToolGateFindings(ctx.root)),
+              ...remote.findings,
             ]
           : []),
         // What a worker never registers: a declaration beside a component the API index does not
@@ -395,7 +411,10 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       ];
       // Warnings are not findings: `AGENTS.md` tabulating a route table is a smell a human
       // judges, not a build error. They ride in `output`, which `--json` carries verbatim.
-      const output = agents.warnings.map((warning) => `${AGENTS_MD_FILENAME}: ${warning}`);
+      const output = [
+        ...agents.warnings.map((warning) => `${AGENTS_MD_FILENAME}: ${warning}`),
+        ...remote.warnings,
+      ];
       return {
         ok: findings.length === 0,
         findings,

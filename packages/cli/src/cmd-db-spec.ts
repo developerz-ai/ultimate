@@ -13,13 +13,14 @@ export const DB_SUBCOMMANDS = [
   'branch',
   'backfill',
   'diagnostics',
+  'recount',
 ] as const;
 
 export const dbSpec: CommandSpec = {
   name: 'db',
-  summary: 'gen, migrate, reset, seed, studio, branch, backfill, diagnostics',
+  summary: 'gen, migrate, reset, seed, studio, branch, backfill, diagnostics, recount',
   usage:
-    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n]',
+    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n] | recount <entity>.<column> [--write]',
   requiresApp: true,
   subcommands: DB_SUBCOMMANDS,
   // Declared from the constant `runBranchCommand` validates against, never a second literal: it
@@ -88,8 +89,8 @@ export const dbSpec: CommandSpec = {
     {
       name: 'write',
       type: 'boolean',
-      summary: 'backfill: enqueue the pass; dry run without it',
-      subcommands: ['backfill'],
+      summary: 'backfill, recount: enqueue the pass, or set drifted counters; dry run without it',
+      subcommands: ['backfill', 'recount'],
     },
     {
       name: 'force',

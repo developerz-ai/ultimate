@@ -8,6 +8,7 @@ import type {
   DevSources,
   InvalidationFact,
   MailFact,
+  MailTemplateFact,
   ManifestFact,
   PolicyFact,
   RequestTrace,
@@ -25,12 +26,14 @@ import { recentInvalidations } from '@ultimat3/cache';
 import type { Role } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { jsonResponse } from '@ultimat3/http';
+import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import type { MemoryMailDriver } from '@ultimat3/mail';
 import { isMemoryDriver } from '@ultimat3/mail';
 import type { Manifest } from '@ultimat3/manifest';
 import { appManifest, readAppManifest } from './app-manifest';
 import { appBoundaryFindings } from './boundary-findings';
 import { assertSameOrigin, hostRefusal, SQL_BODY, sqlOnGet } from './dev-dashboard-guard';
+import { mailTemplateFacts } from './dev-mail-templates';
 import type { StatementLedger } from './dev-n-plus-one';
 import { devPolicyMatrix } from './dev-policy';
 import type { TraceRecorder } from './dev-traces';
@@ -137,6 +140,10 @@ export function devSources(input: DevDashboardInput): DevSources {
       ...(outbox === undefined
         ? {}
         : { mail: (): Promise<readonly MailFact[]> => Promise.resolve(mailFacts(outbox)) }),
+      // Every declared mail's `preview`, rendered in every locale the app ships — independent of the
+      // transport, so a template is checked before anything is sent anywhere.
+      mailTemplates: async (): Promise<readonly MailTemplateFact[]> =>
+        mailTemplateFacts((await appLocaleSet(input.root)).locales),
       manifest: (): Promise<ManifestFact> => manifestFact(input.root),
       invalidations: (): Promise<readonly InvalidationFact[]> =>
         Promise.resolve(invalidationFacts()),

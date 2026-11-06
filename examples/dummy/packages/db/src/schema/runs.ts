@@ -8,7 +8,7 @@
  * from each event it appends — the one writer of both. `code` is the `X_*` a failed run ended on.
  */
 
-import { entity, enumerated, text, timestamp, uuid } from '@ultimat3/entity';
+import { entity, enumerated, integer, text, timestamp, uuid } from '@ultimat3/entity';
 import { connections } from './connections';
 import { orgs } from './orgs';
 
@@ -36,6 +36,11 @@ export const runs = entity('runs', {
     /** Nullable: only a `failed` run ended on a code. */
     code: text({ max: RUN_IDENT_MAX }).nullable(),
     startedAt: timestamp().defaultNow(),
+    /**
+     * The `run_events` rows this run holds, kept by the database (`runEvents.runId`'s `countedIn`)
+     * in each write's transaction — appends, and the retention sweep's deletes.
+     */
+    eventCount: integer().default(0),
   },
   indexes: [{ on: ['orgId', 'startedAt'] }, { on: ['orgId', 'status'] }],
 });

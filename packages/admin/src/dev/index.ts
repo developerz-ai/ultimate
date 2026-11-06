@@ -17,6 +17,8 @@ export type {
   LiveQueryFact,
   LiveSubscriberFact,
   MailFact,
+  MailTemplateFact,
+  MailTemplatePreviewFact,
   ManifestFact,
   PolicyFact,
   QueueFact,

@@ -59,6 +59,8 @@ export const members = entity('members', {
     { on: ['orgId', 'role'] },
     /** The digest walks members by zone, so the scheduler reads one index, not a table scan. */
     { on: ['tz'], where: (c) => c.digestOptIn.isTrue() },
+    /** The nightly fan-out pages every opted-in member across orgs, in (org, id) order. */
+    { on: ['digestOptIn', 'orgId', 'id'] },
   ],
 });
 

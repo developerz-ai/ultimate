@@ -637,6 +637,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `ISLAND_HOLD_ATTRIBUTE`, `ISLAND_HOLD_MS`, `ISLAND_HOLD_REVEAL` | a held island's marker, and the cap after which it shows its server markup regardless |
 | `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
+| `zoneScript`, `zoneScriptBody`, `ZONE_SCRIPT_MAX_BYTES` | `time.detect`'s inline script, `app/` documents only: writes `x_timezone_detected` from `Intl`'s zone, which `@ultimat3/http` ranks below every chosen zone. Under 200 B; tag and CSP hash from one body |
 | `clientNavigationTags`, `linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `NAVIGATION_*` (`NAVIGATION_ERROR_EVENT`‡), `NAVIGATE_EVENT`‡, `NAVIGATED_EVENT`‡ | the client router's document tags and its pure rules; the router itself is `@ultimat3/render/navigation`, built and served by the CLI |
 | `navigate`‡, `refresh`‡, `openModal`‡, `closeModal`‡, `NavigateToOptions`‡, `NavigationModalPathInvalidError`‡ | navigating from code: the router when the page has one, the browser's own load when not. Import from `/client` in an island |
 | `scheduleRefresh`‡ | a `refresh()` once the visitor is idle, coalesced; never a reload |

@@ -7,10 +7,11 @@ import type { Clock, Page } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import { pumpBounded } from './byte-pump';
 import { putTooLarge } from './errors';
+import type { MultipartCapability } from './multipart';
 import type { ObjectLock, ObjectLockOptions } from './object-lock';
 import type { PutStreamOptions } from './put-stream';
 import type { ByteRange, GetOptions } from './range';
-import type { SignedUrlVerification } from './signed-url';
+import type { SignedPart, SignedUrlVerification } from './signed-url';
 
 export type StorageBody = Uint8Array | ReadableStream<Uint8Array> | Blob;
 
@@ -114,6 +115,12 @@ export interface SignedUrlOptions {
    */
   readonly contentLength?: number | undefined;
   readonly contentType?: string | undefined;
+  /**
+   * A part of an open upload, inside the signature: the URL then writes that part and nothing else.
+   * Only a disk whose `multipart.receivePart` stores parts signs one; `s3Driver` refuses it, since
+   * its parts are signed by `multipart.signPart` against the provider.
+   */
+  readonly part?: SignedPart | undefined;
 }
 
 export interface CopyOptions {
@@ -218,6 +225,12 @@ export interface StorageDriver {
    * provider and never reaches this path, and a third-party driver that implements neither is
    * refused by name (`X_STORAGE_URL_UNVERIFIABLE`) rather than reported as a bad signature.
    */
+  /**
+   * An upload in parts: resumable, and past S3's 5 GiB single-PUT ceiling. Optional, so a
+   * third-party driver still compiles; `grantMultipart` refuses a disk without it
+   * (`X_STORAGE_MULTIPART_UNSUPPORTED`). Every shipped disk has one.
+   */
+  readonly multipart?: MultipartCapability | undefined;
   verifySigned?(input: {
     readonly url: string;
     /** Overrides the driver's own, so a test's frozen clock still governs expiry. */

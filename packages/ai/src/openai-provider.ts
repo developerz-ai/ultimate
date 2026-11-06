@@ -19,7 +19,9 @@ import type { ModelId } from './models';
 import { chatCompletionBody, sessionHeaders } from './openai-body';
 import type { ChatAnswer } from './openai-wire';
 import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
+import type { ProviderCacheRow, ProviderPromptCache } from './prompt-cache';
 import { promptCacheRule } from './prompt-cache';
+import { screenCacheRows } from './prompt-cache-rows';
 import type {
   GenerateRequest,
   GenerateResult,
@@ -69,6 +71,14 @@ export interface OpenAiProviderInput {
    * thing that says which of them answered.
    */
   readonly name?: string;
+  /**
+   * What this endpoint does with a cache hint, when `PROMPT_CACHE_RULES` does not name its host —
+   * a company gateway fronting a marking family:
+   * `{ rules: [{ model: 'anthropic/', marks: 'parts', session: 'x-session-id' }] }`. Read before the
+   * table, first match by model prefix. This wire speaks `parts` or `none`, and carries a session as
+   * `x-session-id`, `prompt_cache_key` or `none`; anything else is `X_AI_REQUEST_INVALID` here.
+   */
+  readonly promptCache?: ProviderPromptCache;
   /** Injectable so a test can assert the request body without a network. Defaults to `fetch`. */
   readonly fetch?: AiFetch;
 }
@@ -92,6 +102,7 @@ class OpenAiProvider implements Provider {
   readonly name: string;
   readonly models: readonly ModelId[];
   private readonly config: OpenAiProviderInput;
+  private readonly cacheRows: readonly ProviderCacheRow[];
 
   // `| undefined` for the reason `AnthropicProvider`'s is: no argument at all, from plain JS or a
   // cast, is the empty-list boot mistake and gets its coded refusal, never a TypeError.
@@ -108,10 +119,11 @@ class OpenAiProvider implements Provider {
     this.name = config.name ?? 'openai';
     this.models = config.models;
     this.config = config;
+    this.cacheRows = screenCacheRows('openai', config.promptCache);
   }
 
   marksPromptCache(model: ModelId): boolean {
-    return promptCacheRule('openai', this.config.baseUrl, model).marks === 'parts';
+    return promptCacheRule('openai', this.config.baseUrl, model, this.cacheRows).marks === 'parts';
   }
 
   /**
@@ -124,13 +136,14 @@ class OpenAiProvider implements Provider {
     // this provider's first listed model — the app's three places are the only ones.
     const model = resolveModel('provider', request.model);
     if (requiresStreaming({ ...request, model })) return this.assemble(request);
-    const { baseUrl } = this.config;
+    const cache = { baseUrl: this.config.baseUrl, cacheRows: this.cacheRows };
+    const cacheRule = promptCacheRule('openai', cache.baseUrl, model, cache.cacheRows);
     const response = await this.send(
       model,
-      chatCompletionBody({ request, model, stream: false, provider: this.name, baseUrl }),
+      chatCompletionBody({ request, model, stream: false, provider: this.name, ...cache }),
       false,
       request.signal,
-      sessionHeaders(request, model, baseUrl),
+      sessionHeaders(request, cacheRule),
     );
     const answer = parseChatCompletion((await response.json()) as unknown, this.name);
     return this.result(request, model, answer);
@@ -138,13 +151,14 @@ class OpenAiProvider implements Provider {
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const model = resolveModel('provider', request.model);
-    const { baseUrl } = this.config;
+    const cache = { baseUrl: this.config.baseUrl, cacheRows: this.cacheRows };
+    const cacheRule = promptCacheRule('openai', cache.baseUrl, model, cache.cacheRows);
     const response = await this.send(
       model,
-      chatCompletionBody({ request, model, stream: true, provider: this.name, baseUrl }),
+      chatCompletionBody({ request, model, stream: true, provider: this.name, ...cache }),
       true,
       request.signal,
-      sessionHeaders(request, model, baseUrl),
+      sessionHeaders(request, cacheRule),
     );
     if (response.body === null) {
       throw new AiTransportError({

@@ -160,4 +160,8 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_HOST_REFUSED: 421,
   // @ultimat3/ai — a provider refused a request as longer than the model context window
   X_AI_CONTEXT_OVERFLOW: 500,
+  // @ultimat3/mcp — a remote MCP server failed or refused the call
+  X_MCP_REMOTE_REFUSED: 502,
+  // @ultimat3/mcp — a remote MCP server needs authorization this app does not hold
+  X_MCP_REMOTE_AUTH_REQUIRED: 502,
 } satisfies Readonly<Record<string, number>>;

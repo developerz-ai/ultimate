@@ -56,6 +56,8 @@ export type {
   McpConfirmationsInput,
 } from './confirmations';
 export { DEFAULT_MCP_CONFIRMATION_TTL_MS, mcpConfirmations } from './confirmations';
+export type { DevGraphHost, DevGraphQuestion } from './dev-graph-tool';
+export { graphQuestion } from './dev-graph-tool';
 export type { DevMcpServerInput } from './dev-host';
 export { devHost, devMcpServer, frameworkIntrospection } from './dev-host';
 export type {
@@ -133,6 +135,9 @@ export { exposedPrimitives } from './exposed';
 export type { ProjectablePrimitive } from './from-action';
 export { deriveAnnotations, toolFrom, toolsFrom, toolsListed } from './from-action';
 export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
+export type { JobToolAnswer, JobToolDef, JobToolWait } from './job-tool';
+export { JOB_STATUS_TOOL, JOB_TOOL_INLINE_CEILING_MS, jobTool } from './job-tool';
+export { McpJobToolInvalidError } from './job-tool-errors';
 export type { ListFilterOp, McpListParams } from './list-params';
 export { DEFAULT_LIST_MAX_LIMIT, listParamsSchema } from './list-params';
 export {
@@ -191,6 +196,21 @@ export {
 } from './query-limits';
 export type { DatabaseTarget } from './readonly-sql';
 export { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
+export {
+  McpRecipeExampleInvalidError,
+  McpRecipeLinkDanglingError,
+  McpRecipeToolUnknownError,
+  McpRecipeUnknownError,
+  McpRecipeUriReservedError,
+} from './recipe-errors';
+export { assertRecipeLinks, servedRecipes } from './recipe-links';
+export { markdownRecipes, recipeFromMarkdown } from './recipe-markdown';
+export type { ReplayOptions, ReplayReport } from './recipe-replay';
+export { replayRecipes } from './recipe-replay';
+export type { McpRecipe, McpRecipeStep } from './recipes';
+export { RECIPE_URI_PREFIX, recipeUri, renderRecipe } from './recipes';
+export type { ExtraRecipes } from './recipes-tool';
+export { DOCS_TOOL } from './recipes-tool';
 export type {
   AnyMcpTool,
   ContentBlock,
@@ -214,10 +234,42 @@ export {
   visibleToCaller,
 } from './registry';
 export type {
+  McpClient,
+  McpClientOptions,
+  RemoteTool,
+  RemoteToolResult,
+} from './remote-client';
+export { mcpClient } from './remote-client';
+export type { McpRemoteFailure } from './remote-errors';
+export {
+  McpRemoteAuthRequiredError,
+  McpRemoteRefusedError,
+  McpRemoteToolChangedError,
+} from './remote-errors';
+export type { LockedServer, LockedTool } from './remote-lock';
+export {
+  assertLocked,
+  lockChanges,
+  readToolsLock,
+  TOOLS_LOCK_FILE,
+  writeToolsLock,
+} from './remote-lock';
+export type {
+  McpOAuthClient,
+  McpOAuthClientOptions,
+  McpOAuthHandshake,
+  McpOAuthStart,
+  McpOAuthTokens,
+} from './remote-oauth';
+export { mcpOAuthClient } from './remote-oauth';
+export type { DeclaredMcpServer, McpTools, McpToolsDef, RemoteToolAction } from './remote-tools';
+export { declaredMcpServers, mcpTools, RemoteToolOutput } from './remote-tools';
+export type {
   FrameworkResourceProviders,
   McpPrompt,
   McpPromptArgument,
   McpResource,
+  McpResourceSource,
   ResourceContents,
   ResourceListEntry,
   ResourceResolution,

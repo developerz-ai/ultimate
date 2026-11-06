@@ -59,6 +59,20 @@ A refusal's issue carries `rule` (`string.min`, `enum`, … — `SCHEMA_RULES`) 
 | `ctx.signal` | `AbortSignal` | client disconnect / drain / the request deadline; pass it to long calls. A write past the deadline rethrows `X_TIMEOUT` and rolls back; an `idempotent` action called with a key runs to its end instead, on a fresh signal with no deadline, so the retry replays success (`runToCompletion`), under a hard ceiling: twice `requestTimeoutMs` by default (60 s), `configureIdempotency({ scope, ceilingMs })` to change it. Past it the handler is aborted and the key replays `X_IDEMPOTENCY_RUN_CEILING` |
 | `ctx.role` / `ctx.buildId` | `Role` / `string` | which runtime role is executing, and which build |
 
+## Streaming: `stream:` and an async generator
+
+An action that answers in pieces declares `stream: <chunk schema>` and writes `handle` as `async *handle({ input, ctx })`: each `yield` is a chunk, the `return` is the output.
+
+| Caller | Gets |
+|---|---|
+| `accept: text/event-stream` on its route | `event: chunk` per yield (parsed by `stream` first), then one `event: done` (output) or `event: error` (problem document); `x-accel-buffering: no`, a `: keep-alive` every 15 s |
+| anything else — JSON, MCP, `.job()`, `.as()`, a direct call | the generator drained, the output alone: one contract |
+| refused before the handler starts (policy, input, rate limit) | the ordinary problem response, never a stream |
+| the client leaves mid-stream | `ctx.signal` aborts inside the handler |
+| a browser | `clientStream({ url, body })` from `@ultimat3/core`: `fetch`, never `EventSource` |
+
+A chunk its schema refuses, or `stream:` beside a handle that is not a generator, is `X_ACTION_STREAM_INVALID`. The OpenAPI 200 lists `text/event-stream` beside `application/json` for a streaming action only. `agent()` streams this way.
+
 ## The fluent surface
 
 Every projection this package owns is a method on the action — `publishPost.openapi()`, never `toOpenApiOperation(publishPost)`. The MCP tool is the exception by tier: `@ultimat3/mcp`'s one projection, `toolFrom(publishPost)` (`As of 25.0.0` there is no `.tool()`). Exactly four declared fields are lifted onto it as readable properties: `input`, `output`, `policy`, `mcp`. The rest of the declaration is structured metadata, reachable through `describe()` and nowhere else. An action has no `.def`.
@@ -88,6 +102,10 @@ Every projection needs the name `registerActions()` stamps on. It names the expo
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
 | 5 | **MCP tool** | `mcp` + `input` + `policy` | `toolFrom(publishPost)` from `@ultimat3/mcp` — one tool named `publishPost` per exposed action, exactly the `tools/list` entry, JSON Schema from `input`, every call through this action's `invoke` (authz unchanged) |
 | 6 | **Test** | `input` + `policy` + `handle` | `publishPost.contract({ exercise: { actor } })` — schema round-trip, a denial test per policy branch, and the handler on generated legal input, generated green, not as a `TODO` |
+
+**A client for code that cannot import the app.** `rpc` needs the app's action types, so a customer's TypeScript never had one. `x client customer --out <dir>` compiles the committed `openapi.json` (or a bearer mount's own document, `--mount /v1`) into `index.ts` + `types.ts` with no import beyond the platform: `createClient({ baseUrl, headers })`, one method per `operationId`, a non-2xx as `ProblemError`, and `refusalOf(error, 'publishPost')` narrowing to the codes that operation declares under `errors:`. The calling direction is `x client vendor <name>` — `outbound()` and `t` schemas from a third party's document. One compiler for both, never a second way: [CLI reference](CLI-Reference#x-client). `As of 2026-11`.
+
+**A bulk endpoint is one action.** `hive({ member, split, onMemberError })` (`@ultimat3/ai`) runs `member` once per item under its own policy and answers per-item outcomes — `{ index, status: 'ok' | 'failed', … }` — so a bulk operation is in OpenAPI, the typed client, the customer client and MCP by construction, with no batch route to hand-write.
 
 Plus cache invalidation: `cache.invalidates` fans out to request memo, in-process LRU (all instances, over NATS), Redis, ISR pages, and the CDN purge webhook in one hop ([Caching and invalidation](Caching-And-Invalidation)).
 

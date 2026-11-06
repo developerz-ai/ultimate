@@ -89,6 +89,28 @@ export const GENERATABLE_FORMS: readonly GeneratableForm[] = [
     // read them as generatable and let a squash discard the replication setup in silence.
     pattern: /^alter\s+table\s[\s\S]*?\breplica\s+identity\s+(?:full|default)\b/,
   },
+  // The lifecycle triggers (`generate-triggers.ts`, `generate-history.ts`, `generate-counter.ts`,
+  // `generate-append-only.ts`), read on BLANKED text: every name is a quoted identifier (`""`) and
+  // every body a dollar quote, so each pattern is the whole statement's shape. Absent until
+  // 2026-11-06, so `x db gen` wrote 11 statements its own rail reported. An unquoted, hand-written
+  // trigger or function, and an `update` that is not the recount, stay counted.
+  {
+    name: 'create or replace function … returns trigger',
+    pattern:
+      /^create\s+or\s+replace\s+function\s+""\s*\(\s*\)\s+returns\s+trigger\s+language\s+plpgsql\s+as\s*$/,
+  },
+  { name: 'create trigger', pattern: /^create\s+trigger\s+""\s+(?:before|after)\s/ },
+  { name: 'drop trigger if exists', pattern: /^drop\s+trigger\s+if\s+exists\s+""\s+on\s+""$/ },
+  // The recount's cross-tenant switch, transaction-local (`true`): a setting, never a write.
+  {
+    name: 'select set_config(…, true)',
+    pattern: /^select\s+set_config\s*\(\s*''\s*,\s*''\s*,\s*true\s*\)$/,
+  },
+  {
+    name: 'update … recount',
+    pattern:
+      /^update\s+""\s+p\s+set\s+""\s*=\s*\(\s*select\s+count\s*\(\s*\*\s*\)::integer\s+from\s+""\s+c\s+where\s/,
+  },
 ];
 
 /**

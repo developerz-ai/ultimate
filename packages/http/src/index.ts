@@ -117,7 +117,7 @@ export {
   socketIdleTimeoutSeconds,
 } from './idle-timeout';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
-export { DEFAULT_LOCALE_CONFIG } from './locale';
+export { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG } from './locale';
 export type { RequestAddress } from './locale-prefix';
 export { requestAddress } from './locale-prefix';
 export type { Middleware } from './middleware';

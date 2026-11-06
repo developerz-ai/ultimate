@@ -26,6 +26,7 @@ verifyContract({ before: committed, after: manifest });
 | `admin` | one entry per `defineAdmin()`: `basePath`; each resource's `filters`, `sorts`, `scopes` (`name`, `default`, `count`) and `rowScoped`; each mounted route's `url`, `view`, `entity` and `permissions`. `[]` for an app with no admin. Read off the process's own declarations — the one section the CLI does not inject |
 | `jobs` | input schema, queue, retry policy, step names, and — only when the job declares a cap — `concurrency: { limit, keyed, whenBusy }` |
 | `tasks` | cron, tz, jobs enqueued |
+| `subjects` | one entry per `defineSubject()`: the entity, `batch`, each reached table's treatment kind (`delete`, `anonymize` with its columns, `retain` with its reason), the framework targets and any `links`. Never the anonymized values. No key for an app with none |
 | `policies` | permission, where enforced |
 | `permissions` | **derived** from policies + each operation's own list, never declared twice |
 | `locales`, `errorCodes` | catalogs a tool can enumerate |
@@ -37,6 +38,24 @@ An operation's `policy` is its **display label** — a composite renders as
 `and(post:publish, org:administer)`, which is not a permission and matches no grant. Match a grant
 against `permissions`; matching on `policy` reports every non-trivially-guarded operation as
 enforcing nothing.
+
+## The app graph — `buildGraph`, `impactOf`, `pathBetween`
+
+Pure, never stored: `buildGraph(manifest, modules?, observed?)` joins the manifest's declared facts
+to the module facts the CLI scans (`ModuleFacts`: each file's imports, opaque files, which file
+declares which primitive) and to edges a run observed. Every edge carries `declared`, `import` or
+`observed`. `impactOf(graph, id)` walks dependents — an opaque file and its dependents are always in
+— and sorts them into routes, actions, queries, jobs, MCP tools, published operations, tests and
+budgets; `pathBetween` explains one link; `findNode` resolves a name, id or path, or names the
+nearest three. `GRAPH_VERSION` versions the shape. `x graph` and `x impact` are its readers.
+
+```ts
+import { buildGraph, impactOf, type Manifest } from '@ultimat3/manifest';
+
+declare const manifest: Manifest;
+const reach = impactOf(buildGraph(manifest), 'query:postById');
+reach.publishedOperations; // non-empty: contract-diff will have an opinion
+```
 
 ## Determinism
 

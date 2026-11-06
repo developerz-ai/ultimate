@@ -25,9 +25,17 @@ const flatten = (node: Node, prefix = ''): Map<string, string> => {
 const flatEn = flatten(en as Node);
 const flatEs = flatten(es as Node);
 
+/**
+ * An ORDINAL family's members are the locale's CLDR categories, not a key space the two catalogs
+ * share: English says 1st/2nd/3rd/4th (`one`, `two`, `few`, `other`), Spanish one form (`other`).
+ */
+const ORDINAL = /_ordinal_[a-z]+$/;
+const ordinalStem = (key: string): string => key.replace(ORDINAL, '');
+
 test('both catalogs describe exactly the same key space', () => {
-  const missingInEs = [...flatEn.keys()].filter((key) => !flatEs.has(key));
-  const extraInEs = [...flatEs.keys()].filter((key) => !flatEn.has(key));
+  const shared = (key: string): boolean => !ORDINAL.test(key);
+  const missingInEs = [...flatEn.keys()].filter((key) => shared(key) && !flatEs.has(key));
+  const extraInEs = [...flatEs.keys()].filter((key) => shared(key) && !flatEn.has(key));
 
   expect(missingInEs).toEqual([]);
   expect(extraInEs).toEqual([]);
@@ -56,11 +64,24 @@ test('interpolation slots match between locales', () => {
   expect(mismatched.map(([key]) => key)).toEqual([]);
 });
 
+test('every ordinal family ends in `_ordinal_other` in both locales: the form every number reaches', () => {
+  const stems = new Set(
+    [...flatEn.keys(), ...flatEs.keys()].filter((key) => ORDINAL.test(key)).map(ordinalStem),
+  );
+  expect(stems.size).toBeGreaterThan(0);
+  for (const stem of stems) {
+    expect(flatEn.has(`${stem}_ordinal_other`)).toBe(true);
+    expect(flatEs.has(`${stem}_ordinal_other`)).toBe(true);
+  }
+});
+
 test('every plural key carries both categories Spanish and English need', () => {
   // Underscore suffixes on the leaf, never a nested `{ one, other }` branch: `selectPluralKey`
   // probes `<stem>_one` / `<stem>_other`, so a nested branch renders `⟦key⟧` at every call site.
+  // A `select`/`ordinal` family's `_other` is its fallback, not a plural: it has no `_one` twin.
+  const family = /_(?:select|ordinal)_[A-Za-z0-9-]+$/;
   const stems = [...flatEn.keys()]
-    .filter((key) => key.endsWith('_one') || key.endsWith('_other'))
+    .filter((key) => !family.test(key) && (key.endsWith('_one') || key.endsWith('_other')))
     .map((key) => key.slice(0, key.lastIndexOf('_')));
 
   // Without this the loop below is vacuous: rename the convention and the test stays green.

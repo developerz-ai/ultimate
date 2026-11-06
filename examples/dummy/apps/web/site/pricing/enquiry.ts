@@ -11,6 +11,8 @@ export interface Enquiry {
   readonly currency: string;
   readonly message: string;
   readonly locale: string;
+  /** Optional, and AS TYPED: the action reads it in `locale` (`1.234,56` is not `1.234`). */
+  readonly budget?: string;
 }
 
 const REQUIRED = ['email', 'plan', 'currency', 'message', 'locale'] as const;
@@ -24,6 +26,9 @@ const REQUIRED = ['email', 'plan', 'currency', 'message', 'locale'] as const;
  * Values are trimmed and blanks are dropped rather than sent: `message` is `min(1)` on the action,
  * and a body of three spaces should read as "the visitor typed nothing", not as X_INPUT_INVALID.
  */
+const budgetOf = (budget: string | undefined): { budget?: string } =>
+  budget === undefined ? {} : { budget };
+
 export function enquiryFrom(entries: Iterable<readonly unknown[]>): Enquiry | null {
   const values = new Map<string, string>();
   for (const [key, value] of entries) {
@@ -42,5 +47,6 @@ export function enquiryFrom(entries: Iterable<readonly unknown[]>): Enquiry | nu
     currency: values.get('currency') ?? '',
     message: values.get('message') ?? '',
     locale: values.get('locale') ?? '',
+    ...budgetOf(values.get('budget')),
   };
 }

@@ -262,3 +262,23 @@ Decisions:
 - **Tokens are opaque, hashed at rest** (`xat_`/`xrt_` prefixes, 32 random bytes), never a JWT, so
   `revoke` holds on the next lookup. Lists are space-joined text in Postgres: scope-tokens and URIs
   hold no space, and no array parameter has to cross `Bun.SQL`.
+
+## Agents on the wire, remote tools, job tools, recipes (As of 2026-11, plan 101 slices 41 / 39)
+
+Compared before the design was fixed, read only (never run): sst/opencode at
+[`b60984d6`](https://github.com/sst/opencode/tree/b60984d68ad959524bd1036b00d6ebf8f473fd07)
+(`packages/core/src/mcp/client.ts`, `packages/server/src/handlers/event.ts`) and badlogic/pi-mono at
+[`e12dbfc9`](https://github.com/badlogic/pi-mono/tree/e12dbfc9299049dc2e7a974612fec32001a7ba8a)
+(`packages/mcp/src/{client,output-limit,naming}.ts`, `transports/streamable-http.ts`,
+`packages/agent/src/{types,proxy}.ts`).
+
+| Question | opencode | pi | Ultimate |
+|---|---|---|---|
+| Tokens to a client | an app-wide SSE event bus, `: heartbeat` every 15 s | `ProxyAssistantMessageEvent`: the provider events with `partial` stripped for bandwidth | the action's own route, `accept: text/event-stream`; `chunk`… then one `done` or `error`; `: keep-alive` every 15 s. A stream is one caller's answer with its policy and budget, so not a channel |
+| Agent events | per-message parts | `turn_start/end`, `tool_execution_start/end` with ids | `agent()` chunks `text`, `tool_call {id,name}`, `tool_result {id,name,isError}`, `turn` — ids pair a call with its result as pi's do; no arguments, no tool output, no transcript (the `onTurn` line) |
+| Remote tools found | listed on connect, relisted on `list_changed` | listed on connect | NEVER at run time: `allow` + committed `tools.lock.json` (`x mcp lock`); a drift is `X_MCP_REMOTE_TOOL_CHANGED`. Both references trust the live list; a changed description is a prompt-injection channel |
+| Transport | the SDK's streamable HTTP; session + DELETE on close | its own: `Mcp-Session-Id`, 404 → session expired, SSE answers, `Last-Event-ID` resume | `outbound()` (deadline, dial screen, size cap); modern era first, legacy `initialize` + `Mcp-Session-Id`, one re-initialize on 404; an SSE answer read for its `id`. No GET stream, no resume: a tool call is one request |
+| Cancellation | the SDK's abort | `notifications/cancelled` on abort | the call's `ctx.signal`; legacy era also sends `notifications/cancelled`, best effort and logged |
+| Result size | timeouts per phase | 20 KiB, middle cut (Codex's format) | `maxResultChars` (20,000), middle cut, inside an `<untrusted source=…>` fence the remote cannot close |
+| Tool naming | server-prefixed | `mcp__<server>__<tool>`, hashed past 64 | `<server>_<tool>`, `[A-Za-z0-9_]`, 64 — an action name, the model's tool name |
+| OAuth to the upstream | full client flow, stored tokens | auth provider | not in the framework: `auth: () => headers` per call; the app owns the token store |

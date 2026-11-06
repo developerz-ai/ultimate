@@ -9,6 +9,7 @@ import { type Binding, bindingOf, columnName, moneyColumns, referenceBinding } f
 import { currencyCheck, scaleCheck } from './columns';
 import { EntityError, invariantViolated } from './errors';
 import type { Invariant } from './invariants';
+import type { LifecycleDescription } from './lifecycle';
 import type {
   ColumnDescription,
   EntityDescription,
@@ -39,8 +40,12 @@ export interface DescribeInput<Row> {
   readonly retired?: readonly string[] | undefined;
   /** `entity({ shared: '<why>' })` — projected only when declared. */
   readonly shared?: string | undefined;
+  /** `entity({ scan: '<why>' })` — projected only when declared. */
+  readonly scan?: string | undefined;
   /** `entity({ view })` — projected only when declared. */
   readonly view?: ViewQuery | null | undefined;
+  /** `retain`, `history`, `countedIn` counters — each projected only when declared (`lifecycle.ts`). */
+  readonly lifecycle?: LifecycleDescription | undefined;
 }
 
 /**
@@ -215,6 +220,19 @@ export const assertShared = (
   }
 };
 
+/**
+ * `scan` is a reason, like `shared`: a blank one is no reason, and a table a plan check skips with
+ * no argument is a silenced finding nobody can tell from a considered one.
+ */
+export const assertScan = (entityName: string, scan: string | undefined): void => {
+  if (scan === undefined || scan.trim() !== '') return;
+  throw new EntityError({
+    code: 'X_INVARIANT_VIOLATED',
+    cause: `${entityName} declares scan with no reason: a blank reason says nothing about why the table stays small enough to read whole`,
+    fix: `entity('${entityName}', { scan: '<why it stays small, e.g. a closed catalog of 8 rows>' }) — or drop scan and add the index x exercise --json names`,
+  });
+};
+
 const describeColumn = <Row>(
   input: DescribeInput<Row>,
   property: string,
@@ -353,6 +371,7 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
     ...((input.retired ?? []).length === 0 ? {} : { retired: input.retired }),
     // Absent unless declared, like `appendOnly`: no entity that never said it moves the hash.
     ...(input.shared === undefined ? {} : { shared: input.shared }),
+    ...(input.scan === undefined ? {} : { scan: input.scan }),
     // Absent on every table, so no entity that never said `view` moves the hash.
     ...(input.view === null || input.view === undefined
       ? {}
@@ -362,5 +381,6 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
             ...(input.view.materialized ? { materialized: true as const } : {}),
           },
         }),
+    ...input.lifecycle,
   };
 };

@@ -25,9 +25,10 @@ import {
   readOnlyQuery,
 } from '@ultimat3/db';
 import { inspectJobList, inspectQueues } from '@ultimat3/jobs';
-import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { impactOf, MANIFEST_FILENAME, pathBetween } from '@ultimat3/manifest';
 import type {
   DevCapabilities,
+  DevGraphQuestion,
   McpCaller,
   McpServer,
   QueryLimits,
@@ -38,6 +39,7 @@ import type {
 import { DEV_SCOPES, devHost, devMcpServer, frameworkIntrospection } from '@ultimat3/mcp';
 import { loadApp } from './app-load';
 import { appManifest, policyFacts } from './app-manifest';
+import { loadAppGraph, resolveNode } from './cmd-graph-load';
 import { runVerify, VERIFY_STEPS } from './cmd-verify';
 import { declareDevEnvironment } from './dev-environment';
 import { loadCodeFixes } from './error-fixes';
@@ -311,6 +313,14 @@ function capabilities(
     },
 
     explainError: explainErrorCode,
+
+    // Loaded per question, as `x impact` loads it: an agent asks between edits, and a graph held
+    // for the session would answer for the code as it was when the host started.
+    async queryGraph(question: DevGraphQuestion) {
+      const { graph } = await loadAppGraph(root);
+      if (question.kind === 'impact') return impactOf(graph, resolveNode(graph, question.node));
+      return pathBetween(graph, resolveNode(graph, question.from), resolveNode(graph, question.to));
+    },
 
     ...ui,
 

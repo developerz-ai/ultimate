@@ -128,8 +128,6 @@ export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
   'packages/flags/CLAUDE.md: x flags': 1,
   // why: re-keyed per site in plan 101 sweep 11c; was `packages/flags/README.md: 1`.
   'packages/flags/README.md: x flags': 1,
-  // why: re-keyed per site in plan 101 sweep 11c; was `packages/mail/README.md: 1`.
-  'packages/mail/README.md: x mail': 1,
 };
 
 /** A pin row's key: the page, then the invocation as `citationFault` spells its subject. */

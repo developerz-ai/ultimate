@@ -358,6 +358,22 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_CHART_MISSING: 'x g chart-alerts --print --json',
   X_ENTITY_VIEW_DRIFT:
     "x verify --only drift --json   # the cause names the view entity and both column lists: make columns name exactly the view's output, or change view.sql and x db gen",
+  X_CLIENT_SPEC_UNSUPPORTED:
+    'x help client --json   # then rerun with --only naming the tags around the pointer the cause names, or pin a corrected source.json',
+  X_CLIENT_STALE:
+    'x verify --only drift --json   # each finding names the line that regenerates its client',
+  X_CLIENT_EDITED:
+    'x verify --only drift --json   # regenerate with the command the finding names, and keep custom code in a file of your own that wraps the client',
+  X_GRAPH_NODE_UNKNOWN: 'x graph --json   # every node id is in data.nodes',
+  X_CLIENT_SPEC_INVALID:
+    'x help client --json   # then point --from at the OpenAPI 3.0 or 3.1 document itself',
+  X_REPRO_UNKNOWN: 'x repro --list --json',
+  X_REPRO_NOT_REPRODUCED:
+    'x repro --list --json   # re-read the bundle (x repro ID --json), then set its listed masked fields and unread rows by hand in the written test',
+  X_REPRO_CAPTURE_OFF:
+    'x jobs list --json   # a job id replays with capture off; for requests set failureCapture: { enabled: true } in app.config.ts',
+  X_ENTITY_RETAIN_UNSWEPT:
+    "add export const retention = purge({ entities: 'declared' }) to a jobs module named in jobs: [...] in apps/web/api/index.ts, then x verify",
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

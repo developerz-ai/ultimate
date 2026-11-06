@@ -40,6 +40,7 @@ import { serviceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerRoutes } from './sw-routes';
 import { loadThemeMode, themeBoot } from './theme-boot';
 import { loadThemeBrand } from './theme-brand';
+import { zoneBoot } from './zone-boot';
 
 /** Everything `startRoles` is handed that only a process serving documents has. */
 export interface WebSurface {
@@ -117,6 +118,8 @@ export async function webSurface(
   // `assets.retain`: this build's hashed files onto the shared disk, BEFORE the role binds — a pod
   // takes no traffic until `/readyz`, so no document of this build reaches an old pod first.
   const config = await loadAppConfig(options.root);
+  // `time.detect`: the zone script on `app/` documents, admitted below by its own hash.
+  const zone = zoneBoot(config?.time);
   const scripts = [
     ...sync.scripts,
     ...(navigation.script === undefined ? [] : [navigation.script]),
@@ -198,14 +201,18 @@ export async function webSurface(
       ...(pwa === undefined
         ? {}
         : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
-      ...clientScriptHeads(clientErrors, vitals),
+      ...clientScriptHeads(clientErrors, vitals, zone),
       isr: isr.isr,
     }),
   ];
   return {
     // A miss on any asset route asks the retained builds (`assets.retain`); none declared, unchanged.
     routes: withRetainedAssets(routes, retained?.reader),
-    inlineScripts: [theme.cspSource, ...(speculation === undefined ? [] : [speculation.cspSource])],
+    inlineScripts: [
+      theme.cspSource,
+      ...(speculation === undefined ? [] : [speculation.cspSource]),
+      ...(zone === undefined ? [] : [zone.cspSource]),
+    ],
     // The enforced policy this process sends must admit the app's own error pages' `<style>` and
     // the brand's; `x dev` is report-only, so only here was a missing hash an unstyled page.
     inlineStyles: [
