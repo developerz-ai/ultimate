@@ -56,6 +56,19 @@ export function runById(id: string): Promise<Run | null> {
   return db.runs.where({ id }).one();
 }
 
+/**
+ * The newest runs started in `[since, until)`, newest first and bounded — `/runs/health`'s whole
+ * read. Half-open, so two adjacent windows never both count the run on their shared edge.
+ */
+export function runsBetween(since: Date, until: Date, limit: number): Promise<readonly Run[]> {
+  return db.runs
+    .andWhere('startedAt', 'gte', since)
+    .andWhere('startedAt', 'lt', until)
+    .orderBy('startedAt', 'desc')
+    .limit(limit)
+    .all();
+}
+
 /** One run's events in the order they happened. The handle appends `id`, so the order is total. */
 export function eventsOf(runId: string, limit: number): Promise<readonly RunEvent[]> {
   return db.runEvents.where({ runId }).orderBy('seq').limit(limit).all();

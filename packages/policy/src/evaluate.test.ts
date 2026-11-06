@@ -7,7 +7,7 @@ import { userActor } from '@ultimat3/core';
 import { memoryDecisionSink, resetDecisionSink, setDecisionSink } from './decisions';
 import { codeOf, evaluate, reasonOf, resetPolicyTracing } from './evaluate';
 import { clearPermissions, definePermissions } from './permissions';
-import { ALLOWED, can, denied } from './policy';
+import { ALLOWED, can, denied, or } from './policy';
 import { clearRoles, defineRoles } from './roles';
 import { testActor } from './test-kit';
 
@@ -131,5 +131,28 @@ describe('the trace is opt-in in production', () => {
       actor: testActor('editor', { roles: ['editor'] }).actor,
     });
     expect(evaluation.trace).toHaveLength(1);
+  });
+});
+
+// `/_x` and every `explain()` name the clause that DECIDED. In an `or(...)` every clause denied,
+// and the decision reports the LAST denial — so the deciding leaf is the one whose reason the
+// caller reads, never merely the first leaf that also denied.
+describe('who decided an or(...) denial', () => {
+  afterEach(() => {
+    clearPermissions();
+    clearRoles();
+  });
+
+  test('the leaf whose reason the decision carries, not the first denying leaf', () => {
+    definePermissions(['post:publish', 'post:review'] as const);
+    defineRoles({ reader: { grants: [] } });
+    const evaluation = evaluate(
+      or(can('post:publish'), can('post:review')),
+      { input: {}, actor: testActor('reader', { roles: ['reader'] }).actor },
+      { trace: true },
+    );
+    expect(evaluation.allowed).toBe(false);
+    expect(reasonOf(evaluation.decision)).toBe('actor lacks post:review');
+    expect(evaluation.deciding?.label).toBe('post:review');
   });
 });

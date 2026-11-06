@@ -32,19 +32,29 @@ export function announcedBuild(data: unknown, running: string | null): string | 
   return message.to === running ? null : message.to;
 }
 
-export function mount(el: HTMLElement, props: UpdateBannerProps): void {
+/**
+ * The disposer removes the listener: the worker outlives every client-router navigation, so one
+ * left on it would answer for a document that is gone (`X_ISLAND_DISPOSER_MISSING`).
+ */
+export function mount(el: HTMLElement, props: UpdateBannerProps): () => void {
+  const listening = new AbortController();
   const running =
     document.querySelector(`meta[name="${CLIENT_BUILD_META}"]`)?.getAttribute('content') ?? null;
-  navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
-    if (announcedBuild(event.data, running) === null || el.childElementCount > 0) return;
-    const banner = document.createElement('div');
-    banner.setAttribute('role', 'status');
-    banner.dataset['role'] = 'update-available';
-    const reload = document.createElement('button');
-    reload.type = 'button';
-    reload.textContent = props.action;
-    reload.addEventListener('click', () => location.reload());
-    banner.append(`${props.label} `, reload);
-    el.append(banner);
-  });
+  navigator.serviceWorker?.addEventListener(
+    'message',
+    (event: MessageEvent) => {
+      if (announcedBuild(event.data, running) === null || el.childElementCount > 0) return;
+      const banner = document.createElement('div');
+      banner.setAttribute('role', 'status');
+      banner.dataset['role'] = 'update-available';
+      const reload = document.createElement('button');
+      reload.type = 'button';
+      reload.textContent = props.action;
+      reload.addEventListener('click', () => location.reload());
+      banner.append(`${props.label} `, reload);
+      el.append(banner);
+    },
+    { signal: listening.signal },
+  );
+  return () => listening.abort();
 }

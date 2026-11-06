@@ -93,11 +93,13 @@ describe('unit · the budgets step measures first when the stats are unusable', 
     const outcome = await measureIfStale({ root, runner });
     expect(calls).toEqual([{ command: verifyBuildCommand(), cwd: root }]);
     // The CLI's own entry is spawned (`x build`, the one builder), so the argv ends with its words.
-    expect(calls[0]?.command.slice(-7)).toEqual([
+    // `--no-capture`: an app declaring `og.capture` stays green on a machine with no Chrome.
+    expect(calls[0]?.command.slice(-8)).toEqual([
       'build',
       '--target',
       'static',
       '--no-preflight',
+      '--no-capture',
       '--out',
       VERIFY_STATIC_OUT,
       '--json',

@@ -1,0 +1,50 @@
+@use '../tokens' as t;
+
+.slider {
+  display: grid;
+  gap: t.space(1);
+  min-inline-size: 0;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: t.space(2);
+}
+
+.label {
+  color: t.role('fg-strong');
+  font-size: t.text(sm);
+  font-weight: t.weight(medium);
+}
+
+.output {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  font-variant-numeric: tabular-nums;
+}
+
+// The thumb's hit area is the touch target: the input is that tall, the track stays thin.
+.input {
+  inline-size: 100%;
+  min-block-size: t.touch(target);
+  margin: 0;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: t.stroke(thick);
+  }
+
+  &:disabled {
+    @include t.disabled;
+  }
+}
+
+// The fill and thumb painted from the accent token where the engine paints a range natively.
+@supports (accent-color: auto) {
+  .input {
+    accent-color: t.role('accent');
+  }
+}

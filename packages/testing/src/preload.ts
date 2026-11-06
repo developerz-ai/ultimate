@@ -13,6 +13,7 @@ import './matchers';
 import { installTabA11yAudit } from './e2e-a11y-tabs';
 import { onFileBoundary } from './file-boundary';
 import { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
+import { installModuleMockBoundary } from './module-mock-boundary';
 import { installPerTestReset } from './per-test-reset';
 import { installRegistryLeakGuard } from './registry-leak-guard';
 import { sealNetwork } from './sealed-network';
@@ -51,6 +52,10 @@ installRegistryLeakGuard();
 // And per TEST: the jobs event bus stores what it is handed, so one test's published answer
 // resumed the next test's waiting run (`per-test-reset.ts`).
 installPerTestReset();
+
+// And every `mock.module`: Bun keeps one past `mock.restore()` and past the file, so the next file
+// on a shared worker read the fake. Put back at the boundary (`module-mock-boundary.ts`).
+installModuleMockBoundary();
 
 // And every browser tab a suite drives itself is audited like an `e2eTest`'s page: its findings
 // fail the test from this one `afterEach`, so no suite has a line to forget (`e2e-a11y-tabs.ts`).

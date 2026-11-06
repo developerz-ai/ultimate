@@ -1,0 +1,37 @@
+{{/*
+Prometheus-operator discovery for the scrape listener every serving role opens, rendered by
+capability: serviceMonitor.enabled auto (the default, and a values file with no such block) renders
+it when the cluster serves the kind, so a cluster without the operator still installs. ONE object
+for the release: every role's Service publishes the same `metrics` port name. targetLabels carry
+the role and the release onto every series, which is what alert-rules.yaml and an HPA key on.
+*/}}
+{{- $cfg := .Values.serviceMonitor | default dict }}
+{{- $mode := toString (ternary $cfg.enabled "auto" (hasKey $cfg "enabled")) }}
+{{- if not (has $mode (list "auto" "true" "false")) }}
+{{- fail (printf "serviceMonitor.enabled is %q — set it to auto (render when the cluster serves monitoring.coreos.com/v1/ServiceMonitor), true or false" $mode) }}
+{{- end }}
+{{- if or (eq $mode "true") (and (eq $mode "auto") (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor")) }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "docs-site.fullname" . }}
+  labels:
+    {{- include "docs-site.labels" . | nindent 4 }}
+    {{- with $cfg.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "docs-site.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  targetLabels:
+    - app.kubernetes.io/component
+    - app.kubernetes.io/instance
+  endpoints:
+    # The Service port NAME, never the integer: moving metricsPort moves nothing here.
+    - port: metrics
+      path: /metrics
+      interval: {{ $cfg.interval | default "15s" }}
+      scrapeTimeout: {{ $cfg.scrapeTimeout | default "10s" }}
+{{- end }}

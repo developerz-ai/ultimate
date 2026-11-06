@@ -3,7 +3,7 @@
 // rotation list. It does not decode a secret (Svix's base64 `whsec_` key is the mail receivers'),
 // and the bytes and the header are the vendor's: no vendor verifier ships (axiom 8).
 
-import { timingSafeEqual } from '@ultimat3/core';
+import { hmac, timingSafeEqual } from '@ultimat3/core';
 import { webhookSignatureInvalid } from './errors';
 import { assertWebhookSecrets } from './webhook-verify';
 
@@ -51,7 +51,7 @@ export function verifyBodyHmac(options: BodyHmacOptions): VerifiedBody {
   let matched = false;
   // Every secret is tried, even after a match: which one matched is not worth a timing signal.
   for (const secret of secrets) {
-    const expected = `${prefix}${new Bun.CryptoHasher('sha256', secret).update(options.bytes).digest(options.encoding)}`;
+    const expected = `${prefix}${hmac('sha256', secret, options.bytes, options.encoding)}`;
     if (timingSafeEqual(expected, given)) matched = true;
   }
   if (!matched) {

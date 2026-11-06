@@ -33,33 +33,41 @@ export interface ContactSalesProps {
  * `el` is the wrapper the page rendered, with the server's own markup already inside it, so this
  * takes the markup over rather than replacing it: a replace is a visible flash on every load.
  */
-export function mount(el: HTMLElement, props: ContactSalesProps): void {
+export function mount(el: HTMLElement, props: ContactSalesProps): () => void {
+  // The disposer drops the submit listener: a router navigation leaves nothing listening.
+  const listening = new AbortController();
+  const dispose = (): void => listening.abort();
   const form = el.querySelector('form');
   const status = el.querySelector<HTMLElement>('[data-role="status"]');
   // A shell this mount does not recognise is left exactly as the server rendered it. The form
   // posts to the action on its own; a listener that half-attached would be worse than none.
-  if (!(form instanceof HTMLFormElement) || status === null) return;
+  if (!(form instanceof HTMLFormElement) || status === null) return dispose;
 
-  form.addEventListener('submit', (event) => {
-    const enquiry = enquiryFrom(new FormData(form));
-    // Hand it back to the browser: a native POST to the same action still sends the enquiry, and
-    // `setRedirect` on the server is what answers it. Never a silent no-op.
-    if (enquiry === null) return;
+  form.addEventListener(
+    'submit',
+    (event) => {
+      const enquiry = enquiryFrom(new FormData(form));
+      // Hand it back to the browser: a native POST to the same action still sends the enquiry, and
+      // `setRedirect` on the server is what answers it. Never a silent no-op.
+      if (enquiry === null) return;
 
-    event.preventDefault();
-    status.textContent = props.sendingLabel;
+      event.preventDefault();
+      status.textContent = props.sendingLabel;
 
-    // The typed client from `shared/`, never a raw `fetch`: one naming rule, one transport. The
-    // form's fields are strings and the action's plan, currency and locale are enumerations, so
-    // the cast is the wire's own shape — the server validates every field against the catalog.
-    browserClient
-      .contactSales(enquiry as ContactSalesInput)
-      .then(() => {
-        status.textContent = props.sentLabel;
-        form.reset();
-      })
-      .catch(() => {
-        status.textContent = props.failedLabel;
-      });
-  });
+      // The typed client from `shared/`, never a raw `fetch`: one naming rule, one transport. The
+      // form's fields are strings and the action's plan, currency and locale are enumerations, so
+      // the cast is the wire's own shape — the server validates every field against the catalog.
+      browserClient
+        .contactSales(enquiry as ContactSalesInput)
+        .then(() => {
+          status.textContent = props.sentLabel;
+          form.reset();
+        })
+        .catch(() => {
+          status.textContent = props.failedLabel;
+        });
+    },
+    { signal: listening.signal },
+  );
+  return dispose;
 }

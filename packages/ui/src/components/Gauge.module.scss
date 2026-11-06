@@ -33,6 +33,14 @@
   fill: var(--tone);
 }
 
+// The target: a stroke of the strongest text colour across the ring, in every tone.
+.target {
+  stroke: t.role('fg-strong');
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
 // HTML over the dial's centre, so the figure keeps its type step at every gauge size. The ring's
 // centre is not the box's — the open quarter is cropped — so `--centre` carries where it is.
 .readout {

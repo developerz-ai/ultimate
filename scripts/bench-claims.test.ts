@@ -194,8 +194,34 @@ describe('unit · this repo', () => {
     REPO_SCAN_TIMEOUT_MS,
   );
 
-  test('checks both committed runs, so neither can drift unwatched', () => {
-    expect(new Set(CLAIMS.map((one) => one.file)).size).toBe(2);
+  test('checks every committed run, so none can drift unwatched', () => {
+    // The two realtime runs, the first hour, and http-hello's two targets.
+    expect(new Set(CLAIMS.map((one) => one.file)).size).toBe(5);
     expect(CLAIMS.length).toBeGreaterThan(9);
+  });
+});
+
+describe('unit · a figure stated on another page (README.md, wiki/Compared.md)', () => {
+  const onReadme: BenchClaim = { ...claim, doc: 'README.md' };
+  const check = (readme: string, received: number) =>
+    checkBenchClaims({
+      claims: [onReadme],
+      prose: '',
+      docs: { 'README.md': readme },
+      results: { [RESULTS]: { seq: { received } } },
+    }).map(benchGapFindingFor);
+
+  test('off by one is refused, and the finding names that page', () => {
+    const found = check(PROSE, 1_666_883);
+    expect(found.map((finding) => finding.at)).toEqual(['README.md']);
+    expect(found[0]?.fix).toContain('edit README.md: write 1,666,883');
+  });
+
+  test('agrees when that page states the measured figure — the claims page is not read for it', () => {
+    expect(check(PROSE, 1_666_882)).toEqual([]);
+  });
+
+  test('a page that no longer states it is unstated, never a pass', () => {
+    expect(check('nothing here', 1_666_882)[0]?.cause).toContain('no sentence in README.md');
   });
 });

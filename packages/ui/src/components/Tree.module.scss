@@ -1,0 +1,98 @@
+@use '../tokens' as t;
+
+.tree {
+  font-size: t.text(sm);
+}
+
+.root,
+.group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// Indent caps at a few levels: past it, a deep path still fits a phone and stays readable.
+.group {
+  padding-inline-start: min(t.space(4), 4vw);
+}
+
+.item {
+  min-inline-size: 0;
+}
+
+.link,
+.summary,
+.row {
+  display: flex;
+  align-items: center;
+  gap: t.space(2);
+  min-block-size: t.touch(target);
+  @include t.padding-inline(t.space(2));
+  border-radius: t.radius(sm);
+  color: t.role('fg');
+  overflow-wrap: anywhere;
+  cursor: pointer;
+
+  &:hover {
+    background: t.role('bg-soft');
+  }
+}
+
+.link {
+  text-decoration: none;
+
+  &[aria-current='page'] {
+    color: t.role('accent-strong');
+    font-weight: t.weight(semibold);
+    background: t.role('accent', 0.12);
+  }
+}
+
+.link:focus-visible,
+.summary:focus-visible,
+.item[role='treeitem']:focus-visible > .row {
+  outline: t.stroke(thick) solid t.role('accent');
+  outline-offset: calc(-1 * #{t.stroke(thick)});
+}
+
+.item[role='treeitem'] {
+  outline: none;
+}
+
+.item[aria-selected='true'] > .row {
+  color: t.role('accent-strong');
+  background: t.role('accent', 0.12);
+}
+
+.item[aria-disabled='true'] > .row {
+  color: t.role('fg-muted');
+  cursor: not-allowed;
+}
+
+.twisty {
+  display: inline-block;
+  inline-size: t.space(3);
+  color: t.role('fg-muted');
+
+  &[data-open] {
+    transform: rotate(90deg);
+  }
+}
+
+// Under `dir="rtl"` the closed marker points inward from the other side.
+:global([dir='rtl']) .twisty:not([data-open]) {
+  transform: scaleX(-1);
+}
+
+.label {
+  min-inline-size: 0;
+}
+
+.loading {
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+}
+
+.branch {
+  margin: 0;
+}

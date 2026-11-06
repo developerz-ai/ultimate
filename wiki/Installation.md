@@ -58,7 +58,7 @@ otherwise until then). `bun run setup` is six steps, idempotent and safe to re-r
 | 5 | `x db seed` | run through the CLI, never `bun run`: the CLI owns the connection, so it reaches the same embedded database the migration just wrote to |
 | 6 | `x manifest` | `x.manifest.json` is a projection of the loaded app, so `x new` cannot write it. Nothing else ever ran the command, and `x verify`'s `manifest` step now refuses its absence with `X_MANIFEST_MISSING` |
 
-Every flag, from the registry — `bun run x -- help new`, or `x help new` in an app. There are five,
+Every flag, from the registry — `bun run x -- help new`, or `x help new` in an app. There are six,
 each with a default, so **`x new` asks nothing**: an agent cannot answer a prompt and is never given
 one.
 
@@ -66,6 +66,7 @@ one.
 |---|---|---|
 | `--dir <path>` | cwd | parent directory the app is written into |
 | `--example` / `--no-example` | `--example` | include the example feature slice; `--no-example` gives the same shape with an empty `app/` |
+| `--shape <shape>` | none | start from `api`, `blog` or `dashboard` instead of the dashboard and example slice — what each writes and leaves out: [Shapes](Shapes) |
 | `--git` / `--no-git` | `--git` | `git init` and commit the scaffold |
 | `--dry-run` | off | print the file list, write nothing |
 | `--force` | off | write into a directory that already exists |

@@ -1,0 +1,26 @@
+@use '../shared/tokens' as t;
+
+.article {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(6);
+}
+
+.title {
+  margin: 0;
+  color: t.role('fg-strong');
+  font-size: t.text('3xl');
+  font-weight: t.weight('semibold');
+  letter-spacing: t.tracking('tight');
+  text-wrap: balance;
+}
+
+.ways {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(4);
+  margin: 0;
+  padding-block-start: t.space(6);
+  border-block-start: 1px solid t.role('line', 0.6);
+  font-size: t.text('sm');
+}

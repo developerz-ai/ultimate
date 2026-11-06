@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-68 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `ChartFrame` · `Checkbox` · `Combobox` · `CommandPalette` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `DonutChart` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Gauge` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `InlineBar` · `Input` · `Kbd` · `LineChart` · `AreaChart` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `QrCode` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
+99 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Board` · `BottomNav` · `Breadcrumb` · `Button` · `Calendar` · `Card` · `ChartFrame` · `Checkbox` · `CodeBlock` · `Combobox` · `CommandPalette` · `ConfirmDialog` · `Container` · `CopyButton` · `DataTable` · `DatePicker` · `DateRangePicker` · `DateTime` · `DescriptionList` · `Dialog` · `DiffView` · `Divider` · `DonutChart` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Gauge` · `Grid` · `HeatStrip` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `InlineBar` · `Input` · `JsonView` · `Kbd` · `LineChart` · `AreaChart` · `Link` · `LiveIndicator` · `LocaleSwitcher` · `LogViewer` · `Markdown` · `Menu` · `Meter` · `Money` · `NavList` · `PageHeader` · `Pagination` · `Popover` · `PullToRefresh` · `QrCode` · `Radio` · `RelativeTime` · `SearchableSelect` · `SearchableSelectChips` · `SearchableSelectNative` · `Section` · `Select` · `ShortcutSheet` · `Skeleton` · `Slider` · `SortableList` · `Sparkline` · `Spinner` · `SplitPane` · `Stack` · `StatTile` · `Stepper` · `Switch` · `Table` · `Tabs` · `TerminalView` · `Text` · `Textarea` · `ThemeToggle` · `TimeRangePicker` · `Timeline` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip` · `Tree` · `VirtualList` · `TreeLinkNode` · `TreeSelectNode`
 
 ## Vocabulary
 
@@ -55,6 +55,7 @@ The page frame every app screen sits in: skip link, banner, navigation, main, co
 | `header` | `JSX.Element` | — |  |
 | `sidebar` | `JSX.Element` | — | Rendered inside a `<nav>` landmark: the inline-start column at `md` and up, a panel below. |
 | `footer` | `JSX.Element` | — |  |
+| `bottomNav` | `JSX.Element` | — | A `<BottomNav>`: shown below `md` only, pinned to the bottom edge in thumb reach, and in flow, so the page reserves its height and no content scrolls under it. The menu button stays for everything that does not fit five destinations. |
 | `sidebarLabel` | `string` | — | Accessible name for the sidebar landmark. Defaults to the translated `ui.navigation`. |
 | `skipLabel` | `string` | — | Skip-link text. Defaults to the translated `ui.skip`. |
 | `menuLabel` | `string` | — | The menu button's text below `md`. Defaults to the translated `ui.menu`. |
@@ -104,19 +105,50 @@ Small status label. Tone maps straight onto the status colour roles so the same 
 
 ### BarChart
 
-A bar chart of one series — clicks per day, signups per week — or two stacked (done, and failed on top): SVG bars, HTML axis labels. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. The labels sit outside the svg because text inside a viewBox scales with it — a speck at phone width. It stands in a `ChartFrame`: a legend for two series, and a hidden table of the same numbers.
+A bar chart of one series — clicks per day, signups per week — two stacked (done, and failed on top), or n side by side over shared keys: SVG bars, HTML axis labels. Signed: a loss hangs below a drawn zero line, a gap is no bar. No charting library: `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. It stands in a `ChartFrame`: legend, hidden table.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `label` | `string` | yes | The accessible name for the whole chart, already translated. |
-| `points` | `readonly ChartPoint[]` | yes | Oldest first. Every bar comes from exactly this array — the caller zero-fills gaps. |
 | `highlightLast` | `boolean` | — | Draw the last bar at full strength — the eye lands where the live number is. Default on. |
-| `seriesLabels` | `{ readonly primary: string; readonly secondary: string }` | — | Names of the two series, already translated, read by each rect's `<title>`, the legend and the data table. Give them when a point carries `secondary`: a stacked bar with no name for its top is two numbers and no key. |
 | `keyLabel` | `string` | — | The key column's head in the data table, already translated — "Day". |
 | `format` | `((value: number) => string)` | — | Formats every value. Default: `Intl.NumberFormat` in the page's locale. |
-| `focusable` | `boolean` | — | Give every bar a tab stop and a hover/focus readout. Default off: no tab stops. |
+| `references` | `readonly ChartReference[]` | — | Dashed rules at a value — a target, a limit. Each widens the range so it stays on the plot. |
+| `focusable` | `boolean` | — | Give every bar a tab stop and a hover/focus/tap readout. Default off: no tab stops. |
 | `showCaption` | `boolean` | — | Show the caption above the plot. Default off — it names the figure either way. |
 | `class` | `string` | — | Lands on the root `<figure>`, which holds the svg and its HTML axis labels. |
+| `points` | `readonly ChartPoint[]` | — | Oldest first. `value: null` is unknown — no bar, and the table says so. Never zero-fill. |
+| `seriesLabels` | `{ readonly primary: string; readonly secondary: string }` | — | Names of the two series, already translated, when a point carries `secondary`. |
+| `tone` | `Tone` | — | The primary bars' colour role, in place of `accent` — a failure count in `danger`. |
+| `keys` | `readonly string[]` | — |  |
+| `series` | `readonly ChartSeries[]` | — | `values[i]` belongs to `keys[i]`, exactly one per key — `null` for a gap. |
+
+### Board
+
+Columns of sortable groups sharing one gesture: a card moves within a column or across to another by pointer, touch, the arrow keys, or — with scripting off — a target `select` per card. No card look and no column rules: `renderItem` and `canDrop` are the caller's.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `groups` | `readonly BoardColumn<T>[]` | yes |  |
+| `itemKey` | `(item: T) => string` | yes | Unique across EVERY column: a card is one node wherever it sits. |
+| `renderItem` | `(item: T) => JSX.Element` | yes |  |
+| `label` | `string` | yes | Already-translated name of the whole board. |
+| `onMove` | `(move: SortMove) => unknown` | yes |  |
+| `canDrop` | `CanDrop<T>` | — | The one seam for a business rule — a WIP limit, a status machine. |
+| `action` | `string` | — | The action URL the no-script target select posts to. |
+| `fields` | `SortFields` | — |  |
+| `class` | `string` | — |  |
+
+### BottomNav
+
+The phone's destination bar: up to five links along the bottom edge, in thumb reach, the current one marked by `currentOf` — the same rule as `NavList`. No state and no script: links with `aria-current`, server-rendered. Its padding clears the home indicator (`safe-area-padding`); `AppShell bottomNav` shows it below `md` and reserves the space so no content hides under it.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `items` | `readonly BottomNavItem[]` | yes | At most five; a sixth is `X_UI_INVALID_VALUE`. |
+| `currentHref` | `string` | yes |  |
+| `label` | `string` | — | The landmark's name. Defaults to the translated `ui.navigation`. |
+| `class` | `string` | — |  |
 
 ### Breadcrumb
 
@@ -150,6 +182,24 @@ The one button. Variants and tones are token-driven, so dark mode and RTL need n
 | `aria-controls` | `string` | — |  |
 | `aria-expanded` | `boolean` | — |  |
 | `onClick` | `JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent>` | — |  |
+
+### Calendar
+
+A month you can pick a day from. Server-rendered and correct with no effect run: in link mode every day is a link (`hrefFor`), in select mode an APG grid with one tab stop. Inline on a booking page, and what `DatePicker`/`DateRangePicker` open. Rules: `calendar-view.ts`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `string` | — | The chosen day, `YYYY-MM-DD`. |
+| `range` | `DateRange` | — | A span to mark selected — what `DateRangePicker` passes. |
+| `month` | `string` | — | The month shown first; defaults to `value`'s, then `min`'s, then today's in `useUi().timeZone`. |
+| `min` | `string` | — |  |
+| `max` | `string` | — |  |
+| `isDisabled` | `((date: PlainDate) => boolean)` | — |  |
+| `weekStart` | `Weekday` | — | Overrides the locale's week start (`Intl.Locale#getWeekInfo`). 1 is Monday, 7 Sunday. |
+| `class` | `string` | — |  |
+| `hrefFor` | `(date: PlainDate) => string` | — |  |
+| `monthHrefFor` | `((month: PlainDate) => string)` | — | The previous and next month's links; omitted, the month does not change. |
+| `onSelect` | `(date: PlainDate) => void` | — |  |
 
 ### Card
 
@@ -200,6 +250,20 @@ Native checkbox with a token-drawn indicator. The label element wraps the input,
 | `aria-invalid` | `boolean` | — |  |
 | `onChange` | `JSX.EventHandlerUnion<HTMLInputElement, Event>` | — |  |
 
+### CodeBlock
+
+A block of code: `<pre><code>` of classed runs, a named scroll region that stays left-to-right under `dir="rtl"`, and — with script — a wrap toggle and a copy button. The runs are text nodes, so code can never become markup. Languages are passed in, never imported here (axiom 6).
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `code` | `string` | yes |  |
+| `language` | `string` | — | The language's name or alias — a fence's info string. Unknown or absent: plain text. |
+| `languages` | `readonly Language[]` | — | The languages this block may highlight with: `[tsLanguage]`, or `allLanguages` on a server page. |
+| `label` | `string` | — | Already-translated name of the scroll region; defaults to `ui.code.region`. |
+| `wrap` | `boolean` | — | Start wrapped. The reader can toggle it once script runs. |
+| `copy` | `boolean` | — | `false` hides the copy button. |
+| `class` | `string` | — |  |
+
 ### Combobox
 
 A searchable text field with suggestions: one `<input list>` plus a `<datalist>`, which is a real combobox in every engine — typing, filtering, keyboard and mobile are the platform's, and the field still works with scripting off. `onFilter` is the debounced enhancement on top.
@@ -224,7 +288,7 @@ A searchable text field with suggestions: one `<input list>` plus a `<datalist>`
 
 ### CommandPalette
 
-The ⌘K palette: a filter field over a list of commands and destinations, in a NON-modal `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no dialog methods and a server with no DOM both render it the same way. Controlled and presentational: the open flag, the query and the active item all live in the caller, and the rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller does not rewrite them. Renders closed on the server unless told otherwise; with scripting off it is inert markup.
+The ⌘K palette: a filter field over a list of commands and destinations, in a NON-modal `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no dialog methods and a server with no DOM both render it the same way. Controlled and presentational: the open flag, the query and the active item all live in the caller, and the rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller does not rewrite them. Renders closed on the server unless told otherwise; with scripting off it is inert markup. Items carrying a `group` render under one `role="group"` heading per run; `useCommandPalette` is the shell that owns the open flag, the query, `⌘K` and focus.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -238,10 +302,30 @@ The ⌘K palette: a filter field over a list of commands and destinations, in a 
 | `onHoverItem` | `(id: string) => void` | yes |  |
 | `onRunItem` | `(id: string) => void` | yes |  |
 | `onClose` | `() => void` | yes |  |
+| `loading` | `boolean` | — | Items are being fetched for the query (`onQuery`): says so where the list goes. |
 | `id` | `string` | — | The element's id, so a trigger can name it with `aria-controls`. |
 | `filterRef` | `((el: HTMLInputElement) => void)` | — | Refs out, so a caller can read focus or the attribute behind its own capability guard. |
 | `dialogRef` | `((el: HTMLDialogElement) => void)` | — |  |
 | `class` | `string` | — |  |
+
+### ConfirmDialog
+
+A destructive confirmation, the one way: a trigger that opens a modal `<dialog>` by invoker command (`commandfor` + `show-modal`, no script), a real `<form method="post">` inside it, Cancel holding `autofocus` so a stray Enter destroys nothing, Esc closing and the backdrop never.  With `onConfirm` instead of `action` an island runs the act: busy refuses a second submit, a refusal keeps the dialog open with the reason in the form summary, focused. The native `<dialog>` and `Dialog`'s sheet, not `Dialog` itself: that one opens from an effect and closes from a script button, and this one must open, cancel and post with scripting off.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `title` | `string` | yes | Already translated. The dialog's accessible name: the question, "Withdraw this post?". |
+| `consequence` | `string` | yes | What happens, in one sentence, read before the act: "Readers lose the page at once." |
+| `confirmLabel` | `string` | yes | The verb — "Withdraw post", never "OK". No default; an empty one is `X_UI_INVALID_VALUE`. |
+| `trigger` | `string` | yes | The trigger button's label. |
+| `tone` | `Tone` | — | The confirm button's tone; `danger` when omitted. |
+| `cancelLabel` | `string` | — | Defaults to the translated `ui.cancel`. |
+| `error` | `string` | — | A refusal to show on open — the server's, after a native post came back refused. |
+| `children` | `JSX.Element` | — | Hidden inputs, and any gate on the act — a typed name, a reason — with native constraints. |
+| `id` | `string` | — |  |
+| `class` | `string` | — |  |
+| `action` | `string` | — |  |
+| `onConfirm` | `(data: FormData) => Promise<string \| undefined>` | — |  |
 
 ### Container
 
@@ -298,6 +382,47 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `sortHrefFor` | `((sort: SortState \| undefined) => string)` | — | Link sorting: the URL of the list under the NEXT sort state of a header's cycle (`undefined` is "unsorted"). Absent, a sortable header is plain text — never a button with no handler. |
 | `firstHref` | `string` | — | The first page's URL, for the pager's "First" anchor — `listUrl().firstHref`. |
 
+### DatePicker
+
+A date field that is a native `<input type="date">` first, always: on the server, with scripting off and on a coarse pointer it is all there is, and it is the value either way, so the form posts the same thing. A fine pointer with a script also gets a button opening a `Calendar` popover.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `name` | `string` | yes | The form field name: the post is the native input's, `YYYY-MM-DD`. |
+| `id` | `string` | — |  |
+| `value` | `string` | — | `YYYY-MM-DD`; anything else is `X_UI_INVALID_VALUE`. |
+| `min` | `string` | — |  |
+| `max` | `string` | — |  |
+| `isDisabled` | `((date: PlainDate) => boolean)` | — | Days the calendar refuses. The native input cannot express it; validate on the server too. |
+| `weekStart` | `Weekday` | — |  |
+| `required` | `boolean` | — |  |
+| `disabled` | `boolean` | — |  |
+| `month` | `string` | — | The month the calendar opens on with no value; else today's in `useUi().timeZone`. |
+| `aria-label` | `string` | — |  |
+| `aria-describedby` | `string` | — |  |
+| `aria-invalid` | `boolean` | — |  |
+| `onChange` | `((date: PlainDate \| undefined) => void)` | — |  |
+| `class` | `string` | — |  |
+
+### DateRangePicker
+
+A date range as two native date inputs — `fromName` and `toName` — so a GET filter or a POST works with scripting off and on a phone. A fine pointer with a script also gets one calendar: the first pick sets the start, the second completes the range. Rules: `date-range-view.ts`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `legend` | `string` | yes | Already-translated name for the pair, rendered as the `<legend>`. |
+| `fromName` | `string` | yes |  |
+| `toName` | `string` | yes |  |
+| `from` | `string` | — | `YYYY-MM-DD` each; anything else is `X_UI_INVALID_VALUE`. |
+| `to` | `string` | — |  |
+| `min` | `string` | — |  |
+| `max` | `string` | — |  |
+| `isDisabled` | `((date: PlainDate) => boolean)` | — |  |
+| `weekStart` | `Weekday` | — |  |
+| `month` | `string` | — | The month the calendar opens on with no `from`; else today's in `useUi().timeZone`. |
+| `onChange` | `((range: DateRange) => void)` | — | Called with the range in order whenever either end changes. |
+| `class` | `string` | — |  |
+
 ### DateTime
 
 Renders <time datetime="<ISO instant>"> with text formatted in the context time zone. The attribute is always the UTC instant so crawlers, tests, and other machines read the same value regardless of the viewer's zone.
@@ -310,6 +435,16 @@ Renders <time datetime="<ISO instant>"> with text formatted in the context time 
 | `dateStyle` | `DateStyle` | — |  |
 | `timeStyle` | `DateStyle` | — |  |
 | `format` | `DateTimeFormatter` | — |  |
+| `class` | `string` | — |  |
+
+### DescriptionList
+
+Terms and their details: `<dl>` with one `<div>` per group, so a pair stays together when the list stacks. A `Table` of two columns is the wrong landmark for facts about one thing. Server-only: no signal, no effect, 0 B of script on a static route.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `items` | `readonly DescriptionItem[]` | yes |  |
+| `layout` | `'columns' \| 'stacked'` | — | `columns` puts each term beside its detail and stacks them when the list's OWN width falls below `sm` (a container query, never the viewport). `stacked` always stacks. |
 | `class` | `string` | — |  |
 
 ### Dialog
@@ -326,6 +461,19 @@ Modal built on native <dialog>: the platform gives us the top layer, the backdro
 | `size` | `'sm' \| 'md' \| 'lg' \| 'full'` | — |  |
 | `dismissOnBackdrop` | `boolean` | — | Clicking the backdrop closes. Turn off for destructive confirmations. |
 | `class` | `string` | — |  |
+
+### DiffView
+
+A diff a person can read with colour off: `+` and `-` gutters, a spoken word per changed row, word marks inside a changed pair, line numbers on each side. Unified below `md`, side by side from it, by `@container`. Two texts or a unified patch — one parser to rows.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | — | Already-translated name of the scroll region; defaults to `ui.diff.region`. |
+| `maxLines` | `number` | — | Rows past this fold into one line saying how many. Defaults to 2,000. |
+| `class` | `string` | — |  |
+| `old` | `string` | — |  |
+| `new` | `string` | — |  |
+| `patch` | `string` | — | A unified patch, as `git diff` writes it. |
 
 ### Divider
 
@@ -356,7 +504,7 @@ Parts of one whole — traffic by device, runs by outcome — as a ring of segme
 
 ### Drawer
 
-Edge-anchored panel, also a native <dialog> so it inherits the top layer and inert background. `side` is logical (`inline-start`/`inline-end`), so a drawer pinned to the start edge lands on the right in an RTL locale automatically.
+Edge-anchored panel, also a native <dialog> so it inherits the top layer and inert background. `side` is logical (`inline-start`/`inline-end`), so a drawer pinned to the start edge lands on the right in an RTL locale automatically.  `side="block-end"` is the bottom sheet: with `grabber`, a drag from the grabber (only — the body keeps its scroll) moves it between `half` and `full` or closes it (`drawer-gesture-view.ts`).
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -367,6 +515,8 @@ Edge-anchored panel, also a native <dialog> so it inherits the top layer and ine
 | `side` | `DrawerSide` | — |  |
 | `size` | `string` | — |  |
 | `footer` | `JSX.Element` | — |  |
+| `grabber` | `boolean` | — | `block-end` only: a handle to drag the sheet by. The drag has no keyboard form, so the close button stays; Esc closes as ever. |
+| `snap` | `DrawerSnap` | — | The height a `grabber` sheet opens at: `half` (the default) or `full` of the viewport. |
 | `class` | `string` | — |  |
 
 ### Dropzone
@@ -476,14 +626,16 @@ Form shell. Owns the one thing every form needs and always forgets: a top-of-for
 
 ### Gauge
 
-One value against its maximum as a 270° dial — CPU, a quota, a queue's fill — with the reading in its centre and its label under it. A `meter` role carries the value for assistive tech, the way `Meter` does; the readout is HTML over the svg so it keeps its size on a phone.
+One value against its maximum as a 270° dial — CPU, a quota, a queue's fill — with the reading in its centre and its label under it. `null` is unknown: the track alone and `ui.chart.none`, never an empty dial that reads as zero. Thresholds pick the tone; a target is a tick.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `label` | `string` | yes | What is measured, already translated: shown under the dial, and the meter's name. |
-| `value` | `number` | yes |  |
+| `value` | `number \| null` | yes | `null` is unknown: the track alone, and the readout says so. |
 | `max` | `number` | yes |  |
-| `tone` | `Tone` | — | The fill's colour role. Default `accent`; a caller picks `warning`/`danger` by threshold. |
+| `tone` | `Tone` | — | The fill's colour role below every threshold. Default `accent`. |
+| `thresholds` | `readonly GaugeThreshold[]` | — | Ascending by `at` (the value's unit): the highest one reached sets the fill's tone. |
+| `target` | `number` | — | A tick across the ring at this value — the goal the fill is read against. |
 | `format` | `((value: number, max: number) => string)` | — | The readout, from the value and max. Default: the share as a percentage in the page's locale. |
 | `class` | `string` | — | Lands on the root `<figure>`. |
 
@@ -499,6 +651,17 @@ Grid layout primitive. The default is an intrinsic responsive grid (`auto-fit` +
 | `gap` | `SpaceStep` | — |  |
 | `rowGap` | `SpaceStep` | — |  |
 | `as` | `'div' \| 'ul' \| 'ol' \| 'section'` | — |  |
+| `class` | `string` | — |  |
+
+### HeatStrip
+
+Rows of status cells — a check per five minutes, a service per row — as HTML, not a chart: each cell is one element named by its whole reading, shaped by its tone, and a link when it has a page. Arrow keys never: a linked cell is a tab stop like any link, an unlinked one is none.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The strip's name, already translated: its caption. |
+| `rows` | `readonly HeatRow[]` | yes | One row per thing watched; cells oldest first. |
+| `showCaption` | `boolean` | — | Show the caption. Default off — it names the figure for assistive tech either way. |
 | `class` | `string` | — |  |
 
 ### Icon
@@ -603,6 +766,17 @@ Single-line text control. No `type="number"` convenience wrapper: numeric input 
 | `onChange` | `JSX.EventHandlerUnion<HTMLInputElement, Event>` | — |  |
 | `onBlur` | `JSX.EventHandlerUnion<HTMLInputElement, FocusEvent>` | — |  |
 
+### JsonView
+
+Any value as nested native `<details>`: keyboard and no-script for free, keys in the order given, long strings wrapped. A webhook body, an event, a tool call — whatever arrived prints as text.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `unknown` | yes |  |
+| `label` | `string` | yes | Already-translated name of the whole value. |
+| `open` | `number` | — | Levels open on first paint; deeper containers start closed. Defaults to 1. |
+| `class` | `string` | — |  |
+
 ### Kbd
 
 A keyboard key or chord as the user reads it — "⌘K", "Esc", "/". A native `<kbd>`, because a keyboard hint is inline code, not a badge: the element carries the meaning, so it works with no script and reads as a key to a screen reader.
@@ -620,7 +794,9 @@ A line chart of one or more series over the same keys — signups per day, p95 p
 |---|---|---|---|
 | `label` | `string` | yes | The chart's name, already translated: the figure's caption and the svg's accessible name. |
 | `keys` | `readonly string[]` | yes | The x axis, oldest first, already formatted for display — "17 Sep", "14:00". |
-| `series` | `readonly ChartSeries[]` | yes | One entry per line. `values[i]` belongs to `keys[i]`; `null` is a gap, never a zero. |
+| `series` | `readonly ChartSeries[]` | yes | One entry per line, exactly one value per key; `null` is a gap, never a zero. |
+| `at` | `readonly number[]` | — | True x positions, one per key, strictly ascending — `row.at.getTime()` for a time axis. Absent, keys are evenly spaced, which is honest only for regular samples. |
+| `references` | `readonly ChartReference[]` | — | Dashed rules at a value — a target, an SLO. Each widens the axis so it stays on the plot. |
 | `keyLabel` | `string` | — | The key column's head in the data table, already translated — "Day". |
 | `format` | `((value: number) => string)` | — | Formats every value and tick. Default: `Intl.NumberFormat` in the page's locale. |
 | `zero` | `boolean` | — | Start the value axis at zero. Default on; off fits the axis to the data. |
@@ -636,13 +812,16 @@ A line chart of one or more series over the same keys — signups per day, p95 p
 |---|---|---|---|
 | `label` | `string` | yes | The chart's name, already translated: the figure's caption and the svg's accessible name. |
 | `keys` | `readonly string[]` | yes | The x axis, oldest first, already formatted for display — "17 Sep", "14:00". |
-| `series` | `readonly ChartSeries[]` | yes | One entry per line. `values[i]` belongs to `keys[i]`; `null` is a gap, never a zero. |
+| `series` | `readonly ChartSeries[]` | yes | One entry per line, exactly one value per key; `null` is a gap, never a zero. |
+| `at` | `readonly number[]` | — | True x positions, one per key, strictly ascending — `row.at.getTime()` for a time axis. Absent, keys are evenly spaced, which is honest only for regular samples. |
+| `references` | `readonly ChartReference[]` | — | Dashed rules at a value — a target, an SLO. Each widens the axis so it stays on the plot. |
 | `keyLabel` | `string` | — | The key column's head in the data table, already translated — "Day". |
 | `format` | `((value: number) => string)` | — | Formats every value and tick. Default: `Intl.NumberFormat` in the page's locale. |
 | `zero` | `boolean` | — | Start the value axis at zero. Default on; off fits the axis to the data. |
 | `focusable` | `boolean` | — | Give every point a tab stop and a hover/focus readout. Default off: no tab stops. |
 | `showCaption` | `boolean` | — | Show the caption above the plot. Default off — it names the figure either way. |
 | `class` | `string` | — | Lands on the root `<figure>`. |
+| `stacked` | `boolean` | — | Each series' band sits on the series before it; the axis reads the total. Default off. |
 
 ### Link
 
@@ -668,6 +847,15 @@ Anchor primitive. External links get `rel` hardening and a translated "opens in 
 | `iconStart` | `JSX.Element` | — | `appearance="button"` only. |
 | `iconEnd` | `JSX.Element` | — | `appearance="button"` only. |
 
+### LiveIndicator
+
+Whether a live view is live: a static dot whose SHAPE is the state, with the word beside it — live, reconnecting, paused, offline. Never blinks: a pulse is motion a reader cannot stop and says nothing the word does not. A change of state is announced once; a tick never is.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `state` | `LiveIndicatorState` | yes |  |
+| `class` | `string` | — |  |
+
 ### LocaleSwitcher
 
 Locale picker. Option labels come from `Intl.DisplayNames` in each locale's own language (endonyms), so the list needs no translation catalog of its own.
@@ -680,6 +868,31 @@ Locale picker. Option labels come from `Intl.DisplayNames` in each locale's own 
 | `hrefFor` | `((locale: Locale) => string)` | — | Render as links instead of a select, for a 0kb-JS `site/` route. Defaults, when `path` is given, to that page in each locale — `localizedPath`: unprefixed for the default, `/en/…` otherwise — so a site's switcher needs no href of its own. |
 | `path` | `string` | — | The page's own path, prefixed or not — `new URL(props.url).pathname`. Turns on links mode. |
 | `defaultLocale` | `Locale` | — | The unprefixed locale. Defaults to `locales[0]`, which is where `routedLocales()` puts it. |
+| `class` | `string` | — |  |
+
+### LogViewer
+
+Structured log rows on `VirtualList`: a 100,000-line run mounts a screenful, follows the end while the reader is there, and keeps only the newest `cap` lines. With script, a text filter, a level floor and a follow toggle; without it, every line given is in the document.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `lines` | `readonly LogLine[]` | yes |  |
+| `label` | `string` | — | Already-translated name of the log; defaults to `ui.log.region`. |
+| `follow` | `boolean` | — | Start following the end. Defaults to true; the reader can turn it off. |
+| `cap` | `number` | — | The newest lines kept. Defaults to 10,000. |
+| `class` | `string` | — |  |
+
+### Markdown
+
+What a model or a person wrote, rendered: text → tree → elements, never HTML. Raw HTML, a `javascript:` link and a remote image all print inert. Re-parsed per change and keyed by block index, so a streaming body keeps every finished block's node and only the open one redraws.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `text` | `string` | yes | The body. Malformed markdown is never an error: what cannot parse prints as text. |
+| `baseLevel` | `1 \| 2 \| 3 \| 4 \| 5 \| 6` | — | The level a `#` renders at. Defaults to 2: a body never adds a second `h1` to a page. |
+| `resolveImage` | `((src: string) => ResolvedImage \| null)` | — | Vouch for an image: its served source and box, or `null` to print its alt as a link. |
+| `headingIds` | `boolean` | — | Give each heading the id the GitHub wiki would (`headingSlug`), de-duplicated `-1`, `-2` in order, so a `#anchor` link scrolls. Off by default: two bodies on one page would collide. |
+| `languages` | `readonly Language[]` | — | Languages fences may highlight with. Absent: fences are plain text, and an island pays 0 B. |
 | `class` | `string` | — |  |
 
 ### Menu
@@ -706,6 +919,7 @@ A thin horizontal bar showing one value against a maximum — a table cell's "ho
 | `max` | `number` | yes |  |
 | `label` | `string` | — | The accessible name. Omit for a purely decorative bar beside a visible number. |
 | `tone` | `Tone` | — |  |
+| `target` | `number` | — | A tick at this value — a bullet bar: the fill read against its goal. |
 | `class` | `string` | — |  |
 
 ### Money
@@ -720,6 +934,16 @@ Formats through @ultimat3/money using the locale and currency from context — n
 | `signed` | `boolean` | — | Colour negatives with the danger role, e.g. in a ledger. |
 | `options` | `FormatMoneyOptions` | — | Passed to @ultimat3/money: display, accounting, grouping, fractionDigits. |
 | `format` | `MoneyFormatter` | — |  |
+| `class` | `string` | — |  |
+
+### NavList
+
+The ways around an app: links only (a command is `Menu`'s), in groups, one marked current by `currentOf` — the longest href covering the page. Server-rendered and scriptless; a collapsible group is a `<details>`, open when it holds the current page.  Renders lists, not a `<nav>`: it sits in `AppShell`'s sidebar, which is already the navigation landmark, and a second one inside it would announce the same region twice.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `items` | `readonly NavListEntry[]` | yes |  |
+| `currentHref` | `string` | yes | The page's own path — `currentOf` decides which one link carries `aria-current="page"`. |
 | `class` | `string` | — |  |
 
 ### PageHeader
@@ -771,6 +995,17 @@ Non-modal anchored panel. Positioning is CSS-only (a relatively positioned ancho
 | `align` | `'start' \| 'center' \| 'end'` | — |  |
 | `class` | `string` | — |  |
 
+### PullToRefresh
+
+Pull down at the top of a list to refresh it — the gesture an installed app has no browser to give it. No refresh of its own: `onRefresh` is the caller's (`refresh()` from the page's router, usually), so `ui` never imports `render`.  Touch only, and only at the top: a pull mid-list is the page's scroll, and a fine pointer gets nothing — the caller's toolbar button is the way there, and the way for every keyboard. Inert with scripting off; the scroll position stays.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `onRefresh` | `() => Promise<void>` | yes | Re-reads the content. Its settling — resolved or rejected — ends the busy state. |
+| `onError` | `(error: unknown) => void` | yes | A rejected refresh, after the busy state ended. Required: a failed refresh is never silent. |
+| `children` | `JSX.Element` | yes |  |
+| `class` | `string` | — |  |
+
 ### QrCode
 
 A QR code of one short value — a link's short URL, a join code — as static SVG from the pure-TypeScript encoder in `qr-encode.ts` / `qr-matrix.ts`. No QR library: a route's JS budget counts raw minified bytes, and one `<rect>` per dark module costs nothing to hydrate, so the server-rendered shell IS the code. Versions 1-3 only (42 bytes); longer is `X_UI_QR_CAPACITY`.
@@ -795,6 +1030,7 @@ Radio group. Rendered as a <fieldset>/<legend> so the group has a name, and as o
 | `disabled` | `boolean` | — |  |
 | `required` | `boolean` | — |  |
 | `direction` | `'row' \| 'column'` | — |  |
+| `appearance` | `'default' \| 'segmented'` | — | `segmented` draws the options as one joined strip of buttons — still native radios, so arrows, a form post and scripting off are the platform's. One prop, not a second component. |
 | `class` | `string` | — |  |
 | `aria-describedby` | `string` | — |  |
 | `onChange` | `JSX.EventHandlerUnion<HTMLInputElement, Event>` | — |  |
@@ -812,6 +1048,60 @@ Radio group. Rendered as a <fieldset>/<legend> so the group has a name, and as o
 | `numeric` | `'always' \| 'auto'` | — |  |
 | `format` | `DateTimeFormatter` | — |  |
 | `class` | `string` | — |  |
+
+### SearchableSelect
+
+One — or many — of a long, closed list, chosen by typing, where the posted value is not the label. Without script it IS a native `<select>` (`multiple`, `<optgroup>`), which posts the same `name` and values; with script an effect swaps in a WAI-ARIA combobox whose text is never posted: hidden inputs carry the chosen values, so a half-typed name cannot reach the server.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `name` | `string` | yes | The form field name every chosen value posts under. |
+| `options` | `readonly SearchableOption[]` | yes | Unique by `value`; a group's options adjacent. Chosen values must be among them. |
+| `onSearch` | `((query: string) => void)` | — | The caller searches: called `debounceMs` after typing stops, and hands back `options`. The list is then shown as given, never filtered again here; keep the chosen options in it. |
+| `debounceMs` | `number` | — | Debounce window for `onSearch`, in ms. Read once. |
+| `limit` | `number` | — | Rows shown at most; past it the control says "first N of M". Default `COMBOBOX_LIMIT`. |
+| `placeholder` | `string` | — | Already translated: the no-script placeholder option and the empty field's hint. |
+| `id` | `string` | — | Lands on whichever control is live, so `Field`'s `<label for>` names it in both modes. |
+| `required` | `boolean` | — |  |
+| `disabled` | `boolean` | — |  |
+| `size` | `Size` | — |  |
+| `class` | `string` | — |  |
+| `aria-label` | `string` | — |  |
+| `aria-describedby` | `string` | — |  |
+| `aria-invalid` | `boolean` | — |  |
+| `multiple` | `false \| true` | — |  |
+| `value` | `string \| readonly string[]` | — | The chosen value; absent is nothing chosen. |
+| `onChange` | `((value: string) => void) \| ((values: readonly string[]) => void)` | — |  |
+
+### SearchableSelectChips
+
+The chosen values of a many-valued SearchableSelect, as removable chips: each a label and one button naming what it removes. Split from `SearchableSelect.tsx` by the 200-line target; it owns no state — every removal is the parent's `onRemove`, so a chip and the posted inputs agree.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `chosen` | `readonly SearchableOption[]` | yes | The chosen options, in the order they were chosen. |
+| `onRemove` | `(value: string) => void` | yes |  |
+| `disabled` | `boolean` | — |  |
+
+### SearchableSelectNative
+
+A SearchableSelect with scripting off — and its first client render: the real `<select>`, with `multiple` for many and `<optgroup>` for groups, posting the same `name` and values the enhanced control does. Split from `SearchableSelect.tsx` by the 200-line target; it holds no state.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `ref` | `(el: HTMLSelectElement) => void` | yes |  |
+| `name` | `string` | yes |  |
+| `options` | `readonly SearchableOption[]` | yes |  |
+| `chosen` | `readonly string[]` | yes |  |
+| `multiple` | `boolean` | yes |  |
+| `placeholder` | `string` | yes |  |
+| `id` | `string` | yes |  |
+| `required` | `boolean` | yes |  |
+| `disabled` | `boolean` | yes |  |
+| `size` | `Size` | yes |  |
+| `aria-label` | `string` | yes |  |
+| `aria-describedby` | `string` | yes |  |
+| `aria-invalid` | `boolean` | yes |  |
 
 ### Section
 
@@ -847,6 +1137,15 @@ Native <select>. Deliberately not a custom listbox: the platform control wins on
 | `aria-invalid` | `boolean` | — |  |
 | `onChange` | `JSX.EventHandlerUnion<HTMLSelectElement, Event>` | — |  |
 
+### ShortcutSheet
+
+The page's keyboard legend: a `Dialog` listing every row every island registered, opened by `?` — itself a row of the same table, so the sheet lists exactly the bindings that work. Hidden with scripting off (a shortcut needs a listener) and never offered where nothing hovers: a phone.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `title` | `string` | — | The dialog's title and the `?` row's legend. Defaults to the translated `ui.shortcuts`. |
+| `class` | `string` | — |  |
+
 ### Skeleton
 
 Loading placeholder. Sized by the caller so the real content lands in the same box — a skeleton that changes size on load is just a slower layout shift.
@@ -859,14 +1158,52 @@ Loading placeholder. Sized by the caller so the real content lands in the same b
 | `lines` | `number` | — | Repeat as stacked lines, e.g. a paragraph placeholder. |
 | `class` | `string` | — |  |
 
+### Slider
+
+A bounded number: a native `<input type="range">` with its label and an `<output>` bound to it. The platform owns the thumb, the keyboard and the touch; the paint is tokens (`accent-color`). No thumb script — a kit without one sends an agent to a div. Rules: `slider-view.ts`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `name` | `string` | yes |  |
+| `label` | `string` | yes | Already-translated visible label. |
+| `id` | `string` | — |  |
+| `min` | `number` | — |  |
+| `max` | `number` | — |  |
+| `step` | `number` | — |  |
+| `value` | `number` | — |  |
+| `format` | `((value: number) => string)` | — | The output's text and the control's `aria-valuetext`, in the caller's locale and unit. |
+| `disabled` | `boolean` | — |  |
+| `aria-describedby` | `string` | — |  |
+| `onInput` | `((value: number) => void)` | — |  |
+| `class` | `string` | — |  |
+
+### SortableList
+
+A list a person reorders by hand: a handle per row that lifts by pointer, touch or keyboard, and a drop that REQUESTS a move through `onMove` — the caller's action decides. With scripting off each row carries Move up and Move down as real form buttons posting to `action`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `items` | `readonly T[]` | yes |  |
+| `itemKey` | `(item: T) => string` | yes | Unique per item; the row keeps its node under it across live updates. |
+| `renderItem` | `(item: T) => JSX.Element` | yes | The row's look is the caller's: a `Card`, a line of text. |
+| `label` | `string` | yes | Already-translated name of the list, read with every announcement. |
+| `onMove` | `(move: SortMove) => unknown` | yes | Called once per drop that moves something. A rejection puts the row back and says so. |
+| `canDrop` | `CanDrop<T>` | — |  |
+| `action` | `string` | — | The action URL the no-script Up and Down buttons post to. Without it, no fallback renders. |
+| `fields` | `SortFields` | — | The field names those buttons post: `id`, `fromGroup`, `toGroup`, `toIndex` by default. |
+| `group` | `string` | — | The id `onMove` names as `fromGroup` and `toGroup`. Defaults to `list`. |
+| `class` | `string` | — |  |
+
 ### Sparkline
 
-One series as a single line with no axes — the trend beside a figure, in a table cell, on a detail page. Static SVG for `BarChart`'s reason: the framework's own docs use a sparkline pulling in a chart library as the cautionary example, and this file IS that sparkline written the way the docs say to. The path comes from `sparkline-view.ts`.
+One series as a single line with no axes — the trend beside a figure, in a table cell, on a StatTile. Static SVG for `BarChart`'s reason: the framework's own docs use a sparkline pulling in a chart library as the cautionary example, and this file IS that sparkline written the way the docs say to. Signed through zero; the path and the area come from `sparkline-view.ts`.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `label` | `string` | yes | The accessible name for the whole chart, already translated. |
 | `points` | `readonly SparklinePoint[]` | yes | Oldest first. `value: null` is unknown — a gap in the line, never a zero. |
+| `tone` | `Tone` | — | The line's colour role, in place of `accent`. |
+| `area` | `boolean` | — | Fill under the line, down to zero — above it for a gain, below it for a loss. |
 | `class` | `string` | — |  |
 
 ### Spinner
@@ -878,6 +1215,22 @@ Indeterminate progress. `role="status"` plus a translated name, because a spinne
 | `size` | `Size` | — |  |
 | `label` | `string` | — | Overrides the translated `ui.loading` default. |
 | `decorative` | `boolean` | — | Hide from assistive tech when a parent already announces the busy state. |
+| `class` | `string` | — |  |
+
+### SplitPane
+
+Two panes and a `role="separator"` between them, its value a percentage of the start pane. Arrows step it, Home and End go to the bounds, a pointer drags it, Esc mid-drag restores. Below `md` the panes stack and the separator is gone: no gesture on a phone. Storage is the caller's.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `start` | `JSX.Element` | yes |  |
+| `end` | `JSX.Element` | yes |  |
+| `value` | `number` | — | Controlled: the start pane's share in percent. Pair it with `onResize`. |
+| `defaultValue` | `number` | yes | Where the split sits before any input, and with scripting off. |
+| `min` | `number` | — |  |
+| `max` | `number` | — |  |
+| `onResize` | `((percent: number) => void)` | — | Each change, in percent. Persisting it is the caller's: storage is never ambient. |
+| `label` | `string` | — | Already-translated name of the separator; defaults to `ui.pane.resize`. |
 | `class` | `string` | — |  |
 
 ### Stack
@@ -897,7 +1250,7 @@ Flex layout primitive. Gap comes from the space scale as a custom property, so t
 
 ### StatTile
 
-One labelled figure with an optional trend chip and a line of context — the tile a dashboard's top row is made of. The figure arrives formatted: number formatting is the caller's (`Intl.NumberFormat` against the page locale), so the tile never guesses a locale.  Intrinsic tags only: a runtime-chosen root (`const Tag = props.as ?? 'div'`) is called as a component by the island build, so a tile built on `Card` hydrated differently from how it was served. A `<div>` renders identically on both sides.
+One labelled figure with an optional trend chip, a sparkline and a line of context — the tile a dashboard's top row is made of. The figure arrives formatted (the caller's `Intl.NumberFormat`), and whether up is good is the caller's one prop (`goodWhen`): the arrow always shows the way, the colour only what the caller said it means.  Intrinsic tags only: a runtime-chosen root (`const Tag = props.as ?? 'div'`) is called as a component by the island build, so a linked tile is a second literal `<a>`, never a variable tag.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -905,7 +1258,24 @@ One labelled figure with an optional trend chip and a line of context — the ti
 | `value` | `string` | yes | The figure, already formatted as the string this tile shows. |
 | `stat` | `string` | yes | The stable hook a test or a live check reads the figure through: `data-stat`. |
 | `delta` | `StatDelta` | — | The trend chip; `deltaOf()` builds one from a current and a baseline. |
+| `goodWhen` | `StatGoodWhen` | — | Which direction of `delta` is good news. Default `'up'`; `'none'` colours neither. |
+| `of` | `string` | — | The denominator, formatted — "of 40" reads after the figure: "12 of 40". |
+| `trend` | `readonly SparklinePoint[]` | — | The recent series behind the figure, oldest first; `null` is a gap. |
+| `tone` | `Tone` | — | A status edge on the tile — `danger` for a figure past its limit. |
+| `href` | `string` | — | The page behind the figure: the whole tile becomes one link. |
+| `loading` | `boolean` | — | The figure is on its way: a skeleton in its box, so the row does not shift when it lands. |
 | `hint` | `string` | — | One short line of context under the figure: "vs yesterday", "849 clicks". |
+| `class` | `string` | — |  |
+
+### Stepper
+
+Progress through a multi-step flow: an `<ol>`, the current step `aria-current="step"`, a passed step a link (its `href`) or a button (`onSelect`) and an upcoming one plain text. Exactly one current, by `stepperModel`. Below `sm` the list folds into one line, "Step {n} of {total}: Details".
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `steps` | `readonly StepperStep[]` | yes |  |
+| `label` | `string` | yes | Already-translated name of the list — "Checkout progress". |
+| `onSelect` | `((id: string) => void)` | — | A passed step with no `href` becomes a button that calls this. |
 | `class` | `string` | — |  |
 
 ### Switch
@@ -942,15 +1312,29 @@ Presentational table. Owns what every hand-rolled table gets wrong: a sticky hea
 
 ### Tabs
 
-Tablist with roving tabindex: one Tab in the page tab order, arrows move between them, Home/End jump to the ends, and arrow direction follows `dir`.
+Tablist with roving tabindex: one Tab in the page tab order, arrows move between them, Home/End jump to the ends, and arrow direction follows `dir`. Link mode (`hrefFor`, no `onChange`) is a `<nav>` of links with `aria-current`, never `role="tab"`: ARIA tabs promise panels on this page, and a link tab's panel is the next page.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
-| `items` | `readonly TabItem[]` | yes |  |
+| `items` | `readonly TabItem[] \| readonly TabLinkItem[]` | yes |  |
 | `value` | `string` | yes | Selected tab id. Controlled — the caller owns the state. |
-| `onChange` | `(id: string) => void` | yes |  |
+| `onChange` | `(id: string) => void` | — |  |
 | `label` | `string` | yes | Already-translated accessible name for the tablist. |
 | `orientation` | `'horizontal' \| 'vertical'` | — |  |
+| `class` | `string` | — |  |
+| `hrefFor` | `(id: string) => string` | — | Each tab's URL. Server-rendered links: no script, and the back button works. |
+| `children` | `JSX.Element` | — | The current tab's content, rendered under the links. |
+
+### TerminalView
+
+One styled stream of terminal output on `VirtualList`: SGR colours as roles, every other escape dropped, wrapped by default, left-to-right under `dir="rtl"`. A focusable region where Home and End jump. Output only: keystrokes are an app's island over its own transport.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `text` | `string` | yes | Raw output, escapes and all. |
+| `label` | `string` | — | Already-translated name of the region; defaults to `ui.code.terminal`. |
+| `rows` | `number` | — | Lines tall, before it scrolls. Defaults to 24, a terminal's own. |
+| `follow` | `boolean` | — | Follow the end as output arrives. Defaults to true. |
 | `class` | `string` | — |  |
 
 ### Text
@@ -998,6 +1382,28 @@ Theme control. `toggle` flips light/dark; `select` also offers "system", which c
 | `mode` | `'toggle' \| 'select'` | — |  |
 | `initial` | `Theme` | — | The theme in force at server render — the toggle's glyph. Never the select's choice: nothing on the server knows whether the visitor chose it, so the select shows "system" until the effect reads storage. |
 | `env` | `ThemeEnv` | — | Injectable for tests and for non-DOM hosts. |
+| `class` | `string` | — |  |
+
+### TimeRangePicker
+
+"This metric over that window": the app's presets as links, and a custom window as a GET form of two `datetime-local` inputs in a `<details>`. Links and a form, so 0 B of script on a static route; the URL is the state (`timeRangeUrl`), so a window survives reload, share and paging.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `range` | `TimeRangeUrl` | yes | The window the URL holds, read by `timeRangeUrl` in the loader. |
+| `timeZone` | `TimeZone` | yes | The zone the custom window's wall-clock times are in. Required, and it must be the one the window was read in: there is no ambient zone, and a mismatch would post a different window. |
+| `label` | `string` | yes | Already-translated name for the control. |
+| `class` | `string` | — |  |
+
+### Timeline
+
+What happened, in order: when, what, a marker and a tone. An `<ol>` because the order IS the content; day headers come from `groupBy`, already formatted. Server-only, no signal: an activity feed is this plus `InfiniteScroll` and `RelativeTime`, never a component of its own.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `items` | `readonly TimelineItem[]` | yes |  |
+| `label` | `string` | yes | Already-translated accessible name for the list. |
+| `groupBy` | `((item: TimelineItem) => string)` | — | A day header per run of items: answer a label already formatted in the caller's zone. |
 | `class` | `string` | — |  |
 
 ### ToastRegion
@@ -1063,6 +1469,62 @@ Supplementary hint, shown on hover AND on keyboard focus. CSS-only, so it costs 
 | `children` | `(control: { 'aria-describedby': string }) => JSX.Element` | yes |  |
 | `placement` | `'block-start' \| 'block-end'` | — |  |
 | `class` | `string` | — |  |
+
+### Tree
+
+Files, folders, org charts: one node list, two renderings. With `hrefFor` it is nested `<ul>` and `<details>` with links — open and close are the platform's, 0 B of script. With `onSelect` it is an APG `role="tree"` with one tab stop, arrows, type-ahead and lazy children: an island's.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `nodes` | `readonly TreeNode[]` | yes |  |
+| `label` | `string` | yes | Already-translated accessible name. |
+| `selected` | `string` | — | The current node: `aria-current="page"` in link mode, `aria-selected` in select mode. Its ancestors open. |
+| `open` | `readonly string[]` | — | Branches open on first render, beside the selected node's ancestors. |
+| `class` | `string` | — |  |
+| `hrefFor` | `(node: TreeNode) => string` | — |  |
+| `onSelect` | `(id: string) => void` | — |  |
+| `onExpand` | `((id: string) => Promise<readonly TreeNode[]>)` | — |  |
+
+### VirtualList
+
+A long list that mounts only what is on screen: a real `<ul>` in a scroll box, padded above and below by what is not drawn. Server-rendered, and with scripting off, every row renders — the document carries the whole list. The arithmetic is `virtual-list-view.ts`; this file is wiring.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `items` | `readonly T[]` | yes |  |
+| `itemKey` | `(item: T) => string` | yes | Unique per item: a visible row keeps its node — and its focus — across a live prepend. |
+| `renderItem` | `(item: T) => JSX.Element` | yes |  |
+| `estimate` | `number` | — | A row's block size in CSS px until it is measured. A right estimate IS fixed-height mode. |
+| `overscan` | `number` | — | Rows drawn beyond each edge of the box. |
+| `follow` | `boolean` | — | Stay at the end as items arrive, while the reader is there; offer a way back when not. |
+| `label` | `string` | yes | Already-translated accessible name for the list. |
+| `class` | `string` | — | Size the box here: the list scrolls inside the caller's height, and a box with none renders every row. |
+
+### TreeLinkNode
+
+One node of a `Tree`, in either of its two renderings. Link mode is the platform's: a branch is a `<details>` whose `<summary>` opens it, a leaf is a link — no script at all. Select mode is the APG tree item, which only an island drives; its state arrives as accessors from `Tree`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `node` | `TreeNode` | yes |  |
+| `hrefFor` | `(node: TreeNode) => string` | yes |  |
+| `selected` | `string` | yes |  |
+| `open` | `ReadonlySet<string>` | yes |  |
+
+### TreeSelectNode
+
+One node of a `Tree`, in either of its two renderings. Link mode is the platform's: a branch is a `<details>` whose `<summary>` opens it, a leaf is a link — no script at all. Select mode is the APG tree item, which only an island drives; its state arrives as accessors from `Tree`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `node` | `TreeNode` | yes |  |
+| `state` | `(id: string) => TreeItemState` | yes | Level and position, read from the flattened tree. |
+| `isOpen` | `(id: string) => boolean` | yes |  |
+| `isLoading` | `(id: string) => boolean` | yes |  |
+| `isStop` | `(id: string) => boolean` | yes | The node holding the group's one tab stop. |
+| `selected` | `string` | yes |  |
+| `childrenOf` | `(node: TreeNode) => readonly TreeNode[]` | yes | Loaded children: the node's own, or what `onExpand` answered for it. |
+| `onActivate` | `(id: string) => void` | yes |  |
 
 ## Tokens
 

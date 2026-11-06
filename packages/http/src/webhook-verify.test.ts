@@ -10,6 +10,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  hmac,
   isUltimateError,
   WEBHOOK_ID_HEADER,
   WEBHOOK_SIGNATURE_HEADER,
@@ -54,9 +55,12 @@ const signed = (over: {
 
 /** A correctly built signature over the vector's clock, secret and body, for other id/topic pairs. */
 const signatureFor = (eventId: string, topic: string): string => {
-  const mac = new Bun.CryptoHasher('sha256', WEBHOOK_VECTOR.secret)
-    .update(`v1:${WEBHOOK_VECTOR.timestampSeconds}:${eventId}:${topic}:${WEBHOOK_VECTOR.body}`)
-    .digest('hex');
+  const mac = hmac(
+    'sha256',
+    WEBHOOK_VECTOR.secret,
+    `v1:${WEBHOOK_VECTOR.timestampSeconds}:${eventId}:${topic}:${WEBHOOK_VECTOR.body}`,
+    'hex',
+  );
   return `t=${WEBHOOK_VECTOR.timestampSeconds},v1=${mac}`;
 };
 
@@ -161,9 +165,7 @@ describe('verifyWebhookSignature refuses everything else', () => {
     // signature under a label the sender never wrote. Refusing the separator is what collapses
     // the two readings to none; without it BOTH requests below verify.
     const ambiguous = `v1:${WEBHOOK_VECTOR.timestampSeconds}:evt:01HZ:orders.paid:${WEBHOOK_VECTOR.body}`;
-    const mac = new Bun.CryptoHasher('sha256', WEBHOOK_VECTOR.secret)
-      .update(ambiguous)
-      .digest('hex');
+    const mac = hmac('sha256', WEBHOOK_VECTOR.secret, ambiguous, 'hex');
     const signature = `t=${WEBHOOK_VECTOR.timestampSeconds},v1=${mac}`;
 
     expect(await codeOf(signed({ signature, eventId: 'evt', topic: '01HZ:orders.paid' }))).toBe(
@@ -191,9 +193,12 @@ describe('verifyWebhookSignature refuses everything else', () => {
     // Not an outsider's attack — only the secret holder can build this — and it is still a hole:
     // `Number('later')` is `NaN`, and `Math.abs(NaN) > toleranceMs` is FALSE, so a sender could
     // opt itself out of the replay window entirely and hand the app a `signedAtMs` of `NaN`.
-    const mac = new Bun.CryptoHasher('sha256', WEBHOOK_VECTOR.secret)
-      .update(`v1:later:${WEBHOOK_VECTOR.eventId}:${WEBHOOK_VECTOR.topic}:${WEBHOOK_VECTOR.body}`)
-      .digest('hex');
+    const mac = hmac(
+      'sha256',
+      WEBHOOK_VECTOR.secret,
+      `v1:later:${WEBHOOK_VECTOR.eventId}:${WEBHOOK_VECTOR.topic}:${WEBHOOK_VECTOR.body}`,
+      'hex',
+    );
     expect(await codeOf(signed({ signature: `t=later,v1=${mac}` }))).toBe(
       'X_WEBHOOK_SIGNATURE_INVALID',
     );

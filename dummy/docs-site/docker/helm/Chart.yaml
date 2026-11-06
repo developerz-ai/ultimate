@@ -1,0 +1,7 @@
+apiVersion: v2
+name: docs-site
+description: One image, N roles. Per-role deployments for docs-site.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"

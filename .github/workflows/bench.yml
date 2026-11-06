@@ -1,0 +1,88 @@
+# The figures `wiki/Compared.md` and `README.md` publish, re-measured where anyone can read the log:
+# a stranger's first hour from the PUBLISHED `create-ultimate` (never a workspace link), then
+# requests per second against that scaffold's `/` and one typed read through the full pipeline.
+# Five runs each, min and median, the runner image printed in the JSON (`box.runner`).
+#
+# NOT a step of `x verify`, and it must never become one: it resolves npm and measures wall time,
+# and green may not depend on either. It changes no file on `main`: it opens a pull request with the
+# new JSON, which `bun run scripts/bench-claims.ts` then holds the prose to (`X_BENCH_CLAIM_STALE`).
+
+name: bench
+
+on:
+  schedule:
+    # Weekly, Monday early UTC — away from the daily registry audit at 06:17.
+    - cron: '41 4 * * 1'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# `contents: write` + `pull-requests: write`: the branch and the pull request with the new JSON. No
+# `id-token` and no new secret — the job's own token is all it holds.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bench
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    # Five clean first hours (install, two gates each) plus ten 30 s load runs, measured locally at
+    # well under the bound; without one a hung registry holds the runner for six hours.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+
+      - name: first hour, five clean runs of the published create-ultimate
+        run: bun run scripts/bench/first-hour.ts --runs 5 --out scripts/bench/results/first-hour.json
+
+      # The last run's scaffold, already set up: `x dev` on embedded Postgres. `always()` here and
+      # below: a red first hour is itself the figure to publish, so the JSON still reaches a pull
+      # request — and the job stays red, which is the alarm.
+      # The scaffold's rate limiter answers one client 429 past a 120-request burst at 2/s — correct
+      # for an app, and a 429 is `X_BENCH_RUN_FAILED`, never a figure. Raised here, and only here,
+      # for the `default` bucket in the app's own `configureHttp()` (`auth` and `mutation` keep the
+      # shipped values; the map replaces whole), so the run measures the pipeline, not the limiter.
+      - name: raise the scaffold's read bucket for the load runs
+        if: ${{ always() }}
+        run: |
+          APP="$(jq -r '.runs[-1].work' scripts/bench/results/first-hour.json)/firsthour"
+          sed -i 's|  cors: { origins: \[\] },|  cors: { origins: [] },\n  rateLimit: { buckets: { default: { capacity: 1000000, refillPerSecond: 1000000 }, auth: { capacity: 10, refillPerSecond: 0.2 }, mutation: { capacity: 30, refillPerSecond: 1 } } },|' "$APP/apps/web/app/http.ts"
+          grep -q 'capacity: 1000000' "$APP/apps/web/app/http.ts"
+
+      - name: requests per second, scaffold /
+        if: ${{ always() }}
+        run: |
+          APP="$(jq -r '.runs[-1].work' scripts/bench/results/first-hour.json)/firsthour"
+          bun run scripts/bench/http-hello.ts --url http://localhost:3000/ --seconds 30 --runs 5 \
+            --start 'bunx x dev' --cwd "$APP" --out scripts/bench/results/http-hello.json
+
+      - name: requests per second, a typed read through the full pipeline
+        if: ${{ always() }}
+        run: |
+          APP="$(jq -r '.runs[-1].work' scripts/bench/results/first-hour.json)/firsthour"
+          bun run scripts/bench/http-hello.ts --url 'http://localhost:3000/_x/query/post-list?limit=10' \
+            --seconds 30 --runs 5 --start 'bunx x dev' --cwd "$APP" \
+            --out scripts/bench/results/http-hello-query.json
+
+      - name: open a pull request with the new figures
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- scripts/bench/results; then exit 0; fi
+          BRANCH="bench/${GITHUB_RUN_ID}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$BRANCH"
+          git add scripts/bench/results
+          git commit -m "chore(bench): re-measure first hour and http-hello (run ${GITHUB_RUN_ID})"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          gh pr create --head "$BRANCH" --title 'chore(bench): re-measured figures' \
+            --body "Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. \`bun run scripts/bench-claims.ts\` says which prose to update."

@@ -4,6 +4,7 @@
 // matrix would otherwise unmake, and `x verify merge` would only notice after a push.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { NEW_SHAPES } from '../packages/cli/src/new-shapes';
 import { BESIDE_SERIAL_SUITES } from '../packages/cli/src/verify-run';
 import { SHARDABLE_STEPS } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
@@ -333,6 +334,15 @@ describe('unit · ci.yml · scaffold-smoke opens the app it scaffolded', () => {
     expect(at('scripts/scaffold-first-run.ts')[0]).toBeLessThan(walk ?? -1);
     expect(at('scripts/scaffold-gate.ts').at(-1)).toBeLessThan(walk ?? -1);
     expect(at('scripts/scaffold-gate.ts')).toHaveLength(2);
+  });
+
+  // A shape `x new` accepts is one a stranger can pick, so it gates on a runner of its own: a
+  // name in `NEW_SHAPES` with no row here is a scaffold nothing has ever run `bun run verify` on.
+  test('the matrix is the default, --no-example, and one row per x new --shape', () => {
+    const rows = listOf(job('scaffold-smoke').strategy?.matrix?.['include']).map((row) =>
+      text(record(row)['flags']),
+    );
+    expect(rows).toEqual(['', '--no-example', ...NEW_SHAPES.map((shape) => `--shape ${shape}`)]);
   });
 });
 

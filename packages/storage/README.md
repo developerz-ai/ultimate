@@ -535,6 +535,12 @@ a job boundary the class is gone and the `code` is what survives — match on th
 `variantKey()`, `srcsetDescriptors()`, `fitDimensions()` are pure — `@ultimat3/seo` builds
 `srcset` from them without decoding a byte.
 
+`warmVariants({ disk, key, widths, formats })` (`image-warm.ts`) writes every width x format of a
+stored image under the key `/media` reads — `variantKey(key, { width, format, revision })`, the
+revision off the etag of the bytes it read — so the job an upload enqueues pays the decode and no
+visitor does. Answers `{ written, failed, skipped }`: a width above the source's is skipped, a coded
+failure (an `avif`) is one entry and the rest are still written. `As of 2026-11`.
+
 A variant key is the WHOLE source key plus the transform: `photos/hero.png` at width 640 is
 `photos/hero.png@w640.webp`. The source extension stays in, so `hero.png` and `hero.jpg` are two
 cache identities — it was cut, and both minted `photos/hero@w640.webp`. `width` and `height` are

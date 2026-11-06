@@ -1,0 +1,102 @@
+@use 'sass:map';
+@use '../tokens' as t;
+
+$sm: map.get(t.$breakpoints, 'sm');
+
+.log {
+  @include t.column(t.space(2));
+  @include t.container(log);
+}
+
+.bar {
+  @include t.row(t.space(2), center);
+  flex-wrap: wrap;
+}
+
+// Filtering and follow need script; without it every line is in the document.
+.log:not([data-enhanced='true']) .bar {
+  display: none;
+}
+
+.filter,
+.levels,
+.follow {
+  @include t.focus-ring;
+  min-block-size: t.touch(target);
+  border: t.stroke(hairline) solid t.role('line');
+  border-radius: t.radius(md);
+  background: t.role('surface');
+  color: t.role('fg');
+  font-size: t.text(md);
+  padding-inline: t.space(2);
+}
+
+.filter {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.follow[aria-pressed='true'] {
+  border-color: t.role('accent');
+  color: t.role('accent');
+}
+
+.capped {
+  margin: 0;
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}
+
+// The caller sizes the page; the log's own box is a bounded share of the viewport, and
+// VirtualList bounds itself inside it.
+.box {
+  block-size: min(70vh, t.rem(640px));
+  border: t.stroke(hairline) solid t.role('line');
+  border-radius: t.radius(md);
+  background: t.role('bg-soft');
+  font-family: var(--font-mono);
+  font-size: t.text(sm);
+}
+
+// Timestamp above the line on a phone; one row of columns from `sm` of the log's own width.
+.line {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 t.space(2);
+  padding-block: t.space(1);
+  padding-inline: t.space(2);
+  text-align: start;
+
+  &[data-level='warn'] .level {
+    color: t.role('warning');
+  }
+
+  &[data-level='error'] .level {
+    color: t.role('danger');
+  }
+}
+
+.time {
+  grid-column: 1 / -1;
+  color: t.role('fg-muted');
+}
+
+.level {
+  color: t.role('fg-muted');
+  text-transform: uppercase;
+}
+
+.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@include t.container-query(log, $sm) {
+  .line {
+    grid-template-columns: auto auto 1fr;
+  }
+
+  .time {
+    grid-column: auto;
+  }
+}

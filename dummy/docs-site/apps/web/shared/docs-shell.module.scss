@@ -1,0 +1,55 @@
+@use '../shared/tokens' as t;
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100dvh;
+  background: t.role('bg');
+  color: t.role('fg');
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: t.space(3) t.space(6);
+  padding: t.space(4);
+  border-block-end: 1px solid t.role('line', 0.6);
+
+  @include t.respond-to(md) {
+    padding-inline: t.space(8);
+  }
+}
+
+.brand {
+  color: t.role('fg-strong');
+  font-weight: t.weight('semibold');
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: t.text('sm');
+}
+
+.main {
+  flex: 1;
+  inline-size: 100%;
+  max-inline-size: 52rem;
+  margin-inline: auto;
+  padding: t.space(8) t.space(4) t.space(16);
+  overflow-wrap: anywhere;
+}
+
+.footer {
+  padding: t.space(6) t.space(4);
+  border-block-start: 1px solid t.role('line', 0.6);
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+  text-align: center;
+}

@@ -112,6 +112,41 @@ Browsers ask for those at fixed URLs, so they are not hashed.
 
 Everything else is `loading="lazy"`, `fetchpriority="auto"` and `decoding="async"`.
 
+## Responsive images in a static export
+
+`responsiveImage()` from `@ultimat3/seo` mints `?w=&f=` URLs, which only `/media` answers — a dumb
+file server ignores the query and hands back the full original under `<source type="image/webp">`.
+So under `x build --target static` every candidate is a FILE instead: `/_img/<source hash>-<width>.<ext>`,
+written through core's pipeline after the documents render, one per width in every offered format.
+`As of 2026-11`.
+
+| Rule | Detail |
+|---|---|
+| the `src` | a file the export holds — an `asset('assets/hero.png')` URL. Anything else is `X_IMAGE_SOURCE_UNREADABLE` at build; an absolute `https://` URL keeps its query URL for a CDN that answers one |
+| the widths | capped at the source's own (`usableWidths`), never an upscale |
+| the formats | `webp` and the source's encoding. `avif` at a static build is `X_IMAGE_UNSUPPORTED`, a build error, never a dead `<source>` |
+| what is written | only the candidates an EXPORTED document names: a page rendered just to be weighed writes nothing |
+| a served page | keeps the `?w=&f=` URLs, which `/assets` answers itself — [below](#responsive-images-on-a-served-page). The seam is installed by the export alone |
+
+The name is the source's content hash, so a changed image is a new URL and every file can be served
+`immutable`. `examples/dummy`'s landing page (`apps/web/site/page.tsx`) is the worked example.
+
+## Responsive images on a served page
+
+`x dev` and the container answer the same candidates on `/assets/<name>.<hash>.<ext>?w=&f=`: the
+variant is resized and re-encoded through the pipeline `/media` uses (core's, or the
+`ImageTransformDriver` the boot was handed), with its own `content-type` and
+`public, max-age=31536000, immutable`. `As of 2026-11`.
+
+| Rule | Detail |
+|---|---|
+| the widths | exactly the `srcset`'s: `usableWidths(intrinsic, DEFAULT_WIDTHS)` — never an upscale |
+| the formats | `DEFAULT_FORMATS` (`webp`), or none for the source's own encoding |
+| anything else | `?w=321`, `?f=avif`, `?f=jpeg`, any `?q=`, a `?w=` on an SVG: `404 X_ASSET_VARIANT_UNDECLARED`, before a pixel is decoded. A public URL is never a resize service; an upload under `/media` answers any width |
+| a custom `widths` | not served for a site asset; drop the option, or store the image and use `/media` |
+| the cache | one decode per variant per content hash, in memory, least recently used out past 64 MiB; a burst of first visitors is one decode |
+| a stale hash | the plain route's answer, query or not |
+
 ## In a unit test
 
 A test that renders a page calling `asset()` without loading the app installs a table itself:

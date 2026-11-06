@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "3cc2cf50e1349522",
+  "buildId": "18e69f07a1be3806",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,13 +495,24 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "179kb"
+        "js": "205.5kb"
       }
     },
     {
       "url": "/offline",
       "render": "static",
       "offline": "precache",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb"
+      }
+    },
+    {
+      "url": "/og/home",
+      "render": "static",
+      "offline": "network-only",
       "hydrate": "never",
       "revalidateTags": [],
       "surface": "site",
@@ -518,6 +529,17 @@
       "surface": "app",
       "budget": {
         "js": "209.5kb"
+      }
+    },
+    {
+      "url": "/posts/board",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "107.5kb"
       }
     },
     {
@@ -556,7 +578,18 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "196.5kb"
+        "js": "240kb"
+      }
+    },
+    {
+      "url": "/runs/health",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "33kb"
       }
     },
     {
@@ -567,7 +600,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "82kb"
+        "js": "104.5kb"
       }
     }
   ],
@@ -5281,6 +5314,39 @@
       ],
       "live": false,
       "cacheTags": []
+    },
+    {
+      "name": "runHealth",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "orgId",
+          "since",
+          "until"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "run:read",
+      "permissions": [
+        "run:read"
+      ],
+      "live": false,
+      "cacheTags": []
     }
   ],
   "channels": [
@@ -7462,6 +7528,34 @@
       "steps": []
     },
     {
+      "name": "runs.statement",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "runs.sync",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -7657,6 +7751,34 @@
       "queue": "default",
       "retry": {
         "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "warmAvatar",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "orgId",
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
         "backoff": "exponential"
       },
       "steps": []
@@ -7996,7 +8118,8 @@
       "permission": "run:read",
       "enforcedIn": [
         "query:liveRunEvents",
-        "query:runConnections"
+        "query:runConnections",
+        "query:runHealth"
       ]
     },
     {
@@ -8097,6 +8220,10 @@
       "package": "apps/web"
     },
     {
+      "code": "X_AVATAR_KEY_OUTSIDE_ORG",
+      "package": "apps/web"
+    },
+    {
       "code": "X_BILLING_EVENT_UNREADABLE",
       "package": "apps/web"
     },
@@ -8163,6 +8290,10 @@
     {
       "code": "X_ISLAND_WITHOUT_STATES",
       "package": "guards/island-without-states.ts"
+    },
+    {
+      "code": "X_NATIVE_CONFIRM",
+      "package": "guards/native-confirm.ts"
     },
     {
       "code": "X_RAW_BREAKPOINT",

@@ -8,6 +8,7 @@
 // a silently wrong page. It is tamper-evidence, not authorization: policy still runs per page.
 
 import { UltimateError } from './errors';
+import { hmac } from './hmac';
 
 export interface CursorPayload {
   /** What this cursor belongs to: one read plus its arguments. A cursor is not portable. */
@@ -135,7 +136,7 @@ export function decodeCursor(cursor: string, scope: string): CursorPayload {
 
 /** Truncated HMAC-SHA256. 128 bits is far past forging a page position. */
 function sign(body: string): string {
-  return new Bun.CryptoHasher('sha256', currentSecret()).update(body).digest('hex').slice(0, 32);
+  return hmac('sha256', currentSecret(), body, 'hex').slice(0, 32);
 }
 
 /** Constant time: the comparison must not leak how much of a forged signature was right. */

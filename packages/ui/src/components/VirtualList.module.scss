@@ -1,0 +1,60 @@
+@use '../tokens' as t;
+
+// One row that may SHRINK: an `auto` row grows to every row's height whenever the caller's size is
+// a cap (`max-block-size`) or a flex share rather than a fixed block size, and the list then
+// measures itself as tall as all its rows and draws each one (`ui-virtual-list.e2e.test.ts`).
+.wrap {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+// The caller's box sets the height; this one scrolls inside it. The platform's scroll anchoring
+// is off because the component keeps the reader's row itself, and two anchors fight.
+.box {
+  @include t.custom-scrollbar;
+  min-block-size: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+
+  &:focus-visible {
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: calc(-1 * #{t.stroke(thick)});
+  }
+}
+
+// The padding stands in for the rows not drawn, so the scrollbar is the whole list's.
+.list {
+  margin: 0;
+  padding-block: var(--virtual-before, 0) var(--virtual-after, 0);
+  padding-inline: 0;
+  list-style: none;
+}
+
+.row {
+  display: block;
+}
+
+.toEnd {
+  @include t.touch-target;
+  @include t.padding-inline(t.space(4));
+  position: absolute;
+  inset-block-end: t.space(3);
+  inset-inline-end: t.space(3);
+  border: 1px solid t.role('line');
+  border-radius: t.radius(pill);
+  color: t.role('fg-strong');
+  background: t.role('surface-raised');
+  box-shadow: t.shadow(md);
+  font-size: t.text(sm);
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: t.stroke(thick);
+  }
+}

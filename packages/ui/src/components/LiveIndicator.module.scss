@@ -1,0 +1,44 @@
+@use '../tokens' as t;
+
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  color: t.role('fg');
+  font-size: t.text(sm);
+}
+
+// Static on purpose: no animation, so there is nothing to withdraw under reduced motion.
+.dot {
+  flex: none;
+  inline-size: t.space(3);
+  block-size: t.space(3);
+  border-radius: t.radius(full);
+  background: currentcolor;
+}
+
+.word {
+  white-space: nowrap;
+}
+
+// Each state a shape as well as a colour: filled, a ring, two bars, a square.
+[data-live='live'] .dot {
+  color: t.role('success');
+}
+
+[data-live='reconnecting'] .dot {
+  border: t.stroke(thick) solid t.role('warning');
+  background: none;
+}
+
+[data-live='paused'] .dot {
+  border-radius: 0;
+  border-inline: t.stroke(thick) solid t.role('fg-muted');
+  background: none;
+  inline-size: t.space(2);
+}
+
+[data-live='offline'] .dot {
+  border-radius: t.radius(sm);
+  background: t.role('danger');
+}

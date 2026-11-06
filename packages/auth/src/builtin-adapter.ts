@@ -119,16 +119,23 @@ const toApiKey = (row: Row): AuthApiKeyRecord => ({
  */
 export class PostgresAuthAdapter implements AuthAdapter {
   readonly name = 'builtin-postgres';
-  readonly #db: DbClient;
+  readonly #client: DbClient | undefined;
   readonly #clock: Clock;
 
   /**
+   * `client` omitted, every call resolves the ambient `db()` when it runs, never once here: a
+   * memoized `appAuth` is built by the process's first caller, and a client captured then
+   * ignored every later `setDbClient` and every open `withTransaction`. Passed, it is pinned.
    * `clock` is the one `MemoryAuthAdapter` takes, for the same stamp: hand over the clock
    * `defineAuth` was given, so a redemption is dated by the clock that judged its expiry.
    */
-  constructor(client: DbClient = db(), clock: Clock = systemClock) {
-    this.#db = client;
+  constructor(client?: DbClient, clock: Clock = systemClock) {
+    this.#client = client;
     this.#clock = clock;
+  }
+
+  get #db(): DbClient {
+    return this.#client ?? db();
   }
 
   /** A write to `x_users`, with the table's own unique violations answered as this package's. */
@@ -427,10 +434,11 @@ export class PostgresAuthAdapter implements AuthAdapter {
 
 /**
  * The one way to build the Postgres adapter — the twin of `memoryAuthAdapter()`. The class is a
- * type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
+ * type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling. No
+ * `client`: each call reads the ambient `db()` as it runs, so build it once and keep it.
  */
 export function postgresAuthAdapter(
-  client: DbClient = db(),
+  client?: DbClient,
   clock: Clock = systemClock,
 ): PostgresAuthAdapter {
   return new PostgresAuthAdapter(client, clock);

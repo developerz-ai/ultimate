@@ -26,7 +26,7 @@ export const STALE_BUILD_OUTPUTS = [
 /** Runnable from the repo root, like the gate's own `reproduce` line. */
 const reproduceBuild = (app: GatedApp): string => {
   const up = '../'.repeat(app.dir.split('/').length);
-  return `cd ${app.dir} && bun run ${up}packages/cli/src/bin.ts build --target static`;
+  return `cd ${app.dir} && bun run ${up}packages/cli/src/bin.ts build --target static --no-capture`;
 };
 
 /**
@@ -44,7 +44,17 @@ export const buildApp = async (
     await rm(join(cwd, path), { recursive: true, force: true });
   }
   const result = await runner(
-    ['bun', 'run', join(root, 'packages/cli/src/bin.ts'), 'build', '--target', 'static'],
+    // `--no-capture`, as `x verify`'s own build: the gate weighs bytes, and a social card is a
+    // picture a runner with no Chrome cannot take (`X_SEO_CARD_BROWSER_MISSING`).
+    [
+      'bun',
+      'run',
+      join(root, 'packages/cli/src/bin.ts'),
+      'build',
+      '--target',
+      'static',
+      '--no-capture',
+    ],
     { cwd },
   );
   if (result.ok) return undefined;

@@ -75,9 +75,20 @@ describe('useQuery — a non-live read', () => {
     answering([{ id: 'p1' }], [{ id: 'p2' }]);
     const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null);
     await flush();
-    posts.refetch();
+    void posts.refetch();
     expect(posts()).toEqual({ status: 'refreshing', data: [{ id: 'p1' }] });
     await flush();
+    expect(posts()).toEqual({ status: 'ready', data: [{ id: 'p2' }] });
+  });
+
+  test('a refetch settles when its answer is on screen, so a caller awaits the re-read', async () => {
+    pageHarness();
+    answering([{ id: 'p1' }], [{ id: 'p2' }]);
+    const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null);
+    await flush();
+    // Typed, too: `refetch(): void` made this assignment a compile error and an `await` a guess.
+    const reread: Promise<void> = posts.refetch();
+    await reread;
     expect(posts()).toEqual({ status: 'ready', data: [{ id: 'p2' }] });
   });
 
@@ -203,6 +214,17 @@ describe('useQuery — a live read', () => {
     resetPage();
     expect(useQuery(liveFeed, null)()).toEqual({ status: 'pending' });
   });
+
+  // The socket IS a live read's refresh: there is nothing to re-read, so the promise a pull or a
+  // button awaits settles at once, on both the browser's accessor and a server render's.
+  test('a refetch settles at once: the socket is its refresh', async () => {
+    pageHarness();
+    const feed = useQuery(liveFeed, null);
+    expect(feed.refetch()).toBeInstanceOf(Promise);
+    expect(await feed.refetch()).toBeUndefined();
+    resetPage();
+    expect(useQuery(liveFeed, null).refetch()).toBeInstanceOf(Promise);
+  });
 });
 
 describe('useQuery — paged', () => {
@@ -252,7 +274,7 @@ describe('useQuery — paged', () => {
     const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, { first: 1 });
     await flush();
     posts.more(); // held: the page after c1
-    posts.refetch(); // held: a fresh first page
+    void posts.refetch(); // held: a fresh first page
     // The refetch answers first; the stale more() answers last.
     held[1]?.({ rows: [{ id: 'p1' }], nextCursor: 'fresh', hasMore: true });
     await flush();

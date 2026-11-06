@@ -29,6 +29,7 @@ import type { PartStep } from './verify-part-step';
 import { readPartStep } from './verify-part-step';
 import { verifySummary } from './verify-run';
 import { corpusHash } from './verify-shard';
+import { judgeSkips } from './verify-skip-ceiling';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
 
 /**
@@ -322,8 +323,19 @@ function mergeStep(
   const nothingRan = sharded.length > 0 && tests !== undefined && tests.ran === 0;
   const required = floorRequires(floor, name);
   const floorGap = nothingRan && required ? [skippedSuiteFinding(name, tests.skipped)] : [];
+  // The ceiling on the SUM, always: a merge is the CI verdict, and one shard's skips say nothing.
+  const skips =
+    sharded.length > 0
+      ? judgeSkips(name, tests, floor?.skipCeiling)
+      : { findings: [], warnings: [] };
   const riding = rider?.findings ?? [];
-  const findings = [...steps.flatMap((step) => step.findings), ...gaps, ...floorGap, ...riding];
+  const findings = [
+    ...steps.flatMap((step) => step.findings),
+    ...gaps,
+    ...floorGap,
+    ...skips.findings,
+    ...riding,
+  ];
   const output = [
     ...steps
       .filter((step) => !step.ok && step.output !== undefined && step.output.length > 0)
@@ -331,7 +343,9 @@ function mergeStep(
     ...(rider?.output === undefined ? [] : [rider.output]),
   ].join('\n');
   // Every part's advice, once each and in the order the parts reported it.
-  const warnings = [...new Set(steps.flatMap((step) => step.warnings ?? []))];
+  const warnings = [
+    ...new Set([...steps.flatMap((step) => step.warnings ?? []), ...skips.warnings]),
+  ];
   const skipped =
     sharded.length > 0 ? nothingRan && !required : steps.every((step) => step.skipped);
   return {
@@ -340,6 +354,7 @@ function mergeStep(
       steps.every((step) => step.ok) &&
       gaps.length === 0 &&
       floorGap.length === 0 &&
+      skips.findings.length === 0 &&
       riding.length === 0,
     // The slowest job: the parts ran side by side, and wall time is what a CI run waits on.
     durationMs: Math.max(...steps.map((step) => step.durationMs)),

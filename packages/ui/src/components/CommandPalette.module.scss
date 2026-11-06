@@ -111,3 +111,28 @@
   font-size: t.text(xs);
   color: t.role('fg-muted');
 }
+
+.run {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.groupLabel {
+  padding-block: t.space(2) t.space(1);
+  padding-inline: t.space(3);
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+  font-weight: t.weight(semibold);
+}
+
+// On a phone the palette is full width and anchored to the top, so the on-screen keyboard rising
+// from the bottom never covers the filter or the first rows.
+@include t.respond-down(sm) {
+  .palette {
+    inset-block-start: 0;
+    inline-size: 100%;
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+  }
+}

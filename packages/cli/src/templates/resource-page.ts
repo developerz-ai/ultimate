@@ -22,9 +22,18 @@ import { LINE_WIDTH, wrapImport } from './wrap';
  * byte-identical since 1.4.1 (issue #354), so no headroom is held for run-to-run movement. An app
  * that adds per-document scripts (`navigation: { client: [...] }` charges its router, ~18 kB, to
  * every `app/` page) is over it on its first build, and `nextSteps` sends the author there.
+ *
+ * Raised to 68kb (69,632) on 2026-11-06, measured on Bun 1.4.4 the same way: 66,285 B — the island
+ * 65,430 + the runtime 855, over 64kb by 749 B. why: `@ultimat3/ui` grew a wave of components
+ * (pickers, lists, viewers, drag, charts) and the island carries ui's whole catalog-key list
+ * (`i18n-keys.ts`) beside the Form/Input/Button it renders. The same 3.3 kB of headroom.
+ *
+ * Lowered to 66kb (67,584) the same day, measured the same way: 64,167 B — the island 63,312 +
+ * the runtime 855. why: `UI_KEYS` became a namespace over `ui-keys.ts`, so the island keeps the
+ * three keys its components read, not all of them (−2,118 B). The same ~3.4 kB of headroom.
  */
-export const RESOURCE_PAGE_BUDGET = '64kb';
-export const RESOURCE_PAGE_MEASURED = '59,679 B';
+export const RESOURCE_PAGE_BUDGET = '66kb';
+export const RESOURCE_PAGE_MEASURED = '64,167 B';
 
 /** How the page reaches a string — the same rule `route.ts` states, for the same issue (#249). */
 const catalogImport = (module: string | undefined): string =>
@@ -186,7 +195,7 @@ export const config = defineRoute({
   // An org's rows are not public: a route with no policy registers \`auth: 'public'\` and its
   // response carries no \`vary: cookie\`. Which ORG is the query's decision, on every read.
   policy: { permission: '${feature.kebab}:read' satisfies KnownPermission },
-  // measured: ${RESOURCE_PAGE_MEASURED} (\`x build --target static\`, Bun 1.4.0) — the form island and the
+  // measured: ${RESOURCE_PAGE_MEASURED} (\`x build --target static\`, Bun 1.4.4) — the form island and the
   // \`visible\` runtime. why: the form is Solid, @ultimat3/ui's Form/Input/Button and the transport.
   // A raise states its own measured bytes and why here, in the same diff (\`X_BUDGET_EXCEEDED\`).
   budget: { js: '${RESOURCE_PAGE_BUDGET}' },

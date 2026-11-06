@@ -164,4 +164,6 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_REMOTE_REFUSED: 502,
   // @ultimat3/mcp — a remote MCP server needs authorization this app does not hold
   X_MCP_REMOTE_AUTH_REQUIRED: 502,
+  // @ultimat3/scraping — the PDF request names no single page size a print engine can lay out
+  X_SCRAPE_PDF_OPTIONS_INVALID: 422,
 } satisfies Readonly<Record<string, number>>;

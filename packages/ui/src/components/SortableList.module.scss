@@ -1,0 +1,72 @@
+@use '../tokens' as t;
+
+// Shared by `SortableList` and `Board` (`sort-surface.tsx`): one gesture, one sheet.
+
+.root {
+  position: relative;
+}
+
+.list {
+  @include t.column(t.space(2));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-block-size: t.touch(target);
+}
+
+.row {
+  @include t.row(t.space(2), center);
+  @include t.transition(box-shadow);
+  position: relative;
+
+  &[data-lifted='true'] {
+    z-index: t.z(raised);
+    box-shadow: t.shadow(lg);
+    // The pointer's offset, written per move: input, not animation, so reduced motion keeps it.
+    transform: translate(var(--drag-x, 0), var(--drag-y, 0));
+  }
+}
+
+.body {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+// The handle is the ONLY place a drag starts, so the row body still scrolls a phone's page.
+.handle {
+  @include t.touch-target;
+  @include t.focus-ring;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: t.radius(md);
+  background: transparent;
+  color: t.role('fg-muted');
+  cursor: grab;
+  touch-action: none;
+
+  &[aria-pressed='true'] {
+    background: t.role('bg-soft');
+    color: t.role('accent');
+    cursor: grabbing;
+  }
+}
+
+// Without script the handle cannot do anything, so it is not there; the form is.
+.root:not([data-enhanced='true']) .handle {
+  display: none;
+}
+
+.root[data-enhanced='true'] .fallback {
+  display: none;
+}
+
+.fallback {
+  @include t.row(t.space(1), center);
+  flex-wrap: wrap;
+
+  button,
+  select {
+    min-block-size: t.touch(target);
+  }
+}

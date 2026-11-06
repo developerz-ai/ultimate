@@ -12,20 +12,31 @@
 import { useT } from '@postly/i18n';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute, island } from '@ultimat3/render';
-import { Skeleton, Text, uiCatalog } from '@ultimat3/ui';
+import { Link, Skeleton, Text, Tree, uiCatalog } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { useActor } from '../../shared/actor';
 import { memberQueries } from '../../shared/client';
 import { pluralFormsOf } from '../../shared/plural-forms';
 import { Layout, updateBannerIsland } from '../layout';
 import { useViewer } from '../viewer-context';
+import {
+  connectionsByDay,
+  createdOn,
+  createdRange,
+  dayHref,
+  withinCreated,
+} from './connection-filter';
+import { CreatedFilter, type CreatedFilterProps } from './created-filter';
 import type { RunConsoleLabels } from './run-console.island';
 import styles from './run-console.module.scss';
 
-/** Declared ABOVE `defineRoute` so the route can drain it. `props` are the browser's keys. */
+/**
+ * Declared ABOVE `defineRoute` so the route can drain it. `props` are the browser's keys. The
+ * "created between" filter rides in it (`filter`): one island, so one Solid on the page.
+ */
 const Console = island({
   src: './run-console.island.tsx',
-  props: ['orgId', 'locale', 'zone', 'connections', 'labels', 'ui'],
+  props: ['orgId', 'locale', 'zone', 'connections', 'labels', 'ui', 'filter'],
 });
 
 /** The layout's update banner — an island of THIS route, so it is declared here. */
@@ -147,12 +158,36 @@ export const config = defineRoute({
   // run console's `rpc` +2,068 B, every typed-client method carrying `.stream(input)` (core's
   // `clientStream`, plan 101 slice 41: a stream-declaring action read as it is written); the other
   // +933 B is the page boot, 82,123 B here, not this change — raised 194kb → 196.5kb.
-  budget: { js: '196.5kb' },
-  load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
+  // measured: 223574 B (2026-11-06; 201,102 + the run-console island's own growth measured by
+  // `buildIslands`, 85,911 → 108,383 B, against main's console built the same way) — why: plan
+  // 101 slice 38: the log beside the run (`SplitPane`, the separator gesture `drag/pointer-drag.ts`),
+  // the events as a filterable, following `LogViewer` on `VirtualList` (+`log-viewer-view.ts`),
+  // the transcript as `TerminalView` (`content/ansi.ts`) and the usage record as `JsonView`
+  // (+22,472 B) — raised 196.5kb → 219kb. The coordinator's `budgets` step weighs the document.
+  // measured: 287222 B (2026-11-06; x verify --only budgets) — why: the "created between" filter
+  // island, 58,159 B: `DateRangePicker`'s calendar (`Calendar`, `calendar-view.ts`, `Popover`,
+  // `@ultimat3/time`'s plain dates) on a fine pointer, over the GET form of two native date inputs
+  // the server renders; its own island, so it carries its own Solid and `UiProvider` — raised
+  // 219kb → 281kb (plan 101, 38-ui-pickers). The `Tree` of connections is server markup, 0 B.
+  // measured: 245551 B (2026-11-06; x build --target static, against 287,402) — why: the filter
+  // is drawn inside the run console, so the page carries ONE Solid and one `UiProvider`: the
+  // console 113,213 → 131,443 B (+18,230, the calendar and the form) and no 58,159 B island
+  // beside it (−39,929 B); `islands.sharedChunks` measured 254,863 here and +0.9–7 kB on four
+  // other routes. Then −1,922 B: ui's keys tree-shaken per key (`ui-keys.ts`), and `mount`
+  // returning its disposer — lowered 281kb → 240kb (plan 101 wave 10).
+  budget: { js: '240kb' },
+  // The URL rides along: the "created between" filter is read off it, in the member's zone.
+  load: async ({ url }) => ({
+    connections: await memberQueries.runConnections({ orgId: useActor().orgId }),
+    url,
+  }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });
 
-type Connections = Awaited<ReturnType<typeof memberQueries.runConnections>>;
+type RunsData = {
+  readonly connections: Awaited<ReturnType<typeof memberQueries.runConnections>>;
+  readonly url: string;
+};
 
 /** Every word the island shows, translated here: a catalog cannot cross the wire. */
 const consoleLabels = (t: ReturnType<typeof useT>): RunConsoleLabels => ({
@@ -179,9 +214,13 @@ const consoleLabels = (t: ReturnType<typeof useT>): RunConsoleLabels => ({
     requests: t('app.runs.usage.requests'),
     bytes: t('app.runs.usage.bytes'),
     prompts: t('app.runs.usage.prompts'),
+    raw: t('app.runs.usage.raw'),
   },
   events: t('app.runs.events'),
   accounts: pluralFormsOf(t, 'app.runs.accounts'),
+  output: t('app.runs.output'),
+  log: t('app.runs.log'),
+  resize: t('app.runs.resize'),
   connection: t('app.runs.connection'),
   start: t('app.runs.start'),
   cancel: t('app.runs.cancel'),
@@ -200,25 +239,51 @@ const consoleLabels = (t: ReturnType<typeof useT>): RunConsoleLabels => ({
   },
 });
 
-export function Page(props: { readonly data: Connections }): JSX.Element {
+export function Page(props: { readonly data: RunsData }): JSX.Element {
   const t = useT();
   const actor = useActor();
   const viewer = useViewer();
+  const range = createdRange(props.data.url);
+  const shown = withinCreated(props.data.connections, range, viewer.zone);
+  const dayOf = new Map(shown.map((row) => [row.id, createdOn(row, viewer.zone)]));
+  const filter: CreatedFilterProps = {
+    from: range.from ?? null,
+    to: range.to ?? null,
+    labels: { legend: t('app.runs.created'), submit: t('app.runs.filter') },
+  };
 
   return (
-    <Layout banner={Banner}>
+    <Layout banner={Banner} here="/runs">
       <div class={styles.page}>
         <h1>{t('app.runs.heading')}</h1>
         <Text tone="muted">{t('app.runs.intro')}</Text>
-        {/* The island's wrapper, and what the server puts inside it: the loading state. */}
+        {/* How the org's runs have gone over a window, as charts: a page of its own, 0 B of script. */}
+        <Link href="/runs/health">{t('app.runs.healthLink')}</Link>
+        {/*
+          The connections by the day they were made: `<details>` and links, 0 B of script. A leaf
+          filters the page to its day; the open branch is the day the filter already shows.
+        */}
+        <Tree
+          label={t('app.runs.connection')}
+          nodes={connectionsByDay(shown, viewer.zone, t.locale)}
+          open={range.from !== undefined && range.from === range.to ? [`day:${range.from}`] : []}
+          hrefFor={(node) => {
+            const day = dayOf.get(node.id);
+            return day === undefined ? '/runs' : dayHref(day);
+          }}
+        />
+        {/* The island's wrapper; the server fills it with the filter, then the loading state. */}
         <Console
           orgId={actor.orgId}
           locale={t.locale}
           zone={viewer.zone}
-          connections={props.data.map((row) => ({ id: row.id, label: row.label }))}
+          connections={shown.map((row) => ({ id: row.id, label: row.label }))}
           labels={consoleLabels(t)}
           ui={uiCatalog(t)}
+          filter={filter}
         >
+          {/* A GET form of two native date inputs, which filters with scripting off. */}
+          <CreatedFilter {...filter} />
           <Skeleton lines={3} />
         </Console>
       </div>

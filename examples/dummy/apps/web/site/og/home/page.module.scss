@@ -1,0 +1,36 @@
+// The card's frame: exactly the 1200 x 630 a link preview crops from. Tokens only, no hex.
+
+@use '@ultimat3/ui/tokens' as tokens;
+
+.card {
+  background-color: rgb(var(--color-accent));
+  block-size: tokens.rem(630px);
+  box-sizing: border-box;
+  color: rgb(var(--color-accent-fg));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  inline-size: tokens.rem(1200px);
+  justify-content: center;
+  overflow: hidden;
+  padding: var(--space-16);
+}
+
+.brand {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.title {
+  color: inherit;
+  font-size: 4rem;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 1.75rem;
+  margin: 0;
+  max-inline-size: 60rem;
+}

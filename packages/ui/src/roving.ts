@@ -11,6 +11,8 @@
  */
 export const MENU_ITEM_SELECTOR = '[role="menuitem"]:not([disabled])';
 export const TAB_SELECTOR = '[role="tab"]:not([disabled])';
+/** A tree item is an `<li>`, which has no `disabled`: a disabled one carries `aria-disabled`. */
+export const TREE_ITEM_SELECTOR = '[role="treeitem"]:not([aria-disabled="true"])';
 
 /** The only thing the tab-stop rule needs to know about an item. */
 export interface RovingItem {

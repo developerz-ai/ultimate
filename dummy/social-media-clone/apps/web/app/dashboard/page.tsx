@@ -84,12 +84,19 @@ function Destinations() {
 
 function Figures(props: { readonly screen: DashboardScreen }) {
   const count = new Intl.NumberFormat(currentLocale());
+  const { activity } = props.screen;
+  /** The figure's last fortnight, day by day, under it: posts and likes have one, the rest none. */
+  const trends = new Map<keyof DashboardScreen['stats'], readonly number[]>([
+    ['posts', activity.posts],
+    ['likes', activity.likes],
+  ]);
   const tile = (name: keyof DashboardScreen['stats']) => (
     <StatTile
       stat={`dashboard-${name}`}
       label={t(`app.dashboard.stats.${name}.label`)}
       value={count.format(props.screen.stats[name])}
       hint={t(`app.dashboard.stats.${name}.hint`)}
+      trend={trends.get(name)?.map((value, i) => ({ key: activity.keys[i] ?? String(i), value }))}
     />
   );
   return (

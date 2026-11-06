@@ -126,7 +126,7 @@ describe('the same answer when nothing shown moved', () => {
     const first = list();
     expect(ids(first)).toEqual(['r1', 'r2']);
 
-    list.refetch();
+    void list.refetch();
     const refreshing = list();
     expect(refreshing.status).toBe('refreshing');
     expect(dataOf(refreshing)).toBe(dataOf(first));

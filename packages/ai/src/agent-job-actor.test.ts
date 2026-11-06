@@ -7,7 +7,7 @@
  * hands the run a user actor, stayed green. The worker below is the production one.
  */
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { resetActions } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import { ctxOf, userActor } from '@ultimat3/core';
@@ -33,7 +33,12 @@ import { costOf } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 
 useFixtureModels();
-definePermissions(['draft:review']);
+// In a hook, not at module scope: a test file's top level is its worker's ENVIRONMENT to the
+// file-boundary restore (`registry-leak-guard.ts`), so a set declared there stayed declared for every
+// later file on the worker — 66 `mcp` tests read `X_PERMISSION_UNKNOWN` under `--no-isolate`.
+beforeAll(() => {
+  definePermissions(['draft:review']);
+});
 
 const Input = t.object({ topic: t.string, orgId: t.string, memberId: t.string });
 type In = { topic: string; orgId: string; memberId: string };

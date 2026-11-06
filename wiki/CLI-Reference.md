@@ -78,13 +78,14 @@ x version              # CLI version
 ## x new
 
 ```bash
-x new <name> [--dir path] [--no-example] [--no-git] [--dry-run] [--force] [--json]
+x new <name> [--dir path] [--shape api|blog|dashboard] [--no-example] [--no-git] [--dry-run] [--force] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--dir` | string | cwd | parent directory to create the app in |
 | `--example` / `--no-example` | boolean | `true` | include the example feature slice (default: on; `--no-example` for an empty `app/`) |
+| `--shape` | string | none | start from an app shape — `api`, `blog` or `dashboard`, each an overlay over this scaffold ([Shapes](Shapes)). An unknown name is `X_NEW_SHAPE_UNKNOWN`; with `--no-example`, `X_NEW_SHAPE_CONFLICT` (a shape is its own example). Both refuse before a file is written. `dashboard` then runs `x g sign-in --password` in the new app (listed under `data.generate` by `--dry-run`); a refusal there is `X_NEW_SHAPE_GENERATE_FAILED` |
 | `--git` / `--no-git` | boolean | `true` | `git init`, then one commit named `x new`. On by default because three surfaces assume a repository — `x affected`, `x ci` and `x pr`. A git that is absent or fails never fails `x new`: the tree is the verdict, and `data.git` carries `{ initialized, committed, problem }` |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 | `--force` | boolean | `false` | write into a directory that already exists |
@@ -704,7 +705,7 @@ because it was slow ([#342](https://github.com/developerz-ai/ultimate/issues/342
 | `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
 | `contract-diff` | the code vs the **committed** `x.manifest.json`: a breaking change without a major bump |
-| `budgets` | per-route JS bytes, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`). **Builds first** when `.x/build-stats.json` is missing, of an earlier measurement rule, or older than the newest app source: `x build --target static --no-preflight --out .x/verify-static`, under this step's deadline (`stepTimeoutMs.budgets`), never over a deployable `.x/static`. A failed build is the step's verdict, with the build's own findings. `As of 30.0` |
+| `budgets` | per-route JS bytes, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`). **Builds first** when `.x/build-stats.json` is missing, of an earlier measurement rule, or older than the newest app source: `x build --target static --no-preflight --no-capture --out .x/verify-static`, under this step's deadline (`stepTimeoutMs.budgets`), never over a deployable `.x/static`. A failed build is the step's verdict, with the build's own findings. `As of 30.0` |
 | `manifest` | the files an agent reads: `x.manifest.json` **and `openapi.json`** freshness — the one check `x manifest --check` runs (`X_MANIFEST_MISSING` / `X_MANIFEST_DRIFT` / `X_MANIFEST_STALE`) — `.env.example`, a hand-written `AGENTS.md` that exists and is under 12kB, and `x.verify.json` naming only steps the gate runs |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
@@ -753,7 +754,7 @@ Errors: `X_VERIFY_FAILED` (with the failing step names), plus each step's own co
 ## x build
 
 ```bash
-x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--platform bun-target] [--no-preflight] [--json]
+x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--platform bun-target] [--no-preflight] [--no-capture] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
@@ -763,6 +764,7 @@ x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--plat
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets only; relative to the cwd |
 | `--platform` | string | the host | binary target only: `bun-linux-x64`, `bun-linux-arm64`, `bun-windows-x64` or `bun-darwin-arm64`, passed to Bun as `--target` (the list is `BINARY_PLATFORMS` in `packages/cli/src/cmd-build.ts`). A Windows executable — `--platform bun-windows-x64`, or no `--platform` on a Windows host — is written as `<out>.exe`, and `data.artifact` names that file; `data.platform` echoes the flag. Any other value is `X_CLI_BAD_FLAG` before the gate runs, `fix: x build --target binary --platform bun-linux-x64`. For local runs and CI cross-compiles: a Windows host deploys the Linux image under Docker Desktop ([Deployment](Deployment)). `As of 2026-10-05` |
 | `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` has run them, as its `budgets` step does when it builds. Not on `prebuilt`. `As of 22.7` |
+| `--no-capture` | boolean | off | `static` only: stamp every `og.capture` card's `og:image` tags and photograph none, so no browser is needed (`X_SEO_CARD_BROWSER_MISSING` otherwise). `x verify`'s own build and `scripts/reference-app-gate.ts` pass it, and only they do — a deployable build takes the pictures. Reaches the app's `prerender.ts` as `ULTIMATE_BUILD_CAPTURE=off`. `As of 2026-11` |
 
 A flag the chosen target never reads — `--tag` on `binary`/`static`, `--out` on `docker`, `--platform` on anything but `binary`, any of them on `prebuilt` — is `X_CLI_BAD_FLAG` before the gate runs, with `fix: x build --target <target>`.
 

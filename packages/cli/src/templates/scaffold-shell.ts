@@ -14,7 +14,9 @@ const SHELL_DIR = 'apps/web/shared';
 const navType = (example: boolean): string => (example ? "'dashboard' | 'posts'" : "'dashboard'");
 
 const postsItem = (example: boolean): string =>
-  example ? `\n            {item('posts', '/posts', t('shell.nav.posts'), iconList)}` : '';
+  example
+    ? `\n    { label: t('shell.nav.posts'), href: '/posts', icon: <Icon glyph={iconList} size="sm" /> },`
+    : '';
 
 // Plain strings for the framework lines, never template literals: the workspace-dependency scanner
 // blanks a string's contents but not a nested template's, so a template here would bill the CLI
@@ -25,14 +27,16 @@ const shell = (
 ): string => `// The app's frame: brand mark, the sidebar with one link per destination, an environment pill,
 // the page's own actions at the end of the bar, and a footer — composed over the catalog's
 // \`AppShell\`, so the skip link, the landmarks and the phone layout are the framework's and not
-// this file's. \`site/page.tsx\` does NOT use it: the landing page is a 0kb document and this is the
-// signed-in product's chrome. Every page under \`app/\` does.
+// this file's. The destinations are ONE list, drawn twice: \`NavList\` in the sidebar, \`BottomNav\`
+// along a phone's bottom edge; each marks the current page by its href, with no script.
+// \`site/page.tsx\` does NOT use it: the landing page is a 0kb document and this is the signed-in
+// product's chrome. Every page under \`app/\` does.
 //
 // \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
 ${sortedImports([
   `import { useT } from '@${app.kebab}/i18n';`,
   "import { tryResolveEnvironment } from '@ultimat3/core';",
-  "import { AppShell, Icon, type IconGlyph, Link } from '@ultimat3/ui';",
+  "import { AppShell, BottomNav, Icon, Link, NavList } from '@ultimat3/ui';",
   "import { iconHexagon } from '@ultimat3/ui/icons/hexagon';",
   "import { iconLayoutDashboard } from '@ultimat3/ui/icons/layout-dashboard';",
   ...(example ? ["import { iconList } from '@ultimat3/ui/icons/list';"] : []),
@@ -42,6 +46,11 @@ import styles from './shell.module.scss';
 
 /** The routes the sidebar knows about. A page names itself so its link can carry aria-current. */
 export type ShellNav = ${navType(example)};
+
+/** Where each destination lives — what \`NavList\` and \`BottomNav\` match the current page against. */
+const HREFS: Readonly<Record<ShellNav, string>> = {
+  dashboard: '/dashboard',${example ? "\n  posts: '/posts'," : ''}
+};
 
 export interface ShellProps {
   readonly nav?: ShellNav | undefined;
@@ -56,20 +65,15 @@ export function Shell(props: ShellProps): JSX.Element {
   // neither ULTIMATE_ENV nor NODE_ENV names one, and the pill is absent with it.
   const environment = tryResolveEnvironment();
 
-  const item = (id: ShellNav, href: string, label: string, glyph: IconGlyph): JSX.Element => (
-    <li>
-      <Link
-        class={styles.navLink}
-        href={href}
-        tone="inherit"
-        underline="none"
-        aria-current={props.nav === id ? 'page' : false}
-      >
-        <Icon glyph={glyph} size="sm" class={styles.navIcon} />
-        <span>{label}</span>
-      </Link>
-    </li>
-  );
+  const destinations = [
+    {
+      label: t('shell.nav.dashboard'),
+      href: '/dashboard',
+      icon: <Icon glyph={iconLayoutDashboard} size="sm" />,
+    },${postsItem(example)}
+  ];
+  // No page named means nothing is current: an href no destination covers.
+  const currentHref = props.nav === undefined ? '' : HREFS[props.nav];
 
   return (
     <div class={styles.doc}>
@@ -97,11 +101,8 @@ export function Shell(props: ShellProps): JSX.Element {
             </div>
           </div>
         }
-        sidebar={
-          <ul class={styles.nav}>
-            {item('dashboard', '/dashboard', t('shell.nav.dashboard'), iconLayoutDashboard)}${postsItem(example)}
-          </ul>
-        }
+        sidebar={<NavList items={destinations} currentHref={currentHref} />}
+        bottomNav={<BottomNav items={destinations} currentHref={currentHref} />}
         footer={<span>{t('shell.footer')}</span>}
       >
         {props.children}
@@ -207,55 +208,6 @@ const shellStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
     opacity: 0.35;
   }
 }
-
-.nav {
-  display: flex;
-  // A row on a phone — stacked links cost a fifth of the first screen — a rail from md up.
-  flex-direction: row;
-  gap: tokens.space(1);
-  margin: 0;
-  padding: 0;
-  overflow-x: auto;
-  list-style: none;
-
-  @include tokens.respond-to(md) {
-    flex-direction: column;
-  }
-}
-
-.navLink {
-  display: flex;
-  align-items: center;
-  gap: tokens.space(3);
-  padding: tokens.space(2) tokens.space(3);
-  border-radius: tokens.radius('md');
-  color: tokens.role('fg-muted');
-  font-size: tokens.text('sm');
-  transition:
-    color tokens.duration('fast') tokens.easing('out'),
-    background-color tokens.duration('fast') tokens.easing('out');
-
-  &:hover {
-    color: tokens.role('fg-strong');
-    background: tokens.role('surface');
-  }
-
-  &[aria-current='page'] {
-    color: tokens.role('fg-strong');
-    background: tokens.role('surface-raised');
-    box-shadow: inset 0 0 0 1px tokens.role('line', 0.7);
-
-    .navIcon {
-      color: tokens.role('accent');
-    }
-  }
-}
-
-.navIcon {
-  flex: none;
-  color: tokens.role('fg-muted');
-  transition: color tokens.duration('fast') tokens.easing('out');
-}
 `;
 
 const shellTest =
@@ -267,10 +219,13 @@ import { Shell } from './shell';
 
 unitTest('the shell marks the current destination and keeps the page in <main>', async () => {
   const view = await renderView(Shell, { nav: 'dashboard', children: 'the page body' });
-  expect(view.html).toMatch(/<a href="\\/dashboard" aria-current="page"/);
-  // Landmarks come from AppShell: one banner, one navigation, one main, one contentinfo.
+  // One current link per list — the sidebar's and the bottom bar's — and both are the dashboard.
+  const current = [...view.html.matchAll(/<a[^>]*aria-current="page"[^>]*>/g)].map((m) => m[0]);
+  expect(current).toHaveLength(2);
+  for (const link of current) expect(link).toContain('href="/dashboard"');
+  // Landmarks come from AppShell: one banner, two navigations (sidebar, bottom bar), one main.
   expect(view.html.match(/<main\\b/g)).toHaveLength(1);
-  expect(view.html.match(/<nav\\b/g)).toHaveLength(1);
+  expect(view.html.match(/<nav\\b/g)).toHaveLength(2);
   expect(view.html).toMatch(/<main[^>]*>the page body<\\/main>/);
 });
 
@@ -314,7 +269,7 @@ export interface ThemeToggleIslandProps {
  * namespace object keeps every export of solid-js alive in the chunk. The shell is cleared before
  * \`render\`, which APPENDS — the server's copy would otherwise stay on screen beside the live one.
  */
-export function mount(el: HTMLElement, props: ThemeToggleIslandProps): void {
+export function mount(el: HTMLElement, props: ThemeToggleIslandProps): () => void {
   setSolidRuntime({
     createContext,
     useContext,
@@ -325,7 +280,9 @@ export function mount(el: HTMLElement, props: ThemeToggleIslandProps): void {
     createRoot,
   });
   el.textContent = '';
-  render(
+  // Solid's disposer, returned: the client router calls it when it navigates away, and a mount
+  // that returns nothing is X_ISLAND_DISPOSER_MISSING.
+  return render(
     () => (
       <UiProvider locale={props.locale}>
         <ThemeToggle mode="toggle" />

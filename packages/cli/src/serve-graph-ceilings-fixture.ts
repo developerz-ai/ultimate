@@ -160,8 +160,10 @@
  * `jobs/src/purge-entities.ts`), subject data (`jobs/src/subject{,-errors,-jobs,-plan,-select,
  * -erase-pass,-export-pass}.ts`, `auth/src/subject-target.ts`), `jobs/src/failure-row.ts`, and
  * streaming (`action/src/{action-stream,http-stream}.ts`) — each through its package's barrel.
+ * raised 852 → 853, measured 853 (2026-11-07, plan 101 wave 10): `core/src/hmac.ts`, the one keyed
+ * hash every HMAC site now calls (a Bun keyed-hasher bug). No existing module newly reached.
  */
-export const MIGRATE_CEILING = 852;
+export const MIGRATE_CEILING = 853;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -329,8 +331,12 @@ export const MIGRATE_CEILING = 852;
  * raised 1221 → 1223, measured 1223 (2026-11-06, plan 101 wave 9): `storage/src/driver-local.ts`
  * split at its line ceiling into `driver-local-{list,remove}.ts`, which every role reaches through
  * the storage barrel.
+ * raised 1223 → 1225, measured 1225 (2026-11-07, plan 101 wave 10): `seo/src/static-export.ts` (the
+ * static build's image and card hook) and `storage/src/image-warm.ts` (`warmVariants`), each through
+ * its package's barrel. No existing module newly reached.
+ * raised 1225 → 1226, measured 1226 (2026-11-07, plan 101 wave 10): `MIGRATE_CEILING`'s `core/src/hmac.ts`.
  */
-export const SERVING_ROLE_CEILING = 1223;
+export const SERVING_ROLE_CEILING = 1226;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -485,5 +491,9 @@ export const SERVING_ROLE_CEILING = 1223;
  * remote-errors,remote-listen,remote-lock,remote-oauth,remote-schema,remote-tools,remote-wire,
  * dev-graph-tool}.ts`. No existing module newly reached.
  * raised 1390 → 1392, measured 1392 (2026-11-06, plan 101 wave 9): `SERVING_ROLE_CEILING`'s 2.
+ * raised 1392 → 1397, measured 1397 (2026-11-07, plan 101 wave 10): `SERVING_ROLE_CEILING`'s 2, plus
+ * `cli/src/runtime-assets-site{,-cache}.ts` (a served `/assets` image's declared variants) and
+ * `cli/src/site-llms-pages.ts` (`llms.txt`'s page reads). No existing module newly reached.
+ * raised 1397 → 1398, measured 1398 (2026-11-07, plan 101 wave 10): `MIGRATE_CEILING`'s `core/src/hmac.ts`.
  */
-export const WEB_ROLE_CEILING = 1392;
+export const WEB_ROLE_CEILING = 1398;

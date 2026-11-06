@@ -16,7 +16,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { dispatch, planNewApp, writeNewApp } from '@ultimat3/cli';
+import { dispatch, NEW_SHAPES, planNewApp, writeNewApp } from '@ultimat3/cli';
 import { readDocPages } from './doc-commands';
 import { parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
@@ -180,6 +180,12 @@ export async function generatorFacts(): Promise<readonly GeneratorFacts[]> {
       variants: [
         { flags: [], files: planNewApp({ name: 'probe', example: true }).length },
         { flags: ['--no-example'], files: planNewApp({ name: 'probe', example: false }).length },
+        // One per shape: a prose count "with --shape" holds when it is any shape's own count.
+        ...NEW_SHAPES.map((shape) => ({
+          flags: ['--shape'],
+          files: planNewApp({ name: 'probe', example: true, shape }).length,
+          shape: `--shape ${shape}`,
+        })),
       ],
     },
     { id: 'x g resource', variants: await resourceVariants() },

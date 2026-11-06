@@ -18,6 +18,7 @@ import {
 import { type ColorScheme, colorSchemeFeatures } from './color-scheme';
 import { browserUnreachable, pageCrashed } from './error-throws';
 import { parseKeyChord } from './key-chord';
+import { printOptionsOf } from './pdf-print';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 import { boundedRing } from './rings';
 import type { SessionSnapshot } from './session-state';
@@ -26,6 +27,7 @@ import type {
   CaptureOptions,
   FrameRef,
   GotoOptions,
+  PdfOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
   ScrapeTarget,
@@ -345,7 +347,7 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
           ? Uint8Array.from(atob(shot), (character) => character.charCodeAt(0))
           : shot;
       }),
-    pdf: (_options: CaptureOptions) => guard('pdf', () => init.page.pdf()),
+    pdf: (options: PdfOptions) => guard('pdf', () => init.page.pdf(printOptionsOf(options))),
     cookies: () =>
       guard('cookies', async () => {
         const source = init.browser as { cookies?: () => Promise<unknown> };

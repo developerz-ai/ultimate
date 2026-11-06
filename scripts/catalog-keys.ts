@@ -190,10 +190,54 @@ export async function catalogSources(root: string): Promise<readonly SourceText[
     .map((file) => ({ path: file.path, text: file.stripped }));
 }
 
+/**
+ * A key table imported as a namespace (`import * as UI_KEYS from './ui-keys'`): each `export const`
+ * of the module it names is a member. One export per key is how a bundler keeps only the keys an
+ * island reads, so the table has no `{…}` body for `carriedKeys` to read.
+ */
+export function namespaceTableKeys(
+  files: readonly SourceText[],
+  carriers: Carriers,
+): readonly CarriedKey[] {
+  const byPath = new Map(files.map((file) => [file.path, file]));
+  const imported =
+    /import\s*\*\s*as\s+(?<name>[A-Z][A-Z0-9_]*)\s+from\s*['"](?<spec>\.{1,2}\/[^'"]+)['"]/g;
+  const exported = new RegExp(
+    String.raw`\bexport\s+const\s+(?<member>[A-Za-z_$][\w$]*)\s*=\s*${KEY}`,
+    'g',
+  );
+  const out: CarriedKey[] = [];
+  for (const file of files) {
+    for (const match of file.text.matchAll(imported)) {
+      const name = match.groups?.['name'] ?? '';
+      if (!carriers.tables.has(name)) continue;
+      const dir = file.path.split('/').slice(0, -1);
+      for (const segment of (match.groups?.['spec'] ?? '').split('/')) {
+        if (segment === '..') dir.pop();
+        else if (segment !== '.') dir.push(segment);
+      }
+      const module = byPath.get(`${dir.join('/')}.ts`);
+      if (module === undefined) continue;
+      for (const entry of module.text.matchAll(exported)) {
+        out.push({
+          path: module.path,
+          line: lineOf(module.text, entry.index),
+          key: entry.groups?.['lit'] ?? '',
+          via: `${name}.${entry.groups?.['member']}`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 export async function carriedKeySites(root: string): Promise<readonly CarriedKey[]> {
   const files = await catalogSources(root);
   const carriers = assignedNames(files, deriveCarriers(files));
-  return files.flatMap((file) => carriedKeys(file, carriers));
+  return [
+    ...files.flatMap((file) => carriedKeys(file, carriers)),
+    ...namespaceTableKeys(files, carriers),
+  ];
 }
 
 export async function catalogKeyGaps(root: string): Promise<readonly CatalogKeyGap[]> {

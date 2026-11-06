@@ -47,6 +47,7 @@ import * as memberAvatar from '../app/orgs/actions/member-avatar';
 import * as upgradePlan from '../app/orgs/actions/upgrade-plan';
 import * as onboardOrg from '../app/orgs/jobs/onboard-org';
 import * as sendInvite from '../app/orgs/jobs/send-invite';
+import * as warmAvatar from '../app/orgs/jobs/warm-avatar';
 import { PARTNER_SCOPES, resolvePartnerToken } from '../app/partners/oauth';
 import * as abortPostsImport from '../app/posts/actions/abort-posts-import';
 import * as completePostsImport from '../app/posts/actions/complete-posts-import';
@@ -92,11 +93,13 @@ import * as connectSite from '../app/runs/actions/connect-site';
 import * as issueRunKey from '../app/runs/actions/issue-run-key';
 import * as revokeRunKey from '../app/runs/actions/revoke-run-key';
 import * as startRun from '../app/runs/actions/start-run';
+import * as printStatement from '../app/runs/jobs/print-statement';
 import * as purgeRetained from '../app/runs/jobs/purge-retained';
 import * as syncConnection from '../app/runs/jobs/sync-connection';
 import { ORG_KEY_SCOPES, resolveOrgKey } from '../app/runs/keys';
 import * as liveRunEvents from '../app/runs/live/live-run-events';
 import * as runConnections from '../app/runs/queries/run-connections';
+import * as runHealth from '../app/runs/queries/run-health';
 import * as hourlyRetention from '../app/runs/tasks/hourly-retention';
 import * as requestMemberErasure from '../app/settings/actions/request-member-erasure';
 import * as requestMemberExport from '../app/settings/actions/request-member-export';
@@ -179,6 +182,7 @@ export const api = defineApi({
     postBySlug,
     liveRunEvents,
     runConnections,
+    runHealth,
   ],
   // Named jobs keep their own durable names (`runs.sync`, `posts.published.webhook`, a backfill's
   // ledger key); every other job's export name is its queue key.
@@ -197,6 +201,8 @@ export const api = defineApi({
     deliverDigest,
     sendSalesReceipt,
     syncConnection,
+    printStatement,
+    warmAvatar,
     purgeMcpConfirmations,
     purgeRetained,
     purgeImports,

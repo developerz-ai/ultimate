@@ -30,8 +30,9 @@ headings for that reason. The summary table's `From → to` column is the place 
 | maintainer | "we are cutting a major — what do I write, and where?" | this page |
 | release runner | "the tag is cut — how does it reach npm?" | `PUBLISHING.md` |
 
-`wiki/` is the only public documentation surface and carries no process meta; it is synced to the
-GitHub wiki on merge, and this page is not. That split is the whole reason the convention lives here
+`wiki/` is the only public documentation SOURCE and carries no process meta; it is synced to the
+GitHub wiki on merge and projected to `dummy/docs-site` (one page per major at `/upgrading/<major>`,
+split from the section you write here), and this page is neither. That split is the whole reason the convention lives here
 and the walkthrough lives there.
 
 ## `CHANGELOG.md` is the record; the wiki section is the walkthrough

@@ -36,6 +36,17 @@ export const exercise = defineExercise(
     upgradePlan: { actor: owner, input: (drawn) => ({ ...drawn, plan: 'business' }) },
     // The worker asserts the date shape the schema leaves a string (`send-digest.ts:28`).
     sendDigest: { actor: null, input: () => ({ runDate: '2026-01-01' }) },
+    // The draw's window is one instant, which holds no seeded run: half-open, it is empty, and the
+    // tenant proof had none of A's rows to compare. A window around every seeded run proves it;
+    // `actor` is what makes the pass read `input` at all, and an owner holds `run:read`.
+    runHealth: {
+      actor: owner,
+      input: (drawn) => ({
+        ...drawn,
+        since: new Date('2000-01-01T00:00:00.000Z'),
+        until: new Date('2100-01-01T00:00:00.000Z'),
+      }),
+    },
     // The payload is what `verify` read out of the signed bytes; the draw's JSON `null` is not one.
     'billing.events': {
       actor: null,
@@ -59,6 +70,8 @@ export const exercise = defineExercise(
     'posts.published.webhook': { off: 'delivers to a receiver URL: a real call out, sealed' },
     grantAvatarUpload: { off: NO_STORAGE },
     memberAvatar: { off: NO_STORAGE },
+    warmAvatar: { off: NO_STORAGE },
+    'runs.statement': { off: NO_STORAGE },
     'posts.export': { off: NO_STORAGE },
     'posts.import': { off: NO_STORAGE },
     'posts.imports.purge': { off: NO_STORAGE },

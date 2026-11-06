@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "1842e3330341712df5c6b81d618d67eca144dbcb2d2169b3d173070d44214d9d",
+  "buildId": "62f2bb9c044ee01f178fc2e7139a1bbd63e8d63e7954bdd2fdcdbca66c1b7a4f",
   "tiers": {
     "0": [
       "core",
@@ -575,6 +575,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_ASSET_VARIANT_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ASYNC_CONTEXT_UNAVAILABLE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -680,6 +685,16 @@
       "at": "scripts/bench-claims.ts"
     },
     {
+      "code": "X_BENCH_RUN_FAILED",
+      "owner": "scripts",
+      "at": "scripts/bench/first-hour.ts"
+    },
+    {
+      "code": "X_BENCH_RUN_TOO_SHORT",
+      "owner": "scripts",
+      "at": "scripts/bench/http-hello.ts"
+    },
+    {
       "code": "X_BENCH_STREAM_CLOSED",
       "owner": "scripts",
       "at": "scripts/bench/restart-bench.ts"
@@ -687,7 +702,7 @@
     {
       "code": "X_BENCH_URL_REQUIRED",
       "owner": "scripts",
-      "at": "scripts/bench/restart-bench-client-worker.ts"
+      "at": "scripts/bench/http-hello.ts"
     },
     {
       "code": "X_BODY_INVALID",
@@ -1027,7 +1042,7 @@
     {
       "code": "X_CLIENT_EDITED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_CLIENT_ERROR",
@@ -1047,17 +1062,17 @@
     {
       "code": "X_CLIENT_SPEC_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_CLIENT_SPEC_UNSUPPORTED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_CLIENT_STALE",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_CLIENT_TRANSPORT_FAILED",
@@ -2237,7 +2252,7 @@
     {
       "code": "X_GRAPH_NODE_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_GUARD_FAILED",
@@ -2385,6 +2400,11 @@
       "at": "scripts/image-contract.ts"
     },
     {
+      "code": "X_IMAGE_SOURCE_UNREADABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_IMAGE_TOO_LARGE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -2453,6 +2473,11 @@
       "code": "X_INVARIANT_VIOLATED",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ISLAND_DISPOSER_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ISLAND_INVALID",
@@ -2623,6 +2648,16 @@
       "code": "X_JOB_UNREGISTERED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_KEYED_HASHER",
+      "owner": "scripts",
+      "at": "scripts/keyed-hasher.ts"
+    },
+    {
+      "code": "X_KEYED_HASHER_EXEMPT_STALE",
+      "owner": "scripts",
+      "at": "scripts/keyed-hasher.ts"
     },
     {
       "code": "X_KEYSET_NULL_KEY",
@@ -3268,6 +3303,21 @@
       "code": "X_NEW_ERROR_CODE_PATTERN_UNKNOWN",
       "owner": "scripts",
       "at": "scripts/lib/error-code-plan.ts"
+    },
+    {
+      "code": "X_NEW_SHAPE_CONFLICT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_NEW_SHAPE_GENERATE_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_NEW_SHAPE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_NO_CONTEXT",
@@ -4117,17 +4167,17 @@
     {
       "code": "X_REPRO_CAPTURE_OFF",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_REPRO_NOT_REPRODUCED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_REPRO_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_ROADMAP_FILE_MISSING",
@@ -4420,6 +4470,11 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_PDF_OPTIONS_INVALID",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SCRAPE_PROFILE_LOCKED",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
@@ -4618,6 +4673,16 @@
       "code": "X_SEO_CANONICAL_MISMATCH",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
+    },
+    {
+      "code": "X_SEO_CARD_BROWSER_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SEO_CARD_ROUTE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SEO_DUPLICATE_META",
@@ -5360,6 +5425,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_MODULE_MOCK_UNRESTORABLE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_NETWORK_OFFLINE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -5716,6 +5786,11 @@
     },
     {
       "code": "X_VERIFY_SHARD_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_SKIPS_OVER_CEILING",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

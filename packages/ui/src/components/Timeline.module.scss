@@ -1,0 +1,74 @@
+@use '../tokens' as t;
+
+@include t.tone-classes;
+
+.timeline {
+  display: grid;
+  gap: t.space(3);
+}
+
+.day {
+  margin: 0;
+  color: t.role('fg-strong');
+  font-size: t.text(sm);
+  font-weight: t.weight(semibold);
+}
+
+.list {
+  display: grid;
+  gap: t.space(3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// The marker column stays at every width; only the content wraps.
+.item {
+  position: relative;
+  display: grid;
+  grid-template-columns: t.space(6) minmax(0, 1fr);
+  gap: t.space(3);
+  align-items: start;
+
+  // The rail between markers, on the inline-start column so it mirrors under `dir="rtl"`.
+  &:not(:last-child)::before {
+    position: absolute;
+    inset-block: t.space(6) calc(-1 * #{t.space(3)});
+    inset-inline-start: calc(#{t.space(3)} - #{t.stroke(hairline)} / 2);
+    border-inline-start: t.stroke(hairline) solid t.role('line');
+    content: '';
+  }
+}
+
+.marker {
+  display: inline-grid;
+  place-items: center;
+  inline-size: t.space(6);
+  block-size: t.space(6);
+  border: t.stroke(thick) solid var(--tone);
+  border-radius: t.radius(full);
+  color: var(--tone);
+  background: t.role('surface');
+}
+
+.body {
+  display: grid;
+  gap: t.space(1);
+  min-inline-size: 0;
+}
+
+.title {
+  color: t.role('fg');
+  overflow-wrap: anywhere;
+}
+
+.when {
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+}
+
+.detail {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  overflow-wrap: anywhere;
+}

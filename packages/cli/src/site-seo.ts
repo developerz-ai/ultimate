@@ -11,8 +11,10 @@ import { routeEntries } from '@ultimat3/render';
 import { enumeratePrerenderEntries, fillPath } from '@ultimat3/render/server';
 import type { RouteRecord, SitemapFile, SitemapPage } from '@ultimat3/seo';
 import { buildRobots, buildSitemap, isDynamic } from '@ultimat3/seo';
+import type { RouteEntries } from './prerender-entries';
 import { readSiteMeta } from './seo-meta';
 import { siteLlms } from './site-llms';
+import type { LlmsPages } from './site-llms-pages';
 import { lastmodOf } from './sitemap-lastmod';
 
 export const ROBOTS_PATH = '/robots.txt';
@@ -50,6 +52,18 @@ export interface SiteSeoOptions {
   readonly root?: string | undefined;
   /** `seo.llms` from `app.config.ts`. Omitted: on, like the sitemap. */
   readonly llms?: boolean | undefined;
+  /**
+   * What the static export's `prerender()` calls already answered, by declared route path
+   * (`PrerenderReport.entries`). A route listed here is never asked again: the build enumerated
+   * it inside its API scope, which is gone by the time the sitemap is written, so a `prerender()`
+   * reading the app's own query would fail the export (`X_CLIENT_TRANSPORT_FAILED`).
+   */
+  readonly entries?: RouteEntries | undefined;
+  /**
+   * `llms.txt`'s page records the static export read inside its API scope
+   * (`PrerenderReport.llmsPages`). A route listed here never runs its `load` again.
+   */
+  readonly llmsPages?: LlmsPages | undefined;
 }
 
 /**
@@ -176,9 +190,11 @@ type Stamp = (file: string) => { readonly lastmod?: string };
 /** `enumeratePrerenderEntries`, asked once per route per answer: the sitemap and `llms.txt` share it. */
 type Enumerate = (entry: RouteEntry) => Promise<readonly PrerenderEntry[]>;
 
-const enumerateOnce = (): Enumerate => {
+const enumerateOnce = (given: RouteEntries | undefined): Enumerate => {
   const asked = new Map<RouteEntry, Promise<readonly PrerenderEntry[]>>();
   return (entry) => {
+    const enumerated = given?.get(entry.path);
+    if (enumerated !== undefined) return Promise.resolve(enumerated);
     const known = asked.get(entry);
     if (known !== undefined) return known;
     const answer = enumeratePrerenderEntries(entry);
@@ -237,7 +253,7 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
     const lastmod = lastmodOf(file, settings.lastmod, root);
     return lastmod === undefined ? {} : { lastmod };
   };
-  const enumerate = enumerateOnce();
+  const enumerate = enumerateOnce(options.entries);
   const routes = [
     ...(await publicSiteRoutes(options, stamp, locales, enumerate)),
     ...extraRoutes(settings.extra, stamp),
@@ -276,6 +292,7 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
     pagesFor: options.pagesFor,
     defaultLocale,
     enumerate,
+    pages: options.llmsPages,
   });
   return { robots, sitemaps, llms };
 }

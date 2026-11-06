@@ -25,16 +25,18 @@ import { clientErrorsStaticWarning } from './client-errors-routes';
 import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { PrerenderLoadFailedError } from './errors';
 import { FAVICON_PATH, faviconBytes } from './favicon';
-import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
 import { measureDatabase } from './measure-database';
 import { measurePaths } from './measure-paths';
 import { measurementActorLabel, measureScope, withAppUrl } from './measure-scope';
 import { loadNavigation, pageNavigation } from './page-navigation';
 import { loadSpeculation, otherLocaleSegments, pageSpeculation } from './page-speculation';
+import { enumerateOnce, type RouteEntries } from './prerender-entries';
+import { heaviestSource } from './prerender-heaviest';
 import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
 import type { PrerenderedPage, PrerenderReport } from './prerender-report';
+import { collectSeoReads } from './prerender-seo-reads';
 import type { ServedMeasure } from './prerender-served';
 import { servedMeasure } from './prerender-served';
 import { clientVitalsStaticWarning, vitalsBuild } from './prerender-vitals';
@@ -42,7 +44,9 @@ import { loadPwaArtifacts, writePwaIcons } from './pwa-artifacts';
 import { routeDocument, servedDocument } from './runtime-render';
 import { writeSiteAssets } from './site-assets';
 import { loadSiteSettings, originWarning, publicOrigin } from './site-config';
+import type { LlmsPages } from './site-llms-pages';
 import { newestSourceMtime } from './source-mtime';
+import { staticCapture } from './static-capture';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 import { styleBundle, writeStyles } from './style-bundle';
@@ -84,29 +88,8 @@ export interface PrerenderOptions {
    * on a production build, because a placeholder canonical is one a search engine indexes.
    */
   readonly origin?: string;
-}
-
-/**
- * The heaviest thing the document actually boots, named by the source file an author can open.
- * An island chunk is content-addressed, so its URL says nothing on its own — mapping it back
- * through the bundle is what turns `X_BUDGET_EXCEEDED` from a number into an instruction.
- */
-function heaviestSource(
-  bundle: IslandBundle,
-  entries: readonly { readonly url: string; readonly bytes: number }[],
-): readonly string[] | undefined {
-  const heaviest = entries.reduce<{ url: string; bytes: number } | undefined>(
-    (max, entry) => (max === undefined || entry.bytes > max.bytes ? entry : max),
-    undefined,
-  );
-  if (heaviest === undefined) return undefined;
-  const chunk = bundle.chunkAt(heaviest.url);
-  if (chunk !== undefined) return [chunk.file];
-  // A shared chunk has no file of its own: the chain is an island on THIS page that imports it.
-  const importer = bundle.chunks.find(
-    (one) => one.imports.includes(heaviest.url) && entries.some((entry) => entry.url === one.url),
-  );
-  return importer === undefined ? [heaviest.url] : [importer.file, heaviest.url];
+  /** Photograph declared social cards. Absent: on unless `ULTIMATE_BUILD_CAPTURE=off` (`--no-capture`). */
+  readonly capture?: boolean;
 }
 
 export const DEFAULT_ORIGIN = 'https://localhost';
@@ -319,6 +302,11 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       render(entry, data),
     );
 
+  // The seo seam is installed for the loop and only the loop (`static-capture.ts`).
+  const capture = await staticCapture(options.out, options.capture);
+  let entries: RouteEntries = new Map();
+  const enumerate = enumerateOnce();
+  let llmsPages: LlmsPages = new Map();
   try {
     for (const entry of routeEntries()) {
       const facts = { surface: entry.surface, render: entry.config.render, route: entry.path };
@@ -336,7 +324,9 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
           // Inside the measuring scope: a route's `prerender()` lists its paths by reading the app's
           // own data, the same way its `load` does.
           await database.ready();
-          const plan = await withAppUrl(origin, () => measure.run(() => measurePaths(entry)));
+          const plan = await withAppUrl(origin, () =>
+            measure.run(() => measurePaths(entry, enumerate)),
+          );
           if ('unmeasured' in plan) {
             unmeasured.push(plan.unmeasured);
             continue;
@@ -432,9 +422,22 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       }
       if (heaviest !== undefined) routes.push(heaviest);
     }
+    // Before the scope and the database are released: `siteSeo` reads these instead of asking
+    // `prerender()` or a page's `load` again, when nothing answers the app's own query any more.
+    ({ entries, llmsPages } = await collectSeoReads({
+      root: options.root,
+      origin,
+      defaultLocale,
+      scope: (fn) => withAppUrl(origin, () => measure.run(fn)),
+      before: () => database.ready(),
+      enumerate,
+    }));
   } finally {
+    capture.close();
     await database.close();
   }
+  // The variants and cards the exported documents name, before the worker precaches them.
+  await capture.write(pages);
   // The worker, LAST: every document it precaches has now been rendered, hashed and weighed. A
   // static host runs no route table, so both files go into the artifact — a
   // `<script src="/x-sw-register.js">` in every document is a 404 otherwise, which is the same
@@ -489,5 +492,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     serviceWorkerWarnings: serviceWorker?.warnings ?? [],
     warnings,
     origin,
+    entries,
+    llmsPages,
   };
 }

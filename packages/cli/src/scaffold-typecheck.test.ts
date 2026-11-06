@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { GENERATORS } from './cmd-generate';
 import { ScaffoldPathEscapeError } from './errors';
+import { NEW_SHAPES } from './new-shapes';
 import { FIXTURE_GENERATORS, scaffoldFixture, scaffoldVariants } from './scaffold-fixture';
 import type { KnownGap } from './scaffold-typecheck-fixture';
 import {
@@ -169,7 +170,7 @@ describe('unit · scaffold typecheck harness', () => {
 
   test('--no-example is its own variant: a different db package, so its own compile', () => {
     const [example, empty] = scaffoldVariants();
-    expect(scaffoldVariants()).toHaveLength(2);
+    expect(scaffoldVariants()).toHaveLength(2 + NEW_SHAPES.length);
     const schemaIn = (variant: typeof example): string => {
       const file = variant?.files.find((entry) => entry.path === 'packages/db/src/schema.ts');
       if (file === undefined) return '';

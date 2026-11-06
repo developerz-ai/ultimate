@@ -66,8 +66,8 @@ servers a `services:` block cannot start.
 |---|---|---|
 | `gate` | 5 | one part of the framework gate: `unit`, `contract` and `job` in three shards against one Postgres, `live` (every suite that needs more than one server, with the six static steps beside it), `e2e` (the compiler, then a browser) — as of 2026-11-05, below |
 | `verify` | 1 | `x verify merge` over the five parts — the framework gate's verdict. `release.yml` reads the whole run's conclusion, which includes it (2026-10-03) |
-| `reference-app-verify` | 2 | one tracked app: build, gate, ratchet |
-| `scaffold-smoke` | 2 | one scaffold shape: default, `--no-example` |
+| `reference-app-verify` | 3 | one tracked app: build, gate, ratchet — the docs site the third since 2026-11-06 (plan 101, 42-adopt-docs-site) |
+| `scaffold-smoke` | 5 | one scaffold per runner: default, `--no-example`, and one per `x new --shape` (`api`, `blog`, `dashboard` since 2026-11-06), held to `NEW_SHAPES` by `scripts/ci-workflow-shape.test.ts` |
 | `packages` | 2 | each unit tested and covered alone; `cli` in one shard, every other unit in the other (2026-11-05, below) |
 | `container` | 1 | unchanged |
 | `deploy-proof` | 1 | unchanged, `main` only |
@@ -204,5 +204,7 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `release.yml` | that dispatch or a **published** Release → npm via OIDC, after `check` |
 | `registry-audit.yml` | daily → a `registry-drift` issue on disagreement |
 | `deploy-social-demo.yml` | green `ci` on `main` → the demo image |
+| `deploy-docs-site.yml` | green `ci` on `main` → `dummy/docs-site`'s static build on GitHub Pages; **inert** — every job skipped — until the owner sets the `DOCS_SITE_ORIGIN` repository variable (`scripts/ci-workflow-shape-docs.test.ts`) |
 | `wiki.yml` | push to `main` → the wiki |
 | `tutorial-run.yml` | push to `main` touching a tutorial or a generator → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never on a PR, never in `ci` |
+| `bench.yml` | weekly + release → re-measured first-hour/http-hello JSON as a PR; never in `ci` |

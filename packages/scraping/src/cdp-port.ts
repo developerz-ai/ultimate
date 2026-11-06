@@ -31,6 +31,28 @@ export interface CdpScreenshotOptions {
   };
 }
 
+/**
+ * Puppeteer's `PDFOptions`, the part this package sends — restated for the screenshot options'
+ * reason. Lengths are CSS length strings (`'210mm'`); `format` is the library's own capitalised
+ * spelling (`'A4'`, `'Letter'`), which every version since 1.x accepts.
+ */
+export interface CdpPdfOptions {
+  readonly format?: string;
+  readonly width?: string;
+  readonly height?: string;
+  readonly margin?: {
+    readonly top?: string;
+    readonly right?: string;
+    readonly bottom?: string;
+    readonly left?: string;
+  };
+  readonly printBackground?: boolean;
+  readonly preferCSSPageSize?: boolean;
+  readonly displayHeaderFooter?: boolean;
+  readonly headerTemplate?: string;
+  readonly footerTemplate?: string;
+}
+
 export interface CdpRequestLike {
   url(): string;
   resourceType(): string;
@@ -77,7 +99,7 @@ export interface CdpPageLike {
   type(selector: string, text: string): Promise<void>;
   select(selector: string, ...values: string[]): Promise<string[]>;
   screenshot(options: CdpScreenshotOptions): Promise<Uint8Array | string>;
-  pdf(options?: Record<string, unknown>): Promise<Uint8Array>;
+  pdf(options?: CdpPdfOptions): Promise<Uint8Array>;
   setRequestInterception(enabled: boolean): Promise<void>;
   /**
    * The browser's own network condition — `Network.emulateNetworkConditions` under CDP.

@@ -47,8 +47,13 @@ const BASE = {
     { value: 'ro', label: 'Română' },
   ],
   timezones: [
-    { value: 'Europe/Bucharest', label: 'Bucharest' },
     { value: 'UTC', label: 'UTC' },
+    {
+      value: 'Europe/Bucharest',
+      label: 'Bucharest',
+      group: 'Europe',
+      description: 'Europe/Bucharest',
+    },
   ],
   themes: [
     { value: 'system', label: 'Match my system' },
@@ -56,6 +61,15 @@ const BASE = {
     { value: 'dark', label: 'Dark' },
   ],
   labels: LABELS,
+  // What `uiCatalog(t)` hands the editor for the time-zone picker's own strings.
+  ui: {
+    locale: 'en',
+    catalog: {
+      'ui.select.none': 'Nothing chosen',
+      'ui.select.more': 'Showing {shown} of {total} — type to narrow',
+      'ui.results.empty': 'No matches',
+    },
+  },
 } satisfies SettingsProps;
 
 export const settingsStates = defineIslandStates({

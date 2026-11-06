@@ -1,4 +1,4 @@
-// The apps this repo tracks and blocks on. As of 2026-11 both tables are empty: every declared step
+// The apps this repo tracks and blocks on. As of 2026-11 all three tables are empty: every declared step
 // is asserted, `exercise` included. Data only;
 // `scripts/reference-app-gate.ts` owns the ratchet; its `--unpin <app>:<step>` drops a pin.
 
@@ -13,7 +13,7 @@ export interface GatedApp {
   /** The root `tsconfig.json` `references` entry the app must join once it typechecks. */
   readonly reference: string;
   /**
-   * Steps allowed to fail, each naming the work that owns it. Both tables are empty, so every
+   * Steps allowed to fail, each naming the work that owns it. Every table is empty, so every
    * declared step is asserted. A step absent from the table MUST pass; a new red step is a
    * regression, never a reason to add a pin. Lines are only ever deleted: a pinned step that turns
    * green fails the gate until its line goes. The step count is `VERIFY_STEP_NAMES.length`, never restated here.
@@ -22,8 +22,8 @@ export interface GatedApp {
 }
 
 /**
- * Both tracked apps, in the order the gate runs them: the curated reference app first, the demo
- * second. `satisfies` against the gate's own step names, so a pin for a step that does not exist
+ * The tracked apps, in the order the gate runs them: the curated reference app first, the demo
+ * second, the docs site third. `satisfies` against the gate's own step names, so a pin for a step that does not exist
  * is a compile error rather than a line that quietly excuses nothing.
  */
 export const GATED_APPS: readonly GatedApp[] = [
@@ -43,6 +43,14 @@ export const GATED_APPS: readonly GatedApp[] = [
     // URL is a claim, and axiom 3 says a claim that is not a build error does not exist.
     dir: 'dummy/social-media-clone',
     reference: './dummy/social-media-clone',
+    expectedRed: {} satisfies Partial<Record<VerifyStepName, string>>,
+  },
+  {
+    // The framework's own docs site (plan 101, 42-adopt-docs-site): `wiki/*.md` projected to static
+    // pages at a 0 KB budget, scaffolded by `x new --no-example` so it hits what a stranger hits.
+    // Gated from day one with an empty table: the front door is a claim like the demo's image.
+    dir: 'dummy/docs-site',
+    reference: './dummy/docs-site',
     expectedRed: {} satisfies Partial<Record<VerifyStepName, string>>,
   },
 ];

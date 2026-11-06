@@ -73,4 +73,16 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...CHART_ROLES.flatMap((role) =>
     onSurfaces(role, AA_LARGE, `the ${role} series mark — a bar, line or slice — on a surface`),
   ),
+  // A `tone` replaces the slot colour on a series, a Gauge fill, a HeatStrip cell or a reference
+  // line: the same non-text floor. Text pairs above already hold most of these at 4.5:1; this
+  // names the use, so relaxing a text pairing cannot quietly drop a mark below 3:1.
+  ...(['fg-strong', 'accent', ...STATUS] as const).flatMap((role) =>
+    onSurfaces(role, AA_LARGE, `a ${role}-toned chart mark — series, fill, cell — on a surface`),
+  ),
+  // `TerminalView` writes ANSI magenta and cyan as these two series roles, and it is TEXT on the
+  // code surface (`bg-soft`): 4.5:1, not a mark's 3:1. `chart-6` measured 3.37 there, so cyan is
+  // `chart-1`. Every other code and terminal colour is a role already held as text above.
+  ...(['chart-1', 'chart-5'] as const).map((role) =>
+    pair(role, 'bg-soft', AA_TEXT, `ANSI ${role} terminal text on the code surface`),
+  ),
 ];

@@ -2,7 +2,9 @@
 // a value fills. `Gauge` takes that share from `meterShare` — one rule for "value of max", so a
 // Gauge and a Meter beside it can never disagree about what 7 of 4 draws.
 
+import { svgNumber } from './chart-frame-view';
 import { annularSector } from './donut-chart-view';
+import type { Tone } from './variants';
 
 /**
  * 200 wide, cropped to 172 tall: the dial's open quarter is at the bottom, and the box ends just
@@ -40,4 +42,31 @@ export function gaugeArcs(share: number): GaugeArcs {
     track: annularSector(centre, centre, outer, inner, from, gaugeFillEnd(1)),
     fill: annularSector(centre, centre, outer, inner, from, end),
   };
+}
+
+/** A target's tick: a radial stroke across the ring at `share`, a little proud of both edges. */
+export function gaugeTick(share: number): string {
+  const { centre, outer, inner } = GAUGE;
+  const angle = gaugeFillEnd(share);
+  const at = (r: number): string =>
+    `${svgNumber(centre + Math.sin(angle) * r)},${svgNumber(centre - Math.cos(angle) * r)}`;
+  return `M${at(inner - 4)} L${at(outer + 4)}`;
+}
+
+export interface GaugeThreshold {
+  /** In the value's own unit: the tone applies from this value up. Ascending. */
+  readonly at: number;
+  readonly tone: Tone;
+}
+
+/** The tone of the highest threshold `value` has reached, or `fallback` below them all. */
+export function thresholdTone(
+  value: number | null,
+  thresholds: readonly GaugeThreshold[] | undefined,
+  fallback: Tone,
+): Tone {
+  if (value === null || !Number.isFinite(value)) return fallback;
+  let tone = fallback;
+  for (const threshold of thresholds ?? []) if (value >= threshold.at) tone = threshold.tone;
+  return tone;
 }

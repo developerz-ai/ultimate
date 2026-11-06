@@ -60,6 +60,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 |---|---|---|
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never a second env var |
 | one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`). Full rule: `docs/history/core.md` |
+| the ONE keyed hash | `hmac.ts` (`hmac(alg, key, data, encoding?)`) | `node:crypto`'s `createHmac`: a keyed `Bun.CryptoHasher` throws a stale failed-EC-import error (Bun 1.4.4). `bun run keyed-hasher` (`X_KEYED_HASHER`). Full rule: `docs/history/core.md` |
 | what this process does | `roles.ts` (`ROLE`) | |
 | how a route renders, caches offline and hydrates | `route-vocabulary.ts` (`RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it |
 | which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments. Full rule: `docs/history/core.md` |

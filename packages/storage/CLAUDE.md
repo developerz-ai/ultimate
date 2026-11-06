@@ -67,6 +67,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `image.ts` | deterministic variant keys; byte path over core's pipeline (png/jpeg encode only) |
 | | `VARIANT_FORMATS` — what a variant KEY can carry — and NOT `IMAGE_FORMATS`, which is core's and means what core can PROBE. See below |
 | | `variantKey` is the cache identity `@ultimat3/cli`'s `/media/*` route looks a variant up by — derived, never stored, so a request that misses transforms once and every later one is a disk read |
+| `image-warm.ts` | `warmVariants`: a stored image's variants written ahead of `/media`, under its keys, the revision off the bytes read; core's spec, so a warmed variant is the one a miss would store |
 | `storage.ts` | `defineStorage` + module-level `storage()` / `disk()` |
 | `grant.ts` | `grantUpload` — the ONE way a presigned PUT is minted; the client never names a key |
 | `accept.ts` | `acceptSignedUpload` / `readSignedObject` — the two decisions a `/_storage` route is made of |

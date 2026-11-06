@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SPARKLINE, sparklinePath, sparkPoints } from './sparkline-view';
+import { SPARKLINE, sparkAreaPath, sparklinePath, sparkPoints, sparkZeroY } from './sparkline-view';
 
 const points = (...values: number[]) => values.map((value, i) => ({ key: `d${i}`, value }));
 
@@ -51,5 +51,32 @@ describe('sparklinePath with gaps', () => {
 
   test('all unknown is no line at all', () => {
     expect(sparklinePath([{ key: 'd0', value: null }])).toBe('');
+  });
+});
+
+describe('a signed series', () => {
+  test('-5, 0, 5 is a rise through zero, never a flat line on the floor', () => {
+    // The probe: `M4,68 L300,68 L596,4` — the clamp drew -5 as 0.
+    const d = sparklinePath(points(-5, 0, 5));
+    expect(d).toBe('M4.0,68.0 L300.0,36.0 L596.0,4.0');
+    expect(sparkZeroY(points(-5, 0, 5))).toBe(36);
+  });
+
+  test('negative, missing and zero sit in three different places', () => {
+    const placed = sparkPoints([
+      { key: 'a', value: -2 },
+      { key: 'b', value: null },
+      { key: 'c', value: 0 },
+      { key: 'd', value: 2 },
+    ]);
+    expect(placed[1]).toBeNull();
+    expect(placed[0]?.y).toBeGreaterThan(placed[2]?.y ?? Number.POSITIVE_INFINITY);
+  });
+
+  test('the area closes each run down to zero', () => {
+    expect(sparkAreaPath(points(-5, 0, 5))).toBe(
+      'M4.0,36.0 L4.0,68.0 L300.0,36.0 L596.0,4.0 L596.0,36.0 Z',
+    );
+    expect(sparkAreaPath(points(3))).toBe('');
   });
 });

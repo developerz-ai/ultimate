@@ -23,6 +23,11 @@ export interface RadioProps {
   disabled?: boolean | undefined;
   required?: boolean | undefined;
   direction?: 'row' | 'column' | undefined;
+  /**
+   * `segmented` draws the options as one joined strip of buttons — still native radios, so arrows,
+   * a form post and scripting off are the platform's. One prop, not a second component.
+   */
+  appearance?: 'default' | 'segmented' | undefined;
   class?: string | undefined;
   'aria-describedby'?: string | undefined;
   onChange?: JSX.EventHandlerUnion<HTMLInputElement, Event> | undefined;
@@ -32,7 +37,13 @@ export function Radio(props: RadioProps): JSX.Element {
   const group = useId('radio');
   return (
     <fieldset
-      class={cx(styles['group'], styles[`direction-${props.direction ?? 'column'}`], props.class)}
+      class={cx(
+        styles['group'],
+        props.appearance === 'segmented'
+          ? styles['appearance-segmented']
+          : styles[`direction-${props.direction ?? 'column'}`],
+        props.class,
+      )}
       disabled={props.disabled === true}
       aria-describedby={props['aria-describedby']}
     >

@@ -16,9 +16,22 @@
  * reaches this markup by tag, from the `.editor` wrapper the page renders around it.
  */
 
+import type { CatalogSubset } from '@ultimat3/i18n/subset';
+import { subsetTranslator } from '@ultimat3/i18n/subset';
 import { subscribeToPush } from '@ultimat3/pwa/client';
+import type { SearchableOption } from '@ultimat3/ui';
+import { Radio, SearchableSelect, setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import { createEffect, createSignal, For } from 'solid-js';
+import {
+  createContext,
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  For,
+  onCleanup,
+  useContext,
+} from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Api } from '../../api';
 import { browserClient } from '../../shared/browser-client';
@@ -71,9 +84,12 @@ export interface SettingsProps {
   readonly theme: string;
   readonly digestOptIn: boolean;
   readonly locales: readonly PreferenceOption[];
-  readonly timezones: readonly PreferenceOption[];
+  /** Grouped by region and searchable: the long closed list, where value (an IANA id) ≠ label. */
+  readonly timezones: readonly SearchableOption[];
   readonly themes: readonly PreferenceOption[];
   readonly labels: PreferenceLabels;
+  /** The design system's own strings, resolved by the server (`uiCatalog(t)`). */
+  readonly ui: CatalogSubset;
 }
 
 export type SaveState = 'idle' | 'saved' | 'failed';
@@ -152,6 +168,14 @@ function Preferences(props: SettingsProps): JSX.Element {
     }
   };
 
+  /**
+   * The saved zone, when the list names it. A failed options read hands an empty list, and a value
+   * no option names is a refusal (`X_UI_INVALID_VALUE`): the editor still renders, and `save` still
+   * posts the zone held in the signal.
+   */
+  const listedZone = (): string | undefined =>
+    props.timezones.some((option) => option.value === zone()) ? zone() : undefined;
+
   const status = (): string => {
     if (state() === 'saved') return props.labels.saved;
     return state() === 'failed' ? props.labels.retry : '';
@@ -169,28 +193,34 @@ function Preferences(props: SettingsProps): JSX.Element {
         <small>{props.labels.localeHelp}</small>
       </label>
 
-      <label>
-        {props.labels.timezone}
-        <select value={zone()} onChange={(event) => setZone(event.currentTarget.value)}>
-          <For each={props.timezones}>
-            {(option) => <option value={option.value}>{option.label}</option>}
-          </For>
-        </select>
-        <small>{props.labels.timezoneHelp}</small>
-      </label>
+      {/* A `for` label, never a wrapping one: wrapped, every option would land in the name. */}
+      <div data-role="timezone">
+        <label for="settings-timezone">{props.labels.timezone}</label>
+        <SearchableSelect
+          id="settings-timezone"
+          name="tz"
+          required
+          options={props.timezones}
+          value={listedZone()}
+          onChange={setZone}
+          aria-describedby="settings-timezone-help"
+        />
+        <small id="settings-timezone-help">{props.labels.timezoneHelp}</small>
+      </div>
 
       {/* Immediate proof that the zone means something: the request's own instant, as this member
           would read it once the choice above is saved. */}
       <p data-role="preview">{previewOf(props.nowIso, locale(), zone())}</p>
 
-      <label>
-        {props.labels.theme}
-        <select value={theme()} onChange={(event) => setTheme(event.currentTarget.value)}>
-          <For each={props.themes}>
-            {(option) => <option value={option.value}>{option.label}</option>}
-          </For>
-        </select>
-      </label>
+      {/* Three choices, all visible at once: a segmented strip of native radios, one tap each. */}
+      <Radio
+        legend={props.labels.theme}
+        name="theme"
+        appearance="segmented"
+        options={props.themes}
+        value={theme()}
+        onChange={(event) => setTheme(event.currentTarget.value)}
+      />
 
       <label>
         <input
@@ -228,7 +258,26 @@ function Preferences(props: SettingsProps): JSX.Element {
  * edited. An island is compiled with `hydratable: false`, so there is no takeover to resume — the
  * shell is what the server knows, and this is what replaces it once a browser can do more.
  */
-export function mount(el: HTMLElement, props: SettingsProps): void {
+export function mount(el: HTMLElement, props: SettingsProps): () => void {
+  // The design system's reactive seam, from THIS bundle's solid-js — named, never `import *`.
+  setSolidRuntime({
+    createContext,
+    useContext,
+    createSignal,
+    createMemo,
+    createEffect,
+    onCleanup,
+    createRoot,
+  });
   el.textContent = '';
-  render(() => <Preferences {...props} />, el);
+  // Returned: the router calls it when it swaps this page out, so every effect this island
+  // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
+  return render(
+    () => (
+      <UiProvider locale={props.locale} timeZone={props.timezone} t={subsetTranslator(props.ui)}>
+        <Preferences {...props} />
+      </UiProvider>
+    ),
+    el,
+  );
 }

@@ -1,0 +1,61 @@
+{{/*
+One Deployment per enabled role, from one image. terminationGracePeriodSeconds covers the preStop
+sleep, the framework's readiness grace and its SIGTERM drain — in-flight requests, open websockets
+and running job steps finish — derived per role from drain in values.yaml.
+*/}}
+{{- range $role, $cfg := .Values.roles }}
+{{- if $cfg.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "docs-site.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "docs-site.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $role }}
+spec:
+  {{/* Ask whether the block EXISTS before reading through it: scheduler and replicator declare
+  none, and without the guard the whole chart fails to render. */}}
+  {{- if not (and $cfg.autoscaling $cfg.autoscaling.enabled) }}
+  replicas: {{ $cfg.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $role }}
+  {{/*
+  The replicator is Recreate, never a rolling update: one pod per database holds the replication
+  slot's advisory lock, so a surged pod can only stand by, unready, and maxUnavailable: 0 never
+  terminates the holder it is waiting on — every rollout stalled. Recreate lets the holder go first.
+  */}}
+  {{/* A new pod must stay Ready this long before the rollout counts it and stops an old one, so a
+  role that crashes seconds after its first probe never replaces a working pod. */}}
+  minReadySeconds: {{ $.Values.minReadySeconds | int }}
+  strategy:
+    {{- if eq $role "replicator" }}
+    type: Recreate
+    {{- else }}
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "docs-site.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $role }}
+    spec:
+      {{/* No role in this image calls the Kubernetes API — ROLE comes from the env and everything
+      else from app.config.ts. Mounting the token anyway hands a JWT for this namespace to any
+      code that reaches the filesystem, which for a web role is one path traversal. */}}
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      {{/* Derived per role from the drain values — see the helper in _helpers.tpl. Raise
+      drain.deadlineMs in app.config.ts, never this: the drain abandons its hooks at its own
+      deadline, so a longer grace period alone buys nothing. */}}
+      terminationGracePeriodSeconds: {{ include "docs-site.terminationGracePeriodSeconds" (dict "role" $role "cfg" $cfg "root" $) }}
+      containers:
+        {{- include "docs-site.container" (dict "role" $role "cfg" $cfg "root" $) | nindent 8 }}
+      volumes:
+        {{- include "docs-site.tmpVolume" $ | nindent 8 }}
+{{- end }}
+{{- end }}

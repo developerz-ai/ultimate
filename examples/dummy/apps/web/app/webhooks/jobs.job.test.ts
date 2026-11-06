@@ -10,6 +10,7 @@
  */
 
 import { db } from '@postly/db';
+import { hmac } from '@ultimat3/core';
 import { defineHttpConfig, httpPipeline, httpRouter } from '@ultimat3/http';
 import { expect, jobTest } from '@ultimat3/testing';
 import { publishPost } from '../posts/actions/publish-post';
@@ -103,7 +104,7 @@ const billingPipeline = () =>
   });
 
 const signBilling = (body: string): string =>
-  `sha256=${new Bun.CryptoHasher('sha256', BILLING_SECRET).update(body).digest('hex')}`;
+  `sha256=${hmac('sha256', BILLING_SECRET, body, 'hex')}`;
 
 const deliverBilling = (
   pipeline: ReturnType<typeof billingPipeline>,

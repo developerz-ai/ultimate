@@ -447,14 +447,15 @@ type DispatchProps = {
 };
 const Picker = (props: { readonly models: readonly Model[] }) => <ul>{props.models.length}</ul>;
 
-export function mount(el: HTMLElement, props: DispatchProps): void {
+export function mount(el: HTMLElement, props: DispatchProps): () => void {
   const [models, setModels] = createSignal<readonly Model[]>(props.models);
   if (props.modelsEndpoint !== undefined) {
     fetch(props.modelsEndpoint, { credentials: 'same-origin' })
       .then((response) => response.json())
       .then((rows: readonly Model[]) => setModels(rows));
   }
-  render(() => <Picker models={models()} />, el);
+  // The disposer, returned: the client router calls it on navigation (X_ISLAND_DISPOSER_MISSING).
+  return render(() => <Picker models={models()} />, el);
 }
 ```
 

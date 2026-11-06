@@ -115,7 +115,7 @@ ISO code, never a float. Bun only.
 
 \`\`\`
 Primitive:  <which of the eight>    Slice: <dir>
-Generated:  <the x g invocations you ran>
+Generated:  <every \`bunx x g\` command you ran>
 Changed:    <files>
 Gate:       bun run verify ✓ | ✗ <failing steps>
 Deferred:   <what you did not do, and why>      [never omit this line]

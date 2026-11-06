@@ -16,6 +16,8 @@ export interface ShellSlots {
   readonly header: boolean;
   readonly sidebar: boolean;
   readonly footer: boolean;
+  /** `AppShell bottomNav`: a second `navigation` landmark, after the footer in DOM order. */
+  readonly bottomNav?: boolean | undefined;
 }
 
 export function shellIds(base: string): ShellIds {
@@ -25,7 +27,7 @@ export function shellIds(base: string): ShellIds {
 
 /**
  * DOM order, which is also screen-reader order: banner, then navigation, then main, then
- * contentinfo. `main` is unconditional — a shell with no main region is not a page.
+ * contentinfo, then the bottom bar's navigation. `main` is unconditional — a shell with no main region is not a page.
  */
 export function shellLandmarks(slots: ShellSlots): readonly ShellLandmark[] {
   const out: ShellLandmark[] = [];
@@ -33,5 +35,6 @@ export function shellLandmarks(slots: ShellSlots): readonly ShellLandmark[] {
   if (slots.sidebar) out.push('navigation');
   out.push('main');
   if (slots.footer) out.push('contentinfo');
+  if (slots.bottomNav === true) out.push('navigation');
   return out;
 }

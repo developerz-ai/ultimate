@@ -15,6 +15,10 @@
  * `useMutation(LIKE_POST)`, the same write `like.island.tsx` makes: the optimistic twin moves the
  * row's own record, so the count beside the button is the store's, and a like taken offline waits
  * in the page's outbox with the queued notice showing.
+ *
+ * A pull at the top of the list re-reads it (`PullToRefresh`, touch only), and the toolbar's button
+ * does the same for every other pointer and the keyboard. `feed-commands.tsx` is the page's
+ * keyboard layer: `⌘K` and `?`.
  */
 
 import type { CatalogSubset } from '@ultimat3/i18n/subset';
@@ -23,11 +27,15 @@ import { useConnection, useMutation, useOutbox, useQuery } from '@ultimat3/realt
 import { formatDate } from '@ultimat3/time';
 import {
   AsyncRegion,
+  Button,
   DateTime,
   type DateTimeFormatter,
   EmptyState,
+  PullToRefresh,
   setSolidRuntime,
+  Toolbar,
   UiProvider,
+  VirtualList,
 } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import {
@@ -36,7 +44,6 @@ import {
   createMemo,
   createRoot,
   createSignal,
-  For,
   onCleanup,
   Show,
   useContext,
@@ -45,7 +52,12 @@ import { render } from 'solid-js/web';
 import { postHref } from '../../shared/entities';
 import { type PluralForms, pluralText } from '../../shared/plural-text';
 import { LIKE_POST } from '../posts/like-mutation';
+import { type CommandLabels, type Destination, FeedCommands } from './feed-commands';
 import { type FeedRow, LIVE_FEED } from './live';
+import styles from './page.module.scss';
+
+/** A row's height before it is measured: a title, a date, a two-line excerpt and the like row. */
+const ROW_ESTIMATE_PX = 140;
 
 /** The day alone, `dateStyle: 'long'`: a feed row says when, the post page says at what time. */
 const dayOnly: DateTimeFormatter = (at, options) =>
@@ -54,6 +66,8 @@ const dayOnly: DateTimeFormatter = (at, options) =>
 /** Already translated, on the server: an island's props cross as JSON, so `t()` cannot travel. */
 export interface FeedLabels {
   readonly empty: string;
+  /** The list's accessible name. */
+  readonly list: string;
   /** Beside rows there ARE, while the socket is down: they are this device's copy. */
   readonly offline: string;
   /** Every plural form of `app.post.likes`: a row's count moves after the page was rendered. */
@@ -67,6 +81,8 @@ export interface FeedLabels {
    */
   readonly update: string;
   readonly reload: string;
+  /** The toolbar's re-read: the way to refresh for every pointer that cannot pull. */
+  readonly refresh?: string;
 }
 
 export interface FeedIslandProps {
@@ -77,6 +93,11 @@ export interface FeedIslandProps {
   readonly labels: FeedLabels;
   /** The design system's `ui.*` strings, resolved on the server (`uiCatalog(t)`): a `t` cannot travel. */
   readonly ui: CatalogSubset;
+  /** The keyboard layer's strings and the app's destinations; absent, the page has none. */
+  readonly commands?: {
+    readonly labels: CommandLabels;
+    readonly destinations: readonly Destination[];
+  };
 }
 
 function Feed(props: FeedIslandProps): JSX.Element {
@@ -90,6 +111,15 @@ function Feed(props: FeedIslandProps): JSX.Element {
     like.release();
     outbox.release();
   });
+  /**
+   * The pull's and the button's one re-read: `refetch` settles when the read has, so the busy state
+   * lasts exactly as long. The feed is LIVE, so that is at once: its socket is its refresh.
+   */
+  const reread = (): Promise<void> => feed.refetch();
+  const rows = (): readonly FeedRow[] => {
+    const state = feed();
+    return state.status === 'ready' || state.status === 'refreshing' ? state.data : [];
+  };
   const shown = (): number => {
     const state = feed();
     return state.status === 'ready' || state.status === 'refreshing' ? state.data.length : 0;
@@ -112,37 +142,64 @@ function Feed(props: FeedIslandProps): JSX.Element {
       <Show when={outbox.size > 0}>
         <p data-role="queued">{props.labels.queued}</p>
       </Show>
-      <AsyncRegion
-        state={feed()}
-        reserve={{ lines: 4 }}
-        empty={() => <EmptyState title={props.labels.empty} />}
-        ready={(rows) => (
-          <ul data-role="posts">
-            <For each={rows}>
-              {(post) => (
-                <li>
-                  <a href={postHref(post)}>{post.title}</a>
-                  <DateTime value={post.publishedAt ?? post.createdAt} format={dayOnly} />
-                  <p>{post.excerpt}</p>
-                  <button
-                    type="button"
-                    data-like-button={post.id}
-                    onClick={() => {
-                      // A refusal has already taken its overlay back; the count IS the answer.
-                      void like({ postId: post.id, orgId: props.orgId }).catch(() => undefined);
-                    }}
-                  >
-                    {props.labels.like}
-                  </button>
-                  <span data-role="likes" data-like-count={post.likeCount} data-post={post.id}>
-                    {pluralText(props.labels.likes, post.likeCount)}
-                  </span>
-                </li>
-              )}
-            </For>
-          </ul>
+      <Show when={props.commands}>
+        {(commands) => (
+          <FeedCommands
+            labels={commands().labels}
+            destinations={commands().destinations}
+            posts={() => rows().map((post) => ({ title: post.title, href: postHref(post) }))}
+          />
         )}
-      />
+      </Show>
+      <Show when={props.labels.refresh}>
+        {(label) => (
+          <Toolbar label={label()}>
+            <Button variant="secondary" size="sm" onClick={() => void reread()}>
+              {label()}
+            </Button>
+          </Toolbar>
+        )}
+      </Show>
+      {/* A failed re-read is the region's own `failed` branch: nothing for the pull to add. */}
+      <PullToRefresh onRefresh={reread} onError={() => undefined}>
+        <AsyncRegion
+          state={feed()}
+          reserve={{ lines: 4 }}
+          empty={() => <EmptyState title={props.labels.empty} />}
+          ready={(rows) => (
+            // A feed is long and live: only the rows on screen are mounted, and a post arriving
+            // at the top while the reader is further down moves nothing they are reading.
+            <div class={styles.posts} data-role="posts">
+              <VirtualList
+                items={rows}
+                itemKey={(post: FeedRow) => post.id}
+                label={props.labels.list}
+                estimate={ROW_ESTIMATE_PX}
+                renderItem={(post: FeedRow) => (
+                  <article>
+                    <a href={postHref(post)}>{post.title}</a>
+                    <DateTime value={post.publishedAt ?? post.createdAt} format={dayOnly} />
+                    <p>{post.excerpt}</p>
+                    <button
+                      type="button"
+                      data-like-button={post.id}
+                      onClick={() => {
+                        // A refusal has already taken its overlay back; the count IS the answer.
+                        void like({ postId: post.id, orgId: props.orgId }).catch(() => undefined);
+                      }}
+                    >
+                      {props.labels.like}
+                    </button>
+                    <span data-role="likes" data-like-count={post.likeCount} data-post={post.id}>
+                      {pluralText(props.labels.likes, post.likeCount)}
+                    </span>
+                  </article>
+                )}
+              />
+            </div>
+          )}
+        />
+      </PullToRefresh>
     </>
   );
 }
@@ -151,7 +208,7 @@ function Feed(props: FeedIslandProps): JSX.Element {
  * The one export the hydration runtime calls. Solid's `render` APPENDS when the container already
  * has children, so the server's loading shell goes first — `settings.island.tsx`'s rule, verbatim.
  */
-export function mount(el: HTMLElement, props: FeedIslandProps): void {
+export function mount(el: HTMLElement, props: FeedIslandProps): () => void {
   // The design system's reactive seam, from THIS bundle's solid-js — named, never `import *`.
   setSolidRuntime({
     createContext,
@@ -163,7 +220,9 @@ export function mount(el: HTMLElement, props: FeedIslandProps): void {
     createRoot,
   });
   el.textContent = '';
-  render(
+  // Returned: the router calls it when it swaps this page out, so every effect this island
+  // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
+  return render(
     () => (
       <UiProvider locale={props.locale} timeZone={props.zone} t={subsetTranslator(props.ui)}>
         <Feed {...props} />

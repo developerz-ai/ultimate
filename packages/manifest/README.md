@@ -170,6 +170,10 @@ heading of its level — for `x docs Upgrading#<anchor>`. `tokenize()` is the qu
 equal score ranks a guide over a source header. The ranking is not a stable surface; the regression
 set is `docs-search-eval-set-fixture.ts`, held at 18 of 20 by `docs-search.test.ts`.
 
+`@ultimat3/manifest/docs-search` is the ranker alone — `searchDocs`, `nearestTopics` and the
+`DocEntry`/`DocHit` types — for a browser island that searches a prebuilt index: no scanner, no
+`node:fs`, a few kB minified (`docs-search-subpath.test.ts` bundles it and holds that).
+
 The **file header** is the doc unit, not JSDoc. Measured across this repo, `As of 2026-08`: 99.8%
 of source files carry a 1–4 line header (2,510 of 2,514), while only 42.3% of public exports have
 JSDoc directly above the declaration (1,868 of 4,414) — `job()` itself has none. Ranking a question

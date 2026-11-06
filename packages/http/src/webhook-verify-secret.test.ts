@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  hmac,
   isUltimateError,
   WEBHOOK_ID_HEADER,
   WEBHOOK_SIGNATURE_HEADER,
@@ -17,9 +18,7 @@ const BODY = '{"amount":100}';
 
 /** A delivery an attacker signed with the key a misconfigured receiver holds: none. */
 const forgedWith = (key: string): Request => {
-  const mac = new Bun.CryptoHasher('sha256', key)
-    .update(`v1:${SIGNED_AT_SECONDS}:evt_forged:orders.paid:${BODY}`)
-    .digest('hex');
+  const mac = hmac('sha256', key, `v1:${SIGNED_AT_SECONDS}:evt_forged:orders.paid:${BODY}`, 'hex');
   return new Request('https://app.test/api/webhooks/billing', {
     method: 'POST',
     headers: {

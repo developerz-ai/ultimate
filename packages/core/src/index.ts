@@ -692,6 +692,9 @@ export type { GenerationFence } from './generation-fence';
 export { generationFence, isSuperseded } from './generation-fence';
 export type { PublicHealthBody } from './health-disclosure';
 export { DEFAULT_HEALTH_DETAIL_PEERS, healthBody, healthPeerListed } from './health-disclosure';
+// The ONE keyed hash: every HMAC in the framework (`bun run keyed-hasher`).
+export type { HmacAlgorithm, HmacEncoding, HmacInput } from './hmac';
+export { hmac } from './hmac';
 export type { HostDecision, HostRule } from './host-rules';
 export { ANY_HOST, hostDecision, hostMatches } from './host-rules';
 export { escapeHtml } from './html-escape';

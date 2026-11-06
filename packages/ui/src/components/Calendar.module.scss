@@ -1,0 +1,118 @@
+@use '../tokens' as t;
+
+.calendar {
+  display: inline-grid;
+  gap: t.space(2);
+  max-inline-size: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: t.space(2);
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  color: t.role('fg-strong');
+  font-weight: t.weight(semibold);
+  text-align: center;
+}
+
+.nav {
+  @include t.touch-target;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: t.radius(md);
+  color: t.role('fg');
+  background: transparent;
+  cursor: pointer;
+
+  &:hover {
+    background: t.role('bg-soft');
+  }
+
+  &:focus-visible {
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: calc(-1 * #{t.stroke(thick)});
+  }
+}
+
+// The chevrons point the way the month moves, which is the other way under `dir="rtl"`.
+:global([dir='rtl']) .nav {
+  transform: scaleX(-1);
+}
+
+.grid {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.weekday {
+  padding-block-end: t.space(1);
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+  font-weight: t.weight(medium);
+  text-align: center;
+}
+
+.cell {
+  padding: 0;
+  text-align: center;
+}
+
+// 44 px at 320 px wide: seven of them fit, and each is a finger's target.
+.day,
+.outside {
+  display: inline-grid;
+  place-items: center;
+  inline-size: t.touch(target);
+  block-size: t.touch(target);
+  border: 0;
+  border-radius: t.radius(md);
+  font-size: t.text(sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.day {
+  color: t.role('fg');
+  background: transparent;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    background: t.role('bg-soft');
+  }
+
+  &:focus-visible {
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: calc(-1 * #{t.stroke(thick)});
+  }
+
+  &:disabled,
+  &[aria-disabled='true'] {
+    color: t.role('fg-muted');
+    text-decoration: line-through;
+    background: transparent;
+    cursor: not-allowed;
+  }
+}
+
+.outside {
+  color: t.role('fg-muted');
+  opacity: 0.5;
+}
+
+.cell[aria-selected='true'] .day,
+.day[aria-current='date'] {
+  color: t.role('accent-fg');
+  background: t.role('accent');
+}
+
+.cell[data-span='inside'] .day {
+  color: t.role('accent-strong');
+  background: t.role('accent', 0.12);
+}

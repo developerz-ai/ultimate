@@ -1,0 +1,30 @@
+@use '../tokens' as t;
+
+// A board: columns side by side that snap-scroll sideways; one column wide on a phone.
+.board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(t.rem(256px), 1fr);
+  gap: t.space(4);
+  overflow-x: auto;
+  scroll-snap-type: inline mandatory;
+  overscroll-behavior-inline: contain;
+
+  @include t.respond-down(sm) {
+    grid-auto-columns: 100%;
+  }
+}
+
+.column {
+  @include t.column(t.space(2));
+  scroll-snap-align: start;
+  border-radius: t.radius(lg);
+  background: t.role('bg-soft');
+  padding: t.space(3);
+}
+
+.columnLabel {
+  margin: 0;
+  color: t.role('fg-strong');
+  font-weight: t.weight(semibold);
+}

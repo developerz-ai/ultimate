@@ -41,6 +41,7 @@
     "gate-steps": "bun --preload ./scripts/lib/guard-preload.ts scripts/gate-steps.ts",
     "guards-doc": "bun run scripts/guards-doc.ts",
     "index-of-order": "bun run scripts/index-of-order.ts",
+    "keyed-hasher": "bun run scripts/keyed-hasher.ts",
     "lint": "biome check .",
     "llms-txt": "bun run scripts/llms-txt.ts",
     "lint:fix": "biome check --write .",

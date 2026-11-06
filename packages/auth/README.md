@@ -967,8 +967,9 @@ export const resolveKey = apiKeyResolver(() => {
 | a store that FAILS | the throw, untouched — a database that is down is not a wrong key |
 
 The store is a THUNK, read when a token is presented: a mount is declared when its module is
-evaluated, and `postgresAuthAdapter()` takes the process's database client, which boot installs
-later. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is an
+evaluated, and which store serves (memory or Postgres) is often decided at boot.
+`postgresAuthAdapter()` with no client reads the ambient `db()` on every call, so the instance can
+be built before boot installs the client, and joins an open `withTransaction`. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is an
 `ApiKeyVerifyStore` (an `ApiKeyStore` that can also `findUserById`).
 
 ## A person's identity, for a subject export or erase

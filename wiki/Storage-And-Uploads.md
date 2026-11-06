@@ -359,6 +359,28 @@ encode `png`, `jpeg` and `webp`; `avif` is key and `srcset` math only. `variantK
 `srcsetDescriptors()` and `fitDimensions()` are pure, which is how [SEO](SEO) builds `srcset`
 without decoding a byte.
 
+### Warm the variants after the upload — `warmVariants`
+
+The first request for each width otherwise pays the decode on the request path. A job the upload
+enqueues pays it once instead, under the exact keys `/media` reads:
+
+```ts
+import { disk, warmVariants } from '@ultimat3/storage';
+
+const warmed = await warmVariants({
+  disk: disk(),
+  key: 'org/o1/member/m1/avatar/a.png',
+  widths: [48, 96, 192],
+  formats: ['webp'],
+});
+```
+
+`{ written, failed, skipped }`: the revision is read off the source it decodes, so a variant is never
+keyed to bytes it was not made from; a width above the source's is `skipped`, never an upscale; an
+`avif` fails alone with core's `X_IMAGE_UNSUPPORTED` and the rest are still written. The source is
+read and probed once and held to `MAX_IMAGE_PIXELS` before a pixel is decoded. `As of 2026-11`.
+`examples/dummy`'s `app/orgs/jobs/warm-avatar.ts` is the worked job.
+
 ## Expiry — `expireObjects` and `abortStaleUploads`
 
 `As of 2026-11-06`. **The window is the app's, at the call; the sweep runs on every disk.** A local

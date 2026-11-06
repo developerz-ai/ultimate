@@ -1,6 +1,9 @@
 // The wiring of LineChart and AreaChart — what the markup carries — asked of the components; the
 // geometry has its own tests in `line-chart-view.test.ts` and `chart-ticks-view.test.ts`.
 
+// Bare, as `index.ts` imports it: the server's `useUi()` reader and the catalog behind
+// `ui.chart.none` — this file reaches the component by its module path (issue #490).
+import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
 import type { RenderNode } from '@ultimat3/core/render-nodes';
 import { byTag, nodesOf, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
@@ -73,13 +76,14 @@ describe('LineChart', () => {
     expect(byTag(nodes, 'ul')).toHaveLength(0);
   });
 
-  test('the fallback table holds the same numbers the plot draws, with a gap left empty', () => {
+  test('the fallback table holds the same numbers the plot draws, a gap saying so', () => {
     const nodes = renderNodes(LineChart, base);
     const table = one(byTag(nodes, 'table'), 'fallback');
     const inTable = nodesOf(table.props['children']);
     expect(text(one(byTag(inTable, 'caption'), 'caption'))).toBe('Signups, this week');
     expect(byTag(inTable, 'th').map(text)).toEqual(['Day', 'Web', 'App', 'mon', 'tue', 'wed']);
-    expect(byTag(inTable, 'td').map(text)).toEqual(['3', '1', '9', '', '4', '6']);
+    // A gap is `ui.chart.none` — an empty cell read aloud is nothing at all.
+    expect(byTag(inTable, 'td').map(text)).toEqual(['3', '1', '9', 'No data', '4', '6']);
     // Row heads are scoped to their row, column heads to their column.
     const scopes = byTag(inTable, 'th').map((th) => th.props['scope']);
     expect(scopes).toEqual(['col', 'col', 'col', 'row', 'row', 'row']);

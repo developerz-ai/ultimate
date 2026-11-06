@@ -1,0 +1,15 @@
+// This app's authoring layer for stylesheets: `@use '../../shared/tokens' as t;` in a
+// `*.module.scss` and reach for `t.role(…)`. Forwards @ultimat3/ui's token layer verbatim and is
+// where this app's own functions and mixins go.
+//
+// Emits no CSS, and must not: every module is its own Sass compilation, so a `:root` block in here
+// would be inlined once per stylesheet that uses it. The custom properties those functions REFER to
+// are defined exactly once, by `shared/global.scss`.
+//
+// A raw hex anywhere in the app is a lint failure, because dark theme is not a later project.
+//
+// The API is functions, not variables: `role('accent')`, `space(4)`, `radius('md')`,
+// `text('lg')`, `shadow('sm')`, plus mixins like `@include focus-ring` and `@include surface`.
+// Colours are stored as space-separated RGB CHANNELS, so `role('accent', 0.12)` gives you a tint
+// without inventing a second token.
+@forward '@ultimat3/ui/tokens';

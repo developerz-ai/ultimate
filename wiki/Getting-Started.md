@@ -4,6 +4,9 @@
 bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 ```
 
+Building a blog or an API rather than a dashboard? Add `--shape blog` or `--shape api` to the
+first command: [Shapes](Shapes) says what each writes and leaves out.
+
 **Four commands, and `bun run setup` is one of them.** It is the scaffold's own script, six steps —
 `bun install`, an `.env.development.local` touch, `x db gen "initial"` when
 `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — idempotent, so
@@ -62,7 +65,7 @@ Measured on a fresh scaffold, `As of 2026-08-23`.
 | `/_x` dev panel | `http://localhost:3000/_x` | 11 panels: routes, timeline, live, jobs, db, mail, cache, policy, manifest, services, boundaries |
 | MCP server | `x mcp serve` | 19 dev tools over `stdio` or `http` (14 framework tools plus five `ui.*`). **Not started by `x dev`** — `/mcp` on the dev server is 404 |
 | Landing page | `apps/web/site/page.tsx` | `render: 'static'`, `hydrate: 'never'`, `budget: { js: '0kb' }`, real meta + JSON-LD |
-| Dashboard | `apps/web/app/dashboard/page.tsx` | `render: 'stream'`, `hydrate: 'visible'`, `budget: { js: '64kb' }` (one island, the theme toggle), behind `policy: { permission: 'dashboard:read' }`. A `<Hole>` is the next read it does not wait for ([Routes and render modes](Routes-And-Render-Modes#what-a-hole-does)) |
+| Dashboard | `apps/web/app/dashboard/page.tsx` | `render: 'stream'`, `hydrate: 'visible'`, `budget: { js: '60kb' }` (one island, the theme toggle), behind `policy: { permission: 'dashboard:read' }`. A `<Hole>` is the next read it does not wait for ([Routes and render modes](Routes-And-Render-Modes#what-a-hole-does)) |
 | Admin app | `apps/admin/` | one `ssr` page; your actions reach an agent through `mcp: { expose: true }` and `x mcp serve`, not through this app |
 | Green gate | `bun run verify` — `x verify` | 21 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `budgets` weighs `.x/build-stats.json` and runs `x build --target static` itself when that file is missing or older than the source, so `x verify` alone is the gate on an app nobody has built (`As of 30.0`). The first-run verdict on a fresh scaffold is measured by CI, never asserted here |
 

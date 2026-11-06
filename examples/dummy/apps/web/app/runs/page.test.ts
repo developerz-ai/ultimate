@@ -20,7 +20,10 @@ const LEDGER = {
  */
 const routeWith = (rows: readonly (typeof LEDGER)[]) => ({
   ...page,
-  config: { ...page.config, load: () => Promise.resolve([...rows]) },
+  config: {
+    ...page.config,
+    load: () => Promise.resolve({ connections: [...rows], url: 'https://example.test/runs' }),
+  },
 });
 
 /** The console among the route's islands — the layout's update banner is the other one. */
@@ -35,8 +38,12 @@ unitTest('the page renders its heading and the console’s loading shell', async
   expect(view.html.match(/<h1\b/g)).toHaveLength(1);
   expect(view.text).toContain(t('app.runs.heading'));
   expect(view.text).toContain(t('app.runs.intro'));
-  // Reachable from every `app/` page, not only by typing the URL.
+  // Reachable from every `app/` page, not only by typing the URL; and the health charts from here.
   expect(view.html).toContain('href="/runs"');
+  expect(view.html).toContain('href="/runs/health"');
+  expect(view.text).toContain(t('app.runs.healthLink'));
+  // The board is in the app's nav, header and bottom bar alike.
+  expect(view.html.match(/href="\/posts\/board"/g)).toHaveLength(2);
 });
 
 unitTest('it hands the island the org’s connections and no credential', async () => {
@@ -46,6 +53,23 @@ unitTest('it hands the island the org’s connections and no credential', async 
   expect(JSON.stringify(island?.props)).not.toContain('credential":"');
   expect(island?.props?.['zone']).toBeString();
 });
+
+unitTest(
+  'the filter is the console’s: one island beside the banner, and a form with no script',
+  async () => {
+    const view = await renderRoute(routeWith([LEDGER]), request);
+    // Two islands carried their own Solid and `UiProvider` each (58,159 B for the filter alone).
+    expect(view.islands).toHaveLength(2);
+    expect(consoleOf(view)?.props?.['filter']).toEqual({
+      from: null,
+      to: null,
+      labels: { legend: useT()('app.runs.created'), submit: useT()('app.runs.filter') },
+    });
+    // Scripting off, the server's GET form still filters.
+    expect(view.html).toMatch(/<form[^>]*method="get"[^>]*action="\/runs"/);
+    expect(view.html).toContain('name="from"');
+  },
+);
 
 unitTest('every label the island shows is a catalog string, in the request’s locale', async () => {
   const t = useT();
@@ -95,7 +119,7 @@ unitTest('load reads the org’s connections as the member who asked', async () 
       { ...ctxOf({ actor }), requestHeaders: new Headers({ cookie }) },
       () => renderRoute(page, { url: request.url }),
     );
-    expect(view.data.map((row) => row.label)).toEqual(['Ledger']);
+    expect(view.data.connections.map((row) => row.label)).toEqual(['Ledger']);
   } finally {
     globalThis.fetch = realFetch;
     if (realUrl === undefined) delete process.env['APP_URL'];

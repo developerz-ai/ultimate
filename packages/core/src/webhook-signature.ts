@@ -11,6 +11,8 @@
 // FORMAT and never POLICY. What counts as fresh, how large a body may be, and which status a
 // refusal answers with are the receiver's questions and stay in `@ultimat3/http`.
 
+import { hmac } from './hmac';
+
 /** The format's version: the first field of the canonical string, and the signature's key. */
 export const WEBHOOK_SIGNATURE_VERSION = 'v1';
 
@@ -86,12 +88,8 @@ export interface WebhookMacInput {
 
 /** The hex hmac-sha256 over the canonical string. The one place either side computes one. */
 export function webhookMac(input: WebhookMacInput): string {
-  const hasher = new Bun.CryptoHasher('sha256', input.secret);
-  hasher.update(
-    `${WEBHOOK_SIGNATURE_VERSION}:${input.timestampText}:${input.eventId}:${input.topic}:`,
-  );
-  hasher.update(input.body);
-  return hasher.digest('hex');
+  const prefix = `${WEBHOOK_SIGNATURE_VERSION}:${input.timestampText}:${input.eventId}:${input.topic}:`;
+  return hmac('sha256', input.secret, [prefix, input.body], 'hex');
 }
 
 /**

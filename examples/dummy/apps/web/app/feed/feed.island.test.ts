@@ -33,6 +33,7 @@ const PROPS = {
   zone: 'Asia/Tokyo',
   labels: {
     empty: 'No posts yet.',
+    list: 'Feed',
     offline: 'Offline — showing the copy on this device.',
     likes: { locale: 'en', forms: { one: '{count} like', other: '{count} likes' } },
     like: 'Like',

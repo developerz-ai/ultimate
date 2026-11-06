@@ -2,6 +2,8 @@
 // where the stats and the inventory landed. Split from `prerender.ts`, which decides what is
 // written; this file only names the shapes the report carries.
 
+import type { RouteEntries } from './prerender-entries';
+import type { LlmsPages } from './site-llms-pages';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 
 export interface PrerenderedPage {
@@ -55,4 +57,14 @@ export interface PrerenderReport {
   readonly warnings: readonly string[];
   /** The origin every absolute URL in the export was built against — hand it to `siteSeo`. */
   readonly origin: string;
+  /**
+   * Every page each public `site/` route's `prerender()` listed, enumerated once inside the build's
+   * scope — hand it to `siteSeo`, which then never asks `prerender()` after that scope is gone.
+   */
+  readonly entries: RouteEntries;
+  /**
+   * Every `llms.txt` page record whose `meta` needs its `load`, read inside the build's scope —
+   * hand it to `siteSeo` as `llmsPages`, which then never runs a `load` after that scope is gone.
+   */
+  readonly llmsPages: LlmsPages;
 }

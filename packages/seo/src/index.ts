@@ -125,6 +125,8 @@ export {
 export { sitemapDatetime } from './sitemap-datetime';
 export type { SitemapSection } from './sitemap-sections';
 export { sectionOf } from './sitemap-sections';
+export type { StaticExport, StaticImageRequest } from './static-export';
+export { currentStaticExport, isExportableSrc, setStaticExport } from './static-export';
 export type { MetaIssue, MetaValidationReport, ValidateMetaOptions } from './validate';
 export { assertMeta, validateMeta } from './validate';
 export { absoluteUrl, escapeXml } from './xml';
