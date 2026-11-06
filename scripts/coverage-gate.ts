@@ -223,6 +223,9 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
  * and passed — so the isolation this gate runs per unit to prove was proved by nothing.
  * Measured: a probe asserting `1 === 2` in `packages/money` left `--package money` green.
  */
+/** How much of a failed run's end the cause carries when no line names the failure. */
+const UNNAMED_TAIL_LINES = 20;
+
 export function suiteFailure(
   name: string,
   exitCode: number,
@@ -235,9 +238,15 @@ export function suiteFailure(
   // The assertion's own diff — what the test RECEIVED — is the half that names the cause; a CI
   // flake reported as `error: expect(received).toEqual(expected)` alone cannot be root-caused.
   const diff = lines.filter((line) => /^(?:[-+]\s|Expected:|Received:)/.test(line)).slice(0, 24);
+  // Nothing named: an unhandled error between tests, a crash, a non-zero exit with every test
+  // green. The run's own last lines are then the only evidence, and CI keeps no other copy.
+  const tail =
+    failed.length === 0 && diff.length === 0
+      ? lines.filter((line) => line !== '').slice(-UNNAMED_TAIL_LINES)
+      : [];
   return {
     code: 'X_TEST_FAILED',
-    cause: `bun test ${unit.test} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}${diff.length > 0 ? ` — the assertion's diff: ${diff.join(' | ')}` : ''}`,
+    cause: `bun test ${unit.test} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}${diff.length > 0 ? ` — the assertion's diff: ${diff.join(' | ')}` : ''}${tail.length > 0 ? ` — exit ${String(exitCode)}, and the run ended: ${tail.join(' | ')}` : ''}`,
     fix: `run bun test ${unit.test} and fix what it reports — a suite green only beside other packages depends on something another package registered first`,
   };
 }

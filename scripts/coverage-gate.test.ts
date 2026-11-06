@@ -227,6 +227,18 @@ describe('a suite that fails alone', () => {
     expect(cause).toMatch(/\+\s+"GET \/eager prefetch"/);
   });
 
+  test('a failure no line names carries the end of the run instead', () => {
+    const stderr = [
+      ...Array.from({ length: 30 }, (_, i) => `line ${String(i)}`),
+      '# Unhandled error between tests',
+      'PolicyError: X_PERMISSION_UNKNOWN',
+    ].join('\n');
+    const cause = suiteFailure('testing', 1, stderr)?.cause ?? '';
+    expect(cause).toContain('exit 1');
+    expect(cause).toContain('PolicyError: X_PERMISSION_UNKNOWN');
+    expect(cause).not.toContain('line 0 |');
+  });
+
   test('a zero exit is no failure, whatever stderr says', () => {
     expect(suiteFailure('money', 0, '(fail) not really')).toBeUndefined();
   });
