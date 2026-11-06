@@ -904,9 +904,12 @@ a current fact: the rules that still hold are in that file, and where the two di
   tenant-scoped row is somebody else's, and letting the caller's value stand there would leave the
   hole open on exactly the unauthenticated path. **Outside every request context there is no actor
   to derive from** — a script, a seed, a test harness — so the caller names the tenant itself and
-  `X_TENANCY_UNSCOPED` still refuses a plan that names none. There is no build-time tenancy step in
-  `x verify` (its 20 steps check none) and the old comment in `tenancy.ts` claiming one was wrong:
-  the tenant is a request-time value, so the seam is the enforcement.
+  `X_TENANCY_UNSCOPED` still refuses a plan that names none. There was no build-time tenancy step in
+  `x verify` when this landed (the gate was 20 steps and none checked it), and the old comment in
+  `tenancy.ts` claiming one was wrong: the tenant is a request-time value, so the seam is the
+  enforcement. As of 2026-11 the `exercise` step adds a STATIC half beside the seam —
+  `X_ENTITY_TENANT_UNDECLARED`, an untenanted entity whose references reach a tenant-columned one,
+  with no `shared: '<why>'` (`packages/cli/src/exercise-static.ts`); the request-time value is still the seam's alone.
 
 - **`crossTenant(reason, fn)` (`cross-tenant.ts`) is the ONE way to read across tenants**, for the
   three cases that have no single one: an admin surface over every org, background reconciliation,

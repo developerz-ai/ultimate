@@ -10,6 +10,7 @@ import './quiet-logs';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
+import { installTabA11yAudit } from './e2e-a11y-tabs';
 import { onFileBoundary } from './file-boundary';
 import { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
 import { installPerTestReset } from './per-test-reset';
@@ -50,6 +51,10 @@ installRegistryLeakGuard();
 // And per TEST: the jobs event bus stores what it is handed, so one test's published answer
 // resumed the next test's waiting run (`per-test-reset.ts`).
 installPerTestReset();
+
+// And every browser tab a suite drives itself is audited like an `e2eTest`'s page: its findings
+// fail the test from this one `afterEach`, so no suite has a line to forget (`e2e-a11y-tabs.ts`).
+installTabA11yAudit();
 
 // A shared worker only (an isolated file is a fresh registry anyway): the app's
 // `defineApi({ pathStyle })` evaluates once per worker, in whichever file first imports it, and

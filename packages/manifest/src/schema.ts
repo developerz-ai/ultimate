@@ -156,6 +156,8 @@ export interface EntityFact {
   readonly columns: readonly ColumnFact[];
   /** Named invariants, so an agent can see the rules without reading the migration. */
   readonly invariants: readonly string[];
+  /** `entity({ shared })`: why it belongs to no tenant. Absent when undeclared. */
+  readonly shared?: string;
 }
 
 /** A declared bucket as the author wrote it — `toBucket`'s input, never its converted output. */

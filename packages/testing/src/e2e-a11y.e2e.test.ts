@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eBrowser } from './cdp-browser';
 import { E2E_BROWSER_CLOSE_MS, E2E_BROWSER_OPEN_MS, openE2eBrowser } from './cdp-browser';
 import { findChrome } from './cdp-launch';
+import { endTabA11y } from './e2e-a11y-tabs';
 import { e2eRunner } from './e2e-driver';
 import type { E2eBody } from './test-types';
 
@@ -125,5 +126,22 @@ describe.skipIf(noBrowser)('every e2eTest audits the browser’s accessibility t
 
   test('a document that is not markup — JSON in the browser’s own viewer — is not judged', async () => {
     expect(await outcome(runner().run(visit('/data.json')))).toBe('passed');
+  });
+
+  test('a raw tab a suite drives itself is audited the same way, with no line in the suite', async () => {
+    const tab = await browser.session.newTab();
+    try {
+      await tab.goto(`${baseUrl}/unnamed`);
+      // What the preload's `afterEach` runs at this test's end, called here to read its verdict.
+      const told = await outcome(endTabA11y());
+      expect(told).toContain('X_E2E_A11Y_VIOLATION');
+      expect(told).toContain('id=\\"close\\"');
+      await tab.goto(`${baseUrl}/dialog`);
+      await tab.click('#open');
+      const opened = await outcome(endTabA11y());
+      expect(opened).toContain('dismiss');
+    } finally {
+      await tab.close();
+    }
   });
 });

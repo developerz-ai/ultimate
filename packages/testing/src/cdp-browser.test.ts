@@ -16,6 +16,7 @@ import {
   TAB_OPEN_DEADLINES,
 } from './cdp-browser';
 import type { CdpConnection, CdpEventListener, CdpResult } from './cdp-connection';
+import { FULL_AX_TREE } from './cdp-e2e-page';
 import { cdpE2eSession } from './cdp-e2e-session';
 import {
   CHROME_PATH_ENV,
@@ -88,7 +89,7 @@ describe('the open budget a browser hook is given', () => {
     expect(browserCalls.length - SESSION_SETUP_DEADLINES + 1).toBe(TAB_OPEN_DEADLINES);
   });
 
-  test('a goto spends GOTO_DEADLINES sequential calls: the navigate (raced by the load event), then two reads', async () => {
+  test('a goto spends GOTO_DEADLINES sequential calls: the navigate (raced by the load event), two reads, the audit', async () => {
     const { connection, tabCalls } = fakeBrowser();
     const session = await cdpE2eSession({ connection, loadTimeoutMs: 1_000 });
     const tab = await session.newTab();
@@ -98,8 +99,13 @@ describe('the open budget a browser hook is given', () => {
 
     expect(tabCalls.slice(before)).toEqual([
       'Page.navigate',
-      ...Array.from({ length: GOTO_DEADLINES - 1 }, () => 'Runtime.evaluate'),
+      'Runtime.evaluate',
+      'Runtime.evaluate',
+      // The audit: the in-page probe, then the tree.
+      'Runtime.evaluate',
+      FULL_AX_TREE,
     ]);
+    expect(tabCalls.length - before).toBe(GOTO_DEADLINES);
     expect(E2E_GOTO_MS).toBe(GOTO_DEADLINES * DEFAULT_CDP_TIMEOUT_MS);
   });
 

@@ -92,6 +92,7 @@ export const OFF_SOCKET: Pins = {
     'X_N_PLUS_ONE_WRITE',
     'X_LOCK_UNSUPPORTED',
     'X_TEST_DRIVER_CLIENT_CHANGED',
+    'X_ENTITY_TENANT_UNDECLARED',
   ],
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],

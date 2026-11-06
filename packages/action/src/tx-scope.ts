@@ -15,7 +15,7 @@ import {
   liveTxConnection,
   withTransaction,
 } from '@ultimat3/db';
-import { memoryTransactor } from '@ultimat3/entity';
+import { memoryJournal, memoryTransactor } from '@ultimat3/entity';
 
 /** The mark a keyed run puts on the open root: its COMMIT carries the settle, abort or no abort. */
 export const carrySettleOnCommit = (): void => completeTransaction();
@@ -31,10 +31,15 @@ export interface CommitScope {
  * included: a promise chain the body forgot to await still finds the handle after the scope
  * closed, and `onCommit` on it runs the effect at once after a COMMIT and drops it after a
  * ROLLBACK — the answer `@ultimat3/entity`'s row observer gets from the same call, so a late bust
- * and a late change report never disagree about one write.
+ * and a late change report never disagree about one write. With no SQL transaction, the open
+ * MEMORY transaction answers the same way (the row observer asks it too).
  */
 export function openCommitScope(): CommitScope | undefined {
-  return currentTx();
+  const sql = currentTx();
+  if (sql !== undefined) return sql;
+  const memory = memoryJournal();
+  const onCommit = memory?.onCommit?.bind(memory);
+  return onCommit === undefined ? undefined : { onCommit };
 }
 
 /** A transaction that is still OPEN: statements sent now are inside it. */

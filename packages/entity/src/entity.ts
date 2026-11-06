@@ -9,7 +9,7 @@ import { assertAppendOnlyColumns } from './append-only';
 import { entityNow } from './clock';
 import { assertTableName, bindColumn, columnName, moneyColumns } from './column';
 import { newId } from './columns';
-import { assertNotRetired, describeEntity, describeReferences } from './describe';
+import { assertNotRetired, assertShared, describeEntity, describeReferences } from './describe';
 import { parseEntityPatch } from './entity-patch';
 import { invariantViolated } from './errors';
 import type { InvariantColumns, Resolve } from './expr';
@@ -52,6 +52,11 @@ export interface EntityInit<C extends ColumnMap> {
    * `orgId`, so silence never means unscoped.
    */
   readonly tenant?: keyof C & string;
+  /**
+   * Why an entity with no tenant column, referencing a tenant-owned one, belongs to no tenant.
+   * Without it `x verify`'s exercise step reports `X_ENTITY_TENANT_UNDECLARED`; blank is refused.
+   */
+  readonly shared?: string;
   /** Composite keys only — a single key is `uuid().primaryKey()` on the column itself. */
   readonly primaryKey?: readonly (keyof C & string)[];
   /**
@@ -190,6 +195,7 @@ export const entity = <const C extends ColumnMap>(
   // does not rename its table — was not, so an entity NAME closed the identifier in the same way a
   // column name could: `entity('t" (x int); drop table u; --')` emitted that `drop table` verbatim.
   const table = assertTableName(name, init.table ?? name);
+  assertShared(name, table, init.shared, tenantColumn);
   for (const [property, column] of entries) bindColumn(column, name, property, tenant, table);
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
@@ -369,6 +375,7 @@ export const entity = <const C extends ColumnMap>(
       search,
       appendOnly,
       retired: init.retired,
+      shared: init.shared,
     });
   assertNotRetired(name, entries, init.retired);
   const references = (): readonly ReferenceDescription[] => describeReferences(name, entries);

@@ -39,6 +39,9 @@
       "path": "../policy"
     },
     {
+      "path": "../pwa"
+    },
+    {
       "path": "../query"
     },
     {
@@ -48,10 +51,10 @@
       "path": "../render"
     },
     {
-      "path": "../time"
+      "path": "../schema"
     },
     {
-      "path": "../pwa"
+      "path": "../time"
     }
   ]
 }

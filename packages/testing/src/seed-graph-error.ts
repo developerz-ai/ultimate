@@ -1,8 +1,9 @@
-// The one refusal the seed graph has: no generated row satisfies a table. Apart from ./errors, which
-// owns the code, its title and the one registration, because that catalogue is at its ceiling. Every
-// fix names the `defineFactory` to write, since a factory is the only input that beats the graph.
+// The seed graph's refusals: no generated row satisfies a table, or a writer handed a plan for an
+// entity it was not given. Apart from ./errors, which owns the codes, their titles and the one
+// registration, because that catalogue is at its ceiling. A row refusal's fix names the
+// `defineFactory` to write, since a factory is the only input that beats the graph.
 
-import { renderFixLiteral, UltimateError } from '@ultimat3/core';
+import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
 import './errors';
 
 /** What could not be generated: a column, a rule a row breaks, or a cycle with no nullable edge. */
@@ -33,3 +34,17 @@ export class SeedGraphUnsatisfiedError extends UltimateError {
 
 export const seedGraphUnsatisfied = (input: SeedGraphUnsatisfiedInput): SeedGraphUnsatisfiedError =>
   new SeedGraphUnsatisfiedError(input);
+
+/**
+ * `entitySeedWriter` met a row whose entity is not in the set it writes through: the plan and the
+ * writer were built from two different entity sets. The fix is one set, handed to both.
+ */
+export class SeedGraphEntityUnknownError extends UltimateError {
+  constructor(input: { readonly entity: string; readonly known: readonly string[] }) {
+    super({
+      code: 'X_SEED_GRAPH_ENTITY_UNKNOWN',
+      cause: `the seed plan writes ${renderCauseValue(input.entity)}, and the writer holds only ${renderCauseValue(input.known)}`,
+      fix: 'const graph = seedGraph(entities, …); await insertSeedGraph(graph, entitySeedWriter({ entities, … }))   # one entity set for both',
+    });
+  }
+}

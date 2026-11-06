@@ -82,7 +82,9 @@ export function seedGraph(
       what:
         reference === undefined
           ? `no generated value is storable in ${property} — its column refuses every one`
-          : `${property} references ${reference.targetEntity}, which has no row${tenant === null ? '' : ' in the same tenant'} to point at`,
+          : !shapes.has(reference.targetEntity)
+            ? `${property} references ${reference.targetEntity}, which is not in the set seeded — pass it too`
+            : `${property} references ${reference.targetEntity}, which has no row${tenant === null ? '' : ' in the same tenant'} to point at`,
       columns: [property],
     });
   };
@@ -100,7 +102,7 @@ export function seedGraph(
     const rootProperty = roots.get(name);
     const buckets: readonly (string | null)[] = scoped(name) ? tenants : [null];
     let ordinal = 0;
-    for (const tenant of buckets) {
+    for (const [bucket, tenant] of buckets.entries()) {
       const size = rootProperty === undefined ? perTable : 1;
       for (let index = 0; index < size; index += 1) {
         ordinal += 1;
@@ -109,16 +111,29 @@ export function seedGraph(
           factory === undefined ? {} : { ...factory.build() };
         const columns = shape.columns.map(([property, column], position) => {
           const reference = shape.references.get(property);
+          // The tenant key points at a root row only when the root is in the set: refused like any
+          // other reference to an entity this graph does not seed.
           const candidates =
-            property === entity.$tenantColumn || property === rootProperty
-              ? [tenant]
-              : reference !== undefined
-                ? deferred.has(edgeKey(name, property))
+            property === entity.$tenantColumn &&
+            reference !== undefined &&
+            !shapes.has(reference.targetEntity)
+              ? []
+              : property === entity.$tenantColumn || property === rootProperty
+                ? [tenant]
+                : property === shape.softDelete && !Object.hasOwn(built, property)
                   ? [null]
-                  : parentValues(reference, tenant, index)
-                : Object.hasOwn(built, property)
-                  ? storable(column, [built[property]])
-                  : candidatesFor(property, column, { ordinal, canary, position, uuid: stream });
+                  : reference !== undefined
+                    ? deferred.has(edgeKey(name, property))
+                      ? [null]
+                      : parentValues(reference, tenant, index)
+                    : Object.hasOwn(built, property)
+                      ? storable(column, [built[property]])
+                      : candidatesFor(property, column, {
+                          ordinal,
+                          canary,
+                          position,
+                          uuid: stream,
+                        });
           return [
             property,
             candidates.length === 0 ? refuseEmpty(shape, property, tenant) : candidates,
@@ -132,11 +147,15 @@ export function seedGraph(
         };
         const solved = solveRow(problem);
         if (!solved.ok) {
-          // A table whose unique values run out is full, not broken — as long as it holds a row.
+          // A table whose unique values run out is full, not broken — as long as EVERY tenant holds a
+          // row: a tenant left empty would leave its own children no parent to point at.
           if (solved.capacity && index > 0) break;
           throw seedGraphUnsatisfied({
             entity: name,
-            what: `no generated row keeps ${solved.broken.join(', ')}`,
+            what:
+              solved.capacity && rows.length > 0
+                ? `${solved.broken.join(', ')} runs out of values before tenant ${bucket + 1} of ${buckets.length} holds a row — it is unique across the table, not per tenant`
+                : `no generated row keeps ${solved.broken.join(', ')}`,
             columns: solved.properties,
           });
         }

@@ -4,8 +4,9 @@
  * its execution survive. A read writes nothing, so no transaction wraps it. The codes are action's.
  */
 
-import type { Actor, Ctx, ExerciseReport } from '@ultimat3/core';
+import type { Actor, Ctx, DrawnInput, ExerciseReport } from '@ultimat3/core';
 import {
+  bindDrawn,
   ctxOf,
   exerciseReplay,
   isUltimateError,
@@ -26,7 +27,7 @@ import { queryName, sourceFor } from './read';
 /** Who reads, and what binds the parts a generated value cannot. Same shape as an action's. */
 export interface QueryExerciseActorOptions {
   readonly actor: Actor | null;
-  readonly input?: (drawn: unknown) => unknown;
+  readonly input?: (drawn: DrawnInput) => unknown;
   readonly runs?: number;
 }
 
@@ -76,7 +77,7 @@ export async function exerciseQuery(
     runs: options.runs,
     stoppedLabel: 'stopped before sql()',
     draw: (seed, run) => arbitrary(target.input, { seed, run }),
-    bind: options.input,
+    bind: bindDrawn(options.input),
     accepts: (input) => accepts(target.input, input),
     attempt: async (input) => {
       try {

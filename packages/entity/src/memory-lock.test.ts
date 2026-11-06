@@ -124,22 +124,35 @@ describe('unit · memoryLocks', () => {
   test('joined to a tx the key is held to the root’s end, as a row lock is', async () => {
     const locks = memoryLocks();
     const order: string[] = [];
-    const second = Promise.withResolvers<Promise<void>>();
-    await memoryTransactor().run(async (root) => {
-      await locks.run('k', root, async () => {
+    const nested = Promise.withResolvers<void>();
+    const end = Promise.withResolvers<void>();
+    const root = memoryTransactor().run(async (tx) => {
+      await locks.run('k', tx, async () => {
         order.push('nested');
       });
-      second.resolve(
-        locks.run('k', undefined, async () => {
-          order.push('second');
-        }),
-      );
-      await tick();
-      await tick();
+      nested.resolve();
+      await end.promise;
       order.push('root ending');
     });
-    await await second.promise;
+    await nested.promise;
+    // Another caller, outside the root: it waits for the root, not for the scope that took the key.
+    const second = locks.run('k', undefined, async () => {
+      order.push('second');
+    });
+    await tick();
+    end.resolve();
+    await root;
+    await second;
     expect(order).toEqual(['nested', 'root ending', 'second']);
+  });
+
+  test('a key taken in a savepoint is the root’s: the root writes it again with no wait', async () => {
+    const locks = memoryLocks(5);
+    await memoryTransactor().run(async () => {
+      await memoryTransactor().run(() => locks.run('k', undefined, async () => undefined));
+      expect(await locks.turn('k', undefined, () => 'free')).toBe('free');
+      expect(await locks.run('k', undefined, async () => 'again')).toBe('again');
+    });
   });
 
   test('the same tx may take its own key again after the scope that took it ended', async () => {

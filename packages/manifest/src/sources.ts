@@ -137,6 +137,7 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
         ...sealedFact(sealed.get(entity.name)?.get(column.column)),
       })),
       invariants: entity.invariants.map((invariant) => invariant.name),
+      ...(entity.shared === undefined ? {} : { shared: entity.shared }),
     })),
     actions: describeActions().map((action) => ({
       name: action.name,

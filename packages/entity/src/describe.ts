@@ -36,6 +36,8 @@ export interface DescribeInput<Row> {
   readonly appendOnly?: boolean;
   /** `entity({ retired: [...] })` — physical names, projected only when there are any. */
   readonly retired?: readonly string[] | undefined;
+  /** `entity({ shared: '<why>' })` — projected only when declared. */
+  readonly shared?: string | undefined;
 }
 
 /**
@@ -182,6 +184,34 @@ export const assertNotRetired = (
   }
 };
 
+/**
+ * `shared` is a reason, so a blank one is no reason: refused where it was written, never read as a
+ * declaration someone took. On an entity WITH a tenant column it states a reason for nothing — the
+ * stance `sameTenantOf` takes on a `crossTenant` reason for an edge that cannot be same-tenant.
+ */
+export const assertShared = (
+  entityName: string,
+  table: string,
+  shared: string | undefined,
+  tenantColumn: string | null,
+): void => {
+  if (shared === undefined) return;
+  if (shared.trim() === '') {
+    throw new EntityError({
+      code: 'X_ENTITY_TENANT_UNDECLARED',
+      cause: `${entityName} declares shared with no reason: a blank reason says nothing about why its rows belong to no tenant`,
+      fix: `entity('${entityName}', { shared: '<why it belongs to no tenant>' }) — or drop shared, add orgId: uuid().tenant() to its columns, then x db gen "${table} tenant"`,
+    });
+  }
+  if (tenantColumn !== null) {
+    throw new EntityError({
+      code: 'X_INVARIANT_VIOLATED',
+      cause: `${entityName} declares shared and has the tenant column ${tenantColumn}: its rows belong to a tenant, so the reason explains nothing`,
+      fix: `entity('${entityName}', { … }) — with the shared option removed`,
+    });
+  }
+};
+
 const describeColumn = <Row>(
   input: DescribeInput<Row>,
   property: string,
@@ -318,5 +348,7 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
     // and an entity that never said `appendOnly` must hash exactly what it hashed before.
     ...(input.appendOnly === true ? { appendOnly: true as const } : {}),
     ...((input.retired ?? []).length === 0 ? {} : { retired: input.retired }),
+    // Absent unless declared, like `appendOnly`: no entity that never said it moves the hash.
+    ...(input.shared === undefined ? {} : { shared: input.shared }),
   };
 };

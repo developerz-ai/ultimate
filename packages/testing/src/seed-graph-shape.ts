@@ -26,7 +26,18 @@ export interface EntityShape {
   readonly references: ReadonlyMap<string, ReferenceDescription>;
   readonly checks: readonly RowCheck[];
   readonly uniques: readonly (readonly string[])[];
+  /**
+   * The soft-delete property, or `null`. Seeded null unless a factory builds it: a row born deleted
+   * is invisible to every read.
+   */
+  readonly softDelete: string | null;
 }
+
+/**
+ * `@ultimat3/entity`'s `SOFT_DELETE_COLUMN`, restated because this module type-imports entity only.
+ * `seed-graph.test.ts` holds the two equal, so a rename there fails here.
+ */
+export const SEED_SOFT_DELETE_PROPERTY = 'deletedAt';
 
 /** Physical column -> property. A money property owns all of its physical columns. */
 const propertiesByColumn = (entity: SeedEntity): ReadonlyMap<string, string> => {
@@ -88,5 +99,6 @@ export function shapeOf(entity: SeedEntity): EntityShape {
     references: new Map(entity.$references().map((reference) => [reference.property, reference])),
     checks,
     uniques,
+    softDelete: description.softDelete ? SEED_SOFT_DELETE_PROPERTY : null,
   };
 }

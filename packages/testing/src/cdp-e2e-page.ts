@@ -94,6 +94,13 @@ export interface CdpE2eTabOptions {
   readonly loadTimeoutMs: number;
   /** The session's browser-wide switch, which `offline()` forwards to. */
   readonly offline: (enabled: boolean) => Promise<void>;
+  /**
+   * The raw-tab accessibility audit (`e2e-a11y-tabs.ts`), which the session wires: `navigated`
+   * after every settled `goto`/`reload`, `used` on every call the tab sends, `closed` once
+   * `close()` is answered. Absent, a tab is a
+   * bare driver — what this file's own unit tests build.
+   */
+  readonly audit?: { navigated(): Promise<void>; used(): void; closed(): void } | undefined;
 }
 
 const POLL_MS = 100;
@@ -117,7 +124,11 @@ const DESCRIBE_NODE = `function (selectors) {
 
 /** A tab over a session the caller has already attached and enabled (`cdp-e2e-session.ts`). */
 export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
-  const send = options.connection.send.bind(options.connection);
+  const sendRaw = options.connection.send.bind(options.connection);
+  const send: CdpConnection['send'] = (...args) => {
+    options.audit?.used();
+    return sendRaw(...args);
+  };
   const { sessionId } = options;
 
   // `url()` is SYNCHRONOUS on the port, and CDP has no synchronous read — so the last committed
@@ -254,6 +265,8 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
       // The app may have redirected, so the committed url is re-read rather than assumed.
       const settled = await evaluate('location.href');
       if (typeof settled === 'string' && settled !== '') current = settled;
+      // The document as it settled, before anything replaces it: what a person would land on.
+      await options.audit?.navigated();
       return undefined;
     },
     evaluate,
@@ -323,6 +336,7 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
     },
     async close(): Promise<void> {
       await send('Target.closeTarget', { targetId: options.targetId });
+      options.audit?.closed();
     },
   };
   return tab;

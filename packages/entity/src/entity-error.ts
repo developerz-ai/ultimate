@@ -42,6 +42,7 @@ export const ENTITY_ERROR_CODES = [
   'X_ENTITY_OPERATOR_UNKNOWN',
   'X_LOCK_UNSUPPORTED',
   'X_TEST_DRIVER_CLIENT_CHANGED',
+  'X_ENTITY_TENANT_UNDECLARED',
 ] as const;
 
 export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
@@ -78,6 +79,7 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_ENTITY_OPERATOR_UNKNOWN: 'a predicate names an operator outside the vocabulary',
   X_LOCK_UNSUPPORTED: 'a repository has no lock',
   X_TEST_DRIVER_CLIENT_CHANGED: 'The installed client changed inside a testDriver() transaction',
+  X_ENTITY_TENANT_UNDECLARED: 'a child of a tenant-owned table has no tenant',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the

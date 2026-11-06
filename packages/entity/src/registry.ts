@@ -153,6 +153,8 @@ export interface EntityDescription {
   readonly appendOnly?: true;
   /** `entity({ retired: [...] })`; physical names, absent when there are none. `x db gen` reads it. */
   readonly retired?: readonly string[] | undefined;
+  /** `entity({ shared: '<why>' })`: why a row referencing a tenant's belongs to no tenant. */
+  readonly shared?: string | undefined;
 }
 
 export interface RegistryEntry {

@@ -148,6 +148,27 @@ describe('entity facts', () => {
     });
   });
 
+  test('a shared reason declared, changed or dropped is additive, and reported', () => {
+    const at = 'entities.post.shared';
+    const between = (before: Partial<Entity>, after: Partial<Entity>) =>
+      diffManifest(
+        fixtureManifest({ entities: post(before) }),
+        fixtureManifest({ entities: post(after) }),
+      );
+    const declared = between({}, { shared: 'global' });
+    expect(declared.hasBreaking).toBe(false);
+    expect(declared.additive.find((c) => c.path === at)?.detail).toBe('shared declared: global');
+    expect(
+      between({ shared: 'a' }, { shared: 'b' }).additive.find((c) => c.path === at)?.detail,
+    ).toBe('shared reason a -> b');
+    expect(between({ shared: 'a' }, {}).additive.find((c) => c.path === at)?.detail).toBe(
+      'shared reason dropped',
+    );
+    expect(between({ shared: 'a' }, { shared: 'a' }).changes.filter((c) => c.path === at)).toEqual(
+      [],
+    );
+  });
+
   test('an unchanged entity reports nothing of its own', () => {
     expect(diff(post()).changes.filter((c) => c.path.startsWith('entities.'))).toEqual([]);
   });

@@ -870,6 +870,20 @@ pattern × value — never a backtracking regex), a unique declared as `invarian
 is enforced by memory exactly as an index is, and `in` takes a list or nothing (a scalar matches no rows; a list carrying
 a `null` also matches the NULL rows, which `col = null` never does).
 
+**A memory transaction ends as a Postgres one does**, `As of 2026-11-05` (`memory-transactor.ts`,
+`memory-journal.ts`):
+
+| Rule | What it means |
+|---|---|
+| ambient | a memory-store write inside `memoryTransactor().run` that names no `tx` joins it, as one inside `withTransaction` does |
+| nested | a nested commit hands its undos **and its effects** up: an `onCommit` effect runs once the root commits, and never after the root rolls back |
+| ended | a write after the root ended — a promise `work` forgot to await — is `X_DB_TRANSACTION_CLOSED`, as a statement on a finished Postgres transaction is |
+| locks | a row or key lock taken with no `tx` inside a memory transaction is a savepoint of it, held to the root's end |
+| observers | the row observer and the action's cache bust wait for the root commit, and see nothing of a rollback |
+
+`memoryJournal()` answers the open memory transaction of this async chain, or `undefined` — the
+memory twin of `@ultimat3/db`'s `currentTx()`, which `@ultimat3/action`'s commit scope reads.
+
 `compareByKind(kind, left, right)` and `sameValueOfKind(kind, left, right)` are that rule, exported
 (`As of 2026-10`): `-1 | 0 | 1` and a boolean for two values of one column of a declared
 `ColumnKind`, NULL sorting largest. `@ultimat3/query`'s live matcher and in-memory source call them
@@ -1039,6 +1053,13 @@ a target found under another tenant and accepts one not found, because it enforc
 `crossTenant: '<reason>'` on the option is the stated escape; blank, or on an edge that was never
 same-tenant, is `X_INVARIANT_VIOLATED`. `x db gen` adds the `(tenant, id)` unique index the target
 needs and swaps the key online. [The wiki](../../wiki/Entities-And-Migrations.md#same-tenant-keys).
+
+**A table with no tenant column that hangs off one with a tenant says why.** `entity('plans', {
+columns, shared: 'one price list for every org' })` states its rows belong to no tenant. Without
+it, `x verify`'s `exercise` step reports `X_ENTITY_TENANT_UNDECLARED` for each untenanted entity
+whose references reach, directly or through others, a tenant-columned one: a row of one tenant
+readable by id from another. A blank reason is `X_ENTITY_TENANT_UNDECLARED` at `entity()`, and
+`shared` beside a tenant column is `X_INVARIANT_VIOLATED`. A `shared` entity is not walked through.
 
 **A read-modify-write takes a lock.** `db.posts.lock(id, (row, tx) => …)` holds the row for the
 callback and `db.posts.lockKey(key, (tx) => …)` holds a key of this table and tenant. A transaction

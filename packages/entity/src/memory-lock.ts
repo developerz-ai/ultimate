@@ -5,6 +5,7 @@
 import { asyncContext } from '@ultimat3/core';
 import { driverError } from '@ultimat3/db';
 import { undoingBatch } from './memory-batch';
+import { memoryJournal, memoryRoot, refuseIfMemoryTxClosed } from './memory-journal';
 import { memoryTransactor } from './memory-transactor';
 import type { Tx } from './repo';
 
@@ -47,7 +48,7 @@ export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks =
   const instance = instances;
   /** The last holder's end, per key: a newcomer waits on it and becomes the new end. */
   const tails = new Map<string, Promise<void>>();
-  /** What a joined scope still holds once it returned: same tx, same key, no second wait. */
+  /** What a joined scope still holds once it returned, per ROOT: same root, same key, no wait. */
   const heldByTx = new WeakMap<Tx, Set<string>>();
 
   const inTx = <R>(outer: Tx | undefined, work: (tx: Tx) => Promise<R> | R): Promise<R> =>
@@ -84,13 +85,19 @@ export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks =
   };
 
   const holds = (name: string, chain: Chain | undefined, outer: Tx | undefined): boolean =>
-    chain?.names.has(name) === true || (outer && heldByTx.get(outer)?.has(name)) === true;
+    chain?.names.has(name) === true ||
+    (outer !== undefined && heldByTx.get(memoryRoot(outer))?.has(name)) === true;
 
   return {
     async run(key, given, work) {
       const name = `${instance}:${key}`;
       const chain = heldByChain.get();
-      const outer = given ?? chain?.tx;
+      // The ambient memory transaction last: a lock taken in one is a savepoint of it, held to its
+      // root's end. Its own transaction instead released at that one's commit, and the root's
+      // rollback then overwrote what the next holder had committed.
+      const outer = given ?? chain?.tx ?? memoryJournal();
+      // Before the wait, as a statement on a finished transaction is refused before it is sent.
+      refuseIfMemoryTxClosed(outer);
       // `work` runs knowing its own tx, so a lock nested in it with no options joins this one.
       const body =
         <R>(step: (tx: Tx) => Promise<R> | R) =>
@@ -101,9 +108,12 @@ export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks =
       // Held to the root's end when there is one that can say so. A hand-written `Tx` with no
       // `onCommit` cannot, and the scope's own end is the only moment left.
       if (outer?.onCommit !== undefined) {
-        const held = heldByTx.get(outer) ?? new Set<string>();
+        // Filed under the root, so any scope of it finds the key; released by `outer`'s end, which
+        // for a savepoint that commits is the root's, and for one that rolls back is its own.
+        const root = memoryRoot(outer);
+        const held = heldByTx.get(root) ?? new Set<string>();
         held.add(name);
-        heldByTx.set(outer, held);
+        heldByTx.set(root, held);
         const once = (): void => {
           held.delete(name);
           release();
@@ -122,7 +132,7 @@ export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks =
     async turn(key, outer, work) {
       const name = `${instance}:${key}`;
       const chain = heldByChain.get();
-      if (holds(name, chain, outer ?? chain?.tx)) return work();
+      if (holds(name, chain, outer ?? chain?.tx ?? memoryJournal())) return work();
       const release = await acquire(name);
       try {
         return work();

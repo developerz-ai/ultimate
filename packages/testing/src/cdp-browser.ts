@@ -51,10 +51,12 @@ export const E2E_BROWSER_CLOSE_MS = LAUNCHED_CLOSE_MS;
 
 /**
  * Sequential deadlines one `tab.goto()` spends: the load event raced against `Page.navigate`'s
- * reply (one deadline, two waiters), then the two reads of the document (`cdp-e2e-page.ts`). Held
- * to the method by `cdp-browser.test.ts` over a fake connection, as the tab's count is.
+ * reply (one deadline, two waiters), the two reads of the document (`cdp-e2e-page.ts`), then the
+ * accessibility audit's two reads — the probe and the tree (`e2e-a11y-tabs.ts`). A finding's own
+ * description is three more calls, spent on a test that is already red. Held to the method by
+ * `cdp-browser.test.ts` over a fake connection, as the tab's count is.
  */
-export const GOTO_DEADLINES = 3;
+export const GOTO_DEADLINES = 5;
 
 /** The longest one `tab.goto()` is designed to take, at the default per-call deadline. */
 export const E2E_GOTO_MS = GOTO_DEADLINES * DEFAULT_CDP_TIMEOUT_MS;

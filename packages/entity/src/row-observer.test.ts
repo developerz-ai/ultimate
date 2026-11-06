@@ -13,6 +13,9 @@ import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
 import { observedRepo, type RowBulkChange, type RowChange, setRowObserver } from './row-observer';
 
+// A foreign failure handed to the subject to end its transaction: test input, never its verdict.
+const ROLLED_BACK = new RangeError('rolled back');
+
 const ORG = '00000000-0000-4000-8000-0000000000a1';
 const ONE = '00000000-0000-4000-8000-000000000001';
 const TWO = '00000000-0000-4000-8000-000000000002';
@@ -333,6 +336,25 @@ describe('changes inside a transaction are reported at COMMIT', () => {
       })
       .catch(() => undefined);
     expect(seen).toHaveLength(1);
+  });
+
+  test('memory, no tx named: the ambient transaction holds the change, a rollback drops it', async () => {
+    const seen: RowChange[] = [];
+    setRowObserver({ onChange: (change) => seen.push(change) });
+    const repo = observedRepo(tags, memoryDriver().repo(tags));
+    const tx = memoryTransactor();
+    await tx
+      .run(async () => {
+        await repo.insert(tagRow(ONE));
+        throw ROLLED_BACK;
+      })
+      .catch(() => undefined);
+    expect(seen).toHaveLength(0);
+    await tx.run(async () => {
+      await repo.insert(tagRow(TWO));
+      expect(seen).toHaveLength(0);
+    });
+    expect(seen.map((change) => change.op)).toEqual(['insert']);
   });
 
   test('postgres: the ambient withTransaction holds the change until COMMIT', async () => {

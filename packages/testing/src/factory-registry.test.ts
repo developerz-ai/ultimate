@@ -57,6 +57,20 @@ describe(testName('unit', 'defaultFor'), () => {
     expect(defaultFor(column('title'), 3, ids)).toBe('title-3');
   });
 
+  test('a nullable deletedAt builds null — a live row; a notNull one still gets a value', () => {
+    const soft = entity('fr_soft', {
+      columns: { id: uuid().primaryKey(), deletedAt: timestamp().nullable() },
+    });
+    const hard = entity('fr_hard', {
+      columns: { id: uuid().primaryKey(), deletedAt: timestamp() },
+    });
+    const at = (column: unknown) => ({ table: 't', property: 'deletedAt', column, position: 1 });
+    expect(defaultFor(at(soft.$columns.deletedAt), 1, ids)).toBeNull();
+    expect(defaultFor(at(hard.$columns.deletedAt), 1, ids)).toBeInstanceOf(Date);
+    // Only the soft-delete property: another nullable instant still gets one.
+    expect(defaultFor(column('publishedAt'), 1, ids)).toBeInstanceOf(Date);
+  });
+
   test('a value that is not an entity column refuses, naming the factory to write', () => {
     expect(() =>
       defaultFor({ table: 't', property: 'orgId', column: 0, position: 0 }, 1, ids),

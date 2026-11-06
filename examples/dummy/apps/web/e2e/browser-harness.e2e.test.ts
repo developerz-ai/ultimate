@@ -12,7 +12,7 @@ import type { AcceptanceBrowser } from './fixtures/postly';
 import { noBrowser } from './fixtures/postly';
 
 /** One socket per origin through a SharedWorker when there is one, one per tab when there is not. */
-const PAGE = `<!doctype html><html><body><h1>harness</h1><script>
+const PAGE = `<!doctype html><html lang="en"><head><title>Harness</title></head><body><h1>harness</h1><script>
   window.connected = false;
   if (typeof SharedWorker === 'function') {
     const worker = new SharedWorker('/worker.js', { name: 'sync' });

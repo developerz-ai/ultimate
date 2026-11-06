@@ -5,6 +5,7 @@
 import type { EntityLike, Factory, FactoryIds } from './factories';
 import { defineFactory } from './factories';
 import { seedGraphUnsatisfied } from './seed-graph-error';
+import { SEED_SOFT_DELETE_PROPERTY } from './seed-graph-shape';
 import { candidatesFor, isSeedColumn } from './seed-graph-values';
 
 export type EntityRegistry = Readonly<Record<string, EntityLike>>;
@@ -57,6 +58,11 @@ export interface DefaultColumn {
  */
 export function defaultFor(target: DefaultColumn, index: number, ids: FactoryIds): unknown {
   const { column, property, table } = target;
+  // A built row is a LIVE one: a soft-delete instant would hide it from every read, as `seedGraph`
+  // already keeps it `null` (`seed-graph.ts`).
+  if (property === SEED_SOFT_DELETE_PROPERTY && isSeedColumn(column) && !column.$meta.notNull) {
+    return null;
+  }
   const values = isSeedColumn(column)
     ? candidatesFor(property, column, {
         ordinal: index,

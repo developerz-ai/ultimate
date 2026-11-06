@@ -6,6 +6,7 @@ import { isUltimateError, UltimateError } from './errors';
 import type { ExerciseAttempt, ExerciseSubject } from './exercise-run';
 import {
   assertExerciseScoped,
+  bindDrawn,
   EXERCISE_RUNS,
   exerciseDefect,
   exerciseReplay,
@@ -217,5 +218,15 @@ describe('refusals before a run', () => {
     // A read declares no scope and runs in development as before.
     const read = subject(() => ({ ok: true, reached: true }), { env: { NODE_ENV: 'development' } });
     expect((await runExercise(read)).kind).toBe('pass');
+  });
+});
+
+describe('bindDrawn', () => {
+  // The form every override's docs and fixes print: a spread of the drawn object, a key bound in.
+  test('an object draw is spread and bound; a non-object draw passes through untouched', () => {
+    const bind = bindDrawn((drawn) => ({ ...drawn, postId: 'p1' }));
+    expect(bind?.({ title: 't' })).toEqual({ title: 't', postId: 'p1' });
+    expect(bind?.('not an object')).toBe('not an object');
+    expect(bindDrawn(undefined)).toBeUndefined();
   });
 });

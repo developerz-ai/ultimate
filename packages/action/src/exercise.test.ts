@@ -142,7 +142,7 @@ describe('verdicts', () => {
   test('an input binder that breaks every draw keeps X_CONTRACT_DRIFT, naming exercise.input', async () => {
     const fine = failing('boundNote', () => ({ length: 1 }));
     const failure = await failureOf(() =>
-      exerciseAction(fine, { actor: null, input: () => ({ title: '' }) }),
+      exerciseAction(fine, { actor: null, input: (drawn) => ({ ...drawn, title: '' }) }),
     );
     expect(failure.code).toBe('X_CONTRACT_DRIFT');
     expect(failure.fix).toContain('exercise: { actor, input:');

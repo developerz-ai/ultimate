@@ -99,11 +99,11 @@ const LINKS = [
   .join(' ');
 
 const FORMS =
-  '<form id="search" action="/search"><input name="q" value="tutela"></form>' +
-  '<form id="post" method="post" action="/submit"><input name="name" value="ada"></form>' +
-  '<form id="export" method="post" action="/export"><input name="id" value="7"></form>' +
-  '<form id="pay" method="post" action="/pay"><input name="amount" value="1"></form>' +
-  '<form id="switch" method="post" action="/switch"><input name="to" value="member:2"></form>';
+  '<form id="search" action="/search"><input name="q" aria-label="Search" value="tutela"></form>' +
+  '<form id="post" method="post" action="/submit"><input name="name" aria-label="Name" value="ada"></form>' +
+  '<form id="export" method="post" action="/export"><input name="id" aria-label="Export id" value="7"></form>' +
+  '<form id="pay" method="post" action="/pay"><input name="amount" aria-label="Amount" value="1"></form>' +
+  '<form id="switch" method="post" action="/switch"><input name="to" aria-label="Switch to" value="member:2"></form>';
 
 /** An app's own inline head script, admitted by hash like every inline script under the CSP. */
 export const INLINE_HEAD = 'window.__inlineRan = (window.__inlineRan || 0) + 1;';
@@ -243,7 +243,7 @@ const other = Bun.serve({
   fetch(request): Response {
     // The page only: the browser also asks this origin for its favicon.
     if (new URL(request.url).pathname === '/paid') state.paid += 1;
-    return html('<!doctype html><title>Paid</title><h1>Paid</h1>');
+    return html('<!doctype html><html lang="en"><title>Paid</title><h1>Paid</h1>');
   },
 });
 const OTHER = `http://127.0.0.1:${String(other.port)}`;
@@ -291,7 +291,7 @@ const routes: Route[] = [
     () => {
       state.flaky += 1;
       return state.flaky === 1
-        ? html('<!doctype html><title>Broken</title>', 500)
+        ? html('<!doctype html><html lang="en"><title>Broken</title>', 500)
         : html(documentOf({ title: 'Flaky', path: '/flaky' }));
     },
     nav({ prefetch: true }),

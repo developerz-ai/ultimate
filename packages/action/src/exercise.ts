@@ -4,8 +4,15 @@
  * handler counter. The verdict, the seed and the replay are the loop's, shared with `query`.
  */
 
-import type { Actor, Ctx, ExerciseAttempt, ExerciseReport } from '@ultimat3/core';
-import { ctxOf, exerciseReplay, isUltimateError, runExercise, tryUseContext } from '@ultimat3/core';
+import type { Actor, Ctx, DrawnInput, ExerciseAttempt, ExerciseReport } from '@ultimat3/core';
+import {
+  bindDrawn,
+  ctxOf,
+  exerciseReplay,
+  isUltimateError,
+  runExercise,
+  tryUseContext,
+} from '@ultimat3/core';
 import { statusFor } from '@ultimat3/http';
 import { admitsAnonymous } from '@ultimat3/policy';
 import { arbitrary } from '@ultimat3/schema/sample';
@@ -28,7 +35,7 @@ export interface ExerciseActorOptions {
   /** The caller each run is invoked as. `null` is the signed-out caller. */
   readonly actor: Actor | null;
   /** `(drawn) => ({ ...drawn, postId })`: the generated value, with what must resolve bound in. */
-  readonly input?: (drawn: unknown) => unknown;
+  readonly input?: (drawn: DrawnInput) => unknown;
   /** 1 to `EXERCISE_RUNS_MAX`; `EXERCISE_RUNS` when omitted. */
   readonly runs?: number;
 }
@@ -51,10 +58,11 @@ export const exerciseTestName = (name: string): string =>
  *
  * A test-time call: refused in `staging`/`production` (`X_CONTRACT_EXERCISE_ENVIRONMENT`). Each
  * run's transaction rolls back the handler's SQL writes, its memory-store writes (`test` with no
- * client installed, `tx` passed or not), the outbox stage and the post-commit cache bust. NOT
- * rolled back: a write on a second client or `outsideTransaction`, a job enqueued with
- * `outbox: false`, storage puts, mail, outbound fetch (sealed under the test preload) and
- * rate-limit counters.
+ * client installed, `tx` passed or not), the post-commit cache bust (either store) and, when a SQL
+ * transaction is open, the outbox stage. NOT rolled back: a write on a second client or
+ * `outsideTransaction`, a job enqueued with `outbox: false`, every job enqueue when no SQL
+ * transaction is open (the memory store: the jobs facade enqueues straight to the job driver),
+ * storage puts, mail, outbound fetch (sealed under the test preload) and rate-limit counters.
  */
 export async function exerciseAction(
   target: AnyAction,
@@ -69,7 +77,7 @@ export async function exerciseAction(
     stoppedLabel: 'stopped before the handler',
     scoped: rollbackAvailable(),
     draw: (seed, run) => arbitrary(target.input, { seed, run }),
-    bind: options.input,
+    bind: bindDrawn(options.input),
     accepts: (input) => acceptedBy(target, input, name),
     attempt: async (input): Promise<ExerciseAttempt> => {
       const before = handlerReached(target);

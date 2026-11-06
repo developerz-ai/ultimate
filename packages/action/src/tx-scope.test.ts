@@ -19,3 +19,28 @@ describe('the action → db edge', () => {
     expect(importers).toEqual(['tx-scope.ts']);
   });
 });
+
+// The cache bust rides `openCommitScope()`, and so does the row observer's report: with no SQL
+// transaction, the open MEMORY transaction answers for both, or a rolled-back write busts a cache
+// for a row that never existed.
+const ROLL_BACK = new TypeError('roll it back');
+
+describe('openCommitScope over the memory store', () => {
+  test('a memory COMMIT runs the effect; a memory ROLLBACK drops it', async () => {
+    const { memoryTransactor } = await import('@ultimat3/entity');
+    const { openCommitScope } = await import('./tx-scope');
+    const ran: string[] = [];
+    await memoryTransactor().run(async () => {
+      openCommitScope()?.onCommit(() => ran.push('committed'));
+    });
+    const rolledBack = await memoryTransactor()
+      .run(async () => {
+        openCommitScope()?.onCommit(() => ran.push('rolled back'));
+        throw ROLL_BACK;
+      })
+      .catch((error: unknown) => error);
+    expect(rolledBack).toBe(ROLL_BACK);
+    expect(ran).toEqual(['committed']);
+    expect(openCommitScope()).toBeUndefined();
+  });
+});
