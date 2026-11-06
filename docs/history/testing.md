@@ -357,3 +357,11 @@ Verbatim from [`packages/testing/CLAUDE.md`](../../packages/testing/CLAUDE.md), 
 | The box is 0 until a test writes it | `clientHeight`, `scrollTop`, `scrollHeight` and the rest are writable numbers, default 0; `getBoundingClientRect()` derives from the offset box |
 | `ResizeObserver` records and never fires on its own | `island-observers.ts`, one registry PER DOCUMENT. |
 | Attaching a node MOVES it | `appendChild`, `insertBefore`, `replaceChild` detach it from its old parent first; `removeChild` clears `parentNode` |
+
+## Moved out 2026-11-06 (plan 101 wave 7, the crash proof's row)
+
+Verbatim from [`packages/testing/CLAUDE.md`](../../packages/testing/CLAUDE.md), the registry leak guard's row.
+
+| | |
+|---|---|
+| The baseline is not a hook | measured on Bun 1.3.14 the order is onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload `beforeEach`, so a preload hook cannot sample before the file's own `beforeAll` |

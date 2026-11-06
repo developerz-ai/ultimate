@@ -130,6 +130,25 @@ an `llm()`/`agent()`/`hive()` call live in `actions/`; every job factory but `ba
 | e2e | [`apps/web/e2e/offline-feed.e2e.test.ts`](apps/web/e2e/offline-feed.e2e.test.ts) |
 | eval | [`apps/web/app/posts/prompts/summarize.eval.test.ts`](apps/web/app/posts/prompts/summarize.eval.test.ts) |
 
+## Fault drills
+
+Not a test type and not a gate step: `x drill` boots this app's `web` and `worker` as processes on
+a scratch database behind a fault proxy and plays a failure under load. The load reads the four
+`site/` pages and posts `contactSales` — the one action an anonymous caller may run, each request
+a fresh seeded enquiry — so every request enqueues `sendSalesReceipt` and the worker drills have
+jobs to reclaim. `endSession` is left out by its `exercise.ts` entry.
+
+```bash
+docker compose -f docker/docker-compose.test.yml up -d --wait   # from the repo root
+set -a; . docker/test-services.env; set +a
+bun run x -- drill worker-sigkill --cwd examples/dummy --json
+```
+
+| Drill | Here, `As of 2026-11-06` |
+|---|---|
+| `pg-blackhole` `pg-slow` `pg-restart` `worker-sigkill` `worker-sigterm` `web-sigterm` | held; CI's `fault-drills` runs `pg-blackhole`, `worker-sigkill`, `web-sigterm` |
+| `redis-down` `nats-down` | refused, `X_DRILL_SERVICE_MISSING`: no `redis` tier, an in-memory transport |
+
 ## Files you must not hand-edit
 
 | File | Author |

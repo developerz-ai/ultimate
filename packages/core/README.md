@@ -662,6 +662,7 @@ reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'P
 | `ErrorReport` | `code` `title` `cause` `fix` `docs` + `meta` `stack` `resource` `environment` `release` `scope`, and the thrown value under `error` |
 | `configureErrorReporting({ reporter, clock, release, environment, enabled })` | the one install point; `resetErrorReporting()` puts the no-op back |
 | Reporters | `noopErrorReporter` (default), `memoryErrorReporter()` (`.events`, `.reset()`), `sentryErrorReporter({ dsn, fetch?, clientName? })` |
+| Several at once | `chainErrorReporters(...reporters)` — one reporter handing each report to every member in order; a member that throws is logged and costs only itself; chains flatten, a member listed twice reports once, none is the no-op. `errorReportersOf(reporter)` reads the members back; `installedErrorReporter()` the one installed now. The container chains its `SENTRY_DSN` transport after what the app installed (`As of 2026-11`) |
 | Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEnvelope(report, { dsn, eventId })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |
 | `errorReport(error, options)` | the normalisation on its own, for a transport's test or a surface that enriches before sending |
 | `errorFingerprint(report)` | 16 hex, which reports are one fault: `code`, `source`, `scope.operation`, and for `X_INTERNAL` the top application frame (function and root-relative path, no line). Never `cause`, `meta`, an id or `release`. Total; the Sentry envelope sends it as `fingerprint` |
@@ -838,6 +839,22 @@ Server-only, on its own subpath: `import { outbound, screenDial } from '@ultimat
 | `screenDial(url, { resolve?, allowPrivate? })` → `{ pin } \| { refused } \| { unresolved }` | where a dial may land | every resolved address classified by `classifyAddress`, the connection pinned with `tls.serverName`. The framework's one `Bun.dns.lookup` (`resolveDialHost`); `@ultimat3/jobs`' webhook target and `@ultimat3/scraping` call it and keep their own codes |
 | `deadlineSignal(ms, outer?, timer?)` | one attempt's signal | a deadline plus the caller's signal, undone on dispose (no listener left on `outer`, no timer armed) |
 | `breaker({ name, failures, cooldownMs, classify?, clock? })` → `admit`, `succeeded`, `failed`, `released`, `state`, `failures`, `judge`, `refusal`, `run` | is a dependency down | one state machine, the trigger stays the caller's. One probe in `half-open`, lapsing after `cooldownMs`; `X_BREAKER_OPEN` names `retryAfterSeconds`; `breaker_transitions_total{name,to}`. Per process |
+
+## One Redis client
+
+Server-only, on its own subpath: `import { redisClient } from '@ultimat3/core/redis'` (the barrel
+exports none of it, `redis-subpath.test.ts`). The cache's shared tier and the Redis job driver both
+take it; never `Bun.redis`, whose defaults turned an outage into a hang and a restart into a dead
+client. `As of 2026-11`.
+
+| Export | The one answer | The question it settles |
+|---|---|---|
+| `redisClient(url?)` → `RedisClient` | one client per process per URL | `enableOfflineQueue: false` (a command while down is refused at once, not queued — a stopped server cost 30,916 ms per first read), `maxRetries: 2_147_483_647` (the default gave up after ~31 s and never reconnected), `connectionTimeout: 1_000`. Connects in the background: the caller never waits, and a command before the first connect is refused like any other while down |
+| `redisUrl(env?)` | which server | `REDIS_URL`, then `VALKEY_URL`, then `redis://localhost:6379`; blank is unset |
+| `REDIS_CLIENT_OPTIONS` | the three options above, frozen | each carries its measured `why` in `redis-client.ts` |
+
+A refusal is Bun's `ERR_REDIS_CONNECTION_CLOSED`, untyped here: the job driver types it
+`X_DRIVER_UNAVAILABLE`, the cache tier reads it as a miss. `close()` closes it for every holder in the process.
 
 ## One browser seam — transport, records, page handle, principal fence
 

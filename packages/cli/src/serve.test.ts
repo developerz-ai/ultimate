@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import type { ErrorReport } from '@ultimat3/core';
 import {
   configureErrorReporting,
+  errorReportersOf,
   InternalError,
+  installedErrorReporter,
   memoryErrorReporter,
   reportError,
   resetErrorReporting,
@@ -150,6 +152,23 @@ test('every report a container sends is tagged with the build id this boot compu
 
   // `x-ultimate-build` and the release a monitor groups by are ONE identity, not two.
   expect((reporter.events[0] as ErrorReport).release).toBe('build-abc');
+  resetErrorReporting();
+});
+
+test("a DSN chains the transport BESIDE the app's own reporter, and a re-boot swaps it", () => {
+  resetErrorReporting();
+  const app = memoryErrorReporter();
+  configureErrorReporting({ reporter: app });
+  const dsn = { [ERROR_DSN_KEY]: 'https://public@monitor.example.invalid/7' };
+  configureReporting(dsn, 'build-abc');
+  const first = errorReportersOf(installedErrorReporter());
+  expect(first).toHaveLength(2);
+  expect(first[0]).toBe(app);
+  // A second boot in one process replaces its own transport rather than stacking a second one.
+  configureReporting(dsn, 'build-abc');
+  expect(errorReportersOf(installedErrorReporter())).toHaveLength(2);
+  configureReporting({}, 'build-abc');
+  expect(installedErrorReporter()).toBe(app);
   resetErrorReporting();
 });
 

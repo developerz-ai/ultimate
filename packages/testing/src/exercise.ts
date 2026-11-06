@@ -3,7 +3,8 @@
 // and the input 39's minimal draw gives with seeded ids bound in; the verdict is 39's loop.
 //
 // Committed, never rolled back. Around that call the tenant proof runs: the pair's other tenant
-// calls with the first one's ids before and after it (`tenant-proof.ts`, plan 101, 40).
+// calls with the first one's ids before and after it (`tenant-proof.ts`, plan 101, 40). A reached
+// job is then killed at every step boundary (`exercise-crash.ts`).
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
 import { bindDrawn, isUltimateError, renderThrowable, runExercise } from '@ultimat3/core';
@@ -15,6 +16,7 @@ import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
 import { assertOverridesKnown, unknownDeclaration } from './define-exercise';
 import type { ActorRows, RoleGrants } from './exercise-actor';
 import { asSeededRow, chooseActor } from './exercise-actor';
+import { proveCrash } from './exercise-crash';
 import type { IdLookup, Sampler } from './exercise-input';
 import {
   bindIds,
@@ -65,6 +67,8 @@ interface Subject {
   readonly policy: Policy | undefined;
   /** Every permission the policy references — what `x policy explain` matches grants against. */
   readonly permissions: readonly string[];
+  /** A job's handle: what the crash proof kills at every step boundary once the control reached it. */
+  readonly handle?: AnyJobHandle;
   /** Resolves to the failure a worker recorded on the row (a job's), or what the call answered. */
   call(input: unknown, actor: Actor | null, tenant: string, jobs: RunJobs): Promise<Answer>;
 }
@@ -90,6 +94,7 @@ async function subjectsOf(): Promise<readonly Subject[]> {
     input: handle.input,
     policy: undefined,
     permissions: [],
+    handle,
     call: async (input, actor, tenant, jobs) => {
       const queued = await jobs.enqueue(handle, input, { tenantId: tenant });
       const trace = await jobs.drain(actor === null ? {} : { actor });
@@ -248,7 +253,7 @@ async function control(
   run: Prepared,
   room: ExerciseRoom,
   sampler: Sampler,
-): Promise<{ readonly record: ExerciseRecord; readonly output: unknown }> {
+): Promise<{ readonly record: ExerciseRecord; readonly output: unknown; readonly input: unknown }> {
   const { subject, actor, tenant, declaredRuns, lookups, bindInput } = run;
   const { kind, name } = subject;
   let binds = 0;
@@ -296,7 +301,7 @@ async function control(
   const effects = [...observed.effects, ...(await enqueued(subject, jobs, executions))];
   const verdictOf = judged(subject, { verdict, answered, lastError, lastInput }, observed);
   const record = { kind, name, statements: observed.statements, effects, ms, ...verdictOf };
-  return { record, output };
+  return { record, output, input: lastInput };
 }
 
 /** One B leg: B's actor, A's ids, a queue of its own. What it answered and every effect it had. */
@@ -310,15 +315,23 @@ async function attack(
   await using jobs = await testJobs();
   room.begin();
   let output: unknown;
+  // Every `crossTenant()` B's call opened: a job's declared sweep is told from a leak by it alone.
+  // Loaded here, never at the top: the barrel stays entity-free (`seed-writer.ts`'s rule).
+  const { setCrossTenantObserver } = await import('@ultimat3/entity');
+  const crossings: string[] = [];
+  setCrossTenantObserver((reason) => crossings.push(reason));
   try {
     const answer = await subject.call(input, actor, tenant, jobs);
     output = answer.output;
   } catch {
     // B's refusal is the answer a scoped primitive gives: only what B got back, and what B's call
     // did to A's rows, is judged — never whether B was refused.
+  } finally {
+    setCrossTenantObserver(undefined);
   }
   const observed = room.end();
-  return { output, payloads: [...observed.payloads, ...(await queuedPayloads(subject))] };
+  const payloads = [...observed.payloads, ...(await queuedPayloads(subject))];
+  return { output, payloads, crossings };
 }
 
 async function exerciseOne(
@@ -373,15 +386,25 @@ async function exerciseOne(
   // A's own first input, A's ids in it: B sends exactly what A legitimately would.
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookups[0]);
   const input = bindInput === undefined ? drawn : bindInput(drawn);
-  return proveTenant({
+  let reachedWith: unknown;
+  const record = await proveTenant({
     taint: tenantTaint(graph, tenant),
     input,
     public: publicReason(subject.policy),
     read: kind === 'query',
+    sweep: kind === 'job',
     attack: () => attack(subject, input, intruder, other, room),
-    control: () => control(run, room, sampler),
+    control: async () => {
+      const done = await control(run, room, sampler);
+      reachedWith = done.input;
+      return done;
+    },
     snapshot: (seeded) => options.writer.snapshot(seeded),
   });
+  // After the tenant proof, outside the room's begin/end: the crash runs' effects are their own.
+  return subject.handle === undefined || record.outcome !== 'reached'
+    ? record
+    : { ...record, crash: await proveCrash(subject.handle, reachedWith, actor) };
 }
 
 export async function runExercisePass(

@@ -101,8 +101,9 @@ export const cacheTiersOf = (config: AppConfig | undefined): readonly CacheTierN
 
 /**
  * `REDIS_URL` is the same "an unset variable means the embedded default" law the db, events,
- * storage, mail and CDN bindings follow — and it is the variable Bun's own `Bun.redis` reads, so a
- * tier selected here and a client built there cannot point at two servers.
+ * storage, mail and CDN bindings follow — and it is the first variable core's `redisClient()`
+ * (`@ultimat3/core/redis`, which `redisTier` builds on) reads, so a tier selected here and the
+ * client built there cannot point at two servers.
  */
 function redisUrl(env: Env): string | undefined {
   const url = env['REDIS_URL']?.trim();

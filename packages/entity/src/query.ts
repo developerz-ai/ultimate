@@ -14,6 +14,7 @@ import { checkedPredicate, type Operator } from './operator';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE } from './plan';
 import { preloaded, type RelatedTables } from './preload';
 import { type PreloadOptions, type PreloadRelation, preloadsWith } from './preload-ceiling';
+import { type ReadAggregates, readAggregates } from './read-aggregates';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
@@ -26,7 +27,6 @@ import type {
   Filterable,
   IdOf,
   Insertable,
-  MoneyValue,
   NoSealedKeys,
   RowPatch,
   SealedKeySet,
@@ -44,7 +44,8 @@ export type Preloaded<Name extends string> = { readonly [K in Name]: unknown };
  * `S` names the entity's sealed columns, so naming one in a filter or an order is a COMPILE error
  * and not only `X_ENTITY_SEALED_PREDICATE` at runtime. It defaults to none.
  */
-export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys> {
+export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys>
+  extends ReadAggregates<Row, S> {
   /** Equality on the columns given. `where({ orgId })` is what satisfies the tenancy guard. */
   where(filter: RowPatch<Filterable<Row, S>>): ReadBuilder<Row, S>;
   // NULL is never sealed, so its tests take ANY column. First: `Parameters<…>` reads the last.
@@ -125,59 +126,6 @@ export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys> {
   all(): Promise<readonly Row[]>;
   one(): Promise<Row | null>;
   count(): Promise<number>;
-  /**
-   * The grouped count: one statement, one entry per distinct value of `column`, keyed by that
-   * value — the aggregate a `count()` per row is the N+1 of. `recount every post's likes` is one
-   * `likes.andWhere('postId', 'in', ids).countBy('postId')`, not one statement per post.
-   *
-   * Counts the whole predicate, exactly as `count()` does: the chain's filters, its tenancy and
-   * its soft-delete visibility, never its page. A value nothing matched is absent rather than `0`,
-   * which is what `group by` returns and what lets a caller tell "none" from "never asked".
-   * Entries come back biggest group first, ties by the value, `null` — the group every row without
-   * one shares — last.
-   *
-   * Refused rather than answered: a column whose values a map cannot be keyed by (a timestamp, a
-   * jsonb, money), and a chain matching more distinct values than one statement should answer with.
-   */
-  countBy<K extends Exclude<keyof Row & string, S['sealed']>>(
-    column: K,
-  ): Promise<ReadonlyMap<Row[K], number>>;
-  /**
-   * The four SQL aggregates, over exactly the rows `count()` counts — the chain's filters, its
-   * tenancy and its soft-delete visibility, never its page. "Total spend this month" is
-   * `payments.where({ orgId }).andWhere('paidAt', 'gte', from).sum('amount')`, one statement,
-   * rather than a page loop or a hand-written query outside every guard this layer applies.
-   *
-   * **Never a float.** `sum` and `avg` answer decimal TEXT whatever the column was — the sum of a
-   * million `integer` rows is not an `integer` and `Number()` on it loses digits past 2^53 — and a
-   * money column answers a `MoneyValue` in integer minor units. `min`/`max` answer the row's own
-   * type, because the answer is one of the values that went in.
-   *
-   * `null` for an empty set in every one of them, which is what SQL answers: a `0` would claim
-   * rows were seen.
-   *
-   * Refused rather than answered: a kind with no aggregate the two drivers can agree on (`text`
-   * ordering is the database's collation here and JS code-unit order there), `avg` over money
-   * (every answer would be a silent rounding of a fraction of a minor unit), and an amount
-   * covering more than one currency or scale.
-   */
-  sum<K extends keyof Row & string>(
-    column: K,
-  ): Promise<(Row[K] extends MoneyValue | null ? MoneyValue : string) | null>;
-  avg<K extends keyof Row & string>(column: K): Promise<string | null>;
-  min<K extends keyof Row & string>(column: K): Promise<Row[K] | null>;
-  max<K extends keyof Row & string>(column: K): Promise<Row[K] | null>;
-  /**
-   * The planner's own row estimate for the table — `reltuples`, one row out of `pg_class`, and the
-   * only count that stays constant time as the table grows. `count()` walks every visible row
-   * because MVCC gives it no shortcut, so past a few million it is the read that trips a web
-   * role's `statement_timeout` and no index can make it cheaper.
-   *
-   * The whole TABLE, never the chain's filters — a filtered chain is `X_APPROXIMATE_COUNT_FILTERED`
-   * rather than an estimate that answers a different question than the one asked. `null` when the
-   * table has never been analysed, which is the absence of an estimate and not an estimate of zero.
-   */
-  approximateCount(): Promise<number | null>;
   /** The plan this chain describes. Safe to log — `describePlan()` elides values. */
   plan(): QueryPlan;
 }
@@ -405,28 +353,7 @@ const builder = <Source, Row>(
 
     count: () => repo.count(args()),
 
-    // The one cast on each of these, and it is the same seam `countBy` and `select()` have: the
-    // driver contract is row-agnostic because a column name is a runtime string there, while the
-    // chain knows which property it just named and therefore what comes back.
-    sum: async <K extends keyof Row & string>(column: K) =>
-      (await repo.aggregate('sum', column, args())) as
-        | (Row[K] extends MoneyValue | null ? MoneyValue : string)
-        | null,
-    avg: async (column: keyof Row & string) =>
-      (await repo.aggregate('avg', column, args())) as string | null,
-    min: async <K extends keyof Row & string>(column: K) =>
-      (await repo.aggregate('min', column, args())) as Row[K] | null,
-    max: async <K extends keyof Row & string>(column: K) =>
-      (await repo.aggregate('max', column, args())) as Row[K] | null,
-
-    approximateCount: () => repo.approximateCount(args()),
-
-    async countBy<K extends keyof Row & string>(column: K) {
-      // The one cast on this terminal, and it is the same seam `select()` has: the driver contract
-      // is row-agnostic because a column name is a runtime string there, while the chain knows
-      // which property it just named and therefore what the map is keyed by.
-      return (await repo.countBy(column, args())) as ReadonlyMap<Row[K], number>;
-    },
+    ...readAggregates(entity, repo, args),
 
     plan: (): QueryPlan => ({
       entity: entity.$name,

@@ -140,8 +140,8 @@ describe('which tiers a boot registers', () => {
       transport: new InProcessTransport(),
       tiers: ['request-memo', 'lru', 'redis'],
     });
-    // Registered, never dialled: `redisTier` resolves `Bun.redis` lazily, so selection is
-    // pure here exactly as the mail and transport selections are.
+    // Registered, never dialled: `redisTier` takes core's `redisClient()` at its first command,
+    // so selection is pure here exactly as the mail and transport selections are.
     expect(registeredTiers().map((tier) => tier.name)).toContain('redis');
   });
 

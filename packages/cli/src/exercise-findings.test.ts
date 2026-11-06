@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ExerciseRecord } from '@ultimat3/testing';
 import {
+  crashFindingLines,
   exerciseCounts,
   exerciseFindings,
   exerciseReport,
@@ -100,5 +101,77 @@ describe('unit · exercise findings', () => {
     ]);
     expect(findings[0]?.fix).toStartWith('x exercise readPost --json');
     expect(renderExerciseTable(tenanted).join('\n')).toContain('crossed');
+  });
+
+  // plan 101 / 40-next-job-crash-proof: a reached job killed at a step boundary made an effect
+  // more often than a clean run — a real double effect on retry, red in the gate.
+  const leaky = record({
+    name: 'chargeOrder',
+    kind: 'job',
+    crash: {
+      verdict: 'diverged',
+      boundaries: 4,
+      reruns: 1,
+      findings: [
+        {
+          boundary: 'charge',
+          mode: 'clean',
+          effect: 'row:payments:insert',
+          clean: 1,
+          killed: 2,
+          after: 'create',
+        },
+        {
+          boundary: 'mail',
+          mode: 'clean',
+          effect: 'row:payments:insert',
+          clean: 1,
+          killed: 2,
+          after: 'create',
+        },
+        {
+          boundary: 'mail',
+          mode: 'clean',
+          effect: 'mail:receipt→a@x.example',
+          clean: 1,
+          killed: 2,
+        },
+      ],
+    },
+  });
+
+  test('a diverged crash proof is X_JOB_CRASH_DIVERGED, one finding per effect, every boundary named', () => {
+    const findings = exerciseFindings([
+      leaky,
+      record({ name: 'held', kind: 'job', crash: { verdict: 'held', boundaries: 3, reruns: 0 } }),
+      record({ name: 'odd', kind: 'job', crash: { verdict: 'unproven', reason: 'X_NOPE: no' } }),
+    ]);
+    expect(findings.map((one) => [one.code, one.at])).toEqual([
+      ['X_JOB_CRASH_DIVERGED', 'job chargeOrder'],
+      ['X_JOB_CRASH_DIVERGED', 'job chargeOrder'],
+    ]);
+    const [rows, mail] = findings;
+    expect(rows?.cause).toContain('row:payments:insert');
+    expect(rows?.cause).toContain('"charge", "mail"');
+    expect(rows?.cause).toContain('2× against 1×');
+    expect(rows?.fix).toStartWith('x exercise chargeOrder --json');
+    expect(rows?.fix).toContain("step.run('<name>'");
+    expect(rows?.fix).toContain('after step "create"');
+    expect(mail?.fix).toContain('before the first step');
+  });
+
+  test('a job name a shell would split is a placeholder in the rerun', () => {
+    const [finding] = exerciseFindings([{ ...leaky, name: 'a; rm -rf b' }]);
+    expect(finding?.fix).toStartWith('x exercise <job> --json');
+  });
+
+  test('the table has a crash column, and one line per killed boundary', () => {
+    expect(renderExerciseTable([leaky]).join('\n')).toContain('diverged');
+    expect(renderExerciseTable([leaky])[0]).toContain('crash');
+    expect(crashFindingLines([leaky, record({ name: 'createPost' })])).toEqual([
+      'job chargeOrder · killed at charge · X_JOB_CRASH_DIVERGED row:payments:insert 2× (clean 1×)',
+      'job chargeOrder · killed at mail · X_JOB_CRASH_DIVERGED row:payments:insert 2× (clean 1×)',
+      'job chargeOrder · killed at mail · X_JOB_CRASH_DIVERGED mail:receipt→a@x.example 2× (clean 1×)',
+    ]);
   });
 });

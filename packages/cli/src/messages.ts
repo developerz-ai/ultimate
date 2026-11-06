@@ -3,6 +3,11 @@
 // built-in catalog in the same flat-key/loud-miss shape as @ultimat3/i18n instead of importing
 // one. Missing keys render as ⟦key⟧, never as English fallback.
 
+import { DB_MESSAGES } from './messages-db';
+import { GATE_MESSAGES } from './messages-gate';
+import { SHOT_MESSAGES } from './messages-shot';
+import { UPGRADE_MESSAGES } from './messages-upgrade';
+
 const CATALOG = {
   'cli.tagline': 'Ultimate — one command means shippable',
   'cli.usage': 'usage: x <command> [options]',
@@ -29,55 +34,6 @@ const CATALOG = {
   'cli.cron.inMonths': 'in {months}',
   'cli.cron.onDaysOfMonth': 'on day {days} of the month',
   'cli.cron.onWeekdays': 'on {days}',
-  'cli.db.backfill.empty': 'no backfill has run against this database yet',
-  'cli.db.backfill.listed': '{count} backfill pass(es)',
-  /** The empty cell in a `x db backfill --list` column — a value, not a column key. */
-  'cli.db.backfill.none': '-',
-  'cli.db.backfill.pending': '{count} of {declared} declared backfill(s) never completed',
-  'cli.db.backfill.swept': 'every one of {declared} declared backfill(s) has completed',
-  // Every action counted, never derived: `count - enqueued` folded a deduped pass into "blocked",
-  // so the summary said blocked while `--json` said deduped for the same row — two renderers
-  // stating different facts about one run, which is the thing `--json` exists to make impossible.
-  'cli.db.backfill.planned':
-    '{count} backfill(s): {enqueued} enqueued, {deduped} already live, {blocked} blocked',
-  'cli.db.backfill.dryRun': '{count} backfill(s) would run — nothing written without --write',
-  'cli.db.branch.ready': 'branch {name} ready',
-  'cli.db.branch.dropped': 'branch {name} dropped',
-  'cli.db.branch.failed': 'branch command failed',
-  'cli.db.branch.listed': '{count} branch(es) of this database',
-  'cli.db.branch.none': 'this database has no branch',
-  /** The empty cell in an `x db branch list` column — a value, not a column key. */
-  'cli.db.branch.unknown': '-',
-  'cli.db.diagnostics.done': '{available} of {total} diagnostic section(s) answered',
-  'cli.db.diagnostics.section': '{section}: {count} row(s)',
-  'cli.db.diagnostics.unavailable': '{section}: unavailable, {code} — {reason}  fix: {fix}',
-  'cli.db.gen.failed': 'migration not generated',
-  'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',
-  'cli.db.gen.blocked':
-    'nothing was compared — the app did not load ({count} finding(s)); fix them, then run x db gen again',
-  // A THIRD outcome, and it is neither of the other two: nothing to generate, but the sidecar the
-  // `drift` step reads did move — an edit under `packages/db/src` that implies no DDL. Rendering it
-  // as `written` would name a migration nobody can apply; as `unchanged`, it would hide a file this
-  // command wrote. `GeneratedFiles.outcome` is what `--json` carries the same distinction on.
-  'cli.db.gen.recorded': 'no migration needed — schema hash re-recorded in {file}',
-  // The fourth: no DDL and no sidecar moved, but `packages/db/schema/` did — a hand edit repaired,
-  // or a framework table that changed under an upgrade. `unchanged` would deny a write the lines
-  // below it list, and this command is `X_SCHEMA_DUMP_DRIFT`'s whole `fix:`.
-  'cli.db.gen.dumped': 'no migration needed — schema dump rewritten ({count} file(s))',
-  'cli.db.gen.written': 'migration {id} generated',
-  // Exit 1 and a migration on disk at once: the summary carries the half the exit code hides.
-  'cli.db.gen.writtenDumpFailed':
-    'migration {id} generated and written — the schema dump was not; do not generate it again',
-  'cli.db.migrate.applied': 'migrations applied',
-  'cli.db.migrate.failed': 'migration failed',
-  'cli.db.reset.done': 'database reset and migrated',
-  // Every seed counted per outcome, exactly as the backfill summary is: a replayed seed writes
-  // nothing and skips everything, and a total that hid that would make the second run look idle.
-  'cli.db.seed.done':
-    '{count} seed(s): {inserted} inserted, {updated} updated, {skipped} already stored',
-  'cli.db.seed.dryRun': '{count} seed(s) would run — nothing written while --dry-run is set',
-  'cli.db.seed.failed': '{failed} of {count} seed(s) failed',
-  'cli.db.seed.none': 'no seed matched — nothing to run',
   'cli.dev.ready': 'dev ready on {url} — /_x mounted ({panels} panels), {services}',
   // The mail and CDN halves of that boot line. Rendered text, so it lives here — while
   // `describeMail`/`describeCdn` keep the same wording as the fixed vocabulary `x dev --json`
@@ -126,6 +82,7 @@ const CATALOG = {
   // `x doctor`'s other listing: what the coverage floor in x.verify.json does not see, and why.
   'cli.doctor.coverageExclude':
     '{count} path(s) x.verify.json excludes from the coverage floor — each with the reason it gives:',
+  'cli.doctor.chartAlerts': '{count} monitoring template(s) missing from the chart:',
   // `x doctor`'s reminder: the rolling rail is off until this key is set (`doctor-rolling.ts`).
   'cli.doctor.rollingSince':
     'the rolling-deploy rail is off: set "rollingSince": "{newest}" in x.verify.json to judge every migration after your newest',
@@ -137,6 +94,8 @@ const CATALOG = {
   'cli.docs.found': '{count} doc(s) for "{query}"',
   'cli.docs.none': 'no framework doc matches "{query}"',
   'cli.docs.unresolved': 'the installed framework packages could not be located',
+  'cli.drill.listed': '{count} drill(s); run one with x drill <name> --json',
+  'cli.drill.summary': '{held} of {ran} drill(s) held; {notRun} not run, its service undeclared',
   'cli.errors.count': '{count} registered error code(s)',
   'cli.errors.explained': '{code} — {title}',
   'cli.exercise.none': 'this app registers no action, query or job: nothing to exercise',
@@ -162,6 +121,7 @@ const CATALOG = {
   // file(s)" while `data.dryRun` said nothing had landed, so an agent branching on `summary`
   // believed the files were on disk.
   'cli.generate.planned': 'would write {count} file(s) for {kind} {name} — nothing written',
+  'cli.generate.chartAlertsPrinted': '{count} alert rule(s), as Prometheus rule groups',
   'cli.i18n.added': 'added {locale} — {keys} key(s) seeded from {from}',
   'cli.i18n.dynamic': '{count} dynamic t() call(s) the extractor cannot verify:',
   'cli.i18n.gaps': '{missing} missing key(s) across {locales} locale(s)',
@@ -243,111 +203,6 @@ const CATALOG = {
     'sealed {sealed} second-factor secret(s); {already} already sealed, {skipped} changed mid-run and left alone',
   'cli.tasks.count': '{count} task(s)',
   'cli.tasks.shown': '{name} — {cron} ({tz}), next {next}',
-  'cli.affected.count':
-    '{count} workspace(s) affected by {base}...HEAD, from {changed} changed file(s)',
-  'cli.affected.dirty':
-    '  including the working tree (--dirty): every uncommitted change in this checkout, whoever made it',
-  'cli.affected.none': 'no workspace is affected by {base}...HEAD, from {changed} changed file(s)',
-  'cli.affected.rootWide':
-    '  every workspace: {files} belongs to none of them and changes what all of them compile',
-  // `x shot` — the picture is the `lines`, the verdict is the artifact. The summary names the
-  // GATING fact, and a redirect comes first: a photograph of the sign-in page with every island
-  // missing reads as a bug in the app, and it is a bug in the capture.
-  'cli.shot.ok': '{route} clean — {islands} island(s) mounted, nothing logged and nothing threw',
-  'cli.shot.errors': '{route}: {errors} console error(s) — verdict.json names each one',
-  'cli.shot.redirected': '{route} redirected to {url} — the picture is not the route asked for',
-  // After the redirect and before everything else: a 404 page can be spotless, and a picture of
-  // "Not found" read as the route is the capture lying about its subject.
-  'cli.shot.status':
-    '{route} answered HTTP {status}, expected {expected} — the picture is that response, not the page',
-  'cli.shot.document': '  document HTTP {status}',
-  'cli.shot.documentUnknown': '  document status not seen — the driver recorded no response for it',
-  'cli.shot.server.booted': '  server   booted for this shot on {url}',
-  'cli.shot.server.reused': '  server   the x dev already running on {url}',
-  'cli.shot.canvas': '  canvas   {width}x{height}',
-  'cli.shot.canvasUnreadable': '  canvas   unreadable — {bytes} byte(s), not a decodable image',
-  'cli.shot.islands': '  islands  {booted} of {declared} mounted ({strategies})',
-  'cli.shot.islandsUnknown': '  islands  not counted — the page answered no probe',
-  // The failure a picture cannot show and a console count cannot see: a rejected mount promise
-  // calls no console method, so the FIRST one is named here rather than left to verdict.json.
-  'cli.shot.islandFailed': '{route}: {failed} island(s) failed to mount — {island}: {message}',
-  'cli.shot.network': '  network  {requests} request(s), {refused} refused, {dropped} dropped',
-  'cli.shot.console': '  console  {level}: {text}',
-  'cli.shot.threw': '{route}: {thrown} uncaught exception(s) — {first}',
-  'cli.shot.pageError': '  threw    {message}  {at}',
-  'cli.shot.picture': '  picture  {path}',
-  'cli.shot.verdict': '  verdict  {path}',
-  // `--viewport`: one route at several sizes. The summary is ONE size's verdict, so it says which
-  // size; each size line leads with its size and the per-size detail lines sit indented beneath.
-  'cli.shot.viewport.summary': '{size}: {summary}',
-  'cli.shot.viewport.line': '{size}  {summary}',
-  // `--island`. A component capture reports per STATE, so the summary counts pictures and the
-  // lines name one state each; nothing here restates a fact `--json` does not carry.
-  'cli.shot.island.ok':
-    '{island} clean — {pictures} picture(s), every one mounted, nothing logged and nothing threw',
-  'cli.shot.island.failed':
-    '{island}: {taken} of {expected} declared picture(s) taken — verdict.json names each refusal',
-  'cli.shot.island.state': '  {state}  {theme}  {width}x{height}  {file}',
-  'cli.shot.island.missing': '  missing  {file} — no picture was taken for this declared state',
-  'cli.shot.island.picture': '  pictures {path}',
-  'cli.shot.island.verdict': '  verdict  {path}',
-  'cli.shot.island.index': '  index    {path}',
-  'cli.shot.island.blind.crop':
-    "the picture is the crop target and a thin margin around it — anything further out, including the space a component's own fault sits in, is outside the frame; content that overflows the box is recorded per state as overflow, never shown",
-  'cli.shot.island.blind.locale':
-    'toLocaleString() on a Date resolves its zone inside the engine — only an explicit timeZone is pinned by this harness',
-  'cli.ci.failed':
-    '{failed} of {runs} workflow run(s) on {branch} failed — {findings} finding(s) recovered from the log',
-  'cli.ci.green': 'every one of {runs} workflow run(s) on {branch} passed',
-  'cli.ci.job': '  {conclusion}  {job}  ({steps})',
-  'cli.ci.jobs.other': '  {count} other job(s) in this run',
-  'cli.ci.logs.empty': '  the failed step wrote no log — {url}',
-  /** The conclusion of a run GitHub has not finished — a value, not a column key. */
-  'cli.ci.pending': 'pending',
-  'cli.ci.run': '{conclusion}  {workflow}  {url}',
-  'cli.ci.running':
-    '{running} of {runs} workflow run(s) on {branch} has not finished — nothing has failed yet',
-  'cli.ci.tail': '  log tail, {job}:',
-  // `x ci tested`, one reason per condition (`TESTED_CONDITIONS`): what reused, or why it ran all.
-  'cli.ci.tested.tested':
-    'tested: PR #{pr} merged this tree, and {workflow} run {run} passed on its head — the jobs it ran are reused',
-  'cli.ci.tested.subject':
-    'not tested: the subject does not end (#N), so no pull request merged this commit — a full run',
-  'cli.ci.tested.merged': 'not tested: PR #{pr} was not merged as this commit — a full run',
-  'cli.ci.tested.fork':
-    "not tested: PR #{pr}'s head is not in {repo}, and a fork's run is never reused — a full run",
-  'cli.ci.tested.tree':
-    "not tested: this tree is not PR #{pr}'s head tree, so its base moved after the run — a full run",
-  'cli.ci.tested.run': "not tested: no green {workflow} run on PR #{pr}'s head — a full run",
-  'cli.ci.tested.stale':
-    'not tested: {workflow} run {run} for PR #{pr} is older than {maxAge} — a full run',
-  'cli.ci.tested.api': 'not tested: GitHub did not answer ({detail}) — a full run',
-  'cli.ci.tested.sha':
-    'not tested: no GITHUB_SHA, and git rev-parse HEAD named no commit — a full run',
-  'cli.pr.body.truncated': '      … {hidden} more line(s) — re-run with --full',
-  /** The line of a thread whose anchor GitHub answers null for — a value, not a column key. */
-  'cli.pr.line.unknown': '-',
-  'cli.pr.replied': 'replied on thread {id}: {url}',
-  // Resolving closes a CONVERSATION. Whether the finding is fixed is a fact about the code that
-  // no GitHub mutation observes, and a summary saying "addressed" would assert one from the other.
-  'cli.pr.resolved':
-    'thread {id} is marked resolved on GitHub — that records the conversation, not that the finding is fixed',
-  'cli.pr.review.count':
-    '{unresolved} unresolved and {resolved} resolved review thread(s) on {repo}#{pr}',
-  'cli.pr.review.current': '  submitted against the current head {head}',
-  'cli.pr.review.decision': '  review: {decision} by {author} at {submitted}',
-  'cli.pr.review.none': 'no review thread is anchored to a line on {repo}#{pr}',
-  'cli.pr.review.stale':
-    '  submitted against {commit}; the head is now {head} ({committed}) — this decision predates the current code',
-  'cli.pr.review.truncated':
-    '  more than {count} threads — this is the first page, not the whole review',
-  'cli.pr.review.undecided': '  GitHub reports no review decision yet',
-  'cli.pr.thread.closed': '  resolved    {path}:{line}  {id}',
-  'cli.pr.thread.comment': '    {author} at {createdAt}',
-  'cli.pr.thread.more': '    {hidden} more comment(s) on this thread',
-  'cli.pr.thread.open': '  unresolved  {path}:{line}  {id}',
-  'cli.pr.thread.outdated':
-    '    the diff has moved under this thread — {line} is where the comment was written',
   'cli.test.fail': '{failed} of {workers} shard(s) failed',
   'cli.test.affected.none': 'nothing is affected by {base}...HEAD — 0 test file(s) ran',
   'cli.test.empty': 'no test file matches {selection} — 0 test file(s) ran (--allow-empty)',
@@ -357,49 +212,6 @@ const CATALOG = {
   'cli.test.sampled': 'sampled {kept} of {total} {type} file(s)',
   'cli.test.type.fail': '{type} — {failed} of {workers} shard(s) failed',
   'cli.test.type.pass': '{type} — {files} test file(s) on {workers} worker(s) passed in {ms}ms',
-  // The banner a `--only` run carries, in front of whichever summary above it renders. Rendered
-  // output, so it lives here — `data.notAGateRun` is the machine marker, and a reader testing for
-  // one narrowed run reads that boolean rather than substring-matching this line.
-  'cli.verify.notAGateRun': 'NOT A GATE RUN — {summary}',
-  'cli.verify.pass': 'all {count} steps passed in {ms}ms',
-  'cli.verify.fail': '{failed} of {count} steps failed',
-  // The budgets step built before it weighed (`verify-budgets-build.ts`): which stats state made it.
-  'cli.verify.budgets.built':
-    'built first: build stats were {state} — x build --target static --out {out} ({ms}ms)',
-  // A skipped step is not a passed one, so the two counts never share a sentence — and the skipped
-  // ones are named, because "which suite has nothing to run here?" is the question a green gate
-  // over a missing suite has to answer on its own line. Whole sentences per case rather than a
-  // clause the caller glues on: a catalog clause cannot know the sentence it lands in.
-  'cli.verify.passSkipped':
-    '{passed} of {count} steps passed in {ms}ms — {skipped} skipped: {names}',
-  'cli.verify.failSkipped': '{failed} of {count} steps failed — {skipped} skipped: {names}',
-  // The `errors` step's own coverage, in `output`: a scan without a parser reads most fix lines
-  // and not all of them, and a step that reports findings alone claims a completeness it lacks.
-  'cli.verify.fixCoverage': 'checked {checked} fix line(s), could not read {unreadable}',
-  // Why a skipped step is a dash when the step can say so: the suite exists and not one of its
-  // tests ran. Each test's own name carries the reason it skipped, and `bun test` prints only the
-  // counts — so the line says how many and `x test <type>` prints the names.
-  'cli.verify.allSkipped': 'found {skipped} test(s) and every one skipped itself',
-  'cli.verify.warnings': '{count} warning(s) — --verbose or --json lists them',
-  'cli.verify.slowest': 'slowest: {files}',
-  'cli.verify.isrQueryOmitted':
-    '{file}: reads the query parameter "{name}", which revalidate.query does not list — the page is stored under a key without it, so every visitor gets the document rendered for whichever value arrived first. Declare query: [{declared}], or stop reading it',
-  // The other shape the same counts can take: a suite that reported no test at all, skipped ones
-  // included. Its own line and not `allSkipped` with a zero, because the repair differs — there is
-  // no skipped test to read a reason off, so the files the step selected hold no test.
-  'cli.verify.ranNothing': 'found no test to run in the file(s) it selected',
-  'cli.verify.merged': 'merged {parts} part(s) — {summary}',
-  // The heartbeat `verify-progress.ts` writes while a step is still running: `{steps}` is
-  // `unit (12m 3s), live (4m 0s)`, each step with the time since it started.
-  'cli.verify.stillRunning': 'still running: {steps}',
-  // The `unit` step's own measurement, in `output`: what the suite covered of the app's whole
-  // source tree, beside the floor it was held to. A shard says it measured a slice instead.
-  'cli.verify.coverage':
-    'coverage: {lines}% of lines, {funcs}% of functions over {files} source file(s) — floor {floor}',
-  'cli.verify.coverageDeferred':
-    'coverage: this shard measured its own slice — x verify merge folds every shard and judges the floor',
-  'cli.verify.serial': 'serial',
-  'cli.verify.workers': '{workers} workers',
   'cli.clean.nothing': 'nothing to clean: no test leftovers under this app',
   'cli.clean.removed': 'removed {paths} path(s) and {databases} probe database(s)',
   'cli.clean.would':
@@ -436,46 +248,10 @@ const CATALOG = {
   'cli.secrets.dropped':
     'dropped retired master key {kid} from {path} — {count} retired key(s) still declared',
   'cli.secrets.ring': 'retired master key(s) that still open sealed values: {kids}',
-  'cli.upgrade.atLatest': 'already at {version}, the newest release',
-  'cli.upgrade.atTarget': 'already at {version}; {next} is the next release',
-  'cli.upgrade.noApp.done':
-    '{from} -> {to}: no app.config.ts, so no x verify ran; {count} script(s) passed',
-  'cli.upgrade.noApp.none':
-    '{from} -> {to}: nothing checked: no app.config.ts, and no typecheck or test script',
-  'cli.upgrade.noApp.red': '{from} -> {to}: no app.config.ts, and a script failed: {names}',
-  'cli.upgrade.scriptRed': 'failed, re-run it: bun run {name}',
-  'cli.upgrade.then.atTarget':
-    'nothing to do at {version}; a bare x upgrade --json takes the next release, {next}',
-  'cli.upgrade.then.dryRunNoApp':
-    'no app.config.ts, so on a clean tree x upgrade --json moves the pins and runs {scripts} in place of x verify',
-  'cli.upgrade.then.noProof':
-    'nothing checked this hop: confirm {to} works by hand, commit it, then re-run x upgrade --json for the next one',
-  'cli.upgrade.then.scriptsGreen':
-    'the scripts passed, which is less than x verify would say: review the diff, commit this hop to {to}, then re-run x upgrade --json for the next one',
-  'cli.upgrade.then.scriptsRed':
-    'read the section, make each failed script pass, commit this hop to {to}, then re-run x upgrade --json for the next one',
-  'cli.upgrade.agentsMd.link':
-    'AGENTS.md: byte-identical to CLAUDE.md, so this hop makes it a symlink to it',
-  'cli.upgrade.agentsMd.differs':
-    'AGENTS.md: differs from CLAUDE.md, left alone. Merge what only AGENTS.md says into CLAUDE.md, then: ln -sf CLAUDE.md AGENTS.md',
-  'cli.upgrade.bunEdited': 'bun floor: {path} {from} -> {to}',
-  'cli.upgrade.bunManual': 'bun floor, by hand: {path}:{line} — {why}',
-  'cli.upgrade.done': '{from} -> {to}: the gate is green',
-  'cli.upgrade.dryRun': '{from} -> {to}: nothing written, no gate run',
-  'cli.upgrade.guard': 'guard, yours to take or leave: {fix}',
-  'cli.upgrade.read': 'read: {title} — {url}',
-  'cli.upgrade.red': '{from} -> {to}: not done, the gate says: {summary}',
-  'cli.upgrade.stillRunning': 'x upgrade: still in {stage} ({elapsed})',
-  'cli.upgrade.then': 'then: {then}',
-  'cli.upgrade.then.atLatest':
-    'nothing to do: this app is on {version}, and no newer release is published',
-  'cli.upgrade.then.dryRun': 'on a clean tree, run the hop: x upgrade --json',
-  'cli.upgrade.then.last':
-    'review the diff and commit this hop to {to}: it is the newest release, so the walk is over',
-  'cli.upgrade.then.red':
-    'read the section, close each finding by its fix, re-check with x verify --json, commit this hop to {to}, then re-run x upgrade --json for the next one',
-  'cli.upgrade.then.walk':
-    'review the diff and commit this hop to {to}, then re-run x upgrade --json to take the next one, {next}',
+  ...DB_MESSAGES,
+  ...SHOT_MESSAGES,
+  ...UPGRADE_MESSAGES,
+  ...GATE_MESSAGES,
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

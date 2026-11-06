@@ -14,6 +14,8 @@ export interface SubscribeArgs {
   readonly input: JsonValue;
   readonly sid?: string;
   readonly cursor?: LiveCursor | null;
+  /** The subscribe frame's `traceparent`, raw: the window's read joins that trace (`query-window`). */
+  readonly traceparent?: string | undefined;
 }
 
 /**

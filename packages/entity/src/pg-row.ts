@@ -189,14 +189,41 @@ const cellOf = (entityName: string, property: string, column: AnyColumn, value: 
   );
 };
 
+/** One column as the decoder reads it: the property, its column, and its physical names. */
+type DecodeStep = readonly [
+  property: string,
+  column: AnyColumn,
+  head: string | undefined,
+  currency: string | undefined,
+  scale: string | undefined,
+];
+
+/**
+ * The physical names, derived once per column map. Column names never change after `entity()`,
+ * and deriving them per row was most of a list's CPU: `snake` is a regex replace, and it ran once
+ * per column per row (measured 2026-11-06: 35.6% self time of a 100-row list). Weak, so a test's
+ * throwaway entity is not held by it.
+ */
+const DECODE_PLANS = new WeakMap<object, readonly DecodeStep[]>();
+
+const decodePlan = (columns: EntityCore<unknown>['$columns']): readonly DecodeStep[] => {
+  const known = DECODE_PLANS.get(columns);
+  if (known !== undefined) return known;
+  const steps = Object.entries(columns).map(([property, column]): DecodeStep => {
+    const [head, currency, scale] = columnsOf(property, column);
+    return [property, column, head, currency, scale];
+  });
+  DECODE_PLANS.set(columns, steps);
+  return steps;
+};
+
 /**
  * Physical row -> entity row. A column the projection left out is left out here too, so a
  * `select` narrows the object as well as the statement.
  */
 export const decodeRow = <Row>(entity: EntityCore<Row>, source: PhysicalRow): Row => {
   const row: Record<string, unknown> = {};
-  for (const [property, column] of Object.entries(entity.$columns)) {
-    const [head, currency, scale] = columnsOf(property, column);
+  for (const [property, column, head, currency, scale] of decodePlan(entity.$columns)) {
     if (head === undefined || !(head in source)) continue;
     // Decided by the column's KIND and never by how many names came back: a money column whose
     // table has no scale column projects two names, and reading that as a non-money column handed

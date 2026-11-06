@@ -64,6 +64,8 @@ export function useMigratedDatabase(): void {
 | a repo's handle calls, a service, a policy | a plain `.test.ts` on memory |
 | a repo mixing the handle with a raw join, an aggregate, a CTE | a `.test.ts` running the recipe above |
 | behaviour only a real server has (a second connection, `LISTEN`, a lock across sessions) | `.live.test.ts` against `TEST_DATABASE_URL` |
+| a raw join paged with `keyset()` | the recipe above: raw SQL has no memory path, so a page boundary is asserted on the real engine |
+| text order where it matters | the recipe above, `As of 2026-11-06`. Memory sorts text by code unit (`["10","9","A","B","a"]`), Postgres by the column's collation (`["10","9","a","A","a b"]` on `en_US`): `.orderBy('name').page()` agrees on order only on the real engine |
 
 **What a run leaves behind is swept** — before every `x test` and every test step of `x verify` (once per process), and on demand by `x clean`:
 
@@ -566,6 +568,17 @@ unitTest('a row deleted before the run is skipped, not failed', async ({ runJobs
 
 Enforced through it, keyed or not: `concurrency` and `whenBusy` — each pass is a real worker's `tick()`, so a run over its slot waits for the next pass, or is refused under `whenBusy: 'fail'`. The lease is renewed on the test clock — every millisecond of it — so a body in flight learns of a cancel at the next `clock.advance()`: cancel, `clock.advance(1)`, await the drain. A `clock.advance()` past the visibility timeout while it runs is `X_JOB_LEASE_LOST`, as in production. `As of 2026-10`.
 
+## A job killed at every boundary, and raced from a seed
+
+`crashProof(handle, input)` and `simulateJobs({ … })`, both from `@ultimat3/testing`, judge a job by its **effects** — row writes, mail, calls out, enqueues — never its return value. Reads are not effects. `As of 2026-11`.
+
+| Call | Runs | Answers |
+|---|---|---|
+| `crashProof(job, input)` | one clean run, then one per boundary it crossed (each step write landing, each settle), the worker killed there and the next one reclaiming; then each boundary again with the write's answer lost | `{ boundaries, divergences, reruns }`. A divergence carries `error`, an `X_JOB_CRASH_DIVERGED` naming the effect and the step it follows — `throw report.divergences[0].error`. A rerun is at-least-once, reported, never red |
+| `simulateJobs({ jobs: [{ handle, input }], workers, faults, invariant })` | `seeds` (20) seeds from `seed` (1), N workers, every driver call interleaved and faulted by a seeded picker: `kill`, `answer-lost`, `lease-lapse`, `duplicate-claim`, `clock-jump` (`ALL_FAULTS`) | throws `X_JOB_SIM_INVARIANT` with the seed and its faults when `invariant(state)` throws or answers `false`; `X_JOB_SIM_NONDETERMINISTIC` when one seed traces two ways. `x test job --seed <n>` replays one |
+
+A `compensates: true` job is also forced to fail for good and killed while it unwinds: each `compensate:*` once, last in first out. A kill inside `step.run(…, { once: true })` ends `X_STEP_OUTCOME_UNKNOWN` and is green. Postgres is not simulated. The reference: `examples/dummy/apps/web/app/posts/jobs.job.test.ts`.
+
 ## A model call under test
 
 `echoProvider()` answers text; it cannot call a tool. A test that drives an `agent()` through its tools scripts the model with `scriptedProvider({ turns })`: each provider call answers the next turn, and `.seen` keeps every request in order.
@@ -920,8 +933,8 @@ shape, same unreached code. `As of 2026-11`.
 | Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
 | Room | network sealed, mail captured, jobs in memory, clock frozen. A call out is refused and counted, so the primitive is `unreached` |
 | Overrides | `apps/web/exercise.ts`: `export const exercise = defineExercise({ publishPost: { actor, input }, sendInvoice: { off: '<why>' } })`. Each value is `.contract({ exercise })`'s option. An unknown name is `X_DECLARATION_UNKNOWN`; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED` |
-| Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, statements, effects, ms, override?, tenant? }`. The fields before `tenant` are A's call. The human table's `tenant` column is the verdict, `-` where none ran |
-| Gate | the `exercise` step, after `job`, runs `x exercise --json` as a child and is red on its findings: `X_CONTRACT_EXERCISE_UNREACHED`, `X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`, and — on a whole pass, not `x exercise <name>` — `X_ENTITY_TENANT_UNDECLARED`. `unreached` is never sampled or skipped: it is a finding whose `fix:` is the entry to paste |
+| Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, statements, effects, ms, override?, tenant?, crash? }`. The fields before `tenant` are A's call. The human table's `tenant` and `crash` columns are the verdicts, `-` where none ran |
+| Gate | the `exercise` step, after `job`, runs `x exercise --json` as a child and is red on its findings: `X_CONTRACT_EXERCISE_UNREACHED`, `X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`, `X_JOB_CRASH_DIVERGED`, and — on a whole pass, not `x exercise <name>` — `X_ENTITY_TENANT_UNDECLARED`. `unreached` is never sampled or skipped: it is a finding whose `fix:` is the entry to paste |
 
 ```bash
 x exercise --json                 # the whole pass
@@ -954,14 +967,45 @@ only what came back and what changed.
 | `crossed` | any finding, from either leg | yes: `X_TENANT_LEAK` (a path, `output.items[0].url`, `effect.mail[0].to`) or `X_TENANT_WRITE_CROSSED` (table and A's row id) |
 | `unproven` | A's own call was not `reached` | no — the record is already `unreached`, which is |
 | `public` | the policy admits an anonymous caller with an empty input: read half skipped, write half kept | no |
+| `public` | a **job** whose B leg opened `crossTenant(reason, fn)` and whose input carried none of A's marks — a declared sweep, `sendDigest` fanning out one delivery per org. The reason is quoted in the verdict; read half skipped, write half kept | no |
 | `unproven` | a query whose A answer held none of A's marks: B's empty answer proves nothing | no |
 | `proven` | otherwise | no |
 
-`off` and `refused` records carry no `tenant`. A job has no policy, so it is never `public`. A
-finding prints paths, tables and seeded ids, never a bound value. The fix on each:
+`off` and `refused` records carry no `tenant`. A job has no policy, so it is `public` only as a
+declared sweep. `crossTenant()` is the one declaration the proof reads (`@ultimat3/entity` tells a
+witness each scope opened, after its capability is proven); it excuses nothing on an action or a
+query, which answer B directly, nor on a job B handed one of A's ids — that is B choosing A's row,
+crossed as ever. A finding prints paths, tables and seeded ids, never a bound value. The fix on each:
 `x exercise <name> --json`, then read or write the row through the repository scoped to
 `ctx.actor`. What this does not walk — a `route` `load`, a `task` — is
 [Policies and authz](Policies-And-Authz#the-dynamic-tenant-proof).
+
+### The crash proof
+
+**Every job the pass reached is killed at every step boundary**, `As of 2026-11`: `crashProof`
+([above](#a-job-killed-at-every-boundary-and-raced-from-a-seed)) with the control's own input and
+actor, after the tenant proof. Source: `packages/testing/src/exercise-crash.ts`,
+`packages/cli/src/exercise-findings.ts`.
+
+| Rule | |
+|---|---|
+| Runs | committed on the pass's scratch database, after the control. A job body runs outside every transaction, so no rollback scope can hold its writes, and an effect is counted when it commits |
+| Oracle | the effect multiset — row writes through a repository, mail, calls out, enqueues — of each killed run against the clean one. Raw SQL is no effect, and reads are none |
+| A job with no step | one boundary, before the ack: an effect in its body runs again on the retry |
+
+| `crash.verdict` | When | Red |
+|---|---|---|
+| `diverged` | an effect made more often by a killed run: `findings[]` of `{ boundary, mode, effect, clean, killed, after? }` | yes: `X_JOB_CRASH_DIVERGED`, one per effect and the step it follows, every boundary named |
+| `held` | otherwise; `boundaries` and `reruns` (lost answers — at-least-once, never red) counted | no |
+| `unproven` | the proof itself threw: `reason` | no |
+
+The human output prints one line per killed boundary,
+`job chargeOrder · killed at mail · X_JOB_CRASH_DIVERGED row:payments:insert 2× (clean 1×)`. The fix
+reruns the one job and names the effect to move:
+
+```bash
+x exercise chargeOrder --json   # in job("chargeOrder"): wrap the "row:payments:insert" made after step "create" in step.run('<name>', async () => …)
+```
 
 ## Memory, width and isolation
 
@@ -1108,7 +1152,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
 | `job` | step replay, idempotency dedupe, retry/backoff, concurrency, outbox atomicity |
-| `exercise` | an action, query or job that never reached its handler when `x exercise` ran it once on generated rows (`X_CONTRACT_EXERCISE_UNREACHED`, its fix the override to paste); one that handed tenant B tenant A's data or changed A's row (`X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`); a tenantless child of a tenant-owned table (`X_ENTITY_TENANT_UNDECLARED`) → [The exercise pass](#the-exercise-pass). Skipped in a repo with no `app.config.ts` |
+| `exercise` | an action, query or job that never reached its handler when `x exercise` ran it once on generated rows (`X_CONTRACT_EXERCISE_UNREACHED`, its fix the override to paste); one that handed tenant B tenant A's data or changed A's row (`X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`); a job that, killed at a step boundary, made an effect twice (`X_JOB_CRASH_DIVERGED`); a tenantless child of a tenant-owned table (`X_ENTITY_TENANT_UNDECLARED`) → [The exercise pass](#the-exercise-pass). Skipped in a repo with no `app.config.ts` |
 | `e2e` | a real browser (raw CDP, no Playwright) against the app, spawned on a throwaway database, when Chrome is on the machine; otherwise its browser cases skip, or refuse under `E2E_BROWSER_REQUIRED=1` |
 | `eval` | a prompt scoring below its committed baseline, or a prompt with no eval at all |
 | `drift` | schema differs from migrations, or a migration is not reversible-or-marked |

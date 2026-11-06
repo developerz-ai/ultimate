@@ -180,8 +180,21 @@ export interface TableDescription {
   readonly policyNames?: readonly string[] | undefined;
 }
 
+/**
+ * A view `x db gen` wrote (`generate-view.ts`): SNAPSHOT-only, as `checks` is declared-only — the
+ * catalog reading never fills it (`app-relation.ts` keeps every view out of `tables`), so drift
+ * never reports one. `create` is the statements verbatim, which is what the next diff compares.
+ */
+export interface ViewDescription {
+  readonly name: string;
+  readonly materialized?: true | undefined;
+  readonly create: readonly string[];
+}
+
 export interface SchemaDescription {
   readonly tables: readonly TableDescription[];
+  /** Absent on every snapshot written before views existed, and on every catalog reading. */
+  readonly views?: readonly ViewDescription[] | undefined;
 }
 
 export interface IntrospectOptions {

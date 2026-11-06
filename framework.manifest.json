@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "1d8eea93cda68592ba975f6efb303276d611e74bc544eb292ccdb90e57593e72",
+  "buildId": "ce00cce55d675f8ed8a1f805b4f8460c529865e85b092930537ce74ec56970cc",
   "tiers": {
     "0": [
       "core",
@@ -378,6 +378,11 @@
       "code": "X_ADMIN_UNSCANNED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ADMIN_VIEW_WRITE",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
     },
     {
       "code": "X_AGENT_CONTEXT_EXHAUSTED",
@@ -938,6 +943,11 @@
       "code": "X_CHANNEL_LITERAL_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/channel-literals.ts"
+    },
+    {
+      "code": "X_CHART_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_CHART_VERSION_STALE",
@@ -1660,6 +1670,16 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_DRILL_FAILED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_DRILL_SERVICE_MISSING",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_DRIVER_UNAVAILABLE",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
@@ -1745,7 +1765,27 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_ENTITY_SERIES_INVALID",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_SERIES_UNSUPPORTED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_ENTITY_TENANT_UNDECLARED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_VIEW_DRIFT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ENTITY_VIEW_READ_ONLY",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },
@@ -2375,6 +2415,11 @@
       "at": "packages/jobs/src/error-codes.ts"
     },
     {
+      "code": "X_JOB_CRASH_DIVERGED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_JOB_DECLARATION_INVALID",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
@@ -2450,9 +2495,29 @@
       "at": "packages/jobs/src/error-codes.ts"
     },
     {
+      "code": "X_JOB_REFRESH_VIEW_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_JOB_ROLLUP_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
       "code": "X_JOB_ROW_STATUS_UNKNOWN",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_JOB_SIM_INVARIANT",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_SIM_NONDETERMINISTIC",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_JOB_SLOT_LOST",
@@ -2483,6 +2548,11 @@
       "code": "X_JOB_UNREGISTERED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_KEYSET_NULL_KEY",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
     },
     {
       "code": "X_KNOWN_GAP_LINK_MALFORMED",
@@ -2976,6 +3046,11 @@
     },
     {
       "code": "X_MIGRATION_IRREVERSIBLE",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_ROLLBACK_DESTRUCTIVE",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },
@@ -3656,6 +3731,11 @@
     },
     {
       "code": "X_RATE_LIMIT_SCOPE_UNSET",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_RATE_LIMIT_STORE_TIMEOUT",
       "owner": "http",
       "at": "packages/http/src/error-titles.ts"
     },

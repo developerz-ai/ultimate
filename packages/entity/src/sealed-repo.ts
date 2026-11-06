@@ -232,6 +232,15 @@ export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo:
       return repo.approximateCount(await readArgs(entity, fields, args, sealKeysOnce()));
     },
   };
+  // A bucket is an instant and a sum is arithmetic: neither has a meaning over ciphertext.
+  const series = repo.series?.bind(repo);
+  if (series !== undefined) {
+    sealing.series = async (spec, args) => {
+      const named = spec.value === 'count' ? [spec.on] : [spec.on, spec.value.sum];
+      refuseNamed(entity, fields, named, 'an aggregate');
+      return series(spec, await readArgs(entity, fields, args, sealKeysOnce()));
+    };
+  }
   // Opened before `fn` sees it: a callback is a caller, and `lockKey` hands it no row to open.
   const inner = repo.lock?.bind(repo);
   if (inner !== undefined) {

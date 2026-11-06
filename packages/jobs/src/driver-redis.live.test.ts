@@ -6,11 +6,13 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import type { FrozenClock } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
+import { redisClient } from '@ultimat3/core/redis';
 import type { JobDriver, StepStore } from '.';
 import { isJobState } from './driver';
 import { driverEnqueueManyScenarios } from './driver-enqueue-many-fixture';
 import { memoryJobDriver } from './driver-memory';
 import { redisJobDriver } from './driver-redis';
+import { DriverUnavailableError } from './errors';
 
 const url = Bun.env['TEST_REDIS_URL'] ?? '';
 const prefix = `xlive-jobs-${crypto.randomUUID()}`;
@@ -293,5 +295,48 @@ describe.skipIf(url === '')('live · redis · the job driver', () => {
     const ttl = async (id: string) => Number(await client?.send('PTTL', [`{${prefix}}:job:${id}`]));
     expect(await ttl(done.id)).toBeGreaterThan(0);
     expect(await ttl(dead.id)).toBe(-1);
+  });
+
+  test('a killed connection: enqueue is X_DRIVER_UNAVAILABLE at once, then the queue answers', async () => {
+    /** Ask until `ready()` holds, or fail after `limitMs` of the server's and Bun's own time. */
+    const until = async (ready: () => Promise<boolean> | boolean, limitMs: number) => {
+      const started = performance.now();
+      while (!(await ready())) {
+        if (performance.now() - started > limitMs) expect.unreachable(`not ready in ${limitMs} ms`);
+        // real-clock: Bun's reconnect loop and the server's socket close run on their own timers.
+        await Bun.sleep(10);
+      }
+    };
+    // core's client, the one the driver takes when none is handed in, on a path of its own.
+    const own = redisClient(`${url}/2`);
+    try {
+      const driver = redisJobDriver({ client: own, prefix: `${prefix}-outage` });
+      const request = { name: 'outage.job', input: null, idempotencyKey: 'k', maxAttempts: 1 };
+      await until(() => own.connected, 2_000);
+      const id = String((await own.send('CLIENT', ['ID'])) as unknown);
+      expect(Number((await client?.send('CLIENT', ['KILL', 'ID', id])) as unknown)).toBe(1);
+      await until(() => !own.connected, 2_000);
+
+      const started = performance.now();
+      const refusal = await driver.enqueue({ ...request, queue: 'outage' }).then(
+        () => expect.unreachable('an enqueue on a killed connection answered'),
+        (error: unknown) => error,
+      );
+      expect(performance.now() - started).toBeLessThan(50);
+      expect(refusal).toBeInstanceOf(DriverUnavailableError);
+
+      await until(
+        () =>
+          driver.enqueue({ ...request, queue: 'outage' }).then(
+            () => true,
+            () => false,
+          ),
+        5_000,
+      );
+      const found: unknown = await own.send('KEYS', [`{${prefix}-outage}*`]);
+      for (const key of Array.isArray(found) ? found : []) await own.send('DEL', [String(key)]);
+    } finally {
+      own.close();
+    }
   });
 });

@@ -29,7 +29,7 @@ Reads walk down until a hit, then populate every tier they walked past. Writes p
 |---|---|---|---|---|
 | 0 | `request-memo` | ALS context (`WeakMap`) | dies with the request | never |
 | 1 | `lru` | in-process, byte-budgeted | tag index | never |
-| 2 | `redis` | `Bun.redis` | tag→keys set, one `EVAL` **per tag** + slot-local `DEL`s | single node |
+| 2 | `redis` | `redisClient()` (`@ultimat3/core/redis`) | tag→keys set, one `EVAL` **per tag** + slot-local `DEL`s | single node |
 | 3 | `cdn` | headers + purge driver | surrogate keys | no CDN |
 
 A tier is a `CacheTier` (`get`/`set`/`del`/`invalidateTags`, plus an optional `fence` for a tier
@@ -268,6 +268,32 @@ what `x cache bust --json` will print once it ships; that command is planned and
 A dead tier lands in `errors` and never throws — a Redis outage must not fail the write
 that triggered the bust. Entries there expire by TTL instead.
 
+### Redis down is a slow miss, not a hang
+
+A refused tier was always a miss; a tier that never ANSWERS was unbounded — measured on Redis 7,
+a paused server hung `stack.read` 45 s and a bust 20 s, on an action's commit path. `As of 2026-11`:
+
+| Redis is | A read | A bust |
+|---|---|---|
+| up | answers, single milliseconds | answers |
+| paused (accepts, never answers) | one command misses its `commandTimeoutMs` (default 150 ms) → a miss, the source answers; the value path then **parks** for 5 s and every read there is an immediate miss, nothing sent | its own 1,000 ms deadline, **never parked**: a bust skipped for a stall leaves stale rows until TTL. Past it → `report.errors` |
+| stopped | refused at once (no offline queue) → a miss | refused at once → `report.errors`; retry with the same tags |
+| back | the client reconnects on its own, every pod, no restart | answers |
+
+A missed deadline or a parked command is `X_CACHE_DRIVER_UNAVAILABLE` in `recentTierFailures()`,
+the cause naming the deadline or the park left; a stopped server's refusal is recorded with Bun's
+own `ERR_REDIS_CONNECTION_CLOSED` message and no `code`. The client is core's `redisClient()` (`@ultimat3/core/redis`,
+`REDIS_URL`), never `Bun.redis`: its default offline queue made the first read against a stopped
+server wait 31 s, and it stopped reconnecting after that. A `client` handed in keeps its own
+reconnect behaviour and still gets the deadline. Raise the budget only when that latency is the
+store's normal:
+
+```ts
+import { redisTier } from '@ultimat3/cache';
+
+redisTier({ commandTimeoutMs: 400 }); // anything but whole ms above 0 is X_CACHE_LIMIT_INVALID
+```
+
 The fan-out walks the ladder **farthest tier first** — Redis before the LRU before the request memo
 — and reports in read order. Clearing near-to-far leaves the far tier holding the old value after
 the near ones are clear, and a read racing the bust promotes it straight back up into them: every
@@ -443,7 +469,7 @@ reached the floor unchecked would have passed it, at any floor — `0` included.
 
 | Code | Cause |
 |---|---|
-| `X_CACHE_DRIVER_UNAVAILABLE` | `Bun.redis` missing, a purge driver built without its token, or a batch size that is not a positive integer |
+| `X_CACHE_DRIVER_UNAVAILABLE` | a Redis command missed its deadline, or the tier is parked after one; a purge driver built without its token; or a batch size that is not a positive integer |
 | `X_CACHE_JITTER_INVALID` | a tier's `jitterFraction` outside `[0, 1)` |
 | `X_CACHE_PURGE_FAILED` | the CDN refused a purge, or a key it would split on whitespace |
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared — usually a typo |

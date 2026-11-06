@@ -22,6 +22,7 @@ import type {
   PlanCode,
   PostId,
 } from '@postly/domain';
+import type { AgentTranscript } from '@ultimat3/ai';
 import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
 import type {
@@ -52,6 +53,15 @@ export interface PostsService {
   inOrg(orgId: OrgId, postId: PostId): Promise<PostView | null>;
   /** The post's latest review, `null` before any. */
   review(postId: PostId): Promise<ReviewView | null>;
+  /**
+   * Open the post's review run, or pick up the one open for the same draft: its latest checkpoint,
+   * or `null` to start from the top. A run opened for an older draft starts over.
+   */
+  openReviewRun(postId: PostId): Promise<AgentTranscript | null>;
+  /** `reviewDraft`'s `onCheckpoint`: kept on the open run; with none open it writes nothing. */
+  checkpointReview(postId: PostId, transcript: AgentTranscript): Promise<void>;
+  /** The review is kept: the run is over. */
+  closeReviewRun(postId: PostId): Promise<void>;
   /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */
   publishedSince(orgId: OrgId, since: Date): Promise<PostSummary[]>;
   /**

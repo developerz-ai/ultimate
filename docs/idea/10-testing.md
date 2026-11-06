@@ -188,6 +188,24 @@ $ x verify
 
 `x verify --json` emits the same content machine-readably, per [`09-ai-first.md`](./09-ai-first.md). CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check developers cannot run.
 
+## Fault drills: `x drill`
+
+The gate proves the code; a drill proves the app survives its dependencies failing, `As of
+2026-11-06`. Not a gate step: `x drill` needs a real Postgres (and Redis, NATS where the app
+declares them), and `x verify` needs nothing ([`21-the-range.md`](./21-the-range.md)).
+
+| Decision | Answer |
+|---|---|
+| verdict | the framework's declared behaviour, never "it survived": coded answers, bounded requests, `/readyz` flips and returns, recovery with no restart, jobs terminal and never doubled, a signalled role gone inside its drain |
+| fault | a Bun TCP proxy per service per fleet (`faultProxy`: `pass`, `delay`, `blackhole`, `reset`, `refuse`), switchable mid-run; bytes a blackhole holds cross once it lifts |
+| topology | `web` and `worker` as separate processes on a scratch database; one node per role ([`17-scale-ladder.md`](./17-scale-ladder.md) stands) |
+| thresholds | derived from the app's config; `--budget-ms` replaces the judged deadline and is printed |
+| no evidence | red. An uncoded 5xx: red. A missing service: refused (`X_DRILL_SERVICE_MISSING`), never a skip |
+| random faults | no: a drill states its expected result. The seeded, in-process half is plan 101 slice `40-next-job-crash-proof` |
+
+The table is `DRILLS` in [`packages/testing/src/drills.ts`](../../packages/testing/src/drills.ts);
+each property's judge is [`drill-verdict.ts`](../../packages/testing/src/drill-verdict.ts).
+
 ## Rules
 
 - Never mock the database. Clone it.

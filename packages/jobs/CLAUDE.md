@@ -69,8 +69,10 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - Drivers: the `JobDriver` methods plus optional `introspect`, `backfills`, `leases`; new
   capabilities go behind the interface. **`redisJobDriver`** (`@ultimat3/jobs/redis`, off the
   barrel) is one Lua script per operation: a semantic change lands in memory, pg AND the scripts.
-- **`demand` is the seventh method, required.** `redisJobDriver` counts every running row: it keeps no worker registry, so no claimer is known to drain. **A draining worker's `queue_demand` goes to 0** (`stopAccepting`): `max by (queue)` would read a frozen value over every live worker's. `queue_depth` keeps its last value.
-- **The claim SEEKS** (`SQL_CLAIM`): one ordered scan per open queue for due rows (`x_jobs_claim_idx`, predicate word for word) and one for lapsed leases (`x_jobs_depth_idx`), then an outer `order by run_at limit`. `driver-pg-claim.live.test.ts` refuses a sort under `LockRows`. Dropped rows stay locked to the transaction's end: correct only because a claim autocommits.
+  Its client is core's `redisClient()`, never `Bun.redis`; `ERR_REDIS_CONNECTION_CLOSED` is
+  `X_DRIVER_UNAVAILABLE` at once (`typedRefusals`), never a wait.
+- **`demand` is the seventh method, required**; a draining worker's `queue_demand` goes to 0.
+- **The claim SEEKS** (`SQL_CLAIM`); correct only because a claim autocommits.
 - Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm` (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Full rule: `docs/history/jobs.md`.
 - **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
 
@@ -147,6 +149,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 ## Rules — long form in `docs/history/jobs.md`
 
 - "Moved out 2026-11-03": operator verbs on BOTH drivers; an idle round touches no store.
+- "Moved out 2026-11-06": `demand` with no worker registry; how the claim seeks.
 - "Plan 101 wave 6c": compensate ONLY failed for good; `once` writes `started` BEFORE `fn`; a
   waking publish is ONE statement; payload org = enqueue org (`X_JOB_TENANT_MISMATCH`).
 
@@ -174,6 +177,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 - **The ledger says what RAN, the registry what EXISTS, `backfill-pending.ts` is the diff.**
   `environments` is checked in `backfillPass()` and `gateBackfill()`; `requires` in `gateBackfill()`
   only; `count` after the last batch (`X_BACKFILL_STALLED`). `inspectBackfills()` is the ONE projection.
+- **`rollup()`/`refreshView()`**: ONE `upsertAll`; `rollup.job.test.ts`.
 - **`purge()`** is the one caller of every `purgeExpired()`: one table per `step.run`, one clock
   reading per pass, duplicate names refused.
 - **`exportRows()`**: one object per PAGE, named by page index; NO cross-tenant escape.
@@ -275,6 +279,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `job-enqueue-many.ts` / `enqueue-record.ts` / `driver-pg-enqueue-many.ts` | `enqueueMany`, `MAX_ENQUEUE_BATCH`, `ENQUEUE_CHUNK`; one enqueue's row, every path; `SQL_ENQUEUE_MANY` + resolve |
 | `import.ts` / `import-pass.ts` | `importRows()`: the declaration; one pass, its byte-offset checkpoints, the error report |
 | `import-format.ts` / `import-source.ts` / `import-errors.ts` | record boundaries on bytes; the `ImportSource` seam; the `X_IMPORT_*` classes |
+| `driver-redis-refusal.ts` | `typedRefusals`: a send refused for want of a connection → `X_DRIVER_UNAVAILABLE` |
 | `webhook-receiver.ts` / `-route.ts` / `-types.ts` / `-errors.ts` | `webhookReceiver()` and `webhookReceiverRoutes`; the route; `ReceivedEvent`, `WebhookInbound`; its three refusals |
 
 Commands: `bun test packages/jobs` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:

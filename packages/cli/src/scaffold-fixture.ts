@@ -187,6 +187,10 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   // shape does not write. Both shapes, with the authenticator swap, compile whole in
   // `generate-sign-in.contract.test.ts`; one sign-in per app, so one here.
   { kind: 'sign-in', name: 'corp-sso', signIn: { kind: 'oidc', provider: 'corp-sso' } },
+  // Helm YAML only — nothing here reaches the compiler. Listed so the coverage test stays a set
+  // equality with `GENERATORS`: a later TS output from this generator is compiled without anyone
+  // remembering to add it. `x new` writes the same two templates first, so `dedupe` keeps those.
+  { kind: 'chart-alerts', name: FIXTURE_APP },
 ];
 
 /** The whole scaffolded surface: a new app, then every generator run inside it. */

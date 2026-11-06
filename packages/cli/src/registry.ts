@@ -16,6 +16,7 @@ import { deploySpec } from './cmd-deploy-spec';
 import { devSpec } from './cmd-dev-spec';
 import { docsSpec } from './cmd-docs-spec';
 import { doctorSpec } from './cmd-doctor-spec';
+import { drillSpec } from './cmd-drill-spec';
 import { envSpec } from './cmd-env-spec';
 import { errorsSpec } from './cmd-errors-spec';
 import { exerciseSpec } from './cmd-exercise-spec';
@@ -104,6 +105,7 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(tasksSpec, async () => (await import('./cmd-tasks')).tasksCommand),
   lazy(policySpec, async () => (await import('./cmd-policy')).policyCommand),
   lazy(exerciseSpec, async () => (await import('./cmd-exercise')).exerciseCommand),
+  lazy(drillSpec, async () => (await import('./cmd-drill')).drillCommand),
   lazy(i18nSpec, async () => (await import('./cmd-i18n')).i18nCommand),
   lazy(errorsSpec, async () => (await import('./cmd-errors')).errorsCommand),
   lazy(docsSpec, async () => (await import('./cmd-docs')).docsCommand),

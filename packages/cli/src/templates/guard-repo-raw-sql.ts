@@ -18,6 +18,8 @@ const source =
 // Only a statement the handle can express is reported: \`select *\`, \`insert\`, \`update\` or \`delete\`
 // on ONE table, with plain comparisons, and \`select * … where id = ? for update\`. A join, an aggregate, a CTE, a window, an \`or\`, a function
 // call and a statement composed from another fragment are past what the handle says, and silent.
+// One more shape is reported in any statement, join or not: an \`order by date_trunc('milliseconds', …)\`,
+// whose repair is \`keyset()\` from \`@ultimat3/db\`.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -226,11 +228,38 @@ export function handleCallFor(sql: string): string | undefined {
   return undefined;
 }
 
+/**
+ * \`order by date_trunc('milliseconds', col)\`: the cure for a JS \`Date\` dropping microseconds, and
+ * the plan's loss — an expression the index does not hold sorts every row. A line comment inside
+ * the statement is not code, so it is dropped before the match.
+ */
+export function truncatedOrder(sql: string): boolean {
+  const text = sql
+    .replaceAll(/--[^\\n]*/g, ' ')
+    .toLowerCase()
+    .replaceAll(/\\s+/g, ' ');
+  return /\\border by [^;]*\\bdate_trunc ?\\( ?'milliseconds'/.test(text);
+}
+
+const KEYSET_CALL =
+  "keyset({ scope, keys: [{ column: raw('p.created_at'), kind: 'timestamptz', direction: 'desc' }, { column: raw('p.id'), kind: 'uuid', direction: 'desc' }], after, limit })";
+
+const truncatedFinding = (at: string): Finding => ({
+  code: CODE,
+  cause: \`\${at} orders by date_trunc('milliseconds', …), the workaround for a Date losing microseconds — and the index cannot serve that expression: measured on 300,000 rows, an Index Only Scan (0.2 ms) became a Parallel Seq Scan and a sort (100 ms)\`,
+  fix: \`\${KEYSET_CALL} — from @ultimat3/db, its select, where, orderBy and limit spliced in place of the date_trunc order at \${at}, then: x verify\`,
+  at,
+});
+
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function rawRepoSql(files: readonly RepoFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
     for (const statement of sqlStatements(file.source)) {
+      if (truncatedOrder(statement.text)) {
+        findings.push(truncatedFinding(\`\${file.path}:\${statement.line}\`));
+        continue;
+      }
       const call = handleCallFor(statement.text);
       if (call === undefined) continue;
       const at = \`\${file.path}:\${statement.line}\`;
@@ -260,7 +289,7 @@ const test =
 // a green gate over the convention it was written to enforce.
 
 import { expect, unitTest } from '@ultimat3/testing';
-import { handleCallFor, rawRepoSql, sqlStatements } from './repo-raw-sql';
+import { handleCallFor, rawRepoSql, sqlStatements, truncatedOrder } from './repo-raw-sql';
 
 const REPO = 'apps/web/app/post/repo.ts';
 const repo = (source: string) => [{ path: REPO, source }];
@@ -338,6 +367,25 @@ unitTest('a statement past what the handle says is silent', () => {
   ];
   for (const sql of silent) expect(handleCallFor(sql)).toBeUndefined();
 });
+
+unitTest(
+  'an order by a millisecond-truncated column is refused in any statement, naming keyset()',
+  () => {
+    const join =
+      "select p.* from posts p join members m on m.id = p.author_id order by date_trunc('milliseconds', p.created_at) desc, p.id desc";
+    expect(truncatedOrder(join)).toBe(true);
+    expect(
+      truncatedOrder(
+        "select * from posts where date_trunc('day', created_at) = ? order by created_at",
+      ),
+    ).toBe(false);
+    expect(
+      truncatedOrder("select * from posts -- order by date_trunc('milliseconds', created_at)"),
+    ).toBe(false);
+    const findings = rawRepoSql(repo(\`const q = sql\\\`\${join}\\\`;\`));
+    expect(findings[0]?.fix).toStartWith('keyset({ scope, keys: [');
+  },
+);
 
 unitTest('a statement composed from another fragment is silent', () => {
   const inner = \`sql\\\`and a = \${hole('a')}\\\`\`;

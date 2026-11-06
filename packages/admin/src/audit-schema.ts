@@ -1,6 +1,10 @@
-// The DDL of the admin's one framework table, and nothing else: a LEAF module, so the boot's
-// `FRAMEWORK_SCHEMA` (`@ultimat3/cli`) can apply it in every role through `@ultimat3/admin/schema`
-// without pulling one screen, one view or one stylesheet into a worker's module graph.
+// The DDL of the admin's framework tables, and nothing else: a LEAF module, so the boot's
+// `FRAMEWORK_SCHEMA` (`@ultimat3/cli`) can apply them in every role through `@ultimat3/admin/schema`
+// without pulling one screen, one view or one stylesheet into a worker's module graph. The audit
+// table is declared here; the error-groups table beside it, in its own leaf, re-exported below.
+
+/** `x_error_groups` — one subpath for every admin table the boot applies, one import line there. */
+export { ERROR_GROUPS_TABLE, SQL_ERROR_GROUPS_TABLE } from './error-groups-schema';
 
 /** The table. One name, read by this DDL and by `audit-pg.ts`'s insert and select. */
 export const ADMIN_AUDIT_TABLE = 'x_admin_audit';

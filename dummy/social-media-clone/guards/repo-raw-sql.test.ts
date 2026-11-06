@@ -2,7 +2,7 @@
 // a green gate over the convention it was written to enforce.
 
 import { expect, unitTest } from '@ultimat3/testing';
-import { handleCallFor, rawRepoSql, sqlStatements } from './repo-raw-sql';
+import { handleCallFor, rawRepoSql, sqlStatements, truncatedOrder } from './repo-raw-sql';
 
 const REPO = 'apps/web/app/post/repo.ts';
 const repo = (source: string) => [{ path: REPO, source }];
@@ -80,6 +80,25 @@ unitTest('a statement past what the handle says is silent', () => {
   ];
   for (const sql of silent) expect(handleCallFor(sql)).toBeUndefined();
 });
+
+unitTest(
+  'an order by a millisecond-truncated column is refused in any statement, naming keyset()',
+  () => {
+    const join =
+      "select p.* from posts p join members m on m.id = p.author_id order by date_trunc('milliseconds', p.created_at) desc, p.id desc";
+    expect(truncatedOrder(join)).toBe(true);
+    expect(
+      truncatedOrder(
+        "select * from posts where date_trunc('day', created_at) = ? order by created_at",
+      ),
+    ).toBe(false);
+    expect(
+      truncatedOrder("select * from posts -- order by date_trunc('milliseconds', created_at)"),
+    ).toBe(false);
+    const findings = rawRepoSql(repo(`const q = sql\`${join}\`;`));
+    expect(findings[0]?.fix).toStartWith('keyset({ scope, keys: [');
+  },
+);
 
 unitTest('a statement composed from another fragment is silent', () => {
   const inner = `sql\`and a = ${hole('a')}\``;

@@ -74,6 +74,12 @@ beforeAll(() => {
     },
   });
 
+  // Third: a materialized view over the posts, so the manifest says which entity is no table.
+  entity('sources_test_titles', {
+    view: { sql: 'select id from sources_test_posts', materialized: true },
+    columns: { id: uuid().primaryKey() },
+  });
+
   registerAction(
     'publishSourcesPost',
     action({
@@ -165,6 +171,7 @@ describe('frameworkSources reaches every registry', () => {
     expect(sources.entities?.map((e) => e.name)).toEqual([
       'sources_test_post',
       'sources_test_secret',
+      'sources_test_titles',
     ]);
     expect(sources.actions?.map((a) => a.name)).toEqual([
       'archiveSourcesPost',
@@ -234,6 +241,14 @@ describe('the entity projection', () => {
     const secret = entities.find((one) => one.name === 'sources_test_secret');
     expect(secret?.shared).toBe('one credential store for the whole install');
     expect(Object.hasOwn(entities[0] ?? {}, 'shared')).toBe(false);
+  });
+
+  test('a view entity says it is one, and whether it is stored; a table carries no `view` key', () => {
+    const entities = frameworkSources({ app: APP }).entities ?? [];
+    expect(entities.find((one) => one.name === 'sources_test_titles')?.view).toEqual({
+      materialized: true,
+    });
+    expect(Object.hasOwn(entities[0] ?? {}, 'view')).toBe(false);
   });
 
   test('a column with no foreign key carries no `references` key at all', () => {

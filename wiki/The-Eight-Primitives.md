@@ -180,7 +180,7 @@ export const onboardOrg = job({
 | Projects to | queue row, per-step persistence, retry schedule, dashboard entry, MCP `jobs.inspect` tool |
 | Owns | retries, steps, concurrency class |
 | Never | assume it runs once — assume at-least-once. Durable business state lives in your tables, never only in the payload |
-| Factories over it | `backfill()`, `consumer()` (a `job` plus its `.supervisor` `task` — [Consumers](Jobs-And-Workflows#consumers--consumer)), `purge()`, `exportRows()`, `importRows()`, `notifier()`, `webhook()` (outbound) and `webhookReceiver()` (inbound: a `job` plus the plain route that verifies, enqueues, then acks) — [Jobs and workflows](Jobs-And-Workflows#inbound-webhooks) |
+| Factories over it | `backfill()`, `rollup()`, `refreshView()` ([Rollups](Jobs-And-Workflows#rollups-and-materialized-views)), `consumer()` (a `job` plus its `.supervisor` `task` — [Consumers](Jobs-And-Workflows#consumers--consumer)), `purge()`, `exportRows()`, `importRows()`, `notifier()`, `webhook()` (outbound) and `webhookReceiver()` (inbound: a `job` plus the plain route that verifies, enqueues, then acks) — [Jobs and workflows](Jobs-And-Workflows#inbound-webhooks) |
 
 ## `route`
 

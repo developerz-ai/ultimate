@@ -40,7 +40,9 @@ describe('unit · what x g emits', () => {
   });
 
   test('every generator emits a test next to its source', () => {
-    for (const kind of GENERATORS) {
+    // Not `chart-alerts`: it emits Helm templates, no TypeScript, and the chart is held by the
+    // helm render in CI and `scripts/chart-alerts.test.ts`, never by an app-side test.
+    for (const kind of GENERATORS.filter((one) => one !== 'chart-alerts')) {
       const files = generate({ kind, name: 'invoice', feature: 'invoice' });
       const tests = files.filter((file) => file.path.endsWith('.test.ts'));
       expect(tests.length).toBeGreaterThan(0);

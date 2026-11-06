@@ -117,7 +117,7 @@ export const headFor = async (
     (typeof options.pwaHead === 'function'
       ? options.pwaHead(meta.locale)
       : (options.pwaHead ?? '')) +
-    (entry.surface === 'app' ? (options.appHead ?? '') : '')
+    (entry.surface === 'app' ? (options.appHead ?? '') : (options.siteHead ?? ''))
   );
 };
 

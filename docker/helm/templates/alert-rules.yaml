@@ -1,0 +1,99 @@
+{{/*
+The alert rules for this release's own series, written from @ultimat3/cli's rule table. Each rule
+reads alerts.rules.<alert> for threshold, for, severity and enabled; its runbook_url is
+alerts.runbookBase plus the rule's anchor. Rendered by capability, like servicemonitor.yaml.
+*/}}
+{{- $cfg := .Values.alerts | default dict }}
+{{- $mode := toString (ternary $cfg.enabled "auto" (hasKey $cfg "enabled")) }}
+{{- if not (has $mode (list "auto" "true" "false")) }}
+{{- fail (printf "alerts.enabled is %q — set it to auto (render when the cluster serves monitoring.coreos.com/v1/PrometheusRule), true or false" $mode) }}
+{{- end }}
+{{- if or (eq $mode "true") (and (eq $mode "auto") (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule")) }}
+{{- $rules := $cfg.rules | default dict }}
+{{- $base := $cfg.runbookBase | default "https://github.com/developerz-ai/ultimate/blob/main/docs/ops/06-runbooks.md" }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "ultimate.fullname" . }}
+  labels:
+    {{- include "ultimate.labels" . | nindent 4 }}
+    {{- with $cfg.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: {{ include "ultimate.fullname" . }}.ultimate
+      rules:
+        {{- $r := index $rules "UltimateQueueStalled" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateQueueStalled
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance, queue) (queue_oldest_ready_seconds{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > {{ ternary $r.threshold 300 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "5m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "A queue has a due job nothing has claimed for longer than the threshold"
+            runbook_url: {{ printf "%s#ultimatequeuestalled" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateDeadLetters" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateDeadLetters
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance, queue) (queue_dead_jobs{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > 0
+          for: {{ $r.for | default "5m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "A queue holds dead-lettered jobs"
+            runbook_url: {{ printf "%s#ultimatedeadletters" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateLeaseLost" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateLeaseLost
+          expr: >-
+            sum by (namespace, app_kubernetes_io_instance, queue) (rate(job_leases_lost_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[5m])) > 0
+          for: {{ $r.for | default "5m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "Job leases are lapsing while their jobs still run, so jobs run twice"
+            runbook_url: {{ printf "%s#ultimateleaselost" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateFramesDropped" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateFramesDropped
+          expr: >-
+            sum by (namespace, app_kubernetes_io_instance) (rate(channel_frames_dropped_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[5m])) > 0
+          for: {{ $r.for | default "5m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "Sync nodes are dropping channel frames to socket backpressure"
+            runbook_url: {{ printf "%s#ultimateframesdropped" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateServerErrors" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateServerErrors
+          expr: >-
+            sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}",status="5xx"}[5m])) / sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[5m])) > {{ ternary $r.threshold 0.05 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "10m" }}
+          labels:
+            severity: {{ $r.severity | default "critical" }}
+          annotations:
+            summary: "The share of requests answered 5xx is above the threshold"
+            runbook_url: {{ printf "%s#ultimateservererrors" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateTargetDown" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateTargetDown
+          expr: >-
+            count by (namespace, app_kubernetes_io_instance, app_kubernetes_io_component) (up{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"} == 0) > 0
+          for: {{ $r.for | default "5m" }}
+          labels:
+            severity: {{ $r.severity | default "critical" }}
+          annotations:
+            summary: "A role has a scrape target that is down"
+            runbook_url: {{ printf "%s#ultimatetargetdown" $base | quote }}
+        {{- end }}
+{{- end }}

@@ -22,8 +22,16 @@ import { isUltimateError, logger } from '@ultimat3/core';
 import type { RateLimitStore } from './rate-limit';
 import { memoryRateLimitStore } from './rate-limit';
 
-/** Codes `@ultimat3/db` raises when no connection could run the statement at all. */
-const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['X_DB_UNAVAILABLE', 'X_DB_POOL_EXHAUSTED']);
+/**
+ * Codes `@ultimat3/db` raises when no connection could run the statement at all, and the store's
+ * own deadline (`rate-limit-store-deadline.ts`): a database that has not answered in time is one
+ * this decision cannot wait for.
+ */
+const UNREACHABLE_CODES: ReadonlySet<string> = new Set([
+  'X_DB_UNAVAILABLE',
+  'X_DB_POOL_EXHAUSTED',
+  'X_RATE_LIMIT_STORE_TIMEOUT',
+]);
 
 /**
  * SQLSTATEs that mean "this connection, right now", carried on `meta.sqlState` of an

@@ -21,7 +21,7 @@ import type { DbSubscription, ListeningClient } from './listen';
 import { freeSlot, type GatedPool, poolGate, takeSlot } from './pool-gate';
 import { trackPool } from './pool-gauge';
 import { poolListeners } from './pool-listeners';
-import { onPin, type PinRecord, pinsWedged } from './pool-pins';
+import { noteAnswered, pinBound, pinDeadlineMs } from './pool-pins';
 import { assertPoolProfile, type PoolProfile, poolProfileFor } from './pool-profile';
 import { reserveWithin } from './pool-reserve';
 import { closeRetiredPool } from './pool-retire';
@@ -85,6 +85,9 @@ export interface PostgresClient extends ReservableClient, ListeningClient {
   close(): Promise<void>;
 }
 
+const PIN_RETIRED =
+  'the connection this transaction holds stopped answering and was retired; nothing more is sent on it';
+
 /** Lazily connects: the pool opens on the first statement, never at import. */
 export function postgresClient(options: PostgresClientOptions = {}): PostgresClient {
   const env = options.env ?? process.env;
@@ -105,17 +108,18 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
   // counter, never against the pool that replaced it. Built only once the driver exists, so a
   // connection string that cannot be built registers no pool in `db_pool_max`.
   // The gate rides on it for the same reason: a pin held on a retired pool is no slot of the new one.
-  type LivePool = GatedPool & { readonly pool: BunSqlDriver; readonly pins: Set<PinRecord> };
+  type LivePool = GatedPool & { readonly pool: BunSqlDriver };
   let driver: LivePool | undefined;
   const listeners = poolListeners(() => connect().pool, options.schedule);
-  // A pooled statement past it is rejected. A pin's is only counted (`SET LOCAL` may raise its bound)
-  // and judged when pins fill the gate (`pool-pins.ts`). `0` (`migrate`, `replicator`): none.
+  // Every statement past it is rejected and its pool retired: pooled, or on a pin against the bound
+  // in force on that connection (`pool-pins.ts`). `0` (`migrate`, `replicator`): none.
+  // Behind a pooler the server's bound starts only once a backend is assigned.
+  const beyondBoundMs = UNANSWERED_GRACE_MS + poolerWaitMs;
   const sweep =
     profile.statementTimeoutMs === 0
       ? undefined
       : poolSweep<LivePool>({
-          // Behind a pooler the server's bound starts only once a backend is assigned.
-          deadlineMs: profile.statementTimeoutMs + UNANSWERED_GRACE_MS + poolerWaitMs,
+          deadlineMs: profile.statementTimeoutMs + beyondBoundMs,
           onMiss: retire,
           schedule: options.schedule,
         });
@@ -131,7 +135,6 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
       pool: new Factory(url, bunSqlPoolOptions(profile)),
       demand: trackPool(profile.max),
       gate: poolGate(profile.max, options.schedule),
-      pins: new Set(),
     };
     return driver;
   }
@@ -148,31 +151,9 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
     listeners.redial();
   }
 
-  /**
-   * A refused wait, read once more: when every slot is a pin with a statement past the bound, no
-   * slot will ever come free, and the kernel's 15 minutes are what the pod would wait. Retired, and
-   * this caller asks the new pool: its work was never sent, so it can be late, never doubled.
-   */
-  async function afterWait(
-    waiting: Promise<LivePool>,
-    budgetMs: number,
-    reasked?: () => void,
-  ): Promise<LivePool> {
-    try {
-      return await waiting;
-    } catch (error) {
-      const stuck = driver;
-      if (stuck === undefined || !pinsWedged(stuck.pins, profile.max)) throw error;
-      retire(stuck, 'a statement on every pinned connection', profile.statementTimeoutMs);
-      // A fresh deadline on the new pool, for every wait the caller still has to make.
-      reasked?.();
-      return await takeSlot(connect, budgetMs);
-    }
-  }
-
   async function run(fragment: SqlFragment): Promise<unknown> {
     const slot = takeSlot(connect, profile.acquireTimeoutMs);
-    const live = slot instanceof Promise ? await afterWait(slot, profile.acquireTimeoutMs) : slot;
+    const live = slot instanceof Promise ? await slot : slot;
     try {
       const sending = runOn(live.pool, fragment);
       return await (sweep === undefined ? sending : sweep.track(live, fragment.text, sending));
@@ -201,10 +182,8 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
       // `withTransaction` and `readOnlyQuery` depend on being true.
       // One gate slot for the life of the pin, so one number counts statements and pins alike.
       const budget = profile.acquireTimeoutMs;
-      let started = performance.now();
-      const live = await afterWait(Promise.resolve(takeSlot(connect, budget)), budget, () => {
-        started = performance.now();
-      });
+      const started = performance.now();
+      const live = await takeSlot(connect, budget);
       let reserved: BunSqlReserved;
       try {
         // `reserveWithin` keeps its own timer for `Bun.SQL`'s queue, on what the gate left of ONE
@@ -224,22 +203,37 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
         throw driverError('could not reserve a connection from the pool', error);
       }
       let held = true;
-      const record: PinRecord = new Set();
-      live.pins.add(record);
+      const pin = pinBound(profile.statementTimeoutMs);
       // Direct only while the pin is held. `release()` hands this physical connection back, and
       // the pool may already have given it to another unit of work mid-transaction — a statement
       // issued on the stale handle would land inside theirs, committed or rolled back with it and
       // no error anywhere to explain the row. So a late statement takes its own connection out of
       // the pool, exactly like any other caller. Same rule as `pglite.ts`, one driver down.
       const on = (fragment: SqlFragment): Promise<unknown> =>
-        held ? onPin(record, sweep?.pinned, () => runOn(reserved, fragment)) : run(fragment);
+        held ? onPinned(fragment) : run(fragment);
+      // A miss retired the pool; this connection is never written to again, so the transaction's
+      // ROLLBACK is refused here rather than waiting out a second bound on the same dead path.
+      const onPinned = async (fragment: SqlFragment): Promise<unknown> => {
+        if (pin.dead) throw dbUnavailable(PIN_RETIRED);
+        const sending = runOn(reserved, fragment);
+        const deadlineMs = pinDeadlineMs(pin, beyondBoundMs);
+        try {
+          const answer = await (sweep === undefined
+            ? sending
+            : sweep.track(live, fragment.text, sending, deadlineMs));
+          noteAnswered(pin, fragment, profile.statementTimeoutMs);
+          return answer;
+        } catch (error) {
+          if (error instanceof DbError && error.code === 'X_DB_UNAVAILABLE') pin.dead = true;
+          throw error;
+        }
+      };
       // Idempotent because two owners already exist on one exit path: `withTransaction` releases
       // in a `finally` and `[Symbol.dispose]` fires on the same scope. A second `release()` on a
       // handle already back in the pool frees whoever holds that connection now.
       const release = (): void => {
         if (!held) return;
         held = false;
-        live.pins.delete(record);
         freeSlot(live);
         // Total by construction — `releaseReserved` owns the reason (`bun-sql.ts`).
         releaseReserved(reserved);

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
 import { auditLedger, checksumOf, type LedgerRow } from '@ultimat3/db';
+import { emptyCatalog } from '@ultimat3/db/schema-dump';
 import { readSchemaDump, SCHEMA_DUMP_DIR } from './db-schema-dump';
 import { exec } from './exec';
 import { type FixtureApp, fixtureApp, GIT } from './fix-truth-fixture';
@@ -249,7 +250,7 @@ describe('D2 · an applied migration, edited', () => {
   const drift = async (): Promise<readonly Finding[]> => {
     const files = await readSchemaDump(app.root);
     return checkSchemaDump(app.root, {}, async () => ({
-      catalog: {} as never,
+      catalog: emptyCatalog(),
       files,
       reload: [],
     }));

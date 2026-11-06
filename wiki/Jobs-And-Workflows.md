@@ -435,6 +435,73 @@ export const importOrders = importRows({
 | no formula guard on the way in | the export prefixes `'` on `=`, `+`, `-`, `@`; an import cannot know the prefix was added, so it keeps it |
 | peak memory is a page, not the file | measured `As of 2026-11-03`: a 200 MB csv (190 × `pageBytes`) imported with the heap up 42 MB, a 20 MB one with it up 24 MB |
 
+## Rollups and materialized views
+
+Two factories over `job()`, two jobs, `As of 2026-11`. A time window over append-mostly rows is
+`rollup()`, recomputing only recent buckets into the app's own table. An arbitrary join is a
+materialized view, refreshed whole by `refreshView()`. Neither is scheduled: the app's `task`
+enqueues it.
+
+```ts
+import { bigint, database, entity, integer, newId, timestamp, uuid } from '@ultimat3/entity';
+import { refreshView, rollup } from '@ultimat3/jobs';
+
+const likes = entity('likes', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), createdAt: timestamp() },
+});
+const likesPerDay = entity('likes_per_day', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), day: timestamp(), likes: integer() },
+  indexes: [{ on: ['orgId', 'day'], unique: true }],
+});
+const postTotals = entity('post_totals', {
+  view: { sql: 'select org_id, post_id, count(*) as total from likes group by 1, 2', materialized: true },
+  columns: { orgId: uuid().tenant(), postId: uuid().unique(), total: bigint() },
+  primaryKey: ['postId'],
+});
+const db = database({ likes, likesPerDay });
+const ORG = '00000000-0000-7000-8000-000000000001';
+
+export const dailyLikes = rollup({
+  name: 'daily-likes',
+  into: likesPerDay,                 // the app's entity, unique index over `key`
+  table: () => db.likesPerDay,
+  key: ['orgId', 'day'],
+  lookback: '2d',                    // how late a row may arrive and still count
+  bucket: { unit: 'day', timeZone: 'UTC' }, // one row of `into`: a series unit, an IANA zone
+  tenant: (input) => input.orgId ?? ORG,
+  source: ({ since, bucket, input }) =>
+    db.likes
+      .where({ orgId: input.orgId ?? ORG })
+      .andWhere('createdAt', 'gte', since) // a bucket's first instant, never mid-bucket
+      .series({ on: 'createdAt', ...bucket, value: 'count' }),
+  map: (point, { input }) => ({
+    id: newId(),
+    orgId: input.orgId ?? ORG,
+    day: point.bucket,
+    likes: point.value,
+  }),
+});
+
+export const refreshPostTotals = refreshView({
+  name: 'refresh-post-totals',
+  view: postTotals,
+  concurrently: true,
+});
+```
+
+| `rollup()` | |
+|---|---|
+| Each run | reads `source` from the first instant of the `bucket` holding `now - lookback` — in its zone, DST included, so the first bucket upserted whole is read whole — maps every item, ONE `upsertAll` on `key`: all buckets or none |
+| Idempotent | a re-run over the same rows writes the same values; a late row inside `lookback` moves its bucket on the next run |
+| Not handled | a row older than `lookback` when it lands; a bucket whose rows were all deleted keeps its last value |
+| Refused at declaration | no `lookback`, a non-positive one, no `bucket`, a unit no `series()` has, a zone that is not IANA, a `key` no unique constraint on `into` covers — `X_JOB_ROLLUP_INVALID` |
+
+| `refreshView()` | |
+|---|---|
+| Each run | `refresh materialized view [concurrently]` in one step; `tenant: 'none'` — the read path scopes the rows |
+| `concurrently` | readers keep the old rows meanwhile; needs a unique index on the view (`.unique()`) |
+| Refused at declaration | a table, a plain view, `concurrently` with no unique index — `X_JOB_REFRESH_VIEW_INVALID` |
+
 ## Outbound webhooks — `webhook()`
 
 **An outbound webhook is a job: `webhook()` is a factory over `job()` that delivers one event to
@@ -573,7 +640,7 @@ Two implementations ship, `As of 25.0.0`: `postgresJobDriver()` and `memoryJobDr
 
 **There is no `jobs.driver`, and 5.0.0 is where it went.** It accepted `'postgres' | 'redis' | 'nats'` and had **no reader anywhere** — boot always built `postgresJobDriver`, stated in [`packages/jobs/src/driver.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/src/driver.ts)'s own header. So setting it to `redis` changed nothing at all and you silently got Postgres, which is the more dangerous behaviour because nothing reports it. From 5.0.0 to 24.x a stale key still rode through untyped; **25.0.0 refuses it** at `defineConfig`, naming `setJobDriver`. Deleting it from `app.config.ts` is the whole of the upgrade.
 
-**The seam that does work is `setJobDriver(driver)`** — swap the driver, zero job-code change, which is what the interface buys. `redisJobDriver()` is the second durable driver (`As of 2026-10`, #710): `setJobDriver(redisJobDriver())` on `Bun.redis`, imported from `@ultimat3/jobs/redis`, held to the same conformance suite as Postgres, without the operator surface (`x jobs show`, `retry`, `cancel`), backfill bookkeeping or fleet-wide `concurrency` — [`packages/jobs/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/README.md#drivers) has the table. There is no NATS jobs driver.
+**The seam that does work is `setJobDriver(driver)`** — swap the driver, zero job-code change, which is what the interface buys. `redisJobDriver()` is the second durable driver (`As of 2026-10`, #710): `setJobDriver(redisJobDriver())` on core's `redisClient()` — while Redis is down an `enqueue` is `X_DRIVER_UNAVAILABLE` at once, never a wait — imported from `@ultimat3/jobs/redis`, held to the same conformance suite as Postgres, without the operator surface (`x jobs show`, `retry`, `cancel`), backfill bookkeeping or fleet-wide `concurrency` — [`packages/jobs/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/README.md#drivers) has the table. There is no NATS jobs driver.
 
 **`x jobs drain` is planned, `As of 25.0.0`.** It exits `X_NOT_IMPLEMENTED` before the queue boots, pointing at `x jobs list --json`: with Postgres the one durable driver, there is nowhere to drain to. Its two former `--to` values, `redis` and `nats`, were all-throw stubs — until 2026-10 a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back, nothing moved, and no worker could claim those jobs meanwhile. 25.0.0 deleted the stubs and the unreachable drain body behind the planned answer. A drain that returns with a real second driver is new code, and owes the lesson of `--to memory`, a target until 2026-09: `memoryJobDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited.
 
@@ -641,6 +708,8 @@ test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) =>
 ```
 
 Asserted by the runner: step replay, idempotency-key dedupe, retry/backoff, concurrency and rate limits, outbox atomicity on rollback. `clock.advance` drives `step.sleep` — never assert on wall-clock time. See [Testing](Testing).
+
+What a crash does to a job is asked by `crashProof(job, input)` — killed at every step boundary, a double effect is `X_JOB_CRASH_DIVERGED` — and what a race does by `simulateJobs({ jobs, workers, invariant })`, seeded. See [Testing](Testing#a-job-killed-at-every-boundary-and-raced-from-a-seed).
 
 ## Rules
 

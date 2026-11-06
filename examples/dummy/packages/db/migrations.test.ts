@@ -264,6 +264,11 @@ let migrationFiles: readonly string[] = [];
 let newest = '';
 let sidecarExists = false;
 let recorded: readonly RecordedTable[] = [];
+/**
+ * A materialized view's indexes: the sidecar records a view as the statements `x db gen` wrote for
+ * it (`views[].create`), so they are read through the same `walk` the chain is, never a table.
+ */
+let recordedViewIndexes: ReadonlyMap<string, LiveIndex> = new Map();
 let chain: ChainState = { tables: new Set(), indexes: new Map(), checks: new Map(), added: [] };
 let ups: ReadonlyMap<string, string> = new Map();
 
@@ -272,6 +277,7 @@ const recordedIndexes = (): Map<string, LiveIndex> => {
   for (const table of recorded)
     for (const index of table.indexes)
       out.set(index.name, { table: table.name, columns: index.columns, unique: index.unique });
+  for (const [name, index] of recordedViewIndexes) out.set(name, index);
   return out;
 };
 
@@ -302,7 +308,13 @@ beforeAll(async () => {
   sidecarExists = await sidecar.exists();
   // An unreadable sidecar is an absent one, exactly as `readMigrations` treats it: the assertion
   // below reports the absence rather than the run dying in a hook with no verdict attached.
-  recorded = sidecarExists ? tablesOf(await sidecar.json().catch(() => undefined)) : [];
+  const parsed: unknown = sidecarExists ? await sidecar.json().catch(() => undefined) : undefined;
+  recorded = tablesOf(parsed);
+  const views = isRecord(parsed) && Array.isArray(parsed['views']) ? parsed['views'] : [];
+  const created = views.flatMap((view) =>
+    isRecord(view) && isStrings(view['create']) ? view['create'] : [],
+  );
+  recordedViewIndexes = walk(created.map((one) => one.trim().replace(/;$/, ''))).indexes;
 });
 
 describe('the newest migration records the schema this chain creates', () => {
@@ -320,10 +332,12 @@ describe('the newest migration records the schema this chain creates', () => {
     expect([...chain.tables].sort()).toEqual([
       'comments',
       'connections',
+      'daily_likes',
       'likes',
       'members',
       'orgs',
       'plans',
+      'post_review_runs',
       'post_reviews',
       'posts',
       'run_events',

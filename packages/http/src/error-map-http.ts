@@ -55,6 +55,9 @@ export const HTTP_ERROR_STATUS = {
   X_RATE_LIMIT_INVALID: 500,
   // The shared store did not answer, so nothing decided. An operator's fault, never the caller's.
   X_RATE_LIMIT_STORE_UNAVAILABLE: 500,
+  // The store's own deadline passed. The store degrades on it rather than throwing, so a request
+  // answered with it is the store's bug; 500, and never a 503 the `admit` stage alone answers.
+  X_RATE_LIMIT_STORE_TIMEOUT: 500,
   // The two the `admit` stage answers with, and the only 503s the pipeline produces. Both carry
   // `retry-after`: a shed request that does not say when to come back is a request that comes
   // back immediately, which is the load it was shed to avoid.

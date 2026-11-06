@@ -861,3 +861,22 @@ Verbatim from [`packages/http/CLAUDE.md`](../../packages/http/CLAUDE.md), which 
   Spent, it REFUSES the address before `authenticate()` (`refuseExhaustedAddress`, via the store's
   read-only `peek` — never a take: that was an upsert per signed-in page),
   a valid credential included; no `ctx.ip`, no gate. Signed-in callers behind that NAT wait too.
+
+## The shared rate-limit store's own deadline (2026-11-06)
+
+Before: `postgresRateLimitStore`'s `take`/`peek` waited as long as the pool did. Under
+`x drill pg-blackhole` on `examples/dummy` a POST spent ~16 s in the limiter (the `web` role's
+10 s statement bound + `UNANSWERED_GRACE_MS` + one sweep tick) before `rate-limit-degrade.ts`
+switched it to memory, then its own statement waited a second bound: slowest request 21.0 s
+against a 20 s drill budget, past 30 s at the default deadline. Now each round trip races
+`RATE_LIMIT_STORE_DEADLINE_MS` (250, `rate-limit-store-deadline.ts`) and a miss is
+`X_RATE_LIMIT_STORE_TIMEOUT`, one of the codes `isRateLimitStoreUnreachable` degrades on — so the
+degraded path is the one that already existed (`http.rate_limit.degraded`, per-pod memory), reached
+in a quarter second. Same drill after: slowest 16.1 s, twice. Not a server-side
+`SET LOCAL statement_timeout`: the server's bound cannot fire when the path is gone, and a pin's
+sweep deadline is its bound + 5 s. The abandoned statement is not cancelled (`PgExecutor` has no
+seam); the pool's sweep still retires it. The number, measured on loopback (cold connect 15–31 ms,
+100 concurrent takes on one key ≤ 11.3 ms), is in the constant's comment; `deadlineMs` overrides it.
+Cost, stated: a pool saturated past 250 ms by the app's own work also degrades the limiter to per
+pod for those decisions — logged, and a weaker limit rather than none. Proof:
+`rate-limit-store-deadline.test.ts`, `packages/testing/src/rate-limit-store-blackhole.live.test.ts`.

@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "d60ff5cd1b7bd95d",
+  "buildId": "98193ad889dc83d7",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -107,6 +107,46 @@
     },
     {
       "url": "/admin/connections/new",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/daily_likes",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/daily_likes/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/daily_likes/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/errors",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/errors/:fingerprint",
       "render": "ssr",
       "offline": "network-only",
       "hydrate": "never",
@@ -298,6 +338,30 @@
       "surface": "app"
     },
     {
+      "url": "/admin/post_like_totals",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/post_like_totals/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/post_like_totals/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
       "url": "/admin/posts",
       "render": "ssr",
       "offline": "network-only",
@@ -431,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "177kb"
+        "js": "178.5kb"
       }
     },
     {
@@ -464,7 +528,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "32kb"
+        "js": "33kb"
       }
     },
     {
@@ -492,7 +556,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "192.5kb"
+        "js": "194kb"
       }
     },
     {
@@ -503,7 +567,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "78kb"
+        "js": "79.5kb"
       }
     }
   ],
@@ -607,6 +671,25 @@
       "invariants": [
         "connection_label_present"
       ]
+    },
+    {
+      "name": "daily_likes",
+      "table": "daily_likes",
+      "columns": [
+        {
+          "name": "day",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "likes",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": []
     },
     {
       "name": "likes",
@@ -830,6 +913,74 @@
         "plan_price_non_negative",
         "plan_seats_positive"
       ]
+    },
+    {
+      "name": "post_like_totals",
+      "table": "post_like_totals",
+      "columns": [
+        {
+          "name": "likes",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "post_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        }
+      ],
+      "invariants": [],
+      "view": {
+        "materialized": true
+      }
+    },
+    {
+      "name": "post_review_runs",
+      "table": "post_review_runs",
+      "columns": [
+        {
+          "name": "checkpoint",
+          "type": "jsonb",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "draft",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "opened_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false,
+          "hasDefault": true
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "orgs.id"
+        },
+        {
+          "name": "post_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "posts.id"
+        }
+      ],
+      "invariants": []
     },
     {
       "name": "post_reviews",
@@ -4329,6 +4480,48 @@
       ]
     },
     {
+      "name": "postLikesByDay",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "timeZone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          }
+        },
+        "required": [
+          "orgId",
+          "postId",
+          "timeZone"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:read",
+      "permissions": [
+        "post:read"
+      ],
+      "live": false,
+      "cacheTags": []
+    },
+    {
       "name": "postRecord",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4649,6 +4842,38 @@
           "actions": []
         },
         {
+          "entity": "daily_likes",
+          "path": "/daily_likes",
+          "filters": [
+            "day"
+          ],
+          "sorts": [
+            "day",
+            "likes"
+          ],
+          "scopes": [],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "day",
+                "likes"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "likes"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": []
+        },
+        {
           "entity": "members",
           "path": "/members",
           "filters": [
@@ -4771,6 +4996,40 @@
               "matching": false
             }
           ]
+        },
+        {
+          "entity": "post_like_totals",
+          "path": "/post_like_totals",
+          "filters": [
+            "postId"
+          ],
+          "sorts": [
+            "orgId",
+            "postId",
+            "likes"
+          ],
+          "scopes": [],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "orgId",
+                "postId",
+                "likes"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "likes"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": []
         },
         {
           "entity": "posts",
@@ -5462,6 +5721,51 @@
           ]
         },
         {
+          "url": "/admin/daily_likes",
+          "view": "list",
+          "entity": "daily_likes",
+          "permissions": [
+            "admin:read",
+            "daily_likes:read"
+          ]
+        },
+        {
+          "url": "/admin/daily_likes/:id",
+          "view": "detail",
+          "entity": "daily_likes",
+          "permissions": [
+            "admin:read",
+            "daily_likes:read"
+          ]
+        },
+        {
+          "url": "/admin/daily_likes/lookup",
+          "view": "lookup",
+          "entity": "daily_likes",
+          "permissions": [
+            "admin:read",
+            "daily_likes:read"
+          ]
+        },
+        {
+          "url": "/admin/errors",
+          "view": "page",
+          "entity": null,
+          "permissions": [
+            "admin:read",
+            "errors:read"
+          ]
+        },
+        {
+          "url": "/admin/errors/:fingerprint",
+          "view": "page",
+          "entity": null,
+          "permissions": [
+            "admin:read",
+            "errors:read"
+          ]
+        },
+        {
           "url": "/admin/jobs",
           "view": "jobs",
           "entity": null,
@@ -5666,6 +5970,33 @@
           "permissions": [
             "admin:write",
             "orgs:write"
+          ]
+        },
+        {
+          "url": "/admin/post_like_totals",
+          "view": "list",
+          "entity": "post_like_totals",
+          "permissions": [
+            "admin:read",
+            "post_like_totals:read"
+          ]
+        },
+        {
+          "url": "/admin/post_like_totals/:id",
+          "view": "detail",
+          "entity": "post_like_totals",
+          "permissions": [
+            "admin:read",
+            "post_like_totals:read"
+          ]
+        },
+        {
+          "url": "/admin/post_like_totals/lookup",
+          "view": "lookup",
+          "entity": "post_like_totals",
+          "permissions": [
+            "admin:read",
+            "post_like_totals:read"
           ]
         },
         {
@@ -6139,6 +6470,61 @@
       "steps": []
     },
     {
+      "name": "openErrorIssue",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "minLength": 1
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "firstSeen": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "fingerprint",
+          "code",
+          "source",
+          "operation",
+          "message",
+          "firstSeen"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "post-excerpts",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6260,6 +6646,27 @@
       "steps": []
     },
     {
+      "name": "posts.daily-likes",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "posts.export",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6327,6 +6734,22 @@
             ]
           }
         ]
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "posts.like-totals",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
       },
       "queue": "default",
       "retry": {
@@ -6587,6 +7010,15 @@
       ]
     },
     {
+      "name": "hourlyLikes",
+      "cron": "20 * * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "posts.daily-likes",
+        "posts.like-totals"
+      ]
+    },
+    {
       "name": "hourlyPurge",
       "cron": "23 * * * *",
       "tz": "UTC",
@@ -6655,10 +7087,26 @@
       ]
     },
     {
+      "permission": "daily_likes:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "daily_likes:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "daily_likes:write",
+      "enforcedIn": []
+    },
+    {
       "permission": "end-session",
       "enforcedIn": [
         "action:endSession"
       ]
+    },
+    {
+      "permission": "errors:read",
+      "enforcedIn": []
     },
     {
       "permission": "feed:read",
@@ -6772,6 +7220,7 @@
         "action:summarize",
         "action:summarizePosts",
         "query:postById",
+        "query:postLikesByDay",
         "query:postRecord",
         "query:postReview"
       ]
@@ -6783,6 +7232,18 @@
         "query:publicPostSlugs",
         "query:publicPosts"
       ]
+    },
+    {
+      "permission": "post_like_totals:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "post_like_totals:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "post_like_totals:write",
+      "enforcedIn": []
     },
     {
       "permission": "posts:delete",
@@ -6857,7 +7318,11 @@
     "connections:read",
     "connections:write",
     "contact:submit",
+    "daily_likes:delete",
+    "daily_likes:read",
+    "daily_likes:write",
     "end-session",
+    "errors:read",
     "feed:read",
     "job:delete",
     "job:manage",
@@ -6878,6 +7343,9 @@
     "post:publish",
     "post:read",
     "post:read-public",
+    "post_like_totals:delete",
+    "post_like_totals:read",
+    "post_like_totals:write",
     "posts:delete",
     "posts:read",
     "posts:write",

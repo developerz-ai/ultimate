@@ -28,6 +28,7 @@ await withTransaction(async (tx) => {
 | Export | |
 |---|---|
 | `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
+| `keyset({ scope, keys, after, limit })` | keyset paging for a raw join: `{ select, where, orderBy, limit, page(rows) }`, [below](#paging-a-raw-join-keyset) |
 | `shellInertIdentifier()` | `As of 2026-08-26`: a quoted identifier that is also inert wherever a human PASTES it — or `null`. The one screen a catalog name goes through before it reaches a `fix:`. `identifier()` answers about SQL and **accepts** a backtick and a `$`, which are exactly what a shell substitutes inside double quotes, so a column called `$(id)` inside `x db gen "add $(id)"` runs `id` on paste |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
 | `dbClientInstalled()` | `As of 30.0`: whether `setDbClient` installed a client that is still in place. Never builds the lazy default. `@ultimat3/entity`'s `testDriver()` asks it on every repository call |
@@ -95,6 +96,24 @@ trusted to remember the difference between a value and a fragment. So:
   `sql`/`raw` did not produce;
 - `raw(trusted)` is the one audited escape hatch, `identifier(name)` the safe way to interpolate
   a table or column, `literal(text)` for utility statements that reject bound parameters.
+
+## Paging a raw join: `keyset()`
+
+`As of 2026-11-06`. The handle pages with `.after()`; a join it cannot say pages with this. Four
+fragments to splice and `page(rows)`, which answers core's `Page`.
+
+| Rule | |
+|---|---|
+| A key | `{ column: SqlFragment, kind: 'timestamptz' \| 'uuid' \| 'text' \| 'integer' \| 'bigint', direction }`, last key the tiebreak |
+| Precision | selected as `col::text` under `_keyset_<n>`, bound back as `$n::<kind>`: a microsecond survives, a `Date` would floor it and drop rows |
+| The seek | uniform direction: one row comparison, Index Only Scan on a matching index. Mixed: the or-chain |
+| `order by` | the bare columns. `date_trunc('milliseconds', …)` there is a Parallel Seq Scan and a sort (100 ms against 0.2 ms, 300,000 rows); the scaffolded `repo-raw-sql` guard reports it |
+| A null key | `X_KEYSET_NULL_KEY`, on any row of a page, whatever its size |
+| The cursor | core's signed codec; scoped to `scope` plus every key's column, kind and direction. Another read's is `X_CURSOR_INVALID` |
+| `limit` | a whole number ≥ 1 (`finiteCount`), read as `limit + 1` |
+
+Proven on both engines: `keyset.live.test.ts` (Postgres) and `keyset-embedded.test.ts` (PGlite)
+walk four rows inside one millisecond across page boundaries, and assert the plan holds no sort.
 
 ## Transactions that end badly
 
@@ -352,6 +371,15 @@ the exit code — and a deploy that rolled on past a schema nobody can reconstru
 drift exists to catch. There is no `x db drift`, and `x verify`'s `drift` step is the *source*
 detector (`checkSourceDrift`), which needs no database and never calls this.
 
+## Views
+
+`EntityDescriptionLike.view` (from `entity({ view: { sql, materialized? } })`) is emitted by
+`generate-view.ts`, never by a table arm: `create [materialized] view` after every table, its
+indexes with it when materialized, recorded on the snapshot as `views: [{ name, materialized?,
+create }]`. Anything that moved — a query, an index, a retype, drop column or drop table under it —
+drops every recorded view first and recreates every declared one last. The catalog reading never
+fills `views`, so drift never reports one.
+
 ## Append-only tables
 
 `EntityDescriptionLike.appendOnly` (from `entity({ appendOnly: true })`) is a trigger, written by
@@ -518,14 +546,16 @@ a slot until it settles, a pin until it is released, and a statement on a pin ta
 
 **A statement nobody answers replaces the pool** (`As of 2026-11-02`). `statement_timeout` is the
 server's, so it cannot fire when the server or the path is gone, and the kernel's retransmit window is
-about 15 minutes. A plain statement unanswered past `statementTimeoutMs` + 5 s is `X_DB_UNAVAILABLE`,
+about 15 minutes. A statement unanswered past `statementTimeoutMs` + 5 s is `X_DB_UNAVAILABLE`,
 its cause naming the bound and the statement; an autocommit write may have landed. The old pool closes
 in the background (`db.pool.retired`, at error), the next statement opens a new one, a statement still
 queued moves to it unsent, and a `LISTEN` is dialled again, `onListening` firing as on any re-dial.
-`statementTimeoutMs: 0` has no deadline. A statement on a pin is never rejected on its own: `SET LOCAL`
-can raise its bound. It is counted, and when pins fill every slot each with a statement past the bound,
-the next refused acquire replaces the pool and asks the new one; an idle pin or a busy pool stays. A
-pin dies with its pool. `X_DB_UNAVAILABLE` is unclassified for retry, so a job worker re-runs the
+`statementTimeoutMs: 0` has no deadline. **A statement on a pin — a transaction's — is bound the same
+way** (`As of 2026-11-06`), against the `statement_timeout` in force on that connection: the role's,
+until a `set_config('statement_timeout', …)` or `SET [LOCAL] statement_timeout` it answered moves it
+(`0`: no deadline), and the role's again after `COMMIT`/`ROLLBACK`. After a miss the pin sends nothing
+more: its `ROLLBACK` is refused `X_DB_UNAVAILABLE` at once rather than waiting out a second bound, and
+a missed `COMMIT` is `X_DB_COMMIT_UNKNOWN`. `X_DB_UNAVAILABLE` is unclassified for retry, so a job worker re-runs the
 attempt: a write that landed runs again, at least once, as every job. `reserve()`'s two waits share one
 `acquireTimeoutMs`. The cost is one unref'd 1 s
 timer per pool while statements are in flight, and a set insert and delete per statement: measured
@@ -576,7 +606,8 @@ until `lockWaitMs` (default 60s) and then throwing `X_MIGRATE_CONCURRENT` (`As o
 and the lock — for hours, so a deploy hook sat inside one statement printing nothing while
 `helm upgrade --wait` blocked and `backoffLimit` never fired, because a job that never finishes
 never fails. It then ensures `x_migrations`
-(`id, name, checksum, applied_at, app_version, duration_ms`), audits, then applies each pending
+(`id, name, checksum, applied_at, app_version, duration_ms`, and `destructive` — added
+`if not exists`, written at apply from `isDestructiveMigration(up)`), audits, then applies each pending
 migration inside its own transaction — or, for one marked `-- transaction: false`, one
 autocommitted statement at a time ([Indexes built concurrently](#indexes-built-concurrently-and-every-index-drop)).
 It refuses **before applying anything** when:
@@ -589,7 +620,12 @@ It refuses **before applying anything** when:
 sorts after the newest migration this build ships, and this build has nothing left to apply, the
 ledger is an older image rolled back onto a newer build's schema. Nothing is applied, the rows are
 reported in `ahead` and logged as `ultimate migrate ledger ahead of build`; any other unknown row is
-still `X_MIGRATION_CONFLICT`.
+still `X_MIGRATION_CONFLICT`. A row ahead whose `destructive` bit is `true` refuses that rollback
+(`X_MIGRATION_ROLLBACK_DESTRUCTIVE`, `As of 2026-11`) unless `ROLLBACK_ALLOW_DESTRUCTIVE` names it
+(comma-separated ids); a `null` bit — a row applied before the ledger kept one — still warns.
+`readLedger()` reads the bit through the row's JSON, so a ledger an older release created answers
+`null` rather than `42703`. The refusal is the ROLLED-BACK build's code: it protects from the
+release after the one that ships it.
 
 Report (`--json`): `{ applied: [{ id, name, durationMs }], skipped: [id], durationMs, appVersion, ahead: [id] }`.
 

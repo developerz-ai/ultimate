@@ -9,7 +9,12 @@ import {
   withChildContext,
 } from '@ultimat3/core';
 import { text, uuid } from './columns';
-import { CROSS_TENANT_SCOPE, crossTenant, crossTenantReason } from './cross-tenant';
+import {
+  CROSS_TENANT_SCOPE,
+  crossTenant,
+  crossTenantReason,
+  setCrossTenantObserver,
+} from './cross-tenant';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
 import { clearRegistry } from './registry';
@@ -120,5 +125,28 @@ describe('the scope', () => {
       }),
     );
     expect(crossTenantReason()).toBeUndefined();
+  });
+});
+
+describe('the witness', () => {
+  test('every scope opened is reported with its reason; a refused one declares nothing', async () => {
+    const seen: string[] = [];
+    setCrossTenantObserver((reason) => seen.push(reason));
+    try {
+      await inRequest(support, () =>
+        crossTenant('outer sweep', async () => {
+          crossTenant('inner sweep', () => null);
+        }),
+      );
+      await inRequest(member, async () => {
+        expect(() => crossTenant('not granted', () => null)).toThrow(/X_TENANCY_CROSS_DENIED/);
+      });
+    } finally {
+      setCrossTenantObserver(undefined);
+    }
+    expect(seen).toEqual(['outer sweep', 'inner sweep']);
+    // Uninstalled, nothing is told: the witness is the proof's, for the length of one call.
+    await inRequest(support, () => crossTenant('after', async () => null));
+    expect(seen).toHaveLength(2);
   });
 });

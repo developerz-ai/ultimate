@@ -18,11 +18,13 @@ export {
   configureErrorReporting,
   ERROR_SOURCES,
   errorReport,
+  installedErrorReporter,
   memoryErrorReporter,
   noopErrorReporter,
   reportError,
   resetErrorReporting,
 } from '../error-reporter';
+export { chainErrorReporters, errorReportersOf } from '../error-reporter-chain';
 export type {
   SentryDsn,
   SentryEnvelopeOptions,

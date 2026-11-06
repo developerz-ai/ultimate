@@ -122,6 +122,8 @@ describe('PRIMITIVE_FACTORIES', () => {
       '@ultimat3/jobs#exportRows',
       '@ultimat3/jobs#importRows',
       '@ultimat3/jobs#purge',
+      '@ultimat3/jobs#refreshView',
+      '@ultimat3/jobs#rollup',
       '@ultimat3/jobs#webhook',
       '@ultimat3/jobs#webhookReceiver',
       '@ultimat3/mcp#mcpConfirmations',

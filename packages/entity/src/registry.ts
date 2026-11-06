@@ -155,6 +155,11 @@ export interface EntityDescription {
   readonly retired?: readonly string[] | undefined;
   /** `entity({ shared: '<why>' })`: why a row referencing a tenant's belongs to no tenant. */
   readonly shared?: string | undefined;
+  /**
+   * `entity({ view: { sql } })`: a relation Postgres derives. Absent on a table. `x db gen` emits
+   * it (`@ultimat3/db`'s `generate-view.ts`), admin lists it read-only.
+   */
+  readonly view?: { readonly sql: string; readonly materialized?: true } | undefined;
 }
 
 export interface RegistryEntry {

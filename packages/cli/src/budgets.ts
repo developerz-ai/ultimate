@@ -305,6 +305,12 @@ export interface MeasuredJs {
  * rides `app/` documents a served process renders, and the static export this measures never names
  * it (no route there receives a report). Measured 2026-11-03: 1,961 B (962 B gzip) per served
  * `app/` document of an app that turned it on, and 0 B for every other document.
+ *
+ * `/x-client-vitals.js` (`clientErrors.vitals`, plan 101, 41) is NOT here either, and is CHARGED:
+ * the app opted in per surface and can opt out, the page boot's argument. A weighed `app/` page
+ * is measured as served (`prerender-served.ts` hands its bytes in `served`), and a `site/` page
+ * that lists it is exported carrying it, so it is weighed off disk. Measured 2026-11-06: 1,202 B
+ * (633 B gzip) per document on a listed surface, 0 B everywhere else.
  */
 export const FRAMEWORK_SCRIPTS: ReadonlySet<string> = new Set([SW_REGISTER_PATH]);
 

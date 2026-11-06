@@ -7,8 +7,8 @@ Deps (16): `core` `schema`; `cache` `db` `i18n` `time`; `entity` `http` `policy`
 (`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
 (`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
 `action`, `http`, `mail`, `pwa`, `query`, `render`, `schema` (`exercise-input.ts:16`), `time` — no `mail` destructure, no mail
-package; a `packages/core` import never loads `@ultimat3/entity`. `entity` exists for exactly
-one call, `nPlusOne()`: the strict fixture reports `x dev`'s error, with the `fix:` the schema's
+package; a `packages/core` import never loads `@ultimat3/entity`. `entity` serves two calls, the
+tenant witness and `nPlusOne()`: the strict fixture reports `x dev`'s error, with the `fix:` the schema's
 own relations spell — a second N+1 code here would be a second answer to one condition. Its one
 static import: `registry-isolation.ts`, own entry point, off the barrel.
 
@@ -49,7 +49,8 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | Fixtures | the preload registers the framework bag — an app registers only what it alone knows (`seed`, `actorFor`) |
 | Every `e2eTest` is audited | `e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (per-test run, `allow`, dedupe), `ax-node.ts` (the one AX reader); the full tree is read only in `cdp-e2e-page.ts` (`FULL_AX_TREE`, a convention). No switch; `allow` needs a non-blank `because`. And every raw tab: `e2e-a11y-tabs.ts`, checked after each `goto`/`reload` and at the test's end from the preload's `afterEach`; exceptions are `allowA11y([{ role, selector, because }])` |
 | The exercise pass runs what is registered | `exercise.ts` (`runExercisePass`): every action, query and job once, its own tenant pair off one `seedGraph`, an actor `exercise-actor.ts` picks, 39's `runExercise` as the verdict. Rows COMMITTED. Overrides only via `defineExercise` (blank `off` refused) |
-| The tenant proof is taint only | `tenant-proof.ts`: B, A, B; B is A's role minus `tenancy:cross`. Leak = a seeded canary or unhanded id (`tenant-canary.ts`); write = a moved digest. Only `crossed` is red |
+| A reached job is crash-proven | `exercise-crash.ts`: `crashProof` with the control's input and actor, after the tenant proof; only `diverged` is red (`X_JOB_CRASH_DIVERGED`). Committed: job bodies escape transactions |
+| The tenant proof is taint only | `tenant-proof.ts`: B, A, B; B is A's role minus `tenancy:cross`. Leak = seeded canary or unhanded id (`tenant-canary.ts`); write = moved digest. Only `crossed` is red |
 | One seed writer | `entitySeedWriter({ entities, client \| driver })` (`seed-writer.ts`) writes through each entity's own repository; `snapshot` is required; `entity` loads on the first write, so the barrel stays entity-free |
 | Factory values are DECLARED | `factoriesFor` and `seedGraph` share `seed-graph-values.ts`: default, enum, kind, through `$parse`, never the name. `seed-graph*.ts` type-import `entity` only |
 | e2e without a driver | `e2eTest` becomes `test.skip`; the gate reports the step SKIPPED (or `X_VERIFY_SUITE_VANISHED` when `x.verify.json` requires it), never passed |
@@ -70,7 +71,6 @@ static import: `registry-isolation.ts`, own entry point, off the barrel.
 | A driver arrives whole | `defineFixtures` holds every name `Fixtures` declares to its declared type, so a half-built `page` is a compile error at the registration |
 | Registry hygiene | the fixture registry is process-global; a test that clears it snapshots with `fixtureSnapshot()` and hands it back in `afterAll` |
 | Leaks are the file's, not the next file's | `installRegistryLeakGuard()` runs from the preload and fails the run naming the FILE that left cache tags declared or a cache tier registered after its last test (`X_TEST_REGISTRY_LEAK`). |
-| The baseline is not a hook | measured on Bun 1.3.14 the order is onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload `beforeEach`, so a preload hook cannot sample before the file's own `beforeAll` |
 | Reported and restored are different sets | the guard also RESTORES, at the same file boundary, the registries whose module-scope declarations a neighbour's cleanup destroys |
 | A catalog restore is a MERGE, never a replace | the other three registries are replaced with the snapshot. `registerCatalog` has no inverse, so all a file can cost its neighbour is a `resetCatalogs()` |
 | Permissions are still REPLACED at a file boundary, and it is measured | an app's `definePermissions()` reached only by a dynamic `loadApp()` is dropped at that file's boundary exactly as catalogs were; the union rule would leak `permissions.test.ts`'s declarations into every later file. Open, its own piece of work (history) |

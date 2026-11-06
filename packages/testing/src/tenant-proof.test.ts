@@ -9,6 +9,7 @@ import type { ExerciseRecord, TenantFinding } from './exercise-report';
 import { proveOne, resetTenantApp, tenantlessRows, tpFiles } from './tenant-proof-fixture';
 import { overwrittenDocs, proveSql, releaseSql, useSql } from './tenant-proof-sql-fixture';
 import './tenant-proof-holes-fixture';
+import './tenant-proof-sweep-fixture';
 import { testName } from './test-types';
 
 /** The findings of a crossed record — an empty list for any other verdict, which fails the caller. */
@@ -124,6 +125,20 @@ describe(testName('unit', 'tenant proof: what must stay green'), () => {
     const record = await proveOne('tpLinkRead');
     expect(record.outcome).toBe('reached');
     expect(record.tenant).toEqual({ verdict: 'proven' });
+  });
+
+  test('a job sweeping every org under crossTenant() is public, naming its reason', async () => {
+    const record = await proveOne('tpVaultSweep');
+    expect(record.outcome).toBe('reached');
+    expect(record.tenant).toEqual({
+      verdict: 'public',
+      reason: expect.stringContaining('the nightly vault report covers every org'),
+    });
+  });
+
+  test('the same sweep with no crossTenant() declared is crossed', async () => {
+    const findings = expectCrossed(await proveOne('tpFileSweep'), 'tpFileSweep', 'job');
+    expect(findings).toContainEqual(expect.objectContaining({ code: 'X_TENANT_LEAK' }));
   });
 
   test('a handler that always throws is unreached and unproven, never proven', async () => {

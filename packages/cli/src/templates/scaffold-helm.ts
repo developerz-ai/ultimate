@@ -6,6 +6,7 @@
 // scaffold-helm-templates.ts.
 
 import type { GeneratedFile, NameSet } from './naming';
+import { RUNBOOK_BASE } from './scaffold-helm-alerts';
 import { helmTemplateFiles } from './scaffold-helm-templates';
 
 /**
@@ -16,6 +17,37 @@ import { helmTemplateFiles } from './scaffold-helm-templates';
  * `scaffold-container.test.ts`.
  */
 export const RUNTIME_UID = 1000;
+
+/**
+ * The two monitoring blocks of `values.yaml`, each a top-level key with its comment. Exported
+ * because `x g chart-alerts` appends whichever one an existing app's `values.yaml` lacks: one
+ * copy of the bytes, here, for the scaffold and the backfill.
+ */
+export const SERVICE_MONITOR_VALUES = `# Prometheus-operator discovery for that port (templates/servicemonitor.yaml) and the alert rules on
+# the series it scrapes (templates/alert-rules.yaml). \`enabled\` on each:
+#   auto   render when the cluster serves the operator's kind, so a cluster without it still
+#          installs. \`helm template\` answers from \`--api-versions\`: an offline render (GitOps) gets
+#          neither unless it passes --api-versions monitoring.coreos.com/v1/ServiceMonitor and
+#          --api-versions monitoring.coreos.com/v1/PrometheusRule
+#   true   always render; \`helm install\` fails where the CRD is missing
+#   false  never render
+serviceMonitor:
+  enabled: auto
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}         # what your operator's serviceMonitorSelector matches, if it uses one
+
+`;
+
+export const ALERTS_VALUES = `# Each rule's runbook_url is runbookBase#<alert, lower-cased>. Per rule, under rules.<alert>:
+# threshold, for, severity, enabled — e.g. rules: { UltimateQueueStalled: { threshold: 600 } }.
+alerts:
+  enabled: auto
+  runbookBase: ${RUNBOOK_BASE}
+  labels: {}         # what your operator's ruleSelector matches, if it uses one
+  rules: {}
+
+`;
 
 /**
  * `appVersion` is the default image tag (`image.tag: ""` below), so it must name a tag that can
@@ -80,7 +112,7 @@ networkPolicy:
 # METRICS_PORT in the container; move one and the other follows.
 metricsPort: 9090
 
-# The image's \`bun\` user, the same uid as the Dockerfile's USER: move one and the other follows.
+${SERVICE_MONITOR_VALUES}${ALERTS_VALUES}# The image's \`bun\` user, the same uid as the Dockerfile's USER: move one and the other follows.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: ${RUNTIME_UID}
@@ -215,9 +247,9 @@ ingress:
 `;
 
 /**
- * The chart for a new app: six kinds of object, all of them core Kubernetes. A ServiceMonitor and
- * a PodDisruptionBudget are deliberately absent — the first needs a CRD `helm install` fails on
- * where no Prometheus operator is installed, and both are cluster policy rather than app topology.
+ * The chart for a new app: core Kubernetes objects, plus a ServiceMonitor and a PrometheusRule that
+ * render only where the cluster serves those kinds. A PodDisruptionBudget is deliberately absent:
+ * it is cluster policy rather than app topology.
  */
 export function helmFiles(app: NameSet): readonly GeneratedFile[] {
   return [

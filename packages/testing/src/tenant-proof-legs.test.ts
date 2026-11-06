@@ -47,14 +47,17 @@ function harness(options: {
   readonly control?: ExerciseRecord;
   readonly public?: string;
   readonly read?: { readonly output: unknown };
+  readonly sweep?: boolean;
+  readonly input?: unknown;
 }) {
   const calls: string[] = [];
   const digests: (string | null)[] = ['p0', 'f0'];
   const plan: TenantAttack = {
     taint,
-    input: { postId: POST },
+    input: options.input ?? { postId: POST },
     public: options.public,
     read: options.read !== undefined,
+    sweep: options.sweep ?? false,
     attack: async (leg) => {
       calls.push(`B:${leg}`);
       options.writes?.[leg]?.(digests);
@@ -143,6 +146,54 @@ describe(testName('unit', 'tenant proof legs'), () => {
       },
     });
     expect((await proveTenant(writing.plan)).tenant).toMatchObject({ verdict: 'crossed' });
+  });
+
+  test('a job that declared crossTenant() and was handed nothing of A is a sweep, not a leak', async () => {
+    // `sendDigest`: no input naming an org, one delivery enqueued per org — A's id in an effect.
+    const fanOut: LegAnswer = {
+      output: { groups: 2 },
+      payloads: [{ path: 'effect.enqueue[0]', value: { input: { orgId: POST } } }],
+      crossings: ['the digest spans every org'],
+    };
+    const sweep = harness({
+      sweep: true,
+      input: { runDate: '2026-01-01' },
+      answers: { before: fanOut, after: fanOut },
+    });
+    expect((await proveTenant(sweep.plan)).tenant).toEqual({
+      verdict: 'public',
+      reason: expect.stringContaining('the digest spans every org'),
+    });
+  });
+
+  test('the same fan-out with no declared scope, or handed A ids, or as an action, is crossed', async () => {
+    const leak = { path: 'effect.enqueue[0]', value: { input: { orgId: FILE } } };
+    const declared: LegAnswer = { output: null, payloads: [leak], crossings: ['support'] };
+    const undeclared = harness({
+      sweep: true,
+      input: { runDate: '2026-01-01' },
+      answers: { before: { output: null, payloads: [leak] } },
+    });
+    // `tpCrossRead`'s shape: the scope is declared, but B chose which of A's rows it reads.
+    const chosen = harness({ sweep: true, answers: { before: declared } });
+    const action = harness({ input: { runDate: '2026-01-01' }, answers: { before: declared } });
+    for (const one of [undeclared, chosen, action]) {
+      expect((await proveTenant(one.plan)).tenant).toMatchObject({ verdict: 'crossed' });
+    }
+  });
+
+  test('a declared sweep skips the read half only: a crossed write still crosses', async () => {
+    const { plan } = harness({
+      sweep: true,
+      input: { runDate: '2026-01-01' },
+      answers: { before: { output: null, payloads: [], crossings: ['sweep'] } },
+      writes: {
+        before: (d) => {
+          d[1] = 'f1';
+        },
+      },
+    });
+    expect((await proveTenant(plan)).tenant).toMatchObject({ verdict: 'crossed' });
   });
 
   test('an A that was not reached leaves the proof unproven, never proven', async () => {

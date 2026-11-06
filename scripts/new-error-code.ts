@@ -100,6 +100,16 @@ export function statusDecision(pkg: string, argv: readonly string[]): StatusDeci
       fix: RERUN_STATUS,
     });
   }
+  // `@ultimat3/http` holds every code it owns to a status row (`error-map.test.ts`: "every code
+  // this package can throw has a row"), so an off-socket pin there writes a code that test refuses.
+  if (status === undefined && pkg === 'http') {
+    throw new ScriptError({
+      code: 'X_NEW_ERROR_CODE_INVALID',
+      cause:
+        '@ultimat3/http gives every code it owns a status row, so --off-socket would write a code its own error-map test refuses',
+      fix: "bun run scripts/new-error-code.ts <CODE> --package http --title '…' --cause '…' --fix '…' --status 500   # a code that never reaches a caller takes 500",
+    });
+  }
   if (status === undefined) return { kind: 'pin' };
   const parsed = Number(status);
   if (!Number.isInteger(parsed) || parsed < 400 || parsed > 599) {

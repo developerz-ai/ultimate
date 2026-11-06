@@ -70,6 +70,34 @@ describe('unit · shipped guard · repo-raw-sql', () => {
     expect(findings).toEqual([]);
   });
 
+  test('a millisecond-truncated order names keyset(), whose seek keeps the index', async () => {
+    const findings = await shippedGuardFindings('repo-raw-sql', {
+      [REPO]: [
+        "import { db, sql } from '@ultimat3/db';",
+        'export const feed = (orgId: string) =>',
+        '  db().query(',
+        `    sql\`select p.*, m.name from posts p join members m on m.id = p.author_id where p.org_id = ${hole('orgId')} order by date_trunc('milliseconds', p.created_at) desc, p.id desc\`,`,
+        '  );',
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => finding.code)).toEqual(['X_REPO_RAW_SQL']);
+    expect(findings[0]?.at).toBe(`${REPO}:4`);
+    expect(findings[0]?.fix).toStartWith('keyset({ scope, keys: [');
+    expect(findings[0]?.cause).toContain('Seq Scan');
+  });
+
+  test('a truncated order in a comment, or in a predicate only, is silent', async () => {
+    const findings = await shippedGuardFindings('repo-raw-sql', {
+      [REPO]: [
+        "// It was: sql`select p.* from posts p order by date_trunc('milliseconds', p.created_at) desc`",
+        `export const q = sql\`select p.* from posts p join members m on m.id = p.author_id -- order by date_trunc('milliseconds', p.created_at)\nwhere date_trunc('day', p.created_at) = ${hole('day')} order by p.created_at desc\`;`,
+        '',
+      ].join('\n'),
+    });
+    expect(findings).toEqual([]);
+  });
+
   test('only a repo.ts is read: the same statement in a query source is not this rule', async () => {
     const statement = `export const q = sql\`select * from posts where id = ${hole('id')}\`;\n`;
     expect(

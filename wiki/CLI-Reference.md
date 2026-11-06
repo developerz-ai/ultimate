@@ -50,6 +50,7 @@ x version              # CLI version
 | `x tasks` | cron tasks, their timezone and their next run | shipped |
 | `x policy` | which clause decided a permission, and why | shipped |
 | `x exercise [<name>] [--seed n]` | run every action, query and job once on generated rows, with no test written; the gate's `exercise` step | shipped |
+| `x drill [<name>] [--list] [--budget-ms n]` | the app's `web` and `worker` roles as real processes on real Postgres, Redis and NATS, each dependency faulted through a proxy or each role signalled, red on any framework contract that does not hold. Not a gate step: it needs the services | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
 | `x clean [--dry-run]` | remove what test runs leave behind: migrated test templates, `.x/cache`, stray `.x` folders, stale probe databases | shipped |
@@ -115,12 +116,12 @@ Deployment artifacts are part of the scaffold — an app is deployable the momen
 | `docker/Dockerfile.dockerignore` | **this exact name** — not a root `.dockerignore`. Drops `*.test.ts`, `*.test.tsx` and the root `docs/`; an app serving a file from `docs/` re-includes it with `!docs/<path>` |
 | `docker/docker-compose.prod.yml` | one service per role: migrate, web, sync, worker, scheduler |
 | `docker/docker-compose.dev.yml` | parity checks only; `x dev` needs none of it |
-| `docker/helm/` | the chart, 8 files — `Chart.yaml`, `values.yaml` and 6 templates (`_helpers.tpl`, `deployments`, `service`, `migrate-job`, `ingress`, `hpa`). Written `As of 2026-08-19`, which is what makes `x deploy --method helm` work in a scaffold |
+| `docker/helm/` | the chart, 12 files — `Chart.yaml`, `values.yaml` and 10 templates (`_helpers.tpl`, `_volumes.tpl`, `deployments`, `service`, `migrate-job`, `ingress`, `hpa`, `networkpolicy`, `servicemonitor`, `alert-rules`). Written `As of 2026-08-19`, which is what makes `x deploy --method helm` work in a scaffold; the last two render only where the cluster serves the Prometheus operator's kinds (`auto`) |
 | `docker/README.md` | how the two compose files differ |
 | `.github/workflows/ci.yml` | the generated app's own CI: `bun run setup` then `bun run verify`, on push and pull request — the same two commands its `README.md` opens with |
 | `bin/setup.ts` | TypeScript Bun runs, never shell — `package.json`'s `setup` script (`bun bin/setup.ts`), so `bun run setup` is the same command in PowerShell, cmd and bash; `bun run dev` is `x dev` and `bun run verify` is `x verify`, and neither needs a file. There is no `bin/check.ts` `As of 30.0`: `x verify`'s `budgets` step builds when the stats are missing or stale, so a wrapper that built first would be a second name for the gate |
 
-The framework repo's own `docker/helm` carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in an npm tarball, so copying them is a `git clone` of this repo, not an install.
+The framework repo's own `docker/helm` carries one template the scaffold does not — `pdb.yaml`, cluster policy rather than app topology. It ships in no npm tarball, so copying it is a `git clone` of this repo, not an install. An app chart from before the monitoring pair gets it from `x g chart-alerts`.
 
 `bunx create-ultimate myapp` is the same generator without a global install — and it says so in its own refusals, `As of 2026-08-23`: a `fix:` line is a command the reader is meant to RUN, and `x new myapp` named a binary they have not installed yet. Errors: `X_GENERATE_CONFLICT` (the directory exists — `fix` is the same command with `--force`), `X_CLI_BAD_FLAG` (no name given, or a path where a name goes), `X_BUN_VERSION`.
 
@@ -313,6 +314,7 @@ x g island <name> [--at <dir>]              # a client component on an otherwise
 x g admin:page <name> --permission <perm> [--at <dir>]   # a custom admin screen, guarded by construction
 x g guard <name>                            # a convention this app enforces, as a build error
 x g sign-in --password | --oidc <provider>  # the app's one sign-in: pages, actions, boot guard
+x g chart-alerts [--print]                  # the chart's ServiceMonitor + alert rules, backfilled
 ```
 
 **`x g sign-in`** (`As of 2026-11`) is what a deployed scaffold needs to issue a session: before it, a production `web` role answered every policy-protected route `401` (`packages/cli/e2e/sign-in.e2e.test.ts` proves the after). Exactly one of the two flags, and no `<name>` — an app has one sign-in; anything else is `X_CLI_BAD_FLAG`, and so is any other `x g` flag it would ignore (`--feature`, `--surface`, `--at`, `--permission`, `--live`, `--admin`), and either flag on another generator. Its keys land in every catalog the app ships, or the ones `--locales` names, as every other generator's do. The auth slice lands under `apps/web/app/auth/` beside `x new`'s `auth.ts`, plus `apps/web/runtime.ts` and the edits in the last column. A dry run lists the deletions in `data.removed`, apart from `data.files`; a real run reports them under the same key:
@@ -323,6 +325,8 @@ x g sign-in --password | --oidc <provider>  # the app's one sign-in: pages, acti
 | `--oidc <provider>` | `oidc.ts` — `discoverOAuthProvider` on the FIRST sign-in, never at import — and `sign-in-routes.ts`, the `oauthLogin` legs on `runtime.routes`; the sign-in page (one link to `/auth/oauth/<provider>`); `destroySession`; the guard — 20 files on a dry run (plus the two in `data.removed`), 22 after setup | as above, plus `<PROVIDER>_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET` in `envSchema`; and **the authenticator swap**: `authenticator.ts` loses the development fallback and `dev-actor.ts` is deleted, only while all four files are byte-for-byte what `x new` wrote — an edited one is an `X_GENERATE_CONFLICT` finding naming the line to delete by hand |
 
 The boot guard is generated, app-owned: `apps/web/runtime.ts` calls `assertSignInConfigured(process.env)` before the boot binds a port, and outside `development`/`test` a `web` or `sync` role with a sign-in key unset refuses to start — `X_AUTH_SIGN_IN_UNCONFIGURED`, fix `export <KEY>="<value>"` in the role's deployed environment, then restart it (`x env example` lists the keys). The keys: `ULTIMATE_SECRETS_KEY` for `--password` (it seals the second-factor challenge); the provider's three plus `SESSION_SECRET` and `APP_URL` for `--oidc`. A second `x g sign-in` is `X_GENERATE_CONFLICT` and writes nothing. `--password` keeps the development viewer: it ships no sign-up page, so the first user is `register(appAuth(), { email, password, orgId, roles })`. An app that already has an `apps/web/runtime.ts` is that conflict too — merge the two `runtime` objects by hand.
+
+**`x g chart-alerts`** (`As of 2026-11`) writes the two monitoring templates `x new`'s chart carries into an app chart that predates them — `docker/helm/templates/servicemonitor.yaml` and `alert-rules.yaml`, named after `Chart.yaml`'s `name` — and appends the `serviceMonitor:` / `alerts:` blocks `values.yaml` lacks. Only what is missing: a template already there is kept (`--force` rewrites both), and a values key already there — `enabled: false` included — is never touched; both templates read a missing block as `auto`, rendering only where the cluster serves the Prometheus operator's kinds. A second run writes nothing. No `<name>`, and any other `x g` flag but `--force`/`--dry-run` is `X_CLI_BAD_FLAG`. **`--print`** writes nothing and needs no chart: the same rules as plain Prometheus rule groups, defaults in place, for a loader outside Kubernetes (`--json`: `data.rules`, the YAML text). No `docker/helm/Chart.yaml` is `X_CHART_MISSING`, fix `x g chart-alerts --print --json`. `x doctor` lists the missing templates. The rules: [Observability](Observability).
 
 `x g guard <name>` writes `guards/<name>.ts` and its test. A name the framework ships a guard under — `raw-length`, `raw-breakpoint`, `raw-z-index`, `raw-shadow`, `raw-motion`, `undefined-style-class`, `undeclared-custom-property`, `repo-raw-sql` and every other name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) — writes THAT guard, which is how an app adopts one it does not hold; any other name writes the blank template. `x doctor` lists the shipped ones missing, and the held ones that differ from the current template ([Interface rules](Interface-Rules#stylesheets)).
 
@@ -343,6 +347,7 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 | `--locales` | string | every locale with a catalog in `packages/i18n/catalogs/`, else `en` | comma-separated locales; lands each generator's catalog entry in every one. **Never starts a catalog** in an app that has any: a non-default locale with no `packages/i18n/catalogs/<locale>.json` is `X_CLI_BAD_FLAG`, `fix: x i18n add <locale>`, before a file is planned — a catalog a generator started would hold only its own keys. A non-default locale's new keys land marked `⟦…⟧`, as `x i18n add` seeds them, so `x i18n check` reports them until translated. In an app with no catalogs yet, a first `--locales en,es` writes `en` bare and `es` marked. `As of 2026-10-06` (`localiseCatalogs`, `packages/cli/src/generate-catalog-locales.ts`) |
 | `--password` | boolean | `false` | `sign-in` only: an address and a password over `login()` |
 | `--oidc` | string | — | `sign-in` only: an OpenID Connect provider id (`corp-sso`; lowercase, digits, hyphens, not a built-in), discovered from `<PROVIDER>_ISSUER` |
+| `--print` | boolean | `false` | `chart-alerts` only: print the alert rules as plain Prometheus rule groups, write nothing. On any other generator it is `X_CLI_BAD_FLAG` |
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | the write plan, nothing written: **every file the run would touch** — the ones it creates (a slice module already on disk is skipped, not listed) and, `As of 27.6.2`, the ones it EDITS outside the slice (role map, typed handle, API index, manifests, catalogs, the i18n index), in the order the run lists them. `--json`: `data.files` is that list, `data.edits` the subset that already exists, `data.refreshes` the committed contracts (`x.manifest.json`, `openapi.json`) a real run re-projects. `ok: false` with every finding the real run would report — an existing file, an API-index binding already held, a grant or a handle entry it cannot place |
 
@@ -1169,6 +1174,8 @@ It also lists the shipped guards the app's `guards/` does not hold, and the ones
 
 A listing, never a finding: deleting or editing a guard is how an app changes a rule, so the verdict does not move.
 
+**The chart's monitoring templates**, the same way (`As of 2026-11`): an app with a `docker/helm/Chart.yaml` and no `templates/servicemonitor.yaml` or `templates/alert-rules.yaml` gets one line per missing file, then `x g chart-alerts`, which writes only those (`--json`: `data.chartAlerts`, `{ missing[], add }`). A chart that dropped them on purpose keeps a green verdict; an app with no chart is listed nothing.
+
 The embedded half is the bare-VM case: the external-database probe answers nothing the moment `DATABASE_URL` is unset, and that silence *is* the configuration a fresh box has. So `x doctor` also asks whether `@electric-sql/pglite` resolves from the app root — a resolve, never an import, because loading it boots the WASM build and takes the single-writer lock the next command needs. Red only where both hold: `DATABASE_URL` unset **and** the peer unresolvable, reported as `X_DB_UNAVAILABLE` with `@ultimat3/db`'s own sentence and its own runnable fix ([Bare VM](Bare-VM)). The snapshot half is `As of 2026-08` and separate from drift on purpose: they are two questions with two remedies, and `x db gen`'s own `X_MIGRATION_SNAPSHOT_MISSING` was a condition this diagnostic could not see at all, so `x doctor --json` — the `fix:` of the `X_CLI_UNEXPECTED` an author reaches it through — ran clean over a broken app.
 
 **It probes BOTH ports `x dev` binds** — `PORT` for the web role and `PORT + 1` for the sync node —
@@ -1348,6 +1355,49 @@ that references one with a tenant and declares no `shared` reason.
 
 Errors: `X_CONTRACT_EXERCISE_UNREACHED`, `X_CONTRACT_EXERCISE_UNDECLARED`, `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`.
 
+## x drill
+
+```bash
+x drill [<name>] [--list] [--budget-ms n] [--json]
+```
+
+The app run through its dependencies failing, `As of 2026-11-06`. Each drill boots a fleet on a
+scratch database made on `TEST_DATABASE_URL` and dropped after: `ROLE=migrate`, then `web` and
+`worker` as separate processes (`apps/web/server.ts`), each dialling Postgres, and Redis or NATS
+where the app declares them, through a Bun TCP fault proxy; `nats-down` adds the `sync` role and a
+sync client that dials it. Load runs before, through and after the fault over the site's
+parameterless pages and every action an anonymous POST reaches, each request a fresh input drawn
+as `x exercise` draws one (`apps/web/exercise.ts` honoured; `data.skippedWrites` names every action
+left out and why) — the writes are how a job reaches the queue for the worker drills. `/readyz` is
+sampled throughout.
+
+| Drill | Fault | Must hold |
+|---|---|---|
+| `pg-blackhole` | live sockets unanswered, server healthy | `requests-coded`, `requests-bounded`, `recovers`, `jobs-once` |
+| `pg-slow` | every byte delayed half the deadline | `requests-coded`, `requests-bounded`, `recovers` |
+| `pg-restart` | `reset`, then `refuse`, then `pass` | `requests-coded`, `readyz-flips`, `recovers`, `jobs-once` |
+| `redis-down` | the cache tier blackholed | `requests-coded`, `requests-prompt`, `requests-ok`, `recovers` |
+| `nats-down` | the bus refused | `requests-coded`, `recovers`, `sync-resumes` |
+| `worker-sigkill` | `SIGKILL` the worker, then a fresh one | `jobs-terminal`, `jobs-once`, `requests-coded` |
+| `worker-sigterm` | `SIGTERM` the worker, then a fresh one | `role-exits`, `jobs-terminal`, `jobs-once` |
+| `web-sigterm` | `SIGTERM` the web role under load | `requests-ok`, `role-exits` |
+
+Thresholds come from the app: the request deadline (`@ultimat3/http`'s default, 30 s, because
+`configureHttp` is runtime code the CLI does not run), `drain.deadlineMs` plus
+`drain.readinessGraceMs`, and `health.readiness` — under `'process'`, `readyz-flips` expects 200
+throughout. `--budget-ms` replaces the deadline the verdict judges against, not the app's, and is
+printed in `data.budgets.override`. An answer may reach the load up to 500 ms past the deadline
+(`DRILL_ANSWER_SLACK_MS`: the 504 a deadline fires arrives a beat after it). A 5xx with no `X_*`
+code, or `X_INTERNAL`, is always red. A property with no evidence is red, never passed: a job
+property is red when no job ran during the drill, `sync-resumes` when no sync client ran.
+
+A service the app uses must be up for every drill; an unset one is refused, never skipped. A named
+drill that faults a service the app does not declare is refused; a whole run lists it under
+`data.notRun`. `--list` prints the table and runs nothing. `--json`: `{ budgets, targets,
+skippedWrites, drills[], notRun }`, each drill `{ name, verdict, evidence, budgets, baseline }`.
+
+Errors: `X_DRILL_FAILED` (one per property that did not hold), `X_DRILL_SERVICE_MISSING`, `X_CLI_UNKNOWN_COMMAND`, `X_CLI_BAD_FLAG`.
+
 ## x policy
 
 ```bash
@@ -1395,7 +1445,7 @@ Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_CATALOG_INVALID`
 
 ```bash
 x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empty] [--sample N]
-       [--affected [--base <ref>] [--dirty]] [--workers N] [--json]
+       [--affected [--base <ref>] [--dirty]] [--workers N] [--seed N] [--json]
        [-- <bun test flags>]
 ```
 
@@ -1409,6 +1459,7 @@ x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empt
 | `--affected` | boolean | off | narrow the selection to the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
 | `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |
+| `--seed` | string | — | replay one `simulateJobs` seed, the `N` an `X_JOB_SIM_INVARIANT` names: handed to every `bun test` child as `ULTIMATE_JOB_SIM_SEED`, which runs that seed alone. A uint32, else `X_CLI_BAD_FLAG`. The shard reproduce line does not carry it yet |
 | `-- <args>` | tail | — | handed to `bun test` verbatim, before the file list — `x test unit -- --coverage --bail`. The reproduce line carries it back. **`x test` is the only command that reads a `--` tail**: every other one refuses it (`X_CLI_BAD_FLAG`) rather than dropping it, which is what all of them did until 2026-09 |
 
 The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES` (green with `--allow-empty`); an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.

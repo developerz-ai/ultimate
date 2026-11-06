@@ -120,6 +120,27 @@ why the s3 driver hands both calls to the provider while the local and memory di
 (`X_STORAGE_OBJECT_LOCKED`). Plan 102/03's premise that S3 answers a locked delete with a refusal
 was false.
 
+## The physical standby (2026-11-06)
+
+`postgres-standby` is a streaming physical standby of `postgres` (`TEST_STANDBY_URL`, port 5434),
+for the two suites that pause its replay and read behind the primary:
+`packages/db/src/replica-position.live.test.ts` and
+`packages/cli/src/runtime-replica-roundtrip.live.test.ts`. Before it, both skipped everywhere — the
+`postgres-logical` peer is never in recovery, so it cannot say how far it replayed — and the first
+run against a real standby found both wrong:
+
+| Found | Why | Now |
+|---|---|---|
+| a standby replayed exactly to the primary's position looked caught up without the row | `pg_current_wal_lsn()` is the WRITE position; under `synchronous_commit = off` it trails the commit just made | `primaryPosition` reads `pg_current_wal_insert_lsn()` |
+| the round trip's non-vacuity read was `X_DB_SCHEMA_STALE`, not `[]` | it paused replay before the standby had replayed its `CREATE TABLE` | it waits for `pg_last_wal_replay_lsn()` to pass the primary's insert position, then pauses |
+| a pause that had not landed yet | `pg_wal_replay_pause()` only REQUESTS one; the startup process may replay the next record after it returns | both suites poll `pg_get_wal_replay_pause_state()` to `paused` |
+
+The two `pg_wal_replay_*` calls need a superuser on the standby, which the test services' user is.
+To run it beside a shared stack already up, a second compose project with its own ports never
+touches the first:
+`docker compose -p ultimate-standby-probe -f docker/docker-compose.test.yml -f <override> up -d --wait postgres postgres-standby`,
+the override giving both services `ports: !override [...]`, then `down` the same project.
+
 ## Logs in the test run itself
 
 Not closed by this change. A green `bun test` over a package still prints the framework's own JSON

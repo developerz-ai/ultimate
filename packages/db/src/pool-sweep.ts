@@ -1,10 +1,9 @@
-// Single responsibility: noticing a pooled statement nobody answered. `statement_timeout` is the
-// server's, so it cannot fire when the server or the path is gone, and the kernel's retransmit window
-// is about 15 minutes. One timer per pool walks the statements in flight; a statement never arms one.
+// Single responsibility: noticing a statement nobody answered, pooled or on a pin. `statement_timeout`
+// is the server's, so it cannot fire when the server or the path is gone, and the kernel's retransmit
+// window is about 15 minutes. One timer per pool walks the statements in flight; none arms its own.
 
 import type { Scheduler } from '@ultimat3/core';
 import { statementUnanswered } from './errors';
-import type { PinStatement } from './pool-pins';
 import { unrefSchedule } from './pool-timer';
 import { statementExcerpt } from './statement-excerpt';
 
@@ -21,16 +20,19 @@ export interface PoolSweepOptions<Owner> {
 }
 
 export interface PoolSweep<Owner> {
-  /** `sending`'s answer, or `X_DB_UNAVAILABLE` once it is past the deadline. */
-  track<T>(owner: Owner, text: string, sending: Promise<T>): Promise<T>;
-  /** A statement on a pin: aged by the same ticks, never rejected here (`pool-pins.ts`). */
-  pinned(): PinStatement;
+  /**
+   * `sending`'s answer, or `X_DB_UNAVAILABLE` once it is past the deadline: the pool's, or
+   * `deadlineMs` for a pin whose own bound moved (`pool-pins.ts`). `0` judges nothing.
+   */
+  track<T>(owner: Owner, text: string, sending: Promise<T>, deadlineMs?: number): Promise<T>;
 }
 
 interface InFlight<Owner> {
   readonly owner: Owner;
   readonly text: string;
   readonly startedAtTick: number;
+  readonly deadlineMs: number;
+  readonly ticksToMiss: number;
   readonly reject: (reason: unknown) => void;
 }
 
@@ -43,12 +45,13 @@ interface InFlight<Owner> {
  */
 export function poolSweep<Owner>(options: PoolSweepOptions<Owner>): PoolSweep<Owner> {
   const schedule = options.schedule ?? unrefSchedule;
-  const ticksToMiss = Math.ceil(options.deadlineMs / SWEEP_INTERVAL_MS) + 1;
+  const ticksFor = (deadlineMs: number): number => Math.ceil(deadlineMs / SWEEP_INTERVAL_MS) + 1;
+  const ticksToMiss = ticksFor(options.deadlineMs);
   // Insertion order is start order and every statement has the same deadline, so a walk stops at
   // the first one still in time, whatever the pool's size.
   const inFlight = new Set<InFlight<Owner>>();
-  // Only their start tick: a pin statement keeps the timer armed so its age keeps counting.
-  const pinnedAt = new Set<{ readonly startedAtTick: number }>();
+  // Each its own deadline, so walked whole: at most one per pin, and pins are at most `max`.
+  const ownDeadline = new Set<InFlight<Owner>>();
   let ticks = 0;
   let armed = false;
 
@@ -61,46 +64,52 @@ export function poolSweep<Owner>(options: PoolSweepOptions<Owner>): PoolSweep<Ow
     armed = false;
     ticks += 1;
     for (const entry of inFlight) {
-      const age = ticks - entry.startedAtTick;
-      if (age < ticksToMiss) break;
-      inFlight.delete(entry);
-      const excerpt = statementExcerpt(entry.text);
-      options.onMiss(entry.owner, excerpt, age * SWEEP_INTERVAL_MS);
-      entry.reject(statementUnanswered(excerpt, options.deadlineMs));
+      if (ticks - entry.startedAtTick < ticksToMiss) break;
+      miss(inFlight, entry);
     }
-    if (inFlight.size > 0 || pinnedAt.size > 0) arm();
+    for (const entry of ownDeadline) {
+      if (ticks - entry.startedAtTick >= entry.ticksToMiss) miss(ownDeadline, entry);
+    }
+    if (inFlight.size > 0 || ownDeadline.size > 0) arm();
+  }
+
+  function miss(from: Set<InFlight<Owner>>, entry: InFlight<Owner>): void {
+    from.delete(entry);
+    const excerpt = statementExcerpt(entry.text);
+    options.onMiss(entry.owner, excerpt, (ticks - entry.startedAtTick) * SWEEP_INTERVAL_MS);
+    entry.reject(statementUnanswered(excerpt, entry.deadlineMs));
   }
 
   return {
-    track<T>(owner: Owner, text: string, sending: Promise<T>): Promise<T> {
+    track<T>(owner: Owner, text: string, sending: Promise<T>, deadlineMs?: number): Promise<T> {
+      if (deadlineMs === 0) return sending;
+      const own = deadlineMs !== undefined && deadlineMs !== options.deadlineMs;
+      const bound = own ? deadlineMs : options.deadlineMs;
+      const into = own ? ownDeadline : inFlight;
       return new Promise<T>((resolve, reject) => {
-        const entry: InFlight<Owner> = { owner, text, startedAtTick: ticks, reject };
-        inFlight.add(entry);
+        const entry: InFlight<Owner> = {
+          owner,
+          text,
+          startedAtTick: ticks,
+          deadlineMs: bound,
+          ticksToMiss: own ? ticksFor(bound) : ticksToMiss,
+          reject,
+        };
+        into.add(entry);
         if (!armed) arm();
         // Both arms stay attached after a miss: the statement rejects when its pool closes, and
         // nobody else is left holding that promise.
         sending.then(
           (value) => {
-            inFlight.delete(entry);
+            into.delete(entry);
             resolve(value);
           },
           (error: unknown) => {
-            inFlight.delete(entry);
+            into.delete(entry);
             reject(error);
           },
         );
       });
-    },
-    pinned(): PinStatement {
-      const entry = { startedAtTick: ticks };
-      pinnedAt.add(entry);
-      if (!armed) arm();
-      return {
-        overdue: () => ticks - entry.startedAtTick >= ticksToMiss,
-        done: () => {
-          pinnedAt.delete(entry);
-        },
-      };
     },
   };
 }

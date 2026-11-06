@@ -324,6 +324,7 @@ export class LiveClient {
   }
 
   #sendSubscribe(registration: Registration): void {
+    const traceparent = this.#options.traceparent?.();
     this.#send({
       type: 'subscribe',
       v: PROTOCOL_VERSION,
@@ -335,6 +336,7 @@ export class LiveClient {
         input: registration.input,
         cursor: registration.cursor,
       },
+      ...(traceparent === undefined ? {} : { traceparent }),
     });
   }
 

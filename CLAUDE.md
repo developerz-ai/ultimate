@@ -189,7 +189,7 @@ a list, never a count or an ordinal: `PRIMITIVE_FACTORIES` in the same file, hel
 
 ## CI
 
-Free runners only: `ubuntu-latest`, plus `windows-latest` and `macos-latest`, free on a public repo. Under 5 min. One runner per unit
+Free runners only: `ubuntu-latest`, `windows-latest`, `macos-latest` (free, public repo). Under 5 min. One runner per unit
 ([why](docs/history/ci-split.md)); each job's question is the comment above it in `ci.yml`.
 `awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}' .github/workflows/ci.yml` re-derives the jobs.
 
@@ -199,6 +199,7 @@ Free runners only: `ubuntu-latest`, plus `windows-latest` and `macos-latest`, fr
 - `scaffold-smoke` — a scaffolded app gates twice per shape (`demoapp`, `bareapp`); the second
   gate catches broken generators.
 - `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
+- `fault-drills` — `x drill` on the reference app: three faults, real Postgres.
 
 `ci.yml` runs on pushes to `main`, `next` and `release/*`. Other workflows: `release-tag.yml`,
 `release.yml`, `registry-audit.yml`, `deploy-social-demo.yml`, `wiki.yml`, `tutorial-run.yml` —

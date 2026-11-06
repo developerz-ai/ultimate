@@ -14,7 +14,7 @@
 #   * RAM. The data directory is a tmpfs, so a run writes no block device and `down` leaves nothing
 #     behind — no volume to prune, and no state one run can leave for the next.
 #   * NO DURABILITY. A test database that survives a crash is a database nobody asked for:
-#     `fsync`, `synchronous_commit` and `full_page_writes` are off on both Postgres servers, and
+#     `fsync`, `synchronous_commit` and `full_page_writes` are off on every Postgres server, and
 #     Redis keeps no RDB snapshot and no AOF.
 #   * SILENT. Each server is told to log nothing it can be told not to, and the container's log
 #     driver is `none`, so `docker logs` has nothing to read and the daemon keeps no JSON file. To
@@ -67,10 +67,53 @@ x-postgres: &postgres
 services:
   # pgvector, not stock postgres: `@ultimat3/ai`'s postgresVectorStore() is the only production vector
   # path, and `pg-vector.live.test.ts` refuses to skip when the extension is missing.
+  #
+  # The one hba line the stock entrypoint never writes — `host all all all` does not match the
+  # `replication` pseudo-database — so `postgres-standby` could not take its base backup. Appended
+  # by an init script the wrapper drops in before handing over, so it lands in the cluster initdb
+  # just wrote and the real server reads it on its first start: `samenet`, the compose network only.
   postgres:
     <<: *postgres
     image: pgvector/pgvector:pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        echo 'echo "host replication all samenet scram-sha-256" >> "$$PGDATA/pg_hba.conf"'
+        > /docker-entrypoint-initdb.d/replication.sh && exec docker-entrypoint.sh "$$@"
+      - postgres
+    command: ['postgres']
     ports: ['127.0.0.1:5432:5432']
+
+  # A PHYSICAL standby of `postgres`, streaming, for the suites that pause its replay
+  # (`pg_wal_replay_pause()`) and read behind the primary: `replica-position.live.test.ts`, the
+  # CLI's write-redirect-read round trip. `pg_basebackup -R` clones the primary and writes the
+  # standby signal and `primary_conninfo`, so the copied postgresql.conf — no fsync, nothing logged
+  # below FATAL — is the primary's own. No replication slot: a slot pins WAL on a tmpfs for a
+  # standby that may be gone. The cluster is a subdirectory, which `pg_basebackup` creates 0700.
+  postgres-standby:
+    <<: *silent
+    image: pgvector/pgvector:pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: postgres
+    environment:
+      PGPASSWORD: ultimate
+      PGDATA: /var/lib/postgresql/data/standby
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        pg_basebackup -h postgres -U ultimate -D "$$PGDATA" -X stream -R --no-sync
+        exec postgres -D "$$PGDATA"
+    tmpfs: [/var/lib/postgresql/data]
+    ports: ['127.0.0.1:5434:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ultimate -h 127.0.0.1 -p 5432']
+      interval: 1s
+      timeout: 3s
+      retries: 60
 
   # A second server because `wal_level` is a server argument: the logical-replication feed's live
   # tests decode a real WAL stream, and the template-database clones the other suites make must not

@@ -39,7 +39,21 @@ const asOperator = <T>(run: () => Promise<T>): Promise<T> =>
   runWithContext(ctxOf({ actor: APP_OWNER }), run);
 
 /** The resources this app declares, in the order it declares them. */
-const APP_RESOURCES = ['orgs', 'members', 'posts', 'comments', 'connections', 'runs', 'run_events'];
+const APP_RESOURCES = [
+  'orgs',
+  'members',
+  'posts',
+  'comments',
+  'connections',
+  'runs',
+  'run_events',
+  'post_like_totals',
+  'daily_likes',
+];
+/** The app's own catalogs: the dashboard's titles resolve there, by `admin.<entity>.title`. */
+const CATALOGS = `${import.meta.dir}/../../../../packages/i18n/catalogs`;
+/** Written by a job alone — a run, its events, a refreshed view, a rollup: an operator reads. */
+const READ_ONLY_RESOURCES = ['runs', 'run_events', 'post_like_totals', 'daily_likes'];
 const isApp = (name: string): boolean => APP_RESOURCES.includes(name);
 
 const ctx = (actor: AdminActor = OPERATOR) => admin.ctx({ actor, requestId: 'test' });
@@ -53,11 +67,30 @@ describe('the dashboard is derived from the entities, not restated', () => {
     expect(paths).not.toContain('/admin/orgses');
   });
 
-  test('a run and its events are read-only: the job writes them, an operator reads', () => {
-    for (const name of ['runs', 'run_events']) {
+  test('what a job writes is read-only: a run, its events, the like totals, the daily likes', () => {
+    for (const name of READ_ONLY_RESOURCES) {
       expect([...admin.resource(name).operations].sort()).toEqual(['detail', 'list', 'search']);
     }
-    expect(admin.routes.map((route) => route.path)).not.toContain('/admin/runs/new');
+    const paths = admin.routes.map((route) => route.path);
+    for (const name of READ_ONLY_RESOURCES) {
+      expect(paths).toContain(`/admin/${name}`);
+      expect(paths).not.toContain(`/admin/${name}/new`);
+    }
+  });
+
+  test('every resource is titled from the catalog, in each locale', async () => {
+    const lookup = (node: unknown, part: string): unknown =>
+      typeof node === 'object' && node !== null ? Reflect.get(node, part) : undefined;
+    for (const locale of ['en', 'es']) {
+      const catalog: unknown = await Bun.file(`${CATALOGS}/${locale}.json`).json();
+      const missing = APP_RESOURCES.map((name) => admin.resource(name).titleKey).filter(
+        (key) => typeof key.split('.').reduce(lookup, catalog) !== 'string',
+      );
+      expect({ locale, missing }).toEqual({ locale, missing: [] });
+    }
+    expect(APP_RESOURCES.map((name) => admin.resource(name).titleKey)).toContain(
+      'admin.daily_likes.title',
+    );
   });
 
   test('each toolbar action lands on its own entity, and a run carries its cancel', () => {
@@ -72,6 +105,8 @@ describe('the dashboard is derived from the entities, not restated', () => {
       'connections:',
       'runs:run.cancel',
       'run_events:',
+      'post_like_totals:',
+      'daily_likes:',
     ]);
   });
 
@@ -237,7 +272,7 @@ describe('the agent surface is the same dashboard, projected again', () => {
         expect(tools).toContain(`admin.${entity}.${op}`);
       }
     }
-    for (const entity of ['runs', 'run_events']) {
+    for (const entity of READ_ONLY_RESOURCES) {
       expect(tools).toContain(`admin.${entity}.list`);
       expect(tools).not.toContain(`admin.${entity}.create`);
     }

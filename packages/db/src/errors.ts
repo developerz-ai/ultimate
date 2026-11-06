@@ -54,6 +54,8 @@ export const DB_OWNED_ERROR_CODES = [
   'X_MIGRATION_CONCURRENT_PARTITIONED',
   'X_DB_ROW_SECURITY_BYPASSED',
   'X_DB_ROW_SECURITY_DRIFT',
+  'X_KEYSET_NULL_KEY',
+  'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
 ] as const;
 
 /**
@@ -120,6 +122,9 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_MIGRATION_CONCURRENT_PARTITIONED: 'a concurrent index build names a partitioned table',
   X_DB_ROW_SECURITY_BYPASSED: 'row security is on and the serving role is exempt from it',
   X_DB_ROW_SECURITY_DRIFT: 'a tenant table and database.rowSecurity disagree about its policy',
+  X_KEYSET_NULL_KEY: 'a keyset page holds a null in one of its sort keys',
+  X_MIGRATION_ROLLBACK_DESTRUCTIVE:
+    'a rollback would serve an older build over a destructive migration',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails

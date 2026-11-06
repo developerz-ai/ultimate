@@ -10,6 +10,7 @@ import type {
   IndexDescription,
   SchemaDescription,
   TableDescription,
+  ViewDescription,
 } from './introspect';
 
 type Row = Record<string, unknown>;
@@ -153,5 +154,21 @@ function tableOf(value: unknown): TableDescription | undefined {
 export function parseSnapshot(value: unknown): SchemaDescription | undefined {
   if (!isRow(value)) return undefined;
   const tables = all(value['tables'], tableOf);
-  return tables === undefined ? undefined : { tables };
+  if (tables === undefined) return undefined;
+  const recorded = value['views'];
+  if (recorded === undefined) return { tables };
+  const views = all(recorded, viewOf);
+  return views === undefined ? undefined : { tables, views };
+}
+
+/** One recorded view: a name, the flag, the statements — anything else is not a snapshot. */
+function viewOf(value: unknown): ViewDescription | undefined {
+  if (!isRow(value)) return undefined;
+  const { name, materialized, create } = value;
+  if (typeof name !== 'string') return undefined;
+  if (!(materialized === undefined || materialized === true)) return undefined;
+  if (!Array.isArray(create) || !create.every((each) => typeof each === 'string')) {
+    return undefined;
+  }
+  return { name, ...(materialized === true ? { materialized } : {}), create };
 }

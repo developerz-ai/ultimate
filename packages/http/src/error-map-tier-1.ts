@@ -94,4 +94,6 @@ export const TIER_1_ERROR_STATUS = {
   X_STORAGE_UPLOAD_SIZE_UNDECLARED: 422,
   // @ultimat3/storage — a write was sent and its answer lost, and the disk could not say whether it landed
   X_STORAGE_WRITE_OUTCOME_UNKNOWN: 500,
+  // @ultimat3/db — a keyset page holds a null in one of its sort keys
+  X_KEYSET_NULL_KEY: 500,
 } satisfies Readonly<Record<string, number>>;

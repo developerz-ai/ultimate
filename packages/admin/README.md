@@ -283,7 +283,18 @@ table only as `[redacted]` — `@ultimat3/core`'s `REDACTED`, the logger's marke
 table is applied at boot with every other framework table (`@ultimat3/cli`'s `FRAMEWORK_SCHEMA`),
 from the leaf module `@ultimat3/admin/schema` (`SQL_ADMIN_AUDIT_TABLE`, `ADMIN_AUDIT_TABLE`) —
 no migration, no screen loaded to install it. That subpath is their one import path: 25.0.0 took
-them off the barrel.
+them off the barrel. `x_error_groups` (`SQL_ERROR_GROUPS_TABLE`, `ERROR_GROUPS_TABLE`) rides the
+same subpath.
+
+**Error groups** (`As of 2026-11`). `@ultimat3/admin/error-groups` is the sink and its stores, and
+nothing else, because every role installs it: `errorGroupsSink({ store, onNewGroup?, ignore?,
+perMinute? })` is an `ErrorReporter` folding each report into its `errorFingerprint` group —
+outside the request's transaction, capped per minute, `onNewGroup` (a job handle) enqueued once
+per new group fleet-wide (`xmax = 0`). Install it beside any other reporter with core's
+`chainErrorReporters`. Stores: `postgresErrorGroupsStore()`, `memoryErrorGroupsStore()`;
+retention `errorGroupsPurgeTarget(store, { olderThanMs })`. The screens are the barrel's:
+`pages: errorGroupsPages({ store, navGroup? })` mounts `/admin/errors` behind `errors:read`
+(`ERRORS_READ`).
 
 `/admin/audit` is the whole trail, 100 entries per page, newest first, behind one native GET form:
 `?entity=`, `?actor=`, `?outcome=`, `?since=`, `?until=` (an instant with an offset or `Z`, a

@@ -1,11 +1,15 @@
 // Write, redirect, read against a real standby whose replay is PAUSED: the row the write committed
 // is not on the standby, and the read the redirect leads to shows it anyway — the position cookie
-// sent it to the primary. Needs `TEST_STANDBY_URL`; the test services have none, so it skips, named.
+// sent it to the primary. Needs `TEST_STANDBY_URL` (the test services' `postgres-standby`); unset,
+// it skips, named.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
+  type DbClient,
   type PostgresClient,
+  parsePosition,
   postgresClient,
+  primaryPosition,
   REPLICA_URL_ENV,
   raw,
   replicatedClient,
@@ -28,6 +32,39 @@ const hasStandby =
 
 const ORIGIN = 'http://app.test';
 const TABLE = 'x_roundtrip_live';
+const STANDBY_LIMIT_MS = 5_000;
+
+/** Polls `standby` until `ready` answers true. The standby replays WAL in its own process. */
+async function untilStandby(what: string, ready: () => Promise<boolean>): Promise<void> {
+  const started = performance.now();
+  while (!(await ready())) {
+    if (performance.now() - started > STANDBY_LIMIT_MS) {
+      expect.unreachable(`the standby did not ${what} within ${String(STANDBY_LIMIT_MS)} ms`);
+    }
+    // real-clock: the standby's startup process replays and pauses on its own schedule
+    await Bun.sleep(20);
+  }
+}
+
+/** Pause replay only once it has passed every WAL record the primary wrote so far. */
+async function pauseAfterCatchingUp(primary: DbClient, standby: DbClient): Promise<void> {
+  const written = (await primaryPosition(primary)) ?? 0n;
+  await untilStandby('replay the primary', async () => {
+    const row = await standby.one<{ lsn: string | null }>(
+      sql`select pg_last_wal_replay_lsn()::text as lsn`,
+    );
+    return (parsePosition(row?.lsn) ?? 0n) >= written;
+  });
+  await standby.execute(raw('select pg_wal_replay_pause()'));
+  // `pg_wal_replay_pause()` only REQUESTS the pause; a record replayed after it returns would
+  // land the very row this test needs the standby not to have.
+  await untilStandby('pause replay', async () => {
+    const row = await standby.one<{ state: string }>(
+      sql`select pg_get_wal_replay_pause_state()::text as state`,
+    );
+    return row?.state === 'paused';
+  });
+}
 
 describe.skipIf(!hasStandby)('live · standby · write, redirect, read with replay paused', () => {
   let primary: PostgresClient;
@@ -81,7 +118,9 @@ describe.skipIf(!hasStandby)('live · standby · write, redirect, read with repl
       config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     });
 
-    await standby.execute(raw('select pg_wal_replay_pause()'));
+    // The CREATE TABLE must be on the standby before it pauses: paused short of it, the
+    // non-vacuity read below is X_DB_SCHEMA_STALE, not an empty answer.
+    await pauseAfterCatchingUp(primary, standby);
     const wrote = await server.fetch(
       new Request(`${ORIGIN}/rows`, { method: 'POST', headers: { origin: ORIGIN } }),
     );
@@ -99,5 +138,5 @@ describe.skipIf(!hasStandby)('live · standby · write, redirect, read with repl
     const read = await server.fetch(new Request(`${ORIGIN}/rows/latest`, { headers: { cookie } }));
     expect(await read.json()).toEqual([{ id }]);
     expect(client.stats.replica).toBe(0);
-  });
+  }, 15_000);
 });

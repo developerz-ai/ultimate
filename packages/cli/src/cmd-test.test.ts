@@ -446,3 +446,29 @@ describe('unit · x test --affected', () => {
     expect(testCommand.spec.usage).toContain('--affected');
   });
 });
+
+describe('unit · x test --seed', () => {
+  // The seed is an input to the run like the filter: a failed run's fix that drops it reruns the
+  // default seeds and passes over the one `X_JOB_SIM_INVARIANT` printed.
+  test('a failed seeded run prints a fix that replays the seed', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-seed-'));
+    try {
+      await Bun.write(join(root, 'a.job.test.ts'), 'export {};\n');
+      const failing: Runner = async (command) => ({
+        command,
+        code: 1,
+        ok: false,
+        stdout: '',
+        stderr: '',
+        durationMs: 7,
+      });
+      const result = await testCommand.run(
+        context(['test', 'job', '--seed', '7', '--workers', '1'], root, failing),
+      );
+      const fixes = (result.steps ?? []).flatMap((step) => step.findings.map((one) => one.fix));
+      expect(fixes).toEqual(['x test job --workers 1 --seed 7']);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

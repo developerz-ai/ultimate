@@ -81,6 +81,11 @@ export interface AdminEntity {
    * renders it as an input — the acting actor's tenant is the only value it may hold.
    */
   readonly $tenantColumn?: string | null;
+  /**
+   * `entity({ view })`'s query, `null` on a table. Optional in this surface only because a
+   * hand-built fixture has none; a view offers reads alone (`resource-operations.ts`).
+   */
+  readonly $viewQuery?: { readonly materialized: boolean } | null;
   /** Resolves foreign-key targets. See `entity-columns.ts` for what the admin takes from it. */
   $describe(): AdminEntityDescription;
 }

@@ -247,9 +247,32 @@ describe('unit · the generatable list is the generators own output', () => {
     indexes: [index('tags_label_idx', ['label'], { where: 'label is not null' })],
   };
 
+  // Both view kinds, so the corpus carries `create view`, `create materialized view` and — in
+  // `down` — both drops. Without them every view form below holds VACUOUSLY, which is how
+  // `x db gen` came to write a migration its own rail reported (`generate-view.ts`, 2026-11).
+  const plainView: EntityDescriptionLike = {
+    name: 'LiveTag',
+    table: 'live_tags',
+    primaryKey: [],
+    columns: [column('label')],
+    indexes: [],
+    view: { sql: 'select label from tags' },
+  };
+  const totals: EntityDescriptionLike = {
+    name: 'TagTotal',
+    table: 'tag_totals',
+    primaryKey: [],
+    columns: [column('label'), column('total', { kind: 'integer' })],
+    indexes: [index('tag_totals_label_key', ['label'], { unique: true })],
+    view: {
+      sql: 'select label, count(*)::integer as total from tags group by label',
+      materialized: true,
+    },
+  };
+
   const corpus = (): readonly string[] => {
     const migration = generateMigration({
-      entities: [posts, fresh],
+      entities: [posts, fresh, plainView, totals],
       current: before,
       name: 'every form',
       now: new Date('2026-01-01T00:00:00.000Z'),
@@ -282,6 +305,34 @@ describe('unit · the generatable list is the generators own output', () => {
       (form) => !statements.some((statement) => form.pattern.test(statement)),
     ).map((form) => form.name);
     expect(unhit).toEqual([]);
+  });
+});
+
+describe('unit · a view x db gen wrote', () => {
+  // Verbatim from `examples/dummy/packages/db/migrations/20261106140629_…`: `generate-view.ts`
+  // wrote every line, and the rail asked a `-- ungeneratable: 1` header for the first one.
+  test('create/drop of a view and a materialized view owe no header', () => {
+    const up = [
+      'create materialized view "post_like_totals" as select org_id, post_id, count(*)::integer as likes from likes group by org_id, post_id;',
+      'create index "post_like_totals_org_id_idx" on "post_like_totals" ("org_id");',
+      'create unique index "post_like_totals_post_id_key" on "post_like_totals" ("post_id");',
+      'create view "live_posts" as select id from posts;',
+      'drop materialized view if exists "post_like_totals";',
+      'drop view if exists "live_posts";',
+    ].join('\n');
+    expect(ungeneratableStatements(up)).toEqual([]);
+  });
+
+  test('a hand-written refresh or `or replace` view is still counted', () => {
+    // The generator emits neither: a rebuild is drop + create, and a refresh is a job's work.
+    const up = [
+      'refresh materialized view "post_like_totals";',
+      'create or replace view "live_posts" as select id from posts;',
+    ].join('\n');
+    expect(ungeneratableStatements(up)).toEqual([
+      'refresh materialized view "post_like_totals"',
+      'create or replace view "live_posts" as select id from posts',
+    ]);
   });
 });
 

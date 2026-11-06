@@ -15,6 +15,7 @@ import { appendOnlyBackfillRefused, appendOnlyPlan } from './generate-append-onl
 import { type RowSecurityOption, rowSecurityInput } from './generate-row-security';
 import { snapshotOf } from './generate-snapshot';
 import { assembleSteps } from './generate-steps';
+import { splitViews, viewPlan } from './generate-view';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
 import { createIndex, impliedByColumnClause } from './index-ddl';
@@ -288,7 +289,9 @@ export function slugify(name: string): string {
 export function generateMigration(given: GenerateOptions): GeneratedMigration {
   // One list for every arm below: a target's same-tenant index is declared by whoever points at it,
   // and neither `createTable`, `diffTable` nor a snapshot may hold a different answer.
-  const options = { ...given, entities: withSameTenantIndexes(given.entities, given.current) };
+  // Views leave here, before any table arm: none of them is a table (`generate-view.ts`).
+  const { tables, views } = splitViews(given.entities);
+  const options = { ...given, entities: withSameTenantIndexes(tables, given.current) };
   const current = options.current ?? { tables: [] };
   const plan: Plan = { up: [], down: [] };
   // Applied AFTER `plan`, outside its transaction, in a step of its own (`concurrent-plan.ts`).
@@ -429,18 +432,21 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
   // `current`, not the entities alone: an `assert` whose CHECK a previous migration recorded is a
   // loss only because THIS plan drops it, and the recorded schema is the only thing that knows.
   const unrendered = unrenderedOf(options.entities, current);
+  // Dropped ahead of every table statement and created after the last one: a view compiled against
+  // a column this migration retypes or drops is `0A000`/`2BP01` otherwise.
+  const viewed = viewPlan(views, current, [...preAlters.up, ...plan.up]);
   return assembleSteps({
     id,
     name: options.name,
-    up: [...preAlters.up, ...plan.up],
+    up: [...viewed.before.up, ...preAlters.up, ...plan.up, ...viewed.after.up],
     // Reverse order: the last thing created is the first thing dropped. `preAlters` goes in at the
     // FRONT here precisely so reversal puts it last — a key is added back only once both of its
     // ends have been retyped back, which is every other statement in the script.
-    down: [...preAlters.down, ...plan.down].reverse(),
+    down: [...viewed.before.down, ...preAlters.down, ...plan.down, ...viewed.after.down].reverse(),
     concurrent,
     snapshot: recordRetired(
       snapshotOf(
-        options.entities,
+        [...options.entities, ...views],
         replicaIdentityFullAfter(replicaIdentity),
         rowSecurityAfter(rowSecurity),
       ),

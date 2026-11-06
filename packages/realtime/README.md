@@ -521,6 +521,16 @@ engine (one per origin, in the `SharedWorker`) keeps none of it across pages: a 
 the node is down dials at once on a fresh curve, and the last page leaving forgets the target, so
 the next build's page never dials with the old build id.
 
+### A live read joins its caller's trace
+
+`As of 2026-11`. A `subscribe` frame may carry `traceparent` (additive, no protocol bump), from
+`LiveClient({ traceparent: () => … })`, asked per frame. The node keeps the newest subscriber's on
+the window: the snapshot a subscribe causes runs in `live.snapshot <query>`, a child of it; a
+re-read a change forces runs in `live.rerun <query>`, linked to it and parented on the change
+(`@ultimat3/query`'s `traceLiveRead`). A non-string or oversized value is dropped at decode and an
+unparsable one ignored — telemetry never fails a subscribe. The page socket sends none: a browser
+holds no ambient trace.
+
 ### Liveness: `heartbeatMs`
 
 A half-open socket — the TCP connection is dead and no `close` ever fires — is invisible to the

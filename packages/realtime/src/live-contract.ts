@@ -10,6 +10,7 @@
 // decision and every window lookup keyed differently.
 
 import type { Actor } from '@ultimat3/core';
+import type { LiveReadPhase } from '@ultimat3/query';
 import type { LiveCursor } from './cursor';
 import type { JsonValue, Row } from './json';
 import type { IncrementalMatcher } from './matcher-bridge';
@@ -18,6 +19,19 @@ import type { SyncSocket } from './socket';
 export interface SnapshotResult<R extends Row = Row> {
   readonly rows: readonly R[];
   readonly lsn: string;
+}
+
+/**
+ * One shared read's arguments. `traceparent` is the value a subscriber put on its `subscribe`
+ * frame — raw, so an invalid one is ignored where it is parsed (`@ultimat3/query`'s
+ * `traceLiveRead`), never refused. `phase` says why the read runs: a subscribe asked for it, or a
+ * change made the window re-read. Both optional: a definition that traces nothing ignores them.
+ */
+export interface SnapshotArgs {
+  readonly input: JsonValue;
+  readonly tenant: string | null;
+  readonly traceparent?: string | null | undefined;
+  readonly phase?: LiveReadPhase | undefined;
 }
 
 export interface LiveQueryDefinition<R extends Row = Row> {
@@ -31,7 +45,7 @@ export interface LiveQueryDefinition<R extends Row = Row> {
    * FOR `tenant`: the org of the subscribers this window serves, `null` for subscribers that carry
    * none. A window is keyed by it (`live-tenant.ts`), so one read is never two orgs' rows.
    */
-  snapshot(args: { input: JsonValue; tenant: string | null }): Promise<SnapshotResult<R>>;
+  snapshot(args: SnapshotArgs): Promise<SnapshotResult<R>>;
   /** Subscribe-time gate. Throws to deny — the same `policy` used by HTTP, jobs, and MCP. */
   authorize?(args: { actor: Actor | null; input: JsonValue }): void | Promise<void>;
   /**

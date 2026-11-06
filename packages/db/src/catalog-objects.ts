@@ -34,6 +34,8 @@ export interface ViewRow {
   readonly kind: string;
   readonly options: string | null;
   readonly definition: string;
+  /** The output columns, in order — what a view entity's `columns` must name (`X_ENTITY_VIEW_DRIFT`). */
+  readonly columns: readonly string[];
 }
 
 export interface FunctionRow {
@@ -102,7 +104,12 @@ export const viewRows = (client: DbClient, schema: string): Promise<readonly Vie
       c.relname as name,
       c.relkind as kind,
       array_to_string(c.reloptions, ', ') as options,
-      pg_get_viewdef(c.oid) as definition
+      pg_get_viewdef(c.oid) as definition,
+      array(
+        select a.attname::text from pg_attribute a
+        where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+        order by a.attnum
+      ) as columns
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = ${schema}

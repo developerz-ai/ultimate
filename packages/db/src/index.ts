@@ -120,6 +120,7 @@ export type {
   IntrospectOptions,
   SchemaDescription,
   TableDescription,
+  ViewDescription,
 } from './introspect';
 export { buildSchema, findTable, introspectSchema } from './introspect';
 export {
@@ -129,6 +130,8 @@ export {
   uniqueColumns,
 } from './invariant-ddl';
 export { constraintExpressionUnsafe, constraintNameUnsafe } from './invariant-errors';
+export type { Keyset, KeysetKey, KeysetKind, KeysetOptions, KeysetRow } from './keyset';
+export { keyset } from './keyset';
 export type { DbSubscription, ListeningClient } from './listen';
 export { canListen } from './listen';
 export type { LocalSettings } from './local-settings';

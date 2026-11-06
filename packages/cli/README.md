@@ -22,6 +22,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x build --target prebuilt` | the store a container boots from: island chunks, compiled stylesheets | a `RUN` line in the image build, never run by hand |
 | `x verify` | **the gate** | 21 named steps, each with pass/fail + duration; `budgets` runs `x build --target static` first when its stats are missing or older than the source |
 | `x exercise [<name>] [--seed n]` | every action, query and job run once on generated rows, no test written | a scratch database; `.x/exercise.json`; an `unreached` primitive is `X_CONTRACT_EXERCISE_UNREACHED` with the override to paste into `apps/web/exercise.ts` — the gate's `exercise` step |
+| `x drill [<name>] [--list] [--budget-ms n]` | the app's roles as real processes on real services, each fault played through a proxy or a signal, judged on framework contracts only | a scratch database per drill; load = anonymous site pages plus every action an anonymous POST reaches (`data.skippedWrites` names the rest and why); `X_DRILL_FAILED` per property that did not hold, `X_DRILL_SERVICE_MISSING` before anything starts. Not a gate step — CI's `fault-drills` job runs three on `examples/dummy` |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
 | `x mcp serve` | `@ultimat3/mcp`'s 18 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
@@ -197,6 +198,7 @@ that name where there is one (`x new` writes all twenty), the blank template oth
 | `island-routes.ts` | the one route those chunks are served from, in dev and in the container |
 | `retained-assets.ts` / `-sweep.ts` / `-read.ts` / `-layout.ts` / `-boot.ts` | `assets.retain`: the web boot publishes this build's hashed files to `x-build-assets/<app>/<environment>/` on a shared disk before `/readyz` (30 s deadline), sweeps to the newest `builds` without touching a concurrent publish, and `withRetainedAssets(routes, reader)` answers an asset route's 404 for any URL a retained manifest names — an open tab keeps its stylesheet and islands across a deploy |
 | `client-errors-script.ts` / `client-errors-routes.ts` | `clientErrors.enabled`: `/x-client-errors.js` on every `app/` document (`DocumentOptions.appHead`, never `site/`), and `POST /_client-errors` — same-origin proven, 32 KiB, closed shape, the app's rate-limit store, an island id grouped on only when this build serves it — into `reportError(…, { source: 'browser' })` as `X_CLIENT_ERROR`. Both boots mount it beside `/_storage`; a static export warns ([Observability](../../wiki/Observability.md#browser-failures)) |
+| `client-vitals-script.ts` / `client-vitals-route.ts` / `prerender-vitals.ts` | `clientErrors.vitals`: `/x-client-vitals.js` on documents of each listed surface (`app` by default; `DocumentOptions.appHead` / `siteHead`, composed with the error script by `clientScriptHeads`), and `POST /_client-vitals` — same origin, 4 KiB, 60 a minute per address, every outcome `204` — into `web_vital_seconds{route, metric}` / `web_vital_cls{route}` by route PATTERN. Both boots mount it; the build charges it to each listed route's `budget.js` as served ([Observability](../../wiki/Observability.md#real-user-timings)) |
 | `mcp-host.ts` | the shell-side half of `@ultimat3/mcp`'s dev server — db, tests, logs, verify |
 | `verify-step.ts` | the step shape, the step names, the host-check hook |
 | `verify-tests.ts` | one `bun test` invocation per test type |
@@ -223,9 +225,15 @@ apps/admin/app/admin/pages/<name>.tsx            # x g admin:page <name> --permi
 guards/<name>.ts                                 # x g guard <name>
 apps/web/app/auth/{sign-in,actions,…}            # x g sign-in --password | --oidc <provider>
 apps/web/runtime.ts                              #   …and the boot guard it calls
+docker/helm/templates/{servicemonitor,alert-rules}.yaml   # x g chart-alerts [--print]
 ```
 
 Every emitted source has a `<file>.test.ts` beside it that passes on the first run.
+
+`x g chart-alerts` takes no `<name>` either — `docker/helm/Chart.yaml` names the chart — and writes
+only the monitoring templates and `values.yaml` blocks an older app chart lacks
+(`generate-chart-alerts.ts`); `x doctor` lists them (`doctor-chart-alerts.ts`). `--print` is the
+same rule table as plain Prometheus rule groups, for a loader outside Kubernetes.
 
 `x g sign-in` takes no `<name>` — an app has one sign-in — and exactly one of `--password` or
 `--oidc <provider>` (`generate-sign-in-mode.ts`). It writes through `writeFiles` like every

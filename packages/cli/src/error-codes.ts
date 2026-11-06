@@ -261,6 +261,8 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_DEV_STOP_DENIED',
   'X_ASSET_RETAIN_FAILED',
   'X_APP_MODULE_LOAD_FAILED',
+  'X_CHART_MISSING',
+  'X_ENTITY_VIEW_DRIFT',
 ] as const;
 
 /**
@@ -284,9 +286,8 @@ export const CLI_BORROWED_ERROR_CODES = [
   // nearest declared name all come from `permissionUnknown`. A CLI-owned twin would be a second
   // wording for the condition `can()` already refuses at run time, and the two would drift.
   'X_PERMISSION_UNKNOWN',
-  // `@ultimat3/db`'s, reported by `x doctor`'s database probe with that package's own two-branch
-  // fix. The CLI is the half that asks BEFORE a pool is opened; the condition and the remedy are
-  // both db's, and a CLI twin would be one unreachable database with two names.
+  // `@ultimat3/db`'s, reported by `x doctor`'s database probe with db's own fix: the CLI only asks
+  // before a pool opens, and a CLI twin would be one unreachable database with two names.
   'X_DB_UNAVAILABLE',
   'X_CONFIG_INVALID',
   'X_ENV_MISSING',
@@ -479,6 +480,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ASSET_RETAIN_FAILED: 'Build assets were not retained',
   X_APP_MODULE_LOAD_FAILED:
     'an app module failed to load, so the role refused to serve a partial app',
+  X_CHART_MISSING: 'x g chart-alerts found no Helm chart to write into',
+  X_ENTITY_VIEW_DRIFT: "a view entity's columns disagree with the view its migration created",
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

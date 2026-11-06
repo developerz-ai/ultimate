@@ -140,6 +140,8 @@ export interface ReproduceOptions {
   readonly passthrough?: readonly string[];
   /** The run was isolated per file; the rerun must be too. */
   readonly isolate?: boolean;
+  /** The `simulateJobs` seed the run replayed: without it the rerun draws the default seeds. */
+  readonly seed?: number;
 }
 
 /**
@@ -162,6 +164,7 @@ export function reproduceFor(options: ReproduceOptions): string {
     '--workers',
     String(options.workers),
     ...(options.isolate === true ? ['--isolate'] : []),
+    ...(options.seed === undefined ? [] : ['--seed', String(options.seed)]),
     // Last, and after a `--` of its own, because that is where the caller typed it and where the
     // parser will find it again. Quoted for `shell-quote.ts`'s reason: a reproduce line is pasted.
     ...(options.passthrough === undefined || options.passthrough.length === 0
@@ -195,6 +198,8 @@ export interface RunShardsOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** A fresh global per file (`x.verify.json` `"isolate": true`, or `--isolate`). Default off. */
   readonly isolate?: boolean;
+  /** `--seed`: handed to the children by the caller's runner, printed back in the reproduce. */
+  readonly seed?: number;
   /** The machine-pool lease (`test-slots.ts`), for a default-width run. */
   readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
 }
@@ -221,6 +226,7 @@ const planOf = (
   ...(options.sample === undefined ? {} : { sample: options.sample.kept }),
   ...(options.affected === undefined ? {} : { affected: options.affected }),
   ...(options.isolate === true ? { isolate: true } : {}),
+  ...(options.seed === undefined ? {} : { seed: options.seed }),
   ...(options.passthrough === undefined || options.passthrough.length === 0
     ? {}
     : { passthrough: options.passthrough }),

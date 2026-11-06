@@ -14,6 +14,7 @@ import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { loadAppConfig } from './app-config-load';
 import { mountAppMcp } from './app-mcp';
 import { clientErrorsSurface } from './client-errors-routes';
+import { clientScriptHeads, clientVitalsSurface } from './client-vitals-route';
 import type { DevDashboardInput } from './dev-dashboard';
 import { devDashboardRoutes } from './dev-dashboard';
 import { errorPageStyleBodies } from './error-page-csp';
@@ -141,10 +142,10 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   // `serve-boot.ts`'s answer: the app's declared disks when it has any, read per request.
   const served = servedStorage(input.storage);
   // `clientErrors.enabled` or nothing: off, the route is a 404 and no document names the script.
-  const clientErrors = clientErrorsSurface(
-    (await loadAppConfig(input.root))?.clientErrors,
-    input.buildId,
-  );
+  const reporting = (await loadAppConfig(input.root))?.clientErrors;
+  const clientErrors = clientErrorsSurface(reporting, input.buildId);
+  // Real-user timings: their own switch (`clientErrors.vitals.enabled`), the same door.
+  const vitals = clientVitalsSurface(reporting?.vitals);
   const routes: readonly Route[] = [
     ...devDashboardRoutes(input.dashboard),
     // The same API table the container serves: a read that answers here and 404s in production
@@ -164,6 +165,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     }),
     ...storageRoutes({ storage: served }),
     ...(clientErrors?.routes ?? []),
+    ...(vitals?.routes ?? []),
     // The chunks the documents below name. Mounted before the app's routes for the reason
     // `/icons` and `/media` are: a page route must not be able to shadow an asset URL.
     ...islandRoutes(() => input.islands()),
@@ -213,7 +215,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       ...(pwa === undefined
         ? {}
         : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
-      ...(clientErrors === undefined ? {} : { appHead: clientErrors.head }),
+      ...clientScriptHeads(clientErrors, vitals),
     }),
   ];
 

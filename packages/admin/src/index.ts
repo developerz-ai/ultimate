@@ -170,6 +170,9 @@ export {
   adminColumnsOf,
   adminSealedColumnsOf,
 } from './entity-columns';
+// The screens only. The sink and its stores are `@ultimat3/admin/error-groups`'s alone: every role
+// installs the sink, and this barrel would carry every admin screen into a worker's graph.
+export { ERRORS_READ, type ErrorGroupsPagesOptions, errorGroupsPages } from './error-groups-pages';
 // The /_x dashboard is NOT re-exported here — it has its own door, `@ultimat3/admin/dev`, so a
 // host that only mounts the dev panels never loads a production admin component.
 export {
@@ -387,6 +390,7 @@ export {
   type AdminScopeWhere,
   LOOKUP_SEGMENT,
 } from './resource-list';
+export { AdminViewWriteError, VIEW_OPERATIONS } from './resource-operations';
 export {
   type AdminRouteConfig,
   type AdminRouteMatch,

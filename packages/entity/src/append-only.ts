@@ -6,11 +6,14 @@
 import { appendOnlyColumnRefused, appendOnlyRefused } from './append-only-errors';
 import type { Repo, UpsertArgs } from './repo';
 import type { AnyColumn } from './types';
+import { readOnlyRepo } from './view-repo';
 
 /** The two members the seam reads — so a driver written outside this package can pass its entity. */
 export interface AppendOnlySource {
   readonly $name: string;
   readonly $appendOnly: boolean;
+  /** `entity({ view })`: every write refused. Optional so a hand-built source still passes. */
+  readonly $viewQuery?: unknown;
 }
 
 /**
@@ -55,6 +58,10 @@ export const assertAppendOnlyColumns = (
  * rewrite is not append-only. Changing existing rows is lifting the flag, in a migration.
  */
 export const appendOnlyRepo = <Row, R extends Repo<Row>>(entity: AppendOnlySource, repo: R): R => {
+  // A view is the stricter rule and the same seam: nothing written, not even an append.
+  if (entity.$viewQuery !== undefined && entity.$viewQuery !== null) {
+    return readOnlyRepo<Row, R>(entity.$name, repo);
+  }
   if (!entity.$appendOnly) return repo;
   const name = entity.$name;
   const refusing: Pick<

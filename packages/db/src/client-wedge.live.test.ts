@@ -145,7 +145,7 @@ describe.skipIf(!hasPostgres)('live · a pool whose path died recovers without a
     await running;
   }, 20_000);
 
-  test('transactions hung on every slot: the next refused acquire replaces the pool', async () => {
+  test('transactions hung on every slot: their own bound replaces the pool', async () => {
     const proxy = blackholeProxy(new URL(url ?? ''));
     proxies.push(proxy);
     const client = postgresClient({
@@ -160,7 +160,7 @@ describe.skipIf(!hasPostgres)('live · a pool whose path died recovers without a
 
     const started = performance.now();
     let rows: readonly { ok: number }[] = [];
-    // Each refusal before the bound is the pool being busy; the first after it finds it dead.
+    // Each refusal before the bound is the pool being busy; past it the pins' own misses retired it.
     while (rows.length === 0 && performance.now() - started < statementTimeoutMs + 7_000) {
       rows = await client.query<{ ok: number }>(sql`select 4 as ok`).catch((error: unknown) => {
         expect((error as DbError).code).toBe('X_DB_POOL_EXHAUSTED');

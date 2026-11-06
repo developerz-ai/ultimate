@@ -65,7 +65,7 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 - **`matching` is "all matching" as ONE call** (`batch-matching.ts`): the list's `where`, gated by the batch's grant, confirmed as `<entity>:all matching`, audited once (`admin.batch.matching`). A checked selection never reaches it.
 - **An action on a row the actor cannot see is refused, `when` or none** (`actionApplies`: a `null` row is no row).
 - **An action's input field is labelled `admin.input.<action>.<field>`** — never under `admin.action.<action>`, which is a leaf: a JSON catalog cannot hold both.
-- **`x_admin_audit`'s DDL is the leaf `audit-schema.ts`** (`@ultimat3/admin/schema`): the boot applies it in every role; `serve-graph.test.ts` exempts exactly that file.
+- **`./schema` (`audit-schema.ts` + `error-groups-schema.ts`) is the DDL leaf**, exempt in `serve-graph.test.ts`. **`./error-groups`**: sink + stores, no screen, off the barrel.
 - Money via `assertMoney`, timestamps via `assertZone`, pagination via `pagination.ts`. No `offset`, ever.
 - **One cursor codec.** `pagination.ts` is the only file calling core's `encodeCursor`/`decodeCursor`; it wraps them as `encodeAdminCursor`/`decodeAdminCursor`, scoped `admin:<resource>`. An invalid cursor is page one here, not an error page — but the signature is checked first, so a forged one cannot seek.
 - Labels are i18n keys derived in `resource.ts` (`admin.<entity>.field.<name>`); only `.tsx` calls `t()`. An action's is `actionLabelKey` (`action-label.ts`), never respelled. `AdminApp.catalogKeys()` (`catalog-keys.ts`) is every derived key — the CLI's `i18n` step audits exactly that list. MCP tool descriptions are literal English (protocol payload, not UI copy).

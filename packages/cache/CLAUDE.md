@@ -128,6 +128,11 @@ Tier 1. Tagged caching + THE invalidation graph.
   Every claim about what a script DOES belongs in `redis.live.test.ts`.
 - **The Redis namespace carries the build id by default** (`namespaceFor`, `appVersion()`);
   `buildId: null` opts out. Changing the layout is a cold cache.
+- **Redis down is a slow miss, never a hang** (`redis-deadline.ts`). Every value-path command gets
+  `commandTimeoutMs` (150 ms); one miss parks the value path `REDIS_PARK_MS` (5 s) — commands refuse
+  unsent, one clock read, no state machine. A bust NEVER parks and gets 1,000 ms: a skipped bust is
+  stale rows until TTL. A miss or a park is `X_CACHE_DRIVER_UNAVAILABLE`, which `bestEffort` records.
+  The client is core's `redisClient()` (no offline queue, endless reconnect); never `Bun.redis`.
 - **Cross-instance invalidation is a SEAM, never a transport.** `registerInvalidationBroadcast` /
   `receiveInvalidationBroadcast`; `cli` owns the bus. The inbound half cannot re-emit (only it passes
   `emit: false`). An undeclared inbound tag goes to `report.errors`, never a throw.
@@ -175,7 +180,8 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `value-codec.ts` | the one value encoding every tier stores and decodes |
-| `redis.ts` | `Bun.redis` tier, build-namespaced keys, hash-tagged buckets, one script call per tag |
+| `redis.ts` | the shared tier over core's `redisClient()` (`@ultimat3/core/redis`, never `Bun.redis`), build-namespaced keys, hash-tagged buckets, one script call per tag |
+| `redis-deadline.ts` | `withinDeadline`: a per-command deadline (150 ms, `commandTimeoutMs`), a 5 s park of the value path after one is missed, and the bust view that skips the park on its own 1,000 ms |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, `surrogateKeys`, the purge key list, the `PurgeDriver` seam |
 | `purge-http.ts` | the HTTP half both remote drivers share: one POST, batching, key guard, and core's retryable table re-exported |
 | `purge-fastly.ts` | `fastlyPurgeDriver`: surrogate-key batch purge, `purge_all` |

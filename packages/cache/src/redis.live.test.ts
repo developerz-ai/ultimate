@@ -9,10 +9,12 @@
 //   TEST_REDIS_URL=redis://localhost:6379 bun test packages/cache/src/redis.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { redisClient } from '@ultimat3/core/redis';
 import { lruTier } from './lru';
 import type { RedisLike } from './redis';
 import { REDIS_INVALIDATE_SCRIPT, redisTier } from './redis';
 import { tag } from './tags';
+import { isolateTierFailures, recentTierFailures } from './tier-failures';
 import type { CacheTier } from './tiers';
 import { cacheStack } from './tiers';
 
@@ -262,6 +264,48 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
         const pttl = await count(client, 'PTTL', key);
         expect(pttl).toBeGreaterThan(0);
         expect(pttl).toBeLessThanOrEqual(120_000);
+      }
+    });
+  });
+
+  describe('a lost connection is a fast miss, then the tier answers again on its own', () => {
+    /** Ask until `ready()` holds, or fail after `limitMs` of the server's and Bun's own time. */
+    const until = async (ready: () => Promise<boolean> | boolean, limitMs: number) => {
+      const started = performance.now();
+      while (!(await ready())) {
+        if (performance.now() - started > limitMs) expect.unreachable(`not ready in ${limitMs} ms`);
+        // real-clock: Bun's reconnect loop and the server's socket close run on their own timers.
+        await Bun.sleep(10);
+      }
+    };
+
+    test('CLIENT KILL: the read is its load inside 50 ms, recorded, and the next one hits', async () => {
+      const restoreFailures = isolateTierFailures();
+      // core's client, the one the tier takes when none is handed in, on a path of its own.
+      const client = redisClient(`${url ?? ''}/1`);
+      try {
+        const tier = tierOn(client);
+        await until(() => client.connected, 2_000);
+        await tier.set('outage-feed', 'cached', { ttlMs: 60_000 });
+        const id = String(await reply(client, 'CLIENT', ['ID']));
+        expect(Number(await reply(raw(), 'CLIENT', ['KILL', 'ID', id]))).toBe(1);
+        await until(() => !client.connected, 2_000);
+
+        const stack = cacheStack([tier]);
+        const started = performance.now();
+        expect(await stack.read('outage-feed', () => Promise.resolve('loaded'))).toBe('loaded');
+        expect(performance.now() - started).toBeLessThan(50);
+        expect(recentTierFailures()[0]?.message).toContain('offline queue is disabled');
+
+        await until(
+          async () =>
+            (await stack.read('outage-feed', () => Promise.resolve('loaded'))) === 'cached',
+          5_000,
+        );
+        await tier.del('outage-feed');
+      } finally {
+        client.close();
+        restoreFailures();
       }
     });
   });

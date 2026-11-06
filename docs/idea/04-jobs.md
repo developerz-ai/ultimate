@@ -56,6 +56,23 @@ export const onboardOrg = job({
 
 Step names must be unique and stable within a job — renaming a step invalidates its stored result. A duplicate name in one `run` throws `X_STEP_DUPLICATE` **at run time**, not at build time: the names are produced by executing `run`, so a static scan cannot see them. `x verify`'s `job` step catches it wherever a job suite exercises the path.
 
+## Proving a job survives a crash
+
+A durable job is only as durable as what its author left outside `step.run`. `@ultimat3/testing` holds the queue, the step store, the clock, the RNG and every effect fixture under one owner, so it can kill a job at every boundary and compare. As of 2026-11:
+
+| Call | What it does | Red when |
+|---|---|---|
+| `crashProof(handle, input)` | one clean run; then one run per boundary it crossed — each step write landing, each settle — with the worker killed there (every later call from it rejects and lands nothing) and the next worker reclaiming after the lease lapses; then the same boundary with the write's answer lost | a killed run makes an effect — a row write, a mail, a call out, an enqueue — a different number of times than the clean run: `X_JOB_CRASH_DIVERGED`, naming the effect and the step it follows |
+| `simulateJobs({ jobs, workers, faults, invariant })` | N workers, one queue, every driver call interleaved by a seeded picker and faulted by it: `kill`, `answer-lost`, `lease-lapse`, `duplicate-claim`, `clock-jump`. Each seed runs twice | the app's invariant fails (`X_JOB_SIM_INVARIANT`, replayed by `x test job --seed <n>`), or one seed traces two ways (`X_JOB_SIM_NONDETERMINISTIC`) |
+
+- **Reads are not effects.** A read outside a step is fine.
+- **A lost answer is at-least-once**, reported as a rerun and never red: the step landed, the caller heard no, and no framework can tell the two apart. Key the external call on `` `${jobId}:<step>` ``.
+- **`step.run(…, { once: true })`** killed after its `started` record ends `X_STEP_OUTCOME_UNKNOWN` with `fn` run at most once — the right answer, never a divergence.
+- **A `compensates: true` job** is also run forced to fail for good, then killed at `unwinding` and each `compensate:*`: every compensator runs once, last in first out, for the forward steps that completed.
+- **Not simulated:** Postgres. `jobDriverConformance` holds the memory driver to its behaviour; real sockets are the fault drills.
+
+`crashProof` is not yet a step of the automatic exercise pass: a test calls it.
+
 ## Idempotency is in the type signature
 
 ```ts

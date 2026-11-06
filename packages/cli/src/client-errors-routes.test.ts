@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Actor, ClientErrorsConfig } from '@ultimat3/core';
 import {
+  CLIENT_ERRORS_DEFAULTS,
   configureErrorReporting,
   errorFingerprint,
   memoryErrorReporter,
@@ -22,7 +23,7 @@ import {
 } from './client-errors-routes';
 import { CLIENT_ERRORS_PATH, CLIENT_ERRORS_SCRIPT_PATH } from './client-errors-script';
 
-const ON: ClientErrorsConfig = { enabled: true, anonymous: false, perMinute: 30 };
+const ON: ClientErrorsConfig = { ...CLIENT_ERRORS_DEFAULTS, enabled: true };
 const ADA: Actor = userActor({ id: 'ada', orgId: 'org-1', roles: ['member'] });
 
 const PAGES: readonly ClientErrorPage[] = [

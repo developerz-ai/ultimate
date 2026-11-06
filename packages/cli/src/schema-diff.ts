@@ -17,6 +17,7 @@ import type {
   TableDescription,
 } from '@ultimat3/db';
 import { indexMethodOf } from '@ultimat3/db';
+import { diffViews } from './schema-diff-views';
 
 /**
  * Which side holds a declaration the other does not, and they are two different repairs.
@@ -25,8 +26,11 @@ import { indexMethodOf } from '@ultimat3/db';
  */
 export type SchemaDirection = 'unmigrated' | 'undeclared';
 
-/** The part of a table a difference is about. Rendered into the cause verbatim. */
-export type SchemaPart = 'table' | 'column' | 'index' | 'foreign key' | 'check';
+/**
+ * The part of a table a difference is about, or a whole view (`table` is then the view's name).
+ * Rendered into the cause verbatim.
+ */
+export type SchemaPart = 'table' | 'view' | 'column' | 'index' | 'foreign key' | 'check';
 
 export interface SchemaDifference {
   readonly direction: SchemaDirection;
@@ -246,7 +250,14 @@ function compareTable(declared: TableDescription, recorded: TableDescription): S
   return out;
 }
 
-const PART_ORDER: readonly SchemaPart[] = ['table', 'column', 'index', 'foreign key', 'check'];
+const PART_ORDER: readonly SchemaPart[] = [
+  'table',
+  'view',
+  'column',
+  'index',
+  'foreign key',
+  'check',
+];
 
 /**
  * Pure and total: the same two snapshots always produce the same ordered report, so a diff of two
@@ -287,6 +298,7 @@ export function diffDeclaredSchema(
       detail: RECORDED_ONLY,
     });
   }
+  out.push(...diffViews(declared.views, recorded.views));
   out.sort((a, b) => {
     if (a.table !== b.table) return a.table < b.table ? -1 : 1;
     if (a.part !== b.part) return PART_ORDER.indexOf(a.part) - PART_ORDER.indexOf(b.part);

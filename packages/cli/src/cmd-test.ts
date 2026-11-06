@@ -5,13 +5,14 @@
 // there, because it is a fact about a git diff and not about a path: what the diff touches is
 // `affected.ts`, and this file only maps that answer onto the paths discovery yields.
 
-import { TEST_TYPES } from '@ultimat3/testing';
+import { JOB_SIM_SEED_ENV, TEST_TYPES } from '@ultimat3/testing';
 import type { AffectedScope } from './affected';
 import { affectedScope, affectedScopeJson, DEFAULT_BASE, inScope } from './affected';
 import { testSpec } from './cmd-test-spec';
 import type { CliCommand, CommandContext } from './command';
 import { ok } from './command';
 import { BadFlagError, NoTestFilesError } from './errors';
+import type { Runner } from './exec';
 import { readIntFlag } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
@@ -55,6 +56,29 @@ const readWorkers = (args: ParsedArgs): number | undefined =>
     max: WORKER_CEILING,
     example: 'x test --workers 1',
   });
+
+/**
+ * `--seed`: the one `simulateJobs` seed to replay, the number an `X_JOB_SIM_INVARIANT` printed. A
+ * seed is a uint32 (`seededRandom` reads `seed >>> 0`), so a larger one would replay another.
+ */
+const readSeed = (args: ParsedArgs): number | undefined =>
+  readIntFlag(args, {
+    name: 'seed',
+    command: 'test',
+    min: 0,
+    max: 2 ** 32 - 1,
+    example: 'x test job --seed 7',
+  });
+
+/**
+ * The runner every `bun test` child is spawned through, with the seed in its environment: the
+ * child's `simulateJobs` reads `ULTIMATE_JOB_SIM_SEED` and runs that seed alone.
+ */
+const seeded = (runner: Runner, seed: number | undefined): Runner =>
+  seed === undefined
+    ? runner
+    : (command, options) =>
+        runner(command, { ...options, env: { ...options.env, [JOB_SIM_SEED_ENV]: String(seed) } });
 
 /**
  * One positional, and it is the type. `x test contract live` used to run `contract` and drop
@@ -130,6 +154,7 @@ export const testCommand: CliCommand = {
     const filter = flagString(ctx.args, 'filter');
     const filters = readFilters(filter);
     const sample = readSample(ctx.args);
+    const seed = readSeed(ctx.args);
     const scope = await readAffectedScope(ctx);
     const discovered = await discoverTests(ctx.cwd, filters, type);
     if (discovered.length === 0) {
@@ -179,11 +204,12 @@ export const testCommand: CliCommand = {
     const workers = Math.max(1, Math.min(requested, ceiling));
     const result = await runShards({
       root: ctx.cwd,
-      runner: ctx.runner,
+      runner: seeded(ctx.runner, seed),
       env: ctx.env,
       files,
       workers,
       ...(isolate ? { isolate } : {}),
+      ...(seed === undefined ? {} : { seed }),
       // A default-width run leases its workers from the machine pool, so a second `x test` or
       // gate on the same box runs narrower instead of doubling its memory.
       ...(plan === undefined ? {} : withLease(machineLease(plan.workers, ctx.env))),

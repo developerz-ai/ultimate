@@ -17,6 +17,7 @@ import type {
 } from './registry';
 import type { SearchVector } from './search';
 import type { AnyColumn, ColumnMeta, IndexDef } from './types';
+import type { ViewQuery } from './view-entity';
 
 export interface DescribeInput<Row> {
   readonly name: string;
@@ -38,6 +39,8 @@ export interface DescribeInput<Row> {
   readonly retired?: readonly string[] | undefined;
   /** `entity({ shared: '<why>' })` — projected only when declared. */
   readonly shared?: string | undefined;
+  /** `entity({ view })` — projected only when declared. */
+  readonly view?: ViewQuery | null | undefined;
 }
 
 /**
@@ -350,5 +353,14 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
     ...((input.retired ?? []).length === 0 ? {} : { retired: input.retired }),
     // Absent unless declared, like `appendOnly`: no entity that never said it moves the hash.
     ...(input.shared === undefined ? {} : { shared: input.shared }),
+    // Absent on every table, so no entity that never said `view` moves the hash.
+    ...(input.view === null || input.view === undefined
+      ? {}
+      : {
+          view: {
+            sql: input.view.sql,
+            ...(input.view.materialized ? { materialized: true as const } : {}),
+          },
+        }),
   };
 };

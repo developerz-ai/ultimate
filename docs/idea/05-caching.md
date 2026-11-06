@@ -8,12 +8,12 @@ Four tiers, one invalidation graph. You declare what a write touches; the framew
 |---|---|---|---|---|
 | 1 | **Request memo** | one request (AsyncLocalStorage) | ~0 | the same `query` called by three components resolves once |
 | 2 | **In-process LRU** | process lifetime, size-bounded | ~microseconds | hot rows, policy lookups, compiled templates; per-instance, so treat as a probabilistic hit |
-| 3 | **shared** (`Bun.redis`) | cross-instance; jittered TTL, leased tag sets, keys namespaced by build | ~1ms | shared query results, rendered fragments, session-adjacent data |
+| 3 | **shared** (core's `redisClient()`) | cross-instance; jittered TTL, leased tag sets, keys namespaced by build; a stalled store is a miss within 150 ms, not a hang | ~1ms | shared query results, rendered fragments, session-adjacent data |
 | 4 | **CDN / HTTP headers** | client + edge | `Cache-Control`, `ETag`, `stale-while-revalidate` | static + ISR pages, images, assets |
 
 Every tier is read in order 1 → 2 → 3 → origin. A tier is never consulted for a request whose `policy` has not already passed.
 
-**Cache keys should carry the actor's tenant and policy scope**, so that a cache hit cannot leak across tenants. `As of 2026-08` they do **not**: `cacheKeyFor` in `packages/query/src/cache.ts` is the query name, a fingerprint of the parsed input, and the read's sorted tag keys. The tenant therefore reaches the key only through the input — which is the shape every scoped read already has (`feed({ orgId })`) — and a `cache:` read whose answer varies by actor for one input is a cross-tenant hit. Tier 1 is keyed by `Ctx` identity and is not affected, and tier 3's build-id namespace separates deploys, not tenants — it is a different problem. Closing this means the key derives the scope itself; until then the rule is the one the wiki states.
+**Cache keys carry the read's authority**, so that a cache hit cannot leak across tenants. `As of 2026-11` `cacheKeyFor` in `packages/query/src/cache.ts` is the query name, the authority, a fingerprint of the parsed input and the read's sorted tag keys. The authority comes from `cache: { scope }` through `readAuthority`: `actor` (the default — the narrowest key, always correct), `tenant` (one key per org; an org-less actor narrows back to itself) or `global`. Widening is a written statement about what the rows are, visible in the declaration. Tier 1 is keyed by `Ctx` identity, and tier 3's build-id namespace separates deploys, not tenants — a different problem.
 
 Tier 2 is optional per entry (`local: false` for large or per-tenant-unbounded values). Tier 3 is required for any entry an ISR page depends on, because regeneration happens on a different instance than the write.
 
@@ -105,12 +105,12 @@ export const publishPost = action({
 |---|---|---|
 | Tier 1 request memo | drop entries carrying the tag | immediate, same request |
 | Tier 2 in-process LRU (**all instances**) | tag-invalidation message on NATS | ~ms, best-effort; a missed message costs a stale read until TTL, never a wrong write |
-| Tier 3 shared | one `EVAL`: `SMEMBERS` the tag set, `DEL` each member, `DEL` the set | immediate, transactional with the outbox |
+| Tier 3 shared | one `EVAL` per tag READS its buckets (it deletes nothing — a member is a key the script was not handed, which Redis Cluster and Dragonfly refuse); the tier `DEL`s each value key client-side, slot-local, then `SREM`s only what it deleted | immediate, inside the fan-out, on its own 1,000 ms deadline |
 | ISR pages | routes whose `revalidate.tags` include the tag are marked stale → regenerated in background | next request serves stale, regen enqueued as a job |
 | CDN | purge by surrogate key — the same tag strings — through the configured `PurgeDriver`: `selectPurgeDriver(env)` picks Fastly or Cloudflare from the credential set, refuses both at once, and is a no-op with neither; any other edge implements the interface | seconds; `stale-while-revalidate` covers the gap |
 | Live queries | the same commit already flows through logical replication ([`03-realtime.md`](./03-realtime.md)) | independent path — realtime does not depend on cache invalidation |
 
-Fanout is enqueued in the **same transaction** as the write (the outbox from [`04-jobs.md`](./04-jobs.md)). A rolled-back write never purges; a committed write always does.
+Fanout runs **after the commit, in the same call** — `bustAfterCommit` awaits `invalidateTags()` directly (`packages/action/src/cache-gate.ts`), never through the outbox, and inside `withTransaction` it waits for the root `COMMIT`. A rolled-back write never purges; a process that dies between the commit and the fan-out leaves those entries until their TTL. A tier that is down lands in the report's `errors` and never fails the write. `As of 2026-11`
 
 ## Why removing the manual decision matters
 
@@ -121,9 +121,9 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Stale page after publish | forgot one `revalidate` call | tags are declared on the route, resolved from the graph |
 | Purging too much | uncertainty → `flushAll` | narrow `tag.post.id(x)` is the ergonomic default |
 | Tier drift | Redis purged, CDN not | one fanout, all tiers |
-| Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated — `As of 2026-08` from the query name, the parsed input and the tags, not yet from actor scope, so the read must take the tenant as input |
+| Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from the query name, the read's authority (`cache: { scope }`, default `actor`), the parsed input and the tags `As of 2026-11` |
 
-This is [wrap, don't reinvent](./00-thesis.md#wrap-dont-reinvent) applied to eviction: the tiers are `Bun.redis` and standard CDN headers, and what the wrapper deletes is the decision about which of them to clear. A wrapper that only renamed `DEL` would have earned nothing.
+This is [wrap, don't reinvent](./00-thesis.md#wrap-dont-reinvent) applied to eviction: the tiers are Bun's own Redis client and standard CDN headers, and what the wrapper deletes is the decision about which of them to clear. A wrapper that only renamed `DEL` would have earned nothing.
 
 Agents are measurably bad at *distant* invariants — the pattern "edit here, remember to also edit there" is where LLM-written code regresses most. Declaring `invalidates` at the write site is local, checkable, and typed: an unknown tag is a compile error. The other half is **not** a gate `As of 2026-08` — a cached query whose tables no tag covers is caught in review, because `X_CACHE_UNTAGGED_QUERY` is reserved and no `.ts` file raises it ([Error codes → Reserved codes](../../wiki/Error-Codes.md#reserved-codes)).
 

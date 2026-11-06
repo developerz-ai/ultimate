@@ -66,8 +66,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `statement-funnel.ts` (`sendOn`/`runOn`), `pool-gate.ts`, `pool-sweep.ts`, `pool-retire.ts`,
   `pool-listeners.ts` and `pool-timer.ts` hold the rest.
 - **`pool-gate.ts` is the one count of `max`** (`takeSlot`/`freeSlot`), per pool: a statement holds a slot until it settles, a pin until `release()`, a statement ON a pin none. A wait past `acquireTimeoutMs` is `X_DB_POOL_EXHAUSTED`; `enter` answers `undefined` on a free slot so a send stays in the caller's turn. `reserveWithin` keeps its timer for `Bun.SQL`'s own queue. `close()` refuses who is queued; a retirement hands them to the next pool, unsent.
-- **`pool-sweep.ts`: an unanswered plain statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`; never a pin); age is ticks that fired, never a clock. Full rule: `docs/history/db.md`.
-- **`pool-pins.ts`: a pin statement is COUNTED by the sweep, never rejected** (`SET LOCAL` may raise its bound); `pinsWedged` on an acquire refusal (every slot a pin, each past the bound) retires the pool. `reserve()` passes `reserveWithin` what the gate left of one budget. **`pool-listeners.ts` holds `client.listen`** and re-dials every session on a retirement, with backoff.
+- **`pool-sweep.ts`: an unanswered statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`), pooled or pinned; age is ticks that fired, never a clock. Full rule: `docs/history/db.md`.
+- **`pool-pins.ts`: a pin is swept against ITS bound** (a `statement_timeout` it set; the role's after `COMMIT`/`ROLLBACK`); after a miss it sends nothing. `reserve()` passes `reserveWithin` what the gate left of one budget. **`pool-listeners.ts` holds `client.listen`** and re-dials every session on a retirement, with backoff.
 - **`pooler.ts` owns the pooler**: `postgresClient({ env })` is the one reader; everything after asks `client.pooler`. Never a detection. `pooler.live.test.ts`. Full rule: `docs/history/db.md`.
 - **`idleInTransactionMs` is sent beside `statement_timeout`.** `25P03` stays `X_DB_STATEMENT_FAILED`, its fix naming the slow await; `08P01` with `unsupported startup parameter` is `X_DB_POOLER_OPTIONS_REFUSED`. `statementBound` reads `pg_settings` (ms), `lostStatementBound` judges: no pooler, any difference; a pooler, only a `0` on a role with a bound. Fix text lives in the leaf `pooler-fix.ts` (no cycle). `client-idle-tx.live.test.ts`.
 - **`libpq-options.ts` merges the framework's `options` into the operator's**: the framework wins
@@ -156,6 +156,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **A foreign key is `alter table … add constraint`** after every table statement (`foreign-key-plan.ts`); a table drop's bucket runs first, children-first (`drop-order.ts`). Full rule: `docs/history/db.md`.
 - **`same-tenant.ts`**: `sameTenant` is `foreignKeysOf`'s composite; `withSameTenantIndexes` opens `generateMigration` and `snapshotOf`, idempotent. `set null (a)` is the rule's spelling everywhere (`introspectSchema()` off `pg_get_constraintdef`, never `confdelsetcols`). `foreign-key-plan.test.ts`. Why: `docs/history/db.md` (2026-11-02).
 - **The deferred step holds keys too** (`concurrent-plan.ts`, phases in `stepStatements`: index builds, `keys`, `validate`, `contractKeys`, `contract`; `down` reversed: restore old key, drop new key, drop index). Full rule: `docs/history/db.md`.
+- **Views**: `generate-view.ts`.
 - **`retired.ts`: a retired column**. Full rule: `docs/history/db.md`.
 - **`entity-shape.ts` holds the `*Like` interfaces** (every later field optional).
 - **`snapshot-json.ts` writes a fixed point of Biome** (an array collapses when it fits at `<= 100`

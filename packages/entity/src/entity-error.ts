@@ -43,6 +43,9 @@ export const ENTITY_ERROR_CODES = [
   'X_LOCK_UNSUPPORTED',
   'X_TEST_DRIVER_CLIENT_CHANGED',
   'X_ENTITY_TENANT_UNDECLARED',
+  'X_ENTITY_SERIES_UNSUPPORTED',
+  'X_ENTITY_SERIES_INVALID',
+  'X_ENTITY_VIEW_READ_ONLY',
 ] as const;
 
 export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
@@ -80,6 +83,9 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_LOCK_UNSUPPORTED: 'a repository has no lock',
   X_TEST_DRIVER_CLIENT_CHANGED: 'The installed client changed inside a testDriver() transaction',
   X_ENTITY_TENANT_UNDECLARED: 'a child of a tenant-owned table has no tenant',
+  X_ENTITY_SERIES_UNSUPPORTED: 'a repository has no series',
+  X_ENTITY_SERIES_INVALID: 'a time series asked for something no bucket can answer',
+  X_ENTITY_VIEW_READ_ONLY: 'a view entity was asked to write a row',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the

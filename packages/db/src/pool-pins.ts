@@ -1,48 +1,68 @@
-// Single responsibility: which statements are in flight on each pin a pool holds, so an acquire
-// refusal can tell a gate full of dead transactions from a busy one. A pin is never swept on its own
-// (`SET LOCAL` may raise its bound); only when EVERY slot is a pin past the bound is the path dead.
+// Single responsibility: the unanswered-statement bound of ONE pinned connection. A pin's statements
+// are swept like any other, against the `statement_timeout` in force on that connection: the role's,
+// until a `set_config('statement_timeout', …)` or `SET [LOCAL] statement_timeout` it answered moves
+// it, and back to the role's at the transaction's end. A miss leaves the pin dead, never reused.
 
-/** One statement on a pin, as the sweep counts it. */
-export interface PinStatement {
-  overdue(): boolean;
-  done(): void;
+import type { SqlFragment } from './sql';
+
+/** What one pin is bound by now. `boundMs` 0 is no bound, as the server reads it. */
+export interface PinBound {
+  boundMs: number;
+  /** A statement on it went unanswered: nothing more is sent on this connection. */
+  dead: boolean;
 }
 
-/** The statements in flight on ONE pin. */
-export type PinRecord = Set<PinStatement>;
-
-/** `sending` counted on `record` until it settles. No sweep (`statementTimeoutMs: 0`): not counted. */
-export function onPin<T>(
-  record: PinRecord,
-  watch: (() => PinStatement) | undefined,
-  sending: () => Promise<T>,
-): Promise<T> {
-  if (watch === undefined) return sending();
-  const statement = watch();
-  record.add(statement);
-  const settle = (): void => {
-    statement.done();
-    record.delete(statement);
-  };
-  return sending().finally(settle);
+export function pinBound(roleBoundMs: number): PinBound {
+  return { boundMs: roleBoundMs, dead: false };
 }
 
-/**
- * True only when the pins alone fill the gate and each has a statement past the bound. An idle pin,
- * a pin still in time, or a slot held by a plain statement (which the sweep judges itself) is a
- * pool that is busy, not gone.
- */
-export function pinsWedged(pins: ReadonlySet<PinRecord>, max: number): boolean {
-  if (pins.size < max) return false;
-  for (const statements of pins) {
-    let overdue = false;
-    for (const statement of statements) {
-      if (statement.overdue()) {
-        overdue = true;
-        break;
-      }
-    }
-    if (!overdue) return false;
+/** The sweep's deadline for the next statement on `pin`; `0` is none to judge. */
+export function pinDeadlineMs(pin: PinBound, extraMs: number): number {
+  return pin.boundMs === 0 ? 0 : pin.boundMs + extraMs;
+}
+
+/** `setLocal`'s text (`local-settings.ts`), the framework's one writer, held by `pool-pins.test.ts`. */
+const SET_CONFIG = 'select set_config($1, $2, true)';
+const SET_TEXT = /^\s*set\s+(?:local\s+|session\s+)?statement_timeout\s*(?:=|to)\s*(.+?)\s*;?\s*$/i;
+const SET_CONFIG_TEXT =
+  /^\s*select\s+set_config\s*\(\s*'statement_timeout'\s*,\s*'([^']*)'\s*,\s*(?:true|false)\s*\)\s*;?\s*$/i;
+const ENDS_TRANSACTION = /^\s*(?:commit|rollback|end|abort)(?:\s+(?:work|transaction))?\s*;?\s*$/i;
+const UNITS: ReadonlyMap<string, number> = new Map([
+  ['us', 0.001],
+  ['ms', 1],
+  ['s', 1_000],
+  ['min', 60_000],
+  ['h', 3_600_000],
+  ['d', 86_400_000],
+]);
+
+/** A `statement_timeout` value in Postgres' own grammar, as ms: a bare number is ms. */
+export function timeoutValueMs(value: unknown): number | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const match = /^\s*'?\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*'?\s*$/i.exec(String(value));
+  if (match === null) return undefined;
+  const scale = UNITS.get((match[2] ?? '').toLowerCase() || 'ms');
+  if (scale === undefined) return undefined;
+  return Math.round(Number(match[1]) * scale);
+}
+
+/** The bound `fragment` sets, or `undefined` when it sets none (or one this cannot read). */
+export function boundSetBy(fragment: SqlFragment): number | undefined {
+  if (fragment.text === SET_CONFIG) {
+    return fragment.values[0] === 'statement_timeout'
+      ? timeoutValueMs(fragment.values[1])
+      : undefined;
   }
-  return true;
+  const text = SET_TEXT.exec(fragment.text) ?? SET_CONFIG_TEXT.exec(fragment.text);
+  return text === null ? undefined : timeoutValueMs(text[1]);
+}
+
+/** After `fragment` ANSWERED on `pin`: a refused statement moved nothing. */
+export function noteAnswered(pin: PinBound, fragment: SqlFragment, roleBoundMs: number): void {
+  if (ENDS_TRANSACTION.test(fragment.text)) {
+    pin.boundMs = roleBoundMs;
+    return;
+  }
+  const set = boundSetBy(fragment);
+  if (set !== undefined) pin.boundMs = set;
 }

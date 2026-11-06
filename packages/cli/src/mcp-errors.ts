@@ -355,6 +355,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ASSET_RETAIN_FAILED: 'x doctor --json',
   X_APP_MODULE_LOAD_FAILED:
     'x manifest --json   # names each module that does not load and why; fix it, then restart the role',
+  X_CHART_MISSING: 'x g chart-alerts --print --json',
+  X_ENTITY_VIEW_DRIFT:
+    "x verify --only drift --json   # the cause names the view entity and both column lists: make columns name exactly the view's output, or change view.sql and x db gen",
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -119,6 +119,11 @@ export interface CatalogView {
   readonly options: string | null;
   /** `pg_get_viewdef` verbatim, trailing `;` and all. */
   readonly definition: string;
+  /**
+   * The output columns, in order. Never rendered — the definition already says them — and read by
+   * the `drift` step against a view entity's declared `columns`. Absent on a hand-built catalog.
+   */
+  readonly columns?: readonly string[] | undefined;
 }
 
 export interface CatalogFunction {

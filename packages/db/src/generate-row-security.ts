@@ -32,7 +32,10 @@ export function rowSecurityInput(
   current: SchemaDescription,
   option: RowSecurityOption = OFF,
 ): RowSecurityPlanInput {
-  const declared = new Map(entities.map((entity) => [entity.table, entity]));
+  // A view carries no policy of its own: Postgres reads its source table's (`generate-view.ts`).
+  const declared = new Map(
+    entities.filter((entity) => entity.view === undefined).map((entity) => [entity.table, entity]),
+  );
   const tenantTables = option.tenants.flatMap((tenant): TenantTable[] => {
     const column = declared.get(tenant.table)?.columns.find((c) => c.column === tenant.column);
     return column === undefined

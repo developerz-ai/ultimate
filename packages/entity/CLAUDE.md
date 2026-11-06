@@ -123,6 +123,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   (`X_AGGREGATE_UNSUPPORTED`), mixed currency or scale (`X_AGGREGATE_MIXED_CURRENCY`, two causes, two fixes), a money total
   past ±2^53. **`approximateCount()` is `reltuples`**; a filtered chain or tenant-scoped entity is
   `X_APPROXIMATE_COUNT_FILTERED`; `null` for an unanalysed table.
+- **`series`, views**: `time-bucket.ts` (zone rules, measured), `view-repo.ts` (read-only); `time-bucket.test.ts`, `view-entity.test.ts`.
 - **`json()` / `arrayOf()` are filterable** (`contains`, `contained-by`, `overlaps`, `has-key`) with
   Postgres' measured meaning in `containment.ts`; `has-key` emits `operator(pg_catalog.?)` (indexable)
   and takes a STRING key, else no rows; a NULL array element equals nothing. No jsonpath operator.

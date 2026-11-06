@@ -282,17 +282,20 @@ describe('a statement nobody answers', () => {
     expect(linesNaming('db.pool.retire_failed')).toBe(1);
   });
 
-  test('a statement on a pin has no deadline: a pin dies with its pool', async () => {
+  test('a statement on a pin has the same deadline, and retires the pool the same way', async () => {
     const pools = installPools();
     const time = manualTime();
     const db = client(1_000, time);
     const pin = await db.reserve();
 
-    void pin.query(sql`select 'pinned'`).catch(() => undefined);
-    time.until(1_000 + UNANSWERED_GRACE_MS + 2 * SWEEP_INTERVAL_MS);
+    const hung = pin.query(sql`select 'pinned'`).catch((error: unknown) => error);
+    time.until(1_000 + UNANSWERED_GRACE_MS);
     await settled();
-
     expect(pools[0]?.closes).toEqual([]);
+    time.step();
+
+    expect(((await hung) as DbError).cause).toContain("select 'pinned'");
+    expect(pools[0]?.closes).toEqual([{ timeout: 1 }]);
     pin.release();
   });
 

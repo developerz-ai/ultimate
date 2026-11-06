@@ -77,6 +77,12 @@ describe('firstRunPlan', () => {
     expect(step?.args).toEqual(['g', 'sign-in', '--password', '--json']);
   });
 
+  // One chart per app, named by its Chart.yaml: a `<name>` is X_CLI_BAD_FLAG, like sign-in's.
+  test('chart-alerts runs with no name', () => {
+    const step = firstRunPlan().find((one) => one.name === 'g chart-alerts');
+    expect(step?.args).toEqual(['g', 'chart-alerts', '--json']);
+  });
+
   // A read never creates its table (`X_FEATURE_REQUIRED`), so each needs a slice to read, and one
   // named before the step that writes it would be the sweep's own red.
   test('a read runs into the resource slice, after the step that writes it', () => {

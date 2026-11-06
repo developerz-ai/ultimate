@@ -36,12 +36,13 @@ const FORBIDDEN = /packages\/testing\/|packages\/cli\/src\/templates\/|\/e2e-|\/
  * What only a process that serves documents evaluates. In the static graph these were 107 modules
  * every worker, scheduler and migrate pod loaded to render nothing (966 static, 2026-10-01).
  */
-// `admin/src/audit-schema.ts`, `mcp/src/confirmation-schema.ts` and `pwa/src/push-schema.ts` are
-// the one admin, mcp and pwa module every role may load: the leaves the boot's `FRAMEWORK_SCHEMA`
-// applies `x_admin_audit`, `x_mcp_confirmations` and `x_push_subscriptions` from, reached as
+// `admin/src/{audit,error-groups}-schema.ts`, `mcp/src/confirmation-schema.ts` and
+// `pwa/src/push-schema.ts` are the admin, mcp and pwa modules every role may load: the leaves the
+// boot's `FRAMEWORK_SCHEMA` applies `x_admin_audit`, `x_error_groups`, `x_mcp_confirmations` and
+// `x_push_subscriptions` from, reached as
 // `@ultimat3/admin/schema`, `@ultimat3/mcp/schema` and `@ultimat3/pwa/schema`.
 const WEB_ONLY =
-  /packages\/pwa\/src\/(?!push-schema\.ts$)|packages\/(?:manifest|ui)\/src\/|packages\/mcp\/src\/(?!confirmation-schema\.ts$)|packages\/admin\/src\/(?!audit-schema\.ts$)|packages\/cli\/src\/(?:serve-web|runtime-render|island-|sw-|pwa-|seo-routes|page-)/;
+  /packages\/pwa\/src\/(?!push-schema\.ts$)|packages\/(?:manifest|ui)\/src\/|packages\/mcp\/src\/(?!confirmation-schema\.ts$)|packages\/admin\/src\/(?!(?:audit|error-groups)-schema\.ts$)|packages\/cli\/src\/(?:serve-web|runtime-render|island-|sw-|pwa-|seo-routes|page-)/;
 
 /**
  * What no role evaluates at boot, whatever the app: reachable only behind an `await import()` at

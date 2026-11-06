@@ -70,14 +70,15 @@ connections at full saturation, from one app. At `max_connections: 450` that is 
 before the shared server is the constraint. **Do the multiplication before you raise an HPA
 ceiling**, not after: an autoscaler that scales `web` to 30 asks for 600 connections on its own.
 
-`max` is also what the client admits, statements and pins alike. What each bound does, `As of 2026-11-02`:
+`max` is also what the client admits, statements and pins alike. What each bound does, `As of 2026-11-06`:
 
 | Bound | Past it | What happens next |
 |---|---|---|
 | `acquireTimeoutMs` (5 s `web`/`sync`, 10 s `worker`/`scheduler`) | no slot free | `X_DB_POOL_EXHAUSTED`, for a plain statement as for a transaction: raise `DATABASE_POOL_MAX` or fix the slow statement |
 | `statement_timeout` (the table above) | the server stops the statement | `X_DB_STATEMENT_TIMEOUT`; the pool is fine |
-| the role's statement timeout + 5 s, plain statements only | no answer at all: the server or the path is gone | `X_DB_UNAVAILABLE`, `db.pool.retired` at error; **the pool is replaced**, the next statement opens a new one and a `LISTEN` is dialled again. Recovery inside the bound + 7 s, no restart. An autocommit write may have landed |
-| `net.ipv4.tcp_retries2`, a node setting | the kernel gives up on a silent socket | about 15 minutes at the default `15`. Lower it (`8` is about 100 s) to bound what no statement watches: a transaction pinned while the gate still has room (pins that fill it, each past the bound, replace the pool on the next refused acquire). A complement, not the fix: a path that still ACKs never reaches it, and nothing checks the setting |
+| the statement timeout in force + 5 s, plain or pinned: the role's, or what `SET LOCAL statement_timeout` / `withStatementTimeout` set on that transaction | no answer at all: the server or the path is gone | `X_DB_UNAVAILABLE`, `db.pool.retired` at error; **the pool is replaced**, the next statement opens a new one and a `LISTEN` is dialled again. A transaction's dead pin sends nothing more, its `ROLLBACK` included. Recovery inside the bound + 7 s, no restart. An autocommit write may have landed |
+| the shared rate-limit store's own deadline, 250 ms (`postgresRateLimitStore({ deadlineMs })`) | one `take` or `peek` unanswered | that decision is taken from the pod's memory, `http.rate_limit.degraded` at warn (code `X_RATE_LIMIT_STORE_TIMEOUT`, once a minute): the limit holds per pod, and the request's budget goes to its own work rather than to the limiter waiting out the bound above. Measured by `x drill pg-blackhole` on `examples/dummy`: slowest request 21.0 s without it, 16.1 s with it |
+| `net.ipv4.tcp_retries2`, a node setting | the kernel gives up on a silent socket | about 15 minutes at the default `15`. Lower it (`8` is about 100 s) to bound what no statement watches: a socket under a bound of `0` — the `migrate` and `replicator` roles, or a transaction that set its own `statement_timeout` to `0`. A complement, not the fix: a path that still ACKs never reaches it, and nothing checks the setting |
 
 ### Read replicas
 

@@ -291,10 +291,15 @@ somebody else's repository is a command that cannot run. \`--image\` sets \`imag
 | Job | release | \`ROLE=migrate\`, a \`pre-install,pre-upgrade\` hook — it runs to completion first |
 | Ingress | release | off by default; routes \`/_x/sync\` to sync and \`/\` to web |
 | HorizontalPodAutoscaler | role, opt-in | rps, websocket connections, queue depth — never CPU |
+| ServiceMonitor | release | scrapes \`/metrics\` on \`metricsPort\`, every serving role |
+| PrometheusRule | release | stalled queue, dead letters, lost leases, dropped frames, 5xx share, target down |
 
-No ServiceMonitor and no PodDisruptionBudget: the first needs a CRD \`helm install\` fails on in a
-cluster with no Prometheus operator, and both are cluster policy rather than this app's topology.
-Every role already answers \`/metrics\` on \`metricsPort\`.
+The last two render only where the cluster serves the Prometheus operator's kinds
+(\`serviceMonitor.enabled\` and \`alerts.enabled\` are \`auto\`), so \`helm install\` still succeeds on a
+cluster without it; \`true\` forces them, \`false\` declines. Each rule's threshold, \`for\` and
+severity are values under \`alerts.rules.<alert>\`. Outside Kubernetes, \`x g chart-alerts --print\`
+prints the same rules for any Prometheus rule loader. No PodDisruptionBudget: that is cluster
+policy rather than this app's topology.
 `;
 
 /** The container files for a new app, in the order a reader meets them. */

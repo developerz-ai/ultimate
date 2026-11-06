@@ -19,6 +19,7 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 interface Service {
   readonly image?: string;
   readonly command?: readonly string[];
+  readonly entrypoint?: readonly string[];
   readonly environment?: Readonly<Record<string, string>>;
   readonly tmpfs?: readonly string[];
   readonly volumes?: readonly string[];
@@ -103,10 +104,7 @@ const BINDS: Readonly<Record<string, readonly string[]>> = {
  * named, everywhere — so it is declared here rather than read as a gap. A row whose URL the env
  * file now writes, or that no suite reads, is refused below: the table only shrinks to the truth.
  */
-const UNSUPPLIED: Readonly<Record<string, string>> = {
-  TEST_STANDBY_URL:
-    'a physical standby of TEST_DATABASE_URL the suite pauses (pg_wal_replay_pause): compose starts none',
-};
+const UNSUPPLIED: Readonly<Record<string, string>> = {};
 
 /** The compose service whose published port a URL dials, or nothing. */
 const serviceAt = (url: URL): string | undefined =>
@@ -162,6 +160,22 @@ describe('unit · test services · in RAM, without durability, silent', () => {
     expect(service('postgres-logical').command).toContain('wal_level=logical');
     expect(service('postgres-tls').command).toContain('wal_level=logical');
     expect(service('postgres-tls').command).toContain('ssl=on');
+  });
+
+  // The standby has no initdb of its own: its postgresql.conf — no fsync, nothing below FATAL — is
+  // the one `pg_basebackup` copies off `postgres`, so it is the same image and a clone of that one.
+  test('the standby is a streaming clone of the suites server, admitted by one replication line', () => {
+    const standby = service('postgres-standby');
+    const script = standby.entrypoint?.join(' ') ?? '';
+    const primary = service('postgres').entrypoint?.join(' ') ?? '';
+
+    expect(standby.image).toBe(service('postgres').image ?? '');
+    expect(standby.tmpfs).toEqual(['/var/lib/postgresql/data']);
+    expect(script).toContain('pg_basebackup -h postgres ');
+    expect(script).toContain(' -R ');
+    // A slot pins WAL on the primary's tmpfs for a standby that may be gone.
+    expect(script).not.toMatch(/ (-C|-S|--slot|--create-slot)\b/);
+    expect(primary).toContain('host replication all samenet scram-sha-256');
   });
 
   // What `pooler.live.test.ts` proves is the STOCK config: a bare URL refused at startup. Naming

@@ -184,6 +184,13 @@ export type {
   ClientErrorsConfig,
   ClientErrorsSection,
   ClientErrorsSectionInput,
+  ClientVitalsConfig,
+  ClientVitalsSurface,
+} from './config-client-errors';
+export {
+  CLIENT_ERRORS_DEFAULTS,
+  CLIENT_VITALS_DEFAULTS,
+  CLIENT_VITALS_SURFACES,
 } from './config-client-errors';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
@@ -505,6 +512,7 @@ export type {
 export {
   alwaysOffSampler,
   alwaysOnSampler,
+  chainErrorReporters,
   collectMetrics,
   configureErrorReporting,
   configureMetrics,
@@ -522,9 +530,11 @@ export {
   ErrorReporterDsnInvalidError,
   errorFingerprint,
   errorReport,
+  errorReportersOf,
   exportMetrics,
   gauge,
   histogram,
+  installedErrorReporter,
   isRedactedKey,
   jobs,
   LOG_LEVELS,

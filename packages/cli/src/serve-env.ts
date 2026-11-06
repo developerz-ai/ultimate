@@ -1,8 +1,16 @@
 // What a container's environment decides about a boot: which role, which port, which interface,
 // and where errors are reported. Split from `serve.ts`, which re-exports every name here.
 
-import type { Role } from '@ultimat3/core';
-import { configureErrorReporting, isRole, ROLES, sentryErrorReporter } from '@ultimat3/core';
+import type { ErrorReporter, Role } from '@ultimat3/core';
+import {
+  chainErrorReporters,
+  configureErrorReporting,
+  errorReportersOf,
+  installedErrorReporter,
+  isRole,
+  ROLES,
+  sentryErrorReporter,
+} from '@ultimat3/core';
 import { PortInvalidError, RoleUnknownError } from './errors';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import type { WebBinding } from './role-start';
@@ -103,17 +111,27 @@ export const metricsPortFor = (env: Env, port: number, override?: number): numbe
  */
 export const ERROR_DSN_KEY = 'SENTRY_DSN';
 
+/** The transport the LAST `configureReporting` installed, so a second boot swaps it, never adds. */
+let vendor: ErrorReporter | undefined;
+
 /**
- * Switch reporting on for this process. Unset DSN leaves core's no-op reporter in place, so a
- * laptop and a CI run pay nothing and page nobody — and the release every event carries is the
- * build id this boot already computed, never a second identity for the same deploy.
+ * Switch reporting on for this process. Unset DSN leaves whatever the app installed (or core's
+ * no-op) in place, so a laptop and a CI run pay nothing and page nobody — and the release every
+ * event carries is the build id this boot already computed, never a second identity for the deploy.
+ *
+ * The transport is CHAINED beside the app's reporter, never over it: the app's modules import —
+ * and install an `errorGroupsSink`, say — before this line runs, and replacing it here would
+ * leave `/admin/errors` empty in exactly the deploys that set `SENTRY_DSN`.
  */
 export function configureReporting(env: Env, buildId: string): void {
   const dsn = env[ERROR_DSN_KEY]?.trim();
+  // A malformed DSN throws here, at boot, rather than at the first outage: a monitor that was
+  // never connected looks exactly like an app that never failed.
+  const next = dsn === undefined || dsn.length === 0 ? undefined : sentryErrorReporter({ dsn });
+  const app = errorReportersOf(installedErrorReporter()).filter((member) => member !== vendor);
+  vendor = next;
   configureErrorReporting({
     release: buildId,
-    // A malformed DSN throws here, at boot, rather than at the first outage: a monitor that was
-    // never connected looks exactly like an app that never failed.
-    ...(dsn === undefined || dsn.length === 0 ? {} : { reporter: sentryErrorReporter({ dsn }) }),
+    reporter: chainErrorReporters(...app, ...(next === undefined ? [] : [next])),
   });
 }

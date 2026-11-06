@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
-import { boolean, entity, text, uuid } from '@ultimat3/entity';
+import { boolean, entity, integer, text, uuid } from '@ultimat3/entity';
 import type { SeedRow, SeedWriter } from '@ultimat3/testing';
 import { dbSpec } from './cmd-db-spec';
 import {
@@ -12,6 +12,7 @@ import {
   generatedSeedFlags,
   generatedSeedPlan,
   refuseGeneratedSeed,
+  registeredEntityCores,
   writeGeneratedSeed,
 } from './db-seed-generate';
 import { parseArgs } from './parse';
@@ -28,6 +29,11 @@ const notes = entity('dsg_notes', {
   },
 });
 const schema = { orgs, notes };
+/** A view: Postgres derives its rows, so no seed — generated or exercised — may write one. */
+const noteCounts = entity('dsg_note_counts', {
+  view: { sql: 'select org_id, count(*)::integer as notes from dsg_notes group by org_id' },
+  columns: { orgId: uuid().primaryKey(), notes: integer() },
+});
 
 const refusal = (run: () => void): string => {
   try {
@@ -118,5 +124,11 @@ describe('unit · x db seed --generate', () => {
     expect(row.status).toBe('failed');
     expect(row.inserted).toBe(0);
     expect(row.finding?.cause).toContain('dsg_orgs');
+  });
+
+  test('the seedable set is every registered TABLE: a view is left out, never written', () => {
+    const seedable = Object.keys(registeredEntityCores());
+    expect(seedable).toContain(notes.$name);
+    expect(seedable).not.toContain(noteCounts.$name);
   });
 });

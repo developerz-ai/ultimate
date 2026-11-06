@@ -12,6 +12,8 @@ export {
   CONNECTION_LABEL_MAX,
   connections,
 } from './schema/connections';
+export type { DailyLikes } from './schema/daily-likes';
+export { dailyLikes } from './schema/daily-likes';
 export type { Like } from './schema/likes';
 export { likes } from './schema/likes';
 export type { Member } from './schema/members';
@@ -20,6 +22,10 @@ export type { Org } from './schema/orgs';
 export { orgs } from './schema/orgs';
 export type { PlanRow } from './schema/plans';
 export { plans } from './schema/plans';
+export type { PostLikeTotal } from './schema/post-like-totals';
+export { postLikeTotals } from './schema/post-like-totals';
+export type { PostReviewRun } from './schema/post-review-runs';
+export { postReviewRuns, REVIEW_DRAFT_MARK_MAX } from './schema/post-review-runs';
 export type { PostReview, PostReviewVerdict } from './schema/post-reviews';
 export { POST_REVIEW_VERDICTS, postReviews, REVIEW_NOTES_MAX } from './schema/post-reviews';
 export type { Post } from './schema/posts';

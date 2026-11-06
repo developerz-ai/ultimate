@@ -17,6 +17,7 @@ import { registeredEntityCores } from './db-seed-generate';
 import { devActors } from './dev-policy';
 import { withExerciseDatabase, withExerciseProcess } from './exercise-database';
 import {
+  crashFindingLines,
   EXERCISE_REPORT_FILE,
   exerciseFindings,
   exerciseReport,
@@ -93,9 +94,11 @@ async function exercise(
       records.length === 0
         ? msg('cli.exercise.none')
         : msg('cli.exercise.summary', { ...report.counts, file: EXERCISE_REPORT_FILE }),
-    lines: [...renderExerciseTable(records), ...tenantFindingLines(records)].map(
-      (line) => `  ${line}`,
-    ),
+    lines: [
+      ...renderExerciseTable(records),
+      ...tenantFindingLines(records),
+      ...crashFindingLines(records),
+    ].map((line) => `  ${line}`),
     findings,
     data: report as unknown as JsonValue,
   };

@@ -114,6 +114,26 @@ export {
   setFrozenClock,
   withFrozenClock,
 } from './determinism';
+// `x drill` (plan 101 / 40): the eight fault drills, the fleet they run on, the verdict over evidence.
+export type { DrillConfig, DrillTiming } from './drill-budgets';
+export { drillBudgets } from './drill-budgets';
+export { DrillFailedError, DrillServiceMissingError } from './drill-errors';
+export type { DrillFleet, DrillRoleProcess, DrillServiceUrls } from './drill-fleet';
+export { startDrillFleet } from './drill-fleet';
+export { bunDrillSql } from './drill-jobs';
+export type { DrillTarget } from './drill-load';
+export type { DrillReport } from './drill-run';
+export { runDrill } from './drill-run';
+export type { DrillDeclarations } from './drill-services';
+export { DRILL_SERVICE_ENV, drillServices } from './drill-services';
+export type { DrillSyncEvidence, DrillSyncLane, DrillSyncOptions } from './drill-sync';
+export { startDrillSync } from './drill-sync';
+export type { DrillBudgets, DrillEvidence, DrillFailure, DrillProperty } from './drill-verdict';
+export { judgeDrill } from './drill-verdict';
+export type { DrillWriteCandidate, DrillWrites } from './drill-writes';
+export { DRILL_DRAW_SEED, drillWriteTargets } from './drill-writes';
+export type { Drill, DrillName, DrillRole, DrillService } from './drills';
+export { DRILL_NAMES, DRILLS, drillNamed, drillRoles } from './drills';
 export type { A11yFinding, A11yRule } from './e2e-a11y';
 export { auditTree, NAMED_ROLES } from './e2e-a11y';
 export type { A11yAllow, A11yOptions } from './e2e-a11y-run';
@@ -169,6 +189,8 @@ export type { ExercisePassOptions } from './exercise';
 export { runExercisePass } from './exercise';
 export type { ActorChoice, RoleGrants } from './exercise-actor';
 export type {
+  CrashFinding,
+  CrashProof,
   EffectPayload,
   ExerciseEffect,
   ExerciseOutcome,
@@ -200,6 +222,8 @@ export type {
   FakeIdpUser,
 } from './fake-identity-provider';
 export { fakeIdentityProvider } from './fake-identity-provider';
+export type { FaultMode, FaultProxy, FaultProxyCounts } from './fault-proxy';
+export { faultProxy, throughFaultProxy } from './fault-proxy';
 export type { TestClock, TestDuration } from './fixture-clock';
 export { testClock } from './fixture-clock';
 export type {
@@ -328,7 +352,31 @@ export {
   normalizeIslandName,
 } from './island-states-resolve';
 export { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
+export type {
+  CrashBoundary,
+  CrashDivergence,
+  CrashProofOptions,
+  CrashReport,
+  CrashRerun,
+} from './job-crash-proof';
+export { crashProof } from './job-crash-proof';
 export { jobDriverConformance } from './job-driver-conformance';
+export type { SimEffect } from './job-sim-effects';
+export {
+  JobCrashDivergedError,
+  JobSimInvariantError,
+  JobSimNondeterministicError,
+} from './job-sim-errors';
+export type { JobFaultKind } from './job-sim-schedule';
+export { ALL_FAULTS, JOB_FAULT_KINDS } from './job-sim-schedule';
+export type {
+  SimulatedJob,
+  SimulatedRun,
+  SimulateJobsOptions,
+  SimulationReport,
+  SimulationState,
+} from './job-simulate';
+export { JOB_SIM_SEED_ENV, simulateJobs } from './job-simulate';
 export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
 export { liveNode } from './live-node';
 // The store a mutator's `local()` half writes into under test — the Map every app hand-rolled.

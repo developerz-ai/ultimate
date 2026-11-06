@@ -1,10 +1,10 @@
-// The position comparison against real servers. The test services have no physical standby (the
-// `postgres-logical` service is a logical-replication peer, never in recovery), so the paused-
-// replay proof needs `TEST_STANDBY_URL` and skips, named, without it. What a primary can prove runs
-// on `TEST_DATABASE_URL`: a real `pg_lsn` parses, and a server not in recovery is "unknown".
+// The position comparison against real servers. The paused-replay proof needs a physical standby,
+// `TEST_STANDBY_URL` (the test services' `postgres-standby`), and skips, named, without it. What a
+// primary can prove runs on `TEST_DATABASE_URL`: a real `pg_lsn` parses, and a server not in
+// recovery is "unknown".
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type PostgresClient, postgresClient } from './client';
+import { type DbClient, type PostgresClient, postgresClient } from './client';
 import { replicatedClient } from './replica-client';
 import { parsePosition, primaryPosition } from './replica-position';
 import { withReplicaReads } from './replica-scope';
@@ -14,6 +14,27 @@ const url = Bun.env['TEST_DATABASE_URL'];
 const standbyUrl = Bun.env['TEST_STANDBY_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
 const hasStandby = hasPostgres && typeof standbyUrl === 'string' && standbyUrl.length > 0;
+const PAUSE_LIMIT_MS = 5_000;
+
+/**
+ * `pg_wal_replay_pause()` only REQUESTS the pause: the startup process may replay the next record
+ * after it returns. Polled to `paused`, so the write below is one the standby cannot have.
+ */
+async function pauseReplay(standby: DbClient): Promise<void> {
+  await standby.execute(raw('select pg_wal_replay_pause()'));
+  const started = performance.now();
+  for (;;) {
+    const row = await standby.one<{ state: string }>(
+      sql`select pg_get_wal_replay_pause_state()::text as state`,
+    );
+    if (row?.state === 'paused') return;
+    if (performance.now() - started > PAUSE_LIMIT_MS) {
+      expect.unreachable(`replay did not pause within ${String(PAUSE_LIMIT_MS)} ms`);
+    }
+    // real-clock: the standby's startup process pauses on its own schedule
+    await Bun.sleep(20);
+  }
+}
 
 describe.skipIf(!hasPostgres)('live · postgres · replica position on a primary', () => {
   let primary: PostgresClient;
@@ -53,7 +74,7 @@ describe.skipIf(!hasStandby)('live · standby · a paused replay', () => {
     const primary = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     const standby = postgresClient({ url: standbyUrl ?? '', role: 'web', profile: { max: 1 } });
     try {
-      await standby.execute(raw('select pg_wal_replay_pause()'));
+      await pauseReplay(standby);
       await primary.execute(raw('create table if not exists x_position_live (id int)'));
       await primary.execute(raw('insert into x_position_live values (1)'));
       const written = await primaryPosition(primary);
@@ -77,5 +98,5 @@ describe.skipIf(!hasStandby)('live · standby · a paused replay', () => {
       await primary.close();
       await standby.close();
     }
-  });
+  }, 15_000);
 });

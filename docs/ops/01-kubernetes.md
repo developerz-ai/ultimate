@@ -36,6 +36,7 @@ there is one environment, and it hides the object a reviewer needs to see.
 | `certificate.yml` | TLS cert request for the public hostname |
 | `ingressroute.yml` (or `ingress.yml`) | the public route |
 | `servicemonitor.yml` | scrape config — [`03-observability.md`](./03-observability.md) |
+| `prometheusrule.yml` | the mechanism alerts: `spec:` holds what `x g chart-alerts --print` prints, with each `expr` scoped to the app's namespace — [`03-observability.md`](./03-observability.md#alerts-on-the-apps-own-metrics) |
 | `kustomization.yml` | the resource list and the image override |
 
 ## Role → workload

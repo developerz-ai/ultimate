@@ -131,6 +131,26 @@ job({
   },
 });
 
+/** Two steps, a note written between them: outside a step, wrapped in one, by `wrapped`. */
+const noteJob = (name: string, wrapped: boolean) =>
+  job({
+    name,
+    tenant: (input) => input.expOrgId,
+    input: t.object({ expOrgId: t.uuid }),
+    idempotencyKey: (input) => input.expOrgId,
+    retry: { ...DEFAULT_RETRY, attempts: 2 },
+    run: async ({ input, step }) => {
+      const write = () =>
+        db.notes.insert({ id: crypto.randomUUID(), orgId: input.expOrgId, title: 'audit' });
+      await step.run('create', () => 'created');
+      if (wrapped) await step.run('audit', async () => (await write()).id);
+      else await write();
+      await step.run('mail', () => 'mailed');
+    },
+  });
+noteJob('expPassLeaky', false);
+noteJob('expPassWrapped', true);
+
 const one = async (
   only: string,
   overrides?: Parameters<typeof defineExercise>[0],
@@ -241,5 +261,25 @@ describe(testName('unit', 'runExercisePass'), () => {
   test('a query runs as an allowed reader; a job drains, its id bound to a seeded note', async () => {
     expect(await one('expPassNotes')).toMatchObject({ kind: 'query', outcome: 'reached' });
     expect(await one('expPassJob')).toMatchObject({ kind: 'job', outcome: 'reached' });
+  });
+
+  test('a reached job is killed at each step boundary: an effect outside a step diverges', async () => {
+    const leaky = (await one('expPassLeaky')).crash;
+    expect(leaky?.verdict).toBe('diverged');
+    const findings = leaky?.verdict === 'diverged' ? leaky.findings : [];
+    expect(findings.length).toBeGreaterThan(0);
+    for (const finding of findings) {
+      expect(finding).toMatchObject({ effect: 'row:exp_notes:insert', after: 'create' });
+      expect(finding.killed).toBeGreaterThan(finding.clean);
+    }
+    expect(findings.map((finding) => finding.boundary)).not.toContain('create');
+    expect(await one('expPassWrapped')).toMatchObject({ crash: { verdict: 'held' } });
+  });
+
+  test('only a reached job is crash-proven: an action, an unreached job carry no crash', async () => {
+    expect((await one('expPassCreate')).crash).toBeUndefined();
+    const unreached = await one('expPassJob', { expPassJob: { actor: null, input: () => ({}) } });
+    expect(unreached.outcome).toBe('unreached');
+    expect(unreached.crash).toBeUndefined();
   });
 });

@@ -62,6 +62,8 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_CONSUMER_SELF_ENQUEUE',
   'X_BACKFILL_SOURCE_INVALID',
   'X_STEP_NOT_RESOLVABLE',
+  'X_JOB_ROLLUP_INVALID',
+  'X_JOB_REFRESH_VIEW_INVALID',
 ] as const;
 
 /**
@@ -139,6 +141,8 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_BACKFILL_SOURCE_INVALID:
     'a backfill() declares both or neither of source and pages, or input with no scope',
   X_STEP_NOT_RESOLVABLE: 'the step is not an unknown once outcome an operator can resolve',
+  X_JOB_ROLLUP_INVALID: 'a rollup declaration cannot be run',
+  X_JOB_REFRESH_VIEW_INVALID: 'a refreshView declaration names no materialized view it can refresh',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws

@@ -3537,6 +3537,163 @@
         }
       }
     },
+    "/_x/query/post-likes-by-day": {
+      "get": {
+        "operationId": "postLikesByDay",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "postId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeZone",
+            "required": true,
+            "schema": {
+              "enum": [
+                "UTC",
+                "America/New_York",
+                "America/Sao_Paulo",
+                "Europe/Madrid",
+                "Europe/Berlin",
+                "Asia/Tokyo",
+                "Australia/Sydney",
+                "Pacific/Auckland"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the nextCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": true
+                            },
+                            "nextCursor": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": false
+                            },
+                            "nextCursor": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
+                        "hasMore": {
+                          "description": "whether another page follows",
+                          "type": "boolean"
+                        },
+                        "nextCursor": {
+                          "description": "the signed cursor for the next page — send it as _after; null exactly when hasMore is false",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "nextCursor",
+                        "hasMore"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "Count a post’s likes per day in a given IANA time zone",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [],
+          "capability": "post:read",
+          "live": false,
+          "tool": "postLikesByDay"
+        }
+      }
+    },
     "/_x/query/post-record": {
       "get": {
         "operationId": "postRecord",

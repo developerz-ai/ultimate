@@ -83,16 +83,47 @@ export function packageFacts(root: string, dir: string): PackageFacts | undefine
 export const isProgramPackage = (root: string, dir: string): boolean =>
   packageFacts(root, dir)?.program === true;
 
-/** Every program in the tree, in directory order — the excluded set, derived and never listed. */
-export const programPackages = (root: string): readonly string[] =>
+/** Every package directory that declares a manifest, in directory order. */
+const packageDirs = (root: string): readonly string[] =>
   [...new Bun.Glob('packages/*/package.json').scanSync({ cwd: root })]
     .map((path) => path.split('\\').join('/').split('/')[1] ?? '')
-    .filter((dir) => dir !== '' && isProgramPackage(root, dir))
+    .filter((dir) => dir !== '')
     .sort();
 
-/** The seam set a browser can actually evaluate: what names the seam, minus what runs as a program. */
+/** Every program in the tree, in directory order — the excluded set, derived and never listed. */
+export const programPackages = (root: string): readonly string[] =>
+  packageDirs(root).filter((dir) => isProgramPackage(root, dir));
+
+/** A Bun builtin named by an import or re-export: `bun:test`, `bun:sqlite`, `bun:ffi`. */
+const BUN_BUILTIN = /(?:from|import|require)\s*\(?\s*['"]bun:[\w-]+['"]/;
+
+/**
+ * A LIBRARY whose `"."` barrel imports a Bun builtin is the other shape no browser evaluates: Bun
+ * refuses the build outright ("Browser build cannot import Bun builtin"), so there is no chunk for
+ * a module-scope `AsyncLocalStorage` to throw in. Read off the barrel itself, never a list.
+ *
+ * Measured, and the reason this exists: `@ultimat3/testing` entered the seam set on 2026-11-06 —
+ * `packages/testing/src/job-sim-effects.ts` scopes a simulated worker with `asyncContext` — and
+ * three assertions went red on the build `isProgramPackage` above already names as impossible:
+ * `packages/testing/src/index.ts:25` re-exports `bun:test`. Sound for the same reason a program is:
+ * `excludedImports` reds the day a library that IS bundled imports one.
+ */
+export function isBunOnlyPackage(root: string, dir: string): boolean {
+  const barrel = join(root, 'packages', dir, 'src/index.ts');
+  return existsSync(barrel) && BUN_BUILTIN.test(readFileSync(barrel, 'utf8'));
+}
+
+/** A package no browser bundle has as an entry: a program, or a Bun-only library. */
+export const isExcludedPackage = (root: string, dir: string): boolean =>
+  isProgramPackage(root, dir) || isBunOnlyPackage(root, dir);
+
+/** Every excluded package in the tree, in directory order — derived and never listed. */
+export const excludedPackages = (root: string): readonly string[] =>
+  packageDirs(root).filter((dir) => isExcludedPackage(root, dir));
+
+/** The seam set a browser can actually evaluate: what names the seam, minus what no bundle enters. */
 export const browserBarrels = (root: string): readonly string[] =>
-  seamPackages(root).filter((dir) => !isProgramPackage(root, dir));
+  seamPackages(root).filter((dir) => !isExcludedPackage(root, dir));
 
 /**
  * The barrels an app's BROWSER bundle actually reaches, which is a different question from the seam
@@ -105,34 +136,34 @@ export const browserBarrels = (root: string): readonly string[] =>
  */
 export const CLIENT_BARRELS = ['realtime', 'render', 'pwa', 'ui'] as const;
 
-export interface ProgramImport {
+export interface ExcludedImport {
   readonly importer: string;
-  readonly program: string;
+  readonly excluded: string;
 }
 
 /**
- * Every import of a program from a package that is NOT one — the soundness condition of the
- * exclusion above, and the one thing that could turn it into a hole. A program's modules re-enter
- * a bundle graph the moment a library imports it, and then they are back in the browser's reach
- * with nothing bundling them here. Package names in this tree carry no regex metacharacter, so the
+ * Every import of an excluded package (a program or a Bun-only library) from a package that is NOT
+ * excluded — the soundness condition of the exclusion above, and the one thing that could turn it
+ * into a hole. Its modules re-enter a bundle graph the moment a bundled library imports it, and
+ * then they are back in the browser's reach with nothing bundling them here. Package names in this tree carry no regex metacharacter, so the
  * specifier goes into the pattern as written; a subpath (`@ultimat3/render/server`) counts.
  */
-export function programImports(root: string): readonly ProgramImport[] {
-  const programs = programPackages(root);
-  if (programs.length === 0) return [];
-  const named = programs.map((dir) => ({ dir, name: packageFacts(root, dir)?.name ?? dir }));
-  // Keyed, because one importer reaching a program from four files is one finding and not four.
-  const found = new Map<string, ProgramImport>();
+export function excludedImports(root: string): readonly ExcludedImport[] {
+  const excluded = excludedPackages(root);
+  if (excluded.length === 0) return [];
+  const named = excluded.map((dir) => ({ dir, name: packageFacts(root, dir)?.name ?? dir }));
+  // Keyed, because one importer reaching a package from four files is one finding and not four.
+  const found = new Map<string, ExcludedImport>();
   for (const path of new Bun.Glob('packages/*/src/**/*.{ts,tsx}').scanSync({ cwd: root })) {
     const posix = path.split('\\').join('/');
     const importer = posix.split('/')[1];
     if (importer === undefined || posix.includes('.test.')) continue;
-    if (programs.includes(importer)) continue;
+    if (excluded.includes(importer)) continue;
     const source = readFileSync(join(root, posix), 'utf8');
-    for (const program of named) {
-      const pattern = `(?:from|import|require)\\s*\\(?\\s*['"]${program.name}(?:/[\\w./-]+)?['"]`;
+    for (const target of named) {
+      const pattern = `(?:from|import|require)\\s*\\(?\\s*['"]${target.name}(?:/[\\w./-]+)?['"]`;
       if (!new RegExp(pattern).test(source)) continue;
-      found.set(`${importer} ${program.dir}`, { importer, program: program.dir });
+      found.set(`${importer} ${target.dir}`, { importer, excluded: target.dir });
     }
   }
   return [...found.values()];

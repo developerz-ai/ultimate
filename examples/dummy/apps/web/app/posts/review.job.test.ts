@@ -4,7 +4,8 @@
  * fail: the run authorising as the member who asked (`agentJob({ actor })`), the verdict landing
  * on the post the CODE named and on no other — a draft can tell the model anything — the one write
  * it IS offered waiting for a person, a replayed run leaving one review rather than two, and a
- * reader, or a member who left, being refused.
+ * reader, or a member who left, being refused — and an attempt whose worker died after a
+ * checkpoint resuming there, its earlier tool not run again.
  */
 
 import { db } from '@postly/db';
@@ -15,6 +16,9 @@ import {
   type GenerateResult,
   type Provider,
   providerGateway,
+  type ScriptedProvider,
+  type ScriptedTurn,
+  scriptedProvider,
 } from '@ultimat3/ai';
 import { beforeEach, expect, jobTest } from '@ultimat3/testing';
 import { CLAUDE_SONNET_5_5 } from '../models';
@@ -212,5 +216,137 @@ jobTest(
     expect(trace.executions.at(-1)?.error).toContain('X_ORG_NOT_FOUND');
     expect(turns).toBe(0);
     expect(await db.postReviews.where({ orgId: draft.orgId, postId: draft.id }).count()).toBe(0);
+  },
+);
+
+/**
+ * The scripted model, with the worker lost on provider call `lostAt` of the whole test: that call
+ * fails as a dead process would end it, after every turn before it — and its checkpoint — landed.
+ */
+const workerLostAt = (script: ScriptedProvider, lostAt: number): Provider => {
+  let calls = 0;
+  return {
+    name: script.name,
+    models: script.models,
+    generate(request) {
+      calls += 1;
+      return calls === lostAt
+        ? Promise.reject(new Error('the worker running this attempt died'))
+        : script.generate(request);
+    },
+    stream: (request) => script.stream(request),
+  };
+};
+
+const SUMMARY = { summary: 'Minor units and a currency.', tags: ['money'] };
+const VERDICT = { verdict: 'revise', notes: 'Say which rounding rule the body defends.' } as const;
+
+/** One whole review: the agent asks for `summarize`, the tool's own `llm()` answers, the agent answers. */
+const wholeRun = (target: { id: string; orgId: string }): readonly ScriptedTurn[] => [
+  { call: 'summarize', input: { postId: target.id, orgId: target.orgId } },
+  { answer: SUMMARY },
+  { answer: VERDICT },
+];
+
+const runOf = (orgId: string, postId: string) => db.postReviewRuns.where({ orgId, postId }).one();
+
+jobTest(
+  'an attempt whose worker died after a checkpoint resumes there: summarize ran once, one model call left',
+  async ({ seed, actorFor, runJobs, clock }) => {
+    const { draft, bruno } = await seed('dev').pick({
+      draft: 'post:draft-money',
+      bruno: 'member:bruno',
+    });
+    // Exactly one whole run is scripted: a retry that started over would ask for a fourth turn and
+    // be X_AI_SCRIPT_EXHAUSTED rather than a review.
+    const script = scriptedProvider({ turns: wholeRun(draft) });
+    configureAi({ gateway: providerGateway({ providers: [workerLostAt(script, 3)] }) });
+
+    await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
+    const lost = await runJobs.drain();
+
+    expect(lost.executions.map((execution) => execution.outcome)).toEqual(['retried']);
+    // The checkpoint landed before the worker died: turn 1 and the summary it fetched.
+    const open = await runOf(draft.orgId, draft.id);
+    expect(JSON.stringify(open?.checkpoint)).toContain(SUMMARY.summary);
+    expect(script.seen).toHaveLength(2);
+
+    clock.advance('1h');
+    const resumed = await runJobs.drain();
+
+    expect(resumed.executions.map((execution) => execution.outcome)).toEqual([
+      'retried',
+      'completed',
+    ]);
+    // ONE model call for the retry where a whole run is three, and it read the summary turn 1
+    // fetched rather than fetching it again.
+    expect(script.seen).toHaveLength(3);
+    const retried = JSON.stringify(script.seen[2]?.messages);
+    expect(retried).toContain(SUMMARY.summary);
+    expect(retried).toContain('Carry on');
+    expect((await reviewOf(draft.orgId, draft.id))?.notes).toBe(VERDICT.notes);
+    // The review is kept, so the run is closed: the next request starts a new one.
+    expect(await runOf(draft.orgId, draft.id)).toBeNull();
+  },
+);
+
+jobTest(
+  'a stored checkpoint the screen refuses is not a dead letter: the retry reviews from the top',
+  async ({ seed, actorFor, runJobs, clock }) => {
+    const { draft, bruno } = await seed('dev').pick({
+      draft: 'post:draft-money',
+      bruno: 'member:bruno',
+    });
+    const script = scriptedProvider({
+      turns: [...wholeRun(draft).slice(0, 2), ...wholeRun(draft)],
+    });
+    configureAi({ gateway: providerGateway({ providers: [workerLostAt(script, 3)] }) });
+
+    await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
+    await runJobs.drain();
+    const open = await runOf(draft.orgId, draft.id);
+    const checkpoint = open?.checkpoint;
+    if (checkpoint === null || checkpoint === undefined || Array.isArray(checkpoint)) {
+      return expect.unreachable('the lost attempt left no checkpoint to tamper with');
+    }
+    // What a prompt bump or a rotated secret does to a stored handle: its signature no longer holds.
+    await db.postReviewRuns.updateWhere(
+      { orgId: draft.orgId, postId: draft.id },
+      { checkpoint: { ...(checkpoint as Record<string, unknown>), turns: 0 } as typeof checkpoint },
+    );
+
+    clock.advance('1h');
+    const trace = await runJobs.drain();
+
+    expect(trace.executions.at(-1)?.outcome).toBe('completed');
+    // Two calls lost, then a whole run of three: `summarize` asked for again.
+    expect(script.seen).toHaveLength(5);
+    expect((await reviewOf(draft.orgId, draft.id))?.verdict).toBe(VERDICT.verdict);
+  },
+);
+
+jobTest(
+  'a draft edited between attempts is reviewed as it reads now, not resumed from the old words',
+  async ({ seed, actorFor, runJobs, clock }) => {
+    const { draft, bruno } = await seed('dev').pick({
+      draft: 'post:draft-money',
+      bruno: 'member:bruno',
+    });
+    const script = scriptedProvider({
+      turns: [...wholeRun(draft).slice(0, 2), ...wholeRun(draft)],
+    });
+    configureAi({ gateway: providerGateway({ providers: [workerLostAt(script, 3)] }) });
+
+    await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
+    await runJobs.drain();
+    const edited = 'Round half to even, and say so in the first paragraph.';
+    await db.posts.update(draft.id, { body: edited }, { orgId: draft.orgId });
+
+    clock.advance('1h');
+    const trace = await runJobs.drain();
+
+    expect(trace.executions.at(-1)?.outcome).toBe('completed');
+    expect(script.seen).toHaveLength(5);
+    expect(JSON.stringify(script.seen[2]?.messages)).toContain(edited);
   },
 );

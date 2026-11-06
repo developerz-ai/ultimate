@@ -13,6 +13,7 @@ import { loadSignInPath } from './app-auth';
 import { loadAppConfig } from './app-config-load';
 import { mountAppMcp } from './app-mcp';
 import { clientErrorsSurface } from './client-errors-routes';
+import { clientScriptHeads, clientVitalsSurface } from './client-vitals-route';
 import { errorPageStyleBodies } from './error-page-csp';
 import { islandRoutes } from './island-routes';
 import type { LoadedIslands } from './island-store';
@@ -132,6 +133,8 @@ export async function webSurface(
   });
   // The same call `x dev` makes: `clientErrors.enabled` or nothing mounted and nothing named.
   const clientErrors = clientErrorsSurface(config?.clientErrors, buildId);
+  // And real-user timings, on their own switch: the call `x dev` makes, so both name one script.
+  const vitals = clientVitalsSurface(config?.clientErrors?.vitals);
   // Attached, so a tag bust marks this process's ISR pages stale. The store is the deployment's
   // when it supplied one: the default is per process, so twelve replicas hold twelve of them and a
   // purge regenerates one twelfth of the fleet while the other eleven keep the invalidated page.
@@ -156,6 +159,7 @@ export async function webSurface(
     }),
     ...storageRoutes({ storage: served }),
     ...(clientErrors?.routes ?? []),
+    ...(vitals?.routes ?? []),
     ...islandRoutes(() => islands),
     // The surface stylesheets the documents link. Built from the registry the `loadApp` above
     // filled, so this process serves exactly the CSS it renders against.
@@ -194,7 +198,7 @@ export async function webSurface(
       ...(pwa === undefined
         ? {}
         : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
-      ...(clientErrors === undefined ? {} : { appHead: clientErrors.head }),
+      ...clientScriptHeads(clientErrors, vitals),
       isr: isr.isr,
     }),
   ];

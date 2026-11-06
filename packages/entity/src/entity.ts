@@ -4,12 +4,11 @@
 // this one call.
 
 import type { IndexMethod } from '@ultimat3/db';
-import { describeValue, type Schema } from '@ultimat3/schema';
+import type { Schema } from '@ultimat3/schema';
 import { assertAppendOnlyColumns } from './append-only';
-import { entityNow } from './clock';
 import { assertTableName, bindColumn, columnName, moneyColumns } from './column';
-import { newId } from './columns';
 import { assertNotRetired, assertShared, describeEntity, describeReferences } from './describe';
+import { rowParsers } from './entity-parse';
 import { parseEntityPatch } from './entity-patch';
 import { invariantViolated } from './errors';
 import type { InvariantColumns, Resolve } from './expr';
@@ -25,13 +24,14 @@ import { registerEntity } from './registry';
 import { rowSchema } from './row-schema';
 import { sealedFields } from './sealed';
 import { assertSealedDeclaration } from './sealed-declaration';
-import { sealedInView, sealedMissing } from './sealed-errors';
+import { sealedInView } from './sealed-errors';
 import type { SearchInit, SearchSource, SearchVector } from './search';
 import { searchVectorOf } from './search';
 import { resolveTenantColumn } from './tenancy';
-import type { AnyColumn, ColumnMap, ColumnMeta, IndexDef, RowOf, WireRow } from './types';
+import type { AnyColumn, ColumnMap, IndexDef, RowOf, WireRow } from './types';
 import type { EntityView } from './view';
 import { viewFor } from './view';
+import { type ViewInit, type ViewQuery, viewQueryOf } from './view-entity';
 
 /** Presence of this column is what makes an entity soft-deletable — not a flag. */
 export const SOFT_DELETE_COLUMN = 'deletedAt';
@@ -94,6 +94,12 @@ export interface EntityInit<C extends ColumnMap> {
    * name, not a chain on the column: a column here has no builder left to chain from.
    */
   readonly retired?: readonly string[];
+  /**
+   * A relation Postgres derives rather than a table: `x db gen` emits `create [materialized] view`
+   * from `sql`, reads are the chain's (tenancy, codec, `$view`), and every write is
+   * `X_ENTITY_VIEW_READ_ONLY`. `columns` name its output columns; `primaryKey` is the read identity.
+   */
+  readonly view?: ViewInit;
 }
 
 /**
@@ -114,6 +120,8 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   readonly $softDelete: boolean;
   /** `entity({ appendOnly: true })`: update and delete are refused, here and by the table. */
   readonly $appendOnly: boolean;
+  /** `entity({ view })`: the query a view is derived by, `null` on a table. Writes are refused. */
+  readonly $viewQuery: ViewQuery | null;
   /** Property key of the tenant column, or `null`. Presence is what turns tenancy on. */
   readonly $tenantColumn: string | null;
   /**
@@ -171,13 +179,6 @@ export type Entity<Row, C extends ColumnMap = ColumnMap> = Omit<EntityCore<Row, 
 } & C;
 
 const MONEY_PARTS = new Set(['minor', 'currency']);
-
-const defaultValue = (meta: ColumnMeta): unknown => {
-  const declared = meta.default;
-  if (declared === undefined) return undefined;
-  if (declared.kind === 'value') return declared.value;
-  return declared.by === 'uuid-v7' ? newId() : entityNow();
-};
 
 export const entity = <const C extends ColumnMap>(
   name: string,
@@ -356,6 +357,11 @@ export const entity = <const C extends ColumnMap>(
     invariants,
   });
   const sealedKeys = new Set(sealed.map((field) => field.property));
+  const viewQuery = viewQueryOf(name, init.view, {
+    appendOnly,
+    indexes,
+    sealed: [...sealedKeys],
+  });
   /** The columns that leave the server: every one that is not sealed. */
   const wireEntries = entries.filter(([property]) => !sealedKeys.has(property));
 
@@ -376,70 +382,12 @@ export const entity = <const C extends ColumnMap>(
       appendOnly,
       retired: init.retired,
       shared: init.shared,
+      view: viewQuery,
     });
   assertNotRetired(name, entries, init.retired);
   const references = (): readonly ReferenceDescription[] => describeReferences(name, entries);
 
-  const parse = (value: unknown): Row => {
-    if (typeof value !== 'object' || value === null) {
-      // `describeValue`, never `String(value)`: this message is a `$parse` failure, which reaches
-      // the caller and the log line — and the whole row is the last value in the framework that
-      // may be echoed there. Same renderer as the column builders (`columns.ts`) use.
-      throw invariantViolated(name, 'row', `expected an object, got ${describeValue(value)}`);
-    }
-    const input = value as Readonly<Record<string, unknown>>;
-    const row: Record<string, unknown> = {};
-    for (const [property, column] of entries) {
-      // `=== undefined`, never `??`: an explicit `null` is the caller CLEARING a nullable column,
-      // and `??` read it as absence and wrote the column's declared default straight back — so
-      // `update(id, { status: null })` reported success and stored `'draft'`, with nothing on any
-      // surface to say otherwise. A present `undefined` still means absence, which is what a
-      // spread of an omitted optional key produces and is the shape every existing caller has.
-      const raw = input[property];
-      const given = raw === undefined ? defaultValue(column.$meta) : raw;
-      if (given === undefined || given === null) {
-        if (column.$meta.notNull) {
-          // A required sealed column ABSENT from a row is nearly always a spread of a repository
-          // row, which does not enumerate it — so the refusal names that, and the rewrite.
-          throw given === undefined && sealedKeys.has(property)
-            ? sealedMissing(name, property)
-            : invariantViolated(name, property, 'is required and has no default');
-        }
-        row[property] = null;
-        continue;
-      }
-      row[property] = column.$parse(given);
-    }
-    // Every property was validated by its own column above, so the shape is the derived row.
-    return row as Row;
-  };
-
-  /**
-   * The row as `$schema` validates it: the sealed columns are neither required nor returned, so a
-   * handler's row — which holds their plaintext — parses to a value that does not.
-   */
-  const parseWire = (value: unknown): WireRow<Row, C> => {
-    if (sealedKeys.size === 0) return parse(value) as WireRow<Row, C>;
-    if (typeof value !== 'object' || value === null) {
-      throw invariantViolated(name, 'row', `expected an object, got ${describeValue(value)}`);
-    }
-    const input = value as Readonly<Record<string, unknown>>;
-    const row: Record<string, unknown> = {};
-    for (const [property, column] of wireEntries) {
-      const raw = input[property];
-      const given = raw === undefined ? defaultValue(column.$meta) : raw;
-      if (given === undefined || given === null) {
-        if (column.$meta.notNull) {
-          throw invariantViolated(name, property, 'is required and has no default');
-        }
-        row[property] = null;
-        continue;
-      }
-      row[property] = column.$parse(given);
-    }
-    // Every wire property was validated by its own column, and no sealed one was copied.
-    return row as WireRow<Row, C>;
-  };
+  const { parse, parseWire } = rowParsers<Row, WireRow<Row, C>>(name, entries, sealedKeys);
 
   const schema = rowSchema<WireRow<Row, C>>(
     { name, table, primaryKey, persist: init.persist === true, sealed: [...sealedKeys] },
@@ -458,6 +406,7 @@ export const entity = <const C extends ColumnMap>(
     $cacheTag: cacheTag,
     $softDelete: softDelete,
     $appendOnly: appendOnly,
+    $viewQuery: viewQuery,
     $tenantColumn: tenantColumn,
     $search: search,
     $schema: schema,

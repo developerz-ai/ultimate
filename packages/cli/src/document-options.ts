@@ -86,9 +86,16 @@ export interface DocumentOptions {
    */
   readonly faviconHead?: string;
   /**
-   * Tags on `app/` documents ONLY — today `/x-client-errors.js` (`client-errors-routes.ts`), when
-   * `clientErrors.enabled`. A `site/` document never carries it: the static path never pays for
-   * the app path (axiom 6), and a static export has no route to receive a report.
+   * Tags on `app/` documents ONLY — `/x-client-errors.js` (`client-errors-routes.ts`) when
+   * `clientErrors.enabled`, and `/x-client-vitals.js` (`client-vitals-route.ts`) when
+   * `clientErrors.vitals` lists `app`. A `site/` document never carries them: the static path
+   * never pays for the app path (axiom 6).
    */
   readonly appHead?: string;
+  /**
+   * Tags on `site/` documents ONLY — today `/x-client-vitals.js`, and only when
+   * `clientErrors.vitals.surfaces` lists `site`: the static path opts in by name, and the bytes
+   * are then charged to its own budget (`prerender-served.ts`'s `vitalsMeasure`).
+   */
+  readonly siteHead?: string;
 }

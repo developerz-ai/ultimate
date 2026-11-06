@@ -221,7 +221,9 @@ export async function testJobs(): Promise<RunJobs> {
       queue: handle.queue,
       input,
       idempotencyKey: handle.idempotencyKeyFor(input),
-      maxAttempts: handle.retry.attempts,
+      // The row's count, never the policy's: a `compensates` job carries the unwind margin, so a
+      // final attempt whose worker died is re-offered to unwind instead of buried.
+      maxAttempts: jobs.enqueuedAttempts(handle.retry, handle.compensates),
       ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
     });
 

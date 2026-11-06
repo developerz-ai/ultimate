@@ -34,6 +34,13 @@ export interface LedgerRow {
   readonly applied_at: string;
   readonly app_version: string;
   readonly duration_ms: number;
+  /**
+   * Whether this migration's `up` destroys data, recorded at apply (`destructiveBit`). `null` on a
+   * row applied before the ledger kept the bit: the framework cannot know, and says so
+   * (`migrate-rollback.ts` warns rather than refuses over it). Optional so a row a caller builds
+   * by hand still types; `readLedger` always answers it.
+   */
+  readonly destructive?: boolean | null | undefined;
 }
 
 /**
@@ -61,6 +68,11 @@ export async function ensureLedger(client: DbClient): Promise<void> {
       duration_ms integer not null
     )
   `);
+  // Added, never part of the create: a ledger every earlier release made has no such column, and
+  // its rows keep `null` — "applied before the bit was recorded", never a guessed `false`.
+  await client.execute(sql`
+    alter table ${raw(LEDGER_TABLE)} add column if not exists destructive boolean
+  `);
 }
 
 /**
@@ -79,10 +91,16 @@ export function isLedgerMissing(error: unknown): boolean {
   return sqlState(error) === SQLSTATE.undefinedTable;
 }
 
+/**
+ * The bit is read through the row's JSON, not by name: `x db status`, the drift step and the MCP
+ * dry run read a ledger `ensureLedger` has not touched, and naming a column an older release's
+ * ledger lacks would turn every one of those reads into `42703`. Absent reads `null`.
+ */
 export async function readLedger(client: DbClient): Promise<readonly LedgerRow[]> {
   return client.query<LedgerRow>(sql`
-    select id, name, checksum, applied_at, app_version, duration_ms
-    from ${raw(LEDGER_TABLE)}
+    select id, name, checksum, applied_at, app_version, duration_ms,
+           (to_jsonb(ledger) ->> 'destructive')::boolean as destructive
+    from ${raw(LEDGER_TABLE)} as ledger
     order by id
   `);
 }

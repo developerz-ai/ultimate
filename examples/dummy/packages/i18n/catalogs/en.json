@@ -381,9 +381,25 @@
         "failed": "Failed"
       }
     },
+    "post_like_totals": {
+      "title": "Like totals",
+      "field": {
+        "orgId": "Org ID",
+        "postId": "Post",
+        "likes": "Likes"
+      }
+    },
+    "daily_likes": {
+      "title": "Daily likes",
+      "field": {
+        "day": "Day (UTC)",
+        "likes": "Likes"
+      }
+    },
     "group": {
       "data": "Data",
-      "jobs": "Jobs"
+      "jobs": "Jobs",
+      "ops": "Operations"
     },
     "dashboard": {
       "title": "Dashboard"
@@ -540,6 +556,38 @@
         "retry-from-step": {
           "step": "Step"
         }
+      }
+    },
+    "errors": {
+      "title": "Errors",
+      "detail": {
+        "title": "Error group"
+      },
+      "empty": "No errors grouped yet.",
+      "missing": "This error group no longer exists.",
+      "back": "Back to errors",
+      "count_one": "{count} time",
+      "count_other": "{count} times",
+      "filter": {
+        "status": "Filter by status"
+      },
+      "status": {
+        "open": "Open",
+        "resolved": "Resolved",
+        "ignored": "Ignored"
+      },
+      "field": {
+        "code": "Code",
+        "count": "Occurrences",
+        "environment": "Environment",
+        "first": "First seen",
+        "last": "Last seen",
+        "operation": "Operation",
+        "release": "Release",
+        "request": "Request",
+        "source": "Source",
+        "status": "Status",
+        "trace": "Trace"
       }
     }
   },

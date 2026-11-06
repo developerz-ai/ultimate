@@ -226,8 +226,8 @@ jobs:
             urls: TEST_DATABASE_URL
           - part: live
             only: lint,boundaries,filesize,package-shape,errors,live,exercise,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
-            services: postgres postgres-logical postgres-tls pooler redis nats s3
-            urls: TEST_DATABASE_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
+            services: postgres postgres-standby postgres-logical postgres-tls pooler redis nats s3
+            urls: TEST_DATABASE_URL|TEST_STANDBY_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
           - part: e2e
             only: typecheck,e2e
             services: postgres
@@ -1001,6 +1001,61 @@ jobs:
         env:
           WORK: ${{ runner.temp }}/deploy-proof
         run: mkdir -p "$WORK" && bash docker/deploy-proof/run.sh
+
+  # Does the reference app keep the framework's declared behaviour while a dependency fails? `x
+  # drill` boots `examples/dummy`'s web and worker roles as separate processes on a scratch database,
+  # each dialling Postgres through a fault proxy, plays one fault under load (anonymous page reads,
+  # and `contactSales` POSTs that enqueue a job each) and is red on any stated property that did not
+  # hold: a coded answer, a bounded request, recovery with no restart, every job terminal, none run
+  # twice, a signalled role gone within its drain. The verdict is evidence, never a chart to read.
+  #
+  # Not a gate step: it needs a real Postgres, and `x verify` needs nothing (docs/idea/21-the-range.md).
+  # THREE of the eight, chosen for the 5-minute budget — measured locally 2026-11-06: `pg-blackhole`
+  # 67 s (plan 29's unanswered-statement bound; `drill-pg-blackhole.live.test.ts` proves it red with
+  # the bound off), `worker-sigkill` 49 s (a reclaimed run, 1,012 jobs, none stuck or doubled),
+  # `web-sigterm` 6 s. `pg-slow` and `pg-restart` cost a minute each more and run by hand;
+  # `redis-down` and `nats-down` fault services this app does not declare, so they are refused
+  # (`X_DRILL_SERVICE_MISSING`), never run green. Postgres only, so only Postgres is started.
+  fault-drills:
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    runs-on: ubuntu-latest
+    # A runaway kill-switch, not a budget: three drills plus setup is about three minutes.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: test services, in RAM — started
+        run: |
+          nohup bash -c 'docker compose -f docker/docker-compose.test.yml up -d --wait postgres; echo $? > "$RUNNER_TEMP/services.exit"' \
+            > "$RUNNER_TEMP/services.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/services.pid"
+      - uses: ./.github/actions/setup
+      - name: test services, in RAM — ready
+        run: |
+          tail --pid="$(cat "$RUNNER_TEMP/services.pid")" -f /dev/null
+          cat "$RUNNER_TEMP/services.log"
+          [ "$(cat "$RUNNER_TEMP/services.exit" 2>/dev/null)" = 0 ] \
+            || { docker compose -f docker/docker-compose.test.yml ps -a; exit 1; }
+          grep -E '^TEST_DATABASE_URL=' docker/test-services.env >> "$GITHUB_ENV"
+      - name: x drill pg-blackhole, worker-sigkill, web-sigterm on examples/dummy
+        run: |
+          status=0
+          for drill in pg-blackhole worker-sigkill web-sigterm; do
+            doc="$RUNNER_TEMP/drill-${drill}.json"
+            bun run x -- drill "$drill" --cwd examples/dummy --json > "$doc" || status=1
+            jq -r '.summary, (.findings[]? | "  \(.code)\n    cause: \(.cause)\n    fix:   \(.fix)")' "$doc" \
+              || { echo "x drill $drill wrote no document"; status=1; }
+          done
+          exit "$status"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: fault-drills-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/drill-*.json
+          if-no-files-found: error
+          retention-days: 7
 
 
   # Every package's own tests and its own coverage bar, each in isolation. No lint — the gate's

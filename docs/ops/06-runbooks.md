@@ -127,7 +127,9 @@ Then fix the class, not the instance. Each row above corresponds to a countermea
 | Situation | Do |
 |---|---|
 | The migrate Job failed, no serving pod started | the old version is still serving. Fix the migration and re-deploy. **Do not** roll the image back past the migration — the schema may already be partly applied |
-| The migration succeeded, the new code is broken | roll the image back. This is safe **only** if the migration was additive. If it dropped or renamed anything, the old code cannot run against the new schema, and the rollback is a second outage. The older image's pre-upgrade migrate Job **passes**: ledger rows newer than every migration that build ships are read as a rollback — nothing is applied or reverted, and the Job logs `ultimate migrate ledger ahead of build` naming each id (`ahead` in `x db migrate --json`). Redeploying the newer build later finds its migrations already applied |
+| The migration succeeded, the new code is broken | roll the image back. This is safe **only** if the migration was additive. If it dropped or renamed anything, the old code cannot run against the new schema, and the rollback is a second outage. Over additive rows the older image's pre-upgrade migrate Job **passes**: ledger rows newer than every migration that build ships are read as a rollback — nothing is applied or reverted, and the Job logs `ultimate migrate ledger ahead of build` naming each id (`ahead` in `x db migrate --json`). Redeploying the newer build later finds its migrations already applied |
+| The migrate Job of a rollback exits `X_MIGRATION_ROLLBACK_DESTRUCTIVE` | the ledger records (`x_migrations.destructive`, written at apply) that a migration ahead of this build destroyed data — a dropped column or table this build may still read. Nothing was applied and nothing serves. Roll **forward** (`x deploy --image <the newer image> --json`); or, after checking this build runs on the newer schema, set `ROLLBACK_ALLOW_DESTRUCTIVE=<id>[,<id>…]` on the migrate role naming every refused row — the fix prints the list — and re-run. A row with no bit (`null`, applied before the ledger kept one) still only warns |
+| The rollback over a dropped column was NOT refused | the refusing code must be in the image rolled BACK to. The ledger bit and the check ship in the same release (`As of 2026-11`, plan 101): a rollback to a build from before it, or over rows applied before it, cannot refuse. The guarantee starts with the release after this one; until then the row above this one is the rule |
 | The migrate Job of a rollback exits `X_MIGRATION_CONFLICT` | the ledger is not a rollback: an unknown row sorts **between** migrations the older build ships (a deleted or renamed migration), or that build still has a migration it never applied here. The cause names the row and the version that applied it; deploy that version, or follow the `fix:` |
 | The migration waits on a table lock | it does not wait forever: the `migrate` pool sets `lock_timeout` 3 s (`packages/db/src/pool-profile.ts`), so a DDL statement blocked by a long transaction fails with SQLSTATE `55P03`, and `migrate()` sends it again up to 5 more times, at least one timeout apart with a warn line each, before it exits `X_DB_LOCK_TIMEOUT` stating the attempts. Run `x db diagnostics --json` against the same database: `data.blockers.rows[]` names each waiting `pid` and the `blockedBy` pid holding it, with `blockerState` and `blockerTransactionSeconds`. End it (`select pg_terminate_backend(<blockedBy>)`) or wait for it, and re-run the release. The statement itself still has no timeout, by design — a long backfill-free migration is allowed to run |
 | `X_MIGRATE_CONCURRENT` | another migrator held the migration's advisory lock for the whole 60 s bounded wait (`MIGRATION_LOCK_WAIT_MS`). Two overlapping deploys serialise while the first is merely slow; this code means the first did not finish. Check for a stuck migrate Job (`kubectl get jobs`), let it finish or delete it, then re-run |
@@ -165,14 +167,14 @@ the wrong one for a stateless role.
 
 ## `db.pool.retired` in the logs
 
-A plain statement had no answer past the role's statement timeout + 5 s, so the client replaced its pool. The app recovers on its own: this line is the evidence of what happened to the path, not a step to take.
+A statement had no answer past its statement timeout + 5 s, so the client replaced its pool. The app recovers on its own: this line is the evidence of what happened to the path, not a step to take.
 
 | # | Step |
 |---|---|
 | 1 | one line after a node loss or a failover: expected, nothing to do. The statement it names answered `X_DB_UNAVAILABLE`; if it was an autocommit write, read the row before repeating it |
 | 2 | repeating, one per bound: the database is still not answering. `psql "$DATABASE_URL" -c 'select 1'` from the same network; a paused or overloaded server looks the same as a dead path |
 | 3 | requests failing with `X_DB_POOL_EXHAUSTED` and no such line: the pool is full, not gone. `x db diagnostics --json` (`data.activity.rows[]` per session, oldest transaction first; `data.slowQueries.rows[]` when `pg_stat_statements` is installed), then fix the slow statement or raise `DATABASE_POOL_MAX` |
-| 4 | the line names `a statement on every pinned connection`: every slot was a transaction hung past the bound, and the next statement refused for a slot found it. Recovered the same way, nothing to do. A transaction that never fills the gate has no client deadline: `net.ipv4.tcp_retries2` on the node bounds it ([connection arithmetic](04-datastores.md#connection-arithmetic)) |
+| 4 | the statement is a transaction's (`insert`, `update`, `commit` …): a pinned statement is bound the same way, against the `statement_timeout` in force on its connection. Its transaction answered `X_DB_UNAVAILABLE` (`X_DB_COMMIT_UNKNOWN` for a `COMMIT`) and rolled back with the pool. A transaction that raised its own bound to `0` has no client deadline: `net.ipv4.tcp_retries2` on the node bounds it ([connection arithmetic](04-datastores.md#connection-arithmetic)) |
 | 5 | a job retried after this code: `X_DB_UNAVAILABLE` is unclassified, so the worker re-runs the attempt, and an autocommit write that landed runs again. Make that write idempotent or put it in a transaction |
 
 ## Jobs are dead-lettered
@@ -215,3 +217,59 @@ A drain hook — a handler, a job step, a socket teardown — was still running 
 | A long job step is expected on the worker | declare `drain: { workerDeadlineMs }` (1–86400000, `ROLE=worker` only, in place of `deadlineMs` there — which stays capped at an hour). `x deploy --method helm` passes it as `drain.workerDeadlineSeconds` and the chart sizes the worker's grace from it; on Compose raise the worker service's `stop_grace_period` to at least that budget + 10 s. A job that must never be cut off at all: the worker's retire ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |
 | A job holds its pod through a rollout | nothing to do: the worker's retire (`drain.workerRetireMs`, an hour by default) waits it out and the pod shows Terminating meanwhile. `X_JOB_OUTLASTS_DRAIN` in `x verify` names a job whose `timeout` is over that budget |
 | It is not expected | the log line names the hook (`the "<name>" shutdown hook`): make it return once it stops accepting work, not once all work is done |
+
+## Redis is down or stalled
+
+`cache.tier.failed` lines with `tier: "redis"`, or `enqueue` refusing `X_DRIVER_UNAVAILABLE` on `redisJobDriver`. As of 2026-11 both share core's `redisClient()` (`@ultimat3/core/redis`): a command while the connection is down refuses at once, and the client reconnects with no pod restart, however long the outage.
+
+| Log line or code | What happened | Do |
+|---|---|---|
+| `GET did not answer within 150 ms; reads skip the shared tier for 5000 ms` | the server accepted the command and did not answer (paused, swapping, a full network queue). Reads are misses served from Postgres; for 5 s after each missed deadline the tier is not asked at all | `redis-cli -u "$REDIS_URL" --latency`. Raise `redisTier({ commandTimeoutMs })` only if that latency is its normal |
+| `Connection is closed and offline queue is disabled` | no connection: the server is stopped, restarting or unreachable. Every read is a miss in under a millisecond | `redis-cli -u "$REDIS_URL" PING`. When it answers `PONG` the pods reconnect on their own, within a few seconds |
+| `X_CACHE_DRIVER_UNAVAILABLE` in an invalidation's `report.errors` | a bust (1,000 ms deadline, never skipped) did not land: rows it should have cleared serve until their TTL | once Redis answers, repeat the write that triggered it, or `invalidateTags(tags)` with the same tags |
+| `X_DRIVER_UNAVAILABLE` from `enqueue` | nothing was queued. It is retryable: a job attempt that enqueues is re-run | the same `PING`; work that must not be lost is enqueued inside a transaction with the outbox installed: it is staged in Postgres and the relay publishes it once Redis answers |
+
+Postgres takes the read load while the shared tier is gone: single-flight still holds per pod, not across pods. After a restore, keys newer than the restored rows survive in Redis: deploy with a new `APP_VERSION` so the namespace changes.
+
+## The chart's alerts
+
+`docker/helm/templates/alert-rules.yaml` (and the chart `x new` writes) links each rule's
+`runbook_url` here. Every rule is scoped to one release in one namespace; `alerts.rules.<alert>` in
+`values.yaml` overrides its `threshold`, `for`, `severity` or turns it off with `enabled: false`.
+
+### UltimateQueueStalled
+
+`queue_oldest_ready_seconds` over the threshold (300 s) for 5 m: a due job nothing claims. Check that
+a worker runs and serves that queue (`WORKER_QUEUES`), that it is Ready, and that `queue_demand` is
+not pinned at the HPA's `maxReplicas`. A worker boot warns of a queue no worker serves
+(`queue-unserved`).
+
+### UltimateDeadLetters
+
+`queue_dead_jobs` above zero for 5 m. Follow [Jobs are dead-lettered](#jobs-are-dead-lettered).
+
+### UltimateLeaseLost
+
+`job_leases_lost_total` rising for 5 m: the queue re-delivered a job its first worker was still
+running, so its side effects may run twice. The usual cause is a blocked event loop or a starved
+pod (CPU throttling, a long synchronous step): the lease could not be renewed in time. Read the
+worker's `process_event_loop_lag_seconds` and its CPU limits; make the job's writes idempotent.
+
+### UltimateFramesDropped
+
+`channel_frames_dropped_total` rising for 5 m: sync nodes drop frames to clients whose sockets
+cannot keep up, and those clients re-read. Check `connections` per pod against its ceiling and the
+pods' CPU; scale `roles.sync` out before raising anything per pod.
+
+### UltimateServerErrors
+
+More than the threshold (5 %) of `http_requests_total` answered `5xx` for 10 m. The logs carry each
+error's `X_*` code; group by it, and if the share rose with a rollout,
+[roll back the image](#roll-back-a-bad-image).
+
+### UltimateTargetDown
+
+A scrape target of one role (`app_kubernetes_io_component`) reads `up == 0` for 5 m: the pod is
+gone, crash-looping, or its `metrics` port is fenced off. List the role's pods with
+`kubectl get pods -l app.kubernetes.io/component=<role>`; a Running pod still down is
+`networkPolicy.metricsFrom` not admitting the Prometheus namespace.
