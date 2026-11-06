@@ -4,14 +4,7 @@
 // Committed, never rolled back: a later proof reads the rows after the call (plan 101, 40).
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
-import {
-  bindDrawn,
-  ctxOf,
-  isUltimateError,
-  renderThrowable,
-  runExercise,
-  tryUseContext,
-} from '@ultimat3/core';
+import { bindDrawn, isUltimateError, renderThrowable, runExercise } from '@ultimat3/core';
 import type { AnyJobHandle, JobExecution } from '@ultimat3/jobs';
 import { registeredJobs } from '@ultimat3/jobs';
 import type { Policy } from '@ultimat3/policy';
@@ -31,6 +24,7 @@ import {
 } from './exercise-input';
 import type { ExerciseEffect, ExerciseRecord, ExerciseRoom, Observed } from './exercise-report';
 import { openExerciseRoom, overrideLine } from './exercise-report';
+import { withExerciseRequest } from './exercise-request';
 import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
 import { seedPass, tenantPair } from './seed-graph-pass';
@@ -73,7 +67,6 @@ async function subjectsOf(): Promise<readonly Subject[]> {
   // On demand, as every fixture here loads them: the barrel stays off `action` and `query`.
   const { invoke, listActions } = await import('@ultimat3/action');
   const { listQueries, runQuery } = await import('@ultimat3/query');
-  const base = () => tryUseContext() ?? ctxOf({});
   const job = (handle: AnyJobHandle): Subject => ({
     kind: 'job',
     name: handle.name,
@@ -98,7 +91,9 @@ async function subjectsOf(): Promise<readonly Subject[]> {
         policy: target.policy,
         permissions: target.describe().permissions,
         call: async (input, actor) => {
-          await invoke(target, input, { ctx: base(), actor, surface: 'http' });
+          await withExerciseRequest(target.name, actor, () =>
+            invoke(target, input, { surface: 'http' }),
+          );
           return undefined;
         },
       }),
@@ -111,7 +106,9 @@ async function subjectsOf(): Promise<readonly Subject[]> {
         policy: target.policy,
         permissions: target.describe().permissions,
         call: async (input, actor) => {
-          await runQuery(target, input, { ctx: base(), actor, surface: 'http' });
+          await withExerciseRequest(target.name, actor, () =>
+            runQuery(target, input, { surface: 'http' }),
+          );
           return undefined;
         },
       }),
