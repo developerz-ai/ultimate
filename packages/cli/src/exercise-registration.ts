@@ -10,23 +10,23 @@ export const EXERCISE_FILE = 'apps/web/exercise.ts';
  * The password sign-in's two actions the pass cannot drive, by the file that declares each. One line
  * each in the app's file, inside Biome's 100 columns: `login()` refuses the drawn address and password.
  */
-const SIGN_IN_OFF: Readonly<Record<string, readonly [string, string]>> = {
-  'apps/web/app/auth/actions/create-session.ts': [
-    'createSession',
-    'needs a real password; the pass draws one no account holds',
+const SIGN_IN_OFF: ReadonlyMap<string, readonly [string, string]> = new Map([
+  [
+    'apps/web/app/auth/actions/create-session.ts',
+    ['createSession', 'needs a real password; the pass draws one no account holds'],
   ],
-  'apps/web/app/auth/actions/confirm-session.ts': [
-    'confirmSession',
-    'answers the challenge createSession holds; the pass holds none',
+  [
+    'apps/web/app/auth/actions/confirm-session.ts',
+    ['confirmSession', 'answers the challenge createSession holds; the pass holds none'],
   ],
-};
+]);
 
 /** The `off` entries the written files are owed, by primitive name. */
 export const signInExerciseEntries = (
   written: readonly string[],
 ): readonly (readonly [string, string])[] =>
   written.flatMap((path) => {
-    const entry = SIGN_IN_OFF[path];
+    const entry = SIGN_IN_OFF.get(path);
     return entry === undefined ? [] : [entry];
   });
 
