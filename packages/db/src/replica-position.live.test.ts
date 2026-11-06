@@ -29,7 +29,7 @@ describe.skipIf(!hasPostgres)('live · postgres · replica position on a primary
     await notInRecovery.close();
   });
 
-  test('pg_current_wal_lsn parses, and a write moves it forward', async () => {
+  test('pg_current_wal_insert_lsn parses, and a write moves it forward', async () => {
     const before = await primaryPosition(primary);
     await primary.execute(raw('create temp table x_position_probe (id int)'));
     await primary.execute(raw('insert into x_position_probe values (1)'));

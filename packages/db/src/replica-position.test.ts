@@ -96,9 +96,9 @@ describe('a read carrying a position', () => {
 
   test('primaryPosition reads the primary, never the replica, even inside a scope', async () => {
     const { client, primary, replica } = setup('0/0');
-    primary.on(/pg_current_wal_lsn/, { rows: [{ lsn: '0/AB' }] });
+    primary.on(/pg_current_wal_insert_lsn/, { rows: [{ lsn: '0/AB' }] });
     const position = await withReplicaReads(() => client.primaryPosition());
     expect(position).toBe(0xabn);
-    expect(replica.texts.some((text) => text.includes('pg_current_wal_lsn'))).toBe(false);
+    expect(replica.texts.some((text) => text.includes('pg_current_wal_insert_lsn'))).toBe(false);
   });
 });

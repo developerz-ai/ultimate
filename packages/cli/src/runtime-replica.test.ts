@@ -126,7 +126,7 @@ describe('unit · with a replica configured, a request routes', () => {
     expect(primary.texts).toEqual([
       'insert into posts (id) values ($1)',
       'select * from posts where id = $1',
-      'select pg_current_wal_lsn()::text as lsn',
+      'select pg_current_wal_insert_lsn()::text as lsn',
     ]);
   });
 

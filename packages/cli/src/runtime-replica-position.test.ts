@@ -17,7 +17,7 @@ const requestWith = (headers: Readonly<Record<string, string>> = {}, cookie?: st
   });
 
 function pair(replayed: string) {
-  const primary = recordingClient().on(/pg_current_wal_lsn/, { rows: [{ lsn: '0/AB' }] });
+  const primary = recordingClient().on(/pg_current_wal_insert_lsn/, { rows: [{ lsn: '0/AB' }] });
   const replica = recordingClient().on(/pg_last_wal_replay_lsn/, { rows: [{ lsn: replayed }] });
   const client = replicatedClient(primary, replica, { positionCacheMs: 0 });
   setDbClient(client);

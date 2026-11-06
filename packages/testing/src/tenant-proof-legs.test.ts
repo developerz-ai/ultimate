@@ -5,13 +5,18 @@
 import { describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import { CROSS_TENANT_SCOPE as ENTITY_CROSS_TENANT_SCOPE } from '@ultimat3/entity';
-import { allow, can } from '@ultimat3/policy';
+import { allow, can, definePermissions } from '@ultimat3/policy';
 import type { ExerciseRecord, TenantLeg } from './exercise-report';
 import type { SeedRow } from './seed-graph-plan';
 import type { TenantTaint } from './tenant-canary';
 import type { LegAnswer, TenantAttack } from './tenant-proof';
 import { CROSS_TENANT_SCOPE, proveTenant, publicReason, withoutCrossTenant } from './tenant-proof';
 import { testName } from './test-types';
+
+// Declared here, never left to another file: the permission set is one per process, and once
+// any file declares one, `can()` refuses a name nobody declared (X_PERMISSION_UNKNOWN) — so in
+// one process, which file was imported first decided whether this one loaded.
+definePermissions(['post:read']);
 
 const POST = 'aaaaaaaa-0000-7000-8000-000000000001';
 const FILE = 'aaaaaaaa-0000-7000-8000-000000000002';

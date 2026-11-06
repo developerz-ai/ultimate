@@ -8,9 +8,14 @@ import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import { blocks, defineMail, send } from '@ultimat3/mail';
-import { allow, can } from '@ultimat3/policy';
+import { allow, can, definePermissions } from '@ultimat3/policy';
 import { from, query, registerQueries } from '@ultimat3/query';
 import { tpDriver, tpFiles, tpLabelCache, tpLinks, tpVaults } from './tenant-proof-fixture';
+
+// Declared here, never left to another file: the permission set is one per process, and once
+// any file declares one, `can()` refuses a name nobody declared (X_PERMISSION_UNKNOWN) — so in
+// one process, which file was imported first decided whether this one loaded.
+definePermissions(['tp:read', 'tp:write']);
 
 const files = () => tpDriver.repo(tpFiles);
 const vaults = () => tpDriver.repo(tpVaults);

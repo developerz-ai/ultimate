@@ -5,9 +5,14 @@
 import { describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import type { NamedActor } from '@ultimat3/policy';
-import { can, testActor } from '@ultimat3/policy';
+import { can, definePermissions, testActor } from '@ultimat3/policy';
 import { asSeededRow, chooseActor } from './exercise-actor';
 import { testName } from './test-types';
+
+// Declared here, never left to another file: the permission set is one per process, and once
+// any file declares one, `can()` refuses a name nobody declared (X_PERMISSION_UNKNOWN) — so in
+// one process, which file was imported first decided whether this one loaded.
+definePermissions(['exa:write', 'exa:admin']);
 
 const grants = (tenant: string): readonly NamedActor[] => [
   { name: 'anonymous', actor: null },

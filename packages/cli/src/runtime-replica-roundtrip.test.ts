@@ -20,7 +20,7 @@ const ORIGIN = 'http://app.test';
 const READ = 'select * from posts';
 
 function cluster() {
-  const primary = recordingClient().on(/pg_current_wal_lsn/, { rows: [{ lsn: '0/AB' }] });
+  const primary = recordingClient().on(/pg_current_wal_insert_lsn/, { rows: [{ lsn: '0/AB' }] });
   // Paused: replay stands at 0/10, behind the write's 0/AB.
   const standby = recordingClient().on(/pg_last_wal_replay_lsn/, { rows: [{ lsn: '0/10' }] });
   const client = replicatedClient(primary, standby, { positionCacheMs: 0 });

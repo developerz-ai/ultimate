@@ -37,9 +37,14 @@ interface PositionRow {
   readonly lsn: string | null;
 }
 
-/** The primary's current WAL position, read once after a request that wrote has committed. */
+/**
+ * The primary's WAL INSERT position, read once after a request that wrote has committed. Not
+ * `pg_current_wal_lsn()`, the WRITE position: under `synchronous_commit = off` it trails the
+ * commit just made, so a standby replayed exactly that far looked caught up without the row
+ * (measured on the test services' standby: write 0/3029ED0, insert 0/302AE80).
+ */
 export async function primaryPosition(primary: DbClient): Promise<bigint | undefined> {
-  const row = await primary.one<PositionRow>(sql`select pg_current_wal_lsn()::text as lsn`);
+  const row = await primary.one<PositionRow>(sql`select pg_current_wal_insert_lsn()::text as lsn`);
   return parsePosition(row?.lsn);
 }
 
