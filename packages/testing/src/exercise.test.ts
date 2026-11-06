@@ -8,13 +8,18 @@ import { isUltimateError, UltimateError } from '@ultimat3/core';
 import { database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import type { NamedActor } from '@ultimat3/policy';
-import { can, testActor } from '@ultimat3/policy';
+import { can, definePermissions, testActor } from '@ultimat3/policy';
 import { from, query, registerQueries } from '@ultimat3/query';
 import { defineExercise } from './define-exercise';
 import { runExercisePass } from './exercise';
 import type { ExerciseRecord } from './exercise-report';
 import type { SeedWriter } from './seed-graph-plan';
 import { testName } from './test-types';
+
+// Declared here, never left to another file: the permission set is one per process, and once
+// any file declares one, `can()` refuses a name nobody declared (X_PERMISSION_UNKNOWN) — so in
+// one process, which file was imported first decided whether this one loaded.
+definePermissions(['exp-admin:do', 'exp-note:read', 'exp-note:write']);
 
 const orgs = entity('exp_orgs', { columns: { id: uuid().primaryKey(), name: text({ max: 40 }) } });
 const notes = entity('exp_notes', {

@@ -7,11 +7,16 @@ import { action, registerActions, t } from '@ultimat3/action';
 import { UltimateError } from '@ultimat3/core';
 import { type DbClient, generateMigration, migrate, sql } from '@ultimat3/db';
 import { entity, postgresRepo, text, uuid } from '@ultimat3/entity';
-import { can } from '@ultimat3/policy';
+import { can, definePermissions } from '@ultimat3/policy';
 import { runExercisePass } from './exercise';
 import type { ExerciseRecord } from './exercise-report';
 import { entitySeedWriter } from './seed-writer';
 import { tpRoles } from './tenant-proof-fixture';
+
+// Declared here, never left to another file: the permission set is one per process, and once
+// any file declares one, `can()` refuses a name nobody declared (X_PERMISSION_UNKNOWN) — so in
+// one process, which file was imported first decided whether this one loaded.
+definePermissions(['tp:read', 'tp:write']);
 
 export const tpsOrgs = entity('tps_orgs', {
   columns: { id: uuid().primaryKey(), name: text({ max: 40 }) },
