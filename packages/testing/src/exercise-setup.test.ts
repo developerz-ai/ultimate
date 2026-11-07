@@ -102,7 +102,11 @@ describe(testName('unit', 'defineExercise setup'), () => {
   test('a setup that throws refuses the pass with its own error, the room closed', async () => {
     const before = captureNetwork();
     const thrown = new TypeError('the vendor sdk would not load');
-    expect(await failureOf(() => pass({ setup: () => Promise.reject(thrown) }))).toBe(thrown);
+    // `async` and a throw: the setup's own rejection, typed as the hook's `Promise<void>`.
+    const setup = async (): Promise<void> => {
+      throw thrown;
+    };
+    expect(await failureOf(() => pass({ setup }))).toBe(thrown);
     expect(captureNetwork()).toEqual(before);
   });
 });

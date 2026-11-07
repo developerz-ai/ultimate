@@ -6,7 +6,6 @@
 import type { AppConfig, JobsConcurrency } from '@ultimat3/core';
 import {
   ConfigInvalidError,
-  logger,
   renderCauseValue,
   renderFixShellArg,
   UltimateError,
