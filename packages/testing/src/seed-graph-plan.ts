@@ -72,6 +72,12 @@ export interface SeedGraph {
 /** Where `insertSeedGraph` writes. One insert per row, in order, then one update per deferred key. */
 export interface SeedWriter {
   insert(row: SeedRow): Promise<void>;
+  /**
+   * Rows of ONE entity, in plan order, as one write — `insertAll`. Optional: a writer without it
+   * takes `insert` per row. With it, a graph costs one statement per table, not one per row: a
+   * pass seeding a fresh tenant pair per primitive writes primitives × tables rows.
+   */
+  insertMany?(rows: readonly SeedRow[]): Promise<void>;
   update(update: SeedUpdate): Promise<void>;
   /**
    * Each row read back by its primary key, as one digest per row in the order given — `null` for
@@ -81,8 +87,24 @@ export interface SeedWriter {
   snapshot(rows: readonly SeedRow[]): Promise<readonly (string | null)[]>;
 }
 
+/**
+ * Each run of consecutive rows of one entity. The plan writes table by table, so a run is a table's
+ * rows — and a parent table's run always lands before its children's.
+ */
+export function entityRuns(rows: readonly SeedRow[]): readonly (readonly SeedRow[])[] {
+  const runs: SeedRow[][] = [];
+  for (const row of rows) {
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last[0]?.entity === row.entity) last.push(row);
+    else runs.push([row]);
+  }
+  return runs;
+}
+
 /** Writes the plan in order: every insert, then every deferred key. Sequential, so it replays. */
 export async function insertSeedGraph(graph: SeedGraph, writer: SeedWriter): Promise<void> {
-  for (const row of graph.inserts) await writer.insert(row);
+  const { insertMany } = writer;
+  if (insertMany === undefined) for (const row of graph.inserts) await writer.insert(row);
+  else for (const run of entityRuns(graph.inserts)) await insertMany.call(writer, run);
   for (const update of graph.updates) await writer.update(update);
 }

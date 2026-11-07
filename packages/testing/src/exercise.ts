@@ -39,7 +39,7 @@ import type { Subject } from './exercise-subjects';
 import { fixedTenant, seatIn, subjectsOf } from './exercise-subjects';
 import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
-import { seedPass, tenantPair } from './seed-graph-pass';
+import { pairGraph, seedPass, tenantPair } from './seed-graph-pass';
 import type { SeedGraph, SeedWriter } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 import { tenantTaint } from './tenant-canary';
@@ -359,8 +359,9 @@ export async function runExercisePass(
     // In order, one at a time: the seams the room installs are the process's, not the primitive's.
     for (const subject of chosen) {
       const index = live.indexOf(subject);
-      const pair = tenantPair(graph, Math.max(0, index));
-      records.push(await exerciseOne(subject, options, pair, graph, room, sampler));
+      const at = Math.max(0, index);
+      const view = pairGraph(graph, at);
+      records.push(await exerciseOne(subject, options, tenantPair(graph, at), view, room, sampler));
     }
   } catch (error) {
     await room[Symbol.asyncDispose]();

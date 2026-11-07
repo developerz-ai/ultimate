@@ -6,7 +6,14 @@
 import { isUltimateError, renderCauseValue, renderThrowable, UltimateError } from '@ultimat3/core';
 import { seedGraph } from './seed-graph';
 import { seedGraphUnsatisfied } from './seed-graph-error';
-import type { SeedFactory, SeedGraph, SeedRow, SeedUpdate, SeedWriter } from './seed-graph-plan';
+import type {
+  SeedCanary,
+  SeedFactory,
+  SeedGraph,
+  SeedRow,
+  SeedUpdate,
+  SeedWriter,
+} from './seed-graph-plan';
 import { insertSeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 
@@ -38,6 +45,14 @@ const refused = (write: SeedRow | SeedUpdate, error: unknown): unknown => {
 const coded = (writer: SeedWriter): SeedWriter => ({
   insert: (row) =>
     writer.insert(row).catch((error: unknown) => Promise.reject(refused(row, error))),
+  ...(writer.insertMany === undefined
+    ? {}
+    : {
+        insertMany: (rows: readonly SeedRow[]) =>
+          (writer.insertMany?.(rows) ?? Promise.resolve()).catch((error: unknown) =>
+            Promise.reject(refused(rows[0] as SeedRow, error)),
+          ),
+      }),
   update: (update) =>
     writer.update(update).catch((error: unknown) => Promise.reject(refused(update, error))),
   // A read, not a write: nothing a database refuses here is the generated row's fault.
@@ -49,6 +64,59 @@ export const tenantPair = (graph: SeedGraph, index: number): readonly [string, s
   graph.tenants[index * TENANTS_PER_PRIMITIVE] as string,
   graph.tenants[index * TENANTS_PER_PRIMITIVE + 1] as string,
 ];
+
+interface TenantIndex {
+  readonly inserts: ReadonlyMap<string | null, readonly number[]>;
+  readonly updates: ReadonlyMap<string | null, readonly SeedUpdate[]>;
+}
+
+const indexes = new WeakMap<SeedGraph, TenantIndex>();
+
+const grouped = <T>(items: readonly T[], tenantOf: (item: T) => string | null) => {
+  const out = new Map<string | null, T[]>();
+  for (const item of items) {
+    const key = tenantOf(item);
+    const bucket = out.get(key);
+    if (bucket === undefined) out.set(key, [item]);
+    else bucket.push(item);
+  }
+  return out;
+};
+
+const indexOf = (graph: SeedGraph): TenantIndex => {
+  let index = indexes.get(graph);
+  if (index === undefined) {
+    const positions = graph.inserts.map((_, i) => i);
+    index = {
+      inserts: grouped(positions, (i) => (graph.inserts[i] as SeedRow).tenant),
+      updates: grouped(graph.updates, (update) => update.tenant),
+    };
+    indexes.set(graph, index);
+  }
+  return index;
+};
+
+/**
+ * What primitive `index` can see of the pass's graph: the rows of no tenant and its own pair's —
+ * the same rows, in the same order, `canaries` still aligned. Everything a primitive reads off the
+ * graph (ids to bind, its taint, its actor rows) reads this, so its cost is its pair's, never the
+ * whole pass's: a filter of every row per primitive was primitives² over the pass.
+ */
+export function pairGraph(graph: SeedGraph, index: number): SeedGraph {
+  const pair = tenantPair(graph, index);
+  const { inserts, updates } = indexOf(graph);
+  const at = [null, ...pair]
+    .flatMap((tenant) => inserts.get(tenant) ?? [])
+    .sort((a, b) => a - b);
+  return {
+    seed: graph.seed,
+    tenants: pair,
+    order: graph.order,
+    inserts: at.map((i) => graph.inserts[i] as SeedRow),
+    canaries: at.map((i) => graph.canaries[i] as SeedCanary),
+    updates: [null, ...pair].flatMap((tenant) => updates.get(tenant) ?? []),
+  };
+}
 
 /** A factory keyed by a name no seeded entity has would build nothing, and the red would stay. */
 const unknownFactory = (names: readonly string[], known: ReadonlySet<string>): UltimateError =>

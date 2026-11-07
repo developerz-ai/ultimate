@@ -88,6 +88,11 @@ describe(testName('unit', 'entitySeedWriter'), () => {
             seen.push({ entity: target.$name, op: 'insert', orgId: options?.orgId });
             return repo.insert(values, options);
           },
+          // A graph's rows of one table are one write: the scope rides when every row shares it.
+          insertAll: (values, options) => {
+            seen.push({ entity: target.$name, op: 'insert', orgId: options?.orgId });
+            return repo.insertAll(values, options);
+          },
           updateWhere: (filter, patch, options) => {
             seen.push({ entity: target.$name, op: 'update', orgId: options?.orgId });
             return repo.updateWhere(filter, patch, options);

@@ -99,15 +99,19 @@ export function seedGraph(
   for (const factory of Object.values(options.factories ?? {})) factory.reset();
 
   const placed = new Map<string, Placed[]>();
+  // The same rows by tenant: a pool read per row was a filter of the whole parent table, so a pass
+  // seeding a tenant pair per primitive planned in primitives² time.
+  const placedIn = new Map<string, Map<string | null, Placed[]>>();
   const parentValues = (
     reference: ReferenceDescription,
     tenant: string | null,
     index: number,
   ): unknown[] => {
     if (!shapes.has(reference.targetEntity)) return reference.nullable ? [null] : [];
-    const pool = (placed.get(reference.targetEntity) ?? []).filter(
-      (parent) => tenant === null || !scoped(reference.targetEntity) || parent.tenant === tenant,
-    );
+    const pool =
+      tenant === null || !scoped(reference.targetEntity)
+        ? (placed.get(reference.targetEntity) ?? [])
+        : (placedIn.get(reference.targetEntity)?.get(tenant) ?? []);
     const values =
       pool.length === 0 ? [] : rotate(pool, index).map((p) => p.row[reference.targetProperty]);
     return reference.nullable ? [...values, null] : values;
@@ -135,6 +139,8 @@ export function seedGraph(
     const factory = options.factories?.[name];
     const rows: Placed[] = [];
     placed.set(name, rows);
+    const byTenant = new Map<string | null, Placed[]>();
+    placedIn.set(name, byTenant);
     const allUniques = [...shape.uniques, ...shape.partialUniques];
     const taken = allUniques.map(() => new Set<string>());
     const rootProperty = roots.get(name);
@@ -210,7 +216,11 @@ export function seedGraph(
           const key = uniqueKey(row, set);
           if (key !== undefined) taken[i]?.add(key);
         });
-        rows.push({ tenant, row, index });
+        const one = { tenant, row, index };
+        rows.push(one);
+        const bucketRows = byTenant.get(tenant);
+        if (bucketRows === undefined) byTenant.set(tenant, [one]);
+        else bucketRows.push(one);
         inserts.push({ entity: name, table: entity.$table, tenant, row: { ...row } });
         canaries.push({
           entity: name,
