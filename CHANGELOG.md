@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.4.0 - 2026-11-07
+
 ### Highlights
 
 - `x exercise` runs vendor-calling handlers for real under the sealed network: `defineExercise(overrides, { setup })` installs an app's `mockFetch` routes or `cassette()` for the pass.
@@ -55,6 +59,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `@ultimat3/core`: the compiled-binary e2e removes its temp directory through `removeTempDir` (bounded EBUSY/EPERM wait, ~3.5 s): Windows still held the just-exited binary and the bare `rmSync` failed the file after both tests passed.
 - `@ultimat3/cli`: the `x upgrade, one real hop` e2e's cleanup hook carries a measured bound: removing ~49k entries took 5.46 s on the ubuntu runner under coverage, past bun's 5 s hook default.
 - `wiki/Upgrading.md` says what the tools write: `x new` declares `^<version>`, `x upgrade` rewrites every pin it moves exact, on purpose.
+
+### Commits
+
+- fix: sweep 3 â€” x exercise mechanics, attempt signal on success, MCP mounts, x upgrade from mixed pins, flakes (#1016)
 
 ## 30.3.0 - 2026-11-07
 
