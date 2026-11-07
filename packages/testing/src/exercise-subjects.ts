@@ -36,11 +36,7 @@ export interface Subject {
 }
 
 /** `input` seated in `tenant` when the subject declares a seat and one exists; else as given. */
-export const seatIn = (
-  subject: Pick<Subject, 'seat'>,
-  input: unknown,
-  tenant: string,
-): unknown => {
+export const seatIn = (subject: Pick<Subject, 'seat'>, input: unknown, tenant: string): unknown => {
   const seat = subject.seat?.(input, tenant);
   return seat?.kind === 'seated' ? seat.input : input;
 };

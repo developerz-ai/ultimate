@@ -34,9 +34,9 @@ import type {
   Observed,
 } from './exercise-report';
 import { openExerciseRoom, overrideLine } from './exercise-report';
-import { actorRowsOf, attachSweeps, seated, sizedCall } from './exercise-sweeps';
 import type { Subject } from './exercise-subjects';
 import { fixedTenant, seatIn, subjectsOf } from './exercise-subjects';
+import { actorRowsOf, attachSweeps, seated, sizedCall } from './exercise-sweeps';
 import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
 import { pairGraph, seedPass, tenantPair } from './seed-graph-pass';

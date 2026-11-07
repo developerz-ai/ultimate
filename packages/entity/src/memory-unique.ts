@@ -97,6 +97,4 @@ export const uniqueClash = <Row>(
   candidate: Row,
   others: Iterable<Row>,
 ): string | undefined =>
-  uniqueConstraints(entity).length === 0
-    ? undefined
-    : uniqueIndex(entity, others).clash(candidate);
+  uniqueConstraints(entity).length === 0 ? undefined : uniqueIndex(entity, others).clash(candidate);

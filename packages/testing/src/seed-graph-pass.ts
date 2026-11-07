@@ -105,9 +105,7 @@ const indexOf = (graph: SeedGraph): TenantIndex => {
 export function pairGraph(graph: SeedGraph, index: number): SeedGraph {
   const pair = tenantPair(graph, index);
   const { inserts, updates } = indexOf(graph);
-  const at = [null, ...pair]
-    .flatMap((tenant) => inserts.get(tenant) ?? [])
-    .sort((a, b) => a - b);
+  const at = [null, ...pair].flatMap((tenant) => inserts.get(tenant) ?? []).sort((a, b) => a - b);
   return {
     seed: graph.seed,
     tenants: pair,
