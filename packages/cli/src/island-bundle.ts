@@ -189,7 +189,9 @@ async function buildAll(
       // gets the same rule (`island-package-dedupe.ts`): a nested copy is a second module where no
       // symlink folds it, which is every `file:` install on Windows.
       plugins: [
-        ...(runtime === undefined ? [] : [islandRealtimePlugin(root, runtime, follows)]),
+        ...(runtime === undefined
+          ? []
+          : [islandRealtimePlugin(root, runtime, follows, live.length === files.length)]),
         solidDedupePlugin(root),
         ...frameworkDedupePlugins(root),
         solidJsxPlugin,

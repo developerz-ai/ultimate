@@ -188,6 +188,52 @@ describe(testName('unit', 'seedGraph cycles'), () => {
     expect(written).toEqual([...graph.inserts, ...graph.updates]);
   });
 
+  test('a cycle breaks at a table that takes updates, never an appendOnly one', () => {
+    // `sg_a_ledger` sorts first, so name order alone broke the cycle at it — whose trigger refuses
+    // every UPDATE, so the deferred key could never be set.
+    const ledger = entity('sg_a_ledger', {
+      columns: {
+        id: uuid().primaryKey(),
+        accountId: uuid()
+          .references((): AnyColumn => accounts.id)
+          .nullable(),
+      },
+      appendOnly: true,
+    });
+    const accounts = entity('sg_b_accounts', {
+      columns: {
+        id: uuid().primaryKey(),
+        lastEntryId: uuid()
+          .references((): AnyColumn => ledger.id)
+          .nullable(),
+      },
+    });
+    const graph = seedGraph({ ledger, accounts }, { perTable: 2 });
+    expect(graph.order).toEqual(['sg_b_accounts', 'sg_a_ledger']);
+    expect(graph.updates.map((update) => update.entity)).toEqual([
+      'sg_b_accounts',
+      'sg_b_accounts',
+    ]);
+  });
+
+  test('a cycle breakable only at an appendOnly table leaves that key null, no update', () => {
+    const ledger = entity('sg_c_ledger', {
+      columns: {
+        id: uuid().primaryKey(),
+        accountId: uuid()
+          .references((): AnyColumn => accounts.id)
+          .nullable(),
+      },
+      appendOnly: true,
+    });
+    const accounts = entity('sg_d_accounts', {
+      columns: { id: uuid().primaryKey(), firstId: uuid().references((): AnyColumn => ledger.id) },
+    });
+    const graph = seedGraph({ ledger, accounts }, { perTable: 2 });
+    expect(graph.order).toEqual(['sg_c_ledger', 'sg_d_accounts']);
+    expect(graph.updates).toEqual([]);
+  });
+
   test('a cycle with no nullable key refuses, naming the factory to write', () => {
     const eggs = entity('sg_eggs', {
       columns: { id: uuid().primaryKey(), henId: uuid().references((): AnyColumn => hens.id) },
@@ -207,7 +253,8 @@ describe(testName('unit', 'seedGraph cycles'), () => {
 describe(testName('unit', 'seedGraph refusals'), () => {
   const codes = entity('sg_codes', {
     columns: { id: uuid().primaryKey(), code: text({ max: 12 }) },
-    invariants: (c) => [invariant('sg_code_shape', c.code.matches(/^ZZ[0-9]{9}Q$/))],
+    // A lookahead is outside the pattern sampler's subset: no generated value meets the rule.
+    invariants: (c) => [invariant('sg_code_shape', c.code.matches(/^(?=ZZ)ZZ[0-9]{9}Q$/))],
   });
 
   test('a CHECK no generated value meets refuses, naming the column the factory must fill', () => {

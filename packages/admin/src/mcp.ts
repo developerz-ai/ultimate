@@ -8,9 +8,11 @@ import {
   type AnyMcpTool,
   type AppMcp,
   defineAppMcp,
+  exposedPrimitives,
   type JsonSchema,
   jsonResult,
   type McpCaller,
+  type McpRequestFacts,
   type McpToolResult,
   type ResolvedToken,
   type ToolArgs,
@@ -33,7 +35,7 @@ import {
 import { AdminFilterInvalidError } from './errors';
 import type { AdminFieldType } from './fields';
 import { type AskedFilter, checkedFilter } from './list-filters';
-import { adminTokenScopes, adminToolScopes } from './mcp-scopes';
+import { adminTokenScopes, adminToolScopes, includedToolScopes } from './mcp-scopes';
 import { type AdminMcpTool, adminMcpTools, adminToolCatalog } from './mcp-tools';
 import type { AdminAction, AdminRow } from './registry';
 import { adminSearch } from './search';
@@ -250,9 +252,26 @@ export interface AdminMcpActor extends AdminActor {
 
 export interface AdminMcpOptions {
   readonly app: AdminApp;
-  /** Resolve the MCP session's actor. The same hook the HTTP surface uses, never a bypass. */
-  actor(session: { readonly token?: string }): Promise<AdminMcpActor | null> | AdminMcpActor | null;
+  /**
+   * Resolve the MCP session's actor. The same hook the HTTP surface uses, never a bypass. `facts`
+   * is how the request arrived (`McpRequestFacts`: the caller's address, its `Origin`), handed on
+   * from `defineAppMcp`'s `resolveToken` — what a development token checks before it is honoured.
+   */
+  actor(session: {
+    readonly token?: string;
+    readonly facts?: McpRequestFacts;
+  }): Promise<AdminMcpActor | null> | AdminMcpActor | null;
   readonly requestId?: () => string;
+  /** Mount path, `defineAppMcp`'s own. Default `/mcp`; an admin surface beside the app's says `/admin/mcp`. */
+  readonly path?: string;
+  /**
+   * `'exposed'`: the app's own MCP tools on this endpoint too — every action and query that
+   * declared `mcp: { expose: true }`, projected by `defineAppMcp` exactly as on the app's `/mcp`,
+   * each under the admin scope its kind needs (`includedToolScopes`). Read where `adminMcp` runs,
+   * so call it at module scope in `apps/<app>/mcp.ts`: the boot scan evaluates that file after
+   * every primitive registered, and the mount refuses one built earlier (`X_MCP_INCLUDE_EARLY`).
+   */
+  readonly include?: 'exposed';
 }
 
 /** A field type an agent can actually send. Anything richer is a JSON object on the wire. */
@@ -436,15 +455,21 @@ export function adminMcp(opts: AdminMcpOptions): AppMcp {
   const requestId = opts.requestId ?? ((): string => crypto.randomUUID());
   const catalog = adminToolCatalog(opts.app);
 
+  const own = adminToolScopes(catalog);
+
   return defineAppMcp({
     name: 'admin',
     tools: catalog.map((tool) => toMcpTool(opts, requestId, tool)),
+    ...(opts.path === undefined ? {} : { path: opts.path }),
+    // The app's tools are `defineAppMcp`'s projection, never a copy here; the scope map names them
+    // from the same registry read, an instant apart.
+    ...(opts.include === undefined ? {} : { include: opts.include }),
     // The connection gate: each tool needs its admin-level permission as a token scope, checked
     // by the registry BEFORE the actor's policy. A stdio host builds its caller's scopes with
     // `adminTokenScopes`, as `resolveToken` does below.
-    scopes: adminToolScopes(catalog),
-    async resolveToken(token: string): Promise<ResolvedToken | null> {
-      const actor = await opts.actor({ token });
+    scopes: opts.include === 'exposed' ? includedToolScopes(exposedPrimitives(), own) : own,
+    async resolveToken(token: string, facts: McpRequestFacts): Promise<ResolvedToken | null> {
+      const actor = await opts.actor({ token, facts });
       // `kind: 'agent'` — the same actor shape an agent gets everywhere else, so a policy
       // that distinguishes agents from people keeps working on this surface.
       //

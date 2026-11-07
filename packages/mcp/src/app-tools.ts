@@ -22,6 +22,7 @@ import type { McpConfirmations } from './confirmations';
 import { McpToolDuplicateError } from './errors';
 import { exposedPrimitives } from './exposed';
 import { toolsFrom, toolsListed } from './from-action';
+import { noteIncluded } from './include-early';
 import { jobStatusPrimitive } from './job-status-tool';
 import { jobToolBrand } from './job-tool';
 import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
@@ -270,8 +271,8 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
   );
   // An explicitly listed primitive is a refinement of the registry's entry, not a rival to it,
   // so `include` fills the gaps rather than colliding with what the caller already spelled out.
-  const included =
-    input.include === 'exposed' ? notNamed(toolsFrom(exposedPrimitives()), listed) : [];
+  const exposed = input.include === 'exposed' ? exposedPrimitives() : [];
+  const included = notNamed(toolsFrom(exposed), listed);
   const written = handWritten(input.tools);
   // One `job_status` for every `jobTool()` here, projected beside them; an app tool already named
   // that is a duplicate below, never a silent shadow.
@@ -334,7 +335,16 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
             : { oauth: input.oauth, scopes: Object.keys(input.scopes ?? {}) }),
         });
 
-  return { server, tools: projected, route };
+  const app: AppMcp = { server, tools: projected, route };
+  // What `include` saw, so the mount can tell a catalog built before the scan finished
+  // (`X_MCP_INCLUDE_EARLY`) from one built after it.
+  if (input.include === 'exposed') {
+    noteIncluded(
+      app,
+      exposed.map((primitive) => primitive.name),
+    );
+  }
+  return app;
 }
 
 /**

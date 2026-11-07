@@ -7,9 +7,10 @@ import { frozenClock } from '@ultimat3/core';
 import { pageClient } from '@ultimat3/core/page';
 import { type ClientSocket, LiveClient } from './client';
 import type { LiveClientOptions, SignalFactory } from './client-contract';
+import { resetPageRealtime } from './page-reset';
 import { installPageRuntime } from './page-runtime';
 import type { InstalledPage } from './page-store';
-import { installRealtime, uninstallRealtime } from './reactivity';
+import { installRealtime } from './reactivity';
 import { decode, encode, type Frame } from './sync-protocol';
 
 export type PostRow = {
@@ -72,14 +73,7 @@ export class FakeSocket implements ClientSocket {
 
 /** Drop every trace of the previous case's page: its state, its store and its socket. */
 export function resetPage(): void {
-  uninstallRealtime();
-  Reflect.deleteProperty(globalThis, Symbol.for('ultimate.realtime'));
-  Reflect.deleteProperty(globalThis, Symbol.for('ultimate.outbox'));
-  Reflect.deleteProperty(globalThis, Symbol.for('ultimate.page-boot'));
-  Reflect.deleteProperty(globalThis, Symbol.for('ultimate.page-boot.release'));
-  const handle = pageClient();
-  handle.store = undefined;
-  handle.socket = undefined;
+  resetPageRealtime();
 }
 
 export interface PageHarness {

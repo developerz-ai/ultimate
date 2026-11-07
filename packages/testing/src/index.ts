@@ -212,6 +212,7 @@ export type {
   TenantProof,
 } from './exercise-report';
 export { overrideLine } from './exercise-report';
+export type { ExerciseSetup, ExerciseSetupHandle } from './exercise-setup';
 export type {
   Association,
   AssociationMap,

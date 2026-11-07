@@ -188,6 +188,7 @@ export {
   installedRateLimitStore,
   installRateLimitStore,
   resetRateLimitStore,
+  withScratchRateLimitStore,
 } from './rate-limit-installed';
 export type { RateLimitPeek } from './rate-limit-peek';
 export { rateLimitPeek, refilledTokens } from './rate-limit-peek';

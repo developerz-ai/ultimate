@@ -9,7 +9,13 @@
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import type { Frame } from '@ultimat3/realtime';
-import { decode, encode, installRealtime, PROTOCOL_VERSION } from '@ultimat3/realtime';
+import {
+  decode,
+  encode,
+  installRealtime,
+  PROTOCOL_VERSION,
+  resetPageRealtime,
+} from '@ultimat3/realtime';
 import {
   afterAll,
   beforeAll,
@@ -27,9 +33,6 @@ import { runConsoleStates } from './run-console.island.states';
 const APP_ROOT = join(import.meta.dir, '..', '..', '..', '..');
 const SYNC_URL = 'ws://localhost:3001';
 const RUN = { runId: '00000000-0000-4000-8000-0000000000b7', jobId: 'job-7' };
-
-/** The page state every island bundle on a page shares — `globalThis`, by its registered symbol. */
-const PAGE = Symbol.for('ultimate.realtime');
 
 /** One turn of the event loop: the transport's answer and the socket's dial are awaits deep. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -117,7 +120,7 @@ beforeAll(() => {
 
 afterAll(() => {
   // The page state is process-global: left behind it would be the next file's page.
-  Reflect.deleteProperty(globalThis, PAGE);
+  resetPageRealtime();
 });
 
 describe('the run console island, with a connection and no run', () => {

@@ -66,6 +66,24 @@ describe('unit · x upgrade, the walk', () => {
     expect(web.dependencies).toEqual({ '@ultimat3/core': '20.1.0', sass: '^1.0.0' });
   });
 
+  // A mixed set walks its lowest pins one major per run; the workspaces already ahead stay put.
+  test('a straggler hop moves the lowest pins and never the higher ones', async () => {
+    const dir = await fixture({
+      'apps/web/package.json': `${JSON.stringify({ dependencies: { '@ultimat3/core': '21.0.0' } })}\n`,
+    });
+    const { output } = await run(dir, recording().runner, ['--to', '20.1.0']);
+    expect(output.data).toMatchObject({ from: '19.4.0', to: '20.1.0', next: '21.0.0' });
+    expect(output.data?.section?.title).toBe('19.x → 20.0.0, entry by entry');
+    expect(output.data?.pins.map((pin) => `${pin.file} ${pin.name} ${pin.to}`)).toEqual([
+      'package.json @ultimat3/cli 20.1.0',
+      'package.json @ultimat3/core 20.1.0',
+    ]);
+    const web = await Bun.file(join(dir, 'apps/web/package.json')).json();
+    expect(web.dependencies).toEqual({ '@ultimat3/core': '21.0.0' });
+    const root = await Bun.file(join(dir, 'package.json')).json();
+    expect(root.dependencies).toEqual({ '@ultimat3/cli': '20.1.0', '@ultimat3/core': '20.1.0' });
+  });
+
   test('the Bun floor moves with the hop, and the digest is reported, untouched', async () => {
     const dir = await fixture();
     const { output } = await run(dir, recording().runner);

@@ -34,12 +34,13 @@ import type {
   Observed,
 } from './exercise-report';
 import { openExerciseRoom, overrideLine } from './exercise-report';
+import { withExerciseSetup } from './exercise-setup';
 import type { Subject } from './exercise-subjects';
 import { fixedTenant, seatIn, subjectsOf } from './exercise-subjects';
 import { actorRowsOf, attachSweeps, seated, sizedCall } from './exercise-sweeps';
 import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
-import { pairGraph, seedPass, tenantPair } from './seed-graph-pass';
+import { deferredMayStayNull, pairGraph, seedPass, tenantPair } from './seed-graph-pass';
 import type { SeedGraph, SeedWriter } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 import { tenantTaint } from './tenant-canary';
@@ -343,7 +344,8 @@ export async function runExercisePass(
   const sampler = await loadSampler();
   // Not `Math.random`: the frozen RNG answers the same sequence in every process.
   const passSeed = options.seed ?? (crypto.getRandomValues(new Uint32Array(1))[0] as number);
-  const room = await openExerciseRoom();
+  // The app's setup runs inside the seal, before the first row: its routes answer every call.
+  const room = await withExerciseSetup(await openExerciseRoom(), options.overrides?.setup);
   const live = chosen.filter((subject) => !isOff(options.overrides, subject.name));
   const records: ExerciseRecord[] = [];
   let graph: SeedGraph;
@@ -372,7 +374,8 @@ export async function runExercisePass(
   return attachSweeps(records, {
     subjects: chosen.filter((subject) => reached.has(subject.name)),
     entities: options.entities,
-    writer: options.writer,
+    // The sized graphs close their cycles as the pass's did: a refused deferred key stays null.
+    writer: deferredMayStayNull(options.writer),
     main: graph,
     seed: passSeed,
     room,

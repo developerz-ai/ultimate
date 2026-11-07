@@ -86,7 +86,7 @@ class — stay on `.`.
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
 | the node | `./server` | `syncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
-| hooks | `.` | `useQuery` (and `pollEvery` for its `poll`), `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useRecordChanges`, `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
+| hooks | `.` | `useQuery` (and `pollEvery` for its `poll`), `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useRecordChanges`, `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime`, `resetPageRealtime` (tests) |
 | channel records, no replicator | `./server` | `recordPublisher` — an app's committed rows as channel `records`, sequenced per producer ([below](#channel-records-with-no-replicator)) |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
 | first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`, for an island that reads the store or the outbox: the boot's restore and the open outbox, capped (#506). An island taking only `useChannel` / `usePresence` / `useConnection` never awaits it and is never hidden, nor is one taking `useQuery` / `useRecord` in an app that declares no `persist: true` entity |
@@ -303,6 +303,11 @@ same type `@ultimat3/ui` renders.
 state; a `useMutation` call refuses with `X_LIVE_SERVER_RENDER`. With a DOM and no install, every
 hook is `X_REALTIME_UNINSTALLED`. `hasPageSocket()` is the guard a component with a static fallback
 asks.
+
+**Between island tests**, `resetPageRealtime()` (`.`) is the one reset: it closes the page socket —
+whichever bundle's copy built it, through the page object — and drops the page object, the outbox
+and the boot's promise. A mounted chunk carries its own copy of this package, so a test never reaches
+into `Symbol.for('ultimate.realtime')` itself. Tests only; a page's state ends with its tab.
 
 ## Who a socket is
 

@@ -78,6 +78,21 @@ describe('unit · the db package reading an entity is the one generated exceptio
     expect(check(sibling, HANDLE)).toEqual([]);
   });
 
+  // A slice nests (`app/runs/canary/`) as any feature directory does; its entity is the same
+  // generated-handle entry, never a finding the app can only clear by flattening the slice.
+  test('an entity in a nested slice is the same exception, and its repo still is not', () => {
+    const nested = "import { canary } from '@acme/web/app/runs/canary/entity';\ncanary;\n";
+    expect(check(nested, HANDLE)).toEqual([]);
+    const sibling = "import { probe } from '@acme/web/app/runs/canary/entity-probe';\nprobe;\n";
+    expect(check(sibling, HANDLE)).toEqual([]);
+    const repo = "import { list } from '@acme/web/app/runs/canary/repo';\nlist();\n";
+    expect(check(repo, HANDLE).map((one) => one.code)).toEqual(['X_BOUNDARY_PACKAGE_TO_APP']);
+    const surfaceRoot = "import { x } from '@acme/web/app/entity';\nx;\n";
+    expect(check(surfaceRoot, HANDLE).map((one) => one.code)).toEqual([
+      'X_BOUNDARY_PACKAGE_TO_APP',
+    ]);
+  });
+
   test('and nothing else from an app, and no other package', () => {
     const repo = "import { list } from '@acme/web/app/post/repo';\nlist();\n";
     expect(check(repo, HANDLE).map((one) => one.code)).toEqual(['X_BOUNDARY_PACKAGE_TO_APP']);

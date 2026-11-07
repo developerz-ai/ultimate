@@ -856,6 +856,7 @@ Three of them are raised at `notifier(...)`, while the app's modules load, so th
 | `X_MCP_TENANT_REQUIRED` | an MCP call names no tenant | defineAppMcp({ tenant }) acts every call in the tenant the call names, and this call carries no tenant argument | `list_tenants({}) — then send one of its values as the tenant argument of every tools/call` |
 | `X_MCP_TENANT_UNRESOLVED` | the tenant of an MCP call could not be resolved | defineAppMcp({ tenant: { resolve } }) threw, or answered an actor that is not an agent — a failed lookup is never read as "not a member" | `defineAppMcp({ tenant: { arg, resolve: ({ person, value }) => (member ? agentActor({ id: person.id, orgId: value }) : null), list } })` — the cause names what refused; `resolve` answers a `kind: 'agent'` actor, or `null` for a non-member, and never throws |
 | `X_MCP_TENANT_INVALID` | defineAppMcp declares its tenant argument inconsistently | tenant.arg is not a plain argument name, or a tool of this server already declares an input property of that name | `defineAppMcp({ tenant: { arg: 'tenant', resolve, list } }) — pick an argument name no tool's input declares` |
+| `X_MCP_INCLUDE_EARLY` | include: 'exposed' projected before the scan registered every exposed primitive | an mcp endpoint built with include: 'exposed' at the top level of a module the boot scan evaluates before the app's actions and queries — an apps/<app>/{app,site,api,shared}/ file — so its catalog froze without them | `move the defineAppMcp / adminMcp call into apps/<app>/mcp.ts at module scope — the boot scan evaluates that file after every apps/*/{site,app,api,shared} module` |
 
 ## Scraping
 
@@ -1012,6 +1013,7 @@ Two sets override the table, in `failures.ts`:
 | `X_CASSETTE_SECRET` | a cassette about to be written holds a secret value | the value of a redacted env key or a declared secret appears in the bytes about to be written (raw, percent-encoded, base64 or base64url); nothing was written | `cassette(import.meta.dir, <name>, { redact: (text) => text.replaceAll(<value of KEY>, '[redacted]') })` — then re-record |
 | `X_CASSETTE_RECORD_REFUSED` | a cassette recording was refused | ULTIMATE_CASSETTE=record ran under CI, or the run requested a host outside record.hosts | `cassette(import.meta.dir, <name>, { record: { hosts: [<host>] } })` — add the host, and record locally with CI unset |
 | `X_TEST_MODULE_MOCK_UNRESTORABLE` | a mocked module could not be put back at the file boundary | a test file called mock.module() on a module whose real source threw or did not resolve when loaded for its snapshot, so the next file on this worker would see the fake | `x test unit --isolate, or inject the dependency as a parameter instead of mocking the module` |
+| `X_EXERCISE_SETUP_UNSEALED` | an exercise setup let a host through the seal | defineExercise(…, { setup }) called allowHost(): the pass would send a primitive's call out for real, where every vendor is answered by mockFetch or cassette() | `mockFetch('https://<host>/*', handler)` — or cassette(import.meta.dir, '<name>') — in apps/web/exercise.ts's setup, in place of allowHost('<host>') |
 
 ## UI
 

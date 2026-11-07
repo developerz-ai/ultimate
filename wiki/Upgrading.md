@@ -1,6 +1,6 @@
 # Upgrading
 
-**`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` package moves in lockstep — never mix versions. An app declares them at `^<version>`, as `x new` writes, and `bun.lock` pins the exact build.
+**`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` package moves in lockstep — never mix versions. `x new` declares them at `^<version>`; `x upgrade` rewrites every pin it moves exact (`20.1.0`, no caret), on purpose — a caret is how `^19.0.0` beside `^19.4.0` came to be mixed, and a range is a silent upgrade. `bun.lock` pins the exact build either way.
 
 > **From v30, one major per 90 days.** The window, what semver covers, the support window and the security exception: [Stability](Stability). A removal now ships its `@deprecated` alias for at least one minor before a major takes it, so `x upgrade` across one major names no edit a minor did not already warn about. The 29 sections below stay as they are.
 

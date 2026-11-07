@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { resetPage } from './hooks-fixture';
 import { installPageRuntime } from './page-runtime';
-import { awaitPageRuntime } from './page-runtime-wait';
+import { awaitPageRuntime, runtimeSend } from './page-runtime-wait';
 import { peekPageRealtime } from './page-store';
 
 const BOOT = '/_x/page-boot/';
@@ -168,5 +168,27 @@ describe('awaitPageRuntime', () => {
     const runtime = chunk();
     await awaitPageRuntime({ boot: BOOT, load: runtime.load });
     expect(runtime.loads()).toBe(1);
+  });
+});
+
+describe('runtimeSend', () => {
+  test('refuses by code on a page with no runtime, never sending through a copy of its own', () => {
+    expect(() => runtimeSend({ method: 'GET', url: '/api/ping' })).toThrow(
+      expect.objectContaining({ code: 'X_REALTIME_UNINSTALLED' }),
+    );
+  });
+
+  test('sends through the transport the runtime installed', async () => {
+    const page = installPageRuntime();
+    const asked: string[] = [];
+    page.services = {
+      ...page.services,
+      send: (async (req: { readonly url: string }) => {
+        asked.push(req.url);
+        return 'sent';
+      }) as typeof page.services.send,
+    };
+    expect(await runtimeSend({ method: 'GET', url: '/api/ping' })).toBe('sent');
+    expect(asked).toEqual(['/api/ping']);
   });
 });

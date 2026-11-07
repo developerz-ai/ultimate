@@ -39,6 +39,11 @@ export interface PageRealtime {
   readonly booted: Promise<void>;
   /** What a hook calls instead of bundling it — installed with the store, by the page runtime. */
   services: PageServices | undefined;
+  /**
+   * Closes the page socket and unhooks its listeners — set by whichever bundle's copy built it, so
+   * a test reset in ANOTHER copy (`resetPageRealtime`, from an app's island test) can reach it.
+   */
+  closeSocket: (() => void) | undefined;
 }
 
 /**
@@ -68,7 +73,7 @@ export interface PageWrites {
   readonly listeners: Set<() => void>;
 }
 
-const KEY: unique symbol = Symbol.for('ultimate.realtime');
+export const PAGE_KEY: unique symbol = Symbol.for('ultimate.realtime');
 
 /**
  * Where the boot script leaves its promise. The boot is ONE page-level script, not code in every
@@ -149,7 +154,7 @@ function bootComing(): boolean {
   return document.querySelector(`meta[name="${CLIENT_SCOPE_META}"]`) !== null;
 }
 
-type Host = { [KEY]?: PageRealtime };
+type Host = { [PAGE_KEY]?: PageRealtime };
 
 /**
  * Get-or-create the page object — never its runtime: an island that asks before the runtime is
@@ -157,7 +162,7 @@ type Host = { [KEY]?: PageRealtime };
  */
 export function pageRealtime(): PageRealtime {
   const host = globalThis as Host;
-  const existing = host[KEY];
+  const existing = host[PAGE_KEY];
   if (existing !== undefined) return existing;
   const created: PageRealtime = {
     store: undefined,
@@ -168,14 +173,15 @@ export function pageRealtime(): PageRealtime {
       return bootedPromise();
     },
     services: undefined,
+    closeSocket: undefined,
   };
-  Object.defineProperty(host, KEY, { value: created, configurable: true });
+  Object.defineProperty(host, PAGE_KEY, { value: created, configurable: true });
   return created;
 }
 
 /** The page state when some island already made it — never creates one (a server render must not). */
 export function peekPageRealtime(): PageRealtime | undefined {
-  return (globalThis as Host)[KEY];
+  return (globalThis as Host)[PAGE_KEY];
 }
 
 /**

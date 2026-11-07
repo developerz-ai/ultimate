@@ -12,6 +12,7 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { removeTempDir } from '../src/temp-dir-fixture';
 import { VERSION_DEFINE } from '../src/version';
 
 const dir = mkdtempSync(join(tmpdir(), 'ultimate-version-e2e-'));
@@ -19,9 +20,14 @@ const entry = join(dir, 'entry.ts');
 const module = join(import.meta.dir, '..', 'src', 'version.ts');
 const DEFINED = '9.9.9-binary';
 
-afterAll(() => {
-  rmSync(dir, { recursive: true, force: true });
-});
+// Through `removeTempDir`: on Windows the binary that just exited is still held for a moment, and a
+// bare `rmSync` here failed the file with EBUSY after both tests passed.
+afterAll(() =>
+  removeTempDir(dir, {
+    remove: (path) => rmSync(path, { recursive: true, force: true }),
+    sleep: (ms) => Bun.sleep(ms),
+  }),
+);
 
 await Bun.write(
   entry,

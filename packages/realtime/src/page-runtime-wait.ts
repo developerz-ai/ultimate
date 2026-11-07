@@ -3,7 +3,8 @@
 // classic script); every other document — a static export, an anonymous page, an app with no sync
 // node — gets it from the runtime chunk the island loads itself. Never both, never twice.
 
-import { deferredScriptsPending, peekPageRealtime } from './page-store';
+import type { TransportRequest } from '@ultimat3/core/page';
+import { deferredScriptsPending, installedPage, peekPageRealtime } from './page-store';
 
 export interface AwaitPageRuntimeOptions {
   /**
@@ -69,4 +70,14 @@ function firstOf(boot: Listenable): Promise<void> {
     if (isListenable(doc)) doc.addEventListener('DOMContentLoaded', done, { once: true });
     if (typeof addEventListener === 'function') addEventListener('load', done, { once: true });
   });
+}
+
+/**
+ * Core's `clientTransport`, as the page runtime installed it. What a realtime island's bundle sends
+ * through instead of carrying its own copy (`packages/cli/src/island-realtime.ts`): the island
+ * awaited the runtime before its module body ran, so the transport is already on the page.
+ * `X_REALTIME_UNINSTALLED` on a page with no runtime, never a silent second transport.
+ */
+export function runtimeSend(req: TransportRequest): Promise<unknown> {
+  return installedPage('clientTransport').services.send(req);
 }

@@ -5,7 +5,8 @@
 // every app ever scaffolded (measured 2026-09-05). The contract is one file: `apps/<app>/mcp.ts`
 // exports `mcp` — one `AppMcp`, or an array of them, one per population (customers, staff,
 // affiliates) — this module finds it, and both boots mount what it carries: EVERY endpoint at its
-// own `defineAppMcp({ path })`, the one path its RFC 9728 metadata and its 401 also name.
+// own `defineAppMcp({ path })`, the one path its RFC 9728 metadata and its 401 also name — and
+// every app directory's file mounts, so an admin surface's `apps/admin/mcp.ts` stands beside the web one.
 
 // why: a directory's existence — `Bun.file().exists()` answers for files, and `apps/` is a directory.
 import { existsSync } from 'node:fs';
@@ -16,6 +17,7 @@ import type { Route } from '@ultimat3/http';
 import { jsonResponse, originListed, selfOrigin } from '@ultimat3/http';
 import {
   type AppMcp,
+  assertIncludeCurrent,
   assertRecipeLinks,
   McpAppUnmountedError,
   McpPathDuplicateError,
@@ -75,21 +77,43 @@ function endpointsOf(exported: unknown): readonly AppMcp[] | undefined {
   return exported.every(isAppMcp) ? (exported as readonly AppMcp[]) : undefined;
 }
 
-/** Every `apps/<app>/mcp.ts`, app-root-relative and sorted, so two apps answer in one order. */
+/** The web surface's file: endpoint #0 — the default — wherever its directory sorts. */
+const DEFAULT_MCP_FILE = 'apps/web/mcp.ts';
+
+/**
+ * Every `apps/<app>/mcp.ts`, app-root-relative: the web surface's first, then the rest sorted, so
+ * two machines answer in one order and an `apps/admin/mcp.ts` never takes the default endpoint.
+ */
 async function candidates(root: string): Promise<readonly string[]> {
   // A root with no `apps/` is an app with no MCP file, never a boot failure — the scan's ENOENT
   // is answered as "none", and the warning below says which file to write.
   if (!existsSync(join(root, 'apps'))) return [];
   const files: string[] = [];
   for await (const file of new Bun.Glob(APP_MCP_GLOB).scan({ cwd: root })) files.push(file);
-  return files.sort();
+  files.sort();
+  return files.includes(DEFAULT_MCP_FILE)
+    ? [DEFAULT_MCP_FILE, ...files.filter((file) => file !== DEFAULT_MCP_FILE)]
+    : files;
 }
 
 const NOTHING: AppMcpMount = { routes: [], path: null, paths: [], warning: undefined };
 
+/** One mount file's endpoints. */
+interface MountFile {
+  readonly file: string;
+  readonly endpoints: readonly AppMcp[];
+}
+
 /**
  * The routes to mount, or the reason there are none. Pure over the filesystem it is pointed at;
  * `mountAppMcp` below is the one place the warning becomes a log line.
+ *
+ * EVERY app directory's `mcp.ts` mounts — an admin surface's `apps/admin/mcp.ts` beside the web
+ * one — on one route table. The first sorted file used to win alone, so an admin surface's file
+ * silently took the app's `/mcp` away. Each is imported HERE, after the boot scan: the scan
+ * evaluates `apps/<app>/mcp.ts` after every `apps/<app>/{site,app,api,shared}/` module, so an
+ * `include: 'exposed'` built at its top level sees every primitive — and one built earlier, in a
+ * module it re-exports, is `X_MCP_INCLUDE_EARLY` rather than a catalog missing tools.
  *
  * `meta.auth: 'public'` and `enforcedBy: 'handler'` — the http pipeline must not pre-judge:
  * `mcp.route.handle` is the one evaluation, and it reads `Authorization: Bearer` through the
@@ -100,67 +124,78 @@ const NOTHING: AppMcpMount = { routes: [], path: null, paths: [], warning: undef
 export async function appMcpMount(root: string): Promise<AppMcpMount> {
   if (!(await exposed(root))) return NOTHING;
   const files = await candidates(root);
-  const fallbackFile = 'apps/web/mcp.ts';
+  const mounted: MountFile[] = [];
   for (const file of files) {
     const module = (await import(join(root, file))) as Record<string, unknown>;
     const endpoints = endpointsOf(module[APP_MCP_EXPORT]);
     if (endpoints === undefined) continue;
-    // Every endpoint is built by now: an error's declared `docs://recipes/` link must name a recipe
-    // one of them serves (`X_MCP_RECIPE_UNKNOWN`), the union and never one endpoint alone.
-    assertRecipeLinks(servedRecipes());
-    return mountEndpoints(endpoints, file);
+    for (const endpoint of endpoints) assertIncludeCurrent(endpoint, file);
+    mounted.push({ file, endpoints });
   }
-  return {
-    ...NOTHING,
-    warning: new McpAppUnmountedError({
-      reason: 'missing',
-      path: UNROUTED_MCP_PATH,
-      file: files[0] ?? fallbackFile,
-    }),
-  };
+  if (mounted.length === 0) {
+    return {
+      ...NOTHING,
+      warning: new McpAppUnmountedError({
+        reason: 'missing',
+        path: UNROUTED_MCP_PATH,
+        file: files[0] ?? DEFAULT_MCP_FILE,
+      }),
+    };
+  }
+  // Every endpoint is built by now: an error's declared `docs://recipes/` link must name a recipe
+  // one of them serves (`X_MCP_RECIPE_UNKNOWN`), the union and never one endpoint alone.
+  assertRecipeLinks(servedRecipes());
+  return mountEndpoints(mounted);
 }
 
 /**
- * One file's endpoints onto one route table. An endpoint built without `resolveToken` has no
+ * Every file's endpoints onto one route table. An endpoint built without `resolveToken` has no
  * route: it is skipped and the FIRST such is the warning, so one unfinished population never takes
  * the others down with it. Two endpoints on one route is thrown — see `McpPathDuplicateError`.
+ * Numbering: `#n` in a message is the endpoint's index in its own file's export; only the very
+ * first endpoint mounted is the default (#0 of the route names and the root metadata document).
  */
-function mountEndpoints(endpoints: readonly AppMcp[], file: string): AppMcpMount {
+function mountEndpoints(files: readonly MountFile[]): AppMcpMount {
   const routes: Route[] = [];
   const paths: string[] = [];
-  const claimed = new Map<string, number>();
+  const claimed = new Map<string, { readonly file: string; readonly index: number }>();
   let warning: McpAppUnmountedError | undefined;
-  endpoints.forEach((endpoint, index) => {
-    const route = endpoint.route;
-    if (route === undefined) {
-      warning ??= new McpAppUnmountedError({
-        reason: 'no-route',
-        path: UNROUTED_MCP_PATH,
-        file,
-        ...(index === 0 ? {} : { endpoint: index }),
-      });
-      return;
-    }
-    // The descriptor's own path — the one its metadata, its `resourceUrl` and its 401 were built
-    // over. A mount path from anywhere else is a resource advertised where nothing answers.
-    const path = route.path;
-    for (const mounted of endpointRoutes(route, path, index)) {
-      const key = `${mounted.method} ${mounted.path}`;
-      const first = claimed.get(key);
-      if (first !== undefined) {
-        throw new McpPathDuplicateError({
-          method: mounted.method,
-          path: mounted.path,
-          endpoints: [first, index],
+  let mountedIndex = 0;
+  for (const { file, endpoints } of files) {
+    endpoints.forEach((endpoint, index) => {
+      const route = endpoint.route;
+      if (route === undefined) {
+        warning ??= new McpAppUnmountedError({
+          reason: 'no-route',
+          path: UNROUTED_MCP_PATH,
           file,
+          ...(index === 0 ? {} : { endpoint: index }),
         });
+        return;
       }
-      claimed.set(key, index);
-      routes.push(mounted);
-    }
-    paths.push(path);
-  });
-  return { routes, path: endpoints[0]?.route?.path ?? null, paths, warning };
+      // The descriptor's own path — the one its metadata, its `resourceUrl` and its 401 were built
+      // over. A mount path from anywhere else is a resource advertised where nothing answers.
+      const path = route.path;
+      for (const one of endpointRoutes(route, path, mountedIndex)) {
+        const key = `${one.method} ${one.path}`;
+        const first = claimed.get(key);
+        if (first !== undefined) {
+          throw new McpPathDuplicateError({
+            method: one.method,
+            path: one.path,
+            endpoints: [first.index, index],
+            file,
+            firstFile: first.file,
+          });
+        }
+        claimed.set(key, { file, index });
+        routes.push(one);
+      }
+      paths.push(path);
+      mountedIndex += 1;
+    });
+  }
+  return { routes, path: paths[0] ?? null, paths, warning };
 }
 
 type Descriptor = NonNullable<AppMcp['route']>;

@@ -92,10 +92,14 @@ const pinAll = async (version: string): Promise<void> => {
 };
 
 describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
+  // The bound is the removal's own: `work` holds two full installs and a private install cache,
+  // ~49k entries. Measured: 0.7–1.3 s on a local NVMe, 5.46 s on the ubuntu runner under
+  // `--coverage` (ci run 42392549959, attempt 1), which bun's 5 s hook default failed as a timeout
+  // though nothing was wrong. A minute is ten times the slowest measured, not a guess.
   afterAll(() => {
     registry?.kill();
     if (work !== '') rmSync(work, { recursive: true, force: true });
-  });
+  }, 60_000);
 
   beforeAll(async () => {
     work = realpathSync(mkdtempSync(join(tmpdir(), 'ultimate-upgrade-e2e-')));

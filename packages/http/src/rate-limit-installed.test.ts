@@ -10,6 +10,7 @@ import {
   installedRateLimitStore,
   installRateLimitStore,
   resetRateLimitStore,
+  withScratchRateLimitStore,
 } from './rate-limit-installed';
 
 // Process-wide, and another file's server may still hold a frame: every test starts empty.
@@ -81,5 +82,30 @@ describe('adopting a store', () => {
     undoB();
     undoB();
     expect(installedRateLimitStore()).toBe(a);
+  });
+});
+
+describe('withScratchRateLimitStore', () => {
+  const BUCKET = { capacity: 1, refillPerSecond: 0.0001 };
+
+  test("a spend inside is the scratch's: the installed bucket is full after, the slot restored", async () => {
+    const store = shared();
+    installRateLimitStore(store);
+    const inside = await withScratchRateLimitStore(async () => {
+      expect(installedRateLimitStore()).not.toBe(store);
+      // The declaration is still judged against what the app installed.
+      expect(installedRateLimitStore().scope).toBe('shared');
+      return installedRateLimitStore().take('k', BUCKET, 1, 1_700_000_000_000);
+    });
+    expect(inside.allowed).toBe(true);
+    expect(installedRateLimitStore()).toBe(store);
+    expect((await store.take('k', BUCKET, 1, 1_700_000_000_000)).allowed).toBe(true);
+  });
+
+  test('a throw inside still restores the slot', async () => {
+    const store = installedRateLimitStore();
+    const thrown = new TypeError('the exercise broke');
+    await expect(withScratchRateLimitStore(() => Promise.reject(thrown))).rejects.toBe(thrown);
+    expect(installedRateLimitStore()).toBe(store);
   });
 });

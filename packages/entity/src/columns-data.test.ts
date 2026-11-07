@@ -56,6 +56,13 @@ describe('unit · json()', () => {
     expect(settings.$meta.kind).toBe('jsonb');
     expect(sqlTypeOf(settings.$meta)).toBe('jsonb');
   });
+
+  test('the schema it was given rides on $meta, through every modifier', () => {
+    const schema = t.object({ seats: t.number });
+    // What a seed generator draws a storable value from (`@ultimat3/testing`'s seed values).
+    expect(json(schema).$meta.schema).toBe(schema);
+    expect(json(schema).nullable().$meta.schema).toBe(schema);
+  });
 });
 
 describe('unit · bigint()', () => {

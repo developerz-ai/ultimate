@@ -1,8 +1,12 @@
 // A value for one column, read off the column's own declaration — its kind, nullability, enumerated
-// values, length, money parts and default — never off its name. Every candidate is run through the
-// column's `$parse`, which refuses exactly what its CHECK refuses, so what survives is storable.
+// values, length, money parts, default, `matches()` patterns and `json(schema)` — never off its
+// name. Every candidate is run through the column's `$parse`, which refuses exactly what its CHECK
+// refuses, so what survives is storable.
 
+import { fnv1a } from '@ultimat3/core';
 import type { ColumnMeta } from '@ultimat3/entity';
+import type * as Sample from '@ultimat3/schema/sample';
+import { patternSamples } from './seed-pattern-sample';
 
 /** A column as `entity()` declares it, structurally: this barrel never loads `@ultimat3/entity`. */
 export interface SeedColumn {
@@ -18,6 +22,11 @@ export interface ValueContext {
   readonly canary: string;
   /** Declaration position of the column, so two instants on one row are ordered as declared. */
   readonly position: number;
+  /**
+   * The `matches(/…/)` patterns the entity's invariants hold this column to (`declaredPatterns`).
+   * Each one adds strings built from the pattern itself, so a rule no fixed shape meets is met.
+   */
+  readonly patterns?: readonly RegExp[] | undefined;
   uuid(): string;
 }
 
@@ -59,7 +68,46 @@ const textCandidates = (property: string, meta: ColumnMeta, ctx: ValueContext): 
     `https://seed.test/${word}/${ctx.canary}`,
     ctx.canary,
   ];
-  return meta.length === undefined ? shapes : [...shapes, ctx.canary.slice(0, meta.length)];
+  const sized = meta.length === undefined ? shapes : [...shapes, ctx.canary.slice(0, meta.length)];
+  return [...sized, ...fromPatterns(property, ctx)];
+};
+
+/** Strings drawn from each declared pattern, kept only where every other pattern agrees. */
+const fromPatterns = (property: string, ctx: ValueContext): string[] => {
+  const patterns = ctx.patterns ?? [];
+  return patterns
+    .flatMap((pattern) => patternSamples(pattern, `${property}:${ctx.canary}`))
+    .filter((sample) => patterns.every((pattern) => pattern.test(sample)));
+};
+
+let loadedSampler: typeof Sample | undefined;
+
+/**
+ * `@ultimat3/schema/sample`, loaded on the first `json(schema)` column and never at import: this
+ * module is on the barrel, and the walker is a dynamic-only dependency there (`CLAUDE.md`).
+ * `require` and not `import()` because every caller of `candidatesFor` is synchronous.
+ */
+const sampler = (): typeof Sample => {
+  loadedSampler ??= require('@ultimat3/schema/sample') as typeof Sample;
+  return loadedSampler;
+};
+
+/**
+ * Values the column's own schema accepts, seeded by the row so two rows differ and a rerun does
+ * not; then the bare `{}`/`[]`, which a schema-less `jsonb` column stores.
+ */
+const jsonCandidates = (property: string, meta: ColumnMeta, ctx: ValueContext): unknown[] => {
+  const schema = meta.schema;
+  if (schema === undefined) return [{}, []];
+  const { arbitrary, sampleInput, BOUNDARY_RUNS } = sampler();
+  const seed = fnv1a(`${property}:${ctx.canary}`);
+  return [
+    arbitrary(schema, { seed, run: BOUNDARY_RUNS }),
+    arbitrary(schema, { seed, run: 0 }),
+    sampleInput(schema),
+    {},
+    [],
+  ];
 };
 
 const byKind = (property: string, meta: ColumnMeta, ctx: ValueContext): unknown[] => {
@@ -84,7 +132,7 @@ const byKind = (property: string, meta: ColumnMeta, ctx: ValueContext): unknown[
     case 'date':
       return [`2026-01-${String((n % 28) + 1).padStart(2, '0')}`];
     case 'jsonb':
-      return [{}, []];
+      return jsonCandidates(property, meta, ctx);
     case 'bytea':
       return [new Uint8Array([n % 256])];
     case 'array':
@@ -123,8 +171,19 @@ export function candidatesFor(
       out.push(result.ok);
     }
   }
-  return out;
+  return keepsPatternsFirst(out, ctx.patterns ?? []);
 }
+
+/**
+ * Stable: what keeps every declared pattern moves ahead, so `factoriesFor`, which takes the FIRST
+ * candidate and runs no solver, builds a row its own rules accept.
+ */
+const keepsPatternsFirst = (values: unknown[], patterns: readonly RegExp[]): unknown[] => {
+  if (patterns.length === 0) return values;
+  const keeps = (value: unknown): boolean =>
+    typeof value === 'string' && patterns.every((pattern) => pattern.test(value));
+  return [...values.filter(keeps), ...values.filter((value) => !keeps(value))];
+};
 
 /** Candidates offered verbatim (a factory's value), kept only where the column stores them. */
 export function storable(column: SeedColumn, values: readonly unknown[]): readonly unknown[] {

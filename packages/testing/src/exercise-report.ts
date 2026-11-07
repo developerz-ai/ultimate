@@ -13,6 +13,7 @@ import {
 import type { RowObserver } from '@ultimat3/entity';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import { testMail } from './fixture-mail';
+import { routeMatches } from './mock-route';
 import type { PlanProof, SentStatement } from './plan-sweep';
 import type { ScaleProof, StatementTally } from './scale-sweep';
 import {
@@ -228,6 +229,10 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
     },
     end: (): Observed => {
       const calls = requestLog().slice(logFrom);
+      // A call a route answered never left the process: the app's `setup` installed it.
+      const { mocks } = captureNetwork();
+      const refused = (call: (typeof calls)[number]): boolean =>
+        !local(call.url) && !mocks.some((route) => routeMatches(route, call));
       const effects: ExerciseEffect[] = [
         ...[...tally(rows)].map(([key, count]): ExerciseEffect => {
           const [entity = '', op = ''] = key.split('\u0000');
@@ -241,11 +246,11 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
             kind: 'network',
             method: call.method,
             host: hostOf(call.url),
-            refused: !local(call.url),
+            refused: refused(call),
           }),
         ),
       ];
-      const refusedHosts = calls.filter((call) => !local(call.url)).map((c) => hostOf(c.url));
+      const refusedHosts = calls.filter(refused).map((c) => hostOf(c.url));
       const payloads: EffectPayload[] = [
         ...mail.outbox().map(({ message }, i) => ({
           path: `effect.mail[${i}]`,

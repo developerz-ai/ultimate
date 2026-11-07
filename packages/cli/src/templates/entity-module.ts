@@ -3,9 +3,14 @@
 // "the entity files this run wrote" asks here: three of them matched `/entity.ts` alone, so a
 // second entity in a feature could be written by nothing and registered by nothing.
 
-/** `apps/<app>/<surface>/<feature>/entity.ts` or `…/entity-<name>.ts` — never a test beside it. */
+/**
+ * `apps/<app>/<surface>/<feature>/entity.ts` or `…/entity-<name>.ts` — never a test beside it. A
+ * slice nests (`app/runs/canary/entity.ts`) as freely as any other feature directory does, so the
+ * feature is one segment or more: a depth-one rule refused a nested slice's entity at the package
+ * boundary while the app's own surface rules accepted the same file.
+ */
 const ENTITY_MODULE =
-  /^apps\/[^/]+\/(?<rest>[^/]+\/[a-z0-9-]+)\/(?<stem>entity(?:-[a-z0-9-]+)?)\.ts$/;
+  /^apps\/[^/]+\/(?<rest>[^/]+(?:\/[a-z0-9-]+)+)\/(?<stem>entity(?:-[a-z0-9-]+)?)\.ts$/;
 
 /** Whether `path` is a module a generator declares an entity in. */
 export const isEntityModule = (path: string): boolean => ENTITY_MODULE.test(path);

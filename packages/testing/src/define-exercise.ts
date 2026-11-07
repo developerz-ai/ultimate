@@ -5,6 +5,7 @@
 
 import type { ExerciseOptions } from '@ultimat3/action';
 import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import type { ExerciseSetup } from './exercise-setup';
 import type { SeedFactory } from './seed-graph-plan';
 
 /** 39's option type, exactly: `{ actor, input?, runs? }` or `{ off: '<reason>' }`. */
@@ -18,6 +19,8 @@ export interface ExerciseOverrides {
   readonly actorEntity?: string;
   /** By entity name: the pass's graph builds those rows with them (`seedGraph`'s `factories`). */
   readonly factories?: Readonly<Record<string, SeedFactory>>;
+  /** The app's hook, run once inside the pass's sealed room (`exercise-setup.ts`). */
+  readonly setup?: ExerciseSetup;
 }
 
 /** What the whole pass needs to know of the app, beside the per-primitive entries. */
@@ -34,6 +37,13 @@ export interface ExerciseAppOptions {
    * refused when the pass runs.
    */
   readonly factories?: Readonly<Record<string, SeedFactory>>;
+  /**
+   * Run in the exercise process once the network is sealed, before the first row: install the
+   * `mockFetch` routes or `cassette()` your vendor-calling handlers need, so they run for real.
+   * What it returns (a cassette, any `Disposable`) is disposed after the pass. `allowHost` here is
+   * `X_EXERCISE_SETUP_UNSEALED` — the pass never sends a call out.
+   */
+  readonly setup?: ExerciseSetup;
 }
 
 /** `X_CONTRACT_EXERCISE_UNDECLARED`, 39's code for the same silence: an `off` with no reason. */
@@ -59,6 +69,7 @@ export function defineExercise(
     entries,
     ...(app.actor === undefined ? {} : { actorEntity: app.actor.$name }),
     ...(app.factories === undefined ? {} : { factories: app.factories }),
+    ...(app.setup === undefined ? {} : { setup: app.setup }),
   });
 }
 

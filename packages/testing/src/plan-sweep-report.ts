@@ -24,7 +24,25 @@ const excerpt = (statement: string): string =>
 const indexLine = (finding: PlanFinding): string =>
   `indexes: [{ on: [${finding.index.map((p) => `'${p}'`).join(', ')}] }]`;
 
+/**
+ * A read that compares no column of the table — a whole-table count, an unfiltered export — is
+ * narrowed by no index: `on: []` is a line `x db gen` refuses. What ends it is saying why it may
+ * read every row, around the call or on the entity, or giving it a condition.
+ */
+function wholeRead(finding: PlanFinding, senders: readonly ExerciseRecord[]): SweepFinding {
+  const by = senders.map(primitive).join(', ');
+  const entity = renderFixLiteral(finding.entity, '<entity>');
+  const rerun = renderFixShellArg(senders[0]?.name ?? '', '<primitive>');
+  return {
+    code: finding.code,
+    cause: `${by} sent ${renderCauseValue(excerpt(finding.statement))}, which reads ${finding.table} whole (${finding.node}) and compares no column of it: no index narrows it, so it slows with every row the table gains`,
+    fix: `x exercise ${rerun} --json   # after expectedSeqScan('<why it reads every row>', fn) around the read, or scan: '<why it stays small>' in entity(${entity}), or a where clause that bounds it`,
+    at: senders[0] === undefined ? finding.entity : primitive(senders[0]),
+  };
+}
+
 function planFinding(finding: PlanFinding, senders: readonly ExerciseRecord[]): SweepFinding {
+  if (finding.index.length === 0) return wholeRead(finding, senders);
   const by = senders.map(primitive).join(', ');
   const entity = renderFixLiteral(finding.entity, '<entity>');
   const name = renderFixShellArg(`${finding.table}-${finding.index.join('-')}-index`, '<name>');
@@ -72,9 +90,10 @@ export function planSweepFindings(records: readonly ExerciseRecord[]): readonly 
 /** One line per red: `action listPosts · X_QUERY_UNINDEXED posts on [orgId, authorId]`. */
 export function planSweepLines(records: readonly ExerciseRecord[]): readonly string[] {
   return records.flatMap((record) => [
-    ...(record.plans?.findings ?? []).map(
-      (finding) =>
-        `${primitive(record)} · ${finding.code} ${finding.table} on [${finding.index.join(', ')}]`,
+    ...(record.plans?.findings ?? []).map((finding) =>
+      finding.index.length === 0
+        ? `${primitive(record)} · ${finding.code} ${finding.table}, every row (no column to index)`
+        : `${primitive(record)} · ${finding.code} ${finding.table} on [${finding.index.join(', ')}]`,
     ),
     ...(record.scale?.verdict === 'grows' ? record.scale.shapes : []).map(
       (shape) =>
