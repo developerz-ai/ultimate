@@ -282,3 +282,85 @@ describe(testName('unit', 'seedGraph refusals'), () => {
     expect(() => seedGraph(schema, { seed: Number.NaN })).toThrow(/seed/);
   });
 });
+
+describe(testName('unit', 'seedGraph partial uniques'), () => {
+  // notificado.co's `orgs`: one staff org, any number of customer ones.
+  const orgs = entity('sg_kind_orgs', {
+    columns: { id: uuid().primaryKey(), kind: enumerated(['customer', 'staff']) },
+    indexes: [{ on: ['kind'], unique: true, where: (c) => c.kind.eq('staff') }],
+  });
+  const notes = entity('sg_kind_notes', {
+    columns: {
+      id: uuid().primaryKey(),
+      orgId: uuid()
+        .references(() => orgs.id)
+        .tenant(),
+      body: text({ max: 40 }),
+    },
+  });
+
+  test('a factory building every column of a partial unique leaves it to the database', () => {
+    const customer = defineFactory<{ kind: 'customer' | 'staff' }>(orgs, {
+      defaults: () => ({ kind: 'customer' }),
+    });
+    const graph = seedGraph(
+      { orgs, notes },
+      { tenants: 6, seed: 1, factories: { sg_kind_orgs: customer } },
+    );
+    const kinds = graph.inserts
+      .filter((i) => i.entity === 'sg_kind_orgs')
+      .map((i) => i.row['kind']);
+    expect(kinds.length).toBe(6);
+    expect(new Set(kinds)).toEqual(new Set(['customer']));
+  });
+
+  test('with no factory it is held as total, never looser than the table', () => {
+    let caught: unknown;
+    try {
+      seedGraph({ orgs, notes }, { tenants: 6, seed: 1 });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: 'X_SEED_GRAPH_UNSATISFIED' });
+  });
+});
+
+describe(testName('unit', 'seedGraph derive'), () => {
+  // notificado.co's `memorial_templates`: `scopeKey` spells the owner the graph picked.
+  const owners = entity('sg_owner_orgs', { columns: { id: uuid().primaryKey() } });
+  const scopeMatches = (ownerOrgId: string, scopeKey: string): boolean =>
+    scopeKey === `org:${ownerOrgId}`;
+  const templates = entity('sg_scoped_templates', {
+    columns: {
+      id: uuid().primaryKey(),
+      ownerOrgId: uuid().references(() => owners.id),
+      scopeKey: text({ max: 64 }),
+    },
+    invariants: (c) => [
+      invariant('sg_scope_key_matches', c.satisfies(scopeMatches, ['ownerOrgId', 'scopeKey'])),
+    ],
+  });
+
+  test('derive builds a column from the reference the graph chose', () => {
+    const graph = seedGraph(
+      { owners, templates },
+      {
+        seed: 3,
+        factories: {
+          sg_scoped_templates: {
+            build: () => ({}),
+            reset: () => undefined,
+            derive: (row) => ({ scopeKey: `org:${String(row['ownerOrgId'])}` }),
+          },
+        },
+      },
+    );
+    const rows = graph.inserts.filter((i) => i.entity === 'sg_scoped_templates');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const { row } of rows) expect(row['scopeKey']).toBe(`org:${String(row['ownerOrgId'])}`);
+  });
+
+  test('without it no generated scopeKey names the owner', () => {
+    expect(() => seedGraph({ owners, templates }, { seed: 3 })).toThrow(/sg_scope_key_matches/);
+  });
+});
