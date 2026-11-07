@@ -213,7 +213,7 @@ job({
   input: t.object({}),
   idempotencyKey: () => 'platform',
   retry: { ...DEFAULT_RETRY, attempts: 1 },
-  run: () => undefined,
+  run: async () => undefined,
 });
 
 const one = async (
