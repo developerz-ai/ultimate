@@ -14,7 +14,7 @@
 
 import type { Gauge } from '@ultimat3/core';
 import { gauge } from '@ultimat3/core';
-import type { JobOutcome } from './execute';
+import type { JobOutcome } from './execute-result';
 
 /**
  * `JobOutcome` -> the `jobs_total` label, and `null` for the outcomes that are not one. `suspended`

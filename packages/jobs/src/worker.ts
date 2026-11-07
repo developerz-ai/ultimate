@@ -18,7 +18,7 @@ import { nowMs } from './clock';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob, JobRecord } from './driver';
 import { DEFAULT_QUEUE } from './driver';
-import type { JobExecution } from './execute';
+import type { JobExecution } from './execute-result';
 import { registeredJobs } from './job';
 import { concurrencyLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';

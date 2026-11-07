@@ -14,7 +14,7 @@ import {
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, SettleBy } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
-import type { JobExecution, JobOutcome } from './execute';
+import type { JobExecution, JobOutcome } from './execute-result';
 import type { AnyJobHandle } from './job';
 import { backoffDelayMs, isFinalUnwindAttempt } from './retry';
 import type { JobStopReason } from './retry-classification';

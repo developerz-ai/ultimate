@@ -205,8 +205,9 @@ export {
 } from './events';
 export type { PostgresEventBusOptions } from './events-pg';
 export { postgresEventBus } from './events-pg';
-export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
+export type { ExecuteJobOptions } from './execute';
 export { executeJob } from './execute';
+export type { JobExecution, JobOutcome } from './execute-result';
 export type { ExportDefinition, ExportReport } from './export';
 export { DEFAULT_EXPORT_BATCH, DEFAULT_EXPORT_MAX_PART_BYTES, exportRows } from './export';
 export { ExportPartTooLargeError, ExportRowInvalidError } from './export-errors';
