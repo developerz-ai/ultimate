@@ -14,6 +14,7 @@ import { from, query, registerQueries } from '@ultimat3/query';
 import { defineExercise } from './define-exercise';
 import { runExercisePass } from './exercise';
 import type { ExerciseRecord } from './exercise-report';
+import { defineFactory } from './factories';
 import type { SeedWriter } from './seed-graph-plan';
 import { testName } from './test-types';
 
@@ -316,6 +317,38 @@ describe(testName('unit', 'runExercisePass'), () => {
     expect(isUltimateError(refused) && refused.code).toBe('X_DECLARATION_UNKNOWN');
     const unknownOnly = await one('expPassNoSuch').catch((error: unknown) => error);
     expect(isUltimateError(unknownOnly) && unknownOnly.code).toBe('X_DECLARATION_UNKNOWN');
+  });
+
+  test("defineExercise's factories reach the pass's graph", async () => {
+    const titled = (index: number): string => `titled-${index}`;
+    const seen: string[] = [];
+    const recording: SeedWriter = {
+      ...writer,
+      insert: async (row) => {
+        if (row.entity === 'exp_notes') seen.push(String(row.row['title']));
+        await writer.insert(row);
+      },
+    };
+    const factory = defineFactory<{ title: string }>(notes, {
+      defaults: (index) => ({ title: titled(index) }),
+    });
+    await runExercisePass({
+      entities: [orgs, notes],
+      writer: recording,
+      roles,
+      only: 'expPassCreate',
+      overrides: defineExercise({}, { factories: { exp_notes: factory } }),
+    });
+    // The factory's rows, beside the tenant proof's own generated canaries.
+    expect(seen.filter((title) => /^titled-\d+$/.test(title)).length).toBeGreaterThan(0);
+    const typo = await runExercisePass({
+      entities: [orgs, notes],
+      writer,
+      roles,
+      only: 'expPassCreate',
+      overrides: defineExercise({}, { factories: { exp_note: factory } }),
+    }).catch((error: unknown) => error);
+    expect(isUltimateError(typo) && typo.code).toBe('X_DECLARATION_UNKNOWN');
   });
 
   test('a query runs as an allowed reader; a job drains, its id bound to a seeded note', async () => {

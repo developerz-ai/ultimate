@@ -3,10 +3,10 @@
 // owns a fresh tenant pair of its own. One graph also means one set of unique keys: per-primitive
 // graphs re-inserted the shared rows and collided on their primary keys.
 
-import { isUltimateError, renderThrowable } from '@ultimat3/core';
+import { isUltimateError, renderCauseValue, renderThrowable, UltimateError } from '@ultimat3/core';
 import { seedGraph } from './seed-graph';
 import { seedGraphUnsatisfied } from './seed-graph-error';
-import type { SeedGraph, SeedRow, SeedUpdate, SeedWriter } from './seed-graph-plan';
+import type { SeedFactory, SeedGraph, SeedRow, SeedUpdate, SeedWriter } from './seed-graph-plan';
 import { insertSeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 
@@ -50,6 +50,15 @@ export const tenantPair = (graph: SeedGraph, index: number): readonly [string, s
   graph.tenants[index * TENANTS_PER_PRIMITIVE + 1] as string,
 ];
 
+/** A factory keyed by a name no seeded entity has would build nothing, and the red would stay. */
+const unknownFactory = (names: readonly string[], known: ReadonlySet<string>): UltimateError =>
+  new UltimateError({
+    code: 'X_DECLARATION_UNKNOWN',
+    cause: `defineExercise() factories name ${names.map((name) => renderCauseValue(name)).join(', ')}, which no seeded entity is called (seeded: ${renderCauseValue([...known].sort().join(', '))})`,
+    fix: "defineExercise({}, { factories: { '<the name entity(...) was declared with>': thatFactory } })   # in apps/web/exercise.ts; the seeded names are in the cause",
+    meta: { unknown: names, registered: [...known].sort() },
+  });
+
 /**
  * Plan and write the pass's graph: shared rows once, `TENANTS_PER_PRIMITIVE` tenants per
  * primitive. Same seed, same rows. Before any primitive runs, so a failure refuses the pass.
@@ -57,11 +66,19 @@ export const tenantPair = (graph: SeedGraph, index: number): readonly [string, s
 export async function seedPass(
   entities: readonly SeedEntity[],
   writer: SeedWriter,
-  options: { readonly primitives: number; readonly seed: number },
+  options: {
+    readonly primitives: number;
+    readonly seed: number;
+    readonly factories?: Readonly<Record<string, SeedFactory>>;
+  },
 ): Promise<SeedGraph> {
+  const known = new Set(entities.map((entity) => entity.$name));
+  const unknown = Object.keys(options.factories ?? {}).filter((name) => !known.has(name));
+  if (unknown.length > 0) throw unknownFactory(unknown, known);
   const graph = seedGraph(Object.fromEntries(entities.map((entity) => [entity.$name, entity])), {
     tenants: Math.max(1, options.primitives) * TENANTS_PER_PRIMITIVE,
     seed: options.seed,
+    ...(options.factories === undefined ? {} : { factories: options.factories }),
   });
   await insertSeedGraph(graph, coded(writer));
   return graph;

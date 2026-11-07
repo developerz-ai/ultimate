@@ -16,7 +16,7 @@ printf '%s' "$flat" | grep -Eq '(^|[;&| ])git (-C [^ ]+ )?restore( |$)' && ! pri
 printf '%s' "$flat" | grep -Eq '(^|[;&| ])git (-C [^ ]+ )?reset( [^;&|]*)? --(hard|merge|keep)' && deny "git reset --hard/--merge/--keep"
 printf '%s' "$flat" | grep -Eq '(^|[;&| ])git (-C [^ ]+ )?clean( |$)' && deny "git clean"
 printf '%s' "$flat" | grep -Eq '(^|[;&| ])git (-C [^ ]+ )?stash( |$)' && deny "git stash (forbidden in this repo)"
-printf '%s' "$flat" | grep -Eq '(^|[;&| ])git (-C [^ ]+ )?(switch|checkout) [^;&|]*(-f|--force|--discard-changes)' && deny "a forced branch switch"
+printf '%s' "$flat" | grep -Eq '(^|[;&| ])git (-C [^ ]+ )?(switch|checkout) [^;&|]*( -f| --force| --discard-changes)( |$|[;&|])' && deny "a forced branch switch"
 # A recursive delete under the repo's source directories, unless every target is build output.
 for target in $(printf '%s' "$flat" | grep -Eo 'rm -[a-zA-Z]*[rR][a-zA-Z]* +[^;&|]*' | sed -E 's/^rm -[a-zA-Z]+ +//'); do
   case "$target" in

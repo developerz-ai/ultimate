@@ -8,7 +8,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `@ultimat3/testing`: `defineExercise(overrides, { factories })` — the exercise pass seeds a table with the app's `defineFactory`, keyed by entity name, so an entity with a cross-column `c.satisfies(…)` invariant no generated row meets can run `x exercise`. Before, `X_SEED_GRAPH_UNSATISFIED`'s fix named `seedGraph(entities, { factories })`, which the pass gave no way to reach; the fix now names `defineExercise` too. An unknown factory name is `X_DECLARATION_UNKNOWN`.
 
 ## 30.0.0 - 2026-11-07
 

@@ -5,6 +5,7 @@
 
 import type { ExerciseOptions } from '@ultimat3/action';
 import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import type { SeedFactory } from './seed-graph-plan';
 
 /** 39's option type, exactly: `{ actor, input?, runs? }` or `{ off: '<reason>' }`. */
 export type ExerciseOverride = ExerciseOptions;
@@ -15,6 +16,8 @@ export interface ExerciseOverrides {
   readonly entries: ReadonlyMap<string, ExerciseOverride>;
   /** The entity an actor is a row of, by name: its id is bound to a seeded row. */
   readonly actorEntity?: string;
+  /** By entity name: the pass's graph builds those rows with them (`seedGraph`'s `factories`). */
+  readonly factories?: Readonly<Record<string, SeedFactory>>;
 }
 
 /** What the whole pass needs to know of the app, beside the per-primitive entries. */
@@ -25,6 +28,12 @@ export interface ExerciseAppOptions {
    * writes a row that exists. Omitted, an actor's id is its role's name.
    */
   readonly actor?: { readonly $name: string };
+  /**
+   * By entity name, `seedGraph`'s own option: a table whose rows a generated value cannot satisfy
+   * (an `invariant` across columns) is built by the app's `defineFactory`. An unknown name is
+   * refused when the pass runs.
+   */
+  readonly factories?: Readonly<Record<string, SeedFactory>>;
 }
 
 /** `X_CONTRACT_EXERCISE_UNDECLARED`, 39's code for the same silence: an `off` with no reason. */
@@ -49,6 +58,7 @@ export function defineExercise(
     kind: 'exercise-overrides',
     entries,
     ...(app.actor === undefined ? {} : { actorEntity: app.actor.$name }),
+    ...(app.factories === undefined ? {} : { factories: app.factories }),
   });
 }
 

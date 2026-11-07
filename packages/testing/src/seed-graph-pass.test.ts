@@ -4,7 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
-import { entity, memoryDriver, text, uuid } from '@ultimat3/entity';
+import { entity, integer, invariant, memoryDriver, text, uuid } from '@ultimat3/entity';
+import { defineFactory } from './factories';
 import { seedPass, TENANTS_PER_PRIMITIVE, tenantPair } from './seed-graph-pass';
 import type { SeedRow, SeedWriter } from './seed-graph-plan';
 import { entitySeedWriter } from './seed-writer';
@@ -103,5 +104,56 @@ describe(testName('unit', 'seedPass'), () => {
     };
     const failure = await failureOf(() => seedPass(entities, writer, { primitives: 1, seed: 1 }));
     expect(failure).toBe(missing);
+  });
+
+  test('a cross-column invariant no generated row meets is satisfied by an app factory', async () => {
+    // A label that spells its own size: no generated pair of a text and an integer meets it.
+    const spelled = (label: string, size: number): boolean => label === `size-${size}`;
+    const labelled = entity('sgp_labelled', {
+      columns: { id: uuid().primaryKey(), label: text({ max: 40 }), size: integer() },
+      invariants: (c) => [
+        invariant('sgp_label_spells_size', c.satisfies(spelled, ['label', 'size'])),
+      ],
+    });
+    // The app's write path runs the JS rule (`$assert`); a refusal there is the pass's red.
+    const rows: SeedRow[] = [];
+    const labelledWriter = (): SeedWriter => ({
+      insert: async (row) => {
+        labelled.$assert(row.row);
+        rows.push(row);
+      },
+      update: async () => undefined,
+      snapshot: async (asked) => asked.map(() => null),
+    });
+    const bare = await failureOf(() =>
+      seedPass([labelled], labelledWriter(), { primitives: 1, seed: 2 }),
+    );
+    expect(isUltimateError(bare) && bare.code).toBe('X_SEED_GRAPH_UNSATISFIED');
+    expect(isUltimateError(bare) && bare.fix).toContain('defineExercise({}, { factories:');
+
+    const factory = defineFactory<{ label: string; size: number }>(labelled, {
+      defaults: (index) => ({ label: `size-${index}`, size: index }),
+    });
+    const writer = labelledWriter();
+    await seedPass([labelled], writer, {
+      primitives: 1,
+      seed: 2,
+      factories: { sgp_labelled: factory },
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const { row } of rows) expect(row['label']).toBe(`size-${row['size']}`);
+  });
+
+  test('a factory keyed by a name no seeded entity has is refused, naming what is seeded', async () => {
+    const factory = defineFactory<{ title: string }>(plans, { defaults: () => ({ title: 'x' }) });
+    const failure = await failureOf(() =>
+      seedPass(entities, collecting().writer, {
+        primitives: 1,
+        seed: 1,
+        factories: { sgp_plan: factory },
+      }),
+    );
+    expect(isUltimateError(failure) && failure.code).toBe('X_DECLARATION_UNKNOWN');
+    expect(isUltimateError(failure) && failure.cause).toContain('sgp_plans');
   });
 });
