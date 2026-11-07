@@ -1532,7 +1532,7 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 
 A dry run refuses exactly what the real run would, then stops before step 4. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
 
-`--to`: an exact release in the next major. Over a mixed set every refusal names the aligning version, the newest release at or above the highest pin: `^6` beside `^19` is told `--to 19.x.y`, it is accepted across any distance, and that report names no section.
+`--to`: an exact release in the next major. Over a mixed set a run moves the LOWEST pins one major: `^19` beside `^29` is told `--to 20.x.y`, that hop rewrites only the pins at or below it (a pin above is never moved backwards) and names its walkthrough, `next` names the following hop, and the last one levels the set. A straggler jump straight to the highest major is `X_UPGRADE_HOP_TOO_WIDE`: it skipped every walkthrough between.
 
 | `data` field | Meaning |
 |---|---|

@@ -1,6 +1,6 @@
 # Upgrading
 
-**`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` package moves in lockstep — never mix versions. `x new` declares them at `^<version>`; `x upgrade` rewrites every pin it moves exact (`20.1.0`, no caret), on purpose — a caret is how `^19.0.0` beside `^19.4.0` came to be mixed, and a range is a silent upgrade. `bun.lock` pins the exact build either way.
+**`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` package moves in lockstep — never mix versions. `x new` declares them at `^<version>`, so `bun update` takes a same-major fix before the first hop; `x upgrade` rewrites every pin it moves exact (`20.1.0`, no caret), on purpose — a caret is how `^19.0.0` beside `^19.4.0` came to be mixed, and a range is a silent upgrade. `bun.lock` pins the exact build either way.
 
 > **From v30, one major per 90 days.** The window, what semver covers, the support window and the security exception: [Stability](Stability). A removal now ships its `@deprecated` alias for at least one minor before a major takes it, so `x upgrade` across one major names no edit a minor did not already warn about. The 29 sections below stay as they are.
 
@@ -3566,7 +3566,7 @@ bunx @ultimat3/cli@latest upgrade --json    # an app below 30.0.0, whose own CLI
 
 A repository with pins and no `app.config.ts` hops too: no `x verify` can run, so it runs the `typecheck` and `test` scripts it declares, and `data.proof` (`verify`, `scripts`, `none`) says what `done` rests on.
 
-Refusals name their own fix: `X_UPGRADE_MIXED_PINS` (`x upgrade --to <the higher version> --json`), `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_UPGRADE_INSTALL_FAILED`. `data.bun.manual[]` lists what only you can move: a digest-pinned image, an expression. `data.guards.differs[]` offers `x g guard <name> --force`, and your guard is never touched. A hop below 30.0.0 reports `X_BUDGET_UNMEASURED` until `x build --target static --json` has run. Field by field: [CLI reference](CLI-Reference#x-upgrade).
+Refusals name their own fix: `X_UPGRADE_MIXED_PINS` (`x upgrade --to <the lowest pins' next major> --json`), `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_UPGRADE_INSTALL_FAILED`. `data.bun.manual[]` lists what only you can move: a digest-pinned image, an expression. `data.guards.differs[]` offers `x g guard <name> --force`, and your guard is never touched. A hop below 30.0.0 reports `X_BUDGET_UNMEASURED` until `x build --target static --json` has run. Field by field: [CLI reference](CLI-Reference#x-upgrade).
 
 ## Breaking-change classes and how each is detected
 
