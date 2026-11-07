@@ -30,9 +30,11 @@ export const e2eBesideLive = (ctx: Pick<VerifyContext, 'root'>): boolean =>
 
 /** `ctx` with every child its runner starts stripped of each service URL in `env`. */
 export function besideLive(ctx: VerifyContext): VerifyContext {
-  const env = ctx.env ?? Bun.env;
+  // Both: a child inherits the process environment, so a URL only `Bun.env` holds reaches it even
+  // when the caller handed `ctx.env`.
+  const keys = new Set([...Object.keys(Bun.env), ...Object.keys(ctx.env ?? {})]);
   const strip: Record<string, undefined> = {};
-  for (const key of Object.keys(env)) if (isServiceUrlKey(key)) strip[key] = undefined;
+  for (const key of keys) if (isServiceUrlKey(key)) strip[key] = undefined;
   const runner: Runner = (command, options) =>
     ctx.runner(command, { ...options, env: { ...options.env, ...strip } });
   return { ...ctx, runner };

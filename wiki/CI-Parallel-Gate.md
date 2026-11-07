@@ -19,7 +19,7 @@ JSON is a *part*: `x verify merge` reads it back.
 | `unit` | `x verify --only unit --shard i/n --json` | nothing (PGlite in process) |
 | `contract` | `x verify --only contract --shard i/n --json` | nothing |
 | `job` | `x verify --only job --shard i/n --json` | nothing |
-| `live` | `x verify --only live --json` (or `--shard i/n`) | a Postgres with `wal_level=logical` (`TEST_DATABASE_URL`) — one process per runner |
+| `live` | `x verify --only live --json` (or `--shard i/n`) | the test services (`docker/test-services.env`): Postgres (`TEST_DATABASE_URL`), the logical + TLS server (`TEST_REPLICATION_URL`, `TEST_TLS_REPLICATION_URL`), pooler, standby, Redis, NATS, S3 — one process per runner |
 | `e2e` | `x verify --only e2e --json` (or `--shard i/n`) | the static build (`x build --target static --no-preflight`), Chrome — one process per runner |
 | `eval` | `x verify --only eval --json` | nothing; baselines committed |
 | `drift` `contract-diff` | `x verify --only drift,contract-diff --json` | nothing |
@@ -38,7 +38,7 @@ x verify --only unit --shard 2/4 --json > part-unit-2.json
 - Only with `--only`, and only over the test steps: `unit`, `contract`, `live`, `job`, `e2e`
   (any other step is `X_VERIFY_SHARD_INVALID`). `live` and `e2e` stay ONE process inside a shard —
   serial means one replication slot and one browser per machine, and each runner starts its own
-  services — so their shards split across runners, never across workers. `As of 2026-11-07` this
+  services — so when sharded, their shards split across runners, never across workers. `As of 2026-11-07` this
   repository's CI still runs each as one part: its longest job is a `packages` coverage shard, so
   a second live or e2e runner would cost runner minutes and save no wall clock.
 - The split is a pure function of the step's **sorted** file list: round-robin by default, so job

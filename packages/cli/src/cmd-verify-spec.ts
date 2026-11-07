@@ -38,7 +38,7 @@ export const verifySpec: CommandSpec = {
       type: 'string',
       subcommands: ['run'],
       summary:
-        'with --only unit|contract|job: run shard i of an n-way split of each step’s sorted file list (round-robin), for one CI job; `x verify merge` checks all n',
+        'with --only unit|contract|job|live|e2e: run shard i of an n-way split of each step’s sorted file list (round-robin), for one CI job; `x verify merge` checks all n',
     },
     {
       name: 'timings',

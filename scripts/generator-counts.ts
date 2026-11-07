@@ -234,8 +234,12 @@ export function checkGeneratorCounts(input: CountGapInput): readonly CountGap[] 
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index] ?? '';
       const fence = /^\s*```(\w*)/.exec(line);
-      if (fence !== null) shell = !shell && SHELL_FENCES.has(fence[1] ?? '');
-      else if (shell)
+      // Opening a shell fence enters it; closing one, or any other fence, leaves shell mode. A new
+      // shell fence forgets the last one's commands: a transcript is of the fence nearest above it.
+      if (fence !== null) {
+        shell = !shell && SHELL_FENCES.has(fence[1] ?? '');
+        if (shell) commands.clear();
+      } else if (shell)
         for (const command of readCommands(line)) commands.set(command.id, command.flags);
       for (const spoken of readTranscriptClaims(line)) {
         const facts = byId.get(spoken.id);

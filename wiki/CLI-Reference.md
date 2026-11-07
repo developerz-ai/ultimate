@@ -1486,7 +1486,7 @@ x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empt
 | `--filter` | string | — | only files whose path contains this substring — or ANY of several, comma-separated (`--filter apps/web/app/billing/,apps/web/app/case/`), in one run. An empty item (`a,,b`) is refused: `''` matches every path |
 | `--allow-empty` | boolean | off | a selection that matches no test file exits **0**, spawns nothing, and says so (`no test file matches … — 0 test file(s) ran`, `data.files: 0`, `data.empty: true`) instead of `X_TEST_NO_FILES`. For a runner that computes the selection; a hand-typed typo stays red without it |
 | `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
-| `--workers` | string | `ceil(cpus * 1.5)`, held to 60% of free memory at 1.5 GiB a worker | worker count, 1 to 64; each worker gets its own template-cloned database |
+| `--workers` | string | one per 1.25 GiB of a `max(2.75 GiB, 25% of RAM)` budget, at most one per core (the gate's width) | worker count, 1 to 64; each worker gets its own template-cloned database |
 | `--affected` | boolean | off | narrow the selection to the tests the diff can break: in an app root, by import closure (the files `x affected` reports as `data.tests`); elsewhere, the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
 | `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |

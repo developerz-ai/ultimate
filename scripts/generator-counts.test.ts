@@ -216,6 +216,9 @@ describe('the two rules', () => {
     const bare =
       '```bash\nbunx x g resource note\n```\n\n```text\n✓ wrote 29 file(s) for resource note\n```';
     expect(gapsFor(bare)).toEqual(['x g resource:29']);
+    // Only the NEAREST shell fence: one naming another command in between drops the --admin spelling.
+    const later = `${admin.replace('27 file', '29 file')}\n\n\`\`\`bash\nbunx x db migrate\n\`\`\`\n\n\`\`\`text\n✓ wrote 27 file(s) for resource memo\n\`\`\``;
+    expect(gapsFor(later)).toEqual([]);
     // Prose mentioning the command is not the command the transcript is of.
     expect(gapsFor('`x g resource note --admin` …\n✓ wrote 27 file(s) for resource note')).toEqual(
       [],

@@ -155,6 +155,9 @@ describe('unit · test services · in RAM, without durability, silent', () => {
         // autoanalyze racing a test's own `analyze` is a plan that changes under its assertion.
         'jit=off',
         'autovacuum=off',
+        // The WAL lives on the tmpfs, so every kept segment is RAM; every DROP DATABASE checkpoints.
+        'min_wal_size=32MB',
+        'max_wal_size=256MB',
       ]) {
         expect(initdb, `${name} is initialised without ${setting}`).toContain(`-c ${setting}`);
       }

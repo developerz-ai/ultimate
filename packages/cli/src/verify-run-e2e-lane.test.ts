@@ -97,6 +97,22 @@ describe('unit · e2e runs beside live in a package monorepo', () => {
     expect(Object.hasOwn(childEnvs.get('live') ?? {}, 'TEST_DATABASE_URL')).toBe(false);
   });
 
+  test('a service URL only the process holds is stripped too: children inherit Bun.env', async () => {
+    childEnvs.clear();
+    const { DATABASE_URL: _held, ...handed } = ENV;
+    const before = process.env['DATABASE_URL'];
+    process.env['DATABASE_URL'] = 'postgres://127.0.0.1:5432/held-by-the-process';
+    try {
+      await runVerify(steps([]), { root: '/nonexistent', runner: recording, env: handed });
+    } finally {
+      if (before === undefined) delete process.env['DATABASE_URL'];
+      else process.env['DATABASE_URL'] = before;
+    }
+    const e2e = childEnvs.get('e2e') ?? {};
+    expect(Object.hasOwn(e2e, 'DATABASE_URL')).toBe(true);
+    expect(e2e['DATABASE_URL']).toBeUndefined();
+  });
+
   test('in an app, e2e waits for live: its app boots against the services live uses', async () => {
     const log: string[] = [];
     await runVerify(steps(log), { root: app, runner: recording, env: ENV });
