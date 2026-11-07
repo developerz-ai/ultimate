@@ -120,6 +120,36 @@ describe('a static page, rendered once', () => {
     expect(loads).toEqual(['/precios']);
   });
 
+  // A forged `Host` evicted nothing it should not have — the key carried the request's origin even
+  // when the app declares one, and 1,024 rotated Hosts filled the memo, so every real page rendered
+  // per request for the life of the process. Declared, the document is the same whatever the Host.
+  test('memoStatic with a declared origin: one kept document whatever Host the request names', async () => {
+    page('apps/web/site/precios/page.tsx', 'static');
+    loads.length = 0;
+    const server = httpServer({
+      routes: appRoutes({ buildId: BUILD_ID, memoStatic: true, origin: 'https://app.example' }),
+      role: 'web',
+      config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
+    });
+    const at = (host: string) =>
+      server.fetch(new Request(`http://${host}/precios`, { headers: { accept: 'text/html' } }));
+    const real = await at('app.example');
+    const forged = await at('forged.test');
+    expect(loads).toEqual(['/precios']);
+    expect(await forged.text()).toBe(await real.text());
+  });
+
+  test('memoStatic with no declared origin: each Host is its own document', async () => {
+    page('apps/web/site/precios/page.tsx', 'static');
+    loads.length = 0;
+    const server = serverFor(true);
+    const at = (host: string) =>
+      server.fetch(new Request(`http://${host}/precios`, { headers: { accept: 'text/html' } }));
+    await at('one.test');
+    await at('two.test');
+    expect(loads).toEqual(['/precios', '/precios']);
+  });
+
   test('without memoStatic (x dev) every request renders', async () => {
     page('apps/web/site/precios/page.tsx', 'static');
     loads.length = 0;

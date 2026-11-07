@@ -212,6 +212,24 @@ describe('a rate-limited subscription', () => {
     limited.unsubscribe();
     expect(armed.find((timer) => timer.delayMs === 3_000)?.cancelled).toBe(true);
   });
+
+  test('retry() re-subscribes a refused one now, and only a refused one on an open socket', () => {
+    const { socket, client, armed } = rig();
+    const handle = client.subscribeLive<PostRow>(liveFeed, { orgId: 'o1' });
+    const sid = querySid(socket, 'add');
+    expect(handle.retry()).toBe(false);
+    socket.deliver({ type: 'ack', v: PROTOCOL_VERSION, ref: sid, lsn: null, error: LIMITED });
+    expect(handle.retry()).toBe(true);
+    expect(querySids(socket, 'add')).toEqual([sid, sid]);
+    expect(handle.state()).toBe('loading');
+    // The node's timer is spent: firing it would send a third subscribe for one refusal.
+    expect(armed.find((timer) => timer.delayMs === 3_000)?.cancelled).toBe(true);
+
+    socket.deliver({ type: 'ack', v: PROTOCOL_VERSION, ref: sid, lsn: null, error: DENIED });
+    socket.close(1006);
+    expect(handle.retry()).toBe(false);
+    expect(querySids(socket, 'add')).toEqual([sid, sid]);
+  });
 });
 
 describe('a records frame', () => {

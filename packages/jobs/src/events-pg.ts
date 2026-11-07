@@ -110,16 +110,17 @@ export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
       };
     },
 
-    /** Earliest match at or after `afterMs`, so a resumed step consumes events in order. */
-    async find(name, correlationKey, afterMs) {
-      const rows = await exec.query<{ payload: unknown; published_at: number | string }>(
-        SQL_EVENT_FIND,
-        [name, correlationKey ?? null, afterMs],
-      );
+    /** Earliest match at or after `afterMs` and past `afterId`, so a step consumes in order. */
+    async find(name, correlationKey, afterMs, afterId) {
+      const rows = await exec.query<{
+        id: string;
+        payload: unknown;
+        published_at: number | string;
+      }>(SQL_EVENT_FIND, [name, correlationKey ?? null, afterMs, afterId ?? null]);
       const row = rows[0];
       return row === undefined
         ? undefined
-        : { payload: row.payload, publishedAt: Number(row.published_at) };
+        : { id: row.id, payload: row.payload, publishedAt: Number(row.published_at) };
     },
 
     async list(name) {

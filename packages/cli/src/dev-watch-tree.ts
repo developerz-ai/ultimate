@@ -47,14 +47,17 @@ export interface WatchTree {
 const DEFAULT_DEBOUNCE_MS = 30;
 
 /**
- * Every directory under `root` an event could be a source change in, `''` first. Ignored
- * directories are not descended, so a `node_modules` tree costs one `readdir` and nothing else.
- * A symlinked directory is deliberately not followed: `Dirent.isDirectory()` is false for one, and
- * a workspace symlink pointing back into the checkout would otherwise be walked twice.
+ * Every directory at or under `from` (`''`, the app root, by default) an event could be a source
+ * change in, `from` first, every path root-relative. Ignored directories are not descended, so a
+ * `node_modules` tree costs one `readdir` and nothing else. A symlinked directory is deliberately
+ * not followed: `Dirent.isDirectory()` is false for one, and a workspace symlink pointing back into
+ * the checkout would otherwise be walked twice. Root-relative because the ignore set is the ROOT's
+ * `.gitignore`: a walk rooted at a new directory asked an anchored `/build` about `build`, and hid
+ * `apps/web/build/` when `apps/web` appeared after boot.
  */
-export function admittedDirectories(root: string, ignore: DevIgnore): readonly string[] {
-  const admitted: string[] = [''];
-  const pending: string[] = [''];
+export function admittedDirectories(root: string, ignore: DevIgnore, from = ''): readonly string[] {
+  const admitted: string[] = [from];
+  const pending: string[] = [from];
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
     for (const entry of childrenOf(join(root, next))) {
       if (!entry.isDirectory()) continue;
@@ -156,9 +159,7 @@ export function watchTree(options: WatchTreeOptions): WatchTree {
 
   /** The admitted directories at or under `directory`, discovered rather than assumed. */
   const subtree = (directory: string): readonly string[] =>
-    admittedDirectories(join(root, directory), ignore).map((found) =>
-      found === '' ? directory : `${directory}/${found}`,
-    );
+    admittedDirectories(root, ignore, directory);
 
   /** The whole set, re-derived: a directory the author just ignored gives its descriptor back. */
   const reconcile = (): void => {

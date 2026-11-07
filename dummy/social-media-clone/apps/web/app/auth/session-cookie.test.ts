@@ -97,27 +97,32 @@ unitTest('the __Host- prefix is chosen by the same flag that makes it legal', ()
   expect(SESSION_COOKIE_SECURE.startsWith('__Host-')).toBe(true);
 });
 
-unitTest(
-  'the token is read by name, never by prefix, and the secure name wins over the plain one',
-  () => {
-    // A prefix match would answer `abc123` for a cookie named `smc_sess`.
-    expect(readSessionToken('x_locale=en; smc_session=abc123; other=1')).toBe('abc123');
-    expect(readSessionToken('smc_sess=abc123')).toBe(null);
-    expect(readSessionToken(`${SESSION_COOKIE_PLAIN}=old; ${SESSION_COOKIE_SECURE}=new`)).toBe(
-      'new',
-    );
-    expect(readSessionToken(null)).toBe(null);
-    expect(readSessionToken('')).toBe(null);
-  },
-);
+unitTest('the token is read by name, never by prefix', () => {
+  // A prefix match would answer `abc123` for a cookie named `smc_sess`.
+  expect(readSessionToken('x_locale=en; smc_session=abc123; other=1', false)).toBe('abc123');
+  expect(readSessionToken('smc_sess=abc123', false)).toBe(null);
+  expect(readSessionToken(null, false)).toBe(null);
+  expect(readSessionToken('', true)).toBe(null);
+});
+
+// Over https only the `__Host-` name is read. A sibling subdomain (or a first-visit http MITM) can
+// plant a plain `smc_session` but never a `__Host-` one, so reading the plain name there signed a
+// visitor into whatever account the planted token named.
+unitTest('the name read is the name written: https reads only the __Host- cookie', () => {
+  const both = `${SESSION_COOKIE_PLAIN}=planted; ${SESSION_COOKIE_SECURE}=mine`;
+  expect(readSessionToken(both, true)).toBe('mine');
+  expect(readSessionToken(`${SESSION_COOKIE_PLAIN}=planted`, true)).toBe(null);
+  expect(readSessionToken(both, false)).toBe('planted');
+  expect(readSessionToken(`${SESSION_COOKIE_SECURE}=mine`, false)).toBe(null);
+});
 
 // The header is client-authored: `smc_session=%` used to be a bare `URIError` out of the
 // authenticator, a 500 on every request that browser sent. Core's reader answers the raw value,
 // which then names no session — an anonymous request, never a crash.
 unitTest('a malformed escape is the raw value, and an empty one is absent', () => {
-  expect(readSessionToken('smc_session=%')).toBe('%');
-  expect(readSessionToken('smc_session=%ZZ; other=1')).toBe('%ZZ');
-  expect(readSessionToken('smc_session=')).toBe(null);
+  expect(readSessionToken('smc_session=%', false)).toBe('%');
+  expect(readSessionToken('smc_session=%ZZ; other=1', false)).toBe('%ZZ');
+  expect(readSessionToken('smc_session=', false)).toBe(null);
 });
 
 unitTest(

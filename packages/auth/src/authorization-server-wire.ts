@@ -3,6 +3,7 @@
 // imported), reading a form body, reading client credentials, and answering RFC 6749 JSON.
 // `no-store` on every answer: a token response cached anywhere is a token handed to a stranger.
 
+import { isUltimateError } from '@ultimat3/core';
 import type { ClientCredentials } from './authorization-server-clients';
 import type { TokenOutcome } from './authorization-server-tokens';
 
@@ -61,6 +62,17 @@ export function outcomeAnswer(outcome: TokenOutcome, success = 200): Response {
     status,
     { error: outcome.error, error_description: outcome.description },
     status === 401 ? { 'www-authenticate': 'Basic realm="oauth"' } : {},
+  );
+}
+
+/** The limiter's `X_ACCOUNT_LOCKED` as RFC 6749 `429 temporarily_unavailable`; `null` otherwise. */
+export function throttledAnswer(error: unknown, description: string): Response | null {
+  if (!isUltimateError(error) || error.code !== 'X_ACCOUNT_LOCKED') return null;
+  const after = error.meta?.['retryAfterSeconds'];
+  return jsonAnswer(
+    429,
+    { error: 'temporarily_unavailable', error_description: description },
+    typeof after === 'number' ? { 'retry-after': String(after) } : {},
   );
 }
 

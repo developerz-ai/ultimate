@@ -206,7 +206,7 @@ describe('a part URL on the local disk', () => {
     const request = { filename: 'a.png', contentType: 'image/png', size: PNG.byteLength };
     const grant = await grantMultipart({ disk, orgId: 'org-1', request, policy });
     const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
-    const url = await signPart({ ...session, partNumber: 1, size: PNG.byteLength });
+    const url = await signPart({ ...session, policy, partNumber: 1, size: PNG.byteLength });
     const partGrant: UploadGrant = { ...grant, url, method: 'PUT', maxBytes: PNG.byteLength };
 
     const response = await put(partGrant, { body: PNG });

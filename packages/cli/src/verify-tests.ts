@@ -185,7 +185,8 @@ export const testStepCommand = (type: TestType, pace?: MachinePace): readonly st
  * "no test files matched", a red gate reporting a suite that by its own rule is not here.
  *
  * Memoized because `runVerify` asks `applies` and then `run`, and a repeated walk of the whole
- * tree per type is the cost this change exists to remove.
+ * tree per type is the cost this change exists to remove. For one run only: `runVerify` clears it
+ * first, since the dev MCP host's `verify` tool runs the gate again in the same process.
  */
 const discovered = new Map<string, readonly TestFile[]>();
 
@@ -198,7 +199,7 @@ const filesFor = async (root: string, type: TestType): Promise<readonly TestFile
   return files;
 };
 
-/** Test seam: a fixture that writes new test files under a root this process already scanned. */
+/** `runVerify` starts every run here; a test that calls a step outside `runVerify` does too. */
 export const resetTestDiscovery = (): void => discovered.clear();
 
 /**

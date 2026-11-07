@@ -169,8 +169,9 @@ a current fact: the rules that still hold are in that file, and where the two di
   pinned one, which is also what stops a row read inside a transaction being served after it —
   `db()` hands back a different client once the transaction is over, rolled back or not.
   **A write drops it**: `postgresRepo`'s `writing()` is the one place every write goes out, and it
-  calls `forgetPreloaded(entity.$name)` *before* the statement, so a row a request changed is
-  re-read and never served from a page read before it. **Values, not rows**: the index is keyed by
+  calls `forgetPreloaded()` *before* the statement — any write drops every bucket, since a
+  `countedIn` trigger or an `onDelete` action rewrites rows of an entity the statement never named
+  (`As of 2026-11-07`); the first lookup after a write declines, so a write loop reads each row once. **Values, not rows**: the index is keyed by
   id and holds ids, so a page early in a long request pins its keys and not its rows, and it dies
   with the request like every other per-ctx store here. **And the store itself is BOUNDED**
   (`MAX_SIBLING_KEYS`, four statements' worth), `As of 2026-08`: "dies with the request" is a job's

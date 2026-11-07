@@ -69,7 +69,12 @@ export interface PushPayload {
   /** Alert again when the `tag` above is replaced. Ignored, with a warning, without one. */
   readonly renotify?: boolean;
   readonly requireInteraction?: boolean;
-  readonly actions?: readonly { readonly action: string; readonly titleKey: string }[];
+  /** Buttons; a button's `url` is what tapping IT opens (this origin only), else `url` above. */
+  readonly actions?: readonly {
+    readonly action: string;
+    readonly titleKey: string;
+    readonly url?: string;
+  }[];
 }
 
 export interface RenderedNotification {
@@ -81,7 +86,11 @@ export interface RenderedNotification {
   readonly badge: string | null;
   readonly renotify: boolean;
   readonly requireInteraction: boolean;
-  readonly actions: readonly { readonly action: string; readonly title: string }[];
+  readonly actions: readonly {
+    readonly action: string;
+    readonly title: string;
+    readonly url?: string;
+  }[];
   readonly locale: string;
   /**
    * What the composing server must see and the device must not: a missing-key marker (`⟦key⟧`),
@@ -135,6 +144,7 @@ export function renderPushPayload(
     actions: (payload.actions ?? []).map((action) => ({
       action: action.action,
       title: render(action.titleKey),
+      ...(action.url === undefined ? {} : { url: action.url }),
     })),
     locale,
     warnings,
@@ -189,9 +199,12 @@ self.addEventListener('push',(event)=>{
     // are truthy in JS while converting to '' and '[object Object]'. !!d.tag therefore enabled
     // renotify for a JSON [] whose converted tag is empty — the rejection this line exists to avoid.
     const tg=typeof d.tag==='string'&&d.tag!==''?d.tag:undefined;
+    // A button's url rides in data: notificationclick sees the notification, never the push body.
+    const acts=Array.isArray(d.actions)?d.actions:[],au={};
+    for(const a of acts)if(a&&typeof a.action==='string'&&typeof a.url==='string')au[a.action]=a.url;
     const opts={body:d.body||'',icon:d.icon||${icon},badge:d.badge||${badge},
       tag:tg,renotify:!!d.renotify&&tg!==undefined,requireInteraction:!!d.requireInteraction,
-      lang:d.lang||undefined,actions:Array.isArray(d.actions)?d.actions:[],data:{url:d.url||'/'}};
+      lang:d.lang||undefined,actions:acts,data:{url:d.url||'/',actions:au}};
     await self.registration.showNotification(d.title||'',opts);${
       badging ? '\n    if(navigator.setAppBadge)await navigator.setAppBadge();' : ''
     }
@@ -210,7 +223,10 @@ self.addEventListener('notificationclick',(event)=>{
   // PushPayload.url is a PATH and WindowClient.url is absolute, so the comparison below is only
   // ever true after resolving — unresolved it matched no client at all and every tap opened a
   // second window on an app the user already had open. Same resolve as the fetch block's.
-  const url=tapTarget(event.notification.data&&event.notification.data.url);
+  // A button opens its own url when it has one; own-property only, so an action named
+  // 'constructor' never reads Object's prototype. Every other tap opens the payload's url.
+  const n=event.notification.data||{},m=n.actions;
+  const url=tapTarget(event.action&&m&&Object.hasOwn(m,event.action)?m[event.action]:n.url);
   event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then((ws)=>{
     for(const w of ws){if(w.url===url&&'focus'in w)return w.focus()}
     return clients.openWindow(url)

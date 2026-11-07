@@ -63,8 +63,9 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   it declines rather than guesses; past `MAX_IDS_PER_STATEMENT` it is several statements; no caller is
   ever left unsettled (`coalesce.test.ts` races a deadline).
 - **A page batches the loop it causes** (`jit-preload.ts`): a preloaded row is served only under the
-  SAME `scopeKey` (a security boundary), same client, dropped by any write (`forgetPreloaded` in
-  `writing()`), keyed by id, bounded (`MAX_SIBLING_KEYS`, oldest page first). One switch:
+  SAME `scopeKey` (a security boundary), same client, dropped by any write to ANY entity — triggers
+  and FK actions rewrite rows a statement never named (`forgetPreloaded` in `writing()`;
+  `jit-preload-db-writes.test.ts`), keyed by id, bounded (`MAX_SIBLING_KEYS`, oldest page first). One switch:
   `postgresDriver({ jitPreload: false })` — never an `app.config.ts` key. Shared pieces live in
   `batch-read.ts`.
 - **`preload(name, { max })` shares `batch-read.ts`, keeps no request cache and is BOUNDED**
@@ -196,7 +197,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   (`X_ENTITY_TENANT_UNDECLARED`), over `EntityDescription.shared`.
 - **`scan: '<why>'`**: a table read whole (`assertScan`).
 - **A seed is replayable**: `SeedContext.insert` is one `upsertAll(…, { onMatch: 'nothing' })` per
-  call; a generated PK the row does not name is refused. **A dry run is the real run rolled back**
+  call; a generated PK the row does not name is refused; `upsert` reads with `includeDeleted` and
+  SKIPS a soft-deleted match. **A dry run is the real run rolled back**
   (`Driver.transactor()`, REQUIRED). Full rule: `docs/history/entity.md`.
 - **`setRowObserver` reports committed row changes above the driver** — one per process (returns the
   replaced one), applied by `database()`, one comparison per write when unset, `before` only when the PK

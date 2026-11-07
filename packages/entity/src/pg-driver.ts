@@ -148,7 +148,7 @@ export const postgresRepo = <Row>(
    */
   const writing = async <T>(send: () => Promise<T>): Promise<T> => {
     refuseAbandoned();
-    forgetPreloaded(entity.$name);
+    forgetPreloaded();
     await stampHistoryActor(entity, config.client !== undefined);
     return taggedWrite(config.client !== undefined, send);
   };

@@ -229,13 +229,22 @@ export function hitEdge(x: number, width: number): 'start' | 'middle' | 'end' {
 
 /**
  * A point's stable identity across ticks: its series and its key, so a live window that drops the
- * oldest key keeps every other point's node — and the focus on it. A repeated key gets `#n`.
+ * oldest key keeps every other point's node — and the focus on it. A repeated key gets `#n`, the
+ * first `n` no earlier id holds: a key may itself read `a#1`, and a duplicate id throws in
+ * `keyedRows`, taking the whole chart with it.
  */
 export function hitIds(series: number, keys: readonly string[]): readonly string[] {
   const seen = new Map<string, number>();
+  const used = new Set<string>();
   return keys.map((key) => {
-    const n = seen.get(key) ?? 0;
+    let n = seen.get(key) ?? 0;
+    let id = n === 0 ? `${series}:${key}` : `${series}:${key}#${n}`;
+    while (used.has(id)) {
+      n += 1;
+      id = `${series}:${key}#${n}`;
+    }
     seen.set(key, n + 1);
-    return n === 0 ? `${series}:${key}` : `${series}:${key}#${n}`;
+    used.add(id);
+    return id;
   });
 }

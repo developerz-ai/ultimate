@@ -417,10 +417,16 @@ describe('a bulk write drops what the request preloaded', () => {
     expect(await pageLookupWriteLookup(upsert)).toBe(4);
   });
 
-  test('a bulk write to another entity leaves the preload intact', async () => {
-    // Three, not four: the second lookup is memory, so the preload is what is being counted —
-    // without it every case here would read four and prove nothing.
-    expect(await pageLookupWriteLookup(() => repo().insertAll([invoice(5)]))).toBe(3);
+  test('with no write between them the second lookup is memory, which is what is counted', async () => {
+    // Two, not four: page and preload. Without this every case here would read four and prove
+    // nothing about the preload.
+    expect(await pageLookupWriteLookup(async () => undefined)).toBe(2);
     expect(client.texts[1]).toContain('"id" in ($1)');
+  });
+
+  test('a bulk write to another entity drops the preload too', async () => {
+    // Any write: a `countedIn` trigger or an `onDelete` action rewrites rows of an entity the
+    // statement never named (`jit-preload-db-writes.test.ts`).
+    expect(await pageLookupWriteLookup(() => repo().insertAll([invoice(5)]))).toBe(4);
   });
 });

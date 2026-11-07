@@ -1,6 +1,6 @@
 // Single responsibility: who a `client_id` is — a registered client from the store, or an https
-// URL whose metadata document (the MCP 2025-11-25 client id metadata document) is fetched through
-// `outbound({ dial: 'public' })`, size-capped and cached — and proving a confidential one's secret.
+// URL whose metadata document (MCP 2025-11-25) is fetched via `outbound({ dial: 'public' })`,
+// size-capped, metered per caller, cached oldest-first — and proving a confidential one's secret.
 // The secret is hashed at rest and compared hash to hash in constant time, never with `===`.
 
 import { logger, stringField, timingSafeEqual } from '@ultimat3/core';
@@ -57,15 +57,24 @@ function clientFromDocument(clientId: string, body: unknown, at: Date): AuthServ
 }
 
 export interface ClientDirectory {
-  find(clientId: string): Promise<AuthServerClient | null>;
+  /**
+   * `callerKey` (the caller's address) meters metadata fetches through `config.limiter`: an
+   * unauthenticated POST naming `https://<anyone>/<path>` would otherwise be one outbound GET per
+   * path. Rejects with `X_ACCOUNT_LOCKED` once the caller is over the limit.
+   */
+  find(clientId: string, callerKey?: string): Promise<AuthServerClient | null>;
 }
 
 export function clientDirectory(config: ResolvedAuthServerConfig): ClientDirectory {
   const cache = new Map<string, { client: AuthServerClient | null; untilMs: number }>();
-  async function fetchDocument(clientId: string): Promise<AuthServerClient | null> {
+  async function fetchDocument(
+    clientId: string,
+    callerKey: string | undefined,
+  ): Promise<AuthServerClient | null> {
     const nowMs = config.clock.now().getTime();
     const hit = cache.get(clientId);
     if (hit !== undefined && hit.untilMs > nowMs) return hit.client;
+    if (callerKey !== undefined) await config.limiter.reserve(`oauth-client-metadata:${callerKey}`);
     let client: AuthServerClient | null = null;
     try {
       const answer = await outbound(
@@ -90,13 +99,18 @@ export function clientDirectory(config: ResolvedAuthServerConfig): ClientDirecto
       const code = stringField(error, 'code');
       logger.warn('auth.server.client_metadata_unreadable', code === undefined ? {} : { code });
     }
-    if (cache.size >= CLIENT_METADATA_CACHE_MAX) cache.clear();
+    // Oldest first: a Map iterates in insertion order, so re-inserting keeps the order honest.
+    cache.delete(clientId);
+    const oldest = cache.keys().next();
+    if (cache.size >= CLIENT_METADATA_CACHE_MAX && oldest.done !== true) cache.delete(oldest.value);
     cache.set(clientId, { client, untilMs: nowMs + CLIENT_METADATA_TTL_MS });
     return client;
   }
   return {
-    find: (clientId) =>
-      isMetadataClientId(clientId) ? fetchDocument(clientId) : config.store.getClient(clientId),
+    find: (clientId, callerKey) =>
+      isMetadataClientId(clientId)
+        ? fetchDocument(clientId, callerKey)
+        : config.store.getClient(clientId),
   };
 }
 

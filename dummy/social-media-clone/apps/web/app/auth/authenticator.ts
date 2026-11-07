@@ -5,7 +5,7 @@
 // time; what it could not see was that no caller existed.
 
 import { configureAuthenticator } from '@ultimat3/http';
-import { readSessionToken } from './session-cookie';
+import { isSecureRequest, readSessionToken } from './session-cookie';
 import { viewerFor } from './viewer';
 
 /**
@@ -19,4 +19,6 @@ import { viewerFor } from './viewer';
  *
  * Expiry is `@ultimat3/auth`'s to judge, on its own clock, per request.
  */
-configureAuthenticator((request) => viewerFor(readSessionToken(request.header('cookie'))));
+configureAuthenticator((request, ctx) =>
+  viewerFor(readSessionToken(request.header('cookie'), isSecureRequest(ctx))),
+);

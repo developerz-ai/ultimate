@@ -36,7 +36,7 @@ export interface MultipartGrant {
   readonly maxParts: number;
   /** Normalised: the type the object is created under. */
   readonly contentType: string;
-  /** The declared size, already held to the policy. */
+  /** The declared size, already held to the policy. The client's claim: `policy` is the bound. */
   readonly size: number;
   /** Epoch ms: the part URLs' window from now. Each `signPart` opens a fresh one. */
   readonly expiresAt: number;
@@ -54,6 +54,8 @@ export interface SignPartInput extends UploadSessionInput {
   readonly partNumber: number;
   /** This part's exact size: `partBytes`, or less for the last part. Signed. */
   readonly size: number;
+  /** The policy the grant was made under: a part no object under its `maxBytes` holds is refused. */
+  readonly policy: UploadPolicy;
   readonly expiresInMs?: number | undefined;
 }
 
@@ -61,7 +63,7 @@ export interface CompleteUploadInput extends UploadSessionInput {
   /** Ascending. Etags are optional: the disk's own, read by `listParts` here, are what is sent. */
   readonly parts: readonly CompletedPart[];
   /** The policy the grant was made under: a completed object past its `maxBytes` is refused. */
-  readonly policy?: UploadPolicy | undefined;
+  readonly policy: UploadPolicy;
 }
 
 const capabilityOf = (disk: StorageDriver, key: string): MultipartCapability => {
@@ -78,6 +80,27 @@ const sessionOf = (input: UploadSessionInput): MultipartCapability => {
   }
   return capabilityOf(input.disk, input.key);
 };
+
+/**
+ * The type says required; an untyped caller upgrading from the call without one does not read
+ * types, and with no policy nothing bounds what the session stores — `promoteAttachment`'s guard.
+ */
+const assertPolicy = (caller: string, policy: UploadPolicy | undefined, fix: string): number => {
+  assert(
+    typeof policy?.maxBytes === 'number',
+    `${caller} was called with no policy, so nothing bounds the size of the upload in parts`,
+    fix,
+  );
+  return policy.maxBytes;
+};
+
+/**
+ * The smallest object part `partNumber` at `size` bytes can belong to. Every part before it is at
+ * least S3's floor and at least as long as it (each but the last is exactly `partBytes`), so an
+ * honest grant's part never implies more than its declared size, and so never more than the policy.
+ */
+const impliedBytes = (partNumber: number, size: number): number =>
+  Math.max((partNumber - 1) * MIN_PART_BYTES + size, partNumber * size);
 
 /** The part size: the app's preference, raised to what the size and the protocol require. */
 const partSizeFor = (size: number, preferred: number | undefined): number => {
@@ -108,8 +131,17 @@ export async function grantMultipart(input: GrantMultipartInput): Promise<Multip
   };
 }
 
-/** One part's URL, its length inside the signature. */
+/**
+ * One part's URL, its length inside the signature. A part past what an object under the policy
+ * holds is `X_STORAGE_TOO_LARGE`, so a session's parts cannot outgrow the policy before the
+ * `completeUpload` that would refuse them: unassembled parts bill too.
+ */
 export async function signPart(input: SignPartInput): Promise<string> {
+  const maxBytes = assertPolicy(
+    'signPart',
+    input.policy,
+    'signPart({ disk, orgId, key, uploadId, partNumber, size, policy: uploadPolicy({ maxBytes }) }) — the policy the grant was made under',
+  );
   const multipart = sessionOf(input);
   const { partNumber, size } = input;
   assert(
@@ -122,6 +154,8 @@ export async function signPart(input: SignPartInput): Promise<string> {
     `signPart was handed size ${String(size)}, not a part of 1..${MAX_PART_BYTES} bytes`,
     'signPart({ disk, orgId, key, uploadId, partNumber, size: grant.partBytes })',
   );
+  const implied = impliedBytes(partNumber, size);
+  if (implied > maxBytes) throw tooLarge(input.key, implied, maxBytes);
   return multipart.signPart(input.key, input.uploadId, partNumber, {
     contentLength: size,
     expiresInMs: input.expiresInMs === undefined ? DEFAULT_SIGNED_URL_TTL_MS : input.expiresInMs,
@@ -139,13 +173,17 @@ export function listParts(input: UploadSessionInput): Promise<readonly UploadedP
  * aborts the session: those bytes were never going to be promoted.
  */
 export async function completeUpload(input: CompleteUploadInput): Promise<StorageObject> {
+  const maxBytes = assertPolicy(
+    'completeUpload',
+    input.policy,
+    'completeUpload({ disk, orgId, key, uploadId, parts, policy: uploadPolicy({ maxBytes }) }) — the policy the grant was made under',
+  );
   const multipart = sessionOf(input);
   const stored = await multipart.listParts(input.key, input.uploadId);
   const matched = matchParts(input.parts, stored);
   if ('problem' in matched) throw partsInvalid(input.key, input.uploadId, matched.problem);
   const total = matched.parts.reduce((sum, part) => sum + part.size, 0);
-  const maxBytes = input.policy?.maxBytes;
-  if (maxBytes !== undefined && total > maxBytes) {
+  if (total > maxBytes) {
     await multipart.abort(input.key, input.uploadId);
     throw tooLarge(input.key, total, maxBytes);
   }

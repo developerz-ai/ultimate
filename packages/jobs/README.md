@@ -187,6 +187,11 @@ inside `crossTenant('<why>', () => onboardOrg.enqueue({ orgId: newOrg }))`, by a
 `tenancy:cross`, the enqueue is admitted (read through entity's own write guard, re-proved at the
 call). An explicit `tenantId` or `.as()` that contradicts the payload is never admitted.
 
+**A row is queued for the org its payload names** when the enqueue states none: a plain
+`enqueue(input)` stamps `tenant(input)`, so two orgs' identical idempotency keys are two jobs and
+`perTenant` / `ratePerTenant` count the org. An explicit `tenantId` or `.as()` still wins — and the
+refusal above guarantees they agree.
+
 A single boot-supplied service actor would have closed the same hole with one identity for every
 job in the app — which is a cross-tenant read waiting for the first job that takes an org id in its
 input. The tenant is a fact about the work, so the job declares it.

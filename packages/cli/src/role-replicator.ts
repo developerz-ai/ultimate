@@ -137,7 +137,13 @@ function standBy(replicator: Replicator, key: string): () => void {
       // Voided: both outcomes are handled here, and a timer has nobody to hand a promise to.
       void replicator.start().then(
         (held) => {
-          if (held) logger.info('replicator.slot_taken_over', { key });
+          // Granted after the role stopped: its stop has already run, so nothing else would ever
+          // release this slot — a stopped role would hold it and decode. Given straight back.
+          if (held && cancelled) {
+            void replicator.stop().catch((thrown: unknown) => {
+              logger.warn('replicator.standby_failed', { key, error: renderThrowable(thrown) });
+            });
+          } else if (held) logger.info('replicator.slot_taken_over', { key });
           else if (!cancelled) ask(attempt + 1);
         },
         (thrown: unknown) => {

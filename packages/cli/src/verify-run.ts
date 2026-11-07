@@ -26,6 +26,7 @@ import type {
   VerifyStepName,
 } from './verify-step';
 import { GATE_COMMAND } from './verify-step';
+import { resetTestDiscovery } from './verify-tests';
 
 /**
  * Run every step, never bailing early: an agent fixing three things at once needs all
@@ -40,6 +41,9 @@ export async function runVerify(
   steps: readonly VerifyStep[],
   ctx: VerifyContext,
 ): Promise<CommandResult> {
+  // The file list is one run's: the dev MCP host calls this again in one process, and a suite
+  // written or deleted since the last call must be what this one judges.
+  resetTestDiscovery();
   const floor = await readVerifyFloor(ctx.root);
   const only = onlyList(ctx.only);
   const selected = only === undefined ? steps : steps.filter((step) => only.includes(step.name));

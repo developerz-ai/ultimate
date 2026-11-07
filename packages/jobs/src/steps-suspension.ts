@@ -42,20 +42,33 @@ export function isWaitTimedOut(output: unknown): boolean {
 }
 
 const WAIT_FLOOR_KEY = '~ultimate.waitFloor';
+const WAIT_FLOOR_ID_KEY = '~ultimate.waitFloorId';
+
+/** Where a wait's next search starts: at `afterMs`, and past the event `afterId` names. */
+export interface WaitFloor {
+  readonly afterMs: number;
+  readonly afterId?: string;
+}
 
 /**
  * What a `waiting` record holds once its schema refused an event: where the next search starts.
  * `startedAt` cannot carry it, because the timeout counts from there. `find` answers the EARLIEST
  * event, so without this a repaired publisher's event sat behind the refused one until its TTL.
+ * The refused event's id rides with its instant: a floor of `publishedAt + 1` skipped every valid
+ * event stamped in the same millisecond. A record written before the id has `afterMs` alone.
  */
-export const waitFloor = (afterMs: number): Record<string, number> => ({
-  [WAIT_FLOOR_KEY]: afterMs,
+export const waitFloor = (floor: WaitFloor): Record<string, number | string> => ({
+  [WAIT_FLOOR_KEY]: floor.afterMs,
+  ...(floor.afterId === undefined ? {} : { [WAIT_FLOOR_ID_KEY]: floor.afterId }),
 });
 
-export function waitFloorOf(output: unknown): number | undefined {
+export function waitFloorOf(output: unknown): WaitFloor | undefined {
   if (typeof output !== 'object' || output === null) return undefined;
-  const floor = (output as Record<string, unknown>)[WAIT_FLOOR_KEY];
-  return typeof floor === 'number' ? floor : undefined;
+  const record = output as Record<string, unknown>;
+  const afterMs = record[WAIT_FLOOR_KEY];
+  if (typeof afterMs !== 'number') return undefined;
+  const afterId = record[WAIT_FLOOR_ID_KEY];
+  return typeof afterId === 'string' ? { afterMs, afterId } : { afterMs };
 }
 
 /**

@@ -21,16 +21,36 @@ export interface RecordEnvelope<T = unknown> {
   readonly records?: Readonly<Record<string, RecordRows>>;
   /** Record keys to drop, keyed by the entity's record type. */
   readonly removed?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * A type's record keys in ANSWER order, sent only for a type whose `records` key order differs:
+   * every JS object — `JSON.parse`'s included — enumerates an integer-like key ascending, so an
+   * `integer()` key's order cannot ride `records` itself. Absent, `records` key order IS the order.
+   */
+  readonly order?: Readonly<Record<string, readonly string[]>>;
 }
 
-/** The server half. An empty `removed` is omitted, so the envelope never claims a deletion. */
+/**
+ * The server half. An empty `removed` is omitted, so the envelope never claims a deletion. `order`
+ * is each type's keys first-seen; only a type whose order an object would lose is sent, so an
+ * answer keyed by uuids stays byte-identical on the wire.
+ */
 export function encodeRecordEnvelope<T>(
   data: T,
   records: Readonly<Record<string, RecordRows>>,
   removed?: Readonly<Record<string, readonly string[]>>,
+  order?: Readonly<Record<string, readonly string[]>>,
 ): RecordEnvelope<T> {
   const hasRemoved = removed !== undefined && Object.keys(removed).length > 0;
-  return hasRemoved ? { data, records, removed } : { data, records };
+  const lost = Object.entries(order ?? {}).filter(([type, keys]) => {
+    const held = Object.keys(records[type] ?? {});
+    return keys.length !== held.length || keys.some((key, index) => key !== held[index]);
+  });
+  return {
+    data,
+    records,
+    ...(hasRemoved ? { removed } : {}),
+    ...(lost.length > 0 ? { order: nullProto(lost) } : {}),
+  };
 }
 
 /**
@@ -51,18 +71,22 @@ export function decodeRecordEnvelope(body: unknown): RecordEnvelope {
       }),
     );
   });
-  const removed = byType(body['removed'], 'removed', (keys, at) => {
-    if (!Array.isArray(keys)) throw envelopeInvalid(at, 'is not an array');
-    const list: unknown[] = keys;
-    const bad = list.findIndex((key) => typeof key !== 'string');
-    if (bad !== -1) throw envelopeInvalid(`${at} key #${bad}`, 'is not a string');
-    return list as string[];
-  });
+  const removed = byType(body['removed'], 'removed', keysOf);
+  const order = byType(body['order'], 'order', keysOf);
   return {
     data: body['data'],
     ...(records === undefined ? {} : { records }),
     ...(removed === undefined ? {} : { removed }),
+    ...(order === undefined ? {} : { order }),
   };
+}
+
+function keysOf(keys: unknown, at: string): string[] {
+  if (!Array.isArray(keys)) throw envelopeInvalid(at, 'is not an array');
+  const list: unknown[] = keys;
+  const bad = list.findIndex((key) => typeof key !== 'string');
+  if (bad !== -1) throw envelopeInvalid(`${at} key #${bad}`, 'is not a string');
+  return list as string[];
 }
 
 function byType<T>(

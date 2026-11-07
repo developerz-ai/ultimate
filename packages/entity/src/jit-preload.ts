@@ -10,8 +10,9 @@
 // which for a job is the whole attempt, so both maps here are bounded and evict the oldest page.
 //
 // The scope guard is a security boundary, not a tuning knob. A preloaded row is served only to a
-// lookup with the same scope key, the same client and no write since — anything else reads the
-// statement it always read.
+// lookup with the same scope key, the same client and no write since — to ANY entity, because the
+// database rewrites rows the statement never named — anything else reads the statement it always
+// read.
 
 import type { Ctx } from '@ultimat3/core';
 import { tryUseContext } from '@ultimat3/core';
@@ -29,11 +30,9 @@ import type { EntityCore } from './entity';
 
 /** The rows one page's worth of foreign keys resolved to, under one scope. */
 interface Bucket {
-  /** The entity the rows belong to — what a write invalidates. */
-  readonly entity: string;
   /** Where the rows were read from. A pinned client and the ambient pool are two places. */
   readonly client: DbClient;
-  /** Writes to `entity` when the bucket was opened. A later write makes every row of it stale. */
+  /** The store's writes when the bucket was opened. A later write makes every row of it stale. */
   readonly generation: number;
   /** Never rejects: a failure is an `Answer`, so an id nobody asks for cannot go unhandled. */
   readonly rows: Map<string, Promise<Answer>>;
@@ -44,8 +43,13 @@ interface Store {
   readonly siblings: Map<string, Map<string, readonly unknown[]>>;
   /** Scope key -> the rows preloaded under it. */
   readonly preloaded: Map<string, Bucket>;
-  /** Entity name -> writes this request has issued against it. */
-  readonly writes: Map<string, number>;
+  /**
+   * Writes this request has issued, to any entity. ONE counter, not one per entity: a
+   * `countedIn` trigger rewrites the parent of the row inserted, an `onDelete` cascade or
+   * `set null` the children of the row deleted, and an app's own trigger anything at all — a
+   * write's statement names its entity, never every row it moves.
+   */
+  writes: number;
 }
 
 /**
@@ -58,7 +62,7 @@ const storeFor = (ctx: Ctx): Store => {
   const key: object = ctx;
   const existing = requests.get(key);
   if (existing !== undefined) return existing;
-  const created: Store = { siblings: new Map(), preloaded: new Map(), writes: new Map() };
+  const created: Store = { siblings: new Map(), preloaded: new Map(), writes: 0 };
   requests.set(key, created);
   return created;
 };
@@ -111,8 +115,6 @@ export const siblingKeysHeld = (ctx: Ctx): number => {
   return held;
 };
 
-const writesTo = (store: Store, entity: string): number => store.writes.get(entity) ?? 0;
-
 /**
  * What a page of rows leaves behind: for each foreign key it declares, the distinct values that
  * page carried, filed under every one of them. A later `findById` for any of those values is a
@@ -156,19 +158,20 @@ export const tagSiblings = <Row>(entity: EntityCore<Row>, rows: readonly Row[]):
 };
 
 /**
- * A write makes every preloaded row of that entity stale, so the bucket holding them is not read
- * again. Called before the statement goes out: a row read back afterwards is the row the write
- * left, and one read concurrently with it was concurrent either way.
+ * A write makes every preloaded row stale — of every entity, since the database may rewrite rows
+ * of another (`Store.writes`) — so no bucket open before it is read again. Called before the
+ * statement goes out: a row read back afterwards is the row the write left, and one read
+ * concurrently with it was concurrent either way.
  */
-export const forgetPreloaded = (entityName: string): void => {
+export const forgetPreloaded = (): void => {
   const ctx = tryUseContext();
   if (ctx === undefined) return;
   const store = requests.get(ctx);
   if (store === undefined) return;
-  store.writes.set(entityName, writesTo(store, entityName) + 1);
+  store.writes += 1;
 };
 
-/** The bucket this lookup may be served from, or `undefined` — a stale one is dropped, not read. */
+/** The bucket this lookup may be served from: one opened on this client with no write since. */
 const usableBucket = <Row>(
   store: Store,
   read: PointRead<Row>,
@@ -176,10 +179,14 @@ const usableBucket = <Row>(
 ): Bucket | undefined => {
   const open = store.preloaded.get(scope);
   if (open === undefined) return undefined;
-  if (open.client === read.client && open.generation === writesTo(store, open.entity)) return open;
-  store.preloaded.delete(scope);
-  return undefined;
+  return open.client === read.client && open.generation === store.writes ? open : undefined;
 };
+
+const emptyBucket = <Row>(store: Store, read: PointRead<Row>): Bucket => ({
+  client: read.client,
+  generation: store.writes,
+  rows: new Map<string, Promise<Answer>>(),
+});
 
 type Settlers = ReadonlyMap<string, (answer: Answer) => void>;
 
@@ -277,12 +284,15 @@ export const preloadedFindById = <Row>(
   if (already !== undefined) return answered<Row>(already);
   const ids = store.siblings.get(siblingKey(read.entity.$name, read.key.property))?.get(filedAt);
   if (ids === undefined) return undefined;
-  const target = bucket ?? {
-    entity: read.entity.$name,
-    client: read.client,
-    generation: writesTo(store, read.entity.$name),
-    rows: new Map<string, Promise<Answer>>(),
-  };
+  const stale = store.preloaded.get(scope);
+  if (bucket === undefined && stale !== undefined && stale.generation !== store.writes) {
+    // A write since this scope last preloaded. Declined, not re-preloaded: a loop that writes on
+    // every iteration would otherwise re-read the rest of the page each time — the page's rows
+    // squared. The empty bucket lets the first lookup after a write-free stretch preload again.
+    store.preloaded.set(scope, emptyBucket(store, read));
+    return undefined;
+  }
+  const target = bucket ?? emptyBucket(store, read);
   store.preloaded.set(scope, target);
   preload(read, target, keptWindow(read, ids, filedAt));
   const answer = target.rows.get(filedAt);

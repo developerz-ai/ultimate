@@ -203,6 +203,12 @@ const sameCell = (left: unknown, right: unknown): boolean => {
   return left === right;
 };
 
+/** A soft-deleting entity's row its delete has stamped — what a plain read reads as absent. */
+const isStamped = (row: unknown): boolean => {
+  const stamp = cellOf(row, SOFT_DELETE_COLUMN);
+  return stamp !== null && stamp !== undefined;
+};
+
 const equalityPredicates = <Row>(where: Partial<Row>): readonly Predicate[] =>
   Object.entries(where).map(([column, value]): Predicate => ({ column, op: 'eq', value }));
 
@@ -312,8 +318,20 @@ export const defineSeed = (
             const where = Object.fromEntries(
               key.by.map((property) => [property, cellOf(row, property)]),
             );
-            const found = await repo.findMany({ where: equalityPredicates(where), limit: 1 });
+            // `includeDeleted`: a stamped row is still the row the key names. Read without it, it
+            // was absent, the write landed on it with `deleted_at` spared, and every replay said
+            // `'inserted'` for a row nobody can see. A soft delete is a decision a seed replayed on
+            // every boot does not undo — skipped, as `insert`'s do-nothing conflict skips it.
+            const found = await repo.findMany({
+              where: equalityPredicates(where),
+              limit: 1,
+              includeDeleted: true,
+            });
             const stored = found.rows[0];
+            if (stored !== undefined && entity.$softDelete && isStamped(stored)) {
+              metrics.skipped += 1;
+              return 'skipped';
+            }
             const preserve: readonly string[] = key.preserve ?? [CREATED_AT_COLUMN];
             // Only what the CALLER named, and never a key the table generates: `$parse` fills a
             // fresh uuid and a `defaultNow()` into `row`, which no stored row can equal — so a

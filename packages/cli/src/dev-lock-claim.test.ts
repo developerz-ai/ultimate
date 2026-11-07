@@ -142,7 +142,7 @@ let verdict = 'won';
 try {
   await preflight({ stateDir: ${JSON.stringify(dir)}, port: 3000, hostname: 'localhost', portBound: () => false });
 } catch (error) {
-  verdict = 'refused:' + String((error as { code?: unknown }).code);
+  verdict = 'refused:' + String((error as { code?: unknown }).code) + ' ' + String((error as { message?: unknown }).message);
 }
 console.log(verdict);
 // Alive while the others decide: the parent closes stdin only once every verdict is in.
@@ -167,13 +167,19 @@ while (!(await reader.read()).done) {}
     };
   };
 
-  test('exactly one of many simultaneous claimers wins, every round', async () => {
-    for (let round = 0; round < ROUNDS; round += 1) {
+  // Odd rounds start over a STALE lock (a pid that cannot exist): every claimer then clears it,
+  // and a clear that unlinked by path deleted a rival's fresh claim — two winners.
+  test('exactly one of many simultaneous claimers wins, every round, stale lock or none', async () => {
+    for (let round = 0; round < ROUNDS * 2; round += 1) {
       const dir = fs.mkdtempSync(join(tmpdir(), 'ultimate-dev-lock-race-'));
       const procs: Bun.Subprocess<'pipe', 'pipe', 'pipe'>[] = [];
       try {
         const script = join(dir, 'claim.ts');
         realWrite(script, claimer(join(dir, '.x')));
+        if (round % 2 === 1) {
+          fs.mkdirSync(join(dir, '.x'));
+          realWrite(join(dir, '.x', 'dev.lock'), '{"pid":2147483646,"port":3000}\n');
+        }
         for (let i = 0; i < CLAIMERS; i += 1) {
           procs.push(
             Bun.spawn([process.execPath, script], {
@@ -199,11 +205,10 @@ while (!(await reader.read()).done) {}
           Array.from({ length: CLAIMERS }, () => 0),
         );
         expect(verdicts.filter((verdict) => verdict === 'won')).toHaveLength(1);
+        // Listed, not counted: a stray verdict names its own code and message.
         expect(
-          verdicts
-            .filter((verdict) => verdict !== 'won')
-            .every((v) => v.startsWith('refused:X_DEV_')),
-        ).toBe(true);
+          verdicts.filter((verdict) => verdict !== 'won' && !verdict.startsWith('refused:X_DEV_')),
+        ).toEqual([]);
       } finally {
         for (const proc of procs) proc.kill();
         fs.rmSync(dir, { recursive: true, force: true });

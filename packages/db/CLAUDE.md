@@ -197,8 +197,10 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`dbDrift()` lives in `drift-errors.ts`** (it needs `shellInertIdentifier`), the only one.
   `errors.ts` registers `DB_ERROR_TITLES` unconditionally.
 - **`not-valid-constraint`** (`compareValidated`): `notValidNames` is catalog-only (`convalidated`, absent when none), judged on the declared side, foreign keys by where they point; the fix is the validate statement (`repair`).
-- `drift-findings.ts` holds every `DriftDifference` constructor and `DriftKind`; `drift.ts` keeps the
-  comparisons.
+- `drift-findings.ts` holds the `DriftDifference` constructors and `DriftKind`; `drift-missing.ts` the
+  missing/rebuilt ones (table, column, index, foreign key); `drift.ts` keeps the comparisons. **No
+  drift fix is `x db migrate`**: the ledger holds the migration, so it applies nothing — every fix is a
+  `repair()` from the snapshot or `byHand()`, run and re-checked by `drift-repair.test.ts`.
 
 ## The schema dump
 

@@ -175,10 +175,10 @@ export const config = defineRoute({
   // beside it (−39,929 B); `islands.sharedChunks` measured 254,863 here and +0.9–7 kB on four
   // other routes. Then −1,922 B: ui's keys tree-shaken per key (`ui-keys.ts`), and `mount`
   // returning its disposer — lowered 281kb → 240kb (plan 101 wave 10).
-  // measured: 246537 B (2026-11-07, sweep 1; x build --target static) — why: core's `clientStream` sharing
+  // measured: 246931 B (2026-11-07, sweep 2; x build --target static) — why: the record envelope's `order` decode and the live refetch's retry (sweep 2). Sweep 1, 246537 B: core's `clientStream` sharing
   // `call()`'s unwrap (`settleAnswer`), `VirtualList` pruning heights of rows that left, the
   // router +122 B.
-  budget: { js: '241kb' },
+  budget: { js: '242kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

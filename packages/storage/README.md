@@ -432,6 +432,9 @@ part URLs carry `x-upload`/`x-part` inside the HMAC and land through `acceptSign
 browser, `uploadFile({ file, grant, multipart })` switches at `partThresholdBytes` (64 MiB): four
 parts in flight, each retried with core's `retry`, `resume: grant` sends only what `listParts`
 lacks. `completeUpload` reads the etags on the server, so no bucket CORS exposes `ETag`.
+`signPart` and `completeUpload` REQUIRE the grant's `policy`: a part no object under `maxBytes`
+holds, or an assembled total past it, is `X_STORAGE_TOO_LARGE`. The declared `size` is the
+client's claim and the server keeps no grant, so the policy is the bound.
 
 | Code | When |
 |---|---|

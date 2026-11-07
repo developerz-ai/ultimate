@@ -37,6 +37,12 @@ export interface LiveHandle<R extends object = Row> extends Disposable {
   cursor(): LiveCursor | null;
   /** What the node answered when it refused the subscription; `undefined` unless `failed`. */
   error(): unknown;
+  /**
+   * Ask the node again, now, for a `failed` subscription on an open socket — a refusal with no
+   * stated delay stays refused until the socket itself reconnects. `true` = a subscribe went out
+   * and the state is `loading`; `false` = nothing to retry, or no socket (the reopen replays it).
+   */
+  retry(): boolean;
   /** Called after anything the reads above answer has moved. Returns the unsubscribe. */
   onChange(listener: () => void): () => void;
   unsubscribe(): void;
