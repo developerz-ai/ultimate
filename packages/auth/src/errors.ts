@@ -36,6 +36,9 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_AUTH_GRANT_DISABLED',
   'X_VERIFICATION_PURPOSE_INVALID',
   'X_VERIFICATION_PURPOSE_UNKNOWN',
+  'X_PASSKEY_INVALID',
+  'X_PASSKEY_CHALLENGE_EXPIRED',
+  'X_PASSKEY_STEP_UP_REQUIRED',
 ] as const;
 
 /**
@@ -90,6 +93,9 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_VERIFICATION_PURPOSE_INVALID: 'a verification purpose was declared twice or without a template',
   X_VERIFICATION_PURPOSE_UNKNOWN:
     'a verification token was issued or consumed for a purpose nothing declared',
+  X_PASSKEY_INVALID: 'a webauthn ceremony was replayed, tampered with, foreign or out of order',
+  X_PASSKEY_CHALLENGE_EXPIRED: 'a passkey challenge was answered after its ttl elapsed',
+  X_PASSKEY_STEP_UP_REQUIRED: 'no verified assertion covers the digest this step-up names',
 };
 
 // Registered unconditionally, in one call: a second package claiming a code auth owns has to fail

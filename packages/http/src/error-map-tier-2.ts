@@ -123,6 +123,12 @@ export const TIER_2_ERROR_STATUS = {
   X_AUTH_CONSENT_INVALID: 422,
   // @ultimat3/auth — a verification token was issued or consumed for a purpose nothing declared
   X_VERIFICATION_PURPOSE_UNKNOWN: 400,
+  // @ultimat3/auth — a webauthn ceremony was replayed, tampered with, foreign or out of order
+  X_PASSKEY_INVALID: 401,
+  // @ultimat3/auth — a passkey challenge was answered after its ttl elapsed
+  X_PASSKEY_CHALLENGE_EXPIRED: 400,
+  // @ultimat3/auth — no verified assertion covers the digest this step-up names
+  X_PASSKEY_STEP_UP_REQUIRED: 401,
   // @ultimat3/entity — a repository has no series
   X_ENTITY_SERIES_UNSUPPORTED: 501,
   // @ultimat3/entity — a time series asked for something no bucket can answer

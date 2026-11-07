@@ -143,7 +143,7 @@ describe('the real tree', () => {
     expect(checkFrameworkTables({ declared: found, applied })).toEqual([]);
   });
 
-  test("auth's five tables are declared AND applied — the defect that shipped in every release", async () => {
+  test("auth's tables are declared AND applied — the defect that shipped in every release", async () => {
     // Named individually rather than counted: the count moving is what a future edit is allowed
     // to do, and these five going missing is what it is not.
     const found = new Set(

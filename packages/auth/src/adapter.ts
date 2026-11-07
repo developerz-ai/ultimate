@@ -3,6 +3,8 @@
 // Better Auth binds here — it is an adapter implementation, not a dependency. The blessed
 // default is `PostgresAuthAdapter` in `builtin-adapter.ts`; the DDL it expects is in `tables.ts`.
 
+import type { PasskeyStore } from './passkey-store';
+
 export interface AuthUser {
   readonly id: string;
   readonly email: string;
@@ -233,13 +235,19 @@ export interface ApiKeyStore {
 /**
  * The full seam. One blessed implementation ships (`PostgresAuthAdapter`); Better Auth, or any
  * other identity backend, binds by implementing this and nothing else changes upstream.
+ *
+ * EVERY slice is required, `PasskeyStore` included. An optional slice would be an adapter that
+ * boots and then answers `X_NOT_IMPLEMENTED` on the first passkey sign-in in production — the
+ * one failure that looks like a working deploy until a user reaches for a passkey. Required, the
+ * omission is a type error at the `defineAuth({ adapter })` that would have shipped it.
  */
 export interface AuthAdapter
   extends UserStore,
     SessionStore,
     AccountStore,
     VerificationStore,
-    ApiKeyStore {
+    ApiKeyStore,
+    PasskeyStore {
   /** Reported by `Auth.adapter.name` so the driver in use is never a guess. */
   readonly name: string;
   /**

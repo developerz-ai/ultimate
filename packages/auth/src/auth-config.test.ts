@@ -123,3 +123,90 @@ describe('defineAuth refuses a policy number that is not a number', () => {
     ).not.toThrow();
   });
 });
+
+/**
+ * `passkeys` is a relying party, and both halves of it are load-bearing: an authenticator signs
+ * `sha256(rpId)` into every assertion, and a browser refuses a ceremony whose page origin is not
+ * the rpId or below it. Neither failure reaches the server — a browser raises a `SecurityError`
+ * and the operator sees a login that simply does not work — so the seam is the only place these
+ * can be caught. Every case below is refused BEFORE anything is built from the config.
+ */
+describe('defineAuth refuses a relying party no ceremony could honour', () => {
+  const authWith = (passkeys: unknown) =>
+    defineAuth({
+      adapter: memoryAuthAdapter(),
+      passkeys: passkeys as AuthConfigInput['passkeys'],
+    });
+
+  test('a valid relying party is built, screened and frozen', () => {
+    const auth = authWith({ rpId: 'example.com', origins: ['https://example.com'] });
+    expect(auth.passkeys).toEqual({ rpId: 'example.com', origins: ['https://example.com'] });
+    expect(Object.isFrozen(auth.passkeys)).toBe(true);
+    expect(Object.isFrozen(auth.passkeys.origins)).toBe(true);
+    // An app that never opted in still boots; every passkey call refuses later, at first use.
+    expect(defineAuth({ adapter: memoryAuthAdapter() }).passkeys).toEqual({
+      rpId: '',
+      origins: [],
+    });
+  });
+
+  test('a subdomain origin and a loopback dev origin are both accepted', () => {
+    expect(() =>
+      authWith({
+        rpId: 'example.com',
+        origins: ['https://example.com', 'https://app.example.com'],
+      }),
+    ).not.toThrow();
+    expect(() => authWith({ rpId: 'localhost', origins: ['http://localhost:3000'] })).not.toThrow();
+  });
+
+  /** Each case names the FIELD, because the fix differs per field and the message is the fix's context. */
+  const REFUSED = [
+    ['no rpId at all', { rpId: '', origins: ['https://example.com'] }, /passkeys: \{ rpId \}/],
+    ['a missing rpId', { origins: ['https://example.com'] }, /passkeys: \{ rpId \}/],
+    ['a scheme in the rpId', { rpId: 'https://example.com' }, /passkeys: \{ rpId \}/],
+    ['a port in the rpId', { rpId: 'example.com:3000' }, /passkeys: \{ rpId \}/],
+    ['a path in the rpId', { rpId: 'example.com/app' }, /passkeys: \{ rpId \}/],
+    ['a trailing dot in the rpId', { rpId: 'example.com.' }, /passkeys: \{ rpId \}/],
+    ['an upper-case rpId', { rpId: 'Example.com' }, /passkeys: \{ rpId \}/],
+    ['an empty origins list', { rpId: 'example.com', origins: [] }, /passkeys: \{ origins \}/],
+    [
+      'http on a non-loopback host',
+      { rpId: 'example.com', origins: ['http://example.com'] },
+      /passkeys: \{ origins \}/,
+    ],
+    [
+      'a foreign host',
+      { rpId: 'example.com', origins: ['https://evil.test'] },
+      /passkeys: \{ origins \}/,
+    ],
+    [
+      'a lookalike host',
+      { rpId: 'example.com', origins: ['https://example.com.evil.test'] },
+      /passkeys: \{ origins \}/,
+    ],
+    [
+      'a path in an origin',
+      { rpId: 'example.com', origins: ['https://example.com/login'] },
+      /passkeys: \{ origins \}/,
+    ],
+    ['a relative origin', { rpId: 'example.com', origins: ['/login'] }, /passkeys: \{ origins \}/],
+  ] as const;
+
+  for (const [label, passkeys, names] of REFUSED) {
+    test(`${label} throws X_CONFIG_INVALID naming the field`, async () => {
+      const error = await caught(async () => authWith(passkeys));
+      expect(error?.code).toBe('X_CONFIG_INVALID');
+      expect(error?.cause).toMatch(names);
+      // The fix has to parse as configuration, not read as advice: an operator pastes it.
+      expect(error?.fix).toContain('passkeys:');
+      expect(error?.fix).toContain('rpId');
+    });
+  }
+
+  test('a hostile rpId cannot write a second line into the one-line cause', async () => {
+    const error = await caught(async () => authWith({ rpId: 'example.com\nevil', origins: [] }));
+    expect(error?.code).toBe('X_CONFIG_INVALID');
+    expect(error?.cause).not.toContain('\n');
+  });
+});

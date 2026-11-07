@@ -151,8 +151,11 @@
  * the Redis client and its deadline (`core/src/redis-client.ts`, `cache/src/redis-deadline.ts`),
  * the limiter's store deadline (`http/src/rate-limit-store-deadline.ts`), `core/src/
  * error-reporter-chain.ts` and `admin/src/error-groups-schema.ts` (the framework table's DDL).
+ * raised 822 → 828, measured 828 (2026-11-06, WebAuthn passkeys): 6 new files, no existing module
+ * newly reached — `auth/src/{passkey,passkey-wire,passkey-store,passkey-step-up,passkey-errors,
+ * passkey-config}.ts`, reached through the auth barrel every role carries.
  */
-export const MIGRATE_CEILING = 822;
+export const MIGRATE_CEILING = 828;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -310,8 +313,10 @@ export const MIGRATE_CEILING = 822;
  * raised 1151 → 1174, measured 1174 (2026-11-06, plan 101 wave 8): `MIGRATE_CEILING`'s 18, plus
  * `query/src/live-trace.ts` (a live read's spans) and the CLI catalog split at its line ceiling,
  * `cli/src/messages-{db,gate,shot,upgrade}.ts`, which `messages.ts` composes.
+ * raised 1174 → 1180, measured 1180 (2026-11-06, WebAuthn passkeys): the same six as
+ * `MIGRATE_CEILING`'s row; the serving roles add nothing of their own.
  */
-export const SERVING_ROLE_CEILING = 1174;
+export const SERVING_ROLE_CEILING = 1180;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -459,5 +464,7 @@ export const SERVING_ROLE_CEILING = 1174;
  * mounts.
  * raised 1296 → 1321, measured 1321 (2026-11-06, plan 101 wave 8): `SERVING_ROLE_CEILING`'s 23,
  * plus `cli/src/client-vitals-{route,script}.ts`, the page-vitals beacon and its script.
+ * raised 1321 → 1327, measured 1327 (2026-11-06, WebAuthn passkeys): the same six as
+ * `MIGRATE_CEILING`'s row; the web role adds nothing of its own.
  */
-export const WEB_ROLE_CEILING = 1321;
+export const WEB_ROLE_CEILING = 1327;

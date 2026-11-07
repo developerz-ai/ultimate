@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ce00cce55d675f8ed8a1f805b4f8460c529865e85b092930537ce74ec56970cc",
+  "buildId": "78ab5bee30da7657d4f4051220fbec2a90a0d837285485c7091c1525fd93f912",
   "tiers": {
     "0": [
       "core",
@@ -3363,6 +3363,21 @@
       "code": "X_PACKAGE_UNREFERENCED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_PASSKEY_CHALLENGE_EXPIRED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_STEP_UP_REQUIRED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
     },
     {
       "code": "X_PASSWORD_WEAK",

@@ -12,6 +12,8 @@
 // | `x_users.mfa_secret` | the TOTP seed SEALED under the app's master key (`mfa-secret.ts`) |
 // | `x_accounts.access_token` / `refresh_token` | **nothing.** The framework writes `null` |
 // | `x_sessions.*`, `x_verifications.token_hash` | digests and metadata, never a token |
+// | `x_passkeys.public_key_cose` | a PUBLIC key. WebAuthn verifies a signature with it |
+// | `x_passkey_assertions.*` | the signed evidence of one ceremony, never a credential |
 //
 // `mfa_secret` cannot be a digest: a TOTP seed is symmetric, so verifying a code needs the seed
 // itself. It is sealed with `purpose: 'auth:x_users.mfa_secret'`, written by `saveTotpSecret` and
@@ -112,6 +114,45 @@ export const X_API_KEYS_TABLE = `create table if not exists x_api_keys (
   created_at            timestamptz not null default now()
 )`;
 
+// A registered authenticator. `credential_id` is base64url and UNIQUE ON ITS OWN, not per user:
+// `PasskeyStore.findPasskeyByCredentialId` answers one row, so a per-user unique would let two
+// rows collide on the read and leave the sign-in picking whichever came back first.
+// `sign_count` is `bigint` because WebAuthn's counter is a uint32 and `integer` would wrap it.
+// Both ids are `text`, not `uuid`, for the reason `x_sessions.id` is: the ceremony generates them.
+export const X_PASSKEYS_TABLE = `create table if not exists x_passkeys (
+  id                    text primary key,
+  user_id               uuid not null references x_users (id) on delete cascade,
+  credential_id         text not null unique,
+  -- CBOR/COSE, base64url. Public by construction — the private half never leaves the device.
+  public_key_cose       text not null,
+  sign_count            bigint not null default 0,
+  transports            text[] not null default '{}',
+  created_at            timestamptz not null default now(),
+  last_used_at          timestamptz
+);
+create index if not exists x_passkeys_user_id_idx on x_passkeys (user_id)`;
+
+// The evidence row: one verified ceremony, kept so a SEPARATE process can check the assertion
+// that authorised a sensitive request without trusting the process that accepted it. Nothing
+// here verifies a passkey — `signature` is what the authenticator signed over `authenticator_data`
+// and `client_data_json`, and the digest it was bound to is the request it authorised.
+// `expires_at` is indexed because the evidence is what a cleanup sweep deletes.
+export const X_PASSKEY_ASSERTIONS_TABLE = `create table if not exists x_passkey_assertions (
+  id                    text primary key,
+  user_id               uuid not null references x_users (id) on delete cascade,
+  credential_id         text not null,
+  challenge             text not null,
+  request_digest        text not null,
+  client_data_json      text not null,
+  authenticator_data    text not null,
+  signature             text not null,
+  verified_at           timestamptz not null default now(),
+  expires_at            timestamptz not null
+);
+create index if not exists x_passkey_assertions_user_idx on x_passkey_assertions (user_id);
+create index if not exists x_passkey_assertions_digest_idx on x_passkey_assertions (request_digest);
+create index if not exists x_passkey_assertions_expiry_idx on x_passkey_assertions (expires_at)`;
+
 /** Ordered by foreign-key dependency — run them top to bottom. */
 export const AUTH_TABLES: readonly string[] = Object.freeze([
   X_USERS_TABLE,
@@ -120,6 +161,8 @@ export const AUTH_TABLES: readonly string[] = Object.freeze([
   X_ACCOUNTS_TABLE,
   X_VERIFICATIONS_TABLE,
   X_API_KEYS_TABLE,
+  X_PASSKEYS_TABLE,
+  X_PASSKEY_ASSERTIONS_TABLE,
 ]);
 
 export const AUTH_TABLE_NAMES: readonly string[] = Object.freeze([
@@ -128,4 +171,6 @@ export const AUTH_TABLE_NAMES: readonly string[] = Object.freeze([
   'x_accounts',
   'x_verifications',
   'x_api_keys',
+  'x_passkeys',
+  'x_passkey_assertions',
 ]);

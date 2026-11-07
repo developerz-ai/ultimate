@@ -47,6 +47,7 @@ export type {
   LoginInput,
   LoginResult,
   OAuthLinkPolicy,
+  PasskeyConfig,
   RegisterInput,
 } from './auth';
 export {
@@ -312,6 +313,35 @@ export {
 } from './oauth-registry';
 export type { AuthRouteDescriptor, OAuthLoginOptions, OAuthLoginRoutes } from './oauth-route';
 export { OAUTH_ROUTE_STATUS, oauthDenied, oauthLogin } from './oauth-route';
+export type {
+  PasskeyAssertionResponse,
+  PasskeyCredentialDescriptor,
+  PasskeyLogin,
+  PasskeyLoginOptions,
+  PasskeyRegisterOptions,
+  PasskeyRegistrationResponse,
+  PasskeySignIn,
+} from './passkey';
+export { PASSKEY_CHALLENGE_TTL_MS, passkeyLogin } from './passkey';
+export { assertPasskeyConfig } from './passkey-config';
+// The WebAuthn refusals: sign-in and step-up raise the same three, so they are exported here
+// rather than left to the module that happens to throw one.
+export {
+  passkeyChallengeExpired,
+  passkeyInvalid,
+  passkeyStepUpRequired,
+} from './passkey-errors';
+export type {
+  PasskeyStepUp,
+  PasskeyStepUpCeremony,
+  PasskeyStepUpOptions,
+} from './passkey-step-up';
+export { passkeyStepUp } from './passkey-step-up';
+export type {
+  PasskeyAssertion,
+  PasskeyCredential,
+  PasskeyStore,
+} from './passkey-store';
 export type {
   PasswordParams,
   PasswordPolicy,

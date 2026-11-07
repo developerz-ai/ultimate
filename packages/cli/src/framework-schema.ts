@@ -104,7 +104,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     ddl: Object.freeze([SQL_TOTP_REPLAY_TABLE]),
   }),
   /**
-   * The five tables `PostgresAuthAdapter` reads, and the oldest hole in this list.
+   * Every table `PostgresAuthAdapter` reads, and the oldest hole in this list.
    *
    * Until this row nothing applied them, in dev or in production: they are not `entity()`
    * declarations, so `x db gen` never saw them, and an app was left to paste per-table exports
@@ -112,8 +112,8 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
    * exports are gone; `AUTH_TABLES` is the whole DDL, the 1.3 `x_users` upgrade included, applied
    * here on exactly the rule the rate-limit and audit rows already follow.
    *
-   * `AUTH_TABLE_NAMES` rather than five literals: @ultimat3/auth already publishes the list, and a
-   * second copy is a second thing to keep right when a table is added.
+   * `AUTH_TABLE_NAMES` rather than its literals: @ultimat3/auth already publishes the list, and a
+   * second copy is a second thing to keep right when a table is added — passkeys were, twice.
    */
   Object.freeze({
     pkg: '@ultimat3/auth',

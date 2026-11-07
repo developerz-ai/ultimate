@@ -17,6 +17,7 @@ import type {
   UserQuery,
 } from './adapter';
 import { authUniqueViolation } from './errors';
+import type { PasskeyAssertion, PasskeyCredential } from './passkey-store';
 
 const verificationKey = (purpose: string, identifier: string): string => `${purpose}:${identifier}`;
 
@@ -46,6 +47,8 @@ export class MemoryAuthAdapter implements AuthAdapter {
   readonly #accounts = new Map<string, AuthAccount>();
   readonly #verifications = new Map<string, AuthVerification>();
   readonly #apiKeys = new Map<string, AuthApiKeyRecord>();
+  readonly #passkeys = new Map<string, PasskeyCredential>();
+  readonly #passkeyAssertions = new Map<string, PasskeyAssertion>();
 
   /**
    * The clock every instant this adapter stamps comes from — one argument, because a stamp is a
@@ -345,6 +348,64 @@ export class MemoryAuthAdapter implements AuthAdapter {
     if (key === undefined || key.revokedAt !== null) return false;
     this.#apiKeys.set(id, { ...key, revokedAt: at });
     return true;
+  }
+
+  /**
+   * Upsert on `x_passkeys.credential_id`, which is `text not null unique` on its own — the
+   * `on conflict (credential_id) do update` the Postgres adapter issues, so re-registering one
+   * authenticator updates the row rather than making a second one the sign-in would never read.
+   * The remembered key is the row's `id`, which is what `updatePasskeyUsage` addresses.
+   */
+  async putPasskey(record: PasskeyCredential): Promise<PasskeyCredential> {
+    for (const [id, existing] of this.#passkeys) {
+      if (existing.credentialId !== record.credentialId || id === record.id) continue;
+      // A different row already claims this handle: the upsert rewrites THAT row, because
+      // `credential_id` is the conflict key and its `id` is whatever the first write chose.
+      this.#passkeys.delete(id);
+    }
+    this.#passkeys.set(record.id, record);
+    return record;
+  }
+
+  async findPasskeyByCredentialId(credentialId: string): Promise<PasskeyCredential | null> {
+    for (const record of this.#passkeys.values()) {
+      if (record.credentialId === credentialId) return record;
+    }
+    return null;
+  }
+
+  async listPasskeys(userId: string): Promise<readonly PasskeyCredential[]> {
+    // `order by created_at desc, id desc`, the builtin adapter's statement.
+    return [...this.#passkeys.values()]
+      .filter((record) => record.userId === userId)
+      .sort(
+        (a, b) =>
+          b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+      );
+  }
+
+  /**
+   * Compare-and-set, stricter than `touchApiKey`: `false` for an unknown row AND for an incoming
+   * counter that is not GREATER than the stored one. A replayed or reordered assertion presents a
+   * counter at or below what is already stored — a real authenticator's only ever rises — so the
+   * write must not happen and the caller must refuse. The Postgres twin carries the same condition
+   * inside its UPDATE (`... and sign_count < $n`), because a read-then-write would let two
+   * concurrent assertions both read the old counter and both pass.
+   */
+  async updatePasskeyUsage(id: string, signCount: number, at: Date): Promise<boolean> {
+    const record = this.#passkeys.get(id);
+    if (record === undefined || record.signCount >= signCount) return false;
+    this.#passkeys.set(id, { ...record, signCount, lastUsedAt: at });
+    return true;
+  }
+
+  async putPasskeyAssertion(record: PasskeyAssertion): Promise<PasskeyAssertion> {
+    this.#passkeyAssertions.set(record.id, record);
+    return record;
+  }
+
+  async findPasskeyAssertion(id: string): Promise<PasskeyAssertion | null> {
+    return this.#passkeyAssertions.get(id) ?? null;
   }
 }
 

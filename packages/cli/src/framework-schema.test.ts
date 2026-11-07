@@ -25,13 +25,15 @@ describe('unit · framework schema', () => {
     }
   });
 
-  test('the five tables PostgresAuthAdapter reads are applied at boot', () => {
+  test('every table PostgresAuthAdapter reads is applied at boot', () => {
     // The oldest hole in the list, and the one with a written consequence: `examples/dummy`'s own
     // CLAUDE.md records that nobody can hold a session in the reference app because nothing ever
     // created these. `AUTH_TABLE_NAMES` is @ultimat3/auth's list, never a copy of it.
     const names = frameworkTableNames();
     for (const table of AUTH_TABLE_NAMES) expect(names).toContain(table);
-    expect(AUTH_TABLE_NAMES.length).toBe(5);
+    // Pinned so the list cannot quietly shrink under the one row that applies it. Seven: the two
+    // passkey tables (`x_passkeys`, `x_passkey_assertions`) are the newest.
+    expect(AUTH_TABLE_NAMES.length).toBe(7);
   });
 
   test('the spent TOTP steps are applied at boot', () => {

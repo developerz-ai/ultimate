@@ -29,6 +29,12 @@ export interface SourceBareErrorExemption {
 
 export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] = [
   {
+    path: 'packages/auth/src/passkey-fixture.ts',
+    line: 58,
+    reason:
+      'a WebCrypto EC key always exports x and y, so this is never reached: it states the fixture precondition rather than reporting a passkey refusal, and a coded error here would claim a ceremony failed that never ran',
+  },
+  {
     path: 'packages/cache/src/redis-fake-fixture.ts',
     line: 81,
     reason:

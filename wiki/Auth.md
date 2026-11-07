@@ -22,8 +22,8 @@ const { actor, token, cookie } = await login(auth, { email, password, ip });
 const { start, callback } = oauthLogin(auth);   // /auth/oauth/:provider and its callback
 ```
 
-The tables (`x_users`, `x_sessions`, `x_accounts`, `x_verifications`, `x_api_keys`) are created by
-every boot; an app writes no migration for them.
+The tables (`x_users`, `x_sessions`, `x_accounts`, `x_verifications`, `x_api_keys`, `x_passkeys`,
+`x_passkey_assertions`) are created by every boot; an app writes no migration for them.
 
 **Signing in by handle** (`As of 2026-10`): an app whose users are `@ada` names the lookup once —
 `defineAuth({ adapter, handles: async (handle) => (await db.users.where({ handle }).one())?.id ?? null })`
@@ -88,6 +88,44 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 | API keys — how an agent authenticates | `issueApiKey` → `ult_<env>_<id>_<secret>`, shown once; `verifyApiKey` + `apiKeyActor` give a `kind: 'agent'` actor whose scopes are the key's and never the owner's roles (`X_API_KEY_INVALID`). A key is its owner's credential: a missing or disabled owner refuses it on the next use, a wildcard scope (`*`, `<resource>:*`) is refused at issue, and an owned key keeps only the scopes its owner's grants cover — pass `grantsOf` to expand roles ([`packages/auth/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/auth/README.md)); a key with no `userId` is unchanged. `apiKeyResolver(() => store)` is both as the `resolveToken` a bearer mount and `defineAppMcp()` take: `{ actor, scopes }` for a live key, one `null` for every wrong one, and a store fault left a throw. In a test the store is `memoryAuthAdapter()` |
 | service-to-service | `verifyWorkloadToken` reads a Kubernetes service-account token, a SPIFFE JWT-SVID or a cloud IMDS token (they are all one JWT); `actorFromService` gives a `kind: 'service'` actor. The returned `WorkloadToken` carries `raw`, the whole decoded payload, read only after every check held. mTLS is the mesh's job |
 | an external issuer's bearer (`As of 2026-11`) | `jwtBearerResolver({ keys, issuers, audience, requiredScope?, accept?, actorOf })` — `apiKeyResolver`'s twin for JWTs, the `resolveToken` a bearer mount and `defineAppMcp()` take. `keys` is a thunk read when a token arrives (no discovery at import); `accept(raw)` is the app's own claim check after the signature; `actorOf(token)` builds the actor. Every refusal — signature, issuer, audience, expiry, scope, `accept`, and a key set that cannot be read — is `null` plus one `auth.jwt_bearer.refused` log line naming the check, never a claim's value. The mount answers that `null` as `401 X_UNAUTHENTICATED` |
+
+## Passkeys
+
+WebAuthn, in-tree (`As of 2026-11`): `defineAuth({ passkeys: { rpId, origins } })`. No dependency — an
+ES256 assertion verifies through `crypto.subtle`, the call `jwks.ts` already made. `rpId` is a bare
+hostname: a scheme, a port or a path is `X_CONFIG_INVALID` naming the field, as is an empty `origins`
+list or one on a foreign host. An origin is `https` on the `rpId` or below it, `http` only on
+loopback. `passkeys` is a `defineAuth` key, never an `AppConfig` one, and an app that declares none
+refuses every ceremony with the same code. Attestation is `none`-only: this package verifies
+signatures, not provenance, so any other format is `X_PASSKEY_INVALID`. The
+ceremony is `packages/auth/src/passkey.ts`; the step-up is
+`packages/auth/src/passkey-step-up.ts`.
+
+`passkeyLogin(auth)` answers four calls:
+
+| Call | What it does |
+|---|---|
+| `registerOptions` | the creation options `navigator.credentials.create` takes: the challenge, the `rp`, the `user` and the ES256 parameter list |
+| `register` | verifies the attestation, stores the credential in `x_passkeys` — id, public key COSE, transports, sign count — and answers the stored record |
+| `loginOptions` | the request options `navigator.credentials.get` takes; the challenge is stored with the purpose it was issued for and is single use |
+| `login` | verifies the origin, the rpId hash, the ES256 signature and a sign count that never goes backwards, then answers a `PasskeySignIn` — `{ userId, credentialId, signCount, verifiedAt }`, **not** a session. The app's route mints one with `createSession(runtime, { userId })`. A replayed challenge, a tampered signature, a foreign origin and a decreasing sign count are each `X_PASSKEY_INVALID` (401) |
+
+`passkeyStepUp(auth, { ttlMs, challenge })` is the second use of the same mechanism: a step-up binds
+the challenge to one request's digest, so the assertion it collects is evidence for THAT request and
+not for a session. The app's `challenge` callback derives the digest; `ttlMs` bounds how long the
+challenge stands. An assertion minted for digest A refuses digest B with
+`X_PASSKEY_STEP_UP_REQUIRED` (401), and one past `ttlMs` is `X_PASSKEY_CHALLENGE_EXPIRED` (400) on the
+injected clock — never a sleep.
+
+| At rest | Where |
+|---|---|
+| a credential: id, public key COSE, transports, sign count, last use | `x_passkeys` |
+| the evidence of one assertion: challenge, `requestDigest`, `clientDataJson`, `authenticatorData`, `signature`, expiry | `x_passkey_assertions` |
+
+Both tables are in `AUTH_TABLE_NAMES`, so the boot's `FRAMEWORK_SCHEMA` applies them and an app writes
+no migration. Nothing secret is at rest: a public key and the proof a signature made are all the
+store holds. The evidence row is read back by id (`findPasskeyAssertion`), so a separate process can
+verify a step-up after the fact.
 
 ## Authorization server
 

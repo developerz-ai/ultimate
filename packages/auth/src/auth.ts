@@ -14,6 +14,7 @@ import { type HandleDirectory, loginIdentity } from './login-identity';
 import { memoryTotpReplayGuard, type TotpReplayGuard } from './mfa';
 import { mfaChallengeRequired } from './mfa-challenge';
 import type { OAuthProviderId } from './oauth';
+import { assertPasskeyConfig } from './passkey-config';
 import {
   checkPasswordStrength,
   DEFAULT_PASSWORD_POLICY,
@@ -130,6 +131,19 @@ export interface AuthMfaPolicy {
   readonly required: false;
 }
 
+/**
+ * The relying party a WebAuthn ceremony is bound to. Both fields are load-bearing and neither has a
+ * default: an authenticator signs `sha256(rpId)` into every assertion, and a browser refuses a
+ * ceremony whose page origin is not `rpId` or below it — so a wrong value here is a credential that
+ * can never be used again. Screened by `assertPasskeyConfig` at the `defineAuth` seam.
+ */
+export interface PasskeyConfig {
+  /** A bare host — `example.com`. No scheme, no port, no path, no trailing dot, no upper case. */
+  readonly rpId: string;
+  /** Every page origin that may run a ceremony: absolute, https (http only on loopback). */
+  readonly origins: readonly string[];
+}
+
 export interface AuthConfigInput {
   readonly adapter: AuthAdapter;
   readonly clock?: Clock | undefined;
@@ -170,6 +184,12 @@ export interface AuthConfigInput {
    * by id — `register(auth, { id })` creates the auth user under the app's id.
    */
   readonly handles?: HandleDirectory | undefined;
+  /**
+   * WebAuthn passkeys. Omitted means the mechanism is off: `passkeyLogin(auth)` refuses every call
+   * with `X_CONFIG_INVALID` rather than minting options no browser could honour. Declaring it turns
+   * sign-in and step-up on together — one mechanism, two uses.
+   */
+  readonly passkeys?: PasskeyConfig | undefined;
 }
 
 export interface Auth {
@@ -187,6 +207,8 @@ export interface Auth {
   readonly providers: readonly OAuthProviderId[];
   readonly link: OAuthLinkPolicy;
   readonly handles?: HandleDirectory | undefined;
+  /** The screened relying party; `rpId` is `''` when the app declared none, which every use refuses. */
+  readonly passkeys: PasskeyConfig;
 }
 
 export function defineAuth(config: AuthConfigInput): Auth {
@@ -200,6 +222,9 @@ export function defineAuth(config: AuthConfigInput): Auth {
   assertSessionPolicy(session);
   assertPasswordPolicy(password);
   assertRateLimitPolicy(rateLimit);
+  // Screened beside the policies and before anything is built from it: an rpId with a scheme, or an
+  // origin the browser will not accept, is a ceremony that dies client-side where no server log sees it.
+  const passkeys = assertPasskeyConfig(config.passkeys);
   // Three answers in precedence order, and the middle one is why the seam exists: what this call
   // passed, then what the HOST installed (`configureAuthLimiters`, filled by the boot that owns
   // the database connection), then one process' worth of state. Without the middle arm a
@@ -259,6 +284,7 @@ export function defineAuth(config: AuthConfigInput): Auth {
     // to be.
     providers: config.providers ?? [],
     link: config.link ?? 'verified-email',
+    passkeys,
     ...(config.handles === undefined ? {} : { handles: config.handles }),
   });
 }

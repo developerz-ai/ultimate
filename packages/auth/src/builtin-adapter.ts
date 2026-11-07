@@ -20,6 +20,8 @@ import type {
 } from './adapter';
 import { usersUniqueViolation } from './builtin-adapter-violation';
 import { authWriteFailed } from './errors';
+import type { PasskeyAssertion, PasskeyCredential, PasskeyStore } from './passkey-store';
+import { passkeyStoreSql } from './passkey-store';
 
 type Row = Readonly<Record<string, unknown>>;
 
@@ -121,6 +123,12 @@ export class PostgresAuthAdapter implements AuthAdapter {
   readonly name = 'builtin-postgres';
   readonly #db: DbClient;
   readonly #clock: Clock;
+  /**
+   * The passkey slice — six members, one implementation, in `passkey-store.ts`. Built in the
+   * constructor rather than as a field initialiser: a private field's initialiser runs before the
+   * constructor body, so an initialiser reading `this.#db` would see `undefined`.
+   */
+  readonly #passkeys: PasskeyStore;
 
   /**
    * `clock` is the one `MemoryAuthAdapter` takes, for the same stamp: hand over the clock
@@ -129,6 +137,7 @@ export class PostgresAuthAdapter implements AuthAdapter {
   constructor(client: DbClient = db(), clock: Clock = systemClock) {
     this.#db = client;
     this.#clock = clock;
+    this.#passkeys = passkeyStoreSql(client);
   }
 
   /** A write to `x_users`, with the table's own unique violations answered as this package's. */
@@ -422,6 +431,31 @@ export class PostgresAuthAdapter implements AuthAdapter {
       sql`update x_api_keys set revoked_at = ${at} where id = ${id} and revoked_at is null`,
     );
     return changed > 0;
+  }
+
+  /** Delegated to `passkey-store.ts` — `PostgresAuthAdapter` names the members, one file runs them. */
+  putPasskey(record: PasskeyCredential): Promise<PasskeyCredential> {
+    return this.#passkeys.putPasskey(record);
+  }
+
+  findPasskeyByCredentialId(credentialId: string): Promise<PasskeyCredential | null> {
+    return this.#passkeys.findPasskeyByCredentialId(credentialId);
+  }
+
+  listPasskeys(userId: string): Promise<readonly PasskeyCredential[]> {
+    return this.#passkeys.listPasskeys(userId);
+  }
+
+  updatePasskeyUsage(id: string, signCount: number, at: Date): Promise<boolean> {
+    return this.#passkeys.updatePasskeyUsage(id, signCount, at);
+  }
+
+  putPasskeyAssertion(record: PasskeyAssertion): Promise<PasskeyAssertion> {
+    return this.#passkeys.putPasskeyAssertion(record);
+  }
+
+  findPasskeyAssertion(id: string): Promise<PasskeyAssertion | null> {
+    return this.#passkeys.findPasskeyAssertion(id);
   }
 }
 

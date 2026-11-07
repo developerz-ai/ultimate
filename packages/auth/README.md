@@ -971,6 +971,61 @@ evaluated, and `postgresAuthAdapter()` takes the process's database client, whic
 later. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is an
 `ApiKeyVerifyStore` (an `ApiKeyStore` that can also `findUserById`).
 
+## Passkeys
+
+WebAuthn, in-tree, no dependency (`As of 2026-11`): an ES256 assertion verifies through `crypto.subtle`, the call
+`jwks.ts` already made for id tokens. One mechanism, two uses — sign-in and digest-bound step-up.
+
+Config is a `defineAuth` key, never an `AppConfig` one:
+
+| Field | Type | What it is |
+|---|---|---|
+| `passkeys.rpId` | `string` | the relying-party id, a bare hostname. A scheme, a port, a path or upper case is `X_CONFIG_INVALID` naming the field |
+| `passkeys.origins` | `readonly string[]` | the absolute origins allowed to run the ceremony: `https` on the `rpId` or below it, `http` only on loopback. Empty, or one on a foreign host, is the same refusal |
+
+`passkeyLogin(auth)` answers a `PasskeyLogin` of four members — the ceremony in two halves, each one
+optional-then-verify:
+
+| Member | What it answers |
+|---|---|
+| `registerOptions` | the creation options `navigator.credentials.create` takes — the challenge, the `rp`, the `user`, the ES256 parameter list |
+| `register` | verifies the attestation and stores the credential in `x_passkeys`; answers the stored record |
+| `loginOptions` | the request options `navigator.credentials.get` takes; the challenge is single use |
+| `login` | verifies origin, rpId hash, ES256 signature and a non-decreasing sign count; answers a `PasskeySignIn` — `{ userId, credentialId, signCount, verifiedAt }` |
+
+`login` answers a **`PasskeySignIn`, not a `LoginResult`**: the ceremony proves who the user is and
+stops there. The app's route turns it into a principal with `createSession(runtime, { userId })`, so
+what a passkey sign-in sets beside the session — a cookie, a redirect — stays the app's decision.
+
+Attestation is `none`-only, which is what these options ask a browser for: the package verifies
+signatures, not attestation trust chains, so any other format is `X_PASSKEY_INVALID`.
+
+`passkeyStepUp(auth, { ttlMs, challenge })` returns a `PasskeyStepUp`: a challenge bound to one
+request's digest, and the check that an assertion was minted for that same digest — evidence for one
+request, never for a session. `challenge` is the app's own derivation of the digest.
+
+| Member | What it answers |
+|---|---|
+| `options` | starts the ceremony for a user over a digest: `{ challenge, requestDigest, expiresAt }` |
+| `verify` | verifies the assertion and records it as evidence for the digest, answering the stored `PasskeyAssertion` |
+| `guard` | what a privileged surface calls: the live assertion covering this digest, else `X_PASSKEY_STEP_UP_REQUIRED`, or `X_PASSKEY_CHALLENGE_EXPIRED` when one stood and its `ttlMs` passed |
+| `isLive` | the same question with no refusal — a boolean |
+
+**One process holds two maps**: the pending challenges and the digest index, both bounded and both
+in memory. The rows are the store's, so the evidence outlives the process and a second one reads it
+by id — but the challenge registry is not shared, so a multi-replica deploy must not round-robin a
+ceremony until a shared challenge store exists. The `signCount` compare-and-set in the store is the
+half of the replay defence that does hold across replicas.
+
+| At rest | Table |
+|---|---|
+| id, user, credential id, public key COSE, transports, sign count, last use | `x_passkeys` |
+| the evidence row: challenge, `requestDigest`, `clientDataJson`, `authenticatorData`, `signature`, expiry | `x_passkey_assertions` |
+
+Both names are in `AUTH_TABLE_NAMES`, so `FRAMEWORK_SCHEMA` applies them at boot; an app writes no
+migration. No secret is stored — a public key and the proof one signature made. `findPasskeyAssertion`
+reads the evidence back by id, so a separate process can verify a step-up after the fact.
+
 ## Errors
 
 | Code | When |
@@ -988,6 +1043,9 @@ later. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is a
 | `X_PASSWORD_WEAK` | strength check rejected the password |
 | `X_ACCOUNT_LOCKED` | the per-ip, per-account or per-org bucket is inside its lockout. The cause names the caller's own address or email, never an org |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired, wrong, or owned by a user who is gone or disabled |
+| `X_PASSKEY_INVALID` | a passkey ceremony refused: an unknown credential, a replayed challenge, a tampered signature, a foreign origin, a decreasing sign count. `401` |
+| `X_PASSKEY_CHALLENGE_EXPIRED` | the ceremony's challenge is past its ttl on the injected clock. `400` |
+| `X_PASSKEY_STEP_UP_REQUIRED` | an assertion proven for one `requestDigest` presented for another. `401` |
 | `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
 | `X_AUTH_WRITE_FAILED` | an `AuthAdapter` lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
 | `X_AUTH_SIGN_IN_UNCONFIGURED` | `signInUnconfigured(role, missing)`, thrown by the boot guard `x g sign-in` writes into the app: a `web` or `sync` role outside development and test with sign-in keys unset. Off the socket — a boot refusal, never a response |
@@ -1019,3 +1077,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `PostgresTotpReplayGuard` | the `TotpReplayGuard` `postgresTotpReplayGuard` returns |
 | `PostgresTotpReplayGuardOptions` | what `postgresTotpReplayGuard` takes |
 | `TotpReplayFactory` | `() => TotpReplayGuard`: what `configureTotpReplay` takes |
+| `PasskeyLogin` · `PasskeyStepUp` | what `passkeyLogin(auth)` and `passkeyStepUp(auth, options)` answer |
+| `PasskeySignIn` | `login`'s answer: `{ userId, credentialId, signCount, verifiedAt }` |
+| `PasskeyConfig` · `assertPasskeyConfig` | the screened `defineAuth({ passkeys })` shape, and the screening on its own |
+| `PasskeyCredential` · `PasskeyStore` | the stored credential (base64url fields, so it survives a JSON round trip) and the store it lives behind |
+| `PASSKEY_CHALLENGE_TTL_MS` | how long one browser prompt may take; the step-up's `ttlMs` is the app's |
