@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4effd911f4a3bab82fff542c863ebf4dcfc1be4164097c25b63f91b197ec477d",
+  "buildId": "2dbd9c7d7b953e2b7cd0325c630929508fa3d0f83ea03db697d0dbb6c670d4ac",
   "tiers": {
     "0": [
       "core",
@@ -361,6 +361,11 @@
     },
     {
       "code": "X_ADMIN_POLICY_MISSING",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_ADMIN_READ_ONLY_WRITE",
       "owner": "admin",
       "at": "packages/admin/src/errors.ts"
     },
@@ -1831,6 +1836,11 @@
     },
     {
       "code": "X_ENTITY_OPERATOR_UNKNOWN",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_READ_ONLY",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },
