@@ -119,7 +119,7 @@ describe(testName('unit', 'seedPass'), () => {
     const rows: SeedRow[] = [];
     const labelledWriter = (): SeedWriter => ({
       insert: async (row) => {
-        labelled.$assert(row.row);
+        labelled.$assert(labelled.$parse(row.row));
         rows.push(row);
       },
       update: async () => undefined,
