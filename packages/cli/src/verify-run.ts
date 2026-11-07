@@ -9,6 +9,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import type { StepDeadline, StepGuard } from './verify-deadline';
 import { guardStep, raceDeadline, stepDeadline } from './verify-deadline';
+import { besideLive, e2eBesideLive } from './verify-e2e-lane';
 import {
   floorRequires,
   readVerifyFloor,
@@ -77,7 +78,14 @@ export async function runVerify(
   // The static steps wait for the serial suites and then run BESIDE them — only when `live` is in
   // the list, so a one-step run (`--only`) and a list with no serial suite keep today's order.
   const overlapping = selected.some((step) => step.name === SERIAL_SUITES[0]);
-  const beside = overlapping ? selected.filter((step) => BESIDE_SERIAL_SUITES.has(step.name)) : [];
+  // The second serial lane (`verify-e2e-lane.ts`): `e2e` beside `live`, its children stripped of
+  // every service URL, in a package monorepo only.
+  const e2eLane = overlapping && e2eBesideLive(ctx);
+  const beside = overlapping
+    ? selected.filter(
+        (step) => BESIDE_SERIAL_SUITES.has(step.name) || (e2eLane && step.name === 'e2e'),
+      )
+    : [];
   let pending: Promise<void> | undefined;
   const join = async (): Promise<void> => {
     await pending;
@@ -94,7 +102,9 @@ export async function runVerify(
   for (const step of selected) {
     if (beside.includes(step)) continue;
     if (step.name === SERIAL_SUITES[0]) {
-      pending = Promise.all(beside.map((other) => run(other, base))).then(() => undefined);
+      pending = Promise.all(
+        beside.map((other) => run(other, other.name === 'e2e' ? besideLive(base) : base)),
+      ).then(() => undefined);
     } else if (!SERIAL_SUITES.includes(step.name)) {
       await join();
     }

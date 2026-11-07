@@ -46,8 +46,8 @@ registerFrameworkFixtures();
 const installedClock = captureDeterminism();
 onFileBoundary(() => restoreCapturedDeterminism(installedClock));
 
-// `bun run test` runs every package in ONE process, so a file that leaves a process-global
-// registry dirty fails a later file in another package. The guard names the file that leaked.
+// A worker runs many packages' files in one process (`bun test <path>` all of them), so a file that
+// leaves a process-global registry dirty fails a later file in another package. The guard names it.
 installRegistryLeakGuard();
 
 // Isolated runs only (`x test` says so): Bun 1.4.0 keeps every finished file alive while a plugin

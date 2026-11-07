@@ -64,7 +64,9 @@ beforeAll(async () => {
     },
   });
   unannounce = markListening(server.url.origin);
-});
+  // The hook's bound is the mint's own: openssl on a loaded 4-core runner (windows, `--parallel`)
+  // took past bun's 5 s hook default, which killed it mid-mint and read as exit code null.
+}, 30_000);
 
 afterAll(() => {
   unannounce();

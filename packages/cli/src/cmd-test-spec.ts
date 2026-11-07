@@ -4,7 +4,13 @@
 import { TEST_TYPES } from '@ultimat3/testing/test-types';
 import { DEFAULT_BASE } from './affected';
 import type { CommandSpec } from './parse';
-import { SERIAL_TYPES, WORKER_BYTES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
+import {
+  BUDGET_RULE,
+  SERIAL_TYPES,
+  WORKER_BYTES,
+  WORKER_CEILING,
+  WORKER_FLOOR,
+} from './test-workers';
 
 export const testSpec: CommandSpec = {
   name: 'test',
@@ -20,7 +26,7 @@ export const testSpec: CommandSpec = {
     {
       name: 'workers',
       type: 'string',
-      summary: `bun worker count (default: one per ${WORKER_BYTES / 2 ** 30} GiB of a min(4 GiB, max(2.75 GiB, 25% of RAM)) budget, at most one per core; ULTIMATE_TEST_MEMORY_BUDGET and ULTIMATE_TEST_MAX_WORKERS override, min ${WORKER_FLOOR}; max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
+      summary: `bun worker count (default: one per ${WORKER_BYTES / 2 ** 30} GiB of a ${BUDGET_RULE} budget, at most one per core; ULTIMATE_TEST_MEMORY_BUDGET and ULTIMATE_TEST_MAX_WORKERS override, min ${WORKER_FLOOR}; max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
     },
     {
       name: 'isolate',

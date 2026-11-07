@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
+
 // Every tracked app's own `x verify`, built first, run as a BLOCKING check on this repo —
 // `examples/dummy` and the deployed `dummy/social-media-clone`. A ratchet rather
 // than a pass/fail: every step passing today must keep passing, every step pinned in that app's
 // `expectedRed` must still be failing, and the moment an app's `typecheck` comes off the pin it
 // has to join the root `tsc -b` solution. Red never becomes the resting state.
 //
-//   bun run scripts/reference-app-gate.ts [--app <dir>] [--json]   # one app: its own CI runner
+//   bun run scripts/reference-app-gate.ts [--app <dir>] [--jobs N] [--json]   # --app: one app, its own CI runner
 //   bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]   # retained for future pins
 //
 // As of 2026-11, both expectedRed tables are empty and every declared step is asserted;
@@ -13,6 +14,8 @@
 // The pins live in scripts/lib/gated-apps.ts; this file owns only what the ratchet does with them.
 // `--app` is scripts/lib/app-select.ts and the `--unpin` edit is scripts/reference-app-unpin.ts.
 
+// why: total RAM bounds how many apps run at once; Bun ships no memory primitive.
+import { totalmem } from 'node:os';
 // `join` builds the host-separator paths to each app root and the CLI entry point; Bun ships no
 // equivalent, and both must be absolute so the subprocess's cwd cannot change what runs.
 import { join } from 'node:path';
@@ -24,8 +27,10 @@ import {
   VERIFY_FLOOR_FILE,
   VERIFY_STEP_NAMES,
 } from '@ultimat3/cli';
+import { appJobs, gateWidth, sharedServices } from './lib/app-gate-schedule';
 import { selectApps } from './lib/app-select';
 import { flagString, parseScriptArgs } from './lib/args';
+import { leasePool, serviceKeys } from './lib/coverage-schedule';
 import type { GatedApp } from './lib/gated-apps';
 import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
 import type { Finding } from './lib/log';
@@ -390,18 +395,44 @@ if (import.meta.main) {
   // "the apps hold" without the counts tells a CI reader nothing about which way they are moving.
   const tallies: string[] = [];
 
-  // Sequentially, not `Promise.all`: each app's `x verify` runs its own test workers, boots an
-  // embedded Postgres and binds the e2e server's port. CI gives each app a runner (`--app`).
-  for (const app of apps) {
-    // Built first: `budgets` weighs what this build writes, and finds it fresh, so it builds nothing.
-    const built = await buildApp(root, exec, app);
+  const jobs = appJobs(args.flags.get('jobs'), navigator.hardwareConcurrency, totalmem());
+  if (jobs === undefined) {
+    report(
+      badFlag(
+        `--jobs needs a positive integer, got ${String(args.flags.get('jobs'))}`,
+        'bun run scripts/reference-app-gate.ts --jobs 1',
+      ),
+      args.json,
+    );
+  }
+  // Builds side by side: each writes only its own app's `.x/` and holds no service. Gates side by
+  // side only while no shared service URL is set (`app-gate-schedule.ts` says which collide), and
+  // every app's tests lease from the one machine slot pool either way. Results are collected in
+  // table order, so the report reads exactly as a serial run's does.
+  const shared = sharedServices(Bun.env, serviceKeys(root));
+  const width = gateWidth(jobs, shared);
+  const one = (): number => 1;
+  const builds = await leasePool(apps, jobs, one, (app) => buildApp(root, exec, app));
+  const gates = await leasePool(apps, width, one, async (app) => ({
+    steps: await runAppGate(root, exec, app.dir),
+    referenced: await referencesApp(root, app.reference),
+    // Read here rather than inside `gateFindings` for the same reason `referenced` is: the
+    // decision stays pure and testable, and the one thing that touches the disk is this pool.
+    floor: await readVerifyFloor(join(root, app.dir)),
+  }));
+  if (apps.length > 1) {
+    lines.push(
+      shared.length > 0
+        ? `${apps.length} apps: built ${Math.min(jobs, apps.length)} at a time, gated one at a time — ${shared.join(', ')} is one server for every app`
+        : `${apps.length} apps: built and gated ${Math.min(jobs, apps.length)} at a time (--jobs)`,
+    );
+  }
+
+  apps.forEach((app, index) => {
+    const built = builds[index];
     if (built !== undefined) findings.push(built);
-    const steps = await runAppGate(root, exec, app.dir);
-    const referenced = await referencesApp(root, app.reference);
+    const { steps, referenced, floor } = gates[index] as (typeof gates)[number];
     findings.push(...gateFindings({ app, steps, referenced, declaredSteps: VERIFY_STEP_NAMES }));
-    // Read here rather than inside `gateFindings` for the same reason `referenced` is: the decision
-    // stays pure and testable, and the one thing that touches the disk is this loop.
-    const floor = await readVerifyFloor(join(root, app.dir));
     findings.push(...floorFindings({ app, steps: steps ?? [], floor: floor?.steps }));
     const red = steps === undefined ? [] : redSteps(steps);
     const total = steps?.length ?? 0;
@@ -415,7 +446,7 @@ if (import.meta.main) {
       pinned: Object.keys(app.expectedRed),
       referenced,
     });
-  }
+  });
 
   report(
     {

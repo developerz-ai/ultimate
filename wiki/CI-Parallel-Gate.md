@@ -19,8 +19,8 @@ JSON is a *part*: `x verify merge` reads it back.
 | `unit` | `x verify --only unit --shard i/n --json` | nothing (PGlite in process) |
 | `contract` | `x verify --only contract --shard i/n --json` | nothing |
 | `job` | `x verify --only job --shard i/n --json` | nothing |
-| `live` | `x verify --only live --json` | a Postgres with `wal_level=logical` (`TEST_DATABASE_URL`) — serial, never sharded |
-| `e2e` | `x verify --only e2e --json` | the static build (`x build --target static --no-preflight`), Chrome — serial, never sharded |
+| `live` | `x verify --only live --json` (or `--shard i/n`) | the test services (`docker/test-services.env`): Postgres (`TEST_DATABASE_URL`), the logical + TLS server (`TEST_REPLICATION_URL`, `TEST_TLS_REPLICATION_URL`), pooler, standby, Redis, NATS, S3 — one process per runner |
+| `e2e` | `x verify --only e2e --json` (or `--shard i/n`) | the static build (`x build --target static --no-preflight`), Chrome — one process per runner |
 | `eval` | `x verify --only eval --json` | nothing; baselines committed |
 | `drift` `contract-diff` | `x verify --only drift,contract-diff --json` | nothing |
 | `budgets` `seo` `i18n` `policy` | `x verify --only budgets,seo,i18n,policy --json` | the static build — `budgets` weighs `.x/build-stats.json` |
@@ -35,8 +35,12 @@ sharded step, in shards `1..n` exactly once). `x verify merge` refuses anything 
 x verify --only unit --shard 2/4 --json > part-unit-2.json
 ```
 
-- Only with `--only`, and only over `unit`, `contract` and `job`. `live` and `e2e` are serial by
-  design (one replication slot, one built output) and are refused with `X_VERIFY_SHARD_INVALID`.
+- Only with `--only`, and only over the test steps: `unit`, `contract`, `live`, `job`, `e2e`
+  (any other step is `X_VERIFY_SHARD_INVALID`). `live` and `e2e` stay ONE process inside a shard —
+  serial means one replication slot and one browser per machine, and each runner starts its own
+  services — so when sharded, their shards split across runners, never across workers. `As of 2026-11-07` this
+  repository's CI still runs each as one part: its longest job is a `packages` coverage shard, so
+  a second live or e2e runner would cost runner minutes and save no wall clock.
 - The split is a pure function of the step's **sorted** file list: round-robin by default, so job
   2 of 4 is the same files on every runner and on your laptop. `--timings <file>` (Bun's
   `--timings` file, e.g. the `.x/test-timings.json` every parallel run refreshes — cache it
@@ -200,9 +204,10 @@ job's runner acquisition ahead of every other job, a few seconds.
 ## Width and memory, per job
 
 Each job sizes its own test width the same way the laptop does (`x verify` prints it on the step
-line, e.g. `3 workers (budget 4.0 GB)`): a budget of `min(4 GiB, max(2.75 GiB, 25% of the runner's RAM))`,
+line, e.g. `3 workers (budget 4.0 GB)`): a budget of `max(2.75 GiB, 25% of the runner's RAM)`,
 1.25 GiB planned per worker, never more workers than cores. On a 16 GB `ubuntu-latest` that is 3
-workers. `ULTIMATE_TEST_MEMORY_BUDGET=6g` or `ULTIMATE_TEST_MAX_WORKERS=4` override it; `--workers`
+workers; a 62 GB, 16-core workstation plans 12 (`As of 2026-11-07`, when the fixed 4 GiB cap went —
+the machine-wide slot pool is what keeps two runs on one box inside one budget). `ULTIMATE_TEST_MEMORY_BUDGET=6g` or `ULTIMATE_TEST_MAX_WORKERS=4` override it; `--workers`
 wins over both. The machine-wide slot pool (see [Testing](Testing#memory-width-and-isolation))
 has nothing to share on a one-job VM; `ULTIMATE_TEST_SLOTS=0` turns it off.
 

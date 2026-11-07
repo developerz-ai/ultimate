@@ -38,7 +38,7 @@ const compose = Bun.YAML.parse(await Bun.file(`${root}/${COMPOSE}`).text()) as {
 const services = Object.entries(compose.services ?? {});
 const service = (name: string): Service => compose.services?.[name] ?? {};
 
-/** `127.0.0.1:5433:5432` → 5433: the port a suite on the host dials. */
+/** `127.0.0.1:5440:5432` → 5440: the port a suite on the host dials. */
 const hostPort = (published: string): string => published.split(':').at(-2) ?? '';
 
 const lines = (await Bun.file(`${root}/${ENV_FILE}`).text())
@@ -143,23 +143,58 @@ describe('unit · test services · in RAM, without durability, silent', () => {
     }
   });
 
-  test('both Postgres servers run without fsync and log nothing below FATAL', () => {
-    for (const name of ['postgres', 'postgres-logical', 'postgres-tls']) {
+  test('both Postgres servers run without fsync, plan without JIT and log nothing below FATAL', () => {
+    for (const name of ['postgres', 'postgres-tls']) {
       const initdb = service(name).environment?.['POSTGRES_INITDB_ARGS'] ?? '';
       for (const setting of [
         'fsync=off',
         'synchronous_commit=off',
         'full_page_writes=off',
         'log_min_messages=fatal',
+        // A suite's queries are milliseconds: JIT is compile time they never earn back, and an
+        // autoanalyze racing a test's own `analyze` is a plan that changes under its assertion.
+        'jit=off',
+        'autovacuum=off',
+        // The WAL lives on the tmpfs, so every kept segment is RAM; every DROP DATABASE checkpoints.
+        'min_wal_size=32MB',
+        'max_wal_size=256MB',
       ]) {
         expect(initdb, `${name} is initialised without ${setting}`).toContain(`-c ${setting}`);
       }
       expect(service(name).tmpfs).toEqual(['/var/lib/postgresql/data']);
     }
     expect(service('postgres').image).toStartWith('pgvector/pgvector:');
-    expect(service('postgres-logical').command).toContain('wal_level=logical');
     expect(service('postgres-tls').command).toContain('wal_level=logical');
     expect(service('postgres-tls').command).toContain('ssl=on');
+  });
+
+  // Measured 2026-11-07: the stock 100 was exhausted by 12 parallel test processes on this
+  // repo's own suites (`sorry, too many clients already`, read as X_DB_POOL_EXHAUSTED), with a
+  // peak of 305 once the ceiling moved. A slot costs ~25 KB of shared memory.
+  test('each Postgres server admits every parallel test process at once', () => {
+    for (const name of ['postgres', 'postgres-tls']) {
+      const initdb = service(name).environment?.['POSTGRES_INITDB_ARGS'] ?? '';
+      const ceiling = Number(/-c max_connections=(\d+)/.exec(initdb)?.[1] ?? '100');
+      expect(ceiling, `${name} keeps the stock connection ceiling`).toBeGreaterThanOrEqual(400);
+    }
+  });
+
+  // `wal_level` is a server argument, but TLS is not a property of the server a plain client
+  // sees: `host all all all` admits a cleartext session on the same port. So the logical feed's
+  // suites and the TLS suite share ONE server, and the cleartext URL says so with sslmode=disable
+  // — without it the wire client's default `prefer` would quietly move those suites onto TLS.
+  test('one logical server answers both replication URLs, one in cleartext and one over TLS', () => {
+    const plain = urls.get('TEST_REPLICATION_URL');
+    const tls = urls.get('TEST_TLS_REPLICATION_URL');
+
+    expect(plain && serviceAt(plain)).toBe('postgres-tls');
+    expect(tls && serviceAt(tls)).toBe('postgres-tls');
+    expect(plain?.searchParams.get('sslmode')).toBe('disable');
+    expect(
+      services
+        .filter(([, spec]) => (spec.command ?? []).join(' ').includes('wal_level=logical'))
+        .map(([name]) => name),
+    ).toEqual(['postgres-tls']);
   });
 
   // The standby has no initdb of its own: its postgresql.conf — no fsync, nothing below FATAL — is
@@ -321,7 +356,10 @@ describe('unit · test services · a suite finds each one where it was started',
     const servers = services.filter(([, spec]) => (spec.ports ?? []).length > 0);
 
     expect(dialled.filter(([, at]) => at === undefined)).toEqual([]);
-    expect(dialled.map(([, at]) => at).sort()).toEqual(servers.map(([name]) => name).sort());
+    // A set: one server may answer two URLs (the logical one, in cleartext and over TLS).
+    expect([...new Set(dialled.map(([, at]) => at))].sort()).toEqual(
+      servers.map(([name]) => name).sort(),
+    );
   });
 
   // Every port binds `127.0.0.1` (above). `localhost` resolves `::1` first on Windows, where

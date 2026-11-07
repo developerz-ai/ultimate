@@ -11,12 +11,13 @@ One file starts every backing service a suite measures against —
 | Rule | How |
 |---|---|
 | in RAM | every data directory is a tmpfs; no volume |
-| no durability | Postgres `fsync`, `synchronous_commit`, `full_page_writes` off; Redis `--save ''`, `--appendonly no` |
+| no durability | Postgres `fsync`, `synchronous_commit`, `full_page_writes` off, JIT and autovacuum off, a small WAL; Redis `--save ''`, `--appendonly no` |
 | silent | Postgres `log_min_messages=fatal`, Redis `--loglevel nothing`, NATS `-l /dev/null`, the gateway `VGW_QUIET`; every container's log driver is `none` |
 | one definition | CI's `gate` parts run `docker compose up -d --wait <services>`; the URLs live in `docker/test-services.env` |
 | one supplier | a suite that reads a `TEST_*_URL` is run by the part that starts that server and exports the URL — `scripts/test-services-shape.test.ts` |
 
-Held by `scripts/test-services-shape.test.ts`.
+Held by `scripts/test-services-shape.test.ts`, which also pins `jit=off`, `autovacuum=off`, the
+connection ceiling and the one logical server.
 
 ## Why compose, not a `services:` block
 
@@ -140,6 +141,30 @@ To run it beside a shared stack already up, a second compose project with its ow
 touches the first:
 `docker compose -p ultimate-standby-probe -f docker/docker-compose.test.yml -f <override> up -d --wait postgres postgres-standby`,
 the override giving both services `ports: !override [...]`, then `down` the same project.
+
+## One logical server, and the throughput settings (2026-11-07)
+
+On the owner's instruction: "dbs no logs, errors optimized, 1 process multiple parallel dbs,
+ramdisk, same for redis". Measured on a 16-core laptop, images cached, in a second compose
+project on offset ports so the shared stack stayed up.
+
+| Candidate | Verdict | Number |
+|---|---|---|
+| `postgres-logical` + `postgres-tls` → one server | **done**: `postgres-tls` serves both; `TEST_REPLICATION_URL` dials 5440 with `sslmode=disable` (`host all all all` admits cleartext; without it the wire client's `prefer` would move those suites onto TLS) | idle stack 282 → 245 MiB; `up --wait` 4.31 → 3.96 s (mean of 4); the 7 replication + TLS suites, 31 tests, green on the one server in 3.5 s. Slot, publication, table and role names are disjoint per suite, and `live` runs serially |
+| `max_connections` | **raised to 400** | the stock 100 ran out at `bun test --parallel=12` over `packages/{db,entity,testing}`: 98 `too many clients`, read as 96 `X_DB_POOL_EXHAUSTED`. Peak once raised: 305. Cost: ~8 MiB of shared memory per idle server |
+| `jit=off`, `autovacuum=off` | **done** | no wall-clock change on the serial live suites (121.6–123.3 s before, 121.9–122.0 s after, fresh servers): they wait on timers. Kept for what they remove — JIT compile on a millisecond query, and an autoanalyze racing a suite's own `analyze` (every plan-asserting suite analyzes explicitly) |
+| `min_wal_size=32MB`, `max_wal_size=256MB` | **done**, smaller, not larger | the WAL is a tmpfs, so a kept segment is RAM. Every `DROP DATABASE` requests a checkpoint (64 in one verify), so `max_wal_size` never triggers one and a larger one buys nothing; peak `pg_wal` 48–64 MiB either way |
+| `wal_level=minimal` + `max_wal_senders=0` | **killed** here, already true in the scaffold | `postgres` feeds `postgres-standby`; `postgres-tls` decodes logical WAL |
+| `log_min_error_statement`, `log_error_verbosity` | **killed**: already silent | `log_min_messages=fatal` suppresses an ERROR and its STATEMENT line: `select 1/0` and an unknown column wrote 0 server log lines |
+| `client_min_messages` | **killed** | a client setting, not a server log; a suite may read a NOTICE |
+| clone with `STRATEGY file_copy` | **killed** | 20 clones of the migrated template: 170–199 ms `wal_log`, 91–119 ms `file_copy`; ~8 test files clone per run, so ~30 ms a run — not worth `cloneSql` behaving differently on an app's disk-backed server, where `file_copy` forces checkpoints |
+| per-worker databases | **already true** | `acquireWorkerDatabase` clones one migrated template per worker (`packages/testing/src/template-db.ts`) |
+
+The same settings land in the test stack `x new` writes (`scaffold-test-services.ts`, and its copy
+in `dummy/docs-site/docker/`), whose Redis now logs `nothing` as this repo's does. The deploy
+proof's throwaway Postgres in kind (`docker/deploy-proof/postgres.yaml`) runs on a memory
+`emptyDir` with fsync off. Dev and production compose files keep their durability: their data is
+somebody's.
 
 ## Logs in the test run itself
 

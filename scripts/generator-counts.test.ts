@@ -5,13 +5,12 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { generate } from '@ultimat3/cli';
 import {
   checkGeneratorCounts,
-  type GeneratorFacts,
-  generatorFacts,
   ownerOf,
   readCountClaims,
   readMentions,
   readTranscriptClaims,
 } from './generator-counts';
+import { type GeneratorFacts, generatorFacts } from './lib/generator-variants';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 
 // A scaffold written to a temporary directory and `x g` run in it, twice: seconds, not milliseconds.
@@ -205,6 +204,25 @@ describe('the two rules', () => {
     expect(gapsFor('✓ wrote 25 file(s) for resource todo')).toEqual(['x g resource:25']);
     expect(gapsFor('✓ wrote 27 file(s) for resource todo')).toEqual([]);
     expect(gapsFor('would write 99 file(s) for new demo')).toEqual([]);
+  });
+
+  test('a transcript is held to the flags of the command fence it follows', () => {
+    // wiki/Tutorial-03 pasted 41 under `x g resource note --admin`: a count the bare spelling
+    // prints, so membership alone left tutorial-run red on main for eight pushes.
+    const admin =
+      '```bash\nbunx x g resource note --admin\n```\n\n```text\n✓ wrote 27 file(s) for resource note\n```';
+    expect(gapsFor(admin)).toEqual(['x g resource:27']);
+    expect(gapsFor(admin.replace('27 file', '29 file'))).toEqual([]);
+    const bare =
+      '```bash\nbunx x g resource note\n```\n\n```text\n✓ wrote 29 file(s) for resource note\n```';
+    expect(gapsFor(bare)).toEqual(['x g resource:29']);
+    // Only the NEAREST shell fence: one naming another command in between drops the --admin spelling.
+    const later = `${admin.replace('27 file', '29 file')}\n\n\`\`\`bash\nbunx x db migrate\n\`\`\`\n\n\`\`\`text\n✓ wrote 27 file(s) for resource memo\n\`\`\``;
+    expect(gapsFor(later)).toEqual([]);
+    // Prose mentioning the command is not the command the transcript is of.
+    expect(gapsFor('`x g resource note --admin` …\n✓ wrote 27 file(s) for resource note')).toEqual(
+      [],
+    );
   });
 });
 
