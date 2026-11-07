@@ -133,7 +133,10 @@ describe(testName('unit', 'factoriesFor'), () => {
     });
     const row = factoriesFor({ orders }).orders.build();
     expect(row['ref']).toMatch(/^ORD-\d{4}$/);
-    expect(orders.$invariants.every((rule) => rule.holds(row))).toBe(true);
+    // `build()` answers the registry's loose row; the rule reads the entity's own row type.
+    expect(
+      orders.$invariants.every((rule) => rule.holds(row as Parameters<typeof rule.holds>[0])),
+    ).toBe(true);
   });
 
   test('a registry factory declares no traits', () => {

@@ -1,8 +1,7 @@
 // Insert order for a seed graph: every parent before its children, over the foreign keys the
-// entities themselves resolve (`$references()`, the record `relationsOf` is built from). A cycle is
-// broken at a NULLABLE edge — inserted null, set by an update once its target exists; a cycle with
-// no nullable edge is refused, because no insert order can satisfy it. The break prefers a table
-// that takes updates: an `appendOnly` one refuses every UPDATE, so its key would stay null.
+// entities themselves resolve (`$references()`). A cycle is broken at a NULLABLE edge — inserted
+// null, set by an update once its target exists — preferring a table that takes updates (never
+// `appendOnly`); a cycle with no nullable edge is refused: no insert order can satisfy it.
 
 import type { ReferenceDescription } from '@ultimat3/entity';
 import { seedGraphUnsatisfied } from './seed-graph-error';

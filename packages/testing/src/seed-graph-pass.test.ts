@@ -215,7 +215,11 @@ describe(testName('unit', 'seedPass'), () => {
   });
 
   test('an environment failure on a deferred update keeps its own code', async () => {
-    const down = new UltimateError({ code: 'X_DB_UNAVAILABLE', cause: 'down', fix: 'x db up' });
+    const down = new UltimateError({
+      code: 'X_DB_UNAVAILABLE',
+      cause: 'down',
+      fix: 'x doctor --json',
+    });
     const failure = await failureOf(() =>
       seedPass([teams, players], updateRefusing(down).writer, { primitives: 1, seed: 4 }),
     );

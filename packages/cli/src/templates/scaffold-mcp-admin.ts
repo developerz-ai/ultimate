@@ -3,6 +3,7 @@
 // exposed tools at `/admin/mcp`, behind the web surface's agent-token resolver. Mounted beside
 // `apps/web/mcp.ts`, and REFUSING without a token, like it.
 
+import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 
 const endpoint = (
@@ -15,8 +16,10 @@ const endpoint = (
 // Built HERE, at module scope, and nowhere under \`apps/admin/app/\`: the boot scan evaluates this
 // file after every \`apps/*/{site,app,api,shared}\` module has registered its primitives, and the mount
 // refuses a catalog projected before that (X_MCP_INCLUDE_EARLY) rather than serve it short.
-import { type AgentCaller, resolveAgentToken } from '@${app.kebab}/web/app/auth/agent-token';
-import { type AdminMcpActor, adminMcp } from '@ultimat3/admin';
+${sortedImports([
+  `import { type AgentCaller, resolveAgentToken } from '@${app.kebab}/web/app/auth/agent-token';`,
+  "import { type AdminMcpActor, adminMcp } from '@ultimat3/admin';",
+])}
 import { admin } from './app/admin/admin';
 
 /**
@@ -51,10 +54,12 @@ const endpointTest = (
   app: NameSet,
 ): string => `// The admin endpoint is mounted and refusing: a route at /admin/mcp, and a 401 for a request that
 // carries no token or one this process does not honour — before any tool, or the body, is read.
-import { DEV_AGENT_TOKEN_PREFIX } from '@${app.kebab}/web/app/auth/agent-token';
-import { DEMO_ORG_ID } from '@${app.kebab}/web/shared/demo-org';
-import { agentActor } from '@ultimat3/core';
-import { expect, unitTest } from '@ultimat3/testing';
+${sortedImports([
+  `import { DEV_AGENT_TOKEN_PREFIX } from '@${app.kebab}/web/app/auth/agent-token';`,
+  `import { DEMO_ORG_ID } from '@${app.kebab}/web/shared/demo-org';`,
+  "import { agentActor } from '@ultimat3/core';",
+  "import { expect, unitTest } from '@ultimat3/testing';",
+])}
 import { adminAgentOf, mcp } from './mcp';
 
 const post = (headers: Record<string, string>) =>

@@ -6,6 +6,7 @@ import { text, timestamp } from './columns';
 import { entity } from './entity';
 import { memoryRepo, memoryTransactor } from './memory-repo';
 import { clearRegistry } from './registry';
+import type { Tx } from './repo';
 
 afterAll(() => {
   clearRegistry();
@@ -33,7 +34,7 @@ const refusal = (work: Promise<unknown>): Promise<string | undefined> =>
         : 'refused',
   );
 
-const rollingBack = (work: (tx: { id: string }) => Promise<void>): Promise<unknown> =>
+const rollingBack = (work: (tx: Tx) => Promise<void>): Promise<unknown> =>
   memoryTransactor()
     .run(async (tx) => {
       await work(tx);
@@ -119,12 +120,16 @@ describe('unit · the memory unique index is maintained, not rebuilt', () => {
     await people.delete('a');
     await people.insert({ id: 'b', email: 'a@x.test', handle: null });
     const repo = memoryRepo(notes);
-    await repo.insert({ id: 'n', slug: 'hello' });
+    await repo.insert({ id: 'n', slug: 'hello', deletedAt: null });
     await repo.delete('n');
-    expect(await refusal(repo.insert({ id: 'm', slug: 'hello' }))).toContain('mui_notes_slug');
-    await repo.insert({ id: 'o', slug: 'other' });
+    expect(await refusal(repo.insert({ id: 'm', slug: 'hello', deletedAt: null }))).toContain(
+      'mui_notes_slug',
+    );
+    await repo.insert({ id: 'o', slug: 'other', deletedAt: null });
     await repo.deleteWhere({ slug: 'other' });
-    expect(await refusal(repo.insert({ id: 'p', slug: 'other' }))).toContain('mui_notes_slug');
+    expect(await refusal(repo.insert({ id: 'p', slug: 'other', deletedAt: null }))).toContain(
+      'mui_notes_slug',
+    );
   });
 
   test('reset returns the index to the seed', async () => {

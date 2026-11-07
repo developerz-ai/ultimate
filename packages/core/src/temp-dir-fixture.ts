@@ -3,6 +3,8 @@
 // scanned by the antivirus: either answers `rm` with EBUSY or EPERM for a moment after `exited`
 // resolved. Bun's `rmSync` ignores Node's `maxRetries`, so the bounded wait is here.
 
+// why: Bun ships no recursive delete; `rmSync` is what a temp directory's removal needs.
+import { rmSync } from 'node:fs';
 import { backoffDelay } from './backoff';
 import { stringField } from './error-render';
 
@@ -16,8 +18,14 @@ export interface RemoveIo {
 
 const isHeldOpen = (code: string | undefined): boolean => code === 'EBUSY' || code === 'EPERM';
 
+/** The real filesystem and the real wait: an OS holding a file lets go on ITS clock, not ours. */
+const REAL_IO: RemoveIo = {
+  remove: (path) => rmSync(path, { recursive: true, force: true }),
+  sleep: (ms) => Bun.sleep(ms),
+};
+
 /** `remove(path)`, retried on EBUSY/EPERM only, `REMOVE_ATTEMPTS` tries in all. */
-export async function removeTempDir(path: string, io: RemoveIo): Promise<void> {
+export async function removeTempDir(path: string, io: RemoveIo = REAL_IO): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     try {
       io.remove(path);

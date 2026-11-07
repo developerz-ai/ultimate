@@ -82,11 +82,17 @@ describe("unit · a settled attempt's signal", () => {
 
   test('a step a completed body never awaited is refused as ENDED, never as cancelled', async () => {
     let forgotten: Promise<unknown> | undefined;
+    // The step finishes only once the attempt has settled: released below, after the outcome.
+    let release: () => void = () => undefined;
+    const late = new Promise<string>((resolve) => {
+      release = () => resolve('done');
+    });
     const { outcome } = await runOnce(({ step }) => {
-      forgotten = step.run('forgotten', () => Bun.sleep(5).then(() => 'done'));
+      forgotten = step.run('forgotten', () => late);
       return Promise.resolve();
     });
     expect(await outcome).toBe('completed');
+    release();
     const refusal: unknown = await forgotten?.then(
       () => undefined,
       (error: unknown) => error,

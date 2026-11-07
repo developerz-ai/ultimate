@@ -16,9 +16,7 @@ export type ExerciseSetupHandle = Disposable | AsyncDisposable;
 export type ExerciseSetup = () =>
   | void
   | ExerciseSetupHandle
-  | Promise<void>
-  | Promise<ExerciseSetupHandle>
-  | Promise<ExerciseSetupHandle | undefined>;
+  | Promise<void | ExerciseSetupHandle | undefined>;
 
 const setupUnsealed = (hosts: readonly string[]): UltimateError =>
   new UltimateError({

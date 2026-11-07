@@ -41,8 +41,10 @@ const coded = (code: string) => (): never => {
 };
 refusing('ejrConflict', coded('X_EJR_SLOT_TAKEN'));
 refusing('ejrServerError', coded('X_EJR_VENDOR_DOWN'));
+// A foreign throw the body makes — input to the pass, never this test's verdict.
+const uncoded = new TypeError('undefined is not an object');
 refusing('ejrUncoded', () => {
-  throw new TypeError('undefined is not an object');
+  throw uncoded;
 });
 
 const one = async (only: string): Promise<ExerciseRecord> => {

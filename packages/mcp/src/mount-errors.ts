@@ -48,7 +48,7 @@ export class McpIncludeEarlyError extends UltimateError {
     super({
       code: 'X_MCP_INCLUDE_EARLY',
       cause: `the mcp endpoint ${input.file} exports projected include: 'exposed' before ${input.missing.join(', ')} registered — it was built at the top level of a module the boot scan evaluates before the app's actions and queries — so its catalog lacks them`,
-      fix: `build the endpoint at module scope in ${input.file} itself (or a function it calls there) — the boot scan evaluates every apps/<app>/mcp.ts after all apps/*/{site,app,api,shared} modules have registered`,
+      fix: `export const mcp = defineAppMcp({ include: 'exposed', resolveToken })   # at module scope in ${input.file} itself, not in a module it imports — the boot scan evaluates every apps/<app>/mcp.ts after all apps/*/{site,app,api,shared} modules have registered`,
     });
     this.missing = input.missing;
   }

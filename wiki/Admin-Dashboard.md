@@ -260,6 +260,14 @@ mount serves it beside `apps/web/mcp.ts`. `x new` writes it.
 
 ```ts
 // apps/admin/mcp.ts
+import { type AdminApp, type AdminMcpActor, adminMcp } from '@ultimat3/admin';
+import type { McpRequestFacts } from '@ultimat3/mcp';
+declare const admin: AdminApp; // `import { admin } from './app/admin/admin'` — the defineAdmin() module
+// The web surface's resolver (`apps/web/app/auth/agent-token.ts`) and its mapping onto an admin actor,
+// both as `x new` writes them.
+declare function resolveAgentToken(token: string, facts?: McpRequestFacts): Promise<unknown>;
+declare function adminAgentOf(caller: unknown): AdminMcpActor | null;
+
 export const mcp = adminMcp({
   app: admin,
   path: '/admin/mcp',

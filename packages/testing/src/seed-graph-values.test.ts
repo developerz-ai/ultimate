@@ -30,6 +30,9 @@ const orders = entity('sgv_orders', {
   ],
 });
 
+/** A whole row for a rule's type; each rule here reads its own column alone. */
+const BLANK = { id: '', orderRef: '', code: '', note: '' };
+
 const column = (property: keyof typeof orders.$columns): SeedColumn =>
   orders.$columns[property] as SeedColumn;
 
@@ -50,7 +53,8 @@ describe('a matches() pattern', () => {
 
   test('without the pattern no candidate keeps the rule; with it, one does', () => {
     const rule = orders.$invariants.find((i) => i.name === 'sgv_order_ref_shape');
-    const keeps = (value: unknown) => rule?.holds({ orderRef: value }) === true;
+    const keeps = (value: unknown) =>
+      typeof value === 'string' && rule?.holds({ ...BLANK, orderRef: value }) === true;
     expect(candidatesFor('orderRef', column('orderRef'), ctx()).some(keeps)).toBe(false);
     const patterns = declaredPatterns(orders).get('orderRef');
     const offered = candidatesFor('orderRef', column('orderRef'), ctx(patterns));
@@ -64,7 +68,11 @@ describe('a matches() pattern', () => {
       column('code'),
       ctx(declaredPatterns(orders).get('code')),
     );
-    expect(offered.some((value) => rule?.holds({ code: value }) === true)).toBe(true);
+    expect(
+      offered.some(
+        (value) => typeof value === 'string' && rule?.holds({ ...BLANK, code: value }) === true,
+      ),
+    ).toBe(true);
   });
 
   test('the same row draws the same values', () => {
