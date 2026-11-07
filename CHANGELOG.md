@@ -11,10 +11,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 ### Highlights
 
 - `seo: { llms: false }` hands `/llms.txt` to the app: an app serving its own no longer fails to boot with `X_ROUTE_CONFLICT`.
+- `x exercise`'s app factories now seed every graph the pass builds, the scale sweep's and the subject proof's too.
 
 ### Fixed
 
 - `@ultimat3/cli`: with `seo.llms: false` the web role and `x dev` mount no `GET /llms.txt`, and the static export writes no `llms.txt`. Both mounted an empty one, so an app with its own `/llms.txt` route refused every boot with `X_ROUTE_CONFLICT` — no Upgrading row covered it. `writeSiteSeo(out, seo, { llms })` takes the setting; a scaffold from `x new` passes it.
+- `@ultimat3/testing`: `defineExercise`'s `factories` reach the scale sweep's sized graphs and the subject proof's graph, not only the pass's first one — `x exercise` still refused a cross-column `satisfies` table with `X_SEED_GRAPH_UNSATISFIED` on 30.1.0, from `scaleGraph`.
 
 ## 30.1.0 - 2026-11-07
 

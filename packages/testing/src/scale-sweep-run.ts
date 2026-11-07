@@ -10,7 +10,7 @@ import { testJobs } from './fixture-jobs';
 import type { ScaleProof, StatementTally } from './scale-sweep';
 import { judgeScale, SCALE_SIZES } from './scale-sweep';
 import { scaleGraph } from './scale-sweep-graph';
-import type { SeedGraph, SeedWriter } from './seed-graph-plan';
+import type { SeedFactory, SeedGraph, SeedWriter } from './seed-graph-plan';
 import { insertSeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 
@@ -45,6 +45,8 @@ export interface ScaleSweepOptions {
   readonly seed: number;
   readonly room: ExerciseRoom;
   readonly setup: ScaleSetup;
+  /** `defineExercise`'s factories, handed to every sized graph as to the pass's own. */
+  readonly factories?: Readonly<Record<string, SeedFactory>> | undefined;
 }
 
 type Call = { readonly shapes: readonly StatementTally[] } | { readonly failed: string };
@@ -88,6 +90,7 @@ export async function scaleSweep(
     scaleGraph(options.main, options.entities, {
       perTable,
       seed: fnv1a(`scale:${options.seed}:${i}`) || 1,
+      factories: options.factories,
     }),
   );
   try {

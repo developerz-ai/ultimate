@@ -8,7 +8,7 @@ import { ctxOf, finiteOption, runWithContext, serviceActor } from '@ultimat3/cor
 import type { Subject, SubjectPlan } from '@ultimat3/jobs';
 import { memoryStepStore, planSubject, stepRunner, subjectEraseTables } from '@ultimat3/jobs';
 import { seedGraph } from './seed-graph';
-import type { SeedGraph, SeedWriter } from './seed-graph-plan';
+import type { SeedFactory, SeedGraph, SeedWriter } from './seed-graph-plan';
 import { insertSeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 import { SubjectEraseIncompleteError } from './subject-proof-error';
@@ -22,6 +22,8 @@ export interface SubjectProofOptions {
   /** Every stored row of one table, as the database holds it, unscoped. */
   readonly read: (entity: SeedEntity) => Promise<readonly Stored[]>;
   readonly seed?: number;
+  /** `defineExercise`'s factories: a table only they satisfy is built by them for the proof too. */
+  readonly factories?: Readonly<Record<string, SeedFactory>> | undefined;
 }
 
 export interface SubjectProofResult {
@@ -107,6 +109,7 @@ export async function subjectProof<I>(
   const graph = seedGraph(Object.fromEntries(entities), {
     seed: finiteOption('subjectProof', 'seed', options.seed ?? 1),
     tenants: 2,
+    ...(options.factories === undefined ? {} : { factories: options.factories }),
   });
   await insertSeedGraph(graph, options.writer);
   const tenant = graph.tenants[0] ?? null;
