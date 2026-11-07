@@ -10,7 +10,14 @@
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import type { Frame } from '@ultimat3/realtime';
-import { decode, encode, installRealtime, PROTOCOL_VERSION, pageOutbox } from '@ultimat3/realtime';
+import {
+  decode,
+  encode,
+  installRealtime,
+  PROTOCOL_VERSION,
+  pageOutbox,
+  resetPageRealtime,
+} from '@ultimat3/realtime';
 import {
   afterAll,
   beforeAll,
@@ -46,9 +53,6 @@ const PROPS = {
     catalog: { 'ui.empty': 'Nothing here', 'ui.error.title': 'Something went wrong' },
   },
 } as const;
-
-/** The page state every island bundle on a page shares — `globalThis`, by its registered symbol. */
-const PAGE = Symbol.for('ultimate.realtime');
 
 /** One turn for the page's disk restore to settle: the socket dials after it (`page-socket.ts`). */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -154,8 +158,7 @@ beforeAll(async () => {
 afterAll(() => {
   mounted?.[Symbol.dispose]();
   // The page state is process-global: left behind it would be the next file's page.
-  Reflect.deleteProperty(globalThis, PAGE);
-  Reflect.deleteProperty(globalThis, Symbol.for('ultimate.outbox'));
+  resetPageRealtime();
 });
 
 /**

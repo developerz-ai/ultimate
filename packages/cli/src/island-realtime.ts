@@ -5,8 +5,9 @@
 // that reads the record store or the outbox also waits for the page's restore before it mounts
 // (#506); one that only follows the socket does not (`island-realtime-state.ts`).
 
-// why: Bun ships no path API; the entry is joined to the root, the runtime named by its basename.
-import { basename, join } from 'node:path';
+// why: Bun ships no path API; the entry is joined to the root, the runtime named by its basename,
+// core's transport found beside the core module importing it.
+import { basename, dirname, join } from 'node:path';
 import type { BunPlugin } from 'bun';
 import { followsOnly, type IslandRealtime } from './island-realtime-state';
 import { RUNTIME_CHUNK_SPECIFIER, type RuntimeChunk } from './island-runtime';
@@ -29,6 +30,10 @@ const INSTALL = 'ultimate:island-realtime';
 const RESTORE = 'ultimate:island-restore';
 const MODULE = 'ultimate:island-module:';
 const WAIT = 'ultimate:island-page-wait';
+const CORE_TRANSPORT = 'ultimate:island-core-transport';
+/** What core's own modules import the transport by — the one specifier the swap answers. */
+const TRANSPORT_SPECIFIER = /^\.\/client-transport$/;
+const TRANSPORT_MODULE = 'transport:';
 
 /**
  * Whether the island's own graph value-imports realtime. Relative specifiers only, which is the
@@ -109,21 +114,77 @@ const restoreSource = (): string =>
   `await holdFirstPaint();\n`;
 
 /**
+ * Core's `client-transport.ts`, as a realtime island's bundle sees it: `clientTransport` sends
+ * through the page runtime's copy (`runtimeSend`), and `settleAnswer` — `clientStream`'s, which
+ * the runtime does not expose — is the real one, tree-shaken to what it needs. The island awaited
+ * the runtime before its module body ran, so a send can never find it absent. Measured on
+ * `examples/dummy`'s run console, As of 2026-11-07: see `island-transport.test.ts`'s header.
+ */
+const transportSource = (): string =>
+  `import { runtimeSend } from '${WAIT}';\n` +
+  `export { settleAnswer } from '${CORE_TRANSPORT}';\n` +
+  `export function clientTransport(req) {\n  return runtimeSend(req);\n}\n`;
+
+/** Whether `file` is a source file of an installed `@ultimat3/core` — any copy of it. */
+async function inCore(file: string, cache: Map<string, Promise<boolean>>): Promise<boolean> {
+  const dir = dirname(file);
+  let known = cache.get(dir);
+  if (known === undefined) {
+    known = packageNameAbove(dir).then((name) => name === '@ultimat3/core');
+    cache.set(dir, known);
+  }
+  return await known;
+}
+
+async function packageNameAbove(start: string): Promise<string | undefined> {
+  for (let dir = start; dir !== dirname(dir); dir = dirname(dir)) {
+    const manifest = Bun.file(join(dir, 'package.json'));
+    if (!(await manifest.exists())) continue;
+    const parsed: unknown = await manifest.json();
+    const name =
+      typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'name') : undefined;
+    return typeof name === 'string' ? name : undefined;
+  }
+  return undefined;
+}
+
+/**
  * `runtime` names the realtime every bare `@ultimat3/realtime` of the build resolves to — the copy
  * the runtime chunk was built against, resolved from the first realtime island's directory. One
  * copy for all of them, because one copy in the bundle is the requirement: the signal the install
  * sets is only read by hooks from the same module instance, and the page object it reads is the
  * shape that copy's runtime installs. `follows` is THIS build's islands that restore nothing: an
  * island absent from it waits for the restore, which is the answer that can never paint stale.
+ *
+ * `sendThroughRuntime` swaps core's transport for the runtime's (`transportSource`). Only for a
+ * build whose every entry is a realtime island: one split build shares a module between its
+ * entries, and a plain island never waits for a runtime to send through.
  */
 export function islandRealtimePlugin(
   root: string,
   runtime: RuntimeChunk,
   follows: ReadonlySet<string> = new Set(),
+  sendThroughRuntime = false,
 ): BunPlugin {
+  const cores = new Map<string, Promise<boolean>>();
   return {
     name: 'ultimate-island-realtime',
     setup(build) {
+      if (sendThroughRuntime) {
+        // Only core's own `./client-transport` — an app file of that name is the app's. The real
+        // file rides in the namespace path, so the module's SOURCE names no path on this machine.
+        build.onResolve({ filter: TRANSPORT_SPECIFIER }, async (args) =>
+          args.namespace === 'file' && (await inCore(args.importer, cores))
+            ? {
+                path: `${TRANSPORT_MODULE}${join(dirname(args.importer), 'client-transport.ts')}`,
+                namespace: NAMESPACE,
+              }
+            : undefined,
+        );
+        build.onResolve({ filter: /^ultimate:island-core-transport$/ }, (args) => ({
+          path: args.importer.slice(TRANSPORT_MODULE.length),
+        }));
+      }
       build.onResolve({ filter: /^ultimate:island-entry:/ }, (args) => ({
         path: `entry:${args.path.slice(REALTIME_ISLAND_ENTRY.length)}`,
         namespace: NAMESPACE,
@@ -158,7 +219,9 @@ export function islandRealtimePlugin(
             )
           : args.path === 'restore'
             ? restoreSource()
-            : installSource(runtime.url),
+            : args.path.startsWith(TRANSPORT_MODULE)
+              ? transportSource()
+              : installSource(runtime.url),
         loader: 'js',
       }));
     },

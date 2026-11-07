@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9ece21111a2060114b5f3e5f9c6c40a2602cb72387fb19ae4c97e892a2c38d8a",
+  "buildId": "b6aa2556888ececdfa170eccf2420b29f9044feaf780a287732cae5ccafa88dd",
   "tiers": {
     "0": [
       "core",
@@ -2035,6 +2035,11 @@
       "at": "packages/ai/src/error-codes.ts"
     },
     {
+      "code": "X_EXERCISE_SETUP_UNSEALED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_EXPORT_PART_TOO_LARGE",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
@@ -3041,6 +3046,11 @@
     },
     {
       "code": "X_MCP_IDEMPOTENCY_KEY_SHADOWED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_INCLUDE_EARLY",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

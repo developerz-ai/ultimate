@@ -1,7 +1,7 @@
 // What one worker has settled, by outcome — the counters `stats()` reports. Split from `worker.ts`
 // at the file-size ceiling; the claim loop counts, this file says what each count means.
 
-import type { JobExecution } from './execute';
+import type { JobExecution } from './execute-result';
 import type { WorkerStats } from './worker-types';
 
 export type WorkerTallies = Pick<

@@ -6,7 +6,7 @@
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import { pageClient } from '@ultimat3/core';
-import { installRealtime } from '@ultimat3/realtime';
+import { installRealtime, resetPageRealtime } from '@ultimat3/realtime';
 import {
   afterAll,
   beforeAll,
@@ -20,7 +20,6 @@ import {
 const APP_ROOT = join(import.meta.dir, '..', '..', '..', '..', '..');
 const ISLAND = 'apps/web/app/posts/[id]/likes-badge.island.tsx';
 const POST_ID = '00000000-0000-4000-8000-0000000000c1';
-const PAGE = Symbol.for('ultimate.realtime');
 
 const PROPS = {
   postId: POST_ID,
@@ -63,7 +62,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   mounted?.[Symbol.dispose]();
-  Reflect.deleteProperty(globalThis, PAGE);
+  resetPageRealtime();
 });
 
 describe('the likes badge', () => {

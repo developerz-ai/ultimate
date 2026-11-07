@@ -594,6 +594,7 @@ unitTest('a row deleted before the run is skipped, not failed', async ({ runJobs
 | On the trace or the call | Is |
 |---|---|
 | `trace.executions[n].result` | what the body returned. Absent on a run that failed, suspended or was interrupted |
+| `trace.executions[n].code` | the stable `X_*` code a failed run's error carried, beside its `error` message. Absent on an uncoded throw and on a run that did not fail |
 | `trace.steps[name].executions` | times the step body ran — a replay from storage does not count. Cumulative for the test |
 | `runJobs(job, input, { actor })` · `drain({ actor })` | the identity the **worker** runs as (`WorkerOptions.context()` in a real one). Its org is still the job's declared `tenant`; `tenant: 'none'` strips it. Absent is the anonymous actor |
 | `runJobs(job, input, { tenantId })` · `enqueue(…, { tenantId })` | the **enqueuer's** tenant on the row: the limiter's bucket and the dedupe namespace, as `handle.as(actor, input)` files it. One key in two tenants is two jobs |
@@ -672,6 +673,12 @@ describeIslandState(counterStates, 'idle', island, (mounted) => {
 
 The props are the manifest's, so the picture `x shot --island` takes and the test are of one
 component. `mountIsland` stays the call for props no state declares. `As of 2026-10`.
+
+A realtime island's page outlives its mount: the socket, the record store and the outbox sit on
+`globalThis`, shared by every bundle. Between files (or cases that need a fresh page) call
+`resetPageRealtime()` from `@ultimat3/realtime` in `afterAll` — it closes the socket the CHUNK's copy
+of realtime built and drops every page global. Never `Reflect.deleteProperty(globalThis,
+Symbol.for('ultimate.realtime'))`: that leaves the socket open. `As of 2026-11`.
 
 ## Testing an authenticator
 
@@ -846,7 +853,7 @@ A column whose value comes from another factory, built with the **same strategy*
 
 `ids.uuid()` and `ids.number()` come from the seeded generators; `index` starts at 1 for the first row.
 
-`factoriesFor(registry, seed?)` derives a factory per entity, each value read off the column's **declaration**, never its name (`As of 2026-11`, 30.0.0 entry 89): the declared default first, else an enumerated value, else what the kind offers (uuid, text, integer, boolean, timestamp, money as `{ minor, currency }`, …), and `null` only where the column is nullable. Every candidate goes through the column's own `$parse`, so a built row is one the table stores. A registry entry whose `$columns` are not `entity()` columns, or a column that refuses every generated value (a `json(t.object(…))` with required keys), throws `X_SEED_GRAPH_UNSATISFIED` at `build()`, naming the `defineFactory` to write. Source: `packages/testing/src/factory-registry.ts`, `seed-graph-values.ts`.
+`factoriesFor(registry, seed?)` derives a factory per entity, each value read off the column's **declaration**, never its name (`As of 2026-11`, 30.0.0 entry 89): the declared default first, else an enumerated value, else what the kind offers (uuid, text, integer, boolean, timestamp, money as `{ minor, currency }`, …), and `null` only where the column is nullable. A text column held to a `matches(/…/)` invariant is also offered strings built from that pattern, and those come first; a `json(schema)` column is offered values its schema accepts (`As of 2026-11-07`). Every candidate goes through the column's own `$parse`, so a built row is one the table stores. A registry entry whose `$columns` are not `entity()` columns, or a column that refuses every generated value (a `json()` whose schema carries a `pattern` its sampler cannot meet), throws `X_SEED_GRAPH_UNSATISFIED` at `build()`, naming the `defineFactory` to write. Source: `packages/testing/src/factory-registry.ts`, `seed-graph-values.ts`.
 
 ### Persisting
 
@@ -889,8 +896,9 @@ await insertSeedGraph(graph, writer);
 |---|---|
 | order | parents before children, over the entities' own `$references()` |
 | tenancy | each child points at a parent of its **own** tenant; the entity a tenant column references holds one row per tenant, keyed by the tenant. A table with no tenant column whose references reach a tenant-owned one, and no `shared` reason, is seeded per tenant too, under its own tenant's parent — `row.tenant` is that parent's tenant |
-| a cycle | broken at a nullable key: inserted `null`, set by an entry of `graph.updates` once its target exists. A cycle with no nullable key is `X_SEED_GRAPH_UNSATISFIED` |
+| a cycle | broken at a nullable key: inserted `null`, set by an entry of `graph.updates` once its target exists. The break prefers a table that takes updates — never an `appendOnly` one, whose key stays `null` when it is the only break. In `x exercise`, a deferred update the database refuses (a trigger no declaration carries) leaves the key `null`; an environment failure still fails. A cycle with no nullable key is `X_SEED_GRAPH_UNSATISFIED` |
 | values | read off the declaration, as `factoriesFor` reads them, and kept only if `$parse` accepts them |
+| patterns and schemas | a `matches(/…/)` pattern adds strings drawn from the pattern itself: literals, classes, `.`, groups, `\|`, quantifiers, anchors. Lookaround, backreferences, `\b` and `\p{…}` add nothing, so the column's other candidates stand. A `json(schema)` column draws from its schema, as the contract step's `arbitrary` does. Both are seeded by the row, so the same seed gives the same bytes |
 | rules | every invariant, the primary key, unique columns and unique indexes are kept; a partial unique is treated as total. A unique column that runs out of values ends its table early — but a table-wide unique that runs out before every tenant holds a row is `X_SEED_GRAPH_UNSATISFIED` (`… runs out of values before tenant 2 of 2 holds a row`): that tenant's children would have no parent |
 | an unseeded target | a key — the tenant column included — whose target entity is not in the set is `X_SEED_GRAPH_UNSATISFIED` (`… which is not in the set seeded — pass it too`) |
 | soft delete | a soft-deleting table's `deletedAt` is `null` unless a factory builds it: seeded rows are live |
@@ -957,7 +965,8 @@ A legal input that crashes the handler is red in `contract`, the day the action 
 | Runs | 16 (`EXERCISE_RUNS` from `@ultimat3/core`), `runs` from 1 to 64. Runs 0-3 sit on the IR's bounds (`minLength`, `maxLength`, `minimum`, `maximum`, `minItems`). The rest draw multibyte text, every enum and union member, optional keys on and off, `null` where nullable. A format value (`t.uuid`, `t.email`, …) is never varied |
 | Seed | `fnv1a(<action name>)`, never time, so a red run replays: `bun test <file> -t '<name>: handler survives generated input'` |
 | Rolled back | each run inside a memory transaction, always, and in it `withTransaction` when SQL can hold the writes: a SAVEPOINT in a test's open transaction, a root transaction once `setDbClient` installed a client. Both always roll back. The handler's SQL writes, its memory-store writes (`storeMode` `memory`, `tx` passed or not, since `memoryTransactor().run` is ambient), the outbox stage and the post-commit bust drop with it (`packages/action/src/tx-scope.ts` `inRolledBackScope`) |
-| **Not rolled back** | a write on a second client or `outsideTransaction`. A job enqueued with `outbox: false`. Storage puts. Mail and outbound fetch: the test preload seals both, so a real one is only sent where a test opted out. Rate-limit counters. An audit record a non-database sink accepted |
+| **Not rolled back** | a write on a second client or `outsideTransaction`. A job enqueued with `outbox: false`. Storage puts. Mail and outbound fetch: the test preload seals both, so a real one is only sent where a test opted out. An audit record a non-database sink accepted |
+| Rate-limit counters | spent in a scratch store of the exercise's own (`withScratchRateLimitStore`, `@ultimat3/http`), answering for the installed store's scope: the same file's next call has its whole declared limit |
 | Where it runs | `development` and `test` only. `staging` or `production` (`ULTIMATE_ENV`, else `NODE_ENV`) is `X_CONTRACT_EXERCISE_ENVIRONMENT` before the first run: generated input never reaches a deploy. `bun test` sets `NODE_ENV=test` |
 | Pass | the output parsed, or a coded refusal under 500 |
 | Defect, `X_CONTRACT_DEFECT` | an uncoded throw, `X_OUTPUT_INVALID`, or a coded 5xx (an undeclared `errors:` code is one). `meta.run`, `meta.input`, `meta.failure` |
@@ -984,11 +993,13 @@ shape, same unreached code. `As of 2026-11`.
 | Rows | one seed graph for the pass, a fresh pair of tenants per primitive in it — the first the actor's (A), the second the tenant proof's intruder (B); every table seeded off its declaration, parents first, same-tenant keys (`x db seed --generate`'s graph). A view and a `readOnly: '<why>'` table get no row; a NOT NULL key into a `readOnly` one is `X_SEED_GRAPH_UNSATISFIED` naming it ([Read-only tables](Entities-And-Migrations#read-only-tables)) |
 | Actor | the first of `x policy explain`'s actors the policy allows, in the primitive's tenant. None allowed is `refused`, by design |
 | Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
-| A job's org | the field(s) its `tenant(input)` reads — any name, nested, or left out of the draw — are set to the tenant it is enqueued in, found by reading them: A's for the control, B's for the tenant proof (B's own job, carrying A's ids). A `tenant` no input field moves (one fixed org) is `unreached`, `X_JOB_TENANT_MISMATCH`, its `fix:` the declaration: `tenant: (input) => input.orgId` |
+| A job's org | the field(s) its `tenant(input)` reads — any name, nested, left out of the draw, or under a parent the draw left out (a scoped backfill's `payload.input.orgId`) — are set to the tenant it is enqueued in, found by reading them: A's for the control, B's for the tenant proof (B's own job, carrying A's ids). A `tenant` no input field moves (one fixed org) is `unreached`, `X_JOB_TENANT_MISMATCH`, its `fix:` the declaration: `tenant: (input) => input.orgId` |
+| A job's failure | judged by the action rule: a coded refusal under 500 (an app's 409) is `unreached` under its own code, never a defect; an uncoded throw or a coded 5xx is `X_CONTRACT_DEFECT` |
 | Async input | an override's `input` may be `async`: it is awaited inside the call's request, as the call's actor, so it can mint what the action checks (a one-time token, a passkey assertion). `x drill`'s load skips an `async` input and says why |
 | Room | network sealed, mail captured, jobs in memory, clock frozen — from before the app loads and the scratch database boots, as `bun test`'s preload does, so the embedded Postgres never sees its clock jump. A call out is refused and counted, so the primitive is `unreached` |
 | Cost | rows are primitives × tables; statements are not: the graph is written one `insertAll` per table, each tenant-proof snapshot is one statement, and a primitive reads only its own pair's rows of the graph |
 | Overrides | `apps/web/exercise.ts`: `export const exercise = defineExercise({ publishPost: { actor, input }, sendInvoice: { off: '<why>' } })`. Each value is `.contract({ exercise })`'s option. An unknown name is `X_DECLARATION_UNKNOWN`; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED` |
+| A handler that calls a vendor | `defineExercise({ … }, { setup: () => { mockFetch('https://api.vendor.test/*', handler); } })` — or `setup: () => cassette(import.meta.dir, 'exercise')`. Runs once in the exercise process, after the seal and before the first row; what it returns is disposed after the pass. A call a setup route answers is reached, not refused. `allowHost` in it is `X_EXERCISE_SETUP_UNSEALED` |
 | Rows a generated value cannot satisfy | a cross-column `c.satisfies(…)` reads `X_SEED_GRAPH_UNSATISFIED`: `defineExercise({ … }, { factories: { bosses: defineFactory(bosses, { defaults: (i) => ({ … }) }) } })`, keyed by entity name, the graph's keys kept. A column that follows from a key or reference the graph picked: `derive: (row) => ({ scopeKey: … })` beside `build`/`reset`, reading `row.ownerOrgId`. A partial unique whose columns the factory builds is the database's to judge. An unknown name is `X_DECLARATION_UNKNOWN` |
 | Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, statements, effects, ms, override?, fix?, tenant?, crash? }` — `fix` where no override reaches it. The fields before `tenant` are A's call. The human table's `tenant` and `crash` columns are the verdicts, `-` where none ran |
 | Gate | the `exercise` step, after `job`, runs `x exercise --json` as a child and is red on its findings: `X_CONTRACT_EXERCISE_UNREACHED`, `X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`, `X_JOB_CRASH_DIVERGED`, and — on a whole pass, not `x exercise <name>` — `X_ENTITY_TENANT_UNDECLARED`. `unreached` is never sampled or skipped: it is a finding whose `fix:` is the entry to paste |

@@ -72,9 +72,12 @@ export function planRoot(answer: unknown): unknown {
 
 const IDENT = /(?:"?([A-Za-z_][\w$]*)"?\.)?"?([A-Za-z_][\w$]*)"?/g;
 const EQUALITY = /(?<![<>!])=(?!>)/;
+/** `IS NULL` pins one value as `=` does, and a btree serves it as an index condition. */
+const IS_NULL = /\bIS\s+NULL\b/i;
 
 /**
- * The columns of `scan` a condition names, split by how they are compared. A conjunct qualified by
+ * The columns of `scan` a condition names, split by how they are compared: `=` and `IS NULL` are
+ * equality, anything else a range. A conjunct qualified by
  * another alias is a join's other side; an unqualified name counts when the table has the column.
  */
 function columnsIn(
@@ -86,7 +89,7 @@ function columnsIn(
   const range: string[] = [];
   for (const condition of conditions) {
     for (const conjunct of condition.split(/\bAND\b/)) {
-      const into = EQUALITY.test(conjunct) ? equality : range;
+      const into = EQUALITY.test(conjunct) || IS_NULL.test(conjunct) ? equality : range;
       for (const [, qualifier, name] of conjunct.replace(/'[^']*'/g, '').matchAll(IDENT)) {
         if (name === undefined || !columns.has(name)) continue;
         if (qualifier !== undefined && qualifier !== scan.alias && qualifier !== scan.table)

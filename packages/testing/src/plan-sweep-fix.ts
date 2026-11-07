@@ -18,19 +18,65 @@ export interface PlanFinding {
 }
 
 /** Every column set the table holds unique: the primary key, unique columns, total unique rules. */
-function uniqueKeys(entity: SeedEntity): readonly (readonly string[])[] {
+function uniqueKeys(entity: SeedEntity, statement: string): readonly (readonly string[])[] {
   const description = entity.$describe();
+  const holds = (where: string | null): boolean => where === null || stated(where, statement);
   return [
     description.primaryKey,
     ...description.columns.filter((column) => column.unique).map((column) => [column.column]),
     ...description.indexes
-      .filter((index) => index.unique && index.where === null)
+      .filter((index) => index.unique && holds(index.where))
       .map((index) => index.columns),
     ...description.invariants
-      .filter((rule) => rule.kind === 'unique' && rule.where === null)
+      .filter((rule) => rule.kind === 'unique' && holds(rule.where))
       .map((rule) => rule.columns),
   ].filter((key) => key.length > 0);
 }
+
+/** Lower case outside literals, no identifier quotes, no parentheses, single spaces. */
+const normalized = (sql: string): string =>
+  sql
+    .split(/('[^']*')/)
+    .map((part, at) => (at % 2 === 1 ? part : part.toLowerCase().replace(/["()]/g, ' ')))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * A partial rule holds for a statement that states its predicate, conjunct for conjunct:
+ * `deleted_at is null` is in every soft-deleted entity's `one()`. Text, so a predicate the
+ * statement implies some other way is not credited — a finding, never a false pass.
+ */
+function stated(where: string, statement: string): boolean {
+  const text = ` ${normalized(statement)} `;
+  return normalized(where)
+    .split(/\band\b/)
+    .every((conjunct) => text.includes(` ${conjunct.trim()} `));
+}
+
+/** Every non-partial index the entity declares, in column order: primary key and unique ones too. */
+function declaredIndexes(entity: SeedEntity, statement: string): readonly (readonly string[])[] {
+  const description = entity.$describe();
+  return [
+    ...uniqueKeys(entity, statement),
+    ...description.indexes.filter((index) => index.where === null).map((index) => index.columns),
+  ];
+}
+
+/**
+ * A walk filtered by a range is served by an index that leads with the equality columns and then
+ * a range column: it bounds the rows and the planner sorts the few left. A generic plan with sorts
+ * off still prefers the ordered walk, so the oracle cannot see it. Credited, never re-proven.
+ */
+const servedByRange = (keys: readonly (readonly string[])[], verdict: PlanVerdict): boolean =>
+  keys.some((key) => {
+    const next = key[verdict.equality.length];
+    return (
+      next !== undefined &&
+      verdict.range.includes(next) &&
+      key.slice(0, verdict.equality.length).every((column) => verdict.equality.includes(column))
+    );
+  });
 
 const IDENTIFIER = /"([A-Za-z_][\w$]*)"|\b([A-Za-z_][\w$]*)\b/g;
 
@@ -95,16 +141,22 @@ export function planFindings(
     const entity = byTable.get(verdict.table);
     if (entity === undefined) return [];
     if (verdict.code === 'X_QUERY_UNINDEXED' && sorted.has(verdict.table)) return [];
-    const pinned = uniqueKeys(entity).some((key) =>
+    const pinned = uniqueKeys(entity, statement).some((key) =>
       key.every((column) => verdict.equality.includes(column)),
     );
     if (pinned) return [];
     const description = entity.$describe();
     const byColumn = new Map(description.columns.map((c) => [c.column, c.property]));
     const walked = verdict.code === 'X_QUERY_UNINDEXED' && verdict.node !== 'Seq Scan';
-    const order = walked
-      ? orderOf(statement, new Set(description.columns.map((c) => c.column)))
-      : verdict.order;
+    // A walk filtered by a range already has its order: what it lacks is the bound. A btree serves
+    // no order after a range column, so the index is the equality columns, then the range.
+    const ranged = walked && verdict.range.length > 0;
+    if (ranged && servedByRange(declaredIndexes(entity, statement), verdict)) return [];
+    const order = ranged
+      ? []
+      : walked
+        ? orderOf(statement, new Set(description.columns.map((c) => c.column)))
+        : verdict.order;
     if (servedByPartial(entity, verdict, order)) return [];
     const tenant = description.columns.find((c) => c.property === entity.$tenantColumn)?.column;
     const lead = tenant !== undefined && verdict.equality.includes(tenant) ? [tenant] : [];

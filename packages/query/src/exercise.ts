@@ -15,7 +15,7 @@ import {
   tryUseContext,
   UltimateError,
 } from '@ultimat3/core';
-import { statusFor } from '@ultimat3/http';
+import { statusFor, withScratchRateLimitStore } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { validateAsync } from '@ultimat3/schema';
 import { arbitrary } from '@ultimat3/schema/sample';
@@ -62,8 +62,9 @@ const accepts = async (schema: StandardSchemaV1, input: unknown): Promise<boolea
  * policy, the declared limit, the parse — is the front half every surface shares.
  *
  * A test-time call: refused in `staging`/`production` (`X_CONTRACT_EXERCISE_ENVIRONMENT`). Nothing
- * is rolled back, because a read writes nothing; what it touches anyway (a rate-limit counter, an
- * audit record, an outbound fetch — sealed under the test preload) is kept.
+ * is rolled back, because a read writes nothing; what it touches anyway (an audit record, an
+ * outbound fetch — sealed under the test preload) is kept. Rate-limit counters are spent in a
+ * scratch store of the exercise's own, so the installed one is left as it was.
  */
 export async function exerciseQuery(
   target: AnyQuery,
@@ -72,28 +73,31 @@ export async function exerciseQuery(
 ): Promise<QueryExerciseReport> {
   const name = queryName(target);
   const base = ctx ?? tryUseContext() ?? ctxOf({});
-  const verdict = await runExercise({
-    name,
-    runs: options.runs,
-    stoppedLabel: 'stopped before sql()',
-    draw: (seed, run) => arbitrary(target.input, { seed, run }),
-    bind: bindDrawn(options.input),
-    accepts: (input) => accepts(target.input, input),
-    attempt: async (input) => {
-      try {
-        const source = await sourceFor(target, input, {
-          ctx: base,
-          actor: options.actor,
-          surface: 'http',
-        });
-        await source.execute();
-        return { ok: true, reached: true };
-      } catch (error) {
-        return { ok: false, reached: !beforeSql(error), error };
-      }
-    },
-    statusOf: statusFor,
-  });
+  // Counted in a scratch store: a spent bucket would make the file's next real call a 429.
+  const verdict = await withScratchRateLimitStore(() =>
+    runExercise({
+      name,
+      runs: options.runs,
+      stoppedLabel: 'stopped before sql()',
+      draw: (seed, run) => arbitrary(target.input, { seed, run }),
+      bind: bindDrawn(options.input),
+      accepts: (input) => accepts(target.input, input),
+      attempt: async (input) => {
+        try {
+          const source = await sourceFor(target, input, {
+            ctx: base,
+            actor: options.actor,
+            surface: 'http',
+          });
+          await source.execute();
+          return { ok: true, reached: true };
+        } catch (error) {
+          return { ok: false, reached: !beforeSql(error), error };
+        }
+      },
+      statusOf: statusFor,
+    }),
+  );
   switch (verdict.kind) {
     case 'pass':
       return verdict.report;

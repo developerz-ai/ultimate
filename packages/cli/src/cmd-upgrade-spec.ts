@@ -15,7 +15,7 @@ export const upgradeSpec: CommandSpec = {
       name: 'to',
       type: 'string',
       summary:
-        'an exact release inside the next major, or the higher version a mixed set was told to align to (default: the next major’s newest)',
+        'an exact release inside the next major; over a mixed set, inside the lowest pins’ next major, and only those pins move (default: the next major’s newest)',
     },
     {
       name: 'dry-run',

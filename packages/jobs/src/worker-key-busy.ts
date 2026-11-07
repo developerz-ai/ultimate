@@ -9,7 +9,7 @@ import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { claimOf } from './driver';
 import { JobKeyBusyError } from './errors-concurrency';
-import type { JobExecution } from './execute';
+import type { JobExecution } from './execute-result';
 import { getJob } from './job';
 import { failureForRow } from './retry-classification';
 import { announceSettled } from './settled';

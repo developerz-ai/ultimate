@@ -135,6 +135,7 @@ export {
   type PageOutbox,
   pageOutbox,
 } from './page-outbox';
+export { resetPageRealtime } from './page-reset';
 export { hasPageSocket, type SyncTarget } from './page-store';
 export { pollEvery, type QueryPoll } from './query-poll';
 export { installRealtime, type RealtimeInstall } from './reactivity';

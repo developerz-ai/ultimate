@@ -168,6 +168,7 @@ export { exposedPrimitives } from './exposed';
 export type { ProjectablePrimitive } from './from-action';
 export { deriveAnnotations, toolFrom, toolsFrom, toolsListed } from './from-action';
 export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
+export { assertIncludeCurrent } from './include-early';
 export type { JobToolAnswer, JobToolDef, JobToolWait } from './job-tool';
 export { JOB_STATUS_TOOL, JOB_TOOL_INLINE_CEILING_MS, jobTool } from './job-tool';
 export { McpJobToolInvalidError } from './job-tool-errors';
@@ -210,7 +211,7 @@ export {
   oneLineParams,
   renderCatalog,
 } from './meta-surface';
-export { McpPathDuplicateError } from './mount-errors';
+export { McpIncludeEarlyError, McpPathDuplicateError } from './mount-errors';
 export type { McpOAuth } from './oauth-metadata';
 export {
   metadataPaths,

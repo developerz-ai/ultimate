@@ -77,7 +77,9 @@ export function pageSocket(hook: string): LiveClient {
     addEventListener('online', wake);
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', wake);
   }
-  teardowns.add(() => {
+  const teardown = (): void => {
+    teardowns.delete(teardown);
+    if (page.closeSocket === teardown) page.closeSocket = undefined;
     offRescope();
     if (listens) {
       removeEventListener('pagehide', bye);
@@ -89,14 +91,17 @@ export function pageSocket(hook: string): LiveClient {
     host.bye();
     if (page.socket === client) page.socket = undefined;
     if (pageClient().socket === client) pageClient().socket = undefined;
-  });
+  };
+  teardowns.add(teardown);
+  page.closeSocket = teardown;
   return client;
 }
 
 /**
  * Every socket this module built, as the undo of building it. A page builds one and never tears it
  * down — the tab's end is its teardown — so only a test process, which builds one per case, calls
- * `resetPageSocket`. Not on the barrel: an app has no page to reset.
+ * `resetPageSocket`. Not on the barrel: an app's test calls `resetPageRealtime` (`page-reset.ts`),
+ * which reaches the socket through the page object, whichever bundle's copy built it.
  */
 const teardowns = new Set<() => void>();
 
@@ -112,9 +117,14 @@ let hosts: (options: SocketHostOptions) => SocketHost = openHost;
 export function resetPageSocket(
   options: { readonly openHost?: (options: SocketHostOptions) => SocketHost } = {},
 ): void {
-  for (const teardown of teardowns) teardown();
-  teardowns.clear();
+  closePageSockets();
   hosts = options.openHost ?? openHost;
+}
+
+/** Unsubscribe, close and unseat every page socket THIS copy built; the host override stays. */
+export function closePageSockets(): void {
+  for (const teardown of [...teardowns]) teardown();
+  teardowns.clear();
 }
 
 /** Where `hasPageSocket` lives, re-exported for the callers that reach it from here. */

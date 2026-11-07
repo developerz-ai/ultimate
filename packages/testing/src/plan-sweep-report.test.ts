@@ -67,6 +67,27 @@ describe('unit · planSweepFindings', () => {
     expect(finding?.fix).not.toContain('scan:');
   });
 
+  test('a read that compares no column offers no empty index: it is a scan to state', () => {
+    const whole: PlanFinding = {
+      ...unindexed,
+      statement: 'select count(*) as count from "posts"',
+      node: 'Index Only Scan',
+      index: [],
+    };
+    const records = [record('postCount', { plans: planned([whole]) })];
+    const [finding] = planSweepFindings(records);
+    expect(finding?.code).toBe('X_QUERY_UNINDEXED');
+    expect(finding?.fix).not.toContain('on: []');
+    expect(finding?.fix).not.toContain('x db gen');
+    expect(finding?.fix).toStartWith('x exercise postCount --json');
+    expect(finding?.fix).toContain("expectedSeqScan('<why it reads every row>', fn)");
+    expect(finding?.fix).toContain('scan: \'<why it stays small>\' in entity("posts")');
+    expect(finding?.cause).toContain('compares no column');
+    expect(planSweepLines(records)).toEqual([
+      'query postCount · X_QUERY_UNINDEXED posts, every row (no column to index)',
+    ]);
+  });
+
   test('a shape that grows is X_QUERY_SCALES_WITH_ROWS, its counts in the cause', () => {
     const grows = record('listPosts', {
       scale: {

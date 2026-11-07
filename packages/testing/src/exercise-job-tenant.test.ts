@@ -41,6 +41,25 @@ describe(testName('unit', 'bindJobTenant'), () => {
     });
   });
 
+  test("a backfill's tenant under an absent parent — payload.input.orgId — is bound", () => {
+    // A scoped backfill's payload is `{ force?, input? }`: the minimal draw leaves `input` out, so
+    // reading `payload.input.orgId` throws before `orgId` is ever read.
+    const backfill = handle((payload: { input: { orgId: string } }) => payload.input.orgId);
+    expect(bindJobTenant(backfill, {}, SEATED)).toEqual({
+      kind: 'seated',
+      input: { input: { orgId: SEATED } },
+    });
+    expect(bindJobTenant(backfill, { force: true, input: { orgId: DRAWN } }, SEATED)).toEqual({
+      kind: 'seated',
+      input: { force: true, input: { orgId: SEATED } },
+    });
+    const deep = handle((payload: { a: { b: { c: string } } }) => payload.a.b.c);
+    expect(bindJobTenant(deep, { a: {} }, SEATED)).toEqual({
+      kind: 'seated',
+      input: { a: { b: { c: SEATED } } },
+    });
+  });
+
   test('an input already naming the tenant, and a tenant: none job, come back as given', () => {
     const input = { orgId: SEATED };
     const named = bindJobTenant(

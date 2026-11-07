@@ -8,8 +8,8 @@ import { ctxOf, logger } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
-import type { JobExecution } from './execute';
 import { executeJob } from './execute';
+import type { JobExecution } from './execute-result';
 import type { AnyJobHandle, JobRunArgs } from './job';
 import { job, resetJobs } from './job';
 

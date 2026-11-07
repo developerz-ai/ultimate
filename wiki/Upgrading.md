@@ -1,6 +1,6 @@
 # Upgrading
 
-**`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` package moves in lockstep — never mix versions. An app declares them at `^<version>`, as `x new` writes, and `bun.lock` pins the exact build.
+**`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` package moves in lockstep — never mix versions. `x new` declares them at `^<version>`, so `bun update` takes a same-major fix before the first hop; `x upgrade` rewrites every pin it moves exact (`20.1.0`, no caret), on purpose — a caret is how `^19.0.0` beside `^19.4.0` came to be mixed, and a range is a silent upgrade. `bun.lock` pins the exact build either way.
 
 > **From v30, one major per 90 days.** The window, what semver covers, the support window and the security exception: [Stability](Stability). A removal now ships its `@deprecated` alias for at least one minor before a major takes it, so `x upgrade` across one major names no edit a minor did not already warn about. The 29 sections below stay as they are.
 
@@ -299,6 +299,7 @@ Only an app that relied on the old behaviour has anything to do:
 | What moved | Do |
 |---|---|
 | with `DATABASE_REPLICA_URL` set, a request that wrote sets `__Host-x-pos` and `x-ultimate-position` | nothing. A proxy with a cookie allowlist passes `__Host-x-pos`; stripped, the next read may land on a standby that has not replayed the write |
+| a job attempt that completed and was acked leaves `ctx.signal` un-aborted (`As of 2026-11-07`); before, its timers' writes and enqueues were refused `X_ABORTED`, "was cancelled" | nothing. A body that read an aborted signal as "the run ended" reads the settle instead (`onSettled`); work that must outlive a FAILED attempt too runs in `runToCompletion(() => work)` from `@ultimat3/core` |
 | `onSettled`'s `ctx.signal` is live | a hook that treated an aborted signal as "the run ended" reads `settled.outcome` instead. It is aborted at `onSettledTimeout`, 30 s across every try by default: raise it on a hook that takes longer |
 | `publishEvent` inside a transaction commits and rolls back with it | nothing, unless a rolled-back event must still resume a run: publish it in `outsideTransaction(fn)` |
 | the `drift` step's `rollingSince` rail is off until set | optional: set `rollingSince` in `x.verify.json` to your newest applied migration id. `x doctor` reminds you |
@@ -3566,7 +3567,7 @@ bunx @ultimat3/cli@latest upgrade --json    # an app below 30.0.0, whose own CLI
 
 A repository with pins and no `app.config.ts` hops too: no `x verify` can run, so it runs the `typecheck` and `test` scripts it declares, and `data.proof` (`verify`, `scripts`, `none`) says what `done` rests on.
 
-Refusals name their own fix: `X_UPGRADE_MIXED_PINS` (`x upgrade --to <the higher version> --json`), `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_UPGRADE_INSTALL_FAILED`. `data.bun.manual[]` lists what only you can move: a digest-pinned image, an expression. `data.guards.differs[]` offers `x g guard <name> --force`, and your guard is never touched. A hop below 30.0.0 reports `X_BUDGET_UNMEASURED` until `x build --target static --json` has run. Field by field: [CLI reference](CLI-Reference#x-upgrade).
+Refusals name their own fix: `X_UPGRADE_MIXED_PINS` (`x upgrade --to <the lowest pins' next major> --json`), `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_UPGRADE_INSTALL_FAILED`. `data.bun.manual[]` lists what only you can move: a digest-pinned image, an expression. `data.guards.differs[]` offers `x g guard <name> --force`, and your guard is never touched. A hop below 30.0.0 reports `X_BUDGET_UNMEASURED` until `x build --target static --json` has run. Field by field: [CLI reference](CLI-Reference#x-upgrade).
 
 ## Breaking-change classes and how each is detected
 

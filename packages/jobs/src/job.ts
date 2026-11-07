@@ -279,6 +279,16 @@ export function resetJobs(): void {
 }
 
 /**
+ * Put the registry back to exactly `handles` — `restoreTasks`' twin. `job()` registers at module
+ * scope, once per `bun test` process, so a test whose premise is "only these jobs" (`x exercise`
+ * over a fixture) empties the registry and hands every inherited handle back after it.
+ */
+export function restoreJobs(handles: readonly AnyJobHandle[]): void {
+  registry.clear();
+  for (const handle of handles) registry.set(handle.name, handle);
+}
+
+/**
  * Registered jobs as the manifest, the `/_x` jobs panel and the MCP dev server need them.
  * Name-sorted because `x.manifest.json` is committed and diffed — an iteration-order-dependent
  * list would show up as a spurious change on every build. Each row is the handle's own

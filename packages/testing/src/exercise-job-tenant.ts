@@ -31,8 +31,15 @@ const answer = (handle: TenantOf, input: unknown): string | undefined => {
   }
 };
 
+/** How deep an absent parent is filled in to read past it: `payload.input.orgId` is two. */
+const ABSENT_DEPTH = 4;
+
+/** The value at `path`, `undefined` when any step of it is absent. */
+const getAt = (input: unknown, path: Path): unknown =>
+  path.reduce<unknown>((value, key) => (isPlainObject(value) ? value[key] : undefined), input);
+
 /** Every property path `tenantFor` read, at any depth of plain objects — a missing one included. */
-function pathsRead(handle: TenantOf, input: unknown): readonly Path[] {
+function readOnce(handle: TenantOf, input: unknown): readonly Path[] {
   const read: Path[] = [];
   const watch = (value: unknown, at: Path): unknown =>
     !isPlainObject(value)
@@ -49,8 +56,28 @@ function pathsRead(handle: TenantOf, input: unknown): readonly Path[] {
   return read;
 }
 
+/**
+ * Every path read, past absent parents too: a read that found nothing is filled with `{}` and read
+ * again, so `payload.input.orgId` — a scoped backfill's tenant, its `input` left out of the
+ * minimal draw — is found, not lost to the throw reading `orgId` of `undefined`.
+ */
+function pathsRead(handle: TenantOf, input: unknown, depth = 0): readonly Path[] {
+  const reads = readOnce(handle, input);
+  if (depth >= ABSENT_DEPTH) return reads;
+  const deeper = reads
+    .filter((path) => getAt(input, path) === undefined)
+    .flatMap((path) => pathsRead(handle, setAt(input, path, {}), depth + 1));
+  const seen = new Set<string>();
+  return [...reads, ...deeper].filter((path) => {
+    const key = JSON.stringify(path);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** `input` with `path` set to `value`, copied along the path only. */
-function setAt(input: unknown, path: Path, value: string): unknown {
+function setAt(input: unknown, path: Path, value: unknown): unknown {
   const [head, ...rest] = path;
   if (head === undefined) return value;
   const base = isPlainObject(input) ? input : {};

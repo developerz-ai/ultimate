@@ -4,7 +4,7 @@
 
 import type { Clock, Ctx } from '@ultimat3/core';
 import type { JobDriver, QueueStats } from './driver';
-import type { JobExecution } from './execute';
+import type { JobExecution } from './execute-result';
 import type { Limiter } from './limits';
 import type { IntervalScheduler } from './renewal-timer';
 import type { EventLookup } from './steps';

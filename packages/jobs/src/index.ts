@@ -205,8 +205,9 @@ export {
 } from './events';
 export type { PostgresEventBusOptions } from './events-pg';
 export { postgresEventBus } from './events-pg';
-export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
+export type { ExecuteJobOptions } from './execute';
 export { executeJob } from './execute';
+export type { JobExecution, JobOutcome } from './execute-result';
 export type { ExportDefinition, ExportReport } from './export';
 export { DEFAULT_EXPORT_BATCH, DEFAULT_EXPORT_MAX_PART_BYTES, exportRows } from './export';
 export { ExportPartTooLargeError, ExportRowInvalidError } from './export-errors';
@@ -301,7 +302,15 @@ export type {
   JobHandle,
   JobRunArgs,
 } from './job';
-export { describeJobs, getJob, isJobHandle, job, registeredJobs, resetJobs } from './job';
+export {
+  describeJobs,
+  getJob,
+  isJobHandle,
+  job,
+  registeredJobs,
+  resetJobs,
+  restoreJobs,
+} from './job';
 export type { EnqueueManyOptions } from './job-enqueue-many';
 export { MAX_ENQUEUE_BATCH } from './job-enqueue-many';
 export type { JobsRetentionOptions } from './jobs-retention';

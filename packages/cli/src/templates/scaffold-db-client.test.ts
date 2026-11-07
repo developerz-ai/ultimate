@@ -56,6 +56,20 @@ describe('unit · the packages/db client x new writes', () => {
     expect(test).toContain("expect(client.texts).toContain('BEGIN');");
   });
 
+  // `typeof db === 'object'` held for a handle over ANY driver. The generated test reads every
+  // table under an installed client, so a handle built without `{ driver }` fails it.
+  test('the generated test reads every table through the exported driver', () => {
+    const test = String(
+      dbClientFiles(names('ledger-demo'), true).find(
+        (file) => file.path === 'packages/db/src/client.test.ts',
+      )?.contents,
+    );
+    expect(test).not.toContain('typeof db');
+    expect(test).toContain('Object.values(db)');
+    expect(test).toContain('await table.all();');
+    expect(test).toContain('expect(client.statements.length).toBeGreaterThan(before);');
+  });
+
   test('the client ships with the test that covers it', () => {
     const paths = dbClientFiles(names('ledger-demo'), true).map((file) => file.path);
     expect(paths).toEqual([HANDLE_FILE, 'packages/db/src/client.test.ts']);

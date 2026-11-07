@@ -41,6 +41,31 @@ const refused = (write: SeedRow | SeedUpdate, error: unknown): unknown => {
   });
 };
 
+const refusedRow = (error: unknown): boolean =>
+  !isUltimateError(error) || ROW_REFUSALS.has(error.code) || error.code === 'X_ENTITY_APPEND_ONLY';
+
+/**
+ * A deferred key the database refuses to set is left null: only a nullable key is ever deferred
+ * (`seed-graph-order.ts`), so the row as inserted is already a valid one. The refusal is a rule no
+ * declaration carries — a trigger that refuses every UPDATE of the table. An environment failure
+ * still rejects with its own code. `onRefused` hears each update left out.
+ */
+export const deferredMayStayNull = (
+  writer: SeedWriter,
+  onRefused: (update: SeedUpdate) => void = () => undefined,
+): SeedWriter => ({
+  insert: (row) => writer.insert(row),
+  ...(writer.insertMany === undefined
+    ? {}
+    : { insertMany: (rows: readonly SeedRow[]) => writer.insertMany?.(rows) ?? Promise.resolve() }),
+  update: (update) =>
+    writer.update(update).catch((error: unknown) => {
+      if (!refusedRow(error)) return Promise.reject(error);
+      onRefused(update);
+    }),
+  snapshot: (rows) => writer.snapshot(rows),
+});
+
 /** Every write coded: a row refusal names its factory, an environment failure keeps its own fix. */
 const coded = (writer: SeedWriter): SeedWriter => ({
   insert: (row) =>
@@ -146,6 +171,10 @@ export async function seedPass(
     seed: options.seed,
     ...(options.factories === undefined ? {} : { factories: options.factories }),
   });
-  await insertSeedGraph(graph, coded(writer));
-  return graph;
+  const refused = new Set<SeedUpdate>();
+  await insertSeedGraph(graph, coded(deferredMayStayNull(writer, (update) => refused.add(update))));
+  // What was written: an update the database refused is no part of the seeded state.
+  return refused.size === 0
+    ? graph
+    : { ...graph, updates: graph.updates.filter((update) => !refused.has(update)) };
 }

@@ -3,13 +3,11 @@
  * `mcp: { expose: true }` — with their policies, not copies of them. Only tools that are *not*
  * actions are written out here.
  *
- * No `resolveToken` yet, so `mcp.route` is `undefined` — this server is reachable in-process
- * (`mcp.server.handle(body, caller)`, what `apps/web/app/posts/mcp-drive.contract.test.ts`
- * drives) but not yet mounted at `POST /mcp`. Wiring one needs a real bearer-token → member
- * resolution, which needs Postly to issue agent tokens in the first place — neither exists yet.
- * `packages/admin/src/mcp.ts` (the framework's own admin package) is the shape to follow once
- * they do — it wraps `resolveToken` around the same `actor({ token })` hook its HTTP surface
- * already uses.
+ * Mounted at `POST /mcp` by `apps/web/mcp.ts`, which hands in the org API key resolver the `/v1`
+ * mount already uses (`app/runs/keys.ts`'s `resolveOrgKey`): a key's scopes are its permissions,
+ * so an agent holding one reaches exactly the tools its org key may call. Without a
+ * `resolveToken` the server is in-process only (`mcp.server.handle(body, caller)`, what
+ * `apps/web/app/posts/mcp-drive.contract.test.ts` drives).
  *
  * `t` comes from @ultimat3/mcp, not @ultimat3/schema: an MCP file imports one package.
  */
@@ -172,6 +170,8 @@ export interface PostlyMcpApp {
    * org as `org` (`./tenants.ts`). Absent, a token resolves to one member, as it always did.
    */
   readonly memberships?: PostlyMemberships;
+  /** Who a bearer token is: given, the server is a route (`apps/web/mcp.ts`); absent, in-process. */
+  readonly resolveToken?: DefineAppMcpInput['resolveToken'];
 }
 
 /** The app's tools, refused by name when one would replace a tool of this package's. */
@@ -206,6 +206,7 @@ const build = (
     recipes: POSTLY_RECIPES,
 
     tools: { ...POSTLY_TOOLS, ...appTools(app) },
+    ...(app.resolveToken === undefined ? {} : { resolveToken: app.resolveToken }),
   });
 
 /**

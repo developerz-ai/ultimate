@@ -253,6 +253,37 @@ mcp: { expose: true, description: 'Publish a draft post' },
 
 The projected tool calls `action.run(...)` — the same entry point the HTTP route calls. Policy evaluation lives inside `run`, so there is nothing to keep in sync. Details: [MCP and AI](MCP-And-AI).
 
+### An admin surface serves the app's tools
+
+`As of 2026-11`. One way: `apps/admin/mcp.ts` exports `adminMcp(...)`, at module scope, and the
+mount serves it beside `apps/web/mcp.ts`. `x new` writes it.
+
+```ts
+// apps/admin/mcp.ts
+import { type AdminApp, type AdminMcpActor, adminMcp } from '@ultimat3/admin';
+import type { McpRequestFacts } from '@ultimat3/mcp';
+declare const admin: AdminApp; // `import { admin } from './app/admin/admin'` — the defineAdmin() module
+// The web surface's resolver (`apps/web/app/auth/agent-token.ts`) and its mapping onto an admin actor,
+// both as `x new` writes them.
+declare function resolveAgentToken(token: string, facts?: McpRequestFacts): Promise<unknown>;
+declare function adminAgentOf(caller: unknown): AdminMcpActor | null;
+
+export const mcp = adminMcp({
+  app: admin,
+  path: '/admin/mcp',
+  include: 'exposed',
+  actor: async ({ token, facts }) =>
+    adminAgentOf(token === undefined ? null : await resolveAgentToken(token, facts)),
+});
+```
+
+| Option | Rule |
+|---|---|
+| `path` | `defineAppMcp`'s own; default `/mcp`, which collides with the web endpoint (`X_MCP_PATH_DUPLICATE`) — an admin surface says `/admin/mcp` |
+| `include: 'exposed'` | every action and query with `mcp: { expose: true }`, projected as on `/mcp` (opt-in, the one predicate), each under its kind's admin scope: a query `admin:read`, an action `admin:write` |
+| `actor({ token, facts })` | `facts` is how the request arrived (address, `Origin`) — what a development token is decided on |
+| where it is built | `apps/<app>/mcp.ts`, never under `apps/admin/app/`: the scan evaluates the former after every primitive registered; one built earlier is `X_MCP_INCLUDE_EARLY` at the mount |
+
 ### Tool scopes
 
 `As of 2026-10`. `adminMcp()` hands the MCP registry one scope per tool (`adminToolScopes`, `packages/admin/src/mcp-scopes.ts`). Tool names are unchanged.

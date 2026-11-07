@@ -13,7 +13,7 @@ import {
   runExercise,
   tryUseContext,
 } from '@ultimat3/core';
-import { statusFor } from '@ultimat3/http';
+import { statusFor, withScratchRateLimitStore } from '@ultimat3/http';
 import { admitsAnonymous } from '@ultimat3/policy';
 import { arbitrary } from '@ultimat3/schema/sample';
 import type { AnyAction } from './action';
@@ -66,7 +66,8 @@ export const exerciseTestName = (name: string): string =>
  * transaction is open, the outbox stage. NOT rolled back: a write on a second client or
  * `outsideTransaction`, a job enqueued with `outbox: false`, every job enqueue when no SQL
  * transaction is open (the memory store: the jobs facade enqueues straight to the job driver),
- * storage puts, mail, outbound fetch (sealed under the test preload) and rate-limit counters.
+ * storage puts, mail and outbound fetch (sealed under the test preload). Rate-limit counters are
+ * spent in a scratch store of the exercise's own, so the installed one is left as it was.
  */
 export async function exerciseAction(
   target: AnyAction,
@@ -75,24 +76,27 @@ export async function exerciseAction(
 ): Promise<ExerciseReport> {
   const name = actionName(target);
   const base = ctx ?? tryUseContext() ?? ctxOf({});
-  const verdict = await runExercise({
-    name,
-    runs: options.runs,
-    stoppedLabel: 'stopped before the handler',
-    scoped: rollbackAvailable(),
-    draw: (seed, run) => arbitrary(target.input, { seed, run }),
-    bind: bindDrawn(options.input),
-    accepts: (input) => acceptedBy(target, input, name),
-    attempt: async (input): Promise<ExerciseAttempt> => {
-      const before = handlerReached(target);
-      const settled = await inRolledBackScope(() =>
-        invoke(target, input, { ctx: base, actor: options.actor, surface: 'http' }),
-      );
-      const reached = handlerReached(target) > before;
-      return settled.ok ? { ok: true, reached } : { ok: false, reached, error: settled.error };
-    },
-    statusOf: statusFor,
-  });
+  // Counted in a scratch store: a spent bucket would make the file's next real call a 429.
+  const verdict = await withScratchRateLimitStore(() =>
+    runExercise({
+      name,
+      runs: options.runs,
+      stoppedLabel: 'stopped before the handler',
+      scoped: rollbackAvailable(),
+      draw: (seed, run) => arbitrary(target.input, { seed, run }),
+      bind: bindDrawn(options.input),
+      accepts: (input) => acceptedBy(target, input, name),
+      attempt: async (input): Promise<ExerciseAttempt> => {
+        const before = handlerReached(target);
+        const settled = await inRolledBackScope(() =>
+          invoke(target, input, { ctx: base, actor: options.actor, surface: 'http' }),
+        );
+        const reached = handlerReached(target) > before;
+        return settled.ok ? { ok: true, reached } : { ok: false, reached, error: settled.error };
+      },
+      statusOf: statusFor,
+    }),
+  );
   switch (verdict.kind) {
     case 'pass':
       return verdict.report;

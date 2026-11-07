@@ -8,8 +8,8 @@ import { ctxOf, logger, registerErrorRetry, UltimateError } from '@ultimat3/core
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
-import type { JobExecution } from './execute';
 import { executeJob } from './execute';
+import type { JobExecution } from './execute-result';
 import type { AnyJobHandle } from './job';
 import { job, resetJobs } from './job';
 
@@ -401,5 +401,18 @@ describe('why a job stopped is readable, not inferred', () => {
     await harness.execute(1);
 
     expect(harness.nacks()[0]?.error).not.toContain('not retried');
+  });
+});
+
+describe('the execution carries the code its error carried', () => {
+  test('a retried and a dead-lettered attempt name the code; an uncoded throw names none', async () => {
+    const retried = await claimOne({ attempts: 3, throws: () => coded(RETRY_AFTER_CODE) });
+    expect(await retried.execute()).toMatchObject({ outcome: 'retried', code: RETRY_AFTER_CODE });
+    const dead = await claimOne({ attempts: 5, throws: () => coded(TERMINAL_CODE) });
+    expect(await dead.execute()).toMatchObject({ outcome: 'dead-lettered', code: TERMINAL_CODE });
+    const uncoded = await claimOne({ attempts: 1, throws: () => new TypeError('boom') });
+    const execution = await uncoded.execute();
+    expect(execution.outcome).toBe('dead-lettered');
+    expect('code' in execution).toBe(false);
   });
 });

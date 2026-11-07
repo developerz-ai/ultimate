@@ -7,7 +7,7 @@ import type { PlanTableColumns } from './plan-oracle';
 import { judgePlan, planRoot } from './plan-oracle';
 
 const TABLES: PlanTableColumns = new Map([
-  ['posts', new Set(['id', 'org_id', 'author_id', 'title', 'created_at'])],
+  ['posts', new Set(['id', 'org_id', 'author_id', 'title', 'project_id', 'created_at'])],
   ['comments', new Set(['id', 'post_id'])],
 ]);
 
@@ -151,6 +151,28 @@ describe('unit · plan oracle, the rules at their edges', () => {
     );
     expect(verdict?.equality).toEqual(['author_id']);
     expect(verdict?.range).toEqual(['created_at', 'title']);
+  });
+
+  test('`IS NULL` pins a column as equality does; `IS NOT NULL` is a range', () => {
+    // Probed 2026-11-07, PGlite: a lookup by a partial unique's key, under `order by id limit`.
+    const [verdict] = judgePlan(
+      answer(
+        limit(
+          scan('Index Scan', 'posts', {
+            'Index Name': 'posts_pkey',
+            Filter: '((project_id IS NULL) AND (org_id = $1) AND (title = $2))',
+          }),
+        ),
+      ),
+      TABLES,
+    );
+    expect(verdict?.equality).toEqual(['project_id', 'org_id', 'title']);
+    expect(verdict?.range).toEqual([]);
+    const [open] = judgePlan(
+      answer(scan('Seq Scan', 'posts', { Filter: '(project_id IS NOT NULL)' })),
+      TABLES,
+    );
+    expect(open).toMatchObject({ equality: [], range: ['project_id'] });
   });
 
   test('the answer is read as a string or as parsed JSON', () => {

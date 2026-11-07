@@ -7,6 +7,7 @@ import type { ReferenceDescription } from '@ultimat3/entity';
 import { DEFAULT_SEED, seededUuid } from './determinism';
 import { seedGraphUnsatisfied } from './seed-graph-error';
 import { edgeKey, insertOrder } from './seed-graph-order';
+import { declaredPatterns } from './seed-graph-patterns';
 import type {
   SeedCanary,
   SeedGraph,
@@ -91,6 +92,7 @@ export function seedGraph(
     [...shapes.values()].map((shape) => ({
       name: shape.name,
       references: [...shape.references.values()],
+      updatable: shape.entity.$describe().appendOnly !== true,
     })),
   );
   const tenantStream = seededUuid(streamSeed(seed, '$tenants'));
@@ -163,6 +165,8 @@ export function seedGraph(
     const allUniques = [...shape.uniques, ...shape.partialUniques];
     const taken = allUniques.map(() => new Set<string>());
     const rootProperty = roots.get(name);
+    // Read once per table: each `matches(/…/)` an invariant holds a column to, sampled from.
+    const patterns = declaredPatterns(entity);
     const buckets: readonly (string | null)[] = scoped(name) ? tenants : [null];
     let ordinal = 0;
     for (const [bucket, tenant] of buckets.entries()) {
@@ -195,6 +199,7 @@ export function seedGraph(
                           ordinal,
                           canary,
                           position,
+                          patterns: patterns.get(property),
                           uuid: stream,
                         });
           return [
@@ -257,6 +262,8 @@ export function seedGraph(
   const updates: SeedUpdate[] = [];
   for (const name of order) {
     const shape = shapes.get(name) as EntityShape;
+    // An appendOnly row is never updated (its trigger refuses): a key deferred there stays null.
+    if (shape.entity.$describe().appendOnly === true) continue;
     const later = shape.columns.filter(([property]) => deferred.has(edgeKey(name, property)));
     if (later.length === 0) continue;
     for (const { tenant, row, index } of placed.get(name) ?? []) {

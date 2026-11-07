@@ -7,6 +7,7 @@ import type { AgentsLinkState } from './upgrade-agents-link';
 import type { BunEdit, BunManual } from './upgrade-bun-floor';
 import type { GateFinding, HopGate, RepoScript } from './upgrade-gate';
 import type { UpgradeHop, UpgradePin } from './upgrade-plan';
+import { pinMoves } from './upgrade-plan';
 
 export interface PlannedWrites {
   /** Absolute path to final text; a manifest holding both a pin and a floor is written once. */
@@ -125,7 +126,9 @@ export const report = (input: {
     section: hop.section,
     pins: hop.atTarget
       ? []
-      : pins.map((pin) => ({ file: pin.file, name: pin.name, from: pin.spec, to: hop.to })),
+      : pins
+          .filter((pin) => pinMoves(pin.spec, hop.to))
+          .map((pin) => ({ file: pin.file, name: pin.name, from: pin.spec, to: hop.to })),
     bun: { from: bunFrom, to: bunTo, edited: writes.edited, manual: writes.manual },
     agentsMd: input.agentsMd ?? null,
     guards: gate?.guards ?? null,

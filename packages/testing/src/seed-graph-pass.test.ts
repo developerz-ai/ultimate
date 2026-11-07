@@ -4,10 +4,23 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
-import { entity, integer, invariant, memoryDriver, text, uuid } from '@ultimat3/entity';
+import {
+  type AnyColumn,
+  entity,
+  integer,
+  invariant,
+  memoryDriver,
+  text,
+  uuid,
+} from '@ultimat3/entity';
 import { defineFactory } from './factories';
-import { seedPass, TENANTS_PER_PRIMITIVE, tenantPair } from './seed-graph-pass';
-import type { SeedRow, SeedWriter } from './seed-graph-plan';
+import {
+  deferredMayStayNull,
+  seedPass,
+  TENANTS_PER_PRIMITIVE,
+  tenantPair,
+} from './seed-graph-pass';
+import type { SeedRow, SeedUpdate, SeedWriter } from './seed-graph-plan';
 import { entitySeedWriter } from './seed-writer';
 import { testName } from './test-types';
 
@@ -155,5 +168,72 @@ describe(testName('unit', 'seedPass'), () => {
     );
     expect(isUltimateError(failure) && failure.code).toBe('X_DECLARATION_UNKNOWN');
     expect(isUltimateError(failure) && failure.cause).toContain('sgp_plans');
+  });
+
+  // `sgp_a_teams` sorts first, so the cycle breaks at its nullable captain — and the app's own
+  // trigger (no declaration says so) refuses every UPDATE of it.
+  const teams = entity('sgp_a_teams', {
+    columns: {
+      id: uuid().primaryKey(),
+      captainId: uuid()
+        .references((): AnyColumn => players.id)
+        .nullable(),
+    },
+  });
+  const players = entity('sgp_b_players', {
+    columns: { id: uuid().primaryKey(), teamId: uuid().references((): AnyColumn => teams.id) },
+  });
+  const updateRefusing = (refusal: unknown): { writer: SeedWriter; tried: SeedUpdate[] } => {
+    const tried: SeedUpdate[] = [];
+    return {
+      tried,
+      writer: {
+        insert: async () => undefined,
+        update: (update) => {
+          tried.push(update);
+          return Promise.reject(refusal);
+        },
+        snapshot: async (asked) => asked.map(() => null),
+      },
+    };
+  };
+  const triggerSaidNo = new UltimateError({
+    code: 'X_DB_STATEMENT_FAILED',
+    cause: 'sgp_a_teams rows are never updated',
+    fix: 'see the trigger',
+  });
+
+  test('a deferred key the database refuses to set stays null: the pass goes on', async () => {
+    const { writer, tried } = updateRefusing(triggerSaidNo);
+    const graph = await seedPass([teams, players], writer, { primitives: 1, seed: 4 });
+    expect(tried.length).toBeGreaterThan(0);
+    // The graph says what was written: no update the database refused.
+    expect(graph.updates).toEqual([]);
+    for (const insert of graph.inserts.filter((row) => row.entity === 'sgp_a_teams')) {
+      expect(insert.row['captainId']).toBeNull();
+    }
+  });
+
+  test('an environment failure on a deferred update keeps its own code', async () => {
+    const down = new UltimateError({
+      code: 'X_DB_UNAVAILABLE',
+      cause: 'down',
+      fix: 'x doctor --json',
+    });
+    const failure = await failureOf(() =>
+      seedPass([teams, players], updateRefusing(down).writer, { primitives: 1, seed: 4 }),
+    );
+    expect(failure).toBe(down);
+  });
+
+  test('deferredMayStayNull leaves an insert refusal to its caller', async () => {
+    const writer = deferredMayStayNull({
+      ...updateRefusing(triggerSaidNo).writer,
+      insert: () => Promise.reject(triggerSaidNo),
+    });
+    await writer.update({ entity: 'sgp_a_teams', tenant: null, key: { id: 1 }, patch: {} });
+    expect(
+      await failureOf(() => writer.insert({ entity: 'x', table: 'x', tenant: null, row: {} })),
+    ).toBe(triggerSaidNo);
   });
 });

@@ -19,7 +19,13 @@
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import type { Frame } from '@ultimat3/realtime';
-import { decode, encode, installRealtime, PROTOCOL_VERSION } from '@ultimat3/realtime';
+import {
+  decode,
+  encode,
+  installRealtime,
+  PROTOCOL_VERSION,
+  resetPageRealtime,
+} from '@ultimat3/realtime';
 import {
   afterAll,
   beforeAll,
@@ -49,7 +55,6 @@ const PROPS = {
   },
 } as const;
 
-const PAGE = Symbol.for('ultimate.realtime');
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 const row = (likeCount: number) => ({
@@ -144,7 +149,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   mounted?.[Symbol.dispose]();
-  Reflect.deleteProperty(globalThis, PAGE);
+  resetPageRealtime();
 });
 
 describe('the like island', () => {

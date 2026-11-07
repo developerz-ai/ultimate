@@ -8,6 +8,7 @@ import { ctxOf, finiteOption, runWithContext, serviceActor } from '@ultimat3/cor
 import type { Subject, SubjectPlan } from '@ultimat3/jobs';
 import { memoryStepStore, planSubject, stepRunner, subjectEraseTables } from '@ultimat3/jobs';
 import { seedGraph } from './seed-graph';
+import { deferredMayStayNull } from './seed-graph-pass';
 import type { SeedFactory, SeedGraph, SeedWriter } from './seed-graph-plan';
 import { insertSeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
@@ -111,7 +112,8 @@ export async function subjectProof<I>(
     tenants: 2,
     ...(options.factories === undefined ? {} : { factories: options.factories }),
   });
-  await insertSeedGraph(graph, options.writer);
+  // The pass's rule: a nullable cycle key the database refuses to set stays null.
+  await insertSeedGraph(graph, deferredMayStayNull(options.writer));
   const tenant = graph.tenants[0] ?? null;
   const person = graph.inserts.find(
     (i) => i.entity === subject.entity && (i.tenant === tenant || i.tenant === null),

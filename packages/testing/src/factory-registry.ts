@@ -5,7 +5,8 @@
 import type { EntityLike, Factory, FactoryIds } from './factories';
 import { defineFactory } from './factories';
 import { seedGraphUnsatisfied } from './seed-graph-error';
-import { SEED_SOFT_DELETE_PROPERTY } from './seed-graph-shape';
+import { declaredPatterns } from './seed-graph-patterns';
+import { SEED_SOFT_DELETE_PROPERTY, type SeedEntity } from './seed-graph-shape';
 import { candidatesFor, isSeedColumn } from './seed-graph-values';
 
 export type EntityRegistry = Readonly<Record<string, EntityLike>>;
@@ -25,13 +26,14 @@ export function factoriesFor<TRegistry extends EntityRegistry>(
 ): FactoryRegistry<TRegistry> {
   const out: Record<string, Factory<Record<string, unknown>>> = {};
   for (const [name, entity] of Object.entries(registry)) {
+    const patterns = hasInvariants(entity) ? declaredPatterns(entity) : new Map();
     out[name] = defineFactory(entity, {
       ...(seed === undefined ? {} : { seed }),
       defaults: (index, ids): Record<string, unknown> => {
         const row: Record<string, unknown> = {};
         Object.entries(entity.$columns).forEach(([property, column], position) => {
           row[property] = defaultFor(
-            { table: entity.$table, property, column, position },
+            { table: entity.$table, property, column, position, patterns: patterns.get(property) },
             index,
             ids,
           );
@@ -43,12 +45,21 @@ export function factoriesFor<TRegistry extends EntityRegistry>(
   return out as FactoryRegistry<TRegistry>;
 }
 
+/** An `entity()` value, which declares rules; a hand-built `EntityLike` may declare none. */
+const hasInvariants = (entity: object): entity is Pick<SeedEntity, '$invariants' | '$describe'> =>
+  '$invariants' in entity &&
+  Array.isArray(entity.$invariants) &&
+  '$describe' in entity &&
+  typeof entity.$describe === 'function';
+
 /** One column of one entity: what `defaultFor` reads. The name labels a refusal, nothing more. */
 export interface DefaultColumn {
   readonly table: string;
   readonly property: string;
   readonly column: unknown;
   readonly position: number;
+  /** The `matches()` patterns the entity holds this column to (`declaredPatterns`). */
+  readonly patterns?: readonly RegExp[] | undefined;
 }
 
 /**
@@ -68,6 +79,7 @@ export function defaultFor(target: DefaultColumn, index: number, ids: FactoryIds
         ordinal: index,
         canary: String(index),
         position: target.position,
+        patterns: target.patterns,
         uuid: () => ids.uuid(),
       })
     : [];
