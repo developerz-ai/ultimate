@@ -23,7 +23,8 @@
       "title": "Publish together. Behave predictably.",
       "subtitle": "Orgs, members, drafts, comments and a nightly digest that arrives at 09:00 wherever your writers actually are.",
       "ctaPrimary": "Start free",
-      "ctaSecondary": "Read the blog"
+      "ctaSecondary": "Read the blog",
+      "imageAlt": "A soft blue gradient behind the Postly headline"
     },
     "features": {
       "heading": "What you get on day one",
@@ -84,7 +85,8 @@
       "feed": "Feed",
       "settings": "Settings",
       "org": "Organisation",
-      "runs": "Runs"
+      "runs": "Runs",
+      "board": "Board"
     },
     "feed": {
       "metaTitle": "Feed",
@@ -93,9 +95,27 @@
       "newPost": "New post",
       "offlineNotice": "Offline — showing the copy on this device.",
       "activity_one": "{count} post published",
-      "activity_other": "{count} posts published"
+      "activity_other": "{count} posts published",
+      "refresh": "Refresh"
+    },
+    "commands": {
+      "title": "Go to…",
+      "filterLabel": "Search pages and posts",
+      "filterPlaceholder": "Type a page or a post title",
+      "empty": "Nothing matches.",
+      "esc": "Esc",
+      "goTo": "Go to",
+      "posts": "Posts"
     },
     "post": {
+      "withdraw": "Withdraw",
+      "withdrawTitle": "Withdraw this post?",
+      "withdrawConsequence": "It goes back to a draft, and readers lose its public page at once.",
+      "withdrawConfirm": "Withdraw post",
+      "stepsLabel": "Publishing a post",
+      "stepWrite": "Write",
+      "stepReview": "Review",
+      "stepPublish": "Publish",
       "metaTitle": "{title}",
       "publishedAt": "Published {date}",
       "draftNotice": "This is a draft. Only your organisation can see it.",
@@ -115,7 +135,9 @@
       "commentNumber_ordinal_one": "{ordinal}st comment",
       "commentNumber_ordinal_two": "{ordinal}nd comment",
       "commentNumber_ordinal_few": "{ordinal}rd comment",
-      "commentNumber_ordinal_other": "{ordinal}th comment"
+      "commentNumber_ordinal_other": "{ordinal}th comment",
+      "excerptStale": "The excerpt readers see no longer matches the body.",
+      "excerptDiff": "The stored excerpt against the one the body gives"
     },
     "settings": {
       "metaTitle": "Settings",
@@ -141,6 +163,35 @@
       "role_select_other": "You read {org}."
     },
     "runs": {
+      "created": "Created between",
+      "filter": "Filter",
+      "health": {
+        "metaTitle": "Run health",
+        "heading": "Run health",
+        "intro": "The newest runs of every connected site: how each ended, when, and how much each one did.",
+        "snapshot": "A snapshot: refresh the page to see newer runs.",
+        "success": "Runs that succeeded",
+        "total": "Runs",
+        "failed": "Failed runs",
+        "failedHint": "the newer half against the older",
+        "strip": "Runs by connection, oldest first",
+        "trend": "Events per run",
+        "trendSeries": "Events",
+        "trendKey": "Started",
+        "cell": "{time}: {status}",
+        "status": {
+          "queued": "queued",
+          "running": "running",
+          "done": "succeeded",
+          "failed": "failed"
+        },
+        "range": {
+          "label": "Window",
+          "day": "Last 24 hours",
+          "week": "Last 7 days",
+          "month": "Last 30 days"
+        }
+      },
       "metaTitle": "Runs",
       "heading": "Run console",
       "intro": "Start a sync of a connected site and watch it here, live. When the site asks for a code, you answer it on this page.",
@@ -158,7 +209,8 @@
         "navigations": "Pages opened",
         "requests": "Requests",
         "bytes": "Data read",
-        "prompts": "Codes answered"
+        "prompts": "Codes answered",
+        "raw": "The usage record"
       },
       "state": {
         "pending": "Waiting for the run to start",
@@ -190,6 +242,21 @@
         "start": "The run could not be started. Try again.",
         "answer": "The code could not be sent. Try again.",
         "cancel": "The run could not be cancelled. Try again."
+      },
+      "output": "Run transcript",
+      "log": "Run log",
+      "resize": "Resize the log and the run",
+      "healthLink": "Run health"
+    },
+    "board": {
+      "metaTitle": "Board",
+      "heading": "Posts by status",
+      "intro": "Drag a draft to Scheduled, or back. Publishing stays on the post itself.",
+      "label": "Posts by status",
+      "status": {
+        "draft": "Draft",
+        "scheduled": "Scheduled",
+        "published": "Published"
       }
     }
   },

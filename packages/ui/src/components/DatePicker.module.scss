@@ -1,0 +1,37 @@
+@use '../tokens' as t;
+
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(1);
+  max-inline-size: 100%;
+}
+
+.field {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.open {
+  @include t.touch-target;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid t.role('line');
+  border-radius: t.radius(md);
+  color: t.role('fg');
+  background: t.role('surface-raised');
+  cursor: pointer;
+
+  &:hover {
+    background: t.role('bg-soft');
+  }
+
+  &:focus-visible {
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: t.stroke(thick);
+  }
+
+  &:disabled {
+    @include t.disabled;
+  }
+}

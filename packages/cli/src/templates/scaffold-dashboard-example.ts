@@ -6,6 +6,7 @@
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { examplePageTest, exampleViewTest } from './scaffold-dashboard-example-tests';
+import { exampleView } from './scaffold-dashboard-example-view';
 import { DASHBOARD_DIR, routeConfig, themeActions, themeIsland } from './scaffold-dashboard-shared';
 
 // Plain strings for the framework lines, never template literals: the workspace-dependency scanner
@@ -24,7 +25,7 @@ ${sortedImports([
   "import { isUltimateError } from '@ultimat3/core';",
   "import { currentLocale } from '@ultimat3/i18n';",
   "import { formatMoney } from '@ultimat3/money';",
-  "import { defineRoute, island } from '@ultimat3/render';",
+  "import { defineRoute, island, type RouteContext } from '@ultimat3/render';",
   [
     'import {',
     '  AreaChart,',
@@ -38,6 +39,8 @@ ${sortedImports([
     '  Section,',
     '  StatTile,',
     '  ThemeToggle,',
+    '  TimeRangePicker,',
+    '  timeRangeUrl,',
     "} from '@ultimat3/ui';",
   ].join('\n'),
 ])}
@@ -45,7 +48,10 @@ import { Shell } from '../../shared/shell';
 import { postList } from '../post/live/post-list';
 import {
   bucketByDay,
-  CHART_DAYS,
+  CHART_RANGES,
+  CHART_ZONE,
+  chartDays,
+  DEFAULT_CHART_RANGE,
   formatCount,
   type PostRow,
   postStats,
@@ -66,6 +72,8 @@ export interface DashboardData {
   readonly rows: readonly PostRow[];
   /** The instant the windows were cut at, so server and test agree on "the last 7 days". */
   readonly now: string;
+  /** The request's URL: the chart's window lives in it (\`?range=\`, or a custom \`from\`/\`to\`). */
+  readonly url: string;
 }
 
 /**
@@ -76,12 +84,13 @@ export interface DashboardData {
  */
 export async function dashboardData(
   read: () => Promise<readonly Parameters<typeof toPostRow>[0][]>,
+  url: string,
 ): Promise<DashboardData> {
   const now = new Date().toISOString();
   try {
-    return { rows: (await read()).map(toPostRow), now };
+    return { rows: (await read()).map(toPostRow), now, url };
   } catch (error) {
-    if (isUltimateError(error) && error.code === 'X_DB_UNAVAILABLE') return { rows: [], now };
+    if (isUltimateError(error) && error.code === 'X_DB_UNAVAILABLE') return { rows: [], now, url };
     throw error;
   }
 }
@@ -93,7 +102,8 @@ export async function dashboardData(
  * read to the request's actor, so the viewer \`auth/dev-actor.ts\` resolves sees the rows
  * \`packages/db/src/seed.ts\` wrote, and a real session sees its own org's the day one exists.
  */
-const load = (): Promise<DashboardData> => dashboardData(() => postList({ limit: ROW_LIMIT }));
+const load = ({ url }: RouteContext): Promise<DashboardData> =>
+  dashboardData(() => postList({ limit: ROW_LIMIT }), url);
 
 ${themeIsland}
 
@@ -108,7 +118,27 @@ export function Page(props: PageProps) {
   const locale = currentLocale();
   const now = new Date(props.data.now);
   const stats = postStats(props.data.rows, now);
-  const points = bucketByDay(props.data.rows, now, CHART_DAYS);
+  // The chart's window, from the URL: a preset link or the custom form, kept across reload and
+  // share. A window the URL cannot hold (backwards, malformed) is the default, and the picker says so.
+  const labels = new Map<string, string>([
+    ['week', t('app.dashboard.rangeWeek')],
+    ['fortnight', t('app.dashboard.rangeFortnight')],
+    ['month', t('app.dashboard.rangeMonth')],
+  ]);
+  const range = timeRangeUrl(props.data.url, {
+    presets: CHART_RANGES.map((preset) => ({
+      id: preset.id,
+      label: labels.get(preset.id) ?? preset.id,
+      seconds: preset.days * 86_400,
+    })),
+    default: DEFAULT_CHART_RANGE,
+    timeZone: CHART_ZONE,
+    now,
+  });
+  // A capped read cannot see the days before its oldest row: those are unknown, never zero.
+  const points = bucketByDay(props.data.rows, range.to, chartDays(range.from, range.to), {
+    capped: props.data.rows.length >= ROW_LIMIT,
+  });
   const mix = priceMix(props.data.rows);
   const latest = props.data.rows.slice(0, TABLE_ROWS);
   // Per currency: a bar is a share of the dearest post IN ITS CURRENCY, never of another's minor units.
@@ -137,6 +167,8 @@ export function Page(props: PageProps) {
             label={t('app.dashboard.statWeek')}
             value={formatCount(stats.lastWeek, locale)}
             delta={stats.delta}
+            goodWhen="up"
+            trend={points}
             hint={t('app.dashboard.hintVsPriorWeek')}
           />
           <StatTile
@@ -157,6 +189,11 @@ export function Page(props: PageProps) {
             title={t('app.dashboard.chartTitle')}
             description={t('app.dashboard.chartRange')}
           >
+            <TimeRangePicker
+              range={range}
+              timeZone={CHART_ZONE}
+              label={t('app.dashboard.rangeLabel')}
+            />
             <AreaChart
               label={t('app.dashboard.chartLabel')}
               keys={points.map((point) => point.key)}
@@ -223,131 +260,6 @@ export function Page(props: PageProps) {
     </Shell>
   );
 }
-`;
-
-const exampleView =
-  (): string => `// The dashboard's numbers, apart from its markup: pure functions over the rows the page loaded,
-// so the server render and a test cannot disagree about a figure. No I/O, no \`t()\`, no JSX.
-
-import type { Money } from '@ultimat3/money';
-import { type ChartPoint, deltaOf, type StatDelta } from '@ultimat3/ui';
-
-/** Days of history the chart shows, oldest first. */
-export const CHART_DAYS = 14;
-
-const DAY_MS = 86_400_000;
-
-/** One post as the page reads it. \`createdAt\` is ISO text: a \`Date\` cannot cross a JSON seam. */
-export interface PostRow {
-  readonly id: string;
-  readonly title: string;
-  /** Integer minor units plus an ISO code, never a float — the entity's \`money()\` column. */
-  readonly price: Money;
-  readonly createdAt: string;
-}
-
-/**
- * Duck-typed rather than the entity's own row: the page only ever reads these four columns. The
- * query reads through the typed handle, so \`createdAt\` arrives as the \`Date\` the entity declares.
- */
-export function toPostRow(row: {
-  readonly id: string;
-  readonly title: string;
-  readonly price: Money;
-  readonly createdAt: Date | string;
-}): PostRow {
-  const at = row.createdAt;
-  return {
-    id: row.id,
-    title: row.title,
-    price: row.price,
-    createdAt: at instanceof Date ? at.toISOString() : at,
-  };
-}
-
-/** Free (a zero price) against paid, over every row loaded — the two halves of the ring. */
-export interface PriceMix {
-  readonly free: number;
-  readonly paid: number;
-}
-
-export function priceMix(rows: readonly PostRow[]): PriceMix {
-  const paid = rows.filter((row) => row.price.minor > 0).length;
-  return { free: rows.length - paid, paid };
-}
-
-/**
- * The dearest price per currency, in minor units — what each row's in-cell bar is a share of.
- * Per currency because 1,900 cents and 1,900 yen are not the same height.
- */
-export function priceCeilings(rows: readonly PostRow[]): ReadonlyMap<string, number> {
-  const ceilings = new Map<string, number>();
-  for (const row of rows) {
-    const { currency, minor } = row.price;
-    ceilings.set(currency, Math.max(ceilings.get(currency) ?? 0, minor));
-  }
-  return ceilings;
-}
-
-export interface PostStats {
-  readonly total: number;
-  /** Created in the seven days ending at \`now\`. */
-  readonly lastWeek: number;
-  /** \`lastWeek\` against the seven days before it; absent when that baseline is zero. */
-  readonly delta: StatDelta | undefined;
-  /** Created in the UTC day \`now\` falls in — a partial day, so it carries no delta. */
-  readonly today: number;
-}
-
-const createdAtOf = (row: PostRow): number => Date.parse(row.createdAt);
-
-const within = (rows: readonly PostRow[], from: number, to: number): number =>
-  rows.filter((row) => {
-    const at = createdAtOf(row);
-    return Number.isFinite(at) && at > from && at <= to;
-  }).length;
-
-export function postStats(rows: readonly PostRow[], now: Date): PostStats {
-  const end = now.getTime();
-  const weekAgo = end - 7 * DAY_MS;
-  const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const lastWeek = within(rows, weekAgo, end);
-  return {
-    total: rows.length,
-    lastWeek,
-    delta: deltaOf(lastWeek, within(rows, weekAgo - 7 * DAY_MS, weekAgo)),
-    today: within(rows, dayStart - 1, end),
-  };
-}
-
-/** \`MM-DD\` of a UTC day. ISO, never \`toLocaleDateString\`: the chart's axis is data, not prose. */
-const dayKey = (at: number): string => new Date(at).toISOString().slice(5, 10);
-
-/**
- * One bucket per UTC day, the last one being the day \`now\` falls in, oldest first — the shape
- * \`BarChart\` draws. Every day is present even when nothing was created on it: a chart with the
- * quiet days removed reads as busier than the app is.
- */
-export function bucketByDay(
-  rows: readonly PostRow[],
-  now: Date,
-  days: number,
-): readonly ChartPoint[] {
-  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const start = today - (days - 1) * DAY_MS;
-  const counts: number[] = Array.from({ length: days }, () => 0);
-  for (const row of rows) {
-    const at = createdAtOf(row);
-    if (!Number.isFinite(at)) continue;
-    const index = Math.floor((at - start) / DAY_MS);
-    if (index >= 0 && index < days) counts[index] = (counts[index] ?? 0) + 1;
-  }
-  return counts.map((value, index) => ({ key: dayKey(start + index * DAY_MS), value }));
-}
-
-/** A figure for a tile, in the page's locale. \`Intl.NumberFormat\` needs no time zone. */
-export const formatCount = (value: number, locale: string): string =>
-  new Intl.NumberFormat(locale).format(value);
 `;
 
 /** The example dashboard's page, view module and the tests beside both. */

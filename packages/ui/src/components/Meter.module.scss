@@ -16,3 +16,10 @@
 .fill {
   fill: var(--tone);
 }
+
+// The target tick stands proud of the bar both ways, in the strongest text colour, every tone.
+.target {
+  stroke: t.role('fg-strong');
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}

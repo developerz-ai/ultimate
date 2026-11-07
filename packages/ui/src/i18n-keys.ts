@@ -1,55 +1,10 @@
-// Every string the design system needs but cannot receive as a prop. Components
-// resolve these through the context translator, so an app can localise the whole
-// system by adding one namespace to its catalog — and a miss is loud (⟦key⟧).
+// `UI_KEYS`: every string the design system resolves through the context translator, so an app
+// localises the whole system with one catalog namespace (a miss is loud, ⟦key⟧). A NAMESPACE over
+// `ui-keys.ts`, never an object literal: `UI_KEYS.x` is then a static member read a bundler turns
+// into one string, so an island keeps only the keys it reads (`i18n-keys-shake.test.ts`).
 
-export const UI_KEYS = {
-  close: 'ui.close',
-  cancel: 'ui.cancel',
-  confirm: 'ui.confirm',
-  dismiss: 'ui.dismiss',
-  loading: 'ui.loading',
-  empty: 'ui.empty',
-  // `ui.error` cannot be a leaf: `ui.error.code|cause|fix` are branches under it, and a catalog is
-  // authored nested — `parseNestedCatalog` refuses a dot inside a key, so a name is a leaf or a
-  // branch, never both. Same reason `theme` is `ui.theme.label`.
-  error: 'ui.error.title',
-  retry: 'ui.retry',
-  next: 'ui.next',
-  previous: 'ui.previous',
-  /** Pagination: back to the first page — the one way back a keyset list has. */
-  first: 'ui.first',
-  page: 'ui.page',
-  sortAscending: 'ui.sort.ascending',
-  sortDescending: 'ui.sort.descending',
-  breadcrumb: 'ui.breadcrumb',
-  /** AppShell's skip link — the first Tab stop on every page. */
-  skip: 'ui.skip',
-  /** AppShell's sidebar landmark name. */
-  navigation: 'ui.navigation',
-  menu: 'ui.menu',
-  more: 'ui.more',
-  required: 'ui.required',
-  optional: 'ui.optional',
-  theme: 'ui.theme.label',
-  themeLight: 'ui.theme.light',
-  themeDark: 'ui.theme.dark',
-  themeSystem: 'ui.theme.system',
-  language: 'ui.language',
-  /** Combobox: how many suggestions the datalist currently offers. Takes `{ count }`. */
-  suggestions: 'ui.suggestions',
-  /** Combobox: the query matched nothing. */
-  noResults: 'ui.results.empty',
-  /** InfiniteScroll: the label on the next-page control. */
-  loadMore: 'ui.load.more',
-  /** InfiniteScroll: announced when the last page has arrived. */
-  endOfList: 'ui.load.end',
-  /** CopyButton: the control's name before a copy. */
-  copy: 'ui.copy',
-  /** CopyButton: announced, and the control's name, once the write succeeded. */
-  copied: 'ui.copied',
-  errorCode: 'ui.error.code',
-  errorCause: 'ui.error.cause',
-  errorFix: 'ui.error.fix',
-} as const;
+import * as UI_KEYS from './ui-keys';
+
+export { UI_KEYS };
 
 export type UiKey = (typeof UI_KEYS)[keyof typeof UI_KEYS];

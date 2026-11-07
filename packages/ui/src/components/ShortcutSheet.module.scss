@@ -1,0 +1,33 @@
+@use '../tokens' as t;
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(2);
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: t.space(4);
+}
+
+.label {
+  color: t.role('fg');
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(2);
+  margin: 0;
+}
+
+.binding,
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(1);
+}

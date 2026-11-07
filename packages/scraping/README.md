@@ -371,6 +371,17 @@ whole-viewport picture spends them on everything that is not the component under
 | `clip` with no area, or entirely in negative coordinates | `X_SCRAPE_CAPTURE_INVALID` — a blank picture that reads as a successful capture is the failure this exists to remove |
 | `clip` on `page.pdf()` | `X_SCRAPE_CAPTURE_INVALID` — a print engine paginates the document and has no crop |
 
+### A PDF laid out as asked
+
+`page.pdf(layout)` takes `PdfRequest`: `format` (`PDF_FORMATS` — `a4`, `letter`, …) **or**
+`widthMm` + `heightMm`, `marginMm: { top, right, bottom, left }`, `printBackground`,
+`preferCssPageSize` (the document's own `@page`), and `headerHtml` / `footerHtml` (Chrome's print
+templates). `pdf-request.ts` checks it once, before any driver, beside the clip rule: two sizes,
+half a size, a size beside `preferCssPageSize` or a non-finite measure is
+`X_SCRAPE_PDF_OPTIONS_INVALID` (422, terminal). The CDP driver forwards the layout in puppeteer's
+words (`pdf-print.ts`: `'210mm'`, `'A4'`, a blank template for the band the caller left empty); the
+offline drivers stamp it into deterministic bytes, so a dropped field fails a test. `As of 2026-11`.
+
 A rectangle **below the fold is accepted**. It is not checked against a viewport: this package
 neither sets nor reads one, and a component under the fold is the case a component crop is for.
 

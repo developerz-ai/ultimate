@@ -15,7 +15,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 
 | Command | Does | Notes |
 |---|---|---|
-| `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |
+| `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route. `--shape api\|blog\|dashboard` starts from an app shape instead ([Shapes](https://github.com/developerz-ai/ultimate/wiki/Shapes)) |
 | `x dev` | every role in one process | embedded Postgres/events/storage, `/_x` mounted |
 | `x stop` | ends this checkout's `x dev`: the pid `.x/dev.lock` names, nothing else | returns once the next `x dev` can boot; `X_DEV_STOP_TIMEOUT` past `--timeout` |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
@@ -76,6 +76,16 @@ Pick the org your dev seed creates and the most-privileged role your gated pages
 weigh measures the page a holder of that role is served. Any other refusal (a missing database, a
 `TypeError` in `load`) keeps the generic `fix:` — the `unmeasured` list of
 `x build --target static --json` — with the code already in the cause.
+
+## `x build --target static`: images and cards as files
+
+While the export renders, `@ultimat3/seo`'s static seam is installed (`static-capture.ts`). Every
+`responsiveImage()` candidate an exported document names is written to `/_img/<hash>-<w>.<ext>`
+(`static-images.ts`) — a `src` the export lacks is `X_IMAGE_SOURCE_UNREADABLE`, an `avif` is
+`X_IMAGE_UNSUPPORTED`. Every `og.capture` card is photographed from its exported page at 1200 x 630
+into `/_og/<path>.png` over the CLI's own CDP driver (`static-cards.ts`); no such page is
+`X_SEO_CARD_ROUTE_UNKNOWN`, no browser `X_SEO_CARD_BROWSER_MISSING`. `--no-capture` stamps the same
+tags and takes no picture: `x verify`'s build and the reference-app gate pass it. `As of 2026-11`.
 
 ## Which `x` runs
 

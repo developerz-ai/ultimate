@@ -5,6 +5,7 @@
 
 import type { CaptureFraming } from './capture-clip';
 import type { ColorScheme } from './color-scheme';
+import type { PdfLayout } from './pdf-request';
 import type { ConsoleRing, NetworkRing, PageErrorRing } from './rings';
 import type { SessionSnapshot } from './session-state';
 
@@ -123,6 +124,12 @@ export interface GotoOptions {
 export type CaptureOptions = CaptureFraming;
 
 /**
+ * A PDF capture: the framing plus the print layout, already checked by `pdfLayoutOf` — a driver
+ * forwards every field it is given and invents none.
+ */
+export type PdfOptions = CaptureOptions & PdfLayout;
+
+/**
  * The port. Every member is something a browser genuinely does and nothing a scraper's vocabulary
  * should be re-deriving per driver. NO COUNT: this comment said "Twelve methods" while the
  * interface carried seventeen, and a number in prose is wrong the moment the next member lands.
@@ -228,7 +235,7 @@ export interface ScrapeTarget {
    */
   prepare(expression: string): Promise<void>;
   screenshot(options: CaptureOptions): Promise<Uint8Array>;
-  pdf(options: CaptureOptions): Promise<Uint8Array>;
+  pdf(options: PdfOptions): Promise<Uint8Array>;
   cookies(): Promise<readonly ScrapeCookie[]>;
   /** Whatever the last click/navigation produced as a file, or a `X_SCRAPE_DOWNLOAD_TIMEOUT`. */
   download(options: { readonly timeoutMs: number }): Promise<ScrapeDownloadFile>;

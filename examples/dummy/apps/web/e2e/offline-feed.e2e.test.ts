@@ -12,6 +12,12 @@ const APP_SCRIPTS = `script[src]${[...FRAMEWORK_SCRIPTS].map((path) => `:not([sr
 
 const TENANCY = 'Tenancy is a column, not a convention';
 
+/**
+ * The feed ROW's title, by its role: the command palette lists every post too, as a button in a
+ * closed dialog, and a text locator answers about its FIRST match — that hidden entry.
+ */
+const tenancyRow = { role: 'link', name: TENANCY } as const;
+
 // Some assertions here retry and some do not, and which is which is the load-bearing fact — each
 // retrying one says why on the line above it, so no count is written here to go stale.
 //
@@ -102,7 +108,7 @@ test('the feed streams its shell before the rows resolve', async ({ page, signIn
   expect(firstFlush.html).toContain('Acme Editorial');
   expect(firstFlush.html).not.toContain('Tenancy is a column');
   // Retries: the rows arrive over the socket after hydration, not in any flush.
-  await expect(page.getByText(TENANCY)).toBeVisible();
+  await expect(page.getByRole(tenancyRow.role, { name: tenancyRow.name })).toBeVisible();
 });
 
 test('a like taken offline is queued, shown, and reconciled on reconnect', async ({
@@ -117,12 +123,13 @@ test('a like taken offline is queued, shown, and reconciled on reconnect', async
   await page.waitForServiceWorker();
 
   // Retries: the rows — and their Like buttons — arrive over the socket after hydration.
-  await expect(page.getByText(TENANCY)).toBeVisible();
+  await expect(page.getByRole(tenancyRow.role, { name: tenancyRow.name })).toBeVisible();
   await network.offline();
   // Tenancy's own button, not `.first()`: the first row is "Money is an integer" at 0 likes, and
-  // the reconciled count below is Tenancy's 2 seeded + 1 queued.
+  // the reconciled count below is Tenancy's 2 seeded + 1 queued. A ROW of the feed's list: the
+  // command palette's closed dialog holds an `<li>` naming every post too, its button first.
   const clicked = await page.evaluate(() => {
-    const row = [...document.querySelectorAll('li')].find((li) =>
+    const row = [...document.querySelectorAll('[data-role="posts"] li')].find((li) =>
       (li.textContent ?? '').includes('Tenancy is a column, not a convention'),
     );
     const button = row?.querySelector('button');

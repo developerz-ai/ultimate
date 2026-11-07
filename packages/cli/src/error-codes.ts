@@ -5,6 +5,8 @@
 import { registerErrorCodes } from '@ultimat3/core';
 import type { CliShotErrorCode } from './error-codes-shot';
 import { CLI_SHOT_ERROR_CODES, CLI_SHOT_ERROR_TITLES } from './error-codes-shot';
+import type { CliToolingErrorCode } from './error-codes-tooling';
+import { CLI_TOOLING_ERROR_CODES, CLI_TOOLING_ERROR_TITLES } from './error-codes-tooling';
 
 /** Codes this package declares and owns. */
 export const CLI_OWNED_ERROR_CODES = [
@@ -237,15 +239,16 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_APP_MODULE_LOAD_FAILED',
   'X_CHART_MISSING',
   'X_ENTITY_VIEW_DRIFT',
-  'X_CLIENT_SPEC_UNSUPPORTED',
-  'X_CLIENT_STALE',
-  'X_CLIENT_EDITED',
-  'X_GRAPH_NODE_UNKNOWN',
-  'X_CLIENT_SPEC_INVALID',
-  'X_REPRO_UNKNOWN',
-  'X_REPRO_NOT_REPRODUCED',
-  'X_REPRO_CAPTURE_OFF',
   'X_ENTITY_RETAIN_UNSWEPT',
+  'X_NEW_SHAPE_UNKNOWN',
+  'X_NEW_SHAPE_CONFLICT',
+  'X_SEO_CARD_ROUTE_UNKNOWN',
+  'X_SEO_CARD_BROWSER_MISSING',
+  'X_IMAGE_SOURCE_UNREADABLE',
+  'X_VERIFY_SKIPS_OVER_CEILING',
+  'X_ASSET_VARIANT_UNDECLARED',
+  'X_NEW_SHAPE_GENERATE_FAILED',
+  'X_ISLAND_DISPOSER_MISSING',
 ] as const;
 
 /**
@@ -282,12 +285,13 @@ export const CLI_BORROWED_ERROR_CODES = [
 export const CLI_ERROR_CODES = [
   ...CLI_OWNED_ERROR_CODES,
   ...CLI_SHOT_ERROR_CODES,
+  ...CLI_TOOLING_ERROR_CODES,
   ...CLI_BORROWED_ERROR_CODES,
 ] as const;
 
 /** The codes listed in THIS file — the ones `CLI_ERROR_TITLES` below must title. */
 type CliListedErrorCode = (typeof CLI_OWNED_ERROR_CODES)[number];
-export type CliOwnedErrorCode = CliListedErrorCode | CliShotErrorCode;
+export type CliOwnedErrorCode = CliListedErrorCode | CliShotErrorCode | CliToolingErrorCode;
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
 
 /**
@@ -453,25 +457,28 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
     'an app module failed to load, so the role refused to serve a partial app',
   X_CHART_MISSING: 'x g chart-alerts found no Helm chart to write into',
   X_ENTITY_VIEW_DRIFT: "a view entity's columns disagree with the view its migration created",
-  X_CLIENT_SPEC_UNSUPPORTED: 'x client met an OpenAPI construct its compiler refuses',
-  X_CLIENT_STALE: 'a generated client is older than the document it was compiled from',
-  X_CLIENT_EDITED: 'a generated client file was changed by hand',
-  X_GRAPH_NODE_UNKNOWN: 'x graph or x impact was asked about a node the app graph does not hold',
-  X_CLIENT_SPEC_INVALID: 'x client was handed a document that is not OpenAPI 3.0 or 3.1',
-  X_REPRO_UNKNOWN: 'x repro was given an id nothing holds',
-  X_REPRO_NOT_REPRODUCED: 'a written repro test did not fail the way the original did',
-  X_REPRO_CAPTURE_OFF: 'x repro was given a request id while failure capture is off',
   X_ENTITY_RETAIN_UNSWEPT: 'an entity declares retain and no purge() sweeps it',
+  X_NEW_SHAPE_UNKNOWN: 'x new --shape names no registered shape',
+  X_NEW_SHAPE_CONFLICT: 'x new --shape with --no-example',
+  X_SEO_CARD_ROUTE_UNKNOWN: 'og.capture names a path no site/ route answers',
+  X_SEO_CARD_BROWSER_MISSING:
+    'a static build with social cards found no browser to photograph them',
+  X_IMAGE_SOURCE_UNREADABLE: 'a responsiveImage src is not a file the static export holds',
+  X_VERIFY_SKIPS_OVER_CEILING: 'a step skipped more tests than its skipCeiling allows',
+  X_ASSET_VARIANT_UNDECLARED: 'an /assets image variant responsiveImage() never mints',
+  X_NEW_SHAPE_GENERATE_FAILED: 'a shape generator failed in the new app',
+  X_ISLAND_DISPOSER_MISSING: "an island's mount returns no disposer",
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws
 // X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
 registerErrorCodes(
   Object.fromEntries(
-    Object.entries({ ...CLI_ERROR_TITLES, ...CLI_SHOT_ERROR_TITLES }).map(([code, title]) => [
-      code,
-      { title },
-    ]),
+    Object.entries({
+      ...CLI_ERROR_TITLES,
+      ...CLI_SHOT_ERROR_TITLES,
+      ...CLI_TOOLING_ERROR_TITLES,
+    }).map(([code, title]) => [code, { title }]),
   ),
 );
 

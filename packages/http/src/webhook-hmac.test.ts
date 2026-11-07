@@ -2,7 +2,7 @@
 // prefix, under any of the rotation secrets — and refused for one flipped byte or an empty secret.
 
 import { describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { hmac, isUltimateError } from '@ultimat3/core';
 import { verifyBodyHmac } from './webhook-hmac';
 
 const BODY = new TextEncoder().encode('{"id":"evt_1","type":"invoice.paid"}');
@@ -10,7 +10,7 @@ const SECRET = 'whsec_current';
 const OLD = 'whsec_previous';
 
 const mac = (secret: string, bytes: Uint8Array, encoding: 'hex' | 'base64'): string =>
-  new Bun.CryptoHasher('sha256', secret).update(bytes).digest(encoding);
+  hmac('sha256', secret, bytes, encoding);
 
 /** The refusal's code, or the verdict that nothing was refused. */
 const refusal = (run: () => void): string => {

@@ -89,10 +89,11 @@ describe('ChartFrame.module.scss', () => {
     }
   });
 
-  test('a readout shows on hover and on keyboard focus alike, with no script', async () => {
+  test('a readout shows on hover, keyboard focus and a tap alike, with no script', async () => {
     const css = await sheet('ChartFrame.module.scss');
+    // `:focus`, not `:focus-visible`: a tap focuses the point without matching the visible one.
     expect(css).toMatch(
-      /\.hit:hover > \.readout, \.hit:focus-visible > \.readout \{\s*visibility: visible/,
+      /\.hit:hover > \.readout, \.hit:focus > \.readout \{\s*visibility: visible/,
     );
   });
 });

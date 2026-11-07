@@ -1,0 +1,97 @@
+{
+  "version": "latest",
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel(R) Core(TM) i7-10610U CPU @ 1.80GHz",
+    "cores": 8,
+    "memoryGb": 31,
+    "bun": "1.4.4",
+    "runner": "local"
+  },
+  "runs": [
+    {
+      "work": "/tmp/first-hour-8JkfeX",
+      "steps": [
+        {
+          "name": "scaffold",
+          "command": "bun x create-ultimate@latest firsthour --no-git",
+          "ms": 4696,
+          "status": "ok"
+        },
+        {
+          "name": "setup",
+          "command": "bun run setup",
+          "ms": 43347,
+          "status": "ok"
+        },
+        {
+          "name": "verify",
+          "command": "bun run verify --json",
+          "ms": 60619,
+          "status": "failed",
+          "tail": "{\"step\":\"seo\",\"ok\":true,\"ms\":136} | {\"step\":\"i18n\",\"ok\":true,\"ms\":179} | {\"step\":\"policy\",\"ok\":true,\"ms\":259} | {\"step\":\"roadmap\",\"ok\":true,\"ms\":0,\"skipped\":true} | error: script \"verify\" exited with code 1"
+        },
+        {
+          "name": "first feature",
+          "command": "bun x x g resource note",
+          "ms": null,
+          "status": "skipped"
+        },
+        {
+          "name": "setup after feature",
+          "command": "bun run setup",
+          "ms": null,
+          "status": "skipped"
+        },
+        {
+          "name": "verify after feature",
+          "command": "bun run verify --json",
+          "ms": null,
+          "status": "skipped"
+        }
+      ],
+      "sizes": {
+        "appFiles": 261,
+        "nodeModulesMb": 165,
+        "packages": 106,
+        "homeBytes": null,
+        "homeJsBytes": null,
+        "imageMb": null
+      }
+    }
+  ],
+  "spread": {
+    "scaffold ms": {
+      "min": 4696,
+      "median": 4696,
+      "n": 1
+    },
+    "setup ms": {
+      "min": 43347,
+      "median": 43347,
+      "n": 1
+    },
+    "verify ms": null,
+    "first feature ms": null,
+    "setup after feature ms": null,
+    "verify after feature ms": null,
+    "appFiles": {
+      "min": 261,
+      "median": 261,
+      "n": 1
+    },
+    "nodeModulesMb": {
+      "min": 165,
+      "median": 165,
+      "n": 1
+    },
+    "packages": {
+      "min": 106,
+      "median": 106,
+      "n": 1
+    },
+    "homeBytes": null,
+    "homeJsBytes": null,
+    "imageMb": null
+  }
+}

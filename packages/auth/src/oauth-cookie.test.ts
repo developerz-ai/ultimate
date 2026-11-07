@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { frozenClock, hmac, isUltimateError } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
 import { memoryAuthAdapter } from './memory-adapter';
 import { beginOAuth, type OAuthHandshake } from './oauth';
@@ -89,7 +89,7 @@ describe('the handshake seal', () => {
     );
     const body = btoa('{"not":"an array"}').replaceAll('=', '');
     const secret = SECRET;
-    const signature = new Bun.CryptoHasher('sha256', secret).update(body).digest('hex');
+    const signature = hmac('sha256', secret, body, 'hex');
     expect(codeOf(() => openHandshake(`${body}.${signature}`, 'github', options))).toBe(
       'X_OAUTH_STATE_INVALID',
     );

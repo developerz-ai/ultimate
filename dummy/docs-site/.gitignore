@@ -1,0 +1,11 @@
+node_modules/
+.x/
+/dist/
+packages/*/dist/
+*.tsbuildinfo
+.env
+.env.*.local
+.env.production
+/coverage/
+playwright-report/
+test-results/

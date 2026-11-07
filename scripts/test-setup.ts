@@ -19,6 +19,7 @@ import { registerFrameworkFixtures } from '../packages/testing/src/framework-fix
 import '../packages/testing/src/matchers';
 import { installRenderLoader } from '../packages/render/src/module-loader';
 import { releasePluginsAfterIsolatedFile } from '../packages/testing/src/isolated-plugins';
+import { installModuleMockBoundary } from '../packages/testing/src/module-mock-boundary';
 import { installPerTestReset } from '../packages/testing/src/per-test-reset';
 import { installRegistryLeakGuard } from '../packages/testing/src/registry-leak-guard';
 import { sealNetwork } from '../packages/testing/src/sealed-network';
@@ -63,6 +64,10 @@ installRenderLoader();
 // The per-TEST half, the same one an app's preload installs: the jobs event bus STORES what it is
 // handed, so an answer one test published would resume the next test's waiting run.
 installPerTestReset();
+
+// The same module-mock boundary an app's preload installs: a `mock.module` is put back when its file
+// ends, so no later file on the worker reads another file's fake.
+installModuleMockBoundary();
 
 // The same raw-tab accessibility audit an app's preload installs: a tab a framework suite drives
 // itself fails its test on an unnamed control exactly as an `e2eTest` page does.

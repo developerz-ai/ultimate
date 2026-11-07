@@ -1,0 +1,41 @@
+@use '../tokens' as t;
+
+.root {
+  position: relative;
+  // The pull is ours at the top edge: no browser bounce or native refresh layered on top.
+  overscroll-behavior-y: contain;
+}
+
+.indicator {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  display: flex;
+  justify-content: center;
+  padding-block: t.space(2);
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.root[data-state='pulling'] .indicator,
+.root[data-state='refreshing'] .indicator {
+  opacity: 1;
+}
+
+.content {
+  translate: 0 var(--pull-distance, 0);
+}
+
+.root[data-state='idle'] .content,
+.root[data-state='refreshing'] .content {
+  @include t.transition(translate);
+}
+
+// The content follows the finger only where motion is welcome; the hint still shows.
+@media (prefers-reduced-motion: reduce) {
+  .content {
+    translate: none;
+  }
+}

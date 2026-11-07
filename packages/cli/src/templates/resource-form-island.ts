@@ -154,7 +154,7 @@ function ${feature.pascal}FormBody(props: ${feature.pascal}FormProps): JSX.Eleme
  * The shell is cleared first: Solid's \`render\` APPENDS when the container already has children,
  * so without it the server's markup stays on screen above a second, live copy of the same thing.
  */
-export function mount(el: HTMLElement, props: ${feature.pascal}FormProps): void {
+export function mount(el: HTMLElement, props: ${feature.pascal}FormProps): () => void {
   setSolidRuntime({
     createContext,
     useContext,
@@ -165,7 +165,9 @@ export function mount(el: HTMLElement, props: ${feature.pascal}FormProps): void 
     createRoot,
   });
   el.textContent = '';
-  render(
+  // Solid's disposer, returned: the client router calls it when it navigates away, and a mount
+  // that returns nothing is X_ISLAND_DISPOSER_MISSING.
+  return render(
     () => (
       <UiProvider locale={props.locale}>
         <${feature.pascal}FormBody {...props} />

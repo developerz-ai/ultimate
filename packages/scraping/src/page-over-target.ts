@@ -22,6 +22,7 @@ import type {
   WaitOptions,
 } from './page';
 import { DEFAULT_ACCESSIBILITY_MAX } from './page';
+import { type PdfRequest, pdfLayoutOf } from './pdf-request';
 import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
 import { safeConsole, safeHtml, safeNetwork, safePageErrors } from './secrets';
@@ -241,7 +242,7 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
   };
   const capture = async (
     kind: 'screenshot' | 'pdf',
-    options: CaptureRequest | undefined,
+    options: CaptureRequest | PdfRequest | undefined,
   ): Promise<Uint8Array> => {
     // The leak nobody remembers: a screenshot of a filled login form IS the password, in pixels,
     // in object storage, forever. Refused rather than masked — a mask over pixels is a guess
@@ -255,8 +256,10 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
       fullPage: options?.fullPage,
       ...(options?.clip === undefined ? {} : { clip: options.clip }),
     };
-    const reached = reported();
-    return kind === 'screenshot' ? reached.screenshot(request) : reached.pdf(request);
+    if (kind === 'screenshot') return reported().screenshot(request);
+    // The layout is checked here too, for the framing's reason: once, before any driver.
+    const layout = pdfLayoutOf(options ?? {});
+    return reported().pdf({ ...request, ...layout });
   };
   return {
     ...frame,

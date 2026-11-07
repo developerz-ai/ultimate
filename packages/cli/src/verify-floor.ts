@@ -14,6 +14,8 @@ import { COVERAGE_FIELD, readCoverageFloor } from './coverage-floor';
 import type { Finding } from './output';
 import type { StepTimeouts } from './verify-deadline';
 import { readStepTimeouts, STEP_TIMEOUT_FIELD } from './verify-deadline';
+import type { SkipCeiling } from './verify-skip-ceiling';
+import { readSkipCeiling, SKIP_CEILING_FIELD } from './verify-skip-ceiling';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
 
 /** Hand-written and committed, beside the generated `x.manifest.json` the same gate reads. */
@@ -68,6 +70,11 @@ export interface VerifyFloor {
    * Absent is off, and `x doctor` says which id turns it on.
    */
   readonly rollingSince?: string;
+  /**
+   * The most tests a step may skip (`verify-skip-ceiling.ts`), judged by `x verify merge` and by a
+   * whole `x verify` under `CI`. Absent is no ceiling, and a CI run names the number to write.
+   */
+  readonly skipCeiling?: SkipCeiling;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
   readonly problems: readonly string[];
 }
@@ -186,6 +193,7 @@ export function parseVerifyFloor(
   const timeouts = readStepTimeouts(record, declared);
   const coverage = readCoverageFloor(record);
   const rolling = readRollingSince(record);
+  const skips = readSkipCeiling(record, declared);
   const rest = {
     ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
     ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
@@ -193,6 +201,7 @@ export function parseVerifyFloor(
     ...(timeouts.timeouts === undefined ? {} : { stepTimeoutMs: timeouts.timeouts }),
     ...(coverage.coverage === undefined ? {} : { coverage: coverage.coverage }),
     ...(rolling.since === undefined ? {} : { rollingSince: rolling.since }),
+    ...(skips.ceiling === undefined ? {} : { skipCeiling: skips.ceiling }),
   };
   const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
@@ -207,6 +216,7 @@ export function parseVerifyFloor(
         ...timeouts.problems,
         ...coverage.problems,
         ...rolling.problems,
+        ...skips.problems,
       ],
     };
   }
@@ -226,6 +236,7 @@ export function parseVerifyFloor(
       ...timeouts.problems,
       ...coverage.problems,
       ...rolling.problems,
+      ...skips.problems,
     ],
   };
 }
@@ -317,5 +328,7 @@ const fixFor = (problem: string): string => {
     return `x verify --only unit --json   # then write "${COVERAGE_FIELD}" in ${VERIFY_FLOOR_FILE} as { "lines": 95, "funcs": 95 }, every "exclude" entry as { "glob": "…", "why": "…" }`;
   if (problem.includes(`"${ROLLING_SINCE_FIELD}"`))
     return `x doctor --json   # it names your newest migration id: set "${ROLLING_SINCE_FIELD}" in ${VERIFY_FLOOR_FILE} to that, "0" to judge them all, or drop the key`;
+  if (problem.includes(`"${SKIP_CEILING_FIELD}"`))
+    return `x verify --json   # then write "${SKIP_CEILING_FIELD}" in ${VERIFY_FLOOR_FILE} as { "contract": 9 } — a step it runs, a whole number of tests`;
   return `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`;
 };

@@ -30,6 +30,7 @@ by the CLI, not imported.
 | `agents-md.ts` | read-only AGENTS.md existence + size check |
 | `docs-scan.ts` | read-only: an installed package tree → `DocEntry[]`. Never writes |
 | `docs-search.ts` | pure ranking of `DocEntry[]` against a question. No I/O, no clock |
+| `docs-search-subpath.ts` | the `./docs-search` entry: `searchDocs`, `nearestTopics`, the entry types. Nothing with I/O may join its graph — an island imports it (`docs-search-subpath.test.ts` bundles it for a browser) |
 | `docs-wiki.ts` | read-only: a shipped `wiki/` directory → `DocEntry[]`, topic `wiki.<Page>#<GitHub anchor>`; `wikiSection` is one whole section. Never reads `Error-Codes.md` |
 | `docs-tokens.ts` | pure: the query/name splitter and the one-suffix stem both sides of `docs-search` share |
 | `diff-rows.ts` | a read's row, member by member: removed, retyped or no longer required is breaking, added is additive. Never `canonicalJson` inequality: an entity gaining a column would flip every `rows: X.$schema` read |

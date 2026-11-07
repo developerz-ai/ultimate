@@ -1,0 +1,124 @@
+@use 'sass:map';
+@use '../tokens' as t;
+
+$md: map.get(t.$breakpoints, 'md');
+
+// Unified below `md` of the CONTAINER, side by side at and above it. Hue is never alone: the
+// `+`/`-` gutter and a spoken word carry the same fact, so the diff reads with colour off.
+.diff {
+  @include t.container(diff);
+  border: t.stroke(hairline) solid t.role('line');
+  border-radius: t.radius(md);
+  background: t.role('bg-soft');
+}
+
+.bar {
+  @include t.row(t.space(1), center, flex-end);
+  padding-block: t.space(1);
+  padding-inline: t.space(2);
+  border-block-end: t.stroke(hairline) solid t.role('line');
+}
+
+.diff:not([data-enhanced='true']) .bar {
+  display: none;
+}
+
+.next {
+  @include t.focus-ring;
+  border: 0;
+  background: transparent;
+  color: t.role('accent');
+  font-size: t.text(sm);
+  cursor: pointer;
+  min-block-size: t.touch(target);
+}
+
+.scroll {
+  @include t.focus-ring;
+  overflow-x: auto;
+  text-align: start;
+}
+
+.unified,
+.split {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: t.text(sm);
+  color: t.role('fg');
+}
+
+.split {
+  display: none;
+  table-layout: fixed;
+}
+
+@include t.container-query(diff, $md) {
+  .unified {
+    display: none;
+  }
+
+  .split {
+    display: table;
+  }
+}
+
+.row td {
+  vertical-align: top;
+}
+
+.num {
+  inline-size: t.space(10);
+  padding-inline: t.space(2);
+  color: t.role('fg-muted');
+  text-align: end;
+  user-select: none;
+}
+
+.sign {
+  inline-size: t.space(4);
+  text-align: center;
+  user-select: none;
+}
+
+.text {
+  padding-inline-end: t.space(2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.add {
+  background: t.role('success-soft');
+}
+
+.del {
+  background: t.role('danger-soft');
+}
+
+.context {
+  background: transparent;
+}
+
+// A changed word: weight and an underline as well as the tint, so it survives colour off.
+.word {
+  background: transparent;
+  color: inherit;
+  font-weight: t.weight(bold);
+  text-decoration: underline;
+}
+
+.spoken {
+  @include t.visually-hidden;
+}
+
+.hunk,
+.file,
+.fold {
+  background: t.role('surface');
+  color: t.role('fg-muted');
+
+  td {
+    padding-block: t.space(1);
+    padding-inline: t.space(2);
+  }
+}

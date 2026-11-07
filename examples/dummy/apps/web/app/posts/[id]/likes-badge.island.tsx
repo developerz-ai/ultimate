@@ -38,7 +38,9 @@ function LikesBadge(props: LikesBadgeProps): JSX.Element {
   );
 }
 
-export function mount(el: HTMLElement, props: LikesBadgeProps): void {
+export function mount(el: HTMLElement, props: LikesBadgeProps): () => void {
   el.textContent = '';
-  render(() => <LikesBadge {...props} />, el);
+  // Returned: the router calls it when it swaps this page out, so every effect this island
+  // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
+  return render(() => <LikesBadge {...props} />, el);
 }

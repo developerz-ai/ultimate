@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ERROR_DOCS_URL, frameworkVersion, UltimateError, VERSION_DEFINE } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
+import { BUILD_CAPTURE_ENV } from './build-capture-env';
 import { buildSpec } from './cmd-build-spec';
 import { DEFAULT_IMAGE } from './cmd-deploy-compose';
 import { runVerify } from './cmd-verify';
@@ -200,8 +201,19 @@ export function binaryArgs(
   ];
 }
 
+/** The module `staticArgs` preloads: the render loader, ahead of the script's whole graph. */
+export const PRERENDER_PRELOAD = join(import.meta.dir, 'prerender-preload.ts');
+
 export function staticArgs(root: string, out: string): readonly string[] {
-  return ['bun', 'run', join(root, BUILD_ENTRY.static), '--out', out];
+  return [
+    'bun',
+    'run',
+    '--preload',
+    PRERENDER_PRELOAD,
+    join(root, BUILD_ENTRY.static),
+    '--out',
+    out,
+  ];
 }
 
 export function argsFor(
@@ -293,7 +305,7 @@ export function buildResult(input: {
 }
 
 /** The flags only some targets read. */
-const TARGET_SCOPED_FLAGS = ['tag', 'out', 'platform', 'preflight'] as const;
+const TARGET_SCOPED_FLAGS = ['tag', 'out', 'platform', 'preflight', 'capture'] as const;
 
 type TargetScopedFlag = (typeof TARGET_SCOPED_FLAGS)[number];
 
@@ -301,7 +313,7 @@ type TargetScopedFlag = (typeof TARGET_SCOPED_FLAGS)[number];
 const TARGET_FLAGS: ReadonlyMap<BuildTarget, readonly TargetScopedFlag[]> = new Map([
   ['docker', ['tag', 'preflight']],
   ['binary', ['out', 'platform', 'preflight']],
-  ['static', ['out', 'preflight']],
+  ['static', ['out', 'preflight', 'capture']],
   // The boot reads ONE place, and the image holds no devDependencies to run a gate with.
   ['prebuilt', []],
 ]);
@@ -312,6 +324,7 @@ const UNREAD_BECAUSE: Readonly<Record<TargetScopedFlag, string>> = {
   out: 'the docker target writes an image, not a path',
   platform: 'only the binary target compiles an executable for a platform',
   preflight: 'the prebuilt target runs no gate: `x verify` ran before `docker build` was called',
+  capture: 'only the static target photographs social cards',
 };
 
 /**
@@ -428,7 +441,12 @@ export const buildCommand: CliCommand = {
     // Removed BEFORE the builder runs, so a build that writes no inventory can never be reported
     // with the last one's: a stale emitted list is worse than none, because it reads as this run's.
     if (target === 'static') await removeStaticReport(root);
-    const result = await ctx.runner(command, { cwd: root });
+    // `--no-capture` reaches the app's own `prerender.ts` through the env (`build-capture-env.ts`).
+    const capture = ctx.args.flags.get('capture') !== false;
+    const result = await ctx.runner(command, {
+      cwd: root,
+      ...(capture ? {} : { env: { [BUILD_CAPTURE_ENV]: 'off' } }),
+    });
     // `prerenderSite` writes it; an app whose `apps/web/prerender.ts` does not call that writes no
     // `.x/build-stats.json` either, and `x verify`'s `budgets` step already reds that app with
     // `X_BUDGET_UNMEASURED` — so the absence needs no second code here.

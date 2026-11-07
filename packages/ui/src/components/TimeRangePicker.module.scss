@@ -1,0 +1,85 @@
+@use '../tokens' as t;
+
+.picker {
+  display: grid;
+  gap: t.space(2);
+  min-inline-size: 0;
+}
+
+.invalid {
+  margin: 0;
+  color: t.role('warning');
+  font-size: t.text(sm);
+}
+
+// The presets scroll in their own box on a narrow screen rather than wrapping into a wall.
+.presets {
+  @include t.custom-scrollbar;
+  display: flex;
+  gap: t.space(1);
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+  overscroll-behavior-inline: contain;
+}
+
+.preset {
+  @include t.padding-inline(t.space(3));
+  display: inline-flex;
+  align-items: center;
+  min-block-size: t.touch(target);
+  border: 1px solid t.role('line');
+  border-radius: t.radius(pill);
+  color: t.role('fg');
+  font-size: t.text(sm);
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    background: t.role('bg-soft');
+  }
+
+  &[aria-current='true'] {
+    border-color: t.role('accent');
+    color: t.role('accent-fg');
+    background: t.role('accent');
+  }
+
+  &:focus-visible {
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: t.stroke(thick);
+  }
+}
+
+.custom {
+  min-inline-size: 0;
+}
+
+.summary {
+  min-block-size: t.touch(target);
+  display: flex;
+  align-items: center;
+  color: t.role('fg');
+  font-size: t.text(sm);
+  cursor: pointer;
+}
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: t.space(3);
+  padding-block: t.space(2);
+}
+
+.end {
+  display: grid;
+  gap: t.space(1);
+  min-inline-size: 0;
+}
+
+.label {
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+}

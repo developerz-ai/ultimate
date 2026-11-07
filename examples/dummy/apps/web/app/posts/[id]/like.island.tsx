@@ -138,7 +138,9 @@ function Like(props: LikeIslandProps): JSX.Element {
  * The one export the hydration runtime calls. The shell goes first and it is load-bearing —
  * Solid's `render` APPENDS when the container already has children.
  */
-export function mount(el: HTMLElement, props: LikeIslandProps): void {
+export function mount(el: HTMLElement, props: LikeIslandProps): () => void {
   el.textContent = '';
-  render(() => <Like {...props} />, el);
+  // Returned: the router calls it when it swaps this page out, so every effect this island
+  // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
+  return render(() => <Like {...props} />, el);
 }

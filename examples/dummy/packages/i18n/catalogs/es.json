@@ -23,7 +23,8 @@
       "title": "Publicad juntos. Comportamiento predecible.",
       "subtitle": "Organizaciones, miembros, borradores, comentarios y un resumen diario que llega a las 09:00 donde de verdad está cada autor.",
       "ctaPrimary": "Empezar gratis",
-      "ctaSecondary": "Leer el blog"
+      "ctaSecondary": "Leer el blog",
+      "imageAlt": "Un degradado azul suave detrás del titular de Postly"
     },
     "features": {
       "heading": "Lo que tienes el primer día",
@@ -84,7 +85,8 @@
       "feed": "Feed",
       "settings": "Ajustes",
       "org": "Organización",
-      "runs": "Ejecuciones"
+      "runs": "Ejecuciones",
+      "board": "Tablero"
     },
     "feed": {
       "metaTitle": "Feed",
@@ -93,9 +95,27 @@
       "newPost": "Nuevo artículo",
       "offlineNotice": "Sin conexión: se muestra la copia de este dispositivo.",
       "activity_one": "{count} artículo publicado",
-      "activity_other": "{count} artículos publicados"
+      "activity_other": "{count} artículos publicados",
+      "refresh": "Actualizar"
+    },
+    "commands": {
+      "title": "Ir a…",
+      "filterLabel": "Buscar páginas y artículos",
+      "filterPlaceholder": "Escribe una página o el título de un artículo",
+      "empty": "Nada coincide.",
+      "esc": "Esc",
+      "goTo": "Ir a",
+      "posts": "Artículos"
     },
     "post": {
+      "withdraw": "Retirar",
+      "withdrawTitle": "¿Retirar este artículo?",
+      "withdrawConsequence": "Vuelve a ser un borrador y los lectores pierden su página pública al momento.",
+      "withdrawConfirm": "Retirar artículo",
+      "stepsLabel": "Publicar un artículo",
+      "stepWrite": "Escribir",
+      "stepReview": "Revisar",
+      "stepPublish": "Publicar",
       "metaTitle": "{title}",
       "publishedAt": "Publicado el {date}",
       "draftNotice": "Es un borrador. Solo lo ve tu organización.",
@@ -112,7 +132,9 @@
       "commentsEmpty": "Aún no hay comentarios.",
       "commentPlaceholder": "Di algo útil",
       "commentSubmit": "Comentar",
-      "commentNumber_ordinal_other": "{ordinal}.º comentario"
+      "commentNumber_ordinal_other": "{ordinal}.º comentario",
+      "excerptStale": "El extracto que ven los lectores ya no coincide con el cuerpo.",
+      "excerptDiff": "El extracto guardado frente al que da el cuerpo"
     },
     "settings": {
       "metaTitle": "Ajustes",
@@ -138,6 +160,35 @@
       "role_select_other": "Lees {org}."
     },
     "runs": {
+      "created": "Creadas entre",
+      "filter": "Filtrar",
+      "health": {
+        "metaTitle": "Salud de las ejecuciones",
+        "heading": "Salud de las ejecuciones",
+        "intro": "Las ejecuciones más recientes de cada sitio conectado: cómo terminó cada una, cuándo y cuánto hizo.",
+        "snapshot": "Una instantánea: recarga la página para ver ejecuciones más nuevas.",
+        "success": "Ejecuciones con éxito",
+        "total": "Ejecuciones",
+        "failed": "Ejecuciones fallidas",
+        "failedHint": "la mitad más nueva frente a la más antigua",
+        "strip": "Ejecuciones por conexión, de la más antigua a la más nueva",
+        "trend": "Eventos por ejecución",
+        "trendSeries": "Eventos",
+        "trendKey": "Inicio",
+        "cell": "{time}: {status}",
+        "status": {
+          "queued": "en cola",
+          "running": "en curso",
+          "done": "con éxito",
+          "failed": "fallida"
+        },
+        "range": {
+          "label": "Periodo",
+          "day": "Últimas 24 horas",
+          "week": "Últimos 7 días",
+          "month": "Últimos 30 días"
+        }
+      },
       "metaTitle": "Ejecuciones",
       "heading": "Consola de ejecuciones",
       "intro": "Inicia una sincronización de un sitio conectado y síguela aquí, en directo. Cuando el sitio pida un código, lo respondes en esta página.",
@@ -155,7 +206,8 @@
         "navigations": "Páginas abiertas",
         "requests": "Peticiones",
         "bytes": "Datos leídos",
-        "prompts": "Códigos respondidos"
+        "prompts": "Códigos respondidos",
+        "raw": "El registro de uso"
       },
       "state": {
         "pending": "Esperando a que empiece la ejecución",
@@ -187,6 +239,21 @@
         "start": "No se ha podido iniciar la ejecución. Inténtalo de nuevo.",
         "answer": "No se ha podido enviar el código. Inténtalo de nuevo.",
         "cancel": "No se ha podido cancelar la ejecución. Inténtalo de nuevo."
+      },
+      "output": "Transcripción de la ejecución",
+      "log": "Registro de la ejecución",
+      "resize": "Cambiar el tamaño del registro y la ejecución",
+      "healthLink": "Salud de las ejecuciones"
+    },
+    "board": {
+      "metaTitle": "Tablero",
+      "heading": "Publicaciones por estado",
+      "intro": "Arrastra un borrador a Programado, o de vuelta. La publicación se hace en la propia publicación.",
+      "label": "Publicaciones por estado",
+      "status": {
+        "draft": "Borrador",
+        "scheduled": "Programado",
+        "published": "Publicado"
       }
     }
   },

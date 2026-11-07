@@ -14,7 +14,7 @@ const ORG = '00000000-0000-4000-8000-000000000002';
 const OTHER_ORG = '00000000-0000-4000-8000-000000000009';
 
 /** The declaration-shape assertions that differ between the two primitives. */
-const shapeTest = (name: NameSet, isMutator: boolean): string =>
+const shapeTest = (name: NameSet, feature: NameSet, isMutator: boolean): string =>
   isMutator
     ? `unitTest('${name.camel} projects both halves and a conflict strategy', () => {
   // The projected names mirror the declaration: local() optimistic, server() authoritative.
@@ -25,9 +25,11 @@ const shapeTest = (name: NameSet, isMutator: boolean): string =>
   expect(typeof target.local).toBe('function');
   expect(typeof target.server).toBe('function');
 });`
-    : `unitTest('${name.camel} is a declared action', () => {
+    : `unitTest('${name.camel} is a declared action that invalidates its slice', () => {
   expect(target.kind).toBe('action');
   expect(target.describe().name).toBe('${name.camel}');
+  // Without \`cache: { invalidates }\` every cached read of this slice serves the row as it was.
+  expect(target.describe().invalidates).toContain(${feature.camel}Tag.entity);
 });`;
 
 /**
@@ -194,7 +196,7 @@ ${sortedImports([
   ...(known ? ["import { testActor } from '@ultimat3/policy';"] : []),
   `import { ${testing} } from '@ultimat3/testing';`,
   ...(stores ? [`import { driver } from '${shape.dbModule}';`] : []),
-])}${stores ? "\nimport * as repo from '../repo';" : ''}
+])}${shape.isMutator ? '' : `\nimport { ${feature.camel}Tag } from '../policy';`}${stores ? "\nimport * as repo from '../repo';" : ''}
 import { ${name.camel} } from './${name.kebab}';
 
 const id = '${ID}';
@@ -222,7 +224,7 @@ afterEach(() => {
 `
     : ''
 }
-${shapeTest(name, shape.isMutator)}
+${shapeTest(name, feature, shape.isMutator)}
 
 unitTest('${name.camel} rejects input that is not a uuid', async () => {
   await expect(target.input).toRejectInput({ ...input, id: 'not-a-uuid' });

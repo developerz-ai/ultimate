@@ -411,18 +411,20 @@ jobs:
   # reading a red run.
   #
   # `deploy-social-demo.yml` reads the check `reference-app-verify (dummy/social-media-clone)` — the
-  # gate of the app whose image it publishes — so the `name:` below is a contract with that file.
+  # gate of the app whose image it publishes — and `deploy-docs-site.yml` reads
+  # `reference-app-verify (dummy/docs-site)`, so the `name:` below is a contract with both files.
   reference-app-verify:
     name: reference-app-verify (${{ matrix.app }})
     needs: tested
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
-    # A runaway kill-switch, not a budget: both apps together measured 106 s on main, 2026-10-01.
+    # A runaway kill-switch, not a budget: the first two apps together measured 106 s on main,
+    # 2026-10-01; one runner per app since.
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        app: [examples/dummy, dummy/social-media-clone]
+        app: [examples/dummy, dummy/social-media-clone, dummy/docs-site]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -475,10 +477,10 @@ jobs:
   # imports; on 1.4.4 it does, and the hoisted one copies a `file:` folder per dependent — one
   # `@ultimat3/core` per package, `X_REGISTRAR_MISSING` at `bun run setup`.
   #
-  # TWO scaffolds, one runner each since 2026-10-01 — they share no state, and the second waited
-  # out the first (44 s then 33 s on main). `scaffold-gate.ts` takes one directory per run by
-  # design, so covering both shapes was already two invocations rather than a flag; the matrix is
-  # those two. `--no-example` is an app with no islands and no example slice — some thirty files
+  # One scaffold per runner since 2026-10-01 — they share no state, and the second waited out the
+  # first (44 s then 33 s on main). `scaffold-gate.ts` takes one directory per run by design, so
+  # each scaffold is a matrix row: the default, `--no-example`, and one per `x new --shape`
+  # (`NEW_SHAPES`, held to this matrix by `scripts/ci-workflow-shape.test.ts`). `--no-example` is an app with no islands and no example slice — some thirty files
   # fewer, a count `scripts/generator-counts.ts` derives and this comment does not restate — which
   # is precisely why it stayed green through a default scaffold whose fix chain was a loop: the
   # steps that read emitted island and feature files had nothing to read.
@@ -499,6 +501,12 @@ jobs:
             flags: ''
           - app: bareapp
             flags: --no-example
+          - app: apiapp
+            flags: --shape api
+          - app: blogapp
+            flags: --shape blog
+          - app: dashboardapp
+            flags: --shape dashboard
     env:
       APP: ${{ matrix.app }}
     steps:
@@ -510,7 +518,7 @@ jobs:
         env:
           FLAGS: ${{ matrix.flags }}
         run: |
-          # $FLAGS is empty or one flag, split on purpose.
+          # $FLAGS is empty, one flag, or a flag and its value, split on purpose.
           # shellcheck disable=SC2086
           bun run x -- new "$APP" --dir "$RUNNER_TEMP" $FLAGS
       - name: point the app's @ultimat3/* ranges at this repo's own packages

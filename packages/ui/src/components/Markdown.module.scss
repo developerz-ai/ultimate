@@ -1,0 +1,87 @@
+@use '../tokens' as t;
+
+// Body copy never below 16 px on a phone (`text(md)` floors at 1rem); a wide table scrolls in its
+// own box so the page never scrolls sideways.
+.markdown {
+  @include t.column(t.space(3));
+  font-size: t.text(md);
+  line-height: t.leading(normal);
+  color: t.role('fg');
+  overflow-wrap: anywhere;
+
+  p,
+  ul,
+  ol {
+    margin: 0;
+  }
+
+  ul,
+  ol {
+    padding-inline-start: t.space(6);
+  }
+
+  hr {
+    inline-size: 100%;
+    border: 0;
+    border-block-start: t.stroke(hairline) solid t.role('line');
+  }
+}
+
+.heading {
+  margin: 0;
+  color: t.role('fg-strong');
+  line-height: t.leading(tight);
+}
+
+.code {
+  padding-inline: t.space(1);
+  border-radius: t.radius(sm);
+  background: t.role('bg-soft');
+  font-family: var(--font-mono);
+  font-size: t.text(sm);
+}
+
+.quote {
+  @include t.column(t.space(2));
+  @include t.border-inline-start(t.stroke(heavy), 'line');
+  margin: 0;
+  padding-inline-start: t.space(3);
+  color: t.role('fg-muted');
+}
+
+.task {
+  list-style: none;
+
+  input {
+    margin-inline-end: t.space(2);
+  }
+}
+
+.table {
+  max-inline-size: 100%;
+  overflow-x: auto;
+
+  table {
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    padding-block: t.space(1);
+    padding-inline: t.space(2);
+    border: t.stroke(hairline) solid t.role('line');
+    text-align: start;
+  }
+
+  [data-align='center'] {
+    text-align: center;
+  }
+
+  [data-align='end'] {
+    text-align: end;
+  }
+}
+
+.rest {
+  white-space: pre-wrap;
+}

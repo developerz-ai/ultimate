@@ -105,6 +105,9 @@ Full shape and the conflict strategies: [Realtime](Realtime#same-mutator-at-ever
 | One field per row. Two side by side only when they are one value (expiry month + year) | **judgement** |
 | An error is an instruction: what to type, not what is wrong | **judgement** |
 | The error text is announced with the control it belongs to | `Field` wires `error` into `aria-describedby` |
+| Choosing one of a list: `Select` for a short closed list, `SearchableSelect` for a long one whose label is not its value, `Combobox` for free text with suggestions | one control per question; `SearchableSelect` posts hidden inputs, so typed text never reaches the server, and without script it is the native `<select>` |
+| A chart's colour says what the caller said it means: `StatTile goodWhen="down"` for an error rate | `deltaMood` — the arrow carries the direction, the colour only a stated meaning; `goodWhen="none"` colours neither |
+| A gap is a gap: never zero-fill a missing value in a chart | `ChartPoint.value` and every series value take `null`; a chart draws nothing there and the table reads `ui.chart.none` |
 
 **16px is the floor for a touch-reachable text input.** iOS Safari zooms the viewport on focus
 below it, and the zoom does not undo itself. The default control is safe — the `control` mixin sets
@@ -203,12 +206,42 @@ under the reader's finger the moment the bytes land.
 | Every `*.island.tsx` has a sibling `*.island.states.ts` | `guards/island-without-states.ts` |
 | A states file is pure data — no sibling import, no framework import | `assertIslandStatesPure`, at `x shot` load time |
 | An island polls with `visibleInterval()` from `@ultimat3/core/page`, never a bare `setInterval(`: a hidden tab and a lost session stop it ([Client data](Client-Data)). A `// why:` on the line, or the line above, admits a tick that is not a read | `guards/raw-interval.ts` |
+| A destructive act asks through `ConfirmDialog` from `@ultimat3/ui` — Cancel focused, Esc closes, the backdrop never, a native post with scripting off, a refusal kept open and focused — never `window.confirm(`. A `// why:` on the line, or the line above, admits a call that is not that question | `guards/native-confirm.ts` |
 | A channel's "this changed" re-reads a server-rendered page through `scheduleRefresh()`, never `refresh()`: nothing swaps under a reader ([Realtime](Realtime#a-channel-event-re-reads-the-page)) | **judgement** |
 | Every state carries a `note` saying why it cannot be reached by clicking | **judgement** — `note` is optional, and it is the line that tells a reviewer what they are looking at |
 
 An island with no states file has never been seen with a refused save, an empty read, or a label
 three times as long in the next locale — not by a reviewer and not by a model. How to photograph
 them: [Testing](Testing#seeing-what-you-built).
+
+## Lists and pickers
+
+`As of 2026-11`.
+
+| Rule | Refused by |
+|---|---|
+| Which list: records with columns `DataTable`; thousands of one-shape rows `VirtualList`; nesting `Tree`; what happened `Timeline`; facts about one thing `DescriptionList` | **judgement** — there is no activity-feed component to reach for instead: `Timeline` + `InfiniteScroll` + `RelativeTime` |
+| A long list is a real `<ul>` that renders every row with scripting off; with script it mounts what is on screen | `VirtualList`'s server branch (`lists.test.ts`); under 100 of 10,000 mounted in Chrome (`ui-virtual-list.e2e.test.ts`) |
+| A live prepend moves nothing being read, and keeps the focused row's node and focus | `ui-virtual-list.e2e.test.ts`; a repeated `itemKey` is `X_UI_INVALID_VALUE` |
+| A `Tree` of links is `<details>` and links, 0 B; `role="tree"` only with `onSelect`, one tab stop | the `TreeProps` union; `lists.test.ts` |
+| A date control is the native input first; the calendar is an extra on a fine pointer, and Esc returns focus to its opener | `DatePicker`/`DateRangePicker` (`pickers.test.ts`, `ui-date-pickers.e2e.test.ts`) |
+| A window takes an explicit IANA zone | `TimeRangePickerProps.timeZone` is required; a non-IANA zone is `X_TIMEZONE_INVALID` |
+| Window presets are the app's, never the framework's | `timeRangeUrl` ships no list; a preset with neither `seconds` nor `from`/`to` is `X_UI_INVALID_VALUE` |
+
+## Reordering and viewers
+
+`As of 2026-11`.
+
+| Rule | Refused by |
+|---|---|
+| A drag is Pointer Events with capture from a handle; never HTML5 drag events | `drag/pointer-drag.ts` is the one gesture; `ui-drag.e2e.test.ts` (keyboard, pointer, rtl) |
+| A drop is a request: `onMove` once, the row held until it settles, a rejection restores and is announced | `sort-controller.test.ts`, `drag-interaction.test.ts` |
+| Reordering works by keyboard alone and with scripting off | Space/arrows/Esc in `drag-interaction.test.ts`; the per-row `<form>` in `posts/board/page.test.ts` |
+| A business rule on a drop is `canDrop`, never a fork | **judgement** — the one seam the components take |
+| Text a model or member wrote renders as a tree, never HTML; only http/https/mailto/relative links | `viewers-no-html.test.ts`, `markdown-parse.test.ts`, no alert under CSP in `ui-viewers.e2e.test.ts` |
+| A remote image in a body is a link to its alt unless `resolveImage` reserves its box | `viewers.test.ts` |
+| An island passes only the languages it shows | `ui-barrel-bytes.test.ts`: `Markdown` alone retains no `languages/*` |
+| A diff reads with colour off: `+`/`-` gutters and a spoken word per changed row | `viewers.test.ts` |
 
 ## Stylesheets
 

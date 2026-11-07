@@ -1,0 +1,46 @@
+@use 'sass:map';
+@use '../tokens' as t;
+
+// The list's own width decides whether a term sits beside its detail: the same facts are a column
+// in a sidebar and two columns in a wide main.
+$sm: map.get(t.$breakpoints, 'sm');
+
+.wrap {
+  @include t.container(descriptionlist);
+}
+
+.list {
+  display: grid;
+  gap: t.space(3);
+  margin: 0;
+}
+
+.group {
+  display: grid;
+  gap: t.space(1);
+}
+
+.layout-columns .group {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: t.space(4);
+  align-items: baseline;
+}
+
+@container descriptionlist (width < #{$sm}) {
+  .layout-columns .group {
+    grid-template-columns: minmax(0, 1fr);
+    gap: t.space(1);
+  }
+}
+
+.term {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  font-weight: t.weight(medium);
+}
+
+.detail {
+  margin: 0;
+  color: t.role('fg');
+  overflow-wrap: anywhere;
+}

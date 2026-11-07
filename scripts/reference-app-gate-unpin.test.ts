@@ -69,10 +69,11 @@ describe('unpin', () => {
     }
   };
 
-  test('both tracked apps have empty pin tables', () => {
+  test('every tracked app has an empty pin table', () => {
     expect(GATED_APPS.map((app) => app.dir)).toEqual([
       'examples/dummy',
       'dummy/social-media-clone',
+      'dummy/docs-site',
     ]);
     for (const app of GATED_APPS) expect(app.expectedRed).toEqual({});
   });

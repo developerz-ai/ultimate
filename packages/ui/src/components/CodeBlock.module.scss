@@ -1,0 +1,101 @@
+@use '../tokens' as t;
+
+// The code surface is `bg-soft`; every run colour is a role measured AA on it
+// (`contrast-pairs.ts`, "a code token on the code surface"), so a theme recolours code for free.
+.block {
+  position: relative;
+  border: t.stroke(hairline) solid t.role('line');
+  border-radius: t.radius(md);
+  background: t.role('bg-soft');
+}
+
+.bar {
+  @include t.row(t.space(1), center, flex-end);
+  padding-block: t.space(1);
+  padding-inline: t.space(2);
+  border-block-end: t.stroke(hairline) solid t.role('line');
+}
+
+// Wrap and copy need script; without it the text is still there and selectable.
+.block:not([data-enhanced='true']) .bar {
+  display: none;
+}
+
+.toggle {
+  @include t.focus-ring;
+  border: 0;
+  border-radius: t.radius(sm);
+  background: transparent;
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  cursor: pointer;
+  min-block-size: t.touch(target);
+
+  &[aria-pressed='true'] {
+    color: t.role('accent');
+  }
+}
+
+.pre {
+  @include t.focus-ring;
+  margin: 0;
+  padding: t.space(3);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: t.text(sm);
+  line-height: t.leading(normal);
+  color: t.role('fg');
+  text-align: start;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.block[data-wrap='true'] .pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tok-plain {
+  color: inherit;
+}
+.tok-keyword {
+  color: t.role('accent-strong');
+}
+.tok-string {
+  color: t.role('success');
+}
+.tok-number {
+  color: t.role('warning');
+}
+.tok-comment {
+  color: t.role('fg-muted');
+  font-style: italic;
+}
+.tok-type {
+  color: t.role('info');
+}
+.tok-function {
+  color: t.role('fg-strong');
+}
+.tok-property {
+  color: t.role('info');
+}
+.tok-tag {
+  color: t.role('danger');
+}
+.tok-attribute {
+  color: t.role('warning');
+}
+.tok-operator,
+.tok-punctuation {
+  color: t.role('fg');
+}
+.tok-inserted {
+  color: t.role('success');
+}
+.tok-deleted {
+  color: t.role('danger');
+}
+.tok-meta {
+  color: t.role('fg-muted');
+}

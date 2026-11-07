@@ -19,11 +19,14 @@ export interface SummaryProps {
   readonly failedLabel: string;
 }
 
-export function mount(el: HTMLElement, props: SummaryProps): void {
+/** The disposer drops the click listener, so a router navigation leaves nothing listening. */
+export function mount(el: HTMLElement, props: SummaryProps): () => void {
+  const listening = new AbortController();
+  const dispose = (): void => listening.abort();
   const button = el.querySelector('button');
   const output = el.querySelector<HTMLElement>('[data-role="summary"]');
   const status = el.querySelector<HTMLElement>('[data-role="status"]');
-  if (button === null || output === null || status === null) return;
+  if (button === null || output === null || status === null) return dispose;
   // The server rendered it disabled — both the attribute and what is announced.
   const usable = (on: boolean): void => {
     button.disabled = !on;
@@ -31,24 +34,29 @@ export function mount(el: HTMLElement, props: SummaryProps): void {
   };
   usable(true);
 
-  button.addEventListener('click', () => {
-    usable(false);
-    output.textContent = '';
-    status.textContent = props.writingLabel;
-    void read({ postId: props.postId, orgId: props.orgId }, output).then(
-      (summary) => {
-        // The answer that satisfied `output` replaces the raw tokens: they were the model's text,
-        // this is the value the schema accepted.
-        output.textContent = summary;
-        status.textContent = '';
-        usable(true);
-      },
-      () => {
-        status.textContent = props.failedLabel;
-        usable(true);
-      },
-    );
-  });
+  button.addEventListener(
+    'click',
+    () => {
+      usable(false);
+      output.textContent = '';
+      status.textContent = props.writingLabel;
+      void read({ postId: props.postId, orgId: props.orgId }, output).then(
+        (summary) => {
+          // The answer that satisfied `output` replaces the raw tokens: they were the model's text,
+          // this is the value the schema accepted.
+          output.textContent = summary;
+          status.textContent = '';
+          usable(true);
+        },
+        () => {
+          status.textContent = props.failedLabel;
+          usable(true);
+        },
+      );
+    },
+    { signal: listening.signal },
+  );
+  return dispose;
 }
 
 /** Appends each token as it lands; resolves the validated summary. */

@@ -1,0 +1,41 @@
+{
+  "steps": [
+    "typecheck",
+    "lint",
+    "boundaries",
+    "filesize",
+    "package-shape",
+    "errors",
+    "unit",
+    "contract",
+    "e2e",
+    "exercise",
+    "eval",
+    "drift",
+    "contract-diff",
+    "budgets",
+    "policy",
+    "manifest",
+    "seo",
+    "i18n"
+  ],
+  "coverage": {
+    "lines": 95,
+    "funcs": 95,
+    "exclude": [
+      {
+        "glob": "apps/**/*.island.tsx",
+        "why": "an island runs in a browser: its test mounts a BUILT chunk (mountIsland), and Bun cannot map that chunk back to this source \u2014 its states are held by guards/island-without-states.ts and photographed by x shot --island"
+      },
+      {
+        "glob": "apps/*/server.ts",
+        "why": "the container entry point: it boots the roles and lives as long as the process \u2014 bun run dev and the image exercise it"
+      },
+      {
+        "glob": "apps/*/prerender.ts",
+        "why": "the static build's entry point: x build --target static runs it, and the budgets step weighs what it writes"
+      }
+    ]
+  },
+  "rollingSince": "0"
+}

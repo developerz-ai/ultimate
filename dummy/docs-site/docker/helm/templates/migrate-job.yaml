@@ -1,0 +1,33 @@
+{{/*
+The release phase, as a pre-install / pre-upgrade hook: ROLE=migrate applies every pending
+migration under an advisory lock and exits, before any serving role starts. Same image, same entry
+point — there is no second migration engine and no toolchain in the container.
+*/}}
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "docs-site.fullname" . }}-migrate
+  labels:
+    {{- include "docs-site.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "docs-site.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        {{- include "docs-site.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 8 }}
+      volumes:
+        {{- include "docs-site.tmpVolume" . | nindent 8 }}
+{{- end }}

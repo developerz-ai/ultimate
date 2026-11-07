@@ -15,6 +15,7 @@ import {
   skippedSuiteFinding,
   vanishedSuiteFinding,
 } from './verify-floor';
+import { inCi, judgeSkips } from './verify-skip-ceiling';
 import { stalledOutput, stepTimeoutFinding } from './verify-stalled';
 import type {
   CoverageNumbers,
@@ -279,20 +280,25 @@ async function runStep(
   // with no files at all — the run just had to finish before it could be seen. Appended to the
   // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
   const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
+  // A mostly skipped suite, judged where the verdict is: CI, and only a whole run (a shard's
+  // share is judged by `x verify merge`, on the sum). A laptop without services stays a dev loop.
+  const skips =
+    outcome.shard === undefined && inCi(ctx.env ?? Bun.env)
+      ? judgeSkips(step.name, tests, floor?.skipCeiling)
+      : { findings: [], warnings: [] };
+  const warnings = [...(outcome.warnings ?? []), ...skips.warnings];
   return {
     result: {
       name: step.name,
-      ok: outcome.ok && vanished.length === 0,
+      ok: outcome.ok && vanished.length === 0 && skips.findings.length === 0,
       durationMs: Math.round(performance.now() - started),
       // Without a floor to require it, a suite that ran nothing is a SKIP and not a pass (#434):
       // the `e2e` step printed `✓ e2e 46ms` over its one skipped test, which is the one thing a
       // step table may never do — a reader cannot tell a lane that ran from a lane that did not.
       skipped: nothingRan && !required,
-      findings: [...outcome.findings, ...vanished],
+      findings: [...outcome.findings, ...vanished, ...skips.findings],
       ...(outcome.output === undefined ? {} : { output: outcome.output }),
-      ...(outcome.warnings === undefined || outcome.warnings.length === 0
-        ? {}
-        : { warnings: outcome.warnings }),
+      ...(warnings.length === 0 ? {} : { warnings }),
       ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
       ...(outcome.widthReason === undefined ? {} : { widthReason: outcome.widthReason }),
       ...(outcome.slowest === undefined || outcome.slowest.length === 0

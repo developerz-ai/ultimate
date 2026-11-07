@@ -6,6 +6,9 @@
   "files": [],
   "references": [
     {
+      "path": "./dummy/docs-site"
+    },
+    {
       "path": "./dummy/social-media-clone"
     },
     {

@@ -42,13 +42,22 @@ Four known gaps sat inside what did ship — the compose host port paired with `
 
 The deploy proof is a measurement, not code. It does not block an app built on 1.0.0; it blocks the claim above being repeated as fact.
 
-**Milestone 11 no longer names a docs site or per-code docs pages**, `As of 2026-08-23`. Both were
-dropped when `wiki/` became the only public documentation surface — a decision, not a deferral
-([`19-cutting-a-major.md`](../architecture/19-cutting-a-major.md)). The error-code documentation
-surface is [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md), which the gate's `errors` step already
-requires a row in for every declared code, and `ERROR_DOCS_URL` is the one URL every framework error
-points at. A per-code page would need a per-code anchor, and a table row has none. Do not add the row
-back.
+**A docs site, built by Ultimate, reverses the 2026-08-23 decision below**, `As of 2026-11-06`
+(plan 101, [`42-adopt-docs-site`](../plans/2026/11/02/101-absorb-reinvented-patterns/42-adopt-docs-site.md)).
+The reason: every GitHub wiki page answers `x-robots-tag: none`, so search engines skip the whole
+manual. `wiki/` stays the ONE source — the GitHub wiki and `dummy/docs-site` are both projections of
+it, and the site is a third tracked app gated by its own `x verify` at 0 KB of script. A per-code
+page needs no anchor in the table: the site's reader splits `wiki/Error-Codes.md` into one page per
+row at `/errors/<code>`, and `wiki/Upgrading.md` into one per major at `/upgrading/<major>`.
+`ERROR_DOCS_URL` moves to `<site>/errors/<code>` only after the site has served for two weeks, in a
+scheduled major.
+
+The decision it reverses, as written: milestone 11 no longer named a docs site or per-code docs
+pages, `As of 2026-08-23`. Both were dropped when `wiki/` became the only public documentation
+surface ([`19-cutting-a-major.md`](../architecture/19-cutting-a-major.md)). The error-code
+documentation surface was [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md), which the gate's
+`errors` step requires a row in for every declared code — still true, and now also the source of
+every code's page.
 
 ### Closed: the 50k-socket forced-restart benchmark
 

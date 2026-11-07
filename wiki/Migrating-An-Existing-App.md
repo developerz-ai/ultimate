@@ -7,6 +7,8 @@
 | You want | Page |
 |---|---|
 | move an app **from another framework** to Ultimate | this page |
+| what each Rails, Django, Laravel or Node/Drizzle term becomes | [From Rails](Migrating-From-Rails) · [From Django](Migrating-From-Django) · [From Laravel](Migrating-From-Laravel) · [From Node and Drizzle](Migrating-From-Node-Drizzle) |
+| how it compares, and when to pick another stack instead | [Compared](Compared) |
 | move an app **from `@ultimat3/*` 1.x or 2.x to the current major** | [Upgrading](Upgrading) |
 | what is unfinished in the release being adopted | [Known gaps](Known-Gaps) |
 | every `X_*` code named below | [Error codes](Error-Codes) |

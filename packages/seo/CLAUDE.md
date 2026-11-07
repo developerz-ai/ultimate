@@ -164,6 +164,7 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 | `feed-dates.ts` | all timestamp parsing and formatting for feeds. Never `Date.parse` in another module |
 | `images.ts` | what the markup promises: `srcset` widths, `<picture>` order, inlined dimensions — plus `IMAGE_QUERY_KEYS` and `parseImageQuery`, the contract that reads a minted URL back. Decodes nothing |
 | `image-driver.ts` | the bytes behind that promise: `ImageTransformDriver` + `builtinImageDriver({ read })` over core's pipeline — encodes png/jpeg/webp |
+| `static-export.ts` | the static build's seam (`globalThis`-slotted, like render's asset table): variant URLs as export files, `og.capture` as a 1200 x 630 `og:image`. Absent in a served process — never read a build fact here |
 
 ## Commands
 

@@ -1,0 +1,49 @@
+@use '../tokens' as t;
+
+.bar {
+  @include t.safe-area-padding(block-end);
+  @include t.safe-area-padding(inline);
+  border-block-start: 1px solid t.role('line');
+  background: t.role('surface');
+}
+
+.list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// Equal shares: five items on a 320px phone are 64px each, over the 44px target.
+.item {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+.link {
+  @include t.focus-ring('accent', t.stroke(thick), calc(-1 * #{t.stroke(thick)}));
+  @include t.touch-target;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: t.space(1);
+  padding-block: t.space(2);
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+  text-decoration: none;
+
+  &[aria-current='page'] {
+    color: t.role('accent');
+    font-weight: t.weight(semibold);
+  }
+}
+
+.icon {
+  display: inline-flex;
+}
+
+.label {
+  @include t.truncate;
+  max-inline-size: 100%;
+}

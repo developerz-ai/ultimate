@@ -7,18 +7,21 @@ Tests live next to their source as `<file>.test.ts`.
 ## Parallel by database clone
 
 ```
-bun test --workers 8
-  worker 0 → myapp_test_0   (CREATE DATABASE myapp_test_0 TEMPLATE myapp_test_tpl)
-  worker 1 → myapp_test_1
+x test unit --workers 4        # one bun test --parallel=4: Bun's workers 1..4
+  worker 1 → ultimate_test_template_w1   (CREATE DATABASE … TEMPLATE ultimate_test_template)
+  worker 2 → ultimate_test_template_w2
   ...
 ```
 
+`--workers` is `x test`'s flag, spent as Bun's `--parallel`; `bun test` itself has no `--workers`.
+
 | Step | Mechanism |
 |---|---|
-| Once per run | build a template DB: migrate + seed → `myapp_test_tpl` |
-| Per worker | `CREATE DATABASE myapp_test_N TEMPLATE myapp_test_tpl` — Postgres file-copies, typically 100–400ms |
-| Per test file | truncate the tables that file touched, or take a savepoint if it declares `readonly` |
-| Teardown | drop on exit; `--keep-db` to inspect a failure |
+| Once per run | `pg_advisory_lock`, then the template database is created and migrated; the first worker builds it, the rest wait on the lock and reuse it |
+| Per worker | `DROP DATABASE IF EXISTS … WITH (FORCE)`, then `CREATE DATABASE … TEMPLATE` the template — Postgres file-copies |
+| Per test file | the worker's database with its DATA reset to the template's (`reusableDatabase`, below) |
+| No `TEST_DATABASE_URL` / `DATABASE_URL` | PGlite in memory behind the same handle |
+| Teardown | `drop()` on the worker's handle. There is no keep-the-database flag, `As of 2026-11` |
 
 ### Rejected approaches
 
@@ -160,7 +163,7 @@ Locale and zone are declared per test when the behavior under test depends on th
 
 | Type | Command | Asserts | Runs against |
 |---|---|---|---|
-| **unit** | `x test unit` | pure logic — services, money, policy predicates, matchers | no DB, no I/O |
+| **unit** | `x test unit` | services, money, policy predicates, matchers, and a handler through `.as()` — what runs in process | the in-memory driver, or the migrated database recipe above (`migratedDatabase` + `reusableDatabase`) when the code reads Postgres |
 | **contract** | `x test contract` | an action's input/output schema, its policy denials, its emitted OpenAPI + MCP tool shape, its handler on generated legal input | cloned DB |
 | **live** | `x test live` | a live query's initial snapshot, incremental patches on write, reconnect delta, and that a policy-failing row is never delivered | cloned DB + in-process replicator + in-process NATS |
 | **job** | `x test job` | step-level replay (a step already run is not re-run), idempotency-key dedupe, retry/backoff, concurrency and rate limits, outbox atomicity on rollback | cloned DB + frozen clock |
@@ -1080,9 +1083,16 @@ gates at once — and it is held to a **memory budget**, not to whatever looks f
   the first file's baseline, the permission/role/catalog registries are restored (as a union — a
   module imported once per worker declares once), tasks exactly (an `anonymous-task-<n>` or
   `anonymous-job-<n>` name is never re-minted in a process — `resetTasks()`/`resetJobs()` clear
-  the registry, not the counter — so a later file's task cannot take an earlier one's seat), and
-  `.tsx` always compiles with the app's JSX factory. A repository whose tests need a fresh global per file says
+  the registry, not the counter — so a later file's task cannot take an earlier one's seat), every
+  `mock.module` (`vi.mock`, `jest.mock`) the file made is put back to the real module — Bun keeps
+  one past `mock.restore()` and past the file — and `.tsx` always compiles with the app's JSX
+  factory. The real module is loaded for its snapshot before the fake goes in, so its top-level code
+  runs; one that throws there cannot be put back, and the next file on the worker fails
+  `X_TEST_MODULE_MOCK_UNRESTORABLE` naming the file that mocked it. A repository whose tests need a fresh global per file says
   `"isolate": true` in `x.verify.json`, or passes `--isolate` to `x test` / `x verify`.
+  The framework repository itself still says `true`, `As of 2026-11`: `ai mcp` in one shared
+  process went from 66 failures to 0 and `auth mcp ai testing` reads 0 (a test file's top-level
+  `definePermissions` is its worker's environment — declare in `beforeAll`); `cli` is unmeasured.
 - **One long-lived process per worker.** Without isolation a worker's memory is set by its live
   database, not by how many files it ran, so a pass is ONE `bun test --parallel=N` (recycled only
   past 256 files a worker; 24 under `--isolate`, whose heap grows per file). Every parallel run
@@ -1273,6 +1283,7 @@ Full list: [Error codes](Error-Codes).
 - Never assert on wall-clock time. Advance the frozen clock.
 - Never let a test reach the network unmocked — it fails by design.
 - A flaky test is deleted or fixed the day it flakes. There is no `retry: 3`.
+- Hunting an order flake: `x test unit --filter <file> -- --rerun-each=30 --randomize` — the `--` hands the rest to `bun test`.
 - Every framework package ships at least 2 tests that would catch a real regression. No `expect(true).toBe(true)`.
 - Tests live next to their source as `<file>.test.ts`.
 - A denial test per policy branch, not one happy-path test per action.

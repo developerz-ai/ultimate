@@ -68,6 +68,7 @@ export const TESTING_ERROR_CODES = [
   'X_CASSETTE_UNUSED',
   'X_CASSETTE_SECRET',
   'X_CASSETTE_RECORD_REFUSED',
+  'X_TEST_MODULE_MOCK_UNRESTORABLE',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -131,6 +132,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_CASSETTE_UNUSED: 'a cassette entry was never replayed',
   X_CASSETTE_SECRET: 'a cassette about to be written holds a secret value',
   X_CASSETTE_RECORD_REFUSED: 'a cassette recording was refused',
+  X_TEST_MODULE_MOCK_UNRESTORABLE: 'a mocked module could not be put back at the file boundary',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

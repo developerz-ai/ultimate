@@ -9,13 +9,25 @@
  * record scopes before it reads one. It was `network-only` while neither was true.
  */
 
+import { excerptOf } from '@postly/domain';
 import { useT } from '@postly/i18n';
 import { actionHttpPath, derivePath } from '@ultimat3/action';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute, island } from '@ultimat3/render';
-import { Button, DateTime, RelativeTime, Stack, Text } from '@ultimat3/ui';
+import {
+  allLanguages,
+  Button,
+  ConfirmDialog,
+  DateTime,
+  DiffView,
+  Markdown,
+  RelativeTime,
+  Stack,
+  Text,
+  Timeline,
+} from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import { For, Show } from 'solid-js';
+import { Show } from 'solid-js';
 import type { Api } from '../../../api';
 import { useActor, useCan } from '../../../shared/actor';
 import { memberQueries } from '../../../shared/client';
@@ -40,6 +52,13 @@ const COMMENT_ENDPOINT = derivePath(COMMENT_ACTION).path;
  * render from the row (`actionHttpPath`), never a module-level const: a template has no one URL.
  */
 const PUBLISH_ACTION = 'publishPost' satisfies keyof Api['actions'];
+
+/**
+ * `withdrawPost` keeps its derived path, `POST /api/posts/withdraw`: the post travels in the body.
+ * The write that takes a public page DOWN, so it is asked through `ConfirmDialog` — Cancel holds
+ * focus, the backdrop never dismisses, and the form inside posts natively with scripting off.
+ */
+const WITHDRAW_ENDPOINT = derivePath('withdrawPost' satisfies keyof Api['actions']).path;
 
 /**
  * The page's two islands, declared ABOVE `defineRoute` so the route can drain them. `props` are the
@@ -199,7 +218,7 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
   const likes = pluralFormsOf(t, 'app.post.likes');
 
   return (
-    <Layout banner={Banner}>
+    <Layout banner={Banner} here={`/posts/${props.data.id}`}>
       <article class={styles.article}>
         <Stack gap={4}>
           <h1>{props.data.title}</h1>
@@ -221,7 +240,34 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
             </Show>
           </p>
 
-          <div class={styles.body}>{props.data.body}</div>
+          {/*
+            The body is markdown a member — or a model through `summarize` — wrote: parsed to a
+            tree and rendered as elements, never as HTML, so a `<script>` in it is text. A server
+            render, so all seven languages cost the page 0 B.
+          */}
+          <div class={styles.body}>
+            <Markdown text={props.data.body} languages={allLanguages} />
+          </div>
+
+          {/*
+            A draft's excerpt is what the feed and the blog show. When the body has moved on from
+            it, the author sees exactly how — the stored excerpt against the one the body now
+            gives (`excerptOf`, the `postExcerpts` backfill's own rule), signed and spoken.
+          */}
+          <Show
+            when={
+              props.data.status === 'draft' && props.data.excerpt !== excerptOf(props.data.body)
+            }
+          >
+            <section class={styles.excerpt}>
+              <Text tone="muted">{t('app.post.excerptStale')}</Text>
+              <DiffView
+                old={props.data.excerpt}
+                new={excerptOf(props.data.body)}
+                label={t('app.post.excerptDiff')}
+              />
+            </section>
+          </Show>
 
           {/*
             The server's half: a button that cannot stream without scripting (disabled until the
@@ -277,6 +323,18 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
                 <Button type="submit">{t('app.post.publish')}</Button>
               </form>
             </Show>
+            <Show when={props.data.status === 'published' && canPublish}>
+              <ConfirmDialog
+                action={WITHDRAW_ENDPOINT}
+                trigger={t('app.post.withdraw')}
+                title={t('app.post.withdrawTitle')}
+                consequence={t('app.post.withdrawConsequence')}
+                confirmLabel={t('app.post.withdrawConfirm')}
+              >
+                <input type="hidden" name="postId" value={props.data.id} />
+                <input type="hidden" name="orgId" value={props.data.orgId} />
+              </ConfirmDialog>
+            </Show>
           </div>
         </Stack>
       </article>
@@ -288,18 +346,19 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
           when={props.data.comments.length > 0}
           fallback={<Text tone="muted">{t('app.post.commentsEmpty')}</Text>}
         >
-          <ul class={styles.list}>
-            <For each={props.data.comments}>
-              {(comment, index) => (
-                <li>
-                  {/* An `ordinal` family: "2nd comment", "2.º comentario" — CLDR's rules per locale. */}
-                  <Text tone="muted">{t('app.post.commentNumber', { ordinal: index() + 1 })}</Text>
-                  <Text>{comment.body}</Text>
-                  <RelativeTime value={comment.createdAt} timeZone={viewer.zone} />
-                </li>
-              )}
-            </For>
-          </ul>
+          {/* The comments are an activity feed: `Timeline` + `RelativeTime`, no component of their own. */}
+          <Timeline
+            label={t('app.post.commentsHeading')}
+            items={props.data.comments.map((comment, index) => ({
+              key: comment.id,
+              // An `ordinal` family: "2nd comment", "2.º comentario" — CLDR's rules per locale.
+              title: (
+                <Text tone="muted">{t('app.post.commentNumber', { ordinal: index + 1 })}</Text>
+              ),
+              detail: <Text>{comment.body}</Text>,
+              when: <RelativeTime value={comment.createdAt} timeZone={viewer.zone} />,
+            }))}
+          />
         </Show>
 
         {/* Native form posting to the action's generated route: it works before hydration. */}

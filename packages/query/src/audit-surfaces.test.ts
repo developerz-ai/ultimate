@@ -119,6 +119,30 @@ describe('unit · every surface records once, under its own name', () => {
     ]);
   });
 
+  // `paginate` and a live build execute what `seek()` and `total()` RETURN, not the source itself:
+  // a seek that handed back the raw source read an MCP page with no record at all.
+  test('a seek and a total off a sourceFor build are recorded too, one record per execute()', async () => {
+    const sink = collecting();
+    setAuditSink(sink);
+
+    const source = await sourceFor(
+      postList(),
+      { limit: 2 },
+      { surface: 'mcp', ctx: ctxOf({ actor: reader }) },
+    );
+    const seek = source.seek;
+    const total = source.total;
+    if (seek === undefined || total === undefined)
+      return expect.unreachable('a from() source seeks and counts');
+    await seek.call(source, null, 2).execute();
+    await total.call(source).execute();
+
+    expect(sink.records.map((record) => [record.surface, record.outcome])).toEqual([
+      ['mcp', 'allowed'],
+      ['mcp', 'allowed'],
+    ]);
+  });
+
   test('a sourceFor build that is refused is recorded at once — no execute() will follow', async () => {
     const sink = collecting();
     setAuditSink(sink);

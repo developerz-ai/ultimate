@@ -15,6 +15,10 @@ import { repoRoot } from './lib/run';
 export const CLAIMS_FILE = 'scripts/bench/results/README.md';
 export const RESULTS_50K = 'scripts/bench/results/50k-restart.json';
 export const RESULTS_10K = 'scripts/bench/results/10k-restart-seq.json';
+export const RESULTS_FIRST_HOUR = 'scripts/bench/results/first-hour.json';
+export const RESULTS_HTTP_HOME = 'scripts/bench/results/http-hello.json';
+export const RESULTS_HTTP_QUERY = 'scripts/bench/results/http-hello-query.json';
+export const COMPARED = 'wiki/Compared.md';
 
 /** How a measured number is spelled in prose. */
 export type BenchFormat = 'count' | 'seconds' | 'plain';
@@ -22,6 +26,8 @@ export type BenchFormat = 'count' | 'seconds' | 'plain';
 export interface BenchClaim {
   /** What the sentence asserts, in the words the fix line will use. */
   readonly label: string;
+  /** The page that states it, when that is not `CLAIMS_FILE` — `README.md`, `wiki/Compared.md`. */
+  readonly doc?: string;
   readonly file: string;
   /** Dot path into that file's JSON. */
   readonly path: string;
@@ -32,6 +38,169 @@ export interface BenchClaim {
    */
   readonly pattern: RegExp;
 }
+
+/** The first-hour figures, on the claims page and on `wiki/Compared.md` — one JSON, two pages. */
+const FIRST_HOUR_CLAIMS: readonly BenchClaim[] = [
+  {
+    label: 'the scaffold step',
+    file: RESULTS_FIRST_HOUR,
+    path: 'spread.scaffold ms.median',
+    format: 'seconds',
+    pattern: /Scaffold ([\d.]+)s, `bun run setup`/,
+  },
+  {
+    label: 'the setup step',
+    file: RESULTS_FIRST_HOUR,
+    path: 'spread.setup ms.median',
+    format: 'seconds',
+    pattern: /`bun run setup` ([\d.]+)s with a cold Bun cache/,
+  },
+  {
+    label: 'node_modules after setup',
+    file: RESULTS_FIRST_HOUR,
+    path: 'spread.nodeModulesMb.median',
+    format: 'plain',
+    pattern: /leaving (\d+) MB of `node_modules`/,
+  },
+  {
+    label: 'installed packages',
+    file: RESULTS_FIRST_HOUR,
+    path: 'spread.packages.median',
+    format: 'plain',
+    pattern: /across (\d+) installed packages/,
+  },
+  {
+    label: 'app files after the first hour',
+    file: RESULTS_FIRST_HOUR,
+    path: 'spread.appFiles.median',
+    format: 'plain',
+    pattern: /installed packages and (\d+) app files/,
+  },
+  {
+    label: 'the scaffold step, compared',
+    doc: COMPARED,
+    file: RESULTS_FIRST_HOUR,
+    path: 'spread.scaffold ms.median',
+    format: 'seconds',
+    pattern: /`create-ultimate` \(29\.4\.0\) \| ([\d.]+) s \|/,
+  },
+  {
+    label: 'the setup step, compared',
+    doc: COMPARED,
+    file: RESULTS_FIRST_HOUR,
+    path: 'spread.setup ms.median',
+    format: 'seconds',
+    pattern: /`bun run setup`, cold Bun cache \| ([\d.]+) s \|/,
+  },
+  {
+    label: 'node_modules after setup, compared',
+    doc: COMPARED,
+    file: RESULTS_FIRST_HOUR,
+    path: 'spread.nodeModulesMb.median',
+    format: 'plain',
+    pattern: /`node_modules` after setup \| (\d+) MB \|/,
+  },
+];
+
+/** `http-hello` against the first-hour scaffold: `/` and one typed read, on both pages. */
+const HTTP_CLAIMS: readonly BenchClaim[] = [
+  {
+    label: "/'s median requests per second",
+    file: RESULTS_HTTP_HOME,
+    path: 'spread.rps.median',
+    format: 'count',
+    pattern: /median ([\d,]+) req\/s, p50 [\d.]+ ms, p99 [\d.]+ ms; cold start/,
+  },
+  {
+    label: "/'s median p50",
+    file: RESULTS_HTTP_HOME,
+    path: 'spread.p50Ms.median',
+    format: 'plain',
+    pattern: /req\/s, p50 ([\d.]+) ms, p99 [\d.]+ ms; cold start/,
+  },
+  {
+    label: "/'s median p99",
+    file: RESULTS_HTTP_HOME,
+    path: 'spread.p99Ms.median',
+    format: 'plain',
+    pattern: /p99 ([\d.]+) ms; cold start/,
+  },
+  {
+    label: 'the cold start to the first 2xx',
+    file: RESULTS_HTTP_HOME,
+    path: 'coldStartMs',
+    format: 'seconds',
+    pattern: /cold start to the first 2xx ([\d.]+)s/,
+  },
+  {
+    label: 'resident memory under load',
+    file: RESULTS_HTTP_HOME,
+    path: 'rssMb',
+    format: 'plain',
+    pattern: /(\d+) MiB resident/,
+  },
+  {
+    label: "the typed read's median requests per second",
+    file: RESULTS_HTTP_QUERY,
+    path: 'spread.rps.median',
+    format: 'count',
+    pattern: /median ([\d,]+) req\/s, p50 [\d.]+ ms, p99 [\d.]+ ms\./,
+  },
+  {
+    label: "the typed read's median p50",
+    file: RESULTS_HTTP_QUERY,
+    path: 'spread.p50Ms.median',
+    format: 'plain',
+    pattern: /req\/s, p50 ([\d.]+) ms, p99 [\d.]+ ms\./,
+  },
+  {
+    label: "the typed read's median p99",
+    file: RESULTS_HTTP_QUERY,
+    path: 'spread.p99Ms.median',
+    format: 'plain',
+    pattern: /p99 ([\d.]+) ms\./,
+  },
+  {
+    label: "/'s median requests per second, compared",
+    doc: COMPARED,
+    file: RESULTS_HTTP_HOME,
+    path: 'spread.rps.median',
+    format: 'count',
+    pattern: /concurrency 16 \| median ([\d,]+) req\/s/,
+  },
+  {
+    label: "/'s median p99, compared",
+    doc: COMPARED,
+    file: RESULTS_HTTP_HOME,
+    path: 'spread.p99Ms.median',
+    format: 'plain',
+    pattern: /concurrency 16 \| median [\d,]+ req\/s, p99 ([\d.]+) ms \|/,
+  },
+  {
+    label: "the typed read's median requests per second, compared",
+    doc: COMPARED,
+    file: RESULTS_HTTP_QUERY,
+    path: 'spread.rps.median',
+    format: 'count',
+    pattern: /`\/_x\/query\/post-list` \| median ([\d,]+) req\/s/,
+  },
+  {
+    label: "the typed read's median p99, compared",
+    doc: COMPARED,
+    file: RESULTS_HTTP_QUERY,
+    path: 'spread.p99Ms.median',
+    format: 'plain',
+    pattern: /`\/_x\/query\/post-list` \| median [\d,]+ req\/s, p99 ([\d.]+) ms \|/,
+  },
+  {
+    label: 'the cold start, compared',
+    doc: COMPARED,
+    file: RESULTS_HTTP_HOME,
+    path: 'coldStartMs',
+    format: 'seconds',
+    pattern: /cold start to the first 2xx \(`x dev`\) \| ([\d.]+) s \|/,
+  },
+];
 
 /**
  * Anchored patterns, never a bare search for the digits: `50,000` appears four times in this file,
@@ -123,6 +292,8 @@ export const CLAIMS: readonly BenchClaim[] = [
     format: 'count',
     pattern: /patches received, ([\d,]+) observed sequence gaps/,
   },
+  ...FIRST_HOUR_CLAIMS,
+  ...HTTP_CLAIMS,
 ];
 
 /**
@@ -143,8 +314,10 @@ export interface BenchGap {
 
 export interface BenchInput {
   readonly claims: readonly BenchClaim[];
-  /** `CLAUDE.md`, verbatim. */
+  /** `CLAIMS_FILE`, verbatim. */
   readonly prose: string;
+  /** Every other page a claim names in `doc`, verbatim, keyed by that path. */
+  readonly docs?: Readonly<Record<string, string>>;
   /** Parsed results, keyed by the same path the claims name. */
   readonly results: Readonly<Record<string, unknown>>;
 }
@@ -187,9 +360,14 @@ export function readNumber(source: unknown, path: string): number | undefined {
 
 /** Pure, so the negative case is a fixture rather than an edit to CLAUDE.md or to a bench result. */
 export function checkBenchClaims(input: BenchInput): readonly BenchGap[] {
-  const prose = input.prose.replace(/\s+/g, ' ');
+  const collapse = (text: string): string => text.replace(/\s+/g, ' ');
+  const docs = new Map(
+    Object.entries(input.docs ?? {}).map(([doc, text]) => [doc, collapse(text)]),
+  );
+  const main = collapse(input.prose);
   const gaps: BenchGap[] = [];
   for (const claim of input.claims) {
+    const prose = claim.doc === undefined ? main : (docs.get(claim.doc) ?? '');
     const measured = readNumber(input.results[claim.file], claim.path);
     if (measured === undefined) {
       gaps.push({ kind: 'unmeasured', claim });
@@ -207,18 +385,21 @@ export function checkBenchClaims(input: BenchInput): readonly BenchGap[] {
   return gaps;
 }
 
+/** The page a claim is stated on. */
+const pageOf = (claim: BenchClaim): string => claim.doc ?? CLAIMS_FILE;
+
 const mismatchFinding = (gap: BenchGap): Finding => ({
   code: 'X_BENCH_CLAIM_STALE',
-  cause: `${CLAIMS_FILE} states ${gap.stated ?? ''} for ${gap.claim.label} and ${gap.claim.file} measured ${gap.measured ?? ''}`,
-  fix: `edit ${CLAIMS_FILE}: write ${gap.measured ?? ''} where it says ${gap.stated ?? ''} for ${gap.claim.label}, then bun run scripts/bench-claims.ts --json`,
-  at: CLAIMS_FILE,
+  cause: `${pageOf(gap.claim)} states ${gap.stated ?? ''} for ${gap.claim.label} and ${gap.claim.file} measured ${gap.measured ?? ''}`,
+  fix: `edit ${pageOf(gap.claim)}: write ${gap.measured ?? ''} where it says ${gap.stated ?? ''} for ${gap.claim.label}, then bun run scripts/bench-claims.ts --json`,
+  at: pageOf(gap.claim),
 });
 
 const unstatedFinding = (gap: BenchGap): Finding => ({
   code: 'X_BENCH_CLAIM_STALE',
-  cause: `no sentence in ${CLAIMS_FILE} states ${gap.claim.label} any more, so this rule stopped checking ${gap.claim.file}'s ${gap.claim.path} without failing`,
-  fix: `restore the sentence stating ${gap.claim.label} (${gap.measured ?? ''}) in ${CLAIMS_FILE}, or drop that claim from CLAIMS in scripts/bench-claims.ts`,
-  at: CLAIMS_FILE,
+  cause: `no sentence in ${pageOf(gap.claim)} states ${gap.claim.label} any more, so this rule stopped checking ${gap.claim.file}'s ${gap.claim.path} without failing`,
+  fix: `restore the sentence stating ${gap.claim.label} (${gap.measured ?? ''}) in ${pageOf(gap.claim)}, or drop that claim from CLAIMS in scripts/bench-claims.ts`,
+  at: pageOf(gap.claim),
 });
 
 const unmeasuredFinding = (gap: BenchGap): Finding => ({
@@ -277,9 +458,19 @@ export async function benchClaimGaps(root: string): Promise<readonly BenchGap[]>
   if (!proseExists && loaded.every(([, body]) => body === undefined)) {
     return CLAIMS.map((claim) => ({ kind: 'absent', claim }));
   }
+  const pages = [
+    ...new Set(CLAIMS.flatMap((claim) => (claim.doc === undefined ? [] : [claim.doc]))),
+  ];
+  const docs = await Promise.all(
+    pages.map(async (doc) => {
+      const page = Bun.file(`${root}/${doc}`);
+      return [doc, (await page.exists()) ? await page.text() : ''] as const;
+    }),
+  );
   return checkBenchClaims({
     claims: CLAIMS,
     prose: proseExists ? await prose.text() : '',
+    docs: Object.fromEntries(docs),
     results: Object.fromEntries(loaded),
   });
 }
@@ -297,8 +488,8 @@ if (import.meta.main) {
       script: 'bench-claims',
       summary:
         gaps.length === 0
-          ? `${CLAIMS.length} bench figures in ${CLAIMS_FILE}, every one measured by a committed result`
-          : `${gaps.length} of ${CLAIMS.length} bench figures in ${CLAIMS_FILE} no longer match the results`,
+          ? `${CLAIMS.length} bench figures in ${CLAIMS_FILE} and the pages citing them, every one measured by a committed result`
+          : `${gaps.length} of ${CLAIMS.length} bench figures no longer match the results`,
       findings: gaps.map(benchGapFindingFor),
     },
     args.json,

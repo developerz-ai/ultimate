@@ -64,19 +64,45 @@
   stroke-linejoin: round;
 }
 
-.trend-up {
+// The chip's colour is what the caller said a direction MEANS (`goodWhen`), never the direction:
+// an error rate rising is `bad`. The arrow carries the direction in every mood.
+.mood-good {
   background: t.role('success-soft');
   color: t.role('success');
 }
 
-.trend-down {
+.mood-bad {
   background: t.role('danger-soft');
   color: t.role('danger');
 }
 
-.trend-flat {
+.mood-neutral {
   background: t.role('surface-raised');
   color: t.role('fg-muted');
+}
+
+.of {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  font-weight: t.weight(normal);
+}
+
+.trend {
+  block-size: t.space(8);
+}
+
+// A whole-tile link: the tile's own hover, a focus ring, and no underline on the figure.
+.linked {
+  @include t.focus-ring;
+  color: inherit;
+  text-decoration: none;
+}
+
+// A status edge on the inline start, from the tone's custom property.
+@include t.tone-classes;
+
+.toned {
+  border-inline-start: t.stroke(thick) solid var(--tone);
 }
 
 .hint {

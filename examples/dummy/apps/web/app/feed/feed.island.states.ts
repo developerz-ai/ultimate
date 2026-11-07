@@ -28,6 +28,7 @@ const BASE = {
   zone: 'Asia/Tokyo',
   labels: {
     empty: 'Nothing published yet.',
+    list: 'Feed',
     offline: 'You are offline — this is the copy on this device.',
     likes: { locale: 'en', forms: { one: '{count} like', other: '{count} likes' } },
     like: 'Like',

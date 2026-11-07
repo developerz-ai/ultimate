@@ -4,9 +4,10 @@
 // the ring reads in greyscale. SVG geometry from `donut-chart-view.ts`; text is HTML.
 
 import type { JSX } from 'solid-js';
+import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
 import type { ChartHit } from './ChartFrame';
-import { ChartFrame, chartHits } from './ChartFrame';
+import { ChartFrame, ChartHits } from './ChartFrame';
 import type { MarkerShape } from './chart-frame-view';
 import {
   chartNumberFormat,
@@ -14,6 +15,7 @@ import {
   chartTable,
   cssPercent,
   hitEdge,
+  hitIds,
   markerPath,
   pointLabel,
   seriesStyle,
@@ -62,13 +64,18 @@ export function DonutChart(props: DonutChartProps): JSX.Element {
   const total = (): number => props.segments.reduce((sum, s) => sum + finitePositive(s.value), 0);
   const { size, centre, outer, inner, marker } = DONUT;
 
-  const hits = (): readonly ChartHit[] =>
-    props.segments.flatMap((segment, i) => {
+  const hits = (): readonly ChartHit[] => {
+    const ids = hitIds(
+      0,
+      props.segments.map((segment) => segment.label),
+    );
+    return props.segments.flatMap((segment, i) => {
       const anchor = arcs()[i]?.anchor;
       if (anchor === null || anchor === undefined) return [];
       const share = arcs()[i]?.share ?? 0;
       return [
         {
+          id: ids[i] ?? String(i),
           x: cssPercent(anchor.x, size),
           y: cssPercent(anchor.y, size),
           label: pointLabel(
@@ -80,6 +87,7 @@ export function DonutChart(props: DonutChartProps): JSX.Element {
         },
       ];
     });
+  };
 
   return (
     <ChartFrame
@@ -100,6 +108,7 @@ export function DonutChart(props: DonutChartProps): JSX.Element {
           { label: props.valueLabel ?? props.label, values: props.segments.map((s) => s.value) },
         ],
         format,
+        none: ui.t(UI_KEYS.chartNone),
       })}
     >
       <div class={styles['donut']}>
@@ -137,7 +146,7 @@ export function DonutChart(props: DonutChartProps): JSX.Element {
             <span class={styles['caption']}>{props.centreLabel}</span>
           )}
         </p>
-        {props.focusable === true ? chartHits(hits()) : null}
+        {props.focusable === true ? <ChartHits hits={hits()} /> : null}
       </div>
     </ChartFrame>
   );

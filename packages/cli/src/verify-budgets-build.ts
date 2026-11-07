@@ -22,7 +22,17 @@ export const VERIFY_STATIC_OUT = join('.x', 'verify-static');
 
 /** `x build`'s argv, spawned as this process's own CLI: the source entry, or a compiled binary. */
 export function verifyBuildCommand(): readonly string[] {
-  const words = ['build', '--target', 'static', '--no-preflight', '--out', VERIFY_STATIC_OUT];
+  // `--no-capture`: the gate weighs script bytes, and a card is a picture — so a machine with no
+  // Chrome stays green on an app that declares `og.capture` (`cmd-shot.ts`'s header is why).
+  const words = [
+    'build',
+    '--target',
+    'static',
+    '--no-preflight',
+    '--no-capture',
+    '--out',
+    VERIFY_STATIC_OUT,
+  ];
   const self = isCompiledBundle(import.meta.dir) ? [] : [join(import.meta.dir, 'bin.ts')];
   return [process.execPath, ...self, ...words, '--json'];
 }

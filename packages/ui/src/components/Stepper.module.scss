@@ -1,0 +1,78 @@
+@use '../tokens' as t;
+
+.stepper {
+  min-inline-size: 0;
+}
+
+// The phone's form: one line. The list stays in the accessibility tree, visually hidden, so the
+// reader still hears every step; the line is the sighted summary and is hidden from the tree.
+.compact {
+  display: none;
+  color: t.role('fg');
+  font-weight: t.weight(medium);
+
+  @include t.respond-down(sm) {
+    display: block;
+  }
+}
+
+.list {
+  display: flex;
+  gap: t.space(4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  @include t.respond-down(sm) {
+    @include t.visually-hidden;
+  }
+}
+
+.item {
+  display: flex;
+  min-inline-size: 0;
+}
+
+.step {
+  @include t.focus-ring;
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  border: 0;
+  background: none;
+  color: t.role('fg-muted');
+  font: inherit;
+  text-decoration: none;
+
+  &[aria-current='step'] {
+    color: t.role('fg-strong');
+    font-weight: t.weight(semibold);
+  }
+}
+
+a.step,
+button.step {
+  color: t.role('accent');
+  cursor: pointer;
+}
+
+.marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: t.space(6);
+  block-size: t.space(6);
+  border: 1px solid currentcolor;
+  border-radius: t.radius(full);
+  font-size: t.text(xs);
+}
+
+.item[data-state='current'] .marker {
+  border-color: t.role('accent');
+  background: t.role('accent');
+  color: t.role('accent-fg');
+}
+
+.label {
+  @include t.truncate;
+}

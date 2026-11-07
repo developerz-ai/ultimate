@@ -1,0 +1,145 @@
+@use '@ultimat3/ui/tokens' as tokens;
+
+// `display: contents` so the wrapper vanishes from the box tree: AppShell's own grid is the
+// layout, and this div exists only to scope the rules below.
+.doc {
+  display: contents;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: tokens.space(4);
+  inline-size: 100%;
+  // Free to shrink below its content: on a 390px phone the brand gives way, never the page.
+  min-inline-size: 0;
+}
+
+// The controls keep their size; the brand is what truncates.
+.end {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: tokens.space(3);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: 0;
+  gap: tokens.space(3);
+  color: tokens.role('fg-strong');
+
+  &:hover .mark {
+    background: tokens.role('accent', 0.22);
+  }
+}
+
+// One accent tile. The only saturated surface in the chrome, so the eye has exactly one anchor.
+.mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  inline-size: tokens.space(8);
+  block-size: tokens.space(8);
+  border: 1px solid tokens.role('accent', 0.35);
+  border-radius: tokens.radius('md');
+  background: tokens.role('accent', 0.12);
+  color: tokens.role('accent');
+  transition: background-color tokens.duration('fast') tokens.easing('out');
+}
+
+.wordmark {
+  @include tokens.data-text;
+  @include tokens.truncate;
+
+  font-size: tokens.text('sm');
+  font-weight: tokens.weight('medium');
+  letter-spacing: tokens.tracking('tight');
+}
+
+.env {
+  @include tokens.data-text;
+
+  display: inline-flex;
+  align-items: center;
+  gap: tokens.space(2);
+  padding: tokens.space(1) tokens.space(3);
+  border: 1px solid tokens.role('line', 0.7);
+  border-radius: tokens.radius('pill');
+  color: tokens.role('fg-muted');
+  font-size: tokens.text('xs');
+}
+
+// Below sm the pill is its dot: the word stays readable to assistive tech, not to the layout.
+.envLabel {
+  @include tokens.respond-down(sm) {
+    @include tokens.visually-hidden;
+  }
+}
+
+.envDot {
+  inline-size: tokens.space(2);
+  block-size: tokens.space(2);
+  border-radius: tokens.radius('full');
+  background: tokens.role('success');
+  animation: pulse calc(#{tokens.duration('slower')} * 4) tokens.easing('in-out') infinite;
+}
+
+// Opacity only — the one property family the motion guard admits, and the global reduced-motion
+// rule switches it off.
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.nav {
+  display: flex;
+  // A row on a phone — stacked links cost a fifth of the first screen — a rail from md up.
+  flex-direction: row;
+  gap: tokens.space(1);
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+
+  @include tokens.respond-to(md) {
+    flex-direction: column;
+  }
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: tokens.space(3);
+  padding: tokens.space(2) tokens.space(3);
+  border-radius: tokens.radius('md');
+  color: tokens.role('fg-muted');
+  font-size: tokens.text('sm');
+  transition:
+    color tokens.duration('fast') tokens.easing('out'),
+    background-color tokens.duration('fast') tokens.easing('out');
+
+  &:hover {
+    color: tokens.role('fg-strong');
+    background: tokens.role('surface');
+  }
+
+  &[aria-current='page'] {
+    color: tokens.role('fg-strong');
+    background: tokens.role('surface-raised');
+    box-shadow: inset 0 0 0 1px tokens.role('line', 0.7);
+
+    .navIcon {
+      color: tokens.role('accent');
+    }
+  }
+}
+
+.navIcon {
+  flex: none;
+  color: tokens.role('fg-muted');
+  transition: color tokens.duration('fast') tokens.easing('out');
+}

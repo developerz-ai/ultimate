@@ -42,6 +42,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_EGRESS_UNSUPPORTED',
   'X_SCRAPE_EGRESS_IN_PAYLOAD',
   'X_SCRAPE_LAUNCH_ARGS_INVALID',
+  'X_SCRAPE_PDF_OPTIONS_INVALID',
 ] as const;
 
 /**
@@ -98,6 +99,8 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_EGRESS_IN_PAYLOAD: 'the run exit carries a credential that is also in the job payload',
   X_SCRAPE_LAUNCH_ARGS_INVALID:
     'the launch options carry arguments this driver cannot hand the browser',
+  X_SCRAPE_PDF_OPTIONS_INVALID:
+    'the PDF request names no single page size a print engine can lay out',
 };
 
 // One unconditional call, so a second package claiming one of these codes throws
@@ -208,6 +211,9 @@ export const SCRAPE_ERROR_RETRY = {
   // The args are the deploy's own literal: attempt 2 launches with the same list and is refused
   // the same way. Launching anyway is the retry that "works" from the worker's own address.
   X_SCRAPE_LAUNCH_ARGS_INVALID: 'terminal',
+  // The request is the caller's literal, refused before any driver sees it: attempt 2 asks for the
+  // same two sizes and is refused identically.
+  X_SCRAPE_PDF_OPTIONS_INVALID: 'terminal',
 } as const satisfies Readonly<Record<ScrapeOwnedErrorCode, 'retryable' | 'terminal'>>;
 
 registerErrorRetry(SCRAPE_ERROR_RETRY);

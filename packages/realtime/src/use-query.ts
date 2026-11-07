@@ -31,8 +31,12 @@ export interface QueryRef {
 
 /** A callable `AsyncState` over the list, plus the two things a caller does to it. */
 export type QueryAccessor<R extends object = Row> = (() => AsyncState<readonly R[]>) & {
-  /** Read again from the first page, keeping the current rows on screen (`refreshing`). */
-  refetch(): void;
+  /**
+   * Read again from the first page, keeping the current rows on screen (`refreshing`). Settles
+   * once the answer is on screen or refused — never rejects, so a pull or a button awaits it. A
+   * live read settles at once: its socket is its refresh.
+   */
+  refetch(): Promise<void>;
   /**
    * The next page, appended — from the cursor the server's last page answered with. A no-op on a
    * live read, on a read with no `first`, and once the server said there is no next page.
@@ -46,6 +50,7 @@ export type QueryAccessor<R extends object = Row> = (() => AsyncState<readonly R
 
 const PENDING: AsyncState<never> = Object.freeze({ status: 'pending' });
 const nothing = (): void => undefined;
+const settled = (): Promise<void> => Promise.resolve();
 
 /**
  * `input` is read ONCE, at call time: there is no reactive runtime here to re-run it, and a
@@ -89,7 +94,7 @@ export function useQuery<R extends object = Row>(
   const signal = signalFor('useQuery');
   if (isServerRender()) {
     return Object.assign((): AsyncState<readonly R[]> => PENDING, {
-      refetch: nothing,
+      refetch: settled,
       more: nothing,
       hasMore: () => false,
       release: nothing,
@@ -132,7 +137,7 @@ function liveAccessor<R extends object>(
     handle.unsubscribe();
   };
   return Object.assign(read, {
-    refetch: nothing,
+    refetch: settled,
     more: nothing,
     hasMore: () => false,
     release,
@@ -286,7 +291,6 @@ function readAccessor<R extends object>(
     keys = [];
   };
   return Object.assign(read, {
-    // Its promise is the poll's; a caller of the `void` member ignores it.
     refetch,
     more: () => {
       if (after !== null && state.status === 'ready') void load(true);

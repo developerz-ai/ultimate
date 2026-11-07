@@ -62,8 +62,9 @@ const click = (selector: string): string => `(() => {
 
 // Parenthesised: `a ?? null === 'done'` is `a ?? (null === 'done')`, which any state satisfies.
 const runState = `(document.querySelector('[data-role="run"]')?.dataset.state ?? null)`;
-const eventKinds = `[...document.querySelectorAll('[data-role="run-events"] li')].map((row) => row.dataset.kind).join(',')`;
-const eventSeqs = `[...document.querySelectorAll('[data-role="run-events"] li')].map((row) => row.dataset.seq).join(',')`;
+// A `Timeline` row: keyed by `seq` (`data-key`), its step's kind on the title (`data-kind`).
+const eventKinds = `[...document.querySelectorAll('[data-role="run-events"] li')].map((row) => row.querySelector('[data-kind]').dataset.kind).join(',')`;
+const eventSeqs = `[...document.querySelectorAll('[data-role="run-events"] li')].map((row) => row.dataset.key).join(',')`;
 
 const act = async (tab: E2eTab, expression: string, what: string): Promise<void> => {
   if (!(await readFlag(tab, expression))) fail(`could not ${what}`);

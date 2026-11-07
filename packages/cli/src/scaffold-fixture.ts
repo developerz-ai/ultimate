@@ -7,6 +7,7 @@ import type { GenerateOptions } from './cmd-generate';
 import { dedupe, generate } from './cmd-generate';
 import { planNewApp } from './cmd-new';
 import { withHandleEntries } from './handle-registration';
+import { NEW_SHAPES } from './new-shapes';
 import type { GeneratedFile } from './templates';
 
 /** The app the fixture scaffolds. Kebab, multi-word: single-word names hide casing bugs. */
@@ -232,4 +233,12 @@ export const scaffoldVariants = (): readonly ScaffoldVariant[] => [
     why: 'an empty app/: no entity, so schema, seed and the initial migration have nothing to name',
     files: planNewApp({ name: FIXTURE_APP, example: false }),
   },
+  // One per shape: each overlay drops, edits and adds files no other invocation writes.
+  ...NEW_SHAPES.map(
+    (shape): ScaffoldVariant => ({
+      name: `x new --shape ${shape}`,
+      why: `the ${shape} overlay (templates/shapes/${shape}.ts) over the scaffold it starts from`,
+      files: planNewApp({ name: FIXTURE_APP, example: true, shape }),
+    }),
+  ),
 ];

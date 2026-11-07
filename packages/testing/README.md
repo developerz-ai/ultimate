@@ -1087,3 +1087,18 @@ registered, and this guard reports additions only, so the damage lands on an inn
 nothing pointing back. A leak fails a one-file run exactly as it fails the suite —
 each file is judged against its own baseline — which is what makes the `bun test <file>` in the fix
 line reproduce it.
+
+### A module mock ends with its file
+
+Bun keeps a `mock.module` (and its aliases `vi.mock`, `jest.mock`) for the life of the process,
+past `mock.restore()` and past the file. The preload wraps the call: a file's first mock of a
+module snapshots the real namespace, and the file boundary mocks it back, so the next file on a
+shared worker reads the real module. A mock made in a preload is every file's environment and is
+left alone. The cost: the real module is LOADED for its snapshot, so its top-level code runs. One
+that throws on load cannot be put back; the next file's first test fails with the file named:
+
+```text
+X_TEST_MODULE_MOCK_UNRESTORABLE: a mocked module could not be put back at the file boundary —
+"/app/a.test.ts" mocked "/app/vendor.ts", whose real module failed to load (…)
+  fix: x test unit --isolate   # or hand the mocked dependency to the code under test as a parameter
+```

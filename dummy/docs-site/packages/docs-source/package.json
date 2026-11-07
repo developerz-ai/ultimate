@@ -1,0 +1,18 @@
+{
+  "name": "@docs-site/docs-source",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The wiki reader: wiki/*.md to pages, code pages, major pages, links rewritten",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@ultimat3/core": "29.4.0",
+    "@ultimat3/manifest": "29.4.0",
+    "@ultimat3/seo": "29.4.0"
+  }
+}

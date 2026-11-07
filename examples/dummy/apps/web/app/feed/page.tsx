@@ -33,7 +33,7 @@ import styles from './page.module.scss';
  */
 const LiveFeed = island({
   src: './feed.island.tsx',
-  props: ['orgId', 'locale', 'zone', 'labels', 'ui'],
+  props: ['orgId', 'locale', 'zone', 'labels', 'ui', 'commands'],
 });
 
 /** The layout's update banner — an island of THIS route, so it is declared here. */
@@ -177,7 +177,20 @@ export const config = defineRoute({
   // time-zone script +153 B (`time.detect`, the visitor's own zone from the next request) and the
   // page boot +665 B (82,123 B), this wave's changes to the client runtime every `app/` page
   // boots — raised 178.5kb → 179kb (plan 101 wave 9).
-  budget: { js: '179kb' },
+  // measured: 206781 B (2026-11-06; x verify --only budgets, against 183,252) — why: the feed
+  // island +23,529 B (90,751 B): the page's keyboard layer (`feed-commands.tsx` — the command
+  // palette and its one ranker, the hotkey table, the `?` shortcut sheet over `Dialog`, and
+  // `navigate()` through the router), the pull-to-refresh gesture and the toolbar's refresh
+  // button — raised 179kb → 202kb (plan 101, 38-ui-commands, 38-ui-navigation).
+  // measured: 212076 B (2026-11-06; x verify --only budgets, against 206,781) — why: the feed
+  // island +5,295 B (96,046 B): the rows on `VirtualList` (`virtual-list-view.ts`, the one
+  // `ResizeObserver`, the DOM anchor and the keyed rows), so a 10,000-post feed mounts what is on
+  // screen and a live prepend moves nothing being read — raised 202kb → 208kb (plan 101, 38-ui-lists).
+  // measured: 210084 B (2026-11-06; x build --target static, against 212,076) — why: ui's keys
+  // tree-shaken per key (`ui-keys.ts`), −2,003 B; `VirtualList` re-pinning when its drawn range
+  // moves (a follower settled 52 px short) and `mount` returning its disposer (the router lets
+  // go of the hotkeys and the live read on a swap) — lowered 208kb → 205.5kb (plan 101 wave 10).
+  budget: { js: '205.5kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 
@@ -197,7 +210,7 @@ export function Page(): JSX.Element {
   const viewer = useViewer();
 
   return (
-    <Layout banner={Banner}>
+    <Layout banner={Banner} here="/feed">
       <header class={styles.header}>
         <h1>{t('app.feed.heading', { org: actor.org.name })}</h1>
         <Text tone="muted" class={styles.activity}>
@@ -218,14 +231,33 @@ export function Page(): JSX.Element {
         zone={viewer.zone}
         labels={{
           empty: t('app.feed.empty'),
+          list: t('app.nav.feed'),
           offline: t('app.feed.offlineNotice'),
           likes: pluralFormsOf(t, 'app.post.likes'),
           like: t('app.post.like'),
           queued: t('errors.offlineQueued'),
           update: t('errors.updateAvailable'),
           reload: t('errors.updateAction'),
+          refresh: t('app.feed.refresh'),
         }}
         ui={uiCatalog(t)}
+        commands={{
+          labels: {
+            title: t('app.commands.title'),
+            filterLabel: t('app.commands.filterLabel'),
+            filterPlaceholder: t('app.commands.filterPlaceholder'),
+            emptyText: t('app.commands.empty'),
+            escHint: t('app.commands.esc'),
+            goTo: t('app.commands.goTo'),
+            posts: t('app.commands.posts'),
+          },
+          destinations: [
+            { label: t('app.nav.feed'), href: '/feed' },
+            { label: t('app.nav.runs'), href: '/runs' },
+            { label: t('app.nav.settings'), href: '/settings' },
+            { label: t('app.feed.newPost'), href: '/posts/new' },
+          ],
+        }}
       >
         <Skeleton lines={4} />
       </LiveFeed>

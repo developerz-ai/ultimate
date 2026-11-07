@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun install)",
+      "Bash(bun test:*)",
+      "Bash(bun run typecheck)",
+      "Bash(bun run lint)",
+      "Bash(bun run verify:*)",
+      "Bash(bunx biome check:*)",
+      "Bash(bunx x verify:*)",
+      "Bash(bunx x test:*)",
+      "Bash(bunx x doctor:*)",
+      "Bash(bunx x g:*)",
+      "Bash(bunx x routes:*)",
+      "Bash(bunx x actions:*)",
+      "Bash(bunx x queries:*)",
+      "Bash(bunx x entities:*)",
+      "Bash(bunx x jobs list:*)",
+      "Bash(bunx x jobs show:*)",
+      "Bash(bunx x tasks:*)",
+      "Bash(bunx x policy:*)",
+      "Bash(bunx x i18n check:*)",
+      "Bash(bunx x errors:*)",
+      "Bash(bunx x docs:*)",
+      "Bash(bunx x env check:*)",
+      "Bash(bunx x manifest:*)",
+      "Bash(bunx x db gen:*)",
+      "Bash(bunx x db migrate:*)",
+      "Bash(bunx x db branch:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bunx biome check --no-errors-on-unmatched --write \"$CLAUDE_FILE_PATHS\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,9 +1,11 @@
 /**
  * What an ended run used, as the console draws it: one term per count `RunUsage` holds. The
- * numbers are formatted for the member's locale here; the terms arrive translated, as labels.
+ * numbers are formatted for the member's locale here; the terms arrive translated, as labels. The
+ * raw record follows, closed, through `JsonView` — what an operator compares against a bill.
  */
 
 import type { RunUsage } from '@postly/db';
+import { DescriptionList, JsonView } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import styles from './run-console.module.scss';
 
@@ -15,6 +17,8 @@ export type UsageLabels = {
   readonly requests: string;
   readonly bytes: string;
   readonly prompts: string;
+  /** Names the raw usage record. */
+  readonly raw: string;
 };
 
 export interface RunUsageBlockProps {
@@ -53,14 +57,11 @@ export function RunUsageBlock(props: RunUsageBlockProps): JSX.Element {
   return (
     <section class={styles.usage} data-role="run-usage" aria-label={props.labels.heading}>
       <h3 class={styles.usageHeading}>{props.labels.heading}</h3>
-      <dl class={styles.figures}>
-        {terms.map((term, index) => (
-          <div class={styles.figure}>
-            <dt>{term}</dt>
-            <dd>{figures[index]}</dd>
-          </div>
-        ))}
-      </dl>
+      <DescriptionList
+        class={styles.figures}
+        items={terms.map((term, index) => ({ term, detail: figures[index] }))}
+      />
+      <JsonView value={props.usage} label={props.labels.raw} open={0} />
     </section>
   );
 }

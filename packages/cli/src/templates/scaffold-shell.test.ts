@@ -46,3 +46,32 @@ describe('the scaffold header fits a 390px phone', () => {
     );
   });
 });
+
+describe('the scaffold frame draws one destination list twice', () => {
+  const source = (example: boolean): string =>
+    String(shellFiles(names('acme'), example).find((f) => f.path.endsWith('shell.tsx'))?.contents);
+
+  test('NavList in the sidebar and BottomNav below it read the same items and current href', () => {
+    for (const example of [true, false]) {
+      const text = source(example);
+      expect(text).toContain(
+        'sidebar={<NavList items={destinations} currentHref={currentHref} />}',
+      );
+      expect(text).toContain(
+        'bottomNav={<BottomNav items={destinations} currentHref={currentHref} />}',
+      );
+      // No hand-drawn list and no hand-set aria-current left: the frame is the catalog's.
+      expect(text).not.toContain('aria-current=');
+    }
+    expect(source(true)).toContain("posts: '/posts'");
+    expect(source(false)).not.toContain('/posts');
+  });
+
+  test('the emitted frame test pins one current link per list', () => {
+    const test = String(
+      shellFiles(names('acme'), true).find((f) => f.path.endsWith('shell.test.ts'))?.contents,
+    );
+    expect(test).toContain('expect(current).toHaveLength(2)');
+    expect(test).toContain('toHaveLength(2)');
+  });
+});

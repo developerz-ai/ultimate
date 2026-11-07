@@ -32,7 +32,7 @@ export interface SecretComparePin {
 }
 
 /**
- * Re-measured 2026-10-21: 58 comparisons in 55 rows — 16 packages and the gate scripts themselves.
+ * Re-measured 2026-11-06: 52 comparisons in 51 rows — 17 packages and the gate scripts themselves.
  * `@ultimat3/auth` is ABSENT and that is the point: every comparison of a token, a hash, a nonce
  * or a state there goes through `timingSafeEqual`. `bun run secret-compare --json` re-derives
  * every row in `data.counts`; no number below is a claim the command cannot check.
@@ -143,6 +143,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     count: 1,
     reason:
       'A `review.state` from the GitHub API (`APPROVED`, `CHANGES_REQUESTED`) against the decision being looked for.',
+  },
+  'packages/cli/src/runtime-assets-site.ts: asset.hash === named.hash': {
+    // why: plan 101 wave 10's site-image variants route; the hash is public, printed into every URL.
+    count: 1,
+    reason:
+      'A site image’s content `hash` against the one spelled in the requested `/assets` URL, deciding whether a variant query names the current file — the hash IS the public URL, printed into every page that names the asset.',
   },
   'packages/cli/src/site-asset-routes.ts: asset.hash !== named.hash': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `cli` package row.
@@ -314,6 +320,18 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     count: 1,
     reason:
       'A `candidate` DATE’s weekday against the slot’s while walking forward to the next occurrence.',
+  },
+  'packages/ui/src/components/LiveIndicator.tsx: previous !== state': {
+    // why: plan 101 wave 10's LiveIndicator; `state` is a connection status word, never a secret.
+    count: 1,
+    reason:
+      'A `LiveIndicator` connection `state` (`live`, `reconnecting`, `paused`, `offline`) against the one last announced, deciding whether to announce the change — an on-screen status word, not an OAuth state.',
+  },
+  'packages/ui/src/components/calendar-view.ts: day.date === candidate': {
+    // why: plan 101 wave 10's calendar grid; `candidate` is a rendered date, never a secret.
+    count: 1,
+    reason:
+      'A calendar `candidate` day (the focused, selected or first enabled `PlainDate`) against each day of the month grid, choosing the one tab stop — a date the page renders, not a credential.',
   },
   // why: new with scripts/health.ts — row 5 re-reads the audit's rows to judge `npm-serves-tree`;
   // the word this rule holds as an OAuth state is this AuditState record.

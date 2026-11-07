@@ -7,6 +7,7 @@ import {
   resetCursorSigning,
   usesDevCursorSecret,
 } from './cursor';
+import { hmac } from './hmac';
 
 const position = { scope: 'posts:acme', key: ['2026-01-01T00:00:00.000Z', 7], id: 'p_9' };
 
@@ -67,7 +68,7 @@ describe('the one cursor codec', () => {
         .replaceAll('+', '-')
         .replaceAll('/', '_')
         .replaceAll('=', '');
-      const mac = new Bun.CryptoHasher('sha256', 'known-secret').update(body).digest('hex');
+      const mac = hmac('sha256', 'known-secret', body, 'hex');
       return `${body}.${mac.slice(0, 32)}`;
     };
 

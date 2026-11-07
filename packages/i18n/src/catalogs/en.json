@@ -640,10 +640,18 @@
   "ui": {
     "breadcrumb": "Breadcrumb",
     "cancel": "Cancel",
+    "chart": {
+      "none": "No data"
+    },
     "close": "Close",
     "confirm": "Confirm",
     "copied": "Copied",
     "copy": "Copy",
+    "date": {
+      "open": "Choose a date",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month"
+    },
     "dismiss": "Dismiss",
     "empty": "Nothing here yet.",
     "error": {
@@ -654,6 +662,15 @@
     },
     "first": "First",
     "language": "Language",
+    "list": {
+      "toEnd": "Back to the end"
+    },
+    "live": {
+      "live": "Live",
+      "reconnecting": "Reconnecting",
+      "paused": "Paused",
+      "offline": "Offline"
+    },
     "load": {
       "more": "Load more",
       "end": "That's everything."
@@ -670,18 +687,73 @@
     "results": {
       "empty": "No matches"
     },
+    "range": {
+      "open": "Choose dates",
+      "from": "From",
+      "to": "To",
+      "apply": "Apply",
+      "custom": "Custom range",
+      "invalid": "That range is not valid, so the default is shown."
+    },
+    "refresh": {
+      "pull": "Pull to refresh",
+      "release": "Release to refresh",
+      "busy": "Refreshing…"
+    },
     "retry": "Try again",
+    "select": {
+      "none": "Nothing chosen",
+      "more": "Showing {shown} of {total} — type to narrow",
+      "remove": "Remove {label}",
+      "clear": "Clear"
+    },
+    "shortcuts": "Keyboard shortcuts",
     "skip": "Skip to content",
     "sort": {
       "ascending": "Sort ascending",
-      "descending": "Sort descending"
+      "descending": "Sort descending",
+      "handle": "Move",
+      "target": "Move to",
+      "lift": "Lifted, position {position} of {total} in {group}. Arrow keys move it, Space drops it, Escape puts it back.",
+      "moved": "Position {position} of {total} in {group}.",
+      "dropped": "Dropped at position {position} of {total} in {group}.",
+      "cancelled": "Not moved: back at position {position} of {total} in {group}.",
+      "up": "Move up",
+      "down": "Move down"
     },
+    "step": "Step {current} of {total}: {label}",
     "suggestions": "{count} suggestions",
     "theme": {
       "light": "Light",
       "dark": "Dark",
       "system": "System",
       "label": "Theme"
+    },
+    "tree": {
+      "loading": "Loading children…"
+    },
+    "pane": {
+      "resize": "Resize panes"
+    },
+    "code": {
+      "region": "Code",
+      "wrap": "Wrap lines",
+      "terminal": "Terminal output"
+    },
+    "diff": {
+      "region": "Changes",
+      "added": "Added",
+      "removed": "Removed",
+      "next": "Next change",
+      "folded": "{count} more lines not shown"
+    },
+    "log": {
+      "region": "Log",
+      "filter": "Filter lines",
+      "level": "Level",
+      "all": "Every level",
+      "follow": "Follow the end",
+      "capped": "Showing the last {count} lines"
     }
   }
 }

@@ -1,0 +1,9 @@
+@use '@ultimat3/ui/tokens' as tokens;
+
+.offline {
+  display: grid;
+  gap: tokens.space(3);
+  padding: tokens.space(8);
+  background: tokens.role('bg');
+  color: tokens.role('fg-muted');
+}

@@ -23,11 +23,11 @@ import { disk } from '@ultimat3/storage';
 import { ConnectionNotFound } from '../errors';
 import * as repo from '../repo';
 
-const SITE = 'ledger.example';
+export const SITE = 'ledger.example';
 
 const LOGIN = `https://${SITE}/login`;
 
-const ACCOUNTS = `https://${SITE}/accounts`;
+export const ACCOUNTS = `https://${SITE}/accounts`;
 
 const ACCOUNTS_API = `https://${SITE}/api/accounts`;
 

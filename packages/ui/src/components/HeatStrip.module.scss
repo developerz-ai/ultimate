@@ -1,0 +1,133 @@
+@use '../tokens' as t;
+
+.strip {
+  display: grid;
+  gap: t.space(2);
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.caption {
+  @include t.label-caps;
+  color: t.role('fg-muted');
+}
+
+.hidden {
+  @include t.visually-hidden;
+}
+
+// Name above the cells on a phone, beside them once there is room: the cells never scroll the page.
+.row {
+  display: grid;
+  gap: t.space(1);
+  min-inline-size: 0;
+
+  @include t.respond-to(md) {
+    grid-template-columns: t.rem(128px) minmax(0, 1fr);
+    align-items: center;
+    gap: t.space(3);
+  }
+}
+
+.name {
+  @include t.truncate;
+  color: t.role('fg');
+  font-size: t.text(sm);
+}
+
+// The cells share the row's width: many buckets get thinner, never wider than the screen.
+.cells {
+  display: flex;
+  gap: t.stroke(thick);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-inline-size: 0;
+}
+
+.slot {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  max-inline-size: t.space(6);
+}
+
+.cell {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  inline-size: 100%;
+
+  // The mark is a pseudo-element, so its clip-path shape never clips the link's touch area.
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--heat, #{t.role('line', 0.5)});
+    clip-path: var(--shape, none);
+  }
+}
+
+.linked {
+  @include t.focus-ring;
+  @include t.touch-target(true);
+}
+
+// A tone is a colour AND a shape: the shape alone tells the cells apart in greyscale.
+.cell[data-tone='neutral'] {
+  --heat: #{t.role('fg-strong')};
+}
+
+@each $tone in (success, info, accent, warning, danger) {
+  .cell[data-tone='#{$tone}'] {
+    --heat: #{t.role($tone)};
+  }
+}
+
+.cell[data-shape='circle'] {
+  --shape: circle(50%);
+}
+
+.cell[data-shape='ring'] {
+  --shape: polygon(
+    evenodd,
+    0 0,
+    100% 0,
+    100% 100%,
+    0 100%,
+    0 0,
+    25% 25%,
+    25% 75%,
+    75% 75%,
+    75% 25%,
+    25% 25%
+  );
+}
+
+.cell[data-shape='triangle'] {
+  --shape: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.cell[data-shape='diamond'] {
+  --shape: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.cell[data-shape='cross'] {
+  --shape: polygon(
+    20% 0,
+    50% 30%,
+    80% 0,
+    100% 20%,
+    70% 50%,
+    100% 80%,
+    80% 100%,
+    50% 70%,
+    20% 100%,
+    0 80%,
+    30% 50%,
+    0 20%
+  );
+}
+
+.cell[data-shape='dash'] {
+  --shape: inset(40% 0);
+}

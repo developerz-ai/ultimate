@@ -46,6 +46,12 @@ describe('unit · the decision fails CLOSED', () => {
     expect(hostDecision('data:text/html,<p>x', []).allowed).toBe(true);
   });
 
+  test('a URL that parses with an empty host is refused, even under the any-host rule', () => {
+    // `file:///x` parses, and its hostname is ''. No rule can be about a host that is not there, so
+    // the wildcard must not read as "everything, including nothing".
+    expect(hostDecision('file:///etc/passwd', [ANY_HOST])).toEqual({ allowed: false, host: '' });
+  });
+
   test('an empty allow list admits nothing', () => {
     expect(hostDecision('https://example.com/', []).allowed).toBe(false);
   });

@@ -66,10 +66,20 @@ export function Popover(props: PopoverProps): JSX.Element {
         root = el;
       }}
     >
+      {/*
+        Getters, so the trigger is built ONCE: a snapshot of `props.open` read here made every open
+        and close rebuild the trigger, and the node the trap hands focus back to on close was the
+        one just thrown away — focus landed on <body>. Read inside the trigger's own attributes,
+        `open` updates those attributes and nothing else.
+      */}
       {props.trigger({
         id: triggerId,
-        'aria-expanded': props.open,
-        'aria-controls': props.open ? panelId : undefined,
+        get 'aria-expanded'() {
+          return props.open;
+        },
+        get 'aria-controls'() {
+          return props.open ? panelId : undefined;
+        },
       })}
       {props.open ? (
         <div

@@ -6,6 +6,7 @@
 
 import { canonicalJson, fingerprint } from './canonical-json';
 import { currentSigningSecret } from './cursor';
+import { hmac } from './hmac';
 import { timingSafeEqual } from './timing-safe-equal';
 
 /** The format tag. A stored value without it predates keying (see `compareFingerprint`). */
@@ -23,9 +24,7 @@ const LEGACY = /^[0-9a-f]{16}$/;
 
 /** One key per purpose, derived from the signing secret, so no two uses share a MAC key. */
 function derivedKey(purpose: string): string {
-  return new Bun.CryptoHasher('sha256', currentSigningSecret())
-    .update(`ultimate:keyed-fingerprint:${purpose}`)
-    .digest('hex');
+  return hmac('sha256', currentSigningSecret(), `ultimate:keyed-fingerprint:${purpose}`, 'hex');
 }
 
 /**
@@ -43,10 +42,7 @@ function keyId(key: string): string {
  */
 export function keyedFingerprint(value: unknown, purpose: string): string {
   const key = derivedKey(purpose);
-  const mac = new Bun.CryptoHasher('sha256', key)
-    .update(canonicalJson(value))
-    .digest('hex')
-    .slice(0, 32);
+  const mac = hmac('sha256', key, canonicalJson(value), 'hex').slice(0, 32);
   return `${KEYED_FINGERPRINT_VERSION}:${keyId(key)}:${mac}`;
 }
 

@@ -23,6 +23,12 @@ export interface AppShellProps {
   /** Rendered inside a `<nav>` landmark: the inline-start column at `md` and up, a panel below. */
   sidebar?: JSX.Element | undefined;
   footer?: JSX.Element | undefined;
+  /**
+   * A `<BottomNav>`: shown below `md` only, pinned to the bottom edge in thumb reach, and in flow,
+   * so the page reserves its height and no content scrolls under it. The menu button stays for
+   * everything that does not fit five destinations.
+   */
+  bottomNav?: JSX.Element | undefined;
   /** Accessible name for the sidebar landmark. Defaults to the translated `ui.navigation`. */
   sidebarLabel?: string | undefined;
   /** Skip-link text. Defaults to the translated `ui.skip`. */
@@ -94,6 +100,9 @@ export function AppShell(props: AppShellProps): JSX.Element {
         {props.children}
       </main>
       {props.footer === undefined ? null : <footer class={styles['footer']}>{props.footer}</footer>}
+      {props.bottomNav === undefined ? null : (
+        <div class={styles['bottomNav']}>{props.bottomNav}</div>
+      )}
       {/* The two live regions, in the SERVER response and empty. `announce()` had none until
           2026-09 and built its own on first call — a region appended and written in the same frame,
           which most screen readers do not announce, so the first message of a session was silent.

@@ -103,7 +103,8 @@ describe('every shipped pairing meets WCAG AA in both themes', () => {
   test('every chart series is held to 3:1 against all four surfaces', () => {
     const SURFACES = ['bg', 'bg-soft', 'surface', 'surface-raised'];
     for (const role of CHART_ROLES) {
-      const rows = CONTRAST_PAIRS.filter((pair) => pair.fg === role);
+      // The series floor only: a role ALSO used as text (TerminalView's ANSI colours) adds a 4.5:1 row.
+      const rows = CONTRAST_PAIRS.filter((pair) => pair.fg === role && pair.minimum === AA_LARGE);
       expect(`${role}: ${rows.map((pair) => `${pair.bg}@${pair.minimum}`).join(' ')}`).toBe(
         `${role}: ${SURFACES.map((bg) => `${bg}@${AA_LARGE}`).join(' ')}`,
       );
@@ -128,4 +129,19 @@ describe('every shipped pairing meets WCAG AA in both themes', () => {
       `light: fg-muted on fg = ${roleContrast('light', 'fg-muted', 'fg').toFixed(2)}, needs 4.5`,
     ]);
   });
+});
+
+test('terminal text in a series role reaches 4.5:1 on the code surface, both themes', () => {
+  for (const role of ['chart-1', 'chart-5'] as const) {
+    expect(
+      CONTRAST_PAIRS.some(
+        (pair) => pair.fg === role && pair.bg === 'bg-soft' && pair.minimum === AA_TEXT,
+      ),
+    ).toBe(true);
+    for (const theme of THEMES) {
+      expect(
+        contrastRatio(colorTokens[theme][role], colorTokens[theme]['bg-soft']),
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  }
 });

@@ -18,6 +18,7 @@ Thin wrapper over `x new` — same templates, same flags, no second code path.
 | Flag | Does |
 |---|---|
 | `--dir <path>` | parent directory (default: cwd) |
+| `--shape <shape>` | start from an app shape — `api`, `blog` ([Shapes](https://github.com/developerz-ai/ultimate/wiki/Shapes)); never with `--no-example` |
 | `--no-example` | skip the example feature slice |
 | `--no-git` | leave a bare directory; do not `git init` and commit |
 | `--dry-run` | print the file list, write nothing |

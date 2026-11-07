@@ -545,6 +545,12 @@ export const summarize = llm({
 
 **A stream is the same action over a different transport, with one difference that is forced rather than chosen: there is no repair turn.** The non-streaming call retries once on a parse failure; a stream cannot, because the tokens are already on the reader's screen and a second answer is two answers to one question. So a stream yields **unvalidated** text increments plus one final `done` carrying the value that did satisfy `output`, and a schema disagreement is `X_LLM_STREAM_INVALID` naming the non-streaming call as the fix. A structured schema wants the non-streaming call.
 
+**Showing what a model wrote is `Markdown` from `@ultimat3/ui`**, never `innerHTML`: the text is
+parsed to a tree and rendered as elements, so a `<script>` or a `javascript:` link in an answer is
+text, and a streaming answer re-parses per token while finished blocks keep their nodes. Tool calls
+and usage records are `JsonView`; a model's proposed edit against the original is `DiffView`
+→ [UI components](UI-Components).
+
 Long or multi-call chains are `job`s with steps, so a model call that fails on step 4 retries step 4 only. See [Jobs and workflows](Jobs-And-Workflows).
 
 ## Agents, hives and agent jobs → [Agents](Agents)

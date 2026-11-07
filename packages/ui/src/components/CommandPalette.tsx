@@ -4,13 +4,17 @@
 // presentational: the open flag, the query and the active item all live in the caller, and the
 // rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller
 // does not rewrite them. Renders closed on the server unless told otherwise; with scripting off
-// it is inert markup.
+// it is inert markup. Items carrying a `group` render under one `role="group"` heading per run;
+// `useCommandPalette` is the shell that owns the open flag, the query, `⌘K` and focus.
 
 import type { JSX } from 'solid-js';
+import { useId } from '../a11y';
 import { cx } from '../cx';
+import { UI_KEYS } from '../i18n-keys';
+import { useUi } from '../theme/context';
 import { solid } from '../theme/solid-adapter';
 import styles from './CommandPalette.module.scss';
-import type { CommandPaletteItem } from './command-palette-view';
+import { type CommandPaletteItem, groupItems } from './command-palette-view';
 import { Kbd } from './Kbd';
 
 /** Every string the palette renders, already translated. */
@@ -39,6 +43,8 @@ export interface CommandPaletteProps {
   onHoverItem: (id: string) => void;
   onRunItem: (id: string) => void;
   onClose: () => void;
+  /** Items are being fetched for the query (`onQuery`): says so where the list goes. */
+  loading?: boolean | undefined;
   /** The element's id, so a trigger can name it with `aria-controls`. */
   id?: string | undefined;
   /** Refs out, so a caller can read focus or the attribute behind its own capability guard. */
@@ -49,6 +55,8 @@ export interface CommandPaletteProps {
 
 export function CommandPalette(props: CommandPaletteProps): JSX.Element {
   const rt = solid();
+  const ui = useUi();
+  const groupBase = useId('palette-group');
   let dialogEl: HTMLDialogElement | undefined;
   let filterEl: HTMLInputElement | undefined;
 
@@ -65,6 +73,24 @@ export function CommandPalette(props: CommandPaletteProps): JSX.Element {
       dialogEl.removeAttribute('open');
     }
   });
+
+  const row = (item: CommandPaletteItem): JSX.Element => (
+    <li>
+      {/* A native button, never a row with a handler; roving TABINDEX, not roving focus. */}
+      <button
+        type="button"
+        class={styles['item']}
+        data-active={item.id === props.activeId ? 'true' : undefined}
+        tabIndex={item.id === props.activeId ? 0 : -1}
+        onClick={() => props.onRunItem(item.id)}
+        onMouseEnter={() => props.onHoverItem(item.id)}
+        onKeyDown={props.onFilterKeyDown}
+      >
+        <span class={styles['label']}>{item.label}</span>
+        {item.hint === '' ? null : <span class={styles['hint']}>{item.hint}</span>}
+      </button>
+    </li>
+  );
 
   return (
     <dialog
@@ -98,28 +124,30 @@ export function CommandPalette(props: CommandPaletteProps): JSX.Element {
           />
           <Kbd>{props.labels.escHint}</Kbd>
         </div>
-        {props.items.length === 0 ? (
+        {props.loading === true ? (
+          <p class={styles['empty']} role="status">
+            {ui.t(UI_KEYS.loading)}
+          </p>
+        ) : props.items.length === 0 ? (
           <p class={styles['empty']}>{props.labels.emptyText}</p>
+        ) : props.items.every((item) => item.group === undefined) ? (
+          <ul class={styles['list']}>{props.items.map(row)}</ul>
         ) : (
-          <ul class={styles['list']}>
-            {props.items.map((item) => (
-              <li>
-                {/* A native button, never a row with a handler; roving TABINDEX, not roving focus. */}
-                <button
-                  type="button"
-                  class={styles['item']}
-                  data-active={item.id === props.activeId ? 'true' : undefined}
-                  tabIndex={item.id === props.activeId ? 0 : -1}
-                  onClick={() => props.onRunItem(item.id)}
-                  onMouseEnter={() => props.onHoverItem(item.id)}
-                  onKeyDown={props.onFilterKeyDown}
-                >
-                  <span class={styles['label']}>{item.label}</span>
-                  {item.hint === '' ? null : <span class={styles['hint']}>{item.hint}</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div class={styles['list']}>
+            {groupItems(props.items).map((run, index) =>
+              run.group === undefined ? (
+                <ul class={styles['run']}>{run.items.map(row)}</ul>
+              ) : (
+                // biome-ignore lint/a11y/useSemanticElements: commands, not form controls; a fieldset is a form's group
+                <div role="group" aria-labelledby={`${groupBase}-${index}`}>
+                  <p class={styles['groupLabel']} id={`${groupBase}-${index}`}>
+                    {run.group}
+                  </p>
+                  <ul class={styles['run']}>{run.items.map(row)}</ul>
+                </div>
+              ),
+            )}
+          </div>
         )}
       </div>
     </dialog>

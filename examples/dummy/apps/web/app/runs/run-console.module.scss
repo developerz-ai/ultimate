@@ -2,8 +2,9 @@
 // query, no colour that is not a role — the guards in `guards/` refuse each by name.
 @use '@ultimat3/ui/tokens' as tokens;
 
+// Wide enough for the log beside the run (`SplitPane` from `md`); one column below it.
 .page {
-  max-inline-size: tokens.rem(640px);
+  max-inline-size: tokens.rem(1024px);
 }
 
 .console {
@@ -42,32 +43,6 @@
   margin-block: 0 tokens.space(3);
 }
 
-.events {
-  display: flex;
-  flex-direction: column;
-  gap: tokens.space(2);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.event {
-  align-items: baseline;
-  display: flex;
-  gap: tokens.space(3);
-}
-
-.seq {
-  color: tokens.role('fg-muted');
-  font-variant-numeric: tabular-nums;
-  min-inline-size: tokens.rem(24px);
-}
-
-.detail {
-  color: tokens.role('fg-muted');
-  margin-inline-start: auto;
-}
-
 .prompt {
   align-items: end;
   display: flex;
@@ -92,23 +67,6 @@
   margin-block: 0 tokens.space(2);
 }
 
-.figures {
-  display: grid;
-  gap: tokens.space(2) tokens.space(4);
-  grid-template-columns: repeat(auto-fill, minmax(tokens.rem(128px), 1fr));
-  margin: 0;
-}
-
-.figure {
-  display: flex;
-  flex-direction: column;
-
-  dt {
-    color: tokens.role('fg-muted');
-  }
-
-  dd {
-    font-variant-numeric: tabular-nums;
-    margin: 0;
-  }
+.figures dd {
+  font-variant-numeric: tabular-nums;
 }

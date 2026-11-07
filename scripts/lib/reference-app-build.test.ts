@@ -59,6 +59,8 @@ describe('buildApp', () => {
       'build',
       '--target',
       'static',
+      // The gate's build photographs no card: a CI runner with no Chrome stays green.
+      '--no-capture',
     ]);
     // Gone BEFORE the build ran — a stale report is exactly what made local runs differ from CI.
     expect(seen[0]?.stale).toEqual(STALE_BUILD_OUTPUTS.map(() => false));
@@ -78,7 +80,7 @@ describe('buildApp', () => {
     expect(finding?.cause).toContain('x build --target static');
     expect(finding?.cause).toContain('X_BUILD_FAILED');
     expect(finding?.fix).toBe(
-      'cd dummy/social-media-clone && bun run ../../packages/cli/src/bin.ts build --target static',
+      'cd dummy/social-media-clone && bun run ../../packages/cli/src/bin.ts build --target static --no-capture',
     );
   });
 });

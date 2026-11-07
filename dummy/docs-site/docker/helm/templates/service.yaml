@@ -1,0 +1,37 @@
+{{/*
+One Service per enabled role. The roles that take no traffic still get one, HEADLESS: it exists so
+a scrape target and a DNS name exist, and a headless Service allocates no ClusterIP, so nothing
+about it invites traffic it would not answer.
+*/}}
+{{- range $role, $cfg := .Values.roles }}
+{{- if $cfg.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "docs-site.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "docs-site.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $role }}
+spec:
+  type: ClusterIP
+  {{- if not $cfg.port }}
+  clusterIP: None
+  # Scraped whether or not ready: a replicator whose stream is down (readiness 503) is the pod
+  # whose metrics matter most, and nothing routes to these addresses anyway.
+  publishNotReadyAddresses: true
+  {{- end }}
+  selector:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: {{ $role }}
+  ports:
+    {{- if $cfg.port }}
+    - name: http
+      port: 80
+      targetPort: http
+    {{- end }}
+    - name: metrics
+      port: {{ $.Values.metricsPort | int }}
+      targetPort: metrics
+{{- end }}
+{{- end }}

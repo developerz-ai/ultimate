@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { hmac } from '@ultimat3/core';
 import { defineAuth } from './auth';
 import { AuthError, mfaRequired } from './errors';
 import { memoryAuthAdapter } from './memory-adapter';
@@ -102,9 +103,7 @@ describe('totp', () => {
       counter[index] = remaining % 256;
       remaining = Math.floor(remaining / 256);
     }
-    const mac = Uint8Array.from(
-      new Bun.CryptoHasher('sha1', new Uint8Array(0)).update(counter).digest(),
-    );
+    const mac = hmac('sha1', new Uint8Array(0), counter);
     const offset = (mac[mac.length - 1] as number) & 0x0f;
     const binary =
       (((mac[offset] as number) & 0x7f) << 24) |

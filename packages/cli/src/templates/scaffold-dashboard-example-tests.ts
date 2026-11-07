@@ -12,6 +12,8 @@ export const exampleViewTest =
 import { expect, unitTest } from '@ultimat3/testing';
 import {
   bucketByDay,
+  CHART_MAX_DAYS,
+  chartDays,
   formatCount,
   type PostRow,
   postStats,
@@ -43,9 +45,14 @@ unitTest('postStats counts the week, compares it with the prior one, and counts 
   expect(postStats([...rows, row('d', 0.25)], NOW).today).toBe(1);
 });
 
-unitTest('a zero baseline yields no delta, and no rows count nothing', () => {
-  expect(postStats([row('a', 1)], NOW).delta).toBeUndefined();
-  expect(postStats([], NOW)).toEqual({ total: 0, lastWeek: 0, delta: undefined, today: 0 });
+unitTest('from a zero baseline the chip is the difference, and no rows count nothing', () => {
+  expect(postStats([row('a', 1)], NOW).delta).toEqual({ text: '+1', trend: 'up' });
+  expect(postStats([], NOW)).toEqual({
+    total: 0,
+    lastWeek: 0,
+    delta: { text: '0', trend: 'flat' },
+    today: 0,
+  });
 });
 
 unitTest('bucketByDay is one bar per day, oldest first, quiet days included', () => {
@@ -53,10 +60,25 @@ unitTest('bucketByDay is one bar per day, oldest first, quiet days included', ()
   expect(points).toHaveLength(14);
   expect(points.at(-1)?.key).toBe('03-15');
   expect(points[0]?.key).toBe('03-02');
-  expect(points.reduce((sum, point) => sum + point.value, 0)).toBe(3);
+  expect(points.reduce((sum, point) => sum + (point.value ?? 0), 0)).toBe(3);
   // Eight days ago is 03-07: inside a 14-day window, so the bar is there.
   expect(points.find((point) => point.key === '03-07')?.value).toBe(1);
   expect(bucketByDay([], NOW, 3).map((point) => point.value)).toEqual([0, 0, 0]);
+});
+
+unitTest('a capped read leaves the days before its oldest row unknown — null, never 0', () => {
+  const values = bucketByDay([row('a', 1), row('b', 3)], NOW, 5, { capped: true }).map(
+    (point) => point.value,
+  );
+  // 03-11 is before the oldest row the capped read saw (03-12): unknown. 03-13 is a quiet day: 0.
+  expect(values).toEqual([null, 1, 0, 1, 0]);
+});
+
+unitTest('chartDays is the window in whole days, never zero and never past the cap', () => {
+  expect(chartDays(new Date(NOW.getTime() - 7 * DAY_MS), NOW)).toBe(7);
+  expect(chartDays(new Date(NOW.getTime() - DAY_MS / 2), NOW)).toBe(1);
+  // A URL may ask for ten years: the chart draws at most this many bars.
+  expect(chartDays(new Date(NOW.getTime() - 3650 * DAY_MS), NOW)).toBe(CHART_MAX_DAYS);
 });
 
 unitTest('toPostRow serialises a Date, passes ISO text through, and keeps the price whole', () => {
@@ -169,8 +191,11 @@ unitTest('it counts and lists the posts of the org that is looking', async () =>
   expect(view.html.match(/data-segment="/g)).toHaveLength(2);
   expect(view.html).toContain('role="meter"');
   expect(view.text).toContain('This week');
+  // The chart's window is the default two weeks, and every preset is a link.
+  expect(view.html).toContain('href="/dashboard?range=week"');
+  expect(view.html).toContain('href="/dashboard?range=month"');
   // The sidebar knows where it is.
-  expect(view.html).toMatch(/<a href="\\/dashboard" aria-current="page"/);
+  expect(view.html).toMatch(/<a [^>]*href="\\/dashboard" aria-current="page"/);
 });
 
 unitTest('another org sees none of them: the page says so instead of an empty table', async () => {
@@ -185,6 +210,18 @@ unitTest('another org sees none of them: the page says so instead of an empty ta
   expect(view.meta.description).toBe(t('app.dashboard.description'));
 });
 
+unitTest('the chart window is read from the URL and survives as a link', async () => {
+  await post('This week', 3);
+  const week = await renderRoute(page, { url: \`\${url}?range=week\`, actor: viewer });
+  expect(week.data.url).toBe(\`\${url}?range=week\`);
+  // Seven bars for the week; the default window draws fourteen.
+  const keys = (html: string): number =>
+    html.match(/<th[^>]*scope="row"[^>]*>\\d{2}-\\d{2}</g)?.length ?? 0;
+  const fortnight = await renderRoute(page, { url, actor: viewer });
+  expect(keys(week.html)).toBe(7);
+  expect(keys(fortnight.html)).toBe(14);
+});
+
 unitTest('a viewer the post read refuses is refused, never shown the org’s posts', async () => {
   await post('Not for them', 0);
   // In the org, onto the page, without \`post:read\`: the query's policy decides, not the page's.
@@ -195,14 +232,17 @@ unitTest('a viewer the post read refuses is refused, never shown the org’s pos
 });
 
 unitTest('the build measures the empty page: no database is not a failure there', async () => {
-  const measured = await page.dashboardData(() => Promise.reject(dbUnavailable('no database')));
+  const measured = await page.dashboardData(
+    () => Promise.reject(dbUnavailable('no database')),
+    url,
+  );
   // The clock is frozen under test, so the instant the windows are cut at is this one.
-  expect(measured).toEqual({ rows: [], now: new Date().toISOString() });
+  expect(measured).toEqual({ rows: [], now: new Date().toISOString(), url });
 });
 
 unitTest('any other failure of the read propagates', async () => {
   const cause = new TypeError('the read broke');
   const read = (): Promise<never> => Promise.reject(cause);
-  expect(await page.dashboardData(read).catch((error: unknown) => error)).toBe(cause);
+  expect(await page.dashboardData(read, url).catch((error: unknown) => error)).toBe(cause);
 });
 `;
