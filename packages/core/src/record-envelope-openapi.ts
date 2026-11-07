@@ -27,6 +27,12 @@ export function recordEnvelopeSchema(
         description: 'Record keys the client store must drop, keyed by record type.',
         additionalProperties: { type: 'array', items: { type: 'string' } },
       },
+      order: {
+        type: 'object',
+        description:
+          "A record type's keys in answer order, sent only where `records` cannot keep it (integer-like keys enumerate ascending).",
+        additionalProperties: { type: 'array', items: { type: 'string' } },
+      },
     },
   };
 }

@@ -101,7 +101,7 @@ describe('a waking bus is asked once more after the park is written', () => {
       // The first ask meets nothing; the publish commits while the `waiting` row is written.
       find: async () => {
         asked += 1;
-        return asked === 1 ? undefined : { payload: { amount: 12 }, publishedAt: T0 };
+        return asked === 1 ? undefined : { id: 'evt-1', payload: { amount: 12 }, publishedAt: T0 };
       },
     };
     const runner = stepRunner({ runId: 'run-1', jobName: 'approve', store, events });

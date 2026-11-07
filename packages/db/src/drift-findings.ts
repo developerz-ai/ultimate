@@ -1,6 +1,6 @@
 // Single responsibility: what a schema difference is CALLED and what its `fix:` says — one
-// constructor per `DriftKind`, and nothing that compares anything (`drift.ts` decides whether two
-// schemas disagree). A `fix:` is ONE command a shell runs, and a difference names the declared
+// constructor per `DriftKind` (the missing-or-rebuilt ones in `drift-missing.ts`), and nothing that
+// compares anything (`drift.ts` decides whether two schemas disagree). A `fix:` is ONE command a shell runs, and a difference names the declared
 // side's spelling, never the catalog's — which is Postgres' rewriting.
 
 import { psqlCommand } from './dependent-view';
@@ -52,10 +52,10 @@ export interface DriftReport {
   readonly differences: readonly DriftDifference[];
 }
 
-const RE_CHECK = 'then x db migrate, which re-checks';
+export const RE_CHECK = 'then x db migrate, which re-checks';
 
 /** `set not null` is refused by the server while a row still holds NULL, and says so here. */
-const NULLS_FIRST = `refused while a row holds NULL there, so backfill those first; ${RE_CHECK}`;
+export const NULLS_FIRST = `refused while a row holds NULL there, so backfill those first; ${RE_CHECK}`;
 
 const CARRIES =
   'a name in this difference carries a backtick, a dollar sign, a quote, a backslash or whitespace';
@@ -109,7 +109,7 @@ const qualified = (schema: string, table: string): string | null => {
 };
 
 /** Every name inert in a shell AND writable as an identifier — the one screen, asked of each. */
-const spellable = (names: readonly string[]): boolean =>
+export const spellable = (names: readonly string[]): boolean =>
   names.every((name) => shellInertIdentifier(name) !== null);
 
 /**
@@ -132,16 +132,6 @@ export function unexpectedColumn(table: string, column: string): DriftDifference
       shellInertIdentifier(column) === null
         ? `x db gen "add the undeclared column"   # the live column name carries shell syntax, so it is in the cause and not in this command; ${undeclaredColumnNext('it')}`
         : `x db gen "add ${column}"   # ${undeclaredColumnNext(column)}`,
-  };
-}
-
-export function missingColumn(table: string, column: string): DriftDifference {
-  return {
-    kind: 'missing-column',
-    table,
-    column,
-    cause: `table "${table}" is missing column "${column}" that migrations declare`,
-    fix: 'x db migrate',
   };
 }
 
@@ -230,16 +220,6 @@ export function unexpectedTable(schema: string, table: string): DriftDifference 
   };
 }
 
-export function missingTable(table: string): DriftDifference {
-  return {
-    kind: 'missing-table',
-    table,
-    column: null,
-    cause: `table "${table}" is declared by migrations but does not exist`,
-    fix: 'x db migrate',
-  };
-}
-
 /**
  * Not a difference between two schemas but the absence of one to compare against — reported
  * through the same channel so it reaches an operator, since a check that quietly answered "clean"
@@ -277,26 +257,6 @@ export function unknownSchema(migrations: readonly Migration[]): DriftDifference
         'checkout it, or delete that migration and rerun x db gen with its description — the ' +
         "migration named in this difference's cause carries a backtick, a dollar sign, a " +
         'quote, a backslash or whitespace in its file name, so no command here can spell it',
-  };
-}
-
-export function missingIndex(table: string, index: string): DriftDifference {
-  return {
-    kind: 'missing-index',
-    table,
-    column: null,
-    cause: `table "${table}" is missing index "${index}" that migrations declare`,
-    fix: 'x db migrate',
-  };
-}
-
-export function changedIndex(table: string, index: string, detail: string): DriftDifference {
-  return {
-    kind: 'changed-index',
-    table,
-    column: null,
-    cause: `index "${index}" on "${table}" ${detail}, not what migrations declare`,
-    fix: 'x db migrate',
   };
 }
 
@@ -339,18 +299,6 @@ export function missingCheck(
             path,
             `alter table ${relation} add constraint ${constraint} check (${check.expression});`,
           ),
-  };
-}
-
-export function missingForeignKey(table: string, key: ForeignKeyDescription): DriftDifference {
-  return {
-    kind: 'missing-foreign-key',
-    table,
-    column: null,
-    cause:
-      `table "${table}" has no foreign key on (${key.columns.join(', ')}) to ` +
-      `"${key.referencedTable}" (${key.referencedColumns.join(', ')}) that migrations declare`,
-    fix: 'x db migrate',
   };
 }
 

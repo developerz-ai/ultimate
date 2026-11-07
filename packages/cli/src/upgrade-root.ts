@@ -2,11 +2,13 @@
 // still hop and just cannot be gated. Never a directory above the repository the cwd is in, and never
 // a workspace member when a root claims it: the hop moves the whole set or none of it.
 
+// why: a submodule's or worktree's `.git` is a file, and Bun.file cannot tell either kind exists.
+import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join, dirname or relative primitive.
 import { dirname, join, relative, resolve } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { appDirsBelow, findAppRoot, requireAppRoot } from './app-root';
-import { readManifests, readPins } from './upgrade-pins';
+import { parseManifest, readManifests, readPins } from './upgrade-pins';
 import { workspaceGlobs, workspaceManifestPaths } from './workspace-graph';
 
 export interface UpgradeRoot {
@@ -15,14 +17,14 @@ export interface UpgradeRoot {
   readonly app: boolean;
 }
 
-/** `from`, then each directory above it, stopping at the repository's own root. */
-async function ancestors(from: string): Promise<readonly string[]> {
+/** `from`, then each directory above it, stopping at the repository's own root: any `.git`. */
+function ancestors(from: string): readonly string[] {
   const dirs: string[] = [];
   let dir = from;
   for (;;) {
     dirs.push(dir);
     const parent = dirname(dir);
-    if (parent === dir || (await Bun.file(join(dir, '.git', 'HEAD')).exists())) return dirs;
+    if (parent === dir || existsSync(join(dir, '.git'))) return dirs;
     dir = parent;
   }
 }
@@ -32,9 +34,10 @@ const holdsPins = async (dir: string): Promise<boolean> =>
   readPins(await readManifests(dir)).length > 0;
 
 const claims = async (root: string, member: string): Promise<boolean> => {
-  const file = Bun.file(join(root, 'package.json'));
+  const path = join(root, 'package.json');
+  const file = Bun.file(path);
   if (!(await file.exists())) return false;
-  const globs = workspaceGlobs(JSON.parse(await file.text()));
+  const globs = workspaceGlobs(parseManifest(path, await file.text()));
   const manifest = `${relative(root, member).replaceAll('\\', '/')}/package.json`;
   return (await workspaceManifestPaths(root, globs)).includes(manifest);
 };
@@ -45,7 +48,7 @@ export async function findUpgradeRoot(from: string): Promise<UpgradeRoot> {
   const app = findAppRoot(start);
   if (app !== undefined) return { dir: app.dir, app: true };
 
-  const chain = await ancestors(start);
+  const chain = ancestors(start);
   let nearest: number | undefined;
   for (const [index, dir] of chain.entries()) {
     if (await holdsPins(dir)) {

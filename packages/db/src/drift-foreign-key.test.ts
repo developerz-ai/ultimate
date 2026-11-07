@@ -29,7 +29,12 @@ describe('a foreign key migrations declare, against the one the catalog holds', 
     expect(report.ok).toBe(false);
     expect(report.differences[0]?.kind).toBe('missing-foreign-key');
     expect(report.differences[0]?.cause).toContain('no foreign key on (org_id) to "orgs" (id)');
-    expect(report.differences[0]?.fix).toBe('x db migrate');
+    // The statement, never `x db migrate`: the ledger holds the migration, so it applies nothing.
+    expect(report.differences[0]?.fix).toBe(
+      `psql "$DATABASE_URL" -c 'alter table "posts" add constraint "posts_org_id_fkey" foreign key ` +
+        `("org_id") references "orgs" ("id");'   # a row it finds is X_DB_FOREIGN_KEY_VIOLATION: ` +
+        'repair that row, run it again, then x db migrate, which re-checks',
+    );
   });
 
   test('a key repointed at another table is the declared one missing', () => {

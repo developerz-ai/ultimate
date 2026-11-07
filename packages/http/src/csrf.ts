@@ -25,6 +25,8 @@ export const DEFAULT_CSRF: CsrfConfig = { mode: 'origin' };
 
 /** Methods with no side effects, per RFC 9110. A CSRF check on these is a check on nothing. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
+/** RFC 6750 §2.1: the scheme, case-insensitive, then a token. A bare `Bearer` carries nothing. */
+const BEARER = /^bearer +\S/i;
 
 export interface CsrfCheckInput {
   readonly method: string;
@@ -32,8 +34,12 @@ export interface CsrfCheckInput {
   readonly selfOrigin: string;
   readonly origin: string | null;
   readonly secFetchSite: string | null;
-  /** A bearer token is not ambient: a cross-site page cannot make the browser attach one. */
-  readonly hasAuthorizationHeader: boolean;
+  /**
+   * The raw `Authorization` header. Only `Bearer` exempts: no browser attaches one on its own,
+   * and a script setting it cross-origin needs a CORS preflight this app's `cors.origins` decides.
+   * Basic, Digest and Negotiate are re-sent from the browser's cache — as ambient as a cookie.
+   */
+  readonly authorization: string | null;
   /**
    * No session resolved. NOT an exemption: a sign-in form is forgeable too (login CSRF — the
    * visitor ends up in the attacker's account), so an anonymous write that carries browser
@@ -68,7 +74,7 @@ export type CsrfVerdict =
 export const checkCsrf = (input: CsrfCheckInput): CsrfVerdict => {
   if (input.config.mode === 'off') return { ok: true };
   if (SAFE_METHODS.has(input.method)) return { ok: true };
-  if (input.hasAuthorizationHeader) return { ok: true };
+  if (input.authorization !== null && BEARER.test(input.authorization)) return { ok: true };
   if (input.anonymous && input.origin === null && input.secFetchSite === null) return { ok: true };
   // No cookie can make this request anyone's, and no cookie is minted by it: a cross-origin
   // client posting a code and its verifier is the endpoint's whole purpose, not a forgery.
@@ -119,7 +125,7 @@ export const csrfBlocked = (
     : new HttpError({
         code: 'X_CSRF_BLOCKED',
         cause: `${pathname} refused a write it could not show came from this app: ${reason}`,
-        fix: "call it with an Authorization header instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
+        fix: "call it with an Authorization: Bearer token instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
       });
 
 /**

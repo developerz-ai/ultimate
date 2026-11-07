@@ -62,6 +62,9 @@ function realm() {
       fire('push', { data: { json: (): unknown => JSON.parse(text), text: () => text } }),
     click: (url: unknown) =>
       fire('notificationclick', { notification: { close: () => undefined, data: { url } } }),
+    /** A tap on one of the notification's buttons: `event.action` names it. */
+    clickAction: (action: string, data: unknown) =>
+      fire('notificationclick', { action, notification: { close: () => undefined, data } }),
   };
 }
 
@@ -76,7 +79,7 @@ describe('the push handler, on a body it did not compose', () => {
     expect(extended).toBe(true);
     expect(sw.shown).toHaveLength(1);
     expect(sw.shown[0]?.options['body']).toBe('Your order shipped');
-    expect(sw.shown[0]?.options['data']).toEqual({ url: '/' });
+    expect(sw.shown[0]?.options['data']).toEqual({ url: '/', actions: {} });
   });
 
   test.each(['null', '42', '"hi"', '[1,2]'])(
@@ -98,7 +101,7 @@ describe('the push handler, on a body it did not compose', () => {
     const sw = realm();
     await sw.push(JSON.stringify({ title: 'Hola', body: 'b', url: '/posts/1' }));
     expect(sw.shown[0]?.title).toBe('Hola');
-    expect(sw.shown[0]?.options['data']).toEqual({ url: '/posts/1' });
+    expect(sw.shown[0]?.options['data']).toEqual({ url: '/posts/1', actions: {} });
   });
 });
 
@@ -125,5 +128,49 @@ describe('the notificationclick handler, on a URL off this origin', () => {
     const sw = realm();
     await sw.click(url);
     expect(sw.opened).toEqual([href]);
+  });
+});
+
+/** An action button opens ITS url; the body tap and a button with none open the payload's url. */
+describe('the notificationclick handler, on an action button', () => {
+  const body = {
+    title: 't',
+    url: '/posts/1',
+    actions: [
+      { action: 'reply', title: 'Reply', url: '/posts/1/reply' },
+      { action: 'mute', title: 'Mute' },
+    ],
+  };
+
+  test('the push carries each button url in data, where notificationclick can read it', async () => {
+    const sw = realm();
+    await sw.push(JSON.stringify(body));
+    const options = sw.shown[0]?.options;
+    expect(options?.['data']).toEqual({ url: '/posts/1', actions: { reply: '/posts/1/reply' } });
+    // Passed through: the browser's NotificationAction reads action/title/icon and ignores url.
+    expect(options?.['actions']).toEqual(body.actions);
+  });
+
+  test('a button with a url opens that url, resolved on this origin', async () => {
+    const sw = realm();
+    await sw.push(JSON.stringify(body));
+    await sw.clickAction('reply', sw.shown[0]?.options['data']);
+    expect(sw.opened).toEqual([`${ORIGIN}/posts/1/reply`]);
+  });
+
+  test.each(['mute', '', 'constructor', '__proto__'])(
+    'button %p with no url of its own opens the payload url',
+    async (action) => {
+      const sw = realm();
+      await sw.push(JSON.stringify(body));
+      await sw.clickAction(action, sw.shown[0]?.options['data']);
+      expect(sw.opened).toEqual([`${ORIGIN}/posts/1`]);
+    },
+  );
+
+  test('a button url off this origin opens the app root, like the body url', async () => {
+    const sw = realm();
+    await sw.clickAction('reply', { url: '/posts/1', actions: { reply: 'https://evil.test/' } });
+    expect(sw.opened).toEqual([`${ORIGIN}/`]);
   });
 });

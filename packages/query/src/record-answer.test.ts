@@ -9,7 +9,7 @@ import {
   RECORDS_OPENAPI_HEADER,
   recordEnvelopeSchema,
 } from '@ultimat3/core';
-import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
+import { clearRegistry, entity, integer, text, uuid } from '@ultimat3/entity';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t, toWireOutputSchema } from '@ultimat3/schema';
@@ -17,6 +17,7 @@ import { toQueryRoute } from './http';
 import { toQueryOpenApiOperation } from './openapi';
 import type { AnyQuery } from './query';
 import { query } from './query';
+import { recordAnswerFor } from './record-answer';
 import { from } from './source';
 
 const ORG = '00000000-0000-4000-8000-000000000001';
@@ -109,6 +110,30 @@ describe('the record envelope on a read', () => {
 
     expect(response.headers.get(RECORDS_HEADER)).toBeNull();
     expect(await response.text()).toBe(JSON.stringify(stored));
+  });
+});
+
+// An integer key is an array index to `JSON.parse`, so a records object comes back sorted by it,
+// not in the order the answer carried — `order` is what puts the answer's order back.
+const Ticket = entity('query_record_answer_tickets', {
+  columns: { id: integer().primaryKey(), title: text({ max: 80 }) },
+});
+
+describe('the record envelope keeps the answer order', () => {
+  const body = async (response: Response): Promise<Record<string, unknown>> =>
+    (await response.json()) as Record<string, unknown>;
+
+  test('integer keys the answer did not sort ascending carry their order', async () => {
+    const rows = [30, 4, 100].map((id) => ({ id, title: `t${id}` }));
+    const answered = await body(recordAnswerFor(Ticket.$schema)(rows));
+    const order = answered['order'] as Record<string, unknown> | undefined;
+    expect(Object.values(order ?? {})).toEqual([['30', '4', '100']]);
+  });
+
+  test('a uuid-keyed answer carries no order: its body is what it always was', async () => {
+    const response = recordAnswerFor(Post.$schema)([ROW_B, ROW_A]);
+    const text = await response.text();
+    expect(Object.keys(JSON.parse(text) as object)).toEqual(['data', 'records']);
   });
 });
 

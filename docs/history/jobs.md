@@ -200,8 +200,10 @@ a current fact: the rules that still hold are in that file, and where the two di
   `tenantFor` is a METHOD on `JobHandle`, never a `readonly tenant: JobTenant<I>` field — a
   function-typed property is contravariant in its parameter, so the field would stop
   `JobHandle<OrgInput>` being assignable to `AnyJobHandle` and break the registry.
-  **The queue row's `tenantId` is unchanged**: it comes from the ENQUEUER's actor and is the
-  limiter's bucket, never re-derived from the payload (`limits.ts`'s header rule). Two different
+  **The queue row's `tenantId`** comes from the explicit `tenantId` / the enqueuer's actor, and
+  when neither is stated from `tenant(input)` (`enqueue-record.ts`, `As of 2026-11-07`) — the
+  refusal guarantees they agree. It was the actor's alone, so a plain enqueue was tenantless: two
+  orgs' `invoice:1` deduped onto one job and every plain enqueue shared one limiter bucket. Two different
   questions — "whose rate budget does this enqueue spend" and "whose rows may this run touch".
 
 - **A `backfill()` declaring `tenant: 'none'` gets the cross-tenant scope, and NOTHING else does**

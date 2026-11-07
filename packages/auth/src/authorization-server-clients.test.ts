@@ -8,6 +8,7 @@ import {
   authorizeUrl,
   ISSUER,
   pkce,
+  post,
   REDIRECT,
   serverFixture,
 } from './authorization-server-fixture';
@@ -85,6 +86,39 @@ describe('metadata-document clients', () => {
     const read = await server.readRequest(authorizeUrl(DOC_ID, pkce().challenge));
     expect(read).toMatchObject({ ok: false, error: 'invalid_client' });
     expect(calls).toHaveLength(0);
+  });
+
+  test('an unauthenticated caller cycling client_id paths meets a bounded fetch count', async () => {
+    const calls: string[] = [];
+    const { server } = await serverFixture({ fetch: serving({}, calls), resolveHost: publicDns });
+    const answers: { status: number; body: Record<string, unknown> }[] = [];
+    for (let i = 0; i < 15; i += 1) {
+      answers.push(
+        await post(server, '/oauth/token', {
+          grant_type: 'refresh_token',
+          refresh_token: 'x',
+          client_id: `https://victim.example/p${i}`,
+        }),
+      );
+    }
+    expect(calls.length).toBeLessThanOrEqual(10);
+    expect(answers.at(-1)).toMatchObject({
+      status: 429,
+      body: { error: 'temporarily_unavailable' },
+    });
+  });
+
+  test('a full cache evicts its oldest entry, not every entry', async () => {
+    const calls: string[] = [];
+    const { server } = await serverFixture({ fetch: serving({}, calls), resolveHost: publicDns });
+    const read = (n: number) =>
+      server.readRequest(authorizeUrl(`https://c.example/d${n}`, pkce().challenge));
+    for (let i = 0; i <= 1_000; i += 1) await read(i);
+    expect(calls).toHaveLength(1_001);
+    await read(1);
+    expect(calls).toHaveLength(1_001);
+    await read(0);
+    expect(calls).toHaveLength(1_002);
   });
 });
 

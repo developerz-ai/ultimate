@@ -62,6 +62,7 @@ describe('the stored event bus keeps one clock', () => {
     expect(event.publishedAt).toBe(at);
     expect(event.expiresAt).toBe(at + 60_000);
     expect(await consumer.find('otp', undefined, askedAt)).toEqual({
+      id: expect.any(String),
       payload: { code: 1 },
       publishedAt: at,
     });

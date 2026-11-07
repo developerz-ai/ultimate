@@ -117,6 +117,19 @@ describe('hitIds', () => {
   test('a repeated key still gets its own id', () => {
     expect(new Set(hitIds(0, ['a', 'a', 'b'])).size).toBe(3);
   });
+
+  test('a key that looks like a suffixed repeat never collides with one', () => {
+    // keyedRows refuses a duplicate id (X_UI_INVALID_VALUE): one collision and the chart is gone.
+    for (const keys of [
+      ['a', 'a', 'a#1'],
+      ['a#1', 'a', 'a'],
+      ['a', 'a#1', 'a', 'a#1#1', 'a#1'],
+    ]) {
+      const ids = hitIds(0, keys);
+      expect(new Set(ids).size).toBe(keys.length);
+    }
+    expect(hitIds(0, ['a', 'b'])).toEqual(['0:a', '0:b']);
+  });
 });
 
 describe('chartNumberFormat', () => {

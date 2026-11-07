@@ -163,9 +163,9 @@ export const config = defineRoute({
   // each) where a `<select>` hid two of three, +1,584 B; ui's keys tree-shaken per key
   // (`ui-keys.ts`), −2,078 B; the island 73,880 → 73,386 B — lowered 105kb → 104.5kb (plan 101
   // wave 10, 38-ui-pickers).
-  // measured: 107446 B (2026-11-07, sweep 1; x build --target static) — why: the island 73,386 → 73,816
+  // measured: 107593 B (2026-11-07, sweep 2; x build --target static) — why: the record envelope's `order` decode in the transport (sweep 2). Sweep 1, 107446 B: the island 73,386 → 73,816
   // (core's `clientStream` sharing `call()`'s unwrap) and the router +122 B.
-  budget: { js: '105kb' },
+  budget: { js: '106kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

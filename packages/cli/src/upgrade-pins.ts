@@ -18,7 +18,8 @@ export interface WorkspaceManifest {
 
 const PIN_ENTRY = /("(@ultimat3\/[a-z0-9-]+)"\s*:\s*")([^"]*)(")/g;
 
-const parseManifest = (file: string, text: string): unknown => {
+/** A manifest's JSON, or X_UPGRADE_PIN_UNREADABLE naming the file: never a raw SyntaxError. */
+export const parseManifest = (file: string, text: string): unknown => {
   try {
     return JSON.parse(text);
   } catch {

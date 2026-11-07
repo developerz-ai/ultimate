@@ -87,8 +87,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`csrf` sits after `auth` and before `body`**: an unsafe request needs
   `sec-fetch-site: same-origin`, an `Origin` equal to this app (from `ctx.https`), or one EXACTLY in
   `cors.origins` (`originListed`, never `allowedOrigin`); else `X_CSRF_BLOCKED` (403). No
-  `mode: 'token'`. **Anonymous is not an exemption** (login CSRF): exempt are an `Authorization`
-  header, and an anonymous request with NEITHER `Origin` nor `sec-fetch-site` (not a browser).
+  `mode: 'token'`. **Anonymous is not an exemption** (login CSRF): exempt are `Authorization:
+  Bearer` (cached Basic is ambient), and an anonymous request with NEITHER `Origin` nor `sec-fetch-site` (not a browser).
   **`meta.csrf: 'cookieless'`** (`/oauth/*`) exempts an ANONYMOUS caller only; `httpRouter`
   refuses it without `meta.authenticate` (`assertRouteCsrf`).
 - **`meta.enforcedBy` says who evaluates `meta.policy`**: `'pipeline'` (default) decides via

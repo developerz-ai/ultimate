@@ -57,3 +57,10 @@ describe('what 25.0.0 took off the barrel stays off it', () => {
     }
   });
 });
+
+describe('one enqueue path on the barrel', () => {
+  test('no enqueueInTx: staging without the facade skipped its tenant and concurrency refusals', () => {
+    expect(Object.keys(barrel)).not.toContain('enqueueInTx');
+    expect(typeof barrel.jobsFacade).toBe('function');
+  });
+});

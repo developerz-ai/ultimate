@@ -55,6 +55,25 @@ describe('unit · editBunSites', () => {
     expect(result.edited.map((edit) => edit.site)).toEqual(['engines.bun', 'packageManager']);
   });
 
+  // A range's version is its lower bound, not a floating tag: `>=1.4` admits 1.4.0.
+  test.each([
+    ['>=1.4', '>=1.4.4'],
+    ['^1.4', '^1.4.4'],
+  ])('engines.bun %s, two parts, is raised to the floor', (range, to) => {
+    const result = editBunSites('package.json', `{ "engines": { "bun": "${range}" } }`, FLOOR);
+    expect(result.text).toBe(`{ "engines": { "bun": "${to}" } }`);
+    expect(result.edited).toEqual([{ path: 'package.json', site: 'engines.bun', from: range, to }]);
+  });
+
+  test('engines.bun >=1.5, two parts, already admits only the floor and above', () => {
+    const source = '{ "engines": { "bun": ">=1.5" } }';
+    expect(editBunSites('package.json', source, FLOOR)).toEqual({
+      text: source,
+      edited: [],
+      manual: [],
+    });
+  });
+
   test('setup-bun, quoted and bare', () => {
     const source = "      with:\n        bun-version: '1.4.2'\n        bun-version: 1.3.14\n";
     const result = editBunSites('.github/workflows/ci.yml', source, FLOOR);

@@ -127,10 +127,14 @@ describe('checkDrift is the post-migrate verification', () => {
     ]);
   });
 
-  test('a table the ledger says was applied and that is gone points at x db migrate', async () => {
+  test('a table the ledger says was applied and that is gone is a create table to run', async () => {
     const report = await checkDrift({ migrations: applied, client: liveDatabase(ledger, []) });
     expect(report.differences.map((difference) => difference.kind)).toEqual(['missing-table']);
-    expect(report.differences[0]?.fix).toBe('x db migrate');
+    // Re-running the migrator applies nothing a ledger row claims, so the fix is the statement.
+    expect(report.differences[0]?.fix).toBe(
+      `psql "$DATABASE_URL" -c 'create table "posts" ("id" text, "title" text, primary key ("id"));'` +
+        '   # then x db migrate, which re-checks and names its indexes, keys, checks and triggers next',
+    );
   });
 
   test('a migration the ledger has not recorded is not owed yet, so it is not drift', async () => {

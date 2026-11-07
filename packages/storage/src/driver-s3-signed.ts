@@ -212,7 +212,10 @@ export function s3ObjectUrl(options: S3WireOptions, key: string): URL {
   );
 }
 
-const XML_FIELD = (name: string): RegExp => new RegExp(`<${name}>([^<]{0,512})</${name}>`);
+// Uncapped: a key is up to 1,024 bytes and S3 escapes it (`&` is `&amp;`), so a 512-character
+// cap dropped a long key's session from `listS3Uploads` and ended its paging at a long
+// `NextKeyMarker`. `[^<]*` stops at the next tag, so the match stays linear with no cap.
+const XML_FIELD = (name: string): RegExp => new RegExp(`<${name}>([^<]*)</${name}>`);
 
 /** The first `<name>…</name>` of an S3 XML answer — the shapes read here are flat and fixed. */
 export function xmlField(xml: string, name: string): string | undefined {

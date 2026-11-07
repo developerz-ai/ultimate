@@ -336,7 +336,6 @@ export type {
   OutboxStore,
 } from './outbox';
 export {
-  enqueueInTx,
   jobsFacade,
   memoryOutboxStore,
   outboxJobsFacade,

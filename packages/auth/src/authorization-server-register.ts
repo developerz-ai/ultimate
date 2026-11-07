@@ -2,13 +2,12 @@
 // it — on only under `registration: 'dynamic'`, counted per address. Never a machine client: an
 // open endpoint handing out `client_credentials` would let anyone mint itself a scope.
 
-import { isUltimateError } from '@ultimat3/core';
 import { isRedirectUri, storeClient } from './authorization-server-clients';
 import type { ResolvedAuthServerConfig } from './authorization-server-config';
 import type { AuthServerGrant, ClientAuthMethod } from './authorization-server-types';
 import { DEVICE_GRANT } from './authorization-server-types';
 import type { AuthServerHttpContext, AuthServerHttpRequest } from './authorization-server-wire';
-import { jsonAnswer } from './authorization-server-wire';
+import { jsonAnswer, throttledAnswer } from './authorization-server-wire';
 import { isRecord } from './json';
 
 const SELF_SERVICE_GRANTS: ReadonlySet<string> = new Set<AuthServerGrant>([
@@ -36,13 +35,9 @@ export async function registerHandler(
   try {
     await config.limiter.reserve(`oauth-register:${ctx.ip ?? 'unknown'}`);
   } catch (error) {
-    if (!isUltimateError(error) || error.code !== 'X_ACCOUNT_LOCKED') throw error;
-    const after = error.meta?.['retryAfterSeconds'];
-    return jsonAnswer(
-      429,
-      { error: 'temporarily_unavailable', error_description: 'too many registrations' },
-      typeof after === 'number' ? { 'retry-after': String(after) } : {},
-    );
+    const answer = throttledAnswer(error, 'too many registrations');
+    if (answer === null) throw error;
+    return answer;
   }
   let body: unknown;
   try {

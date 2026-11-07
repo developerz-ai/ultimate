@@ -66,22 +66,24 @@ export function withTenant(
 }
 
 /**
- * A field declared `on: 'create'` is set once and never patched; one declared `on: 'update'` has no
- * value until the row exists. The form does not draw either on the other side, and this is the
- * same rule for every caller that is not the form — an MCP call, a direct `adminUpdate`.
+ * Only what this resource lets a caller write, on this side. A `hidden` field is in no field
+ * list and a `readOnly` one (a generated column, the tenant, an override) is in the HTML form and
+ * the MCP schema for nobody, so a direct `adminCreate`/`adminUpdate` caller is cut the same way —
+ * skipping the form is not a way around it. A `sensitive` field stays writable: unreadable is not
+ * read-only. A field declared `on: 'create'` is set once and never patched; one declared
+ * `on: 'update'` has no value until the row exists.
  */
 export function onlyFor(
   resource: AdminResource,
   side: 'create' | 'update',
   input: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> {
-  const other = new Set(
+  const offered = new Set(
     [...resource.fields, ...resource.secretFields]
-      .filter((field) => field.on !== undefined && field.on !== side)
+      .filter((field) => !field.readOnly && (field.on === undefined || field.on === side))
       .map((field) => field.name),
   );
-  if (other.size === 0) return input;
-  return Object.fromEntries(Object.entries(input).filter(([key]) => !other.has(key)));
+  return Object.fromEntries(Object.entries(input).filter(([key]) => offered.has(key)));
 }
 
 /**

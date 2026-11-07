@@ -305,6 +305,53 @@ describe('losing the advisory lock', () => {
     expect(fake.calls()).toBe(asked);
   });
 
+  // A standby ask in flight when the role stops can still be granted afterwards. The role's own
+  // stop has already run, so nothing else would ever release that slot: the grant is given back.
+  // The fake's `stop` does not wait out a start in flight — the `Replicator` contract does not
+  // promise that, and `create` hands the role any implementation.
+  test('a standby grant that lands after stop is released, never kept', async () => {
+    declarePost();
+    let calls = 0;
+    let stops = 0;
+    let pumping = false;
+    let grant: (held: boolean) => void = () => undefined;
+    const replicator: Replicator = {
+      start: () => {
+        calls += 1;
+        if (calls === 1) return Promise.resolve(false);
+        return new Promise<boolean>((resolve) => {
+          grant = (held) => {
+            pumping = held;
+            resolve(held);
+          };
+        });
+      },
+      stop: async () => {
+        stops += 1;
+        pumping = false;
+      },
+      get running() {
+        return pumping;
+      },
+      lastLsn: () => null,
+      stats: () => ({ published: 0, skipped: 0, outOfOrder: 0, restarts: 0, failure: null }),
+      retryDelayMs: () => 1,
+    };
+    const running = await startReplicator({
+      services: external,
+      env: ENV,
+      transport,
+      dev: false,
+      create: () => replicator,
+    });
+    await until(() => calls >= 2, 'the standby to ask again');
+    await running.stop();
+    expect(stops).toBe(1);
+    grant(true);
+    await until(() => stops >= 2, 'the late grant to be released');
+    expect(replicator.running).toBe(false);
+  });
+
   test('container refusal names ROLE, not x dev', async () => {
     declarePost();
     let thrown: unknown;

@@ -43,7 +43,7 @@ describe('drift', () => {
     );
   });
 
-  test('a migrated column missing from the live schema points at x db migrate', () => {
+  test('a migrated column missing from the live schema is an add column to run', () => {
     const report = diffSchema(
       schema(table('posts', ['id'])),
       schema(table('posts', ['id', 'publish_at'])),
@@ -52,7 +52,10 @@ describe('drift', () => {
     expect(report.differences[0]?.cause).toBe(
       'table "posts" is missing column "publish_at" that migrations declare',
     );
-    expect(report.differences[0]?.fix).toBe('x db migrate');
+    expect(report.differences[0]?.fix).toBe(
+      `psql "$DATABASE_URL" -c 'alter table "posts" add column "publish_at" text;'` +
+        '   # then x db migrate, which re-checks',
+    );
   });
 
   /**

@@ -190,10 +190,10 @@ export const config = defineRoute({
   // tree-shaken per key (`ui-keys.ts`), −2,003 B; `VirtualList` re-pinning when its drawn range
   // moves (a follower settled 52 px short) and `mount` returning its disposer (the router lets
   // go of the hotkeys and the live read on a swap) — lowered 208kb → 205.5kb (plan 101 wave 10).
-  // measured: 210815 B (2026-11-07, sweep 1; x build --target static) — why: the router 29,570 → 29,692 and
+  // measured: 211146 B (2026-11-07, sweep 2; x build --target static) — why: the record envelope's `order` decode (+63 B, core/page) and the live refetch's retry (`LiveHandle.retry`, use-query + client) — a newest-first list stays newest-first and pull-to-refresh re-asks a refused subscription. Sweep 1, 210815 B: the router 29,570 → 29,692 and
   // core's `clientStream` unwrapping a JSON answer as `call()` does (`settleAnswer`, records and
   // dates), +731 B over 210,084.
-  budget: { js: '206kb' },
+  budget: { js: '207kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

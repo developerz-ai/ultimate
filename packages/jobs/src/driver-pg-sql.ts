@@ -275,16 +275,26 @@ select floor(extract(epoch from statement_timestamp()) * 1000)::bigint as now
 
 /**
  * Earliest matching event at or after `afterMs`, so a resumed step consumes events in publication
- * order rather than jumping to the newest one — the memory bus's rule, in SQL.
+ * order rather than jumping to the newest one — the memory bus's rule, in SQL. `$4` is the cursor a
+ * refused event leaves: rows at or before it in `(published_at, id)` order are passed over, and a
+ * cursor whose row is gone excludes nothing. `floor`, as `SQL_EVENT_PUBLISH` stamps: a rounding
+ * cast answered a stamp up to half a ms LATER than the row, which a floor then stepped past. The
+ * order is QUALIFIED: a bare `published_at` there names the floored output column, whose ties in
+ * one millisecond then fell to the random id.
+ *
+ * $1 name, $2 correlation key, $3 floor (ms), $4 cursor event id.
  */
 export const SQL_EVENT_FIND = `
-select payload, (extract(epoch from published_at) * 1000)::bigint as published_at
-  from x_job_events
+select id, payload, floor(extract(epoch from published_at) * 1000)::bigint as published_at
+  from x_job_events e
  where name = $1
    and expires_at > statement_timestamp()
    and published_at >= to_timestamp($3 / 1000.0)
    and ($2::text is null or correlation_key = $2)
- order by published_at
+   and not exists (
+     select 1 from x_job_events c
+      where c.id = $4::uuid and (e.published_at, e.id) <= (c.published_at, c.id))
+ order by e.published_at, e.id
  limit 1
 `.trim();
 

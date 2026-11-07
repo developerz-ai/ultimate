@@ -310,7 +310,7 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
     },
     listen: async (appUrl) => {
       origins.push(...devOrigins(options, origins, appUrl));
-      return await listen(options, node, { registry, hub }, appUrl);
+      return await listen(options, node, { registry, hub }, appUrl, stopWaiting);
     },
   };
 }
@@ -335,6 +335,8 @@ async function listen(
   node: SyncNode,
   feeds: Pick<RunningSync, 'registry' | 'hub'>,
   appUrl: string | null,
+  /** `startOrWaitForBus`'s cancel: a node stopped while it waits must not start on a reconnect. */
+  stopWaiting: () => void,
 ): Promise<RunningSync> {
   const port = syncPortFor(options.port);
   try {
@@ -365,11 +367,15 @@ async function listen(
       url: listener.url,
       ...feeds,
       stop: async () => {
+        // First, as `prepareSync`'s own stop does: the bus's reconnect subscription otherwise
+        // outlived the node and called `node.start()` on it after this stop returned.
+        stopWaiting();
         listener.stop();
         await node.stop();
       },
     };
   } catch (error) {
+    stopWaiting();
     await node.stop();
     const refusal = await syncBindRefusal(options.port, port);
     if (refusal !== undefined) throw refusal;

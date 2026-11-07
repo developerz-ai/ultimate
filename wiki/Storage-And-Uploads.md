@@ -160,10 +160,12 @@ every one held to the actor's org:
 | Call | Answers |
 |---|---|
 | `grantMultipart({ disk, orgId, request, policy, partBytes? })` | `{ key, uploadId, partBytes, maxParts, contentType, size, expiresAt }`: `grantUpload`'s refusals, then a session. `partBytes` is what 10,000 parts need for `size`, never under 5 MiB |
-| `signPart({ disk, orgId, key, uploadId, partNumber, size })` | a PUT URL whose length is signed. s3: S3's own `UploadPart`, presigned by core's signer. Local: `/_storage/<disk>/<key>?x-upload=…&x-part=…`, both inside the HMAC |
+| `signPart({ disk, orgId, key, uploadId, partNumber, size, policy })` | a PUT URL whose length is signed. s3: S3's own `UploadPart`, presigned by core's signer. Local: `/_storage/<disk>/<key>?x-upload=…&x-part=…`, both inside the HMAC. A part no object under `policy.maxBytes` holds — past `max((partNumber − 1) × 5 MiB + size, partNumber × size)` — is `X_STORAGE_TOO_LARGE` |
 | `listParts({ disk, orgId, key, uploadId })` | `{ partNumber, etag, size }[]`, the resume |
 | `completeUpload({ disk, orgId, key, uploadId, parts, policy })` | the object. Each named part must have landed, ascending, every one but the last at least 5 MiB (`X_STORAGE_PARTS_INVALID`); the etags are the disk's own, so no bucket CORS has to expose `ETag`. A total past `policy.maxBytes` aborts and is `X_STORAGE_TOO_LARGE` |
 | `abortUpload({ disk, orgId, key, uploadId })` | nothing left: no session, no part |
+
+**`policy` is required on `signPart` and `completeUpload`** (`As of 2026-11-07`; no policy is `X_INVARIANT`). The server keeps no record of a grant, and the grant's `size` is the client's own claim, so the policy the app passes on its server is the bound: pass the one the grant was made under, never a value off the request.
 
 ```ts
 import type { MultipartUploadClient, UploadGrant, UploadRequest, UploadSource } from '@ultimat3/storage';

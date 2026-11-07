@@ -62,6 +62,10 @@ const isBelow = (version: string, floor: string): boolean => {
 const atPrecision = (version: string, floor: string): string =>
   floor.split('.').slice(0, version.split('.').length).join('.');
 
+/** A range's version is its lower bound, never a floating tag: `>=1.4` admits 1.4.0. */
+const lowerBound = (version: string): string =>
+  [...version.split('.'), '0', '0'].slice(0, 3).join('.');
+
 const lineAt = (text: string, offset: number): number => text.slice(0, offset).split('\n').length;
 
 /** One comparator over one version: the only range a raise cannot turn into a different claim. */
@@ -81,7 +85,7 @@ const editManifest = (path: string, source: string, floor: string): BunFileEdit 
     /("engines"\s*:\s*\{[^}]*?"bun"\s*:\s*")([^"]*)(")/,
     (whole, head: string, range: string, tail: string, offset: number) => {
       const version = floorOf(range);
-      if (version === undefined || !isBelow(version, floor)) return whole;
+      if (version === undefined || !isBelow(lowerBound(version), floor)) return whole;
       if (!PLAIN_RANGE.test(range)) {
         listed(offset + head.length, `"bun": "${range}"`);
         return whole;

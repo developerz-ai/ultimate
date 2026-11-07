@@ -84,9 +84,7 @@ describe('subscription lifecycle', () => {
     expect(subscriptionState(record, 201, frozenClock(2_000))).toBe('expired');
   });
 
-  // This package's CLAUDE.md states `Determinism | no Date.now()` without qualification, and an
-  // injectable default is still the ONE reader of the wall clock in it. Every other "now" in the
-  // framework's tier-4 packages is a `Clock`, so this one is too.
+  // `Determinism | no Date.now()` (CLAUDE.md): every tier-4 "now" is a `Clock`, this one too.
   test('now arrives as a Clock, and advancing it is what expires a subscription', () => {
     const clock = frozenClock(999);
     expect(subscriptionState(record, 201, clock)).toBe('active');
@@ -302,8 +300,32 @@ describe('serializePushMessage, read by the emitted push handler', () => {
     expect(shown?.options['icon']).toBe('/icons/comment.png');
     expect(shown?.options['renotify']).toBe(true);
     expect(shown?.options['requireInteraction']).toBe(true);
-    expect(shown?.options['data']).toEqual({ url: '/posts/1' });
+    expect(shown?.options['data']).toEqual({ url: '/posts/1', actions: {} });
     expect(shown?.options['actions']).toEqual([{ action: 'reply', title: 'Neuer Kommentar' }]);
+  });
+
+  test('an action url survives render and the wire into the data notificationclick reads', async () => {
+    const withUrl = renderPushPayload(
+      {
+        ...payload,
+        actions: [
+          { action: 'reply', titleKey: 'push.comment.title', url: '/posts/1/reply' },
+          { action: 'mute', titleKey: 'push.comment.title' },
+        ],
+      },
+      'de-DE',
+      translate,
+    );
+    expect(withUrl.actions).toEqual([
+      { action: 'reply', title: 'Neuer Kommentar', url: '/posts/1/reply' },
+      { action: 'mute', title: 'Neuer Kommentar' },
+    ]);
+    const sw = pushRealm(pushSource({}));
+    await sw.deliver(serializePushMessage(withUrl));
+    expect(sw.shown[0]?.options['data']).toEqual({
+      url: '/posts/1',
+      actions: { reply: '/posts/1/reply' },
+    });
   });
 
   test('the missing-translation warnings stay server-side — they are not shipped to a device', () => {
@@ -405,7 +427,7 @@ describe('serializePushMessage, read by the emitted push handler', () => {
     await sw.deliver(null);
 
     expect(sw.shown[0]?.title).toBe('');
-    expect(sw.shown[0]?.options['data']).toEqual({ url: '/' });
+    expect(sw.shown[0]?.options['data']).toEqual({ url: '/', actions: {} });
   });
 });
 

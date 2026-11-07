@@ -100,7 +100,13 @@ export const createSession = action({
       const challenge = challengeOf(error);
       if (challenge === null) throw error;
       holdChallenge(challenge);
-      return { ok: false, next: landAt(SECOND_FACTOR_PATH), secondFactor: true };
+      // The way on survives the second leg: its form posts \`next\` back to \`confirmSession\`.
+      const next = input[NEXT_PARAM];
+      const then =
+        next === undefined
+          ? SECOND_FACTOR_PATH
+          : \`\${SECOND_FACTOR_PATH}?\${NEXT_PARAM}=\${encodeURIComponent(nextPath(next))}\`;
+      return { ok: false, next: landAt(then), secondFactor: true };
     }
   },
 });

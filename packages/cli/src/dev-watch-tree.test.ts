@@ -223,6 +223,28 @@ describe('watchTree', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  // The root `.gitignore` is matched against ROOT-relative paths. The new directory's walk matched
+  // it against paths relative to that directory, so an anchored `/build` hid `pricing/build/` —
+  // saves there never reloaded until a restart — while the boot's own walk admitted it.
+  test('a new directory is walked against the root .gitignore at root-relative paths', async () => {
+    const root = tree('anchored', '/build\n');
+    mkdirSync(join(root, 'build'));
+    const watchers = fakeWatchers(root);
+    const handle = watchTree({
+      root,
+      debounceMs: 1,
+      onChange: () => undefined,
+      watchDirectory: watchers.watchDirectory,
+    });
+    expect(handle.directories()).not.toContain('build');
+    mkdirSync(join(root, 'apps/web/site/pricing/build/pages'), { recursive: true });
+    watchers.fire('apps/web/site', 'rename', 'pricing');
+    expect(handle.directories()).toContain('apps/web/site/pricing/build');
+    expect(handle.directories()).toContain('apps/web/site/pricing/build/pages');
+    handle.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
   test('a removed directory gives its descriptor back', async () => {
     const root = tree('removed');
     const watchers = fakeWatchers(root);

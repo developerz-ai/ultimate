@@ -20,7 +20,7 @@ const setup = async () => {
   const disk = memoryStorageDriver({ signingSecret: 'test-secret', clock });
   const grant = await grantMultipart({ disk, orgId: 'org-1', request, policy, clock });
   const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
-  const url = await signPart({ ...session, partNumber: 2, size: 4 });
+  const url = await signPart({ ...session, policy, partNumber: 2, size: 4 });
   return { disk, grant, session, url };
 };
 

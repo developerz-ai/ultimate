@@ -8,9 +8,10 @@ import { t } from '@ultimat3/schema';
 import type { DigestAppend, DigestStore } from './digest';
 import { memoryDigestStore } from './digest';
 import { NotifyStoreMissingError } from './errors';
+import { memoryDeliveryLedger } from './ledger';
 import { notifier } from './notifier';
 import type { Recorder, TestParams } from './notify-fixture';
-import { driver, recorder } from './notify-fixture';
+import { driver, recorder, START } from './notify-fixture';
 import { resetNotifyStores, setNotifyStores } from './stores';
 
 const params: TestParams = { postId: '00000000-0000-7000-8000-00000000d1d1' };
@@ -100,5 +101,34 @@ describe('unit · fan-out digest under retry', () => {
 
     const sent = log.sent.map((entry) => `${entry.to.join()}:${String(entry.events.length)}`);
     expect(sent).toEqual(['ana:2', 'ben:1']);
+  });
+
+  test('each recipient claims its digest under its OWN window end, not the run maximum', async () => {
+    // Ana's window opens on attempt one; ben's append fails, and attempt two opens his a minute
+    // later. Two windows, two ends: keyed by the later one, ana's claim would collide with any other
+    // run whose maximum lands on that instant and read `sent` for a window it never delivered.
+    const ledger = memoryDeliveryLedger();
+    setNotifyStores({ digest: flaky((_, call) => call === 2), ledger });
+    const log = recorder();
+    const handle = digestNotifier('post.own-window', log);
+    const run = driver();
+    const payload = { params, recipients: [{ id: 'ana' }, { id: 'ben' }] };
+
+    await expect(run.once(handle, payload)).rejects.toBeUltimateError('X_NOTIFY_STORE_MISSING');
+    run.clock.set(START + 60_000);
+    await run.finish(handle, payload);
+
+    const window = 15 * 60_000;
+    const claimed = async (recipient: string, endsAt: number) =>
+      (
+        await ledger.find({
+          notifier: 'post.own-window',
+          key: `digest:post.own-window:${String(endsAt)}`,
+          recipient,
+          channel: 'email',
+        })
+      )?.status;
+    expect(await claimed('ana', START + window)).toBe('sent');
+    expect(await claimed('ben', START + 60_000 + window)).toBe('sent');
   });
 });

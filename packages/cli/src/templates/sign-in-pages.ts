@@ -76,6 +76,7 @@ ${SIGN_OUT_FORM}
 }
 `;
 
+/** The second leg posts the sign-in's \`next\` back, so \`confirmSession\` lands where it was going. */
 export const secondFactorSource = (
   module: string | undefined,
 ): string => `// The second leg of a sign-in: the code from an authenticator app, posted at \`confirmSession\`.
@@ -85,15 +86,21 @@ ${sortedImports([
   "import { defineRoute } from '@ultimat3/render';",
   "import { Button, Field, Input } from '@ultimat3/ui';",
 ])}
+import { NEXT_PARAM, nextPath } from '../../sign-in-flow';
 import styles from '../page.module.scss';
 
 ${routeConfig('app.auth.secondFactor')}
 
-export function Page() {${translatorBinding(module)}
+export interface SecondFactorProps {
+  readonly query?: Readonly<Record<string, string>> | undefined;
+}
+
+export function Page(props: SecondFactorProps) {${translatorBinding(module)}
   return (
     <main class={styles.page}>
       <h1>{t('app.auth.secondFactor.title')}</h1>
       <form method="post" action={derivePath('confirmSession').path}>
+        <input type="hidden" name={NEXT_PARAM} value={nextPath(props.query?.[NEXT_PARAM])} />
         <Field label={t('app.auth.secondFactor.code')} required>
           {(control) => (
             <Input {...control} name="code" inputmode="numeric" autocomplete="one-time-code" />

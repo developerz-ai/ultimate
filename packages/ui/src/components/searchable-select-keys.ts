@@ -56,8 +56,12 @@ export function searchableKeys(state: SearchableKeysState): SearchableKeys {
     if (row === undefined || row.option.disabled === true) return;
     state.commit(pickValue(state.chosen(), row.option.value, state.multiple()));
     if (state.multiple()) {
+      // Clearing the query redraws the list, so the old INDEX names another option: find the
+      // picked one again by value, or the second Enter ticks a row the user never aimed at.
       state.setQuery(null);
-      state.setActive(index);
+      const rows = state.view().rows;
+      const again = rows.findIndex((r) => r.option.value === row.option.value);
+      state.setActive(again >= 0 ? again : firstActive(rows));
     } else close();
   };
 

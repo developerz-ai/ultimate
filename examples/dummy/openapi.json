@@ -3537,6 +3537,16 @@
                         }
                       ]
                     },
+                    "order": {
+                      "additionalProperties": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "description": "A record type's keys in answer order, sent only where `records` cannot keep it (integer-like keys enumerate ascending).",
+                      "type": "object"
+                    },
                     "records": {
                       "additionalProperties": {
                         "additionalProperties": {
@@ -3861,6 +3871,16 @@
                           "type": "object"
                         }
                       ]
+                    },
+                    "order": {
+                      "additionalProperties": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "description": "A record type's keys in answer order, sent only where `records` cannot keep it (integer-like keys enumerate ascending).",
+                      "type": "object"
                     },
                     "records": {
                       "additionalProperties": {
@@ -4583,6 +4603,16 @@
                           "type": "object"
                         }
                       ]
+                    },
+                    "order": {
+                      "additionalProperties": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "description": "A record type's keys in answer order, sent only where `records` cannot keep it (integer-like keys enumerate ascending).",
+                      "type": "object"
                     },
                     "records": {
                       "additionalProperties": {
@@ -6090,6 +6120,16 @@
                   "properties": {
                     "data": {
                       "$ref": "#/components/schemas/ToggleDigestOptInOutput"
+                    },
+                    "order": {
+                      "additionalProperties": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "description": "A record type's keys in answer order, sent only where `records` cannot keep it (integer-like keys enumerate ascending).",
+                      "type": "object"
                     },
                     "records": {
                       "additionalProperties": {
@@ -7956,6 +7996,16 @@
                     "data": {
                       "$ref": "#/components/schemas/SavePreferencesOutput"
                     },
+                    "order": {
+                      "additionalProperties": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "description": "A record type's keys in answer order, sent only where `records` cannot keep it (integer-like keys enumerate ascending).",
+                      "type": "object"
+                    },
                     "records": {
                       "additionalProperties": {
                         "additionalProperties": {
@@ -9149,6 +9199,16 @@
                   "properties": {
                     "data": {
                       "$ref": "#/components/schemas/SetThemeOutput"
+                    },
+                    "order": {
+                      "additionalProperties": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "description": "A record type's keys in answer order, sent only where `records` cannot keep it (integer-like keys enumerate ascending).",
+                      "type": "object"
                     },
                     "records": {
                       "additionalProperties": {

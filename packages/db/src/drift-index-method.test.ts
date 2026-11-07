@@ -40,7 +40,9 @@ describe('the index method is compared', () => {
         table: 'posts',
         column: null,
         cause: 'index "posts_tags_idx" on "posts" is a btree index, not what migrations declare',
-        fix: 'x db migrate',
+        fix:
+          `psql "$DATABASE_URL" -c 'drop index if exists "posts_tags_idx"; create index ` +
+          `"posts_tags_idx" on "posts" using gin ("tags");'   # then x db migrate, which re-checks`,
       },
     ]);
   });

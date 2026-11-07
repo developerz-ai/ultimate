@@ -9,18 +9,20 @@ import type { DriftDifference, DriftKind } from './drift-findings';
 import {
   changedColumn,
   changedForeignKey,
-  changedIndex,
   changedPrimaryKey,
   missingCheck,
-  missingColumn,
-  missingForeignKey,
-  missingIndex,
-  missingTable,
   notValidConstraint,
   unexpectedColumn,
   unexpectedTable,
   unknownSchema,
 } from './drift-findings';
+import {
+  changedIndex,
+  missingColumn,
+  missingForeignKey,
+  missingIndex,
+  missingTable,
+} from './drift-missing';
 import { compareRowSecurity, ROW_SECURITY_DRIFT_CODE } from './drift-row-security';
 import { compareTriggers, LIFECYCLE_DRIFT_CODE, RETAIN_DRIFT_CODE } from './drift-triggers';
 import { DbError, type DbErrorCode } from './errors';
@@ -79,7 +81,7 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
   for (const index of expected.indexes) {
     const counterpart = present.get(index.name);
     if (counterpart === undefined) {
-      differences.push(missingIndex(live.name, index.name));
+      differences.push(missingIndex(live.schema, live.name, index));
       continue;
     }
     // The method first, and before the column list: a GIN index and a btree over the same column
@@ -89,27 +91,47 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
     // catalog reports as `btree` agree instead of reporting drift on a correct database.
     if (indexMethodOf(counterpart) !== indexMethodOf(index)) {
       differences.push(
-        changedIndex(live.name, index.name, `is a ${indexMethodOf(counterpart)} index`),
+        changedIndex(
+          live.schema,
+          live.name,
+          index,
+          counterpart,
+          `is a ${indexMethodOf(counterpart)} index`,
+        ),
       );
       continue;
     }
     if (counterpart.columns.join(',') !== index.columns.join(',')) {
       differences.push(
-        changedIndex(live.name, index.name, `covers (${counterpart.columns.join(', ')})`),
+        changedIndex(
+          live.schema,
+          live.name,
+          index,
+          counterpart,
+          `covers (${counterpart.columns.join(', ')})`,
+        ),
       );
       continue;
     }
     if (counterpart.unique !== index.unique) {
       differences.push(
-        changedIndex(live.name, index.name, counterpart.unique ? 'is unique' : 'is not unique'),
+        changedIndex(
+          live.schema,
+          live.name,
+          index,
+          counterpart,
+          counterpart.unique ? 'is unique' : 'is not unique',
+        ),
       );
       continue;
     }
     if ((counterpart.order ?? 'asc') !== (index.order ?? 'asc')) {
       differences.push(
         changedIndex(
+          live.schema,
           live.name,
-          index.name,
+          index,
+          counterpart,
           counterpart.order === 'desc' ? 'is descending' : 'is ascending',
         ),
       );
@@ -118,8 +140,10 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
     if ((counterpart.where === null) !== (index.where === null)) {
       differences.push(
         changedIndex(
+          live.schema,
           live.name,
-          index.name,
+          index,
+          counterpart,
           counterpart.where === null ? 'covers every row' : 'is partial',
         ),
       );
@@ -152,7 +176,7 @@ function compareForeignKeys(live: TableDescription, expected: TableDescription):
   for (const key of expected.foreignKeys) {
     const counterpart = present.get(foreignKeyTarget(key));
     if (counterpart === undefined) {
-      differences.push(missingForeignKey(live.name, key));
+      differences.push(missingForeignKey(live.schema, live.name, key));
       continue;
     }
     if (onDeleteRule(counterpart.onDelete) !== onDeleteRule(key.onDelete)) {
@@ -235,7 +259,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
   for (const column of expected.columns) {
     const counterpart = liveColumns.get(column.name);
     if (counterpart === undefined) {
-      differences.push(missingColumn(live.name, column.name));
+      differences.push(missingColumn(live.schema, live.name, column));
       continue;
     }
     // Nullability, not the type: the catalog and a snapshot spell types differently often enough
@@ -257,8 +281,16 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
   return differences;
 }
 
-/** Pure and total: the same inputs always produce the same ordered report. */
-export function diffSchema(live: SchemaDescription, expected: SchemaDescription): DriftReport {
+/**
+ * Pure and total: the same inputs always produce the same ordered report. `schema` is where the
+ * live side was read — a missing table has no live description to say so, and its repair has to
+ * create it there. Default `public`, `introspectSchema()`'s own.
+ */
+export function diffSchema(
+  live: SchemaDescription,
+  expected: SchemaDescription,
+  schema = 'public',
+): DriftReport {
   const differences: DriftDifference[] = [];
   for (const table of live.tables) {
     const counterpart = findTable(expected, table.name);
@@ -266,7 +298,9 @@ export function diffSchema(live: SchemaDescription, expected: SchemaDescription)
     else differences.push(...compareTable(table, counterpart));
   }
   for (const table of expected.tables) {
-    if (findTable(live, table.name) === undefined) differences.push(missingTable(table.name));
+    if (findTable(live, table.name) === undefined) {
+      differences.push(missingTable(schema, table.name, table.columns, table.primaryKey));
+    }
   }
   differences.sort((a, b) => {
     if (a.table !== b.table) return a.table < b.table ? -1 : 1;
@@ -393,5 +427,5 @@ export async function checkDrift(options: DriftOptions): Promise<DriftReport> {
     client,
     ...(options.schema === undefined ? {} : { schema: options.schema }),
   });
-  return diffSchema(appTables(live), expected);
+  return diffSchema(appTables(live), expected, options.schema);
 }

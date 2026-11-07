@@ -256,7 +256,7 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
       // A static page already rendered by this process is answered without `load` or a render.
       const key =
         options.memoStatic === true
-          ? staticMemoKey(entry, addressedUrl(request.url, ctx), asCtx(ctx).locale)
+          ? staticMemoKey(entry, addressedUrl(request.url, ctx), asCtx(ctx).locale, options.origin)
           : undefined;
       const kept = key === undefined ? undefined : memo.get(key);
       if (kept !== undefined) return staticResponse(request, kept);

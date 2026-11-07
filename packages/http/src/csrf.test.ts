@@ -13,7 +13,7 @@ const input = (patch: Partial<CsrfCheckInput> = {}): CsrfCheckInput => ({
   selfOrigin: 'https://app.example.com',
   origin: null,
   secFetchSite: null,
-  hasAuthorizationHeader: false,
+  authorization: null,
   anonymous: false,
   cors,
   config: DEFAULT_CSRF,
@@ -124,7 +124,19 @@ describe('checkCsrf', () => {
   // A bearer token is chosen by the caller's own code; a cross-site page cannot make the browser
   // attach one, which is the whole definition of "not ambient".
   test('a bearer caller is exempt', () => {
-    expect(checkCsrf(input({ hasAuthorizationHeader: true, secFetchSite: 'cross-site' })).ok).toBe(
+    for (const authorization of ['Bearer t0k', 'bearer t0k']) {
+      expect(checkCsrf(input({ authorization, secFetchSite: 'cross-site' })).ok).toBe(true);
+    }
+  });
+
+  // Basic, Digest, Negotiate: the browser re-sends a cached one on its own, so a same-site
+  // sibling's form post arrives carrying it — the header is as ambient as the cookie beside it.
+  test('an ambient Authorization scheme is judged like the cookie', () => {
+    const sibling = { origin: 'https://evil.app.example.com', secFetchSite: 'same-site' };
+    for (const authorization of ['Basic dTpw', 'Digest username="u"', 'Negotiate abc', 'Bearer']) {
+      expect(checkCsrf(input({ ...sibling, authorization })).ok).toBe(false);
+    }
+    expect(checkCsrf(input({ authorization: 'Basic dTpw', secFetchSite: 'same-origin' })).ok).toBe(
       true,
     );
   });

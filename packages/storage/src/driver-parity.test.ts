@@ -306,7 +306,7 @@ describe('an upload in parts behaves alike on every disk', () => {
     const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
     await sendPart(
       disk,
-      await signPart({ ...session, partNumber: n, size: bytes.byteLength }),
+      await signPart({ ...session, policy, partNumber: n, size: bytes.byteLength }),
       bytes,
     );
   };
@@ -337,12 +337,12 @@ describe('an upload in parts behaves alike on every disk', () => {
       const session = { disk, orgId: 'org-1', key: grant.key, uploadId: grant.uploadId };
       await upload(disk, grant, 1);
       const parts = [{ partNumber: 1 }, { partNumber: 2 }];
-      const early = await catchError(() => completeUpload({ ...session, parts }));
+      const early = await catchError(() => completeUpload({ ...session, parts, policy }));
       expect([name, codeOf(early)]).toEqual([name, 'X_STORAGE_PARTS_INVALID']);
       const landed = (await listParts(session)).map((part) => part.partNumber);
       expect([name, landed]).toEqual([name, [1]]);
       await upload(disk, grant, 2);
-      const object = await completeUpload({ ...session, parts });
+      const object = await completeUpload({ ...session, parts, policy });
       expect([name, object.size]).toEqual([name, SIZE]);
     }
   });
@@ -369,7 +369,9 @@ describe('an upload in parts behaves alike on every disk', () => {
     for (const [name, disk] of disks()) {
       const grant = await open(disk);
       const foreign = { disk, orgId: 'org-2', key: grant.key, uploadId: grant.uploadId };
-      const refused = await catchError(() => signPart({ ...foreign, partNumber: 1, size: 3 }));
+      const refused = await catchError(() =>
+        signPart({ ...foreign, policy, partNumber: 1, size: 3 }),
+      );
       expect([name, codeOf(refused)]).toEqual([name, 'X_STORAGE_ORG_MISMATCH']);
     }
   });

@@ -18,7 +18,8 @@ import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSyn
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
 import { reusedPid, startedOf } from './dev-lock-identity';
-import { exec, type Runner } from './exec';
+import { type PortHolder, portHolder } from './dev-lock-port-holder';
+import { stealStale } from './dev-lock-steal';
 import { portPairAfter } from './flag-number';
 import { quoteArg } from './shell-quote';
 
@@ -35,6 +36,9 @@ export interface DevLock {
   readonly started?: string;
 }
 
+export { netstatListener, portHolder, tasklistImage } from './dev-lock-port-holder';
+// Re-exported: the port refusal's holder, split out at the file ceiling.
+export type { PortHolder };
 // Re-exported: `cmd-stop.ts` asks the same question before it signals.
 export { reusedPid };
 
@@ -170,82 +174,6 @@ export class DevStateUnwritableError extends UltimateError {
   }
 }
 
-/** Whatever is listening, as far as the OS will say. Both fields absent when it will not say. */
-export interface PortHolder {
-  readonly pid?: number;
-  /** The process name, e.g. `bun`. Enough to recognise "that is my other project". */
-  readonly command?: string;
-}
-
-/**
- * Who holds the port. `ss` first because it is present on every Linux box the framework targets and
- * needs no elevation for your own processes; `lsof` is the macOS answer; `netstat -ano` plus
- * `tasklist` the Windows one.
- *
- * Through `exec.ts`, like every other subprocess the CLI runs, so a test injects a fake `Runner`
- * rather than racing a real socket.
- *
- * EVERY PROBE IS CAUGHT SEPARATELY. `exec` refuses a missing program with `X_CLI_UNEXPECTED`, and
- * letting that escape would mean a box without `ss` gets the CLI's catch-all instead of
- * `X_PORT_IN_USE` — the exact substitution this module exists to end. A missing `ss` must fall
- * through to `lsof`, and a box with none still gets the refusal, just without a pid in it.
- */
-export const portHolder = async (port: number, runner: Runner = exec): Promise<PortHolder> => {
-  const probe = async (command: readonly string[]): Promise<string> => {
-    try {
-      const result = await runner(command, { cwd: process.cwd() });
-      return result.stdout;
-    } catch {
-      return '';
-    }
-  };
-
-  const parsed = /users:\(\("([^"]+)",pid=(\d+)/.exec(
-    await probe(['ss', '-lptnH', `sport = :${port}`]),
-  );
-  const name = parsed?.[1];
-  if (parsed !== null && name !== undefined) return { command: name, pid: Number(parsed[2]) };
-
-  const lines = (
-    await probe(['lsof', '-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN', '-Fpc'])
-  ).split('\n');
-  const pid = lines.find((line) => line.startsWith('p'))?.slice(1);
-  const command = lines.find((line) => line.startsWith('c'))?.slice(1);
-  if (pid !== undefined && /^\d+$/.test(pid)) {
-    return command === undefined ? { pid: Number(pid) } : { command, pid: Number(pid) };
-  }
-
-  // Windows has neither: `netstat -ano` names the listening pid, `tasklist` its image.
-  const listener = netstatListener(await probe(['netstat', '-ano', '-p', 'TCP']), port);
-  if (listener === undefined) return {};
-  const image = tasklistImage(
-    await probe(['tasklist', '/FI', `PID eq ${String(listener)}`, '/FO', 'CSV', '/NH']),
-  );
-  return image === undefined ? { pid: listener } : { command: image, pid: listener };
-};
-
-/**
- * The pid `netstat -ano` reports LISTENING on `port`, any local address: `TCP 127.0.0.1:3000
- * 0.0.0.0:0 LISTENING 4242`, and `[::1]:3000` for IPv6. The state column is the word Windows
- * prints in English on every locale this was read on; an unrecognised line is skipped.
- */
-export function netstatListener(text: string, port: number): number | undefined {
-  for (const line of text.split(/\r?\n/)) {
-    const [proto, local, , state, pid] = line.trim().split(/\s+/);
-    if (proto !== 'TCP' || state !== 'LISTENING' || pid === undefined || !/^\d+$/.test(pid)) {
-      continue;
-    }
-    if (local?.endsWith(`:${String(port)}`) === true) return Number(pid);
-  }
-  return undefined;
-}
-
-/** The image name off `tasklist /FO CSV /NH`'s one row — `"bun.exe","4242",…` — or `undefined`. */
-export function tasklistImage(text: string): string | undefined {
-  const name = /^"([^"]+)","\d+"/m.exec(text.trim())?.[1];
-  return name === undefined || name === '' ? undefined : name;
-}
-
 /**
  * The port is bound by something that is not us. Named separately from the lock case because the
  * remedy is different: a stranger's port is worked around with `--port`, while a second `x dev` on
@@ -341,11 +269,23 @@ function claimExclusive(stateDir: string, path: string, lock: DevLock): boolean 
   }
 }
 
+/**
+ * The lock's bytes right now, or `null` when there is no file to read. Total: a rival's steal may
+ * remove the file between `exists()` and the read, and that is "absent", never a bare `ENOENT`.
+ */
+const readRaw = async (path: string): Promise<string | null> => {
+  const file = Bun.file(path);
+  try {
+    return (await file.exists()) ? await file.text() : null;
+  } catch {
+    return null;
+  }
+};
+
 /** Whatever is on disk right now, or `null` if it is absent or half-written. */
 const readLock = async (path: string): Promise<DevLock | null> => {
-  const file = Bun.file(path);
-  if (!(await file.exists())) return null;
-  return parseLock(await file.text());
+  const raw = await readRaw(path);
+  return raw === null ? null : parseLock(raw);
 };
 
 export interface PreflightInput {
@@ -371,6 +311,62 @@ export interface PreflightResult {
   release(): void;
 }
 
+/** Rounds of claim-or-clear before the lock is reported unreadable, and the wait on a busy steal. */
+const CLAIM_ROUNDS = 200;
+const STEAL_BUSY_MS = 5;
+
+/**
+ * The claim, clearing a stale lock on the way: `true` when one was cleared. Each round claims, or
+ * reads the holder and refuses a live one, or clears a stale one under `dev.lock.steal`
+ * (`stealStale`) and goes round again — so a lock that changed hands mid-round is judged afresh,
+ * never deleted by path. A rival's fresh claim then reads as live and is refused; an unlink after
+ * an unguarded read deleted it, and two boots shared one `.x/pgdata`.
+ */
+async function claimOrClearStale(
+  input: PreflightInput,
+  path: string,
+  mine: DevLock,
+  alive: (pid: number) => boolean,
+): Promise<boolean> {
+  let clearedStale = false;
+  let held: DevLock | null = null;
+  for (let round = 0; round < CLAIM_ROUNDS; round += 1) {
+    if (claimExclusive(input.stateDir, path, mine)) return clearedStale;
+    const raw = await readRaw(path);
+    const now = raw === null ? null : parseLock(raw);
+    // `held` keeps the last identity read: a half-written file parses as `null` for microseconds.
+    held = now ?? held;
+    if (now !== null && alive(now.pid) && !(await reusedPid(now))) {
+      throw new DevAlreadyRunningError({
+        lock: now,
+        stateDir: input.stateDir,
+        ...(input.embeddedDb === undefined ? {} : { embeddedDb: input.embeddedDb }),
+      });
+    }
+    // Stale: a hard kill, or a file nothing here wrote. No bytes read (a directory at the lock's
+    // path, say) leaves nothing to compare, so nothing is removed and the claim decides alone.
+    clearedStale = true;
+    if (raw === null) continue;
+    const outcome = stealStale({
+      path,
+      judged: raw,
+      claim: (guard) => claimExclusive(input.stateDir, guard, mine),
+      alive: isProcessAlive,
+    });
+    if (outcome === 'busy') await Bun.sleep(STEAL_BUSY_MS);
+  }
+  // NEVER `mine`, which is what it fell back to: with an unparseable lock that could not be
+  // cleared, both reads answered `null` and the refusal named THIS pid as the holder — `kill
+  // <self>` as the remedy for a file nobody could read.
+  const holder = (await readLock(path)) ?? held;
+  if (holder === null) throw new DevLockUnreadableError({ path, stateDir: input.stateDir });
+  throw new DevAlreadyRunningError({
+    lock: holder,
+    stateDir: input.stateDir,
+    ...(input.embeddedDb === undefined ? {} : { embeddedDb: input.embeddedDb }),
+  });
+}
+
 /**
  * Run before anything boots, and it CLAIMS: it returns holding the directory, never having merely
  * looked at it.
@@ -382,8 +378,8 @@ export interface PreflightResult {
  * records. The claim closes the window it names.
  *
  * The stale path still exists and is still normal (a hard kill leaves a lock behind): the file is
- * removed and the claim retried once. A retry that ALSO loses is another boot that claimed the
- * cleared slot in that instant, which is a refusal and not a third boot.
+ * removed (`claimOrClearStale`) and the claim retried. A retry that ALSO loses is another boot
+ * that claimed the cleared slot in that instant, which is a refusal and not a third boot.
  */
 export const preflight = async (input: PreflightInput): Promise<PreflightResult> => {
   const alive = input.alive ?? isProcessAlive;
@@ -406,42 +402,7 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
     startedAt: new Date().toISOString(),
     ...(await startedOf(process.pid)),
   };
-  let clearedStale = false;
-
-  if (!claimExclusive(input.stateDir, path, mine)) {
-    const held = await readLock(path);
-    if (held !== null && alive(held.pid) && !(await reusedPid(held))) {
-      throw new DevAlreadyRunningError({
-        lock: held,
-        stateDir: input.stateDir,
-        ...(input.embeddedDb === undefined ? {} : { embeddedDb: input.embeddedDb }),
-      });
-    }
-    // Stale: a hard kill, or a file nothing here wrote. Removing it is what makes the next boot
-    // work, and `unlinkSync` because a lock that outlives its own cleanup is the bug being fixed.
-    try {
-      unlinkSync(path);
-    } catch {
-      // Already gone, or not ours to remove. The claim below is what decides.
-    }
-    clearedStale = true;
-    if (!claimExclusive(input.stateDir, path, mine)) {
-      // Lost the race for the slot we just cleared. `held` is the best identity available — a
-      // half-written file parses as `null` for microseconds — and refusing on a stale pid beats
-      // the alternative, which is two processes writing one single-writer data directory.
-      //
-      // NEVER `mine`, which is what it fell back to: with an unparseable lock and a failed
-      // `unlinkSync`, both reads answer `null` and the refusal named THIS pid as the holder —
-      // `kill <self>` as the remedy for a file nobody could read.
-      const holder = (await readLock(path)) ?? held;
-      if (holder === null) throw new DevLockUnreadableError({ path, stateDir: input.stateDir });
-      throw new DevAlreadyRunningError({
-        lock: holder,
-        stateDir: input.stateDir,
-        ...(input.embeddedDb === undefined ? {} : { embeddedDb: input.embeddedDb }),
-      });
-    }
-  }
+  const clearedStale = await claimOrClearStale(input, path, mine, alive);
 
   if (bound(input.port, input.hostname)) {
     // Released before the throw: the remedy this refusal prints is `x dev --port <n>`, and a claim

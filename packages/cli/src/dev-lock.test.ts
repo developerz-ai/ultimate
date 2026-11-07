@@ -233,6 +233,33 @@ describe('preflight', () => {
     }
   });
 
+  // Two boots over ONE stale lock: B reads it, A clears it and claims, then B's clear used to
+  // `unlinkSync` A's live claim by path and claim too — two processes on one `.x/pgdata`. `alive`
+  // runs between B's read and B's clear, so it is where A's whole clear-and-claim is played.
+  test('a stale lock a rival re-claimed after it was read is refused, never deleted', async () => {
+    const dir = scratch();
+    try {
+      await writeLock(dir, LOCK);
+      const rival = { ...LOCK, pid: 7777, url: 'http://localhost:3010' };
+      const thrown = await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        portBound: () => false,
+        alive: (pid) => {
+          if (pid === LOCK.pid) writeFileSync(lockPath(dir), `${JSON.stringify(rival)}\n`);
+          return pid !== LOCK.pid;
+        },
+      }).catch((error: unknown) => error);
+      expect(thrown).toBeInstanceOf(DevAlreadyRunningError);
+      expect((thrown as DevAlreadyRunningError).cause).toContain('7777');
+      // The rival's claim is still the lock, byte for byte.
+      expect(parseLock(await Bun.file(lockPath(dir)).text())).toEqual(rival);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('an unparseable lock is treated as stale, not as a live owner', async () => {
     const dir = scratch();
     try {

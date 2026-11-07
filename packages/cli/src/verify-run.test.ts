@@ -270,6 +270,35 @@ describe('a suite that executed nothing is a skip, never a pass', () => {
   });
 });
 
+// The dev MCP host's `verify` tool calls `runVerify` again and again in one process: a test file
+// written between two calls must be seen by the second, not hidden behind the first's file list.
+describe('runVerify · test discovery is per run', () => {
+  const onePass: VerifyContext['runner'] = async (command) => ({
+    command,
+    code: 0,
+    ok: true,
+    stdout: ' 1 pass\n 0 skip\n 0 fail\nRan 1 test across 1 file. [46.00ms]',
+    stderr: '',
+    durationMs: 46,
+  });
+
+  test('a suite added after one run applies on the next', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-verify-rediscover-'));
+    try {
+      const step = TEST_STEPS.find((candidate) => candidate.name === 'e2e');
+      if (step === undefined) return expect.unreachable('the e2e step is registered');
+      const before = await runVerify([step], { root, runner: onePass });
+      expect(before.steps?.find((one) => one.name === 'e2e')?.skipped).toBe(true);
+      await Bun.write(join(root, 'apps/web/app/posts/page.e2e.test.ts'), '// e2e\n');
+      const after = await runVerify([step], { root, runner: onePass });
+      expect(after.steps?.find((one) => one.name === 'e2e')?.skipped).not.toBe(true);
+    } finally {
+      resetTestDiscovery();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 /**
  * Three subsets of the step list were typed `string`, so a renamed or deleted step left a stale
  * name that compiled and simply never matched. They are `VerifyStepName` now: the stale name is

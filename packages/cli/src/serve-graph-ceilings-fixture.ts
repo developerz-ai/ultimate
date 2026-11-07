@@ -136,30 +136,19 @@
  * saga and event-wake modules (14: `consumer*`, `errors-saga`, `steps-{unwind,wait}`,
  * `execute-{ctx,unwind}`, `driver-pg-event-wake-sql`, `step-resolve`, `backfill-{source,reader}`)
  * through the jobs barrel; `cli/src/runtime-replica-position.ts`.
- * raised 804 → 822, measured 822 (2026-11-06, plan 101 wave 8): 18 new files, no existing module
- * newly reached — time series and views (`entity/src/{time-bucket,read-aggregates,
- * series-unsupported,pg-aggregates,memory-aggregates,entity-parse,view-entity,view-repo}.ts`,
- * `db/src/generate-view.ts`, `jobs/src/{rollup,rollup-errors,refresh-view}.ts`), `db/src/keyset.ts`,
- * the Redis client and its deadline (`core/src/redis-client.ts`, `cache/src/redis-deadline.ts`),
- * the limiter's store deadline (`http/src/rate-limit-store-deadline.ts`), `core/src/
- * error-reporter-chain.ts` and `admin/src/error-groups-schema.ts` (the framework table's DDL).
- * raised 822 → 852, measured 852 (2026-11-06, plan 101 wave 9): 30 new files, no existing module
- * newly reached — failure capture (`core/src/{failure-capture,failure-capture-flush,
- * failure-capture-mask,config-failure-capture}.ts`, `db/src/failure-store-pg.ts`,
- * `entity/src/read-capture.ts`), `core/src/config-time.ts`, entity lifecycle
- * (`entity/src/{retain,history,history-actor,counter,lifecycle,memory-lifecycle}.ts`,
- * `db/src/{generate-history,generate-counter,generate-triggers,drift-triggers,lifecycle-errors}.ts`,
- * `jobs/src/purge-entities.ts`), subject data (`jobs/src/subject{,-errors,-jobs,-plan,-select,
- * -erase-pass,-export-pass}.ts`, `auth/src/subject-target.ts`), `jobs/src/failure-row.ts`, and
- * streaming (`action/src/{action-stream,http-stream}.ts`) — each through its package's barrel.
+ * raised 804 → 822, measured 822 (2026-11-06, wave 8): 18 new files (time series and views,
+ * `db/src/keyset.ts`, the Redis client and deadlines, `error-reporter-chain`, `error-groups-schema`).
+ * raised 822 → 852, measured 852 (2026-11-06, wave 9): 30 new files (failure capture, `config-time`,
+ * entity lifecycle, subject data, `failure-row`, action streaming), each through its barrel.
  * raised 852 → 853, measured 853 (2026-11-07, plan 101 wave 10): `core/src/hmac.ts`, the one keyed
  * hash every HMAC site now calls (a Bun keyed-hasher bug). No existing module newly reached.
  * raised 853 → 878, measured 878 (2026-11-07, #990–#999), 25 new files through their barrels:
  * `auth/src/{passkey-*,webauthn-data,cbor,cose-key,base64url}.ts` (14), `action/src/{meter*,
  * errors-meter}.ts` (7), `http/src/{problem-meta-framework,server-websocket,websocket-mounts}.ts`,
  * `notify/src/push-device-pg.ts`. No existing module newly reached.
+ * raised 878 → 879, measured 879 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
  */
-export const MIGRATE_CEILING = 878;
+export const MIGRATE_CEILING = 879;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -333,8 +322,9 @@ export const MIGRATE_CEILING = 878;
  * raised 1225 → 1226, measured 1226 (2026-11-07, plan 101 wave 10): `MIGRATE_CEILING`'s `core/src/hmac.ts`.
  * raised 1226 → 1253, measured 1253 (2026-11-07, #990–#999): `MIGRATE_CEILING`'s 25, plus
  * `realtime/src/device-socket.ts` and `cli/src/role-start-devices.ts` (every role's device sockets).
+ * raised 1253 → 1254, measured 1254 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
  */
-export const SERVING_ROLE_CEILING = 1253;
+export const SERVING_ROLE_CEILING = 1254;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -496,5 +486,6 @@ export const SERVING_ROLE_CEILING = 1253;
  * raised 1398 → 1434, measured 1434 (2026-11-07, #990–#999): `SERVING_ROLE_CEILING`'s 27, plus the
  * web role's MCP `mcp/src/{app-catalog,catalog-errors,confirmation-{approvers,evidence,quorum-errors},
  * runtime-schema,runtime-tool,server-catalog,tenant}.ts`.
+ * raised 1434 → 1435, measured 1435 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
  */
-export const WEB_ROLE_CEILING = 1434;
+export const WEB_ROLE_CEILING = 1435;

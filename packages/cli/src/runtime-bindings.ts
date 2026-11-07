@@ -5,6 +5,8 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RealtimeConfig } from '@ultimat3/core';
+import { renderThrowable } from '@ultimat3/core';
+import { StorageUnwritableError } from './errors';
 import { REALTIME_DEFAULTS } from './runtime-realtime';
 import { safeUrlLabel } from './safe-url-label';
 
@@ -58,6 +60,22 @@ const s3EndpointOf = (env: Env): string | undefined => nonEmpty(env['S3_ENDPOINT
 export const storageIsExternal = (env: Env): boolean => s3EndpointOf(env) !== undefined;
 
 /**
+ * `.x/`, coded. A read-only root filesystem (the chart's `readOnlyRootFilesystem: true`) with
+ * `DATABASE_URL` set and no `S3_ENDPOINT` threw a bare `EROFS`/`EACCES` here — every role,
+ * `ROLE=migrate` included — before `startStorage`'s own coded refusal of the same disk could run.
+ */
+function makeStateDir(stateDir: string): void {
+  try {
+    mkdirSync(stateDir, { recursive: true });
+  } catch (cause) {
+    throw new StorageUnwritableError(
+      `the embedded database or storage disk needs the state directory ${stateDir} and it could not be created: ${renderThrowable(cause)}`,
+      `export ULTIMATE_STATE_DIR=/tmp/ultimate-state   # any writable directory or volume; or set DATABASE_URL, S3_ENDPOINT and S3_BUCKET so nothing embedded needs ${stateDir}`,
+    );
+  }
+}
+
+/**
  * Embedded Postgres is PGlite on disk under `.x/`, so a restart keeps the data and a `x db reset`
  * is a directory delete rather than a container dance.
  */
@@ -76,9 +94,7 @@ export function resolveServices(
   // do, in-process events never touch the disk. A container whose bindings are external runs
   // non-root over a read-only app directory, and a mkdir there is an EACCES at boot for a directory
   // that would have stayed empty — which an unset NATS_URL alone used to trigger.
-  if (databaseUrl === undefined || s3Endpoint === undefined) {
-    mkdirSync(stateDir, { recursive: true });
-  }
+  if (databaseUrl === undefined || s3Endpoint === undefined) makeStateDir(stateDir);
   return {
     root,
     stateDir,
