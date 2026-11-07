@@ -95,7 +95,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `generate-feature-required.ts` | `x g query`/`backfill` with no slice holding an `entity.ts` is `X_FEATURE_REQUIRED` |
 | `generate-sign-in*.ts` | `x g sign-in`: one flag, no name; OIDC swaps only `x new`'s bytes |
 | `generate-format-written.ts` | the app's Biome over the TypeScript a run created, best effort; `lint` judges |
-| `templates/scaffold-mcp-json.ts` / `templates/scaffold-mcp-endpoint.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`) and the refusing `apps/web/mcp.ts` + `app/auth/agent-token.ts`; `scaffold-agents-md.test.ts` resolves every command `AGENTS.md` names |
+| `templates/scaffold-mcp-{json,endpoint,admin}.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`), the refusing `apps/web/mcp.ts` + `app/auth/agent-token.ts`, `apps/admin/mcp.ts`; `scaffold-agents-md.test.ts` resolves every command `AGENTS.md` names |
 
 ### Boot (`x dev`, the container)
 
