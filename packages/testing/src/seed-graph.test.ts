@@ -284,7 +284,7 @@ describe(testName('unit', 'seedGraph refusals'), () => {
 });
 
 describe(testName('unit', 'seedGraph partial uniques'), () => {
-  // notificado.co's `orgs`: one staff org, any number of customer ones.
+  // An org table with one staff org and any number of customer ones.
   const orgs = entity('sg_kind_orgs', {
     columns: { id: uuid().primaryKey(), kind: enumerated(['customer', 'staff']) },
     indexes: [{ on: ['kind'], unique: true, where: (c) => c.kind.eq('staff') }],
@@ -326,7 +326,7 @@ describe(testName('unit', 'seedGraph partial uniques'), () => {
 });
 
 describe(testName('unit', 'seedGraph derive'), () => {
-  // notificado.co's `memorial_templates`: `scopeKey` spells the owner the graph picked.
+  // A template table whose `scopeKey` spells the owner the graph picked.
   const owners = entity('sg_owner_orgs', { columns: { id: uuid().primaryKey() } });
   const scopeMatches = (ownerOrgId: string, scopeKey: string): boolean =>
     scopeKey === `org:${ownerOrgId}`;
