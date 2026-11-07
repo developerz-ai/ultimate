@@ -50,6 +50,8 @@ const DENIAL_CODES: ReadonlySet<string> = new Set([
   'X_ADMIN_DENIED',
   'X_FORBIDDEN',
   'X_MCP_CONFIRMATION_REJECTED',
+  // A quorum vote whose signed evidence does not verify: a refusal, in the denial bucket.
+  'X_MCP_CONFIRMATION_EVIDENCE_INVALID',
   'X_UNAUTHENTICATED',
 ]);
 
@@ -64,7 +66,12 @@ const DENIAL_CODES: ReadonlySet<string> = new Set([
  * input this server already validated failing inside the action means the two have drifted, and
  * that wants a human.
  */
-const ARGUMENT_CODES: ReadonlySet<string> = new Set(['X_ADMIN_INVALID', 'X_MCP_WRONG_TOOL']);
+const ARGUMENT_CODES: ReadonlySet<string> = new Set([
+  'X_ADMIN_INVALID',
+  'X_MCP_WRONG_TOOL',
+  // A call on a `tenant` server that named none: a client slip, answered with `list_tenants`.
+  'X_MCP_TENANT_REQUIRED',
+]);
 
 /**
  * `mcpConfirmations`' answers for a call no live approval covers. A rejection is NOT here: a human
@@ -73,6 +80,8 @@ const ARGUMENT_CODES: ReadonlySet<string> = new Set(['X_ADMIN_INVALID', 'X_MCP_W
 const UNCONFIRMED_CODES: ReadonlySet<string> = new Set([
   'X_MCP_CONFIRMATION_PENDING',
   'X_MCP_CONFIRMATION_EXPIRED',
+  // Approved by fewer people than the quorum asks: still waiting, as a pending one is.
+  'X_MCP_CONFIRMATION_QUORUM_PENDING',
   'X_MCP_USER_CONFIRMATION_REQUIRED',
 ]);
 
@@ -187,6 +196,8 @@ function callerFields(entry: McpResourceAuditEntry | McpAuditEntry): LogFields {
     actor: entry.caller.actor.id,
     actorKind: entry.caller.actor.kind,
     ...(entry.caller.role === undefined ? {} : { role: entry.caller.role }),
+    // The tenant a `tenant` server resolved for this call — the decision's subject, not an argument.
+    ...(entry.caller.tenant === undefined ? {} : { tenant: entry.caller.tenant }),
     ...(entry.scope === undefined ? {} : { scope: entry.scope }),
     ...(entry.code === undefined ? {} : { code: entry.code }),
   };

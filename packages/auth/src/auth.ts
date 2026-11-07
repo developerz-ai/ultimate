@@ -15,6 +15,11 @@ import { memoryTotpReplayGuard, type TotpReplayGuard } from './mfa';
 import { mfaChallengeRequired } from './mfa-challenge';
 import type { OAuthProviderId } from './oauth';
 import {
+  type PasskeyPolicy,
+  type PasskeyPolicyInput,
+  resolvePasskeyPolicy,
+} from './passkey-config';
+import {
   checkPasswordStrength,
   DEFAULT_PASSWORD_POLICY,
   hashPassword,
@@ -170,6 +175,13 @@ export interface AuthConfigInput {
    * by id — `register(auth, { id })` creates the auth user under the app's id.
    */
   readonly handles?: HandleDirectory | undefined;
+  /**
+   * The relying party passkeys are verified against: `{ rpId: 'example.com', origins:
+   * ['https://example.com'] }`. Absent means no passkeys — `passkeyLogin(auth)` and
+   * `passkeyStepUp(auth)` refuse at definition (`X_CONFIG_INVALID`), as does a block whose
+   * origins are not on its rp id.
+   */
+  readonly passkeys?: PasskeyPolicyInput | undefined;
 }
 
 export interface Auth {
@@ -187,6 +199,7 @@ export interface Auth {
   readonly providers: readonly OAuthProviderId[];
   readonly link: OAuthLinkPolicy;
   readonly handles?: HandleDirectory | undefined;
+  readonly passkeys?: PasskeyPolicy | undefined;
 }
 
 export function defineAuth(config: AuthConfigInput): Auth {
@@ -234,6 +247,8 @@ export function defineAuth(config: AuthConfigInput): Auth {
   // otherwise be found at the first second factor, as a TypeError, on a production sign-in.
   const declaredReplay: { readonly claim?: unknown } = totpReplay;
   if (typeof declaredReplay.claim !== 'function') throw totpReplayGuardInvalid();
+  const passkeys =
+    config.passkeys === undefined ? undefined : resolvePasskeyPolicy(config.passkeys);
   return Object.freeze({
     adapter: config.adapter,
     clock,
@@ -260,6 +275,7 @@ export function defineAuth(config: AuthConfigInput): Auth {
     providers: config.providers ?? [],
     link: config.link ?? 'verified-email',
     ...(config.handles === undefined ? {} : { handles: config.handles }),
+    ...(passkeys === undefined ? {} : { passkeys }),
   });
 }
 

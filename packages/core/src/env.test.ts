@@ -101,6 +101,31 @@ describe('defineEnv', () => {
     expect(summary.find((entry) => entry.key === 'NATS_URL')?.roles).toEqual(['sync']);
   });
 
+  test('a number is a decimal numeral: blank and 0x/0b/0o spellings are invalid', () => {
+    const numbers = { PORT: { type: 'port' }, N: { type: 'number' } } as const satisfies EnvSchema;
+    for (const [PORT, N] of [
+      ['0x1F90', '1'],
+      ['8080', ' '],
+      ['0b1', '0o17'],
+    ] as const) {
+      const report = checkEnv(numbers, { env: { PORT, N } });
+      expect(report.ok).toBe(false);
+    }
+    expect(checkEnv(numbers, { env: { PORT: '8080', N: '-1.5e2' } }).values).toEqual({
+      PORT: 8080,
+      N: -150,
+    });
+  });
+
+  test('a global or sticky pattern judges every check alike, never a stale lastIndex', () => {
+    const tagged = { TAG: { type: 'string', pattern: /^v\d+$/g } } as const satisfies EnvSchema;
+    expect(checkEnv(tagged, { env: { TAG: 'v1' } }).ok).toBe(true);
+    expect(checkEnv(tagged, { env: { TAG: 'v1' } }).ok).toBe(true);
+    const sticky = { TAG: { type: 'string', pattern: /v\d+/y } } as const satisfies EnvSchema;
+    expect(checkEnv(sticky, { env: { TAG: 'v1' } }).ok).toBe(true);
+    expect(checkEnv(sticky, { env: { TAG: 'v1' } }).ok).toBe(true);
+  });
+
   // One wall-clock round measures the runner, not this function: a CI box running six test shards
   // timed 73ms against a 40ms ceiling for work that costs 0.5ms on a developer machine. Contention
   // only ever ADDS time, so the best of several rounds is the honest sample — under 16-way load the

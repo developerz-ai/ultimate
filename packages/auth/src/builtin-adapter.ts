@@ -13,6 +13,7 @@ import type {
   AuthUser,
   AuthVerification,
   CreateUserInput,
+  PasskeyStore,
   SessionPatch,
   StoredMfaSecret,
   UserPatch,
@@ -20,6 +21,7 @@ import type {
 } from './adapter';
 import { usersUniqueViolation } from './builtin-adapter-violation';
 import { authWriteFailed } from './errors';
+import { postgresPasskeyStore } from './passkey-postgres';
 
 type Row = Readonly<Record<string, unknown>>;
 
@@ -121,6 +123,22 @@ export class PostgresAuthAdapter implements AuthAdapter {
   readonly name = 'builtin-postgres';
   readonly #client: DbClient | undefined;
   readonly #clock: Clock;
+  readonly #passkeys: PasskeyStore = postgresPasskeyStore(() => this.#db);
+  // The passkey members are `passkey-postgres.ts`'s, bound once: closures over the store, no `this`.
+  readonly putPasskey: PasskeyStore['putPasskey'] = this.#passkeys.putPasskey;
+  readonly findPasskey: PasskeyStore['findPasskey'] = this.#passkeys.findPasskey;
+  readonly listPasskeys: PasskeyStore['listPasskeys'] = this.#passkeys.listPasskeys;
+  readonly advancePasskeyCounter: PasskeyStore['advancePasskeyCounter'] =
+    this.#passkeys.advancePasskeyCounter;
+  readonly deletePasskey: PasskeyStore['deletePasskey'] = this.#passkeys.deletePasskey;
+  readonly putPasskeyChallenge: PasskeyStore['putPasskeyChallenge'] =
+    this.#passkeys.putPasskeyChallenge;
+  readonly takePasskeyChallenge: PasskeyStore['takePasskeyChallenge'] =
+    this.#passkeys.takePasskeyChallenge;
+  readonly putPasskeyEvidence: PasskeyStore['putPasskeyEvidence'] =
+    this.#passkeys.putPasskeyEvidence;
+  readonly listPasskeyEvidence: PasskeyStore['listPasskeyEvidence'] =
+    this.#passkeys.listPasskeyEvidence;
 
   /**
    * `client` omitted, every call resolves the ambient `db()` when it runs, never once here: a

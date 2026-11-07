@@ -44,6 +44,17 @@ Meteor-shaped framework died; the same rule applies to a tool surface.
 `planQuote` exists precisely so an agent can answer "what would this cost?" without the tool that
 takes money being the only way to find out.
 
+## Tools resolved per caller, and one token across orgs
+
+`quote_<plan>` (`src/quotes.ts`) is a per-caller catalog: one `runtimeTool()` per plan the acting
+org can still move to — Acme (team) sees `quote_business`, Tinta (free) `quote_team` and
+`quote_business` — borrowing `org:administer`, listed to owners only, resolved per request.
+
+`postlyMcp({ memberships })` turns on `defineAppMcp({ tenant })` (`src/tenants.ts`): the token
+resolves to a person, every call names its org as `org`, and the person's member row there is the
+actor every policy reads. `list_tenants` lists their orgs; an org they are not in answers as a hidden
+tool. Proof over the app's own endpoint: `src/tenant.contract.test.ts`.
+
 ## Prompts and evals
 
 The summarisation prompt lives with its feature

@@ -476,6 +476,7 @@ call (`surface: 'server'` — a service, a seed, a test) is app code, not a call
 | an idempotent replay | spends nothing: the stored answer is served, never a 429 |
 | who a job run is | its actor, else its tenant (`org:<orgId>`); a run with neither shares one `job:unattributed` bucket, never the anonymous callers' |
 | OpenAPI | `x-ultimate.rateLimit`, and with `defineApi({ openapi })` the `RateLimit-*` headers and `429` |
+| a per-call limit | `limit: ({ ctx }) => planOf(ctx).perMinute` — resolved before any bucket is touched, through `toBucket`'s screen (`NaN`/`0`/`Infinity` is `X_RATE_LIMIT_INVALID`); published as `rateLimitPerCall: { windowMs }` and `x-ultimate.rateLimit.limit: 'per-call'` |
 
 ```ts
 import type { PgExecutor } from '@ultimat3/core';
@@ -499,6 +500,25 @@ copy in either package would be a second answer for the other. A pair the limite
 which would cap an action declaring more than it — and only the tenant allowance. An
 `http.rateLimit.buckets.<actionName>` entry is a different table: it neither conflicts with nor
 loosens what the action declared.
+
+## `meter:` — a durable per-period allowance
+
+```ts
+import type { ActionMeter } from '@ultimat3/action';
+
+const quotaWarning = { enqueue: async () => undefined }; // in an app: a job({ input: MeterWarning, … })
+
+// 500 calls per tenant per UTC day; one warning per tenant per day at 80%.
+const meter: ActionMeter = { name: 'calls', period: 'day', limit: 500, warnAt: 0.8, onWarn: quotaWarning };
+```
+
+Drawn once per call inside `invoke` (`meter-gate.ts`) on every surface, `server` included, after
+the policy and before `handle`; spent, `X_METER_EXCEEDED` (429, `meta: { meter, limit, resetsAt,
+retryAfterSeconds }`). Counter per `org:<id>` → `actor:<id>` → `anonymous`; periods are UTC and the
+stored key says so (`day@UTC`). An idempotent replay draws nothing. `limit` may be a function of
+`{ ctx }`. Store: `memoryMeterStore()` by default, `postgresMeterStore({ executor })` over `x_meter`
+installed by the CLI boot (one row per counter, rolled over in place, no purge). Full table:
+[Actions → Usage meters](https://github.com/developerz-ai/ultimate/wiki/Actions#usage-meters-meter).
 
 ## `idempotent:` — and where its records live
 
@@ -944,6 +964,8 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_ACTION_PATH_DUPLICATE` | two actions derive one HTTP path (`archiveOrder` / `archiveOrders`) | rename one export |
 | `X_ACTION_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
 | `X_RATE_LIMIT_INVALID` | `rateLimit:` with a non-positive or non-finite half — `windowMs: 0` refills infinitely. Owned by `@ultimat3/http`, which owns the conversion | make both positive, or delete the block |
+| `X_METER_EXCEEDED` | a `meter:`'s allowance for the current UTC period is spent; `meta.resetsAt` and `Retry-After` say when it resets | wait, or raise what `meter.limit` resolves to for the tenant |
+| `X_METER_INVALID` | a `meter:` with a bad name, period or `warnAt`, half a `warnAt`/`onWarn` pair, or a limit resolving to anything but a whole number ≥ 0 | fix the declaration the cause names |
 | `X_ACTION_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
 | `X_INPUT_INVALID` | input failed the Standard Schema. Carries the rejections **twice**: the flattened line in `cause`, and the structured list in `meta.issues` — one value rendered two ways, `As of 2026-08-24` | `x actions show <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |

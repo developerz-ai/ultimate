@@ -3,7 +3,6 @@
 // database). Both verdicts land on the record of the primitive that sent the statements.
 
 import type { Actor } from '@ultimat3/core';
-import { bindDrawn } from '@ultimat3/core';
 import type { Policy } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ExerciseOverrides } from './define-exercise';
@@ -11,6 +10,7 @@ import type { ActorRows, RoleGrants } from './exercise-actor';
 import { asSeededRow, chooseActor } from './exercise-actor';
 import type { Sampler } from './exercise-input';
 import { bindIds, drawInput, seededIds } from './exercise-input';
+import { overrideInput } from './exercise-override-input';
 import type { ExerciseRecord } from './exercise-report';
 import { sweepPlans } from './plan-sweep';
 import type { ScaleSweepOptions } from './scale-sweep-run';
@@ -46,12 +46,12 @@ interface Callable {
 }
 
 /** One call of `subject` in `tenant` of a sized graph: the control's actor and first input. */
-export function sizedCall(
+export async function sizedCall(
   subject: Callable,
   options: CallOptions,
   sampler: Sampler,
   at: { readonly graph: SeedGraph; readonly tenant: string; readonly self: boolean },
-): { readonly actor: Actor | null; readonly input: unknown } | undefined {
+): Promise<{ readonly actor: Actor | null; readonly input: unknown } | undefined> {
   const { graph, tenant, self } = at;
   const override = options.overrides?.entries.get(subject.name);
   const chosen = chooseActor(subject.policy, subject.permissions, options.roles, tenant, override);
@@ -66,10 +66,8 @@ export function sizedCall(
   };
   const lookup = seededIds(graph, options.entities, { ...scope, self });
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookup);
-  const bindInput = bindDrawn(
-    override !== undefined && 'actor' in override ? override.input : undefined,
-  );
-  return { actor, input: bindInput === undefined ? drawn : bindInput(drawn) };
+  const bindInput = overrideInput(subject.name, override);
+  return { actor, input: bindInput === undefined ? drawn : await bindInput(drawn, actor) };
 }
 
 /**

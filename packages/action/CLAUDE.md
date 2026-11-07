@@ -24,7 +24,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `client-scale-pins.ts` | compile-time pin: `rpc<Api['actions']>` over 300 actions in 100 modules, 100 reads in 50 |
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
-| `openapi-complete.ts` | the COMPLETE document (`defineApi({ openapi })`: info, servers, security schemes, 401/429 by the ROUTE's `meta.auth`) and a bearer mount's own cut |
+| `openapi-complete.ts` | the COMPLETE document (`defineApi({ openapi })`: info, servers, security schemes, 401/429 by the ROUTE's `meta.auth`, a declared `rateLimit` or `meter`) and a bearer mount's own cut |
 | `http-path.ts` | where an action is served: the app's `pathStyle` + a per-action `http.path` pin, read lazily by every projection; the pin's `:param` template + `method` (`ACTION_HTTP_METHODS`), `assertPinnedHttp`, `filledRoute`, `pathParametersOf`, `actionHttpPinOf` |
 | `path-style-miss.ts` | `explainActionPathMiss` — `@ultimat3/http`'s `hooks.explainMiss`: a POST under the style this app does not serve is `X_CONTRACT_DRIFT` naming the one it does |
 | `api-declaration.ts` | `defineApi({ http, openapi })` held process-wide for the boot and `x manifest` |
@@ -53,7 +53,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
 | `cache-gate.ts` | the post-COMMIT bust — **the only** file that calls `invalidateTags` |
 | `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust), `liveTransaction` (the settle), `completeTransaction`, and `inRolledBackScope`, the exercise's always-rolled-back scope and the memory transaction it opens always |
-| `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent, and the installed-store slot |
+| `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent (a `limit` resolved per call from `ctx`, through `toBucket`) |
+| `meter*.ts`, `errors-meter.ts` | `meter:` — declaration (`meter.ts`), UTC window, store seam + memory + Postgres (`x_meter`), and `meter-gate.ts`, **the one place** it is drawn |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
 | `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`setAuditSink`) is core's alone |
 | `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
@@ -162,6 +163,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **`tagKeys` is `@ultimat3/cache`'s and `toBucket` is `@ultimat3/http`'s** (imported, never
   re-exported; `toBucket` raises `X_RATE_LIMIT_INVALID`). Never restore a local copy.
 - **`rateLimit:` is spent ONCE, inside `invoke`** (`rate-limit-gate.ts`), so HTTP, MCP, the agent tool and `.job()` share one bucket; `surface: 'server'` spends nothing. Full rule: `docs/history/action.md`.
+- **`meter:` is drawn ONCE, inside `invoke`, on every surface (`server` too)**, after the policy, before `handle`; under a key only in `beforeRun`, so a replay draws nothing. One conditional increment, never read-then-write. Periods are UTC. `meter-surfaces.test.ts`. Subject: org, else actor, else `job:unattributed` inside a job frame (`inJobFrame()`, `rate-limit-gate.ts` — the limiter's split, one answer), else `anonymous`. `meter-memory.ts` evicts a counter whose period ENDED before a live one, then oldest start.
 - **`deprecated:` is a compat WINDOW**, rendered ONCE at projection
   (`X_ACTION_DEPRECATION_INVALID`); twinned in `@ultimat3/query`. Full rule: `docs/history/action.md`.
 - **The span wraps `execute` whole** (including `def.row()`), with bounded attributes plus the

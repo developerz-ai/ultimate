@@ -2,8 +2,8 @@
 
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
-Deps (16): `core` `schema`; `cache` `db` `i18n` `time`; `entity` `http` `policy`; `action` `jobs`
-`query` `realtime`; `mail` `pwa` `render`. Static in `.`: `cache`
+Deps (16): `core` `schema`; `cache` `db` `i18n` `time`; `entity` `http` `policy`; `action`
+`jobs` `query` `realtime`; `mail` `pwa` `render`. Static in `.`: `cache`
 (`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
 (`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
 `action`, `http`, `mail`, `pwa`, `query`, `render`, `schema` (`exercise-input.ts:16`), `time` — no `mail` destructure, no mail
@@ -47,6 +47,8 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | Fixtures | the preload registers the framework bag — an app registers only what it alone knows (`seed`, `actorFor`) |
 | Every `e2eTest` is audited | `e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (per-test run, `allow`, dedupe), `ax-node.ts` (the one AX reader); the full tree is read only in `cdp-e2e-page.ts` (`FULL_AX_TREE`, a convention). No switch; `allow` needs a non-blank `because`. And every raw tab: `e2e-a11y-tabs.ts`, checked after each `goto`/`reload` and at the test's end from the preload's `afterEach`; exceptions are `allowA11y([{ role, selector, because }])` |
 | The exercise pass runs what is registered | `exercise.ts` (`runExercisePass`): every action, query and job once, its own tenant pair off one `seedGraph`, an actor `exercise-actor.ts` picks, 39's `runExercise` as the verdict. Rows COMMITTED. Overrides only via `defineExercise` (blank `off` refused) |
+| An override `input` is awaited, as the call's actor | `exercise-override-input.ts`: run inside the call's own request, so `useContext().actor` is the seated actor; the one way to a signed input. `async` ones are left out of `x drill`'s load |
+| A passkey test signs for real | `softAuthenticator` is `@ultimat3/auth/soft-authenticator`'s, never re-exported here (one value, one path: `flight-copies`) and never a second one (auth's own suites need it, and auth cannot import testing) |
 | A reached job is crash-proven | `exercise-crash.ts`: `crashProof` with the control's input and actor, after the tenant proof; only `diverged` is red (`X_JOB_CRASH_DIVERGED`). Committed: job bodies escape transactions |
 | The tenant proof is taint only | `tenant-proof.ts`: B, A, B; B is A's role minus `tenancy:cross`. Leak = seeded canary or unhanded id (`tenant-canary.ts`); write = moved digest. Only `crossed` is red |
 | Every statement the pass sent is planned | `plan-sweep.ts` (`sweepPlans`): first relation an app table, `PREPARE` in a READ-ONLY transaction with seq/bitmap scans and sorts off, judged by `plan-oracle.ts`; red = `X_QUERY_UNINDEXED` / `X_QUERY_SORT_UNSERVED` with the `indexes:` entry (`plan-sweep-fix.ts`). `scan:` or `expectedSeqScan` is exempt, listed; no generic plan is `X_QUERY_PLAN_UNAVAILABLE`, never a pass |

@@ -46,6 +46,9 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_SOCKET_LIMIT',
   'X_REALTIME_PRODUCER_CONFLICT',
   'X_MUTATION_PATH_UNFILLED',
+  'X_DEVICE_OFFLINE',
+  'X_DEVICE_REQUEST_TIMEOUT',
+  'X_DEVICE_FRAME_TOO_LARGE',
 ] as const;
 
 export type RealtimeOwnedErrorCode = (typeof REALTIME_OWNED_ERROR_CODES)[number];
@@ -85,6 +88,9 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_SOCKET_LIMIT: 'one principal holds too many sockets on this node',
   X_REALTIME_PRODUCER_CONFLICT: 'two kinds of producer carry one table on the change bus',
   X_MUTATION_PATH_UNFILLED: "a pinned action's :param had no value in the write's input",
+  X_DEVICE_OFFLINE: 'no socket is open for the device a request addressed',
+  X_DEVICE_REQUEST_TIMEOUT: 'a device did not answer a request before its deadline',
+  X_DEVICE_FRAME_TOO_LARGE: 'a device socket frame is over the framework frame limit',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws

@@ -9,6 +9,7 @@ import {
   assertUniqueKeys,
   endDistance,
   nextAtEnd,
+  pruneHeights,
   rowOffsets,
   visibleRange,
 } from './virtual-list-view';
@@ -85,5 +86,23 @@ describe('virtual list arithmetic', () => {
       expect((error as UiError).code).toBe('X_UI_INVALID_VALUE');
       expect((error as UiError).message).toContain('"a"');
     }
+  });
+});
+
+describe('pruneHeights', () => {
+  test('a measured height outlives its row only while the row is in the list', () => {
+    const heights = new Map([
+      ['a', 10],
+      ['b', 20],
+      ['c', 30],
+    ]);
+    pruneHeights(
+      heights,
+      new Map([
+        ['b', 0],
+        ['d', 1],
+      ]),
+    );
+    expect([...heights]).toEqual([['b', 20]]);
   });
 });

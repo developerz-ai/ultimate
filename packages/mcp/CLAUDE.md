@@ -32,6 +32,7 @@ import. The CLI wires it.
 | `oauth-server.ts` | `mcpAuthorizationServer`: `@ultimat3/auth`'s `authorizationServer` bound to one endpoint's `resource` (default and required by `resolveToken`), its `oauth` block, `mcp.auth.<event>` lines. No protocol rule lives here |
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
+| `runtime-*` · `*-catalog.ts` · `tenant.ts` | `catalog:` (`runtimeTool()`, checked, merged per request) · `tenant:` (`list_tenants`); codes in `catalog-errors.ts` |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
 | `projectable.ts` | a real `action`/`query` → `ProjectablePrimitive`; the ONE adapter both the sweep and the written-out list use |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
@@ -96,6 +97,9 @@ import. The CLI wires it.
   fails, every caller simply sees every tool.
 - **A thrown value is a framework error only when its `code` matches core's `FRAMEWORK_CODE`**,
   never `code.startsWith('X_')` (`asFrameworkError` puts the code in a command). Full rule: `docs/history/mcp.md`.
+- **`catalog(caller)` runs per `tools/list`/`tools/call`**, never cached; a duplicate or a throw fails
+  the REQUEST (`X_MCP_CATALOG_*`), never a smaller list. **`tenant` runs first on a call**: `null` =
+  the hidden-tool answer, a throw `X_MCP_TENANT_UNRESOLVED`; its actor is the caller from there on.
 - Resolve order is visibility → scope → args → policy. Validating first leaks a schema;
   running the policy first decides a refusal from attacker-supplied input.
 - **A key's membership of a declared schema is `Object.hasOwn(properties, key)`**, never an index
@@ -121,19 +125,12 @@ import. The CLI wires it.
   parse, so `handle` was handed whatever the wire subset let through — typed `InferOutput<TInput>`,
   past the policy. One code either way, `X_INPUT_INVALID`, built from `@ultimat3/action`'s own
   `InputInvalidError`.
-- **Anything a tool RETURNS is rendered totally.** `jsonResult` is handed an action's own return
-  value, and `JSON.stringify` answers `undefined` for a handler that returned nothing (a
-  `ContentBlock.text` that is not a string is an invalid frame) and THROWS on a bigint, a cycle or
-  a `toJSON` the value carries. Unreadable is an ordinary `isError` result, never an escape past
-  `server.ts`'s catch, which would report a bug in the tool for a fault in the rendering.
-  `query-limits.ts`' `rowBytes` holds the same line one layer earlier: a row the driver decoded
-  into a bigint costs `Infinity` and is cut by the byte ceiling, rather than raising inside the cap
-  that exists to protect the answer.
+- **Anything a tool RETURNS is rendered totally** (`jsonResult`: nothing, a bigint, a cycle, a
+  throwing `toJSON`) — unreadable is an `isError` result, never an escape past `server.ts`'s catch;
+  `query-limits.ts`' `rowBytes` prices a bigint row `Infinity` rather than raising in the cap.
 - **A thrown value is read with `stringField` from `@ultimat3/core`, never `typeof e.code ===
-  'string'`.** `asFrameworkError` reads four fields off whatever an app's handler threw; each read
-  is a getter call, or a `Proxy` trap, inside the catch block that owes the caller a response — and
-  a probe that raises there leaves the JSON-RPC request with no answer at all, not even the
-  `-32603` the transport promises for a genuine bug.
+  'string'`**: each read is a getter or `Proxy` trap in the catch that owes an answer, and a probe
+  that raises there leaves the request with none, not even `-32603`.
 - A framework error rendered into a tool result is **byte-identical to
   `UltimateError.format()`** — one denial must not read one way over MCP and another in the
   terminal. `server.ts` renders it; the test pins it against `format()`, never a literal. Except a
@@ -242,7 +239,8 @@ import. The CLI wires it.
   SAME rejected token, which is precisely the oracle the pre-parse 401 exists to remove. The parse
   error still exists — it is what an authenticated agent gets. Failures spend a per-ADDRESS bucket
   (`seen.address`), and an exhausted address is `429` BEFORE `resolveToken` — a valid guess too.
-- **Confirmation order: visibility → scope → args → `admit` → confirmation → policy.** An approval
+- **Confirmation order: visibility → scope → args → `admit` → confirmation (quorum + signed
+  evidence when declared) → policy.** An approval
   binds actor + tool + `keyedFingerprint(args)` (rotation ⇒ new row); `consume` (CAS) makes one approval run one
   call; rejected/expired is told once, then the call asks again. Args sealed; `approve` carries
   viewed args (digest must match); default `check`: same org. An agent never decides (in the

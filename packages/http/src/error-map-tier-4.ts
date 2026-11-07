@@ -166,4 +166,18 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_REMOTE_AUTH_REQUIRED: 502,
   // @ultimat3/scraping — the PDF request names no single page size a print engine can lay out
   X_SCRAPE_PDF_OPTIONS_INVALID: 422,
+  // @ultimat3/mcp — an MCP confirmation needs more approvers before the call runs
+  X_MCP_CONFIRMATION_QUORUM_PENDING: 409,
+  // @ultimat3/mcp — an MCP confirmation approval carries no valid signed evidence
+  X_MCP_CONFIRMATION_EVIDENCE_INVALID: 403,
+  // @ultimat3/mcp — mcpConfirmations approvers resolved a quorum no approver set can meet
+  X_MCP_CONFIRMATION_QUORUM_INVALID: 500,
+  // @ultimat3/mcp — a per-caller MCP catalog names one tool twice
+  X_MCP_CATALOG_TOOL_DUPLICATE: 500,
+  // @ultimat3/mcp — a per-caller MCP catalog could not be resolved
+  X_MCP_CATALOG_UNRESOLVED: 500,
+  // @ultimat3/mcp — an MCP call names no tenant
+  X_MCP_TENANT_REQUIRED: 400,
+  // @ultimat3/mcp — the tenant of an MCP call could not be resolved
+  X_MCP_TENANT_UNRESOLVED: 500,
 } satisfies Readonly<Record<string, number>>;

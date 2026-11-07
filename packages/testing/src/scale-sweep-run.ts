@@ -35,7 +35,7 @@ export type ScaleSetup = (
   graph: SeedGraph,
   tenant: string,
   self: boolean,
-) => { readonly actor: Actor | null; readonly input: unknown } | undefined;
+) => Promise<{ readonly actor: Actor | null; readonly input: unknown } | undefined>;
 
 export interface ScaleSweepOptions {
   readonly subjects: readonly ScaleSubject[];
@@ -56,7 +56,14 @@ async function callAt(
   options: ScaleSweepOptions,
   self: boolean,
 ): Promise<Call> {
-  const prepared = options.setup(subject, graph, tenant, self);
+  let prepared: Awaited<ReturnType<ScaleSetup>>;
+  try {
+    prepared = await options.setup(subject, graph, tenant, self);
+  } catch (error) {
+    // An override's input is the app's code, run against this sized graph: its failure is this
+    // call's, never the sweep's.
+    return { failed: `its exercise.ts input threw: ${renderThrowable(error)}` };
+  }
   if (prepared === undefined) return { failed: 'no actor its policy permits' };
   await using jobs = await testJobs();
   options.room.begin();

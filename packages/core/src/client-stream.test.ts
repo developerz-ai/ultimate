@@ -6,9 +6,11 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { IDEMPOTENCY_HEADER } from './client-dispatch';
 import { rescope } from './client-scope';
 import { clientStream, takeFrames } from './client-stream';
-import { failure, fakeFetch, heldFetch } from './client-transport-fixture';
+import { failure, fakeFetch, heldFetch, json, recordingSink } from './client-transport-fixture';
 import { isUltimateError } from './errors';
+import { RECORDS_HEADER } from './record-envelope';
 import { sessionIsLost } from './session-lost';
+import { DATES_HEADER, wireDatePaths } from './wire-dates';
 
 afterEach(() => {
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.client'));
@@ -62,6 +64,51 @@ describe('clientStream', () => {
     );
     wire.end();
     await expect(stream.next()).rejects.toMatchObject({ code: 'X_ACTION_STREAM_INVALID' });
+  });
+
+  test("an error frame's own status reaches decodeError, never a stand-in 500", async () => {
+    const wire = held();
+    const seen: number[] = [];
+    const stream = clientStream({
+      url: '/x',
+      fetchImpl: () => Promise.resolve(wire.response),
+      decodeError: (status) => {
+        seen.push(status);
+        return undefined;
+      },
+    });
+    wire.push('event: error\ndata: {"status":409,"code":"X_CONFLICT","title":"t"}\n\n');
+    wire.end();
+    await expect(stream.next()).rejects.toMatchObject({ code: 'X_CONFLICT' });
+    expect(seen).toEqual([409]);
+  });
+
+  test('a JSON answer is unwrapped as call() unwraps it: envelope, records, dates', async () => {
+    const sink = recordingSink();
+    const at = new Date('2026-11-06T10:00:00.000Z');
+    const dates = wireDatePaths({ at }) ?? '';
+    const stream = clientStream({
+      url: '/x',
+      fetchImpl: () =>
+        Promise.resolve(
+          json(
+            { data: { at: at.toISOString() }, records: { post: { p1: { id: 'p1' } } } },
+            { headers: { [RECORDS_HEADER]: '1', [DATES_HEADER]: dates } },
+          ),
+        ),
+    });
+    expect(await stream.next()).toEqual({ done: true, value: { at } });
+    expect(sink.adopted).toEqual([['post', { p1: { id: 'p1' } }]]);
+  });
+
+  test('a JSON answer that is not JSON is the coded body failure, never a SyntaxError', async () => {
+    const error = await failure(
+      clientStream({
+        url: '/x',
+        fetchImpl: () => Promise.resolve(new Response('<html>proxy</html>')),
+      }).next(),
+    );
+    expect(isUltimateError(error) && error.code).toBe('X_CLIENT_TRANSPORT_FAILED');
   });
 
   test('a refusal before the stream is the problem decode, as every other client call', async () => {

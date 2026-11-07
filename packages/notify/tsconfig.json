@@ -9,10 +9,19 @@
   "exclude": ["src/**/*.test.ts"],
   "references": [
     {
+      "path": "../action"
+    },
+    {
       "path": "../core"
     },
     {
+      "path": "../i18n"
+    },
+    {
       "path": "../jobs"
+    },
+    {
+      "path": "../policy"
     },
     {
       "path": "../schema"

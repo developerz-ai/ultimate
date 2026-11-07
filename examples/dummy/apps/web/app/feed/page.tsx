@@ -190,7 +190,10 @@ export const config = defineRoute({
   // tree-shaken per key (`ui-keys.ts`), −2,003 B; `VirtualList` re-pinning when its drawn range
   // moves (a follower settled 52 px short) and `mount` returning its disposer (the router lets
   // go of the hotkeys and the live read on a swap) — lowered 208kb → 205.5kb (plan 101 wave 10).
-  budget: { js: '205.5kb' },
+  // measured: 210815 B (2026-11-07, sweep 1; x build --target static) — why: the router 29,570 → 29,692 and
+  // core's `clientStream` unwrapping a JSON answer as `call()` does (`settleAnswer`, records and
+  // dates), +731 B over 210,084.
+  budget: { js: '206kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

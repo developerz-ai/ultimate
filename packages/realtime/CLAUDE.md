@@ -188,6 +188,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   per table per node (`ProducerKinds`, `X_REALTIME_PRODUCER_CONFLICT`); the x dev bridge skips a
   claimed table (`isPublishedTable`). `ChangeEvent.table` is the relation on every producer.
 - **An error never renders a credential**: `parsePgUrl`/`parseNatsUrl` name the variable.
+- **`deviceSocket()`**: `wiki/Realtime.md#device-sockets`.
 
 ## Replication
 

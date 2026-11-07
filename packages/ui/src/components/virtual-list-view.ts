@@ -132,3 +132,14 @@ export function endDistance(scrollTop: number, viewport: number, total: number):
 export function nextAtEnd(wasAtEnd: boolean, distance: number): boolean {
   return wasAtEnd ? distance <= AT_END_LEAVE_PX : distance <= AT_END_ENTER_PX;
 }
+
+/**
+ * Drops every measured height whose key left the list. A following log mounts and measures each
+ * arriving line, so an unpruned map would hold one entry per line ever shown, for the island's life.
+ */
+export function pruneHeights(
+  heights: Map<string, number>,
+  keep: ReadonlyMap<string, unknown>,
+): void {
+  for (const key of heights.keys()) if (!keep.has(key)) heights.delete(key);
+}

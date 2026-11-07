@@ -5,8 +5,9 @@
 
 import type { ToolGate } from '@ultimat3/action';
 import { toolGateFor } from '@ultimat3/action';
-import type { Actor } from '@ultimat3/core';
+import type { Actor, UltimateError } from '@ultimat3/core';
 import { keyedFingerprint, seal, uuidV7 } from '@ultimat3/core';
+import { resolveApprovers } from './confirmation-approvers';
 import {
   McpConfirmationContestedError,
   McpConfirmationExpiredError,
@@ -14,6 +15,12 @@ import {
   McpConfirmationRejectedError,
   McpConfirmationToolUnknownError,
 } from './confirmation-errors';
+import { verifyConfirmationEvidence } from './confirmation-evidence';
+import {
+  McpConfirmationEvidenceInvalidError,
+  McpConfirmationQuorumPendingError,
+} from './confirmation-quorum-errors';
+import type { McpConfirmation } from './confirmation-store';
 import type { McpConfirmations } from './confirmations';
 import type { AnyMcpTool, McpCaller, McpToolResult, ToolArgs } from './registry';
 import { invalidArgsError } from './server-voice';
@@ -129,6 +136,9 @@ async function confirmedCall<T>(
   const { store, clock, ttlMs, sealKeys } = confirmations;
   const { tool, args, actor } = call;
   const now = clock.now();
+  // Resolved from the validated arguments before any row opens: a bar nobody can meet is refused
+  // here, and the one met is stored on the row so a later declaration cannot lower it.
+  const bar = resolveApprovers(confirmations.approvers, { tool, args, actor });
   const draft = {
     id: uuidV7(clock),
     actorId: actor.id,
@@ -143,15 +153,34 @@ async function confirmedCall<T>(
     }),
     createdAt: now,
     expiresAt: new Date(now.getTime() + ttlMs),
+    quorum: bar.quorum,
+    approvers: bar.from,
   };
   // Bounded: `consume` loses only to a concurrent identical call by the same agent, which then
   // carries the outcome; this one opens the next row on the following pass.
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const { row, created } = await store.open(draft);
     const subject = { id: row.id, tool, expiresAt: row.expiresAt };
+    // Before any outcome is taken: a row of another org is not this call's to wait on, run or
+    // consume — the actor id alone would carry one org's approval into another's call.
+    if (row.orgId !== draft.orgId) {
+      throw new McpConfirmationEvidenceInvalidError({ ...subject, reason: 'org' });
+    }
     const live = row.expiresAt.getTime() > now.getTime();
-    if (created || (row.status === 'pending' && live)) {
-      throw new McpConfirmationPendingError({ ...subject, decider: confirmations.name });
+    if (created || (row.status === 'pending' && live)) throw waiting(row, confirmations.name);
+    if (row.status === 'approved' && live) {
+      // Re-verified from what is STORED, before the CAS: a row written around the decision action
+      // runs nothing, and a verifier that throws leaves the approval in place for a retry.
+      const verdict = await verifyConfirmationEvidence(row, {
+        evidence: confirmations.evidence,
+        quorum: bar.quorum,
+        from: bar.from,
+        arguments: args,
+      });
+      if (!verdict.ok) {
+        if (!(await store.consume(row.id, now))) continue;
+        throw new McpConfirmationEvidenceInvalidError({ ...subject, reason: verdict.reason });
+      }
     }
     // Every other state is an OUTCOME, delivered once: taking it is what frees this call to
     // ask again, and what makes one approval run one call.
@@ -161,4 +190,15 @@ async function confirmedCall<T>(
     return proceed();
   }
   throw new McpConfirmationContestedError(tool);
+}
+
+/** Pending with no vote yet asks a person; pending with some asks for the rest of the quorum. */
+function waiting(row: McpConfirmation, decider: string): UltimateError {
+  const subject = { id: row.id, tool: row.tool, expiresAt: row.expiresAt };
+  if (row.approvals.length === 0) return new McpConfirmationPendingError({ ...subject, decider });
+  return new McpConfirmationQuorumPendingError({
+    ...subject,
+    approvals: row.approvals.length,
+    quorum: row.quorum,
+  });
 }

@@ -175,6 +175,19 @@ export interface RateLimitFact {
   readonly windowMs: number;
 }
 
+/**
+ * A declared `meter:` as `describe()` publishes it: the counter's name, its period and the zone
+ * that period is cut in, and the allowance — `null` when it is resolved per call from `ctx` (a
+ * tenant's plan), because no static number exists to publish. `warnAt` is the app's own signal.
+ */
+export interface MeterFact {
+  readonly name: string;
+  readonly period: 'hour' | 'day' | 'month';
+  readonly timeZone: 'UTC';
+  readonly limit: number | null;
+  readonly warnAt: number | null;
+}
+
 export interface ActionFact {
   readonly name: string;
   readonly input: JsonValue;
@@ -195,6 +208,18 @@ export interface ActionFact {
    * the manifest is the copy the gate reads, so without it the tightening passes clean.
    */
   readonly rateLimit?: RateLimitFact;
+  /**
+   * The window of a rate limit resolved per call (`limit: ({ ctx }) => …`), which has no static
+   * pair to publish; absent otherwise. Never beside `rateLimit`. Judged with it by `diffRateLimit`:
+   * a move to or from a per-call limit is breaking, the reason a per-call meter's is.
+   */
+  readonly rateLimitPerCall?: { readonly windowMs: number };
+  /**
+   * The declared durable allowance; absent when the action declares none. A contract for the
+   * reason `rateLimit` is: 100 a day tightened to 10 refuses a caller the old build served, and
+   * no schema in the manifest moves (`diffMeter`).
+   */
+  readonly meter?: MeterFact;
   readonly mcp: { readonly expose: boolean; readonly description?: string };
   readonly mutator?: boolean;
   /**

@@ -3,7 +3,8 @@
 // Each entry is the value a `.contract({ exercise })` takes, so a test and the pass share a shape.
 
 import { members } from '@postly/db';
-import { userActor } from '@ultimat3/core';
+import { type SoftAuthenticator, softAuthenticator } from '@ultimat3/auth/soft-authenticator';
+import { assert, useContext, userActor } from '@ultimat3/core';
 import { defineExercise } from '@ultimat3/testing';
 
 /** Re-homed by the pass into each primitive's own tenant, and bound to a seeded `owner` row. */
@@ -15,6 +16,52 @@ const NO_STORAGE = 'x exercise installs no storage disk, and this reads or write
 const NO_PUSH =
   'x exercise installs no push transport (the VAPID pair is sealed, `x vapid create`)';
 const NO_GATEWAY = 'calls a real LLM: x exercise installs no AI gateway';
+/**
+ * The passkey ceremonies sign what the SERVER issued to one actor, which no draw can forge: each
+ * input is computed from the pass's own state, inside the request the call runs in — so the actor
+ * read here is the seated one the call acts as. Postly's passkeys are keyed by the acting member's
+ * id (`app/auth/passkeys.ts`), and a seeded member has no `x_users` row yet: linked here, once.
+ * The app modules load on first use: the pass has installed its database by then.
+ */
+const actingId = (): string => useContext().actor.id;
+
+/** Postly's passkeys, and the one origin a browser would sign for. */
+async function relyingParty() {
+  const { auth } = await import('./app/auth/login');
+  const origin = auth.passkeys?.origins[0];
+  assert(
+    origin !== undefined,
+    'postlyAuth() declares no passkeys',
+    'passkeys: postlyRelyingParty(seams.origin)   # in app/auth/login.ts',
+  );
+  return { auth, origin, passkeys: (await import('./app/auth/passkeys')).passkeys };
+}
+
+/** `relyingParty()`, with `userId` linked to an `x_users` row first. */
+async function linkedUser(userId: string) {
+  const party = await relyingParty();
+  const { adapter, clock } = party.auth;
+  if ((await adapter.findUserById(userId)) === null) {
+    await adapter.createUser({
+      id: userId,
+      email: `${userId}@exercise.test`,
+      passwordHash: null,
+      orgId: null,
+      roles: [],
+      createdAt: clock.now(),
+    });
+  }
+  return party;
+}
+
+/** A fresh software passkey registered onto `userId` through Postly's own `passkeyLogin`. */
+async function enrolled(userId: string): Promise<SoftAuthenticator> {
+  const { origin, passkeys } = await linkedUser(userId);
+  const device = await softAuthenticator({ origin });
+  const options = await passkeys.login.registerOptions({ userId });
+  await passkeys.login.register({ userId, response: await device.create(options) });
+  return device;
+}
 
 export const exercise = defineExercise(
   {
@@ -84,9 +131,68 @@ export const exercise = defineExercise(
     // their own by the subject proof (`subjectProof`), which needs none.
     'members.export': { off: NO_STORAGE },
     'members.erase': { off: NO_STORAGE },
+    // A device token is a provider's alphabet the draw does not produce: an iOS one is hex.
+    registerDevice: {
+      actor: owner,
+      input: (drawn) => ({
+        ...drawn,
+        platform: 'ios',
+        token: 'ab'.repeat(32),
+        previousToken: undefined,
+      }),
+    },
+    unregisterDevice: {
+      actor: owner,
+      input: (drawn) => ({ ...drawn, platform: 'ios', token: 'ab'.repeat(32) }),
+    },
     subscribePush: { off: NO_PUSH },
     unsubscribePush: { off: NO_PUSH },
     'post.commented': { off: NO_PUSH },
+    passkeyRegisterOptions: {
+      actor: author,
+      input: async (drawn) => {
+        await linkedUser(actingId());
+        return drawn;
+      },
+    },
+    registerPasskey: {
+      actor: author,
+      input: async (drawn) => {
+        const userId = actingId();
+        const { origin, passkeys } = await linkedUser(userId);
+        const options = await passkeys.login.registerOptions({ userId });
+        return { ...drawn, response: await (await softAuthenticator({ origin })).create(options) };
+      },
+    },
+    // Usernameless and anonymous: somebody holding a passkey, signing in with it.
+    passkeySignIn: {
+      actor: null,
+      input: async (drawn) => {
+        const device = await enrolled(crypto.randomUUID());
+        const { passkeys } = await relyingParty();
+        return { ...drawn, response: await device.get(await passkeys.login.loginOptions()) };
+      },
+    },
+    erasureApprovalOptions: {
+      actor: owner,
+      input: async (drawn) => {
+        await enrolled(actingId());
+        return drawn;
+      },
+    },
+    // Irreversible, so it takes an owner's passkey approval for exactly this org and member; the
+    // erase itself is `members.erase`. The other tenant's owner, sent A's approval, is refused.
+    requestMemberErasure: {
+      actor: owner,
+      input: async (drawn) => {
+        const userId = actingId();
+        const device = await enrolled(userId);
+        const { passkeys } = await relyingParty();
+        const request = { orgId: String(drawn['orgId']), memberId: String(drawn['memberId']) };
+        const options = await passkeys.erasure.options({ userId, input: request });
+        return { ...drawn, approval: await device.get(options) };
+      },
+    },
     keepDraftReview: { off: NO_GATEWAY },
     reviewDraft: { off: NO_GATEWAY },
     summarize: { off: NO_GATEWAY },

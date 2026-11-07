@@ -7,7 +7,11 @@
 import type { StreamDispatch } from './client-dispatch';
 import { dispatchStream } from './client-dispatch';
 import { problemError, transportFailed } from './client-problem';
+import { settleAnswer } from './client-transport';
 import { notifyClientWrite } from './client-writes';
+import { RECORDS_HEADER } from './record-envelope';
+import { pageClient } from './record-sink';
+import { DATES_HEADER } from './wire-dates';
 
 /** What `clientStream` reads: a write's request, never a raw body or a flight. */
 export type StreamRequest = StreamDispatch;
@@ -39,11 +43,18 @@ export function takeFrames(buffer: string): { readonly frames: Frame[]; readonly
 export async function* clientStream<TChunk = unknown, TOutput = unknown>(
   req: StreamRequest,
 ): AsyncGenerator<TChunk, TOutput, undefined> {
+  const issued = pageClient().scope.epoch;
   try {
     const response = await dispatchStream(req);
-    // A server that answered JSON (no stream declared, or a proxy) gave the whole answer at once.
+    // A server that answered JSON (no stream declared, or a proxy) gave the whole answer at once —
+    // `call()`'s answer, so it is settled exactly as `call()` settles it.
     if (!(response.headers.get('content-type') ?? '').startsWith('text/event-stream')) {
-      return JSON.parse(await response.text()) as TOutput;
+      const answer = {
+        text: await response.text(),
+        enveloped: response.headers.get(RECORDS_HEADER) === '1',
+        dates: response.headers.get(DATES_HEADER),
+      };
+      return settleAnswer(answer, req, false, issued) as TOutput;
     }
     const reader = response.body?.getReader();
     if (reader === undefined)
@@ -62,9 +73,9 @@ export async function* clientStream<TChunk = unknown, TOutput = unknown>(
           if (frame.event === 'chunk') yield JSON.parse(frame.data) as TChunk;
           else if (frame.event === 'done') return JSON.parse(frame.data) as TOutput;
           else if (frame.event === 'error') {
+            const status = problemStatus(frame.data);
             throw (
-              req.decodeError?.(500, frame.data) ??
-              problemError(problemStatus(frame.data), frame.data, req.url)
+              req.decodeError?.(status, frame.data) ?? problemError(status, frame.data, req.url)
             );
           }
         }

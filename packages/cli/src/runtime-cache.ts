@@ -4,7 +4,7 @@
 // and lru unconditionally, redis on `REDIS_URL` and cdn on any real purge driver, so the key was
 // declared, validated at boot, documented, and read by nothing.
 
-import type { CacheTier, PurgeDriver } from '@ultimat3/cache';
+import type { CacheTier, PurgeDriver, RedisLike } from '@ultimat3/cache';
 import {
   CacheDriverUnavailableError,
   cdnTier,
@@ -28,6 +28,7 @@ import {
   logger,
   renderThrowable,
 } from '@ultimat3/core';
+import { redisClient, redisUrlSource } from '@ultimat3/core/redis';
 import type { Transport, TransportSubscription } from '@ultimat3/realtime/server';
 import type { Env } from './runtime-bindings';
 
@@ -69,6 +70,8 @@ export interface CacheTiersOptions {
    * `FIRST_DIAL_GRACE_MS`; a test of an OUTAGE passes 0.
    */
   readonly firstDialGraceMs?: number | undefined;
+  /** The client a `redis` rung reads, for the URL `env` names. Default core's `redisClient`. */
+  readonly redisClient?: ((url: string) => RedisLike) | undefined;
 }
 
 /**
@@ -100,15 +103,15 @@ export const cacheTiersOf = (config: AppConfig | undefined): readonly CacheTierN
   config?.cache.tiers ?? DEFAULT_CACHE_TIERS;
 
 /**
- * `REDIS_URL` is the same "an unset variable means the embedded default" law the db, events,
- * storage, mail and CDN bindings follow — and it is the first variable core's `redisClient()`
- * (`@ultimat3/core/redis`, which `redisTier` builds on) reads, so a tier selected here and the
- * client built there cannot point at two servers.
+ * The client for `url`, built at its first command, never at selection: `redisTier` dials nothing
+ * until it is read, and handing it a built client would dial at boot. `client` is memoised per URL
+ * (core's `redisClient`), so asking it per command is one lookup.
  */
-function redisUrl(env: Env): string | undefined {
-  const url = env['REDIS_URL']?.trim();
-  return url === undefined || url === '' ? undefined : url;
-}
+const lazyRedis = (url: string, client: (url: string) => RedisLike): RedisLike => ({
+  get: (key) => client(url).get(key),
+  set: (key, value) => client(url).set(key, value),
+  send: (command, args) => client(url).send(command, args),
+});
 
 /**
  * One rung, or a refusal. A process that cannot build what it was configured to build must not
@@ -126,16 +129,20 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
       return memoTier();
     case 'lru':
       return lruTier();
-    case 'redis':
-      if (redisUrl(options.env) === undefined) {
+    case 'redis': {
+      // `REDIS_URL` then `VALKEY_URL`, out of the boot's env: core's own order (`redisUrlSource`),
+      // so the URL checked here is the URL the client dials.
+      const source = redisUrlSource(options.env);
+      if (source === undefined) {
         throw new CacheDriverUnavailableError({
           driver: 'redis',
           cause:
-            'cache.tiers names it and REDIS_URL is unset, so this process would read a per-process ladder while the config declares a shared one',
+            'cache.tiers names it and REDIS_URL (or VALKEY_URL) is unset, so this process would read a per-process ladder while the config declares a shared one',
           fix: 'set REDIS_URL in .env, or drop the redis tier from cache.tiers in app.config.ts',
         });
       }
-      return redisTier();
+      return redisTier({ client: lazyRedis(source.url, options.redisClient ?? redisClient) });
+    }
     case 'cdn':
       // A noop tier would put a `cdn` line in every invalidation report claiming keys an edge that
       // does not exist had accepted — and the `/_x` cache panel renders those reports, so the lie
@@ -160,8 +167,9 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
  */
 function warnUnnamed(options: CacheTiersOptions): void {
   const named = new Set(options.tiers);
-  if (!named.has('redis') && redisUrl(options.env) !== undefined) {
-    logger.warn('cache.tier.unnamed', { tier: 'redis', source: 'REDIS_URL' });
+  const redis = redisUrlSource(options.env);
+  if (!named.has('redis') && redis !== undefined) {
+    logger.warn('cache.tier.unnamed', { tier: 'redis', source: redis.key });
   }
   if (!named.has('cdn') && !isNoopPurgeDriver(options.purge)) {
     logger.warn('cache.tier.unnamed', { tier: 'cdn', source: options.purge.name });

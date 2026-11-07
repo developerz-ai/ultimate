@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { memoryStepStore, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import type { NotifyPushMessage, Pusher } from './channel-push';
+import type { DataPusher, NotifyPushMessage, Pusher } from './channel-push';
 import { PUSH_CHANNEL, pushChannel } from './channel-push';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
@@ -100,5 +100,38 @@ describe('unit · the push channel', () => {
     await expect(
       driver().finish(liked(failing), { params, recipients: [{ id: 'ana' }] }),
     ).rejects.toBeUltimateError('X_NOTIFY_DELIVERY_FAILED');
+  });
+
+  test('with `data`, the push is data-only: `sendData` alone, carrying the ids', async () => {
+    const sent: { to: string; data: Readonly<Record<string, string>> }[] = [];
+    const pusher: Pusher & DataPusher = {
+      send: () => expect.unreachable('a data push never reaches send'),
+      sendData: ({ to, data }) => {
+        sent.push({ to, data });
+      },
+    };
+    const approval = notifier<TestParams>({
+      name: 'post.approval',
+      input: t.object({ postId: t.uuid }),
+      tenant: 'none',
+      key: (input) => `approval:${input.postId}`,
+      deliver: [
+        {
+          channel: pushChannel<TestParams>({
+            pusher,
+            data: ({ event }) => ({ postId: event.params.postId }),
+          }),
+        },
+      ],
+    });
+    await driver().finish(approval, { params, recipients: [{ id: 'ana' }] });
+    expect(sent).toEqual([{ to: 'ana', data: { postId: POST } }]);
+  });
+
+  test('a pusher that cannot send data-only — a browser push always shows — is a type error', () => {
+    const webOnly: Pusher = recording([]);
+    // @ts-expect-error `webPush()` has no `sendData`: a data push through it would render nothing.
+    const channel = pushChannel({ pusher: webOnly, data: () => ({ id: '1' }) });
+    expect(channel.name).toBe(PUSH_CHANNEL);
   });
 });

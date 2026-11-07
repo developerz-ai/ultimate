@@ -6,7 +6,7 @@
 // send that has not happened; claiming after would let two attempts pass the check together.
 
 import type { Ctx } from '@ultimat3/core';
-import { logger } from '@ultimat3/core';
+import { classifyThrown, logger } from '@ultimat3/core';
 import { NotifyDeliveryFailedError, NotifyDeliveryHeldError } from './errors';
 import type { DeliveryClaim, DeliveryLedger, DeliveryStatus } from './ledger';
 
@@ -33,7 +33,9 @@ export interface AttemptInput {
  *
  * A throwing channel settles `failed` and then rethrows as `X_NOTIFY_DELIVERY_FAILED`: the row
  * stays re-claimable, so the job's own retry policy decides whether it goes out, and the dead
- * letter names the channel rather than whatever the provider's SDK threw.
+ * letter names the channel rather than whatever the provider's SDK threw. A channel error
+ * classified `terminal` (a provider refusing a credential for good) keeps that on the wrapper:
+ * read as `retryable`, every attempt re-sent the alert to each device that already took it.
  */
 export async function attemptDelivery(input: AttemptInput, signal: AbortSignal): Promise<boolean> {
   const answer = await input.ledger.claim(input.claim, input.ctx.now());
@@ -70,6 +72,7 @@ export async function attemptDelivery(input: AttemptInput, signal: AbortSignal):
       channel: input.channel,
       recipients: input.recipients,
       cause: error,
+      retry: classifyThrown(error) === 'terminal' ? 'terminal' : undefined,
     });
   }
   await settle('sent');

@@ -7,9 +7,12 @@
 import {
   type PostgresIdempotencyStore,
   postgresIdempotencyStore,
+  postgresMeterStore,
   requestDeadlineMs,
   resetIdempotency,
+  resetMeterStore,
   setIdempotencyStore,
+  setMeterStore,
 } from '@ultimat3/action';
 import type { PgliteClient, PostgresClient } from '@ultimat3/db';
 import {
@@ -217,6 +220,9 @@ async function startJobs(
     reclaimAfterMs: requestDeadlineMs,
   });
   setIdempotencyStore(idempotency);
+  // `meter:` counters on the boot's pool, never the open transaction: a draw is the caller's
+  // whether or not the business write commits, and one tenant's day is one row on every replica.
+  setMeterStore(postgresMeterStore({ executor }));
   return {
     db: client,
     jobs: driver,
@@ -245,6 +251,7 @@ async function releaseQueue(
   // The idempotency store goes back to the memory default for the same reason the facade does: it
   // holds this client, and the next command in this process would reserve keys over a closed one.
   resetIdempotency();
+  resetMeterStore();
   resetJobsFacade();
   resetEventBus();
   resetJobDriver();

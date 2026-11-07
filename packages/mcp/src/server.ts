@@ -35,9 +35,13 @@ import type {
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource, McpResourceSource } from './resources';
 import { ResourceRegistry } from './resources';
+import type { CatalogRefused, CatalogView, McpCatalogSource, PerCall } from './server-catalog';
+import { catalogRefusal, viewOf } from './server-catalog';
 import { resourcesRead } from './server-resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
 import { instructionsFor, invalidArgsResult } from './server-voice';
+import type { McpTenant } from './tenant';
+import { assertTenant, LIST_TENANTS, listTenantsTool, tenantStep, withTenantArg } from './tenant';
 import { admitted, thrownResponse } from './tool-thrown';
 import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpWire, ServerInfo } from './wire';
 import {
@@ -84,16 +88,27 @@ export interface McpServerInput {
   readonly onAudit?: McpAuditHook | undefined;
   /** Stamps each `onAudit` event's `at`. */
   readonly clock?: Clock | undefined;
+  /**
+   * The per-caller catalog, resolved per request for `tools/list` and every `tools/call` and merged
+   * with `tools`/`groups` (`server-catalog.ts`). `defineAppMcp({ catalog })` builds it.
+   */
+  readonly catalog?: McpCatalogSource | undefined;
+  /** One token across tenants, the tenant named per call — see `tenant.ts`. */
+  readonly tenant?: McpTenant | undefined;
 }
 
 export function mcpServer(input: McpServerInput = {}): McpServer {
-  const tools = new ToolRegistry().registerAll(input.tools ?? []);
+  const tenant = input.tenant;
+  if (tenant !== undefined) assertTenant(tenant, input.tools ?? []);
+  // `list_tenants` is a boot tool like any other, so every surface lists it and nothing shadows it.
+  const all = [...(input.tools ?? []), ...(tenant === undefined ? [] : [listTenantsTool(tenant)])];
+  const tools = new ToolRegistry().registerAll(all);
   const resources = new ResourceRegistry().registerAll(input.resources ?? []);
   for (const source of input.resourceSources ?? []) resources.addSource(source);
   const meta = MetaSurface.build({
     surface: input.surface,
     groups: input.groups,
-    tools: input.tools ?? [],
+    tools: all,
   });
   return new McpServer(
     tools,
@@ -105,6 +120,13 @@ export function mcpServer(input: McpServerInput = {}): McpServer {
     input.onAudit === undefined && input.clock === undefined
       ? LOG_ONLY_AUDITOR
       : mcpAuditor({ onAudit: input.onAudit, clock: input.clock }),
+    {
+      catalog: input.catalog,
+      tenant,
+      tools: all,
+      surface: input.surface,
+      groups: input.groups,
+    },
   );
 }
 
@@ -118,6 +140,7 @@ export class McpServer {
   private readonly voice: McpServerVoice;
   /** Where every decision is audited — the log line, then `onAudit`. Public for the HTTP route. */
   readonly audit: McpAuditor;
+  private readonly perCall: PerCall | undefined;
 
   constructor(
     tools: ToolRegistry,
@@ -127,7 +150,9 @@ export class McpServer {
     meta?: MetaSurface,
     voice: McpServerVoice = { errorAudience: 'developer' },
     audit: McpAuditor = LOG_ONLY_AUDITOR,
+    perCall?: PerCall,
   ) {
+    this.perCall = perCall;
     this.tools = tools;
     this.resources = resources;
     this.prompts = prompts;
@@ -205,8 +230,11 @@ export class McpServer {
       // Empty on both eras until an adopter declares a template; `resources` is advertised.
       case 'resources/templates/list':
         return resultResponse(id, { resourceTemplates: [] });
-      case 'tools/list':
-        return resultResponse(id, { tools: this.list(caller) });
+      case 'tools/list': {
+        const view = await this.viewFor(caller);
+        if ('error' in view) return catalogRefusal(id, view.error, this.voice.errorAudience);
+        return resultResponse(id, { tools: this.listIn(view, caller) });
+      }
       case 'tools/call':
         return this.toolsCall(body, caller);
       case 'resources/list':
@@ -232,18 +260,35 @@ export class McpServer {
     }
   }
 
-  /** Role-filtered catalog. Exposed so a transport can answer a cheap capability probe. */
+  /**
+   * Role-filtered BOOT catalog, synchronously — a capability probe, the dev server. A server with a
+   * `catalog` answers `tools/list` per request on top of it (`viewFor`).
+   */
   list(caller: McpCaller): readonly ToolListEntry[] {
-    const flat = this.tools.list(caller);
-    const meta = this.metaFor(caller);
-    if (meta === undefined) return flat;
+    return this.listIn({ tools: this.tools, meta: this.meta }, caller);
+  }
+
+  private listIn(view: CatalogView, caller: McpCaller): readonly ToolListEntry[] {
+    const flat = view.tools.list(caller);
+    const meta = metaServed(view.meta, caller);
+    const arg = this.perCall?.tenant?.arg;
+    const withArg = (entries: readonly ToolListEntry[]) =>
+      arg === undefined ? entries : withTenantArg(entries, arg);
+    if (meta === undefined) return withArg(flat);
     // Constant: the meta tools plus whatever the app left ungrouped (`docs`, `whoami`).
     const entries = MetaSurface.entriesFor(
       meta.surfaceFor(caller) === 'meta' ? 'meta' : 'meta-split',
     );
-    return [...flat.filter((tool) => !meta.isGrouped(tool.name)), ...entries].sort((a, b) =>
-      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    return withArg(
+      [...flat.filter((tool) => !meta.isGrouped(tool.name)), ...entries].sort((a, b) =>
+        a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+      ),
     );
+  }
+
+  /** The boot view, or this caller's resolved catalog merged over it — one per request. */
+  private viewFor(caller: McpCaller): Promise<CatalogView | CatalogRefused> {
+    return viewOf(this.perCall, { tools: this.tools, meta: this.meta }, caller);
   }
 
   /**
@@ -256,8 +301,7 @@ export class McpServer {
 
   /** The meta surface when THIS caller is served it, else `undefined`. */
   private metaFor(caller: McpCaller): MetaSurface | undefined {
-    const meta = this.meta;
-    return meta !== undefined && meta.surfaceFor(caller) !== 'flat' ? meta : undefined;
+    return metaServed(this.meta, caller);
   }
 
   /** Rate-limit class of a body without executing it — see `classifyBody`. */
@@ -274,11 +318,36 @@ export class McpServer {
       return errorResponse(id, INVALID_PARAMS, 'tools/call params.name must be a string');
     }
 
-    const meta = this.metaFor(caller);
+    // The tenant first: every gate after it, and the policy, sees the tenant's actor. Not a member
+    // answers exactly as a hidden tool — `notFound`, the same call the dispatch below makes.
+    let who = caller;
+    let rawArgs: unknown = params['arguments'];
+    const tenant = this.perCall?.tenant;
+    if (tenant !== undefined && name !== LIST_TENANTS) {
+      const step = await tenantStep(tenant, rawArgs, caller);
+      if (step.kind === 'not-member') {
+        return this.notFound(
+          id,
+          name,
+          caller,
+          this.metaFor(caller) ? META_UNKNOWN_FIX : TOOL_UNKNOWN_FIX,
+        );
+      }
+      if (step.kind === 'refused') {
+        return thrownResponse(id, name, step.error, caller, this.voice.errorAudience, this.audit);
+      }
+      who = step.caller;
+      rawArgs = step.args;
+    }
+    const view = await this.viewFor(who);
+    if ('error' in view) {
+      return thrownResponse(id, name, view.error, who, this.voice.errorAudience, this.audit);
+    }
+    const meta = metaServed(view.meta, who);
     if (meta !== undefined) {
       const answered = await metaCall(
         {
-          tools: this.tools,
+          tools: view.tools,
           audit: this.audit,
           dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who),
           notFound: (at, tool, who, fix) => this.notFound(at, tool, who, fix),
@@ -286,16 +355,11 @@ export class McpServer {
             thrownResponse(at, tool, error, who, this.voice.errorAudience, this.audit),
         },
         meta,
-        { id, name, rawArgs: params['arguments'], caller },
+        { id, name, rawArgs, caller: who },
       );
       if (answered !== undefined) return answered;
     }
-    return this.dispatch(
-      id,
-      name,
-      this.tools.resolve(name, params['arguments'] ?? {}, caller),
-      caller,
-    );
+    return this.dispatch(id, name, view.tools.resolve(name, rawArgs ?? {}, who), who);
   }
 
   /** OUTCOME 1, the one answer for absent and hidden alike. See `dispatch`. */
@@ -403,4 +467,9 @@ function protocolRefusal(message: string, error: McpProtocolError): JsonRpcRespo
     fix: error.fix,
     docs: error.docs,
   });
+}
+
+/** `meta` when this caller is served it, else `undefined` — one rule for the boot and a resolved view. */
+function metaServed(meta: MetaSurface | undefined, caller: McpCaller): MetaSurface | undefined {
+  return meta !== undefined && meta.surfaceFor(caller) !== 'flat' ? meta : undefined;
 }

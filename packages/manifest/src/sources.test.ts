@@ -89,6 +89,7 @@ beforeAll(() => {
       policy: can('post:publish'),
       cache: { invalidates: [tag('feed'), tag('post')] },
       rateLimit: { limit: 1000, windowMs: 60_000 },
+      meter: { name: 'publishes', period: 'day', limit: 500 },
       mcp: { expose: true, description: 'publish a draft post' },
       handle: ({ input }) => ({ id: input.id }),
     }),
@@ -104,6 +105,18 @@ beforeAll(() => {
       conflict: 'server-wins',
       local: () => undefined,
       server: (_ctx, input) => ({ id: input.id }),
+    }),
+  );
+
+  // A limit resolved per call: no static pair exists, so only the window is a fact to publish.
+  registerAction(
+    'throttledSourcesPost',
+    action({
+      input: t.object({ id: t.uuid }),
+      output: t.object({ id: t.uuid }),
+      policy: can('post:publish'),
+      rateLimit: { limit: () => 5, windowMs: 30_000 },
+      handle: ({ input }) => ({ id: input.id }),
     }),
   );
 
@@ -177,6 +190,7 @@ describe('frameworkSources reaches every registry', () => {
     expect(sources.actions?.map((a) => a.name)).toEqual([
       'archiveSourcesPost',
       'publishSourcesPost',
+      'throttledSourcesPost',
     ]);
     expect(sources.queries?.map((q) => q.name)).toEqual([
       'recentSourcesPosts',
@@ -286,6 +300,23 @@ describe('the action projection', () => {
     expect(fact?.output).toMatchObject({ type: 'object' });
   });
 
+  test('a declared meter is projected as describe() publishes it, zone included', () => {
+    expect(factFor('publishSourcesPost')?.meter).toEqual({
+      name: 'publishes',
+      period: 'day',
+      timeZone: 'UTC',
+      limit: 500,
+      warnAt: null,
+    });
+  });
+
+  // Dropped, a per-call limit read as "no rate limit" in the file the contract diff judges.
+  test('a per-call rate limit publishes its window, never a fixed pair', () => {
+    const fact = factFor('throttledSourcesPost');
+    expect(fact?.rateLimitPerCall).toEqual({ windowMs: 30_000 });
+    expect('rateLimit' in (fact ?? {})).toBe(false);
+  });
+
   test('rateLimit, mcp.description and mutator are written only when declared', () => {
     const declared = factFor('publishSourcesPost');
     expect(declared?.rateLimit).toEqual({ limit: 1000, windowMs: 60_000 });
@@ -294,6 +325,9 @@ describe('the action projection', () => {
 
     const bare = factFor('archiveSourcesPost');
     expect('rateLimit' in (bare ?? {})).toBe(false);
+    expect('rateLimitPerCall' in (bare ?? {})).toBe(false);
+    expect('rateLimitPerCall' in (declared ?? {})).toBe(false);
+    expect('meter' in (bare ?? {})).toBe(false);
     // Nothing declared an `mcp` block, and the descriptor answers `expose: false` — projected
     // as the fact it is, with no description key beside it.
     expect(bare?.mcp).toEqual({ expose: false });

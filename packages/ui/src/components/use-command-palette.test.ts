@@ -216,6 +216,25 @@ describe('useCommandPalette', () => {
     expect(pending.map((entry) => entry.query)).toEqual(['a', 'ab', 'abc', 'abcd']);
   });
 
+  test('clearing the query drops the request in flight: loading off, its late answer never lands', async () => {
+    const pending: ((items: CommandPaletteItem[]) => void)[] = [];
+    const { palette } = mount({
+      debounceMs: 0,
+      onQuery: () => new Promise((resolve) => pending.push(resolve)),
+    });
+    palette.show();
+    palette.props.onQueryInput('ab');
+    await turn();
+    expect(palette.props.loading).toBe(true);
+    palette.props.onQueryInput('');
+    expect(palette.props.loading).toBe(false);
+    pending[0]?.([{ id: 'late', label: 'ab', hint: '' }]);
+    await turn();
+    expect(palette.props.loading).toBe(false);
+    palette.props.onQueryInput('ab');
+    expect(palette.props.items).toEqual([]);
+  });
+
   test('closing cancels a query still waiting on its debounce', async () => {
     const asked: string[] = [];
     const { palette } = mount({

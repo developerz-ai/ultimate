@@ -7,7 +7,7 @@
 // job is then killed at every step boundary (`exercise-crash.ts`).
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
-import { bindDrawn, isUltimateError, renderThrowable, runExercise } from '@ultimat3/core';
+import { isUltimateError, renderThrowable, runExercise } from '@ultimat3/core';
 import type { AnyJobHandle, JobExecution, JobRecord } from '@ultimat3/jobs';
 import { registeredJobs } from '@ultimat3/jobs';
 import type { Policy } from '@ultimat3/policy';
@@ -26,6 +26,8 @@ import {
   namesActorEntity,
   seededIds,
 } from './exercise-input';
+import type { OverrideInput } from './exercise-override-input';
+import { overrideInput } from './exercise-override-input';
 import type {
   EffectPayload,
   ExerciseEffect,
@@ -234,7 +236,7 @@ interface Prepared {
   readonly runs: number;
   readonly declaredRuns: number | undefined;
   readonly lookups: readonly [IdLookup, IdLookup];
-  readonly bindInput: ((drawn: unknown) => unknown) | undefined;
+  readonly bindInput: OverrideInput | undefined;
 }
 
 /** A's positive control: 39's loop, as the pass has always run it. */
@@ -260,9 +262,9 @@ async function control(
     stoppedLabel: 'stopped before the call answered',
     // The minimal draw on every run the pass adds; 39's seeded draw only on runs an override asks.
     draw: (at, n) => drawInput(sampler, subject.input, at, declaredRuns === undefined ? 0 : n),
-    bind: (drawn) => {
+    bind: async (drawn) => {
       const bound = bindIds(drawn, lookups[binds++ === 0 ? 0 : 1]);
-      lastInput = bindInput === undefined ? bound : bindInput(bound);
+      lastInput = bindInput === undefined ? bound : await bindInput(bound, actor);
       return lastInput;
     },
     accepts: async (input) =>
@@ -348,9 +350,7 @@ async function exerciseOne(
   );
 
   const scope = { tenant, actorId: actor?.id, subject: name, actorEntity: rows?.entity.$name };
-  const bindInput = bindDrawn(
-    override !== undefined && 'actor' in override ? override.input : undefined,
-  );
+  const bindInput = overrideInput(name, override);
   const declaredRuns = override !== undefined && 'actor' in override ? override.runs : undefined;
   // A field naming the actor entity is tried as the actor's own row, then as somebody else's:
   // both readings are legitimate and only the handler knows which it meant. Same minimal draw.
@@ -374,7 +374,7 @@ async function exerciseOne(
   };
   // A's own first input, A's ids in it: B sends exactly what A legitimately would.
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookups[0]);
-  const input = bindInput === undefined ? drawn : bindInput(drawn);
+  const input = bindInput === undefined ? drawn : await bindInput(drawn, actor);
   let reachedWith: unknown;
   const record = await proveTenant({
     taint: tenantTaint(graph, tenant),
@@ -438,11 +438,11 @@ export async function runExercisePass(
     main: graph,
     seed: passSeed,
     room,
-    setup: (subject, sized, tenant, self) => {
+    setup: async (subject, sized, tenant, self) => {
       const full = chosen.find((one) => one.name === subject.name);
       return full === undefined
         ? undefined
-        : sizedCall(full, options, sampler, { graph: sized, tenant, self });
+        : await sizedCall(full, options, sampler, { graph: sized, tenant, self });
     },
   });
 }

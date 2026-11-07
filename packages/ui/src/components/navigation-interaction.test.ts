@@ -202,6 +202,23 @@ describe('PullToRefresh, the controller its touches drive', () => {
     expect(errors).toHaveLength(1);
   });
 
+  test('an onRefresh that throws before its promise ends the busy state and reaches onError', async () => {
+    const errors: unknown[] = [];
+    const boom = new TypeError('not a function');
+    const pull = pullController(
+      () => {
+        throw boom;
+      },
+      () => {},
+      (error) => errors.push(error),
+    );
+    expect(() => pullOnce(pull.send)).not.toThrow();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pull.state().kind).toBe('idle');
+    expect(errors).toEqual([boom]);
+  });
+
   test('a pull mid-list never refreshes', () => {
     let calls = 0;
     const pull = pullController(

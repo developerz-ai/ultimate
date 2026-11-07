@@ -10,7 +10,9 @@
     "sessions",
     "oauth",
     "mfa",
-    "api-keys"
+    "api-keys",
+    "passkeys",
+    "webauthn"
   ],
   "homepage": "https://github.com/developerz-ai/ultimate/wiki/Auth",
   "license": "MIT",
@@ -25,7 +27,9 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./soft-authenticator": "./src/soft-authenticator.ts"
   },
   "files": [
     "src",

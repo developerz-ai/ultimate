@@ -317,6 +317,17 @@ a current fact: the rules that still hold are in that file, and where the two di
   (`@ultimat3/action`'s `metaFromWire`) puts the member back on `RemoteActionError.meta`, under
   the four members that class owns.
 
+- **A framework code's public `meta` keys are ONE reviewed table** (`As of 2026-11`,
+  `problem-meta-framework.ts`, issue #996). `X_METER_EXCEEDED` carries `meter`, `limit` and
+  `resetsAt` for a client to say "100 drafts a day, again at midnight UTC", and the app-codes-only
+  rule above meant they never left the process. Not an option on the error class or the instance:
+  that would let any throw site publish any key. `problemMetaKeysFor` reads the table first, then
+  the app's declarations; `registerProblemMeta` still refuses every framework code, these rows
+  included. `problem-meta-framework.test.ts` holds each row to a framework code answered 4xx (a
+  5xx's meta is the operator's), keys that pass `metaKeyRefusal` (the app's own rule), and no
+  secret-shaped name; `@ultimat3/action`'s `meter-problem.test.ts` pins the producer's keys.
+  `retryAfterSeconds` stays out: it is the `Retry-After` header already.
+
 - **A browser that fails `auth: 'required'` is redirected; an agent gets the problem document.**
   One condition, two audiences, decided once in `auth-redirect.ts` and applied in the `error-map`
   stage before the overlay. `config.signInPath` is `null` until an app names its page, because a

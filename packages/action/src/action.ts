@@ -25,7 +25,10 @@ import { actionName, defOf, hasDef, invoke, stashDef } from './invoke';
 import type { ActionJobHandle } from './job-handle';
 import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
+import type { ActionMeter, ActionMeterFact, ResolvedLimit } from './meter';
+import { assertMeterDeclaration, meterFact } from './meter';
 import type { ActionPolicy, Surface } from './policy-gate';
+import { fixedRateLimit } from './rate-limit-gate';
 
 export interface ActionCache {
   /** Tags dropped from every cache tier after the handler settles. */
@@ -39,6 +42,13 @@ export interface ActionCache {
 export type ActionMcp = Omit<McpExposureDeclaration, 'listParams'>;
 
 export interface ActionRateLimit {
+  /** The burst, or one resolved per call from `ctx` (`({ ctx }) => planOf(ctx).perMinute`). */
+  readonly limit: ResolvedLimit;
+  readonly windowMs: number;
+}
+
+/** A rate limit as data: the fixed pair a contract can diff. */
+export interface ActionRateLimitFact {
   readonly limit: number;
   readonly windowMs: number;
 }
@@ -65,6 +75,12 @@ export interface ActionDef<
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
+  /**
+   * A durable per-period allowance, drawn once per call on EVERY surface — HTTP, MCP, a job, an
+   * in-process call — after the policy admits it and before `handle` starts. Spent, the call is
+   * `X_METER_EXCEEDED`. A replayed idempotent call draws nothing. Periods are UTC (`meter.ts`).
+   */
+  readonly meter?: ActionMeter;
   /**
    * The HTTP projection's one per-action knob: `http: { path }` pins the URL whatever the app's
    * `pathStyle` derives — for a path a caller holds and cannot be told to change (a signed upload).
@@ -208,7 +224,11 @@ export interface ActionDescriptor {
    */
   readonly audited: boolean;
   readonly mcp: McpDescriptorMeta;
-  readonly rateLimit: ActionRateLimit | null;
+  /** The FIXED pair; `null` when none is declared or the limit is resolved per call. */
+  readonly rateLimit: ActionRateLimitFact | null;
+  /** The window of a rate limit resolved per call, which has no static number to publish. */
+  readonly rateLimitPerCall: { readonly windowMs: number } | null;
+  readonly meter: ActionMeterFact | null;
   /** Published so `x actions list --json` can answer "what is retiring, and when". */
   readonly deprecated: Deprecation | null;
   /** The declared refusals, sorted; `null` for an action that declares none (an open contract). */
@@ -227,6 +247,7 @@ export interface AnyActionDef {
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
+  readonly meter?: ActionMeter;
   readonly http?: ActionHttp;
   readonly deprecated?: Deprecation;
   readonly idempotent?: boolean;
@@ -331,6 +352,7 @@ export function action<
   // Refused where it is written, and frozen before `build` stores it: the list a caller still
   // holds is not the one the descriptor, the document and the wrap read.
   const errors = checkDeclaredErrors(def.errors, declaredStatusFor, 'this action');
+  if (def.meter !== undefined) assertMeterDeclaration(def.meter);
   return build(errors === undefined ? def : { ...def, errors }, '');
 }
 
@@ -429,7 +451,12 @@ export function describeAction(target: AnyAction): ActionDescriptor {
       tool: name,
       description: mcp?.description ?? null,
     },
-    rateLimit: def.rateLimit ?? null,
+    rateLimit: fixedRateLimit(def.rateLimit),
+    rateLimitPerCall:
+      def.rateLimit !== undefined && typeof def.rateLimit.limit === 'function'
+        ? { windowMs: def.rateLimit.windowMs }
+        : null,
+    meter: meterFact(def.meter),
     deprecated: def.deprecated ?? null,
     errors: def.errors ?? null,
   };

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "62f2bb9c044ee01f178fc2e7139a1bbd63e8d63e7954bdd2fdcdbca66c1b7a4f",
+  "buildId": "604fa93875254dbfe222b41f98bfbe578a642c786be360ae34b13298fd3e5d69",
   "tiers": {
     "0": [
       "core",
@@ -1550,6 +1550,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_DEVICE_FRAME_TOO_LARGE",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_DEVICE_OFFLINE",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_DEVICE_REQUEST_TIMEOUT",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
       "code": "X_DOC_BOUNDARY_RULES_STALE",
       "owner": "scripts",
       "at": "scripts/boundary-rule-docs.ts"
@@ -2920,6 +2935,16 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_CATALOG_TOOL_DUPLICATE",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CATALOG_UNRESOLVED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -2935,12 +2960,27 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_CONFIRMATION_EVIDENCE_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_CONFIRMATION_EXPIRED",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
     {
       "code": "X_MCP_CONFIRMATION_PENDING",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_QUORUM_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_QUORUM_PENDING",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
@@ -3120,6 +3160,21 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_TENANT_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_TENANT_REQUIRED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_TENANT_UNRESOLVED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_TOOL_DUPLICATE",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -3148,6 +3203,16 @@
       "code": "X_MCP_WRONG_TOOL",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_METER_EXCEEDED",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_METER_INVALID",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_METHOD_NOT_ALLOWED",
@@ -3400,6 +3465,21 @@
       "at": "packages/notify/src/errors.ts"
     },
     {
+      "code": "X_NOTIFY_PUSH_DEVICE_GONE",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_PUSH_MESSAGE_INVALID",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_PUSH_PROVIDER_REFUSED",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
       "code": "X_NOTIFY_STORE_MISSING",
       "owner": "notify",
       "at": "packages/notify/src/errors.ts"
@@ -3553,6 +3633,21 @@
       "code": "X_PACKAGE_UNREFERENCED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_PASSKEY_CHALLENGE_EXPIRED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_STEP_UP_REQUIRED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
     },
     {
       "code": "X_PASSWORD_WEAK",
@@ -4710,6 +4805,11 @@
       "at": "packages/seo/src/errors.ts"
     },
     {
+      "code": "X_SEO_OG_IMAGE_CONFLICT",
+      "owner": "seo",
+      "at": "packages/seo/src/errors.ts"
+    },
+    {
       "code": "X_SERVER_NOT_STARTED",
       "owner": "http",
       "at": "packages/http/src/error-titles.ts"
@@ -4873,6 +4973,11 @@
       "code": "X_SOCKET_AUTH_UNAVAILABLE",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_SOCKET_HAND_ROLLED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SOCKET_LIMIT",

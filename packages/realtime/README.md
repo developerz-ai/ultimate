@@ -389,7 +389,7 @@ wire.
 | Ceiling | Default | Option | Refused with |
 |---|---|---|---|
 | concurrent sockets on this node | 250,000 | `syncNode({ maxConnections })` | `503` + `retry-after-ms`, the same shed as the accept budget |
-| inbound bytes per frame | 256 KiB | `syncNode({ maxFrameBytes })` | the socket, by `Bun.serve`'s `maxPayloadLength` |
+| inbound bytes per frame | 256 KiB | `syncNode({ maxFrameBytes })` | a `1009` close, by `Bun.serve`'s `maxPayloadLength` and by the node itself — a listener shared with a `deviceSocket()` takes the widest mount's limit |
 | inbound frames per socket | 64/s, burst 256 | `syncNode({ maxFramesPerSecond, frameBurst })` | `X_FRAME_RATE_LIMIT` |
 | live subscriptions per socket | 128 | `new LiveQueryRegistry({ maxPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
 | live subscriptions per actor (anonymous: per resolved client address), across its sockets | 1,000 (`DEFAULT_MAX_PER_ACTOR`) | `new LiveQueryRegistry({ maxPerActor })`; the boot passes `realtime.maxSubscriptionsPerActor` | `X_SUBSCRIPTION_LIMIT` |
@@ -891,6 +891,26 @@ principal.
   (`maxRowsPerType` / `maxRowsByType`, least recently written first). An eviction is a change like any other: the
   persister deletes the row from disk with it. Persisting it (IndexedDB) is plan 101 slice 12.
 
+## Device sockets
+
+`deviceSocket({ path, resolveToken, onFrame, maxSocketsPerActor?, heartbeatMs?, allowedOrigins? })`
+— a declared socket for a non-browser client, from `./server`. A factory over `route`: the value is
+a websocket mount plus `request(ctx, deviceId, frame, { deadlineMs })`, which reaches one connected
+device from any process over the bus, scoped to `ctx.actor.orgId`. `deviceAgent({ url, token,
+onRequest })` is the Bun client. Every rule (credential, caps, frame limit, beat, drain, codes):
+[wiki/Realtime.md#device-sockets](../../wiki/Realtime.md#device-sockets).
+
+| File | Job |
+|---|---|
+| `device-socket.ts` | the declaration, its screen, the registry, `request()` and `attach()` |
+| `device-upgrade.ts` | the upgrade decision: origin, bearer token under a deadline, expiry, cap |
+| `device-host.ts` | the sockets one node holds: frames, the lane, the sweep, the drain |
+| `device-bus.ts` | where a device is and how a request reaches it and comes back |
+| `device-wire.ts` | both hops' frames and the frame limit |
+| `device-agent.ts` | the device's half, on Bun |
+| `device-errors.ts` | its refusals |
+| `device-declarer.ts` | the file that called `deviceSocket()`, so `x dev` refuses another module taking a path |
+
 ## Errors
 
 `X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_SUBSCRIPTION_ID_TAKEN` ·
@@ -900,7 +920,8 @@ principal.
 `X_REALTIME_UNINSTALLED` · `X_SYNC_UNCONFIGURED` · `X_RECORD_REJECTED` ·
 `X_LIVE_SERVER_RENDER` · `X_LIVE_QUERY_UNKNOWN` ·
 `X_LIVE_REPLICA_IDENTITY` ·
-`X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` · `X_NOT_IMPLEMENTED` ·
+`X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` ·
+`X_DEVICE_OFFLINE` · `X_DEVICE_REQUEST_TIMEOUT` · `X_DEVICE_FRAME_TOO_LARGE` · `X_NOT_IMPLEMENTED` ·
 `X_TIMEOUT`
 
 `X_NOT_IMPLEMENTED` and `X_TIMEOUT` are **borrowed** from `@ultimat3/core`, which owns and titles

@@ -130,8 +130,11 @@ describe('PRIMITIVE_FACTORIES', () => {
       '@ultimat3/jobs#webhookReceiver',
       '@ultimat3/mcp#mcpConfirmations',
       '@ultimat3/notify#notifier',
+      '@ultimat3/notify#pushRegister',
+      '@ultimat3/notify#pushUnregister',
       '@ultimat3/pwa#pushSubscribe',
       '@ultimat3/pwa#pushUnsubscribe',
+      '@ultimat3/realtime#deviceSocket',
       '@ultimat3/scraping#scrape',
     ]);
   });

@@ -315,6 +315,99 @@ defineAppMcp({
   actor half → preview / confirmation → `dispatch`, the flat path — same audit line, same bucket.
 - Ungrouped tools (`docs`, `whoami`) stay flat beside the five, exactly as on `'meta'`.
 
+### Per-caller tools: `catalog:` and `runtimeTool()`
+
+`As of 2026-11`. A tool that exists per tenant — a connector row, a project's integration — is a
+`runtimeTool()` answered by `catalog(caller)`, resolved for **every** `tools/list` and `tools/call`
+(never cached) and merged with the static tools into one per-request registry, so visibility →
+scope → args → admit → confirmation → policy run on it unchanged.
+
+```ts
+import { defineAppMcp, runtimeTool } from '@ultimat3/mcp';
+
+interface ConnectorRow {
+  readonly name: string;
+  readonly description: string;
+  readonly schema: unknown;
+}
+declare function connectorsOf(orgId: string | undefined): Promise<readonly ConnectorRow[]>;
+
+defineAppMcp({
+  catalog: async (caller) => ({
+    tools: (await connectorsOf(caller.actor.orgId)).map((row) =>
+      runtimeTool({
+        name: row.name,
+        description: row.description,
+        inputSchema: row.schema, // the wire subset, root `type: 'object'` — else refused
+        permission: 'connector:call', // a DECLARED permission, borrowed: never its own authz
+        destructive: false,
+        run: ({ input }) => ({ called: row.name, input }),
+      }),
+    ),
+  }),
+});
+```
+
+| Rule | Answer |
+|---|---|
+| only `runtimeTool()` values are served | anything else is `X_MCP_CATALOG_UNRESOLVED` — a hand-built tool would skip the permission |
+| `permission` | `can(permission)`: an undeclared one is `X_PERMISSION_UNKNOWN`, an empty one `X_MCP_TOOL_UNSAFE` |
+| `inputSchema` | copied into the wire subset or refused whole (`format`, `$ref`, `oneOf`…): published = enforced |
+| a name a static tool, a meta tool, `list_tenants` or another runtime tool holds | `X_MCP_CATALOG_TOOL_DUPLICATE` |
+| outcome 2 | with `scopes:` declared, `scope` must be one of its keys (else `X_MCP_CATALOG_UNRESOLVED`); without, none |
+| visibility | the resolver already answers per caller: no `visibleTo`. Another caller's tool is an absent tool |
+| meta surface | `groups` beside `tools` adds resources to `list_resources`; a boot group's name is a duplicate |
+| the resolver throws | the request fails: `tools/list` `-32603` + `{ code, fix }`, `tools/call` an `isError` result — every name alike, so no name is an oracle. Never a smaller catalog |
+| rate limit | a runtime name is unknown to the pre-dispatch classifier, so it bills the `write` bucket (fail closed) |
+
+### One token across tenants: `tenant:`
+
+`As of 2026-11`. `resolveToken` answers the PERSON (unchanged shape); every `tools/call` names the
+tenant it acts in under `tenant.arg`. The step runs first on a call:
+
+1. the arg is read and **stripped** — no tool's schema or handler ever sees it (`X_MCP_TENANT_INVALID`
+   at boot for a tool declaring it). Missing or empty: `X_MCP_TENANT_REQUIRED`, whose fix is `list_tenants({})`.
+2. `resolve({ person, value })` answers the call's actor, a `kind: 'agent'` — or `null`, which is
+   **byte-for-byte the hidden-tool answer**: no 403, no echo of the value. A throw (or a non-agent
+   actor) is `X_MCP_TENANT_UNRESOLVED`, never "not a member".
+3. that actor IS the caller for every gate, the confirmation, the policy and `ctx.actor.orgId` — so
+   the tenancy guards see one org per call — and the audit line carries `tenant`.
+
+`list_tenants` (no arg, no scope) serves `list({ person })`; `tools/list` publishes the arg as a
+required string on every other tool.
+
+**`tools/list` is person-scoped, and not a promise.** It names no tenant (MCP's `tools/list` takes
+only a `cursor`), so `visibleTo`, `can()` and `catalog` run there as the PERSON. `tools/call` runs
+them as the tenant actor, and the call is authoritative:
+
+| a tool | `tools/list` | `tools/call` |
+|---|---|---|
+| visible to the person, not to the tenant actor | listed | the hidden-tool answer |
+| visible only through a tenant role or a tenant's `catalog` row | not listed | runs, when called by name |
+
+A role or a runtime tool an agent must discover per tenant belongs on the person's actor, or in a
+tool the agent reads after `list_tenants` (`docs`, `list_resources`).
+
+```ts
+import { agentActor } from '@ultimat3/core';
+import { defineAppMcp } from '@ultimat3/mcp';
+
+declare function roleIn(personId: string, project: string): Promise<string | undefined>;
+declare function projectsOf(personId: string): Promise<readonly string[]>;
+
+defineAppMcp({
+  include: 'exposed',
+  tenant: {
+    arg: 'project',
+    resolve: async ({ person, value }) => {
+      const role = await roleIn(person.id, value);
+      return role === undefined ? null : agentActor({ id: person.id, orgId: value, roles: [role] });
+    },
+    list: async ({ person }) => (await projectsOf(person.id)).map((value) => ({ value })),
+  },
+});
+```
+
 ### What a client is told beyond the schema
 
 `As of 22.10`, MCP 2025-06-18. The projection derives each from the declaration; the primitive's
@@ -531,6 +624,50 @@ another. `sealKeys` points at the key in a test. `SQL_MCP_CONFIRMATIONS_TABLE` i
 `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at boot. The gated tool carries `confirms: true`, which the meta
 catalog shows as `(confirms)`.
 
+### Quorum and signed decisions
+
+Two more options on the same factory, `As of 2026-11`: `approvers` (N of M) and `evidence` (every
+vote signed). Same gate, same order, same single-use `consume`.
+
+```ts
+import type { PgExecutor } from '@ultimat3/core';
+import type { McpEvidenceCheck } from '@ultimat3/mcp';
+import { mcpConfirmations, postgresConfirmationStore } from '@ultimat3/mcp';
+
+declare const executor: PgExecutor;
+// The app's key registry: true only when `signature` verifies over `payload` under a key
+// registered to `approver` (a device key — the private half never reaches the server).
+declare function verifyDeviceKey(check: McpEvidenceCheck): Promise<boolean>;
+
+export const confirmRefunds = mcpConfirmations({
+  tools: ['refundOrder'],
+  store: postgresConfirmationStore({ executor }),
+  permission: 'order:refund',
+  approvers: ({ args }) => ({ quorum: Number(args['amount']) > 1000 ? 2 : 1, from: ['role:finance'] }),
+  evidence: { verify: verifyDeviceKey },
+  ttlMs: 4 * 3_600_000,
+});
+```
+
+| Rule | Mechanism |
+|---|---|
+| the bar | `approvers({ tool, args, actor })` over the VALIDATED arguments, at the call, before a row opens; `quorum` and `from` are stored on the row, so a later declaration cannot lower an open one (the gate re-checks with the higher of the two) |
+| `from` | `'role:<name>'` (an application role on the decider) or `'actor:<id>'`, a closed template type. Matched by the decision action's policy — the one authz path — for `approve` and `reject`; `view` stays `permission` + `check` |
+| the requester never counts | a decider whose id is the row's `actorId` is `X_FORBIDDEN` (`mcp-confirmation.requester`), and so is an impersonated one (`onBehalfOf`). Only when `approvers` is declared: without it, the original single decision by anyone the policy admits holds |
+| one approver, one vote | the store's conditional write refuses a second vote by the same id; the decision answers `X_MCP_CONFIRMATION_QUORUM_PENDING` naming it |
+| partial | the row stays `pending` until `quorum` distinct votes; the agent's repeat answers `X_MCP_CONFIRMATION_QUORUM_PENDING` (`n of m`), nothing runs. One rejection rejects. `ttlMs` expires a partial row like any other |
+| refused at the call | a quorum that is not a whole number ≥ 1, an empty or malformed `from`, or more named `actor:` approvers than exist without the requester: `X_MCP_CONFIRMATION_QUORUM_INVALID`, no row. `evidence` with no `verify`: the same code at declaration |
+| what is signed | `signingPayload` — `confirmationSigningPayload(row)`, canonical JSON of purpose, confirmation id, tool and the keyed argument digest — returned by `view`. The id makes a signature good for one row (a replay onto the next identical call binds another id); the digest for one set of arguments |
+| at the decision | `approve` carries `signature`; missing or not `true` from `verify` is `X_MCP_CONFIRMATION_EVIDENCE_INVALID` and stores no vote. A `verify` that throws propagates: an outage, never a verdict |
+| at the call | before the CAS `consume`, the gate runs `verifyConfirmationEvidence` over the STORED row: approved, bound to these arguments, every signature verifying, `quorum` distinct eligible approvers. Any failure consumes the row and answers `X_MCP_CONFIRMATION_EVIDENCE_INVALID` (a denial); a throwing verifier leaves it for a retry |
+| a separate process | `verifyConfirmationEvidence(row, { evidence, quorum, from, arguments })` is exported: an executor that trusts nothing the app server wrote re-checks the row with public keys alone. `from` checks `actor:` selectors here; a `role:` standing is the registry's, so `verify` is handed `from` |
+
+The row carries `quorum`, `approvers` and `approvals` (`{ approver, at, signature }[]`, one per
+distinct approver, in order); `decidedBy`/`decidedAt` are the vote that met the quorum. The view
+answers `quorum`, `approvedBy` and `signingPayload` too. `McpConfirmationStore.decide` takes the
+signature as a fifth argument. Three columns are added by the boot (`alter table … add column if
+not exists`): a row opened before them reads as one approval, no selectors.
+
 ## Resources
 
 | URI | Contents |
@@ -654,6 +791,9 @@ lists resources per caller — what `extraRecipes` is built on.
 | `X_MCP_CONFIRMATION_TOOL_UNKNOWN` | `mcpConfirmations({ tools })` names a tool this server does not project, or none |
 | `X_MCP_CONFIRMATION_CONTESTED` | identical concurrent calls kept racing one confirmation; retry |
 | `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | an approval did not carry the arguments the agent sent (missing, different, or keyed before a rotation) |
+| `X_MCP_CONFIRMATION_QUORUM_PENDING` | some distinct approvers approved and the quorum needs more; also a repeat vote by one who already counted |
+| `X_MCP_CONFIRMATION_EVIDENCE_INVALID` | under `evidence`, a vote's signature is missing or does not verify, or the stored row no longer proves its approval |
+| `X_MCP_CONFIRMATION_QUORUM_INVALID` | `approvers` answered a bar nobody can meet, or `evidence` declares no `verify` |
 | `X_MCP_RATE_LIMITED` | the caller spent its per-minute allowance for this request's class. Its own code rather than `@ultimat3/http`'s `X_RATE_LIMITED` because the KNOB differs — `rateLimits` on the route, never `rateLimit.buckets` in `app.config.ts` |
 
 ### Error classes
@@ -670,8 +810,11 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpConfirmationArgumentsMismatchError` | `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | `src/confirmation-errors.ts` |
 | `McpConfirmationContestedError` | `X_MCP_CONFIRMATION_CONTESTED` | `src/confirmation-errors.ts` |
 | `McpConfirmationDecidedError` | `X_MCP_CONFIRMATION_DECIDED` | `src/confirmation-errors.ts` |
+| `McpConfirmationEvidenceInvalidError` | `X_MCP_CONFIRMATION_EVIDENCE_INVALID` | `src/confirmation-quorum-errors.ts` |
 | `McpConfirmationExpiredError` | `X_MCP_CONFIRMATION_EXPIRED` | `src/confirmation-errors.ts` |
 | `McpConfirmationPendingError` | `X_MCP_CONFIRMATION_PENDING` | `src/confirmation-errors.ts` |
+| `McpConfirmationQuorumInvalidError` | `X_MCP_CONFIRMATION_QUORUM_INVALID` | `src/confirmation-quorum-errors.ts` |
+| `McpConfirmationQuorumPendingError` | `X_MCP_CONFIRMATION_QUORUM_PENDING` | `src/confirmation-quorum-errors.ts` |
 | `McpConfirmationRejectedError` | `X_MCP_CONFIRMATION_REJECTED` | `src/confirmation-errors.ts` |
 | `McpConfirmationToolUnknownError` | `X_MCP_CONFIRMATION_TOOL_UNKNOWN` | `src/confirmation-errors.ts` |
 | `McpConfirmationUnknownError` | `X_MCP_CONFIRMATION_UNKNOWN` | `src/confirmation-errors.ts` |

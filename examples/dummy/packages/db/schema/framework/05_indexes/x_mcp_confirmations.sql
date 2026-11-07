@@ -2,4 +2,4 @@
 
 CREATE INDEX x_mcp_confirmations_expires_at_idx ON public.x_mcp_confirmations USING btree (expires_at);
 
-CREATE UNIQUE INDEX x_mcp_confirmations_open_idx ON public.x_mcp_confirmations USING btree (actor_id, tool, input_digest) WHERE (consumed_at IS NULL);
+CREATE UNIQUE INDEX x_mcp_confirmations_open_org_idx ON public.x_mcp_confirmations USING btree (actor_id, COALESCE(org_id, ''::text), ((org_id IS NULL)), tool, input_digest) WHERE (consumed_at IS NULL);

@@ -71,6 +71,7 @@ export type {
   JobFact,
   JsonValue,
   Manifest,
+  MeterFact,
   MountFact,
   PolicyFact,
   QueryFact,

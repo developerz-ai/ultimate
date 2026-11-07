@@ -38,6 +38,9 @@ import {
   t,
 } from '@ultimat3/mcp';
 import { confirmAgentPublish } from './confirmations';
+import { postlyQuotes } from './quotes';
+import type { PostlyMemberships } from './tenants';
+import { postlyTenant } from './tenants';
 
 /**
  * The org an agent's call acts in. `ctx.actor.orgId` is `string | undefined` on core's `Actor` —
@@ -164,6 +167,11 @@ const POSTLY_TOOLS = ownTools({
  */
 export interface PostlyMcpApp {
   readonly tools?: Readonly<Record<string, AnyAppToolDefinition>>;
+  /**
+   * A person's memberships, when their one token spans several orgs: every call then names its
+   * org as `org` (`./tenants.ts`). Absent, a token resolves to one member, as it always did.
+   */
+  readonly memberships?: PostlyMemberships;
 }
 
 /** The app's tools, refused by name when one would replace a tool of this package's. */
@@ -186,7 +194,7 @@ function appTools(app: PostlyMcpApp): Readonly<Record<string, AnyAppToolDefiniti
  * tools the app hands in.
  */
 const build = (
-  registry: Pick<DefineAppMcpInput, 'include' | 'confirmations'>,
+  registry: Pick<DefineAppMcpInput, 'include' | 'confirmations' | 'catalog' | 'tenant'>,
   app: PostlyMcpApp = {},
 ): AppMcp =>
   defineAppMcp({
@@ -216,6 +224,9 @@ export const postlyMcp = (app: PostlyMcpApp = {}): AppMcp =>
       include: 'exposed',
       /** `publishPost` waits for a person: `./confirmations.ts`. */
       confirmations: confirmAgentPublish,
+      /** `quote_<plan>` per plan the acting org can move to, resolved per request: `./quotes.ts`. */
+      catalog: postlyQuotes(app.memberships),
+      ...(app.memberships === undefined ? {} : { tenant: postlyTenant(app.memberships) }),
     },
     app,
   );

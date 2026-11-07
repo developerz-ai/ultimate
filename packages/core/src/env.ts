@@ -2,6 +2,7 @@
 // is reported in ONE error — an agent should never have to restart the process six times to
 // discover six missing variables.
 
+import { numeric } from '@ultimat3/schema';
 import { describeValue } from './error-render';
 import { EnvMissingError } from './errors';
 import { REDACTED, redactKeys } from './logger';
@@ -135,8 +136,9 @@ function parseValue(decl: EnvVarDecl, raw: string): { ok: true; value: unknown }
     case 'number':
     case 'integer':
     case 'port': {
-      const value = Number(raw);
-      if (!Number.isFinite(value)) return { ok: false };
+      // Schema's one decimal reader: `Number()` reads `' '` as 0 and `0x1F90` as 8080.
+      const value = numeric(raw);
+      if (value === undefined) return { ok: false };
       if (decl.type !== 'number' && !Number.isInteger(value)) return { ok: false };
       if (decl.type === 'port' && (value < 1 || value > 65535)) return { ok: false };
       if (decl.min !== undefined && value < decl.min) return { ok: false };
@@ -150,7 +152,10 @@ function parseValue(decl: EnvVarDecl, raw: string): { ok: true; value: unknown }
     case 'url':
       return URL.canParse(raw) ? { ok: true, value: raw } : { ok: false };
     default:
-      if (decl.pattern !== undefined && !decl.pattern.test(raw)) return { ok: false };
+      if (decl.pattern === undefined) return { ok: true, value: raw };
+      // A `g`/`y` pattern resumes at its `lastIndex`: a second check would refuse a valid value.
+      decl.pattern.lastIndex = 0;
+      if (!decl.pattern.test(raw)) return { ok: false };
       return { ok: true, value: raw };
   }
 }

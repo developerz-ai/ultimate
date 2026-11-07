@@ -1,9 +1,9 @@
 /**
  * The COMPLETE document an app opts into with `defineApi({ openapi })`: its own `info` and
- * `servers`, the security schemes its routes are reached through, and the two refusals every
- * authenticated operation can answer — 401 and 429, with `Retry-After` — which the per-primitive
- * projections cannot state because they do not know the route an operation is mounted as. Plus
- * the second document a bearer mount publishes: only the cut, at the mounted paths.
+ * `servers`, the security schemes its routes are reached through, and the refusals an
+ * authenticated, limited or metered operation can answer — 401 and 429, with `Retry-After` — which
+ * the per-primitive projections cannot state: they do not know the route an operation is mounted
+ * as. Plus the second document a bearer mount publishes: only the cut, at the mounted paths.
  *
  * Built over the merged document (actions AND reads — `@ultimat3/cli` merges the two packages'
  * paths) and over the `Route`s that serve it, so "is this operation authenticated" is the answer
@@ -88,10 +88,32 @@ interface Refusals {
  * still does, hence both reads above.
  */
 function declaresRateLimit(operation: Operation): boolean {
+  return declares(operation, 'rateLimit');
+}
+
+/**
+ * A `meter:` is drawn inside `invoke` too, on every surface, and refuses with `X_METER_EXCEEDED`
+ * and a `Retry-After` up to the period's end — on a public operation as on an authenticated one.
+ * Published as `x-ultimate.meter`, absent when undeclared.
+ */
+function declaresMeter(operation: Operation): boolean {
+  return declares(operation, 'meter');
+}
+
+function declares(operation: Operation, key: 'rateLimit' | 'meter'): boolean {
   const extensions = operation['x-ultimate'];
   if (typeof extensions !== 'object' || extensions === null) return false;
-  const declared = (extensions as Record<string, unknown>)['rateLimit'];
+  const declared = (extensions as Record<string, unknown>)[key];
   return declared !== undefined && declared !== null;
+}
+
+/** The codes a 429 can carry here, named so a client knows which refusal it is reading. */
+function tooManyDescription(throttled: boolean, metered: boolean): string {
+  const codes = [
+    ...(throttled ? ['X_RATE_LIMITED'] : []),
+    ...(metered ? ['X_METER_EXCEEDED'] : []),
+  ].join(' or ');
+  return `${codes} — retry after Retry-After seconds`;
 }
 
 /** One operation, with its route's refusals and security added. Never mutates `operation`. */
@@ -101,7 +123,8 @@ function completeOperation(operation: Operation, route: Route | undefined, refus
     refusals.everyOpLimited ||
     route?.meta.rateLimitBucket !== undefined ||
     declaresRateLimit(operation);
-  if (!authenticated && !limited) return operation;
+  const metered = declaresMeter(operation);
+  if (!authenticated && !limited && !metered) return operation;
   const responses = { ...(operation['responses'] as Record<string, unknown>) };
   if (limited) {
     const ok = responses['200'] as Record<string, unknown> | undefined;
@@ -121,8 +144,9 @@ function completeOperation(operation: Operation, route: Route | undefined, refus
       refusals.unauthorizedHeaders,
     );
   }
+  // A meter is no bucket: its refusal states the delay to the period's end and no `RateLimit-*`.
   responses['429'] = problem(
-    'X_RATE_LIMITED — retry after Retry-After seconds',
+    tooManyDescription(authenticated || limited, metered),
     limited ? { ...RETRY_AFTER_HEADER, ...RATE_LIMIT_HEADERS } : RETRY_AFTER_HEADER,
   );
   return {

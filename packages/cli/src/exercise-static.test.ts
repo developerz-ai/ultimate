@@ -88,6 +88,19 @@ describe('unit · entityTenantFindings', () => {
     expect(codesAt([orgs, unrelated])).toEqual([]);
   });
 
+  // What a probe found (sweep 1): `probe_invites.ownerOrg -> orgs.id` and no tenant column, while
+  // `seedGraph` seeds it per tenant. A table a tenant column points at IS the tenant: a row keyed
+  // to it belongs to that tenant, so the walk ends there, found.
+  test('a key to the tenant root, once a tenant column names that root, is a finding', () => {
+    expect(codesAt([orgs, docs, unrelated])).toEqual([
+      ['X_ENTITY_TENANT_UNDECLARED', 'xs_unrelated'],
+    ]);
+    const [finding] = entityTenantFindings([orgs, docs, unrelated].map((e) => e.$describe()));
+    expect(finding?.cause).toContain('references xs_unrelated -> xs_orgs, the tenant root');
+    // The root itself is the tenant, never a finding of its own.
+    expect(codesAt([orgs, docs])).toEqual([]);
+  });
+
   test('a reference cycle terminates, and a tenant beyond it is still found', () => {
     const loopA = entity('xs_loop_a', {
       columns: {

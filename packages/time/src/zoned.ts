@@ -216,12 +216,18 @@ export function isoDateInZone(at: Instant, zone: TimeZone): string {
  * (which is what `toIso` is for). The form a schedule is read in: the two passes of a fall-back
  * hour are one wall time and two instants, and the offset is the only thing that tells them
  * apart. Seconds precision; `fromIso` reads it back to the same second.
+ *
+ * An offset off the minute (Africa/Monrovia, -00:44:30 until 1972) has no ISO-8601 spelling — an
+ * offset is `±HH:MM`, and `fromIso` refuses more — so the label rounds and the clock written is the
+ * one THAT label names: 30 s from the zone's own dial, never 30 s from the instant.
  */
 export function isoInZone(at: Instant, zone: TimeZone): string {
-  const zoned = toZoned(at, zone);
-  const date = `${String(zoned.year).padStart(4, '0')}-${pad2(zoned.month)}-${pad2(zoned.day)}`;
-  const time = `${pad2(zoned.hour)}:${pad2(zoned.minute)}:${pad2(zoned.second)}`;
-  return `${date}T${time}${offsetLabel(zoned.offsetMinutes)}`;
+  const offsetMinutes = toZoned(at, zone).offsetMinutes;
+  const clock = new Date(Math.floor(at.getTime() / 1000) * 1000 + offsetMinutes * 60_000);
+  const year = String(clock.getUTCFullYear()).padStart(4, '0');
+  const date = `${year}-${pad2(clock.getUTCMonth() + 1)}-${pad2(clock.getUTCDate())}`;
+  const time = `${pad2(clock.getUTCHours())}:${pad2(clock.getUTCMinutes())}:${pad2(clock.getUTCSeconds())}`;
+  return `${date}T${time}${offsetLabel(offsetMinutes)}`;
 }
 
 /** True when both instants fall on the same local calendar day. */

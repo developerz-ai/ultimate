@@ -17,16 +17,13 @@ export interface MeasureScope {
   run<T>(fn: () => T): T;
 }
 
-/**
- * The scope for `origin`. The pipeline is the app's API table and nothing else: a page's data
- * comes from its actions and queries, and a route the render reaches that is not one of them
- * answers 404 — which the render reports, and the route is filed unmeasured with that reason.
- */
-export async function measureScope(input: {
+/** A scope's in-process API: the app's own table, as `actor` — or, `null`, as nobody. */
+interface ScopeInput {
   readonly origin: string;
   readonly buildId: string;
-}): Promise<MeasureScope> {
-  const actor = await measurementActor();
+}
+
+function inProcessRunner(input: ScopeInput, actor: Actor | null): <T>(fn: () => T) => T {
   // No rate limit: every request here is this build's own render, and a limiter would need a
   // deployment scope a build does not have (`X_RATE_LIMIT_SCOPE_UNSET`).
   const config = defineHttpConfig({ buildId: input.buildId, rateLimit: { enabled: false } });
@@ -36,7 +33,7 @@ export async function measureScope(input: {
     role: 'web',
     config,
   });
-  ctx.actor = actor;
+  if (actor !== null) ctx.actor = actor;
   const pipeline = httpPipeline({
     table: httpRouter(apiRoutes()),
     config,
@@ -45,10 +42,27 @@ export async function measureScope(input: {
   const dispatch = (url: string, init: RequestInit): Promise<Response> =>
     pipeline.handle(new Request(url, init), { role: 'web' });
   const request: Ctx = ctx;
-  return {
-    actor,
-    run: <T>(fn: () => T): T => withInProcessFetch(dispatch, () => runWithContext(request, fn)),
-  };
+  return <T>(fn: () => T): T => withInProcessFetch(dispatch, () => runWithContext(request, fn));
+}
+
+/**
+ * The scope for `origin`. The pipeline is the app's API table and nothing else: a page's data
+ * comes from its actions and queries, and a route the render reaches that is not one of them
+ * answers 404 — which the render reports, and the route is filed unmeasured with that reason.
+ * For a render that is WEIGHED and discarded only: its output is never published.
+ */
+export async function measureScope(input: ScopeInput): Promise<MeasureScope> {
+  const actor = await measurementActor();
+  return { actor, run: inProcessRunner(input, actor) };
+}
+
+/**
+ * The same in-process API, authenticating NOBODY: what a read whose answer is PUBLISHED runs in —
+ * a `site/` route's `prerender()` (sitemap.xml) and an llms.txt page's `load`. Run as the
+ * measurement actor, those listed rows only that actor may read (a demo owner's drafts).
+ */
+export function publicScope(input: ScopeInput): <T>(fn: () => T) => T {
+  return inProcessRunner(input, null);
 }
 
 /**

@@ -21,6 +21,7 @@ export const SEO_ERROR_CODES = {
   linkInvalid: 'X_SEO_LINK_INVALID',
   sitemapEntryInvalid: 'X_SITEMAP_ENTRY_INVALID',
   llmsDescriptionMissing: 'X_SEO_LLMS_DESCRIPTION_MISSING',
+  ogImageConflict: 'X_SEO_OG_IMAGE_CONFLICT',
 } as const;
 
 export type SeoErrorCode = (typeof SEO_ERROR_CODES)[keyof typeof SEO_ERROR_CODES];
@@ -48,6 +49,7 @@ registerErrorCodes({
     title: 'a sitemap entry carries a lastmod or a locale the sitemap cannot write',
   },
   X_SEO_LLMS_DESCRIPTION_MISSING: { title: 'a page listed in llms.txt has no description' },
+  X_SEO_OG_IMAGE_CONFLICT: { title: 'a route meta og declares both image and capture' },
 });
 
 export interface SeoErrorInit {
@@ -133,6 +135,21 @@ export function linkInvalid(link: string, problem: string, file?: string): SeoEr
     cause: `${where} declares meta ${link}, which ${problem}`,
     fix: `edit links in defineRoute({ meta }) in ${where}: a path or an http(s) href, \`as\` on every preload, crossorigin: 'anonymous' on a font preload`,
     meta: { link, problem, ...(file === undefined ? {} : { file }) },
+  });
+}
+
+/**
+ * `meta.og` naming both a hosted `image` and a `capture`: the type forbids it, a cast or a JS
+ * caller does not, and the two renders would disagree (the export publishes the capture, a served
+ * page names no `og:image`). `file` as for `linkInvalid`.
+ */
+export function ogImageConflict(file?: string): SeoError {
+  const where = file === undefined ? 'the route' : file;
+  return new SeoError({
+    code: SEO_ERROR_CODES.ogImageConflict,
+    cause: `${where} declares meta.og with both image and capture`,
+    fix: `og: { image: '/card.png' }   # or og: { capture: '/og/<page>' }, never both, in defineRoute({ meta }) in ${where}`,
+    meta: file === undefined ? {} : { file },
   });
 }
 

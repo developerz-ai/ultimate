@@ -5,11 +5,16 @@
 /** `import { a, b as c } from '<pkg>'` — value imports only; `import type` names nothing callable. */
 const NAMED_IMPORT = /import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g;
 
-/** The local name each named VALUE import of `pkg` binds in `source`, keyed by exported name. */
+/**
+ * The local name each named VALUE import of `pkg` binds in `source`, keyed by exported name. A
+ * subpath of `pkg` counts: a server-only factory lives on `@ultimat3/realtime/server`, not the
+ * browser-safe barrel, and is still that package's.
+ */
 export function valueImportsOf(source: string, pkg: string): ReadonlyMap<string, string> {
   const bound = new Map<string, string>();
   for (const match of source.matchAll(NAMED_IMPORT)) {
-    if (match[1] !== undefined || match[3] !== pkg) continue;
+    const from = match[3] as string;
+    if (match[1] !== undefined || (from !== pkg && !from.startsWith(`${pkg}/`))) continue;
     for (const raw of (match[2] as string).split(',')) {
       const spec = raw.trim();
       if (spec === '' || spec.startsWith('type ')) continue;

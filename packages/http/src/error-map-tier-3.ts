@@ -117,4 +117,14 @@ export const TIER_3_ERROR_STATUS = {
   X_WEBHOOK_EVENT_ID_INVALID: 422,
   // @ultimat3/query — a query's pinned http.path is not a valid path template
   X_QUERY_HTTP_PATH_INVALID: 500,
+  // @ultimat3/realtime — no socket is open for the device a request addressed
+  X_DEVICE_OFFLINE: 503,
+  // @ultimat3/realtime — a device did not answer a request before its deadline
+  X_DEVICE_REQUEST_TIMEOUT: 504,
+  // @ultimat3/realtime — a device socket frame is over the framework frame limit
+  X_DEVICE_FRAME_TOO_LARGE: 413,
+  // @ultimat3/action — an action's usage meter is spent for this period
+  X_METER_EXCEEDED: 429,
+  // @ultimat3/action — an action's meter cannot be counted against
+  X_METER_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

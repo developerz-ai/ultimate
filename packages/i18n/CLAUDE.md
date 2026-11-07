@@ -125,7 +125,7 @@ Imported by every package that renders a string.
   so `admin.detail.not-found` and `admin.detail.not-found.fix` cannot coexist. Both keys shipped
   and neither was in the catalog; the leaf is now `…not-found.cause`.
 - `extract.ts` names no framework API. A new key-bearing shape goes in `cli/src/i18n-app-key-shapes.ts` as a callee or a `properties` entry, never in `DEFAULT_CALLEES`: the framework's own scan (`scripts/lib/i18n-scan.ts`) shares this function and its `mail.*` keys live outside `catalogs/en.json`.
-- **`selectMessageKey` (`interpolate.ts`) is the one key selection.** `t()` and `recordingTranslator` both call it; a new selecting var goes there, or a mail refuses a key `t()` can answer.
+- **`selectMessageKey` (`interpolate.ts`) is the one key selection.** `t()` and `recordingTranslator` both call it; a new selecting var goes there, or a mail refuses a key `t()` can answer. Every key `has()` answers true for renders: a missing family var still reaches `_select_other`/`_ordinal_other`.
 - `auditCatalogs`'s `required` is `used` plus the `reference` locale's stems. `used` stays what source names; `unused` still compares against `used` alone.
 
 ## Commands

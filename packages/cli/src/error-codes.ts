@@ -249,6 +249,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ASSET_VARIANT_UNDECLARED',
   'X_NEW_SHAPE_GENERATE_FAILED',
   'X_ISLAND_DISPOSER_MISSING',
+  'X_SOCKET_HAND_ROLLED',
 ] as const;
 
 /**
@@ -468,6 +469,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_ASSET_VARIANT_UNDECLARED: 'an /assets image variant responsiveImage() never mints',
   X_NEW_SHAPE_GENERATE_FAILED: 'a shape generator failed in the new app',
   X_ISLAND_DISPOSER_MISSING: "an island's mount returns no disposer",
+  X_SOCKET_HAND_ROLLED: 'an app upgrades a websocket itself',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

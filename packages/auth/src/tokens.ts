@@ -5,20 +5,14 @@
 // same one — imported from core by every caller, never re-exported here (`X_HELPER_COPY`).
 
 import { finiteCount, timingSafeEqual } from '@ultimat3/core';
+import { base64Url } from './base64url';
 
-const BASE64URL_UNSAFE = /[+/=]/g;
-const BASE64URL_REPLACEMENTS: Readonly<Record<string, string>> = { '+': '-', '/': '_', '=': '' };
+export { base64Url, base64UrlBytes } from './base64url';
 
 export function randomBytes(length: number): Uint8Array {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
   return bytes;
-}
-
-export function base64Url(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(BASE64URL_UNSAFE, (char) => BASE64URL_REPLACEMENTS[char] ?? '');
 }
 
 /**
@@ -37,23 +31,6 @@ export function base64Url(bytes: Uint8Array): string {
  */
 export function randomToken(byteLength = 32): string {
   return base64Url(randomBytes(finiteCount('randomToken', 'byteLength', byteLength, 1)));
-}
-
-/**
- * The inverse of `base64Url`, for the segments of a JWT. Answers `null` rather than throwing
- * because every caller is reading an attacker-supplied string — a `URIError` or an `InvalidCharacterError`
- * escaping from here would turn a coded refusal into a 500, the same reason `readCookie` never throws.
- */
-export function base64UrlBytes(segment: string): Uint8Array<ArrayBuffer> | null {
-  const padded = segment
-    .replaceAll('-', '+')
-    .replaceAll('_', '/')
-    .padEnd(Math.ceil(segment.length / 4) * 4, '=');
-  try {
-    return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
-  } catch {
-    return null;
-  }
 }
 
 export function sha256Hex(value: string): string {

@@ -230,6 +230,91 @@ export interface ApiKeyStore {
   revokeApiKey(id: string, at: Date): Promise<boolean>;
 }
 
+/** Which ceremony a stored challenge was issued for; a challenge redeems only for its own. */
+export type PasskeyCeremony = 'register' | 'login' | 'step-up';
+
+/**
+ * One registered passkey. Every byte field is base64url TEXT, so both adapters store and compare
+ * the same string and a row is readable in a SQL console.
+ */
+export interface PasskeyCredential {
+  /** The credential id the authenticator minted — globally unique, the lookup key. */
+  readonly id: string;
+  readonly userId: string;
+  /** The COSE_Key exactly as registered; `importCoseKey` turns it back into a verifying key. */
+  readonly publicKey: string;
+  /** COSE algorithm: `-7` (ES256) or `-257` (RS256). */
+  readonly algorithm: number;
+  /** The last signature counter seen. `0` forever for an authenticator that keeps none. */
+  readonly signCount: number;
+  readonly transports: readonly string[];
+  readonly createdAt: Date;
+  readonly lastUsedAt: Date | null;
+}
+
+/** An issued, not yet redeemed ceremony challenge. Never the challenge itself: its digest. */
+export interface PasskeyChallengeRecord {
+  /** `sha256Hex` of the base64url challenge — what `clientDataJSON` echoes, hashed. */
+  readonly id: string;
+  readonly ceremony: PasskeyCeremony;
+  /** The user it was issued to; `null` for a usernameless sign-in. */
+  readonly userId: string | null;
+  /** Step-up only: the server digest and the nonce the challenge was derived from, base64url. */
+  readonly digest: string | null;
+  readonly nonce: string | null;
+  readonly expiresAt: Date;
+  readonly createdAt: Date;
+}
+
+/**
+ * A verified step-up assertion, kept whole: everything `verifyPasskeyEvidence` needs to check it
+ * again later, in another process, with no other row — the key included, so deleting the passkey
+ * does not un-prove what it approved.
+ */
+export interface PasskeyEvidence {
+  readonly id: string;
+  readonly userId: string;
+  readonly credentialId: string;
+  /** The bytes the person approved, base64url. */
+  readonly digest: string;
+  readonly nonce: string;
+  readonly authenticatorData: string;
+  readonly clientDataJSON: string;
+  readonly signature: string;
+  readonly publicKey: string;
+  readonly algorithm: number;
+  readonly createdAt: Date;
+}
+
+export interface PasskeyStore {
+  /** A credential id already stored — any user's — is `X_AUTH_WRITE_FAILED` (§7.1 step 22). */
+  putPasskey(credential: PasskeyCredential): Promise<PasskeyCredential>;
+  findPasskey(id: string): Promise<PasskeyCredential | null>;
+  /** Oldest first. */
+  listPasskeys(userId: string): Promise<readonly PasskeyCredential[]>;
+  /**
+   * Compare-and-set on the counter: write `next` (and `at` as last use) only while the row still
+   * holds `expected`, in ONE atomic step. Two assertions racing on one counter value must not
+   * both advance it — that is the cloned-authenticator signal.
+   */
+  advancePasskeyCounter(id: string, expected: number, next: number, at: Date): Promise<boolean>;
+  /** Scoped to the owner: one user cannot delete another's passkey by naming its id. */
+  deletePasskey(userId: string, id: string): Promise<boolean>;
+  /** Also drops every challenge that expired before `record.createdAt`, so the table stays bounded. */
+  putPasskeyChallenge(record: PasskeyChallengeRecord): Promise<void>;
+  /**
+   * Read AND delete in one atomic step, only for its own ceremony: two concurrent redemptions of
+   * one challenge must not both find it. Expiry is the caller's to judge, on its clock.
+   */
+  takePasskeyChallenge(
+    id: string,
+    ceremony: PasskeyCeremony,
+  ): Promise<PasskeyChallengeRecord | null>;
+  putPasskeyEvidence(evidence: PasskeyEvidence): Promise<void>;
+  /** Every stored approval of one digest, oldest first. */
+  listPasskeyEvidence(digest: string): Promise<readonly PasskeyEvidence[]>;
+}
+
 /**
  * The full seam. One blessed implementation ships (`PostgresAuthAdapter`); Better Auth, or any
  * other identity backend, binds by implementing this and nothing else changes upstream.
@@ -239,7 +324,8 @@ export interface AuthAdapter
     SessionStore,
     AccountStore,
     VerificationStore,
-    ApiKeyStore {
+    ApiKeyStore,
+    PasskeyStore {
   /** Reported by `Auth.adapter.name` so the driver in use is never a guess. */
   readonly name: string;
   /**

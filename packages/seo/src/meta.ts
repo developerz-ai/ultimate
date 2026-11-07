@@ -2,6 +2,7 @@
 // for a global default: a route that does not declare a description does not get
 // one, it fails the build (see validate.ts).
 
+import { ogImageConflict } from './errors';
 import { type HeadLink, linkTags } from './links';
 import { hreflangTag, type MetaLocalization, ogLocaleTag } from './locale-tags';
 import { currentStaticExport } from './static-export';
@@ -284,6 +285,7 @@ function socialTags(
     }
   }
   // A capture is the export's to publish (`static-export.ts`); served, it has no file to name.
+  if (og.image !== undefined && og.capture !== undefined) throw ogImageConflict();
   const declared =
     og.capture === undefined ? og.image : currentStaticExport()?.cardImage(og.capture);
   if (declared !== undefined) {

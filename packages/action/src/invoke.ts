@@ -1,6 +1,6 @@
 /**
  * The one invocation core: ask who is calling, spend the rate limit, parse input, evaluate
- * policy, run the handler, parse output. The declaration lives in this module's private store, so `handle` is
+ * policy, draw the meter, run the handler, parse output. The declaration lives in this module's private store, so `handle` is
  * unreachable from anywhere else — HTTP, MCP, jobs and `.as()` hand `invoke` a
  * payload, and none of them can become a second execution path.
  *
@@ -42,6 +42,7 @@ import { judgedHandler } from './declared-errors';
 import { ActionForeignError, ActionUnregisteredError } from './errors';
 import { getIdempotencyStore, withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
+import { drawMeter } from './meter-gate';
 import { guardAction, guardActionBeforeInput } from './policy-gate';
 import { spendActionLimit, withCallerAddress, withJobFrame } from './rate-limit-gate';
 import { parseActionInput, parsedOrNothing, validateOutput } from './validate';
@@ -347,18 +348,28 @@ async function perform(
     const produced = await judgedHandler(def, name, () => def.handle({ input, ctx: useContext() }));
     return validateOutput(def.output, produced, name);
   };
+  // The meter is drawn LAST before the handler, on every surface `surface: 'server'` included: a
+  // call refused by the policy, the parse or the rate limit used none of the allowance. Under a key
+  // it is drawn only for a reservation this call CREATED (`beforeRun`), so a replay — of a success
+  // or of a settled failure — draws nothing, and a refusal releases the key for a retry next period.
+  const metered = (): Promise<void> =>
+    def.meter === undefined ? Promise.resolve() : drawMeter(name, def.meter, ctx);
   // The peek can be stale: a record that lapsed after it leaves this call a FRESH reservation, and
   // the handler must not run on a rule it skipped. `beforeRun` runs only for a created reservation,
   // and a refusal there releases it. Spend first, in the order a first call takes them.
   const beforeRun = async (): Promise<void> => {
     if (!spentEarly) await spend();
     if (answered) await judgeRow();
+    await metered();
   };
 
   try {
-    if (store === undefined || trace.idempotencyKey === null) return await run();
+    if (store === undefined || trace.idempotencyKey === null) {
+      await metered();
+      return await run();
+    }
     const outcome = await withIdempotency(store, trace.idempotencyKey, input, run, {
-      ...(spentEarly && !answered ? {} : { beforeRun }),
+      ...(spentEarly && !answered && def.meter === undefined ? {} : { beforeRun }),
     });
     if (outcome.replayed) options.onReplay?.();
     trace.replayed = outcome.replayed;

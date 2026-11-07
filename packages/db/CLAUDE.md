@@ -155,7 +155,9 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `triggerPlan`, `recordTriggers`): `history` → `ultimate_history` + `ultimate_history_guard`
   (`generate-history.ts`), each `countedIn` → `ultimate_count_<crc32>` on the CHILD
   (`generate-counter.ts`). Triggers, not the repository: only a trigger sees `updateWhere`, a cascade
-  and raw SQL. Recorded on the snapshot; a NEW counter is recounted in the same migration. Drift:
+  and raw SQL. A history image stores `HistoryDescriptionLike.text` (`int8`/`numeric`) as digits and
+  `.instants` (`timestamptz`) as UTC ISO ms, as memory does (`generate-history-values.live.test.ts`).
+  Recorded on the snapshot; a NEW counter is recounted in the same migration. Drift:
   `drift-triggers.ts` (`X_LIFECYCLE_TRIGGER_MISSING`; `retain` on a partitioned table is
   `X_ENTITY_RETAIN_INVALID`).
 - **Views**: `generate-view.ts`.

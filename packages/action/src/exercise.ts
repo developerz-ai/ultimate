@@ -34,7 +34,11 @@ export type { ExerciseReport };
 export interface ExerciseActorOptions {
   /** The caller each run is invoked as. `null` is the signed-out caller. */
   readonly actor: Actor | null;
-  /** `(drawn) => ({ ...drawn, postId })`: the generated value, with what must resolve bound in. */
+  /**
+   * `(drawn) => ({ ...drawn, postId })`: the generated value, with what must resolve bound in.
+   * May be `async`: `x exercise` awaits it inside the call's own request, so `useContext().actor`
+   * is the actor the call runs as (a token issued to that actor, a passkey it registered).
+   */
   readonly input?: (drawn: DrawnInput) => unknown;
   /** 1 to `EXERCISE_RUNS_MAX`; `EXERCISE_RUNS` when omitted. */
   readonly runs?: number;

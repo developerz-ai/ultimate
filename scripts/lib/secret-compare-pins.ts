@@ -249,6 +249,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A test fixture filtering listed rows by the idempotency key a scheduled fire derives from its occurrence (`nightly:<ms>`) — a dedupe name the fixture built itself. Visible from sweep 11, when an interpolating template stopped reading as a constant.',
   },
+  'packages/notify/src/push-register.ts: device.token !== kept.token': {
+    // why: issue #997's per-actor device cap; a push token is a routing address, not a credential.
+    count: 1,
+    reason:
+      "A push device token is an ADDRESS a provider routes to, not a credential: `capDevices` compares the caller's own stored rows with the row it just wrote to keep that one out of the eviction. Neither side is attacker-supplied against a stored secret.",
+  },
   'packages/query/src/live.ts: cursor.queryHash !== hash': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `query` package row.
     count: 1,

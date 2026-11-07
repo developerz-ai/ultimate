@@ -93,8 +93,12 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       { factory: 'webhookReceiver', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'mcpConfirmations', pkg: '@ultimat3/mcp', kind: 'action' },
       { factory: 'notifier', pkg: '@ultimat3/notify', kind: 'job' },
+      { factory: 'pushRegister', pkg: '@ultimat3/notify', kind: 'action' },
+      { factory: 'pushUnregister', pkg: '@ultimat3/notify', kind: 'action' },
       { factory: 'pushSubscribe', pkg: '@ultimat3/pwa', kind: 'action' },
       { factory: 'pushUnsubscribe', pkg: '@ultimat3/pwa', kind: 'action' },
+      // A route: the value IS a websocket mount the web role serves (`path`, `fetch`, `websocket`).
+      { factory: 'deviceSocket', pkg: '@ultimat3/realtime', kind: 'route' },
       { factory: 'scrape', pkg: '@ultimat3/scraping', kind: 'job' },
     ] satisfies readonly PrimitiveFactory[]
   ).map((entry) => Object.freeze(entry)),
