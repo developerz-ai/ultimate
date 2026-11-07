@@ -1241,11 +1241,14 @@ jobs:
       # each spent ~105 s (core 35, scripts/lib 26, browser discovery 19, render 17, run
       # 42323662996) on a 4-core runner that sat at one. `--parallel` starts each file in a fresh
       # isolated worker, the condition the gate's own `unit` runs these files under on Linux, and a
-      # red file is named in the output exactly as it was under its own step.
+      # red file is named in the output exactly as it was under its own step. `--timeout=30000`:
+      # four files at once on this runner's disk pushed two different multi-second tests past bun's
+      # 5 s default on consecutive runs (a repo-wide scan, an openssl mint). This job proves paths,
+      # not speed; the Linux gate keeps the 5 s bound that catches a slow test.
       #   W3: a CRLF migration must hash to the checksum its LF twin wrote (`./packages/db/...`).
       - name: unit · the path-heavy subset, every core
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate --parallel ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/testing/src/cdp-launch.test.ts ./packages/testing/src/cdp-launch-wire.test.ts ./packages/testing/src/cdp-launch-reap.test.ts
+        run: bun test --isolate --parallel --timeout=30000 ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/testing/src/cdp-launch.test.ts ./packages/testing/src/cdp-launch-wire.test.ts ./packages/testing/src/cdp-launch-reap.test.ts
       - name: x new winapp
         id: new
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
