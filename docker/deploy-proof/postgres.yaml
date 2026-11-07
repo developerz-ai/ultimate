@@ -10,15 +10,29 @@ spec:
     metadata: { labels: { app: postgres } }
     spec:
       containers:
+        # In RAM, without durability, silent — docker/docker-compose.test.yml's rules: the proof
+        # measures the release's rollout, and a database that survives a crash is not under test.
         - name: postgres
           image: postgres:17-alpine
+          args:
+            - postgres
+            - -c
+            - fsync=off
+            - -c
+            - synchronous_commit=off
+            - -c
+            - full_page_writes=off
+            - -c
+            - log_min_messages=fatal
           env:
             - { name: POSTGRES_PASSWORD, value: proof }
             - { name: POSTGRES_DB, value: proofapp }
           ports: [{ containerPort: 5432 }]
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
           readinessProbe:
             exec: { command: [pg_isready, -U, postgres] }
             periodSeconds: 2
+      volumes: [{ name: data, emptyDir: { medium: Memory } }]
 ---
 apiVersion: v1
 kind: Service

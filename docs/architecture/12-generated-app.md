@@ -172,8 +172,8 @@ refused at registration with `X_ROUTE_FILE_INVALID`, and `ROUTE_FILENAME` has no
 x g resource post --admin --locales en
 ```
 
-That invocation prints 41 files in a `--no-example` scaffold, 43 once `bun run setup` has run,
-`As of 2026-11-03` — 38 and 40 without `--admin`. The count is the slice plus what the command
+That invocation prints 42 files in a `--no-example` scaffold, 44 once `bun run setup` has run,
+`As of 2026-11-07` — 39 and 41 without `--admin`. The count is the slice plus what the command
 edits outside it (the role map, the API index, the db handle, two `package.json` files) and, after
 setup, the `x.manifest.json` and `openapi.json` it refreshes; `--admin` adds the override in row 12,
 its test and the admin index. Re-derive by counting `data.files` under `--dry-run --json`, plus

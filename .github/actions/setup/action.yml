@@ -131,8 +131,12 @@ runs:
         # `~` is the runner's home on every OS (actions/cache expands it), and Bun's default
         # install cache sits under it on Windows too: %USERPROFILE%\.bun\install\cache.
         path: ~/.bun/install/cache
+        # Exactly one lockfile, and no `restore-keys`. The prefix fallback restored the PREVIOUS
+        # lock's cache, the install added the new packages on top, and the miss saved both under
+        # the new key — so the entry only grew: 34 MB (2026-10-01), 168 MB, 287 MB (run
+        # 42323662996), restored in every job. A lock change now costs that run's jobs one cold
+        # install each; the first to finish saves what this lock installs and nothing else.
         key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-        restore-keys: bun-${{ runner.os }}-
     # One install, two shells, chosen by the runner's OS — a composite's `shell:` takes no
     # expression. The `windows` job in ci.yml runs every step in PowerShell so that a bash
     # dependency coming back fails it; Git Bash is on `windows-latest` and would hide one here.

@@ -42,7 +42,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 
 | File | Job |
 |---|---|
-| `verify-checks.ts` / `verify-step.ts` / `verify-run.ts` | the step list, the outcome shape, the run order (`BESIDE_SERIAL_SUITES`) |
+| `verify-checks.ts` / `verify-step.ts` / `verify-run.ts` / `verify-e2e-lane.ts` | steps, outcome, order (`BESIDE_SERIAL_SUITES`; app-less: e2e+live) |
 | `verify-exercise.ts` / `cmd-exercise.ts` / `exercise-*.ts` | `exercise`: `x exercise --json` as a child, red on its findings |
 | `verify-floor.ts` | `x.verify.json`: a floor step that ran zero tests is `X_VERIFY_SUITE_VANISHED` |
 | `coverage-floor.ts` / `coverage-lcov.ts` / `coverage-source.ts` / `verify-coverage-run.ts` | an APP's `unit` step holds `coverage` in `x.verify.json` over its whole source tree, in fixed slices, never `--parallel --coverage`; `coverage-lcov.ts` is the ONE lcov reader. Full rule: `docs/history/cli.md` |

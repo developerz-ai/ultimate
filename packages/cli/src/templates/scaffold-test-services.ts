@@ -42,7 +42,9 @@ x-silent: &silent
 services:
   # Postgres 18, the production major. \`initdb -c\` writes each setting into the new cluster;
   # \`--no-sync\` is initdb's own fsync of a cluster on a tmpfs. Postgres 18 images keep the cluster
-  # under /var/lib/postgresql/18, so the tmpfs is the parent.
+  # under /var/lib/postgresql/18, so the tmpfs is the parent. After the logging: no JIT and no
+  # autovacuum for millisecond queries, room for every parallel test process, and a small WAL —
+  # it is RAM here.
   postgres:
     <<: *silent
     image: postgres:18-alpine
@@ -63,6 +65,11 @@ services:
         -c log_checkpoints=off
         -c log_connections=off
         -c log_disconnections=off
+        -c jit=off
+        -c autovacuum=off
+        -c max_connections=400
+        -c min_wal_size=32MB
+        -c max_wal_size=256MB
     tmpfs: [/var/lib/postgresql]
     ports: ['127.0.0.1:${TEST_PORTS.postgres}:5432']
     healthcheck:
@@ -75,7 +82,7 @@ services:
   redis:
     <<: *silent
     image: redis:8-alpine
-    command: ['redis-server', '--save', '', '--appendonly', 'no', '--loglevel', 'warning']
+    command: ['redis-server', '--save', '', '--appendonly', 'no', '--loglevel', 'nothing']
     tmpfs: [/data]
     ports: ['127.0.0.1:${TEST_PORTS.redis}:6379']
     healthcheck:

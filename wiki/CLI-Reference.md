@@ -597,12 +597,13 @@ x verify [--only <step>[,<step>…] [--shard i/n [--timings file]]] [--workers N
 x verify merge <part.json…> [--json]
 ```
 
-**`As of 22.7`** — the width is a memory budget (`min(4 GiB, max(2.75 GiB, 25% of RAM))` at 1.25 GiB a worker,
+**`As of 22.7`** — the width is a memory budget (`max(2.75 GiB, 25% of RAM)` at 1.25 GiB a worker — no fixed 4 GiB cap since 2026-11-07,
 at most one per core, printed on the step line; `ULTIMATE_TEST_MEMORY_BUDGET` /
 `ULTIMATE_TEST_MAX_WORKERS` override, `--workers` wins), shared machine-wide across concurrent runs,
 and test files are NOT isolated unless `--isolate` or `x.verify.json` `"isolate": true` says so →
-[Testing](Testing#memory-width-and-isolation). `--shard i/n` (with `--only unit|contract|job`)
-runs one CI job's deterministic slice, and `x verify merge` folds every job's `--json` part back
+[Testing](Testing#memory-width-and-isolation). `--shard i/n` (with `--only unit|contract|live|job|e2e`)
+runs one CI job's deterministic slice — `live` and `e2e` stay one process inside it, a slice per
+runner, each runner with its own services (`As of 2026-11-07`) — and `x verify merge` folds every job's `--json` part back
 into the gate verdict (`X_VERIFY_SHARD_INVALID`, `X_VERIFY_MERGE_INCOMPLETE`,
 `X_VERIFY_MERGE_INPUT`) → [CI: the gate across parallel jobs](CI-Parallel-Gate). The paragraphs
 below on `--workers` and batching describe 22.6 and earlier where they differ.
@@ -660,8 +661,8 @@ declaration and say so in the output. **`x test live` and `x test e2e` obey the 
 files `x verify` ran one over. `--workers` is accepted there and clamps to 1. That clamp read the
 POSITIONAL, so the bare `x test --workers 8` still widened over the same files until 2026-09; the
 selection is now partitioned by each file's own type. The default width is
-a memory budget, `As of 22.7`: `min(4 GiB, max(2.75 GiB, 25% of RAM))` at 1.25 GiB a worker
-(`WORKER_BYTES`, `GATE_BUDGET_CAP`, `GATE_BUDGET_FLOOR` and `GATE_BUDGET_SHARE` in
+a memory budget, `As of 2026-11-07`: `max(2.75 GiB, 25% of RAM)` (`BUDGET_RULE`) at 1.25 GiB a worker
+(`WORKER_BYTES`, `GATE_BUDGET_FLOOR` and `GATE_BUDGET_SHARE` in
 `packages/cli/src/test-workers.ts`), at most one per core — the paragraph under `x verify` above.
 **No fixed ceiling of 8**: it held a 12-core box with 30 GB free to 8. `--workers` accepts 1 to
 64 on both `x verify` and `x test`; an explicit width is the caller's call and is not held to memory.
@@ -1497,6 +1498,8 @@ The type rule is `x verify`'s, not a second one — so `x test contract` runs ex
 **In an app root `--affected` narrows by import closure, `As of 2026-11`** — every slice shares the `apps/web` workspace, so the workspace answer ran the whole app. The rule is `x affected`'s `data.tests`, never a second one: a test runs when its imports reach a changed file, transitively; a changed file the import graph cannot speak for (`app.config.ts`, `package.json`, a catalog, anything outside the app) runs every test; a discovered test outside the scanned globs always runs. `data.affected.tests` carries `{ app, all, reason, forcing, files: [{ path, why }] }` — `reason` is `closure: N changed file(s)` or `all: <forcing files>`, `why` is `closure`, `all` or `unmapped`. Outside an app root, `data.affected` has no `tests` and the workspace scope is unchanged.
 
 `--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failure's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to run at all and a rerun without it selects the whole corpus.
+
+**The inner loop in this repository is `bun run test:affected`, `As of 2026-11-07`** — `x test --affected --base origin/main --dirty` from the root: the workspaces the branch and the working tree touch, plus every workspace that depends on one; a changed file no workspace owns (`package.json`, `bun.lock`, `tsconfig*.json`, `biome.json`, `scripts/**`, the test preload) runs everything, and `.md` alone runs nothing. `bun run test` is `x test` over the whole corpus — the same passes and width as the gate's test steps. Neither is the gate: CI and `x verify merge` run full `x verify`.
 
 **A selection that mixes serial files with the rest is more than one run, `As of 2026-09`.** `--parallel=N` is the width of the WHOLE `bun test`, so the bare `x test --workers 8` — which selects every type — ran `live` and `e2e` eight at a time beside the unit corpus, over the very files `x verify` runs one at a time. The files are partitioned by type: one pass at the requested width for everything that may share a pool, then one pass at `--parallel=1` per serial type, each reproducible on its own (`x test live --workers 1`). `--json` carries a `passes` array when there was more than one.
 

@@ -13,7 +13,9 @@ name: ci
 # coverage bar in isolation (`packages`), and does any of it work on native Windows (`windows`,
 # the one runner that is not `ubuntu-latest`). The last four each carry their own argument, above
 # the job. One more asks first, on a push: did a green pull-request run already test this tree
-# (`tested`)? When it did, every job that run answered is skipped — never on a release commit.
+# (`tested`)? When it did, every job that run answered is skipped — never on a release commit. And
+# beside it: can this diff reach the jobs that read no prose at all (`changes`)? A diff of wiki,
+# docs and root markdown alone skips those six; the gate, its verdict and the app gates always run.
 #
 # There is still no `lint`, `typecheck`, `boundaries` or `test` job BESIDE the gate — that is the
 # second path axiom 1 forbids, and it once cost ~2.2 runner-minutes for checks the gate then ran
@@ -141,6 +143,58 @@ jobs:
           jq -r '.summary' "$RUNNER_TEMP/tested.json"
           echo "tested=$(jq -r '.data.tested' "$RUNNER_TEMP/tested.json")" >> "$GITHUB_OUTPUT"
 
+  # Can this diff reach the heavy jobs at all? A pull request or push that moves only prose —
+  # `wiki/`, `docs/`, root markdown (`scripts/ci-changes.ts`, unit-tested beside it) — cannot change
+  # what `windows`, `macos`, `scaffold-smoke`, `fault-drills`, `container` or `compose-deploy`
+  # answer: they run code, scaffolds and images, and none of them reads a page. Those six cost ~19
+  # runner-minutes a run (run 42323662996), spent re-proving bytes the diff never touched.
+  #
+  # NOT a workflow `paths:` filter: that leaves every check of a skipped workflow pending forever.
+  # Each of the six still runs and concludes — `skipped`, which no reader takes for a verdict
+  # (release.yml reads the whole run, and a skipped job does not fail it). And NOT the gate:
+  # `verify` is green only when every step reported, and the doc guards (`errors`, `manifest`, the
+  # citation tests in `unit`) read exactly these files, so the gate, `packages` and every
+  # `reference-app-verify` (the docs site builds the wiki) wait on `tested` alone and always run.
+  #
+  # Fail-open in every direction: each of the six runs unless this job SAID `heavy=false`. A red,
+  # timed-out or cancelled `changes`, an empty diff, a quoted path, a deleted-then-added file
+  # (`--no-renames` lists both halves of a move, so code renamed into `docs/` is still code), a
+  # push whose `before` is gone or all zeros, and every `workflow_dispatch` are a full run.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      heavy: ${{ steps.classify.outputs.heavy }}
+    steps:
+      # Depth 2: a pull request checks out its merge commit, whose first parent is the base tip.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: ./.github/actions/setup
+      - name: the paths this diff changed
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          list="$RUNNER_TEMP/changed.txt"
+          case "$EVENT" in
+            pull_request)
+              git diff --no-renames --name-only HEAD^1 HEAD > "$list" || rm -f "$list" ;;
+            push)
+              if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+                && git fetch --no-tags --depth=1 origin "$BEFORE"; then
+                git diff --no-renames --name-only "$BEFORE" HEAD > "$list" || rm -f "$list"
+              fi ;;
+          esac
+          if [ -f "$list" ]; then wc -l < "$list"; else echo "no list: a full run"; fi
+      - name: is every changed path prose?
+        id: classify
+        run: |
+          bun run scripts/ci-changes.ts "$RUNNER_TEMP/changed.txt" --json > "$RUNNER_TEMP/changes.json"
+          jq -r '.summary, (.data.code[:20][] | "  " + .)' "$RUNNER_TEMP/changes.json"
+          echo "heavy=$(jq -r '.data.heavy' "$RUNNER_TEMP/changes.json")" >> "$GITHUB_OUTPUT"
+
   # The framework gate, one part per runner. Every part is the same command a contributor runs —
   # `bun run verify --only <steps>` — over a slice of the one step list, and none of them is a
   # verdict: a narrowed run says NOT A GATE RUN on its own summary line. `verify`, below, is.
@@ -226,7 +280,7 @@ jobs:
             urls: TEST_DATABASE_URL
           - part: live
             only: lint,boundaries,filesize,package-shape,errors,live,exercise,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
-            services: postgres postgres-standby postgres-logical postgres-tls pooler redis nats s3
+            services: postgres postgres-standby postgres-tls pooler redis nats s3
             urls: TEST_DATABASE_URL|TEST_STANDBY_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
           - part: e2e
             only: typecheck,e2e
@@ -489,8 +543,8 @@ jobs:
   # that measures what a stranger's first ten minutes with the framework actually do.
   scaffold-smoke:
     name: scaffold-smoke (${{ matrix.app }})
-    needs: tested
-    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    needs: [tested, changes]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -608,8 +662,8 @@ jobs:
   # runtime stage is where three of the four recorded build bugs lived (musl-vs-glibc, the Debian
   # skew, the missing --define), and a build stopping at "build" would have caught none of them.
   container:
-    needs: tested
-    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    needs: [tested, changes]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -918,8 +972,8 @@ jobs:
   # packages, runs `x env init --production`, `x build --target docker` and `x deploy`, and asserts
   # `/readyz` and `/` answer 200. Every push: about 2 minutes (measured 2026-11-03, a warm daemon).
   compose-deploy:
-    needs: tested
-    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    needs: [tested, changes]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -935,8 +989,8 @@ jobs:
   # and `bun run verify`. Not the generator sweep or the admin walk: those ask about the generators,
   # which are the same bytes on every platform, and `scaffold-smoke` asks them.
   macos:
-    needs: tested
-    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    needs: [tested, changes]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
     runs-on: macos-latest
     timeout-minutes: 20
     env:
@@ -1025,8 +1079,8 @@ jobs:
   # `redis-down` and `nats-down` fault services this app does not declare, so they are refused
   # (`X_DRILL_SERVICE_MISSING`), never run green. Postgres only, so only Postgres is started.
   fault-drills:
-    needs: tested
-    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    needs: [tested, changes]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
     runs-on: ubuntu-latest
     # A runaway kill-switch, not a budget: three drills plus setup is about three minutes.
     timeout-minutes: 10
@@ -1161,8 +1215,8 @@ jobs:
   # CI-only line, and its comment explains it), run once and through the scaffold's OWN
   # `bun run setup` and `bun run verify` — the commands a Windows developer types.
   windows:
-    needs: tested
-    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    needs: [tested, changes]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
     runs-on: windows-latest
     timeout-minutes: 25
     defaults:
@@ -1183,28 +1237,15 @@ jobs:
       - name: typecheck
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: bun run typecheck
-      - name: unit · core
+      # The path-heavy subset, in ONE `bun test` on every core: seven serial steps of one process
+      # each spent ~105 s (core 35, scripts/lib 26, browser discovery 19, render 17, run
+      # 42323662996) on a 4-core runner that sat at one. `--parallel` starts each file in a fresh
+      # isolated worker, the condition the gate's own `unit` runs these files under on Linux, and a
+      # red file is named in the output exactly as it was under its own step.
+      #   W3: a CRLF migration must hash to the checksum its LF twin wrote (`./packages/db/...`).
+      - name: unit · the path-heavy subset, every core
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate ./packages/core
-      # W3: a CRLF migration must hash to the checksum its LF twin wrote.
-      - name: unit · db migrations
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts
-      - name: unit · policy
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate ./packages/policy
-      - name: unit · render
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate ./packages/render
-      - name: unit · scripts/lib
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate ./scripts/lib
-      - name: unit · cli paths, drift and the scaffold's .gitattributes
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts
-      - name: unit · browser discovery
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate ./packages/testing/src/cdp-launch.test.ts ./packages/testing/src/cdp-launch-wire.test.ts ./packages/testing/src/cdp-launch-reap.test.ts
+        run: bun test --isolate --parallel ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/testing/src/cdp-launch.test.ts ./packages/testing/src/cdp-launch-wire.test.ts ./packages/testing/src/cdp-launch-reap.test.ts
       - name: x new winapp
         id: new
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}

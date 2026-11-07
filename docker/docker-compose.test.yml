@@ -32,7 +32,13 @@ x-silent: &silent
 # What both Postgres servers are initialised with. `initdb -c` (Postgres 16+) writes each setting
 # into the new cluster's postgresql.conf, so the server needs no command of its own. `--no-sync`
 # is initdb's own fsync of a cluster that lives on a tmpfs; the next three are the durability
-# Postgres pays for on every commit; the rest is everything the server would write to stderr.
+# Postgres pays for on every commit; the next five are everything the server would write to
+# stderr — an ERROR is below FATAL, so a failing statement is not logged either. Then throughput,
+# measured 2026-11-07 (docs/history/test-services.md): JIT compiles plans a millisecond query
+# never earns back; autovacuum is a worker per churned database, and an autoanalyze racing a
+# suite's own `analyze` changes the plan under its assertion; the stock 100 connections ran out
+# under 12 parallel test processes; and the WAL is a tmpfs, so every segment kept is RAM — every
+# `DROP DATABASE` checkpoints, so the floor is what the server holds between runs.
 x-postgres-initdb: &postgres-initdb >-
   --no-sync
   -c fsync=off
@@ -43,6 +49,11 @@ x-postgres-initdb: &postgres-initdb >-
   -c log_checkpoints=off
   -c log_connections=off
   -c log_disconnections=off
+  -c jit=off
+  -c autovacuum=off
+  -c max_connections=400
+  -c min_wal_size=32MB
+  -c max_wal_size=256MB
 
 x-postgres: &postgres
   <<: *silent
@@ -115,19 +126,16 @@ services:
       timeout: 3s
       retries: 60
 
-  # A second server because `wal_level` is a server argument: the logical-replication feed's live
-  # tests decode a real WAL stream, and the template-database clones the other suites make must not
-  # share a server with a replication slot that pins a database open.
-  postgres-logical:
-    <<: *postgres
-    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
-    command: ['postgres', '-c', 'wal_level=logical']
-    ports: ['127.0.0.1:5433:5432']
-
-  # The replicator's wire client over REAL TLS (`packages/realtime/src/pg-tls.live.test.ts`, #519):
+  # The ONE logical server: `wal_level` is a server argument, so the replication feed's live tests
+  # — which decode a real WAL stream — need a server apart from `postgres`, whose template-database
+  # clones must not share a cluster with a slot that pins a database open. Every suite that opens
+  # a slot here names its own slot, publication and tables, and the live step runs them serially.
+  #
+  # Two URLs, one process (2026-11-07; it was two servers): TEST_REPLICATION_URL is cleartext
+  # (`sslmode=disable` — `host all all all` admits it), and TEST_TLS_REPLICATION_URL is the
+  # replicator's wire client over REAL TLS (`packages/realtime/src/pg-tls.live.test.ts`, #519):
   # `sslmode=verify-full` against a private CA — the shape of every CNPG cluster — and the
-  # CopyBoth stream read through the upgraded socket. A server of its own because `ssl` is a server
-  # argument, logical because the suite opens a replication slot over the TLS connection.
+  # CopyBoth stream read through the upgraded socket.
   #
   # The ONE exception to "mounts no volume", and only for the certificate: the suite on the host
   # has to read the CA the server's certificate chains to. `postgres-tls-certs` writes it, and the

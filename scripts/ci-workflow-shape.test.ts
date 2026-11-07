@@ -399,19 +399,25 @@ describe('unit · ci.yml · what the split may not change', () => {
     expect(optional).toEqual([]);
   });
 
-  // `tested` is the one job they wait on: a few seconds that decide whether they run at all.
-  test('no job in the gate waits on a job outside it, except the tested question', () => {
+  // `tested` is the one job they wait on: a few seconds that decide whether they run at all. The
+  // jobs no prose can reach wait on `changes` too (`scripts/ci-workflow-changes.test.ts`); the gate,
+  // `packages` and the app gates never do — the doc guards read exactly what `changes` skips for.
+  test('no job in the gate waits on a job outside it, except the tested and changes questions', () => {
+    for (const name of ['gate', 'reference-app-verify', 'packages']) {
+      expect(job(name).needs, `${name} must wait on tested alone`).toBe('tested');
+    }
     for (const name of [
-      'gate',
-      'reference-app-verify',
       'scaffold-smoke',
       'container',
       'compose-deploy',
-      'packages',
       'windows',
       'macos',
+      'fault-drills',
     ]) {
-      expect(job(name).needs, `${name} must wait on tested alone`).toBe('tested');
+      expect(job(name).needs, `${name} must wait on tested and changes alone`).toEqual([
+        'tested',
+        'changes',
+      ]);
     }
   });
 });
