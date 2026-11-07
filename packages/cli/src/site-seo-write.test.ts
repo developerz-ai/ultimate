@@ -2,7 +2,7 @@
 // `seo.llms: false` — that path is then the app's, in the export as on a running web role.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
 // why: a scratch output directory per test; Bun has no temp-dir primitive.
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +12,7 @@ import { writeSiteSeo } from './site-seo-write';
 
 const SEO: SiteSeo = {
   robots: 'User-agent: *\n',
-  sitemaps: [{ path: '/sitemap.xml', xml: '<urlset/>' }],
+  sitemaps: [{ path: '/sitemap.xml', xml: '<urlset/>', urlCount: 0 }],
   llms: '# Site\n',
 };
 
