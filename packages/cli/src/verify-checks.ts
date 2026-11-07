@@ -52,6 +52,7 @@ import { unknownToolGateFindings } from './tool-gate-names';
 import { measureIfStale } from './verify-budgets-build';
 import { exerciseStep } from './verify-exercise';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
+import { mcpMountFindings } from './verify-mcp-mount';
 import { roleLoadFindings } from './verify-role-load';
 import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
@@ -400,6 +401,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
               ...(await unregisteredJobFindings(ctx.root)),
               ...(await retainUnsweptFindings(ctx.root)),
               ...(await readJobBudgetFindings(ctx.root)),
+              // `ai.mcp.expose: true` and no mounted `POST /mcp`: what every boot only logged.
+              ...(await mcpMountFindings(ctx.root)),
               ...(await unknownToolGateFindings(ctx.root)),
               ...remote.findings,
             ]

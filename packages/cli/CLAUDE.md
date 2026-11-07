@@ -5,7 +5,7 @@ dashboard), `cli → testing` (islands, the e2e step, `x shot`'s `launchChrome`)
 this except `create-ultimate`. The reasoning behind every rule below, verbatim and dated, is
 [`docs/history/cli.md`](../../docs/history/cli.md); where the two disagree this file wins.
 
-Commands: `bun test packages/cli` (from the repo root — the test preload lives there),
+Commands: `bun test packages/cli` (from the repo root: the preload),
 `bunx tsc --noEmit -p packages/cli/tsconfig.json`.
 
 ## Rules
@@ -51,13 +51,13 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `boundary-findings.ts` / `app-boundaries.ts` / `boundary-cuts.ts` / `package-boundaries.ts` | `package-boundaries.ts`: `X_BOUNDARY_PACKAGE_TO_APP`, its own read of `packages/`, never `readAppSources`. surface + layer rules; a finding's `fix:` is the concrete cut |
 | `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport. Never a `guards/` file: an app must not be able to delete it. Full rule: `docs/history/cli.md` |
 | `guards.ts` / `guard-sources.ts` | an app's `guards/*.ts`, discovered, run on `boundaries`, held to the error contract; every `check(root, sources)` shares ONE walk, read and Sass compile per file (`GuardSources`) |
-| `templates/scaffold-guards.ts` | `SHIPPED` — the one list of the twenty-one shipped guards (`native-confirm` the newest): `x new` writes all, `x g guard <name>` writes one, `doctor-guards.ts` lists the ones an app lacks (a listing, never a finding). Full rule: `docs/history/cli.md` |
+| `templates/scaffold-guards.ts` | `SHIPPED` — the one list of the twenty-one shipped guards: `x new` writes all, `x g guard <name>` writes one, `doctor-guards.ts` lists the ones an app lacks (a listing, never a finding). Full rule: `docs/history/cli.md` |
 | `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file |
 | `workspace-checks.ts` / `test-only-shipped.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize`. Full rule: `docs/history/cli.md` |
 | `app-permissions.ts` / `permission-grants.ts` / `app-permissions-borrowed.ts` / `app-permissions-site.ts` | `policy`: every permission granted or required is declared and granted (`X_PERMISSION_UNGRANTED`, `X_PERMISSION_BORROWED`). Full rule: `docs/history/cli.md` |
 | `job-registration.ts` | `manifest`: no job or task under a positional `anonymous-*` name (`X_JOB_UNREGISTERED`) |
 | `unscanned-admin.ts` | `manifest`: a `defineAdmin()` outside the app scan (`apps/*/src/`) is `X_ADMIN_UNSCANNED` |
-| `tool-gate-names.ts` | `manifest`: a gate on no tool |
+| `tool-gate-names.ts` · `verify-mcp-mount.ts` | `manifest`: a gate on no tool · `expose` and no `POST /mcp` |
 | `verify-role-load.ts` / `verify-role-load-probe.ts` | `manifest`: a child imports the app as a worker does, then the rest module by module; a registration only a document-reaching module makes is `X_ROLE_LOAD_INCOMPLETE` with the module and the import the API index lacks |
 | `async-pages.ts` / `live-routes.ts` / `budgets.ts` / `budgets-unmeasured.ts` | `budgets` riders: an async `Page` with no `load`, a live read no island imports, bytes per route; an unweighed route's finding names a refused measurement actor and `defineMeasurementActor()` |
 | `budgets-freshness.ts` / `verify-budgets-build.ts` | the step builds first when stats are missing, of an old rule, or older than source: `x build --target static --no-preflight --out .x/verify-static` through `ctx.runner` |

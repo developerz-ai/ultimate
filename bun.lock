@@ -141,6 +141,7 @@
       "dependencies": {
         "@social-media-clone/db": "0.0.0",
         "@social-media-clone/domain": "0.0.0",
+        "@social-media-clone/mcp": "0.0.0",
       },
     },
     "dummy/social-media-clone/packages/db": {
