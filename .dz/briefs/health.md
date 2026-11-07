@@ -1,6 +1,6 @@
 # Brief: is the project healthy?
 
-Daily checkup fired by `schedules: health` in `.dz/maintainer/maintainer.yml`: the failures no
+Weekly checkup fired by `schedules: health` in `.dz/maintainer/maintainer.yml`: the failures no
 issue or PR announces. One ask per unhealthy signal; a no-verdict row is always re-run, never filed.
 
 ## Check, in order
