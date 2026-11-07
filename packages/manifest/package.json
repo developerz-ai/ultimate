@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/manifest",
-  "version": "30.3.0",
+  "version": "30.4.0",
   "description": "x.manifest.json: deterministic generated facts, contract diff, AGENTS.md budget",
   "keywords": [
     "ultimate",
@@ -43,12 +43,12 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/action": "30.3.0",
-    "@ultimat3/core": "30.3.0",
-    "@ultimat3/entity": "30.3.0",
-    "@ultimat3/jobs": "30.3.0",
-    "@ultimat3/query": "30.3.0",
-    "@ultimat3/realtime": "30.3.0",
-    "@ultimat3/schema": "30.3.0"
+    "@ultimat3/action": "30.4.0",
+    "@ultimat3/core": "30.4.0",
+    "@ultimat3/entity": "30.4.0",
+    "@ultimat3/jobs": "30.4.0",
+    "@ultimat3/query": "30.4.0",
+    "@ultimat3/realtime": "30.4.0",
+    "@ultimat3/schema": "30.4.0"
   }
 }
