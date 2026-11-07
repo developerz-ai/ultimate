@@ -28,10 +28,10 @@ import { FAVICON_PATH, faviconBytes } from './favicon';
 import { buildIslands, writeIslands } from './island-bundle';
 import { measureDatabase } from './measure-database';
 import { measurePaths } from './measure-paths';
-import { measurementActorLabel, measureScope, withAppUrl } from './measure-scope';
+import { measurementActorLabel, measureScope, publicScope, withAppUrl } from './measure-scope';
 import { loadNavigation, pageNavigation } from './page-navigation';
 import { loadSpeculation, otherLocaleSegments, pageSpeculation } from './page-speculation';
-import { enumerateOnce, type RouteEntries } from './prerender-entries';
+import { asksPrerender, enumerateOnce, type RouteEntries } from './prerender-entries';
 import { heaviestSource } from './prerender-heaviest';
 import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
@@ -264,8 +264,9 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // process, because an `app/` page's `load` calls policy-guarded queries over its typed client
   // and no server is listening during a build. `renderStatic` keeps `ctx`: its output is a
   // published file, and a `site/` load a policy refuses must fail the build, never render another
-  // actor's rows into it.
+  // actor's rows into it. `published` authenticates nobody: sitemap and llms.txt reads run in it.
   const measure = await measureScope({ origin, buildId });
+  const published = publicScope({ origin, buildId });
   // Started on the first route that needs weighing, and released however the loop ends.
   const database = measureDatabase(options.root);
   const documentOptions = {
@@ -321,11 +322,12 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         try {
           // A dynamic route is rendered at the paths its own `prerender()` lists, and the row holds
           // the heaviest — a static route's rule. One that lists none is its own finding.
-          // Inside the measuring scope: a route's `prerender()` lists its paths by reading the app's
-          // own data, the same way its `load` does.
+          // `prerender()` reads the app's own data as its `load` does — as nobody for a route the
+          // sitemap asks, because the one memo hands this answer to `collectSeoReads`.
           await database.ready();
+          const enumerateIn = asksPrerender(entry) ? published : measure.run;
           const plan = await withAppUrl(origin, () =>
-            measure.run(() => measurePaths(entry, enumerate)),
+            enumerateIn(() => measurePaths(entry, enumerate)),
           );
           if ('unmeasured' in plan) {
             unmeasured.push(plan.unmeasured);
@@ -428,7 +430,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       root: options.root,
       origin,
       defaultLocale,
-      scope: (fn) => withAppUrl(origin, () => measure.run(fn)),
+      scope: (fn) => withAppUrl(origin, () => published(fn)),
       before: () => database.ready(),
       enumerate,
     }));

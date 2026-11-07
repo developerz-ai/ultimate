@@ -318,6 +318,13 @@ an actor its policy allows, on rows it did not have to write. `x exercise` and t
 step drive it; an app only writes `apps/web/exercise.ts`'s `defineExercise({ … })` for what the pass
 cannot guess. [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-exercise-pass).
 
+An override's `input` is awaited, and runs inside the request its call runs in, so
+`useContext().actor` is the seated actor that call acts as. That is the one way to hand the pass an
+input no draw can forge — a challenge issued to THIS actor, signed by `softAuthenticator` — computed
+from the pass's own state, per call, the scale sweep's included. Declare it `async`: `x drill`'s load
+has no pass behind it, so it leaves an `async` input out and says why (`drill-writes.ts`). Postly's
+passkey entries are the worked example (`examples/dummy/apps/web/exercise.ts`).
+
 Around each call the pass runs the tenant proof: the pair's second tenant (B, same role, no
 `tenancy:cross`) sends A's own input before A's call and again after it. A canary or unhanded id of
 A's in B's output, mail, outbound body or enqueued job input is `X_TENANT_LEAK`; a digest of A's
@@ -661,6 +668,44 @@ unitTest('the provider registers from its own discovery document', async () => {
 Each tamper is refused by `@ultimat3/auth`'s real `verifyIdToken` with the code a real provider's
 broken token gets (`packages/testing/src/fake-identity-provider.test.ts`). An unknown `sub` and an
 empty `users` are `X_INVARIANT`.
+
+## Testing a passkey ceremony
+
+`As of 2026-11`. `softAuthenticator({ origin, algorithm?, counter? })` is a passkey on no device:
+a real ES256 (default) or RS256 key pair on WebCrypto, `create(options)` answering what
+`newPasskey` would and `get(options)` what `getPasskey` would — so the test runs
+`@ultimat3/auth`'s real verifier. One implementation and one import path, `@ultimat3/auth/soft-authenticator`, which `@ultimat3/auth`'s own suites use too (auth cannot import this package).
+
+```ts
+import { defineAuth, memoryAuthAdapter, passkeyLogin } from '@ultimat3/auth';
+import { softAuthenticator } from '@ultimat3/auth/soft-authenticator';
+import { expect, unitTest } from '@ultimat3/testing';
+
+unitTest('a member signs in with the passkey they registered', async () => {
+  const adapter = memoryAuthAdapter();
+  const ada = await adapter.createUser({
+    id: '00000000-0000-7000-8000-00000000ada1',
+    email: 'ada@example.test',
+    passwordHash: null,
+    orgId: null,
+    roles: [],
+    createdAt: new Date(),
+  });
+  const origin = 'http://localhost:3000';
+  const auth = defineAuth({ adapter, passkeys: { rpId: 'localhost', origins: [origin] } });
+  const passkeys = passkeyLogin(auth);
+  const device = await softAuthenticator({ origin });
+  const created = await device.create(await passkeys.registerOptions({ userId: ada.id }));
+  await passkeys.register({ userId: ada.id, response: created });
+  const asserted = await device.get(await passkeys.loginOptions());
+  const signedIn = await passkeys.login({ response: asserted });
+  expect(signedIn.actor.id).toBe(ada.id);
+});
+```
+
+The second argument of `create` / `get` breaks exactly one check — `{ origin, type, rpId, flags,
+signCount, challenge, userHandle, crossOrigin }` — so a refusal test is one line. The step-up is the
+same `get` over `passkeyStepUp(…).options(…)` (`soft-authenticator.test.ts`).
 
 ## Running a mutator's local half
 

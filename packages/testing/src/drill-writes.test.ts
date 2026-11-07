@@ -79,4 +79,38 @@ describe('drillWriteTargets', () => {
     });
     expect(writes.targets[0]?.draw?.(1)).toEqual({ email: 'a@example.test', message: 'bound' });
   });
+
+  test('an async override input is left out: it is computed from a pass the load does not run', async () => {
+    const writes = await drillWriteTargets({
+      actions: [candidate({})],
+      overrides: defineExercise({
+        contactSales: { actor: null, input: async (drawn) => ({ ...drawn, message: 'signed' }) },
+      }),
+      sampler: { arbitrary: () => ({ email: 'a@example.test', message: 'drawn' }) },
+    });
+    expect(writes.targets).toEqual([]);
+    expect(writes.skipped[0]?.reason).toContain('async input');
+  });
+
+  // A plain function returning a promise carries no `async` tag: drawn, its body was
+  // `JSON.stringify(promise)` — `{}` — posted on every request. What it RETURNS is the test.
+  test('an override input that returns a promise is left out, as an async one is', async () => {
+    const writes = await drillWriteTargets({
+      actions: [candidate({})],
+      overrides: defineExercise({
+        contactSales: {
+          actor: null,
+          input: (drawn) => Promise.resolve({ ...drawn, message: 'signed' }),
+        },
+      }),
+      sampler: { arbitrary: () => ({ email: 'a@example.test', message: 'drawn' }) },
+    });
+    expect(writes.targets).toEqual([]);
+    expect(writes.skipped).toEqual([
+      {
+        name: 'contactSales',
+        reason: 'exercise.ts computes its input from the pass (an async input); a load has none',
+      },
+    ]);
+  });
 });

@@ -11,12 +11,14 @@ import type {
   AuthUser,
   AuthVerification,
   CreateUserInput,
+  PasskeyStore,
   SessionPatch,
   StoredMfaSecret,
   UserPatch,
   UserQuery,
 } from './adapter';
 import { authUniqueViolation } from './errors';
+import { memoryPasskeyStore } from './passkey-memory';
 
 const verificationKey = (purpose: string, identifier: string): string => `${purpose}:${identifier}`;
 
@@ -46,6 +48,22 @@ export class MemoryAuthAdapter implements AuthAdapter {
   readonly #accounts = new Map<string, AuthAccount>();
   readonly #verifications = new Map<string, AuthVerification>();
   readonly #apiKeys = new Map<string, AuthApiKeyRecord>();
+  readonly #passkeys: PasskeyStore = memoryPasskeyStore();
+  // The passkey members are `passkey-memory.ts`'s, bound once: closures over the store, no `this`.
+  readonly putPasskey: PasskeyStore['putPasskey'] = this.#passkeys.putPasskey;
+  readonly findPasskey: PasskeyStore['findPasskey'] = this.#passkeys.findPasskey;
+  readonly listPasskeys: PasskeyStore['listPasskeys'] = this.#passkeys.listPasskeys;
+  readonly advancePasskeyCounter: PasskeyStore['advancePasskeyCounter'] =
+    this.#passkeys.advancePasskeyCounter;
+  readonly deletePasskey: PasskeyStore['deletePasskey'] = this.#passkeys.deletePasskey;
+  readonly putPasskeyChallenge: PasskeyStore['putPasskeyChallenge'] =
+    this.#passkeys.putPasskeyChallenge;
+  readonly takePasskeyChallenge: PasskeyStore['takePasskeyChallenge'] =
+    this.#passkeys.takePasskeyChallenge;
+  readonly putPasskeyEvidence: PasskeyStore['putPasskeyEvidence'] =
+    this.#passkeys.putPasskeyEvidence;
+  readonly listPasskeyEvidence: PasskeyStore['listPasskeyEvidence'] =
+    this.#passkeys.listPasskeyEvidence;
 
   /**
    * The clock every instant this adapter stamps comes from — one argument, because a stamp is a

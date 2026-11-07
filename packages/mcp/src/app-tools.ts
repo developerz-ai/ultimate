@@ -12,6 +12,8 @@ import { noteToolNames } from '@ultimat3/action';
 import type { ErrorAudience } from '@ultimat3/core';
 import type { RequestFacts as McpRequestFacts, RateLimitStore } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import type { McpCatalog } from './app-catalog';
+import { appCatalogSource } from './app-catalog';
 import type { AnyAppToolDefinition, AppTools } from './app-tool';
 import { appToolPrimitives } from './app-tool';
 import type { McpAuditHook } from './audit-hook';
@@ -37,6 +39,7 @@ import { withScopes } from './scopes';
 import type { McpServerInput } from './server';
 import { type McpServer, mcpServer } from './server';
 import type { McpInstructions } from './server-voice';
+import type { McpTenant } from './tenant';
 import type { McpRateLimits, McpRouteDescriptor, ResolvedToken } from './transport-http';
 import { mcpHttpRoute } from './transport-http';
 
@@ -86,6 +89,29 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * surfaces that build their catalog programmatically (`@ultimat3/admin` does).
    */
   readonly tools?: readonly AnyMcpTool[] | AppTools<TSchemas>;
+  /**
+   * Tools that exist per caller — a tenant's connectors, a project's integrations — resolved for
+   * every `tools/list` and `tools/call` (never cached) and served beside `tools` under the same
+   * gates. Each is a `runtimeTool()`, borrowing a declared `permission`; `groups` adds resources to
+   * a meta surface. A name taken twice is `X_MCP_CATALOG_TOOL_DUPLICATE`, a resolver that throws or
+   * answers anything unservable `X_MCP_CATALOG_UNRESOLVED` — the request fails, never a smaller list.
+   *
+   * ```ts
+   * catalog: async (caller) => ({
+   *   tools: (await connectorsOf(caller.actor)).map((row) =>
+   *     runtimeTool({ name: row.name, description: row.description, inputSchema: row.schema,
+   *       permission: 'connector:call', destructive: false, run: ({ input, ctx }) => call(ctx, row, input) })),
+   * }),
+   * ```
+   */
+  readonly catalog?: McpCatalog;
+  /**
+   * One token across tenants: `resolveToken` answers the PERSON, and every `tools/call` names its
+   * tenant under `arg` — stripped before validation, checked by `resolve` (`null` answers as a
+   * hidden tool), and the actor `resolve` answers is the caller for every gate and the policy.
+   * `list_tenants` serves `list`; a call naming none is `X_MCP_TENANT_REQUIRED`.
+   */
+  readonly tenant?: McpTenant;
   /**
    * Scope name → the tools that capability covers, by tool name. The connection gate, and the
    * second of the three outcomes: a caller that may SEE a tool but whose token does not carry
@@ -285,6 +311,10 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
     errorAudience: input.errorAudience ?? 'caller',
     ...(input.onAudit === undefined ? {} : { onAudit: input.onAudit }),
+    ...(input.catalog === undefined
+      ? {}
+      : { catalog: appCatalogSource(input.catalog, input.scopes) }),
+    ...(input.tenant === undefined ? {} : { tenant: input.tenant }),
   };
   const server = mcpServer(config);
 

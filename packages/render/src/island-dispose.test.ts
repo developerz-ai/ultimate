@@ -91,6 +91,29 @@ describe('islands', () => {
     expect(calls).toEqual(['booted', 'carried']);
   });
 
+  test('a disposer that throws is reported as uncaught, never left as an unhandled rejection', async () => {
+    const reported: unknown[] = [];
+    const platform = globalThis.reportError;
+    globalThis.reportError = (error: unknown) => reported.push(error);
+    try {
+      const boom = new TypeError('dispose threw');
+      const disposed: string[] = [];
+      const bad = h('div', { 'data-x-island': 'bad' });
+      bad.__x = Promise.resolve(() => {
+        throw boom;
+      });
+      const good = h('div', { 'data-x-island': 'good' });
+      good.__x = Promise.resolve(() => disposed.push('good'));
+      expect(disposeIslands(el(h('div', {}, [bad, good])))).toBe(2);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(reported).toEqual([boom]);
+      expect(disposed).toEqual(['good']);
+    } finally {
+      globalThis.reportError = platform;
+    }
+  });
+
   test('the browser entry exports it, as the one function the router uses', async () => {
     const client = await import('@ultimat3/render/client');
     expect(client.disposeIslands).toBe(disposeIslands);

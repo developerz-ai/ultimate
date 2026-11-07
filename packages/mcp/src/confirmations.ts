@@ -13,10 +13,17 @@ import type { KnownPermission, PolicyArgs, PolicyDecision } from '@ultimat3/poli
 import { can, denied } from '@ultimat3/policy';
 import type { JsonValue } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
+import type { McpApproversResolver } from './confirmation-approvers';
+import { matchesApprover } from './confirmation-approvers';
 import { decideConfirmation } from './confirmation-decide';
 import { McpConfirmationToolUnknownError } from './confirmation-errors';
+import type { McpConfirmationEvidence } from './confirmation-evidence';
 import { confirmationToolGate } from './confirmation-gate';
+import { McpConfirmationQuorumInvalidError } from './confirmation-quorum-errors';
 import type { McpConfirmation, McpConfirmationStore } from './confirmation-store';
+
+/** Room for any detached signature encoding (Ed25519 base64url is 86); a megabyte vote is not one. */
+const MAX_SIGNATURE_LENGTH = 4096;
 
 /** Ten minutes: long enough for a person to read a request, short enough to go stale. */
 export const DEFAULT_MCP_CONFIRMATION_TTL_MS = 600_000;
@@ -27,6 +34,8 @@ const decisionInput = () =>
     decision: t.enum(['view', 'approve', 'reject'] as const),
     /** What the person approves: the `arguments` `view` returned. Required to approve. */
     arguments: t.optional(t.record(t.json())),
+    /** The approver's signature over `signingPayload`, under `evidence`. Bounded: it is stored. */
+    signature: t.optional(t.string.max(MAX_SIGNATURE_LENGTH)),
   });
 
 const decisionOutput = () =>
@@ -37,6 +46,9 @@ const decisionOutput = () =>
     decidedAt: t.nullable(t.date),
     expiresAt: t.date,
     arguments: t.record(t.json()),
+    quorum: t.number,
+    approvedBy: t.array(t.string),
+    signingPayload: t.string,
   });
 
 type DecisionInput = ReturnType<typeof decisionInput>;
@@ -50,6 +62,8 @@ export interface McpConfirmationDecision {
   readonly id: string;
   readonly decision: 'view' | 'approve' | 'reject';
   readonly arguments?: Readonly<Record<string, JsonValue>>;
+  /** The approver's signature over the `signingPayload` `view` returned, under `evidence`. */
+  readonly signature?: string;
 }
 
 export interface McpConfirmationsInput<TTools extends string = string> {
@@ -77,6 +91,19 @@ export interface McpConfirmationsInput<TTools extends string = string> {
   readonly audit?: boolean | undefined;
   /** Where the seal key is read (`.secrets.key` / `ULTIMATE_SECRETS_KEY`). Defaults to the app's. */
   readonly sealKeys?: SealKeySource | undefined;
+  /**
+   * N of M: per call, from its validated arguments, how many DISTINCT approvers matching `from`
+   * must approve. Stored on the row when it opens. Declared, the requesting actor never counts (nor
+   * an impersonated decider), and one approver counts once. Absent: one decision by anyone the
+   * policy admits.
+   */
+  readonly approvers?: McpApproversResolver | undefined;
+  /**
+   * Signed decisions: every approval carries a signature over `signingPayload` (the row's id, tool
+   * and keyed argument digest), checked by `verify` against keys registered to the approver at the
+   * decision, stored with the vote, and re-checked from the stored row before the call runs.
+   */
+  readonly evidence?: McpConfirmationEvidence | undefined;
 }
 
 /** The decision action, carrying what the gate needs. `defineAppMcp({ confirmations })` reads it. */
@@ -88,6 +115,8 @@ export interface McpConfirmations<TTools extends string = string>
   readonly ttlMs: number;
   readonly clock: Clock;
   readonly sealKeys: SealKeySource;
+  readonly approvers: McpApproversResolver | undefined;
+  readonly evidence: McpConfirmationEvidence | undefined;
 }
 
 /**
@@ -114,8 +143,20 @@ export function mcpConfirmations<const TTools extends string>(
     1,
   );
   const clock = input.clock ?? systemClock;
-  const { store, check } = input;
+  const { store, check, approvers, evidence } = input;
   const sealKeys: SealKeySource = input.sealKeys ?? {};
+  if (approvers !== undefined && typeof approvers !== 'function') {
+    throw new McpConfirmationQuorumInvalidError({
+      tool: input.tools.join(', '),
+      reason: 'approvers is not a function of the call',
+    });
+  }
+  if (evidence !== undefined && typeof evidence.verify !== 'function') {
+    throw new McpConfirmationQuorumInvalidError({
+      tool: input.tools.join(', '),
+      reason: 'evidence declares no verify function, so no signature could ever be checked',
+    });
+  }
 
   const decide = action({
     input: decisionInput(),
@@ -123,15 +164,16 @@ export function mcpConfirmations<const TTools extends string>(
     // The agent refusal is IN the policy, so it is decided by `guard()` — the one authz path — and
     // reads as the same `X_FORBIDDEN` on every surface. A confirmation an agent can grant is a
     // confirmation the agent that asked can grant.
-    policy: can<unknown, McpConfirmation>(input.permission, (args) => {
+    policy: can<McpConfirmationDecision, McpConfirmation>(input.permission, (args) => {
       if (args.actor?.kind === 'agent') return denied('mcp-confirmation.agent-decider');
-      return (check ?? sameTenant)(args);
+      const standing = approverStanding(args);
+      return standing ?? (check ?? sameTenant)(args);
     }),
     ...(input.audit === true ? { audit: true } : {}),
     row: async ({ input: asked }) => (await store.get(asked.id)) ?? null,
     // The view and the decision: state only — the policy above has already decided who.
     handle: ({ input: asked, ctx }) =>
-      decideConfirmation({ store, clock, sealKeys }, asked, ctx.actor.id),
+      decideConfirmation({ store, clock, sealKeys, evidence }, asked, ctx.actor.id),
   });
   const confirmations = Object.assign(decide, {
     tools: Object.freeze([...input.tools]),
@@ -139,11 +181,29 @@ export function mcpConfirmations<const TTools extends string>(
     ttlMs,
     clock,
     sealKeys,
+    approvers,
+    evidence,
   });
   // On the declaration, so there is no `agent({ confirmations })` for an author to forget. A worker
   // holds it only if it imports this module, which is `X_ROLE_LOAD_INCOMPLETE` when it would not.
   registerToolGate(confirmations.tools, confirmationToolGate(confirmations));
   return confirmations;
+}
+
+/**
+ * A decision on a row opened under `approvers`: the requester never decides its own request, an
+ * impersonated actor never stands in for the person it wears, and the decider must match one of the
+ * row's stored selectors. `undefined` defers to `check`. `view` stays the policy's alone.
+ */
+function approverStanding(
+  args: PolicyArgs<McpConfirmationDecision, McpConfirmation>,
+): PolicyDecision | undefined {
+  const { actor, row } = args;
+  if (row === null || row.approvers === null || args.input.decision === 'view') return undefined;
+  if (actor === null || actor.id === row.actorId) return denied('mcp-confirmation.requester');
+  if (actor.onBehalfOf !== undefined) return denied('mcp-confirmation.impersonated');
+  if (!matchesApprover(actor, row.approvers)) return denied('mcp-confirmation.not-an-approver');
+  return undefined;
 }
 
 /**

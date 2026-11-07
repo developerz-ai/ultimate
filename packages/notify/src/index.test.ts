@@ -7,13 +7,14 @@ describe('@ultimat3/notify public surface', () => {
   const names = Object.keys(barrel);
 
   test('the SQL another workspace reads, and none of the rest', () => {
-    // The three tables are installed by the boot (`cli/src/framework-schema.ts`). MARK_READ went in
+    // The four tables are installed by the boot (`cli/src/framework-schema.ts`). MARK_READ went in
     // 25.0.0: its one reader was a live test, and a test is no reason to export a statement — the
     // composition test drives `postgresInboxStore().markRead()`. CLAIM and INBOX_PAGE had no reader.
     expect(names.filter((name) => name.startsWith('SQL_')).sort()).toEqual([
       'SQL_NOTIFY_DELIVERIES_TABLE',
       'SQL_NOTIFY_DIGESTS_TABLE',
       'SQL_NOTIFY_INBOX_TABLE',
+      'SQL_PUSH_DEVICES_TABLE',
     ]);
   });
 
@@ -26,11 +27,18 @@ describe('@ultimat3/notify public surface', () => {
       'memoryDigestStore',
       'memoryInboxStore',
       'memoryPreferenceStore',
+      'memoryPushDeviceStore',
       'postgresDeliveryLedger',
       'postgresDigestStore',
       'postgresInboxStore',
+      'postgresPushDeviceStore',
     ]) {
       expect(typeof (barrel as Record<string, unknown>)[name]).toBe('function');
     }
+  });
+
+  test('the two native push bounds an app reads', () => {
+    expect(barrel.PUSH_DEVICES_PER_ACTOR).toBe(20);
+    expect(barrel.PUSH_BAD_TOKEN_LIMIT).toBe(3);
   });
 });

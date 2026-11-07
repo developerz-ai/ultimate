@@ -6,7 +6,7 @@
 // A framework table an app has to install by hand is a table that will be missing in production on
 // the one code path that needs it, and it surfaces as a Postgres `42P01` from inside a worker.
 
-import { SQL_AUDIT_TABLE, SQL_IDEMPOTENCY_TABLE } from '@ultimat3/action';
+import { SQL_AUDIT_TABLE, SQL_IDEMPOTENCY_TABLE, SQL_METER_TABLE } from '@ultimat3/action';
 import {
   ADMIN_AUDIT_TABLE,
   ERROR_GROUPS_TABLE,
@@ -26,9 +26,11 @@ import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
 import { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from '@ultimat3/mcp/schema';
 import {
+  PUSH_DEVICES_TABLE,
   SQL_NOTIFY_DELIVERIES_TABLE,
   SQL_NOTIFY_DIGESTS_TABLE,
   SQL_NOTIFY_INBOX_TABLE,
+  SQL_PUSH_DEVICES_TABLE,
 } from '@ultimat3/notify';
 import { PUSH_SUBSCRIPTIONS_TABLE, SQL_PUSH_SUBSCRIPTIONS_TABLE } from '@ultimat3/pwa/schema';
 import { FrameworkSchemaFailedError } from './schema-errors';
@@ -88,6 +90,13 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     tables: Object.freeze(['x_audit']),
     ddl: Object.freeze([SQL_AUDIT_TABLE]),
   }),
+  // The counters behind `meter:`. One row per tenant × meter × period declaration, rolled over in
+  // place, so it ships no purge: the table is bounded by its subjects, never by time.
+  Object.freeze({
+    pkg: '@ultimat3/action',
+    tables: Object.freeze(['x_meter']),
+    ddl: Object.freeze([SQL_METER_TABLE]),
+  }),
   Object.freeze({
     pkg: '@ultimat3/http',
     tables: Object.freeze(['x_rate_limit']),
@@ -105,7 +114,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     ddl: Object.freeze([SQL_TOTP_REPLAY_TABLE]),
   }),
   /**
-   * The five tables `PostgresAuthAdapter` reads, and the oldest hole in this list.
+   * The eight tables `PostgresAuthAdapter` reads, and the oldest hole in this list.
    *
    * Until this row nothing applied them, in dev or in production: they are not `entity()`
    * declarations, so `x db gen` never saw them, and an app was left to paste per-table exports
@@ -113,7 +122,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
    * exports are gone; `AUTH_TABLES` is the whole DDL, the 1.3 `x_users` upgrade included, applied
    * here on exactly the rule the rate-limit and audit rows already follow.
    *
-   * `AUTH_TABLE_NAMES` rather than five literals: @ultimat3/auth already publishes the list, and a
+   * `AUTH_TABLE_NAMES` rather than eight literals: @ultimat3/auth already publishes the list, and a
    * second copy is a second thing to keep right when a table is added.
    */
   Object.freeze({
@@ -154,6 +163,14 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/notify',
     tables: Object.freeze(['x_notify_digests']),
     ddl: Object.freeze([SQL_NOTIFY_DIGESTS_TABLE]),
+  }),
+  // `postgresPushDeviceStore`'s native registrations — what `pushRegister()` writes and
+  // `nativePush()` reads. Installed whether or not the app ships a native client, for every row's
+  // reason: shipping one must not be the deploy whose first registration meets `42P01`.
+  Object.freeze({
+    pkg: '@ultimat3/notify',
+    tables: Object.freeze([PUSH_DEVICES_TABLE]),
+    ddl: Object.freeze([SQL_PUSH_DEVICES_TABLE]),
   }),
   /**
    * The admin's durable audit trail — what `postgresAuditLog()` writes and every detail page's

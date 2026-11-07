@@ -69,6 +69,10 @@ const ADDED_SINCE = [
   'X_REALTIME_PRODUCER_CONFLICT',
   // Plan 101 wave 5b: a write whose input cannot fill its action's pinned `:param`.
   'X_MUTATION_PATH_UNFILLED',
+  // #995: one connected device addressed from any node — absent, silent, or sent too much.
+  'X_DEVICE_OFFLINE',
+  'X_DEVICE_REQUEST_TIMEOUT',
+  'X_DEVICE_FRAME_TOO_LARGE',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

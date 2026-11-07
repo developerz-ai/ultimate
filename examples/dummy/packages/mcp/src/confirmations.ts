@@ -16,6 +16,7 @@ import {
   memoryConfirmationStore,
   postgresConfirmationStore,
 } from '@ultimat3/mcp';
+import { verifyApproverSignature } from './confirmations-keys';
 
 /**
  * Pending and decided confirmations, in `x_mcp_confirmations` (a framework table the boot applies),
@@ -30,12 +31,19 @@ export const confirmationStore: McpConfirmationStore =
 
 /**
  * Publishing puts a post in front of the whole org and onto the public blog. An agent may draft
- * and comment on its own; `publishPost` waits for a member who holds `post:publish` in the same
- * org to view the exact call and approve it. Decided by a person only — an agent can never approve
- * its own request, whatever it holds — and the approved call still runs through `postPublish`.
+ * and comment on its own; `publishPost` waits for an owner or admin of the same org — never the
+ * member the agent acts for, who is the requester — to view the exact call and approve it with a
+ * signature from a key registered to them (`./confirmations-keys.ts`). Decided by a person only —
+ * an agent can never approve its own request, whatever it holds — and the approved call still runs
+ * through `postPublish`.
+ *
+ * One approver, because an org here has one or two owners and admins: a quorum the seed's orgs
+ * could not reach would hold every agent publish until it expired.
  */
 export const confirmAgentPublish = mcpConfirmations({
   tools: ['publishPost'],
   store: confirmationStore,
   permission: 'post:publish',
+  approvers: () => ({ quorum: 1, from: ['role:owner', 'role:admin'] }),
+  evidence: { verify: verifyApproverSignature },
 });

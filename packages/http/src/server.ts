@@ -31,6 +31,7 @@ import { withRouteBuckets } from './rate-limit-buckets';
 import { adoptRateLimitStore } from './rate-limit-installed';
 import { jsonResponse } from './response';
 import { describeRoutes, httpRouter, type Route } from './router';
+import { serverWebSockets, type WebSocketOption } from './server-websocket';
 
 /**
  * Beside its one caller rather than in `errors.ts`, which is at the 500-line ceiling — the
@@ -86,8 +87,12 @@ export interface ServerOptions {
    * So a host may mount the socket on the port it already publishes, and the two-port topology
    * stays exactly as it was: `x dev` does BOTH, `docker/` keeps its own `sync` service, and a
    * client picks whichever origin it can actually reach.
+   *
+   * A LIST serves several on this one listener — the sync node's beside every declared
+   * `deviceSocket()` — each path checked free, each upgrade and its frames routed to its own mount
+   * (`server-websocket.ts`). An empty list is no websocket.
    */
-  readonly websocket?: WebSocketMount;
+  readonly websocket?: WebSocketOption;
   /**
    * `app.config.ts`'s `drain` section — pass `appConfig.drain`. Its `readinessGraceMs` is how long
    * `/readyz` answers 503 before the `accept` phase closes this listener. Omitted, core's own
@@ -208,7 +213,6 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
   const readinessGraceMs = options.drain?.readinessGraceMs;
   if (readinessGraceMs !== undefined) configureLifecycle({ readinessGraceMs });
 
-  const mount = options.websocket;
   let server: BunServer | undefined;
   let unregister: (() => void) | undefined;
   let unregisterBodies: (() => void) | undefined;
@@ -304,7 +308,7 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
         throw websocketPathTaken(path, `the route \`${description.name}\``);
     }
   };
-  if (mount !== undefined) assertMountPathFree(mount.path);
+  const mount = serverWebSockets(options.websocket, assertMountPathFree);
 
   const handle: ServerHandle = {
     role,
@@ -360,7 +364,7 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
           : Bun.serve({
               ...listen,
               fetch: async (request, socket) =>
-                pathOf(request) === mount.path
+                mount.paths.has(pathOf(request))
                   ? await mount.fetch(request, socket as unknown as UpgradeTarget)
                   : await dispatch(request, socket),
               websocket: mount.websocket,

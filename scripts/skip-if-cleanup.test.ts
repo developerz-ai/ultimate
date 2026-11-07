@@ -100,6 +100,19 @@ function stop(timer: number) {
 `;
     expect(cleanupFiles(one(timer))).toEqual([]);
   });
+
+  test("a method named clear… on a local object is that object's API, not a registry reset", () => {
+    // `store.clearBadToken('ios', token)` read as the free function `clearBadToken()` and called a
+    // notify live test a leak; the method form is RESET_METHOD's, which reads only `.clear(`.
+    const method = `import { describe } from 'bun:test';
+describe.skipIf(true)('live', () => {
+  test('x', async () => {
+    await store.clearBadToken('ios', 'a');
+  });
+});
+`;
+    expect(cleanupFiles(one(method))).toEqual([]);
+  });
 });
 
 describe('the finding', () => {

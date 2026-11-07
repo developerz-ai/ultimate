@@ -103,6 +103,11 @@ export function sortController<T>(
     const at = was === null ? undefined : origin(was.id);
     if (at !== undefined) say('cancelled', at);
   };
+  // Only the answer to the move now held clears it: an earlier request settling while a later one
+  // is in flight would otherwise snap the preview back to the stale order.
+  const release = (was: Held): void => {
+    if (held() === was) setHeld(null);
+  };
   const drop = (): void => {
     const was = lift();
     if (was === null) return;
@@ -125,9 +130,9 @@ export function sortController<T>(
     Promise.resolve()
       .then(() => input.onMove(move))
       .then(
-        () => setHeld(null),
+        () => release(was),
         () => {
-          setHeld(null);
+          release(was);
           const back = origin(was.id);
           if (back !== undefined) say('cancelled', back);
         },
@@ -145,11 +150,12 @@ export function sortController<T>(
           return true;
         }
         if (!event.altKey) return false;
-        const at = origin(id);
+        // A step from a move still in flight starts where the preview shows it, not at the echo.
+        const pending = held();
+        const at = pending?.id === id ? pending.at : origin(id);
+        const base = pending?.id === id ? view() : input.groups();
         const step =
-          at === undefined
-            ? null
-            : sortKeyStep(input.groups(), at, event.key, input.dir(), accepts(id));
+          at === undefined ? null : sortKeyStep(base, at, event.key, input.dir(), accepts(id));
         if (step === null) return false;
         setLift({ id, at: step });
         drop();

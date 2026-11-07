@@ -4,7 +4,7 @@
 // `index.ts` imports this bare, because `problemError` rebuilds a server's refusal by code and reads
 // its title from the registry; `errors.ts` and its two siblings import it bare as well.
 
-import { registerErrorCodes } from '@ultimat3/core';
+import { registerErrorCodes, registerErrorRetry } from '@ultimat3/core';
 
 /**
  * Titles for the framework-wide code table — every one of them owned by this package.
@@ -49,6 +49,8 @@ export const ACTION_ERROR_TITLES: Readonly<Record<string, string>> = {
   X_CONTRACT_EXERCISE_UNREACHED: 'no generated run reached the handler',
   X_CONTRACT_EXERCISE_UNDECLARED: '.contract() on a non-public action names no exercise',
   X_ACTION_STREAM_INVALID: 'a streaming action broke its stream contract',
+  X_METER_EXCEEDED: "an action's usage meter is spent for this period",
+  X_METER_INVALID: "an action's meter cannot be counted against",
 };
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"
@@ -56,3 +58,10 @@ export const ACTION_ERROR_TITLES: Readonly<Record<string, string>> = {
 registerErrorCodes(
   Object.fromEntries(Object.entries(ACTION_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
+
+/**
+ * The one code this package throws that a caller is SUPPOSED to come back from, and it says when:
+ * `meta.retryAfterSeconds` is the period's end, rendered onto `Retry-After`, and a job's retry
+ * waits for it instead of spending its attempts on an allowance that cannot refill sooner.
+ */
+registerErrorRetry({ X_METER_EXCEEDED: 'retry-after' });

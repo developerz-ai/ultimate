@@ -120,9 +120,11 @@ const SKIP_IF = /\.skipIf\s*\(|\b(?:describe|test|it)\.skip\b/;
  * clearing a local, exactly as `clearTimeout` is a builtin clearing a handle.
  *
  * `Timeout`/`Interval`/`Immediate` are excluded by name for that same reason: matching them made
- * this rule report a `realtime` live test whose only `clear…(` was a `clearTimeout`.
+ * this rule report a `realtime` live test whose only `clear…(` was a `clearTimeout`. A name after a
+ * `.` is a method of that object (`store.clearBadToken()`), never this free-function form.
  */
-const RESET_FUNCTION = /\b((?:clear|reset)(?!Timeout|Interval|Immediate)[A-Z][A-Za-z]*)\s*\(/g;
+const RESET_FUNCTION =
+  /(?<!\.\s*)\b((?:clear|reset)(?!Timeout|Interval|Immediate)[A-Z][A-Za-z]*)\s*\(/g;
 const RESET_METHOD = /\b([A-Za-z_$][\w$]*)\s*\.\s*(clear|reset)\s*\(/g;
 
 /**

@@ -686,6 +686,26 @@ unitTest('a session cookie resolves the member it was issued to', async () => {
 `configureAuthenticator()`'s function is handed — a real request over a real context, no server,
 no cast. `cookies` and `bearer` win over the same header spelled in `headers`. `As of 2026-10`.
 
+## Testing a passkey ceremony
+
+```ts
+import type { PasskeyLogin } from '@ultimat3/auth';
+import { softAuthenticator } from '@ultimat3/auth/soft-authenticator';
+
+declare const passkeys: PasskeyLogin; // passkeyLogin(defineAuth({ adapter, passkeys: { rpId, origins } }))
+declare const userId: string;
+
+const key = await softAuthenticator({ origin: 'https://app.test' });
+const created = await key.create(await passkeys.registerOptions({ userId }));
+await passkeys.register({ userId, response: created });
+const session = await passkeys.login({ response: await key.get(await passkeys.loginOptions()) });
+```
+
+`softAuthenticator` is a passkey with real WebCrypto keys (ES256 or RS256): `create(options)`
+answers what `newPasskey` would in a browser, `get(options)` what `getPasskey` would, so the test
+runs the server's real verification. One implementation and one path, `@ultimat3/auth/soft-authenticator`, the one
+auth's own suites use. `As of 2026-11`.
+
 ## Testing a sign-in against an identity provider
 
 `As of 2026-11`. `fakeIdentityProvider({ users, issuer?, clientId?, clock? })` is an OpenID provider
@@ -964,6 +984,7 @@ shape, same unreached code. `As of 2026-11`.
 | Rows | one seed graph for the pass, a fresh pair of tenants per primitive in it — the first the actor's (A), the second the tenant proof's intruder (B); every table seeded off its declaration, parents first, same-tenant keys (`x db seed --generate`'s graph) |
 | Actor | the first of `x policy explain`'s actors the policy allows, in the primitive's tenant. None allowed is `refused`, by design |
 | Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
+| Async input | an override's `input` may be `async`: it is awaited inside the call's request, as the call's actor, so it can mint what the action checks (a one-time token, a passkey assertion). `x drill`'s load skips an `async` input and says why |
 | Room | network sealed, mail captured, jobs in memory, clock frozen. A call out is refused and counted, so the primitive is `unreached` |
 | Overrides | `apps/web/exercise.ts`: `export const exercise = defineExercise({ publishPost: { actor, input }, sendInvoice: { off: '<why>' } })`. Each value is `.contract({ exercise })`'s option. An unknown name is `X_DECLARATION_UNKNOWN`; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED` |
 | Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, statements, effects, ms, override?, tenant?, crash? }`. The fields before `tenant` are A's call. The human table's `tenant` and `crash` columns are the verdicts, `-` where none ran |

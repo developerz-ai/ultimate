@@ -32,6 +32,7 @@ import { ackRefOf, frameRouter } from './sync-frames';
 import {
   clientHeartbeatMs,
   drainGraceMs,
+  refusedOverBytes,
   socketCeilings,
   syncNodeBounds,
 } from './sync-node-bounds';
@@ -399,6 +400,8 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
       message(ws: SyncWs, message: string | Uint8Array): void {
         const socket = sockets.get(ws.data.socketId);
         if (!socket) return;
+        // Bun's `maxPayloadLength` is the widest mount's on a shared listener: the bound is ours.
+        if (refusedOverBytes(ws, message, bounds.maxFrameBytes)) return;
         void (async () => {
           // Decoded into a binding the failure path can read: an ack has to name the thing that
           // failed — the mutation key the client's queue holds, the sid its subscription holds —

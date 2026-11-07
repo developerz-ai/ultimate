@@ -55,8 +55,8 @@ export interface PullController {
 
 /**
  * The machine with its one side effect: entering `refreshing` calls `onRefresh` once, and its
- * settling — a rejection included — returns to idle. A rejection is re-thrown to `onError`, never
- * swallowed: the caller's toolbar button and its error state are where a failed refresh shows.
+ * settling — a rejection or a synchronous throw included — returns to idle. Either failure goes
+ * to `onError`, never swallowed: the caller's toolbar button and its error state show it.
  */
 export function pullController(
   onRefresh: () => Promise<void>,
@@ -73,7 +73,15 @@ export function pullController(
     const before = state;
     set(pullStep(state, event));
     if (before.kind === 'refreshing' || state.kind !== 'refreshing') return;
-    onRefresh().then(
+    // A refresh that throws before it returns a promise fails like one that rejects after, instead
+    // of escaping `send` and pinning the state at `refreshing` with every later pull ignored.
+    let refresh: Promise<void>;
+    try {
+      refresh = onRefresh();
+    } catch (error: unknown) {
+      refresh = Promise.reject(error);
+    }
+    refresh.then(
       () => set(pullStep(state, { type: 'settled' })),
       (error: unknown) => {
         set(pullStep(state, { type: 'settled' }));

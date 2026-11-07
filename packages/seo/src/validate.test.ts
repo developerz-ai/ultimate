@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { SEO_ERROR_CODES } from './errors';
+import type { RouteMeta } from './meta';
 import type { RouteRecord } from './routes';
 import { assertMeta, type ValidateMetaOptions, validateMeta } from './validate';
 
@@ -14,6 +15,20 @@ const GOOD = route({
 });
 
 describe('validateMeta', () => {
+  test('an og declaring both image and capture is a build error naming the file', () => {
+    const og = JSON.parse('{"image":"/a.png","capture":"/og/a"}') as NonNullable<RouteMeta['og']>;
+    const report = validateMeta([
+      route({
+        path: '/a',
+        file: 'apps/web/site/a/page.tsx',
+        meta: { ...GOOD.meta, og } as RouteMeta,
+      }),
+    ]);
+    expect(report.issues.map((issue) => [issue.code, issue.file])).toEqual([
+      [SEO_ERROR_CODES.ogImageConflict, 'apps/web/site/a/page.tsx'],
+    ]);
+  });
+
   test('a site/ route with no description fails and names the exact file', () => {
     const report = validateMeta([
       route({ path: '/about', file: 'apps/web/site/about/page.tsx', meta: { title: 'About' } }),

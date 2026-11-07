@@ -70,4 +70,14 @@ describe('unit · og.capture', () => {
     const both: OpenGraph = { image: '/a.png', capture: '/og/a' };
     expect(both.capture).toBe('/og/a');
   });
+
+  test('image and capture together past the type are refused at render, not resolved', () => {
+    // A cast or a JS caller gets past the type; the export would publish the capture and a served
+    // page no og:image at all, so the two renders would disagree about one route.
+    const both = JSON.parse('{"image":"/a.png","capture":"/og/a"}') as OpenGraph;
+    const meta = { title: 'Hello', description: 'A post', og: both };
+    expect(() => renderMeta(meta)).toThrow(
+      expect.objectContaining({ code: 'X_SEO_OG_IMAGE_CONFLICT' }),
+    );
+  });
 });

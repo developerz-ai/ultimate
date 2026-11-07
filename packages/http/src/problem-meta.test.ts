@@ -13,7 +13,7 @@ import {
 describe('registerProblemMeta', () => {
   afterEach(resetProblemMeta);
 
-  test('an undeclared code carries nothing, which is every framework code', () => {
+  test('an undeclared code carries nothing — every framework code outside the reviewed table', () => {
     expect(problemMetaKeysFor('X_RATE_LIMITED')).toBeUndefined();
     expect(problemMetaKeysFor('X_SESSION_CHECKOUT_BUSY')).toBeUndefined();
   });
@@ -46,6 +46,10 @@ describe('registerProblemMeta', () => {
     expect(() => registerProblemMeta({ X_APP: ['__proto__'] })).toThrow('X_PROBLEM_META_INVALID');
     expect(() => registerProblemMeta({ X_APP: [] })).toThrow('empty');
     expect(() => registerProblemMeta({ X_APP: ['not a key'] })).toThrow('is not a meta key');
+    // `JSON.stringify` throws on a bigint: the refusal must still be the code, not a TypeError.
+    expect(() => registerProblemMeta({ X_APP: [1n as unknown as string] })).toThrow(
+      'X_PROBLEM_META_INVALID',
+    );
     expect(problemMetaKeysFor('X_APP')).toBeUndefined();
   });
 

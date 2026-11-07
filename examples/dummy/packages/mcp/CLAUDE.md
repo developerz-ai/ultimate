@@ -17,6 +17,9 @@ imports them.
 | File | Owns |
 |---|---|
 | `src/tools.ts` | the three app-specific read tools, `POSTLY_RECIPES` + the server declaration. `postlyMcp({ tools })` takes the tools only the app can build (`apps/web/mcp-tools.ts`'s `jobTool()`); a name this package already uses is `X_MCP_TOOL_DUPLICATE` |
+| `src/quotes.ts` | the per-caller catalog: `quote_<plan>` per plan the acting org can move to, `runtimeTool()`s borrowing `org:administer`, owners only |
+| `src/tenants.ts` | `postlyTenant(memberships)`: one token per PERSON, the org named per call as `org`; on when the app hands `postlyMcp({ memberships })` |
+| `src/tenant.contract.test.ts` | one token over this app's own endpoint: Acme then Tinta, `X_MCP_TENANT_REQUIRED`, a foreign org = a hidden tool, per-org quotes |
 | `src/index.ts` | public exports |
 | `src/errors.ts` | `X_MCP_TOOL_UNSAFE` |
 | `src/tools.test.ts` | tool/action parity and the policy-identity assertion |

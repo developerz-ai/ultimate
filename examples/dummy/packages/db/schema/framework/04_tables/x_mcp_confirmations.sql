@@ -13,5 +13,8 @@ create table "x_mcp_confirmations" (
   "decided_at" timestamp with time zone,
   "decided_by" text,
   "consumed_at" timestamp with time zone,
+  "quorum" integer default 1 not null,
+  "approvers" jsonb,
+  "approvals" jsonb default '[]'::jsonb not null,
   constraint "x_mcp_confirmations_pkey" PRIMARY KEY (id)
 );

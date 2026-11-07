@@ -169,6 +169,10 @@ export interface HistoryDescriptionLike {
   readonly tenant: string | null;
   /** Columns whose change alone records nothing: the counters the database keeps. */
   readonly ignore: readonly string[];
+  /** `int8`/`numeric` columns the image stores as their digits, never a JSON number. */
+  readonly text?: readonly string[] | undefined;
+  /** `timestamptz` columns the image stores as a UTC ISO string, whatever the session zone. */
+  readonly instants?: readonly string[] | undefined;
 }
 
 /** One counter, physical names: `<this table>.<column>` counts `<table>` rows by `<references>`. */

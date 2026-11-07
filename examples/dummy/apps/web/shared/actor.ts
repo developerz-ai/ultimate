@@ -13,9 +13,9 @@
  * registered the service, so every `app/` render was a `TypeError` on `undefined.actor()`.
  */
 
-import type { MemberId, OrgId } from '@postly/domain';
+import type { MemberId, OrgId, PlanCode } from '@postly/domain';
 import { memberId, orgId } from '@postly/domain';
-import { type Actor, actorFact, useContext, userActor } from '@ultimat3/core';
+import { type Actor, actorFact, type Ctx, useContext, userActor } from '@ultimat3/core';
 import { actorHas, type KnownPermission } from '@ultimat3/policy';
 import type { MemberView, OrgView } from '../app/orgs/entity';
 import { ActorUnresolved } from './errors';
@@ -62,6 +62,14 @@ export const postlyActor = (init: { readonly member: MemberView; readonly org: O
     tz: init.member.tz,
     facts: { member: init.member, org: init.org },
   });
+
+/**
+ * The acting org's plan, off the facts the request boundary resolved — what a per-call `rateLimit`
+ * or `meter` limit reads. `free`, the floor, when nothing resolved an org (a job run's worker
+ * identity, an anonymous caller): an unknown plan is held to the smallest allowance, never none.
+ */
+export const planOf = (ctx: Pick<Ctx, 'actor'>): PlanCode =>
+  actorFact(ctx.actor, 'org')?.planCode ?? 'free';
 
 /** The app half of the acting member. `X_ACTOR_UNRESOLVED` when nothing resolved it. */
 export const useActor = (): AppActor => {

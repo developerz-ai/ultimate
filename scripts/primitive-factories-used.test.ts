@@ -96,6 +96,12 @@ describe('unit · the use scan itself can fail', () => {
     const prose =
       "import { hive } from '@ultimat3/ai';\n/** `hive()` fans out. */\n// hive() again\n";
     expect(usesFactory(prose, 'hive', '@ultimat3/ai')).toBe(false);
+    // A server-only subpath is still the package; a package whose name merely starts the same is not.
+    const sub =
+      "import { deviceSocket } from '@ultimat3/realtime/server';\nexport const l = deviceSocket({});";
+    expect(usesFactory(sub, 'deviceSocket', '@ultimat3/realtime')).toBe(true);
+    const lookalike = "import { hive } from '@ultimat3/ai-extra';\nexport const h = hive({});";
+    expect(usesFactory(lookalike, 'hive', '@ultimat3/ai')).toBe(false);
   });
 
   test('only an exported declaration initialised by the call counts — never text, dead code or a type', () => {

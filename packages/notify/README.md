@@ -250,6 +250,75 @@ A recipient with no subscription is not a failure: the delivery settles, as `mai
 addressless recipient. A push service that answers 429 or 5xx throws `X_PWA_PUSH_FAILED` after every
 other device was tried, so the job retries; 404/410 deletes the subscription.
 
+### Native push — APNs and FCM
+
+`nativePush({ devices, apns, fcm })` is a pusher for iOS and Android apps, `As of 2026-11-06`: APNs
+token auth (an ES256 JWT over the team's `.p8` key, HTTP/2) and FCM HTTP v1 (an RS256
+service-account assertion exchanged for an OAuth token), both on WebCrypto through core's
+`outbound()` with a deadline — no SDK. Each credential is minted once and re-minted before it
+expires (APNs at 50 of its 60 minutes, Google's 5 minutes early); concurrent sends share one mint.
+
+```ts
+import {
+  memoryPushDeviceStore,
+  nativePush,
+  notifier,
+  pushChannel,
+  pushRegister,
+  t,
+} from '@ultimat3/notify';
+
+// `postgresPushDeviceStore({ executor: dbExecutor() })` in production: `x_push_devices`.
+const devices = memoryPushDeviceStore();
+
+// An action: its route, typed client, MCP tool and policy. Stored against `ctx.actor.id`.
+export const registerDevice = pushRegister({
+  permission: 'push:subscribe',
+  platforms: ['ios', 'android'],
+  devices,
+});
+
+const phones = nativePush({
+  devices,
+  apns: { teamId: 'TEAM123456', keyId: 'KEY1234567', topic: 'com.example.app' },
+  fcm: { projectId: 'example-app', clientEmail: 'push@example-app.iam.gserviceaccount.com' },
+});
+
+export const approvalRequested = notifier({
+  name: 'approval.requested',
+  input: t.object({ approvalId: t.uuid }),
+  tenant: 'none',
+  key: (params) => `approval:${params.approvalId}`,
+  deliver: [
+    // DATA-ONLY: the id, nothing a lock screen or the provider could read. The app wakes and
+    // fetches the rest over its own API.
+    {
+      channel: pushChannel<{ approvalId: string }>({
+        pusher: phones,
+        data: ({ event }) => ({ approvalId: event.params.approvalId }),
+      }),
+    },
+  ],
+});
+```
+
+| Piece | |
+|---|---|
+| private keys | never options: `ULTIMATE_APNS_PRIVATE_KEY` (the `.p8`) and `ULTIMATE_FCM_PRIVATE_KEY` (the service account's `private_key`), read from the environment when a token is minted — `x secrets set <name>` — and boxed in a `Secret` at once. Missing is `X_ENV_MISSING`, unreadable `X_CONFIG_INVALID`, each naming the variable and never its value |
+| registration | `pushRegister({ permission, platforms, devices })`; `previousToken` forgets the token the OS rotated away. `pushUnregister(…)` on sign-out — a token registered by a second person on the same phone is theirs now. Past `PUSH_DEVICES_PER_ACTOR` (20) the caller's oldest registration is evicted. An agent never registers. An iOS token is hex (it is spliced into the APNs path), an Android one FCM's alphabet — anything else is a 422 |
+| data-only | `pushChannel({ pusher, data })`: APNs `background` at priority 5 with `content-available: 1`, FCM with no `notification` block. At most 8 string keys, 256 characters each, no provider-reserved key (`aps`, `notification`, `google.*`…) — else `X_NOTIFY_PUSH_MESSAGE_INVALID` before a request. `webPush()` has no `sendData`, so handing it a `data` channel is a type error |
+| visible | `pushChannel({ pusher, message })` as for the web: title and body rendered per device locale; `url` travels as data; `topic ?? tag` is the collapse id; `urgency` low/very-low sends at the lower priority. `icon`, `badge`, `actions`, `requireInteraction`, `renotify` have no native meaning and are not sent |
+
+| Provider answer | What happens |
+|---|---|
+| 2xx | delivered |
+| APNs 410, FCM `UNREGISTERED` | `X_NOTIFY_PUSH_DEVICE_GONE`: the row is deleted, logged, and the delivery still settles. A bare FCM 404 is **not** gone (a wrong `projectId` is a 404 too) |
+| APNs 400 `BadDeviceToken`, FCM 400 `INVALID_ARGUMENT` on `message.token` | `X_NOTIFY_PUSH_PROVIDER_REFUSED` with `meta.badToken`; counted on the row, which is deleted on the `PUSH_BAD_TOKEN_LIMIT`th (3) answer in a row — never the first (`BadDeviceToken` is also a sandbox token sent to production). A delivery resets the count. An `INVALID_ARGUMENT` on the payload never counts |
+| 401/403, or Google refusing the assertion | `X_NOTIFY_PUSH_PROVIDER_REFUSED` with `meta.credential`: that provider's fan-out stops on its first device, the cached credential the refused request carried is dropped (only that one — a straggler's late 403 keeps a fresh token), and the refusal fails the delivery as `terminal` |
+| another 4xx | `X_NOTIFY_PUSH_PROVIDER_REFUSED`, logged; the next device is tried. When no device took it, the refusal fails the delivery |
+| 429, 5xx, timeout | rethrown after every other device was tried — the job's retry |
+
+
 ## The inbox
 
 ```ts
@@ -299,7 +368,10 @@ without bound and every replay would re-send the whole audience.
 | `X_NOTIFY_DIGEST_UNSUPPORTED` | a digest window on a bulk channel |
 | `X_NOTIFY_FANOUT_TOO_WIDE` | more recipients than `maxRecipients` (default 500) |
 | `X_NOTIFY_STORE_MISSING` | an inbox or digest channel with no store installed |
-| `X_NOTIFY_DELIVERY_FAILED` | a channel's `deliver` threw; the run retries on its policy |
+| `X_NOTIFY_DELIVERY_FAILED` | a channel's `deliver` threw; the run retries on its policy — unless the channel's error was classified `terminal` (`X_NOTIFY_PUSH_PROVIDER_REFUSED`, a mail provider's permanent refusal), which the wrapper keeps |
+| `X_NOTIFY_PUSH_DEVICE_GONE` | APNs 410 / FCM `UNREGISTERED`: the device row is deleted, nothing fails |
+| `X_NOTIFY_PUSH_PROVIDER_REFUSED` | APNs or FCM refused for good: a credential, a topic or project, a payload limit |
+| `X_NOTIFY_PUSH_MESSAGE_INVALID` | a data-only push carrying more than ids |
 
 ### Error classes
 
@@ -313,12 +385,15 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `NotifyDeliveryFailedError` | `X_NOTIFY_DELIVERY_FAILED` | `src/errors.ts` |
 | `NotifyDigestUnsupportedError` | `X_NOTIFY_DIGEST_UNSUPPORTED` | `src/errors.ts` |
 | `NotifyFanoutTooWideError` | `X_NOTIFY_FANOUT_TOO_WIDE` | `src/errors.ts` |
+| `NotifyPushDeviceGoneError` | `X_NOTIFY_PUSH_DEVICE_GONE` | `src/push-errors.ts` |
+| `NotifyPushMessageInvalidError` | `X_NOTIFY_PUSH_MESSAGE_INVALID` | `src/push-errors.ts` |
+| `NotifyPushProviderRefusedError` | `X_NOTIFY_PUSH_PROVIDER_REFUSED` | `src/push-errors.ts` |
 | `NotifyStoreMissingError` | `X_NOTIFY_STORE_MISSING` | `src/errors.ts` |
 
 ## Boundary
 
 Tier 4. May import tiers 0-3 — enforced by `bun run boundaries`. Its real imports are `core`,
-`schema`, `time` and `jobs`, so tier 4 is its floor. See [`CLAUDE.md`](./CLAUDE.md).
+`schema`, `i18n`, `time`, `policy`, `action` and `jobs`, so tier 4 is its floor. See [`CLAUDE.md`](./CLAUDE.md).
 
 ## Supporting exports
 

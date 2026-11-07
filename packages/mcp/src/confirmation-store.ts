@@ -29,8 +29,17 @@ export interface McpConfirmation {
   /** After this instant the row can be neither decided nor used. */
   readonly expiresAt: Date;
   readonly decidedAt: Date | null;
-  /** The deciding actor's id. */
+  /** The deciding actor's id: the rejecter, or the approver whose vote met the quorum. */
   readonly decidedBy: string | null;
+  /** Distinct approvals this row needs, resolved from `approvers({ args })` when it opened. */
+  readonly quorum: number;
+  /**
+   * The `approvers` selectors (`actor:<id>`, `role:<name>`) resolved when it opened; `null` when
+   * none were declared, and any decider the policy admits may approve.
+   */
+  readonly approvers: readonly string[] | null;
+  /** One entry per distinct approver, in order — the stored evidence a separate process verifies. */
+  readonly approvals: readonly McpConfirmationApproval[];
   /**
    * When the asking agent's next identical call took the outcome — ran it, or was told it was
    * rejected or expired. A consumed row is history: the same call afterwards asks again.
@@ -38,34 +47,47 @@ export interface McpConfirmation {
   readonly consumedAt: Date | null;
 }
 
-export type McpConfirmationDraft = Pick<
-  McpConfirmation,
-  | 'id'
-  | 'actorId'
-  | 'orgId'
-  | 'tool'
-  | 'inputDigest'
-  | 'sealedArguments'
-  | 'createdAt'
-  | 'expiresAt'
->;
+/** One approver's vote: who, when, and their signature over the row's signing payload. */
+export interface McpConfirmationApproval {
+  readonly approver: string;
+  readonly at: Date;
+  /** `null` when `mcpConfirmations({ evidence })` is not declared. */
+  readonly signature: string | null;
+}
+
+/** Optional so a row opened without `approvers` needs neither: one approval, any admitted decider. */
+export type McpConfirmationDraft = Partial<Pick<McpConfirmation, 'quorum' | 'approvers'>> &
+  Pick<
+    McpConfirmation,
+    | 'id'
+    | 'actorId'
+    | 'orgId'
+    | 'tool'
+    | 'inputDigest'
+    | 'sealedArguments'
+    | 'createdAt'
+    | 'expiresAt'
+  >;
 
 export interface McpConfirmationStore {
   /**
-   * The OPEN (unconsumed) row for this actor + tool + digest, or a new pending one built from
+   * The OPEN (unconsumed) row for this actor + org + tool + digest, or a new pending one built from
    * `draft` when there is none — atomically, so two identical calls racing open ONE row.
    */
   open(draft: McpConfirmationDraft): Promise<{ row: McpConfirmation; created: boolean }>;
   get(id: string): Promise<McpConfirmation | undefined>;
   /**
-   * Pending, unconsumed and unexpired at `at` → `status`. `undefined` when the row is not in that
-   * state (or does not exist): a decision is taken once, and the caller re-reads to say why.
+   * Pending, unconsumed and unexpired at `at`, as ONE conditional write. `rejected` settles the row.
+   * `approved` appends `by`'s vote — refused when `by` already voted — and flips the row to
+   * `approved` only when the votes reach its `quorum`. `undefined` when the row is not in that state
+   * (or does not exist): a vote is taken once, and the caller re-reads to say why.
    */
   decide(
     id: string,
     status: 'approved' | 'rejected',
     by: string,
     at: Date,
+    signature: string | null,
   ): Promise<McpConfirmation | undefined>;
   /** Unconsumed → consumed at `at`. `false` when another call took it first. */
   consume(id: string, at: Date): Promise<boolean>;
@@ -73,8 +95,10 @@ export interface McpConfirmationStore {
   purge(before: Date): Promise<number>;
 }
 
-const openKey = (row: Pick<McpConfirmation, 'actorId' | 'tool' | 'inputDigest'>): string =>
-  JSON.stringify([row.actorId, row.tool, row.inputDigest]);
+/** The org is in the key: an actor id the same in two orgs is two callers, as Postgres' index. */
+const openKey = (
+  row: Pick<McpConfirmation, 'actorId' | 'orgId' | 'tool' | 'inputDigest'>,
+): string => JSON.stringify([row.actorId, row.orgId, row.tool, row.inputDigest]);
 
 /**
  * Per PROCESS: right for a test and for `x dev`, and a lie for a fleet — an agent's call opens the
@@ -100,6 +124,9 @@ export function memoryConfirmationStore(): McpConfirmationStore {
         decidedAt: null,
         decidedBy: null,
         consumedAt: null,
+        quorum: draft.quorum ?? 1,
+        approvers: draft.approvers ?? null,
+        approvals: [],
       });
       open.set(openKey(row), row.id);
       return { row, created: true };
@@ -107,12 +134,20 @@ export function memoryConfirmationStore(): McpConfirmationStore {
     async get(id) {
       return rows.get(id);
     },
-    async decide(id, status, by, at) {
+    async decide(id, status, by, at, signature) {
       const row = rows.get(id);
       if (row === undefined || row.status !== 'pending' || row.consumedAt !== null)
         return undefined;
       if (row.expiresAt.getTime() <= at.getTime()) return undefined;
-      return put({ ...row, status, decidedBy: by, decidedAt: at });
+      if (status === 'rejected') return put({ ...row, status, decidedBy: by, decidedAt: at });
+      if (row.approvals.some((one) => one.approver === by)) return undefined;
+      const approvals = [...row.approvals, { approver: by, at, signature }];
+      const met = approvals.length >= row.quorum;
+      return put({
+        ...row,
+        approvals,
+        ...(met ? { status: 'approved' as const, decidedBy: by, decidedAt: at } : {}),
+      });
     },
     async consume(id, at) {
       const row = rows.get(id);

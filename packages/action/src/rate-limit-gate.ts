@@ -49,7 +49,12 @@ export function withJobFrame<T>(fn: () => T): T {
  * `ip:unknown` let a flood of unaddressed anonymous requests park every tenantless job, and the
  * reverse. Still ONE bucket for all such runs, deliberately: unlimited is the abuse this exists for.
  */
-const UNATTRIBUTED_JOB = 'job:unattributed';
+export const UNATTRIBUTED_JOB = 'job:unattributed';
+
+/** Whether this call runs inside a job run, nested or not — the one answer both gates key on. */
+export function inJobFrame(): boolean {
+  return callerFrame.get()?.job === true;
+}
 
 /**
  * Namespaced, never the bare action name: the HTTP pipeline still spends its `default` bucket
@@ -85,7 +90,7 @@ export async function spendActionLimit(
   const frame = callerFrame.get();
   // A job run, or any call nested inside one (an `agent()` run as a job calling its tools as
   // `'mcp'`): never a visitor's address, and the unattributed bucket rather than `ip:unknown`.
-  const inJob = options.surface === 'job' || frame?.job === true;
+  const inJob = options.surface === 'job' || inJobFrame();
   const spends = rateLimitSpends(
     {
       actorId: isAnonymous(ctx.actor) ? null : ctx.actor.id,
@@ -101,14 +106,49 @@ export async function spendActionLimit(
     // one included); counting it here too would charge an HTTP call against the tenant twice.
     { route: name, tenant: null },
   );
+  // Resolved once per call, BEFORE any bucket is touched, and through `toBucket`'s own screen: a
+  // resolver answering `NaN`, `0` or `Infinity` is `X_RATE_LIMIT_INVALID`, never allow-all.
+  const bucket = toBucket(name, {
+    limit: await resolvedRateLimit(limit, ctx),
+    windowMs: limit.windowMs,
+  });
   for (const spend of spends) {
     const decision = await installedRateLimitStore().take(
       spend.key,
-      toBucket(name, limit),
+      bucket,
       1,
       ctx.now().getTime(),
     );
     options.onRateLimit?.(decision);
     if (!decision.allowed) throw rateLimited(spend.key, decision.retryAfterSeconds);
   }
+}
+
+/**
+ * The number a call is held to: the declared one, or what the resolver answers from `ctx` — the
+ * tenant's plan, read by the app. A non-number becomes `NaN`, so `toBucket` refuses it by name.
+ */
+async function resolvedRateLimit(limit: ActionRateLimit, ctx: Ctx): Promise<number> {
+  const resolved: unknown =
+    typeof limit.limit === 'function' ? await limit.limit({ ctx }) : limit.limit;
+  return typeof resolved === 'number' ? resolved : Number.NaN;
+}
+
+/**
+ * At mount, never on the first request: a fixed pair is checked whole; a per-call limit has only
+ * its window to check until a caller resolves it, so the window is checked against one request.
+ */
+export function assertActionRateLimit(name: string, limit: ActionRateLimit): void {
+  toBucket(name, {
+    limit: typeof limit.limit === 'function' ? 1 : limit.limit,
+    windowMs: limit.windowMs,
+  });
+}
+
+/** The declaration as data: the fixed pair, or `null` for a limit resolved per call. */
+export function fixedRateLimit(
+  limit: ActionRateLimit | undefined,
+): { readonly limit: number; readonly windowMs: number } | null {
+  if (limit === undefined || typeof limit.limit === 'function') return null;
+  return { limit: limit.limit, windowMs: limit.windowMs };
 }

@@ -6,5 +6,7 @@
  */
 export { jobTool } from '@ultimat3/mcp';
 export { confirmAgentPublish, confirmationStore } from './confirmations';
+export type { PostlyMembership, PostlyMemberships } from './tenants';
+export { POSTLY_TENANT_ARG, postlyTenant } from './tenants';
 export type { PostlyMcpApp } from './tools';
 export { POSTLY_RECIPES, postlyMcp } from './tools';

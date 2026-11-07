@@ -279,7 +279,7 @@ async function bootDev(
   });
   acquired.push(() => running.stop());
 
-  const rebuild = devRebuilder(options, state, isr);
+  const rebuild = devRebuilder(options, state, isr, () => running.refreshDevices());
   // Watched one directory at a time, so an ignored one costs no descriptor at all — `dev-watch.ts`
   // decides which, from the app's own `.gitignore`. A recursive watch on the root registered one
   // inotify descriptor per directory in the tree, `.git/`, `node_modules/` and the `.x/` this

@@ -253,6 +253,24 @@ describe('classification', () => {
     expect(diff.changes.map((c) => c.path)).not.toContain('actions.publishPost.rateLimit');
   });
 
+  const metered = (limit: number, period: 'hour' | 'day' | 'month') => [
+    {
+      ...action('publishPost', 'post:publish'),
+      meter: { name: 'publishes', period, timeZone: 'UTC' as const, limit, warnAt: null },
+    },
+    action('archivePost', 'post:archive'),
+  ];
+
+  // The meter is the one more contract no schema carries; `diff-meter.test.ts` holds every rule.
+  test('a tightened meter is breaking through the gate; a loosened one additive', () => {
+    const before = withActions(metered(100, 'day'));
+    const tightened = diffManifest(before, withActions(metered(10, 'day')));
+    expect(tightened.breaking.map((c) => c.path)).toEqual(['actions.publishPost.meter']);
+    const loosened = diffManifest(before, withActions(metered(100, 'hour')));
+    expect(loosened.hasBreaking).toBe(false);
+    expect(loosened.additive.map((c) => c.path)).toContain('actions.publishPost.meter');
+  });
+
   test('a nullable column added is additive; a NOT NULL column added is breaking', () => {
     const before = buildManifest(base);
     const columns = base.entities?.[0]?.columns ?? [];

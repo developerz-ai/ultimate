@@ -282,6 +282,11 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "signature": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
@@ -294,6 +299,13 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "approvedBy": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
           "arguments": {
             "additionalProperties": {
               "description": "any JSON value, nested at most 256 levels deep"
@@ -328,6 +340,13 @@
             "minLength": 1,
             "type": "string"
           },
+          "quorum": {
+            "type": "number"
+          },
+          "signingPayload": {
+            "minLength": 1,
+            "type": "string"
+          },
           "status": {
             "enum": [
               "pending",
@@ -347,7 +366,10 @@
           "status",
           "decidedAt",
           "expiresAt",
-          "arguments"
+          "arguments",
+          "quorum",
+          "approvedBy",
+          "signingPayload"
         ],
         "type": "object"
       },
@@ -674,6 +696,29 @@
           "next"
         ],
         "type": "object"
+      },
+      "ErasureApprovalOptionsInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "ErasureApprovalOptionsOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "any JSON value, nested at most 256 levels deep"
       },
       "GrantAvatarUploadInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1313,6 +1358,55 @@
         ],
         "type": "object"
       },
+      "PasskeyRegisterOptionsInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "PasskeyRegisterOptionsOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "any JSON value, nested at most 256 levels deep"
+      },
+      "PasskeySignInInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "response": {
+            "description": "any JSON value, nested at most 256 levels deep"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "type": "object"
+      },
+      "PasskeySignInOptionsInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "PasskeySignInOptionsOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "any JSON value, nested at most 256 levels deep"
+      },
+      "PasskeySignInOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "type": "object"
+      },
       "Problem": {
         "properties": {
           "cause": {
@@ -1507,6 +1601,102 @@
         ],
         "type": "object"
       },
+      "RegisterDeviceInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "an ios token is 64 to 200 hex characters, and an android token is an FCM registration token",
+        "properties": {
+          "locale": {
+            "format": "bcp47-locale",
+            "type": "string"
+          },
+          "platform": {
+            "enum": [
+              "ios",
+              "android"
+            ],
+            "type": "string"
+          },
+          "previousToken": {
+            "maxLength": 4096,
+            "minLength": 32,
+            "pattern": "^[A-Za-z0-9_:.-]{32,4096}$",
+            "type": "string"
+          },
+          "timeZone": {
+            "format": "iana-time-zone",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 4096,
+            "minLength": 32,
+            "pattern": "^[A-Za-z0-9_:.-]{32,4096}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "token",
+          "locale",
+          "timeZone"
+        ],
+        "type": "object",
+        "x-ultimate-refinements": [
+          {
+            "message": "an ios token is 64 to 200 hex characters, and an android token is an FCM registration token",
+            "name": "platform-token",
+            "path": [
+              "token"
+            ]
+          }
+        ]
+      },
+      "RegisterDeviceOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "token": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "token"
+        ],
+        "type": "object"
+      },
+      "RegisterPasskeyInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "response": {
+            "description": "any JSON value, nested at most 256 levels deep"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "type": "object"
+      },
+      "RegisterPasskeyOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "credentialId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "credentialId"
+        ],
+        "type": "object"
+      },
       "RemoveWebhookEndpointInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -1577,6 +1767,9 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "approval": {
+            "description": "any JSON value, nested at most 256 levels deep"
+          },
           "memberId": {
             "format": "uuid",
             "type": "string"
@@ -1588,7 +1781,8 @@
         },
         "required": [
           "orgId",
-          "memberId"
+          "memberId",
+          "approval"
         ],
         "type": "object"
       },
@@ -2474,6 +2668,43 @@
           "theme",
           "digestOptIn",
           "createdAt"
+        ],
+        "type": "object"
+      },
+      "UnregisterDeviceInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "enum": [
+              "ios",
+              "android"
+            ],
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 4096,
+            "minLength": 32,
+            "pattern": "^[A-Za-z0-9_:.-]{32,4096}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "token"
+        ],
+        "type": "object"
+      },
+      "UnregisterDeviceOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
         ],
         "type": "object"
       },
@@ -5313,6 +5544,101 @@
         }
       }
     },
+    "/api/approval-options/erasure": {
+      "post": {
+        "operationId": "erasureApprovalOptions",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErasureApprovalOptionsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureApprovalOptionsOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_PASSKEY_STEP_UP_REQUIRED"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_PASSKEY_STEP_UP_REQUIRED",
+            "x-ultimate-errors": [
+              "X_PASSKEY_STEP_UP_REQUIRED"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "erasureApprovalOptions",
+        "tags": [
+          "approval-options"
+        ],
+        "x-ultimate": {
+          "capability": "org:administer",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
     "/api/avatar-uploads/grant": {
       "post": {
         "operationId": "grantAvatarUpload",
@@ -5547,6 +5873,186 @@
             "post"
           ],
           "mcpTool": "createComment",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/devices/register": {
+      "post": {
+        "operationId": "registerDevice",
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDeviceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterDeviceOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "registerDevice",
+        "tags": [
+          "devices"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": true,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/devices/unregister": {
+      "post": {
+        "operationId": "unregisterDevice",
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnregisterDeviceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnregisterDeviceOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "unregisterDevice",
+        "tags": [
+          "devices"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": true,
+          "invalidates": [],
+          "mcpTool": null,
           "rateLimit": null
         }
       }
@@ -5995,6 +6501,36 @@
             },
             "description": "X_INPUT_INVALID"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_PASSKEY_CHALLENGE_EXPIRED",
+                            "urn:ultimate:error:X_PASSKEY_INVALID",
+                            "urn:ultimate:error:X_PASSKEY_STEP_UP_REQUIRED"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_PASSKEY_CHALLENGE_EXPIRED | X_PASSKEY_INVALID | X_PASSKEY_STEP_UP_REQUIRED",
+            "x-ultimate-errors": [
+              "X_PASSKEY_CHALLENGE_EXPIRED",
+              "X_PASSKEY_INVALID",
+              "X_PASSKEY_STEP_UP_REQUIRED"
+            ]
+          },
           "403": {
             "content": {
               "application/problem+json": {
@@ -6197,6 +6733,103 @@
             "org"
           ],
           "mcpTool": "inviteMember",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/passkeys/register": {
+      "post": {
+        "operationId": "registerPasskey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPasskeyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterPasskeyOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_PASSKEY_CHALLENGE_EXPIRED",
+                            "urn:ultimate:error:X_PASSKEY_INVALID"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_PASSKEY_CHALLENGE_EXPIRED | X_PASSKEY_INVALID",
+            "x-ultimate-errors": [
+              "X_PASSKEY_CHALLENGE_EXPIRED",
+              "X_PASSKEY_INVALID"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "registerPasskey",
+        "tags": [
+          "passkeys"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
           "rateLimit": null
         }
       }
@@ -6891,7 +7524,16 @@
             "feed"
           ],
           "mcpTool": "createPost",
-          "rateLimit": null
+          "meter": {
+            "limit": "per-call",
+            "name": "posts",
+            "period": "day",
+            "timeZone": "UTC"
+          },
+          "rateLimit": {
+            "limit": "per-call",
+            "windowMs": 60000
+          }
         }
       }
     },
@@ -7652,6 +8294,101 @@
         }
       }
     },
+    "/api/register-options/passkey": {
+      "post": {
+        "operationId": "passkeyRegisterOptions",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegisterOptionsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyRegisterOptionsOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_PASSKEY_INVALID"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_PASSKEY_INVALID",
+            "x-ultimate-errors": [
+              "X_PASSKEY_INVALID"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "passkeyRegisterOptions",
+        "tags": [
+          "register-options"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
     "/api/run-keys/issue": {
       "post": {
         "operationId": "issueRunKey",
@@ -8062,6 +8799,172 @@
         ],
         "x-ultimate": {
           "capability": "end-session",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/sign-in-options/passkey": {
+      "post": {
+        "operationId": "passkeySignInOptions",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeySignInOptionsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeySignInOptionsOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "passkeySignInOptions",
+        "tags": [
+          "sign-in-options"
+        ],
+        "x-ultimate": {
+          "capability": "passkey-sign-in",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/sign-ins/passkey": {
+      "post": {
+        "operationId": "passkeySignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeySignInInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeySignInOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_PASSKEY_CHALLENGE_EXPIRED",
+                            "urn:ultimate:error:X_PASSKEY_INVALID"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_PASSKEY_CHALLENGE_EXPIRED | X_PASSKEY_INVALID",
+            "x-ultimate-errors": [
+              "X_PASSKEY_CHALLENGE_EXPIRED",
+              "X_PASSKEY_INVALID"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "passkeySignIn",
+        "tags": [
+          "sign-ins"
+        ],
+        "x-ultimate": {
+          "capability": "passkey-sign-in",
           "idempotent": false,
           "invalidates": [],
           "mcpTool": null,
@@ -8490,6 +9393,9 @@
       "name": "agent-publishes"
     },
     {
+      "name": "approval-options"
+    },
+    {
       "name": "avatar-uploads"
     },
     {
@@ -8497,6 +9403,9 @@
     },
     {
       "name": "comments"
+    },
+    {
+      "name": "devices"
     },
     {
       "name": "digest-opt-ins"
@@ -8515,6 +9424,9 @@
     },
     {
       "name": "members"
+    },
+    {
+      "name": "passkeys"
     },
     {
       "name": "plans"
@@ -8544,6 +9456,9 @@
       "name": "pushes"
     },
     {
+      "name": "register-options"
+    },
+    {
       "name": "run-keys"
     },
     {
@@ -8554,6 +9469,12 @@
     },
     {
       "name": "sessions"
+    },
+    {
+      "name": "sign-in-options"
+    },
+    {
+      "name": "sign-ins"
     },
     {
       "name": "sites"

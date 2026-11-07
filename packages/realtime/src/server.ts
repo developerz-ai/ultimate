@@ -50,6 +50,49 @@ export {
   resetChannelTransport,
   setChannelTransport,
 } from './channel-publish';
+export {
+  type AgentDial,
+  type AgentSocket,
+  type DeviceAgent,
+  type DeviceAgentOptions,
+  deviceAgent,
+} from './device-agent';
+export {
+  DeviceFrameTooLargeError,
+  DeviceOfflineError,
+  DeviceRequestTimeoutError,
+} from './device-errors';
+export {
+  DEVICE_FRAME_QUEUE_MAX,
+  DEVICE_REQUESTS_OUTSTANDING_MAX,
+  type DeviceFrameHandler,
+  type DeviceInfo,
+  type DeviceWs,
+} from './device-host';
+export {
+  beginDeviceSocketGeneration,
+  DEFAULT_DEVICE_HEARTBEAT_MS,
+  DEFAULT_DEVICE_REQUEST_DEADLINE_MS,
+  DEFAULT_DEVICE_SOCKETS_PER_ACTOR,
+  DEVICE_AUTH_DEADLINE_MS,
+  DEVICE_MAX_PENDING_UPGRADES,
+  type DeviceAttachment,
+  type DeviceAttachOptions,
+  type DeviceRequestOptions,
+  type DeviceSocket,
+  type DeviceSocketOptions,
+  declaredDeviceSockets,
+  deviceSocket,
+  forgetDeviceSockets,
+} from './device-socket';
+export type {
+  DeviceGrant,
+  DeviceTokenResolver,
+  DeviceUpgradeFacts,
+  DeviceUpgradeTarget,
+  DeviceWsData,
+} from './device-upgrade';
+export { DEVICE_FRAME_MAX_BYTES } from './device-wire';
 export { RealtimeTopologyError } from './errors';
 export {
   InProcessTransport,

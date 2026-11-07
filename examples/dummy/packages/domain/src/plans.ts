@@ -54,6 +54,23 @@ export const PLAN_ORDER: Readonly<Record<PlanCode, number>> = Object.freeze({
 
 export const seatLimit = (code: PlanCode): number => PLAN_CATALOG[code].seats;
 
+/**
+ * What each plan may write: drafts per minute (a burst, `rateLimit`) and per UTC day (a meter).
+ * The numbers are Postly's product decision and live with the catalog; the framework only resolves
+ * them per call from the acting org and counts the draw. `free` is the floor every unknown resolves to.
+ */
+export const POST_ALLOWANCES: Readonly<
+  Record<PlanCode, { readonly perMinute: number; readonly perDay: number }>
+> = Object.freeze({
+  free: { perMinute: 20, perDay: 100 },
+  team: { perMinute: 60, perDay: 2_000 },
+  business: { perMinute: 240, perDay: 20_000 },
+});
+
+export const postsPerMinute = (code: PlanCode): number => POST_ALLOWANCES[code].perMinute;
+
+export const postsPerDay = (code: PlanCode): number => POST_ALLOWANCES[code].perDay;
+
 export const priceOf = (code: PlanCode, currency: BillingCurrency): Money =>
   PLAN_CATALOG[code].monthly[currency];
 

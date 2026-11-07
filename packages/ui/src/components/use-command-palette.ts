@@ -84,12 +84,16 @@ export function useCommandPalette(options: UseCommandPaletteOptions): CommandPal
     setActiveId(undefined);
     setOpen(true);
   };
-  const hide = (): void => {
-    if (!open()) return;
-    setOpen(false);
+  /** Forgets the request waiting or in flight: its answer, when it comes, is stale. */
+  const drop = (): void => {
     ask.cancel();
     asked += 1;
     setLoading(false);
+  };
+  const hide = (): void => {
+    if (!open()) return;
+    setOpen(false);
+    drop();
     const back = opener;
     opener = null;
     back?.focus();
@@ -127,7 +131,8 @@ export function useCommandPalette(options: UseCommandPaletteOptions): CommandPal
     },
     onQueryInput: (value) => {
       setQuery(value);
-      if (options.onQuery === undefined || value.trim() === '') return;
+      if (options.onQuery === undefined) return;
+      if (value.trim() === '') return drop();
       setLoading(true);
       ask(value);
     },

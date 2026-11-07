@@ -633,6 +633,72 @@ Full drain sequence per role: [Deployment](Deployment).
 
 A client on build `A` connecting to a `sync` node on build `B` is **accepted**, then sent an `update-available` frame carrying the node's `buildId`; the socket is not killed. Skew is the build the client claims against the node's own: `?build=` on the dial, and the `hello` frame's `buildId`, which the node records on every hello and which is the later word — a dial without `?build=` starts as "not skewed" and the first hello settles it. Neither side's build moves while a socket is open, so the answer is a property of that socket for its lifetime — a client learns about a deploy on the socket it opens against the new node, never on one it is already holding. Every `hello` on that socket re-reports the same answer, the heartbeat's included. The client's `AppUpdateAvailable` signal flips and the app renders its own update affordance. See [PWA and offline](PWA-And-Offline).
 
+## Device sockets
+
+A long-lived socket for a client that is **not a browser** — a device agent that dials out and
+receives work. `deviceSocket()` is a factory over `route`: the value is a websocket mount (`path`,
+`fetch`, `websocket`) plus `request()`, which reaches one connected device from any process.
+From `@ultimat3/realtime/server`, `As of 2026-11-06`.
+
+```ts
+import { userActor } from '@ultimat3/core';
+import { deviceSocket } from '@ultimat3/realtime/server';
+
+export const deviceLink = deviceSocket({
+  path: '/link',
+  resolveToken: (token) =>
+    token === 'enrolled' ? { actor: userActor({ id: 'u1', orgId: 'o1' }), deviceId: 'desk-7' } : null,
+  maxSocketsPerActor: 10,
+  heartbeatMs: 15_000,
+  onFrame: ({ frame, device }) => ({ ack: device.deviceId, received: frame }),
+});
+
+// From any action or job, on any node — scoped to the caller's tenant:
+export const ask = (ctx: { readonly actor: ReturnType<typeof userActor> }) =>
+  deviceLink.request(ctx, 'desk-7', { job: 'sync' }, { deadlineMs: 30_000 });
+```
+
+| Concern | Rule |
+|---|---|
+| Credential | `Authorization: Bearer <token>` on the upgrade, decided by `resolveToken` before any frame. None: `401` + `www-authenticate: Bearer`; refused or expired grant: `401` + `Bearer error="invalid_token"` (`X_SOCKET_UNAUTHENTICATED`). A grant's `expiresAt` also closes an open socket (`1008`) |
+| Slow token service | `resolveToken` is cut at `DEVICE_AUTH_DEADLINE_MS` (5 s, `503 X_SOCKET_AUTH_UNAVAILABLE`); past `DEVICE_MAX_PENDING_UPGRADES` (256) parked upgrades, and past the accept budget, the dial is shed `503` with a jittered `retry-after-ms` |
+| Origin | a device sends no `Origin`. An upgrade that carries one is a browser: `403 X_SOCKET_ORIGIN_REFUSED` unless `allowedOrigins` lists it exactly |
+| Caps | `maxSocketsPerActor` (default 10) per node, reserved before `server.upgrade`: `429 X_SOCKET_LIMIT`. One socket per device: a newer one, on any node, closes the older (`1008 replaced`) |
+| Frames | JSON text. `DEVICE_FRAME_MAX_BYTES` (256 KiB) is the framework's and is not an option: Bun's `maxPayloadLength` and the handler both enforce it (`1009 X_DEVICE_FRAME_TOO_LARGE`); a `request()` over it throws before sending. `onFrame` runs one frame at a time per socket, as the device's actor; past 32 queued the socket closes `X_FRAME_RATE_LIMIT` |
+| Heartbeat | the node names `heartbeatMs` in its `hello`; a device silent for two beats is closed `4001` |
+| Addressing | the holder registers the device in the bus's shared set (TTL three beats) under `(tenant, deviceId)`; `request()` looks it up and publishes to that node. Nobody holds it, or another tenant does: `X_DEVICE_OFFLINE` at once. No answer in `deadlineMs` (default 30 s, max 600 s): `X_DEVICE_REQUEST_TIMEOUT`. A socket that closes answers its open requests `X_DEVICE_OFFLINE` |
+| Drain | SIGTERM: stop accepting, then the sync node's own `drainPlan` + `reconnect` frame per socket, then close `1001` |
+| Reconnect | `deviceAgent()` (a Bun client) redials on realtime's one jittered backoff, or at the slot a `reconnect` frame assigned |
+
+**Wire.** Device → node: `{ type: 'beat' }`, `{ type: 'frame', frame }`, `{ type: 'response', id, frame }`.
+Node → device: `{ type: 'hello', heartbeatMs, maxFrameBytes }`, `{ type: 'request', id, frame }`,
+`{ type: 'frame', frame }` (what `onFrame` returned), `{ type: 'error', code }`, and the sync
+protocol's `reconnect`.
+
+**Where it runs.** Every role attaches every declaration to its bus (`hostDeviceSockets`), so a
+worker's job can `request()`; only `web` holds sockets. Across replicas `realtime.transport` must be
+`'nats'` — on the in-process bus a device is reachable from its own process only.
+
+**Where it is served.** The `web` role's own listener, beside the sync node's `/_x/sync`: the boot
+hands `httpServer` one mount per declared path beside `syncMount`, every path is checked free of a
+route (`X_ROUTE_CONFLICT`), and each upgrade goes to the path's CURRENT declaration, its frames to
+the declaration that upgraded it. The same in the container (`ROLE=web`) and under `x dev` — no
+port, no option. A declaration is found by the boot's module scan, so it lives in any module under
+`apps/web/app/` (`examples/dummy/apps/web/app/devices/link.ts`). `As of 2026-11-06`.
+
+**Under `x dev`.** A save re-evaluates the module that declares a socket (and anything it imports),
+so its `deviceSocket()` runs again. Each rescan is a new generation (`dev-rebuild.ts`): the path's
+new value replaces the old one, is attached, and serves the next upgrade; the old one's open sockets
+get a `reconnect` frame and a `1001` close, and `deviceAgent()` redials onto the edited handler. A different module declaring a path an earlier scan holds is `X_CONFIG_INVALID`, naming both files — the holder was not re-evaluated; moving a declaration is `x stop && x dev`. A
+path first declared by a save is not served until a restart (`X_DEV_RESTART_REQUIRED` on `/_x`):
+the listener's websocket paths are fixed when it binds. A container scans once, so never replaces.
+
+| Rule | Error |
+|---|---|
+| an app module calls `server.upgrade(`, hands `Bun.serve` a `websocket` key, or writes an inline `websocket: { … }` handler set | `X_SOCKET_HAND_ROLLED`, `x verify`'s `boundaries` step, with the file and `meta.line` — declare `deviceSocket({ path, resolveToken, onFrame })` instead |
+| two declarations at one path in one scan | `X_CONFIG_INVALID` at the second `deviceSocket()` |
+| a declaration at a path a route already answers | `X_ROUTE_CONFLICT` at boot |
+
 ## Errors
 
 | Code | Cause | Fix |
@@ -649,6 +715,9 @@ A client on build `A` connecting to a `sync` node on build `B` is **accepted**, 
 | `X_MUTATOR_CLOCK_MISSING` | `conflict: 'last-write-wins'` with no number `updatedAt` on the entity | add the clock, or declare `conflict: 'server-wins'` |
 | `X_TRANSPORT_UNAVAILABLE` | the fanout bus is down. At boot only for `sync` and the replicator, after a bounded wait; on `web`, `worker` and `scheduler` it is what a publish rejects with while the bus is away ([what each role needs](#what-each-role-needs-from-the-bus)); on a socket it is the one refusal a client treats as transient ([a bus outage, seen from an open page](#a-bus-outage-seen-from-an-open-page)) | `x doctor — then check NATS_URL points at a reachable nats-server` |
 | `X_TRANSPORT_PROTOCOL` | the bus answers in a protocol this build does not speak | `the bus must be nats-server >= 2.11 with JetStream enabled (nats-server -js)` |
+| `X_DEVICE_OFFLINE` | `deviceLink.request()` named a device no node holds a socket for under the caller's tenant | `x doctor --json`, then retry once the device redials |
+| `X_DEVICE_REQUEST_TIMEOUT` | the device took the request and sent no `response` with its id before `deadlineMs` | a longer `deadlineMs`, or answer every request the node sends the device |
+| `X_DEVICE_FRAME_TOO_LARGE` | a device frame, or a `request()` frame, past `DEVICE_FRAME_MAX_BYTES` | split the payload, or store the bytes and send their key |
 | `X_BUILD_SKEW` | client build's contract is incompatible with the server's | reload the client; see the fix line on the error |
 
 Verbatim shapes: [`packages/realtime/src/errors.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/errors.ts). Full index: [Error codes](Error-Codes).

@@ -19,6 +19,7 @@ import type {
 import { action, isAction } from './action';
 import { MutatorNotIdempotentError } from './errors';
 import type { ActionHttp } from './http-path';
+import type { ActionMeter } from './meter';
 import { assertConflictClock } from './mutator-clock';
 import type { ActionPolicy } from './policy-gate';
 
@@ -93,6 +94,8 @@ export interface MutatorDef<
   readonly mcp?: ActionMcp;
   /** Same key, same meaning as an action's — a mutator IS an action. */
   readonly rateLimit?: ActionRateLimit;
+  /** Same key, same meaning as an action's: a replayed write draws nothing. */
+  readonly meter?: ActionMeter;
   /** Same key, same meaning as an action's: `Deprecation`/`Sunset` on every response. */
   readonly deprecated?: Deprecation;
   /** Same key, same meaning as an action's: `http: { path }` pins the URL. */
@@ -178,6 +181,7 @@ export function mutator<
     ...(def.cache === undefined ? {} : { cache: def.cache }),
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
     ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),
+    ...(def.meter === undefined ? {} : { meter: def.meter }),
     ...(def.deprecated === undefined ? {} : { deprecated: def.deprecated }),
     ...(def.http === undefined ? {} : { http: def.http }),
     ...(def.errors === undefined ? {} : { errors: def.errors }),

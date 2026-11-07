@@ -319,6 +319,12 @@ every stage (middleware, finalize, security headers), and an upgraded request mu
 halves above cannot carry a case, the fallback is a long-poll `action` (`GET`-shaped, returning
 `{ frames, cursor }` and re-called on return), which is what the app that asked shipped.
 
+A client that is **not a browser** (a device agent) is the one exception, and it is declared, not
+hand-written: `deviceSocket()` from `@ultimat3/realtime/server` ([Realtime](../../wiki/Realtime.md#device-sockets)).
+Several mounts on one listener — the sync node's beside a device socket's — are joined by
+`joinWebSocketMounts(mounts)`: routed by path at the upgrade, and each socket's events back to the
+mount that upgraded it, keyed by the `data` object it upgraded with (`As of 2026-11-06`).
+
 ### A second door: `bearerMount` (`/v1/*`)
 
 `As of 22.6.0`. `bearerMount({ prefix, routes, scopes, resolveToken, rateLimit?, rateLimitStore? })`
@@ -578,6 +584,11 @@ declared key is set — never `{}`. A framework-owned code is refused (`X_PROBLE
 as is `issues`, which has its own top-level home. `@ultimat3/action`'s typed client puts the
 member back on the rebuilt error's `meta`, so an island reads `error.meta.sessionId` where it
 used to run a regex over `cause`.
+
+A framework code's public keys are not an app's call: they are one reviewed table,
+`problem-meta-framework.ts`, held by its test to a 4xx code and keys an app's declaration could
+carry, none secret-shaped. One row, `As of 2026-11`: `X_METER_EXCEEDED` carries
+`meta: { meter, limit, resetsAt }` (its delay is the `Retry-After` header).
 
 ### Error classes
 

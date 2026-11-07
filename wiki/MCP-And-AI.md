@@ -393,6 +393,56 @@ export const mcp = defineAppMcp({ include: 'exposed', scopes: MCP_SCOPES, oauth:
 Without `oauth`, the 401 is `Bearer realm="ultimate-mcp"` as before. Bad block:
 `X_MCP_OAUTH_INVALID` at definition.
 
+### Per-caller tools and one token across tenants
+
+`As of 2026-11`. Two `defineAppMcp` options, both resolved per request and both behind the same
+gates as every other tool:
+
+| Option | What it does | Refusals |
+|---|---|---|
+| `catalog: (caller) => ({ tools, groups? })` | tools that exist per caller (a tenant's connectors), each a `runtimeTool({ name, description, inputSchema, permission, run })` borrowing a **declared** permission; asked on every `tools/list` and `tools/call`, never cached | `X_MCP_CATALOG_TOOL_DUPLICATE` (a name taken twice), `X_MCP_CATALOG_UNRESOLVED` (the resolver threw, or answered something unservable) — the request fails, never a smaller list |
+| `tenant: { arg, resolve, list }` | the token resolves to a person; every call names its tenant under `arg`, stripped before validation; `resolve` builds the call's actor, so policy and tenancy guards see one org per call; `list_tenants` lists them | `X_MCP_TENANT_REQUIRED` (no tenant named — fix `list_tenants({})`), `X_MCP_TENANT_UNRESOLVED` (the lookup threw), `X_MCP_TENANT_INVALID` (boot: a tool declares the arg) |
+
+A tenant the person is not in (`resolve` answers `null`) gets exactly the answer a hidden tool gets.
+Another caller's runtime tool is an absent tool. The audit line carries `tenant`.
+
+**`tools/list` is person-scoped, and not a promise.** MCP's `tools/list` names no tenant, so `visibleTo` (function form), `can()` and `catalog` run there as the person; `tools/call` runs them as the tenant actor and is authoritative. A tool visible to the person but not the tenant actor is listed and answers as a hidden tool; one visible only through a tenant role or a tenant's catalog row is unlisted and still runs when called by name.
+
+```ts
+import { agentActor } from '@ultimat3/core';
+import { defineAppMcp, runtimeTool } from '@ultimat3/mcp';
+
+declare function roleIn(personId: string, org: string): Promise<string | undefined>;
+
+defineAppMcp({
+  include: 'exposed',
+  tenant: {
+    arg: 'org',
+    resolve: async ({ person, value }) => {
+      const role = await roleIn(person.id, value);
+      return role === undefined ? null : agentActor({ id: person.id, orgId: value, roles: [role] });
+    },
+    list: () => [],
+  },
+  catalog: (caller) => ({
+    tools: caller.actor.orgId === undefined ? [] : [
+      runtimeTool({
+        name: 'org_ping',
+        description: 'Ping the acting org. Read-only.',
+        inputSchema: { type: 'object', properties: {} },
+        permission: 'org:read',
+        destructive: false,
+        run: ({ ctx }) => ({ org: ctx.actor.orgId }),
+      }),
+    ],
+  }),
+});
+```
+
+Worked example: Postly's `quote_<plan>` tools and its multi-org token —
+`examples/dummy/packages/mcp/src/{quotes,tenants}.ts`, proven over its own endpoint by
+`tenant.contract.test.ts`. Full rules: `packages/mcp/README.md`.
+
 ### Long tools: `jobTool()` and `job_status`
 
 A tool whose work outlives a client's timeout. `tools: { reindex: jobTool({ job, policy, description, result, input?, jobInput?, inlineMs? }) }`.
@@ -568,6 +618,15 @@ Long or multi-call chains are `job`s with steps, so a model call that fails on s
 A tool is one of two things. A real `action()` carrying `mcp: { expose: true }` — the **same** predicate an external MCP client is filtered by, so an in-app agent and an external one are offered exactly the same catalogue of actions and authorize identically. Or an `inProcessTool({ name, description, input, execute })`: a tool that is this process's alone, with no `mcp` flag, in no MCP catalogue, route or `openapi.json`, running as `ctx.actor` under the agent's own policy → [In-process tools](Agents#in-process-tools). An `agent()` returns an action, so an agent is a tool of another agent with no supervisor primitive anywhere.
 
 A tool in `mcpConfirmations({ tools })` waits for a person on **both** surfaces: `X_MCP_CONFIRMATION_PENDING` over `tools/call`, on a server handed `confirmations` or not, and as an agent's `tool_result`. A name no tool answers to is `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at the `manifest` step. One list, no second option → [A tool that waits for a person](Agents#a-tool-that-waits-for-a-person).
+
+**Quorum and signed decisions** (`As of 2026-11`) are two more options on the same factory, never a second gate:
+
+| Option | What it holds |
+|---|---|
+| `approvers: ({ args }) => ({ quorum, from })` | N of M distinct approvers matching `'role:<name>'` / `'actor:<id>'`, resolved per call from the validated arguments and stored on the row. The requesting actor never counts (nor an impersonated decider): `X_FORBIDDEN`. One approver counts once. Short of the quorum, the agent's repeat answers `X_MCP_CONFIRMATION_QUORUM_PENDING`; a bar nobody can meet is `X_MCP_CONFIRMATION_QUORUM_INVALID` before a row opens |
+| `evidence: { verify }` | every vote carries `signature` over the `signingPayload` the view returns (confirmation id, tool, keyed argument digest), checked by the app's `verify` against keys registered to the approver. A missing or failing one stores no vote; the stored row is re-verified before the call runs, so a row written around the decision runs nothing. Both are `X_MCP_CONFIRMATION_EVIDENCE_INVALID` |
+
+`verifyConfirmationEvidence(row, { evidence, quorum, from, arguments })` is exported so a separate process that executes the action re-checks the stored evidence with public keys alone. `ttlMs` expires a partly approved row like any other; one rejection rejects. The full table: [`@ultimat3/mcp` README](https://github.com/developerz-ai/ultimate/blob/main/packages/mcp/README.md#quorum-and-signed-decisions).
 
 Full reference, including the at-least-once trap that makes every mutating tool's idempotency your obligation: [Agents](Agents).
 

@@ -112,6 +112,46 @@ export const X_API_KEYS_TABLE = `create table if not exists x_api_keys (
   created_at            timestamptz not null default now()
 )`;
 
+// Passkeys (`passkey-*.ts`). Byte fields are base64url text; the challenge row holds the
+// challenge's sha256, never the challenge; evidence carries its own key so it verifies alone.
+export const X_PASSKEYS_TABLE = `create table if not exists x_passkeys (
+  id                    text primary key,
+  user_id               uuid not null references x_users (id) on delete cascade,
+  public_key            text not null,
+  algorithm             integer not null,
+  sign_count            bigint not null default 0,
+  transports            text[] not null default '{}',
+  created_at            timestamptz not null default now(),
+  last_used_at          timestamptz
+);
+create index if not exists x_passkeys_user_id_idx on x_passkeys (user_id)`;
+
+export const X_PASSKEY_CHALLENGES_TABLE = `create table if not exists x_passkey_challenges (
+  id                    text primary key,
+  ceremony              text not null,
+  user_id               uuid references x_users (id) on delete cascade,
+  digest                text,
+  nonce                 text,
+  expires_at            timestamptz not null,
+  created_at            timestamptz not null default now()
+);
+create index if not exists x_passkey_challenges_expires_at_idx on x_passkey_challenges (expires_at)`;
+
+export const X_PASSKEY_EVIDENCE_TABLE = `create table if not exists x_passkey_evidence (
+  id                    text primary key,
+  user_id               uuid not null references x_users (id) on delete cascade,
+  credential_id         text not null,
+  digest                text not null,
+  nonce                 text not null,
+  authenticator_data    text not null,
+  client_data_json      text not null,
+  signature             text not null,
+  public_key            text not null,
+  algorithm             integer not null,
+  created_at            timestamptz not null default now()
+);
+create index if not exists x_passkey_evidence_digest_idx on x_passkey_evidence (digest)`;
+
 /** Ordered by foreign-key dependency — run them top to bottom. */
 export const AUTH_TABLES: readonly string[] = Object.freeze([
   X_USERS_TABLE,
@@ -120,6 +160,9 @@ export const AUTH_TABLES: readonly string[] = Object.freeze([
   X_ACCOUNTS_TABLE,
   X_VERIFICATIONS_TABLE,
   X_API_KEYS_TABLE,
+  X_PASSKEYS_TABLE,
+  X_PASSKEY_CHALLENGES_TABLE,
+  X_PASSKEY_EVIDENCE_TABLE,
 ]);
 
 export const AUTH_TABLE_NAMES: readonly string[] = Object.freeze([
@@ -128,4 +171,7 @@ export const AUTH_TABLE_NAMES: readonly string[] = Object.freeze([
   'x_accounts',
   'x_verifications',
   'x_api_keys',
+  'x_passkeys',
+  'x_passkey_challenges',
+  'x_passkey_evidence',
 ]);

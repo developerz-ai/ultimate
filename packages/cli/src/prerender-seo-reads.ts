@@ -11,7 +11,7 @@ export interface SeoReadsInput {
   readonly root: string;
   readonly origin: string;
   readonly defaultLocale: string;
-  /** Runs one read inside the build's measurement scope. */
+  /** Runs one read inside the build's PUBLIC scope: its in-process API authenticates nobody. */
   readonly scope: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Readies the build's database before the first read that needs it. */
   readonly before: () => Promise<void>;

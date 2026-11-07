@@ -390,6 +390,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'bunx x g sign-in --password --json   # in the app x new wrote, reproduces it; then bun test packages/cli/src/templates/shapes',
   X_ISLAND_DISPOSER_MISSING:
     'x verify --only boundaries --json   # names the file; end its mount() with return render(() => <Island {...props} />, el)',
+  X_SOCKET_HAND_ROLLED:
+    'x verify --only boundaries --json — names the file and line; delete the upgrade and declare the socket with deviceSocket({ path, resolveToken, onFrame }) from @ultimat3/realtime/server',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

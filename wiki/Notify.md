@@ -65,7 +65,8 @@ message disappears is your decision ([Configuration](Configuration)).
 
 Codes: `X_NOTIFY_CHANNELS_EMPTY`, `X_NOTIFY_CHANNEL_DUPLICATE`, `X_NOTIFY_DIGEST_UNSUPPORTED`,
 `X_NOTIFY_FANOUT_TOO_WIDE` (default cap 500 recipients), `X_NOTIFY_STORE_MISSING`,
-`X_NOTIFY_DELIVERY_FAILED` — [Error codes](Error-Codes).
+`X_NOTIFY_DELIVERY_FAILED`, and native push's `X_NOTIFY_PUSH_DEVICE_GONE`,
+`X_NOTIFY_PUSH_PROVIDER_REFUSED`, `X_NOTIFY_PUSH_MESSAGE_INVALID` — [Error codes](Error-Codes).
 
 ## Push
 
@@ -131,3 +132,77 @@ A retry re-sends to the devices that already got it; the `tag` makes that a repl
 rather than a second notification. `renotify` without a `tag` is dropped with a warning — the spec
 makes that pair show nothing at all.
 
+
+## Native push — iOS and Android
+
+`nativePush({ devices, apns, fcm })` is the pusher for native apps, `As of 2026-11-06`: APNs over
+HTTP/2 with token auth (an ES256 JWT over the team's `.p8` key) and FCM HTTP v1 (a service-account
+assertion exchanged for an OAuth token) — WebCrypto and core's `outbound()` with a deadline, no SDK.
+Both credentials are cached and re-minted before they expire.
+
+```ts
+import {
+  memoryPushDeviceStore,
+  nativePush,
+  notifier,
+  pushChannel,
+  pushRegister,
+  pushUnregister,
+  t,
+} from '@ultimat3/notify';
+
+// Production: `postgresPushDeviceStore({ executor: dbExecutor() })` — `x_push_devices`, a
+// framework table the boot applies. ONE store, handed to the actions and the pusher alike.
+const devices = memoryPushDeviceStore();
+
+export const registerDevice = pushRegister({
+  permission: 'push:subscribe',
+  platforms: ['ios', 'android'],
+  devices,
+});
+export const unregisterDevice = pushUnregister({
+  permission: 'push:subscribe',
+  platforms: ['ios', 'android'],
+  devices,
+});
+
+const phones = nativePush({
+  devices,
+  apns: { teamId: 'TEAM123456', keyId: 'KEY1234567', topic: 'com.example.app' },
+  fcm: { projectId: 'example-app', clientEmail: 'push@example-app.iam.gserviceaccount.com' },
+});
+
+export const approvalRequested = notifier({
+  name: 'approval.requested',
+  input: t.object({ approvalId: t.uuid }),
+  tenant: 'none',
+  key: (params) => `approval:${params.approvalId}`,
+  deliver: [
+    {
+      // Data-only: the id and nothing else. Nothing reaches a lock screen or the provider.
+      channel: pushChannel<{ approvalId: string }>({
+        pusher: phones,
+        data: ({ event }) => ({ approvalId: event.params.approvalId }),
+      }),
+    },
+  ],
+});
+```
+
+| Piece | Where |
+|---|---|
+| private keys | `x secrets set ULTIMATE_APNS_PRIVATE_KEY` (the `.p8`) · `x secrets set ULTIMATE_FCM_PRIVATE_KEY` (the service account's `private_key`). Never an option; read when a token is minted, boxed in a `Secret`, never logged. Missing: `X_ENV_MISSING`; unreadable: `X_CONFIG_INVALID` |
+| devices | `x_push_devices`, keyed `(platform, token)` — a phone a second person signs in on is theirs now |
+| register | `registerDevice` on every launch; `previousToken` when the OS rotated it. `unregisterDevice` on sign-out. Stored against `ctx.actor.id`; an agent never registers |
+| data-only | `pushChannel({ pusher, data })` — APNs `background`, priority 5, `content-available: 1`; FCM with no `notification`. ≤ 8 string keys, ≤ 256 characters, no reserved key: else `X_NOTIFY_PUSH_MESSAGE_INVALID`. `webPush()` cannot take it — a type error |
+| visible | `pushChannel({ pusher, message })`, the same `NotifyPushMessage` as the web: rendered per device locale |
+
+| Provider answer | Outcome |
+|---|---|
+| 2xx | delivered |
+| APNs 410 · FCM `UNREGISTERED` | `X_NOTIFY_PUSH_DEVICE_GONE` — the device row is deleted, the delivery settles |
+| other 4xx | `X_NOTIFY_PUSH_PROVIDER_REFUSED` — logged, next device tried; fails the delivery when no device took it. 401/403 also drops the cached credential |
+| 429 · 5xx · timeout | rethrown after every other device was tried: `X_NOTIFY_DELIVERY_FAILED`, the job retries |
+
+A bare FCM 404 is never "gone" (a wrong `projectId` answers it too), nor is APNs `BadDeviceToken`
+(a sandbox token sent to production): reading either as dead would delete every device.

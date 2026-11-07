@@ -21,6 +21,7 @@ import {
   assertUniqueKeys,
   endDistance,
   nextAtEnd,
+  pruneHeights,
   rowOffsets,
   type ScrollAnchor,
   VIRTUAL_LIST_ESTIMATE,
@@ -109,9 +110,11 @@ export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
     assertUniqueKeys(keys);
     const size = estimate();
     capture();
+    const positions = new Map(keys.map((key, index) => [key, index]));
+    pruneHeights(heights, positions);
     shown = {
       keys,
-      positions: new Map(keys.map((key, index) => [key, index])),
+      positions,
       offsets: rowOffsets(keys.map((key) => heights.get(key) ?? size)),
     };
     return shown;

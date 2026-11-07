@@ -45,6 +45,10 @@ export function counterOf(child: EntityCore, property: string, column: AnyColumn
       `${binding.table}.${binding.property} is no integer()`,
     );
   }
+  // `NULL + 1` is NULL in the trigger and memory counts from 0: a nullable count means two things.
+  if (!counting.$meta.notNull) {
+    throw countsInvalid(child.$name, property, `${binding.table}.${binding.property} is nullable`);
+  }
   const points =
     column.$meta.references === undefined ? undefined : bindingOf(column.$meta.references());
   const key = parent.$primaryKey.length === 1 ? parent.$primaryKey[0] : undefined;

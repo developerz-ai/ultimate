@@ -142,3 +142,23 @@ export function clientHeartbeatMs(
   const idleBound = Math.max(1_000, Math.floor(idleTimeoutMs / 4));
   return Math.min(presenceBeatMs ?? DEFAULT_HEARTBEAT_MS, idleBound);
 }
+
+const utf8 = new TextEncoder();
+
+/**
+ * Closes the socket 1009 — Bun's own code for a payload past `maxPayloadLength` — when an
+ * inbound frame is over `maxFrameBytes`, and says so. The node refuses it itself: on a listener a device
+ * socket shares, Bun's limit is the widest mount's, not this node's.
+ */
+export function refusedOverBytes(
+  ws: { close(code: number, reason: string): void },
+  message: string | Uint8Array,
+  limit: number,
+): boolean {
+  const over =
+    typeof message === 'string'
+      ? message.length * 3 > limit && utf8.encode(message).length > limit
+      : message.byteLength > limit;
+  if (over) ws.close(1009, 'frame over maxFrameBytes');
+  return over;
+}

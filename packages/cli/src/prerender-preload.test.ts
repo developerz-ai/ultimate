@@ -12,6 +12,9 @@ import { PRERENDER_PRELOAD, staticArgs } from './cmd-build';
 // Loaded here as well, so the coverage run holds a record of it: the child processes below run it
 // where `bun test --coverage` cannot see. Idempotent — the render loader installs once.
 import './prerender-preload';
+// Loaded here as well, so the coverage run holds a record of it: the child processes below run it
+// where `bun test --coverage` cannot see. Idempotent — the render loader installs once.
+import './prerender-preload';
 
 test('the static build runs the app script with the render loader preloaded', () => {
   const args = staticArgs('/app', '/app/.x/static');

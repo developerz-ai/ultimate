@@ -3,6 +3,7 @@
 // No `docs:` line, and that is deliberate: `UltimateError`'s constructor resolves the registered
 // descriptor, whose default is `ERROR_DOCS_URL` in @ultimat3/core. A URL written out here is a
 // second answer to a question core already answers, and the last one went stale host and all.
+import type { ErrorRetry } from '@ultimat3/core';
 import {
   registerErrorCodes,
   registerErrorRetry,
@@ -18,6 +19,9 @@ export const NOTIFY_ERROR_CODES = [
   'X_NOTIFY_DELIVERY_FAILED',
   'X_NOTIFY_DIGEST_UNSUPPORTED',
   'X_NOTIFY_DELIVERY_HELD',
+  'X_NOTIFY_PUSH_DEVICE_GONE',
+  'X_NOTIFY_PUSH_PROVIDER_REFUSED',
+  'X_NOTIFY_PUSH_MESSAGE_INVALID',
 ] as const;
 
 export type NotifyErrorCode = (typeof NOTIFY_ERROR_CODES)[number];
@@ -30,6 +34,9 @@ export const NOTIFY_ERROR_TITLES: Readonly<Record<NotifyErrorCode, string>> = {
   X_NOTIFY_DELIVERY_FAILED: 'a channel did not accept the delivery',
   X_NOTIFY_DIGEST_UNSUPPORTED: 'a digest window is declared on a bulk channel',
   X_NOTIFY_DELIVERY_HELD: 'another attempt holds this delivery',
+  X_NOTIFY_PUSH_DEVICE_GONE: 'the push provider says a device token is dead',
+  X_NOTIFY_PUSH_PROVIDER_REFUSED: 'APNs or FCM refused a push for good',
+  X_NOTIFY_PUSH_MESSAGE_INVALID: 'a data-only push carries more than an id',
 };
 
 // One unconditional call, so a second package claiming one of notify's codes throws
@@ -71,6 +78,12 @@ registerErrorRetry({
   // "Not yet": the holder finishes or its window lapses, and the refusal names how long that is.
   // Waited out with the attempt uncounted and `maxDelay` no cap (`rateLimitDeferralMs`, jobs).
   X_NOTIFY_DELIVERY_HELD: 'retry-after',
+  // Native push (`push-errors.ts`). A refusal the provider gives again — a bad credential, a wrong
+  // topic, a payload over its limit — and a data push carrying more than ids: no attempt fixes
+  // either. `X_NOTIFY_PUSH_DEVICE_GONE` is absent: `nativePush()` catches it, deletes the row, and
+  // it never leaves a send.
+  X_NOTIFY_PUSH_PROVIDER_REFUSED: 'terminal',
+  X_NOTIFY_PUSH_MESSAGE_INVALID: 'terminal',
 });
 
 /** Refused where it is written: a notifier with no channel is a job that fans out to nobody. */
@@ -192,9 +205,17 @@ export class NotifyDeliveryHeldError extends UltimateError {
  * rejection is routinely an object whose `toString` throws (`bun run scripts/catch-render.ts`).
  */
 export class NotifyDeliveryFailedError extends UltimateError {
-  constructor(input: { notifier: string; channel: string; recipients: number; cause: unknown }) {
+  constructor(input: {
+    notifier: string;
+    channel: string;
+    recipients: number;
+    cause: unknown;
+    /** The channel's own `terminal`, carried over: absent, the code's `retryable` stands. */
+    retry?: ErrorRetry | undefined;
+  }) {
     super({
       code: 'X_NOTIFY_DELIVERY_FAILED',
+      retry: input.retry,
       cause: `channel "${input.channel}" of notifier "${input.notifier}" failed for ${String(input.recipients)} recipient(s): ${renderThrowable(input.cause)}`,
       // `x jobs list` first, and never `x jobs show` handed a notifier NAME: that command takes a job id
       // positional and resolves it through `inspectJob`, which answers `X_JOB_UNKNOWN` for

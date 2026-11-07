@@ -42,19 +42,22 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   /**
-   * measured: 193,620 B (2026-11-06; the board island 77,589 by `buildIslands`, plus what every
+   * Was 193,620 B (2026-11-06; the board island 77,589 by `buildIslands`, plus what every
    * live `app/` document carries as `/runs` measured it: the page boot 82,123, the router 29,570,
    * `/x-client-vitals.js` 1,202, the inline runtime 2,426, the update banner 710), against 195,072.
    * why: the board is the gesture — `Board` and `sort-surface.tsx` over `drag/` (pointer capture,
    * auto-scroll, keyboard lift and drop, announcements), keyed cards — plus the typed client's
    * `movePostStatus` and `UiProvider` with the server's `ui.*` strings.
-   * measured: 109533 B (2026-11-06; x build --target static, the document as served) — why: the
+   * Was 109533 B (2026-11-06; x build --target static, the document as served), because the
    * figure above was computed, not built, and charged a page boot this page never loads (its
    * island reads no live query): the board island 76,086 (after ui's per-key `ui-keys.ts`), the
    * router 29,570, the vitals 1,202, the banner 710, inline 1,965 — lowered 190.5kb → 107.5kb
    * (plan 101 wave 10).
+   * measured: 110333 B (2026-11-07, sweep 1; x build --target static) — why: the board island
+   * 76,086 → 76,703, `SortableList` stepping a second Alt+Arrow from the held move and releasing
+   * only its own hold, and the router +122 B — raised 107.5kb → 108kb.
    */
-  budget: { js: '107.5kb' },
+  budget: { js: '108kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

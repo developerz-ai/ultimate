@@ -24,6 +24,7 @@ import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
+import { runtimeTool } from './runtime-tool';
 import type { McpServer } from './server';
 import type { JsonRpcResponse } from './wire';
 import {
@@ -340,5 +341,90 @@ describe('the three outcomes over the blessed path — defineAppMcp', () => {
         scopes: { 'posts:write': ['publishPost'], 'org:admin': ['publishPost'] },
       }),
     ).toThrow('X_MCP_SCOPE_CONFLICT');
+  });
+});
+
+describe('the three outcomes over what an app resolves per caller and per call', () => {
+  let ran = 0;
+  beforeEach(() => {
+    ran = 0;
+    definePermissions(['connector:call', 'post:publish']);
+    defineRoles({ owner: { grants: ['connector:call', 'post:publish'] }, member: { grants: [] } });
+    registerAction(
+      'stampOrg',
+      action({
+        input: t.object({ postId: t.string }),
+        output: t.object({ org: t.string }),
+        policy: can('post:publish'),
+        mcp: { expose: true, description: 'Publish a draft post' },
+        handle: ({ ctx }) => {
+          ran += 1;
+          return { org: ctx.actor.orgId ?? '' };
+        },
+      }),
+    );
+  });
+  afterEach(() => {
+    resetActions();
+    clearPermissions();
+    clearRoles();
+  });
+
+  const crm = () =>
+    runtimeTool({
+      name: 'crm',
+      description: 'Call the CRM',
+      inputSchema: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
+      permission: 'connector:call',
+      scope: 'connectors',
+      run: () => {
+        ran += 1;
+        return { ok: true };
+      },
+    });
+  const scopes = { connectors: [], 'posts:write': ['stampOrg'] };
+  const agent = (orgId: string, roles: readonly string[], held: readonly string[]): McpCaller => ({
+    actor: agentActor({ id: 'p1', orgId, roles: [...roles] }),
+    scopes: new Set(held),
+  });
+
+  test('OUTCOME 2 then 3 — a runtime tool is gated by its declared scope, then its borrowed permission', async () => {
+    const server = defineAppMcp({
+      include: 'exposed',
+      scopes,
+      catalog: () => ({ tools: [crm()] }),
+    }).server;
+    const unscoped = await server.handle(call('crm', { q: 'x' }), agent('o1', ['owner'], []));
+    expect(errorData(unscoped)['code']).toBe('X_MCP_SCOPE_DENIED');
+    const denied = await runWithContext(ctxOf({}), () =>
+      server.handle(call('crm', {}), agent('o1', ['member'], ['connectors'])),
+    );
+    // The permission's actor half outranks the argument check: X_FORBIDDEN, never the issue list.
+    expect(toolResult(denied).content?.[0]?.text).toContain('X_FORBIDDEN');
+    expect(ran).toBe(0);
+  });
+
+  test('a tenant actor reaches the projected action’s policy and ctx; a foreign one is hidden', async () => {
+    const server = defineAppMcp({
+      include: 'exposed',
+      scopes,
+      tenant: {
+        arg: 'org',
+        resolve: ({ person, value }) =>
+          value === 'o1' ? agentActor({ id: person.id, orgId: 'o1', roles: ['owner'] }) : null,
+        list: () => [{ value: 'o1' }],
+      },
+    }).server;
+    // The token's actor holds nothing in any org: only the tenant's actor can pass the policy.
+    const person = agent('', [], ['posts:write']);
+    const ok = await runWithContext(ctxOf({}), () =>
+      server.handle(call('stampOrg', { postId: 'p', org: 'o1' }), person),
+    );
+    expect(toolResult(ok).content?.[0]?.text).toBe('{"org":"o1"}');
+    const foreign = await server.handle(call('stampOrg', { postId: 'p', org: 'o2' }), person);
+    const absent = await server.handle(call('noSuchTool', { postId: 'p', org: 'o1' }), person);
+    expect(foreign?.error?.code).toBe(METHOD_NOT_FOUND);
+    expect(JSON.stringify(foreign).replace('stampOrg', 'noSuchTool')).toBe(JSON.stringify(absent));
+    expect(ran).toBe(1);
   });
 });

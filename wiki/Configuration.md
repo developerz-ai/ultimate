@@ -119,8 +119,9 @@ await withReplicaReads(async () => {
 | `totpReplay` | `TotpReplayGuard` | which TOTP steps are spent, one atomic `claim(subject, step, at)`, called by `completeMfa`. Omitted means the guard the host installed: a framework boot's is `postgresTotpReplayGuard` (`x_totp_steps`), so a code is single-use across the fleet. With no host, `memoryTotpReplayGuard()`, single-use per replica. A guard with no `claim` is `X_CONFIG_INVALID` |
 | `providers` | `OAuthProviderId[]` | **defaults to `[]`**, `As of 2026-08-23` — an empty list is "no OAuth", and every `/auth/oauth/<id>` answers `X_OAUTH_PROVIDER_UNKNOWN`. Never the live registry: that would let any dependency that calls `registerOAuthProvider` turn on a login route this app never enabled |
 | `link` | `OAuthLinkPolicy` | defaults to `'verified-email'` |
+| `passkeys` | `PasskeyPolicyInput` | `{ rpId, origins, rpName?, challengeTtlMs? }` (`As of 2026-11`): the relying party every WebAuthn ceremony verifies against. `rpId` a bare lowercase host, never a URL or an IP; each origin exact (`URL.origin` round-trips it), https or `http://localhost`, on `rpId` or a subdomain; `challengeTtlMs` 5 min. Anything else is `X_CONFIG_INVALID` at `defineAuth`. Absent means no passkeys: `passkeyLogin(auth)` / `passkeyStepUp(auth)` refuse at definition ([Auth](Auth#passkeys)) |
 
-There is no `auth.passkeys` and no `auth.trustedOrigins` in either place `As of 2026-08-22`.
+There is no `auth.trustedOrigins` in either place, and passkeys are `defineAuth`'s, never `app.config.ts`'s, `As of 2026-11`.
 
 ## `jobs`
 

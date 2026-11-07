@@ -53,6 +53,14 @@ export const MCP_ERROR_CODES = [
   'X_MCP_RECIPE_URI_RESERVED',
   'X_MCP_REMOTE_AUTH_REQUIRED',
   'X_MCP_RECIPE_LINK_DANGLING',
+  'X_MCP_CONFIRMATION_QUORUM_PENDING',
+  'X_MCP_CONFIRMATION_EVIDENCE_INVALID',
+  'X_MCP_CONFIRMATION_QUORUM_INVALID',
+  'X_MCP_CATALOG_TOOL_DUPLICATE',
+  'X_MCP_CATALOG_UNRESOLVED',
+  'X_MCP_TENANT_REQUIRED',
+  'X_MCP_TENANT_UNRESOLVED',
+  'X_MCP_TENANT_INVALID',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -111,6 +119,17 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_RECIPE_URI_RESERVED: 'docs://recipes/ is owned by recipes:',
   X_MCP_REMOTE_AUTH_REQUIRED: 'a remote MCP server needs authorization this app does not hold',
   X_MCP_RECIPE_LINK_DANGLING: 'a recipe links to a docs://recipes/ URI no recipe serves',
+  X_MCP_CONFIRMATION_QUORUM_PENDING:
+    'an MCP confirmation needs more approvers before the call runs',
+  X_MCP_CONFIRMATION_EVIDENCE_INVALID:
+    'an MCP confirmation approval carries no valid signed evidence',
+  X_MCP_CONFIRMATION_QUORUM_INVALID:
+    'mcpConfirmations approvers resolved a quorum no approver set can meet',
+  X_MCP_CATALOG_TOOL_DUPLICATE: 'a per-caller MCP catalog names one tool twice',
+  X_MCP_CATALOG_UNRESOLVED: 'a per-caller MCP catalog could not be resolved',
+  X_MCP_TENANT_REQUIRED: 'an MCP call names no tenant',
+  X_MCP_TENANT_UNRESOLVED: 'the tenant of an MCP call could not be resolved',
+  X_MCP_TENANT_INVALID: 'defineAppMcp declares its tenant argument inconsistently',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

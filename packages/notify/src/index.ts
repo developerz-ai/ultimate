@@ -7,6 +7,7 @@
 /** Re-exported so a `notifier` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
+export type { ApnsOptions } from './apns';
 export type { AttemptInput } from './attempt';
 export { attemptDelivery } from './attempt';
 export type {
@@ -21,7 +22,13 @@ export type { InAppChannelOptions } from './channel-in-app';
 export { IN_APP_CHANNEL, inAppChannel } from './channel-in-app';
 export type { MailChannelOptions, Mailer, NotifyMail } from './channel-mail';
 export { MAIL_CHANNEL, mailChannel } from './channel-mail';
-export type { NotifyPushMessage, PushChannelOptions, Pusher } from './channel-push';
+export type {
+  DataPushChannelOptions,
+  DataPusher,
+  NotifyPushMessage,
+  PushChannelOptions,
+  Pusher,
+} from './channel-push';
 export { PUSH_CHANNEL, pushChannel } from './channel-push';
 export type {
   DigestAppend,
@@ -47,6 +54,7 @@ export {
   NotifyFanoutTooWideError,
   NotifyStoreMissingError,
 } from './errors';
+export type { FcmOptions } from './fcm';
 // `runFanout` is deliberately absent, for the reason `registerJob` is absent from
 // @ultimat3/jobs: a second way to execute a fan-out would bypass the job the factory built, and
 // with it the retry policy, the cancellation and the manifest row.
@@ -77,6 +85,13 @@ export {
   postgresDeliveryLedger,
   SQL_NOTIFY_DELIVERIES_TABLE,
 } from './ledger-pg';
+export type { NativePusher, NativePushOptions } from './native-push';
+export {
+  DEFAULT_NATIVE_PUSH_DEADLINE_MS,
+  nativePush,
+  PUSH_BAD_TOKEN_LIMIT,
+} from './native-push';
+export { APNS_KEY_ENV, FCM_KEY_ENV } from './native-transport';
 export type { NotifyEvent, Recipient } from './notification';
 export { recipientSchema } from './notification';
 export type { NotifierDefinition } from './notifier';
@@ -95,6 +110,24 @@ export type {
 export { toDurationMs } from './plan';
 export type { MemoryPreferenceStore, PreferenceQuery, PreferenceStore } from './preferences';
 export { allowAllPreferences, memoryPreferenceStore } from './preferences';
+export type { PushDeviceRecord, PushDeviceStore, PushPlatform } from './push-device';
+export { memoryPushDeviceStore, PUSH_PLATFORMS } from './push-device';
+export type { PostgresPushDeviceStoreOptions } from './push-device-pg';
+export {
+  PUSH_DEVICES_TABLE,
+  postgresPushDeviceStore,
+  SQL_PUSH_DEVICES_TABLE,
+} from './push-device-pg';
+export type { PushProvider } from './push-errors';
+export {
+  NotifyPushDeviceGoneError,
+  NotifyPushMessageInvalidError,
+  NotifyPushProviderRefusedError,
+} from './push-errors';
+export type { PushData } from './push-message';
+export { DATA_PUSH_MAX_KEYS, DATA_PUSH_MAX_VALUE } from './push-message';
+export type { PushRegisterOptions } from './push-register';
+export { PUSH_DEVICES_PER_ACTOR, pushRegister, pushUnregister } from './push-register';
 export { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from './retention';
 export type { InstalledNotifyStores, NotifyStores } from './stores';
 export {

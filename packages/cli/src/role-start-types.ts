@@ -108,5 +108,11 @@ export interface RunningRoles {
   readonly liveBridge: LiveReplicator | null;
   /** The sync node's registry, so a test can hold a real subscription; null without the role. */
   readonly liveRegistry: LiveQueryRegistry | null;
+  /**
+   * `x dev`'s rescan seam (`dev-rebuild.ts`): every `deviceSocket()` a save re-declared attached
+   * and served in place of the old one, whose sockets are told to redial. Answers the declared
+   * paths this listener cannot serve — added after it bound. A container never calls it.
+   */
+  refreshDevices(): Promise<readonly string[]>;
   stop(): Promise<void>;
 }

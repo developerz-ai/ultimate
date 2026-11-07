@@ -357,6 +357,14 @@ describe('isoInZone', () => {
     const at = fromIso('2026-03-14T08:00:07Z');
     expect(toIso(fromIso(isoInZone(at, ADELAIDE)))).toBe(toIso(at));
   });
+
+  test('round-trips to the second on an offset off the minute (Monrovia, -00:44:30)', () => {
+    // ISO-8601 offsets have no seconds: the label rounds, and the clock written is the label's.
+    const at = fromIso('1960-06-01T12:00:00Z');
+    const iso = isoInZone(at, 'Africa/Monrovia');
+    expect(iso).toBe('1960-06-01T11:16:00-00:44');
+    expect(toIso(fromIso(iso))).toBe(toIso(at));
+  });
 });
 
 describe('a zero-day move, and a zone off the minute', () => {

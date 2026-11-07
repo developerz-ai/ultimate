@@ -1,8 +1,9 @@
 // A deadline on every command the shared tier sends, and a park after one is missed. A paused
 // Redis accepts a command and never answers it: unbounded, `stack.read` hung 45 s and a bust 20 s
-// on an action's commit path. Bounded, a stalled store is a slow miss, then a free one.
+// on an action's commit path. Bounded, a stalled store is a slow miss, then a free one. A STOPPED
+// store is typed here too: Bun's client rejects every command with a bare connection error.
 
-import type { Clock } from '@ultimat3/core';
+import { type Clock, renderThrowable, stringField } from '@ultimat3/core';
 import type { DeadlineTimer } from '@ultimat3/core/outbound';
 import { platformDeadlineTimer } from '@ultimat3/core/outbound';
 import { CacheDriverUnavailableError } from './errors';
@@ -40,6 +41,19 @@ export interface DeadlinedRedis {
 const FIX =
   'redis-cli -u "$REDIS_URL" --latency — while the store stalls every read is a miss and Postgres answers; raise redisTier({ commandTimeoutMs }) only if that latency is its normal';
 
+/** Bun's code for a command refused for want of a connection: nothing reached the server. */
+const CONNECTION_CLOSED = 'ERR_REDIS_CONNECTION_CLOSED';
+
+/** A refused connection as the cache contract says it; a server's own error reply passes. */
+const typed = (command: string, error: unknown): unknown =>
+  stringField(error, 'code') === CONNECTION_CLOSED
+    ? new CacheDriverUnavailableError({
+        driver: 'redis',
+        cause: `${command} was not sent, the connection is down (${CONNECTION_CLOSED}: ${renderThrowable(error)})`,
+        fix: 'redis-cli -u "$REDIS_URL" PING — while it is down every read is a miss and Postgres answers; the client reconnects on its own once it answers PONG',
+      })
+    : error;
+
 export function withinDeadline(client: RedisLike, options: DeadlineOptions): DeadlinedRedis {
   const { clock, commandTimeoutMs } = options;
   const timer = options.timer ?? platformDeadlineTimer;
@@ -76,7 +90,7 @@ export function withinDeadline(client: RedisLike, options: DeadlineOptions): Dea
         },
         (error: unknown) => {
           settle();
-          reject(error);
+          reject(typed(command, error));
         },
       );
     });

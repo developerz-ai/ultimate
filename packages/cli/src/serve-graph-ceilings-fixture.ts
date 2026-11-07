@@ -118,20 +118,12 @@
  * raised 738 → 740, measured 740 (2026-11-03, plan 101 wave 4b): `core/src/config-assets.ts`
  * (`assets.retain`) and `core/src/config-client-errors.ts` (`clientErrors`) — two `app.config.ts`
  * sections, validated where every config section is, through the core barrel. Nothing else moved.
- * raised 740 → 741, measured 741 (2026-11-03, plan 101 wave 4c): `entity/src/test-driver.ts`
- * (`testDriver()`, which a scaffolded `packages/db/src/client.ts` names) through the entity barrel.
- * `dbDiagnostics()`'s five modules were 746 on the db barrel; they moved to
- * `@ultimat3/db/diagnostics` (one caller, `x db diagnostics`) and `NEVER_AT_BOOT` holds them out.
- * Measured against a copy of HEAD with its own workspace links.
- * raised 741 → 745, measured 745 (2026-11-05, plan 101 wave 5a): `errors:`'s rule on `invoke`'s path
- * (`core/src/declared-errors.ts`, `action/src/declared-errors.ts`) and a `:param` pin's URL merged
- * into the input before `invoke` (`core/src/route-path-template.ts`, `route-path-merge.ts`), all
- * through the action and core barrels. No existing module newly reached.
- * raised 745 → 747, measured 747 (2026-11-05, plan 101 wave 5b): `jwtBearerResolver()`
- * (`auth/src/jwt-bearer-resolver.ts`) through the auth barrel, and the server-stamped path pins
- * (`core/src/client-paths-pins.ts`) through the core barrel. No existing module newly reached.
- * raised 747 → 748, measured 748 (2026-11-05, plan 101 wave 6a): `entity/src/memory-journal.ts`, the
- * memory store's ambient transaction, which the memory repo and transactor now read. Nothing else.
+ * raised 740 → 741, measured 741 (2026-11-03, wave 4c): `entity/src/test-driver.ts`; `dbDiagnostics()`'s
+ * five modules moved to `@ultimat3/db/diagnostics`, held out by `NEVER_AT_BOOT`.
+ * raised 741 → 745, measured 745 (2026-11-05, wave 5a): `{core,action}/src/declared-errors.ts`,
+ * `core/src/route-path-{template,merge}.ts`. → 747 (wave 5b): `auth/src/jwt-bearer-resolver.ts`,
+ * `core/src/client-paths-pins.ts`. → 748 (wave 6a): `entity/src/memory-journal.ts`. No existing
+ * module newly reached by any of the three.
  * raised 748 → 804, measured 804 (2026-11-06, plan 101 wave 7): 54 new files and 2 existing modules
  * newly reached — one is `http/src/set-cookie.ts`, the one `setCookie` the replica position cookie
  * now writes through. `authorizationServer()` (21, `auth/src/{authorization-server*,grant-*,
@@ -162,8 +154,12 @@
  * streaming (`action/src/{action-stream,http-stream}.ts`) — each through its package's barrel.
  * raised 852 → 853, measured 853 (2026-11-07, plan 101 wave 10): `core/src/hmac.ts`, the one keyed
  * hash every HMAC site now calls (a Bun keyed-hasher bug). No existing module newly reached.
+ * raised 853 → 878, measured 878 (2026-11-07, #990–#999), 25 new files through their barrels:
+ * `auth/src/{passkey-*,webauthn-data,cbor,cose-key,base64url}.ts` (14), `action/src/{meter*,
+ * errors-meter}.ts` (7), `http/src/{problem-meta-framework,server-websocket,websocket-mounts}.ts`,
+ * `notify/src/push-device-pg.ts`. No existing module newly reached.
  */
-export const MIGRATE_CEILING = 853;
+export const MIGRATE_CEILING = 878;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -335,8 +331,10 @@ export const MIGRATE_CEILING = 853;
  * static build's image and card hook) and `storage/src/image-warm.ts` (`warmVariants`), each through
  * its package's barrel. No existing module newly reached.
  * raised 1225 → 1226, measured 1226 (2026-11-07, plan 101 wave 10): `MIGRATE_CEILING`'s `core/src/hmac.ts`.
+ * raised 1226 → 1253, measured 1253 (2026-11-07, #990–#999): `MIGRATE_CEILING`'s 25, plus
+ * `realtime/src/device-socket.ts` and `cli/src/role-start-devices.ts` (every role's device sockets).
  */
-export const SERVING_ROLE_CEILING = 1226;
+export const SERVING_ROLE_CEILING = 1253;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -495,5 +493,8 @@ export const SERVING_ROLE_CEILING = 1226;
  * `cli/src/runtime-assets-site{,-cache}.ts` (a served `/assets` image's declared variants) and
  * `cli/src/site-llms-pages.ts` (`llms.txt`'s page reads). No existing module newly reached.
  * raised 1397 → 1398, measured 1398 (2026-11-07, plan 101 wave 10): `MIGRATE_CEILING`'s `core/src/hmac.ts`.
+ * raised 1398 → 1434, measured 1434 (2026-11-07, #990–#999): `SERVING_ROLE_CEILING`'s 27, plus the
+ * web role's MCP `mcp/src/{app-catalog,catalog-errors,confirmation-{approvers,evidence,quorum-errors},
+ * runtime-schema,runtime-tool,server-catalog,tenant}.ts`.
  */
-export const WEB_ROLE_CEILING = 1398;
+export const WEB_ROLE_CEILING = 1434;

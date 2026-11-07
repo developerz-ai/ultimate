@@ -16,6 +16,7 @@ import '@postly/i18n';
 import { send } from '@ultimat3/mail';
 import { mailChannel, notifier, pushChannel, t } from '@ultimat3/notify';
 import { webPush } from '@ultimat3/pwa';
+import { nativePusher } from '../../settings/native-push';
 import { type CommentPostedData, commentPostedMail } from '../mail';
 
 /** What `createComment` enqueues: the ids the audience is resolved from, and the mail's two names. */
@@ -66,6 +67,16 @@ export const commentPosted = notifier({
           tag: `post:${event.params.postId}`,
           renotify: true,
         }),
+      }),
+    },
+    // Her phone: a DATA-ONLY push to every iOS and Android install she registered. It carries the
+    // two ids and nothing a lock screen or the push provider could read — the app wakes, fetches
+    // the comment over its own authenticated API, and decides what to show.
+    {
+      channel: pushChannel<CommentPosted>({
+        name: 'native-push',
+        pusher: nativePusher,
+        data: ({ event }) => ({ postId: event.params.postId, commentId: event.params.commentId }),
       }),
     },
     {

@@ -2,7 +2,7 @@
 // so a refactor that drops one is a red test rather than a 31-second read in production.
 
 import { describe, expect, test } from 'bun:test';
-import { REDIS_CLIENT_OPTIONS, redisClient, redisUrl } from './redis-client';
+import { REDIS_CLIENT_OPTIONS, redisClient, redisUrl, redisUrlSource } from './redis-client';
 
 describe('unit · redisClient', () => {
   test('a command while down refuses at once, and the client never stops reconnecting', () => {
@@ -19,6 +19,23 @@ describe('unit · redisClient', () => {
     expect(redisUrl({ REDIS_URL: '', VALKEY_URL: 'redis://b:6379' })).toBe('redis://b:6379');
     expect(redisUrl({ REDIS_URL: '  ' })).toBe('redis://localhost:6379');
     expect(redisUrl({})).toBe('redis://localhost:6379');
+  });
+
+  // The same precedence, with no fallback: a caller that must tell "unset" from "set" (the CLI's
+  // tier selection) asks this, never a copy of the key list.
+  test('redisUrlSource names the key that supplied the URL, and nothing when neither is set', () => {
+    expect(redisUrlSource({ REDIS_URL: ' redis://a:6379 ', VALKEY_URL: 'redis://b:6379' })).toEqual(
+      {
+        key: 'REDIS_URL',
+        url: 'redis://a:6379',
+      },
+    );
+    expect(redisUrlSource({ REDIS_URL: ' ', VALKEY_URL: 'redis://b:6379' })).toEqual({
+      key: 'VALKEY_URL',
+      url: 'redis://b:6379',
+    });
+    expect(redisUrlSource({ REDIS_URL: '', VALKEY_URL: '  ' })).toBeUndefined();
+    expect(redisUrlSource({})).toBeUndefined();
   });
 
   test('one client per process per URL', () => {

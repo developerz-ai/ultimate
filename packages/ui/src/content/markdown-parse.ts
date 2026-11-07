@@ -162,8 +162,9 @@ function parseLines(lines: readonly string[], depth: number): MarkdownBlock[] {
         continue;
       }
     }
-    // A paragraph, unless a setext underline turns it into a heading.
-    const para: string[] = [line.trim()];
+    // A paragraph, unless a setext underline turns it into a heading. Every line loses its leading
+    // whitespace, and only the LAST its trailing: two spaces before a newline are a hard break.
+    const para: string[] = [line.replace(/^[ \t]+/, '')];
     let j = i + 1;
     let level: 1 | 2 | null = null;
     for (; j < lines.length; j += 1) {
@@ -178,7 +179,7 @@ function parseLines(lines: readonly string[], depth: number): MarkdownBlock[] {
       if (interrupts(candidate)) break;
       para.push(candidate.replace(/^[ \t]+/, ''));
     }
-    const children = parseInline(para.join('\n'));
+    const children = parseInline(para.join('\n').trimEnd());
     out.push(
       level === null ? { kind: 'paragraph', children } : { kind: 'heading', level, children },
     );

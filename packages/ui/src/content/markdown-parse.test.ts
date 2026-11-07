@@ -126,6 +126,26 @@ describe('the working set', () => {
     ]);
   });
 
+  test('two trailing spaces break the line on the first line too, never at the end', () => {
+    expect(parseMarkdown('  one  \ntwo  \nthree  ')).toEqual([
+      {
+        kind: 'paragraph',
+        children: [
+          { kind: 'text', text: 'one' },
+          { kind: 'break' },
+          { kind: 'text', text: 'two' },
+          { kind: 'break' },
+          { kind: 'text', text: 'three' },
+        ],
+      },
+    ]);
+    expect(parseMarkdown('Title  \n===')[0]).toEqual({
+      kind: 'heading',
+      level: 1,
+      children: [{ kind: 'text', text: 'Title' }],
+    });
+  });
+
   test('setext headings', () => {
     expect(parseMarkdown('Title\n===')[0]).toMatchObject({ kind: 'heading', level: 1 });
     expect(parseMarkdown('Title\n---')[0]).toMatchObject({ kind: 'heading', level: 2 });

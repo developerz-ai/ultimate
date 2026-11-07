@@ -39,6 +39,11 @@ export interface McpCaller {
   readonly scopes: ReadonlySet<string>;
   /** Absent = no role filter applies (the caller sees every unrestricted tool). */
   readonly role?: McpRole;
+  /**
+   * The tenant THIS call acts in, on a `defineAppMcp({ tenant })` server — set by `tenant.ts` for
+   * one call, with `actor` the tenant's. Absent for the connection's own caller. Audited.
+   */
+  readonly tenant?: string;
 }
 
 /**

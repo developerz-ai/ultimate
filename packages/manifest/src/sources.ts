@@ -183,6 +183,12 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       // Written only when declared, exactly like `mcp.description`: absence already reads as
       // "no limit", and the descriptor's `null` is not a JSON fact worth a line per action.
       ...(action.rateLimit === null ? {} : { rateLimit: action.rateLimit }),
+      // A per-call limit has no fixed pair, and dropping its window read as "no rate limit".
+      ...(action.rateLimitPerCall === null
+        ? {}
+        : { rateLimitPerCall: { windowMs: action.rateLimitPerCall.windowMs } }),
+      // The same rule: absent reads as "no meter"; a per-call limit keeps its `null` (`MeterFact`).
+      ...(action.meter === null ? {} : { meter: action.meter }),
       mcp: {
         expose: action.mcp.expose,
         ...(action.mcp.description === null ? {} : { description: action.mcp.description }),

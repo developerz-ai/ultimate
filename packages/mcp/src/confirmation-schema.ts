@@ -10,6 +10,10 @@ export const MCP_CONFIRMATIONS_TABLE = 'x_mcp_confirmations';
  * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows.
  * `create … if not exists` throughout, so every boot can run it; a new column is an
  * `alter table … add column if not exists`, never an edit to the `create`.
+ *
+ * The open key carries the org: keyed by actor id alone, an id that stays the same across orgs
+ * carried an approval given in one org into a call in another. `coalesce` plus `is null` keeps a
+ * null org and `''` apart. The org-blind index is dropped in the same applied transaction.
  */
 export const SQL_MCP_CONFIRMATIONS_TABLE = `
 create table if not exists x_mcp_confirmations (
@@ -27,8 +31,15 @@ create table if not exists x_mcp_confirmations (
   consumed_at  timestamptz
 );
 
-create unique index if not exists x_mcp_confirmations_open_idx
-  on x_mcp_confirmations (actor_id, tool, input_digest) where consumed_at is null;
+drop index if exists x_mcp_confirmations_open_idx;
+
+create unique index if not exists x_mcp_confirmations_open_org_idx
+  on x_mcp_confirmations (actor_id, coalesce(org_id, ''), (org_id is null), tool, input_digest)
+  where consumed_at is null;
 
 create index if not exists x_mcp_confirmations_expires_at_idx on x_mcp_confirmations (expires_at);
+
+alter table x_mcp_confirmations add column if not exists quorum integer not null default 1;
+alter table x_mcp_confirmations add column if not exists approvers jsonb;
+alter table x_mcp_confirmations add column if not exists approvals jsonb not null default '[]'::jsonb;
 `;

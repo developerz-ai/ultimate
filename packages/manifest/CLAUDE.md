@@ -19,6 +19,7 @@ by the CLI, not imported.
 | `diff-change.ts` | the shared vocabulary: `ManifestChange`, `index`, `diffNamedSet`, `diffScalar` |
 | `diff-operations.ts` | actions, queries and the permissions they require |
 | `diff-rate-limit.ts` | how a declared rate limit moved |
+| `diff-meter.ts` | how a declared `meter:` moved: breaking iff a call pattern the old one admitted is refused (UTC periods nest — a shorter period at the same limit is LOOSER); a rename is breaking (`meta.meter` is public), `warnAt` internal |
 | `diff-entities.ts` | tables, columns, keys, invariants |
 | `diff-work.ts` | jobs and tasks — the two things that fail by silently not happening |
 | `diff-routes.ts` | a URL's surface and its delivery facts |
@@ -85,7 +86,9 @@ by the CLI, not imported.
   and no schema in the file moved); one dropped is additive but reported, because a widening of
   access is what a reviewer most needs to see. A rate limit tightened — in burst OR in refill rate,
   compared cross-multiplied so no rounding can invent a change — is breaking, and so is
-  introducing one where there was none; loosening or removing is additive.
+  introducing one where there was none; loosening or removing is additive. A limit resolved per call
+  is `rateLimitPerCall: { windowMs }` (never beside `rateLimit`): a move to or from one is breaking,
+  `diff-meter.ts`'s per-call rule; two of them compare windows (longer is breaking).
 - **An absent `permissions` is NOT an empty one.** Unlike `mcp.expose` there is no value to fold
   absence into: `[]` asserts "this operation requires nothing", so reading an absent field that
   way would call every permission of every operation newly required the first time an app diffs

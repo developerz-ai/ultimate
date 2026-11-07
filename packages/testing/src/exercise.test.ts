@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { action, registerActions, t } from '@ultimat3/action';
-import { isUltimateError, UltimateError } from '@ultimat3/core';
+import { isUltimateError, UltimateError, useContext } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
@@ -129,7 +129,20 @@ const expScaleDeclared = action({
   policy: can('exp-note:read'),
   handle: () => expectedQueryLoop('one lookup per note, each on its primary key', readEach),
 });
+/** A one-time token the server issued to ONE actor: the draw cannot forge it, the pass's state can. */
+const issued = new Map<string, string>();
+const expPassIssued = action({
+  input: t.object({ token: t.string.max(64) }),
+  output: Ok,
+  policy: can('exp-note:write'),
+  handle: ({ input, ctx }) => {
+    const mine = issued.get(ctx.actor.id);
+    issued.delete(ctx.actor.id);
+    return mine !== undefined && mine === input.token ? { ok: true } : refuse();
+  },
+});
 registerActions({
+  expPassIssued,
   expScaleDeclared,
   expScaleFlat,
   expScaleLoop,
@@ -255,6 +268,25 @@ describe(testName('unit', 'runExercisePass'), () => {
       },
     });
     expect(record.outcome).toBe('reached');
+  });
+
+  test('an async input is awaited, as the actor the call runs as: state the draw cannot forge', async () => {
+    expect((await one('expPassIssued')).outcome).toBe('unreached');
+    const issue = async (drawn: Readonly<Record<string, unknown>>) => {
+      // The seated actor, read where a handler reads it: the hook runs inside the call's request.
+      const { id } = useContext().actor;
+      await Promise.resolve();
+      const token = crypto.randomUUID();
+      issued.set(id, token);
+      return { ...drawn, token };
+    };
+    const writerActor = testActor('writer', { permissions: ['exp-note:write'] }).actor;
+    const record = await one('expPassIssued', {
+      expPassIssued: { actor: writerActor, input: issue },
+    });
+    expect(record.outcome).toBe('reached');
+    // The scale sweep computes it again, per call, at both sizes.
+    expect(record.scale?.verdict).toBe('flat');
   });
 
   test('off with a reason is recorded off; a blank reason refuses at declaration', async () => {

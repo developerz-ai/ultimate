@@ -96,6 +96,26 @@ describe('keyboard', () => {
     expect(h.moves).toEqual([{ id: 'b', fromGroup: 'list', toGroup: 'list', toIndex: 0 }]);
   });
 
+  test('two Alt+Arrows before the echo step from the held move, and the hold outlives the first answer', async () => {
+    const answers: Array<() => void> = [];
+    const h = harness(
+      [{ id: 'list', items: ['a', 'b', 'c', 'd'] }],
+      () => new Promise<void>((resolve) => answers.push(resolve)),
+    );
+    const down = { key: 'ArrowDown', altKey: true };
+    h.controller.key('a', down);
+    h.controller.key('a', down);
+    await settle();
+    expect(h.moves.map((move) => move.toIndex)).toEqual([1, 2]);
+    expect(h.order()).toEqual([['b', 'c', 'a', 'd']]);
+    answers[0]?.();
+    await settle();
+    expect(h.order()).toEqual([['b', 'c', 'a', 'd']]);
+    answers[1]?.();
+    await settle();
+    expect(h.order()).toEqual([['a', 'b', 'c', 'd']]);
+  });
+
   test('across a board, canDrop false keeps the card out of a column', async () => {
     const board = [
       { id: 'draft', items: ['a'] },

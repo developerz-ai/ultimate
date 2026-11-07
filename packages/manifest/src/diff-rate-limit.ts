@@ -1,12 +1,18 @@
 // One rule: how a declared rate limit moved. A tightened limit refuses a caller the old pair
 // served, which is the definition of breaking — and it is the one contract change that leaves
-// every schema in the manifest untouched, so nothing else in the diff can see it.
+// every schema in the manifest untouched, so nothing else in the diff can see it. A limit resolved
+// per call is judged as `diff-meter.ts` judges a per-call meter.
 
 import type { ManifestChange } from './diff-change';
 import type { ActionFact, RateLimitFact } from './schema';
 
+/** A limit resolved per call: only its window is a static fact. */
+interface PerCallReading {
+  readonly perCall: number;
+}
+
 /** No declaration at all, a declaration, or one this reader cannot make sense of. */
-type RateLimitReading = RateLimitFact | 'none' | 'unreadable';
+type RateLimitReading = RateLimitFact | PerCallReading | 'none' | 'unreadable';
 
 /**
  * Introducing a limit where there was none is the same event at its extreme: a client that was
@@ -35,6 +41,7 @@ export function diffRateLimit(
   if (next === 'none') {
     return [{ kind: 'additive', path: at, detail: `rate limit removed (was ${render(declared)})` }];
   }
+  if ('perCall' in declared || 'perCall' in next) return perCall(at, declared, next);
   if (tighter(declared, next)) {
     return [
       {
@@ -66,10 +73,45 @@ export function diffRateLimit(
 const tighter = (from: RateLimitFact, to: RateLimitFact): boolean =>
   to.limit < from.limit || to.limit * from.windowMs < from.limit * to.windowMs;
 
-const render = (limit: RateLimitFact): string => `${limit.limit}/${limit.windowMs}ms`;
+/**
+ * A per-call limit is the app's function of the caller, so no static number proves a caller the
+ * old build served still is: a move to or from one is breaking. Two of them are taken as the same
+ * resolver over a moved window, where a longer window refills slower.
+ */
+function perCall(
+  at: string,
+  from: RateLimitFact | PerCallReading,
+  to: RateLimitFact | PerCallReading,
+): readonly ManifestChange[] {
+  const moved = `${render(from)} -> ${render(to)}`;
+  if (!('perCall' in from) || !('perCall' in to)) {
+    return [
+      {
+        kind: 'breaking',
+        path: at,
+        detail: `rate limit ${moved}; no static limit proves an old caller is still served`,
+      },
+    ];
+  }
+  if (to.perCall === from.perCall) return [];
+  return to.perCall > from.perCall
+    ? [{ kind: 'breaking', path: at, detail: `per-call rate limit window lengthened ${moved}` }]
+    : [{ kind: 'additive', path: at, detail: `per-call rate limit window shortened ${moved}` }];
+}
+
+const render = (limit: RateLimitFact | PerCallReading): string =>
+  'perCall' in limit ? `per-call/${limit.perCall}ms` : `${limit.limit}/${limit.windowMs}ms`;
 
 function readRateLimit(fact: ActionFact): RateLimitReading {
   const value: unknown = fact.rateLimit;
+  const perCallValue: unknown = fact.rateLimitPerCall;
+  if (perCallValue !== undefined && perCallValue !== null) {
+    // `describe()` publishes one or the other, never both: a file carrying both is not its output.
+    if (value !== undefined && value !== null) return 'unreadable';
+    if (typeof perCallValue !== 'object') return 'unreadable';
+    const windowMs = (perCallValue as Record<string, unknown>)['windowMs'];
+    return positive(windowMs) ? { perCall: windowMs } : 'unreadable';
+  }
   if (value === undefined || value === null) return 'none';
   if (typeof value !== 'object') return 'unreadable';
   const record = value as Record<string, unknown>;

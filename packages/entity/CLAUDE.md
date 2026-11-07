@@ -214,8 +214,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | Declaration | Here | The rule |
 |---|---|---|
 | `retain: { after, on }` | `retain.ts` | no default window; `on` a `timestamp()` some index STARTS with (`X_ENTITY_RETAIN_UNINDEXED`); refused beside `appendOnly` (`X_ENTITY_RETAIN_INVALID`). The sweep is `@ultimat3/jobs`' `retainTarget` |
-| `history: true` | `history.ts`, `history-actor.ts` | `<table>_history` is a REAL registered entity (`$historyOf`), tenant column copied without its key. Written by `@ultimat3/db`'s trigger; `stampHistoryActor` sets `x.actor`/`x.request` once per transaction, never on a pinned repository — no transaction records `null` |
-| `countedIn` on a key | `counter.ts` | the target is an `integer()` of the entity the key points at, by its single primary key (`X_ENTITY_COUNTS_INVALID`); resolved at describe time, memoised on `registryGeneration()` |
+| `history: true` | `history.ts`, `history-actor.ts` | `<table>_history` is a REAL registered entity (`$historyOf`), tenant column copied without its key. Written by `@ultimat3/db`'s trigger; `stampHistoryActor` sets `x.actor`/`x.request` once per transaction, never on a pinned repository — no transaction records `null`. `bigint`/`decimal`/`timestamp` columns ride `text`/`instants`: the image is the memory driver's strings (`history-values.test.ts`) |
+| `countedIn` on a key | `counter.ts` | the target is a NOT NULL `integer()` of the entity the key points at (Postgres' `NULL + 1` stays NULL), by its single primary key (`X_ENTITY_COUNTS_INVALID`); resolved at describe time, memoised on `registryGeneration()` |
 | all three, described | `lifecycle.ts` | each `$describe()` key ABSENT unless declared, so no other entity's hash moves |
 | the memory driver | `memory-lifecycle.ts` | mirrors both triggers through the table's raw store, so a unit test answers what Postgres answers |
 

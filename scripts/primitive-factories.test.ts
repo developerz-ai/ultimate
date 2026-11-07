@@ -21,8 +21,8 @@ const FUNCTION =
   /export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[^{}]*?>)?\s*\(([\s\S]*?)\)\s*:\s*([^{;]+?)\s*\{/g;
 /** `export const name = (…): Return =>` — the same declaration in the other spelling. */
 /** The kinds this scan can recognise from a return type. A subset of `PrimitiveKind`: the other
- *  five primitives are declared, never returned by a factory. */
-type FactoryKind = 'action' | 'job' | 'mutator';
+ *  four primitives are declared, never returned by a factory. */
+type FactoryKind = 'action' | 'job' | 'mutator' | 'route';
 
 const ARROW =
   /export\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:<[^{}]*?>)?\s*\(([\s\S]*?)\)\s*:\s*([^=;]+?)\s*=>/g;
@@ -43,6 +43,11 @@ const ROOTS: ReadonlyMap<string, FactoryKind> = new Map([
   ['Action', 'action'],
   ['JobHandle', 'job'],
   ['Mutator', 'mutator'],
+  // A route factory's value is a websocket MOUNT, which `@ultimat3/http` types structurally
+  // (`WebSocketMount`) and `@ultimat3/realtime` cannot import: no shared supertype exists to seed,
+  // so the one route value a factory returns is seeded by its own name. A second route factory
+  // that returns another type is a missing row this scan does not see — say so in its review.
+  ['DeviceSocket', 'route'],
 ]);
 
 /**
@@ -218,8 +223,11 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
       '@ultimat3/jobs.webhookReceiver:job',
       '@ultimat3/mcp.mcpConfirmations:action',
       '@ultimat3/notify.notifier:job',
+      '@ultimat3/notify.pushRegister:action',
+      '@ultimat3/notify.pushUnregister:action',
       '@ultimat3/pwa.pushSubscribe:action',
       '@ultimat3/pwa.pushUnsubscribe:action',
+      '@ultimat3/realtime.deviceSocket:route',
       '@ultimat3/scraping.scrape:job',
     ]);
     expect(declared).toHaveLength(PRIMITIVE_FACTORIES.length);
@@ -310,6 +318,19 @@ describe('unit · the scan itself can fail', () => {
     expect(ships('src/job.test.ts', unshippedGlobs({}))).toBe(false);
     expect(files).not.toContain('packages/jobs/src/operator-surface-fixture.ts');
     expect(files).toContain('packages/jobs/src/backfill.ts');
+  });
+
+  test('a DeviceSocket-returning export is a route factory', () => {
+    const source =
+      'export function deviceSocket(options: DeviceSocketOptions): DeviceSocket {\n  return link;\n}\n';
+    expect(factoriesIn('packages/realtime/src/device-socket.ts', source, ROOTS)).toEqual([
+      {
+        factory: 'deviceSocket',
+        pkg: '@ultimat3/realtime',
+        kind: 'route',
+        at: 'packages/realtime/src/device-socket.ts',
+      },
+    ]);
   });
 
   test('a JobHandle-returning export is a job factory, by the same rule', () => {

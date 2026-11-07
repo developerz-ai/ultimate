@@ -10,6 +10,7 @@ import {
   duplicateMeta,
   metaMissing,
   metaTooLong,
+  ogImageConflict,
   SeoError,
   type SeoErrorCode,
   titleTemplateSlotMissing,
@@ -136,6 +137,11 @@ export function validateMeta(
       if (problem !== undefined) {
         issues.push(issueOf(linkError(link, problem, route.file), route.path, route.file));
       }
+    }
+
+    // The renderer's refusal, at the route FILE and before any request.
+    if (meta.og?.image !== undefined && meta.og.capture !== undefined) {
+      issues.push(issueOf(ogImageConflict(route.file), route.path, route.file));
     }
 
     // A canonical is only checkable for a static path: a dynamic route's

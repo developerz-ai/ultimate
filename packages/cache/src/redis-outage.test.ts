@@ -1,10 +1,12 @@
 // A paused Redis, through the real stack: the read that hung 45 s answers with its load at the
 // tier's deadline and records it, and the reads after it skip the store without sending a byte.
-// `redis-deadline.test.ts` owns the mechanism; this file owns what `stack.read` makes of it.
+// A stopped one refuses typed. `redis-deadline.test.ts` owns the mechanism; this file owns what
+// `stack.read` and a bust make of it.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { DeadlineTimer } from '@ultimat3/core/outbound';
+import { redisClient } from '@ultimat3/core/redis';
 import { CacheDriverUnavailableError, CacheLimitInvalidError } from './errors';
 import type { RedisLike } from './redis';
 import { redisTier } from './redis';
@@ -12,6 +14,7 @@ import { tag } from './tags';
 import { isolateTierFailures, recentTierFailures, resetTierFailures } from './tier-failures';
 import { cacheStack } from './tiers';
 
+const CONNECTION_CLOSED = 'ERR_REDIS_CONNECTION_CLOSED';
 const restoreFailures = isolateTierFailures();
 beforeEach(resetTierFailures);
 afterAll(restoreFailures);
@@ -116,6 +119,51 @@ describe('unit · a paused redis under cacheStack', () => {
     expect(armed.size).toBeGreaterThan(0);
     await missAll();
     expect(await bust).toBeInstanceOf(CacheDriverUnavailableError);
+  });
+
+  test('a stopped server refuses typed: the read records it, the bust rejects with it', async () => {
+    // Bun's client while the connection is down: every command rejects at once with this code.
+    const closed = (): Promise<never> =>
+      Promise.reject(Object.assign(new Error('Connection closed'), { code: CONNECTION_CLOSED }));
+    const client: RedisLike = { get: closed, set: closed, send: closed };
+    const clock = frozenClock();
+    const tier = redisTier({ client, clock, buildId: null });
+
+    expect(await cacheStack([tier], { clock }).read('k', () => Promise.resolve('loaded'))).toBe(
+      'loaded',
+    );
+    const failures = recentTierFailures();
+    expect(failures.length).toBeGreaterThan(0);
+    expect(failures.every((failure) => failure.code === 'X_CACHE_DRIVER_UNAVAILABLE')).toBe(true);
+
+    const bust = await tier.invalidateTags([tag('post', '1')]).then(
+      () => expect.unreachable('a bust against a stopped server answered'),
+      (error: unknown) => error,
+    );
+    expect(bust).toBeInstanceOf(CacheDriverUnavailableError);
+    expect((bust as CacheDriverUnavailableError).message).toContain(CONNECTION_CLOSED);
+  });
+
+  test("core's real client with nothing listening: the bust is typed, not Bun's error", async () => {
+    // Port 1 answers nothing, so Bun's client refuses every command at once, as a stopped server.
+    const client = redisClient('redis://127.0.0.1:1/4');
+    const tier = redisTier({ client, clock: frozenClock(), buildId: null });
+    const bust = await tier.invalidateTags([tag('post', '1')]).catch((error: unknown) => error);
+    client.close();
+    expect(bust).toBeInstanceOf(CacheDriverUnavailableError);
+  });
+
+  test('a server error reply is not a refusal of the connection and passes through', async () => {
+    const reply = Object.assign(new Error('WRONGTYPE'), { code: 'ERR_REDIS_INVALID_RESPONSE' });
+    const client: RedisLike = {
+      get: () => Promise.reject(reply),
+      set: () => Promise.reject(reply),
+      send: () => Promise.reject(reply),
+    };
+    const tier = redisTier({ client, clock: frozenClock(), buildId: null });
+    expect(await tier.invalidateTags([tag('post', '1')]).catch((error: unknown) => error)).toBe(
+      reply,
+    );
   });
 
   test('commandTimeoutMs is screened where it is named', () => {

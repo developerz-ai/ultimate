@@ -244,6 +244,7 @@ export type {
   WebSocketMount,
 } from './server';
 export { httpServer } from './server';
+export type { WebSocketOption } from './server-websocket';
 export type { DeleteCookieOptions } from './set-cookie';
 export { deleteCookie, setCookie } from './set-cookie';
 // The stage vocabulary comes from its declaration site, beside the fifteen implementations it
@@ -259,3 +260,4 @@ export {
   DEFAULT_WEBHOOK_TOLERANCE_MS,
   verifyWebhookSignature,
 } from './webhook-verify';
+export { type JoinedWebSocketMounts, joinWebSocketMounts } from './websocket-mounts';

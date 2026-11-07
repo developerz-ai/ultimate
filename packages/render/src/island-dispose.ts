@@ -19,6 +19,16 @@ const ISLAND_ATTRIBUTE = 'data-x-island';
 const released = new WeakSet<Element>();
 
 /**
+ * A disposer that threw, handed to the platform's `reportError`: it reaches `window`'s `error`
+ * listeners (the client-errors script among them) as an uncaught error would, once, and the
+ * router's swap carries on. Re-thrown where the platform has none, so it is never swallowed.
+ */
+function reportDisposeFailure(error: unknown): void {
+  if (typeof globalThis.reportError !== 'function') throw error;
+  globalThis.reportError(error);
+}
+
+/**
  * Disposes every island mounted under `root` — `root` itself included when it is an island's
  * wrapper — unless `kept` claims it, and answers how many had a boot to settle. For each one the
  * disposer is what its `mount` returned (held by `el.__x`), called once that boot resolves; a
@@ -29,7 +39,8 @@ const released = new WeakSet<Element>();
  * the pending boot mounts nothing into markup that left the document — a mount nobody would ever
  * dispose. Works on a detached subtree, so the order against removing `root` does not matter.
  * Idempotent per island: one already let go of is skipped and not counted; one `kept` claimed is
- * untouched, so a later call may still dispose it.
+ * untouched, so a later call may still dispose it. A disposer that throws is reported, not left as
+ * an unhandled rejection: `reportDisposeFailure`.
  */
 export function disposeIslands(
   root: Element,
@@ -50,7 +61,12 @@ export function disposeIslands(
     disposed += 1;
     el.__x.then(
       (dispose) => {
-        if (typeof dispose === 'function') dispose();
+        if (typeof dispose !== 'function') return;
+        try {
+          dispose();
+        } catch (error: unknown) {
+          reportDisposeFailure(error);
+        }
       },
       () => undefined,
     );
