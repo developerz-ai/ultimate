@@ -8,7 +8,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `seo: { llms: false }` hands `/llms.txt` to the app: an app serving its own no longer fails to boot with `X_ROUTE_CONFLICT`.
+
+### Fixed
+
+- `@ultimat3/cli`: with `seo.llms: false` the web role and `x dev` mount no `GET /llms.txt`, and the static export writes no `llms.txt`. Both mounted an empty one, so an app with its own `/llms.txt` route refused every boot with `X_ROUTE_CONFLICT` â€” no Upgrading row covered it. `writeSiteSeo(out, seo, { llms })` takes the setting; a scaffold from `x new` passes it.
 
 ## 30.1.0 - 2026-11-07
 

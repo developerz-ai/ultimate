@@ -119,7 +119,7 @@ async function writeSeoFiles(report: PrerenderReport): Promise<readonly string[]
     entries: report.entries,
     llmsPages: report.llmsPages,
   });
-  return await writeSiteSeo(out, seo);
+  return await writeSiteSeo(out, seo, { llms: settings.llms });
 }
 
 if (import.meta.main) {
