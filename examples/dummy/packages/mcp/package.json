@@ -21,10 +21,10 @@
     "@postly/core": "0.0.1",
     "@postly/db": "0.0.1",
     "@postly/domain": "0.0.1",
-    "@ultimat3/action": "30.2.0",
-    "@ultimat3/core": "30.2.0",
-    "@ultimat3/db": "30.2.0",
-    "@ultimat3/mcp": "30.2.0",
-    "@ultimat3/testing": "30.2.0"
+    "@ultimat3/action": "30.3.0",
+    "@ultimat3/core": "30.3.0",
+    "@ultimat3/db": "30.3.0",
+    "@ultimat3/mcp": "30.3.0",
+    "@ultimat3/testing": "30.3.0"
   }
 }
