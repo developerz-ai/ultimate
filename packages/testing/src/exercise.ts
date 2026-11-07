@@ -8,10 +8,8 @@
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
 import { isUltimateError, renderThrowable, runExercise } from '@ultimat3/core';
-import type { AnyJobHandle, JobExecution, JobRecord } from '@ultimat3/jobs';
+import type { JobExecution, JobRecord } from '@ultimat3/jobs';
 import { registeredJobs } from '@ultimat3/jobs';
-import type { Policy } from '@ultimat3/policy';
-import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
 import { assertOverridesKnown, unknownDeclaration } from './define-exercise';
 import type { RoleGrants } from './exercise-actor';
@@ -36,8 +34,9 @@ import type {
   Observed,
 } from './exercise-report';
 import { openExerciseRoom, overrideLine } from './exercise-report';
-import { withExerciseRequest } from './exercise-request';
 import { actorRowsOf, attachSweeps, seated, sizedCall } from './exercise-sweeps';
+import type { Subject } from './exercise-subjects';
+import { fixedTenant, seatIn, subjectsOf } from './exercise-subjects';
 import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
 import { seedPass, tenantPair } from './seed-graph-pass';
@@ -60,86 +59,6 @@ export interface ExercisePassOptions {
   /** One primitive by name; unknown is `X_DECLARATION_UNKNOWN`. */
   readonly only?: string;
   readonly roles: RoleGrants;
-}
-
-/** One primitive, as the pass drives it: the schema to draw from and the one call to make. */
-interface Subject {
-  readonly kind: ExerciseRecord['kind'];
-  readonly name: string;
-  readonly input: StandardSchemaV1;
-  readonly policy: Policy | undefined;
-  /** Every permission the policy references — what `x policy explain` matches grants against. */
-  readonly permissions: readonly string[];
-  /** A job's handle: what the crash proof kills at every step boundary once the control reached it. */
-  readonly handle?: AnyJobHandle;
-  /** Resolves to the failure a worker recorded on the row (a job's), or what the call answered. */
-  call(input: unknown, actor: Actor | null, tenant: string, jobs: RunJobs): Promise<Answer>;
-}
-
-/** `failure` set: the worker recorded one (a job's). Absent: answered, with `output`. */
-interface Answer {
-  readonly failure?: unknown;
-  readonly output?: unknown;
-}
-
-const ANSWERED: ReadonlySet<string> = new Set(['completed', 'suspended']);
-
-const statusOfJobFailure = (run: JobExecution | undefined): string =>
-  run === undefined ? 'the job never ran' : (run.error ?? `the run ended ${run.outcome}`);
-
-async function subjectsOf(): Promise<readonly Subject[]> {
-  // On demand, as every fixture here loads them: the barrel stays off `action` and `query`.
-  const { invoke, listActions } = await import('@ultimat3/action');
-  const { listQueries, runQuery } = await import('@ultimat3/query');
-  const job = (handle: AnyJobHandle): Subject => ({
-    kind: 'job',
-    name: handle.name,
-    input: handle.input,
-    policy: undefined,
-    permissions: [],
-    handle,
-    call: async (input, actor, tenant, jobs) => {
-      const queued = await jobs.enqueue(handle, input, { tenantId: tenant });
-      const trace = await jobs.drain(actor === null ? {} : { actor });
-      const own = trace.executions.find((run) => run.jobId === queued.id);
-      // The worker's failure is a string on the row, never a throw: it is the attempt's error.
-      // Suspended is a body that ran and parked (`step.sleep`, `waitForEvent`): reached.
-      return own !== undefined && ANSWERED.has(own.outcome)
-        ? { output: own.result }
-        : { failure: statusOfJobFailure(own) };
-    },
-  });
-  return [
-    ...listActions().map(
-      (target): Subject => ({
-        kind: 'action',
-        name: target.name,
-        input: target.input,
-        policy: target.policy,
-        permissions: target.describe().permissions,
-        call: async (input, actor) => ({
-          output: await withExerciseRequest(target.name, actor, () =>
-            invoke(target, input, { surface: 'http' }),
-          ),
-        }),
-      }),
-    ),
-    ...listQueries().map(
-      (target): Subject => ({
-        kind: 'query',
-        name: target.name,
-        input: target.input,
-        policy: target.policy,
-        permissions: target.describe().permissions,
-        call: async (input, actor) => ({
-          output: await withExerciseRequest(target.name, actor, () =>
-            runQuery(target, input, { surface: 'http' }),
-          ),
-        }),
-      }),
-    ),
-    ...registeredJobs().map(job),
-  ];
 }
 
 const isOff = (overrides: ExerciseOverrides | undefined, name: string): boolean => {
@@ -264,7 +183,8 @@ async function control(
     draw: (at, n) => drawInput(sampler, subject.input, at, declaredRuns === undefined ? 0 : n),
     bind: async (drawn) => {
       const bound = bindIds(drawn, lookups[binds++ === 0 ? 0 : 1]);
-      lastInput = bindInput === undefined ? bound : await bindInput(bound, actor);
+      const given = bindInput === undefined ? bound : await bindInput(bound, actor);
+      lastInput = seatIn(subject, given, tenant);
       return lastInput;
     },
     accepts: async (input) =>
@@ -306,13 +226,16 @@ async function attack(
   await using jobs = await testJobs();
   room.begin(subject.name);
   let output: unknown;
+  // A job's org is re-seated in B's: B cannot enqueue a payload naming A (refused at the enqueue,
+  // which proves nothing), so the attack that matters is a job of B's carrying A's ids.
+  const sent = seatIn(subject, input, tenant);
   // Every `crossTenant()` B's call opened: a job's declared sweep is told from a leak by it alone.
   // Loaded here, never at the top: the barrel stays entity-free (`seed-writer.ts`'s rule).
   const { setCrossTenantObserver } = await import('@ultimat3/entity');
   const crossings: string[] = [];
   setCrossTenantObserver((reason) => crossings.push(reason));
   try {
-    const answer = await subject.call(input, actor, tenant, jobs);
+    const answer = await subject.call(sent, actor, tenant, jobs);
     output = answer.output;
   } catch {
     // B's refusal is the answer a scoped primitive gives: only what B got back, and what B's call
@@ -374,7 +297,18 @@ async function exerciseOne(
   };
   // A's own first input, A's ids in it: B sends exactly what A legitimately would.
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookups[0]);
-  const input = bindInput === undefined ? drawn : await bindInput(drawn, actor);
+  const given = bindInput === undefined ? drawn : await bindInput(drawn, actor);
+  const seat = subject.seat?.(given, tenant);
+  if (seat?.kind === 'fixed') {
+    const fixed = fixedTenant(name, seat.declared);
+    return {
+      ...none,
+      outcome: 'unreached',
+      ...fixed,
+      tenant: { verdict: 'unproven', reason: fixed.reason },
+    };
+  }
+  const input = seat === undefined ? given : seat.input;
   let reachedWith: unknown;
   const record = await proveTenant({
     taint: tenantTaint(graph, tenant),

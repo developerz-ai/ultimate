@@ -99,6 +99,11 @@ export interface ExerciseRecord {
   readonly ms: number;
   /** For an `unreached` one: the line to paste into `defineExercise({ … })`. */
   readonly override?: string;
+  /**
+   * For an `unreached` one no override reaches: the edit that does, in place of the paste — a job
+   * whose `tenant(input)` names one fixed org (`exercise-subjects.ts`'s `fixedTenant`).
+   */
+  readonly fix?: string;
   /** On every record that ran — absent only on `off` and `refused`. The fields above are A's. */
   readonly tenant?: TenantProof;
   /** On a reached job only: its control's input, killed at every step boundary. */
