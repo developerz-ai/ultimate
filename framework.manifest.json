@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "62f2bb9c044ee01f178fc2e7139a1bbd63e8d63e7954bdd2fdcdbca66c1b7a4f",
+  "buildId": "16a5db580204ac3cdcae2b15577c19a4d8d01942112eda5e31cb8f0ed7ce3c11",
   "tiers": {
     "0": [
       "core",
@@ -3116,6 +3116,11 @@
     },
     {
       "code": "X_MCP_SURFACE_OVER_BUDGET",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_TENANT_REQUIRED",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

@@ -38,6 +38,7 @@ describe('audit levels', () => {
     hidden: 'warn',
     'scope-denied': 'warn',
     'policy-denied': 'warn',
+    refused: 'warn',
     'invalid-args': 'info',
     unconfirmed: 'info',
     previewed: 'info',
@@ -67,6 +68,34 @@ describe('audit levels', () => {
       actorKind: 'agent',
       role: 'member',
       scope: 'orders:write',
+    });
+  });
+
+  test('the line carries the orgId the call ran for — the tenant, on every outcome', () => {
+    const { logger, lines } = capture();
+    // A per-call tenant: a REBUILT actor whose orgId names the renter, whatever the outcome was.
+    const tenantCaller: McpCaller = {
+      actor: agentActor({ id: 'agent-7', orgId: 'org-42' }),
+      scopes: new Set(),
+    };
+    auditToolCall({ tool: 'orders.refund', outcome: 'ok', caller: tenantCaller }, logger);
+    expect(lines[0]).toMatchObject({ orgId: 'org-42' });
+    // And on the tenancy refusal itself: one line still identifies which org was refused.
+    const refused = capture();
+    auditToolCall(
+      {
+        tool: 'orders.refund',
+        outcome: 'refused',
+        caller: { actor: tenantCaller.actor, scopes: new Set() },
+        code: 'X_MCP_TENANT_REQUIRED',
+      },
+      refused.logger,
+    );
+    expect(refused.lines[0]).toMatchObject({
+      orgId: 'org-42',
+      outcome: 'refused',
+      code: 'X_MCP_TENANT_REQUIRED',
+      level: 'warn',
     });
   });
 

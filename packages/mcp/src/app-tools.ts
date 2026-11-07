@@ -37,6 +37,7 @@ import { withScopes } from './scopes';
 import type { McpServerInput } from './server';
 import { type McpServer, mcpServer } from './server';
 import type { McpInstructions } from './server-voice';
+import type { McpTenantOption } from './tenant';
 import type { McpRateLimits, McpRouteDescriptor, ResolvedToken } from './transport-http';
 import { mcpHttpRoute } from './transport-http';
 
@@ -198,6 +199,19 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * ```
    */
   readonly oauth?: McpOAuth | undefined;
+  /**
+   * Multi-tenancy, for an app hosting many orgs under one agent token. The arg names the input-key
+   * callers state the tenant with (kept out of every tool's schema); `resolve` is the app's
+   * membership lookup for ONE actor — the same lookup the fix line of `X_MCP_TENANT_REQUIRED`
+   * cites. A caller naming an org they are not a member of gets the hidden-tool answer, never an
+   * "unknown tenant" (that would be an enumeration oracle over your renters). Omit on a
+   * single-tenant app: absent means nothing changes, byte for byte.
+   *
+   * ```ts
+   * tenant: { arg: 'tenant', resolve: (actor, id) => as.memberships(actor, id) },
+   * ```
+   */
+  readonly tenant?: { arg: string; resolve: McpTenantOption['resolve'] } | undefined;
 }
 
 export interface AppMcp {
@@ -285,6 +299,7 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
     errorAudience: input.errorAudience ?? 'caller',
     ...(input.onAudit === undefined ? {} : { onAudit: input.onAudit }),
+    ...(input.tenant === undefined ? {} : { tenant: input.tenant }),
   };
   const server = mcpServer(config);
 

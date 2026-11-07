@@ -8,7 +8,12 @@ import { fixFor } from '@ultimat3/core';
 import { outcomeForResult } from './audit';
 import type { McpAuditHook, McpAuditor } from './audit-hook';
 import { LOG_ONLY_AUDITOR, mcpAuditor } from './audit-hook';
-import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
+import {
+  McpProtocolError,
+  McpScopeDeniedError,
+  McpTenantRequiredError,
+  TOOL_UNKNOWN_FIX,
+} from './errors';
 import { metaCall } from './meta-call';
 import { META_UNKNOWN_FIX } from './meta-errors';
 import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
@@ -38,6 +43,8 @@ import { ResourceRegistry } from './resources';
 import { resourcesRead } from './server-resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
 import { instructionsFor, invalidArgsResult } from './server-voice';
+import { buildTenantActor, stripTenantArgs } from './tenant';
+import type { McpTenantOption } from './tenant';
 import { admitted, thrownResponse } from './tool-thrown';
 import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpWire, ServerInfo } from './wire';
 import {
@@ -84,6 +91,12 @@ export interface McpServerInput {
   readonly onAudit?: McpAuditHook | undefined;
   /** Stamps each `onAudit` event's `at`. */
   readonly clock?: Clock | undefined;
+  /**
+   * Present when this app hosts many orgs under one token: ONE arg names the tenant each call
+   * runs for, resolved against the app's membership hook before anything sees the call — which
+   * is why no tool below ever declares it. Absent = a single-tenant app, byte for byte as before.
+   */
+  readonly tenant?: McpTenantOption | undefined;
 }
 
 export function mcpServer(input: McpServerInput = {}): McpServer {
@@ -105,6 +118,7 @@ export function mcpServer(input: McpServerInput = {}): McpServer {
     input.onAudit === undefined && input.clock === undefined
       ? LOG_ONLY_AUDITOR
       : mcpAuditor({ onAudit: input.onAudit, clock: input.clock }),
+    input.tenant,
   );
 }
 
@@ -118,6 +132,8 @@ export class McpServer {
   private readonly voice: McpServerVoice;
   /** Where every decision is audited — the log line, then `onAudit`. Public for the HTTP route. */
   readonly audit: McpAuditor;
+  /** Tenant option, `undefined` on a single-tenant app — see `McpServerInput.tenant`. */
+  private readonly tenant: McpTenantOption | undefined;
 
   constructor(
     tools: ToolRegistry,
@@ -127,6 +143,7 @@ export class McpServer {
     meta?: MetaSurface,
     voice: McpServerVoice = { errorAudience: 'developer' },
     audit: McpAuditor = LOG_ONLY_AUDITOR,
+    tenant?: McpTenantOption,
   ) {
     this.tools = tools;
     this.resources = resources;
@@ -135,6 +152,7 @@ export class McpServer {
     this.meta = meta;
     this.voice = voice;
     this.audit = audit;
+    this.tenant = tenant;
   }
 
   async handle(
@@ -274,6 +292,52 @@ export class McpServer {
       return errorResponse(id, INVALID_PARAMS, 'tools/call params.name must be a string');
     }
 
+    // THE per-call gate. A tenant is stated per CALL, never per connection: evict the arg before
+    // anything validates or resolves the rest, settle the app's membership answer, and dispatch
+    // with a rebuilt caller — so every layer below (meta, resolve, schema, policy, the tool) sees
+    // an actor that already IS the tenant's, and no tool's input schema ever models tenancy.
+    // Without the option nothing moves: a single-tenant app keeps every previous byte.
+    if (this.tenant === undefined) {
+      return this.answerToolCall(id, name, params['arguments'], caller);
+    }
+    const evicted = stripTenantArgs(
+      params['arguments'] === undefined
+        ? undefined
+        : (params['arguments'] as Readonly<Record<string, unknown>>),
+      this.tenant,
+    );
+    if (typeof evicted.value !== 'string' || evicted.value === '') {
+      return this.tenantRefused(id, name, caller);
+    }
+    const membership = await this.tenant.resolve(caller.actor, evicted.value);
+    if (membership === undefined) {
+      // Not a member = OUTCOME 1, the hidden-tool answer, bit for bit — a separate "unknown
+      // tenant" error would let anyone enumerate every org this app hosts.
+      return this.answerToolCall(
+        id,
+        name,
+        { ...evicted.rest, [this.tenant.arg]: evicted.value },
+        caller,
+        true,
+      );
+    }
+    const tenantCaller: McpCaller = {
+      ...caller,
+      actor: buildTenantActor(caller.actor, membership),
+      tenant: this.tenant,
+    };
+    return this.answerToolCall(id, name, evicted.rest, tenantCaller);
+  }
+
+  /** The tools/call answer for an already-settled caller; also what the non-member path takes. */
+  private async answerToolCall(
+    id: JsonRpcId,
+    name: string,
+    rawArgs: unknown,
+    caller: McpCaller,
+    notFound = false,
+  ): Promise<JsonRpcResponse> {
+    if (notFound) return this.notFound(id, name, caller, TOOL_UNKNOWN_FIX);
     const meta = this.metaFor(caller);
     if (meta !== undefined) {
       const answered = await metaCall(
@@ -286,16 +350,27 @@ export class McpServer {
             thrownResponse(at, tool, error, who, this.voice.errorAudience, this.audit),
         },
         meta,
-        { id, name, rawArgs: params['arguments'], caller },
+        { id, name, rawArgs, caller },
       );
       if (answered !== undefined) return answered;
     }
-    return this.dispatch(
-      id,
-      name,
-      this.tools.resolve(name, params['arguments'] ?? {}, caller),
+    return this.dispatch(id, name, this.tools.resolve(name, rawArgs ?? {}, caller), caller);
+  }
+
+  /** X_MCP_TENANT_REQUIRED: the tool is visible, so naming the missing arg leaks nothing. */
+  private tenantRefused(id: JsonRpcId, name: string, caller: McpCaller): JsonRpcResponse {
+    const refusal = new McpTenantRequiredError({ name });
+    this.audit.toolCall({
+      tool: name,
+      outcome: 'refused',
       caller,
-    );
+      code: refusal.code,
+    });
+    return errorResponse(id, INVALID_REQUEST, refusal.cause, {
+      code: refusal.code,
+      fix: refusal.fix,
+      docs: refusal.docs,
+    });
   }
 
   /** OUTCOME 1, the one answer for absent and hidden alike. See `dispatch`. */

@@ -7,7 +7,14 @@ import { frameworkResources } from './resources';
 import { mcpServer } from './server';
 import { INTERNAL_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
-const agent = { kind: 'agent', id: 'agent-1' } as unknown as Actor;
+const agent = {
+  kind: 'agent',
+  id: 'agent-1',
+  orgId: 'org-a',
+  roles: [],
+  scopes: [],
+  permissions: [],
+} as unknown as Actor;
 
 function caller(role: string | undefined, scopes: readonly string[]): McpCaller {
   return role === undefined
@@ -57,6 +64,26 @@ const server = mcpServer({
   tools: [openTool, adminOnly, scopeGated],
   resources: frameworkResources({ manifest: () => '{"version":1}' }),
 });
+
+/** Which org a call ran for — read inside the handler, proving the per-call actor arrived. */
+const orgProbe: AnyMcpTool = {
+  name: 'renter.probe',
+  description: 'reports the orgId the actor it was dispatched with carries',
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  async handle(_args, caller) {
+    return textResult(`org=${String(caller.actor.orgId)}`);
+  },
+};
+
+/** The app's membership hook: org-tenant for everyone, anything else for nobody. */
+const memberships = (actor: Actor, id: string) =>
+  id === 'org-tenant' ? Promise.resolve({ orgId: 'org-tenant' }) : Promise.resolve(undefined);
+
+const tenantServer = (tools: AnyMcpTool[]) =>
+  mcpServer({
+    tools,
+    tenant: { arg: 'tenant', resolve: memberships },
+  });
 
 const call = (method: string, params?: unknown) =>
   params === undefined
@@ -140,6 +167,57 @@ describe('hidden is not forbidden', () => {
     expect(response?.error?.data).toBeUndefined();
     // No enumeration behind the curtain: the answer must not hint that the tool exists.
     expect(JSON.stringify(response)).not.toContain('scope');
+  });
+
+  test('the per-call tenant actor is built before policy — the tool reads the caller orgId', async () => {
+    const response = await tenantServer([orgProbe]).handle(
+      call('tools/call', { name: 'renter.probe', arguments: { tenant: 'org-tenant' } }),
+      caller(undefined, []),
+    );
+    const result = response?.result as { content: { text: string }[] } | undefined;
+    // 'org-tenant', not the token's orgId: the mutation test — deleting the rebuild makes this
+    // read the connection's org and the test goes red — is what pins "before policy".
+    expect(result?.content[0]?.text).toBe('org=org-tenant');
+  });
+
+  test('a tenant the caller is not a member of answers exactly what a hidden tool answers', async () => {
+    const rented = tenantServer([orgProbe]);
+    const plain = server;
+    // Same caller, same tool NAME, one rented and one absent tool: the two answers must be
+    // indistinguishable — same JSON-RPC error code, same message, no `data`, no hint anywhere.
+    const args = { name: 'renter.probe', arguments: { tenant: 'org-not-ours' } };
+    // The SAME name against two servers: one where it exists behind a tenancy refusal bucket,
+    // one where it does not exist at all. Identical bytes is the whole contract.
+    const probe = await rented.handle(call('tools/call', args), caller(undefined, []));
+    const absent = await plain.handle(
+      call('tools/call', { name: 'renter.probe', arguments: {} }),
+      caller(undefined, []),
+    );
+    expect(probe?.error?.code).toBe(METHOD_NOT_FOUND);
+    expect(probe?.error?.message).toBe(absent?.error?.message);
+    expect(probe?.error?.data).toBeUndefined();
+    expect(JSON.stringify(probe)).toBe(JSON.stringify(absent));
+  });
+
+  test('a visible tool with no tenant arg refuses X_MCP_TENANT_REQUIRED, fix names the resolver', async () => {
+    const response = await tenantServer([orgProbe]).handle(
+      call('tools/call', { name: 'renter.probe', arguments: {} }),
+      caller(undefined, []),
+    );
+    expect(response?.error?.code).toBe(INVALID_REQUEST);
+    const data = response?.error?.data as { code: string; fix: string } | undefined;
+    expect(data?.code).toBe('X_MCP_TENANT_REQUIRED');
+    expect(data?.fix).toContain('tenant');
+    expect(response?.error?.message).toContain('renter.probe');
+  });
+
+  test('a role-hidden tool stays hidden even under a valid tenant arg', async () => {
+    const response = await tenantServer([orgProbe]).handle(
+      call('tools/call', { name: 'admin.only', arguments: { tenant: 'org-tenant' } }),
+      caller('member', []),
+    );
+    expect(response?.error?.code).toBe(METHOD_NOT_FOUND);
+    expect(response?.error?.message).toStartWith('tool not found: admin.only');
   });
 
   test('an absent tool answers the same instruction, so the hint reveals nothing', async () => {

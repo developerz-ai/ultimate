@@ -19,6 +19,12 @@ export type McpOutcome =
   | 'hidden'
   /** OUTCOME 2: visible, but the connection's token lacks the tool's scope. */
   | 'scope-denied'
+  /**
+   * Refused before dispatch by a gate that is not the tool's policy: a tenant-scoped tool called
+   * without its tenant arg (`X_MCP_TENANT_REQUIRED`). The answer names the miss, so it is not a
+   * probe signal — but a string of them is still an agent misusing the surface: `warn`.
+   */
+  | 'refused'
   /** OUTCOME 3: ran, and the tool's own policy refused this input. */
   | 'policy-denied'
   /** Arguments failed the schema the agent was handed. Not an authz outcome. */
@@ -129,6 +135,7 @@ const LEVEL: ReadonlyMap<McpOutcome, 'info' | 'warn' | 'error'> = new Map([
   ['ok', 'info'],
   ['hidden', 'warn'],
   ['scope-denied', 'warn'],
+  ['refused', 'warn'],
   ['policy-denied', 'warn'],
   ['invalid-args', 'info'],
   ['unconfirmed', 'info'],
@@ -186,6 +193,10 @@ function callerFields(entry: McpResourceAuditEntry | McpAuditEntry): LogFields {
     outcome: entry.outcome,
     actor: entry.caller.actor.id,
     actorKind: entry.caller.actor.kind,
+    // Which org the call ran for — the scoped identity, whatever rebuilt it. On a per-call
+    // tenant option this is the one field that makes a mixed-tenant log sortable by renter.
+    // Spread-gated like `role`: an actor with no org carries no field, not a null one.
+    ...(entry.caller.actor.orgId === undefined ? {} : { orgId: entry.caller.actor.orgId }),
     ...(entry.caller.role === undefined ? {} : { role: entry.caller.role }),
     ...(entry.scope === undefined ? {} : { scope: entry.scope }),
     ...(entry.code === undefined ? {} : { code: entry.code }),

@@ -20,6 +20,8 @@
 
 import type { Actor, McpEffect } from '@ultimat3/core';
 import { McpToolDuplicateError } from './errors';
+import type { McpTenantOption } from './tenant';
+import { stripTenantArgs } from './tenant';
 import type { McpListParams } from './list-params';
 import type { ArgIssue } from './validate-args';
 import { validateArgs } from './validate-args';
@@ -39,6 +41,12 @@ export interface McpCaller {
   readonly scopes: ReadonlySet<string>;
   /** Absent = no role filter applies (the caller sees every unrestricted tool). */
   readonly role?: McpRole;
+  /**
+   * Present when this server is tenant-scoped (`McpServerInput.tenant`): the caller states which
+   * org one call runs for, and `resolve` evicts that arg and refuses a non-member as not-found.
+   * Carried on the CALLER, not the registry, because tenancy is a property of who is calling.
+   */
+  readonly tenant?: McpTenantOption;
 }
 
 /**
@@ -294,10 +302,24 @@ export class ToolRegistry {
    * Validating before the gates would leak a schema to a caller that may not see the tool;
    * running the policy before the scope gate would decide a refusal from attacker-supplied
    * input. Absent and hidden collapse into ONE branch so the two cannot drift apart.
+   *
+   * Tenancy is decided BEFORE this gate: the server evicts the arg (`stripTenantArgs`), settles
+   * the membership and dispatches with a REBUILT caller — so nothing here ever models it. What
+   * arrives at a tenant-scoped call without a tenant arg is refused in the server
+   * (`McpTenantRequiredError`), ahead of any tool-specific answer. This method still evicts the
+   * arg (`stripTenantArgs`) so a direct caller — the meta surface — cannot smuggle it through:
+   * the residue returns as `args`, which the schema never declared.
    */
   resolve(name: string, rawArgs: unknown, caller: McpCaller): ToolResolution {
-    const tool = this.#tools.get(name);
-    if (tool === undefined || !visibleToCaller(tool, caller)) {
+    if (caller.tenant !== undefined) {
+      rawArgs = stripTenantArgs(
+        rawArgs === undefined ? undefined : (rawArgs as Readonly<Record<string, unknown>>),
+        caller.tenant,
+      ).rest;
+    }
+    const found = this.#tools.get(name);
+    const tool = found === undefined || !visibleToCaller(found, caller) ? undefined : found;
+    if (tool === undefined) {
       return { kind: 'not-found', name };
     }
     if (tool.scope !== undefined && !caller.scopes.has(tool.scope)) {

@@ -53,6 +53,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_RECIPE_URI_RESERVED',
   'X_MCP_REMOTE_AUTH_REQUIRED',
   'X_MCP_RECIPE_LINK_DANGLING',
+  'X_MCP_TENANT_REQUIRED',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -111,6 +112,8 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_RECIPE_URI_RESERVED: 'docs://recipes/ is owned by recipes:',
   X_MCP_REMOTE_AUTH_REQUIRED: 'a remote MCP server needs authorization this app does not hold',
   X_MCP_RECIPE_LINK_DANGLING: 'a recipe links to a docs://recipes/ URI no recipe serves',
+  X_MCP_TENANT_REQUIRED:
+    'a tenant-scoped MCP tool was called from a connection with no tenant context',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -460,6 +463,22 @@ export class McpSurfaceOverBudgetError extends UltimateError {
       cause: `over budget: ${input.over.map((o) => `${o.surface} is ${o.size} characters, budget ${o.budget}`).join('; ')}`,
       fix: "shorten the tool descriptions or instructions it names, group tools behind surface: 'meta', or raise the budget with the measured size and the reason in the same diff",
       meta: { over: input.over },
+    });
+  }
+}
+
+/**
+ * A tenant-scoped tool was called without the tenant arg this call's server expects. Refused
+ * before dispatch: running the handler would either leak another tenant's rows or fail the
+ * policy's tenant guard midway. Tenancy is a per-CALL fact, not a connection one — one token
+ * across three orgs is three tenants, each named per call.
+ */
+export class McpTenantRequiredError extends UltimateError {
+  constructor(input: { name: string }) {
+    super({
+      code: 'X_MCP_TENANT_REQUIRED',
+      cause: `tool "${input.name}" requires a tenant, and this call carried none`,
+      fix: `retry the call with the tenant arg set — the app's tenant resolver hook lists the caller's memberships, and it is the same ids it answers resolve() with`,
     });
   }
 }

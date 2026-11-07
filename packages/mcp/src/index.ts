@@ -116,6 +116,7 @@ export {
   McpScopeUncoveredError,
   McpScopeUnknownError,
   McpSurfaceOverBudgetError,
+  McpTenantRequiredError,
   McpToolDuplicateError,
   McpToolUndeclaredError,
   McpToolUnknownError,
@@ -286,6 +287,8 @@ export { withScopes } from './scopes';
 export type { McpServer, McpServerInput, McpWire } from './server';
 export { mcpServer } from './server';
 export type { McpInstructions, McpServerVoice } from './server-voice';
+export type { McpTenantMembership, McpTenantOption } from './tenant';
+export { buildTenantActor, stripTenantArgs } from './tenant';
 export type { McpSurfaceBudget, McpSurfaceSize } from './surface-budget';
 export { assertMcpSurfaceBudget, measureMcpSurface } from './surface-budget';
 export type {
