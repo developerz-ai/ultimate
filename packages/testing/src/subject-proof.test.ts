@@ -67,8 +67,10 @@ const prove = async (tables: Readonly<Record<string, SubjectTreatment>>, copy = 
   let copied = !copy;
   return subjectProof(subject, {
     entities: Object.values(ALL) as unknown as readonly SeedEntity[],
+    // Row by row, no `insertMany`: the planted copy follows the person's own insert.
     writer: {
-      ...writer,
+      update: (update) => writer.update(update),
+      snapshot: (rows) => writer.snapshot(rows),
       async insert(row) {
         await writer.insert(row);
         if (copied || row.entity !== 'spf_people') return;

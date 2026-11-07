@@ -216,6 +216,28 @@ describe('entity facts', () => {
     );
   });
 
+  test('a table becoming readOnly is breaking; ceasing to be, additive; a new reason, internal', () => {
+    const at = 'entities.post.readOnly';
+    const between = (before: Partial<Entity>, after: Partial<Entity>) =>
+      diffManifest(
+        fixtureManifest({ entities: post(before) }),
+        fixtureManifest({ entities: post(after) }),
+      );
+    const became = between({}, { readOnly: 'legacy, closed by a trigger' });
+    expect(became.breaking.find((c) => c.path === at)?.detail).toBe(
+      'became readOnly (legacy, closed by a trigger); every write is refused',
+    );
+    expect(between({ readOnly: 'a' }, {}).additive.find((c) => c.path === at)?.detail).toBe(
+      'no longer readOnly; writes are accepted',
+    );
+    const reworded = between({ readOnly: 'a' }, { readOnly: 'b' });
+    expect(reworded.hasBreaking).toBe(false);
+    expect(reworded.changes.find((c) => c.path === at)).toMatchObject({
+      kind: 'internal',
+      detail: 'readOnly reason a -> b',
+    });
+  });
+
   test('an unchanged entity reports nothing of its own', () => {
     expect(diff(post()).changes.filter((c) => c.path.startsWith('entities.'))).toEqual([]);
   });

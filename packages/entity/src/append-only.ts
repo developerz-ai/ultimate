@@ -4,6 +4,7 @@
 // alike — and before any statement exists, so memory and Postgres answer the same code.
 
 import { appendOnlyColumnRefused, appendOnlyRefused } from './append-only-errors';
+import { readOnlyRefused } from './read-only';
 import type { Repo, UpsertArgs } from './repo';
 import type { AnyColumn } from './types';
 import { readOnlyRepo } from './view-repo';
@@ -14,6 +15,8 @@ export interface AppendOnlySource {
   readonly $appendOnly: boolean;
   /** `entity({ view })`: every write refused. Optional so a hand-built source still passes. */
   readonly $viewQuery?: unknown;
+  /** `entity({ readOnly })`'s reason: every write refused. Optional, as `$viewQuery` is. */
+  readonly $readOnly?: string | null;
 }
 
 /**
@@ -61,6 +64,12 @@ export const appendOnlyRepo = <Row, R extends Repo<Row>>(entity: AppendOnlySourc
   // A view is the stricter rule and the same seam: nothing written, not even an append.
   if (entity.$viewQuery !== undefined && entity.$viewQuery !== null) {
     return readOnlyRepo<Row, R>(entity.$name, repo);
+  }
+  const reason = entity.$readOnly;
+  if (typeof reason === 'string') {
+    return readOnlyRepo<Row, R>(entity.$name, repo, (operation) =>
+      readOnlyRefused(entity.$name, operation, reason),
+    );
   }
   if (!entity.$appendOnly) return repo;
   const name = entity.$name;

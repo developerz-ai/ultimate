@@ -65,6 +65,7 @@ beforeAll(() => {
   entity('sources_test_secret', {
     shared: 'one credential store for the whole install',
     scan: 'one row per install',
+    readOnly: 'written by the install script alone',
     columns: {
       id: uuid().primaryKey(),
       title: text({ max: 80 }),
@@ -263,6 +264,13 @@ describe('the entity projection', () => {
     const secret = entities.find((one) => one.name === 'sources_test_secret');
     expect(secret?.scan).toBe('one row per install');
     expect(Object.hasOwn(entities[0] ?? {}, 'scan')).toBe(false);
+  });
+
+  test('a readOnly reason is carried; an entity that declared none carries no `readOnly` key', () => {
+    const entities = frameworkSources({ app: APP }).entities ?? [];
+    const secret = entities.find((one) => one.name === 'sources_test_secret');
+    expect(secret?.readOnly).toBe('written by the install script alone');
+    expect(Object.hasOwn(entities[0] ?? {}, 'readOnly')).toBe(false);
   });
 
   test('a view entity says it is one, and whether it is stored; a table carries no `view` key', () => {

@@ -27,7 +27,7 @@ import { compareByKind, matchesPredicate } from './memory-match';
 import { observedMemoryRepo } from './memory-observed';
 import { type MemoryTables, sameTenantJudge } from './memory-same-tenant';
 import { afterCursor } from './memory-seek';
-import { uniqueClash, uniqueViolation } from './memory-unique';
+import { uniqueClash, uniqueIndex, uniqueViolation } from './memory-unique';
 import { judgeUpdate, mergedRow } from './memory-update';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { FindManyArgs, MemoryRepo, RepoOptions } from './repo';
@@ -143,8 +143,8 @@ export const memoryRepo = <Row>(
     batch.map((row) => narrowRow<Row>(entity.$columns, row));
 
   /**
-   * Lazy: a batch asks this once a row, and an entity with no unique never iterates it. Re-iterable
-   * and not a generator: `uniqueClash` walks it once per constraint.
+   * Lazy: one write asks it once, and an entity with no unique never iterates it. A batch judges
+   * against `uniqueIndex` instead, built once.
    */
   const storedExcept = (from: string | undefined): Iterable<Row> => ({
     *[Symbol.iterator]() {
@@ -162,6 +162,8 @@ export const memoryRepo = <Row>(
     options: RepoOptions | undefined,
     operation: string,
     from?: string,
+    /** `insertAll` judged every unique key of its batch already, against one index. */
+    uniquesJudged = false,
   ): Row => {
     // `MoneyInput` lets a writer hand a `bigint`; a stored row holds the value type. The Postgres
     // driver narrows at the same position — its write methods' entry — so without this an
@@ -176,7 +178,7 @@ export const memoryRepo = <Row>(
     judgeReferences(row);
     const key = storeKey(row);
     if (key !== from && rows.has(key)) throw uniqueViolation(entity, `${entity.$table}_pkey`);
-    const clash = uniqueClash(entity, row, storedExcept(from));
+    const clash = uniquesJudged ? undefined : uniqueClash(entity, row, storedExcept(from));
     if (clash !== undefined) throw uniqueViolation(entity, clash);
     const moved = from !== undefined && from !== key ? rows.get(from) : undefined;
     const previous = rows.get(key);
@@ -265,14 +267,11 @@ export const memoryRepo = <Row>(
       // Narrowed FIRST, so what this loop judges is what `write` will store: `$assert` was handed
       // the caller's `bigint` minor unit here and the narrowed `number` one call later.
       const batch = narrowed(given);
-      const earlier = (position: number): Iterable<Row> => ({
-        *[Symbol.iterator]() {
-          yield* rows.values();
-          for (let at = 0; at < position; at += 1) yield batch[at] as Row;
-        },
-      });
+      // The stored rows' keys once, then each batch row's as it is judged: a row collides with
+      // what is stored and with the rows before it, never after — the same first refusal.
+      const taken = uniqueIndex(entity, rows.values());
       const seen = new Set<string>();
-      for (const [position, row] of batch.entries()) {
+      for (const row of batch) {
         assertRowTenant(entity.$name, entity.$tenantColumn, 'insertAll', row);
         entity.$assert(row);
         judgeReferences(row, batch);
@@ -282,10 +281,11 @@ export const memoryRepo = <Row>(
           throw uniqueViolation(entity, `${entity.$table}_pkey`);
         }
         seen.add(key);
-        const clash = uniqueClash(entity, row, earlier(position));
+        const clash = taken.clash(row);
         if (clash !== undefined) throw uniqueViolation(entity, clash);
+        taken.add(row);
       }
-      return batch.map((row) => write(row, options, 'insertAll'));
+      return batch.map((row) => write(row, options, 'insertAll', undefined, true));
     }),
 
     upsertAll: writing(async (given, args) => {

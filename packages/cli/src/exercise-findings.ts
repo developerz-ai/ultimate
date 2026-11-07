@@ -57,7 +57,9 @@ const unreachedFinding = (record: ExerciseRecord): Finding => {
   return {
     code: 'X_CONTRACT_EXERCISE_UNREACHED',
     cause: `${record.kind} ${renderCauseValue(record.name)} never reached its handler as an allowed actor in the exercise pass${stopped}${why}`,
-    fix: `defineExercise({ ${override} })   # paste the entry into ${EXERCISE_FILE}, or { off: '<why>' }; then: x exercise ${name} --json`,
+    fix:
+      record.fix ??
+      `defineExercise({ ${override} })   # paste the entry into ${EXERCISE_FILE}, or { off: '<why>' }; then: x exercise ${name} --json`,
     docs: ERROR_DOCS_URL,
     at: EXERCISE_FILE,
   };

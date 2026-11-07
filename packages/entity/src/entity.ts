@@ -26,6 +26,7 @@ import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant } from './invariants';
 import { describeLifecycle, lifecycleHistory } from './lifecycle';
+import { assertReadOnly } from './read-only';
 import { recordProjection } from './record-projection';
 import type { EntityDescription, ReferenceDescription } from './registry';
 import { registerEntity } from './registry';
@@ -72,6 +73,11 @@ export interface EntityInit<C extends ColumnMap> {
    * and a reference column no index leads with; blank is refused.
    */
   readonly scan?: string;
+  /**
+   * Why the app never writes this table — legacy history a trigger closed, a table another system
+   * owns. Every write is `X_ENTITY_READ_ONLY` and `x exercise` seeds no row of it; blank is refused.
+   */
+  readonly readOnly?: string;
   /** Composite keys only — a single key is `uuid().primaryKey()` on the column itself. */
   readonly primaryKey?: readonly (keyof C & string)[];
   /**
@@ -149,6 +155,8 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   readonly $historyOf: string | null;
   /** `entity({ view })`: the query a view is derived by, `null` on a table. Writes are refused. */
   readonly $viewQuery: ViewQuery | null;
+  /** `entity({ readOnly })`'s reason, `null` on a table the app writes. Writes are refused. */
+  readonly $readOnly: string | null;
   /** Property key of the tenant column, or `null`. Presence is what turns tenancy on. */
   readonly $tenantColumn: string | null;
   /**
@@ -230,6 +238,7 @@ export const entity = <const C extends ColumnMap>(
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
   const appendOnly = init.appendOnly === true;
   if (appendOnly) assertAppendOnlyColumns(name, entries, SOFT_DELETE_COLUMN);
+  const readOnly = assertReadOnly(name, init.readOnly, { appendOnly, view: init.view != null });
 
   const searchSources: readonly SearchSource[] = entries.flatMap(([property, column]) => {
     const weight = column.$meta.searchable;
@@ -412,6 +421,7 @@ export const entity = <const C extends ColumnMap>(
       retired: init.retired,
       shared: init.shared,
       scan: init.scan,
+      readOnly: init.readOnly,
       view: viewQuery,
       lifecycle: describeLifecycle(core as EntityCore, retain, init.historyOf),
     });
@@ -438,6 +448,7 @@ export const entity = <const C extends ColumnMap>(
     $softDelete: softDelete,
     $appendOnly: appendOnly || init.historyOf !== undefined,
     $viewQuery: viewQuery,
+    $readOnly: readOnly,
     $tenantColumn: tenantColumn,
     $search: search,
     $schema: schema,

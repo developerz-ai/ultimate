@@ -39,6 +39,54 @@ const kindsOf = <Row>(entity: EntityCore<Row>): ReadonlyMap<string, string> =>
       .map(([property, column]) => [columnName(property, column.$meta), column.$meta.kind]),
   );
 
+/** Each unique constraint's key for a row, in declaration order; `undefined` where a part is NULL. */
+const keysOf = <Row>(entity: EntityCore<Row>) => {
+  const unique = uniqueConstraints(entity);
+  const kinds = kindsOf(entity);
+  return {
+    unique,
+    keys: (row: Row): readonly (string | undefined)[] => {
+      const bound = bindValues(entity, row as unknown as RowPatch<Row>);
+      return unique.map((index) => {
+        const parts = index.columns.map((name) => cellOf(kinds.get(name), bound.get(name)));
+        return parts.some((part) => part === undefined) ? undefined : JSON.stringify(parts);
+      });
+    },
+  };
+};
+
+/**
+ * Every unique key a set of rows holds, one `Set` per constraint: a batch is judged against it row
+ * by row, each row bound once. A scan of every other row per row — rebound per constraint — made a
+ * 1,000-row `insertAll` take tens of seconds.
+ */
+export interface UniqueIndex<Row> {
+  /** The first constraint, in declaration order, `row` collides on — or `undefined`. */
+  clash(row: Row): string | undefined;
+  add(row: Row): void;
+}
+
+export function uniqueIndex<Row>(entity: EntityCore<Row>, rows: Iterable<Row>): UniqueIndex<Row> {
+  const { unique, keys } = keysOf(entity);
+  const taken = unique.map(() => new Set<string>());
+  const index: UniqueIndex<Row> = {
+    clash(row) {
+      if (unique.length === 0) return undefined;
+      const mine = keys(row);
+      const at = mine.findIndex((key, i) => key !== undefined && taken[i]?.has(key) === true);
+      return at === -1 ? undefined : unique[at]?.name();
+    },
+    add(row) {
+      if (unique.length === 0) return;
+      keys(row).forEach((key, i) => {
+        if (key !== undefined) taken[i]?.add(key);
+      });
+    },
+  };
+  for (const row of rows) index.add(row);
+  return index;
+}
+
 /**
  * The first unique constraint `candidate` collides with among `others`, or `undefined`. Partial
  * ones are skipped: their predicate is SQL this driver cannot evaluate, and a guess would refuse
@@ -48,20 +96,5 @@ export const uniqueClash = <Row>(
   entity: EntityCore<Row>,
   candidate: Row,
   others: Iterable<Row>,
-): string | undefined => {
-  const unique = uniqueConstraints(entity);
-  if (unique.length === 0) return undefined;
-  const bound = (row: Row) => bindValues(entity, row as unknown as RowPatch<Row>);
-  const incoming = bound(candidate);
-  const kinds = kindsOf(entity);
-  for (const index of unique) {
-    const key = index.columns.map((name) => cellOf(kinds.get(name), incoming.get(name)));
-    if (key.some((part) => part === undefined)) continue;
-    for (const other of others) {
-      const stored = bound(other);
-      if (index.columns.every((name, at) => cellOf(kinds.get(name), stored.get(name)) === key[at]))
-        return index.name();
-    }
-  }
-  return undefined;
-};
+): string | undefined =>
+  uniqueConstraints(entity).length === 0 ? undefined : uniqueIndex(entity, others).clash(candidate);

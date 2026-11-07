@@ -364,3 +364,46 @@ describe(testName('unit', 'seedGraph derive'), () => {
     expect(() => seedGraph({ owners, templates }, { seed: 3 })).toThrow(/sg_scope_key_matches/);
   });
 });
+
+describe(testName('unit', 'seedGraph · a readOnly table'), () => {
+  const archive = entity('sg_archive', {
+    columns: { id: uuid().primaryKey(), note: text({ max: 40 }) },
+    readOnly: 'pre-2024 history: a trigger refuses every insert',
+  });
+  const optionalRef = entity('sg_archive_notes', {
+    columns: {
+      id: uuid().primaryKey(),
+      archiveId: uuid()
+        .references(() => archive.id)
+        .nullable(),
+    },
+    shared: 'test rows of no tenant',
+  });
+  const requiredRef = entity('sg_archive_links', {
+    columns: { id: uuid().primaryKey(), archiveId: uuid().references(() => archive.id) },
+    shared: 'test rows of no tenant',
+  });
+
+  test('is seeded no row, and a nullable reference into it is null', () => {
+    const graph = seedGraph({ archive, optionalRef }, { seed: 4 });
+    expect(graph.inserts.some((row) => row.entity === 'sg_archive')).toBe(false);
+    const notes = graph.inserts.filter((row) => row.entity === 'sg_archive_notes');
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes.every((row) => row.row['archiveId'] === null)).toBe(true);
+  });
+
+  test('a required reference into it is refused, naming the table, its reason and the declaration', () => {
+    let caught: unknown;
+    try {
+      seedGraph({ archive, requiredRef }, { seed: 4 });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeUltimateError('X_SEED_GRAPH_UNSATISFIED');
+    const { cause, fix } = caught as { cause: string; fix: string };
+    expect(cause).toContain('archiveId references sg_archive, which is readOnly');
+    expect(cause).toContain('pre-2024 history');
+    expect(fix).toStartWith("entity('sg_archive_links', { readOnly: ");
+    expect(fix).toContain('x db gen "sg_archive_links archiveId nullable"');
+  });
+});

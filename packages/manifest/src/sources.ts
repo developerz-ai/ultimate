@@ -169,6 +169,7 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       invariants: entity.invariants.map((invariant) => invariant.name),
       ...(entity.shared === undefined ? {} : { shared: entity.shared }),
       ...(entity.scan === undefined ? {} : { scan: entity.scan }),
+      ...(entity.readOnly === undefined ? {} : { readOnly: entity.readOnly }),
       ...(entity.view === undefined || entity.view === null
         ? {}
         : { view: { materialized: entity.view.materialized === true } }),

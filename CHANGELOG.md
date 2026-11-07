@@ -8,7 +8,24 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `x exercise` seats a job in the tenant it is enqueued under, whatever field its `tenant(input)` reads: no more `X_JOB_TENANT_MISMATCH` (and `X_TENANCY_ACTOR_MISMATCH` inside) on a job whose org field the id binder did not recognise.
+- `x exercise` costs statements per table, not per primitive × table: 499 primitives over the reference app's 16 tables went from 300.8 s (34,053 seed writes, ~32,000 snapshot reads) to 34.4 s (39 seed writes, 1,996 snapshot reads), on PGlite — the gate's `exercise` step deadline is 300 s.
+- `x exercise` no longer floods `TimeoutOverflowWarning` (59,759 lines on the reference app): the embedded Postgres armed a timer on the real clock and re-armed it, every millisecond, against the frozen one.
+
+### Added
+
+- `@ultimat3/entity`: `entity(name, { readOnly: '<why>', columns })` — a table the app reads and never writes (legacy history a trigger closed, a table another system owns). Every write is `X_ENTITY_READ_ONLY` in both drivers before a statement exists; a blank reason, or beside `view` or `appendOnly`, is `X_INVARIANT_VIOLATED`. `$readOnly` and `$describe().readOnly` carry the reason. `x exercise` and `x db seed --generate` seed no row of it, a nullable key into it null and a NOT NULL one refused naming the table and the fix; `defineSubject`'s `delete`/`anonymize` on it is `X_SUBJECT_TREATMENT_INVALID`; the admin lists it read-only (`X_ADMIN_READ_ONLY_WRITE` for an override naming a write); the manifest's entity fact carries `readOnly`, becoming readOnly is breaking.
+- `@ultimat3/testing`: an exercise record may carry `fix` — the edit that reaches an `unreached` primitive when no `defineExercise` override can; `x exercise`'s finding prints it in place of the paste.
+- `@ultimat3/testing`: `SeedWriter.insertMany(rows)`, optional — one entity's rows as one write. `entitySeedWriter` implements it with `insertAll`; `insertSeedGraph` uses it when present.
+
+### Fixed
+
+- `@ultimat3/testing`: a job's input is seated in the tenant it is enqueued under — the fields its `tenant(input)` reads (any name, nested, or absent from the minimal draw) found by reading them, set, and kept only if they move the answer. The tenant proof's B leg enqueues B's own job carrying A's ids, where it was refused at the enqueue and proved nothing. A job whose `tenant` names one fixed org is `unreached`, `X_JOB_TENANT_MISMATCH`, with `tenant: (input) => input.orgId` as its fix.
+- `@ultimat3/testing`: the pass's seed graph is written one `insertAll` per table; each tenant-proof snapshot is one statement over every table, its key compared in the column's own type so the primary key serves it; each primitive reads only its own tenant pair's rows of the graph; the planner indexes parent rows by tenant. Same rows, same seed, same guarantees: a fresh pair per primitive, B/A/B.
+- `@ultimat3/cli`: `x exercise` freezes the clock before the app loads and the scratch database boots, as `bun test`'s preload does. PGlite's Postgres armed its 10 s idle-stats timer on the real clock; the pass's room froze the clock at 2026-01-01 under it, and every re-arm was (real now − frozen now) ≈ 2^34 ms, clamped to 1 ms.
+- `@ultimat3/entity`: the memory driver's `insertAll` judges unique keys against one index built once per batch, and does not judge them again per row: 4,000 rows with two uniques took 168 s, now under 1 s. Same refusals, same first clash, NULLs still distinct, partial uniques still unchecked.
 
 ## 30.2.0 - 2026-11-07
 

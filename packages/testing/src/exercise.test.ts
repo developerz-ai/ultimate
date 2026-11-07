@@ -193,6 +193,29 @@ const noteJob = (name: string, wrapped: boolean) =>
 noteJob('expPassLeaky', false);
 noteJob('expPassWrapped', true);
 
+/** Each run's org and the org its input names: the binder must make the two the same. */
+const workspaceRuns: { readonly org: string | undefined; readonly named: string }[] = [];
+job({
+  name: 'expPassWorkspace',
+  // A field no id stem names (`workspace` is no entity): only reading `tenant` finds it.
+  tenant: (input) => input.scope.workspace,
+  input: t.object({ scope: t.object({ workspace: t.uuid }), expNoteId: t.uuid }),
+  idempotencyKey: (input) => input.expNoteId,
+  retry: { ...DEFAULT_RETRY, attempts: 1 },
+  run: async ({ input }) => {
+    workspaceRuns.push({ org: useContext().actor.orgId, named: input.scope.workspace });
+    if ((await driver.repo(notes).findById(input.expNoteId)) === null) refuse();
+  },
+});
+job({
+  name: 'expPassPlatform',
+  tenant: () => '7d0c4f1e-0000-4000-8000-00000000c0de',
+  input: t.object({}),
+  idempotencyKey: () => 'platform',
+  retry: { ...DEFAULT_RETRY, attempts: 1 },
+  run: async () => undefined,
+});
+
 const one = async (
   only: string,
   overrides?: Parameters<typeof defineExercise>[0],
@@ -354,6 +377,30 @@ describe(testName('unit', 'runExercisePass'), () => {
   test('a query runs as an allowed reader; a job drains, its id bound to a seeded note', async () => {
     expect(await one('expPassNotes')).toMatchObject({ kind: 'query', outcome: 'reached' });
     expect(await one('expPassJob')).toMatchObject({ kind: 'job', outcome: 'reached' });
+  });
+
+  test("a job runs in the seated tenant whatever field its tenant(input) reads; B's in B's", async () => {
+    workspaceRuns.length = 0;
+    const record = await one('expPassWorkspace');
+    expect(record).toMatchObject({ kind: 'job', outcome: 'reached' });
+    expect(record.tenant?.verdict).toBe('proven');
+    expect(workspaceRuns.length).toBeGreaterThan(0);
+    for (const run of workspaceRuns) expect(run.org).toBe(run.named);
+    // A's control, B's legs, the scale sweep's two sized tenants: four orgs, each run in its own.
+    expect(new Set(workspaceRuns.map((run) => run.org)).size).toBe(4);
+  });
+
+  test('a job whose tenant is one fixed org is unreached with the declaration as its fix', async () => {
+    const record = await one('expPassPlatform');
+    expect(record).toMatchObject({
+      outcome: 'unreached',
+      code: 'X_JOB_TENANT_MISMATCH',
+      statements: 0,
+      tenant: { verdict: 'unproven' },
+    });
+    expect(record.reason).toContain('7d0c4f1e-0000-4000-8000-00000000c0de');
+    expect(record.fix).toStartWith('tenant: (input) => input.orgId');
+    expect(record.fix).toContain('x exercise expPassPlatform --json');
   });
 
   test('a reached job is killed at each step boundary: an effect outside a step diverges', async () => {

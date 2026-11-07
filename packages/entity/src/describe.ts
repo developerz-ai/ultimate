@@ -42,6 +42,8 @@ export interface DescribeInput<Row> {
   readonly shared?: string | undefined;
   /** `entity({ scan: '<why>' })` — projected only when declared. */
   readonly scan?: string | undefined;
+  /** `entity({ readOnly: '<why>' })` — projected only when declared. */
+  readonly readOnly?: string | undefined;
   /** `entity({ view })` — projected only when declared. */
   readonly view?: ViewQuery | null | undefined;
   /** `retain`, `history`, `countedIn` counters — each projected only when declared (`lifecycle.ts`). */
@@ -372,6 +374,7 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
     // Absent unless declared, like `appendOnly`: no entity that never said it moves the hash.
     ...(input.shared === undefined ? {} : { shared: input.shared }),
     ...(input.scan === undefined ? {} : { scan: input.scan }),
+    ...(input.readOnly === undefined ? {} : { readOnly: input.readOnly }),
     // Absent on every table, so no entity that never said `view` moves the hash.
     ...(input.view === null || input.view === undefined
       ? {}

@@ -135,4 +135,6 @@ export const TIER_2_ERROR_STATUS = {
   X_PASSKEY_CHALLENGE_EXPIRED: 401,
   // @ultimat3/auth — a sensitive action ran without a fresh user-verified passkey proof for its digest
   X_PASSKEY_STEP_UP_REQUIRED: 401,
+  // @ultimat3/entity — a read-only entity was asked to write a row
+  X_ENTITY_READ_ONLY: 500,
 } satisfies Readonly<Record<string, number>>;

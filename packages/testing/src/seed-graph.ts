@@ -72,9 +72,19 @@ export function seedGraph(
   // A view entity is a relation Postgres derives: no row is ever written to it, so it is no part of
   // the graph (`X_ENTITY_VIEW_READ_ONLY` otherwise) — the tables it reads from carry the rows. A
   // history table is the same from this side: its trigger writes every row, from the parent's.
+  // A `readOnly` table is the app's own statement that it writes no row there (a trigger refuses
+  // every INSERT): seeded like a view, never — a reference into one is null or refused below.
+  const closed = new Map(
+    Object.values(entities).flatMap((entity) => {
+      const reason = entity.$describe().readOnly;
+      return reason === undefined ? [] : [[entity.$name, reason] as const];
+    }),
+  );
   const tables = Object.values(entities).filter((entity) => {
     const described = entity.$describe();
-    return described.view === undefined && described.historyOf === undefined;
+    return (
+      described.view === undefined && described.historyOf === undefined && !closed.has(entity.$name)
+    );
   });
   const shapes = new Map(tables.map((entity) => [entity.$name, shapeOf(entity)]));
   const { order, deferred } = insertOrder(
@@ -99,21 +109,34 @@ export function seedGraph(
   for (const factory of Object.values(options.factories ?? {})) factory.reset();
 
   const placed = new Map<string, Placed[]>();
+  // The same rows by tenant: a pool read per row was a filter of the whole parent table, so a pass
+  // seeding a tenant pair per primitive planned in primitives² time.
+  const placedIn = new Map<string, Map<string | null, Placed[]>>();
   const parentValues = (
     reference: ReferenceDescription,
     tenant: string | null,
     index: number,
   ): unknown[] => {
     if (!shapes.has(reference.targetEntity)) return reference.nullable ? [null] : [];
-    const pool = (placed.get(reference.targetEntity) ?? []).filter(
-      (parent) => tenant === null || !scoped(reference.targetEntity) || parent.tenant === tenant,
-    );
+    const pool =
+      tenant === null || !scoped(reference.targetEntity)
+        ? (placed.get(reference.targetEntity) ?? [])
+        : (placedIn.get(reference.targetEntity)?.get(tenant) ?? []);
     const values =
       pool.length === 0 ? [] : rotate(pool, index).map((p) => p.row[reference.targetProperty]);
     return reference.nullable ? [...values, null] : values;
   };
   const refuseEmpty = (shape: EntityShape, property: string, tenant: string | null): never => {
     const reference = shape.references.get(property);
+    const reason = reference === undefined ? undefined : closed.get(reference.targetEntity);
+    if (reference !== undefined && reason !== undefined) {
+      throw seedGraphUnsatisfied({
+        entity: shape.name,
+        what: `${property} references ${reference.targetEntity}, which is readOnly (${reason}): no row of it is seeded and ${property} is not nullable, so no ${shape.name} row can be written`,
+        columns: [property],
+        fix: `entity('${shape.name}', { readOnly: '<why the app never writes it>' })   # when the app never writes ${shape.name} either — else ${property}: <its column>.nullable(), then x db gen "${shape.entity.$table} ${property} nullable"`,
+      });
+    }
     throw seedGraphUnsatisfied({
       entity: shape.name,
       what:
@@ -135,6 +158,8 @@ export function seedGraph(
     const factory = options.factories?.[name];
     const rows: Placed[] = [];
     placed.set(name, rows);
+    const byTenant = new Map<string | null, Placed[]>();
+    placedIn.set(name, byTenant);
     const allUniques = [...shape.uniques, ...shape.partialUniques];
     const taken = allUniques.map(() => new Set<string>());
     const rootProperty = roots.get(name);
@@ -210,7 +235,11 @@ export function seedGraph(
           const key = uniqueKey(row, set);
           if (key !== undefined) taken[i]?.add(key);
         });
-        rows.push({ tenant, row, index });
+        const one = { tenant, row, index };
+        rows.push(one);
+        const bucketRows = byTenant.get(tenant);
+        if (bucketRows === undefined) byTenant.set(tenant, [one]);
+        else bucketRows.push(one);
         inserts.push({ entity: name, table: entity.$table, tenant, row: { ...row } });
         canaries.push({
           entity: name,

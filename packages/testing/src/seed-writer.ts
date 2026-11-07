@@ -42,45 +42,52 @@ const keyColumns = (entity: EntityCore): readonly string[] => {
   );
 };
 
+/** Joins a composite key's parts, in Postgres and here alike: no seeded key holds a unit separator. */
+const KEY_SEPARATOR = '\u001f';
+
 /**
  * `md5(t::text)` per row, by primary key, through the client — the whole stored row, columns no
- * entity declares included. One statement per table for a one-column key, one per row for a
- * composite one. Unscoped on purpose: the question is whether the row changed, not who may read it.
+ * entity declares included. ONE statement, a `union all` branch per table, a composite key matched
+ * through parallel arrays: the tenant proof snapshots four times a primitive, and a statement per
+ * table was primitives × tables round trips. Unscoped on purpose: the question is whether the row
+ * changed, not who may read it.
  */
 async function snapshotOnClient(
   client: DbClient,
   rows: readonly SeedRow[],
   entities: readonly EntityCore[],
 ): Promise<readonly (string | null)[]> {
-  const out: (string | null)[] = rows.map(() => null);
   const byEntity = new Map<EntityCore, number[]>();
   entities.forEach((entity, i) => {
-    byEntity.set(entity, [...(byEntity.get(entity) ?? []), i]);
+    const indexes = byEntity.get(entity);
+    if (indexes === undefined) byEntity.set(entity, [i]);
+    else indexes.push(i);
   });
-  for (const [entity, indexes] of byEntity) {
-    const table = identifier(entity.$table);
-    const columns = keyColumns(entity);
-    const keyAt = (i: number, at: number) => String(rows[i]?.row[entity.$primaryKey[at] as string]);
-    const [single] = columns;
-    if (columns.length === 1 && single !== undefined) {
-      const key = identifier(single);
-      const found = await client.query<{ k: string; h: string }>(
-        sql`select ${key}::text as k, md5(t::text) as h from ${table} t where ${key}::text = any(${indexes.map((i) => keyAt(i, 0))}::text[])`,
-      );
-      const digests = new Map(found.map((one) => [one.k, one.h]));
-      for (const i of indexes) out[i] = digests.get(keyAt(i, 0)) ?? null;
-      continue;
-    }
+  const keyOf = (entity: EntityCore, i: number): string =>
+    entity.$primaryKey.map((property) => String(rows[i]?.row[property])).join(KEY_SEPARATOR);
+  const branches = [...byEntity].map(([entity, indexes], at): SqlFragment => {
+    const columns = keyColumns(entity).map((column) => identifier(column));
+    // Each key column against its values, the parameter UNTYPED so Postgres types it as the
+    // column: `id::text = any(…)` read every row of a table that grows with the primitives. A
+    // composite key matches a superset here; the full key is matched below.
+    const matched = entity.$primaryKey.map(
+      (property, part) =>
+        sql`${columns[part] as SqlFragment} = any(${[...new Set(indexes.map((i) => String(rows[i]?.row[property])))]})`,
+    );
+    const texts = columns.map((column) => sql`${column}::text`);
+    return sql`select ${at}::int as e, concat_ws(${KEY_SEPARATOR}, ${join(texts)}) as k, md5(t::text) as h from ${identifier(entity.$table)} t where ${join(matched, ' and ')}`;
+  });
+  if (branches.length === 0) return [];
+  const found = await client.query<{ e: number; k: string; h: string }>(
+    join(branches, ' union all '),
+  );
+  const digests = new Map(found.map((one) => [`${one.e}${KEY_SEPARATOR}${one.k}`, one.h]));
+  const out: (string | null)[] = rows.map(() => null);
+  [...byEntity].forEach(([entity, indexes], at) => {
     for (const i of indexes) {
-      const terms: SqlFragment[] = columns.map(
-        (column, at) => sql`${identifier(column)}::text = ${keyAt(i, at)}`,
-      );
-      const one = await client.one<{ h: string }>(
-        sql`select md5(t::text) as h from ${table} t where ${join(terms, ' and ')}`,
-      );
-      out[i] = one?.h ?? null;
+      out[i] = digests.get(`${at}${KEY_SEPARATOR}${keyOf(entity, i)}`) ?? null;
     }
-  }
+  });
   return out;
 }
 
@@ -145,6 +152,20 @@ export function entitySeedWriter(options: EntitySeedWriterOptions): SeedWriter {
     async insert(row) {
       const { entity, repo } = await repoFor(row.entity);
       await repo.insert({ ...row.row }, scope(entity, row));
+    },
+    async insertMany(rows) {
+      const [first] = rows;
+      if (first === undefined) return;
+      const { entity, repo } = await repoFor(first.entity);
+      // One scope when every row shares it. An insert's statement reads none — both drivers check
+      // a row's tenant column against the ACTOR, and a seed has none — so a table holding many
+      // tenants' rows is still one `insertAll`.
+      const scopes = new Set(rows.map((row) => scope(entity, row).orgId));
+      const [only] = scopes;
+      await repo.insertAll(
+        rows.map((row) => ({ ...row.row })),
+        scopes.size === 1 && only !== undefined ? { orgId: only } : {},
+      );
     },
     async update(update) {
       const { entity, repo } = await repoFor(update.entity);

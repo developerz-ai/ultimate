@@ -147,8 +147,10 @@
  * errors-meter}.ts` (7), `http/src/{problem-meta-framework,server-websocket,websocket-mounts}.ts`,
  * `notify/src/push-device-pg.ts`. No existing module newly reached.
  * raised 878 → 879, measured 879 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
+ * raised 879 → 880, measured 880 (2026-11-07, fix/exercise-tenancy): `entity/src/read-only.ts`,
+ * `entity({ readOnly })`'s refusal, which every repository returns through. No module newly reached.
  */
-export const MIGRATE_CEILING = 879;
+export const MIGRATE_CEILING = 880;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -323,8 +325,10 @@ export const MIGRATE_CEILING = 879;
  * raised 1226 → 1253, measured 1253 (2026-11-07, #990–#999): `MIGRATE_CEILING`'s 25, plus
  * `realtime/src/device-socket.ts` and `cli/src/role-start-devices.ts` (every role's device sockets).
  * raised 1253 → 1254, measured 1254 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
+ * raised 1254 → 1255, measured 1255 (2026-11-07, fix/exercise-tenancy): `MIGRATE_CEILING`'s one,
+ * `entity/src/read-only.ts`.
  */
-export const SERVING_ROLE_CEILING = 1254;
+export const SERVING_ROLE_CEILING = 1255;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -487,5 +491,7 @@ export const SERVING_ROLE_CEILING = 1254;
  * web role's MCP `mcp/src/{app-catalog,catalog-errors,confirmation-{approvers,evidence,quorum-errors},
  * runtime-schema,runtime-tool,server-catalog,tenant}.ts`.
  * raised 1434 → 1435, measured 1435 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
+ * raised 1435 → 1436, measured 1436 (2026-11-07, fix/exercise-tenancy): `MIGRATE_CEILING`'s one,
+ * `entity/src/read-only.ts`.
  */
-export const WEB_ROLE_CEILING = 1435;
+export const WEB_ROLE_CEILING = 1436;

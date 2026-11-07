@@ -57,6 +57,14 @@ describe('unit · exercise findings', () => {
     expect(finding?.fix).toContain('x exercise shipOrder --json');
   });
 
+  test('a record carrying its own fix (a job on one fixed org) gets that fix, not a paste', () => {
+    const fix = 'tenant: (input) => input.orgId   # in job({ name: "sweep" })\'s declaration';
+    const [finding] = exerciseFindings([
+      record({ name: 'sweep', outcome: 'unreached', code: 'X_JOB_TENANT_MISMATCH', fix }),
+    ]);
+    expect(finding).toMatchObject({ code: 'X_CONTRACT_EXERCISE_UNREACHED', fix });
+  });
+
   test('a name a shell would split never reaches the rerun line', () => {
     const [finding] = exerciseFindings([record({ name: 'a b; rm', outcome: 'unreached' })]);
     expect(finding?.fix).toContain('x exercise <name> --json');

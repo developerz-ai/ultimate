@@ -3,8 +3,6 @@
 // database). Both verdicts land on the record of the primitive that sent the statements.
 
 import type { Actor } from '@ultimat3/core';
-import type { Policy } from '@ultimat3/policy';
-import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ExerciseOverrides } from './define-exercise';
 import type { ActorRows, RoleGrants } from './exercise-actor';
 import { asSeededRow, chooseActor } from './exercise-actor';
@@ -12,6 +10,8 @@ import type { Sampler } from './exercise-input';
 import { bindIds, drawInput, seededIds } from './exercise-input';
 import { overrideInput } from './exercise-override-input';
 import type { ExerciseRecord } from './exercise-report';
+import type { Subject } from './exercise-subjects';
+import { seatIn } from './exercise-subjects';
 import { sweepPlans } from './plan-sweep';
 import type { ScaleSweepOptions } from './scale-sweep-run';
 import { scaleSweep } from './scale-sweep-run';
@@ -37,13 +37,8 @@ export const actorRowsOf = (options: CallOptions, graph: SeedGraph): ActorRows |
 export const seated = (actor: Actor | null, tenant: string, rows: ActorRows | undefined) =>
   rows === undefined ? actor : asSeededRow(actor, tenant, rows);
 
-/** A primitive as a sized call needs it: its schema and its policy. */
-interface Callable {
-  readonly name: string;
-  readonly input: StandardSchemaV1;
-  readonly policy: Policy | undefined;
-  readonly permissions: readonly string[];
-}
+/** A primitive as a sized call needs it: its schema, its policy, and a job's seat. */
+type Callable = Pick<Subject, 'name' | 'input' | 'policy' | 'permissions' | 'seat'>;
 
 /** One call of `subject` in `tenant` of a sized graph: the control's actor and first input. */
 export async function sizedCall(
@@ -67,7 +62,8 @@ export async function sizedCall(
   const lookup = seededIds(graph, options.entities, { ...scope, self });
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookup);
   const bindInput = overrideInput(subject.name, override);
-  return { actor, input: bindInput === undefined ? drawn : await bindInput(drawn, actor) };
+  const given = bindInput === undefined ? drawn : await bindInput(drawn, actor);
+  return { actor, input: seatIn(subject, given, tenant) };
 }
 
 /**

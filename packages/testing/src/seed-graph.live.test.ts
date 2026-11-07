@@ -7,6 +7,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { probeDatabaseName } from '@ultimat3/core';
 import { type PostgresClient, postgresClient, raw } from '@ultimat3/db';
 import { seedAppThrough, TRACKED_APPS } from './seed-graph-apps-fixture';
+import { expectSnapshotProof, snapshotProof } from './seed-writer-snapshot-fixture';
 import { urlFor } from './template-db';
 
 const adminUrl = Bun.env['TEST_DATABASE_URL'] ?? '';
@@ -40,4 +41,14 @@ describe.skipIf(adminUrl === '')('live · seedGraph over both tracked apps', () 
       }
     }, 60_000);
   }
+
+  // An untyped key parameter, typed by the server as the column: the same proof PGlite passes.
+  test('the writer snapshot digests both key shapes in one statement', async () => {
+    const database = probeDatabaseName('seed_snapshot');
+    created.push(database);
+    await admin?.execute(raw(`create database "${database}"`));
+    const client = postgresClient({ url: urlFor(adminUrl, database) });
+    opened.push(client);
+    expectSnapshotProof(await snapshotProof(client));
+  }, 60_000);
 });
