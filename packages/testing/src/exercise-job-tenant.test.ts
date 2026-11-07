@@ -3,6 +3,7 @@
 // `fixed`, never a guess.
 
 import { describe, expect, test } from 'bun:test';
+import { assert } from '@ultimat3/core';
 import { bindJobTenant, type TenantOf } from './exercise-job-tenant';
 import { testName } from './test-types';
 
@@ -15,7 +16,7 @@ const handle = (tenant: ((input: never) => unknown) | 'none'): TenantOf => ({
   tenantFor: (input) => {
     if (tenant === 'none') return undefined;
     const org = tenant(input as never);
-    if (typeof org !== 'string' || org.length === 0) throw new TypeError('empty tenant');
+    assert(typeof org === 'string' && org.length > 0, 'empty tenant', 'return the org id');
     return org;
   },
 });
