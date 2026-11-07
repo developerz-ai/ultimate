@@ -9,7 +9,7 @@
 
 import { narrowRow } from './columns';
 import type { EntityCore } from './entity';
-import { uniqueClash, uniqueViolation } from './memory-unique';
+import { uniqueIndex, uniqueViolation } from './memory-unique';
 import { assertRowTenant } from './tenancy';
 
 /**
@@ -55,6 +55,8 @@ export const judgeUpdate = <Row>(
   const judged: Row[] = [];
   const judgedKeys = new Set<string>();
   const untouchedKeys = new Set(untouched.map((row) => key(row)));
+  // Built once and grown by each result: rebuilt per matched row, a sweep cost matched x stored.
+  const taken = uniqueIndex(entity, untouched);
   for (const row of matched) {
     const result = mergedRow(entity, row, patch);
     // The same four judgements `write` makes, in the same order — on the merged row rather than
@@ -70,8 +72,9 @@ export const judgeUpdate = <Row>(
     }
     // The unique constraints, against the same two sets. The rows this batch matched are not in
     // either: each of them is replaced by its own result, which is judged here instead.
-    const clash = uniqueClash(entity, result, [...untouched, ...judged]);
+    const clash = taken.clash(result);
     if (clash !== undefined) throw uniqueViolation(entity, clash);
+    taken.add(result);
     judged.push(result);
     judgedKeys.add(resultKey);
   }

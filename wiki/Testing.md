@@ -594,6 +594,7 @@ unitTest('a row deleted before the run is skipped, not failed', async ({ runJobs
 | On the trace or the call | Is |
 |---|---|
 | `trace.executions[n].result` | what the body returned. Absent on a run that failed, suspended or was interrupted |
+| `trace.executions[n].code` | the stable `X_*` code a failed run's error carried, beside its `error` message. Absent on an uncoded throw and on a run that did not fail |
 | `trace.steps[name].executions` | times the step body ran — a replay from storage does not count. Cumulative for the test |
 | `runJobs(job, input, { actor })` · `drain({ actor })` | the identity the **worker** runs as (`WorkerOptions.context()` in a real one). Its org is still the job's declared `tenant`; `tenant: 'none'` strips it. Absent is the anonymous actor |
 | `runJobs(job, input, { tenantId })` · `enqueue(…, { tenantId })` | the **enqueuer's** tenant on the row: the limiter's bucket and the dedupe namespace, as `handle.as(actor, input)` files it. One key in two tenants is two jobs |
@@ -992,6 +993,7 @@ shape, same unreached code. `As of 2026-11`.
 | Actor | the first of `x policy explain`'s actors the policy allows, in the primitive's tenant. None allowed is `refused`, by design |
 | Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
 | A job's org | the field(s) its `tenant(input)` reads — any name, nested, left out of the draw, or under a parent the draw left out (a scoped backfill's `payload.input.orgId`) — are set to the tenant it is enqueued in, found by reading them: A's for the control, B's for the tenant proof (B's own job, carrying A's ids). A `tenant` no input field moves (one fixed org) is `unreached`, `X_JOB_TENANT_MISMATCH`, its `fix:` the declaration: `tenant: (input) => input.orgId` |
+| A job's failure | judged by the action rule: a coded refusal under 500 (an app's 409) is `unreached` under its own code, never a defect; an uncoded throw or a coded 5xx is `X_CONTRACT_DEFECT` |
 | Async input | an override's `input` may be `async`: it is awaited inside the call's request, as the call's actor, so it can mint what the action checks (a one-time token, a passkey assertion). `x drill`'s load skips an `async` input and says why |
 | Room | network sealed, mail captured, jobs in memory, clock frozen — from before the app loads and the scratch database boots, as `bun test`'s preload does, so the embedded Postgres never sees its clock jump. A call out is refused and counted, so the primitive is `unreached` |
 | Cost | rows are primitives × tables; statements are not: the graph is written one `insertAll` per table, each tenant-proof snapshot is one statement, and a primitive reads only its own pair's rows of the graph |

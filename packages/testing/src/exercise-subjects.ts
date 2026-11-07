@@ -3,7 +3,7 @@
 // (`exercise-job-tenant.ts`): a drawn org is a random one, and the enqueue refuses it.
 
 import type { Actor } from '@ultimat3/core';
-import { renderCauseValue, renderFixShellArg } from '@ultimat3/core';
+import { renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core';
 import type { AnyJobHandle, JobExecution } from '@ultimat3/jobs';
 import { registeredJobs } from '@ultimat3/jobs';
 import type { Policy } from '@ultimat3/policy';
@@ -58,8 +58,22 @@ export function fixedTenant(name: string, declared: string | undefined) {
 
 const ANSWERED: ReadonlySet<string> = new Set(['completed', 'suspended']);
 
-const statusOfJobFailure = (run: JobExecution | undefined): string =>
-  run === undefined ? 'the job never ran' : (run.error ?? `the run ended ${run.outcome}`);
+/**
+ * What a failed run hands the verdict. A run whose error carried a code is that code again, so
+ * core's `exerciseDefect` judges it by the one rule an action's refusal meets: a coded refusal
+ * under 500 is the job answering "no", a 5xx or an uncoded throw is a defect. The message alone
+ * read every coded refusal — an app's 409 included — as an uncoded throw: X_CONTRACT_DEFECT.
+ */
+const jobFailure = (run: JobExecution | undefined): unknown => {
+  if (run === undefined) return 'the job never ran';
+  const message = run.error ?? `the run ended ${run.outcome}`;
+  if (run.code === undefined) return message;
+  return new UltimateError({
+    code: run.code,
+    cause: message,
+    fix: `x errors explain ${renderFixShellArg(run.code, '<code>')} --json`,
+  });
+};
 
 const jobSubject = (handle: AnyJobHandle): Subject => ({
   kind: 'job',
@@ -73,11 +87,11 @@ const jobSubject = (handle: AnyJobHandle): Subject => ({
     const queued = await jobs.enqueue(handle, input, { tenantId: tenant });
     const trace = await jobs.drain(actor === null ? {} : { actor });
     const own = trace.executions.find((run) => run.jobId === queued.id);
-    // The worker's failure is a string on the row, never a throw: it is the attempt's error.
+    // The worker's failure is on the row, never a throw: the attempt's error and its code.
     // Suspended is a body that ran and parked (`step.sleep`, `waitForEvent`): reached.
     return own !== undefined && ANSWERED.has(own.outcome)
       ? { output: own.result }
-      : { failure: statusOfJobFailure(own) };
+      : { failure: jobFailure(own) };
   },
 });
 

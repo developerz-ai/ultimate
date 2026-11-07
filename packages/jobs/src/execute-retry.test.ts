@@ -403,3 +403,16 @@ describe('why a job stopped is readable, not inferred', () => {
     expect(harness.nacks()[0]?.error).not.toContain('not retried');
   });
 });
+
+describe('the execution carries the code its error carried', () => {
+  test('a retried and a dead-lettered attempt name the code; an uncoded throw names none', async () => {
+    const retried = await claimOne({ attempts: 3, throws: () => coded(RETRY_AFTER_CODE) });
+    expect(await retried.execute()).toMatchObject({ outcome: 'retried', code: RETRY_AFTER_CODE });
+    const dead = await claimOne({ attempts: 5, throws: () => coded(TERMINAL_CODE) });
+    expect(await dead.execute()).toMatchObject({ outcome: 'dead-lettered', code: TERMINAL_CODE });
+    const uncoded = await claimOne({ attempts: 1, throws: () => new TypeError('boom') });
+    const execution = await uncoded.execute();
+    expect(execution.outcome).toBe('dead-lettered');
+    expect('code' in execution).toBe(false);
+  });
+});

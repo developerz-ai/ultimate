@@ -70,6 +70,8 @@ export interface JobExecution {
   /** Epoch ms the row is claimable again: a suspension's wake, or a retry's backoff ending. */
   readonly resumeAt?: number;
   readonly error?: string;
+  /** The stable `X_*` code the attempt's error carried — absent for an uncoded throw. */
+  readonly code?: string;
   /** Why this attempt was the last. Absent while the job is still being retried. */
   readonly stopReason?: JobStopReason;
   /** What the body returned — present exactly on `completed`, for a caller driving a run by hand. */
@@ -287,6 +289,10 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     }
 
     const message = renderThrowable(error);
+    // The code beside the message: a caller judging the failure (`x exercise`) reads a coded
+    // refusal by its code, as it reads an action's, and the message alone had lost it.
+    const thrownCode = settledCode(error);
+    const coded = thrownCode === undefined ? {} : { code: thrownCode };
     // Unwinding already: the replay stopped at its first incomplete step (`UnwindReached`) or
     // ended any other way. Never retried forward — a drain still hands the attempt back.
     if (
@@ -327,6 +333,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
         attempt: claimed.attempt,
         durationMs: nowMs(options.clock) - startedAt,
         error: message,
+        ...coded,
         steps: [],
         replayed: [],
       });
@@ -359,6 +366,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
         attempt: claimed.attempt,
         durationMs: nowMs(options.clock) - startedAt,
         error: message,
+        ...coded,
         resumeAt: nowMs(options.clock) + deferMs,
         steps: [],
         replayed: [],
@@ -445,6 +453,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       attempt: claimed.attempt,
       durationMs: nowMs(options.clock) - startedAt,
       error: message,
+      ...coded,
       // When the retry falls due, on this process's clock — what lets the worker that failed it
       // pass again at that moment instead of finding out on a backed-off poll.
       ...(decision.retry ? { resumeAt: nowMs(options.clock) + decision.delayMs } : {}),
