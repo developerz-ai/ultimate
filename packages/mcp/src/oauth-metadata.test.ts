@@ -1,6 +1,6 @@
-// OAuth discovery on the MCP route (MCP authorization spec 2025-06-18 / 2025-11-25, RFC 9728):
-// the 401 names the metadata, the metadata names the authorization server, and nothing about an
-// app that declares no `oauth` changes.
+// OAuth discovery on the MCP route (MCP authorization spec — modern 2026-07-28, legacy 2025-11-25 /
+// 2025-06-18 / 2025-03-26 — and RFC 9728): the 401 names the metadata, the metadata names the
+// authorization server, and nothing about an app that declares no `oauth` changes.
 
 import { describe, expect, test } from 'bun:test';
 import { defineAppMcp } from './app-tools';
@@ -53,9 +53,11 @@ describe('the 401 challenge', () => {
     );
   });
 
-  // MCP authorization spec 2025-06-18 / 2025-11-25 and RFC 6750 §3: the challenge names the scopes
-  // the resource supports, so a client asks the authorization server for them without first
-  // fetching the metadata document.
+  // RFC 6750 §3 is the source of `scope=`: the MCP authorization spec adopted scope selection on
+  // the challenge in 2025-11-25 (SEP-835) and keeps it in modern 2026-07-28; the 2025-06-18 and
+  // 2025-03-26 revisions carry no scope guidance there. So the challenge names the scopes the
+  // resource supports and a client asks the authorization server for them without first fetching
+  // the metadata document.
   test('carries scope="…" — the supported scopes, sorted and space-separated', async () => {
     const route = mcpHttpRoute({
       server,

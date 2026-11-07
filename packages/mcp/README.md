@@ -542,7 +542,12 @@ not awaited and cannot change an answer: one that throws or rejects is logged on
 ### OAuth discovery (RFC 9728)
 
 `defineAppMcp({ oauth: { authorizationServers: ['https://www.example.com'] } })` (`As of 22.6.0`;
-MCP authorization spec 2025-06-18, unchanged in 2025-11-25): every 401 carries
+MCP authorization spec, `As of 2026-11` served at modern `2026-07-28` and the legacy handshake
+revisions `2025-11-25` / `2025-06-18` / `2025-03-26`, discovery not the same in each — RFC 9728
+protected-resource metadata is required from `2025-06-18` on; `2025-11-25` made the 401's
+`WWW-Authenticate` optional with a `.well-known` fallback (SEP-985) where `2025-06-18` required it;
+`2025-03-26` defines none, its discovery being RFC 8414 authorization-server metadata at the
+origin): every 401 carries
 `WWW-Authenticate: Bearer realm="ultimate-mcp", resource_metadata="<origin>/.well-known/oauth-protected-resource<path>"`
 (`error="invalid_token"` when a token was sent), and `route.protectedResource` carries the document
 and the two paths it is served at — path-inserted per RFC 9728 §3.1 and the root — which

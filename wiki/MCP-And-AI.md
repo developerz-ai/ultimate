@@ -330,7 +330,12 @@ mounted after the framework's routes and before the pages, through the whole pip
 ### OAuth discovery for remote connectors
 
 `defineAppMcp({ oauth })` makes the endpoint an OAuth 2.1 protected resource per the MCP
-authorization spec (2025-06-18; unchanged in 2025-11-25) and RFC 9728 (`As of 22.6.0`):
+authorization spec (`As of 2026-11`, served at modern `2026-07-28` and the legacy handshake
+revisions `2025-11-25` / `2025-06-18` / `2025-03-26`) and RFC 9728 (`As of 22.6.0`). Discovery is
+not the same in each: RFC 9728 protected-resource metadata is required from `2025-06-18` on;
+`2025-11-25` made the 401's `WWW-Authenticate` optional with a `.well-known` fallback (SEP-985)
+where `2025-06-18` required it; `2025-03-26` defines none, its discovery being RFC 8414
+authorization-server metadata at the origin:
 
 ```ts
 export const mcp = defineAppMcp({
