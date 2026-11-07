@@ -27,6 +27,12 @@ export interface EntityShape {
   readonly checks: readonly RowCheck[];
   readonly uniques: readonly (readonly string[])[];
   /**
+   * The uniques with a `where`: SQL the generator cannot evaluate, so held as total — stricter than
+   * the table — unless a factory builds every one of their columns, when the database judges them.
+   * `orgs: unique(kind) where kind = 'staff'` otherwise ran an enum out of values (`X_SEED_GRAPH_UNSATISFIED`).
+   */
+  readonly partialUniques: readonly (readonly string[])[];
+  /**
    * The soft-delete property, or `null`. Seeded null unless a factory builds it: a row born deleted
    * is invisible to every read.
    */
@@ -83,15 +89,25 @@ export function shapeOf(entity: SeedEntity): EntityShape {
         holds: (row) => invariant.holds(row),
       }),
     );
-  // A partial unique (`where`) is treated as total: stricter than the table, never looser.
   const uniques = dedupe([
     entity.$primaryKey,
     ...description.columns.filter((column) => column.unique).map((c) => toProperties([c.column])),
     ...entity.$invariants
-      .filter((invariant) => invariant.kind === 'unique')
+      .filter((invariant) => invariant.kind === 'unique' && invariant.where === undefined)
       .map((invariant) => toProperties(invariant.columns)),
-    ...description.indexes.filter((index) => index.unique).map((i) => toProperties(i.columns)),
+    ...description.indexes
+      .filter((index) => index.unique && index.where === null)
+      .map((i) => toProperties(i.columns)),
   ]);
+  const total = new Set(uniques.map((set) => set.join('\u0000')));
+  const partialUniques = dedupe([
+    ...entity.$invariants
+      .filter((invariant) => invariant.kind === 'unique' && invariant.where !== undefined)
+      .map((invariant) => toProperties(invariant.columns)),
+    ...description.indexes
+      .filter((index) => index.unique && index.where !== null)
+      .map((i) => toProperties(i.columns)),
+  ]).filter((set) => !total.has(set.join('\u0000')));
   return {
     entity,
     name: entity.$name,
@@ -99,6 +115,7 @@ export function shapeOf(entity: SeedEntity): EntityShape {
     references: new Map(entity.$references().map((reference) => [reference.property, reference])),
     checks,
     uniques,
+    partialUniques,
     softDelete: description.softDelete ? SEED_SOFT_DELETE_PROPERTY : null,
   };
 }

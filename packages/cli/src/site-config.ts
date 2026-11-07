@@ -26,7 +26,7 @@ export interface SiteSettings {
    * `SiteSettings` literal written before it existed still compiles.
    */
   readonly favicon?: SiteFavicon | undefined;
-  /** `seo.llms` — `/llms.txt` on (the default) or off. Optional for `robotsGroups`' reason. */
+  /** `seo.llms` — `/llms.txt` on (the default) or off: off, the path is the app's to mount. Optional for `robotsGroups`' reason. */
   readonly llms?: boolean | undefined;
 }
 

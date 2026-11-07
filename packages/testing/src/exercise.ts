@@ -441,6 +441,7 @@ export async function runExercisePass(
     main: graph,
     seed: passSeed,
     room,
+    factories: options.overrides?.factories,
     setup: async (subject, sized, tenant, self) => {
       const full = chosen.find((one) => one.name === subject.name);
       return full === undefined

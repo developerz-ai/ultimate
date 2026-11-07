@@ -95,7 +95,7 @@ async function exercise(
     proved.length === 0
       ? []
       : await withExerciseDatabase(root, ctx.env, (client) =>
-          subjectProofFindings(proved, cores, client),
+          subjectProofFindings(proved, cores, client, overrides?.factories),
         );
   const report = exerciseReport(records, seed);
   // The whole pass, not a one-primitive run's slice of it, is what the file is for — but a

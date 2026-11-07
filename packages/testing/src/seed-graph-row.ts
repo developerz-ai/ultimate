@@ -17,6 +17,8 @@ export interface RowProblem {
   readonly uniques: readonly (readonly string[])[];
   /** Per entry of `uniques`, the keys earlier rows already hold. */
   readonly taken: readonly ReadonlySet<string>[];
+  /** A factory's `derive`: columns that follow from the picked ones, applied before any rule. */
+  readonly derive?: ((row: Readonly<Record<string, unknown>>) => object) | undefined;
 }
 
 export type RowSolution =
@@ -77,7 +79,7 @@ const build = (problem: RowProblem, picks: readonly number[]): Record<string, un
   problem.columns.forEach(([property, candidates], index) => {
     row[property] = candidates[picks[index] ?? 0];
   });
-  return row;
+  return problem.derive === undefined ? row : { ...row, ...problem.derive(row) };
 };
 
 /** Odometer over the varied columns, last one fastest: deterministic and exhaustive up to the cap. */

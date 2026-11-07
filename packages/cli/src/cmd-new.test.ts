@@ -363,8 +363,8 @@ describe('unit · x new · the sitemap and robots.txt it wires', () => {
     expect(entry).toContain("from '@ultimat3/cli'");
     expect(entry).toContain('siteSeo(');
     // `writeSiteSeo` puts every file of that answer on disk: the sitemap, each part of an index
-    // (`/sitemaps/*.xml`) and `robots.txt` — `site-seo-sections.test.ts` holds it to the bytes.
-    expect(entry).toContain('writeSiteSeo(out, seo)');
+    // (`/sitemaps/*.xml`), `robots.txt` and `llms.txt` unless `seo.llms` is off — `site-seo-sections.test.ts` holds it to the bytes.
+    expect(entry).toContain('writeSiteSeo(out, seo, { llms: settings.llms })');
     expect(emitted('package.json', true)).toContain('"@ultimat3/seo"');
   });
 });

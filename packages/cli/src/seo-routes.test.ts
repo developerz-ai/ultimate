@@ -168,14 +168,27 @@ describe('seoRoutes, served by the web role', () => {
     expect(await (await staging.fetch(new Request('http://x/llms.txt'))).text()).toBe('');
   });
 
-  test('seo.llms: false answers an empty document in production too', async () => {
+  test('seo.llms: false mounts no /llms.txt, so the app may serve its own beside these', async () => {
     site();
-    const off = httpServer({
-      routes: [...seoRoutes({ env: PRODUCTION, site: { ...NO_SITE_SETTINGS, llms: false } })],
+    const off = seoRoutes({ env: PRODUCTION, site: { ...NO_SITE_SETTINGS, llms: false } });
+    expect(off.map((route) => route.path)).not.toContain('/llms.txt');
+    // The app's own route on the same path: X_ROUTE_CONFLICT while the framework mounted one.
+    const own = httpServer({
+      routes: [
+        ...off,
+        {
+          method: 'GET',
+          path: '/llms.txt',
+          meta: { name: 'app.llms', auth: 'public' },
+          handler: async () => new Response('# the app'),
+        },
+      ],
       role: 'web',
       config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
     });
-    expect(await (await off.fetch(new Request('http://x/llms.txt'))).text()).toBe('');
+    expect(await (await own.fetch(new Request('http://x/llms.txt'))).text()).toBe('# the app');
+    const on = seoRoutes({ env: PRODUCTION, site: NO_SITE_SETTINGS });
+    expect(on.map((route) => route.path)).toContain('/llms.txt');
   });
 
   test('with no APP_URL the static build`s SITE_ORIGIN is the origin, then the request`s', async () => {

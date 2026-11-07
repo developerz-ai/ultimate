@@ -6,6 +6,13 @@
 export interface SeedFactory {
   build(): object;
   reset(): void;
+  /**
+   * Columns that follow from what the GRAPH chose — its keys and references, which no factory
+   * builds: `memorial_templates.scopeKey` from `ownerOrgId`. Called on each candidate row before
+   * its rules are judged; what it answers wins. A `defineFactory` with it:
+   * `{ build: () => f.build(), reset: () => f.reset(), derive: (row) => ({ … }) }`.
+   */
+  derive?(row: Readonly<Record<string, unknown>>): object;
 }
 
 export interface SeedGraphOptions {

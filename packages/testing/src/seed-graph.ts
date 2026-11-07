@@ -135,7 +135,8 @@ export function seedGraph(
     const factory = options.factories?.[name];
     const rows: Placed[] = [];
     placed.set(name, rows);
-    const taken = shape.uniques.map(() => new Set<string>());
+    const allUniques = [...shape.uniques, ...shape.partialUniques];
+    const taken = allUniques.map(() => new Set<string>());
     const rootProperty = roots.get(name);
     const buckets: readonly (string | null)[] = scoped(name) ? tenants : [null];
     let ordinal = 0;
@@ -176,11 +177,19 @@ export function seedGraph(
             candidates.length === 0 ? refuseEmpty(shape, property, tenant) : candidates,
           ] as const;
         });
+        // A partial unique whose every column the factory built is the database's to judge.
+        const held = allUniques
+          .map((set, i) => [set, taken[i] as Set<string>] as const)
+          .filter(
+            ([set], i) =>
+              i < shape.uniques.length || !set.every((property) => Object.hasOwn(built, property)),
+          );
         const problem: RowProblem = {
           columns,
           checks: shape.checks,
-          uniques: shape.uniques,
-          taken,
+          uniques: held.map(([set]) => set),
+          taken: held.map(([, set]) => set),
+          derive: factory?.derive?.bind(factory),
         };
         const solved = solveRow(problem);
         if (!solved.ok) {
@@ -197,7 +206,7 @@ export function seedGraph(
           });
         }
         const row = { ...solved.row };
-        shape.uniques.forEach((set, i) => {
+        allUniques.forEach((set, i) => {
           const key = uniqueKey(row, set);
           if (key !== undefined) taken[i]?.add(key);
         });

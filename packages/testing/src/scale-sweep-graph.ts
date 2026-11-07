@@ -3,7 +3,7 @@
 // every reference to one is pointed at the pass's own row in the same position. Pure.
 
 import { seedGraph } from './seed-graph';
-import type { SeedGraph } from './seed-graph-plan';
+import type { SeedFactory, SeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 
 export interface ScaleGraph {
@@ -23,12 +23,18 @@ export interface ScaleGraph {
 export function scaleGraph(
   main: SeedGraph,
   entities: readonly SeedEntity[],
-  options: { readonly perTable: number; readonly seed: number },
+  options: {
+    readonly perTable: number;
+    readonly seed: number;
+    /** The app's `defineExercise` factories: a table only they satisfy is built by them here too. */
+    readonly factories?: Readonly<Record<string, SeedFactory>> | undefined;
+  },
 ): ScaleGraph {
   const sized = seedGraph(Object.fromEntries(entities.map((entity) => [entity.$name, entity])), {
     tenants: 1,
     perTable: options.perTable,
     seed: options.seed,
+    ...(options.factories === undefined ? {} : { factories: options.factories }),
   });
   const shared = (graph: SeedGraph) => graph.inserts.filter((insert) => insert.tenant === null);
   const theirs = shared(main);
