@@ -26,6 +26,7 @@ import {
   outboxRelay,
   postgresLeaseLeader,
   postgresSchedulerState,
+  registeredJobs,
 } from '@ultimat3/jobs';
 import type { SyncWs } from '@ultimat3/realtime/server';
 import { errorPageHook } from './error-pages';
@@ -45,6 +46,7 @@ import { prepareSync, type RunningSync, syncReadsChanges } from './role-sync';
 import { startWorkerWake } from './role-wake';
 import { devHooks } from './runtime-hooks';
 import { workerOptionsFor } from './runtime-jobs';
+import { reportUnservedQueues } from './runtime-jobs-unserved';
 import { startLiveFeed } from './runtime-live-feed';
 import { type RunningServices, releaseOrThrow } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
@@ -335,16 +337,30 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       prepared === null ? null : await prepared.listen(server === null ? null : server.url());
     if (sync !== null) releaseSync = sync.stop;
 
-    const worker = selected.includes('worker')
-      ? jobWorker({
-          driver: options.runtime.jobs,
-          build: options.buildId,
-          context: () => ctxOf({ role: 'worker', buildId: options.buildId }),
-          ...workerOptionsFor(options.runtime.workerConfig),
-        })
+    const workerOptions = selected.includes('worker')
+      ? workerOptionsFor(options.runtime.workerConfig)
       : null;
+    const worker =
+      workerOptions === null
+        ? null
+        : jobWorker({
+            driver: options.runtime.jobs,
+            build: options.buildId,
+            context: () => ctxOf({ role: 'worker', buildId: options.buildId }),
+            ...workerOptions,
+          });
     worker?.start();
     if (worker !== null) started.push(() => worker.stop('x dev stopped'));
+    // An exact worker (`WORKER_QUEUES`) names the registered queues NO live worker serves — after
+    // its start, so the registry holds its own row and the rest of the fleet's. Never rejects.
+    if (workerOptions !== null && options.runtime.workerConfig?.exact === true) {
+      const introspect = options.runtime.jobs.introspect;
+      void reportUnservedQueues({
+        served: workerOptions.queues ?? [],
+        registered: registeredJobs().map((handle) => handle.queue),
+        workers: introspect === undefined ? undefined : () => introspect.workers(),
+      });
+    }
 
     // The half of the transactional outbox that makes a staged row a running job. Without it
     // `handle.enqueue()` inside a transaction writes to `x_outbox` and nothing ever reads it back

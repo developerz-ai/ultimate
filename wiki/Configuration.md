@@ -148,7 +148,7 @@ ROLE: worker                          ROLE: worker
 WORKER_QUEUES: banks                  WORKER_QUEUES: banks-long
 ```
 
-Each worker then claims its list and nothing else. Every entry must be a queue the app knows — in `jobs.queues` or a registered job's — or the boot refuses with `X_WORKER_QUEUE_UNKNOWN` (`As of 29.0.0`). At boot it logs `jobs.worker.queue-unserved` (a warning, not a refusal) naming every queue a registered job is enqueued on that it will not claim, so a queue no Deployment serves is visible in the first log line rather than as a backlog. `x jobs list --json` shows each queue's workers.
+Each worker then claims its list and nothing else. Every entry must be a queue the app knows — in `jobs.queues` or a registered job's — or the boot refuses with `X_WORKER_QUEUE_UNKNOWN` (`As of 29.0.0`). After it starts it logs `jobs.worker.queue-unserved` (a warning, not a refusal) naming every queue a registered job is enqueued on that NO live worker in the registry serves (`As of 2026-11-07`), so a queue no Deployment serves is visible in the first log line rather than as a backlog — and a split fleet whose other Deployments serve the rest logs nothing. A driver with no worker registry says it at `info`. `x jobs list --json` shows each queue's workers.
 
 ## `realtime`
 

@@ -100,21 +100,6 @@ export function workerQueuesFor(
 }
 
 /**
- * An exact worker's one boot line about what it leaves: the queues registered jobs are enqueued
- * on that it will never claim. A warning and not a refusal — another Deployment serving them is
- * the whole point of the split — but this process cannot see that one, so it says what to check.
- */
-function reportUnserved(served: readonly string[], registered: readonly string[]): void {
-  const queues = [...new Set(registered)].filter((queue) => !served.includes(queue)).sort();
-  if (queues.length === 0) return;
-  logger.warn('jobs.worker.queue-unserved', {
-    queues,
-    served,
-    fix: `x jobs list --json — every queue listed with no worker needs one: WORKER_QUEUES=<queue>,<queue> on another worker Deployment, or add it to this one's`,
-  });
-}
-
-/**
  * A `WORKER_QUEUES` entry no registered job and no `jobs.queues` entry names. The worker would
  * claim a queue nothing is enqueued on and leave the real ones waiting while its pod stays Ready —
  * a 15-minute outage behind a healthy roll (`banks-*`, never expanded, 2026-10-27). Refused at
@@ -183,7 +168,6 @@ export function workerOptionsFor(config: WorkerConfig | undefined): WorkerConfig
   const exact = config?.exact === true;
   if (exact) refuseUnknownQueues(config?.queues ?? [], config?.configured ?? [], registered);
   const queues = workerQueuesFor(config?.queues ?? [], registered, exact);
-  if (exact) reportUnserved(queues ?? [], registered);
   // Passed as written: `jobWorker` reads a table by own key and runs a queue it does not name at
   // core's `JOBS_CONCURRENCY_DEFAULT` — the one slot default, so no second table is built here.
   const concurrency = config?.concurrency;
