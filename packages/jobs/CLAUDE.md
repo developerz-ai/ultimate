@@ -238,7 +238,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `retry.ts` | the dead-letter decision, and this package's option names over core's `backoffDelay` — no curve of its own |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
-| `execute.ts` / `execute-result.ts` / `run-deadline.ts` | `executeJob` — one claimed job run and settled; `JobExecution`, what it answers; the run's deadline: cancel, then fail |
+| `execute.ts` (+`-result.ts`) / `run-deadline.ts` | `executeJob`: one claimed job run and settled; its deadline: cancel, then fail |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `renewal-timer.ts` | the renewal interval and its `stopped()` latch |
 | `worker.ts` | `worker` role, claim round, drain |

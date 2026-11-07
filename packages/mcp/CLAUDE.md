@@ -22,7 +22,7 @@ import. The CLI wires it.
 | `server-resources.ts` | `resources/read`'s three outcomes, audited, provider in a `try` |
 | `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
-| `dev-server.ts` | 13 of the 19 dev tools (`routes.list` … `logs.tail`); `ui.shot`, `ui.island`, `ui.inspect`, `ui.diff` are `dev-ui-tools.ts`, `ui.interact` `dev-ui-interact.ts`, `graph.query` `dev-graph-tool.ts`. Depends only on an injected `DevHost` |
+| `dev-server.ts` · `dev-ui-*.ts` · `dev-graph-tool.ts` | the 19 dev tools: 13 here (`routes.list` … `logs.tail`), the five `ui.*`, `graph.query`. Depends only on an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself; it keeps the order |
 | `transport-http-answers.ts` | the pre-dispatch answers (401, 403 not-an-agent / origin, 421, 429) and the per-address failure meter |
@@ -36,7 +36,7 @@ import. The CLI wires it.
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
 | `projectable.ts` | a real `action`/`query` → `ProjectablePrimitive`; the ONE adapter both the sweep and the written-out list use |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
-| `include-early.ts` | what `include: 'exposed'` saw (a `WeakMap` on the `AppMcp`) and `assertIncludeCurrent`, the mount's after-scan check: `X_MCP_INCLUDE_EARLY` names the primitives a too-early catalog lacks |
+| `include-early.ts` | `assertIncludeCurrent`, the mount's after-scan check (`X_MCP_INCLUDE_EARLY`) — [history](../../docs/history/mcp.md) |
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface and its three boot refusals |
 | `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
