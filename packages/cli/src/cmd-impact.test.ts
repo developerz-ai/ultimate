@@ -2,9 +2,15 @@
 // process-wide registries): editing a query names the routes that read it, the operation it
 // publishes, and its tests — each with provenance; a miss is X_GRAPH_NODE_UNKNOWN with the nearest.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
+
+// Each test loads the reference app in a fresh `x` process: seconds on a loaded 4-core runner, past
+// bun's 5 s default (a killed child read as `JSON Parse error: Unexpected EOF`). The test's bound is
+// the spawn's own.
+const SPAWN_TIMEOUT_MS = 60_000;
+setDefaultTimeout(SPAWN_TIMEOUT_MS);
 
 const APP = join(import.meta.dir, '..', '..', '..', 'examples', 'dummy');
 const BIN = join(import.meta.dir, 'bin.ts');
@@ -21,7 +27,7 @@ const run = (
     cwd: APP,
     stdout: 'pipe',
     stderr: 'pipe',
-    timeout: 60_000,
+    timeout: SPAWN_TIMEOUT_MS,
   });
   return {
     code: child.exitCode ?? 1,
