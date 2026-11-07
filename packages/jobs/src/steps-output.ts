@@ -3,6 +3,7 @@
 // result fails at compile time, and if forced, on attempt 1 rather than on the first resume.
 
 import { isJsonObject, isUltimateError, jsonbRefusal, renderThrowable } from '@ultimat3/core';
+import type { JsonValue } from '@ultimat3/schema';
 import { StepOutputUnserializableError } from './errors-steps';
 
 type Callable = ((...args: never[]) => unknown) | (abstract new (...args: never[]) => unknown);
@@ -77,7 +78,13 @@ type JsonOf<T> = T extends string | number | boolean | null
  * `bigint` is `never`: the value raises `X_STEP_OUTPUT_UNSERIALIZABLE` instead of arriving, as do
  * `NaN`, an infinity, an invalid `Date` and text `jsonb` refuses, which the type cannot see.
  */
-export type StepOutput<T> = unknown extends T ? T : JsonOf<T>;
+export type StepOutput<T> = unknown extends T
+  ? T
+  : // Already JSON, so the round trip changes nothing. Checked first: `JsonValue` is recursive, and
+    // walking it member by member never bottoms out (TS2589).
+    [T] extends [JsonValue]
+    ? T
+    : JsonOf<T>;
 
 /**
  * The value both attempts see. One stringify and one parse per EXECUTED step, none on a replay; a
