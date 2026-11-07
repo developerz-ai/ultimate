@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.1.0 - 2026-11-07
+
 ### Highlights
 
 - `x exercise` seeds a table with your own `defineFactory`, so an entity whose rows no generated value satisfies â€” a cross-column `satisfies`, a JSON column with required keys â€” runs the gate's `exercise` step.
@@ -19,6 +23,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ### Fixed
 
 - `@ultimat3/jobs`: `StepOutput<T>` answers a `T` that is already JSON as itself, so a step returning `JsonValue`, or an object holding one, compiles; it was TS2589 ("type instantiation is excessively deep").
+
+### Commits
+
+- feat(testing): x exercise takes app factories; fix(jobs): StepOutput<JsonValue> compiles (#1010)
 
 ## 30.0.0 - 2026-11-07
 
