@@ -2,6 +2,7 @@
 // excludes `src/**/*.test.ts`, so `tsc -b` never reads a test file and a claim written there can
 // never fail. Nothing here is called — a regression is a build error (axiom 3).
 
+import type { JsonValue } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
 import type { StepApi, StepOutput } from './steps';
 
@@ -64,6 +65,14 @@ export type StepOutputPins = [
   Assert<Same<StepOutput<Uint8Array>, Record<string, number>>>,
   // `bigint` never arrives: X_STEP_OUTPUT_UNSERIALIZABLE.
   Assert<Same<StepOutput<bigint>, never>>,
+  // Already JSON comes back as itself, recursive type and all — it was TS2589 before 30.1.0.
+  Assert<Same<StepOutput<JsonValue>, JsonValue>>,
+  Assert<
+    Same<
+      StepOutput<{ readonly payload: JsonValue; readonly at: Date }>,
+      { readonly payload: JsonValue; readonly at: string }
+    >
+  >,
 ];
 
 const Approval = t.object({ amount: t.number });

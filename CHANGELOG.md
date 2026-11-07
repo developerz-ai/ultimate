@@ -8,7 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `x exercise` seeds a table with your own `defineFactory`, so an entity whose rows no generated value satisfies — a cross-column `satisfies`, a JSON column with required keys — runs the gate's `exercise` step.
+
+### Added
+
+- `@ultimat3/testing`: `defineExercise(overrides, { factories })` — the exercise pass seeds a table with the app's `defineFactory`, keyed by entity name, so an entity with a cross-column `c.satisfies(…)` invariant no generated row meets can run `x exercise`. Before, `X_SEED_GRAPH_UNSATISFIED`'s fix named `seedGraph(entities, { factories })`, which the pass gave no way to reach; the fix now names `defineExercise` too. An unknown factory name is `X_DECLARATION_UNKNOWN`.
+
+### Fixed
+
+- `@ultimat3/jobs`: `StepOutput<T>` answers a `T` that is already JSON as itself, so a step returning `JsonValue`, or an object holding one, compiles; it was TS2589 ("type instantiation is excessively deep").
 
 ## 30.0.0 - 2026-11-07
 

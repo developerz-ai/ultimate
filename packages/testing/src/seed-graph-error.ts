@@ -27,7 +27,7 @@ export class SeedGraphUnsatisfiedError extends UltimateError {
     super({
       code: 'X_SEED_GRAPH_UNSATISFIED',
       cause: `${input.entity}: ${input.what}`,
-      fix: `defineFactory(<the ${input.entity} entity>, { defaults: (index, ids) => ({ ${body} }) }), then seedGraph(entities, { factories: { ${name}: thatFactory } })`,
+      fix: `defineFactory(<the ${input.entity} entity>, { defaults: (index, ids) => ({ ${body} }) }), then seedGraph(entities, { factories: { ${name}: thatFactory } }) — for x exercise, defineExercise({}, { factories: { ${name}: thatFactory } }) in apps/web/exercise.ts`,
     });
   }
 }

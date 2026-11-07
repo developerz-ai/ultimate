@@ -418,6 +418,9 @@ export async function runExercisePass(
     graph = await seedPass(options.entities, options.writer, {
       primitives: live.length,
       seed: passSeed,
+      ...(options.overrides?.factories === undefined
+        ? {}
+        : { factories: options.overrides.factories }),
     });
     // In order, one at a time: the seams the room installs are the process's, not the primitive's.
     for (const subject of chosen) {
