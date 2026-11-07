@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.0.0 - 2026-11-07
+
 ### Highlights
 
 - One major for the whole of plan 101: every breaking change below lands here once, each with its edit in [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading).
@@ -690,6 +694,53 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `@ultimat3/testing`: `seedGraph` refuses (`X_SEED_GRAPH_UNSATISFIED`) a key — the tenant column included — whose target entity is not in the set seeded, and a table-wide unique that runs out of values before every tenant holds a row. The first pointed at a parent that was never written; the second left a tenant whose children had no parent.
 - `@ultimat3/testing`: a soft-deleting table's seeded rows are live — `deletedAt` is `null` unless a factory builds it. A generated instant made every seeded row deleted, so a read found none.
 - `@ultimat3/action`: `exerciseAction`'s doc states what a run rolls back: the cache bust on either store, and the outbox stage only when a SQL transaction is open. With none (the memory store), a job enqueue goes straight to the job driver and stays.
+
+### Commits
+
+- docs(upgrading): 30.0.0 section final
+- fix(testing): x drill's jobs-once counts a key run twice at once, not one enqueued again after it settled
+- fix!: sweep 2 — cross-tenant job dedupe, multipart size bound, OAuth metadata fetch metering, and ~30 more (#1008)
+- ci: resource-efficient CI, faster local loop, RAM-only test services; fix red main (#1007)
+- chore(dz): health checkup weekly, not daily (#1006)
+- feat!: issues #990 #993-#997 #999 and sweep 1: passkeys, MCP catalog + tenant + quorum, device sockets, meters, native push, 35 audit fixes (#1005)
+- feat!: plan 101 wave 10: UI kit, page capture, app shapes, docs site, mock boundary, island disposers (#1004)
+- feat!: plan 101 wave 9: subject data, repro, query plans, entity lifecycle, agent wire, MCP, AI cache, cassettes, API clients, app graph, uploads, locale (#1002)
+- feat!: plan 101 wave 8: time series, crash proof, fault drills, redis outage, operations, chart alerts (#1001)
+- feat!: plan 101 wave 7: tenant proof, reads, row security, identity, sagas, consumers, partitions, wedge, agents (#1000)
+- feat!: plan 101 wave 6b (2/2): x exercise, the 21st gate step, both apps unpinned (#989)
+- feat!: plan 101 wave 6b (1/2): exercise runner, one seed graph, memory commit scope, entity shared, raw-tab a11y (#988)
+- feat!: plan 101 wave 6a: exercise memory rollback, seed graph, e2e accessibility audit, /v1 publish, CI split (#987)
+- feat!: plan 101 wave 5b: pinned paths, session/refresh fixes, sign-in, one exercise loop (#986)
+- feat!: plan 101 wave 5a: live refresh, client reads, data table, contract tests, declared errors, mount paths (#985)
+- docs: fix range document link to README navigation (#984)
+- docs: fix SEO idea link to Configuration heading (#983)
+- fix(mail): go deaf on raw socket events after STARTTLS upgrade (#982)
+- feat(guard): compare cross-manifest dependency ranges with the root (#980)
+- feat!: plan 101 wave 4c: testDriver, x db diagnostics, scripted AI, agent evals, MCP 2026-07-28 (#976)
+- feat!: plan 101 wave 4b: client errors, deploy skew, audit trail, CI reuse, deploy proof (#973)
+- feat!: plan 101 wave 4a: jobs: enqueueMany, relay batches, inbound webhooks, importRows (#972)
+- chore: AGENTS.md is a symlink to CLAUDE.md, in this repo and in every new app (#971)
+- fix(ci): private-names is required only where the secret is passed (#970)
+- feat!: plan 101 wave 3: errors, outbound, stability, first hour, agents, docs (#969)
+- feat!: plan 101 wave 2: outages, deploys, streaming, wire, DX, storage (#967)
+- test(services): assert every suite's service URL has a CI part (#966)
+- fix(db): object-drift live suite no longer skips on a missing psql (#965)
+- feat!: plan 101 wave 1: security, tenancy, corruption, concurrency, x upgrade (#963)
+- docs(plans): one new major, v30, carries the whole plan (#962)
+- docs(plans): make every decision and expand the plan for the world (#961)
+- docs(plans): end-to-end improvement plan for Ultimate (#960)
+- fix(scripts): close the bare-Error ratchet's source gap (#957)
+- docs: clarify retained unpin command for empty app ratchets (#959)
+- fix(ci): resolve Dependabot updates from the Bun workspace root (#958)
+- fix(deps): cover workspace manifests and enforce Dependabot policy (#956)
+- docs: correct tracked-app gate status in README (#955)
+- docs(dz): the release judgement reads everything merged since the last release (#954)
+- chore(dz): the bot judges weekly whether a release is needed (#953)
+- chore(deps): Bump lefthook from 2.2.1 to 2.2.2 in the dev-tooling group (#951)
+- chore(deps): Bump sass from 1.105.1 to 1.105.2 in the runtime group (#952)
+- chore(docker): one S3 gateway pin for the scaffold, moved by Dependabot with docker/ (#950)
+- chore(docker): Bump distroless/cc-debian13 in /docker (#948)
+- chore(dz): monthly improve checkup; stop two scripts hiding failures (#946)
 
 ## 29.4.0 - 2026-10-31
 

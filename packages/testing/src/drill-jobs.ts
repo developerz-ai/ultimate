@@ -21,10 +21,17 @@ export const STUCK_SQL = `select count(*)::int as n from x_jobs
 
 export const RAN_SQL = 'select count(*)::int as n from x_jobs where created_at >= $1';
 
-/** A key completed twice: the live-row dedupe only holds while the first is live. */
-export const DOUBLED_SQL = `select count(*)::int as n from (
-  select 1 from x_jobs where created_at >= $1 and state = 'done'
-  group by name, coalesce(tenant_id, ''), idempotency_key having count(*) > 1) twice`;
+/**
+ * A key that ran twice AT ONCE: a second done row created while the first was still live (before
+ * its `updated_at`, the instant it settled). The live-row dedupe only holds while the first is
+ * live, so the same key enqueued again after it finished is a new job by design, never a double.
+ */
+export const DOUBLED_SQL = `select count(distinct (a.name, coalesce(a.tenant_id, ''), a.idempotency_key))::int as n
+  from x_jobs a join x_jobs b
+    on b.name = a.name and coalesce(b.tenant_id, '') = coalesce(a.tenant_id, '')
+   and b.idempotency_key = a.idempotency_key and b.id <> a.id
+  where a.created_at >= $1 and b.created_at >= $1 and a.state = 'done' and b.state = 'done'
+    and b.created_at >= a.created_at and b.created_at < a.updated_at`;
 
 const count = async (sql: DrillSql, text: string, since: Date): Promise<number> => {
   const [row] = await sql.rows(text, [since]);
