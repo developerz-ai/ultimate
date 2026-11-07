@@ -30,6 +30,7 @@ export const ADMIN_OWNED_ERROR_CODES = [
   'X_ADMIN_ACTION_NOT_APPLICABLE',
   'X_ADMIN_MOUNT_MISSING',
   'X_ADMIN_VIEW_WRITE',
+  'X_ADMIN_READ_ONLY_WRITE',
 ] as const;
 
 /**
@@ -64,6 +65,7 @@ export const ADMIN_ERROR_TITLES: Readonly<Record<AdminOwnedErrorCode, string>> =
   X_ADMIN_ACTION_NOT_APPLICABLE: 'an admin action was run on a row its when() rule excludes',
   X_ADMIN_MOUNT_MISSING: 'an admin batch job ran in a process that never declared its admin',
   X_ADMIN_VIEW_WRITE: 'an admin resource over a view entity offers a write',
+  X_ADMIN_READ_ONLY_WRITE: 'an admin resource over a readOnly entity offers a write',
 };
 
 // One unconditional call, so a second package claiming one of admin's codes throws

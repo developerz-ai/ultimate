@@ -16,6 +16,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- `@ultimat3/entity`: `entity(name, { readOnly: '<why>', columns })` — a table the app reads and never writes (legacy history a trigger closed, a table another system owns). Every write is `X_ENTITY_READ_ONLY` in both drivers before a statement exists; a blank reason, or beside `view` or `appendOnly`, is `X_INVARIANT_VIOLATED`. `$readOnly` and `$describe().readOnly` carry the reason. `x exercise` and `x db seed --generate` seed no row of it, a nullable key into it null and a NOT NULL one refused naming the table and the fix; `defineSubject`'s `delete`/`anonymize` on it is `X_SUBJECT_TREATMENT_INVALID`; the admin lists it read-only (`X_ADMIN_READ_ONLY_WRITE` for an override naming a write); the manifest's entity fact carries `readOnly`, becoming readOnly is breaking.
 - `@ultimat3/testing`: an exercise record may carry `fix` — the edit that reaches an `unreached` primitive when no `defineExercise` override can; `x exercise`'s finding prints it in place of the paste.
 - `@ultimat3/testing`: `SeedWriter.insertMany(rows)`, optional — one entity's rows as one write. `entitySeedWriter` implements it with `insertAll`; `insertSeedGraph` uses it when present.
 

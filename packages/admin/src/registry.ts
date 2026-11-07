@@ -86,6 +86,8 @@ export interface AdminEntity {
    * hand-built fixture has none; a view offers reads alone (`resource-operations.ts`).
    */
   readonly $viewQuery?: { readonly materialized: boolean } | null;
+  /** `entity({ readOnly })`'s reason, `null` on a table the app writes: reads alone, as a view. */
+  readonly $readOnly?: string | null;
   /** Resolves foreign-key targets. See `entity-columns.ts` for what the admin takes from it. */
   $describe(): AdminEntityDescription;
 }

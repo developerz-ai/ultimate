@@ -48,6 +48,7 @@ export const ENTITY_ERROR_CODES = [
   'X_ENTITY_VIEW_READ_ONLY',
   'X_ENTITY_RETAIN_UNINDEXED',
   'X_ENTITY_COUNTS_INVALID',
+  'X_ENTITY_READ_ONLY',
 ] as const;
 
 export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
@@ -91,6 +92,7 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_ENTITY_RETAIN_UNINDEXED: 'entity({ retain }) names a column no index leads with',
   X_ENTITY_COUNTS_INVALID:
     'references(…, { countedIn }) names no integer of its parent, or is no key to its primary key',
+  X_ENTITY_READ_ONLY: 'a read-only entity was asked to write a row',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the

@@ -1,6 +1,6 @@
-// Single responsibility: the repository seam of a view entity — every write rejects with
-// `X_ENTITY_VIEW_READ_ONLY` before any statement exists, in both drivers, because both return
-// through `appendOnlyRepo`. Reads pass through untouched; a spread keeps `MemoryRepo.reset()`.
+// Single responsibility: the repository seam of an entity no row of which is written — a view
+// (`X_ENTITY_VIEW_READ_ONLY`), a `readOnly` table (`X_ENTITY_READ_ONLY`) — every write rejecting
+// before any statement exists, in both drivers, because both return through `appendOnlyRepo`. Reads pass through untouched; a spread keeps `MemoryRepo.reset()`.
 
 import { renderFixShellArg } from '@ultimat3/core';
 import { EntityError } from './entity-error';
@@ -24,12 +24,17 @@ export const viewReadOnly = (entityName: string, operation: string): EntityError
     fix: `x entities show ${renderFixShellArg(entityName, '<entity>')} --json   # write the table its view.sql reads; the view answers on the next read (materialized: after its refreshView job runs)`,
   });
 
-export const readOnlyRepo = <Row, R extends Repo<Row>>(entityName: string, repo: R): R => {
+/** `repo` with every write rejecting `refusal(operation)` — a view's code unless told otherwise. */
+export const readOnlyRepo = <Row, R extends Repo<Row>>(
+  entityName: string,
+  repo: R,
+  refusal: (operation: string) => EntityError = (operation) => viewReadOnly(entityName, operation),
+): R => {
   const refusing = Object.fromEntries(
     WRITES.map((operation) => [
       operation,
       async () => {
-        throw viewReadOnly(entityName, operation);
+        throw refusal(operation);
       },
     ]),
   );

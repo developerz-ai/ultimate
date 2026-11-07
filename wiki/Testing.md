@@ -981,7 +981,7 @@ shape, same unreached code. `As of 2026-11`.
 | Rule | |
 |---|---|
 | Database | a scratch one with the framework tables and every migration applied; never the developer's. The pass commits, so the tenant proof can read rows after the call |
-| Rows | one seed graph for the pass, a fresh pair of tenants per primitive in it — the first the actor's (A), the second the tenant proof's intruder (B); every table seeded off its declaration, parents first, same-tenant keys (`x db seed --generate`'s graph) |
+| Rows | one seed graph for the pass, a fresh pair of tenants per primitive in it — the first the actor's (A), the second the tenant proof's intruder (B); every table seeded off its declaration, parents first, same-tenant keys (`x db seed --generate`'s graph). A view and a `readOnly: '<why>'` table get no row; a NOT NULL key into a `readOnly` one is `X_SEED_GRAPH_UNSATISFIED` naming it ([Read-only tables](Entities-And-Migrations#read-only-tables)) |
 | Actor | the first of `x policy explain`'s actors the policy allows, in the primitive's tenant. None allowed is `refused`, by design |
 | Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
 | A job's org | the field(s) its `tenant(input)` reads — any name, nested, or left out of the draw — are set to the tenant it is enqueued in, found by reading them: A's for the control, B's for the tenant proof (B's own job, carrying A's ids). A `tenant` no input field moves (one fixed org) is `unreached`, `X_JOB_TENANT_MISMATCH`, its `fix:` the declaration: `tenant: (input) => input.orgId` |

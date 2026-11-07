@@ -72,9 +72,19 @@ export function seedGraph(
   // A view entity is a relation Postgres derives: no row is ever written to it, so it is no part of
   // the graph (`X_ENTITY_VIEW_READ_ONLY` otherwise) — the tables it reads from carry the rows. A
   // history table is the same from this side: its trigger writes every row, from the parent's.
+  // A `readOnly` table is the app's own statement that it writes no row there (a trigger refuses
+  // every INSERT): seeded like a view, never — a reference into one is null or refused below.
+  const closed = new Map(
+    Object.values(entities).flatMap((entity) => {
+      const reason = entity.$describe().readOnly;
+      return reason === undefined ? [] : [[entity.$name, reason] as const];
+    }),
+  );
   const tables = Object.values(entities).filter((entity) => {
     const described = entity.$describe();
-    return described.view === undefined && described.historyOf === undefined;
+    return (
+      described.view === undefined && described.historyOf === undefined && !closed.has(entity.$name)
+    );
   });
   const shapes = new Map(tables.map((entity) => [entity.$name, shapeOf(entity)]));
   const { order, deferred } = insertOrder(
@@ -118,6 +128,15 @@ export function seedGraph(
   };
   const refuseEmpty = (shape: EntityShape, property: string, tenant: string | null): never => {
     const reference = shape.references.get(property);
+    const reason = reference === undefined ? undefined : closed.get(reference.targetEntity);
+    if (reference !== undefined && reason !== undefined) {
+      throw seedGraphUnsatisfied({
+        entity: shape.name,
+        what: `${property} references ${reference.targetEntity}, which is readOnly (${reason}): no row of it is seeded and ${property} is not nullable, so no ${shape.name} row can be written`,
+        columns: [property],
+        fix: `entity('${shape.name}', { readOnly: '<why the app never writes it>' })   # when the app never writes ${shape.name} either — else ${property}: <its column>.nullable(), then x db gen "${shape.entity.$table} ${property} nullable"`,
+      });
+    }
     throw seedGraphUnsatisfied({
       entity: shape.name,
       what:

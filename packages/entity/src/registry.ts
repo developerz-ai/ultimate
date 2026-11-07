@@ -162,6 +162,8 @@ export interface EntityDescription {
   readonly shared?: string | undefined;
   /** `entity({ scan: '<why>' })`: why the plan sweep may see this table scanned. */
   readonly scan?: string | undefined;
+  /** `entity({ readOnly: '<why>' })`: why the app never writes the table; every write refused. */
+  readonly readOnly?: string | undefined;
   /**
    * `entity({ view: { sql } })`: a relation Postgres derives. Absent on a table. `x db gen` emits
    * it (`@ultimat3/db`'s `generate-view.ts`), admin lists it read-only.

@@ -161,6 +161,8 @@ export interface EntityFact {
   readonly shared?: string;
   /** `entity({ scan })`: why the table may be read whole. Absent when undeclared. */
   readonly scan?: string;
+  /** `entity({ readOnly })`: why the app never writes the table; every write refused. Absent when undeclared. */
+  readonly readOnly?: string;
   /**
    * `entity({ view })`: a relation Postgres derives, so every write to it is refused and the admin
    * lists it read-only. `materialized` stores the rows a `refreshView()` job recomputes. Absent on

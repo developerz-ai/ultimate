@@ -968,6 +968,22 @@ export const postTotals = entity('post_totals', {
 | Admin, MCP | listed read-only: `list`, `detail`, `search`, and no create/edit/delete route, button or admin MCP tool. An `operations` override naming a write is `X_ADMIN_VIEW_WRITE` ([Admin dashboard](Admin-Dashboard)) |
 | Manifest | the entity's fact carries `view: { materialized }`; a table becoming a view is a **breaking** change, a view becoming a table additive |
 
+## Read-only tables
+
+`entity(name, { readOnly: '<why>', columns })` declares a table the app reads and never writes —
+legacy history a trigger closed to INSERTs, a table another system owns. The reason is required. As
+of 2026-11:
+
+| Rule | |
+|---|---|
+| Writes | `insert`, `insertAll`, `upsertAll`, `update`, `delete`, `updateWhere`, `deleteWhere`, `lock`: `X_ENTITY_READ_ONLY`, in both drivers, before a statement exists, the reason in the cause |
+| Refused at declaration | a blank reason, `view` (already read-only), `appendOnly` (it admits the inserts this refuses): `X_INVARIANT_VIOLATED` |
+| Seeds | `x db seed --generate` and `x exercise` seed no row of it. A nullable reference into it is seeded null; a NOT NULL one is `X_SEED_GRAPH_UNSATISFIED` naming the table, its reason, and the fix: `readOnly` on the referencing table too, or `.nullable()` then `x db gen` |
+| Subjects | `defineSubject`'s `'delete'` or `anonymize` on it is `X_SUBJECT_TREATMENT_INVALID`; `retain` is the one treatment that holds |
+| Admin, MCP | listed read-only, as a view; an `operations` override naming a write is `X_ADMIN_READ_ONLY_WRITE` |
+| Projection, manifest | `$describe().readOnly` and the manifest's entity fact carry the reason, absent when undeclared; becoming readOnly is **breaking**, ceasing to be additive |
+| DDL | none: `x db gen` emits nothing for it. The trigger, grant or ownership that closes the table is yours |
+
 ## Migration workflow
 
 | Step | Command | Behavior |

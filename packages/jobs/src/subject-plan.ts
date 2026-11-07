@@ -107,6 +107,9 @@ function inboundEdges(input: SubjectPlanInput, byName: ReadonlyMap<string, Regis
   return inbound;
 }
 
+const isAnonymize = (treatment: SubjectTreatment): boolean =>
+  typeof treatment === 'object' && treatment !== null && 'anonymize' in treatment;
+
 /** What is wrong with one declared treatment on its own, before any reach is considered. */
 function treatmentProblems(
   subject: string,
@@ -118,6 +121,11 @@ function treatmentProblems(
     new SubjectTreatmentInvalidError({ subject, table, field, reason });
   if (entry === undefined) return [invalid(table, 'names no registered entity')];
   const d = entry.describe();
+  // Nothing the app writes reaches a readOnly table: only `retain` can be true of one.
+  if (d.readOnly !== undefined && (treatment === 'delete' || isAnonymize(treatment))) {
+    const field = treatment === 'delete' ? "'delete'" : 'anonymize';
+    return [invalid(field, `is refused: the entity is readOnly (${d.readOnly})`)];
+  }
   if (treatment === 'delete') {
     if (d.appendOnly === true) {
       return [invalid("'delete'", 'is refused: the entity is append-only')];

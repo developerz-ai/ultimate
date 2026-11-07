@@ -12,6 +12,8 @@ export interface SeedGraphUnsatisfiedInput {
   readonly what: string;
   /** The columns the factory has to supply. Empty when no column is to blame (a cycle). */
   readonly columns: readonly string[];
+  /** When no factory is the repair — a key into a `readOnly` table no row is seeded in. */
+  readonly fix?: string;
 }
 
 const ENTITY_PLACEHOLDER = '<the entity the cause names>';
@@ -27,7 +29,9 @@ export class SeedGraphUnsatisfiedError extends UltimateError {
     super({
       code: 'X_SEED_GRAPH_UNSATISFIED',
       cause: `${input.entity}: ${input.what}`,
-      fix: `defineFactory(<the ${input.entity} entity>, { defaults: (index, ids) => ({ ${body} }) }), then seedGraph(entities, { factories: { ${name}: thatFactory } }) — for x exercise, defineExercise({}, { factories: { ${name}: thatFactory } }) in apps/web/exercise.ts`,
+      fix:
+        input.fix ??
+        `defineFactory(<the ${input.entity} entity>, { defaults: (index, ids) => ({ ${body} }) }), then seedGraph(entities, { factories: { ${name}: thatFactory } }) — for x exercise, defineExercise({}, { factories: { ${name}: thatFactory } }) in apps/web/exercise.ts`,
     });
   }
 }
