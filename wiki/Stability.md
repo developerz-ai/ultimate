@@ -2,7 +2,7 @@
 
 **From v30: at most one major every 90 days, the previous major gets security fixes for 6 months after its successor, and a removal is deprecated for at least one minor first.** Each rule is refused by a script, not remembered by a person — the table at the bottom names the code.
 
-**Next major window:** 90 days after the date on the `## 30.0.0` heading in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md). Until v30 ships, this line names no date; `bun run scripts/release-due.ts --json` answers it as `.data.windowOpensOn` while a major waits.
+**Next major window:** opens on `2027-02-05`, 90 days after 30.0.0 (2026-11-07). The bump that ships a major rewrites this line (`scripts/release.ts`).
 
 ## What is covered
 

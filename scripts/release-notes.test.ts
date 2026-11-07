@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
-import { notesFindings, sectionBody, UNRELEASED_VERSION } from './release-notes';
+import { highlightNotes, notesFindings, sectionBody, UNRELEASED_VERSION } from './release-notes';
 
 const CHANGELOG = [
   '# Changelog',
@@ -83,7 +83,7 @@ describe('unit · release-notes · refusals', () => {
 describe('unit · release-notes · the CLI', () => {
   // The workflow reads `.data.notes` off `--json`; the envelope is the contract it relies on.
   test(
-    '--json carries the newest released section of the real CHANGELOG.md',
+    '--json carries the newest released section of the real CHANGELOG.md, short when it has Highlights',
     async () => {
       const changelog = await Bun.file(`${repoRoot()}/CHANGELOG.md`).text();
       const newest = /^## (\d+\.\d+\.\d+)/m.exec(changelog)?.[1] ?? '';
@@ -93,7 +93,10 @@ describe('unit · release-notes · the CLI', () => {
       );
       expect(out.ok).toBe(true);
       const parsed = JSON.parse(out.output) as { ok: boolean; data: { notes: string } };
-      expect(parsed.data.notes).toBe(sectionBody(changelog, newest) ?? '');
+      // A section with Highlights ships the short body; one without, its raw body.
+      expect(parsed.data.notes).toBe(
+        highlightNotes(changelog, newest) ?? sectionBody(changelog, newest) ?? '',
+      );
       expect(parsed.data.notes.length).toBeGreaterThan(0);
     },
     REPO_SCAN_TIMEOUT_MS,

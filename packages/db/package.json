@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/db",
-  "version": "29.4.0",
+  "version": "30.0.0",
   "description": "Postgres access, transactions, migrations and drift detection",
   "keywords": [
     "ultimate",
@@ -44,7 +44,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "29.4.0"
+    "@ultimat3/core": "30.0.0"
   },
   "peerDependencies": {
     "@electric-sql/pglite": ">=0.5.0"
