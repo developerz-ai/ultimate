@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.3.0 - 2026-11-07
+
 ### Highlights
 
 - `x exercise` seats a job in the tenant it is enqueued under, whatever field its `tenant(input)` reads: no more `X_JOB_TENANT_MISMATCH` (and `X_TENANCY_ACTOR_MISMATCH` inside) on a job whose org field the id binder did not recognise.
@@ -26,6 +30,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `@ultimat3/testing`: the pass's seed graph is written one `insertAll` per table; each tenant-proof snapshot is one statement over every table, its key compared in the column's own type so the primary key serves it; each primitive reads only its own tenant pair's rows of the graph; the planner indexes parent rows by tenant. Same rows, same seed, same guarantees: a fresh pair per primitive, B/A/B.
 - `@ultimat3/cli`: `x exercise` freezes the clock before the app loads and the scratch database boots, as `bun test`'s preload does. PGlite's Postgres armed its 10 s idle-stats timer on the real clock; the pass's room froze the clock at 2026-01-01 under it, and every re-arm was (real now âˆ’ frozen now) â‰ˆ 2^34 ms, clamped to 1 ms.
 - `@ultimat3/entity`: the memory driver's `insertAll` judges unique keys against one index built once per batch, and does not judge them again per row: 4,000 rows with two uniques took 168 s, now under 1 s. Same refusals, same first clash, NULLs still distinct, partial uniques still unchecked.
+
+### Commits
+
+- fix(testing): x exercise binds a job's tenant, seeds per primitive, arms timers off one clock; entity readOnly tables, linear memory insertAll (#1014)
 
 ## 30.2.0 - 2026-11-07
 
