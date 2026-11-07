@@ -70,6 +70,13 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   // where every other body does, with no jobs-only parameter to know about. Composed with the
   // caller's signal rather than replacing it: a ctx that was already going away still is.
   const cancel = new AbortController();
+  // The attempt's END, apart from its cancellation: aborted in the `finally` however the attempt
+  // ended, so the step runner records nothing after it. `cancel` — what `ctx.signal` follows — is
+  // aborted only when another attempt may own the run: a failure, a suspension, an ack that did
+  // not land. A body that COMPLETED and was acked owns a finished run, and a timer it armed (a log
+  // flush, a deferred enqueue) still writes; reading as "cancelled" lost every such write.
+  const ended = new AbortController();
+  let completed = false;
   // `createRunSignal` and never `AbortSignal.any` — the second of the two sites this package's
   // `CLAUDE.md` states the rule as absolute for. In the worker path `callerSignal` is per-run and
   // nothing leaks; on `@ultimat3/testing`'s job-fixture path, which calls `executeJob` directly,
@@ -78,6 +85,15 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   // `finally` at the bottom of the try, beside `cancel.abort`.
   const runSignal = createRunSignal([callerSignal(options.ctx), cancel.signal]);
   const signal = runSignal.signal;
+  /**
+   * This attempt no longer owns the run: `ctx.signal` aborts, so a write still under it is refused
+   * (`abandonment()`). A second `abort()` keeps the first reason — a timed-out run still reports
+   * the timeout. `dispose` AFTER it: it stops following the sources and never aborts.
+   */
+  const release = (): void => {
+    cancel.abort(new JobAbortedError({ job: handle.name }));
+    runSignal.dispose();
+  };
   const ctx: Ctx = Object.freeze({
     ...options.ctx,
     signal,
@@ -91,7 +107,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     signal,
     // This attempt's OWN end — the deadline, the `finally` below — apart from the run's signal,
     // whose first reason may be the drain's: a drained step still records, an ended attempt never.
-    ended: cancel.signal,
+    ended: ended.signal,
     // The DECLARED per-step ceiling and event poll. Passed here or nowhere: this is the only
     // production construction of a runner, so a `StepRunnerOptions` field it omits is a feature
     // no `job()` can reach — which both of these were until 2026-08.
@@ -225,6 +241,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     if (handle.compensates && (await runner.unwinding())) {
       return await unwindAndSettle(unwinder(), undefined);
     }
+    completed = true;
   } catch (error) {
     // Before ANY settle: the last value a body reported is written while the row is still this
     // worker's, which is the only time `recordProgress`'s fence lets it land.
@@ -424,14 +441,11 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       replayed: [],
     });
   } finally {
-    // The attempt is over however it ended, so nothing from it may still be writing: a step left
-    // in flight by a handler that returned without awaiting it settles into a run the next
-    // attempt already owns. The runner fences its writes on this signal. A second `abort()` keeps
-    // the first reason, so a timed-out run still reports the timeout, not this.
-    cancel.abort(new JobAbortedError({ job: handle.name }));
-    // AFTER the abort, so the runner's fence still sees it: `dispose` stops following the sources,
-    // it never aborts, and the signal keeps whatever state the abort above left it in.
-    runSignal.dispose();
+    // The attempt is over however it ended, so no step from it may still record: a step left in
+    // flight by a handler that returned without awaiting it would settle into a run the next
+    // attempt may own. The runner fences its writes on `ended`.
+    ended.abort(new JobAbortedError({ job: handle.name }));
+    if (!completed) release();
   }
 
   // Only reachable when the BODY succeeded, and settlement is deliberately outside the catch
@@ -441,9 +455,19 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   // Let it reach the worker instead, which logs `jobs.worker.settle-failed`; the lease then
   // lapses and the queue re-delivers, which is the honest outcome for "we could not say it ended".
   await progress.flush();
+  let acked = false;
+  try {
+    acked = landed(await driver.ack(claimed.id, by()), 'completed');
+  } finally {
+    // Unacked, the row is another worker's (or re-delivered once the lease lapses): cancelled.
+    if (!acked) release();
+    // Acked, the run is finished and owned by nobody: the signal stops following its sources and
+    // stays un-aborted, so work the body deliberately left running keeps landing.
+    else runSignal.dispose();
+  }
   // Announced only when the ack LANDED: a row cancelled or re-delivered under this body is
   // somebody else's to settle, and `completed` would be a claim about a row that is not `done`.
-  if (landed(await driver.ack(claimed.id, by()), 'completed')) {
+  if (acked) {
     await announceSettled({
       handle,
       claimed,

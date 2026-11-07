@@ -33,6 +33,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- `@ultimat3/jobs`: a job attempt that completed, and whose `ack` landed, no longer aborts `ctx.signal`. Every finished attempt used to abort it with `X_ABORTED` ("was cancelled — this attempt no longer owns the run"), so a timer the body armed — a log sink's flush, an `end()` timeout, a deferred `enqueue` — had its writes refused: ~360 lost log writes an hour on one 30.2 app. A failed, suspended or unwound attempt, or one whose ack did not land, still aborts; a step the body never awaited is still refused, now as "had already ended". The refusal's `fix:` names `runToCompletion(() => work)`, the one way to outlive any attempt.
 - `@ultimat3/testing`: a seed-graph cycle breaks at a table that takes updates — never an `appendOnly` one, whose trigger refuses every UPDATE — where name order alone picked the alphabetically first table. A cycle breakable only at an `appendOnly` table leaves that key `null` and plans no update.
 - `@ultimat3/testing`: `x exercise` leaves a deferred cycle key `null` when the database refuses its UPDATE (a trigger no declaration carries) instead of failing the pass; the returned graph lists only the updates written. An environment failure keeps its own code. The sized graphs of the scale sweep and `subjectProof`'s seed do the same.
 - `@ultimat3/testing`: a job whose `tenant` reads under a parent the minimal draw left out — a scoped backfill's `payload.input.orgId` — is seated in its tenant; it was `fixed`, `X_JOB_TENANT_MISMATCH`.

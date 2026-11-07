@@ -1568,3 +1568,18 @@ client's row (slice 29, Redis outage).
 
 - **`demand` is the seventh method, required.** `redisJobDriver` counts every running row: it keeps no worker registry, so no claimer is known to drain. **A draining worker's `queue_demand` goes to 0** (`stopAccepting`): `max by (queue)` would read a frozen value over every live worker's. `queue_depth` keeps its last value.
 - **The claim SEEKS** (`SQL_CLAIM`): one ordered scan per open queue for due rows (`x_jobs_claim_idx`, predicate word for word) and one for lapsed leases (`x_jobs_depth_idx`), then an outer `order by run_at limit`. `driver-pg-claim.live.test.ts` refuses a sort under `LockRows`. Dropped rows stay locked to the transaction's end: correct only because a claim autocommits.
+
+## Moved out 2026-11-07
+
+- **`x jobs cancel` binds to `cancelJob(driver, id, reason?)`, which refuses** a finished job or a
+  driver with no `cancel` (`X_JOB_NOT_CANCELLABLE`).
+- **A completed attempt's `ctx.signal` stays live.** `executeJob` used to abort every finished
+  attempt's signal in its `finally` with `X_ABORTED`, "was cancelled — this attempt no longer owns
+  the run", success included. A timer the body armed inherited that aborted signal, so `abandonment()`
+  and `refuseAbandoned()` refused its writes and enqueues: one adopter on 30.2 lost ~360 log writes
+  an hour from a log sink's flush interval. A body that completed and whose `ack` LANDED owns a
+  finished run nobody else can claim, so nothing there needs fencing; the signal is disposed
+  un-aborted. A failure, a suspension, an unwind, or an ack that did not land (or threw) still aborts,
+  so the drain and lease guarantees hold. The step runner fences on a separate `ended` signal,
+  aborted however the attempt ended, so a step a body never awaited is still refused — as "had
+  already ended", not as a cancellation. Work that must outlive any attempt: `runToCompletion`.

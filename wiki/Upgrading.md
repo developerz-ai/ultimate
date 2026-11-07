@@ -299,6 +299,7 @@ Only an app that relied on the old behaviour has anything to do:
 | What moved | Do |
 |---|---|
 | with `DATABASE_REPLICA_URL` set, a request that wrote sets `__Host-x-pos` and `x-ultimate-position` | nothing. A proxy with a cookie allowlist passes `__Host-x-pos`; stripped, the next read may land on a standby that has not replayed the write |
+| a job attempt that completed and was acked leaves `ctx.signal` un-aborted (`As of 2026-11-07`); before, its timers' writes and enqueues were refused `X_ABORTED`, "was cancelled" | nothing. A body that read an aborted signal as "the run ended" reads the settle instead (`onSettled`); work that must outlive a FAILED attempt too runs in `runToCompletion(() => work)` from `@ultimat3/core` |
 | `onSettled`'s `ctx.signal` is live | a hook that treated an aborted signal as "the run ended" reads `settled.outcome` instead. It is aborted at `onSettledTimeout`, 30 s across every try by default: raise it on a hook that takes longer |
 | `publishEvent` inside a transaction commits and rolls back with it | nothing, unless a rolled-back event must still resume a run: publish it in `outsideTransaction(fn)` |
 | the `drift` step's `rollingSince` rail is off until set | optional: set `rollingSince` in `x.verify.json` to your newest applied migration id. `x doctor` reminds you |

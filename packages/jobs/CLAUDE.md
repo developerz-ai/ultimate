@@ -122,7 +122,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `backoffDelayMs`): `docs/history/jobs.md`, "Moved 2026-10-01 — retry and bounds".
 - **The claim loop re-arms on the PASS, never the jobs**; `tick()` resolves with that pass's executions.
 - **A deadline CANCELS, then fails the attempt**, never the reverse (`raceTimeout`, `withStepTimeout`);
-  the attempt is cancelled in `executeJob`'s `finally`.
+  `ctx.signal` aborts unless the body completed AND its ack landed; steps fence on `ended`.
 - **A cancelled runner writes NOTHING** — `put()` in `steps.ts` (`X_ABORTED`) — save a fenced
   `X_DRAINING` on a live attempt: a step done in the drain is recorded once. The STORE fences
   the claim (`StepFence`, `SQL_STEP_PUT` as `SQL_ACK`: `X_JOB_LEASE_LOST`). `executeJob` passes it.
@@ -143,13 +143,12 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`step.run` hydrates the run's steps from ONE `store.list(runId)`**; `sleep` and `waitForEvent`
   record replays through `trace()`. **`claimName` reads a Set**; `usedNames()` keeps
   `MAX_TRACE_NAMES` (200).
-- **`x jobs cancel` binds to `cancelJob(driver, id, reason?)`, which refuses** a finished job or a
-  driver with no `cancel` (`X_JOB_NOT_CANCELLABLE`).
 
 ## Rules — long form in `docs/history/jobs.md`
 
 - "Moved out 2026-11-03": operator verbs on BOTH drivers; an idle round touches no store.
 - "Moved out 2026-11-06": `demand` with no worker registry; how the claim seeks.
+- "Moved out 2026-11-07": `cancelJob`'s refusals; why a completed attempt's signal stays live.
 - "Plan 101 wave 6c": compensate ONLY failed for good; `once` writes `started` BEFORE `fn`; a
   waking publish is ONE statement; payload org = enqueue org (`X_JOB_TENANT_MISMATCH`).
 
