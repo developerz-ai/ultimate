@@ -6,7 +6,7 @@ import type { JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
-import { describeJobs, getJob, job, registeredJobs, resetJobs } from './job';
+import { describeJobs, getJob, job, registeredJobs, resetJobs, restoreJobs } from './job';
 import { resetJobsFacade } from './outbox';
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
@@ -302,6 +302,27 @@ describe('describe', () => {
       run: () => Promise.resolve(),
     });
     expect(sweep.describe().retry).toEqual({ attempts: 2, backoff: 'exponential' });
+  });
+});
+
+describe('restoreJobs', () => {
+  test('puts the registry back to exactly the snapshot — a job registered after it is gone', () => {
+    resetJobs();
+    const declare = (name: string) =>
+      job<OrgInput>({
+        name,
+        tenant: 'none',
+        input: passthrough<OrgInput>(),
+        idempotencyKey: ({ orgId }) => `${name}:${orgId}`,
+        retry: { attempts: 1 },
+        run: () => Promise.resolve(),
+      });
+    const kept = declare('keptJob');
+    const snapshot = registeredJobs();
+    declare('leakedJob');
+    restoreJobs(snapshot);
+    expect(registeredJobs()).toEqual([kept as JobHandle<unknown>]);
+    expect(getJob('leakedJob')).toBeUndefined();
   });
 });
 

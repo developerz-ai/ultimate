@@ -301,7 +301,15 @@ export type {
   JobHandle,
   JobRunArgs,
 } from './job';
-export { describeJobs, getJob, isJobHandle, job, registeredJobs, resetJobs } from './job';
+export {
+  describeJobs,
+  getJob,
+  isJobHandle,
+  job,
+  registeredJobs,
+  resetJobs,
+  restoreJobs,
+} from './job';
 export type { EnqueueManyOptions } from './job-enqueue-many';
 export { MAX_ENQUEUE_BATCH } from './job-enqueue-many';
 export type { JobsRetentionOptions } from './jobs-retention';
