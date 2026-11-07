@@ -482,7 +482,13 @@ The admin exposes **its own MCP surface**, derived from the same resources and g
 ```ts
 import { adminMcp, adminMcpTools } from '@ultimat3/admin';
 
-export const mcp = adminMcp({ app: admin, actor: (session) => actorFor(session.token) });
+// apps/admin/mcp.ts — module scope: the mount serves every apps/<app>/mcp.ts, after the scan
+export const mcp = adminMcp({
+  app: admin,
+  path: '/admin/mcp', // beside the web endpoint's /mcp
+  include: 'exposed', // the app's exposed actions (admin:write) and queries (admin:read) too
+  actor: ({ token, facts }) => actorFor(token, facts),
+});
 adminMcpTools(admin, ctx); // admin.post.list · admin.post.read · admin.search · admin.action.post.publish
 ```
 

@@ -37,7 +37,10 @@ export const mcp = defineAppMcp({ include: 'exposed', path: '${path}', resolveTo
 `;
 
 /** A fixture app that resolves `@ultimat3/*` through the CLI's own workspace links. */
-async function fixtureApp(prefix: string, files: Readonly<Record<string, string>>): Promise<string> {
+async function fixtureApp(
+  prefix: string,
+  files: Readonly<Record<string, string>>,
+): Promise<string> {
   root = mkdtempSync(join(tmpdir(), prefix));
   symlinkSync(join(import.meta.dir, '..', 'node_modules'), join(root, 'node_modules'));
   await Bun.write(join(root, 'app.config.ts'), CONFIG);

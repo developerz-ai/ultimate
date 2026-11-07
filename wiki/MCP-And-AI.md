@@ -257,16 +257,19 @@ developer's.
 `As of 2026-09-05`. `defineAppMcp({ …, resolveToken })` builds `mcp.route`, and `app.config.ts`
 declares `ai: { mcp: { expose: true } }` **by default** (the path is `defineAppMcp`'s own, `/mcp` by default) — and until this date nothing
 between the two served it: `POST /mcp` was `X_ROUTE_NOT_FOUND` under `x dev` and in every
-container. The contract is one file:
+container. The contract is one file per app directory:
 
 | Piece | Where | Rule |
 |---|---|---|
 | the declaration | `apps/<app>/mcp.ts` | `export const mcp = defineAppMcp({ include: 'exposed', resolveToken })` |
-| the switch and the path | `app.config.ts` → `ai.mcp` | `expose` (default `true`), `path` (default `/mcp`) |
+| the switch | `app.config.ts` → `ai.mcp` | `expose` (default `true`). The path is each endpoint's own `defineAppMcp({ path })` (default `/mcp`) |
+| several app directories | every `apps/<app>/mcp.ts` mounts (`As of 2026-11`) | `apps/web/mcp.ts` first — its first endpoint is the default — then the rest sorted. An admin surface's `apps/admin/mcp.ts` stands beside the web one; until 2026-11 the first sorted file mounted ALONE, so it silently took `/mcp` away. Two files claiming one route: `X_MCP_PATH_DUPLICATE` naming both |
+| when it is built | at the top level of `apps/<app>/mcp.ts` | the boot scan evaluates that file after every `apps/*/{site,app,api,shared}` module has registered, so `include: 'exposed'` sees every exposed primitive. An endpoint projected earlier — in a module under `apps/<app>/app/` that `mcp.ts` re-exports — is `X_MCP_INCLUDE_EARLY` at the mount, naming the tools it lacks, never a short catalog. Never import the API index to fill the registry (`X_BOUNDARY_APP_TO_API`) |
 | the mount | `x dev` **and** `runRole`, through one call | `POST <path>` → `mcp.route.handle(request)`; the boot log says `app mcp mounted`, `x dev`'s summary prints `mcp POST /mcp` |
 | auth | the route's own | `auth: 'public'`, `enforcedBy: 'handler'` on the http route — the bearer token is read by `resolveToken`, never pre-judged by the pipeline |
 | exposed and unmountable | `X_MCP_APP_UNMOUNTED`, logged once | no file exports `mcp`, or it was built without `resolveToken` (no `route`); the fix names the file to write |
 | a new app | `x new` writes it | `apps/web/mcp.ts` over the `@<app>/mcp` catalog, `resolveToken` from `apps/web/app/auth/agent-token.ts`: an API key (`issueApiKey`, `x_api_keys`) is an agent in every environment; `dev-agent.<role>` is one under `x dev` alone, and only from a loopback address with no `Origin` (a page rebound to 127.0.0.1 sends one). No token, or one it does not know: 401 |
+| the admin surface | `x new` writes it too | `apps/admin/mcp.ts`: `adminMcp({ app: admin, path: '/admin/mcp', include: 'exposed', actor })` — the admin's own tools and the app's exposed ones, the actor from the same `resolveAgentToken` (handed the request's `facts`). A key with scopes is held to its `admin:*` ones, a key with none is as strong as its actor → [Admin dashboard](Admin-Dashboard#an-admin-surface-serves-the-apps-tools) |
 
 **A token from an external issuer** (`As of 2026-11-05`): an app whose agents present an IdP's JWT
 rather than an API key hands `defineAppMcp` `jwtBearerResolver` from `@ultimat3/auth` — the twin of

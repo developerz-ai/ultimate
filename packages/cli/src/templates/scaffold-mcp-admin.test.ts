@@ -23,7 +23,7 @@ describe('unit · the admin endpoint x new writes', () => {
     expect(source).toContain('export const mcp = adminMcp({');
     expect(source).toContain("path: '/admin/mcp'");
     expect(source).toContain("include: 'exposed'");
-    expect(source).toContain("import { resolveAgentToken } from '@ledger-demo/web/app/auth/agent-token';");
+    expect(source).toContain("resolveAgentToken } from '@ledger-demo/web/app/auth/agent-token';");
     // The request facts ride to the resolver: the development token is decided on them.
     expect(source).toContain('resolveAgentToken(token, facts)');
     // Built here, never in apps/admin/app/: the mount refuses an early catalog.

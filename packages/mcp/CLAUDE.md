@@ -36,6 +36,7 @@ import. The CLI wires it.
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
 | `projectable.ts` | a real `action`/`query` → `ProjectablePrimitive`; the ONE adapter both the sweep and the written-out list use |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
+| `include-early.ts` | what `include: 'exposed'` saw (a `WeakMap` on the `AppMcp`) and `assertIncludeCurrent`, the mount's after-scan check: `X_MCP_INCLUDE_EARLY` names the primitives a too-early catalog lacks |
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface and its three boot refusals |
 | `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |

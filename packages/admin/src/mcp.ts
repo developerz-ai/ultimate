@@ -253,9 +253,8 @@ export interface AdminMcpActor extends AdminActor {
 export interface AdminMcpOptions {
   readonly app: AdminApp;
   /**
-   * Resolve the MCP session's actor. The same hook the HTTP surface uses, never a bypass. `facts`
-   * is how the request arrived (`McpRequestFacts`: the caller's address, its `Origin`), handed on
-   * from `defineAppMcp`'s `resolveToken` — what a development token checks before it is honoured.
+   * Resolve the MCP session's actor. The same hook the HTTP surface uses, never a bypass. `facts`:
+   * how the request arrived (address, `Origin`) — what a development token is decided on.
    */
   actor(session: {
     readonly token?: string;
@@ -265,11 +264,9 @@ export interface AdminMcpOptions {
   /** Mount path, `defineAppMcp`'s own. Default `/mcp`; an admin surface beside the app's says `/admin/mcp`. */
   readonly path?: string;
   /**
-   * `'exposed'`: the app's own MCP tools on this endpoint too — every action and query that
-   * declared `mcp: { expose: true }`, projected by `defineAppMcp` exactly as on the app's `/mcp`,
-   * each under the admin scope its kind needs (`includedToolScopes`). Read where `adminMcp` runs,
-   * so call it at module scope in `apps/<app>/mcp.ts`: the boot scan evaluates that file after
-   * every primitive registered, and the mount refuses one built earlier (`X_MCP_INCLUDE_EARLY`).
+   * `'exposed'`: the app's own MCP tools here too, projected by `defineAppMcp` as on `/mcp`, each
+   * under its kind's admin scope (`includedToolScopes`). Call `adminMcp` at module scope in
+   * `apps/<app>/mcp.ts`: the mount refuses a catalog built before the scan ended (`X_MCP_INCLUDE_EARLY`).
    */
   readonly include?: 'exposed';
 }
@@ -461,8 +458,7 @@ export function adminMcp(opts: AdminMcpOptions): AppMcp {
     name: 'admin',
     tools: catalog.map((tool) => toMcpTool(opts, requestId, tool)),
     ...(opts.path === undefined ? {} : { path: opts.path }),
-    // The app's tools are `defineAppMcp`'s projection, never a copy here; the scope map names them
-    // from the same registry read, an instant apart.
+    // The app's tools are `defineAppMcp`'s projection, never a copy; the scopes read the same registry.
     ...(opts.include === undefined ? {} : { include: opts.include }),
     // The connection gate: each tool needs its admin-level permission as a token scope, checked
     // by the registry BEFORE the actor's policy. A stdio host builds its caller's scopes with

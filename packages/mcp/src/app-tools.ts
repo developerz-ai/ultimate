@@ -239,9 +239,10 @@ export interface AppMcp {
  * Project an app's primitives into a ready MCP server.
  *
  * ```ts
- * // apps/admin/app/admin/mcp.ts
+ * // apps/admin/mcp.ts, at module scope — built earlier, the mount says X_MCP_INCLUDE_EARLY
  * export const mcp = defineAppMcp({
  *   name: 'acme-admin',
+ *   path: '/admin/mcp',
  *   include: 'exposed',
  *   prompts: ['apps/web/app/posts/prompts/summarize.v3.md'],
  *   tools: {

@@ -132,7 +132,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_TENANT_UNRESOLVED: 'the tenant of an MCP call could not be resolved',
   X_MCP_TENANT_INVALID: 'defineAppMcp declares its tenant argument inconsistently',
   X_MCP_INCLUDE_EARLY:
-    'include: \'exposed\' projected before the scan registered every exposed primitive',
+    "include: 'exposed' projected before the scan registered every exposed primitive",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
