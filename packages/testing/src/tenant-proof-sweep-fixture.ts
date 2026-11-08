@@ -1,6 +1,6 @@
-// Two nightly sweeps on `tenant-proof-fixture.ts`'s memory app, both `tenant: 'none'` and both
-// handing every org's rows on: one DECLARES the crossing with `crossTenant()` and is a sweep, the
-// other reaches the tenantless child with no scope at all and is a leak. Registered at module scope.
+// Three nightly sweeps on `tenant-proof-fixture.ts`'s memory app, all `tenant: 'none'`: one hands
+// every org's rows on under a DECLARED `crossTenant()` and is a sweep, one hands them on with no
+// scope and is a leak, one purges every org's old rows, named by no id: no tenant's crossing.
 
 import { serviceActor, withChildContext } from '@ultimat3/core';
 import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
@@ -38,5 +38,22 @@ job({
   run: async () => {
     const page = await tpDriver.repo(tpFiles).findMany({ limit: 100 });
     return { urls: page.rows.map((file) => file.url) };
+  },
+});
+
+/**
+ * A nightly cleanup across every org: its input is an instant, no id, so whoever enqueues it the
+ * run is the same one — and deletes A's rows exactly as it deletes B's.
+ */
+job({
+  name: 'tpFilePurge',
+  tenant: 'none',
+  input: t.object({ occurrenceMs: t.number }),
+  idempotencyKey: (input) => String(input.occurrenceMs),
+  retry: once,
+  run: async () => {
+    const page = await tpDriver.repo(tpFiles).findMany({ limit: 100 });
+    for (const file of page.rows) await tpDriver.repo(tpFiles).delete(file.id);
+    return { purged: page.rows.length };
   },
 });

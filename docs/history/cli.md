@@ -1808,3 +1808,8 @@ The two new rows in full, as wave 4b wrote them:
 ## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
 
 - `island-realtime-state.ts` also decides `useQuery` / `useRecord` as `follows` when the loaded app's entity registry has entities and none is `persist: true` (`appPersistsRecords`); an empty registry is unknown and keeps `restores`. `realtimeKind`'s `persists` is required, and `island-bundle.ts` reads the registry once per build. Every boot that builds islands has loaded the app first (`dev-boot.ts`, `serve-boot.ts` → `serve-web.ts`, `image-prepare.ts`, `prerender.ts`).
+
+## Moved out for the exercise-declaration slice (`As of 2026-11-08`)
+
+- `templates/scaffold-mcp-{json,endpoint,admin}.ts`: `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`), the refusing `apps/web/mcp.ts` + `app/auth/agent-token.ts`, `apps/admin/mcp.ts`; `scaffold-agents-md.test.ts` resolves every command `AGENTS.md` names.
+- `generate-exercise.ts` / `exercise-entry-edit.ts` / `templates/action-exercise.ts`: a written contract test reads `target.contract({ exercise })`, and its entry (`userActor({ id: 'member', orgId, permissions: [grant] })`, the draw's `orgId` bound under a tenancy rule) is inserted into `apps/web/exercise.ts` — created from `x new`'s when absent; `x new` bakes its own in (`withDeclaredExercises`). `exercise-entry-edit.ts` is the ONE editor of that file (`x g sign-in`'s `off` entries go through it too): masked source, Biome's expanded shape, imports in Biome's order, read back. A file that is not one `export const exercise = defineExercise({ … })` is `X_EXERCISE_FILE_UNEDITABLE`, the entry to paste in its `fix:`.

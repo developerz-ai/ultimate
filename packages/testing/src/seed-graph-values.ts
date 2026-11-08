@@ -6,7 +6,6 @@
 import { fnv1a } from '@ultimat3/core';
 import type { ColumnMeta } from '@ultimat3/entity';
 import type * as Sample from '@ultimat3/schema/sample';
-import { patternSamples } from './seed-pattern-sample';
 
 /** A column as `entity()` declares it, structurally: this barrel never loads `@ultimat3/entity`. */
 export interface SeedColumn {
@@ -72,24 +71,34 @@ const textCandidates = (property: string, meta: ColumnMeta, ctx: ValueContext): 
   return [...sized, ...fromPatterns(property, ctx)];
 };
 
-/** Strings drawn from each declared pattern, kept only where every other pattern agrees. */
-const fromPatterns = (property: string, ctx: ValueContext): string[] => {
-  const patterns = ctx.patterns ?? [];
-  return patterns
-    .flatMap((pattern) => patternSamples(pattern, `${property}:${ctx.canary}`))
-    .filter((sample) => patterns.every((pattern) => pattern.test(sample)));
-};
-
 let loadedSampler: typeof Sample | undefined;
 
 /**
- * `@ultimat3/schema/sample`, loaded on the first `json(schema)` column and never at import: this
- * module is on the barrel, and the walker is a dynamic-only dependency there (`CLAUDE.md`).
+ * `@ultimat3/schema/sample`, loaded on the first pattern or `json(schema)` column, never at import:
+ * this module is on the barrel, and the walker is a dynamic-only dependency there (`CLAUDE.md`).
  * `require` and not `import()` because every caller of `candidatesFor` is synchronous.
  */
 const sampler = (): typeof Sample => {
   loadedSampler ??= require('@ultimat3/schema/sample') as typeof Sample;
   return loadedSampler;
+};
+
+/**
+ * Strings drawn from each declared pattern by schema's one generator (`patternSamples`), kept only
+ * where every other pattern agrees. The text seed hashes with the pattern, so two columns differ.
+ */
+const fromPatterns = (property: string, ctx: ValueContext): string[] => {
+  const patterns = ctx.patterns ?? [];
+  if (patterns.length === 0) return [];
+  const { patternSamples } = sampler();
+  return patterns
+    .flatMap((pattern) =>
+      patternSamples(
+        pattern,
+        fnv1a(`${pattern.source}/${pattern.flags}:${property}:${ctx.canary}`) || 1,
+      ),
+    )
+    .filter((sample) => patterns.every((pattern) => pattern.test(sample)));
 };
 
 /**

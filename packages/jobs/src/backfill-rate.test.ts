@@ -89,6 +89,18 @@ describe('the interval', () => {
     expect(pacer.asked).toEqual([]);
   });
 
+  test('a clock stepped backwards waits one interval at most, never the size of the step', async () => {
+    // An NTP step back, or a frozen test clock reset between runs: `at - lastAt` goes negative,
+    // and the wait it implies is the step itself — 30 s here — which no rate ever asked for.
+    const pacer = paced(5);
+    await pacer.wait();
+
+    pacer.batchTook(-30_000);
+    await pacer.wait();
+
+    expect(pacer.asked).toEqual([200]);
+  });
+
   test('a fractional rate is a rate: one batch every two seconds', async () => {
     const pacer = paced(0.5);
 

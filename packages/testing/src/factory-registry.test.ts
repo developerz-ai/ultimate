@@ -87,11 +87,11 @@ describe(testName('unit', 'defaultFor'), () => {
   });
 
   test('a column that refuses every generated value refuses', () => {
-    // A pattern the schema's own sampler cannot invert, so neither its draw nor {} / [] is stored.
+    // A lookahead is past the sampler's pattern subset, so neither its draw nor {} / [] is stored.
     const shaped = entity('fr_shaped', {
       columns: {
         id: uuid().primaryKey(),
-        usage: json(t.object({ ref: t.string.pattern(/^\d{3}$/) })),
+        usage: json(t.object({ ref: t.string.pattern(/^(?=\d)\d{3}$/) })),
       },
     });
     const target = { table: 'fr_shaped', property: 'usage', column: shaped.$columns.usage };

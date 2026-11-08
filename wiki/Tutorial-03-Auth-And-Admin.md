@@ -272,7 +272,7 @@ lists the override under `resources:` in `apps/admin/app/admin/admin.ts` in the 
 `todo` slice and its wiring:
 
 ```text
-✓ wrote 42 file(s) for resource note — next: …
+✓ wrote 43 file(s) for resource note — next: …
 ``` The
 override is the only hand-written part; fields, operations, filters and forms derive from the entity.
 

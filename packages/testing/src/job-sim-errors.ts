@@ -101,3 +101,27 @@ export class JobSimNondeterministicError extends UltimateError {
     });
   }
 }
+
+export interface CrashUnboundedInput {
+  readonly job: string;
+  /** Kill points the clean run's boundaries asked for, after a loop's rows were taken as one. */
+  readonly points: number;
+  readonly bound: number;
+  /** Boundaries the clean run crossed. */
+  readonly crossed: number;
+  /** The first distinct boundary shapes, in order: where the names that did not collapse are. */
+  readonly shapes: readonly string[];
+}
+
+/** Refused before the first kill: a proof that grows with the rows is one no gate can wait for. */
+export class JobCrashUnboundedError extends UltimateError {
+  constructor(input: CrashUnboundedInput) {
+    const shown = input.shapes.slice(0, 5).join(', ');
+    super({
+      code: 'X_JOB_CRASH_UNBOUNDED',
+      cause: `job ${renderCauseValue(input.job)} crossed ${input.crossed} step boundaries, ${input.points} distinct kill points against a bound of ${input.bound} — its steps are named so a loop's rows do not read as one point (first: ${renderCauseValue(shown)})`,
+      fix: `step.run(\`<name>:\${row.id}\`, async () => …)   # in job(${renderFixLiteral(input.job, '<job>')}): name a per-row step by the row's id, so its loop is one kill point; then: x test job --filter <the test file>`,
+      meta: { ...input, shapes: [...input.shapes] },
+    });
+  }
+}

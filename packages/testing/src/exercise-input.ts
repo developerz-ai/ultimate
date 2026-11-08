@@ -10,6 +10,9 @@ import type { SeedEntity } from './seed-graph-shape';
 export interface Sampler {
   sampleInput(schema: StandardSchemaV1): unknown;
   arbitrary(schema: StandardSchemaV1, options: { seed: number; run: number }): unknown;
+  /** The fields the minimal draw cannot fill, and what each needs: a drift's hint names them. */
+  sampleGaps(schema: StandardSchemaV1): readonly string[];
+  describeSampleGap(schema: StandardSchemaV1, path: string): string;
 }
 
 /** On demand: a `packages/core` test that never exercises anything must not load the walker. */

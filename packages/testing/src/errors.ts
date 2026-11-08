@@ -70,6 +70,8 @@ export const TESTING_ERROR_CODES = [
   'X_CASSETTE_RECORD_REFUSED',
   'X_TEST_MODULE_MOCK_UNRESTORABLE',
   'X_EXERCISE_SETUP_UNSEALED',
+  'X_JOB_CRASH_UNBOUNDED',
+  'X_EXERCISE_ACTOR_USER_UNSEATED',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -135,6 +137,8 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_CASSETTE_RECORD_REFUSED: 'a cassette recording was refused',
   X_TEST_MODULE_MOCK_UNRESTORABLE: 'a mocked module could not be put back at the file boundary',
   X_EXERCISE_SETUP_UNSEALED: 'an exercise setup let a host through the seal',
+  X_JOB_CRASH_UNBOUNDED: 'a crash proof needs more kill points than its bound',
+  X_EXERCISE_ACTOR_USER_UNSEATED: "the exercise pass could not seat its actor's x_users row",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -146,12 +150,8 @@ registerErrorCodes(
   ),
 );
 
-// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
-// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
-// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
-// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
-// answered 404, host included, on every error it has ever thrown; restating the replacement here
-// would be the same constant in eight places waiting to drift again.
+// No `docs:` below: `UltimateError` fills core's `ERROR_DOCS_URL`, one page per code set (a wiki
+// TABLE ROW has no anchor; per-code links answered 404 until 9.x). Restating it here would drift.
 
 /**
  * A test reached the network without a mock or an allowlist entry. Always a bug, never a flake.

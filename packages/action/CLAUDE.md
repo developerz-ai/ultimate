@@ -42,6 +42,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `contract-test.ts` | assertions `x g action` emits |
 | `exercise.ts` | the fourth contract assertion: run loop, verdict, `exerciseContract` |
 | `exercise-errors.ts` | the three `X_CONTRACT_*` classes, off-socket |
+| `exercise-declarations.ts` | `.contract({ exercise })` takes the app's `defineExercise()` value (structural `ExerciseDeclarations`) and reads the entry by the action's name: one declaration in `apps/web/exercise.ts`, read by the contract step and `x exercise` |
 | `declared-errors.ts` | the wrap `invoke` puts around `handle` and `row`, the ONLY judged throws. `errors:` is checked, sorted and frozen at `action()` |
 | `declared-errors-contract.ts` | `.contract()`'s source scan |
 | `openapi-errors.ts` | core's builder bound to http's status and `problemTypeFor` |

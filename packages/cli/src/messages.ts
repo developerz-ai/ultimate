@@ -103,6 +103,8 @@ const CATALOG = {
   'cli.exercise.none': 'this app registers no action, query or job: nothing to exercise',
   'cli.exercise.summary':
     '{total} primitive(s): {reached} reached, {refused} refused, {off} off, {unreached} unreached — {file}',
+  'cli.exercise.phases': 'took {total} ms — {phases} — slowest: {slowest}',
+  'cli.exercise.slowest': 'slowest: {primitive} · {proof} {ms} ms',
   // One rendering of "this file was written", for every command that writes files — `x g`, its
   // own `--dry-run`, and `x new`. Three copies of the same two characters is how a fourth writer
   // arrives with a fifth marker; `--json` carries the paths themselves in `data.files`.

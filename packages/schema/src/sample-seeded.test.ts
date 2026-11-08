@@ -80,6 +80,13 @@ describe('arbitrary', () => {
     }
   });
 
+  test('a pattern no free draw meets is walked per run: accepted, and varied', () => {
+    const digest = t.string.pattern(/^[0-9a-f]{64}$/);
+    const drawn = Array.from({ length: 16 }, (_, run) => at(digest, run));
+    for (const value of drawn) expect(accepts(digest, value)).toBe(true);
+    expect(new Set(drawn).size).toBeGreaterThan(1);
+  });
+
   test('a pattern a draw cannot meet falls back to the one value the walk can build', () => {
     const lower = t.string.pattern(/^[a-z]+$/);
     for (let run = 0; run < 16; run += 1) expect(accepts(lower, at(lower, run))).toBe(true);

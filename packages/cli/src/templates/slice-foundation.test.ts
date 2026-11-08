@@ -51,7 +51,10 @@ const candidates = (from: string, specifier: string): readonly string[] => {
  * query's name). Named, never derived from the scaffold — a module `x new` writes and an older app
  * may lack (`shared/shell.tsx`) is read off the disk instead, and stays an offender here.
  */
-const EVERY_APP_HAS: readonly string[] = ['apps/web/api/index.ts'];
+// And `apps/web/exercise.ts`, which a contract test imports its exercise from: the same run inserts
+// the test's entry there and writes the file from `x new`'s shape when the app has none
+// (`generate-exercise.ts`), so it is on disk whenever the test is.
+const EVERY_APP_HAS: readonly string[] = ['apps/web/api/index.ts', 'apps/web/exercise.ts'];
 
 const unresolved = (files: readonly GeneratedFile[]): readonly string[] => {
   const emitted = new Set([...files.map((file) => file.path), ...EVERY_APP_HAS]);

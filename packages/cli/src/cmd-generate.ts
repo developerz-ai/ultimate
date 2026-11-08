@@ -14,6 +14,7 @@ import { invocationOf } from './command';
 import { localiseCatalogs, namedOrAppLocales } from './generate-catalog-locales';
 import { refuseChartAlertsFlags, runChartAlerts } from './generate-chart-alerts';
 import { appDisk, plannedDisk } from './generate-disk';
+import { writtenExercises } from './generate-exercise';
 import { assertFeatureExists } from './generate-feature';
 import { assertSliceToRead } from './generate-feature-required';
 import { generate, sliceDir } from './generate-files';
@@ -195,7 +196,13 @@ export const generateCommand: CliCommand = {
       const follow =
         refused.length > 0
           ? { edited: [], findings: [] }
-          : await followUpEdits(root, plan.written, dbModule, plannedDisk(root, planned));
+          : await followUpEdits(
+              root,
+              plan.written,
+              dbModule,
+              plannedDisk(root, planned),
+              writtenExercises(files, plan.written),
+            );
       const findings = [...refused, ...follow.findings];
       const touched = refused.length === 0 ? [...plan.written, ...follow.edited] : [];
       // Re-projected after a real write, from the loaded app: named, since their bytes are not
@@ -228,7 +235,13 @@ export const generateCommand: CliCommand = {
     // The edits a generated primitive needs outside its own slice, performed rather than left as
     // findings (`generate-follow-ups.ts`). Before the manifest load below, so the projection sees
     // them all — a repo reading a table the handle lacks would not load at all.
-    const follow = await followUpEdits(root, report.written, dbModule, appDisk(root));
+    const follow = await followUpEdits(
+      root,
+      report.written,
+      dbModule,
+      appDisk(root),
+      writtenExercises(files, report.written),
+    );
     const edited = follow.edited;
     // Before the manifest reads a byte of it. Only what this run created: an edited file is its
     // author's, and a run that reformatted one would hand them a diff they never asked for.

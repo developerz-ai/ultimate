@@ -93,8 +93,10 @@ export function backfillPacer(options: PacerOptions): Pacer {
 
       const at = nowMs(clock);
       // The batch's own time is interval already paid, so a slow page waits for nothing and only a
-      // fast one is held back. The first batch has no previous one to be spaced from.
-      const remaining = lastAt === undefined ? 0 : intervalMs - (at - lastAt);
+      // fast one is held back. The first batch has no previous one to be spaced from. Capped at one
+      // interval: a clock stepped backwards (NTP, a test clock reset) would otherwise make the wait
+      // the size of the step, which no rate asked for.
+      const remaining = lastAt === undefined ? 0 : Math.min(intervalMs, intervalMs - (at - lastAt));
       if (remaining < RESOLUTION_MS) {
         lastAt = at;
         return;

@@ -15,12 +15,33 @@ export function overrideInput(
   name: string,
   override: ExerciseOverride | undefined,
 ): OverrideInput | undefined {
-  const bind = bindDrawn(
-    override !== undefined && 'actor' in override ? override.input : undefined,
-  );
+  // Any entry but `off` may bind: `{ input }` alone keeps the pass's own actor and still binds.
+  const bind = bindDrawn(override === undefined || 'off' in override ? undefined : override.input);
   if (bind === undefined) return undefined;
-  return (drawn, actor) => withExerciseRequest(name, actor, async () => bind(drawn));
+  const declared = override === undefined || 'off' in override ? undefined : override.actor;
+  return async (drawn, actor) =>
+    rehomed(
+      await withExerciseRequest(name, actor, async () => bind(drawn)),
+      declared?.orgId,
+      actor?.orgId,
+    );
 }
+
+/**
+ * The bound input, re-homed with its actor: the pass seats a declared actor in each tenant it
+ * seeds, so a top-level value equal to the org the entry DECLARED (`orgId: '<org>'`, the same
+ * literal the contract test runs with) is that tenant's. Without it A's own call names an org its
+ * actor is not in, and a policy comparing the two denies every run.
+ */
+function rehomed(input: unknown, from: string | undefined, to: string | undefined): unknown {
+  if (from === undefined || to === undefined || from === to || !isPlainObject(input)) return input;
+  return Object.fromEntries(
+    Object.entries(input).map(([key, value]) => [key, value === from ? to : value]),
+  );
+}
+
+const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Whether an override's input is declared `async` — state the pass computes, which a load that
@@ -29,6 +50,6 @@ export function overrideInput(
  */
 export const isAsyncInput = (override: ExerciseOverride | undefined): boolean =>
   override !== undefined &&
-  'actor' in override &&
+  !('off' in override) &&
   override.input !== undefined &&
   Object.prototype.toString.call(override.input) === '[object AsyncFunction]';

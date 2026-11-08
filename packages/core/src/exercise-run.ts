@@ -7,7 +7,7 @@
 import { assert } from './assert';
 import type { ErrorStatusOf } from './declared-errors';
 import { type Environment, resolveEnvironment } from './environment';
-import { isFixShellSafe, renderThrowable } from './error-render';
+import { isFixShellSafe, renderFixShellArg, renderThrowable } from './error-render';
 import { isUltimateError } from './errors';
 import { ExerciseEnvironmentError, ExerciseUnscopedError } from './exercise-errors';
 import { fnv1a } from './fnv1a';
@@ -124,7 +124,8 @@ export async function runExercise(subject: ExerciseSubject): Promise<ExerciseVer
   assert(
     Number.isInteger(runs) && runs >= 1 && runs <= EXERCISE_RUNS_MAX,
     `${name}: exercise runs must be a whole number from 1 to ${EXERCISE_RUNS_MAX}`,
-    `${name}.contract({ exercise: { actor, runs: ${EXERCISE_RUNS} } })`,
+    // The entry's one home, read by the contract step and `x exercise` alike.
+    `defineExercise({ ${renderFixShellArg(name, '<name>')}: { actor, runs: ${EXERCISE_RUNS} } })   # in apps/web/exercise.ts — runs is 1 to ${EXERCISE_RUNS_MAX}`,
   );
   const seed = fnv1a(name);
   const outcomes: string[] = [];

@@ -2,6 +2,7 @@
 // cannot run as generated, each turned off with its reason, so the app's next `x verify` is green.
 // An entry the app already declares is the app's and is never touched.
 
+import { editExerciseFile } from './exercise-entry-edit';
 import { exerciseFiles } from './templates/scaffold-exercise';
 
 export const EXERCISE_FILE = 'apps/web/exercise.ts';
@@ -30,27 +31,22 @@ export const signInExerciseEntries = (
     return entry === undefined ? [] : [entry];
   });
 
-const DEFINE = 'defineExercise({';
-
 /**
  * `source` with each entry not already named in it inserted at the top of `defineExercise({ … })`;
- * `undefined` when there is no file, which starts from `x new`'s. A file with no `defineExercise({`
- * is the app's own shape and is left as it is.
+ * `undefined` when there is no file, which starts from `x new`'s. A file the one editor
+ * (`exercise-entry-edit.ts`) cannot read is the app's own shape and is left as it is.
  */
 export function exerciseWithEntries(
   source: string | undefined,
   entries: readonly (readonly [string, string])[],
 ): string {
-  const base = source ?? String(exerciseFiles()[0]?.contents ?? '');
-  const at = base.indexOf(DEFINE);
-  if (at === -1) return base;
-  const missing = entries.filter(([name]) => !new RegExp(`\\b${name}\\s*:`).test(base));
-  if (missing.length === 0) return base;
-  const lines = missing.map(([name, why]) => `  ${name}: { off: ${singleQuoted(why)} },`);
-  const after = at + DEFINE.length;
-  // `defineExercise({})` — the scaffold's — opens onto its own close: the close gets its own line.
-  const rest = base.slice(after);
-  return `${base.slice(0, after)}\n${lines.join('\n')}${rest.startsWith('}') ? '\n' : ''}${rest}`;
+  const edit = editExerciseFile(
+    source,
+    entries.map(([name, why]) => ({ name, value: `{ off: ${singleQuoted(why)} }` })),
+  );
+  return edit.kind === 'refused'
+    ? (source ?? String(exerciseFiles()[0]?.contents ?? ''))
+    : edit.source;
 }
 
 /** A single-quoted TypeScript string literal, Biome's own quote style. */

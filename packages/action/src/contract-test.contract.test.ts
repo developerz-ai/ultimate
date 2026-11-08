@@ -138,7 +138,7 @@ describe('the policy assertion', () => {
   // that can supply the value is the author.
   test('reports drift naming the FIELD, before the invocation, when no sample can be built', async () => {
     const target = action({
-      input: t.object({ code: t.string.pattern(/^\d+$/) }),
+      input: t.object({ code: t.string.pattern(/^(?=\d)\d+$/) }),
       output: Output,
       policy: can('post:publish'),
       handle: () => ({ id: '00000000-0000-4000-8000-000000000000', published: true }),
@@ -149,7 +149,7 @@ describe('the policy assertion', () => {
       .catch((error: unknown) => error);
     expect(failure).toBeUltimateError('X_CONTRACT_DRIFT');
     // Not silence, and not a pass: an assertion that could not run says so and says how to fix it.
-    expect(causeOf(failure)).toContain('code (must match ^\\d+$)');
+    expect(causeOf(failure)).toContain('code (must match ^(?=\\d)\\d+$)');
     expect(causeOf(failure)).not.toContain('X_INPUT_INVALID');
     // The exact call to paste — the action's own `input:` is not what answers this.
     expect(fixOf(failure)).toContain('contractTestsFor(publishByCode, { input:');
@@ -157,7 +157,7 @@ describe('the policy assertion', () => {
 
   test('an explicit `input:` overrides the synthesized one', async () => {
     const target = action({
-      input: t.object({ code: t.string.pattern(/^\d+$/) }),
+      input: t.object({ code: t.string.pattern(/^(?=\d)\d+$/) }),
       output: Output,
       policy: can('post:publish'),
       handle: () => ({ id: '00000000-0000-4000-8000-000000000000', published: true }),

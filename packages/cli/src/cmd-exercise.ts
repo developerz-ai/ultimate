@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { describeEntities, registeredEntities } from '@ultimat3/entity';
 import { registeredSubjects } from '@ultimat3/jobs';
 import type { NamedActor } from '@ultimat3/policy';
-import type { ExerciseRecord, SeedEntity } from '@ultimat3/testing';
+import type { ExercisePhaseMs, ExerciseRecord, SeedEntity } from '@ultimat3/testing';
 import {
   entitySeedWriter,
   planSweepLines,
@@ -26,8 +26,10 @@ import {
   crashFindingLines,
   EXERCISE_REPORT_FILE,
   exerciseFindings,
+  exercisePhaseLine,
   exerciseReport,
   renderExerciseTable,
+  slowestProofLines,
 } from './exercise-findings';
 import { readExerciseOverrides } from './exercise-overrides';
 import { entityTenantFindings } from './exercise-static';
@@ -79,6 +81,7 @@ async function exercise(
   const proved = registeredSubjects().filter(
     (subject) => only === undefined && !subjectStatic.some((f) => f.at === subject.entity),
   );
+  let pass: ExercisePhaseMs | undefined;
   const records: readonly ExerciseRecord[] = await withExerciseDatabase(root, ctx.env, (client) =>
     runExercisePass({
       entities,
@@ -87,8 +90,12 @@ async function exercise(
       ...(overrides === undefined ? {} : { overrides }),
       ...(only === undefined ? {} : { only }),
       roles: exerciseRoles,
+      onPhases: (ms) => {
+        pass = ms;
+      },
     }),
   );
+  const subjectStarted = performance.now();
   // The subject proof (`exercise-subject.ts`) on a scratch database of its own: the pass's rows
   // are committed, and a second seed graph beside them collides on every small unique domain.
   const subjectProofs =
@@ -97,7 +104,9 @@ async function exercise(
       : await withExerciseDatabase(root, ctx.env, (client) =>
           subjectProofFindings(proved, cores, client, overrides?.factories),
         );
-  const report = exerciseReport(records, seed);
+  const subject = Math.round(performance.now() - subjectStarted);
+  const phases = pass === undefined ? undefined : { ...pass, subject };
+  const report = exerciseReport(records, seed, phases);
   // The whole pass, not a one-primitive run's slice of it, is what the file is for — but a
   // one-primitive run is still a fact worth keeping, so it is written either way.
   await Bun.write(join(root, EXERCISE_REPORT_FILE), `${JSON.stringify(report, null, 2)}\n`);
@@ -119,6 +128,8 @@ async function exercise(
         : msg('cli.exercise.summary', { ...report.counts, file: EXERCISE_REPORT_FILE }),
     lines: [
       ...renderExerciseTable(records),
+      ...(phases === undefined ? [] : [exercisePhaseLine(phases)]),
+      ...slowestProofLines(records),
       ...tenantFindingLines(records),
       ...crashFindingLines(records),
       ...planSweepLines(records),

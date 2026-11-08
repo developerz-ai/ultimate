@@ -336,22 +336,28 @@ describe('unit · each generator writes a unit test that loads the source it wro
   });
 });
 
-// `.contract()` on a guarded action with no `exercise` is X_CONTRACT_EXERCISE_UNDECLARED, so a
-// generator that emitted the bare call would ship a suite red on its first run. Every emitted call
-// names who the handler runs as, or why it does not run, and the first draw is bound to the org
-// the scaffold's tenancy rule compares — else every run is denied, and that is red too.
-describe('unit · every emitted .contract() call declares its exercise', () => {
-  const calls = (): readonly { readonly from: string; readonly call: string }[] =>
+// `.contract()` on a guarded action with no exercise is X_CONTRACT_EXERCISE_UNDECLARED, so a
+// generator that emitted the bare call would ship a suite red on its first run. And an exercise
+// declared inline in a test is one `x exercise` never reads: every emitted call hands over the
+// app's `apps/web/exercise.ts` export, and the primitive's entry is declared THERE — in the file
+// `x new` writes, or carried on the file for `x g` to insert (`generate-exercise.ts`).
+describe('unit · every emitted .contract() call reads its exercise from apps/web/exercise.ts', () => {
+  const calls = (): readonly {
+    readonly from: string;
+    readonly call: string;
+    readonly file: Emitted;
+  }[] =>
     emitted().flatMap((file) =>
       [...stripComments(file.contents).matchAll(/\.contract\(([^;]*?)\)\)/gs)].map((match) => ({
         from: `${file.from} → ${file.path}`,
         call: match[1] ?? '',
+        file,
       })),
     );
 
-  test('none is bare', () => {
-    const bare = calls().filter(({ call }) => !call.includes('exercise:'));
-    expect(bare.map(({ from }) => from)).toEqual([]);
+  test('every one hands over the declarations, none an inline entry', () => {
+    const inline = calls().filter(({ call }) => call.trim() !== '{ exercise }');
+    expect(inline.map(({ from }) => from)).toEqual([]);
   });
 
   test('the rule has subjects: x g action and x g resource both emit one', () => {
@@ -360,10 +366,54 @@ describe('unit · every emitted .contract() call declares its exercise', () => {
     expect(from.some((each) => each.includes('create-invoice.contract.test.ts'))).toBe(true);
   });
 
-  test('a tenancy-ruled action binds the org its member actor belongs to', () => {
-    const action = calls().find((each) => each.from.includes('send-invoice.contract.test.ts'));
-    expect(action?.call).toContain(
-      'exercise: { actor: member, input: (drawn) => ({ ...(drawn as object), orgId }) }',
+  test('each imports `exercise` from the path that is apps/web/exercise.ts', () => {
+    const wrong = calls().filter(({ file }) => {
+      const from = /import \{ exercise \} from '([^']+)';/.exec(file.contents)?.[1];
+      if (from === undefined) return true;
+      const dir = file.path.split('/').slice(0, -1);
+      for (const part of from.split('/')) {
+        if (part === '..') dir.pop();
+        else if (part !== '.') dir.push(part);
+      }
+      return dir.join('/') !== 'apps/web/exercise';
+    });
+    expect(wrong.map(({ from }) => from)).toEqual([]);
+  });
+
+  test('x new declares each contract test’s entry in the exercise file it writes', () => {
+    const missing = scaffoldVariants().flatMap((variant) => {
+      const file = variant.files.find((one) => one.path === 'apps/web/exercise.ts');
+      const source = typeof file?.contents === 'string' ? file.contents : '';
+      return variant.files.flatMap((one) =>
+        'exercise' in one &&
+        one.exercise !== undefined &&
+        !source.includes(`  ${one.exercise.name}: {`)
+          ? [`${variant.name} → ${one.exercise.name}`]
+          : [],
+      );
+    });
+    expect(missing).toEqual([]);
+  });
+
+  test('x g carries the entry on every contract test it writes, the org bound for a tenancy rule', () => {
+    const carried = BATTERY.flatMap((options) =>
+      generate(options).filter(
+        (file) =>
+          file.path.endsWith('.contract.test.ts') &&
+          /\.contract\(/.test(typeof file.contents === 'string' ? file.contents : ''),
+      ),
     );
+    expect(
+      carried
+        .filter((file) => !('exercise' in file && file.exercise !== undefined))
+        .map((f) => f.path),
+    ).toEqual([]);
+    const action = carried.find((file) => file.path.endsWith('send-invoice.contract.test.ts'));
+    const entry = action !== undefined && 'exercise' in action ? action.exercise : undefined;
+    expect(entry?.name).toBe('sendInvoice');
+    expect(entry?.value).toContain(
+      "input: (drawn) => ({ ...drawn, orgId: '00000000-0000-4000-8000-000000000002' }),",
+    );
+    expect(entry?.value).toContain("orgId: '00000000-0000-4000-8000-000000000002',");
   });
 });

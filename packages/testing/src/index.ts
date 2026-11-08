@@ -207,7 +207,9 @@ export type {
   EffectPayload,
   ExerciseEffect,
   ExerciseOutcome,
+  ExercisePhaseMs,
   ExerciseRecord,
+  ProofMs,
   TenantFinding,
   TenantLeg,
   TenantProof,
@@ -366,6 +368,7 @@ export {
   normalizeIslandName,
 } from './island-states-resolve';
 export { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
+export { CRASH_POINT_BOUND } from './job-crash-points';
 export type {
   CrashBoundary,
   CrashDivergence,
@@ -379,6 +382,7 @@ export type { SimEffect } from './job-sim-effects';
 export {
   crashEffectPlace,
   JobCrashDivergedError,
+  JobCrashUnboundedError,
   JobSimInvariantError,
   JobSimNondeterministicError,
 } from './job-sim-errors';

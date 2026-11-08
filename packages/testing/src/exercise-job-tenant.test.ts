@@ -60,7 +60,7 @@ describe(testName('unit', 'bindJobTenant'), () => {
     });
   });
 
-  test('an input already naming the tenant, and a tenant: none job, come back as given', () => {
+  test('an input already naming the tenant comes back as given; a tenant: none job is none', () => {
     const input = { orgId: SEATED };
     const named = bindJobTenant(
       handle((one: { orgId: string }) => one.orgId),
@@ -69,7 +69,7 @@ describe(testName('unit', 'bindJobTenant'), () => {
     );
     expect(named).toEqual({ kind: 'seated', input });
     expect(bindJobTenant(handle('none'), { orgId: DRAWN }, SEATED)).toEqual({
-      kind: 'seated',
+      kind: 'none',
       input: { orgId: DRAWN },
     });
   });

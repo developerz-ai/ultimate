@@ -1,6 +1,6 @@
-// `defineExercise({ publishPost: { input, actor }, sendInvoice: { off: 'why' } })`: an app's
-// overrides for the exercise pass, one entry per primitive. Each value IS 39's `.contract({
-// exercise })` option, re-exported rather than restated, so one shape answers both questions.
+// `defineExercise({ publishPost: { input, actor }, sendInvoice: { off: 'why' } })`: an app's ONE
+// declaration of each primitive's exercise. `x exercise` reads it, and so does every contract
+// test — the whole value handed to `.contract({ exercise })` (action's `ExerciseDeclarations`).
 // A blank `off` is refused here, at declaration; an unknown name when the pass runs.
 
 import type { ExerciseOptions } from '@ultimat3/action';
@@ -11,12 +11,17 @@ import type { SeedFactory } from './seed-graph-plan';
 /** 39's option type, exactly: `{ actor, input?, runs? }` or `{ off: '<reason>' }`. */
 export type ExerciseOverride = ExerciseOptions;
 
-/** What `defineExercise` returns: the overrides, by primitive name. Read by `runExercisePass`. */
+/**
+ * What `defineExercise` returns: the overrides, by primitive name. Read by `runExercisePass` and,
+ * structurally, by `.contract({ exercise })` (`define-exercise.test.ts` pins the assignability).
+ */
 export interface ExerciseOverrides {
   readonly kind: 'exercise-overrides';
   readonly entries: ReadonlyMap<string, ExerciseOverride>;
   /** The entity an actor is a row of, by name: its id is bound to a seeded row. */
   readonly actorEntity?: string;
+  /** The column of that entity whose value IS the actor's id (`memberships.userId`); else its key. */
+  readonly actorColumn?: string;
   /** By entity name: the pass's graph builds those rows with them (`seedGraph`'s `factories`). */
   readonly factories?: Readonly<Record<string, SeedFactory>>;
   /** The app's hook, run once inside the pass's sealed room (`exercise-setup.ts`). */
@@ -28,9 +33,12 @@ export interface ExerciseAppOptions {
   /**
    * The entity whose rows ARE the app's actors (`members`, `users`): each actor's id becomes a
    * seeded row's key in its own tenant, so a handler writing `ctx.actor.id` into a foreign key
-   * writes a row that exists. Omitted, an actor's id is its role's name.
+   * writes a row that exists. `{ entity, column }` names the column that holds the user instead
+   * (`{ entity: membership, column: 'userId' }`). Omitted, a deterministic uuid per role and tenant.
    */
-  readonly actor?: { readonly $name: string };
+  readonly actor?:
+    | { readonly $name: string }
+    | { readonly entity: { readonly $name: string }; readonly column: string };
   /**
    * By entity name, `seedGraph`'s own option: a table whose rows a generated value cannot satisfy
    * (an `invariant` across columns) is built by the app's `defineFactory`. An unknown name is
@@ -67,7 +75,11 @@ export function defineExercise(
   return Object.freeze({
     kind: 'exercise-overrides',
     entries,
-    ...(app.actor === undefined ? {} : { actorEntity: app.actor.$name }),
+    ...(app.actor === undefined
+      ? {}
+      : 'entity' in app.actor
+        ? { actorEntity: app.actor.entity.$name, actorColumn: app.actor.column }
+        : { actorEntity: app.actor.$name }),
     ...(app.factories === undefined ? {} : { factories: app.factories }),
     ...(app.setup === undefined ? {} : { setup: app.setup }),
   });

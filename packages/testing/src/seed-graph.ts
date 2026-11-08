@@ -63,6 +63,33 @@ function ownedByTenant(
   return owned;
 }
 
+/**
+ * Every untenanted entity (`shared`, or of no tenant) a tenant-owned table points at through a key
+ * unique across the TABLE — a unique set holding the reference and not the tenant column. Each
+ * tenant's children then take parent rows no other tenant may reuse, so the parent seeds
+ * `perTable` rows per tenant: `perTable` alone ran out before tenant 2 (`X_SEED_GRAPH_UNSATISFIED`).
+ */
+function fannedOut(
+  shapes: ReadonlyMap<string, EntityShape>,
+  scoped: (name: string) => boolean,
+): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const shape of shapes.values()) {
+    if (!scoped(shape.name)) continue;
+    const tenantColumn = shape.entity.$tenantColumn;
+    const tableWide = [...shape.uniques, ...shape.partialUniques].filter(
+      (set) => tenantColumn === null || !set.includes(tenantColumn),
+    );
+    for (const reference of shape.references.values()) {
+      if (scoped(reference.targetEntity) || reference.targetEntity === shape.name) continue;
+      if (tableWide.some((set) => set.includes(reference.property))) {
+        out.add(reference.targetEntity);
+      }
+    }
+  }
+  return out;
+}
+
 export function seedGraph(
   entities: Readonly<Record<string, SeedEntity>>,
   options: SeedGraphOptions = {},
@@ -108,6 +135,7 @@ export function seedGraph(
   }
   const owned = ownedByTenant(shapes, roots);
   const scoped = (name: string): boolean => owned.has(name);
+  const fanned = fannedOut(shapes, scoped);
   for (const factory of Object.values(options.factories ?? {})) factory.reset();
 
   const placed = new Map<string, Placed[]>();
@@ -170,7 +198,8 @@ export function seedGraph(
     const buckets: readonly (string | null)[] = scoped(name) ? tenants : [null];
     let ordinal = 0;
     for (const [bucket, tenant] of buckets.entries()) {
-      const size = rootProperty === undefined ? perTable : 1;
+      const size =
+        rootProperty !== undefined ? 1 : fanned.has(name) ? perTable * tenantCount : perTable;
       for (let index = 0; index < size; index += 1) {
         ordinal += 1;
         const canary = stream().replace(/-/g, '').slice(0, 10);

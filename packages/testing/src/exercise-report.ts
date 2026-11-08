@@ -79,12 +79,21 @@ export interface CrashFinding {
   readonly inside?: string;
 }
 
-/** The crash proof's verdict on a reached job: killed at every step boundary (`crashProof`). */
+/**
+ * The crash proof's verdict on a reached job: killed at every distinct step boundary, a loop's rows
+ * as one (`crashProof`). `boundaries` is the kills, `crossed` the boundaries they stand for.
+ */
 export type CrashProof =
-  | { readonly verdict: 'held'; readonly boundaries: number; readonly reruns: number }
+  | {
+      readonly verdict: 'held';
+      readonly boundaries: number;
+      readonly crossed?: number;
+      readonly reruns: number;
+    }
   | {
       readonly verdict: 'diverged';
       readonly boundaries: number;
+      readonly crossed?: number;
       /** Lost answers that reran a step: at-least-once, counted, never red. */
       readonly reruns: number;
       readonly findings: readonly CrashFinding[];
@@ -118,6 +127,33 @@ export interface ExerciseRecord {
   readonly plans?: PlanProof;
   /** On a reached primitive: its statement shapes at 2 and at 8 rows a table (`scale-sweep.ts`). */
   readonly scale?: ScaleProof;
+  /** Wall time of each proof that ran on it; `ms` above is the control's own call. */
+  readonly proofMs?: ProofMs;
+}
+
+/**
+ * Milliseconds per proof of one record. No `plans`: one statement is planned once for every
+ * primitive that sent it, so its time is the pass's (`ExercisePhaseMs.plans`), never one record's.
+ */
+export interface ProofMs {
+  /** B's two legs and the snapshots around them, the control's own call excepted. */
+  readonly tenant?: number;
+  /** Every run the crash proof made. */
+  readonly crash?: number;
+  /** Its calls at both sizes; seeding the sized graphs is the pass's (`ExercisePhaseMs.scale`). */
+  readonly scale?: number;
+}
+
+/** Milliseconds per phase of one pass, so a slow pass names its slow part. */
+export interface ExercisePhaseMs {
+  /** The pass's one seed graph, written. */
+  readonly seed: number;
+  /** Every primitive's control and its tenant and crash proofs. */
+  readonly primitives: number;
+  /** The scale sweep: its two sized graphs written, every reached primitive called in each. */
+  readonly scale: number;
+  /** The plan sweep: every distinct statement the pass sent, planned. */
+  readonly plans: number;
 }
 
 /** What an effect carried, for the tenant proof's read half: searched, never reported as is. */

@@ -48,6 +48,7 @@ function harness(options: {
   readonly public?: string;
   readonly read?: { readonly output: unknown };
   readonly sweep?: boolean;
+  readonly tenantless?: boolean;
   readonly input?: unknown;
 }) {
   const calls: string[] = [];
@@ -58,6 +59,7 @@ function harness(options: {
     public: options.public,
     read: options.read !== undefined,
     sweep: options.sweep ?? false,
+    tenantless: options.tenantless ?? false,
     attack: async (leg) => {
       calls.push(`B:${leg}`);
       options.writes?.[leg]?.(digests);
@@ -194,6 +196,56 @@ describe(testName('unit', 'tenant proof legs'), () => {
       },
     });
     expect((await proveTenant(plan)).tenant).toMatchObject({ verdict: 'crossed' });
+  });
+
+  test("a tenant: 'none' job handed nothing of A writes A rows as it writes every org's: public", async () => {
+    // A nightly purge, input `{ occurrenceMs }`: no org reaches its run and B chose no row of A's,
+    // so B's run is A's run — the write is the job's own, not B reaching A.
+    const purge = harness({
+      sweep: true,
+      tenantless: true,
+      input: { occurrenceMs: 1_700_000_000_000 },
+      writes: {
+        before: (d) => {
+          d[1] = null;
+        },
+      },
+    });
+    expect((await proveTenant(purge.plan)).tenant).toEqual({
+      verdict: 'public',
+      reason: expect.stringContaining("tenant: 'none'"),
+    });
+  });
+
+  test("a tenant: 'none' job handed A ids, or one that leaks, is crossed; so is an action handed none", async () => {
+    const write = {
+      before: (d: (string | null)[]) => {
+        d[1] = null;
+      },
+    };
+    // B chose A's row: the declared tenant excuses nothing.
+    const chosen = harness({
+      sweep: true,
+      tenantless: true,
+      input: { fileId: FILE },
+      writes: write,
+    });
+    expect((await proveTenant(chosen.plan)).tenant).toMatchObject({
+      verdict: 'crossed',
+      findings: [{ code: 'X_TENANT_WRITE_CROSSED', table: 'files', id: FILE }],
+    });
+    // The read half is kept: an undeclared sweep handing on A's rows is a leak, as `tpFileSweep`.
+    const leaking = harness({
+      sweep: true,
+      tenantless: true,
+      input: { night: 'n' },
+      answers: { before: { output: { urls: ['title-c0ffee0001'] }, payloads: [] } },
+    });
+    expect((await proveTenant(leaking.plan)).tenant).toMatchObject({ verdict: 'crossed' });
+    // An action runs as B's actor, so B's org reaches it: a write to A with no id handed is an
+    // unscoped statement, crossed as ever.
+    const action = harness({ input: { occurrenceMs: 1 }, writes: write });
+    expect((await proveTenant(action.plan)).tenant).toMatchObject({ verdict: 'crossed' });
   });
 
   test('an A that was not reached leaves the proof unproven, never proven', async () => {

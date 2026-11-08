@@ -11,8 +11,9 @@ import {
   renderFixLiteral,
   renderFixShellArg,
 } from '@ultimat3/core';
-import type { ExerciseRecord } from '@ultimat3/testing';
+import type { ExercisePhaseMs, ExerciseRecord, ProofMs } from '@ultimat3/testing';
 import { crashEffectPlace, planSweepFindings, tenantProofFindings } from '@ultimat3/testing';
+import { msg } from './messages';
 import type { Finding } from './output';
 import { renderTable } from './table';
 
@@ -73,7 +74,7 @@ const unreachedFinding = (record: ExerciseRecord): Finding => {
     cause: `${record.kind} ${renderCauseValue(record.name)} never reached its handler as an allowed actor in the exercise pass${stopped}${why}${defectOf(record)}`,
     fix:
       record.fix ??
-      `defineExercise({ ${override} })   # paste the entry into ${EXERCISE_FILE}, or { off: '<why>' }; then: x exercise ${name} --json`,
+      `defineExercise({ ${override} })   # paste the entry into ${EXERCISE_FILE} (an inline .contract({ exercise: {...} }) in a test is not read here: move it, then pass .contract({ exercise })), or { off: '<why>' }; then: x exercise ${name} --json`,
     docs: ERROR_DOCS_URL,
     at: EXERCISE_FILE,
   };
@@ -140,23 +141,89 @@ export const exerciseFindings = (records: readonly ExerciseRecord[]): readonly F
   ...planSweepFindings(records).map((one) => ({ ...one, docs: ERROR_DOCS_URL })),
 ];
 
+/** The pass's phases, and the subject proof the CLI runs after it on a database of its own. */
+export interface ExercisePhases extends ExercisePhaseMs {
+  readonly subject: number;
+}
+
 export interface ExerciseReport {
   readonly seed: number | null;
   readonly counts: ExerciseCounts;
+  /** Milliseconds per phase: absent only when the pass threw before it could say. */
+  readonly phases?: ExercisePhases;
   readonly records: readonly ExerciseRecord[];
 }
 
 export const exerciseReport = (
   records: readonly ExerciseRecord[],
   seed: number | undefined,
-): ExerciseReport => ({ seed: seed ?? null, counts: exerciseCounts(records), records });
+  phases?: ExercisePhases,
+): ExerciseReport => ({
+  seed: seed ?? null,
+  counts: exerciseCounts(records),
+  ...(phases === undefined ? {} : { phases }),
+  records,
+});
+
+const PHASE_ORDER = ['seed', 'primitives', 'scale', 'plans', 'subject'] as const;
+
+/** `took 10610 ms — seed 800 · primitives 9100 · … — slowest: primitives`. */
+export function exercisePhaseLine(phases: ExercisePhases): string {
+  const total = PHASE_ORDER.reduce((sum, key) => sum + phases[key], 0);
+  const slowest = PHASE_ORDER.reduce((top, key) => (phases[key] > phases[top] ? key : top));
+  return msg('cli.exercise.phases', {
+    total,
+    phases: PHASE_ORDER.map((key) => `${key} ${phases[key]}`).join(' · '),
+    slowest,
+  });
+}
+
+const PROOF_ORDER = ['tenant', 'crash', 'scale'] as const satisfies readonly (keyof ProofMs)[];
+
+/** How many records the slowest-proof lines name: the head of the list is where the time went. */
+export const SLOWEST_SHOWN = 5;
+
+/** The records whose one proof took longest, slowest first: `slowest: job x · crash 9000 ms`. */
+export function slowestProofLines(records: readonly ExerciseRecord[]): readonly string[] {
+  const proofs = records.flatMap((record) => {
+    const top = PROOF_ORDER.map((proof) => [proof, record.proofMs?.[proof] ?? 0] as const).reduce(
+      (best, one) => (one[1] > best[1] ? one : best),
+    );
+    return top[1] > 0 ? [{ record, proof: top[0], ms: top[1] }] : [];
+  });
+  return proofs
+    .toSorted((left, right) => right.ms - left.ms)
+    .slice(0, SLOWEST_SHOWN)
+    .map((one) =>
+      msg('cli.exercise.slowest', {
+        primitive: `${one.record.kind} ${one.record.name}`,
+        proof: one.proof,
+        ms: one.ms,
+      }),
+    );
+}
+
+const msOf = (value: number | undefined): string => (value === undefined ? '-' : String(value));
 
 /** Unreached first — the rows that need a hand — then refused, off, reached; by name within. */
 const RANK: readonly Outcome[] = ['unreached', 'refused', 'off', 'reached'];
 
 export const renderExerciseTable = (records: readonly ExerciseRecord[]): readonly string[] =>
   renderTable(
-    ['primitive', 'kind', 'outcome', 'tenant', 'crash', 'code', 'statements', 'effects', 'ms'],
+    [
+      'primitive',
+      'kind',
+      'outcome',
+      'tenant',
+      'crash',
+      'code',
+      'statements',
+      'effects',
+      'ms',
+      'tenant ms',
+      'crash ms',
+      'scale ms',
+    ],
     records
       .toSorted(
         (left, right) =>
@@ -173,5 +240,8 @@ export const renderExerciseTable = (records: readonly ExerciseRecord[]): readonl
         String(one.statements),
         String(one.effects.length),
         String(one.ms),
+        msOf(one.proofMs?.tenant),
+        msOf(one.proofMs?.crash),
+        msOf(one.proofMs?.scale),
       ]),
   );

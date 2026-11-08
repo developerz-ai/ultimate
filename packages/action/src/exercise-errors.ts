@@ -4,9 +4,19 @@
  * three codes from its own twin (it cannot import this tier), borrowing the titles registered here.
  */
 
-import { isUltimateError, renderFixShellArg, UltimateError } from '@ultimat3/core';
+import {
+  isUltimateError,
+  renderDrawnInput,
+  renderExerciseKey,
+  renderFixShellArg,
+  sampleGapBinding,
+  UltimateError,
+} from '@ultimat3/core';
+import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { describeSampleGap, sampleGaps } from '@ultimat3/schema/sample';
 import './error-titles';
 import { ContractDriftError } from './errors';
+import { EXERCISE_DECLARATIONS_FILE } from './exercise-declarations';
 
 /** A generated legal input made the handler fail: an uncoded throw, a bad output, a coded 5xx. */
 export class ContractDefectError extends UltimateError {
@@ -42,33 +52,64 @@ export class ExerciseUnreachedError extends UltimateError {
     super({
       code: 'X_CONTRACT_EXERCISE_UNREACHED',
       cause: `none of ${outcomes.length} generated runs of ${name} reached its handler (meta.outcomes lists what each one hit)`,
-      fix: `${call}.contract({ exercise: { actor } }) with an actor the policy permits — or bind a real row: { exercise: { actor, input: (drawn) => ({ ...drawn, id }) } }`,
+      fix: `defineExercise({ ${call}: { actor } })   # in ${EXERCISE_DECLARATIONS_FILE}, an actor the policy permits — or bind a real row: { actor, input: (drawn) => ({ ...drawn, id }) }`,
       meta: { outcomes },
     });
   }
 }
 
-/** A guarded handler with no `exercise` said, or an opt-out with no reason. */
+/**
+ * Why no exercise could run: an `off` with no reason, nothing declared, no entry by this name, or
+ * an entry with no `actor` on a guarded handler — `x exercise` picks one its policy allows, a
+ * contract test has no role set to pick from.
+ */
+export type ExerciseUndeclaredWhy = 'blank' | 'undeclared' | 'no-entry' | 'no-actor';
+
+/**
+ * A guarded handler with no exercise. The fix is the paste in the ONE home, `apps/web/exercise.ts`
+ * — the file `x exercise` reads and `.contract({ exercise })` is handed — never an inline option:
+ * an entry declared only in a test is one `x exercise` cannot see. `@ultimat3/query` twins it.
+ */
 export class ExerciseUndeclaredError extends UltimateError {
-  constructor(name: string, blankReason: boolean) {
+  constructor(name: string, why: ExerciseUndeclaredWhy) {
     const call = renderFixShellArg(name, '<name>');
+    const refuses = `${name} refuses an anonymous caller`;
     super({
       code: 'X_CONTRACT_EXERCISE_UNDECLARED',
-      cause: blankReason
-        ? `${name}.contract({ exercise: { off } }) gives a blank reason, so the skip is silent`
-        : `${name} refuses an anonymous caller and its .contract() names no actor to exercise its handler as`,
-      fix: `${call}.contract({ exercise: { actor } }) — or ${call}.contract({ exercise: { off: '<why this handler cannot run in a test>' } })`,
+      cause: undeclaredCause(name, why, refuses),
+      fix: `defineExercise({ ${call}: { actor } })   # in ${EXERCISE_DECLARATIONS_FILE}, then ${call}.contract({ exercise }) with that file's export — or { off: '<why this handler cannot run in a test>' } there`,
     });
   }
 }
 
+/** What was missing, said in the file it is missing from. A `switch`, never a key lookup on a table. */
+function undeclaredCause(name: string, why: ExerciseUndeclaredWhy, refuses: string): string {
+  switch (why) {
+    case 'blank':
+      return `${name}.contract({ exercise: { off } }) gives a blank reason, so the skip is silent`;
+    case 'no-entry':
+      return `${refuses} and ${EXERCISE_DECLARATIONS_FILE} declares no entry for it, so no actor to exercise its handler as is known`;
+  }
+  return `${refuses} and its .contract() names no actor to exercise its handler as`;
+}
+
 /**
- * Every draw failed the schema it was drawn from — a provider refinement the IR does not carry.
- * `X_CONTRACT_DRIFT`, the code the policy assertion already raises for the same gap.
+ * Every draw failed the schema it was drawn from. `X_CONTRACT_DRIFT`, the code the policy
+ * assertion already raises for the same gap. A field whose `pattern` (or item count) the sampler
+ * cannot meet is named in the cause and bound in the fix's `input:`; a provider refinement the IR
+ * does not carry leaves only the placeholder field, honestly.
  */
-export function everyDrawRefused(name: string): ContractDriftError {
+export function everyDrawRefused(name: string, schema: StandardSchemaV1): ContractDriftError {
+  const gaps = sampleGaps(schema);
+  const described = gaps.map((path) => describeSampleGap(schema, path));
+  const input =
+    gaps.length === 0
+      ? "(drawn) => ({ ...drawn, field: '<a value the refinement accepts>' })"
+      : renderDrawnInput(gaps.map((path, i) => sampleGapBinding(path, described[i] ?? path)));
   return new ContractDriftError(
-    `${name}: its input schema refused every generated value, so the handler was never exercised`,
-    `${renderFixShellArg(name, '<name>')}.contract({ exercise: { actor, input: (drawn) => ({ ...drawn, field: '<a value the refinement accepts>' }) } })`,
+    gaps.length === 0
+      ? `${name}: its input schema refused every generated value, so the handler was never exercised`
+      : `${name}: its input schema refused every generated value — no value can be generated for ${described.join(', ')} — so the handler was never exercised`,
+    `defineExercise({ ${renderExerciseKey(name)}: { input: ${input} } })   # in ${EXERCISE_DECLARATIONS_FILE}`,
   );
 }

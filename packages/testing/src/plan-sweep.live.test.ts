@@ -67,7 +67,40 @@ const pswLabels = entity('psw_labels', {
   },
   indexes: [{ on: ['orgId', 'name'], unique: true, where: (c) => c.projectId.isNull() }],
 });
-const ENTITIES: readonly SeedEntity[] = [pswOrgs, pswPosts, pswRanked, pswMembers, pswLabels];
+/** A post's events, the sort the adopter's report misnamed: its own `(org_id, seq)` declared. */
+const pswEvents = entity('psw_events', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid()
+      .tenant()
+      .references(() => pswOrgs.id),
+    postId: uuid().references(() => pswPosts.id),
+    seq: integer(),
+  },
+  indexes: [{ on: ['orgId', 'seq'] }],
+});
+/** Two keys looked up by either: an OR, which one index per arm answers. */
+const keyColumns = () => ({
+  id: uuid().primaryKey(),
+  emailKey: text({ max: 40 }),
+  phoneKey: text({ max: 40 }),
+});
+const pswKeys = entity('psw_keys', { columns: keyColumns() });
+/** The same, each arm's index declared and migrated. */
+const pswKeysIndexed = entity('psw_keys_indexed', {
+  columns: keyColumns(),
+  indexes: [{ on: ['emailKey'] }, { on: ['phoneKey'] }],
+});
+const ENTITIES: readonly SeedEntity[] = [
+  pswOrgs,
+  pswPosts,
+  pswRanked,
+  pswMembers,
+  pswLabels,
+  pswEvents,
+  pswKeys,
+  pswKeysIndexed,
+];
 
 const DDL = [
   'create table psw_orgs (id uuid primary key)',
@@ -79,6 +112,14 @@ const DDL = [
   'create unique index psw_members_handle_key on psw_members (org_id, handle) where (deleted_at is null)',
   'create table psw_labels (id uuid primary key, org_id uuid not null references psw_orgs (id), name text not null, project_id uuid, created_at timestamptz not null)',
   'create unique index psw_labels_name_key on psw_labels (org_id, name) where (project_id is null)',
+  'create table psw_events (id uuid primary key, org_id uuid not null references psw_orgs (id), post_id uuid not null references psw_posts (id), seq integer not null)',
+  'create index psw_events_org_id_idx on psw_events (org_id)',
+  'create index psw_events_post_id_idx on psw_events (post_id)',
+  'create index psw_events_org_id_seq_idx on psw_events (org_id, seq)',
+  'create table psw_keys (id uuid primary key, email_key text not null, phone_key text not null)',
+  'create table psw_keys_indexed (id uuid primary key, email_key text not null, phone_key text not null)',
+  'create index psw_keys_indexed_email_key_idx on psw_keys_indexed (email_key)',
+  'create index psw_keys_indexed_phone_key_idx on psw_keys_indexed (phone_key)',
 ];
 const BY_TITLE = 'select "id" from "psw_posts" where "title" = $1';
 const NEWEST = 'select "id" from "psw_posts" where "org_id" = $1 order by "title" limit 20';
@@ -193,6 +234,56 @@ async function proveAdvice(client: DbClient): Promise<void> {
   expect(listed?.findings.map((one) => one.index)).toEqual([['archivedAt', 'id']]);
 }
 
+const shapes = (proof: ReturnType<Awaited<ReturnType<typeof sweepPlans>>['get']>) =>
+  proof?.findings.map((one) => [one.code, one.table, one.index, one.unserved]);
+
+/** Every printed fix changes the plan: the sort's real table, and an OR's arms. */
+async function proveFixesChangeThePlan(client: DbClient): Promise<void> {
+  const joined = (order: string) =>
+    `select p.id, e.seq from psw_posts p join psw_events e on e.post_id = p.id and e.org_id = p.org_id where p.org_id = $1 and e.org_id = $1 order by ${order} limit $2`;
+  // The adopter's shape: the sort key is an expression on the JOINED table. Never the declared
+  // `(orgId, seq)` of the table the plan happens to scan first.
+  const expression = joined(`date_trunc('milliseconds', p.created_at) desc, p.id desc, e.seq`);
+  expect(shapes((await sweepPlans(client, sent([expression]), ENTITIES)).get('listPosts'))).toEqual(
+    [['X_QUERY_SORT_UNSERVED', 'psw_posts', [], 'expression']],
+  );
+  const aggregate =
+    'select "title", min("score") as low from "psw_posts" where "org_id" = $1 group by "title" order by 2 limit 10';
+  expect(shapes((await sweepPlans(client, sent([aggregate]), ENTITIES)).get('listPosts'))).toEqual([
+    ['X_QUERY_SORT_UNSERVED', 'psw_posts', [], 'aggregate'],
+  ]);
+
+  // Plain columns of one table: that table's index, and once it exists the sort is gone.
+  const plain = joined('p.created_at desc, p.id desc');
+  expect(shapes((await sweepPlans(client, sent([plain]), ENTITIES)).get('listPosts'))).toEqual([
+    ['X_QUERY_SORT_UNSERVED', 'psw_posts', ['orgId', 'createdAt', 'id'], undefined],
+  ]);
+  await client.execute(
+    raw('create index psw_posts_feed_idx on psw_posts (org_id, created_at, id)'),
+  );
+  expect((await sweepPlans(client, sent([plain]), ENTITIES)).get('listPosts')?.findings).toEqual(
+    [],
+  );
+
+  // An OR: one index per arm, never `[emailKey, phoneKey]`; with both, the BitmapOr serves it.
+  const either = (table: string, tail = '') =>
+    `select "id" from "${table}" where "email_key" = $1 or "phone_key" = $2${tail}`;
+  expect(
+    shapes((await sweepPlans(client, sent([either('psw_keys')]), ENTITIES)).get('listPosts')),
+  ).toEqual([
+    ['X_QUERY_UNINDEXED', 'psw_keys', ['emailKey'], undefined],
+    ['X_QUERY_UNINDEXED', 'psw_keys', ['phoneKey'], undefined],
+  ]);
+  await client.execute(raw('create index psw_keys_email_idx on psw_keys (email_key)'));
+  await client.execute(raw('create index psw_keys_phone_idx on psw_keys (phone_key)'));
+  const after = await sweepPlans(client, sent([either('psw_keys')]), ENTITIES);
+  expect(after.get('listPosts')?.findings).toEqual([]);
+  // Under a limit the sweep's settings still pick the Seq Scan: arms the entity declares an index
+  // for are credited by the declaration, as a partial or a range index is.
+  const limited = sent([either('psw_keys_indexed', ' limit 1')]);
+  expect((await sweepPlans(client, limited, ENTITIES)).get('listPosts')?.findings).toEqual([]);
+}
+
 afterAll(() => clearRegistry());
 
 describe('live · plan sweep on PGlite', () => {
@@ -201,6 +292,7 @@ describe('live · plan sweep on PGlite', () => {
     try {
       await proveOn(client);
       await proveAdvice(client);
+      await proveFixesChangeThePlan(client);
     } finally {
       await client.close();
     }
@@ -218,6 +310,7 @@ describe.skipIf(adminUrl === '')('live · plan sweep on Postgres', () => {
     try {
       await proveOn(client);
       await proveAdvice(client);
+      await proveFixesChangeThePlan(client);
     } finally {
       await client.close();
       await admin.execute(raw(`drop database if exists "${database}" with (force)`));

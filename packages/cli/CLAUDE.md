@@ -87,6 +87,7 @@ Commands: `bun test packages/cli` (from the repo root: the preload),
 | `app-name.ts` | `x new`'s slug is asked of core's `defineConfig`, never a copied pattern; refused with a suggested name (`9lives` → `app-9lives`, `a` → `a-app`, cut at 64) |
 | `generate-grants.ts` | a written `policy.ts` or `entity.ts` declares and grants its permissions in `apps/web/shared/roles.ts`. Full rule: `docs/history/cli.md` |
 | `api-registration.ts` | a written job or task is listed in `apps/web/api/index.ts` |
+| `generate-exercise.ts` | a contract test's entry in `apps/web/exercise.ts` (`exercise-entry-edit.ts`) |
 | `handle-registration.ts` / `workspace-dep-edit.ts` / `templates/scaffold-db-client.ts` | a written entity joins `entities` in `packages/db/src/client.ts` (`X_DB_HANDLE_UNREGISTERED` carries the lines). Full rule: `docs/history/cli.md` |
 | `generated-imports.ts` | every sibling workspace a written file imports is declared in the manifest it landed under (`x g admin:page`'s `@<app>/i18n` in `apps/admin`) — `package-shape` would otherwise refuse the generator's own output (`X_WORKSPACE_DEP_UNDECLARED`) |
 | `admin-registration.ts` / `templates/admin-catalog.ts` / `source-edit.ts` | `--admin` wires the override it wrote into `admin.ts` (`X_ADMIN_RESOURCE_UNWIRED`) and the labels its screen reads. Full rule: `docs/history/cli.md` |
@@ -95,7 +96,7 @@ Commands: `bun test packages/cli` (from the repo root: the preload),
 | `generate-feature-required.ts` | `x g query`/`backfill` with no slice holding an `entity.ts` is `X_FEATURE_REQUIRED` |
 | `generate-sign-in*.ts` | `x g sign-in`: one flag, no name; OIDC swaps only `x new`'s bytes |
 | `generate-format-written.ts` | the app's Biome over the TypeScript a run created, best effort; `lint` judges |
-| `templates/scaffold-mcp-{json,endpoint,admin}.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`), the refusing `apps/web/mcp.ts` + `app/auth/agent-token.ts`, `apps/admin/mcp.ts`; `scaffold-agents-md.test.ts` resolves every command `AGENTS.md` names |
+| `templates/scaffold-mcp-{json,endpoint,admin}.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`) and the refusing MCP endpoints. Full rule: `docs/history/cli.md` |
 
 ### Boot (`x dev`, the container)
 

@@ -4,6 +4,7 @@
 
 import { renderCauseValue, renderFixLiteral, renderFixShellArg } from '@ultimat3/core';
 import type { ExerciseRecord } from './exercise-report';
+import type { PlanUnservable } from './plan-sort-key';
 import type { PlanFinding } from './plan-sweep-fix';
 
 export interface SweepFinding {
@@ -41,7 +42,47 @@ function wholeRead(finding: PlanFinding, senders: readonly ExerciseRecord[]): Sw
   };
 }
 
+/** Why no index serves a sort, as the cause says it. */
+const UNSERVED_SORT: Readonly<Record<PlanUnservable, string>> = {
+  expression: 'an expression over its columns, and entity() declares no expression index',
+  aggregate: 'a value an aggregate or window computes, which no stored order holds',
+  derived: 'a value a subquery or CTE derives, which no index on a table holds',
+  tables: 'columns of more than one table, and one index holds one table',
+  directions: 'columns in different directions, and an index declares one order for all of them',
+};
+
+/**
+ * A red node no `indexes:` entry ends: a sort no declarable index holds, or one whose index the
+ * entity already declares. Printing an index would change no plan, so the fix is the rewrite that
+ * lets one apply, or the stated reason the rows stay few.
+ */
+function unservedRead(
+  finding: PlanFinding,
+  unserved: PlanUnservable | 'declared',
+  senders: readonly ExerciseRecord[],
+): SweepFinding {
+  const by = senders.map(primitive).join(', ');
+  const entity = renderFixLiteral(finding.entity, '<entity>');
+  const rerun = renderFixShellArg(senders[0]?.name ?? '', '<primitive>');
+  const sent = `${by} sent ${renderCauseValue(excerpt(finding.statement))}`;
+  const cause =
+    unserved === 'declared'
+      ? `${sent}, which reads ${finding.table} unbounded (${finding.node}) though entity(${entity}) already declares the index that would bound it: declaring it again changes no plan, the statement as written cannot use it`
+      : `${sent}, which sorts its rows to answer a limited read (${finding.node} under Limit) by ${UNSERVED_SORT[unserved]}: no index on ${finding.table} serves that sort, so it slows with every row the table gains`;
+  const rewrite =
+    unserved === 'declared'
+      ? "the read compares the index's leading column by = or a range, no function around it"
+      : `an order by of plain ${finding.table} columns, all one direction (the rerun names their index)`;
+  return {
+    code: finding.code,
+    cause,
+    fix: `x exercise ${rerun} --json   # after ${rewrite}, or expectedSeqScan('<why the rows stay few>', fn) around the read`,
+    at: senders[0] === undefined ? finding.entity : primitive(senders[0]),
+  };
+}
+
 function planFinding(finding: PlanFinding, senders: readonly ExerciseRecord[]): SweepFinding {
+  if (finding.unserved !== undefined) return unservedRead(finding, finding.unserved, senders);
   if (finding.index.length === 0) return wholeRead(finding, senders);
   const by = senders.map(primitive).join(', ');
   const entity = renderFixLiteral(finding.entity, '<entity>');
@@ -67,7 +108,8 @@ export function planSweepFindings(records: readonly ExerciseRecord[]): readonly 
   const groups = new Map<string, { finding: PlanFinding; senders: ExerciseRecord[] }>();
   for (const record of records) {
     for (const finding of record.plans?.findings ?? []) {
-      const key = `${finding.code}\u0000${finding.table}\u0000${finding.statement}`;
+      // An OR's arms are one finding each, on one statement: the index is part of what is red.
+      const key = [finding.code, finding.table, finding.statement, ...finding.index].join('\u0000');
       const group = groups.get(key) ?? { finding, senders: [] };
       group.senders.push(record);
       groups.set(key, group);
@@ -91,9 +133,11 @@ export function planSweepFindings(records: readonly ExerciseRecord[]): readonly 
 export function planSweepLines(records: readonly ExerciseRecord[]): readonly string[] {
   return records.flatMap((record) => [
     ...(record.plans?.findings ?? []).map((finding) =>
-      finding.index.length === 0
-        ? `${primitive(record)} · ${finding.code} ${finding.table}, every row (no column to index)`
-        : `${primitive(record)} · ${finding.code} ${finding.table} on [${finding.index.join(', ')}]`,
+      finding.unserved !== undefined
+        ? `${primitive(record)} · ${finding.code} ${finding.table}, no index serves it (${finding.unserved})`
+        : finding.index.length === 0
+          ? `${primitive(record)} · ${finding.code} ${finding.table}, every row (no column to index)`
+          : `${primitive(record)} · ${finding.code} ${finding.table} on [${finding.index.join(', ')}]`,
     ),
     ...(record.scale?.verdict === 'grows' ? record.scale.shapes : []).map(
       (shape) =>

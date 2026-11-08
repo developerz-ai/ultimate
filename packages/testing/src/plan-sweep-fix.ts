@@ -3,6 +3,8 @@
 // lookup that pins a unique key reads one row whatever the planner walked to find it.
 
 import type { PlanVerdict, PlanVerdictCode } from './plan-oracle';
+import type { PlanUnservable } from './plan-sort-key';
+import { sortKeyPart } from './plan-sort-key';
 import type { SeedEntity } from './seed-graph-shape';
 
 export interface PlanFinding {
@@ -15,6 +17,12 @@ export interface PlanFinding {
   readonly table: string;
   /** The `indexes: [{ on }]` entry, by property: tenant, equality, order, range. */
   readonly index: readonly string[];
+  /**
+   * Why no index is the fix: a sort no declarable index serves, or `declared` — the index the node
+   * asks for is one the entity already holds, so declaring it again changes no plan. `index` is
+   * empty with it.
+   */
+  readonly unserved?: PlanUnservable | 'declared';
 }
 
 /** Every column set the table holds unique: the primary key, unique columns, total unique rules. */
@@ -110,24 +118,74 @@ function servedByPartial(entity: SeedEntity, verdict: PlanVerdict, order: readon
 
 const ORDER_BY = /\border by\s+(.+?)(?:\s+limit\b|\s+offset\b|\s+for\b|$)/gi;
 
-/**
- * The outermost `order by`'s columns, read off the text: an index walk avoids a sort and carries no
- * sort key of its own, yet the index that ends the walk has to hold the order too.
- */
-function orderOf(statement: string, columns: ReadonlySet<string>): readonly string[] {
-  const clauses = [...statement.matchAll(ORDER_BY)];
-  const last = clauses[clauses.length - 1]?.[1] ?? '';
-  return [...last.matchAll(IDENTIFIER)].flatMap(([, quoted, bare]) => {
-    const name = quoted ?? bare;
-    return name !== undefined && columns.has(name) ? [name] : [];
-  });
+/** `a, f(b, c), d` → its three items: commas outside parentheses only. */
+function items(list: string): string[] {
+  const found: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let at = 0; at < list.length; at += 1) {
+    if (list[at] === '(') depth += 1;
+    else if (list[at] === ')') depth -= 1;
+    else if (list[at] === ',' && depth === 0) {
+      found.push(list.slice(start, at));
+      start = at + 1;
+    }
+  }
+  return [...found, list.slice(start)];
 }
+
+/**
+ * The outermost `order by`'s leading columns of the walked table, read off the text: an index walk
+ * avoids a sort and carries no sort key of its own, yet the index that ends the walk has to hold
+ * the order too. Only as far as one index can: plain columns of this table, one direction — past
+ * them the rows arrive presorted and Postgres finishes with an incremental sort.
+ */
+function orderOf(statement: string, columns: ReadonlySet<string>, verdict: PlanVerdict) {
+  const clauses = [...statement.matchAll(ORDER_BY)];
+  const order: string[] = [];
+  let way: string | undefined;
+  for (const item of items(clauses[clauses.length - 1]?.[1] ?? '')) {
+    const part = sortKeyPart(item);
+    const own =
+      part.column !== undefined &&
+      columns.has(part.column.name) &&
+      [undefined, verdict.table, verdict.alias].includes(part.column.qualifier);
+    if (!own || part.way === 'mixed' || (way !== undefined && part.way !== way)) break;
+    way = part.way;
+    if (part.column !== undefined) order.push(part.column.name);
+  }
+  return order;
+}
+
+/**
+ * An OR the read is bounded by and nothing else: one index per arm answers it, as a BitmapOr. An
+ * arm whose column leads a declared index is answered already — the sweep's settings discourage
+ * the BitmapOr, so the plan alone cannot say; credited, never re-proven.
+ */
+function armFindings(
+  verdict: PlanVerdict,
+  declared: readonly (readonly string[])[],
+  property: (column: string) => string | undefined,
+): readonly (readonly string[])[] {
+  const arms = new Map((verdict.arms ?? []).map((arm) => [arm.join('\u0000'), arm]));
+  return [...arms.values()]
+    .filter((arm) => !declared.some((key) => key[0] !== undefined && arm.includes(key[0])))
+    .map((arm) => arm.flatMap((column) => property(column) ?? []));
+}
+
+/**
+ * The plan was taken with every declared index in place: one that leads with exactly these
+ * columns is already there, and printing it as the fix would change nothing.
+ */
+const held = (keys: readonly (readonly string[])[], columns: readonly string[]): boolean =>
+  columns.length > 0 && keys.some((key) => columns.every((column, at) => key[at] === column));
 
 /**
  * The findings one statement's verdicts make. A verdict whose equality columns pin a unique key is
  * dropped: one row at most. A table's sort verdict makes its scan verdict redundant — the index it
  * names leads with the same equality columns. The tenant column leads the index only when the
- * statement compares it: a read across tenants is served by no index that leads with one.
+ * statement compares it: a read across tenants is served by no index that leads with one. A sort
+ * no declarable index serves, or an index the entity already holds, is red with no index to paste.
  */
 export function planFindings(
   statement: string,
@@ -145,31 +203,39 @@ export function planFindings(
       key.every((column) => verdict.equality.includes(column)),
     );
     if (pinned) return [];
+    const finding = {
+      code: verdict.code,
+      statement,
+      node: verdict.node,
+      entity: entity.$name,
+      table: verdict.table,
+    };
+    if (verdict.unservable !== undefined) {
+      return [{ ...finding, index: [], unserved: verdict.unservable }];
+    }
     const description = entity.$describe();
     const byColumn = new Map(description.columns.map((c) => [c.column, c.property]));
     const walked = verdict.code === 'X_QUERY_UNINDEXED' && verdict.node !== 'Seq Scan';
     // A walk filtered by a range already has its order: what it lacks is the bound. A btree serves
     // no order after a range column, so the index is the equality columns, then the range.
     const ranged = walked && verdict.range.length > 0;
-    if (ranged && servedByRange(declaredIndexes(entity, statement), verdict)) return [];
+    const declared = declaredIndexes(entity, statement);
+    const bounded = verdict.equality.length > 0 || verdict.range.length > 0;
+    if (!bounded && verdict.arms !== undefined && verdict.code === 'X_QUERY_UNINDEXED') {
+      const arms = armFindings(verdict, declared, (column) => byColumn.get(column));
+      return arms.map((index) => ({ ...finding, index }));
+    }
+    if (ranged && servedByRange(declared, verdict)) return [];
     const order = ranged
       ? []
       : walked
-        ? orderOf(statement, new Set(description.columns.map((c) => c.column)))
+        ? orderOf(statement, new Set(description.columns.map((c) => c.column)), verdict)
         : verdict.order;
     if (servedByPartial(entity, verdict, order)) return [];
     const tenant = description.columns.find((c) => c.property === entity.$tenantColumn)?.column;
     const lead = tenant !== undefined && verdict.equality.includes(tenant) ? [tenant] : [];
     const columns = [...new Set([...lead, ...verdict.equality, ...order, ...verdict.range])];
-    return [
-      {
-        code: verdict.code,
-        statement,
-        node: verdict.node,
-        entity: entity.$name,
-        table: verdict.table,
-        index: columns.flatMap((column) => byColumn.get(column) ?? []),
-      },
-    ];
+    if (held(declared, columns)) return [{ ...finding, index: [], unserved: 'declared' }];
+    return [{ ...finding, index: columns.flatMap((column) => byColumn.get(column) ?? []) }];
   });
 }

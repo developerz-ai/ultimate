@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "7523156895e995ee67815268cfeba81327e0b82ac72c72a52bcb7dfce15b18a8",
+  "buildId": "0a2abcdbf736137218aaf47c117d0a4922df74e9726f69ae42688a8edb104f19",
   "tiers": {
     "0": [
       "core",
@@ -2035,6 +2035,16 @@
       "at": "packages/ai/src/error-codes.ts"
     },
     {
+      "code": "X_EXERCISE_ACTOR_USER_UNSEATED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_EXERCISE_FILE_UNEDITABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_EXERCISE_SETUP_UNSEALED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -2546,6 +2556,11 @@
     },
     {
       "code": "X_JOB_CRASH_DIVERGED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_CRASH_UNBOUNDED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

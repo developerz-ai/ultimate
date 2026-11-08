@@ -3,6 +3,10 @@
 // a scan or a sort only when nothing else answers, so the verdict reads the schema, not the rows.
 // Pure: JSON in, verdicts out (plan 101, 40-next-query-plans).
 
+import { columnsIn } from './plan-conditions';
+import type { PlanUnservable, SortKeyRef } from './plan-sort-key';
+import { sortKeyPart, sortUnservable } from './plan-sort-key';
+
 /** What a red node is: a whole-table read, or rows sorted for a limited read. */
 export type PlanVerdictCode = 'X_QUERY_UNINDEXED' | 'X_QUERY_SORT_UNSERVED';
 
@@ -16,8 +20,14 @@ export interface PlanVerdict {
   readonly equality: readonly string[];
   /** Physical columns it compares any other way (a range, a pattern). */
   readonly range: readonly string[];
-  /** The sort's columns on that table, in order. Empty for a scan. */
+  /** The sort's columns on that table, in order. Empty for a scan, or a sort no index serves. */
   readonly order: readonly string[];
+  /** A sort no declarable index serves: why (`plan-sort-key.ts`). */
+  readonly unservable?: PlanUnservable;
+  /** The arms of an OR the read is bounded by, each its columns: one index answers each arm. */
+  readonly arms?: readonly (readonly string[])[];
+  /** The alias the plan reads the table by, when it is not the table's own name. */
+  readonly alias?: string;
 }
 
 interface PlanNode {
@@ -70,45 +80,62 @@ export function planRoot(answer: unknown): unknown {
   return record(first)?.['Plan'] ?? first;
 }
 
-const IDENT = /(?:"?([A-Za-z_][\w$]*)"?\.)?"?([A-Za-z_][\w$]*)"?/g;
-const EQUALITY = /(?<![<>!])=(?!>)/;
-/** `IS NULL` pins one value as `=` does, and a btree serves it as an index condition. */
-const IS_NULL = /\bIS\s+NULL\b/i;
+/** Every scan beneath `node` (the node itself included), of any table. */
+const scansBeneath = (node: PlanNode): readonly PlanNode[] => [
+  ...(node.table !== undefined && SCANS.has(node.type) ? [node] : []),
+  ...node.children.flatMap(scansBeneath),
+];
+
+/** Nodes that compute what is sorted: past one, the sort key is no table's stored order. */
+const COMPUTED: ReadonlySet<string> = new Set(['Aggregate', 'WindowAgg', 'Group']);
+const computedBeneath = (node: PlanNode): boolean =>
+  node.children.some((child) => COMPUTED.has(child.type) || computedBeneath(child));
 
 /**
- * The columns of `scan` a condition names, split by how they are compared: `=` and `IS NULL` are
- * equality, anything else a range. A conjunct qualified by
- * another alias is a join's other side; an unqualified name counts when the table has the column.
+ * The verdict of a `Sort` under a `Limit`. It belongs to the table its key names — a join lists
+ * its other side first, and that side's columns are not what is sorted. A key no index can hold
+ * still names a table, with no order to index; a key on a table the sweep does not judge (a
+ * declared `scan:`, a framework table) is that table's, and no verdict.
  */
-function columnsIn(
+function sortVerdict(
+  node: PlanNode,
   conditions: readonly string[],
-  scan: PlanNode,
-  columns: ReadonlySet<string>,
-): { readonly equality: string[]; readonly range: string[] } {
-  const equality: string[] = [];
-  const range: string[] = [];
-  for (const condition of conditions) {
-    for (const conjunct of condition.split(/\bAND\b/)) {
-      const into = EQUALITY.test(conjunct) || IS_NULL.test(conjunct) ? equality : range;
-      for (const [, qualifier, name] of conjunct.replace(/'[^']*'/g, '').matchAll(IDENT)) {
-        if (name === undefined || !columns.has(name)) continue;
-        if (qualifier !== undefined && qualifier !== scan.alias && qualifier !== scan.table)
-          continue;
-        if (!equality.includes(name) && !range.includes(name)) into.push(name);
-      }
-    }
-  }
-  return { equality, range: range.filter((name) => !equality.includes(name)) };
+  tables: PlanTableColumns,
+): PlanVerdict | undefined {
+  const scans = scansBeneath(node);
+  const judged = scans.filter((scan) => scan.table !== undefined && tables.has(scan.table));
+  const scanOf = (ref: SortKeyRef): PlanNode | undefined =>
+    scans.find((scan) =>
+      ref.qualifier === undefined
+        ? scan.table !== undefined && tables.get(scan.table)?.has(ref.name) === true
+        : ref.qualifier === scan.alias || ref.qualifier === scan.table,
+    );
+  const parts = node.sortKey.map(sortKeyPart);
+  const owners = parts.flatMap((part) => part.refs).flatMap((ref) => scanOf(ref) ?? []);
+  const owner = owners[0];
+  if (owner?.table !== undefined && !tables.has(owner.table)) return undefined;
+  const scan = owner ?? judged[0];
+  const columns = scan?.table === undefined ? undefined : tables.get(scan.table);
+  if (scan?.table === undefined || columns === undefined) return undefined;
+  const plainUnowned = parts.some((part) => part.column && scanOf(part.column) === undefined);
+  const unservable: PlanUnservable | undefined =
+    parts.some((part) => part.column === undefined) && computedBeneath(node)
+      ? 'aggregate'
+      : plainUnowned
+        ? 'derived'
+        : sortUnservable(parts, (ref) => scanOf(ref)?.table);
+  const found = columnsIn([...conditions, ...scan.conditions], scan, columns);
+  const order = columnsIn(node.sortKey, scan, columns);
+  return {
+    code: 'X_QUERY_SORT_UNSERVED',
+    node: node.type,
+    table: scan.table,
+    equality: found.equality,
+    range: [],
+    order: unservable === undefined ? [...order.equality, ...order.range] : [],
+    ...(unservable === undefined ? {} : { unservable }),
+  };
 }
-
-/** The first scan beneath `node` (the node itself included) that reads one of `tables`. */
-const scanBeneath = (node: PlanNode, tables: PlanTableColumns): PlanNode | undefined =>
-  node.table !== undefined && SCANS.has(node.type) && tables.has(node.table)
-    ? node
-    : node.children.reduce<PlanNode | undefined>(
-        (found, child) => found ?? scanBeneath(child, tables),
-        undefined,
-      );
 
 /** Physical table → its physical columns: only these tables are judged. */
 export type PlanTableColumns = ReadonlyMap<string, ReadonlySet<string>>;
@@ -135,24 +162,13 @@ export function judgePlan(answer: unknown, tables: PlanTableColumns): readonly P
           table: node.table,
           ...found,
           order: [],
+          ...(node.alias === undefined || node.alias === node.table ? {} : { alias: node.alias }),
         });
       }
     }
     if (node.type === 'Sort' && limited) {
-      const scan = scanBeneath(node, tables);
-      const scanColumns = scan?.table === undefined ? undefined : tables.get(scan.table);
-      if (scan?.table !== undefined && scanColumns !== undefined) {
-        const found = columnsIn([...conditions, ...scan.conditions], scan, scanColumns);
-        const order = columnsIn(node.sortKey, scan, scanColumns);
-        verdicts.push({
-          code: 'X_QUERY_SORT_UNSERVED',
-          node: node.type,
-          table: scan.table,
-          equality: found.equality,
-          range: [],
-          order: [...order.equality, ...order.range],
-        });
-      }
+      const sorted = sortVerdict(node, conditions, tables);
+      if (sorted !== undefined) verdicts.push(sorted);
     }
     const below = limited || node.type === 'Limit';
     // A join's conditions name both sides: each child keeps only the conjuncts about itself.

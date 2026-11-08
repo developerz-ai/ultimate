@@ -1,12 +1,14 @@
 // Everything `x g` edits OUTSIDE the files it creates, in the one order they have to happen: a
 // declared permission granted to a role, a primitive listed in `defineApi`, an entity added to the
-// typed handle, an `--admin` override wired, each new workspace edge declared, and every catalog
-// made selectable. One function over one disk seam, so a real run and a dry run are the same code
+// typed handle, an `--admin` override wired, a contract test's exercise entry declared, each new
+// workspace edge declared, and every catalog made selectable. One function over one disk seam, so a real run and a dry run are the same code
 // — and the dry run's list of touched files is what the run touches, not a second guess at it.
 
 import { registerAdminResources } from './admin-registration';
 import { registerGeneratedPrimitives } from './api-registration';
+import type { ExerciseEntry } from './exercise-entry-edit';
 import type { GenerateDisk } from './generate-disk';
+import { declareGeneratedExercises } from './generate-exercise';
 import { ungrantedByGenerator } from './generate-grant-findings';
 import { grantGeneratedPermissions } from './generate-grants';
 import { declareGeneratedImports } from './generated-imports';
@@ -33,11 +35,15 @@ export async function followUpEdits(
   written: readonly string[],
   dbModule: string | undefined,
   disk: GenerateDisk,
+  /** The written contract tests' entries, declared in `apps/web/exercise.ts` (`generate-exercise.ts`). */
+  exercises: readonly ExerciseEntry[] = [],
 ): Promise<FollowUps> {
   const handle = await registerGeneratedEntities(root, written, dbModule, disk);
   const adminWiring = await registerAdminResources(root, written, disk);
   const granted = await grantGeneratedPermissions(root, written, disk);
   const listed = await registerGeneratedPrimitives(root, written, disk);
+  // Before the manifests: the entry may bring an import (`userActor`) into the exercise file.
+  const exercise = await declareGeneratedExercises(exercises, disk);
   // Last of the manifest writers, because the others add imports too: every sibling workspace a
   // written file imports, declared in the manifest it landed under.
   const imports = await declareGeneratedImports(root, written, disk);
@@ -53,12 +59,19 @@ export async function followUpEdits(
       ...new Set([
         ...granted,
         ...listed,
+        ...exercise.edited,
         ...handle.edited,
         ...adminWiring.edited,
         ...imports,
         ...(indexSync.edited ?? []),
       ]),
     ].filter((path) => !written.includes(path)),
-    findings: [...handle.findings, ...ungranted, ...adminWiring.findings, ...indexSync.findings],
+    findings: [
+      ...handle.findings,
+      ...ungranted,
+      ...adminWiring.findings,
+      ...exercise.findings,
+      ...indexSync.findings,
+    ],
   };
 }

@@ -9,6 +9,7 @@ import { judgePlan, planRoot } from './plan-oracle';
 const TABLES: PlanTableColumns = new Map([
   ['posts', new Set(['id', 'org_id', 'author_id', 'title', 'project_id', 'created_at'])],
   ['comments', new Set(['id', 'post_id'])],
+  ['events', new Set(['id', 'org_id', 'post_id', 'seq'])],
 ]);
 
 const scan = (type: string, table: string, extra: Record<string, unknown> = {}) => ({
@@ -115,6 +116,159 @@ describe('unit · plan oracle, the probed plans', () => {
     expect(judgePlan(answer(plan), TABLES)).toEqual([
       expect.objectContaining({ table: 'comments', equality: ['post_id'] }),
     ]);
+  });
+});
+
+// Probed 2026-11-08 on PGlite: a limited read over a join, sorted by the OUTER-listed table's
+// expression. The first scan under the Sort is the other side; the sort key is not its columns.
+const joined = (keys: string[]) =>
+  limit(
+    sort(keys, {
+      'Node Type': 'Nested Loop',
+      'Join Filter': '(p.id = e.post_id)',
+      Plans: [
+        { ...scan('Index Scan', 'events', { 'Index Cond': '(org_id = $1)' }), Alias: 'e' },
+        {
+          'Node Type': 'Materialize',
+          Plans: [
+            { ...scan('Index Scan', 'posts', { 'Index Cond': '(org_id = $1)' }), Alias: 'p' },
+          ],
+        },
+      ],
+    }),
+  );
+
+describe('unit · plan oracle, the sort is the table its key names', () => {
+  test('a sort by an expression is attributed to its table and no index can serve it', () => {
+    const plan = joined([
+      "(date_trunc('milliseconds'::text, p.created_at)) DESC",
+      'p.id DESC',
+      'e.seq',
+    ]);
+    expect(judgePlan(answer(plan), TABLES)).toEqual([
+      {
+        code: 'X_QUERY_SORT_UNSERVED',
+        node: 'Sort',
+        table: 'posts',
+        equality: ['org_id'],
+        range: [],
+        order: [],
+        unservable: 'expression',
+      },
+    ]);
+  });
+
+  test("a sort by one table's plain columns names that table, even when it is not scanned first", () => {
+    expect(judgePlan(answer(joined(['p.created_at DESC', 'p.id DESC'])), TABLES)).toEqual([
+      {
+        code: 'X_QUERY_SORT_UNSERVED',
+        node: 'Sort',
+        table: 'posts',
+        equality: ['org_id'],
+        range: [],
+        order: ['created_at', 'id'],
+      },
+    ]);
+  });
+
+  test('a sort across two tables is served by no one index', () => {
+    const [verdict] = judgePlan(answer(joined(['p.created_at DESC', 'e.seq DESC'])), TABLES);
+    expect(verdict).toMatchObject({ table: 'posts', order: [], unservable: 'tables' });
+  });
+
+  test('a sort mixing directions is served by no index an entity can declare', () => {
+    const one = (keys: string[]) =>
+      judgePlan(
+        answer(limit(sort(keys, scan('Index Scan', 'posts', { 'Index Cond': '(org_id = $1)' })))),
+        TABLES,
+      )[0];
+    expect(one(['created_at DESC', 'id'])).toMatchObject({ order: [], unservable: 'directions' });
+    expect(one(['created_at NULLS FIRST'])).toMatchObject({ unservable: 'directions' });
+    // All one way, either way: a btree walks backwards.
+    expect(one(['created_at DESC', 'id DESC'])).toMatchObject({ order: ['created_at', 'id'] });
+    expect(one(['created_at DESC', 'id DESC'])?.unservable).toBeUndefined();
+  });
+});
+
+describe('unit · plan oracle, what no single index serves', () => {
+  test('a sort after an aggregate is served by no index: it says so', () => {
+    // Probed 2026-11-08, PGlite and Postgres 17: `group by name order by min(a), name limit 10`.
+    const plan = limit(
+      sort(['(min(a))', 'name'], {
+        'Node Type': 'Aggregate',
+        Strategy: 'Hashed',
+        'Group Key': ['name'],
+        Plans: [scan('Index Scan', 'posts', { 'Index Cond': '(org_id = $1)' })],
+      }),
+    );
+    expect(judgePlan(answer(plan), TABLES)).toEqual([
+      expect.objectContaining({ table: 'posts', order: [], unservable: 'aggregate' }),
+    ]);
+  });
+
+  test("a sort by a column of a table the sweep does not judge is not this table's", () => {
+    const plan = limit(
+      sort(['k.name'], {
+        'Node Type': 'Nested Loop',
+        Plans: [
+          { ...scan('Index Scan', 'posts', { 'Index Cond': '(org_id = $1)' }), Alias: 'p' },
+          { ...scan('Index Scan', 'kinds', { 'Index Cond': '(id = p.kind_id)' }), Alias: 'k' },
+        ],
+      }),
+    );
+    expect(judgePlan(answer(plan), TABLES)).toEqual([]);
+  });
+
+  test('a sort by a value no table holds is derived: no index on a table serves it', () => {
+    const plan = limit(
+      sort(['r.k'], {
+        'Node Type': 'Subquery Scan',
+        Alias: 'r',
+        Plans: [scan('Index Scan', 'posts', { 'Index Cond': '(org_id = $1)' })],
+      }),
+    );
+    expect(judgePlan(answer(plan), TABLES)).toEqual([
+      expect.objectContaining({ table: 'posts', unservable: 'derived' }),
+    ]);
+  });
+
+  test('an OR is its arms, never one composite: each arm is what an index answers', () => {
+    // Probed 2026-11-08, both engines: no index on either column is a Seq Scan with this filter.
+    const [verdict] = judgePlan(
+      answer(scan('Seq Scan', 'posts', { Filter: '((author_id = $1) OR (title = $2))' })),
+      TABLES,
+    );
+    expect(verdict).toMatchObject({ equality: [], range: [], arms: [['author_id'], ['title']] });
+  });
+
+  test('an arm keeps its own conjuncts; the AND around an OR still bounds the read', () => {
+    const [verdict] = judgePlan(
+      answer(
+        scan('Seq Scan', 'posts', {
+          Filter:
+            '((org_id = $1) AND ((project_id IS NULL) OR ((author_id = $2) AND (created_at > $3))))',
+        }),
+      ),
+      TABLES,
+    );
+    expect(verdict).toMatchObject({
+      equality: ['org_id'],
+      range: [],
+      arms: [['project_id'], ['author_id', 'created_at']],
+    });
+  });
+
+  test('an OR with an arm on no column of the table has no arms an index answers', () => {
+    const [verdict] = judgePlan(
+      answer(
+        scan('Seq Scan', 'posts', {
+          Filter: '((created_at < $1) OR (alternatives: SubPlan 1 or hashed SubPlan 2))',
+        }),
+      ),
+      TABLES,
+    );
+    expect(verdict).toMatchObject({ equality: [], range: [] });
+    expect(verdict?.arms).toBeUndefined();
   });
 });
 

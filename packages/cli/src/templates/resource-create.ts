@@ -3,6 +3,7 @@
 // input was `{ id, orgId }` while the form posted `{ title }`. The input is the entity's own view of
 // the columns a caller supplies; the org comes from the actor, never from the body.
 
+import { exerciseImportLine, memberEntry } from './action-exercise';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
@@ -119,10 +120,13 @@ unitTest('orgOf answers the org of the actor, and refuses an actor with none', (
 
 const createContractTest = (
   feature: NameSet,
+  /** The line importing `apps/web/exercise.ts`'s export, relative to this test. */
+  exerciseImport: string,
 ): string => `// create${feature.pascal}: the contract every action owes, and the orgless actor it denies before
 // the handler runs — the org a row is written under is the actor's, so an actor with none is refused.
 import { testActor } from '@ultimat3/policy';
 import { contractTest, expect } from '@ultimat3/testing';
+${exerciseImport}
 import { create${feature.pascal} } from './create-${feature.kebab}';
 
 const target = create${feature.pascal}.named('create${feature.pascal}');
@@ -137,9 +141,9 @@ const writer = testActor('writer', {
 }).actor;
 
 contractTest('create${feature.pascal} passes the action contract', async () => {
-  // The fourth assertion runs the handler as the writer on 16 generated legal inputs, each
-  // inside a transaction that rolls back, so nothing it creates outlives the test.
-  for (const contract of target.contract({ exercise: { actor: writer } })) await contract.run();
+  // The fourth assertion runs the handler on 16 generated legal inputs, each inside a transaction
+  // that rolls back, as its entry in apps/web/exercise.ts declares — the one \`x exercise\` runs.
+  for (const contract of target.contract({ exercise })) await contract.run();
 });
 
 contractTest('create${feature.pascal} needs an actor with an org', async () => {
@@ -167,7 +171,9 @@ export function resourceCreateFiles(
     { path: `${dir}/create-${feature.kebab}.test.ts`, contents: createUnitTest(feature, dbModule) },
     {
       path: `${dir}/create-${feature.kebab}.contract.test.ts`,
-      contents: createContractTest(feature),
+      contents: createContractTest(feature, exerciseImportLine(dir)),
+      // A writer in one org: the create writes under the actor's org, so no input names one.
+      exercise: memberEntry(`create${feature.pascal}`, `${feature.kebab}:write`, { org: ORG }),
     },
   ];
 }

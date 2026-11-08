@@ -127,7 +127,9 @@ describe('declaring the exercise', () => {
     const guarded = feed('guardedFeed', () => undefined);
     const failure = await failureOf(() => only(queryContractTestsFor(guarded)).run());
     expect(failure.code).toBe('X_CONTRACT_EXERCISE_UNDECLARED');
-    expect(failure.fix).toContain('guardedFeed.contract({ exercise: { actor } })');
+    expect(failure.fix).toContain(
+      'defineExercise({ guardedFeed: { actor } })   # in apps/web/exercise.ts',
+    );
   });
 
   test('an opt-out is listed with its reason, and a blank one is refused', async () => {

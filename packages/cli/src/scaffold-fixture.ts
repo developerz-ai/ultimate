@@ -6,6 +6,7 @@ import { withAdminResources } from './admin-registration';
 import type { GenerateOptions } from './cmd-generate';
 import { dedupe, generate } from './cmd-generate';
 import { planNewApp } from './cmd-new';
+import { withDeclaredExercises } from './generate-exercise';
 import { withHandleEntries } from './handle-registration';
 import { NEW_SHAPES } from './new-shapes';
 import type { GeneratedFile } from './templates';
@@ -205,7 +206,10 @@ export function scaffoldFixture(): readonly GeneratedFile[] {
   // What `x g` does on disk after it writes: each generated entity joins the handle's set.
   // …and each `--admin` override joins the admin's `resources:`, so its type is compiled where
   // `defineAdmin()` reads it.
-  return withAdminResources(withHandleEntries(files, FIXTURE_DB), `@${FIXTURE_APP}/web`);
+  // …and each contract test's exercise entry joins `apps/web/exercise.ts` (`generate-exercise.ts`).
+  return withDeclaredExercises(
+    withAdminResources(withHandleEntries(files, FIXTURE_DB), `@${FIXTURE_APP}/web`),
+  );
 }
 
 export interface ScaffoldVariant {

@@ -120,6 +120,10 @@ export type {
   QueryExerciseReport,
 } from './exercise';
 export { exerciseQuery } from './exercise';
+export type {
+  QueryContractExercise,
+  QueryExerciseDeclarations,
+} from './exercise-declarations';
 /** The HTTP projection: `GET /_x/query/<kebab>`, the URL `client()` derives. */
 export { toQueryRoute } from './http';
 export type { QueryHttp } from './http-pin';

@@ -72,4 +72,17 @@ describe('unit · the scaffold authenticates through @ultimat3/auth', () => {
     expect(tests).toContain('installAuthenticator(');
     expect(files().map((file) => file.path)).toContain('apps/web/app/auth/dev-actor.test.ts');
   });
+
+  // `ctx.actor.id` is an `x_users` uuid on every real request, and the app reads it as one: a
+  // role-name id (`'dev-actor'`) was `22P02 invalid input syntax for type uuid` under `x dev`.
+  test('the development viewer has a user id: a uuid per role, the one the seed derives', () => {
+    const devActor = code(text('apps/web/app/auth/dev-actor.ts'));
+    expect(devActor).not.toContain("'dev-actor'");
+    expect(devActor).toContain('id: devActorId(role)');
+    expect(devActor).toContain('=> seedId(`user:dev:');
+    expect(devActor).toContain("import { seedId } from '@ultimat3/entity';");
+    expect(code(text('apps/web/app/auth/dev-actor.test.ts'))).toContain(
+      'expect(devActorFor(role).id).toMatch(UUID)',
+    );
+  });
 });
