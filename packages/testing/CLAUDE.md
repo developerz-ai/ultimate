@@ -16,7 +16,7 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | No mocks of the DB | clone a template database; `template-db.ts` is the only DB path |
 | No wall clock | `withFrozenClock` / `advanceClock`; `Date.now()` is frozen by the preload |
 | Frozen ≠ different | `globalThis.Date` becomes a subclass; `FrozenDate[Symbol.hasInstance]` brands on the `[[DateValue]]` slot (`Date.prototype.getTime.call(value)` throws or not) |
-| No unmocked egress | `sealed-network.ts` seals `fetch`; `sealed-sockets.ts` `WebSocket`, `Bun.connect` (not loopback); `sealed-dns.ts` the three `lookup`s (a mocked host answers `MOCKED_HOST_ADDRESS`); a miss is `X_TEST_NETWORK_SEALED` |
+| No unmocked egress | `sealed-network.ts` seals `fetch`; `sealed-sockets.ts` `WebSocket`, `Bun.connect` (not loopback); `sealed-dns*.ts` every resolver, named imports too (wiki `Testing.md`); a miss is `X_TEST_NETWORK_SEALED` |
 | One `mockFetch`, and it grows | a verb in the match, ordered answers, a pinned dial's name (`mock-route.ts`) and `requestLog` (`request-log.ts`). A stream bound for a real server logs `null` (teeing drains it). `original(input, init)` goes as handed: `tls`, `unix`, `proxy` are in no `Request`. `cassette()`: below |
 | Self is not egress | a port core's `markListening()` announced passes through — a socket test never unseals |
 | Offline is a state, not a mock | `network.offline()` / `.drop()` fail every dial, loopback too, as `X_TEST_NETWORK_OFFLINE` before any mock: the app's offline path runs |

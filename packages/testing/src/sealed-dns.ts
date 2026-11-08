@@ -1,86 +1,85 @@
-// The resolver half of the sealed network: `Bun.dns.lookup`, `dns.lookup` and `dns.promises.lookup`.
-// Only the patching lives here; WHAT a name resolves to is `sealed-network.ts`'s one gate, handed in,
-// so a host `fetch` would answer by mock resolves and a host it would refuse does not. A named ESM
-// import (`import { lookup } from 'node:dns'`) binds before the seal and is NOT covered (measured).
+// The resolver half of the sealed network: every `Bun.dns` resolution function, which is the ROOT
+// every `node:dns` module function calls at call time — so a named import bound before the seal is
+// sealed too (`sealed-dns-paths.test.ts`). `Resolver` instances: `sealed-dns-resolver.ts`. WHAT a
+// name resolves to is `sealed-network.ts`'s one gate, handed in.
 
-// why: `dns.lookup` and `dns.promises.lookup` are what an app's own resolver calls; Bun ships both.
-import nodeDns from 'node:dns';
+import { installResolverSeal } from './sealed-dns-resolver';
 
-/** One lookup's verdict: the addresses to answer, a refusal to raise, or `real` for the resolver. */
+/** One query's verdict: the addresses to answer, a refusal to raise, or `real` for the resolver. */
 export type DnsVerdict =
   | { readonly answer: readonly string[] }
   | { readonly refused: Error }
   | { readonly real: true };
 
-export type DnsGate = (hostname: string) => DnsVerdict;
+/** `LOOKUP` (getaddrinfo), `REVERSE` (an address to its names) or a record type: `A`, `MX`, … */
+export type DnsGate = (name: string, query: string) => DnsVerdict;
 
-interface LookupEntry {
-  readonly address: string;
-  readonly family: number;
-}
+/**
+ * The queries an address list can answer. A mock declares an HTTP endpoint, not a zone: an MX or
+ * TXT answer would be invented, so the gate answers only these and refuses the rest.
+ */
+export const ADDRESS_QUERIES: ReadonlySet<string> = new Set(['LOOKUP', 'A', 'ANY']);
 
 const familyOf = (address: string): number => (address.includes(':') ? 6 : 4);
 
-const entriesOf = (addresses: readonly string[]): LookupEntry[] =>
-  addresses.map((address) => ({ address, family: familyOf(address) }));
+/** The raw shape `Bun.dns` answers per query; `node:dns` maps it as it maps a real one. */
+const shaped = (query: string, addresses: readonly string[]): unknown[] =>
+  addresses.map((address) => {
+    if (query === 'LOOKUP') return { address, family: familyOf(address), ttl: 0 };
+    if (query === 'ANY') return { address, ttl: 0, type: familyOf(address) === 6 ? 'AAAA' : 'A' };
+    return { address, ttl: 0 };
+  });
 
-type NodeCallback = (error: unknown, address?: unknown, family?: number) => void;
+/** Each async `Bun.dns` resolver and the query its arguments ask. */
+const BUN_QUERIES: Readonly<Record<string, (args: readonly unknown[]) => string>> = {
+  lookup: () => 'LOOKUP',
+  resolve: (args) => (typeof args[1] === 'string' ? args[1].toUpperCase() : 'A'),
+  resolveAny: () => 'ANY',
+  resolveCaa: () => 'CAA',
+  resolveCname: () => 'CNAME',
+  resolveMx: () => 'MX',
+  resolveNaptr: () => 'NAPTR',
+  resolveNs: () => 'NS',
+  resolvePtr: () => 'PTR',
+  resolveSoa: () => 'SOA',
+  resolveSrv: () => 'SRV',
+  resolveTxt: () => 'TXT',
+  reverse: () => 'REVERSE',
+  lookupService: () => 'REVERSE',
+};
 
-/** Node's `(hostname, options?, callback)`; `options.all` answers the list, a number is a family. */
-const wantsAll = (options: unknown): boolean =>
-  typeof options === 'object' && options !== null && 'all' in options && options.all === true;
+type Resolve = (...args: unknown[]) => Promise<unknown>;
 
 /**
- * Patch the three resolvers and return the uninstaller, which puts back exactly what was there.
+ * Patch every resolver and return the uninstaller, which puts back exactly what was there.
  * Assigned through `Reflect.set`: each is a writable data property the types declare a function.
  */
 export function installDnsSeal(gate: DnsGate): () => void {
-  const originalBun = Reflect.get(Bun.dns, 'lookup') as typeof Bun.dns.lookup;
-  const originalNode = Reflect.get(nodeDns, 'lookup') as (...args: unknown[]) => void;
-  const originalPromises = Reflect.get(nodeDns.promises, 'lookup') as (
-    ...args: unknown[]
-  ) => Promise<unknown>;
-
-  const sealedBun = async (hostname: string, options?: unknown): Promise<unknown> => {
-    const verdict = gate(hostname);
+  const originals = new Map<string, unknown>();
+  for (const [name, queryOf] of Object.entries(BUN_QUERIES)) {
+    const original = Reflect.get(Bun.dns, name) as Resolve;
+    originals.set(name, original);
+    const sealed: Resolve = async (...args) => {
+      const query = queryOf(args);
+      const verdict = gate(String(args[0]), query);
+      if ('refused' in verdict) throw verdict.refused;
+      if ('answer' in verdict) return shaped(query, verdict.answer);
+      return Reflect.apply(original, Bun.dns, args);
+    };
+    Reflect.set(Bun.dns, name, sealed);
+  }
+  // `prefetch` is synchronous and answers nothing: a mocked name has nothing to warm, and an
+  // unmocked one throws here rather than hide the egress until the dial that follows it.
+  const originalPrefetch = Reflect.get(Bun.dns, 'prefetch') as (...args: unknown[]) => void;
+  originals.set('prefetch', originalPrefetch);
+  Reflect.set(Bun.dns, 'prefetch', (...args: unknown[]): void => {
+    const verdict = gate(String(args[0]), 'LOOKUP');
     if ('refused' in verdict) throw verdict.refused;
-    if ('answer' in verdict) return entriesOf(verdict.answer).map((one) => ({ ...one, ttl: 0 }));
-    return Reflect.apply(originalBun, Bun.dns, [hostname, options]);
-  };
-
-  const sealedNode = (hostname: string, ...rest: unknown[]): void => {
-    const verdict = gate(hostname);
-    if ('real' in verdict) {
-      Reflect.apply(originalNode, nodeDns, [hostname, ...rest]);
-      return;
-    }
-    const callback = rest.findLast((one) => typeof one === 'function') as NodeCallback | undefined;
-    const options = rest.length > 1 ? rest[0] : undefined;
-    // A real lookup answers on a later tick, and a caller may rely on it: never synchronously.
-    queueMicrotask(() => {
-      if ('refused' in verdict) return callback?.(verdict.refused);
-      const entries = entriesOf(verdict.answer);
-      if (wantsAll(options)) return callback?.(null, entries);
-      return callback?.(null, entries[0]?.address, entries[0]?.family);
-    });
-  };
-
-  const sealedPromises = async (hostname: string, options?: unknown): Promise<unknown> => {
-    const verdict = gate(hostname);
-    if ('refused' in verdict) throw verdict.refused;
-    if ('real' in verdict) {
-      return Reflect.apply(originalPromises, nodeDns.promises, [hostname, options]);
-    }
-    const entries = entriesOf(verdict.answer);
-    return wantsAll(options) ? entries : entries[0];
-  };
-
-  Reflect.set(Bun.dns, 'lookup', sealedBun);
-  Reflect.set(nodeDns, 'lookup', sealedNode);
-  Reflect.set(nodeDns.promises, 'lookup', sealedPromises);
+    if ('real' in verdict) Reflect.apply(originalPrefetch, Bun.dns, args);
+  });
+  const restoreResolver = installResolverSeal(gate);
   return () => {
-    Reflect.set(Bun.dns, 'lookup', originalBun);
-    Reflect.set(nodeDns, 'lookup', originalNode);
-    Reflect.set(nodeDns.promises, 'lookup', originalPromises);
+    for (const [name, original] of originals) Reflect.set(Bun.dns, name, original);
+    restoreResolver();
   };
 }

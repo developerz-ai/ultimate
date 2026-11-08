@@ -150,6 +150,25 @@ registerErrorCodes(
 // No `docs:` below: `UltimateError` fills core's `ERROR_DOCS_URL`, one page per code set (a wiki
 // TABLE ROW has no anchor; per-code links answered 404 until 9.x). Restating it here would drift.
 
+/** Which dial refused, and so which repair: `dns-record` is a query no mock answers (an MX, a TXT,
+ *  a reverse lookup), so its fix opens with the one line that lifts it. */
+export type SealedTransport = 'fetch' | 'socket' | 'dns' | 'dns-record';
+
+const sealedFix = (url: string, transport: SealedTransport): string => {
+  const host = hostOf(url);
+  const allow = `allowHost('${host}') if it must be real`;
+  switch (transport) {
+    case 'socket':
+      return `allowHost('${host}')   # only if it must be real — otherwise inject the transport: pass the code under test its \`connect\`/\`client\` option, or dial a Bun.listen server on 127.0.0.1 (loopback is never sealed)`;
+    case 'dns':
+      return `mockFetch('https://${host}/*', () => new Response('{}'))   # a mocked host resolves — or ${allow}`;
+    case 'dns-record':
+      return `allowHost('${host}')   # only if it must be real — a mockFetch route answers an address lookup, never this record or a reverse lookup: inject the resolver into the code under test otherwise`;
+    case 'fetch':
+      return `mockFetch('${url}', () => new Response('{}')) — or ${allow}`;
+  }
+};
+
 /**
  * A test reached the network without a mock or an allowlist entry. Always a bug, never a flake.
  * `transport` picks the repair: a `fetch` is mocked, a socket (`WebSocket`, `Bun.connect`) has no
@@ -160,21 +179,14 @@ export class NetworkSealedError extends UltimateError {
     url: string;
     method: string;
     allowed: readonly string[];
-    transport?: 'fetch' | 'socket' | 'dns' | undefined;
+    transport?: SealedTransport | undefined;
   }) {
-    const allowCall = `allowHost('${hostOf(input.url)}')`;
-    const allow = `${allowCall} if it must be real`;
     super({
       code: 'X_TEST_NETWORK_SEALED',
       cause: `${input.method} ${input.url} was not mocked (allowed hosts: ${
         input.allowed.length > 0 ? input.allowed.join(', ') : 'none'
       })`,
-      fix:
-        input.transport === 'socket'
-          ? `${allowCall}   # only if it must be real — otherwise inject the transport: pass the code under test its \`connect\`/\`client\` option, or dial a Bun.listen server on 127.0.0.1 (loopback is never sealed)`
-          : input.transport === 'dns'
-            ? `mockFetch('https://${hostOf(input.url)}/*', () => new Response('{}'))   # a mocked host resolves — or ${allow}`
-            : `mockFetch('${input.url}', () => new Response('{}')) — or ${allow}`,
+      fix: sealedFix(input.url, input.transport ?? 'fetch'),
     });
   }
 }

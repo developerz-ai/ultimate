@@ -248,7 +248,8 @@ export async function backfillPass<Row>(
               //
               // The signal is the run's cancellation composed with this step's ceiling, so a cancelled
               // pass unwinds out of the wait instead of sitting in a timer nobody is waiting for.
-              await pace.wait({ signal, step: stepName });
+              // The clock is the run's, so a pass under a frozen one waits on it, never in real time.
+              await pace.wait({ signal, step: stepName, clock: args.ctx.clock });
               // A backfill visits every row once, in key order: the scan is the point, and the query-plan
               // sweep is told so rather than asked to index a column no read filters on.
               const page = await expectedSeqScan(BACKFILL_SCAN, () => reader.read(cursor, signal));

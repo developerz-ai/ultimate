@@ -48,7 +48,12 @@ permission, and it is on the audit log.
 
 The dashboard has **no session of its own** — it reads the actor the app already resolved for the
 request. Every mutation and every denial is written to the audit log with a before/after diff.
-Its MCP surface exposes exactly the tools that actor could have clicked, with the same policies.
+Its MCP surface exposes exactly the tools that actor could have clicked, with the same policies:
+`mcp.ts` mounts `adminMcp({ app: admin, path: '/admin/mcp', include: 'exposed', actor })` beside the
+web's `/mcp`, behind the same `resolveAgentToken` (`apps/web/app/auth/agent-token.ts`) — an issued
+key, held to its `admin:*` scopes, or under `x dev` from this machine `Bearer dev-agent.<role>`:
+`dev-agent.admin` sees no write tool, `dev-agent.operator` sees them. No token is a 401. Built in
+`mcp.ts`, never under `app/`: the scan evaluates it after every primitive registered.
 
 ## Commands
 

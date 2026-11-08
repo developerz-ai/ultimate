@@ -1,9 +1,9 @@
 # @postly/admin
 
-The admin dashboard, in one file: `app/admin/admin.ts` declares it with `defineAdmin` and projects
-it for agents with `adminMcp`. `app/admin/admin.test.ts` proves it constructs against this app's
-real entities and actions, that the role map opens it, and that the run console's operator view
-does what it declares.
+The admin dashboard: `app/admin/admin.ts` declares it with `defineAdmin`, and `mcp.ts` projects it
+for agents with `adminMcp` at `POST /admin/mcp`. `app/admin/admin.test.ts` proves it constructs
+against this app's real entities and actions, that the role map opens it, and that the run
+console's operator view does what it declares; `mcp.test.ts` that the agent surface is mounted.
 
 **Mounted** — `x dev` and the container serve every screen under `/admin`, because the app scan
 evaluates `apps/admin/app/**` and `defineAdmin` registers what it declares. There is no page file.
@@ -30,8 +30,17 @@ A toolbar action whose policy carries no permission, or more than one, throws
 
 ## The agent surface
 
-`adminMcp({ app: admin, actor })` projects the same dashboard as MCP tools, answered per caller —
-a tool the actor may not use is absent from `tools/list`, and a direct call answers not-found:
+`mcp.ts` — `adminMcp({ app: admin, path: '/admin/mcp', include: 'exposed', actor })` — projects the
+same dashboard as MCP tools, plus the app's exposed actions and queries, mounted beside the web's
+`/mcp` because the mount serves every `apps/<app>/mcp.ts`. Built there and never under `app/`: the
+scan evaluates it after every primitive registered (`X_MCP_INCLUDE_EARLY` otherwise). Who calls it
+is `resolveAgentToken` (`apps/web/app/auth/agent-token.ts`, as `x new` writes it): an issued API key
+in every environment, held to its `admin:*` scopes — no org key scope is one, so an org key is
+answered an empty dashboard — and, under `x dev` from this machine alone,
+`Authorization: Bearer dev-agent.<role>`, an agent holding that role in the demo org
+(`dev-agent.owner` sees every tool, `dev-agent.reader` none of the writes). No token, or one this
+process does not honour, is a 401. Answered per caller — a tool the actor may
+not use is absent from `tools/list`, and a direct call answers not-found:
 
 | Tools | For |
 |---|---|
