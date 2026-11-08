@@ -30,6 +30,8 @@ export interface AdminToolField {
    * column's value is an array, an object, a scalar or `null` by its own schema, never "object".
    */
   readonly schema?: WireJsonSchema;
+  /** The column takes SQL NULL: the argument admits `null` beside its type (`mcp.ts`). */
+  readonly nullable?: true;
 }
 
 export interface AdminMcpTool {
@@ -90,15 +92,22 @@ const actionDescription = (action: AdminAction): string =>
       : ` Pass ids: [...] to run it once per row; the answer counts done, refused and failed${action.destructive === true ? ', and confirmation is "<entity>:<n> rows"' : ''}.`,
   ].join('');
 
-/** Every form field; a `json` one carries its column's value schema, `{}` (any) where none exists. */
+/**
+ * Every form field, with what its column says beyond the type: a `json` one its value schema (`{}`,
+ * any, where none exists), a nullable one that it takes `null` — the form's empty box, over MCP.
+ */
 const formFields = (resource: AdminResource): readonly AdminToolField[] => {
   const facts = new Map(adminColumnsOf(resource.entity).map((column) => [column.name, column]));
-  return resource.formFields.map((field) => ({
-    name: field.name,
-    type: field.type,
-    required: field.required,
-    ...(field.type === 'json' ? { schema: facts.get(field.name)?.valueSchema ?? {} } : {}),
-  }));
+  return resource.formFields.map((field) => {
+    const column = facts.get(field.name);
+    return {
+      name: field.name,
+      type: field.type,
+      required: field.required,
+      ...(field.type === 'json' ? { schema: column?.valueSchema ?? {} } : {}),
+      ...(column?.nullable === true ? { nullable: true as const } : {}),
+    };
+  });
 };
 
 /**

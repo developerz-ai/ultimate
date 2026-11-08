@@ -23,7 +23,12 @@ import type { AdminActor } from './authz';
 import type { AdminFieldType } from './fields';
 import { callAdminTool } from './mcp-dispatch';
 import { adminTokenScopes, adminToolScopes, includedToolScopes } from './mcp-scopes';
-import { type AdminMcpTool, adminMcpTools, adminToolCatalog } from './mcp-tools';
+import {
+  type AdminMcpTool,
+  type AdminToolField,
+  adminMcpTools,
+  adminToolCatalog,
+} from './mcp-tools';
 
 /**
  * What a session token resolves to: the actor, and optionally the admin scopes the TOKEN was
@@ -88,13 +93,30 @@ const JSON_TYPE: Readonly<Record<AdminFieldType, NonNullable<JsonSchema['type']>
  * exactly the arguments the action needs; a made-up field list would describe a contract nobody
  * validates against. Open lets the action's own validation be the one that decides.
  */
+const NULL_SCHEMA: JsonSchema = { type: 'null' };
+
+/** `{}` admits anything; otherwise only a `null` type or a `null` branch says so. */
+const admitsNull = (schema: JsonSchema): boolean =>
+  Object.keys(schema).length === 0 ||
+  schema.type === 'null' ||
+  (schema.anyOf?.some((branch) => branch.type === 'null') ?? false);
+
+/**
+ * One argument. A field's own schema first — `JSON_TYPE` is the kind's scalar, and a `json()`
+ * column's value is whatever its schema says, where a blanket `object` refused every array and
+ * every JSON `null`. A nullable column takes `null` beside it, which the server's argument check
+ * otherwise refused before the entity was asked.
+ */
+const argumentSchema = (field: AdminToolField): JsonSchema => {
+  const value = field.schema ?? { type: JSON_TYPE[field.type] };
+  return field.nullable === true && !admitsNull(value) ? { anyOf: [value, NULL_SCHEMA] } : value;
+};
+
 const inputSchema = (tool: AdminMcpTool): JsonSchema => ({
   type: 'object',
   properties: Object.fromEntries(
     tool.input.map((field) => {
-      // A field's own schema first: `JSON_TYPE` is the kind's scalar, and a `json()` column's value
-      // is whatever its schema says — a blanket `object` refused every array and every `null`.
-      const one = field.schema ?? { type: JSON_TYPE[field.type] };
+      const one = argumentSchema(field);
       return [field.name, field.list === true ? { type: 'array', items: one } : one];
     }),
   ),

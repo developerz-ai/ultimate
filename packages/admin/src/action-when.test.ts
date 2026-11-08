@@ -30,7 +30,7 @@ import type { AdminRouteResponse } from './screen-frame';
 const { renderComponent } = await import('@ultimat3/render/server');
 const { defineAdmin } = await import('./admin');
 const { adminRouteMatch } = await import('./routes');
-const { callAdminTool } = await import('./mcp');
+const { callAdminTool } = await import('./mcp-dispatch');
 const { adminToolCatalog } = await import('./mcp-tools');
 
 const KEY_ENV = 'ULTIMATE_SECRETS_KEY';

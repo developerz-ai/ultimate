@@ -36,7 +36,7 @@ export interface AdminColumnFacts {
   /**
    * What a `json()` or `arrayOf()` value is, as JSON Schema: the column's own schema, so an MCP
    * argument is typed by the one judge of the value. `{}` (any) where none can be derived. Absent
-   * on every other kind, whose scalar type the field type already says.
+   * on every other kind, whose scalar type the field type already says. SQL NULL is `nullable`.
    */
   readonly valueSchema?: WireJsonSchema;
 }
@@ -69,14 +69,6 @@ const referencesOf = (entity: AdminEntity): ReadonlyMap<string, AdminColumnRefer
   return out;
 };
 
-const NULL_SCHEMA: WireJsonSchema = { type: 'null' };
-
-/** `{}` admits anything; otherwise only a `null` type or a `null` branch says so. */
-const admitsNull = (schema: WireJsonSchema): boolean =>
-  Object.keys(schema).length === 0 ||
-  schema.type === 'null' ||
-  (schema.anyOf?.some((branch) => branch.type === 'null') ?? false);
-
 /**
  * The declared schema as a tool argument, or `{}` when it cannot be said (`X_SCHEMA_UNSUPPORTED`)
  * — permissive, so the entity's own parse still judges the value. Any other throw is a defect.
@@ -91,12 +83,10 @@ const declaredSchema = (schema: unknown): WireJsonSchema => {
   }
 };
 
-/** A nullable column also takes SQL NULL, whatever its schema says of the JSON `null`. */
+/** The VALUE's shape; whether the column also takes SQL NULL is `nullable`, beside it. */
 const valueSchemaOf = (meta: AdminColumnMeta): WireJsonSchema | undefined => {
   if (meta.kind !== 'jsonb' && meta.kind !== 'array') return undefined;
-  const value: WireJsonSchema =
-    meta.kind === 'array' ? { type: 'array' } : declaredSchema(meta.schema);
-  return meta.notNull || admitsNull(value) ? value : { anyOf: [value, NULL_SCHEMA] };
+  return meta.kind === 'array' ? { type: 'array' } : declaredSchema(meta.schema);
 };
 
 const factsFor = (

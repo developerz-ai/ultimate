@@ -23,7 +23,7 @@ import type { AdminResource } from './resource';
 const { defineAdmin } = await import('./admin');
 const { MAX_BATCH_ROWS, batchConfirmationToken, runAdminBatch } = await import('./batch');
 const { ADMIN_BATCH_JOB, runBatchChunk } = await import('./batch-job');
-const { callAdminTool } = await import('./mcp');
+const { callAdminTool } = await import('./mcp-dispatch');
 
 const items = entity('admin_batch_items', {
   columns: {
