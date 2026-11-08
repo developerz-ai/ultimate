@@ -1,11 +1,6 @@
 // The X_* codes owned by @ultimat3/testing. A test failure has to be as actionable as a runtime
 // failure — the fix line here is the mock to add, the service to start, or the seed to freeze.
-import {
-  registerErrorCodes,
-  renderCauseValue,
-  renderFixLiteral,
-  UltimateError,
-} from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 // `X_TEST_REGISTRY_LEAK` is declared below, in this registry; its message lives beside it.
 export { RegistryLeakError } from './registry-leak-error';
