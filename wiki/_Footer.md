@@ -5,7 +5,7 @@
   them. No heading, deliberately. Reported 2026-08; rejected on those grounds.
 -->
 
-**Ultimate** — v30.7.0 `As of 2026-10`. The full-stack framework where the primary developer is an AI agent: `bunx create-ultimate myapp` → [Getting started](Getting-Started) · [live demo](https://social-media.ultimate.demo.developerz.ai). MIT licensed. What npm serves is `npm view @ultimat3/core version`, never this line, and this footer is the only page that stamps a version.
+**Ultimate** — v30.8.0 `As of 2026-10`. The full-stack framework where the primary developer is an AI agent: `bunx create-ultimate myapp` → [Getting started](Getting-Started) · [live demo](https://social-media.ultimate.demo.developerz.ai). MIT licensed. What npm serves is `npm view @ultimat3/core version`, never this line, and this footer is the only page that stamps a version.
 
 [Repository](https://github.com/developerz-ai/ultimate) · [Issues](https://github.com/developerz-ai/ultimate/issues) · [Changelog](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) · [llms.txt](https://github.com/developerz-ai/ultimate/blob/main/llms.txt)
 
