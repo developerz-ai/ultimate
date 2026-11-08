@@ -94,4 +94,6 @@ export const HTTP_ERROR_STATUS = {
   X_MCP_IDEMPOTENCY_KEY_SHADOWED: 500,
   X_ROUTE_POST_INVALID: 500,
   X_ROUTE_NAVIGATION_INVALID: 500,
+  // @ultimat3/http — an exercise entry's request is not one a browser could send
+  X_EXERCISE_REQUEST_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

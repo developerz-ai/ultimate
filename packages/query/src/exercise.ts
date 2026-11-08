@@ -18,7 +18,8 @@ import {
   tryUseContext,
   UltimateError,
 } from '@ultimat3/core';
-import { statusFor, withScratchRateLimitStore } from '@ultimat3/http';
+import type { ExerciseRequestOption } from '@ultimat3/http';
+import { statusFor, withRequestAs, withScratchRateLimitStore } from '@ultimat3/http';
 import { admitsAnonymous } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { validateAsync } from '@ultimat3/schema';
@@ -38,6 +39,8 @@ export interface QueryExerciseActorOptions {
   readonly actor?: Actor | null | undefined;
   readonly input?: (drawn: DrawnInput) => unknown;
   readonly runs?: number;
+  /** What each run's request carries in; the read then runs inside it (action's `request`). */
+  readonly request?: ExerciseRequestOption;
 }
 
 export interface QueryExerciseOffOptions {
@@ -93,13 +96,16 @@ export async function exerciseQuery(
       bind: bindDrawn(options.input),
       accepts: (input) => accepts(target.input, input),
       attempt: async (input) => {
+        const { request } = options;
         try {
-          const source = await sourceFor(target, input, {
-            ctx: base,
-            actor,
-            surface: 'http',
-          });
-          await source.execute();
+          // On a declared request the reader is ON it, so `sourceFor` takes no actor.
+          if (request === undefined) {
+            await (await sourceFor(target, input, { ctx: base, actor, surface: 'http' })).execute();
+          } else {
+            await withRequestAs(name, actor, request, async () => {
+              await (await sourceFor(target, input, { surface: 'http' })).execute();
+            });
+          }
           return { ok: true, reached: true };
         } catch (error) {
           return { ok: false, reached: !beforeSql(error), error };

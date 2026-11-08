@@ -21,9 +21,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `trustedProxyHops`, `rateLimit.scope`) is a type error where an app writes it. `mergeHttpConfig`
   merges `security.csp.extend` per directive. `type-pins.ts` refuses a key on `HttpConfig` missing
   from `HttpConfigInput`.
-- **No drain deadline here**: `drain.deadlineMs` is the one budget (core, per role). Key
-  `drainTimeoutMs` (deleted 25.0.0) is `X_CONFIG_INVALID` via `refuseDeletedHttpKeys`.
-  **`ServerOptions.drain`** passes only `readinessGraceMs`, and only when declared.
+- **No drain deadline here**: `drain.deadlineMs` is the one budget (core, per role); the deleted
+  key and `ServerOptions.drain`: `docs/history/http.md#no-drain-deadline`.
 - **`cors.origins: ['*']` with `credentials: true`, or `'null'` in the list, is `X_CORS_CONFIG_INVALID`.** A refused origin
   still gets `vary: origin`.
 - **`DEFAULT_CORS` is what `clientTransport` sends and reads**, off core's constants; `cors.test.ts` observes the transport's real traffic, so a new header fails it. `date` alone stays hidden: this server writes delta-seconds. An app's list replaces the default whole.
@@ -219,8 +218,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `context.ts` | `RequestContext` (core's `Ctx` plus the request's own), composed from `ctxOf`, the single `Ctx` adapter (`asCtx`) and the inbound-header readers |
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `set-cookie.ts` | `setCookie`/`deleteCookie`: one line each onto `ctx.headers` |
-| `object-response.ts` | `objectResponse`, the one answer for an object held elsewhere, structural (no storage import); `notModified`, the one `if-none-match` answer |
-| `stored-object-headers.ts` | inline only for raster images, audio, video; else `attachment` + `sandbox`. Private to `objectResponse` |
+| `object-response.ts` | `objectResponse`: an object held elsewhere, structural; `notModified`: the `if-none-match` answer |
+| `stored-object-headers.ts` | inline only for raster images, audio, video; else `attachment` + `sandbox` (private) |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor — and the review of a declared one (`reviewedHint`) |
 | `error-log-level.ts` | the level of the `error-map` stage's one line: `error` for 5xx, `warn` for 401/403/429, `info` for the rest |
@@ -245,6 +244,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
 | `compress.ts` | the `compress` stage's rule: which answers leave gzipped |
 | `compress-read.ts` | the one body read that rule does: counted, deadline-bound, replayable |
+| `request-as.ts` | `withRequestAs`: an exercise entry's `request` (cookies, headers) as an inbound request, for `x exercise` and the contract step |
 
 ## Commands
 

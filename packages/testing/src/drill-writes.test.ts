@@ -69,6 +69,22 @@ describe('drillWriteTargets', () => {
     expect((await input['~standard'].validate(drawn)).issues).toBeUndefined();
   });
 
+  test("an 'action:'-qualified entry is the drill's too, over the bare name", async () => {
+    const writes = await drillWriteTargets({
+      actions: [candidate({}), candidate({ name: 'endSession' })],
+      overrides: defineExercise({
+        contactSales: { actor: null, input: (drawn) => ({ ...drawn, message: 'bare' }) },
+        'action:contactSales': { actor: null, input: (drawn) => ({ ...drawn, message: 'own' }) },
+        'action:endSession': { off: 'sets a cookie' },
+      }),
+      sampler: { arbitrary: () => ({ email: 'a@example.test', message: 'drawn' }) },
+    });
+    expect(writes.targets[0]?.draw?.(1)).toEqual({ email: 'a@example.test', message: 'own' });
+    expect(writes.skipped).toEqual([
+      { name: 'endSession', reason: 'exercise.ts turns it off: sets a cookie' },
+    ]);
+  });
+
   test("an anonymous override's input binds into every draw", async () => {
     const writes = await drillWriteTargets({
       actions: [candidate({})],

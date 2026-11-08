@@ -245,4 +245,37 @@ describe('unit · planFindings', () => {
     );
     expect(mixed?.index).toEqual(['orgId', 'createdAt']);
   });
+
+  test('a whole read a keyed side probes by a declared index is served; by none it names it', () => {
+    const statement =
+      'select m.id from psf_members m join psf_posts p on p.rank = m.handle where m.org_id = $1';
+    const probed = (probes: string[], equality = probes) =>
+      planFindings(
+        statement,
+        [verdict({ node: 'Index Scan', alias: 'p', equality, probes })],
+        byTable,
+      );
+    // `rank` leads a declared index: the planner had the probe and walked on cost alone.
+    expect(probed(['rank'])).toEqual([]);
+    // The primary key is declared too.
+    expect(probed(['id'])).toEqual([]);
+    // `score` leads none: still red, and the probe column is the fix.
+    expect(probed(['score']).map((one) => one.index)).toEqual([['score']]);
+    // `created_at` leads only a PARTIAL index: no probe the planner may always take.
+    expect(probed(['created_at']).map((one) => one.index)).toEqual([['createdAt']]);
+    // `handle` is held only second, in `(org_id, handle)`: no index a probe by it can seek.
+    const second = planFindings(
+      `${statement} and deleted_at is null`,
+      [
+        verdict({
+          table: 'psf_members',
+          node: 'Index Scan',
+          equality: ['handle'],
+          probes: ['handle'],
+        }),
+      ],
+      byTable,
+    );
+    expect(second.map((one) => one.index)).toEqual([['handle']]);
+  });
 });

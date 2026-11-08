@@ -184,6 +184,21 @@ describe(testName('unit', 'tenant proof legs'), () => {
     }
   });
 
+  test("only a tenant: 'none' job handed nothing of A's leaks as an undeclared sweep", async () => {
+    // The flag picks the fix: `crossTenant()` for a job with no org to scope to, else the scoped
+    // repository. A scoped job's run has the enqueuer's org; a job handed A's id chose A's row.
+    const leak = { path: 'effect.enqueue[0]', value: { input: { orgId: FILE } } };
+    const answers = { before: { output: null, payloads: [leak] } };
+    const nightly = { runDate: '2026-01-01' };
+    const sweeps = async (options: Parameters<typeof harness>[0]) => {
+      const proof = (await proveTenant(harness({ sweep: true, answers, ...options }).plan)).tenant;
+      return proof?.verdict === 'crossed' ? proof.findings.map((one) => one.sweep) : undefined;
+    };
+    expect(await sweeps({ tenantless: true, input: nightly })).toEqual([true]);
+    expect(await sweeps({ input: nightly })).toEqual([undefined]);
+    expect(await sweeps({ tenantless: true })).toEqual([undefined]);
+  });
+
   test('a declared sweep skips the read half only: a crossed write still crosses', async () => {
     const { plan } = harness({
       sweep: true,

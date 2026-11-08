@@ -51,6 +51,21 @@ describe('.contract({ exercise }) with the app declarations', () => {
     expect(new Set(seen)).toEqual(new Set([reader.id]));
   });
 
+  test("a kind-qualified entry is the query's, and wins over the bare name", async () => {
+    const seen: string[] = [];
+    const nobody = { ...userActor({ id: 'nobody' }), permissions: [] };
+    const exercise = declared({
+      qualifiedFeed: { actor: nobody },
+      'query:qualifiedFeed': { actor: reader },
+    });
+    await only(feed('qualifiedFeed', seen).contract({ exercise })).run();
+    expect(new Set(seen)).toEqual(new Set([reader.id]));
+    const alone = declared({ 'query:qualifiedFeed': { off: 'qualified' } });
+    expect(only(feed('qualifiedFeed', []).contract({ exercise: alone })).name).toBe(
+      'qualifiedFeed: read exercise off: qualified',
+    );
+  });
+
   test('an entry turned off is listed with its reason', () => {
     const exercise = declared({ offFeed: { off: 'a vendor index' } });
     expect(only(feed('offFeed', []).contract({ exercise })).name).toBe(

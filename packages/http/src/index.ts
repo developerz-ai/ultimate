@@ -201,6 +201,8 @@ export { RATE_LIMIT_STORE_DEADLINE_MS } from './rate-limit-store-deadline';
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
 export { UltimateRequest } from './request';
+export type { ExerciseRequest, ExerciseRequestOption } from './request-as';
+export { withRequestAs } from './request-as';
 export type { RequestFacts, RequestFactsInput } from './request-facts';
 export { requestFacts } from './request-facts';
 export type { CacheHint, RedirectIntent, RedirectStatus } from './response';

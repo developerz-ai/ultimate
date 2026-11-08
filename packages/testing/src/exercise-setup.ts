@@ -1,6 +1,7 @@
 // `defineExercise(…, { setup })`, run: the app's hook inside the pass's sealed room, before the
 // first row is seeded, disposed before the room restores the network. What it installs — a
 // `mockFetch` route, a `cassette()` — answers a vendor call; `allowHost` would send one for real.
+// Several hooks (one per feature group) run in order and are undone in reverse.
 
 import { renderCauseValue, UltimateError } from '@ultimat3/core';
 import type { ExerciseRoom } from './exercise-report';
@@ -35,30 +36,46 @@ async function release(handle: unknown): Promise<void> {
 }
 
 /**
- * `room` with `setup` run inside it. Its dispose releases what setup returned FIRST — a cassette's
- * own check reads the routes the pass used — then the room. A setup that throws, or lets a host
- * through, disposes both before the pass refuses.
+ * Every handle released, last first, and then the room — each whatever the one before it threw;
+ * the first throw is what the caller sees, once nothing is left installed.
+ */
+async function releaseAll(handles: readonly unknown[], room: ExerciseRoom): Promise<void> {
+  let failed = false;
+  let first: unknown;
+  for (const handle of [...handles].reverse()) {
+    try {
+      await release(handle);
+    } catch (error) {
+      if (!failed) first = error;
+      failed = true;
+    }
+  }
+  await room[Symbol.asyncDispose]();
+  if (failed) throw first;
+}
+
+/**
+ * `room` with each setup run inside it, in order. Its dispose releases what they returned FIRST,
+ * in reverse — a cassette's own check reads the routes the pass used — then the room. A setup that
+ * throws disposes those that already ran and the room; one that lets a host through, all of them.
  */
 export async function withExerciseSetup(
   room: ExerciseRoom,
-  setup: ExerciseSetup | undefined,
+  setup: ExerciseSetup | readonly ExerciseSetup[] | undefined,
 ): Promise<ExerciseRoom> {
-  if (setup === undefined) return room;
+  const setups = setup === undefined ? [] : typeof setup === 'function' ? [setup] : setup;
+  if (setups.length === 0) return room;
   const before = new Set(captureNetwork().allowed);
-  let handle: unknown;
-  try {
-    handle = await setup();
-  } catch (error) {
-    await room[Symbol.asyncDispose]();
-    throw error;
-  }
-  const dispose = async (): Promise<void> => {
+  const handles: unknown[] = [];
+  for (const one of setups) {
     try {
-      await release(handle);
-    } finally {
-      await room[Symbol.asyncDispose]();
+      handles.push(await one());
+    } catch (error) {
+      await releaseAll(handles, room);
+      throw error;
     }
-  };
+  }
+  const dispose = (): Promise<void> => releaseAll(handles, room);
   const opened = captureNetwork().allowed.filter((host) => !before.has(host));
   if (opened.length > 0) {
     await dispose();

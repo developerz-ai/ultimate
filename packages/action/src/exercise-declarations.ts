@@ -23,11 +23,15 @@ export type ContractExercise = ExerciseOptions | ExerciseDeclarations;
 export const isExerciseDeclarations = (value: ContractExercise): value is ExerciseDeclarations =>
   'kind' in value && value.kind === 'exercise-overrides';
 
-/** The entry `name` reads: the declarations' own, or the inline one. `undefined` when none. */
+/**
+ * The entry `name` reads: the declarations' own, or the inline one. `undefined` when none. An
+ * `'action:<name>'` key wins over the bare name — the one `x exercise` reads for an action whose
+ * name a job shares (`@ultimat3/testing`'s `overrideFor`; query's twin keeps the same rule).
+ */
 export function resolveExercise(
   name: string,
   exercise: ContractExercise | undefined,
 ): ExerciseOptions | undefined {
   if (exercise === undefined || !isExerciseDeclarations(exercise)) return exercise;
-  return exercise.entries.get(name);
+  return exercise.entries.get(`action:${name}`) ?? exercise.entries.get(name);
 }

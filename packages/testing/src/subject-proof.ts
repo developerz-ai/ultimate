@@ -25,6 +25,11 @@ export interface SubjectProofOptions {
   readonly seed?: number;
   /** `defineExercise`'s factories: a table only they satisfy is built by them for the proof too. */
   readonly factories?: Readonly<Record<string, SeedFactory>> | undefined;
+  /**
+   * The graph already written to this database — the previous subject's `graph`. Row positions
+   * continue past it, so a factory value built from the index never repeats one on a unique column.
+   */
+  readonly beside?: SeedGraph | undefined;
 }
 
 export interface SubjectProofResult {
@@ -32,6 +37,8 @@ export interface SubjectProofResult {
   /** The person erased, by key; absent when the plan refused before a row was seeded. */
   readonly key?: string;
   readonly problems: readonly UltimateError[];
+  /** What it wrote: the next proof on the same database is seeded `beside` it. */
+  readonly graph?: SeedGraph;
 }
 
 interface Reached {
@@ -111,6 +118,7 @@ export async function subjectProof<I>(
     seed: finiteOption('subjectProof', 'seed', options.seed ?? 1),
     tenants: 2,
     ...(options.factories === undefined ? {} : { factories: options.factories }),
+    ...(options.beside === undefined ? {} : { beside: options.beside }),
   });
   // The pass's rule: a nullable cycle key the database refuses to set stays null.
   await insertSeedGraph(graph, deferredMayStayNull(options.writer));
@@ -119,7 +127,9 @@ export async function subjectProof<I>(
     (i) => i.entity === subject.entity && (i.tenant === tenant || i.tenant === null),
   );
   const root = entities.get(subject.entity);
-  if (person === undefined || root === undefined) return { subject: subject.entity, problems: [] };
+  if (person === undefined || root === undefined) {
+    return { subject: subject.entity, problems: [], graph };
+  }
   const key = String(person.row[plan.key]);
   const reached = reachedRows(graph, plan, entities, person.row);
 
@@ -181,5 +191,5 @@ export async function subjectProof<I>(
       }
     }
   }
-  return { subject: subject.entity, key, problems: found };
+  return { subject: subject.entity, key, problems: found, graph };
 }

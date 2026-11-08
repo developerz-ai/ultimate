@@ -4,9 +4,16 @@
 // computed from the pass's own state, by one mechanism and no per-primitive case.
 
 import type { Actor } from '@ultimat3/core';
-import { bindDrawn } from '@ultimat3/core';
+import {
+  bindDrawn,
+  isUltimateError,
+  renderExerciseKey,
+  renderFixShellArg,
+  renderThrowable,
+} from '@ultimat3/core';
 import type { ExerciseOverride } from './define-exercise';
 import { withExerciseRequest } from './exercise-request';
+import { testJobs } from './fixture-jobs';
 
 /** `(drawn, actor) => input`, or `undefined` when the override binds nothing. */
 export type OverrideInput = (drawn: unknown, actor: Actor | null) => Promise<unknown>;
@@ -18,13 +25,35 @@ export function overrideInput(
   // Any entry but `off` may bind: `{ input }` alone keeps the pass's own actor and still binds.
   const bind = bindDrawn(override === undefined || 'off' in override ? undefined : override.input);
   if (bind === undefined) return undefined;
-  const declared = override === undefined || 'off' in override ? undefined : override.actor;
-  return async (drawn, actor) =>
-    rehomed(
-      await withExerciseRequest(name, actor, async () => bind(drawn)),
+  const entry = override === undefined || 'off' in override ? undefined : override;
+  const declared = entry?.actor;
+  // The entry's own request: the binder sees the cookies and headers the call itself will.
+  return async (drawn, actor) => {
+    // A queue of its own, as every call gets one: app code that enqueues has a driver, and what it
+    // queued is the input's, never counted as the primitive's enqueue.
+    await using _jobs = await testJobs();
+    return rehomed(
+      await withExerciseRequest(name, actor, async () => bind(drawn), entry?.request),
       declared?.orgId,
       actor?.orgId,
     );
+  };
+}
+
+/**
+ * What an entry's input that THREW makes of its primitive's record: unreached, under the throw's
+ * own code (an uncoded one is `X_EXERCISE_INPUT_THREW`), and a fix naming the entry. Never a
+ * defect: the throw is the app's exercise.ts, and blaming the handler sends the author elsewhere.
+ * `key` is the entry's key as it would be written — kind-qualified when a name is shared.
+ */
+export function inputThrew(name: string, key: string, error: unknown) {
+  const coded = isUltimateError(error);
+  return {
+    outcome: 'unreached' as const,
+    code: coded ? error.code : 'X_EXERCISE_INPUT_THREW',
+    reason: `its exercise.ts input threw before the call: ${coded ? error.cause : renderThrowable(error)}`,
+    fix: `x exercise ${renderFixShellArg(name, '<name>')} --json   # after defineExercise({ ${renderExerciseKey(key)}: { input } }) in apps/web/exercise.ts returns a value (it runs as the seated actor, inside the call's request), or { off: '<why>' }`,
+  };
 }
 
 /**

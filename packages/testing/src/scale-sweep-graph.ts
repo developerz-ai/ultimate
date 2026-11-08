@@ -28,12 +28,15 @@ export function scaleGraph(
     readonly seed: number;
     /** The app's `defineExercise` factories: a table only they satisfy is built by them here too. */
     readonly factories?: Readonly<Record<string, SeedFactory>> | undefined;
+    /** The last graph written to the database before this one; `main` when omitted. */
+    readonly beside?: SeedGraph | undefined;
   },
 ): ScaleGraph {
   const sized = seedGraph(Object.fromEntries(entities.map((entity) => [entity.$name, entity])), {
     tenants: 1,
     perTable: options.perTable,
     seed: options.seed,
+    beside: options.beside ?? main,
     ...(options.factories === undefined ? {} : { factories: options.factories }),
   });
   const shared = (graph: SeedGraph) => graph.inserts.filter((insert) => insert.tenant === null);

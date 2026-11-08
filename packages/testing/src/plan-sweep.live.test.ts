@@ -91,7 +91,41 @@ const pswKeysIndexed = entity('psw_keys_indexed', {
   columns: keyColumns(),
   indexes: [{ on: ['emailKey'] }, { on: ['phoneKey'] }],
 });
+/** A person's seat in an org: the side a join keys by its own tenant column. */
+const pswSeats = entity('psw_seats', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid()
+      .tenant()
+      .references(() => pswOrgs.id),
+    userId: uuid(),
+  },
+  indexes: [{ on: ['orgId'] }, { on: ['userId'] }],
+});
+/** Badge columns: a code unique among approved badges only, the partial index the join implies. */
+const badgeColumns = () => ({
+  id: uuid().primaryKey(),
+  userId: uuid(),
+  status: text({ max: 10 }),
+  code: text({ max: 20 }),
+});
+/** Probed per seat by `user_id`, which it indexes. */
+const pswBadges = entity('psw_badges', {
+  columns: badgeColumns(),
+  indexes: [
+    { on: ['code'], unique: true, where: (c) => c.status.eq('approved') },
+    { on: ['userId'] },
+  ],
+});
+/** The same partial index and nothing on `user_id`: no keyed path exists. */
+const pswBadgesBare = entity('psw_badges_bare', {
+  columns: badgeColumns(),
+  indexes: [{ on: ['code'], unique: true, where: (c) => c.status.eq('approved') }],
+});
 const ENTITIES: readonly SeedEntity[] = [
+  pswSeats,
+  pswBadges,
+  pswBadgesBare,
   pswOrgs,
   pswPosts,
   pswRanked,
@@ -120,6 +154,14 @@ const DDL = [
   'create table psw_keys_indexed (id uuid primary key, email_key text not null, phone_key text not null)',
   'create index psw_keys_indexed_email_key_idx on psw_keys_indexed (email_key)',
   'create index psw_keys_indexed_phone_key_idx on psw_keys_indexed (phone_key)',
+  'create table psw_seats (id uuid primary key, org_id uuid not null references psw_orgs (id), user_id uuid not null)',
+  'create index psw_seats_org_id_idx on psw_seats (org_id)',
+  'create index psw_seats_user_id_idx on psw_seats (user_id)',
+  'create table psw_badges (id uuid primary key, user_id uuid not null, status text not null, code text not null)',
+  "create unique index psw_badges_code_key on psw_badges (code) where (status = 'approved')",
+  'create index psw_badges_user_id_idx on psw_badges (user_id)',
+  'create table psw_badges_bare (id uuid primary key, user_id uuid not null, status text not null, code text not null)',
+  "create unique index psw_badges_bare_code_key on psw_badges_bare (code) where (status = 'approved')",
 ];
 const BY_TITLE = 'select "id" from "psw_posts" where "title" = $1';
 const NEWEST = 'select "id" from "psw_posts" where "org_id" = $1 order by "title" limit 20';
@@ -284,6 +326,25 @@ async function proveFixesChangeThePlan(client: DbClient): Promise<void> {
   expect((await sweepPlans(client, limited, ENTITIES)).get('listPosts')?.findings).toEqual([]);
 }
 
+/**
+ * A partial index whose predicate the statement implies looks like one row on an empty table, so
+ * the planner walks all of it beside a join rather than probe per row. The probe exists — the join
+ * key leads a declared index on the side a keyed scan drives — so it is credited; with no index
+ * on the join key it is red and names it.
+ */
+async function proveImpliedPartial(client: DbClient): Promise<void> {
+  const approved = (table: string) =>
+    `select s.id from psw_seats s join ${table} b on b.user_id = s.user_id where s.org_id = $1 and b.status = 'approved'`;
+  const probed = (await sweepPlans(client, sent([approved('psw_badges')]), ENTITIES)).get(
+    'listPosts',
+  );
+  expect(probed).toMatchObject({ planned: 1, findings: [], unplannable: [] });
+  const bare = await sweepPlans(client, sent([approved('psw_badges_bare')]), ENTITIES);
+  expect(shapes(bare.get('listPosts'))).toEqual([
+    ['X_QUERY_UNINDEXED', 'psw_badges_bare', ['userId'], undefined],
+  ]);
+}
+
 afterAll(() => clearRegistry());
 
 describe('live · plan sweep on PGlite', () => {
@@ -293,6 +354,7 @@ describe('live · plan sweep on PGlite', () => {
       await proveOn(client);
       await proveAdvice(client);
       await proveFixesChangeThePlan(client);
+      await proveImpliedPartial(client);
     } finally {
       await client.close();
     }
@@ -311,6 +373,7 @@ describe.skipIf(adminUrl === '')('live · plan sweep on Postgres', () => {
       await proveOn(client);
       await proveAdvice(client);
       await proveFixesChangeThePlan(client);
+      await proveImpliedPartial(client);
     } finally {
       await client.close();
       await admin.execute(raw(`drop database if exists "${database}" with (force)`));

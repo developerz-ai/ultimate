@@ -52,6 +52,11 @@ export interface TenantFinding {
   /** WRITE_CROSSED: the table and the primary key of A's changed row */
   readonly table?: string;
   readonly id?: string;
+  /**
+   * LEAK from a `tenant: 'none'` job handed nothing of A's: a read across every org that opened no
+   * `crossTenant()` scope — its fix is that scope, never a repository scoped to an actor it lacks.
+   */
+  readonly sweep?: true;
 }
 
 /** The tenant proof's verdict on one primitive: B attacked A's rows twice, around A's own call. */

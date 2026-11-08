@@ -52,6 +52,22 @@ describe('.contract({ exercise }) with the app declarations', () => {
     expect(seen).toEqual(Array.from({ length: EXERCISE_RUNS }, () => ADA.id));
   });
 
+  test("a kind-qualified entry is the action's, and wins over the bare name (a job twin's)", async () => {
+    const seen: string[] = [];
+    const target = guarded('qualifiedNote', seen);
+    const nobody = testActor('nobody', { permissions: [] }).actor;
+    const exercise = declared({
+      qualifiedNote: { actor: nobody },
+      'action:qualifiedNote': { actor: ADA },
+    });
+    await fourth(target.contract({ exercise })).run();
+    expect(seen).toEqual(Array.from({ length: EXERCISE_RUNS }, () => ADA.id));
+    const alone = declared({ 'action:qualifiedNote': { off: 'qualified' } });
+    expect(fourth(target.contract({ exercise: alone })).name).toBe(
+      'qualifiedNote: handler exercise off: qualified',
+    );
+  });
+
   test('an entry turned off is listed with its reason', () => {
     const target = guarded('offNote', []);
     const contract = fourth(

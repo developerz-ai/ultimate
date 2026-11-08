@@ -72,4 +72,57 @@ describe(testName('unit', 'tenant proof report'), () => {
     expect(tenantProofFindings([proven, unproven])).toEqual([]);
     expect(JSON.stringify(tenantFindingLines([odd, unproven]))).not.toContain(HANDED);
   });
+
+  test("a tenant: 'none' job's sweep that declared no scope is fixed by crossTenant, never by a scoped repository", () => {
+    const sweep: ExerciseRecord = {
+      ...base,
+      kind: 'job',
+      name: 'expireInvites',
+      tenant: {
+        verdict: 'crossed',
+        findings: [{ code: 'X_TENANT_LEAK', leg: 'before', path: 'output.count', sweep: true }],
+      },
+    };
+    const [finding] = tenantProofFindings([sweep]);
+    expect(finding?.fix).toStartWith('x exercise expireInvites --json');
+    expect(finding?.fix).toContain(
+      "crossTenant('<why expireInvites reads every org>', async () => …)",
+    );
+    expect(finding?.fix).not.toContain('scoped to ctx.actor');
+    // The same leak on a job handed one of A's ids (no `sweep`) is B choosing A's row: scoped.
+    const chosen: ExerciseRecord = {
+      ...sweep,
+      tenant: {
+        verdict: 'crossed',
+        findings: [{ code: 'X_TENANT_LEAK', leg: 'before', path: 'output.count' }],
+      },
+    };
+    expect(tenantProofFindings([chosen])[0]?.fix).toContain('scoped to ctx.actor');
+  });
+
+  test('one leaking leg is one finding naming every field, never one per enqueue per field', () => {
+    const paths = [0, 1, 2].flatMap((i) =>
+      ['orgId', 'userId', 'email'].map((field) => `effect.enqueue[${i}].input.${field}`),
+    );
+    const noisy: ExerciseRecord = {
+      ...base,
+      kind: 'job',
+      name: 'fanOut',
+      tenant: {
+        verdict: 'crossed',
+        findings: (['before', 'after'] as const).flatMap((leg) =>
+          paths.map((path) => ({ code: 'X_TENANT_LEAK' as const, leg, path })),
+        ),
+      },
+    };
+    const findings = tenantProofFindings([noisy]);
+    expect(findings).toHaveLength(2);
+    expect(findings[0]?.cause).toContain(
+      'effect.enqueue[*].input.orgId, effect.enqueue[*].input.userId, effect.enqueue[*].input.email (3 each)',
+    );
+    expect(tenantFindingLines([noisy])).toEqual([
+      'job fanOut · before · X_TENANT_LEAK effect.enqueue[*].input.orgId, effect.enqueue[*].input.userId, effect.enqueue[*].input.email (3 each)',
+      'job fanOut · after · X_TENANT_LEAK effect.enqueue[*].input.orgId, effect.enqueue[*].input.userId, effect.enqueue[*].input.email (3 each)',
+    ]);
+  });
 });
