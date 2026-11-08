@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "acaad3c3cac48c95fe97e0b45ce3bb964b196aa59a58df99c7a8ddc5b791996c",
+  "buildId": "58110f5432fa8e25be5fd63292140295a0685343c094cdfc8480d853232aa9a9",
   "tiers": {
     "0": [
       "core",
@@ -2043,6 +2043,16 @@
       "code": "X_EXERCISE_FILE_UNEDITABLE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_EXERCISE_INPUT_THREW",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_EXERCISE_REQUEST_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_EXERCISE_SETUP_UNSEALED",

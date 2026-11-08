@@ -13,6 +13,7 @@ import {
 } from '@ultimat3/core';
 import type { ExerciseOverride } from './define-exercise';
 import { withExerciseRequest } from './exercise-request';
+import { testJobs } from './fixture-jobs';
 
 /** `(drawn, actor) => input`, or `undefined` when the override binds nothing. */
 export type OverrideInput = (drawn: unknown, actor: Actor | null) => Promise<unknown>;
@@ -27,12 +28,16 @@ export function overrideInput(
   const entry = override === undefined || 'off' in override ? undefined : override;
   const declared = entry?.actor;
   // The entry's own request: the binder sees the cookies and headers the call itself will.
-  return async (drawn, actor) =>
-    rehomed(
+  return async (drawn, actor) => {
+    // A queue of its own, as every call gets one: app code that enqueues has a driver, and what it
+    // queued is the input's, never counted as the primitive's enqueue.
+    await using _jobs = await testJobs();
+    return rehomed(
       await withExerciseRequest(name, actor, async () => bind(drawn), entry?.request),
       declared?.orgId,
       actor?.orgId,
     );
+  };
 }
 
 /**

@@ -3,7 +3,7 @@
 // because the set — anonymous plus one per declared role — is `@ultimat3/cli`'s `devActors()`,
 // and a second "every role" builder here would drift from the one the policy panel shows.
 
-import type { Actor } from '@ultimat3/core';
+import type { Actor, ActorFactMap } from '@ultimat3/core';
 import type { NamedActor, Policy } from '@ultimat3/policy';
 import { policyMatrix, rolesGranting } from '@ultimat3/policy';
 import type { ExerciseOverride } from './define-exercise';
@@ -21,10 +21,32 @@ export type ActorChoice =
 
 /**
  * An override's actor, moved into the primitive's tenant: every primitive gets a fresh pair of
- * tenants, so an actor declared once in `exercise.ts` cannot know the org it will act in.
+ * tenants, so an actor declared once in `exercise.ts` cannot know the org it will act in. A fact
+ * naming the org it was declared in moves too, as the input's `orgId` does
+ * (`exercise-override-input.ts`): else `memberOrgIds.includes(input.orgId)` denies every run.
  */
-export const inTenant = (actor: Actor | null, tenant: string): Actor | null =>
-  actor === null ? null : Object.freeze({ ...actor, orgId: tenant });
+export const inTenant = (actor: Actor | null, tenant: string): Actor | null => {
+  if (actor === null) return null;
+  const facts = rehomedFacts(actor.facts, actor.orgId, tenant);
+  return Object.freeze({ ...actor, orgId: tenant, ...(facts === undefined ? {} : { facts }) });
+};
+
+/** Each top-level fact equal to `from` — or an array holding it — with `to` in its place. */
+function rehomedFacts(
+  facts: ActorFactMap | undefined,
+  from: string | undefined,
+  to: string,
+): ActorFactMap | undefined {
+  if (facts === undefined || from === undefined || from === to) return facts;
+  const moved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(facts)) {
+    if (value === from) moved[key] = to;
+    else if (Array.isArray(value) && value.includes(from)) {
+      moved[key] = value.map((one: unknown) => (one === from ? to : one));
+    }
+  }
+  return Object.keys(moved).length === 0 ? facts : Object.freeze({ ...facts, ...moved });
+}
 
 /**
  * A role's actor id in one tenant: a uuid, as `ctx.actor.id` always is in production (an
