@@ -8,7 +8,6 @@
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
 import { isUltimateError, renderThrowable, runExercise } from '@ultimat3/core';
-import type { JobExecution, JobRecord } from '@ultimat3/jobs';
 import { registeredJobs } from '@ultimat3/jobs';
 import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
 import { assertOverridesKnown, unknownDeclaration } from './define-exercise';
@@ -16,6 +15,7 @@ import type { RoleGrants } from './exercise-actor';
 import { chooseActor } from './exercise-actor';
 import { proveCrash } from './exercise-crash';
 import { defectDetail } from './exercise-defect';
+import { ambientJobRows } from './exercise-job-run';
 import type { IdLookup, Sampler } from './exercise-input';
 import {
   bindIds,
@@ -76,13 +76,15 @@ const codeOf = (error: unknown): string | undefined => {
 const reasonOf = (error: unknown): string =>
   isUltimateError(error) ? error.cause : typeof error === 'string' ? error : renderThrowable(error);
 
-/** Jobs queued or run by the primitive, the primitive's own job excepted. */
-async function enqueued(subject: Subject, jobs: RunJobs, runs: readonly JobExecution[]) {
+/**
+ * Jobs the primitive queued, its own job excepted. Never run: a job's children are left queued as
+ * an action's are (`exercise-job-run.ts`), so their statements are theirs, never this record's.
+ */
+async function enqueued(subject: Subject, jobs: RunJobs) {
   const effects: ExerciseEffect[] = [];
   for (const handle of registeredJobs()) {
     if (subject.kind === 'job' && handle.name === subject.name) continue;
-    const ran = new Set(runs.filter((run) => run.job === handle.name).map((r) => r.jobId)).size;
-    const count = ran + (await jobs.depth(handle));
+    const count = await jobs.depth(handle);
     if (count > 0) effects.push({ kind: 'enqueue', job: handle.name, count });
   }
   return effects;
@@ -93,21 +95,7 @@ async function enqueued(subject: Subject, jobs: RunJobs, runs: readonly JobExecu
  * input is what B was handed. Read off the leg's own queue, page by page.
  */
 async function queuedPayloads(subject: Subject): Promise<readonly EffectPayload[]> {
-  const jobs = await import('@ultimat3/jobs');
-  const introspect = jobs.jobDriver()?.introspect;
-  if (introspect === undefined) return [];
-  const records: JobRecord[] = [];
-  for (let after: string | undefined; ; ) {
-    const page = await introspect.list({
-      limit: jobs.MAX_JOB_PAGE,
-      ...(after === undefined ? {} : { after }),
-    });
-    records.push(...page);
-    const last = page[page.length - 1];
-    if (last === undefined || page.length < jobs.MAX_JOB_PAGE) break;
-    after = jobs.jobCursor(last);
-  }
-  return records
+  return (await ambientJobRows())
     .filter((record) => !(subject.kind === 'job' && record.name === subject.name))
     .map((record, i) => ({
       path: `effect.enqueue[${i}]`,
@@ -174,7 +162,6 @@ async function control(
   let lastError: unknown;
   let lastInput: unknown;
   let output: unknown;
-  let executions: readonly JobExecution[] = [];
   room.begin(name);
   const started = performance.now();
   const verdict = await runExercise({
@@ -209,9 +196,8 @@ async function control(
     statusOf: (await import('@ultimat3/http')).statusFor,
   });
   const ms = Math.round(performance.now() - started);
-  if (kind === 'job') executions = (await jobs.drain()).executions;
   const observed = room.end();
-  const effects = [...observed.effects, ...(await enqueued(subject, jobs, executions))];
+  const effects = [...observed.effects, ...(await enqueued(subject, jobs))];
   const verdictOf = judged(subject, { verdict, answered, lastError, lastInput }, observed);
   // A 5xx's cause, statement and fields: the code alone sent the author to reproduce it by hand.
   const defect =
