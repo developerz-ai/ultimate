@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/jobs",
-  "version": "30.4.0",
+  "version": "30.5.0",
   "description": "Durable background work: steps, transactional outbox, cron tasks, one driver interface",
   "keywords": [
     "ultimate",
@@ -44,11 +44,11 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "30.4.0",
-    "@ultimat3/db": "30.4.0",
-    "@ultimat3/entity": "30.4.0",
-    "@ultimat3/http": "30.4.0",
-    "@ultimat3/schema": "30.4.0",
-    "@ultimat3/time": "30.4.0"
+    "@ultimat3/core": "30.5.0",
+    "@ultimat3/db": "30.5.0",
+    "@ultimat3/entity": "30.5.0",
+    "@ultimat3/http": "30.5.0",
+    "@ultimat3/schema": "30.5.0",
+    "@ultimat3/time": "30.5.0"
   }
 }
