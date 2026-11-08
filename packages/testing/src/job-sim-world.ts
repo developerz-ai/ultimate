@@ -31,6 +31,8 @@ export const SIM_VISIBILITY_MS = 30_000;
 const RENEW_MS = 1;
 const CLAIM_LIMIT = 64;
 const LIVE: ReadonlySet<string> = new Set(['ready', 'delayed', 'running', 'suspended']);
+/** Where an `alone` world files the harness's row: no body enqueues here, so no worker claims theirs. */
+const HARNESS_QUEUE = 'x-sim-harness';
 
 export interface SimWorldOptions {
   /** Seeds `Math.random` for the run: a body's jitter and draws are the seed's. */
@@ -40,6 +42,11 @@ export interface SimWorldOptions {
   decide(op: SimOp): SimDecision | Promise<SimDecision>;
   /** Told every landed call, after the world has read it. */
   landed?(op: SimOp, answer: unknown): void;
+  /**
+   * Only the row the harness filed is ever claimed: what a body enqueues lands, dedupes and is an
+   * `enqueue:` effect, and never runs — its effects are its own job's, not this run's.
+   */
+  readonly alone?: boolean;
 }
 
 export interface SimWorld extends AsyncDisposable {
@@ -115,9 +122,11 @@ export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> 
   const anonymous = ctxOf({ role: 'worker' });
   const context = options.context ?? (() => anonymous);
 
-  const queues = (): readonly string[] => [
-    ...new Set([jobs.DEFAULT_QUEUE, ...jobs.registeredJobs().map((handle) => handle.queue)]),
-  ];
+  const queues = (): readonly string[] =>
+    options.alone === true
+      ? [HARNESS_QUEUE]
+      : [...new Set([jobs.DEFAULT_QUEUE, ...jobs.registeredJobs().map((handle) => handle.queue)])];
+  const claimable = new Set(queues());
 
   const rows = async (): Promise<readonly JobRecord[]> => {
     const all: JobRecord[] = [];
@@ -146,7 +155,7 @@ export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> 
     enqueue: async (handle, input) => {
       const result = await base.enqueue({
         name: handle.name,
-        queue: handle.queue,
+        queue: options.alone === true ? HARNESS_QUEUE : handle.queue,
         input,
         idempotencyKey: handle.idempotencyKeyFor(input),
         maxAttempts: jobs.enqueuedAttempts(handle.retry, handle.compensates),
@@ -179,7 +188,9 @@ export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> 
     rows,
     nextDue: async () => {
       const due = (await rows())
-        .filter((row) => LIVE.has(row.state))
+        .filter(
+          (row) => LIVE.has(row.state) && (options.alone !== true || claimable.has(row.queue)),
+        )
         .map((row) => (row.state === 'running' ? (row.visibleAt ?? row.runAt) : row.runAt));
       return due.length === 0 ? undefined : Math.min(...due);
     },

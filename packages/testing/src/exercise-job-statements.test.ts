@@ -1,10 +1,11 @@
 // A job's statements in the exercise pass are its OWN execution's: never the jobs it queues (one per
 // row, counted by the scale sweep as a loop the job does not have) and never a job some earlier
-// primitive left queued. A job whose own body loops per row is still red.
+// primitive left queued. A job whose own body loops per row is still red. The crash proof holds the
+// same line: a job that only arms a child is judged on its own effects, the child's never run.
 
 import { describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/action';
-import { entity, memoryDriver, text, uuid } from '@ultimat3/entity';
+import { database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import type { NamedActor } from '@ultimat3/policy';
 import { testActor } from '@ultimat3/policy';
@@ -27,6 +28,7 @@ const notes = entity('ejs_notes', {
   },
 });
 const driver = memoryDriver();
+const db = database({ orgs, notes }, { driver });
 const writer: SeedWriter = {
   insert: async ({ entity: name, row }) => {
     if (name === orgs.$name) await driver.repo(orgs).insert(row as never);
@@ -98,6 +100,34 @@ job({
   },
 });
 
+/** Orgs the child has seeded: state that outlives a run, as committed rows do. */
+const armed = new Set<string>();
+/** Writes its row only the first time an org is seen: the second run of it finds the row there. */
+const ejsSeedOnce = job({
+  name: 'ejsSeedOnce',
+  tenant: (input) => input.ejsOrgId,
+  input: OrgInput,
+  idempotencyKey: (input) => input.ejsOrgId,
+  retry,
+  run: async ({ input }) => {
+    if (armed.has(input.ejsOrgId)) return;
+    armed.add(input.ejsOrgId);
+    await db.notes.insert({ id: crypto.randomUUID(), orgId: input.ejsOrgId, title: 'seeded' });
+  },
+});
+/** Only ENQUEUES the child, in a step: its own effect is the enqueue, the row is the child's. */
+job({
+  name: 'ejsArm',
+  tenant: (input) => input.ejsOrgId,
+  input: OrgInput,
+  idempotencyKey: (input) => input.ejsOrgId,
+  // A retry, so a run killed at a boundary still settles as the clean one did: compared, not dead.
+  retry: { ...DEFAULT_RETRY, attempts: 2 },
+  run: async ({ input, step }) => {
+    await step.run('start-keys', () => ejsSeedOnce.enqueue({ ejsOrgId: input.ejsOrgId }));
+  },
+});
+
 const one = async (only: string): Promise<ExerciseRecord> => {
   const records = await runExercisePass({ entities: [orgs, notes], writer, roles, only });
   expect(records).toHaveLength(1);
@@ -139,5 +169,11 @@ describe(testName('unit', 'runExercisePass · a job counts its own execution'), 
     expect(observed.statements).toBe(1);
     // Not drained by the subject: it is still the queue's.
     expect(await jobs.depth(ejsChild)).toBe(1);
+  });
+
+  test('a job that only arms a child is crash-proven on its own effects: the child never runs', async () => {
+    const record = await one('ejsArm');
+    expect(record.outcome).toBe('reached');
+    expect(record.crash).toMatchObject({ verdict: 'held' });
   });
 });

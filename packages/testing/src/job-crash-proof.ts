@@ -134,7 +134,10 @@ async function runOnce<I>(
     if (op.step.startsWith(COMPENSATE_PREFIX)) compensated.push(op.step);
     else if (op.step !== UNWINDING_STEP) forward.add(op.step);
   };
+  // Alone: a child the job queues is its enqueue effect, never run — the clean run that ran it
+  // first wrote its rows, and every killed run after found them there (0× against 6×).
   await using world = await openSimWorld({
+    alone: true,
     seed: finiteCount('crashProof', 'seed', options.seed ?? 1),
     decide,
     landed,
