@@ -58,8 +58,12 @@ export class ExerciseUnreachedError extends UltimateError {
   }
 }
 
-/** Why no exercise could run: an `off` with no reason, nothing declared, or no entry by this name. */
-export type ExerciseUndeclaredWhy = 'blank' | 'undeclared' | 'no-entry';
+/**
+ * Why no exercise could run: an `off` with no reason, nothing declared, no entry by this name, or
+ * an entry with no `actor` on a guarded handler — `x exercise` picks one its policy allows, a
+ * contract test has no role set to pick from.
+ */
+export type ExerciseUndeclaredWhy = 'blank' | 'undeclared' | 'no-entry' | 'no-actor';
 
 /**
  * A guarded handler with no exercise. The fix is the paste in the ONE home, `apps/web/exercise.ts`
@@ -74,6 +78,7 @@ export class ExerciseUndeclaredError extends UltimateError {
       blank: `${name}.contract({ exercise: { off } }) gives a blank reason, so the skip is silent`,
       'no-entry': `${refuses} and ${EXERCISE_DECLARATIONS_FILE} declares no entry for it, so no actor to exercise its handler as is known`,
       undeclared: `${refuses} and its .contract() names no actor to exercise its handler as`,
+      'no-actor': `${refuses} and its exercise entry names no actor: x exercise picks one its policy allows, a contract test has none to pick from`,
     };
     super({
       code: 'X_CONTRACT_EXERCISE_UNDECLARED',

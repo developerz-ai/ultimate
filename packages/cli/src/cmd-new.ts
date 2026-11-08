@@ -12,6 +12,7 @@ import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
 import { AppNameEmptyError, AppNameIsPathError, MissingPositionalError } from './errors';
 import type { Runner } from './exec';
+import { withDeclaredExercises } from './generate-exercise';
 import { reproducedFlags } from './invocation-flags';
 import { msg } from './messages';
 import { type NewShape, readShape } from './new-shapes';
@@ -142,7 +143,7 @@ export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
     const overlay = SHAPE_OVERLAYS[options.shape];
     const base = planNewApp({ name: options.name, example: overlay.example });
     // Merge-aware, as below: a shape's catalog keys land in the one catalog the base wrote.
-    return dedupe(applyOverlay(base, overlay, names(options.name)));
+    return withDeclaredExercises(dedupe(applyOverlay(base, overlay, names(options.name))));
   }
   const app = names(options.name);
   const files: GeneratedFile[] = [
@@ -169,7 +170,8 @@ export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
   // `repoFiles`' own catalog entry and the example resource's both target the same flat catalog
   // file, so this has to be the merge-aware dedupe — the one `cmd-generate.ts` uses for `x g` —
   // or the second contributor's keys would silently vanish instead of landing in the one file.
-  return dedupe(files);
+  // And each contract test's entry in `apps/web/exercise.ts`, the one file it reads it from.
+  return withDeclaredExercises(dedupe(files));
 }
 
 export interface WrittenApp {

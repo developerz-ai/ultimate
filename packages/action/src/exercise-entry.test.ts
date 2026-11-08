@@ -56,12 +56,13 @@ describe('an input-only entry', () => {
 
 describe('X_CONTRACT_DRIFT', () => {
   test("names the field the draw cannot fill, in the cause and in the fix's input", () => {
-    const schema = t.object({ digest: t.string.pattern(/^[0-9a-f]{64}$/), note: t.string });
+    // A pattern no string matches: no draw, minimal or seeded, can ever fill it.
+    const schema = t.object({ digits: t.string.pattern(/^(?=x)y$/), note: t.string });
     const drift = everyDrawRefused('signDigest', schema);
     expect(drift.code).toBe('X_CONTRACT_DRIFT');
-    expect(drift.cause).toContain('digest (must match ^[0-9a-f]{64}$)');
+    expect(drift.cause).toContain('digits (must match ^(?=x)y$)');
     expect(drift.fix).toContain(
-      'defineExercise({ signDigest: { input: (drawn) => ({ ...drawn, digest: "<must match ^[0-9a-f]{64}$>" }) } })',
+      'defineExercise({ signDigest: { input: (drawn) => ({ ...drawn, digits: "<must match ^(?=x)y$>" }) } })',
     );
     expect(drift.fix).not.toContain('note');
   });

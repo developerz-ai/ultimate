@@ -1099,7 +1099,7 @@ Source: `packages/testing/src/scale-sweep*.ts`, `plan-oracle.ts`, `plan-sweep*.t
 | Sweep | What | Red |
 |---|---|---|
 | scale | every reached primitive once more in a tenant at 2 rows a table, once in one at 8; per statement shape, the counts compared | a shape sent more often at 8: `X_QUERY_SCALES_WITH_ROWS`, fix `preload()` or `expectedQueryLoop('<why>', fn)` |
-| plans | every distinct statement whose first relation is an app table, `PREPARE`d and explained as a generic plan with `enable_seqscan`, `enable_bitmapscan`, `enable_sort` off, in a read-only transaction | `Seq Scan`, or an index scan with no `Index Cond` no `Limit` stops: `X_QUERY_UNINDEXED`. `Sort` under `Limit`: `X_QUERY_SORT_UNSERVED`. Each prints `indexes: [{ on: [...] }]` |
+| plans | every distinct statement whose first relation is an app table, `PREPARE`d and explained as a generic plan with `enable_seqscan`, `enable_bitmapscan`, `enable_sort` off, in a read-only transaction | `Seq Scan`, or an index scan with no `Index Cond` no `Limit` stops: `X_QUERY_UNINDEXED`. `Sort` under `Limit`: `X_QUERY_SORT_UNSERVED`, on the table its key names. Each prints an `indexes:` entry, one per arm for an `or`; a sort no declarable index serves (an expression, an aggregate, a derived column, keys across tables, mixed directions) or an index the entity already declares prints a rewrite or `expectedSeqScan` instead |
 
 With the planner's scans and sorts disabled it picks one only when no index can answer, so the
 verdict reads the schema on empty tables — no volume, no statistics. Never red: `scale.verdict`

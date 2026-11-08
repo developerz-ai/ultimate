@@ -145,7 +145,7 @@ describe('verdicts', () => {
       exerciseAction(fine, { actor: null, input: (drawn) => ({ ...drawn, title: '' }) }),
     );
     expect(failure.code).toBe('X_CONTRACT_DRIFT');
-    expect(failure.fix).toContain('exercise: { actor, input:');
+    expect(failure.fix).toContain('defineExercise({ boundNote: { input: (drawn) =>');
   });
 
   test('a deploy is refused before a run: generated input never reaches production', async () => {

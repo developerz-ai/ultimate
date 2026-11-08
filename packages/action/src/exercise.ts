@@ -34,8 +34,12 @@ export type { ExerciseReport };
 
 /** Who the handler runs as, and what binds the parts a generated value cannot (a real row's id). */
 export interface ExerciseActorOptions {
-  /** The caller each run is invoked as. `null` is the signed-out caller. */
-  readonly actor: Actor | null;
+  /**
+   * The caller each run is invoked as. `null` is the signed-out caller. Omitted, `x exercise`
+   * picks the first actor the policy allows (as it does with no entry); a contract test runs as
+   * the signed-out caller when the policy admits one, else `X_CONTRACT_EXERCISE_UNDECLARED`.
+   */
+  readonly actor?: Actor | null;
   /**
    * `(drawn) => ({ ...drawn, postId })`: the generated value, with what must resolve bound in.
    * May be `async`: `x exercise` awaits it inside the call's own request, so `useContext().actor`
@@ -77,6 +81,7 @@ export async function exerciseAction(
   ctx?: Ctx,
 ): Promise<ExerciseReport> {
   const name = actionName(target);
+  const actor = exerciseActor(target, options, name);
   const base = ctx ?? tryUseContext() ?? ctxOf({});
   // Counted in a scratch store: a spent bucket would make the file's next real call a 429.
   const verdict = await withScratchRateLimitStore(() =>
@@ -91,7 +96,7 @@ export async function exerciseAction(
       attempt: async (input): Promise<ExerciseAttempt> => {
         const before = handlerReached(target);
         const settled = await inRolledBackScope(() =>
-          invoke(target, input, { ctx: base, actor: options.actor, surface: 'http' }),
+          invoke(target, input, { ctx: base, actor, surface: 'http' }),
         );
         const reached = handlerReached(target) > before;
         return settled.ok ? { ok: true, reached } : { ok: false, reached, error: settled.error };
@@ -116,6 +121,13 @@ export async function exerciseAction(
         error: verdict.error,
       });
   }
+}
+
+/** An entry's actor; none declared is the signed-out caller where the policy admits one. */
+function exerciseActor(target: AnyAction, options: ExerciseActorOptions, name: string) {
+  if (options.actor !== undefined) return options.actor;
+  if (admitsAnonymous(target.policy)) return null;
+  throw new ExerciseUndeclaredError(name, 'no-actor');
 }
 
 async function acceptedBy(target: AnyAction, input: unknown, name: string): Promise<boolean> {

@@ -168,7 +168,9 @@ describe('unit · planSweepFindings', () => {
 
   test('an index the entity already declares is never printed as the fix', () => {
     const [finding] = planSweepFindings([
-      record('authorPosts', { plans: planned([{ ...unindexed, index: [], unserved: 'declared' }]) }),
+      record('authorPosts', {
+        plans: planned([{ ...unindexed, index: [], unserved: 'declared' }]),
+      }),
     ]);
     expect(finding?.cause).toContain('already declares');
     expect(finding?.fix).not.toContain('x db gen');

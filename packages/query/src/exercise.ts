@@ -10,24 +10,32 @@ import {
   ctxOf,
   exerciseReplay,
   isUltimateError,
+  renderDrawnInput,
+  renderExerciseKey,
   renderFixShellArg,
   runExercise,
+  sampleGapBinding,
   tryUseContext,
   UltimateError,
 } from '@ultimat3/core';
 import { statusFor, withScratchRateLimitStore } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { validateAsync } from '@ultimat3/schema';
-import { arbitrary } from '@ultimat3/schema/sample';
+import { admitsAnonymous } from '@ultimat3/policy';
+import { arbitrary, describeSampleGap, sampleGaps } from '@ultimat3/schema/sample';
 import { QueryAuditSinkMissingError } from './audit-errors';
 import { QueryDeniedError } from './errors';
 import { QUERY_EXERCISE_DECLARATIONS_FILE } from './exercise-declarations';
 import type { AnyQuery } from './query';
 import { queryName, sourceFor } from './read';
 
-/** Who reads, and what binds the parts a generated value cannot. Same shape as an action's. */
+/**
+ * Who reads, and what binds the parts a generated value cannot. Same shape as an action's: an
+ * omitted `actor` is `x exercise`'s pick, and here the signed-out reader where the policy admits
+ * one, else `X_CONTRACT_EXERCISE_UNDECLARED`.
+ */
 export interface QueryExerciseActorOptions {
-  readonly actor: Actor | null;
+  readonly actor?: Actor | null;
   readonly input?: (drawn: DrawnInput) => unknown;
   readonly runs?: number;
 }
@@ -73,6 +81,7 @@ export async function exerciseQuery(
   ctx?: Ctx,
 ): Promise<QueryExerciseReport> {
   const name = queryName(target);
+  const actor = readerOf(target, options, name);
   const base = ctx ?? tryUseContext() ?? ctxOf({});
   // Counted in a scratch store: a spent bucket would make the file's next real call a 429.
   const verdict = await withScratchRateLimitStore(() =>
@@ -87,7 +96,7 @@ export async function exerciseQuery(
         try {
           const source = await sourceFor(target, input, {
             ctx: base,
-            actor: options.actor,
+            actor,
             surface: 'http',
           });
           await source.execute();
@@ -103,7 +112,7 @@ export async function exerciseQuery(
     case 'pass':
       return verdict.report;
     case 'drift':
-      throw queryDrawsRefused(name);
+      throw queryDrawsRefused(name, target.input);
     case 'unreached':
       throw queryUnreached(name, verdict.outcomes);
     case 'defect':
@@ -140,16 +149,33 @@ function queryUnreached(name: string, outcomes: readonly string[]): UltimateErro
   });
 }
 
-function queryDrawsRefused(name: string): UltimateError {
+/** An entry's reader; none declared is the signed-out reader where the policy admits one. */
+function readerOf(target: AnyQuery, options: QueryExerciseActorOptions, name: string) {
+  if (options.actor !== undefined) return options.actor;
+  if (admitsAnonymous(target.policy)) return null;
+  throw queryExerciseUndeclared(name, 'no-actor');
+}
+
+/** Action's `everyDrawRefused`, for a read: the field no draw can fill, named and bound. */
+function queryDrawsRefused(name: string, schema: StandardSchemaV1): UltimateError {
+  const gaps = sampleGaps(schema);
+  const described = gaps.map((path) => describeSampleGap(schema, path));
+  const input =
+    gaps.length === 0
+      ? "(drawn) => ({ ...drawn, field: '<a value the refinement accepts>' })"
+      : renderDrawnInput(gaps.map((path, i) => sampleGapBinding(path, described[i] ?? path)));
   return new UltimateError({
     code: 'X_CONTRACT_DRIFT',
-    cause: `query ${name}: its input schema refused every generated value, so the read was never exercised`,
-    fix: `${renderFixShellArg(name, '<name>')}.contract({ exercise: { actor, input: (drawn) => ({ ...drawn, field: '<a value the refinement accepts>' }) } })`,
+    cause:
+      gaps.length === 0
+        ? `query ${name}: its input schema refused every generated value, so the read was never exercised`
+        : `query ${name}: its input schema refused every generated value — no value can be generated for ${described.join(', ')} — so the read was never exercised`,
+    fix: `defineExercise({ ${renderExerciseKey(name)}: { input: ${input} } })   # in ${QUERY_EXERCISE_DECLARATIONS_FILE}`,
   });
 }
 
-/** Why no exercise could run: an `off` with no reason, nothing declared, or no entry by this name. */
-export type QueryExerciseUndeclaredWhy = 'blank' | 'undeclared' | 'no-entry';
+/** Why no exercise could run: action's four (`ExerciseUndeclaredWhy`), for a read. */
+export type QueryExerciseUndeclaredWhy = 'blank' | 'undeclared' | 'no-entry' | 'no-actor';
 
 /**
  * A guarded read with no exercise. The fix is the paste in the ONE home, `apps/web/exercise.ts`
@@ -166,6 +192,7 @@ export function queryExerciseUndeclared(
     blank: `${name}.contract({ exercise: { off } }) gives a blank reason, so the skip is silent`,
     'no-entry': `${refuses} and ${QUERY_EXERCISE_DECLARATIONS_FILE} declares no entry for it, so no actor to read as is known`,
     undeclared: `${refuses} and its .contract() names no actor to read as`,
+    'no-actor': `${refuses} and its exercise entry names no actor: x exercise picks one its policy allows, a contract test has none to pick from`,
   };
   return new UltimateError({
     code: 'X_CONTRACT_EXERCISE_UNDECLARED',

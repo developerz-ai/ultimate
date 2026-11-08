@@ -212,11 +212,7 @@ describe('unit · planFindings', () => {
 
   test('an OR is answered one index per arm; arms an index already leads are not asked for', () => {
     const statement = 'select "id" from "psf_posts" where "score" = $1 or "rank" = $2';
-    const found = planFindings(
-      statement,
-      [verdict({ arms: [['score'], ['rank']] })],
-      byTable,
-    );
+    const found = planFindings(statement, [verdict({ arms: [['score'], ['rank']] })], byTable);
     // `rank` leads a declared index; `score` leads none.
     expect(found.map((one) => one.index)).toEqual([['score']]);
     // Every arm led by a declared index is a BitmapOr the planner takes once it may: credited.

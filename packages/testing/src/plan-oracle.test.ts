@@ -130,7 +130,9 @@ const joined = (keys: string[]) =>
         { ...scan('Index Scan', 'events', { 'Index Cond': '(org_id = $1)' }), Alias: 'e' },
         {
           'Node Type': 'Materialize',
-          Plans: [{ ...scan('Index Scan', 'posts', { 'Index Cond': '(org_id = $1)' }), Alias: 'p' }],
+          Plans: [
+            { ...scan('Index Scan', 'posts', { 'Index Cond': '(org_id = $1)' }), Alias: 'p' },
+          ],
         },
       ],
     }),
@@ -204,7 +206,7 @@ describe('unit · plan oracle, what no single index serves', () => {
     ]);
   });
 
-  test('a sort by a column of a table the sweep does not judge is not this table\'s', () => {
+  test("a sort by a column of a table the sweep does not judge is not this table's", () => {
     const plan = limit(
       sort(['k.name'], {
         'Node Type': 'Nested Loop',
@@ -243,7 +245,8 @@ describe('unit · plan oracle, what no single index serves', () => {
     const [verdict] = judgePlan(
       answer(
         scan('Seq Scan', 'posts', {
-          Filter: "((org_id = $1) AND ((project_id IS NULL) OR ((author_id = $2) AND (created_at > $3))))",
+          Filter:
+            '((org_id = $1) AND ((project_id IS NULL) OR ((author_id = $2) AND (created_at > $3))))',
         }),
       ),
       TABLES,
@@ -258,7 +261,9 @@ describe('unit · plan oracle, what no single index serves', () => {
   test('an OR with an arm on no column of the table has no arms an index answers', () => {
     const [verdict] = judgePlan(
       answer(
-        scan('Seq Scan', 'posts', { Filter: '((created_at < $1) OR (alternatives: SubPlan 1 or hashed SubPlan 2))' }),
+        scan('Seq Scan', 'posts', {
+          Filter: '((created_at < $1) OR (alternatives: SubPlan 1 or hashed SubPlan 2))',
+        }),
       ),
       TABLES,
     );
