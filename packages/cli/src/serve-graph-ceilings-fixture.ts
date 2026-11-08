@@ -151,8 +151,10 @@
  * `entity({ readOnly })`'s refusal, which every repository returns through. No module newly reached.
  * raised 880 → 883, measured 883 (2026-11-07, sweep 3): the mount's after-scan `exposedPrimitives()`
  * keeps the barrels' `core/src/{mcp-exposure,tool-description}.ts`, `action/src/tool-gate.ts`.
+ * raised 883 → 884, measured 884 (2026-11-07, fix/exercise-fidelity): `jobs/src/step-scope.ts`,
+ * `currentStep()` — the step body in flight, which the crash proof names. No module newly reached.
  */
-export const MIGRATE_CEILING = 883;
+export const MIGRATE_CEILING = 884;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -330,8 +332,9 @@ export const MIGRATE_CEILING = 883;
  * raised 1254 → 1255, measured 1255 (2026-11-07, fix/exercise-tenancy): `entity/src/read-only.ts`.
  * raised 1255 → 1259, measured 1259 (2026-11-07, sweep 3): `MIGRATE_CEILING`'s three and
  * `cli/src/runtime-jobs-unserved.ts` (a split worker reads the registry before it warns).
+ * raised 1259 → 1260, measured 1260 (2026-11-07, fix/exercise-fidelity): `MIGRATE_CEILING`'s 1.
  */
-export const SERVING_ROLE_CEILING = 1259;
+export const SERVING_ROLE_CEILING = 1260;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -496,5 +499,6 @@ export const SERVING_ROLE_CEILING = 1259;
  * raised 1434 → 1435, measured 1435 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
  * raised 1435 → 1436, measured 1436 (2026-11-07, fix/exercise-tenancy): `entity/src/read-only.ts`.
  * raised 1436 → 1441, measured 1441 (2026-11-07, sweep 3): the four above, `mcp/src/include-early.ts`.
+ * raised 1441 → 1442, measured 1442 (2026-11-07, fix/exercise-fidelity): `MIGRATE_CEILING`'s 1.
  */
-export const WEB_ROLE_CEILING = 1441;
+export const WEB_ROLE_CEILING = 1442;

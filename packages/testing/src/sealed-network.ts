@@ -1,8 +1,6 @@
-// Sealed network. Any egress a test did not explicitly mock or allow fails the test with the URL
-// and the line that fixes it. A test that quietly reaches the internet is a test that fails in CI
-// for reasons nobody can reproduce — so the default is "nothing gets out". Three dials are sealed:
-// `fetch` here, `WebSocket` and `Bun.connect` through `sealed-sockets.ts`, all behind one gate; and
-// name resolution through `sealed-dns.ts`, answered by the same mocks and allow-list.
+// Sealed network: egress a test did not mock or allow fails with the URL and the line that fixes
+// it, so nothing reaches the internet unreproducibly. `fetch` here, `WebSocket`/`Bun.connect` via
+// `sealed-sockets.ts`, name resolution via `sealed-dns.ts` — one gate, one set of mocks and allows.
 
 import { isSelfOrigin, peerAddressClass } from '@ultimat3/core';
 import { NetworkOfflineError, NetworkRaceError, NetworkSealedError } from './errors';
