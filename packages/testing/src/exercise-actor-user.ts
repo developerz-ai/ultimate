@@ -18,7 +18,7 @@ export class ExerciseActorUserUnseatedError extends UltimateError {
     super({
       code: 'X_EXERCISE_ACTOR_USER_UNSEATED',
       cause: `x exercise writes one x_users row per actor it acts as, and the insert was refused: ${isUltimateError(error) ? error.cause : renderThrowable(error)}`,
-      fix: 'give the added x_users column a default or make it nullable in its migration under packages/db/migrations/, then x exercise --json',
+      fix: 'x exercise --json   # after a migration under packages/db/migrations/ gives the column the app added to x_users a default, or makes it nullable',
       sourceError: error,
     });
   }

@@ -188,15 +188,24 @@ export function queryExerciseUndeclared(
 ): UltimateError {
   const call = renderFixShellArg(name, '<name>');
   const refuses = `query ${name} refuses an anonymous reader`;
-  const causes: Record<QueryExerciseUndeclaredWhy, string> = {
-    blank: `${name}.contract({ exercise: { off } }) gives a blank reason, so the skip is silent`,
-    'no-entry': `${refuses} and ${QUERY_EXERCISE_DECLARATIONS_FILE} declares no entry for it, so no actor to read as is known`,
-    undeclared: `${refuses} and its .contract() names no actor to read as`,
-    'no-actor': `${refuses} and its exercise entry names no actor: x exercise picks one its policy allows, a contract test has none to pick from`,
-  };
   return new UltimateError({
     code: 'X_CONTRACT_EXERCISE_UNDECLARED',
-    cause: causes[why],
+    cause: queryUndeclaredCause(name, why, refuses),
     fix: `defineExercise({ ${call}: { actor } })   # in ${QUERY_EXERCISE_DECLARATIONS_FILE}, then ${call}.contract({ exercise }) with that file's export — or { off: '<why this read cannot run in a test>' } there`,
   });
+}
+
+/** What was missing, said in the file it is missing from. A `switch`, never a key lookup on a table. */
+function queryUndeclaredCause(
+  name: string,
+  why: QueryExerciseUndeclaredWhy,
+  refuses: string,
+): string {
+  switch (why) {
+    case 'blank':
+      return `${name}.contract({ exercise: { off } }) gives a blank reason, so the skip is silent`;
+    case 'no-entry':
+      return `${refuses} and ${QUERY_EXERCISE_DECLARATIONS_FILE} declares no entry for it, so no actor to read as is known`;
+  }
+  return `${refuses} and its .contract() names no actor to read as`;
 }

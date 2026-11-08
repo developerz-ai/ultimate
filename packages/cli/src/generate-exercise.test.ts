@@ -64,8 +64,10 @@ describe('unit · x g declares the contract test’s exercise in apps/web/exerci
     expect(edited).toEqual([]);
     expect(findings.map((finding) => finding.code)).toEqual(['X_EXERCISE_FILE_UNEDITABLE']);
     expect(findings[0]?.cause).toContain('holds no defineExercise() call');
-    expect(findings[0]?.fix).toContain(`edit ${FILE}`);
-    expect(findings[0]?.fix).toContain("sendInvoice: { actor: userActor({ id: 'member',");
+    expect(findings[0]?.fix).toStartWith("sendInvoice: { actor: userActor({ id: 'member',");
+    expect(findings[0]?.fix).toContain(
+      `# paste inside export const exercise = defineExercise({ … }) in ${FILE}`,
+    );
     expect(findings[0]?.fix).not.toContain('\n');
     expect(disk.files.get(FILE)).toBe(own);
   });

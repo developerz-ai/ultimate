@@ -40,7 +40,8 @@ export async function declareGeneratedExercises(
         {
           code: 'X_EXERCISE_FILE_UNEDITABLE',
           cause: `${EXERCISE_FILE} ${edit.reason}, so x g could not declare ${entries.map((e) => e.name).join(', ')} there and its contract test reads no entry`,
-          fix: `edit ${EXERCISE_FILE} — add to export const exercise = defineExercise({ … }): ${entries.map(oneLine).join(' · ')}`,
+          // The code to paste first: a fix is pasted from its first character.
+          fix: `${entries.map(oneLine).join(', ')},   # paste inside export const exercise = defineExercise({ … }) in ${EXERCISE_FILE}`,
           at: EXERCISE_FILE,
         },
       ],
