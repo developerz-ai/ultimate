@@ -1,6 +1,8 @@
 // Name derivation for generators. One place, because `x g resource post` has to agree with itself
 // across eight emitted files — a second casing helper is how `Post`/`post`/`posts` drift apart.
 
+import type { ExerciseEntry } from '../exercise-entry-edit';
+
 /**
  * A catalog is one file per locale that many generators contribute keys to; a whole-file write
  * would delete every key already in it, so a `'json'` file merges instead of overwriting. Always
@@ -30,6 +32,11 @@ export interface GeneratedSourceFile {
    * then the target's own text: the copy `write-generated.ts` writes where the OS refuses a link.
    */
   readonly link?: string;
+  /**
+   * The primitive's entry in `apps/web/exercise.ts`, for the contract test that reads it: the run
+   * that writes this file inserts it there (`generate-exercise.ts`), never the file itself.
+   */
+  readonly exercise?: ExerciseEntry;
 }
 
 /**

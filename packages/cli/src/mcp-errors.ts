@@ -392,6 +392,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only boundaries --json   # names the file; end its mount() with return render(() => <Island {...props} />, el)',
   X_SOCKET_HAND_ROLLED:
     'x verify --only boundaries --json — names the file and line; delete the upgrade and declare the socket with deviceSocket({ path, resolveToken, onFrame }) from @ultimat3/realtime/server',
+  X_EXERCISE_FILE_UNEDITABLE:
+    'edit apps/web/exercise.ts — paste the entry the finding names into export const exercise = defineExercise({ … })',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

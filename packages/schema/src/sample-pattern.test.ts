@@ -1,7 +1,11 @@
-import { describe, expect, test } from 'bun:test';
-import { patternSamples } from './seed-pattern-sample';
+// The generator's claims: every sample is accepted by its own pattern, the same seed replays, and
+// a pattern past the subset yields nothing rather than a guess. Moved here from
+// `@ultimat3/testing`'s `seed-pattern-sample.test.ts` with the generator.
 
-const accepted = (pattern: RegExp, seed = 'a1b2c3d4e5'): readonly string[] => {
+import { describe, expect, test } from 'bun:test';
+import { patternSamples } from './sample-pattern';
+
+const accepted = (pattern: RegExp, seed = 0xa1b2c3d4): readonly string[] => {
   const samples = patternSamples(pattern, seed);
   for (const sample of samples)
     expect({ sample, ok: pattern.test(sample) }).toEqual({ sample, ok: true });
@@ -26,36 +30,42 @@ describe('patternSamples', () => {
     expect(accepted(pattern).length).toBeGreaterThan(0);
   });
 
-  test('a pattern none of the fixed text shapes meets still yields a value', () => {
-    // The six shapes `seed-graph-values.ts` offered all carry a lower-case canary or a dot.
-    expect(accepted(/^ORD-\d{4}$/)).toContainEqual(expect.stringMatching(/^ORD-\d{4}$/));
+  test.each([
+    /^\d{4}-\d{2}-\d{2}$/,
+    /^\d{4}-(0[1-9]|1[0-2])$/,
+    /^[0-9a-f]{64}$/,
+    /^[0-9a-f]{96}$/,
+    /^\d{9}$/,
+    /^[A-Za-z0-9_-]{43}$/,
+  ])('the shapes a real app declares — %s — yield a value', (pattern) => {
+    expect(accepted(pattern).length).toBeGreaterThan(0);
   });
 
   test('the same seed draws the same samples; another seed draws others', () => {
     const pattern = /^[a-z]{4}-\d{3}$/;
-    expect(patternSamples(pattern, 'seed-one')).toEqual(patternSamples(pattern, 'seed-one'));
-    expect(patternSamples(pattern, 'seed-one')).not.toEqual(patternSamples(pattern, 'seed-two'));
+    expect(patternSamples(pattern, 1)).toEqual(patternSamples(pattern, 1));
+    expect(patternSamples(pattern, 1)).not.toEqual(patternSamples(pattern, 2));
   });
 
   test('samples are distinct, up to the count asked for', () => {
-    const samples = patternSamples(/^[a-z]{6}$/, 'x', 5);
+    const samples = patternSamples(/^[a-z]{6}$/, 7, 5);
     expect(samples).toHaveLength(5);
     expect(new Set(samples).size).toBe(5);
   });
 
   test('a two-value pattern yields both values and stops', () => {
-    expect([...patternSamples(/^(yes|no)$/, 'x')].sort()).toEqual(['no', 'yes']);
+    expect([...patternSamples(/^(yes|no)$/, 7)].sort()).toEqual(['no', 'yes']);
   });
 
   test.each([/^(?=a)a$/, /^(?!a)b$/, /^(a)\1$/, /\bword\b/, /^\p{L}+$/u, /^a{$/])(
     '%s is past the subset: no sample, never a guess',
     (pattern) => {
-      expect(patternSamples(pattern, 'x')).toEqual([]);
+      expect(patternSamples(pattern, 7)).toEqual([]);
     },
   );
 
   test('a draw that crosses an anchor is never returned', () => {
     // `a^b` matches nothing; the walk can build "ab", and the judge refuses it.
-    expect(patternSamples(/a^b/, 'x')).toEqual([]);
+    expect(patternSamples(/a^b/, 7)).toEqual([]);
   });
 });

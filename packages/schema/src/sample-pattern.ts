@@ -1,10 +1,9 @@
-// Strings a declared `matches(/…/)` pattern accepts, built by walking the pattern rather than
-// guessing shapes. The common subset only — literals, classes, `.`, groups, alternation,
-// quantifiers, anchors — and an honest `[]` for anything past it (lookaround, backreference, `\b`,
-// `\p{…}`): a pattern this cannot read leaves the column's other candidates to the solver.
+// Strings a `pattern` accepts, built by walking the pattern rather than guessing shapes — the ONE
+// generator, read by the input walker (`sample-draw.ts`, `sample-seeded.ts`) and by
+// `@ultimat3/testing`'s seed values. The common subset only — literals, classes, `.`, groups,
+// alternation, quantifiers, anchors — and an honest `[]` past it (lookaround, `\b`, `\p{…}`).
 
-import { fnv1a } from '@ultimat3/core';
-import { seededRandom } from './determinism';
+import { mulberry32 } from './sample-random';
 
 type Node =
   | { readonly kind: 'chars'; readonly chars: readonly string[] }
@@ -199,12 +198,13 @@ const ATTEMPTS = 8;
 
 /**
  * Up to `count` distinct strings `pattern.test` accepts, the same ones for the same `seed` on any
- * machine. Empty when the pattern is past the subset, or when no draw lands inside it.
+ * machine. Empty when the pattern is past the subset, or when no draw lands inside it. `seed` is a
+ * number because this tier cannot import `fnv1a`; a caller with a text seed hashes it first.
  */
-export function patternSamples(pattern: RegExp, seed: string, count = 4): readonly string[] {
+export function patternSamples(pattern: RegExp, seed: number, count = 4): readonly string[] {
   const tree = new Parser(pattern.source).parse();
   if (tree === undefined) return [];
-  const random = seededRandom(fnv1a(`${pattern.source}/${pattern.flags}:${seed}`) || 1);
+  const random = mulberry32(seed);
   // `lastIndex` would make `test` stateful under `g`/`y`; a copy without them judges each draw.
   const judge = new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, ''));
   const out: string[] = [];

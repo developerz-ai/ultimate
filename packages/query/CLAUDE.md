@@ -16,6 +16,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `read.ts` | **the one read path** (`runQuery`, `sourceFor`) + the private declaration store `sql` lives in |
 | `contract-test.ts` | `.contract()`, the generated suite. The three `X_CONTRACT_*` codes and `X_CONTRACT_DRIFT` are borrowed (`QUERY_BORROWED_ERROR_CODES`) |
 | `exercise.ts` | the exercise twin. "Reached" means `sql()` built a source, read off the refusal (`beforeSql`), because `read.ts` keeps no counter. No transaction: a read writes nothing |
+| `exercise-declarations.ts` | action's twin: `.contract({ exercise })` takes the app's `defineExercise()` value and reads the entry by the query's name (`apps/web/exercise.ts`, the one home) |
 | `declared-errors.ts` | `judgedSql` / `judgedRead`, around `sql` and the source's `execute` in `read.ts`. `errors:` is checked where it is lifted (`facade.ts`), not in `query.ts` |
 | `declared-errors-contract.ts`, `openapi-errors.ts` | `.contract()`'s source scan; core's builder bound to http's status |
 | `http-pin.ts` | a read's pinned `http.path`, its check at `query()`, `servedQueryPath`, `queryHttpPinOf` |

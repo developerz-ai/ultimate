@@ -1,6 +1,6 @@
-// `defineExercise({ publishPost: { input, actor }, sendInvoice: { off: 'why' } })`: an app's
-// overrides for the exercise pass, one entry per primitive. Each value IS 39's `.contract({
-// exercise })` option, re-exported rather than restated, so one shape answers both questions.
+// `defineExercise({ publishPost: { input, actor }, sendInvoice: { off: 'why' } })`: an app's ONE
+// declaration of each primitive's exercise. `x exercise` reads it, and so does every contract
+// test — the whole value handed to `.contract({ exercise })` (action's `ExerciseDeclarations`).
 // A blank `off` is refused here, at declaration; an unknown name when the pass runs.
 
 import type { ExerciseOptions } from '@ultimat3/action';
@@ -11,7 +11,10 @@ import type { SeedFactory } from './seed-graph-plan';
 /** 39's option type, exactly: `{ actor, input?, runs? }` or `{ off: '<reason>' }`. */
 export type ExerciseOverride = ExerciseOptions;
 
-/** What `defineExercise` returns: the overrides, by primitive name. Read by `runExercisePass`. */
+/**
+ * What `defineExercise` returns: the overrides, by primitive name. Read by `runExercisePass` and,
+ * structurally, by `.contract({ exercise })` (`define-exercise.test.ts` pins the assignability).
+ */
 export interface ExerciseOverrides {
   readonly kind: 'exercise-overrides';
   readonly entries: ReadonlyMap<string, ExerciseOverride>;

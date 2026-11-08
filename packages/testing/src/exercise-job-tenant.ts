@@ -9,9 +9,13 @@ export interface TenantOf {
   tenantFor(input: unknown): string | undefined;
 }
 
-/** `seated`: the input names the tenant. `fixed`: no field it reads moves the org it answers. */
+/**
+ * `seated`: the input names the tenant. `fixed`: no field it reads moves the org it answers.
+ * `none`: `tenant: 'none'` — no org reaches the run, so whoever enqueues it the run is the same.
+ */
 export type JobTenantBinding =
   | { readonly kind: 'seated'; readonly input: unknown }
+  | { readonly kind: 'none'; readonly input: unknown }
   | { readonly kind: 'fixed'; readonly declared: string | undefined };
 
 type Path = readonly string[];
@@ -85,16 +89,17 @@ function setAt(input: unknown, path: Path, value: unknown): unknown {
 }
 
 /**
- * `input` naming `tenant` wherever `handle.tenantFor` reads it. A `'none'` job, or one already
- * naming it, comes back as given. A read path is kept only if setting it moves the answer to
- * `tenant` — a field read and then ignored is left as drawn.
+ * `input` naming `tenant` wherever `handle.tenantFor` reads it. One already naming it comes back as
+ * given; a `'none'` job comes back as given, as `none` — the tenant proof's write half reads it
+ * (`tenant-proof.ts`, `TenantAttack.tenantless`). A read path is kept only if setting it moves the
+ * answer to `tenant` — a field read and then ignored is left as drawn.
  */
 export function bindJobTenant(handle: TenantOf, input: unknown, tenant: string): JobTenantBinding {
   const declared = answer(handle, input);
   if (declared === tenant) return { kind: 'seated', input };
   const reads = pathsRead(handle, input);
   // `tenant: 'none'` is never called: no org named, none read, so none to disagree with.
-  if (declared === undefined && reads.length === 0) return { kind: 'seated', input };
+  if (declared === undefined && reads.length === 0) return { kind: 'none', input };
   const moving = reads.filter((path) => answer(handle, setAt(input, path, tenant)) === tenant);
   const bound = moving.reduce<unknown>((value, path) => setAt(value, path, tenant), input);
   return moving.length > 0 && answer(handle, bound) === tenant

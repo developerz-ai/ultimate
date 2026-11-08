@@ -52,6 +52,20 @@ describe(testName('unit', 'tenant proof report'), () => {
     expect(findings[1]?.cause).toContain('files row f-1');
   });
 
+  test('the cause claims no id B chose: an input naming none of A reaches A by an unscoped statement', () => {
+    // A primitive whose input carries no id — `{ occurrenceMs }` — still crosses when B's org runs
+    // a statement no tenant predicate scopes: the cause must name that reading, not only the id one.
+    const [leak, write] = tenantProofFindings([crossed]);
+    for (const finding of [leak, write]) {
+      expect(finding?.cause).not.toContain("with tenant A's ids");
+      expect(finding?.cause).toContain('or by a statement no tenant predicate scopes');
+      expect(finding?.fix).toContain('never by the input id alone, nor by an unscoped statement');
+    }
+    // A write is fixed by writing through the scoped repository, never "read".
+    expect(write?.fix).toContain('then write files row f-1 through the repository scoped');
+    expect(leak?.fix).toContain('then read the row behind output.items[0].url');
+  });
+
   test('a name no shell takes verbatim is a placeholder in the fix, and nothing else is', () => {
     const odd: ExerciseRecord = { ...crossed, name: 'read $(rm -rf)' };
     expect(tenantProofFindings([odd])[0]?.fix).toStartWith('x exercise <primitive> --json');

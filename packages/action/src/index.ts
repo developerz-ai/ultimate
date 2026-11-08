@@ -135,6 +135,7 @@ export type {
   ExerciseReport,
 } from './exercise';
 export { exerciseAction } from './exercise';
+export type { ContractExercise, ExerciseDeclarations } from './exercise-declarations';
 export type { OpenApiOperation } from './http';
 export {
   operationTagOf,

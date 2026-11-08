@@ -69,11 +69,11 @@ describe('unit · planFindings', () => {
 
   test('a read across tenants is served by no index that leads with the tenant', () => {
     const [finding] = planFindings(
-      'select * from "psf_posts" where "status" = $1',
-      [verdict({ equality: ['status'] })],
+      'select * from "psf_posts" where "score" = $1',
+      [verdict({ equality: ['score'] })],
       byTable,
     );
-    expect(finding?.index).toEqual(['status']);
+    expect(finding?.index).toEqual(['score']);
   });
 
   test('equality pinning a unique key reads one row: no finding', () => {
@@ -173,5 +173,80 @@ describe('unit · planFindings', () => {
     expect(planFindings(unstated, [{ ...walk, range: [] }], byTable).map((f) => f.index)).toEqual([
       ['orgId', 'handle', 'id'],
     ]);
+  });
+
+  test('a sort no declarable index serves suggests no index, and says why', () => {
+    const [finding] = planFindings(
+      'select * from "psf_posts" where "org_id" = $1 order by date_trunc(\'day\', "created_at") limit $2',
+      [
+        verdict({
+          code: 'X_QUERY_SORT_UNSERVED',
+          node: 'Sort',
+          equality: ['org_id'],
+          unservable: 'expression',
+        }),
+      ],
+      byTable,
+    );
+    expect(finding).toMatchObject({ entity: 'psf_posts', index: [], unserved: 'expression' });
+  });
+
+  test('an index the entity already declares is never the fix: following it changes no plan', () => {
+    const sorted = (equality: string[], order: string[]) =>
+      planFindings(
+        'select * from "psf_posts" where "status" = $1 order by "rank" limit $2',
+        [verdict({ code: 'X_QUERY_SORT_UNSERVED', node: 'Sort', equality, order })],
+        byTable,
+      );
+    expect(sorted(['status'], ['rank'])).toEqual([
+      expect.objectContaining({ index: [], unserved: 'declared' }),
+    ]);
+    // A declared index that the suggestion leads is declared too: `rank` alone is held by it.
+    expect(sorted([], ['rank'])).toEqual([expect.objectContaining({ unserved: 'declared' })]);
+    // One the entity does not hold is still the fix.
+    expect(sorted(['org_id'], ['rank'])).toEqual([
+      expect.objectContaining({ index: ['orgId', 'rank'] }),
+    ]);
+    expect(sorted(['org_id'], ['rank'])[0]?.unserved).toBeUndefined();
+  });
+
+  test('an OR is answered one index per arm; arms an index already leads are not asked for', () => {
+    const statement = 'select "id" from "psf_posts" where "score" = $1 or "rank" = $2';
+    const found = planFindings(
+      statement,
+      [verdict({ arms: [['score'], ['rank']] })],
+      byTable,
+    );
+    // `rank` leads a declared index; `score` leads none.
+    expect(found.map((one) => one.index)).toEqual([['score']]);
+    // Every arm led by a declared index is a BitmapOr the planner takes once it may: credited.
+    expect(
+      planFindings(statement, [verdict({ arms: [['rank'], ['status', 'rank']] })], byTable),
+    ).toEqual([]);
+  });
+
+  test('an OR beside an equality is bounded by the equality: the arms are not the index', () => {
+    const [finding] = planFindings(
+      'select "id" from "psf_posts" where "created_at" = $1 and ("score" = $2 or "rank" = $3)',
+      [verdict({ equality: ['created_at'], arms: [['score'], ['rank']] })],
+      byTable,
+    );
+    expect(finding?.index).toEqual(['createdAt']);
+  });
+
+  test("a walk over a join takes only its own table's leading order, one direction", () => {
+    const walk = verdict({ node: 'Index Scan', alias: 'p', equality: ['org_id'] });
+    const [joined] = planFindings(
+      'select p.id from psf_posts p join psf_members m on m.org_id = p.org_id where p.org_id = $1 order by p.created_at, m.handle, p.id limit 10',
+      [walk],
+      byTable,
+    );
+    expect(joined?.index).toEqual(['orgId', 'createdAt']);
+    const [mixed] = planFindings(
+      'select * from psf_posts where org_id = $1 order by created_at desc, id asc limit 10',
+      [verdict({ node: 'Index Scan', equality: ['org_id'] })],
+      byTable,
+    );
+    expect(mixed?.index).toEqual(['orgId', 'createdAt']);
   });
 });

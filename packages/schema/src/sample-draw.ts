@@ -4,7 +4,9 @@
  * share every rule about what a node accepts; only the choices differ.
  */
 
+import { charCount } from './char-count';
 import type { SchemaFormat, SchemaNode } from './node';
+import { patternSamples } from './sample-pattern';
 
 /** Every choice a walk makes that its node leaves open. Answers stay inside the node's own bounds. */
 export interface Draw {
@@ -74,10 +76,45 @@ export function owedItems(node: SchemaNode): number | undefined {
 }
 
 /** `'sample'`, padded to `minLength` and cut to `maxLength`. */
-export function minimalString(node: SchemaNode): string {
+function paddedSample(node: SchemaNode): string {
   const min = node.minLength ?? 0;
   const padded = SAMPLE_STRING.length >= min ? SAMPLE_STRING : SAMPLE_STRING.padEnd(min, 'x');
   return node.maxLength === undefined ? padded : padded.slice(0, node.maxLength);
+}
+
+/** The seed the minimal draw walks a pattern with: fixed, so the minimal sample never varies. */
+const MINIMAL_PATTERN_SEED = 1;
+
+/** How many candidates a pattern draw offers before the length bounds pick among them. */
+const PATTERN_CANDIDATES = 8;
+
+/**
+ * A string the node's `pattern` accepts, built from the pattern itself (`sample-pattern.ts`) and
+ * inside `minLength`/`maxLength`; `undefined` when the pattern is past the generator's subset,
+ * uncompilable, or meets no length bound — which `sampleGaps` then reports, never a guess.
+ */
+export function patternString(node: SchemaNode, seed: number): string | undefined {
+  if (node.pattern === undefined) return undefined;
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(node.pattern, node.patternFlags ?? '');
+  } catch {
+    return undefined;
+  }
+  const fits = (value: string): boolean =>
+    charCount(value) >= (node.minLength ?? 0) &&
+    (node.maxLength === undefined || charCount(value) <= node.maxLength);
+  return patternSamples(pattern, seed, PATTERN_CANDIDATES).find(fits);
+}
+
+/**
+ * `'sample'`, padded to `minLength` and cut to `maxLength` — or, when the node's `pattern` refuses
+ * that, the first value the pattern itself yields. A pattern `'sample'` meets keeps `'sample'`.
+ */
+export function minimalString(node: SchemaNode): string {
+  const padded = paddedSample(node);
+  if (satisfiesPattern(node, padded)) return padded;
+  return patternString(node, MINIMAL_PATTERN_SEED) ?? padded;
 }
 
 /** The lower bound, rounded inward for an integer, or the upper one when the lower overshoots. */

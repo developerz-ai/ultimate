@@ -34,10 +34,19 @@ export function tenantFindingLines(records: readonly ExerciseRecord[]): readonly
   );
 }
 
+/**
+ * B sends A's own first input, A's ids bound in only where it takes any: `{ occurrenceMs }` carries
+ * none, and B still crosses when a statement it ran names no tenant. Both readings, always.
+ */
 const causeOf = (record: ExerciseRecord, finding: TenantFinding): string =>
   finding.code === 'X_TENANT_LEAK'
-    ? `${record.kind} ${record.name}, called by tenant B with tenant A's ids ${LEG[finding.leg]}, handed back A's seeded data at ${where(finding)}: a read reached A's row by an id the caller chose, past the tenant guard`
-    : `${record.kind} ${record.name}, called by tenant B with tenant A's ids ${LEG[finding.leg]}, changed A's ${where(finding)}: a write reached A's row by an id the caller chose, past the tenant guard`;
+    ? `${record.kind} ${record.name}, called by tenant B with A's own input ${LEG[finding.leg]}, handed back A's seeded data at ${where(finding)}: a read reached A's row past the tenant guard — by an id the caller chose, or by a statement no tenant predicate scopes`
+    : `${record.kind} ${record.name}, called by tenant B with A's own input ${LEG[finding.leg]}, changed A's ${where(finding)}: a write reached A's row past the tenant guard — by an id the caller chose, or by a statement no tenant predicate scopes`;
+
+const fixOf = (name: string, finding: TenantFinding): string =>
+  finding.code === 'X_TENANT_LEAK'
+    ? `x exercise ${name} --json — then read the row behind ${where(finding)} through the repository scoped to ctx.actor, never by the input id alone, nor by an unscoped statement`
+    : `x exercise ${name} --json — then write ${where(finding)} through the repository scoped to ctx.actor, never by the input id alone, nor by an unscoped statement`;
 
 /**
  * One coded finding per tenant finding. The fix reruns the one primitive: what it reads or writes
@@ -54,7 +63,7 @@ export function tenantProofFindings(
       (finding): TenantProofFinding => ({
         code: finding.code,
         cause: causeOf(record, finding),
-        fix: `x exercise ${name} --json — then read ${finding.code === 'X_TENANT_LEAK' ? 'the row behind ' : ''}${where(finding)} through the repository scoped to ctx.actor, never by the input id alone`,
+        fix: fixOf(name, finding),
         at: `${record.kind} ${record.name}`,
       }),
     );

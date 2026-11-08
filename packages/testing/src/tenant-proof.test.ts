@@ -136,6 +136,15 @@ describe(testName('unit', 'tenant proof: what must stay green'), () => {
     expect(findings).toContainEqual(expect.objectContaining({ code: 'X_TENANT_LEAK' }));
   });
 
+  test("a tenant: 'none' purge of every org's rows, handed no id, is public: no B chose A's row", async () => {
+    const record = await proveOne('tpFilePurge');
+    expect(record.outcome).toBe('reached');
+    expect(record.tenant).toEqual({
+      verdict: 'public',
+      reason: expect.stringContaining("tenant: 'none'"),
+    });
+  });
+
   test('a handler that always throws is unreached and unproven, never proven', async () => {
     const record = await proveOne('tpAlwaysThrows');
     expect(record.outcome).toBe('unreached');

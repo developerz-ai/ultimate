@@ -1,6 +1,6 @@
-// `crashProof(handle, input)`: one clean run, then one run killed at each boundary the clean run
-// crossed — every step write landing, every settle — and one more where that write's answer is
-// lost. Judged by the effect log: a killed run that makes an effect more often than the clean one
+// `crashProof(handle, input)`: one clean run, then one run killed at each distinct boundary the
+// clean run crossed — a step write landing, a settle; a loop's rows one point (`job-crash-points.ts`)
+// — and one more where that write's answer is lost. Judged by the effect log: a killed run that makes an effect more often than the clean one
 // is `X_JOB_CRASH_DIVERGED`; a lost answer rerunning a step is at-least-once, reported, never red.
 
 import type { Ctx } from '@ultimat3/core';
@@ -8,11 +8,12 @@ import { finiteCount } from '@ultimat3/core';
 import type { JobHandle } from '@ultimat3/jobs';
 import { COMPENSATE_PREFIX, UNWINDING_STEP } from '@ultimat3/jobs';
 import { advanceClock, frozenNow } from './determinism';
+import { boundaryShapes, CRASH_POINT_BOUND, crashPoints } from './job-crash-points';
 import type { SimDecision, SimOp } from './job-sim-driver';
 import { SEND_AND_ANSWER } from './job-sim-driver';
 import type { SimEffect } from './job-sim-effects';
 import { effectCounts } from './job-sim-effects';
-import { JobCrashDivergedError } from './job-sim-errors';
+import { JobCrashDivergedError, JobCrashUnboundedError } from './job-sim-errors';
 import type { SimWorld } from './job-sim-world';
 import { openSimWorld } from './job-sim-world';
 
@@ -47,7 +48,10 @@ export interface CrashRerun {
 }
 
 export interface CrashReport {
+  /** The boundaries killed at: each distinct one the clean run crossed, a loop's rows as one. */
   readonly boundaries: readonly CrashBoundary[];
+  /** Every boundary the clean run crossed, the forced-fail run's included: what the kills stand for. */
+  readonly crossed: number;
   readonly divergences: readonly CrashDivergence[];
   readonly reruns: readonly CrashRerun[];
 }
@@ -212,6 +216,7 @@ export async function crashProof<I>(
   const boundaries: CrashBoundary[] = [];
   const divergences: CrashDivergence[] = [];
   const reruns: CrashRerun[] = [];
+  let crossed = 0;
   const modes: readonly CrashBoundary['mode'][] = handle.compensates
     ? ['clean', 'forced-fail']
     : ['clean'];
@@ -228,7 +233,19 @@ export async function crashProof<I>(
         : await runOnce(handle, input, { forceFail }, options);
     const afterOf = (key: string): string | undefined =>
       clean.effects.find((effect) => effect.key === key)?.after;
-    for (let at = 1; at <= clean.boundaries.length; at += 1) {
+    // Judged before the first kill: a proof past its bound costs one clean run, then refuses.
+    const points = crashPoints(clean.boundaries);
+    crossed += clean.boundaries.length;
+    if (points.length > CRASH_POINT_BOUND) {
+      throw new JobCrashUnboundedError({
+        job: handle.name,
+        points: points.length,
+        bound: CRASH_POINT_BOUND,
+        crossed: clean.boundaries.length,
+        shapes: boundaryShapes(clean.boundaries),
+      });
+    }
+    for (const at of points) {
       const label = clean.boundaries[at - 1] ?? '?';
       const killed = await runOnce(handle, input, { at, fault: 'kill', forceFail }, options);
       boundaries.push({
@@ -272,5 +289,5 @@ export async function crashProof<I>(
       }
     }
   }
-  return { boundaries, divergences, reruns };
+  return { boundaries, crossed, divergences, reruns };
 }

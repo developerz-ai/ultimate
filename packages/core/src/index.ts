@@ -383,6 +383,9 @@ export {
   tryResolveEnvironment,
 } from './environment';
 export { ExerciseEnvironmentError, ExerciseUnscopedError } from './exercise-errors';
+// The `input:` every exercise fix pastes, owed fields named: one renderer for action, query and testing.
+export type { DrawnBinding } from './exercise-hint';
+export { renderDrawnInput, renderExerciseKey, sampleGapBinding } from './exercise-hint';
 // A contract exercise's one loop: `@ultimat3/action`'s and `@ultimat3/query`'s, one tier apart from neither.
 export type {
   DrawnInput,

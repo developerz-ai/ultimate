@@ -30,6 +30,7 @@ import { overrideInput } from './exercise-override-input';
 import type {
   EffectPayload,
   ExerciseEffect,
+  ExercisePhaseMs,
   ExerciseRecord,
   ExerciseRoom,
   Observed,
@@ -61,6 +62,8 @@ export interface ExercisePassOptions {
   /** One primitive by name; unknown is `X_DECLARATION_UNKNOWN`. */
   readonly only?: string;
   readonly roles: RoleGrants;
+  /** Told once, as the pass returns: how long each phase took, so a slow pass names its slow part. */
+  readonly onPhases?: (ms: ExercisePhaseMs) => void;
 }
 
 const isOff = (overrides: ExerciseOverrides | undefined, name: string): boolean => {
@@ -311,12 +314,14 @@ async function exerciseOne(
   }
   const input = seat === undefined ? given : seat.input;
   let reachedWith: unknown;
+  const tenantStarted = performance.now();
   const record = await proveTenant({
     taint: tenantTaint(graph, tenant),
     input,
     public: publicReason(subject.policy),
     read: kind === 'query',
     sweep: kind === 'job',
+    tenantless: seat?.kind === 'none',
     attack: () => attack(subject, input, intruder, other, room),
     control: async () => {
       const done = await control(run, room, sampler);
@@ -325,10 +330,16 @@ async function exerciseOne(
     },
     snapshot: (seeded) => options.writer.snapshot(seeded),
   });
+  // The control's own call is `ms`: the tenant proof's time is everything around it.
+  const tenantMs = Math.max(0, Math.round(performance.now() - tenantStarted) - record.ms);
   // After the tenant proof, outside the room's begin/end: the crash runs' effects are their own.
-  return subject.handle === undefined || record.outcome !== 'reached'
-    ? record
-    : { ...record, crash: await proveCrash(subject.handle, reachedWith, actor) };
+  if (subject.handle === undefined || record.outcome !== 'reached') {
+    return { ...record, proofMs: { tenant: tenantMs } };
+  }
+  const crashStarted = performance.now();
+  const crash = await proveCrash(subject.handle, reachedWith, actor);
+  const proofMs = { tenant: tenantMs, crash: Math.round(performance.now() - crashStarted) };
+  return { ...record, crash, proofMs };
 }
 
 export async function runExercisePass(
@@ -349,6 +360,8 @@ export async function runExercisePass(
   const live = chosen.filter((subject) => !isOff(options.overrides, subject.name));
   const records: ExerciseRecord[] = [];
   let graph: SeedGraph;
+  const seedStarted = performance.now();
+  let primitivesStarted = seedStarted;
   try {
     // Seeded before the first primitive runs: a failure here is the pass's, never one primitive's.
     graph = await seedPass(options.entities, options.writer, {
@@ -358,6 +371,7 @@ export async function runExercisePass(
         ? {}
         : { factories: options.overrides.factories }),
     });
+    primitivesStarted = performance.now();
     // In order, one at a time: the seams the room installs are the process's, not the primitive's.
     for (const subject of chosen) {
       const index = live.indexOf(subject);
@@ -369,9 +383,11 @@ export async function runExercisePass(
     await room[Symbol.asyncDispose]();
     throw error;
   }
+  const seed = Math.round(primitivesStarted - seedStarted);
+  const primitives = Math.round(performance.now() - primitivesStarted);
   // The sweeps: every reached primitive again at two sizes, then every statement planned.
   const reached = new Set(records.filter((r) => r.outcome === 'reached').map((r) => r.name));
-  return attachSweeps(records, {
+  const swept = await attachSweeps(records, {
     subjects: chosen.filter((subject) => reached.has(subject.name)),
     entities: options.entities,
     // The sized graphs close their cycles as the pass's did: a refused deferred key stays null.
@@ -387,4 +403,6 @@ export async function runExercisePass(
         : await sizedCall(full, options, sampler, { graph: sized, tenant, self });
     },
   });
+  options.onPhases?.({ seed, primitives, ...swept.ms });
+  return swept.records;
 }

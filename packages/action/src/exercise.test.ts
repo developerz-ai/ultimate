@@ -188,7 +188,9 @@ describe('declaring the exercise', () => {
   test('a guarded action with no exercise is X_CONTRACT_EXERCISE_UNDECLARED', async () => {
     const failure = await failureOf(() => fourth(contractTestsFor(guarded)).run());
     expect(failure.code).toBe('X_CONTRACT_EXERCISE_UNDECLARED');
-    expect(failure.fix).toContain('guardedDeclare.contract({ exercise: { actor } })');
+    expect(failure.fix).toContain(
+      'defineExercise({ guardedDeclare: { actor } })   # in apps/web/exercise.ts',
+    );
   });
 
   test('an opt-out is listed with its reason; a blank one is refused', async () => {

@@ -609,7 +609,7 @@ Enforced through it, keyed or not: `concurrency` and `whenBusy` — each pass is
 
 | Call | Runs | Answers |
 |---|---|---|
-| `crashProof(job, input)` | one clean run, then one per boundary it crossed (each step write landing, each settle), the worker killed there and the next one reclaiming; then each boundary again with the write's answer lost | `{ boundaries, divergences, reruns }`. A divergence carries `error`, an `X_JOB_CRASH_DIVERGED` naming the effect and the step it follows — `throw report.divergences[0].error`. A rerun is at-least-once, reported, never red |
+| `crashProof(job, input)` | one clean run, then one per distinct boundary it crossed (each step write landing, each settle), the worker killed there and the next one reclaiming; then each again with the write's answer lost. A loop's steps named by row id (`fanout:${row.id}`, `page-3` — a uuid, a digit run, an 8+ character token with a digit) are one point, killed at its first and last row: the cost is the job's steps, never the rows seeded. Over `CRASH_POINT_BOUND` (32) points per mode it throws `X_JOB_CRASH_UNBOUNDED` after the clean run, never a pass | `{ boundaries, crossed, divergences, reruns }` — `boundaries` the kills, `crossed` every boundary they stand for. A divergence carries `error`, an `X_JOB_CRASH_DIVERGED` naming the effect and the step it follows — `throw report.divergences[0].error`. A rerun is at-least-once, reported, never red |
 | `simulateJobs({ jobs: [{ handle, input }], workers, faults, invariant })` | `seeds` (20) seeds from `seed` (1), N workers, every driver call interleaved and faulted by a seeded picker: `kill`, `answer-lost`, `lease-lapse`, `duplicate-claim`, `clock-jump` (`ALL_FAULTS`) | throws `X_JOB_SIM_INVARIANT` with the seed and its faults when `invariant(state)` throws or answers `false`; `X_JOB_SIM_NONDETERMINISTIC` when one seed traces two ways. `x test job --seed <n>` replays one |
 
 A `compensates: true` job is also forced to fail for good and killed while it unwinds: each `compensate:*` once, last in first out. A kill inside `step.run(…, { once: true })` ends `X_STEP_OUTCOME_UNKNOWN` and is green. Postgres is not simulated. The reference: `examples/dummy/apps/web/app/posts/jobs.job.test.ts`.
@@ -960,9 +960,11 @@ A legal input that crashes the handler is red in `contract`, the day the action 
 
 | Rule | |
 |---|---|
-| Who acts | `action.contract({ exercise: { actor } })`. Required unless the policy admits an anonymous caller. There is no bypass: a policy that denies `actor` makes an unreached run |
-| A row | `{ exercise: { actor, input: (drawn) => ({ ...drawn, postId }) } }` binds what a generated uuid cannot resolve |
-| Opting out | `{ exercise: { off: '<reason>' } }`. The reason is in the test's name. A blank one is `X_CONTRACT_EXERCISE_UNDECLARED` |
+| **One declaration** | in an app, an action's exercise lives in `apps/web/exercise.ts` and nowhere else: `import { exercise } from '<…>/exercise'` then `action.contract({ exercise })` — the whole `defineExercise()` value, of which the contract reads the entry named for the action. `x exercise` reads the same entry, so a test and the pass cannot disagree on who acts. An entry declared only inline in a test is one `x exercise` cannot see (it reports the primitive `unreached`). `As of 2026-11-08` |
+| Who acts | the entry's `actor`. Required unless the policy admits an anonymous caller: no entry is `X_CONTRACT_EXERCISE_UNDECLARED`, its `fix:` the `defineExercise({ <name>: { actor } })` line to paste. There is no bypass: a policy that denies `actor` makes an unreached run |
+| Inline, for a test's own world | `action.contract({ exercise: { actor, input } })` — one entry, not the app's — only when the test binds rows it seeded itself (`seed('dev').pick(…)`, an `actorFor`): those ids exist in that test alone. Kept and not deprecated; the who-acts of the primitive still belongs in `apps/web/exercise.ts` |
+| A row | `{ actor, input: (drawn) => ({ ...drawn, postId }) }` binds what a generated uuid cannot resolve |
+| Opting out | `{ off: '<reason>' }` as the entry. The reason is in the test's name. A blank one is `X_CONTRACT_EXERCISE_UNDECLARED` (`defineExercise` refuses it as the file loads) |
 | Runs | 16 (`EXERCISE_RUNS` from `@ultimat3/core`), `runs` from 1 to 64. Runs 0-3 sit on the IR's bounds (`minLength`, `maxLength`, `minimum`, `maximum`, `minItems`). The rest draw multibyte text, every enum and union member, optional keys on and off, `null` where nullable. A format value (`t.uuid`, `t.email`, …) is never varied |
 | Seed | `fnv1a(<action name>)`, never time, so a red run replays: `bun test <file> -t '<name>: handler survives generated input'` |
 | Rolled back | each run inside a memory transaction, always, and in it `withTransaction` when SQL can hold the writes: a SAVEPOINT in a test's open transaction, a root transaction once `setDbClient` installed a client. Both always roll back. The handler's SQL writes, its memory-store writes (`storeMode` `memory`, `tx` passed or not, since `memoryTransactor().run` is ambient), the outbox stage and the post-commit bust drop with it (`packages/action/src/tx-scope.ts` `inRolledBackScope`) |
@@ -974,12 +976,12 @@ A legal input that crashes the handler is red in `contract`, the day the action 
 | Red, `X_CONTRACT_EXERCISE_UNREACHED` | no run reached the handler. `X_TEST_NETWORK_SEALED` counts as unreached, its host in `meta.outcomes` |
 | Red, `X_CONTRACT_DRIFT` | the schema refused every draw: a provider refinement the IR does not carry. Bind it with `exercise.input` |
 
-A query has the same assertion: `orgFeed.contract({ exercise: { actor } })`, named
+A query has the same assertion, read off the same file: `orgFeed.contract({ exercise })`, named
 `<name>: read survives generated input`. "Reached" is `sql()` building a source, and a read
 writes nothing, so no transaction wraps it; it refuses a deploy the same way. Both are one loop,
 `@ultimat3/core`'s `runExercise`: the verdicts above are the same words for a read and a write.
 The generators emit the call with an actor (`x g action`, `x g resource`), holding the slice's grant: a hand-written `policy.ts`'s one literal
-`can('<perm>')`, or `{ off }` when its grant cannot be read.
+`can('<perm>')`, or `{ off }` when its grant cannot be read. As of 2026-11-08 that call is still the inline form: `x g` does not yet write the entry into `apps/web/exercise.ts`. `x exercise` reaches a generated action without one (the grant is on a role `x policy explain` evaluates); a hand-written policy's needs the entry there.
 `@ultimat3/schema/sample`'s `arbitrary(schema, { seed, run })` is the draw, off the barrel.
 
 ## The exercise pass
@@ -1000,7 +1002,7 @@ shape, same unreached code. `As of 2026-11`.
 | Async input | an override's `input` may be `async`: it is awaited inside the call's request, as the call's actor, so it can mint what the action checks (a one-time token, a passkey assertion). `x drill`'s load skips an `async` input and says why |
 | Room | network sealed, mail captured, jobs in memory, clock frozen — from before the app loads and the scratch database boots, as `bun test`'s preload does, so the embedded Postgres never sees its clock jump. A call out is refused and counted, so the primitive is `unreached` |
 | Cost | rows are primitives × tables; statements are not: the graph is written one `insertAll` per table, each tenant-proof snapshot is one statement, and a primitive reads only its own pair's rows of the graph |
-| Overrides | `apps/web/exercise.ts`: `export const exercise = defineExercise({ publishPost: { actor, input }, sendInvoice: { off: '<why>' } })`. Each value is `.contract({ exercise })`'s option. An unknown name is `X_DECLARATION_UNKNOWN`; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED` |
+| Overrides | `apps/web/exercise.ts`: `export const exercise = defineExercise({ publishPost: { actor, input }, sendInvoice: { off: '<why>' } })`. The same value is what every contract test hands `.contract({ exercise })` ([one declaration](#the-exercise-assertion)). An unknown name is `X_DECLARATION_UNKNOWN`; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED` |
 | A handler that calls a vendor | `defineExercise({ … }, { setup: () => { mockFetch('https://api.vendor.test/*', handler); } })` — or `setup: () => cassette(import.meta.dir, 'exercise')`. Runs once in the exercise process, after the seal and before the first row; what it returns is disposed after the pass. A call a setup route answers is reached, not refused. `allowHost` in it is `X_EXERCISE_SETUP_UNSEALED` |
 | Rows a generated value cannot satisfy | a cross-column `c.satisfies(…)` reads `X_SEED_GRAPH_UNSATISFIED`: `defineExercise({ … }, { factories: { bosses: defineFactory(bosses, { defaults: (i) => ({ … }) }) } })`, keyed by entity name, the graph's keys kept. A column that follows from a key or reference the graph picked: `derive: (row) => ({ scopeKey: … })` beside `build`/`reset`, reading `row.ownerOrgId`. A partial unique whose columns the factory builds is the database's to judge. An unknown name is `X_DECLARATION_UNKNOWN` |
 | Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, defect?, statements, effects, ms, override?, fix?, tenant?, crash? }` — `fix` where no override reaches it; `defect` on a 5xx: `{ cause, statement?, fields? }`, the error's own cause (a value the input held under a credential key or a `.sensitive()` field masked `[redacted]`), the SQL a database refusal names and the paths a validation failure names, all carried into the `X_CONTRACT_EXERCISE_UNREACHED` finding. The fields before `tenant` are A's call. The human table's `tenant` and `crash` columns are the verdicts, `-` where none ran |
@@ -1038,16 +1040,20 @@ only what came back and what changed.
 | `unproven` | A's own call was not `reached` | no — the record is already `unreached`, which is |
 | `public` | the policy admits an anonymous caller with an empty input: read half skipped, write half kept | no |
 | `public` | a **job** whose B leg opened `crossTenant(reason, fn)` and whose input carried none of A's marks — a declared sweep, `sendDigest` fanning out one delivery per org. The reason is quoted in the verdict; read half skipped, write half kept | no |
+| `public` | a **job** declaring `tenant: 'none'` whose input carried none of A's marks — a nightly cleanup across every org, input `{ occurrenceMs }`. No org and no id B chose reaches its run, so B's run is A's run: write half skipped (no snapshots taken), read half kept. Handed one of A's ids, crossed as ever. Both this and a declared sweep: both reasons, `; `-joined | no |
 | `unproven` | a query whose A answer held none of A's marks: B's empty answer proves nothing | no |
 | `proven` | otherwise | no |
 
 `off` and `refused` records carry no `tenant`. A job has no policy, so it is `public` only as a
-declared sweep. `crossTenant()` is the one declaration the proof reads (`@ultimat3/entity` tells a
-witness each scope opened, after its capability is proven); it excuses nothing on an action or a
-query, which answer B directly, nor on a job B handed one of A's ids — that is B choosing A's row,
-crossed as ever. A finding prints paths, tables and seeded ids, never a bound value. The fix on each:
-`x exercise <name> --json`, then read or write the row through the repository scoped to
-`ctx.actor`. What this does not walk — a `route` `load`, a `task` — is
+declared sweep or a `tenant: 'none'` job handed nothing of A's. `crossTenant()` is the one
+declaration the proof reads (`@ultimat3/entity` tells a witness each scope opened, after its
+capability is proven); it excuses nothing on an action or a query, which answer B directly, nor on a
+job B handed one of A's ids — that is B choosing A's row, crossed as ever. `tenant: 'none'` excuses
+only the write half, and only with no id of A's handed: an action or a query runs as B's actor, so a
+write to A's row with no id in the input is a statement no tenant predicate scopes, crossed. A
+finding prints paths, tables and seeded ids, never a bound value. The fix on each: `x exercise
+<name> --json`, then read or write the row through the repository scoped to `ctx.actor`. What this
+does not walk — a `route` `load`, a `task` — is
 [Policies and authz](Policies-And-Authz#the-dynamic-tenant-proof).
 
 ### The crash proof
@@ -1062,12 +1068,20 @@ actor, after the tenant proof. Source: `packages/testing/src/exercise-crash.ts`,
 | Runs | committed on the pass's scratch database, after the control. A job body runs outside every transaction, so no rollback scope can hold its writes, and an effect is counted when it commits |
 | Oracle | the effect multiset — row writes through a repository, mail, calls out, enqueues — of each killed run against the clean one. Raw SQL is no effect, and reads are none |
 | A job with no step | one boundary, before the ack: an effect in its body runs again on the retry |
+| A sweep | one step per row is one kill point when the step is named by the row's id: a job over 1,500 seeded rows costs the runs one over 3 does. Steps named otherwise (a slug, an email) past 32 points are `unproven`, `X_JOB_CRASH_UNBOUNDED` |
 
 | `crash.verdict` | When | Red |
 |---|---|---|
 | `diverged` | an effect made more often by a killed run: `findings[]` of `{ boundary, mode, effect, clean, killed, after?, inside? }` — `inside` the step whose body made it (`@ultimat3/jobs`' `currentStep()`), `after` the last step completed before it. An effect inside a step that did not complete, made FEWER times by a kill that spent one of its attempts, is not a divergence | yes: `X_JOB_CRASH_DIVERGED`, one per effect and place, every boundary named. Inside a step the fix keys its call on `${jobId}:<step>`; outside every step it wraps it in `step.run` |
-| `held` | otherwise; `boundaries` and `reruns` (lost answers — at-least-once, never red) counted | no |
-| `unproven` | the proof itself threw: `reason` | no |
+| `held` | otherwise; `boundaries` (kills), `crossed` (boundaries they stand for) and `reruns` (lost answers — at-least-once, never red) counted | no |
+| `unproven` | the proof itself threw, or could not finish in its bound: `reason`, `X_JOB_CRASH_UNBOUNDED: …` for the second | no |
+
+**Where the time went.** Every record carries `proofMs: { tenant, crash, scale }` beside `ms` (the
+control's own call); the report carries `phases: { seed, primitives, scale, plans, subject }`, in
+milliseconds. No per-record plan time: one statement is planned once for every primitive that sent
+it. The table's `tenant ms` / `crash ms` / `scale ms` columns, then
+`took 44704 ms — seed 818 · primitives 41099 · … — slowest: primitives` and the five slowest
+proofs by record, `slowest: job billing.plan-catalog · crash 35692 ms`. `As of 2026-11`.
 
 The human output prints one line per killed boundary,
 `job chargeOrder · killed at mail · X_JOB_CRASH_DIVERGED row:payments:insert 2× (clean 1×)`. The fix

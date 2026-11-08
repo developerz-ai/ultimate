@@ -18,6 +18,8 @@ import { admitsAnonymous } from '@ultimat3/policy';
 import { arbitrary } from '@ultimat3/schema/sample';
 import type { AnyAction } from './action';
 import type { ContractTest } from './contract-test';
+import type { ContractExercise } from './exercise-declarations';
+import { isExerciseDeclarations, resolveExercise } from './exercise-declarations';
 import {
   ContractDefectError,
   ExerciseUndeclaredError,
@@ -101,7 +103,7 @@ export async function exerciseAction(
     case 'pass':
       return verdict.report;
     case 'drift':
-      throw everyDrawRefused(name);
+      throw everyDrawRefused(name, target.input);
     case 'unreached':
       throw new ExerciseUnreachedError(name, verdict.outcomes);
     case 'defect':
@@ -133,16 +135,17 @@ async function acceptedBy(target: AnyAction, input: unknown, name: string): Prom
  */
 export function exerciseContract(
   target: AnyAction,
-  exercise: ExerciseOptions | undefined,
+  declared: ContractExercise | undefined,
   ctx: Ctx | undefined,
 ): ContractTest {
   const name = actionName(target);
+  const exercise = resolveExercise(name, declared);
   if (exercise !== undefined && 'off' in exercise) {
     const reason = exercise.off.trim();
     return reason.length === 0
       ? {
           name: exerciseTestName(name),
-          run: () => Promise.reject(new ExerciseUndeclaredError(name, true)),
+          run: () => Promise.reject(new ExerciseUndeclaredError(name, 'blank')),
         }
       : { name: `${name}: handler exercise off: ${reason}`, run: () => Promise.resolve() };
   }
@@ -150,7 +153,11 @@ export function exerciseContract(
   return {
     name: exerciseTestName(name),
     run: async () => {
-      if (options === undefined) throw new ExerciseUndeclaredError(name, false);
+      if (options === undefined) {
+        const why =
+          declared !== undefined && isExerciseDeclarations(declared) ? 'no-entry' : 'undeclared';
+        throw new ExerciseUndeclaredError(name, why);
+      }
       await exerciseAction(target, options, ctx);
     },
   };

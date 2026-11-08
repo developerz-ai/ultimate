@@ -21,6 +21,7 @@ import type { StandardSchemaV1 } from './standard';
 
 export type { Draw } from './sample-draw';
 export { minimalDraw, SAMPLE_ITEMS_MAX } from './sample-draw';
+export { patternSamples } from './sample-pattern';
 export { BOUNDARY_RUNS, seededDraw } from './sample-seeded';
 
 /**

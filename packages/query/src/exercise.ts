@@ -21,6 +21,7 @@ import { validateAsync } from '@ultimat3/schema';
 import { arbitrary } from '@ultimat3/schema/sample';
 import { QueryAuditSinkMissingError } from './audit-errors';
 import { QueryDeniedError } from './errors';
+import { QUERY_EXERCISE_DECLARATIONS_FILE } from './exercise-declarations';
 import type { AnyQuery } from './query';
 import { queryName, sourceFor } from './read';
 
@@ -134,7 +135,7 @@ function queryUnreached(name: string, outcomes: readonly string[]): UltimateErro
   return new UltimateError({
     code: 'X_CONTRACT_EXERCISE_UNREACHED',
     cause: `none of ${outcomes.length} generated runs of query ${name} reached its sql() (meta.outcomes lists what each one hit)`,
-    fix: `${renderFixShellArg(name, '<name>')}.contract({ exercise: { actor } }) with an actor the policy permits`,
+    fix: `defineExercise({ ${renderFixShellArg(name, '<name>')}: { actor } })   # in ${QUERY_EXERCISE_DECLARATIONS_FILE}, an actor the policy permits`,
     meta: { outcomes },
   });
 }
@@ -147,14 +148,28 @@ function queryDrawsRefused(name: string): UltimateError {
   });
 }
 
-/** A guarded read with no exercise said, or an opt-out with a blank reason. */
-export function queryExerciseUndeclared(name: string, blankReason: boolean): UltimateError {
+/** Why no exercise could run: an `off` with no reason, nothing declared, or no entry by this name. */
+export type QueryExerciseUndeclaredWhy = 'blank' | 'undeclared' | 'no-entry';
+
+/**
+ * A guarded read with no exercise. The fix is the paste in the ONE home, `apps/web/exercise.ts`
+ * — the file `x exercise` reads and `.contract({ exercise })` is handed — never an inline option:
+ * an entry declared only in a test is one `x exercise` cannot see. Action's twin.
+ */
+export function queryExerciseUndeclared(
+  name: string,
+  why: QueryExerciseUndeclaredWhy,
+): UltimateError {
   const call = renderFixShellArg(name, '<name>');
+  const refuses = `query ${name} refuses an anonymous reader`;
+  const causes: Record<QueryExerciseUndeclaredWhy, string> = {
+    blank: `${name}.contract({ exercise: { off } }) gives a blank reason, so the skip is silent`,
+    'no-entry': `${refuses} and ${QUERY_EXERCISE_DECLARATIONS_FILE} declares no entry for it, so no actor to read as is known`,
+    undeclared: `${refuses} and its .contract() names no actor to read as`,
+  };
   return new UltimateError({
     code: 'X_CONTRACT_EXERCISE_UNDECLARED',
-    cause: blankReason
-      ? `${name}.contract({ exercise: { off } }) gives a blank reason, so the skip is silent`
-      : `query ${name} refuses an anonymous reader and its .contract() names no actor to read as`,
-    fix: `${call}.contract({ exercise: { actor } }) — or ${call}.contract({ exercise: { off: '<why this read cannot run in a test>' } })`,
+    cause: causes[why],
+    fix: `defineExercise({ ${call}: { actor } })   # in ${QUERY_EXERCISE_DECLARATIONS_FILE}, then ${call}.contract({ exercise }) with that file's export — or { off: '<why this read cannot run in a test>' } there`,
   });
 }
