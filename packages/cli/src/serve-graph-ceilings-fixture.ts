@@ -153,8 +153,10 @@
  * keeps the barrels' `core/src/{mcp-exposure,tool-description}.ts`, `action/src/tool-gate.ts`.
  * raised 883 → 884, measured 884 (2026-11-07, fix/exercise-fidelity): `jobs/src/step-scope.ts`,
  * `currentStep()` — the step body in flight, which the crash proof names. No module newly reached.
+ * raised 884 → 885, measured 885 (2026-11-08, fix/followups): `entity/src/json-null.ts`, the one
+ * rule the parsers, the pg binder/decoder and the memory matcher read for a JSON `null`. No module newly reached.
  */
-export const MIGRATE_CEILING = 884;
+export const MIGRATE_CEILING = 885;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -333,5 +335,6 @@ export const MIGRATE_CEILING = 884;
  * raised 1255 → 1259, measured 1259 (2026-11-07, sweep 3): `MIGRATE_CEILING`'s three and
  * `cli/src/runtime-jobs-unserved.ts` (a split worker reads the registry before it warns).
  * raised 1259 → 1260, measured 1260 (2026-11-07, fix/exercise-fidelity): `MIGRATE_CEILING`'s 1.
+ * raised 1260 → 1261, measured 1261 (2026-11-08, fix/followups): `MIGRATE_CEILING`'s 1.
  */
-export const SERVING_ROLE_CEILING = 1260;
+export const SERVING_ROLE_CEILING = 1261;

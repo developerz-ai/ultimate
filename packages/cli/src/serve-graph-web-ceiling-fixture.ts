@@ -167,5 +167,6 @@
  * raised 1435 → 1436, measured 1436 (2026-11-07, fix/exercise-tenancy): `entity/src/read-only.ts`.
  * raised 1436 → 1441, measured 1441 (2026-11-07, sweep 3): the four above, `mcp/src/include-early.ts`.
  * raised 1441 → 1442, measured 1442 (2026-11-07, fix/exercise-fidelity): `MIGRATE_CEILING`'s 1.
+ * raised 1442 → 1443, measured 1443 (2026-11-08, fix/followups): `MIGRATE_CEILING`'s 1.
  */
-export const WEB_ROLE_CEILING = 1442;
+export const WEB_ROLE_CEILING = 1443;
