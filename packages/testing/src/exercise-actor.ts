@@ -39,7 +39,9 @@ function rehomedFacts(
 ): ActorFactMap | undefined {
   if (facts === undefined || from === undefined || from === to) return facts;
   const moved: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(facts)) {
+  // An app augments `ActorFacts`, so its value types say nothing here: each is read as unknown.
+  const entries: [string, unknown][] = Object.entries(facts);
+  for (const [key, value] of entries) {
     if (value === from) moved[key] = to;
     else if (Array.isArray(value) && value.includes(from)) {
       moved[key] = value.map((one: unknown) => (one === from ? to : one));
