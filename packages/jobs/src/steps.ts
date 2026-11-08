@@ -21,6 +21,7 @@ import {
   UNWINDING_STEP,
 } from './errors-saga';
 import { createRunSignal } from './run-signal';
+import { inStep } from './step-scope';
 import type { EventLookup, StepApi, StepRunOptions } from './steps-api';
 import { DEFAULT_EVENT_POLL_MS, WAKING_EVENT_POLL_MS } from './steps-api';
 import type { RunnerCore } from './steps-core';
@@ -297,7 +298,7 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
     const signal = composed?.signal ?? runSignal;
     try {
       const output = await withStepTimeout(
-        fn(signal),
+        inStep(name, () => fn(signal)),
         stepTimeoutMs,
         deadline,
         () =>

@@ -33,6 +33,8 @@ export interface CrashDivergence {
   readonly effect: string;
   readonly clean: number;
   readonly killed: number;
+  /** The step whose body made the effect, when every occurrence was made inside that one step. */
+  readonly inside?: string;
   readonly error: JobCrashDivergedError;
 }
 
@@ -155,8 +157,22 @@ async function runOnce<I>(
 }
 
 /**
- * Effects the killed run made more often than the reference — or less often, when both ended alike
- * and neither unwound. An unwound run is also held to the reference's compensators: each once, last
+ * The one step whose body made every occurrence of `key` in both runs, or `undefined` when any
+ * occurrence was made between steps (or in two different steps).
+ */
+function insideOf(key: string, runs: readonly Ran[]): string | undefined {
+  const steps = new Set(
+    runs.flatMap((run) => run.effects.filter((one) => one.key === key).map((one) => one.inside)),
+  );
+  const [only] = steps;
+  return steps.size === 1 ? only : undefined;
+}
+
+/**
+ * Effects the killed run made more often than the reference — or less often, when both ended alike,
+ * neither unwound and the effect is made between steps. Inside a step body that did not complete,
+ * fewer is a kill that spent one of the step's attempts (the queue's lease accounting), not a call
+ * the crash skipped. An unwound run is also held to the reference's compensators: each once, last
  * in first out, for exactly the forward steps that completed in it.
  */
 function compare(reference: Ran, killed: Ran): readonly [string, number, number][] {
@@ -169,7 +185,9 @@ function compare(reference: Ran, killed: Ran): readonly [string, number, number]
   for (const key of keys) {
     const c = before.get(key) ?? 0;
     const k = after.get(key) ?? 0;
-    if (k > c || (k < c && alike)) out.push([key, c, k]);
+    if (k > c || (k < c && alike && insideOf(key, [reference, killed]) === undefined)) {
+      out.push([key, c, k]);
+    }
   }
   if (unwound) {
     const expected = reference.compensated.filter((name) =>
@@ -222,19 +240,25 @@ export async function crashProof<I>(
           : clean;
       for (const [effect, c, k] of compare(reference, killed)) {
         const after = afterOf(effect);
+        const inside = insideOf(effect, [reference, killed]);
+        const where = {
+          ...(after === undefined ? {} : { after }),
+          ...(inside === undefined ? {} : { inside }),
+        };
         divergences.push({
           boundary: label,
           mode,
           effect,
           clean: c,
           killed: k,
+          ...(inside === undefined ? {} : { inside }),
           error: new JobCrashDivergedError({
             job: handle.name,
             boundary: label,
             effect,
             clean: c,
             killed: k,
-            ...(after === undefined ? {} : { after }),
+            ...where,
           }),
         });
       }

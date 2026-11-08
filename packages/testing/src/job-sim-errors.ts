@@ -17,18 +17,49 @@ export interface CrashDivergedInput {
   readonly effect: string;
   readonly clean: number;
   readonly killed: number;
-  /** The last step written before the effect, in the clean run. */
+  /** The last step completed before the effect, in the clean run. */
   readonly after?: string;
+  /** The step whose body made the effect, when it was made inside one. */
+  readonly inside?: string;
 }
+
+/**
+ * Where an effect was made, as the crash proof's two reporters phrase it — this error and the CLI's
+ * finding (`@ultimat3/cli`'s `exercise-findings.ts`) — so the two cannot name different places.
+ * `remedy` is prose for a `fix:`'s comment, after the call it pastes.
+ */
+export function crashEffectPlace(where: {
+  readonly after?: string | undefined;
+  readonly inside?: string | undefined;
+}): { readonly place: string; readonly remedy: string } {
+  if (where.inside !== undefined) {
+    const step = renderCauseValue(where.inside);
+    return {
+      place: `it runs inside step ${step}, whose body runs again until the step completes`,
+      remedy: `make the body of step ${step} idempotent: key its external call on \`\${jobId}:${where.inside}\`, or move the effect into a step of its own`,
+    };
+  }
+  const at =
+    where.after === undefined
+      ? 'before the first step'
+      : `after step ${renderCauseValue(where.after)}`;
+  return {
+    place: `it runs outside every step, ${at}`,
+    remedy: `wrap the effect made ${at} in step.run('<name>', async () => …); key an external call on \`\${jobId}:<step>\``,
+  };
+}
+
+const howOften = (killed: number, clean: number): string =>
+  killed > clean ? 'so the retry makes it again' : 'so the crash skipped it';
 
 export class JobCrashDivergedError extends UltimateError {
   constructor(input: CrashDivergedInput) {
-    const where =
-      input.after === undefined ? 'before the first step' : `after step "${input.after}"`;
+    const { place, remedy } = crashEffectPlace(input);
+    const name = input.inside ?? `${input.boundary}-effect`;
     super({
       code: 'X_JOB_CRASH_DIVERGED',
-      cause: `job ${renderCauseValue(input.job)} killed at ${renderCauseValue(input.boundary)} made ${renderCauseValue(input.effect)} ${input.killed}× against ${input.clean}× in a clean run: it runs outside every step, ${where}, so the retry makes it again`,
-      fix: `step.run(${renderFixLiteral(`${input.boundary}-effect`, '<name>')}, async () => …)   # in job(${renderFixLiteral(input.job, '<job>')}): wrap the ${renderFixLiteral(input.effect, '<effect>')} made ${where}; key an external call on \`\${jobId}:<step>\`; then: x test job --filter <the test file>`,
+      cause: `job ${renderCauseValue(input.job)} killed at ${renderCauseValue(input.boundary)} made ${renderCauseValue(input.effect)} ${input.killed}× against ${input.clean}× in a clean run: ${place}, ${howOften(input.killed, input.clean)}`,
+      fix: `step.run(${renderFixLiteral(name, '<name>')}, async () => …)   # in job(${renderFixLiteral(input.job, '<job>')}), for ${renderFixLiteral(input.effect, '<effect>')}: ${remedy}; then: x test job --filter <the test file>`,
       meta: { ...input },
     });
   }

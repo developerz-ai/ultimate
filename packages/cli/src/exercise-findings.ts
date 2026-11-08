@@ -12,7 +12,7 @@ import {
   renderFixShellArg,
 } from '@ultimat3/core';
 import type { ExerciseRecord } from '@ultimat3/testing';
-import { planSweepFindings, tenantProofFindings } from '@ultimat3/testing';
+import { crashEffectPlace, planSweepFindings, tenantProofFindings } from '@ultimat3/testing';
 import type { Finding } from './output';
 import { renderTable } from './table';
 
@@ -75,27 +75,29 @@ const crashFindingsOf = (record: ExerciseRecord): readonly CrashFinding[] =>
 
 /**
  * `X_JOB_CRASH_DIVERGED`, testing's code: a reached job, killed at a step boundary, made an effect
- * more often than a clean run — it sits outside every `step.run`, so a retry makes it again. One
- * finding per effect and the step it follows, every boundary that showed it named in the cause.
+ * a different number of times than a clean run. Where it ran — outside every `step.run`, or inside
+ * one whose body re-runs — is testing's `crashEffectPlace`, the phrase its error uses too. One
+ * finding per effect and place, every boundary that showed it named in the cause.
  */
 const crashFindings = (record: ExerciseRecord): readonly Finding[] => {
   const groups = new Map<string, CrashFinding[]>();
   for (const one of crashFindingsOf(record)) {
-    const key = `${one.effect}\u0000${one.after ?? ''}`;
+    const key = `${one.effect}\u0000${one.after ?? ''}\u0000${one.inside ?? ''}`;
     groups.set(key, [...(groups.get(key) ?? []), one]);
   }
   const job = renderFixShellArg(record.name, '<job>');
   return [...groups.values()].map((group): Finding => {
     const [first] = group as [CrashFinding, ...CrashFinding[]];
-    const where =
-      first.after === undefined
-        ? 'before the first step'
-        : `after step ${JSON.stringify(first.after)}`;
+    const { place, remedy } = crashEffectPlace(first);
+    const how =
+      first.killed > first.clean
+        ? 'the retry after a crash makes it again'
+        : 'the crash skipped it';
     const at = group.map((one) => JSON.stringify(one.boundary)).join(', ');
     return {
       code: 'X_JOB_CRASH_DIVERGED',
-      cause: `job ${renderCauseValue(record.name)} killed at ${at} made ${renderCauseValue(first.effect)} ${first.killed}× against ${first.clean}× in a clean run: it runs outside every step, ${where}, so the retry after a crash makes it again`,
-      fix: `x exercise ${job} --json   # in job(${renderFixLiteral(record.name, '<job>')}): wrap the ${renderFixLiteral(first.effect, '<effect>')} made ${where} in step.run('<name>', async () => …)`,
+      cause: `job ${renderCauseValue(record.name)} killed at ${at} made ${renderCauseValue(first.effect)} ${first.killed}× against ${first.clean}× in a clean run: ${place}, so ${how}`,
+      fix: `x exercise ${job} --json   # in job(${renderFixLiteral(record.name, '<job>')}), for ${renderFixLiteral(first.effect, '<effect>')}: ${remedy}`,
       docs: ERROR_DOCS_URL,
       at: `${record.kind} ${record.name}`,
     };

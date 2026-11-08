@@ -72,8 +72,10 @@ export interface CrashFinding {
   readonly effect: string;
   readonly clean: number;
   readonly killed: number;
-  /** The last step the clean run had written before the effect; absent, before the first. */
+  /** The last step the clean run had completed before the effect; absent, before the first. */
   readonly after?: string;
+  /** The step whose body made the effect, when it was made inside one: it runs again on a retry. */
+  readonly inside?: string;
 }
 
 /** The crash proof's verdict on a reached job: killed at every step boundary (`crashProof`). */

@@ -376,6 +376,7 @@ export { crashProof } from './job-crash-proof';
 export { jobDriverConformance } from './job-driver-conformance';
 export type { SimEffect } from './job-sim-effects';
 export {
+  crashEffectPlace,
   JobCrashDivergedError,
   JobSimInvariantError,
   JobSimNondeterministicError,
