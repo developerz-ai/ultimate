@@ -62,7 +62,7 @@ describe('unit · the exercise file edit', () => {
     );
   });
 
-  test('an object over several lines, under an indent, gains a row at its indent', () => {
+  test('an object over several lines, under an indent, gains its last row at that indent', () => {
     const source = [
       "import { userActor } from '@ultimat3/core';",
       "import { defineExercise } from '@ultimat3/testing';",
@@ -70,7 +70,7 @@ describe('unit · the exercise file edit', () => {
       'export const exercise = defineExercise(',
       '  {',
       '    // why',
-      "    keep: { off: 'a reason' },",
+      "    keep: { off: 'a reason' } // no comma",
       '  },',
       '  { actor: members },',
       ');',
@@ -83,11 +83,11 @@ describe('unit · the exercise file edit', () => {
         '',
         'export const exercise = defineExercise(',
         '  {',
+        '    // why',
+        "    keep: { off: 'a reason' }, // no comma",
         '    writeArticle: {',
         "      actor: userActor({ id: 'member', permissions: ['blog:write'] }),",
         '    },',
-        '    // why',
-        "    keep: { off: 'a reason' },",
         '  },',
         '  { actor: members },',
         ');',
@@ -99,7 +99,7 @@ describe('unit · the exercise file edit', () => {
   test('a one-line object with entries is expanded, a row each', () => {
     const source = SCAFFOLD.replace('({})', "({ keep: { off: 'a reason' } })");
     expect(edited(source, [{ name: 'other', value: "{ off: 'n/a' }" }])).toContain(
-      "defineExercise({\n  other: { off: 'n/a' },\n  keep: { off: 'a reason' },\n});",
+      "defineExercise({\n  keep: { off: 'a reason' },\n  other: { off: 'n/a' },\n});",
     );
   });
 

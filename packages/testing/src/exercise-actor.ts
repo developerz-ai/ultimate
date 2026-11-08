@@ -26,6 +26,21 @@ export type ActorChoice =
 export const inTenant = (actor: Actor | null, tenant: string): Actor | null =>
   actor === null ? null : Object.freeze({ ...actor, orgId: tenant });
 
+/**
+ * A role's actor id in one tenant: a uuid, as `ctx.actor.id` always is in production (an
+ * `x_users` key), and the same one every time for that role in that tenant — so a rerun on a seed
+ * replays byte for byte, and A's actor is never B's. Name-based (SHA-1, version 5 bits), never
+ * random: nothing about it may depend on the order the pass asks.
+ */
+export function exerciseActorId(role: string, tenant: string): string {
+  const digest = new Bun.CryptoHasher('sha1').update(`x-exercise-actor\0${role}\0${tenant}`);
+  const bytes = digest.digest().subarray(0, 16);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = bytes.toHex();
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 type Verdict = 'allowed' | 'denied' | 'undecidable';
 
 /**
@@ -64,7 +79,8 @@ export function chooseActor(
   tenant: string,
   override: ExerciseOverride | undefined,
 ): ActorChoice {
-  if (override !== undefined && 'actor' in override) {
+  // An input-only entry (`{ input }`, no `actor`) keeps the pick below: only a DECLARED actor wins.
+  if (override !== undefined && !('off' in override) && override.actor !== undefined) {
     return { kind: 'actor', actor: inTenant(override.actor, tenant), name: 'override' };
   }
   const candidates = grants(tenant);
@@ -92,8 +108,13 @@ export function chooseActor(
           : `none of ${ordered.map((c) => c.name).join(', ')} is allowed by ${policy.label} or holds ${permissions.join(', ') || 'its grant'}`,
     };
   }
-  return { kind: 'actor', actor: pick[0].actor, name: pick[0].name };
+  const [{ actor, name }] = pick;
+  return { kind: 'actor', actor: asRoleUser(actor, name, tenant), name };
 }
+
+/** A role's actor with the id a production actor has: `exerciseActorId(role, tenant)`. */
+const asRoleUser = (actor: Actor | null, name: string, tenant: string): Actor | null =>
+  actor === null ? null : Object.freeze({ ...actor, id: exerciseActorId(name, tenant) });
 
 /** The seeded rows an actor can be one of: the pass's graph, read for one entity. */
 export interface ActorRows {

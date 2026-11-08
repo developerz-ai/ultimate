@@ -71,6 +71,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_MODULE_MOCK_UNRESTORABLE',
   'X_EXERCISE_SETUP_UNSEALED',
   'X_JOB_CRASH_UNBOUNDED',
+  'X_EXERCISE_ACTOR_USER_UNSEATED',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -137,6 +138,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_MODULE_MOCK_UNRESTORABLE: 'a mocked module could not be put back at the file boundary',
   X_EXERCISE_SETUP_UNSEALED: 'an exercise setup let a host through the seal',
   X_JOB_CRASH_UNBOUNDED: 'a crash proof needs more kill points than its bound',
+  X_EXERCISE_ACTOR_USER_UNSEATED: 'the exercise pass could not seat its actor\'s x_users row',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

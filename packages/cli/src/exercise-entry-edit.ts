@@ -101,11 +101,23 @@ function insertRows(
   const indent =
     multiline && startsLine && first !== undefined ? lineIndent(source, first.start) : `${outer}  `;
   const rows = entries.map((entry) => row(indent, entry));
-  const head = source.slice(0, list.open + 1);
-  if (multiline) return `${head}\n${rows.join('\n')}${source.slice(list.open + 1)}`;
-  // One line — `{}` or `{ keep: … }` — becomes a row each, Biome's expanded shape.
+  const closeLine = source.lastIndexOf('\n', list.close) + 1;
+  const last = list.entries.at(-1);
+  if (multiline && source.slice(closeLine, list.close).trim() === '') {
+    // Appended as the last rows, above the closing brace's own line; the comma the old last entry
+    // owes goes right after its code, before any comment beside it.
+    const before = source.slice(0, closeLine);
+    const head =
+      last === undefined || list.trailingComma
+        ? before
+        : `${before.slice(0, last.end)},${before.slice(last.end)}`;
+    return `${head}${rows.join('\n')}\n${source.slice(closeLine)}`;
+  }
+  // One line — `{}` or `{ keep: … }` — or a brace sharing its line with code: a row each, Biome's
+  // expanded shape, the old entries first.
   const kept = list.entries.map((entry) => `${indent}${entry.text},`);
-  return `${head}\n${[...rows, ...kept].join('\n')}\n${outer}${source.slice(list.close)}`;
+  const head = source.slice(0, list.open + 1);
+  return `${head}\n${[...kept, ...rows].join('\n')}\n${outer}${source.slice(list.close)}`;
 }
 
 /** Every top-level `import … from '<x>';` of the source: where it spans and what it names. */

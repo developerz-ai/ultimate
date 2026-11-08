@@ -108,7 +108,7 @@ describe('sampleInput', () => {
     expect(sampleInput(foreign)).toEqual({});
   });
 
-  test('a pattern past the generator\'s subset yields a value the schema rejects, not a throw', () => {
+  test("a pattern past the generator's subset yields a value the schema rejects, not a throw", () => {
     // The honest half of "best effort": a lookahead cannot be walked, so the sample fails its own
     // schema and contractTestsFor turns that into X_CONTRACT_DRIFT naming `input:`.
     const digits = t.string.pattern(/^(?=\d)\d+$/);
