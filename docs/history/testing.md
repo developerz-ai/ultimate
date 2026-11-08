@@ -477,3 +477,9 @@ holds both sides.
 ### Loose in, strict out
 
 `findIslandStates` resolves `Settings`, `settings`, `settings.island.tsx` and the full path to one manifest, and refuses a name nothing answers to by listing EVERY valid one |
+
+### A11y on raw tabs
+
+`e2e-a11y-tabs.ts` audits every raw tab too: checked after each `goto`/`reload` and at the test's end
+from the preload's `afterEach`. The full AX tree is read only in `cdp-e2e-page.ts` (`FULL_AX_TREE`, a
+convention). Exceptions are `allowA11y([{ role, selector, because }])`, never a switch.
