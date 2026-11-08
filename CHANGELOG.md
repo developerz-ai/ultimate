@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.8.0 - 2026-11-08
+
 ### Highlights
 
 - Every primitive of a real app can be reached by `x exercise`: an entry can carry its call's cookies and headers, a job and an action of one name get separate entries, and a throwing entry is that primitive's record instead of the end of the pass.
@@ -30,6 +34,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **testing:** the plan sweep no longer reds a join whose keyed path exists. On empty tables a partial index the statement implies (`where status = 'approved'` against an index `where status = 'approved'`) looks like one row, so the planner walked all of it beside the join instead of probing it per row, and `X_QUERY_UNINDEXED` fired with an empty `indexes:` entry. A whole read whose join column leads a declared index, joined to a side bound by its own key, is now credited (`plan-probes.ts`); with no index on the join column it stays red, and the entry names that column. The join key now reaches a scan held under a `Materialize` or `Memoize` too, so a red read under one names its key instead of `on: []`.
 - **testing:** a declared exercise actor's `facts` naming the org it was declared in (a string, or an array holding it) are re-homed into the primitive's tenant with its `orgId`, as the input's `orgId` already was â€” a `memberOrgIds.includes(input.orgId)` policy now passes.
 - **testing:** an override's `input` gets a job queue of its own on every call it feeds (tenant proof, control, scale sweep): app code that enqueues no longer throws `X_DRIVER_UNAVAILABLE`, and what it queued is not counted as the primitive's enqueue.
+
+### Commits
+
+- fix(exercise): every primitive of a real app reachable (#1024)
+- chore: release 30.7.0 (#1023)
 
 ## 30.7.0 - 2026-11-08
 
