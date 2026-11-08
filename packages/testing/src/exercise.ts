@@ -11,7 +11,7 @@
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
 import { runExercise } from '@ultimat3/core';
-import { registeredJobs } from '@ultimat3/jobs';
+import { LIVE_STATES, registeredJobs } from '@ultimat3/jobs';
 import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
 import { assertOverridesKnown, overrideFor, unknownDeclaration } from './define-exercise';
 import type { RoleGrants } from './exercise-actor';
@@ -39,7 +39,6 @@ import { withExerciseSetup } from './exercise-setup';
 import type { Subject } from './exercise-subjects';
 import { fixedTenant, seatIn, subjectsOf } from './exercise-subjects';
 import { actorRowsOf, attachSweeps, seated, sizedCall } from './exercise-sweeps';
-import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
 import { deferredMayStayNull, pairGraph, seedPass, tenantPair } from './seed-graph-pass';
 import type { SeedGraph, SeedWriter } from './seed-graph-plan';
@@ -70,18 +69,27 @@ const isOff = (overrides: ExerciseOverrides | undefined, subject: Subject): bool
   return override !== undefined && 'off' in override;
 };
 
+/** The ids of every row the call's queue holds now: what an attempt adds is the call's. */
+const queuedIds = async (): Promise<ReadonlySet<string>> =>
+  new Set((await ambientJobRows()).map((record) => record.id));
+
 /**
- * Jobs the primitive queued, its own job excepted. Never run: a job's children are left queued as
- * an action's are (`exercise-job-run.ts`), so their statements are theirs, never this record's.
+ * Jobs the primitive queued — rows an ATTEMPT added (`mine`), still live — its own job excepted.
+ * Never run: a job's children are left queued as an action's are (`exercise-job-run.ts`). A row
+ * the override's input added between calls is on the same queue, so the call can find it, and is
+ * not in `mine`: the input's enqueue is never the primitive's.
  */
-async function enqueued(subject: Subject, jobs: RunJobs) {
-  const effects: ExerciseEffect[] = [];
-  for (const handle of registeredJobs()) {
-    if (subject.kind === 'job' && handle.name === subject.name) continue;
-    const count = await jobs.depth(handle);
-    if (count > 0) effects.push({ kind: 'enqueue', job: handle.name, count });
+async function enqueued(subject: Subject, mine: ReadonlySet<string>) {
+  const counts = new Map<string, number>();
+  for (const record of await ambientJobRows()) {
+    if (!mine.has(record.id) || !LIVE_STATES.has(record.state)) continue;
+    if (subject.kind === 'job' && record.name === subject.name) continue;
+    counts.set(record.name, (counts.get(record.name) ?? 0) + 1);
   }
-  return effects;
+  const order = registeredJobs().map((handle) => handle.name);
+  return [...counts]
+    .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
+    .map(([job, count]): ExerciseEffect => ({ kind: 'enqueue', job, count }));
 }
 
 /**
@@ -134,6 +142,7 @@ async function control(
   let lastInput: unknown;
   let output: unknown;
   const segments: Observed[] = [];
+  const mine = new Set<string>();
   const started = performance.now();
   let verdict: ExerciseVerdict;
   try {
@@ -146,7 +155,9 @@ async function control(
       bind: async (drawn) => {
         const bound = bindIds(drawn, lookups[binds++ === 0 ? 0 : 1]);
         try {
-          const given = bindInput === undefined ? bound : await bindInput(bound, actor);
+          // On the call's own queue: a job the input enqueues is there when the call looks it up.
+          const given =
+            bindInput === undefined ? bound : await bindInput(bound, actor, { onCallQueue: true });
           lastInput = seatIn(subject, given, tenant);
         } catch (error) {
           throw new BindThrew(error);
@@ -156,6 +167,7 @@ async function control(
       accepts: async (input) =>
         (await subject.input['~standard'].validate(input)).issues === undefined,
       attempt: async (input): Promise<ExerciseAttempt> => {
+        const before = await queuedIds();
         room.begin(key);
         try {
           const answer = await subject.call(input, actor, tenant, jobs);
@@ -171,6 +183,7 @@ async function control(
           return { ok: false, reached: false, error };
         } finally {
           segments.push(room.end());
+          for (const id of await queuedIds()) if (!before.has(id)) mine.add(id);
         }
       },
       statusOf: (await import('@ultimat3/http')).statusFor,
@@ -190,7 +203,7 @@ async function control(
   }
   const ms = Math.round(performance.now() - started);
   const observed = mergeObserved(segments);
-  const effects = [...observed.effects, ...(await enqueued(subject, jobs))];
+  const effects = [...observed.effects, ...(await enqueued(subject, mine))];
   const outcome = { verdict, answered, lastError, lastInput };
   const verdictOf = judged(subject, key, outcome, observed, sampler);
   // A 5xx's cause, statement and fields: the code alone sent the author to reproduce it by hand.

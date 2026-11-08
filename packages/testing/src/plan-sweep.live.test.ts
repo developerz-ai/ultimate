@@ -122,7 +122,20 @@ const pswBadgesBare = entity('psw_badges_bare', {
   columns: badgeColumns(),
   indexes: [{ on: ['code'], unique: true, where: (c) => c.status.eq('approved') }],
 });
+/** Read by a list of subjects and ordered by another index's columns, with no limit. */
+const pswStamps = entity('psw_stamps', {
+  columns: {
+    id: uuid().primaryKey(),
+    subjectType: text({ max: 20 }),
+    subjectId: uuid(),
+    providerId: text({ max: 20 }),
+    genTime: timestamp(),
+    serial: text({ max: 20 }),
+  },
+  indexes: [{ on: ['subjectType', 'subjectId'] }, { on: ['providerId', 'serial'], unique: true }],
+});
 const ENTITIES: readonly SeedEntity[] = [
+  pswStamps,
   pswSeats,
   pswBadges,
   pswBadgesBare,
@@ -154,6 +167,9 @@ const DDL = [
   'create table psw_keys_indexed (id uuid primary key, email_key text not null, phone_key text not null)',
   'create index psw_keys_indexed_email_key_idx on psw_keys_indexed (email_key)',
   'create index psw_keys_indexed_phone_key_idx on psw_keys_indexed (phone_key)',
+  'create table psw_stamps (id uuid primary key, subject_type text not null, subject_id uuid not null, provider_id text not null, gen_time timestamptz not null, serial text not null)',
+  'create index psw_stamps_subject_idx on psw_stamps (subject_type, subject_id)',
+  'create unique index psw_stamps_provider_serial_key on psw_stamps (provider_id, serial)',
   'create table psw_seats (id uuid primary key, org_id uuid not null references psw_orgs (id), user_id uuid not null)',
   'create index psw_seats_org_id_idx on psw_seats (org_id)',
   'create index psw_seats_user_id_idx on psw_seats (user_id)',
@@ -345,6 +361,25 @@ async function proveImpliedPartial(client: DbClient): Promise<void> {
   ]);
 }
 
+/**
+ * An `order by` with no `limit` is no sort the sweep judges, so it never bends the access path:
+ * with sorts off the planner would walk the index holding the order, whole, rather than probe the
+ * one keyed by the join. An unindexed filter under the same order is still red, and a sort under
+ * a limit still `X_QUERY_SORT_UNSERVED`.
+ */
+async function proveOrderWithoutLimit(client: DbClient): Promise<void> {
+  const bySubjects = `select distinct t.* from psw_stamps t join unnest($1::text[], $2::uuid[]) as s(subject_type, subject_id) on t.subject_type = s.subject_type and t.subject_id = s.subject_id order by t.provider_id asc, t.gen_time asc`;
+  const probed = (await sweepPlans(client, sent([bySubjects]), ENTITIES)).get('listPosts');
+  expect(probed).toMatchObject({ planned: 1, findings: [], unplannable: [] });
+  const unindexed = 'select "id" from "psw_stamps" where "gen_time" = $1 order by "serial"';
+  const limited = `${unindexed} limit 20`;
+  const red = await sweepPlans(client, sent([unindexed], [limited]), ENTITIES);
+  expect(shapes(red.get('listPosts'))).toEqual([
+    ['X_QUERY_UNINDEXED', 'psw_stamps', ['genTime'], undefined],
+    ['X_QUERY_SORT_UNSERVED', 'psw_stamps', ['genTime', 'serial'], undefined],
+  ]);
+}
+
 afterAll(() => clearRegistry());
 
 describe('live · plan sweep on PGlite', () => {
@@ -355,6 +390,7 @@ describe('live · plan sweep on PGlite', () => {
       await proveAdvice(client);
       await proveFixesChangeThePlan(client);
       await proveImpliedPartial(client);
+      await proveOrderWithoutLimit(client);
     } finally {
       await client.close();
     }
@@ -374,6 +410,7 @@ describe.skipIf(adminUrl === '')('live · plan sweep on Postgres', () => {
       await proveAdvice(client);
       await proveFixesChangeThePlan(client);
       await proveImpliedPartial(client);
+      await proveOrderWithoutLimit(client);
     } finally {
       await client.close();
       await admin.execute(raw(`drop database if exists "${database}" with (force)`));

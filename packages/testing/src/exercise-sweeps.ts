@@ -69,7 +69,9 @@ export async function sizedCall(
   const lookup = seededIds(graph, options.entities, { ...scope, self });
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookup);
   const bindInput = overrideInput(subject.name, override);
-  const given = bindInput === undefined ? drawn : await bindInput(drawn, actor);
+  // On the sized call's own queue, installed by the sweep before this setup (`scale-sweep-run.ts`).
+  const given =
+    bindInput === undefined ? drawn : await bindInput(drawn, actor, { onCallQueue: true });
   return { actor, input: seatIn(subject, given, tenant) };
 }
 

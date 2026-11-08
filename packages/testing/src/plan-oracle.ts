@@ -1,6 +1,6 @@
-// The plan oracle: one `explain (format json)` plan, taken with sequential scans, bitmap scans and
-// sorts disabled, in; the nodes no index could replace, out. Under those settings the planner picks
-// a scan or a sort only when nothing else answers, so the verdict reads the schema, not the rows.
+// The plan oracle: one `explain (format json)` plan, taken with sequential and bitmap scans (and,
+// for a limited sort, sorts) disabled, in; the nodes no index could replace, out. The planner then
+// picks a scan or a sort only when nothing else answers: the verdict reads the schema, not rows.
 // Pure: JSON in, verdicts out (plan 101, 40-next-query-plans).
 
 import { columnsIn } from './plan-conditions';
@@ -87,6 +87,13 @@ export function planRoot(answer: unknown): unknown {
   const parsed = typeof answer === 'string' ? (JSON.parse(answer) as unknown) : answer;
   const first = Array.isArray(parsed) ? parsed[0] : parsed;
   return record(first)?.['Plan'] ?? first;
+}
+
+/** A `Limit` anywhere in the plan: only beneath one is a sort judged, so only then is one planned. */
+export function planLimited(answer: unknown): boolean {
+  const limited = (node: PlanNode): boolean => node.type === 'Limit' || node.children.some(limited);
+  const root = nodeOf(planRoot(answer));
+  return root !== undefined && limited(root);
 }
 
 /** Every scan beneath `node` (the node itself included), of any table. */
