@@ -3,6 +3,7 @@
 // refused with the seal's own code, offline refuses every name, and this machine resolves for real.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+// why: the seal must cover Bun's node:dns lookups, so the test drives that very module.
 import nodeDns from 'node:dns';
 import { classifyAddress } from '@ultimat3/core';
 import { screenDial } from '@ultimat3/core/outbound';
