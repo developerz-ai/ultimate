@@ -1,9 +1,16 @@
 // The socket half of the sealed network: `WebSocket` and `Bun.connect`, the two dials that are not
 // `fetch`. Only the patching lives here; WHETHER a dial may leave is `sealed-network.ts`'s one
 // gate, handed in, so fetch and sockets cannot disagree about the allow-list or the offline state.
+// `node:*` TCP is `sealed-node-sockets.ts`, UDP `sealed-udp.ts`: installed and undone from here.
+
+import { dialUrl, installNodeSocketSeal } from './sealed-node-sockets';
+import { installUdpSeal } from './sealed-udp';
 
 /** A dial's verdict: the error to raise, or `undefined` to let it through to the real one. */
-export type SocketGate = (url: string, method: 'WEBSOCKET' | 'CONNECT') => Error | undefined;
+export type SocketGate = (
+  url: string,
+  method: 'WEBSOCKET' | 'CONNECT' | 'SEND',
+) => Error | undefined;
 
 /** `Bun.connect`'s two option shapes, read structurally: TCP names a host, a unix socket a path. */
 interface ConnectOptions {
@@ -13,12 +20,6 @@ interface ConnectOptions {
 }
 
 type Connect = (options: ConnectOptions) => Promise<unknown>;
-
-/** A dial target as a URL, so the gate parses one shape. IPv6 literals need their brackets. */
-const tcpUrl = (hostname: string, port: number | undefined): string => {
-  const host = hostname.includes(':') && !hostname.startsWith('[') ? `[${hostname}]` : hostname;
-  return `tcp://${host}:${port ?? 0}`;
-};
 
 /**
  * Patch both dials and return the uninstaller, which puts back exactly what was there — the same
@@ -44,7 +45,7 @@ export function installSocketSeal(gate: SocketGate): () => void {
   // a path on this machine and is never egress.
   const sealedConnect: Connect = (options) => {
     if (options.unix === undefined && options.hostname !== undefined) {
-      const refusal = gate(tcpUrl(options.hostname, options.port), 'CONNECT');
+      const refusal = gate(dialUrl(options.hostname, options.port), 'CONNECT');
       if (refusal !== undefined) return Promise.reject(refusal);
     }
     return originalConnect(options);
@@ -52,8 +53,12 @@ export function installSocketSeal(gate: SocketGate): () => void {
 
   Reflect.set(globalThis, 'WebSocket', SealedWebSocket);
   Reflect.set(Bun, 'connect', sealedConnect);
+  const restoreNode = installNodeSocketSeal(gate);
+  const restoreUdp = installUdpSeal(gate);
   return () => {
     Reflect.set(globalThis, 'WebSocket', OriginalWebSocket);
     Reflect.set(Bun, 'connect', originalConnect);
+    restoreNode();
+    restoreUdp();
   };
 }

@@ -5,6 +5,8 @@
 // physical columns. And a foreign key is read back from `$describe()`, because the binding
 // that turns `() => orgs.id` into `"orgs.id"` is private to @ultimat3/entity.
 
+import { isUltimateError } from '@ultimat3/core';
+import { SchemaUnsupportedError, toWireSchema, type WireJsonSchema } from '@ultimat3/schema';
 import { AdminFieldUnsupportedError } from './errors';
 import type { AdminColumnMeta, AdminEntity } from './registry';
 
@@ -31,6 +33,12 @@ export interface AdminColumnFacts {
   readonly length?: number;
   readonly values?: readonly string[];
   readonly references?: AdminColumnReference;
+  /**
+   * What a `json()` or `arrayOf()` value is, as JSON Schema: the column's own schema, so an MCP
+   * argument is typed by the one judge of the value. `{}` (any) where none can be derived. Absent
+   * on every other kind, whose scalar type the field type already says.
+   */
+  readonly valueSchema?: WireJsonSchema;
 }
 
 const parseReference = (entity: string, property: string, target: string): AdminColumnReference => {
@@ -61,25 +69,59 @@ const referencesOf = (entity: AdminEntity): ReadonlyMap<string, AdminColumnRefer
   return out;
 };
 
+const NULL_SCHEMA: WireJsonSchema = { type: 'null' };
+
+/** `{}` admits anything; otherwise only a `null` type or a `null` branch says so. */
+const admitsNull = (schema: WireJsonSchema): boolean =>
+  Object.keys(schema).length === 0 ||
+  schema.type === 'null' ||
+  (schema.anyOf?.some((branch) => branch.type === 'null') ?? false);
+
+/**
+ * The declared schema as a tool argument, or `{}` when it cannot be said (`X_SCHEMA_UNSUPPORTED`)
+ * — permissive, so the entity's own parse still judges the value. Any other throw is a defect.
+ */
+const declaredSchema = (schema: unknown): WireJsonSchema => {
+  if (schema === undefined) return {};
+  try {
+    return toWireSchema(schema);
+  } catch (error) {
+    if (isUltimateError(error) && error.code === SchemaUnsupportedError.code) return {};
+    throw error;
+  }
+};
+
+/** A nullable column also takes SQL NULL, whatever its schema says of the JSON `null`. */
+const valueSchemaOf = (meta: AdminColumnMeta): WireJsonSchema | undefined => {
+  if (meta.kind !== 'jsonb' && meta.kind !== 'array') return undefined;
+  const value: WireJsonSchema =
+    meta.kind === 'array' ? { type: 'array' } : declaredSchema(meta.schema);
+  return meta.notNull || admitsNull(value) ? value : { anyOf: [value, NULL_SCHEMA] };
+};
+
 const factsFor = (
   name: string,
   meta: AdminColumnMeta,
   primaryKey: boolean,
   references: AdminColumnReference | undefined,
-): AdminColumnFacts => ({
-  name,
-  kind: meta.kind,
-  nullable: !meta.notNull,
-  primaryKey,
-  unique: meta.unique,
-  index: meta.index,
-  // A value the writer never supplies. `.default('free')` is a starting value the operator
-  // may still change, so it stays writable — only a generated one is read-only.
-  generated: meta.default?.kind === 'generated' || meta.onUpdate !== undefined,
-  ...(meta.length === undefined ? {} : { length: meta.length }),
-  ...(meta.values === undefined ? {} : { values: meta.values }),
-  ...(references === undefined ? {} : { references }),
-});
+): AdminColumnFacts => {
+  const valueSchema = valueSchemaOf(meta);
+  return {
+    name,
+    kind: meta.kind,
+    nullable: !meta.notNull,
+    primaryKey,
+    unique: meta.unique,
+    index: meta.index,
+    // A value the writer never supplies. `.default('free')` is a starting value the operator
+    // may still change, so it stays writable — only a generated one is read-only.
+    generated: meta.default?.kind === 'generated' || meta.onUpdate !== undefined,
+    ...(meta.length === undefined ? {} : { length: meta.length }),
+    ...(meta.values === undefined ? {} : { values: meta.values }),
+    ...(references === undefined ? {} : { references }),
+    ...(valueSchema === undefined ? {} : { valueSchema }),
+  };
+};
 
 const factsOf = (entity: AdminEntity, sealed: boolean): readonly AdminColumnFacts[] => {
   const references = referencesOf(entity);

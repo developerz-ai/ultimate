@@ -666,7 +666,7 @@ is the shape a table already has, `As of 2026-08`.
 | `enumerated(v)` · `tz(zones)` · `locale(tags)` | `text` + CHECK | the union of the declared values |
 | `timestamp()` | `timestamptz` | `Date` — an instant, stored UTC |
 | `money()` | `<n>_minor bigint` + `<n>_currency char(3)` + `<n>_scale integer null` | `MoneyValue` |
-| `json(schema)` | `jsonb` | whatever the schema infers. The schema is **required** — a `json()` returning `unknown` is an `any` hole, and the value arrives from the database as often as from a caller |
+| `json(schema)` | `jsonb` | whatever the schema infers. The schema is **required** — a `json()` returning `unknown` is an `any` hole, and the value arrives from the database as often as from a caller. `null` in a NOT NULL `json()` column is the JSON value — the schema judges it (`t.nullable(…)` admits it) and it is stored as `'null'::jsonb`; in a `.nullable()` column `null` is SQL NULL, the clear `is-null` matches |
 | `decimal({ precision, scale })` | `numeric(p, s)` | `string`, the exact digits. A value with more decimal places than the column stores is refused, not rounded |
 | `date()` | `date` | `PlainDate` — a calendar date, no time, no zone |
 | `bigint()` | `bigint` | `string`. A JS `bigint` is what `JSON.stringify` throws on and a `number` loses digits past 2^53, which is where a legacy `int8` key lives |

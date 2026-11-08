@@ -155,9 +155,7 @@ export const matchesPredicate = <Row>(
     case 'in':
       return (
         Array.isArray(predicate.value) &&
-        predicate.value.some((candidate) =>
-          isNull(candidate) ? rowIsNull : equals(candidate),
-        )
+        predicate.value.some((candidate) => (isNull(candidate) ? rowIsNull : equals(candidate)))
       );
     case 'gt':
       return !unknown() && order() > 0;

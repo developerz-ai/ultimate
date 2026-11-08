@@ -15,6 +15,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import {
   allowHost,
+  mockFetch,
   resetNetwork,
   sealNetwork,
   setNetworkState,
@@ -70,6 +71,11 @@ describe(testName('unit', 'sealed node sockets'), () => {
     });
     expect(error.cause).toContain(`CONNECT tcp://${ADDRESS}:25`);
     expect(error.fix).toStartWith(`allowHost('${ADDRESS}:25')`);
+  });
+
+  test('a mockFetch route does not answer node:http, so its host is refused, never dialled', async () => {
+    mockFetch('http://vendor.example/*', () => new Response('{}'));
+    expect(await verdictOf(http.get('http://vendor.example/v1'))).toBe('X_TEST_NETWORK_SEALED');
   });
 
   test('loopback is this machine and dials for real', async () => {

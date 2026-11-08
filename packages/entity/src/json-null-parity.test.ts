@@ -141,9 +141,10 @@ describe('a NOT NULL json column whose schema admits null', () => {
   test('a schema that refuses null refuses it in both, by the column', async () => {
     const refusal = async (driver: Driver): Promise<string> => {
       const db = database(ENTITIES, { driver });
-      const error: unknown = await db.strict
-        .insert({ id: ID, payload: null as never })
-        .then(() => undefined, (caught: unknown) => caught);
+      const error: unknown = await db.strict.insert({ id: ID, payload: null as never }).then(
+        () => undefined,
+        (caught: unknown) => caught,
+      );
       return isUltimateError(error) ? `${error.code} ${error.cause}` : 'not refused';
     };
     const pg = await refusal(postgresDriver());

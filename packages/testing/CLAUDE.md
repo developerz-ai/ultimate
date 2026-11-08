@@ -16,7 +16,7 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | No mocks of the DB | clone a template database; `template-db.ts` is the only DB path |
 | No wall clock | `withFrozenClock` / `advanceClock`; `Date.now()` is frozen by the preload |
 | Frozen ≠ different | `globalThis.Date` becomes a subclass; `FrozenDate[Symbol.hasInstance]` brands on the `[[DateValue]]` slot (`Date.prototype.getTime.call(value)` throws or not) |
-| No unmocked egress | `sealed-network.ts` seals `fetch`; `sealed-sockets.ts` `WebSocket`, `Bun.connect` (not loopback); `sealed-dns*.ts` every resolver, named imports too (wiki `Testing.md`); a miss is `X_TEST_NETWORK_SEALED` |
+| No unmocked egress | `sealed-network.ts` seals `fetch`; `sealed-sockets.ts` `WebSocket`, `Bun.connect`, `node:*`, UDP (not loopback); `sealed-dns*.ts` every resolver, named imports too (wiki `Testing.md`); a miss is `X_TEST_NETWORK_SEALED` |
 | One `mockFetch`, and it grows | a verb in the match, ordered answers, a pinned dial's name (`mock-route.ts`) and `requestLog` (`request-log.ts`). A stream bound for a real server logs `null` (teeing drains it). `original(input, init)` goes as handed: `tls`, `unix`, `proxy` are in no `Request`. `cassette()`: below |
 | Self is not egress | a port core's `markListening()` announced passes through — a socket test never unseals |
 | Offline is a state, not a mock | `network.offline()` / `.drop()` fail every dial, loopback too, as `X_TEST_NETWORK_OFFLINE` before any mock: the app's offline path runs |
@@ -35,7 +35,7 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | Every message thunk needs a test that PROVOKES it | a thunk is a function, so an unread message is an UNCOVERED function and `bun run scripts/coverage-gate.ts --package testing` is what says so |
 | Test names | the filename picks the step; a typed helper prefixes its own name. `testName(type, name)` is for an outer `describe` only — never on the inner `test` too, the prefix would print twice |
 | One body shape, five registrars | `test` (= `fixtureTest`), `unitTest`, `contractTest`, `liveTest`, `jobTest` all take `FixtureBody` + `{ timeoutMs }`: `unitTest('…', async ({ runJobs }) => …)`. Never `describe(testName('unit', …))` + `test` to get a fixture |
-| `runJobs` says who and what | `{ actor }` is the WORKER's identity (the org stays the job's declared tenant), `{ tenantId }` the enqueuer's row; `executions[n].result` is the body's return. A fresh event bus per fixture |
+| `runJobs` says who and what | `{ actor }` is the WORKER's identity (the org stays the job's declared tenant), `{ tenantId }` the enqueuer's row; `executions[n].result` is the body's return. A fresh event bus per fixture. Bodies run on the preload's frozen clock (`ctx.clock`), so a `backfill()` throttle moves `Date.now()` instead of sleeping |
 | A `runJobs` pass is a real worker's `tick()` | `fixture-jobs.ts` builds an unstarted `jobWorker` per pass, so admission runs: `concurrency` waits and `whenBusy: 'fail'` refuses (`X_JOB_KEY_BUSY`) exactly as in a fleet. Full rule: `docs/history/testing.md` |
 | Per-test state is `per-test-reset.ts` | the app preload's `beforeEach` resets the jobs event bus — only when `@ultimat3/jobs` is already loaded, so the reset never loads it |
 | A `mock.module` ends with its file | `module-mock-boundary.ts` wraps it (and `vi.mock`/`jest.mock`): the real namespace is snapshotted on a file's first mock, so its top-level code RUNS, and mocked back at the boundary. A preload's mock is left. A real one that throws on load: the next file fails `X_TEST_MODULE_MOCK_UNRESTORABLE` |
@@ -121,9 +121,7 @@ Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 Entry points: `.` (the API), `./preload` (side effects for bunfig) and `./registry-isolation`
 (`isolateEntityRegistry()`, kept off `.` because it loads `@ultimat3/entity`).
 
-`fixture-island.ts`, `island-dom.ts`, `island-selector.ts` and `island-observers.ts` are on `.` and
-import `@ultimat3/core` and nothing else, so they cost a tier-0 test nothing. The whole-chain proof is
-`examples/dummy/apps/web/app/settings/settings.island.test.ts`. Full rule: `docs/history/testing.md`.
+The island fixture's cost and its whole-chain proof: `docs/history/testing.md`.
 
 ## The browser-backed e2e driver (moved here from `@ultimat3/cli` in 22.0.0)
 
@@ -150,9 +148,7 @@ Raw CDP: `@ultimat3/core` and Bun, nothing else; `cli` imports it over `cli -> t
 | `packages/cli/src/verify-e2e.ts` | `withE2eApp` (cli's): in an app on a machine with Chrome, the `e2e` step runs the suite with that preload; otherwise exactly as before |
 | `cdp-errors.ts` | one constructor per way the browser half refuses |
 
-**Absent by default.** Nothing here runs until `installE2eDriver` is called, so `hasE2eDriver()`
-answers `false` and the gate's `e2e` step refuses rather than passing over a browser it lacks.
-GitHub-hosted `ubuntu-latest` ships Chrome at `/usr/bin/google-chrome`.
+**Absent by default** until `installE2eDriver`: [`docs/history/testing.md`](../../docs/history/testing.md#the-browser-backed-e2e-driver-moved-here-from-ultimat3cli-in-2200).
 
 How the raw-CDP driver behaves — the pipe, the load event, deadlines, the lossy `evaluate`, the
 refusing `update()` — is [`docs/history/testing.md`](../../docs/history/testing.md#the-e2e-driver-in-brief-moved-2026-10-01).

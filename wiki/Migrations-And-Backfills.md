@@ -428,7 +428,7 @@ The ledger is a **report an operator reads**, never a resume source — the step
 
 `rate` (batches per second, default `DEFAULT_BACKFILL_RATE`) is spent as the **first statement inside the batch's own step**, never wrapped around it — an attempt resuming at batch 500 replays 500 already-completed checkpoints that run no body and touch no database, and paying the full throttle for all of them again before reading a new row would make every resume slower than the original pass. There is no way to turn the throttle off: a backfill that saturates the pool has no correct value here, since it shares that pool with the requests the app is still serving live.
 
-The wait is spent on the **run's clock** — `ctx.clock` (`As of 2026-11-08`, `backfill-rate.ts`). Under a `frozenClock()` the wait advances that clock by the interval instead of arming a real timer, so a test of a 1,000-batch pass finishes in milliseconds and the clock ends `(batches − 1) / rate` seconds later. Before 30.9.0 every batch under a frozen clock paid the full interval in wall time. A test that runs a backfill through `runJobs` does not yet get this: that fixture's worker context carries the system clock.
+The wait is spent on the **run's clock** — `ctx.clock` (`As of 2026-11-08`, `backfill-rate.ts`). Under a `frozenClock()` the wait advances that clock by the interval instead of arming a real timer, so a test of a 1,000-batch pass finishes in milliseconds and the clock ends `(batches − 1) / rate` seconds later. Before 30.9.0 every batch under a frozen clock paid the full interval in wall time. `runJobs` hands every body the preload's frozen clock, so a backfill drained through it moves `Date.now()` by the same amount, and the lease renewals hear each move.
 
 ### Progress observability
 

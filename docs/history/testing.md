@@ -409,6 +409,10 @@ is `examples/dummy/apps/web/app/settings/settings.island.test.ts`; `fixture-isla
 this package's own contract against modules written in the idiom `babel-preset-solid` emits, with
 no bundler, because a test here cannot import one.
 
+Moved from the package `CLAUDE.md` 2026-11-08 (the ceiling), verbatim: `fixture-island.ts`,
+`island-dom.ts`, `island-selector.ts` and `island-observers.ts` are on `.` and import
+`@ultimat3/core` and nothing else, so they cost a tier-0 test nothing.
+
 ### An island needs a BUILDER, not an import
 
 | An island needs a BUILDER, not an import | `buildIslands` is `@ultimat3/cli`'s and both packages are tier 5; the one declared edge is `cli → testing`, so the reverse is a `bun run boundaries` failure. |

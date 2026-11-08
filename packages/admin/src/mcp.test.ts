@@ -18,7 +18,8 @@ import { type JsonRpcResponse, type McpCaller, METHOD_NOT_FOUND } from '@ultimat
 import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, type AdminAuthz, type AdminDecision, staticAuthz } from './authz';
-import { adminMcp, callAdminTool } from './mcp';
+import { adminMcp } from './mcp';
+import { callAdminTool } from './mcp-dispatch';
 import { adminTokenScopes } from './mcp-scopes';
 import type { AdminAction } from './registry';
 
