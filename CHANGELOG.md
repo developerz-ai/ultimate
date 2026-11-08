@@ -8,7 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `x exercise` counts a job's own statements: never the jobs it queued, never jobs it found queued. A job that queues one child per row is no longer `X_QUERY_SCALES_WITH_ROWS`.
+
+### Added
+
+- `@ultimat3/testing`: `runJobs.tick()` — one worker pass: what is due now runs, and what those runs enqueue waits, unrun, for the next.
+
+### Fixed
+
+- `@ultimat3/testing`: `x exercise` drained the whole queue to run a job, so every child it enqueued (one per event, one per row) ran in its room and was counted as its statements, effects and verdict — the scale sweep saw a 2-row and an 8-row count and reported `X_QUERY_SCALES_WITH_ROWS` on a job that is flat on its own — and a job some earlier call had left queued was drained and counted too. A job now runs alone, on a queue holding nothing else, for one worker pass; what it enqueues is left queued, as an action's is: an `enqueue` effect, searched by the tenant proof, judged as its own primitive. The crash proof holds the same line: its simulated world claims only the job's own row, so a job that only arms a child (the child seeding rows once) no longer diverges `X_JOB_CRASH_DIVERGED` on the child's rows — 0× in a killed run because the clean run had written them.
 
 ## 30.5.0 - 2026-11-08
 

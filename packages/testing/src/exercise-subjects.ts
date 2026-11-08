@@ -1,6 +1,7 @@
 // The primitives an exercise pass drives, each as one call: every registered action, query and job,
 // loaded on demand. A job is enqueued in the tenant it is called for, its input SEATED there first
-// (`exercise-job-tenant.ts`): a drawn org is a random one, and the enqueue refuses it.
+// (`exercise-job-tenant.ts`): a drawn org is a random one, and the enqueue refuses it. It runs
+// alone (`exercise-job-run.ts`): what it queues is left queued, as an action's is.
 
 import type { Actor } from '@ultimat3/core';
 import { renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core';
@@ -8,6 +9,7 @@ import type { AnyJobHandle, JobExecution } from '@ultimat3/jobs';
 import { registeredJobs } from '@ultimat3/jobs';
 import type { Policy } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { runJobAlone } from './exercise-job-run';
 import type { JobTenantBinding } from './exercise-job-tenant';
 import { bindJobTenant } from './exercise-job-tenant';
 import { withExerciseRequest } from './exercise-request';
@@ -84,9 +86,9 @@ const jobSubject = (handle: AnyJobHandle): Subject => ({
   handle,
   seat: (input, tenant) => bindJobTenant(handle, input, tenant),
   call: async (input, actor, tenant, jobs) => {
-    const queued = await jobs.enqueue(handle, input, { tenantId: tenant });
-    const trace = await jobs.drain(actor === null ? {} : { actor });
-    const own = trace.executions.find((run) => run.jobId === queued.id);
+    // Its own execution and nothing else: a drain of `jobs` ran what it queued (one child per row,
+    // which the scale sweep read as the job's loop) and whatever an earlier call had left there.
+    const own = await runJobAlone(handle, input, { actor, tenant }, jobs);
     // The worker's failure is on the row, never a throw: the attempt's error and its code.
     // Suspended is a body that ran and parked (`step.sleep`, `waitForEvent`): reached.
     return own !== undefined && ANSWERED.has(own.outcome)

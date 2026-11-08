@@ -69,6 +69,11 @@ export interface RunJobs extends AsyncDisposable {
   enqueue<I>(handle: JobHandle<I>, input: I, options?: JobEnqueueAs): Promise<EnqueueResult>;
   /** Claim and execute everything due at the current instant, until nothing is. */
   drain(options?: JobDrainAs): Promise<JobRunTrace>;
+  /**
+   * ONE worker pass: what is due now runs, and what those runs enqueue waits for the next pass —
+   * "it queued one child per row" asserted without running a child.
+   */
+  tick(options?: JobDrainAs): Promise<JobRunTrace>;
   /** Live jobs — ready, delayed, running or suspended — optionally for one job only. */
   depth(handle?: AnyJobHandle): Promise<number>;
   /** Live jobs claimable right now. `clock.advance()` is what turns delayed into due. */
@@ -194,14 +199,20 @@ export async function testJobs(): Promise<RunJobs> {
   /** Every execution this fixture has driven, because the trace is cumulative. */
   const history: JobExecution[] = [];
 
+  const ctxFor = (options: JobDrainAs): Ctx =>
+    options.actor === undefined ? anonymousWorker : ctxOf({ role: 'worker', actor: options.actor });
+  const traced = (): JobRunTrace => ({ executions: [...history], steps: tallyOf(history) });
+
+  const tick = async (options: JobDrainAs = {}): Promise<JobRunTrace> => {
+    history.push(...(await round(ctxFor(options))));
+    return traced();
+  };
+
   const drain = async (options: JobDrainAs = {}): Promise<JobRunTrace> => {
-    const ctx =
-      options.actor === undefined
-        ? anonymousWorker
-        : ctxOf({ role: 'worker', actor: options.actor });
+    const ctx = ctxFor(options);
     for (let rounds = 0; rounds < MAX_ROUNDS; rounds += 1) {
       const batch = await round(ctx);
-      if (batch.length === 0) return { executions: [...history], steps: tallyOf(history) };
+      if (batch.length === 0) return traced();
       history.push(...batch);
     }
     assert(
@@ -239,6 +250,7 @@ export async function testJobs(): Promise<RunJobs> {
   return Object.assign(enqueueThenDrain, {
     enqueue,
     drain,
+    tick,
     depth: async (handle?: AnyJobHandle) => (await live(handle?.name)).length,
     due: async () =>
       (await live()).filter(
