@@ -1,8 +1,7 @@
 // `defineExercise({ publishPost: { input, actor }, sendInvoice: { off: 'why' } })`: an app's ONE
-// declaration of each primitive's exercise. `x exercise` reads it, and so does every contract
-// test — the whole value handed to `.contract({ exercise })` (action's `ExerciseDeclarations`).
-// A blank `off` is refused here, at declaration; an unknown name when the pass runs. A key is a
-// bare name or a kind-qualified one (`'job:eraseAccount'`), which wins over the bare for its kind.
+// declaration of each primitive's exercise, read by `x exercise` and every `.contract({ exercise })`.
+// A blank `off` is refused at declaration, an unknown name when the pass runs. A key is a bare name
+// or a kind-qualified one (`'job:eraseAccount'`), which wins over the bare name for its kind.
 
 import type { ExerciseOptions } from '@ultimat3/action';
 import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';

@@ -35,9 +35,10 @@ const uniqueWriter = (): SeedWriter & { readonly codes: Set<unknown> } => {
     const code = row.row['code'];
     if (codes.has(code)) {
       // Input to the sweep, as the driver's refusal is: never this test's verdict.
-      throw new TypeError(
+      const refusal = new TypeError(
         `duplicate key value violates unique constraint (code)=(${String(code)})`,
       );
+      throw refusal;
     }
     codes.add(code);
   };

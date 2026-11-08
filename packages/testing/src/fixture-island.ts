@@ -4,9 +4,9 @@
 // edge. A structural seam keeps the direction honest and survives the bundler changing underneath.
 
 import { basename, join } from 'node:path';
-import { islandMountMissing, islandNotBuilt } from './errors';
 import { onFileBoundary } from './file-boundary';
 import { createIslandDocument, FakeElement, handlerFor, parseHtml } from './island-dom';
+import { islandMountMissing, islandNotBuilt } from './island-errors';
 import { installGlobals } from './island-globals';
 import type { ResizeInput } from './island-observers';
 import { deliverResize } from './island-observers';

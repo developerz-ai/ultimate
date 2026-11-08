@@ -45,11 +45,16 @@ const pass = async (only: string, entry: ExerciseOverride): Promise<ExerciseReco
   return records[0] as ExerciseRecord;
 };
 
+// Each bind's failure is INPUT to the pass — built here, handed over — never this file's verdict.
+const FIXTURE_BROKE = new TypeError('the fixture broke');
+const SECOND_CALL_BROKE = new TypeError('the second call broke');
+const ONCE_PER_PASS = new TypeError('only once per pass');
+
 describe(testName('unit', 'runExercisePass · an override input that throws'), () => {
   test('an uncoded throw is that primitive unreached under X_EXERCISE_INPUT_THREW', async () => {
     const record = await pass('eitUncoded', {
       input: async () => {
-        throw new TypeError('the fixture broke');
+        throw FIXTURE_BROKE;
       },
     });
     expect(record).toMatchObject({
@@ -88,7 +93,7 @@ describe(testName('unit', 'runExercisePass · an override input that throws'), (
       input: (drawn) => {
         calls += 1;
         // The tenant proof's first input binds; the control's run is the one that throws.
-        if (calls > 1) throw new TypeError('the second call broke');
+        if (calls > 1) throw SECOND_CALL_BROKE;
         return { ...drawn, word: 'ok' };
       },
     });
@@ -103,7 +108,7 @@ describe(testName('unit', 'runExercisePass · an override input that throws'), (
       input: (drawn) => {
         calls += 1;
         // The tenant proof's first input and the control's run; every later one is the sweep's.
-        if (calls > 2) throw new TypeError('only once per pass');
+        if (calls > 2) throw ONCE_PER_PASS;
         return { ...drawn, word: 'ok' };
       },
     });

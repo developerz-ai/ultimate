@@ -21,8 +21,10 @@ const MEMBER: Actor = {
 
 // Uncoded on purpose: a handler's coded 4xx is still a reached run, so only a defect tells a run
 // that saw the cookie from one that did not.
+// The handler's foreign failure is the test's INPUT, built once and handed over, not a verdict.
+const NO_PENDING = new TypeError('no pending sign-in on this request');
 const noPending = (): never => {
-  throw new TypeError('no pending sign-in on this request');
+  throw NO_PENDING;
 };
 let lastVia: string | null = null;
 
