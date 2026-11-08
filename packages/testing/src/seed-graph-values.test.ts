@@ -103,6 +103,18 @@ describe('a json(schema) column', () => {
     );
   });
 
+  // `t.json()` accepts JSON `null`, and the sampler draws it for a `json` node; the driver binds a
+  // JSON `null` as SQL NULL (`pg-row.ts` `bindable`), so a NOT NULL column's seed insert failed.
+  test('a NOT NULL json(t.json()) column is never offered null; a nullable one still is', () => {
+    const anyJson = json(t.json()) as SeedColumn;
+    expect(anyJson.$meta.notNull).toBe(true);
+    const offered = candidatesFor('payload', anyJson, ctx());
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered).not.toContain(null);
+    const nullable = json(t.json()).nullable() as SeedColumn;
+    expect(candidatesFor('payload', nullable, ctx())).toContain(null);
+  });
+
   test('a jsonb column with no schema still offers {} and []', () => {
     const { schema: _schema, ...meta } = withSchema.$meta;
     const bare: SeedColumn = { $meta: meta, $parse: (value) => value };
