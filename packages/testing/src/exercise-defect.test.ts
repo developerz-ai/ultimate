@@ -64,7 +64,14 @@ describe(testName('unit', 'runExercisePass · a 5xx carries its cause'), () => {
     const schema = t.object({ card: t.string.sensitive(), sku: t.string });
     const input = { card: '4242424242424242', sku: 'sku-1' };
     const error = new ValidationFailedError(
-      [{ path: 'items.0.sku', message: `expected a known sku near ${input.card}` }],
+      [
+        {
+          path: 'items.0.sku',
+          expected: 'a known sku',
+          received: 'string',
+          message: `expected a known sku near ${input.card}`,
+        },
+      ],
       'output',
     );
     const detail = await defectDetail(error, input, schema);
