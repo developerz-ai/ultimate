@@ -5,12 +5,13 @@ import { describe, expect, test } from 'bun:test';
 import type { ExerciseDeclarations } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
 import { EXERCISE_RUNS } from '@ultimat3/core';
-import { can, testActor } from '@ultimat3/policy';
+import { can, definePermissions, testActor } from '@ultimat3/policy';
 import type { QueryExerciseDeclarations } from '@ultimat3/query';
 import { from, query } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineExercise } from './define-exercise';
 
+definePermissions(['note:write', 'note:read']);
 const ADA = testActor('ada', { permissions: ['note:write', 'note:read'] }).actor;
 const Input = t.object({ title: t.string.min(1).max(40) });
 
