@@ -9,6 +9,7 @@ import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
 import type { ScaleProof, StatementTally } from './scale-sweep';
 import { judgeScale, SCALE_SIZES } from './scale-sweep';
+import type { ScaleGraph } from './scale-sweep-graph';
 import { scaleGraph } from './scale-sweep-graph';
 import type { SeedFactory, SeedGraph, SeedWriter } from './seed-graph-plan';
 import { insertSeedGraph } from './seed-graph-plan';
@@ -85,14 +86,20 @@ export async function scaleSweep(
 ): Promise<ReadonlyMap<string, ScaleProof>> {
   const proofs = new Map<string, ScaleProof>();
   if (options.subjects.length === 0) return proofs;
-  const sizes = [SCALE_SIZES.small, SCALE_SIZES.large].map((perTable, i) =>
+  const sizes: ScaleGraph[] = [];
+  for (const [i, perTable] of [SCALE_SIZES.small, SCALE_SIZES.large].entries()) {
     // Hashed, never `seed + 1`: a later pass on the same database may be seeded with that number.
-    scaleGraph(options.main, options.entities, {
-      perTable,
-      seed: fnv1a(`scale:${options.seed}:${i}`) || 1,
-      factories: options.factories,
-    }),
-  );
+    // Each beside the one written before it, so no row position — and no value built from one —
+    // repeats across the three graphs in the database.
+    sizes.push(
+      scaleGraph(options.main, options.entities, {
+        perTable,
+        seed: fnv1a(`scale:${options.seed}:${i}`) || 1,
+        factories: options.factories,
+        beside: sizes[i - 1]?.write ?? options.main,
+      }),
+    );
+  }
   try {
     for (const size of sizes) await insertSeedGraph(size.write, options.writer);
   } catch (error) {

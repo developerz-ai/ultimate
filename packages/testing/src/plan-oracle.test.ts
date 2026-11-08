@@ -119,6 +119,112 @@ describe('unit · plan oracle, the probed plans', () => {
   });
 });
 
+// Probed 2026-11-08 on the test-services Postgres and PGlite: a join that implies a partial
+// index's predicate. On an empty table that index looks like three rows, so the planner walks all
+// of it under a Materialize rather than probe it per seat by `user_id`.
+const implied = (inner: Record<string, unknown> = {}) => ({
+  'Node Type': 'Nested Loop',
+  'Join Filter': '(s.user_id = b.user_id)',
+  Plans: [
+    { ...scan('Index Scan', 'seats', { 'Index Cond': '(org_id = $1)' }), Alias: 's' },
+    {
+      'Node Type': 'Materialize',
+      Plans: [{ ...scan('Index Scan', 'badges', { 'Index Name': 'badges_code_key' }), ...inner }],
+    },
+  ],
+});
+const JOINED: PlanTableColumns = new Map([
+  ['seats', new Set(['id', 'org_id', 'user_id'])],
+  ['badges', new Set(['id', 'user_id', 'status', 'code'])],
+]);
+
+describe('unit · plan oracle, a whole read beside a keyed join', () => {
+  test('the join key reaches a scan under a Materialize, and is a probe from the keyed side', () => {
+    expect(judgePlan(answer(implied({ Alias: 'b' })), JOINED)).toEqual([
+      {
+        code: 'X_QUERY_UNINDEXED',
+        node: 'Index Scan',
+        table: 'badges',
+        equality: ['user_id'],
+        range: [],
+        order: [],
+        alias: 'b',
+        probes: ['user_id'],
+      },
+    ]);
+  });
+
+  test('a side keyed only by the join is no driver: two whole reads probe nothing', () => {
+    const plan = {
+      'Node Type': 'Merge Join',
+      'Merge Cond': '(s.user_id = b.user_id)',
+      Plans: [
+        { ...scan('Index Scan', 'seats', { 'Index Name': 'seats_user_id_idx' }), Alias: 's' },
+        { ...scan('Index Scan', 'badges', { 'Index Name': 'badges_user_id_idx' }), Alias: 'b' },
+      ],
+    };
+    const verdicts = judgePlan(answer(plan), JOINED);
+    expect(verdicts.map((v) => [v.table, v.equality, v.probes])).toEqual([
+      ['seats', ['user_id'], undefined],
+      ['badges', ['user_id'], undefined],
+    ]);
+  });
+
+  test('a parameterized inner scan keys nothing: its Index Cond is the join itself', () => {
+    const plan = {
+      'Node Type': 'Nested Loop',
+      Plans: [
+        { ...scan('Index Scan', 'badges', { 'Index Name': 'badges_code_key' }), Alias: 'b' },
+        {
+          ...scan('Index Scan', 'seats', {
+            'Index Cond': '(user_id = b.user_id)',
+            Filter: '(org_id = $1)',
+          }),
+          Alias: 's',
+        },
+      ],
+    };
+    expect(judgePlan(answer(plan), JOINED)).toEqual([
+      expect.objectContaining({ table: 'badges', equality: [] }),
+    ]);
+    expect(judgePlan(answer(plan), JOINED)[0]?.probes).toBeUndefined();
+  });
+
+  test('a parameterized inner scan bound by its own key too drives: the outer whole read is probed', () => {
+    const plan = {
+      'Node Type': 'Nested Loop',
+      Plans: [
+        { ...scan('Index Scan', 'badges', { 'Index Name': 'badges_code_key' }), Alias: 'b' },
+        {
+          ...scan('Index Scan', 'seats', {
+            'Index Cond': '((user_id = b.user_id) AND (org_id = $1))',
+          }),
+          Alias: 's',
+        },
+      ],
+    };
+    expect(judgePlan(answer(plan), JOINED).map((v) => [v.table, v.probes])).toEqual([
+      ['badges', ['user_id']],
+    ]);
+  });
+
+  test('a probe carries on: a table probed from a probed table is probed too', () => {
+    const three: PlanTableColumns = new Map([...JOINED, ['grants', new Set(['id', 'badge_id'])]]);
+    const plan = {
+      'Node Type': 'Hash Join',
+      'Hash Cond': '(g.badge_id = b.id)',
+      Plans: [
+        { ...scan('Seq Scan', 'grants'), Alias: 'g' },
+        { 'Node Type': 'Hash', Plans: [implied({ Alias: 'b' })] },
+      ],
+    };
+    expect(judgePlan(answer(plan), three).map((v) => [v.table, v.probes])).toEqual([
+      ['grants', ['badge_id']],
+      ['badges', ['user_id']],
+    ]);
+  });
+});
+
 // Probed 2026-11-08 on PGlite: a limited read over a join, sorted by the OUTER-listed table's
 // expression. The first scan under the Sort is the other side; the sort key is not its columns.
 const joined = (keys: string[]) =>

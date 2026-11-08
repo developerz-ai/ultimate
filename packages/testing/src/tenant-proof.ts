@@ -118,6 +118,8 @@ export function leaksIn(
   return paths.map((path): TenantFinding => ({ code: 'X_TENANT_LEAK', leg, path }));
 }
 
+const asSweep = (finding: TenantFinding): TenantFinding => ({ ...finding, sweep: true });
+
 /**
  * The reason a leg's read half is skipped as a declared sweep, or `undefined`: a job, a scope the
  * leg opened, and an input carrying nothing of A's — so no id B chose pointed at A, and what came
@@ -181,6 +183,8 @@ export async function proveTenant(plan: TenantAttack): Promise<ExerciseRecord> {
   const findings: TenantFinding[] = [];
   const unwritten = tenantlessReason(plan, marks);
   let swept: string | undefined;
+  // What `sweepReason` would credit, had the leg opened a scope: the leak's fix is that scope.
+  const undeclared = plan.sweep && plan.tenantless && marks.length === plan.taint.marks.length;
   /** B's call, between two snapshots unless the write half is skipped: then none is read. */
   const watched = async (name: TenantLeg): Promise<LegAnswer> => {
     if (unwritten !== undefined) return plan.attack(name);
@@ -194,8 +198,9 @@ export async function proveTenant(plan: TenantAttack): Promise<ExerciseRecord> {
     const answer = await watched(name);
     if (plan.public !== undefined) return;
     const sweep = sweepReason(plan, answer, marks);
-    if (sweep === undefined) findings.push(...leaksIn(name, answer, marks));
-    else swept = sweep;
+    if (sweep !== undefined) swept = sweep;
+    else if (undeclared) findings.push(...leaksIn(name, answer, marks).map(asSweep));
+    else findings.push(...leaksIn(name, answer, marks));
   };
   await leg('before');
   const control = await plan.control();

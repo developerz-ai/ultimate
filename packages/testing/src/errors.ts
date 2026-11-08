@@ -72,6 +72,7 @@ export const TESTING_ERROR_CODES = [
   'X_EXERCISE_SETUP_UNSEALED',
   'X_JOB_CRASH_UNBOUNDED',
   'X_EXERCISE_ACTOR_USER_UNSEATED',
+  'X_EXERCISE_INPUT_THREW',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -139,6 +140,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_EXERCISE_SETUP_UNSEALED: 'an exercise setup let a host through the seal',
   X_JOB_CRASH_UNBOUNDED: 'a crash proof needs more kill points than its bound',
   X_EXERCISE_ACTOR_USER_UNSEATED: "the exercise pass could not seat its actor's x_users row",
+  X_EXERCISE_INPUT_THREW: "an exercise entry's input threw",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

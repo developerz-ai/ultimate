@@ -5,6 +5,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core';
+import type { ExerciseRequestOption } from '@ultimat3/http';
 import type { AnyJobHandle, JobExecution } from '@ultimat3/jobs';
 import { registeredJobs } from '@ultimat3/jobs';
 import type { Policy } from '@ultimat3/policy';
@@ -97,7 +98,15 @@ const jobSubject = (handle: AnyJobHandle): Subject => ({
   },
 });
 
-export async function subjectsOf(): Promise<readonly Subject[]> {
+/** The `request` an action's or a query's entry declares, by kind: a job's call has none. */
+export type RequestOf = (
+  kind: 'action' | 'query',
+  name: string,
+) => ExerciseRequestOption | undefined;
+
+export async function subjectsOf(
+  requestOf: RequestOf = () => undefined,
+): Promise<readonly Subject[]> {
   // On demand, as every fixture here loads them: the barrel stays off `action` and `query`.
   const { invoke, listActions } = await import('@ultimat3/action');
   const { listQueries, runQuery } = await import('@ultimat3/query');
@@ -110,8 +119,11 @@ export async function subjectsOf(): Promise<readonly Subject[]> {
         policy: target.policy,
         permissions: target.describe().permissions,
         call: async (input, actor) => ({
-          output: await withExerciseRequest(target.name, actor, () =>
-            invoke(target, input, { surface: 'http' }),
+          output: await withExerciseRequest(
+            target.name,
+            actor,
+            () => invoke(target, input, { surface: 'http' }),
+            requestOf('action', target.name),
           ),
         }),
       }),
@@ -124,8 +136,11 @@ export async function subjectsOf(): Promise<readonly Subject[]> {
         policy: target.policy,
         permissions: target.describe().permissions,
         call: async (input, actor) => ({
-          output: await withExerciseRequest(target.name, actor, () =>
-            runQuery(target, input, { surface: 'http' }),
+          output: await withExerciseRequest(
+            target.name,
+            actor,
+            () => runQuery(target, input, { surface: 'http' }),
+            requestOf('query', target.name),
           ),
         }),
       }),

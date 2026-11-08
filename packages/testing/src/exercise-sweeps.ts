@@ -5,6 +5,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import type { ExerciseOverrides } from './define-exercise';
+import { overrideFor } from './define-exercise';
 import type { ActorRows, RoleGrants } from './exercise-actor';
 import { asSeededRow, chooseActor } from './exercise-actor';
 import type { Sampler } from './exercise-input';
@@ -44,7 +45,7 @@ export const seated = (actor: Actor | null, tenant: string, rows: ActorRows | un
   rows === undefined ? actor : asSeededRow(actor, tenant, rows);
 
 /** A primitive as a sized call needs it: its schema, its policy, and a job's seat. */
-type Callable = Pick<Subject, 'name' | 'input' | 'policy' | 'permissions' | 'seat'>;
+type Callable = Pick<Subject, 'kind' | 'name' | 'input' | 'policy' | 'permissions' | 'seat'>;
 
 /** One call of `subject` in `tenant` of a sized graph: the control's actor and first input. */
 export async function sizedCall(
@@ -54,7 +55,7 @@ export async function sizedCall(
   at: { readonly graph: SeedGraph; readonly tenant: string; readonly self: boolean },
 ): Promise<{ readonly actor: Actor | null; readonly input: unknown } | undefined> {
   const { graph, tenant, self } = at;
-  const override = options.overrides?.entries.get(subject.name);
+  const override = overrideFor(options.overrides, subject.kind, subject.name);
   const chosen = chooseActor(subject.policy, subject.permissions, options.roles, tenant, override);
   if (chosen.kind === 'refused') return undefined;
   const rows = actorRowsOf(options, graph);
@@ -93,10 +94,12 @@ const timed = (subject: ScaleSubject, spent: Map<string, number>): ScaleSubject 
 
 /**
  * The scale sweep inside the room, the room closed, then the plan sweep — on the installed client
- * only: with none, the pass ran on a driver that sends no SQL and there is no plan to read.
+ * only: with none, the pass ran on a driver that sends no SQL and there is no plan to read. Each
+ * proof is found under `label(record)`, the name its primitive ran under in the room.
  */
 export async function attachSweeps(
   records: readonly ExerciseRecord[],
+  label: (record: ExerciseRecord) => string,
   options: ScaleSweepOptions,
 ): Promise<Swept> {
   const spent = new Map<string, number>();
@@ -120,9 +123,9 @@ export async function attachSweeps(
     plans: Math.round(performance.now() - plansStarted),
   };
   const swept = records.map((record) => {
-    const proof = plans.get(record.name);
-    const sized = scale.get(record.name);
-    const scaleMs = spent.get(record.name);
+    const proof = plans.get(label(record));
+    const sized = scale.get(label(record));
+    const scaleMs = spent.get(label(record));
     const proofMs = {
       ...record.proofMs,
       ...(scaleMs === undefined ? {} : { scale: Math.round(scaleMs) }),

@@ -137,6 +137,8 @@ export function seedGraph(
   const scoped = (name: string): boolean => owned.has(name);
   const fanned = fannedOut(shapes, scoped);
   for (const factory of Object.values(options.factories ?? {})) factory.reset();
+  const besideNext = options.beside?.next ?? {};
+  const next: Record<string, number> = { ...besideNext };
 
   const placed = new Map<string, Placed[]>();
   // The same rows by tenant: a pool read per row was a filter of the whole parent table, so a pass
@@ -196,12 +198,17 @@ export function seedGraph(
     // Read once per table: each `matches(/…/)` an invariant holds a column to, sampled from.
     const patterns = declaredPatterns(entity);
     const buckets: readonly (string | null)[] = scoped(name) ? tenants : [null];
-    let ordinal = 0;
+    // Positions continue past the graph written before this one: a reset factory rebuilt that
+    // graph's first values, and a unique column refused the second copy.
+    const start = besideNext[name] ?? 0;
+    for (let skipped = 0; factory !== undefined && skipped < start; skipped += 1) factory.build();
+    let ordinal = start;
     for (const [bucket, tenant] of buckets.entries()) {
       const size =
         rootProperty !== undefined ? 1 : fanned.has(name) ? perTable * tenantCount : perTable;
       for (let index = 0; index < size; index += 1) {
         ordinal += 1;
+        next[name] = ordinal;
         const canary = stream().replace(/-/g, '').slice(0, 10);
         const built: Readonly<Record<string, unknown>> =
           factory === undefined ? {} : { ...factory.build() };
@@ -320,5 +327,5 @@ export function seedGraph(
       updates.push({ entity: name, tenant, key: keyOf(shape.entity, row), patch });
     }
   }
-  return { seed, tenants, order, inserts, updates, canaries };
+  return { seed, tenants, order, inserts, updates, canaries, next };
 }

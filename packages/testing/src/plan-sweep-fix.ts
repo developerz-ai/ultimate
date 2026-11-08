@@ -1,6 +1,7 @@
 // From the oracle's red nodes to what an author pastes: the entity, and the `indexes: [{ on }]`
 // entry by property. Pure. Also where a red node is argued away by the declaration itself: a
-// lookup that pins a unique key reads one row whatever the planner walked to find it.
+// lookup that pins a unique key reads one row whatever the planner walked to find it, and a whole
+// read a keyed join side could probe by a declared index is one the planner declined on cost.
 
 import type { PlanVerdict, PlanVerdictCode } from './plan-oracle';
 import type { PlanUnservable } from './plan-sort-key';
@@ -174,6 +175,15 @@ function armFindings(
 }
 
 /**
+ * A whole read a keyed side could probe: a column it is joined by leads a declared index. On empty
+ * tables the planner may walk a small-looking index (a partial one the statement implies) rather
+ * than probe it per row; at size it probes. Credited, never re-proven, as a range index is.
+ */
+const probed = (keys: readonly (readonly string[])[], verdict: PlanVerdict): boolean =>
+  verdict.code === 'X_QUERY_UNINDEXED' &&
+  (verdict.probes ?? []).some((column) => keys.some((key) => key[0] === column));
+
+/**
  * The plan was taken with every declared index in place: one that leads with exactly these
  * columns is already there, and printing it as the fix would change nothing.
  */
@@ -220,6 +230,7 @@ export function planFindings(
     // no order after a range column, so the index is the equality columns, then the range.
     const ranged = walked && verdict.range.length > 0;
     const declared = declaredIndexes(entity, statement);
+    if (probed(declared, verdict)) return [];
     const bounded = verdict.equality.length > 0 || verdict.range.length > 0;
     if (!bounded && verdict.arms !== undefined && verdict.code === 'X_QUERY_UNINDEXED') {
       const arms = armFindings(verdict, declared, (column) => byColumn.get(column));

@@ -23,6 +23,12 @@ export interface SeedGraphOptions {
   readonly seed?: number;
   /** By entity name. A column the factory builds takes its value; keys stay the graph's. */
   readonly factories?: Readonly<Record<string, SeedFactory>>;
+  /**
+   * A graph already written to the same database. Each table's row positions — the ordinal a
+   * generated value is built from, a factory's `index` — continue past its `next`, so a value built
+   * from a position (`code: \`c${index}\``) never repeats one of its rows on a unique column.
+   */
+  readonly beside?: SeedGraph;
 }
 
 export interface SeedRow {
@@ -67,6 +73,11 @@ export interface SeedGraph {
   readonly updates: readonly SeedUpdate[];
   /** One per insert, in the same order: `canaries[i]` is `inserts[i]`'s. */
   readonly canaries: readonly SeedCanary[];
+  /**
+   * Per table, the row position a graph written `beside` this one starts at: its own `beside`'s
+   * plus every row this graph built. Absent on a hand-written graph: positions then start at 0.
+   */
+  readonly next?: Readonly<Record<string, number>>;
 }
 
 /** Where `insertSeedGraph` writes. One insert per row, in order, then one update per deferred key. */

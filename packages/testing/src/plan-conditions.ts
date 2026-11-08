@@ -21,7 +21,7 @@ const EQUALITY = /(?<![<>!])=(?!>)/;
 const IS_NULL = /\bIS\s+NULL\b/i;
 
 /** The parts of `text` between `word`s that stand outside every parenthesis and literal. */
-function splitTop(text: string, word: 'AND' | 'OR'): string[] {
+export function splitTop(text: string, word: 'AND' | 'OR'): string[] {
   const parts: string[] = [];
   let depth = 0;
   let quoted = false;
@@ -43,7 +43,7 @@ function splitTop(text: string, word: 'AND' | 'OR'): string[] {
 }
 
 /** `((a = $1))` → `a = $1`: parentheses that wrap the whole text, and only those. */
-function unwrap(text: string): string {
+export function unwrap(text: string): string {
   let rest = text.trim();
   for (;;) {
     if (!rest.startsWith('(') || !rest.endsWith(')')) return rest;

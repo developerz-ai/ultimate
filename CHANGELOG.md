@@ -8,7 +8,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- Every primitive of a real app can be reached by `x exercise`: an entry can carry its call's cookies and headers, a job and an action of one name get separate entries, and a throwing entry is that primitive's record instead of the end of the pass.
+- The scale sweep, the subject proof, the tenant proof and the plan sweep stop reporting what is not the app's fault — repeated seed values, the input's own SQL, a keyed join on empty tables — and say the right fix when it is.
+
+### Added
+
+- **testing:** `defineExercise` accepts kind-qualified keys (`'job:eraseAccount'`, `'action:…'`, `'query:…'`), each that kind's alone and winning over the bare name, so an action and a job sharing a name no longer share one entry (the action's input fed the job → `X_CONTRACT_DRIFT`). A shared name's records, statements and sweep proofs are kept apart too, and its paste line prints the qualified key. Read alike by `x exercise`, the contract step (`.contract({ exercise })` reads `action:<name>` / `query:<name>` first) and `x drill`. Additive: a bare key still applies to every kind of that name.
+- **testing:** `defineExercise(…, { setup })` takes an array — run in order, disposed in reverse; one that throws disposes those that already ran.
+- **testing, action, query, http:** an exercise entry can say what its call's request carries in — `defineExercise({ finishSignIn: { request: { cookies: { pending: '…' }, headers: { … } } } })`, or `request: async (actor) => ({ … })`, awaited before each call as that call's actor — so an action or a read that finishes a cookie-held step (a second factor, an OAuth return, "revoke other sessions") is reachable instead of turned `off`. Read by `x exercise` and by the contract step (`.contract({ exercise })` runs each generated run inside that request). One build of the request: `withRequestAs(name, actor, request, fn)` and the types `ExerciseRequest`, `ExerciseRequestOption`, new on `@ultimat3/http`. A cookie as a `Cookie` header, a non-token cookie name or a header `Headers` refuses is `X_EXERCISE_REQUEST_INVALID` (new, http). Additive: an entry without `request` runs exactly as before.
+
+### Fixed
+
+- **testing:** an exercise entry's `input` that throws is that primitive's record — `unreached` under the throw's own code, or the new `X_EXERCISE_INPUT_THREW` for an uncoded one, with a `fix` naming the entry — never an `X_CLI_UNEXPECTED` that ended `x exercise` with no records.
+- **testing:** what an override's `input` sends (a select, a row, a mail) is no longer counted as the primitive's: the control records each call alone, so the plan sweep stops reporting the input's own SQL (`X_QUERY_UNINDEXED` "at action …") as the primitive's.
+- **testing:** `x exercise`'s scale sweep no longer collides with the pass's own rows. Its sized seeds reset the app's factories and restarted every generated ordinal, so a value built from the row index (`code: \`c${index}\``, a generated integer) repeated the pass's first rows. That hit a duplicate key on a unique column, and every primitive's scale proof came back `unproven`. A new option, `seedGraph(entities, { beside: earlier })`, continues each table's row positions past `earlier.next`. The new `SeedGraph.next` field is cumulative, so the small graph is written beside the pass's graph and the large one beside the small. Additive.
+- **testing:** `X_TENANT_LEAK` on a `tenant: 'none'` job handed nothing of A's (a read across every org that opened no scope) now says to wrap the read in `crossTenant('<why <name> reads every org>', async () => …)`, the one declaration the proof credits. It no longer points at "the repository scoped to ctx.actor", which a job with no org cannot use. The finding carries the new `TenantFinding.sweep: true` field.
+- **testing:** the tenant proof's report gives one finding per leg and code, listing each place once. Places that differ only by a list index collapse into one entry (`effect.enqueue[*].input.orgId, … (3 each)`). One leaking statement across three enqueues used to print 18 findings; it now prints 2. `record.tenant.findings` keeps every path.
+- **cli/testing:** `x exercise`'s subject proof no longer fails every subject after the first with `X_DB_UNIQUE_VIOLATION`. Each subject's seed reset the factories on one scratch database, so a value built from the row index on a unique column repeated the previous subject's rows. `subjectProof` now takes `beside` and returns the `graph` it wrote, and `exercise-subject.ts` seeds each subject beside the one before. Additive.
+- **testing:** the plan sweep no longer reds a join whose keyed path exists. On empty tables a partial index the statement implies (`where status = 'approved'` against an index `where status = 'approved'`) looks like one row, so the planner walked all of it beside the join instead of probing it per row, and `X_QUERY_UNINDEXED` fired with an empty `indexes:` entry. A whole read whose join column leads a declared index, joined to a side bound by its own key, is now credited (`plan-probes.ts`); with no index on the join column it stays red, and the entry names that column. The join key now reaches a scan held under a `Materialize` or `Memoize` too, so a red read under one names its key instead of `on: []`.
 
 ## 30.7.0 - 2026-11-08
 

@@ -6,6 +6,7 @@
 import { bindDrawn } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ExerciseOverrides } from './define-exercise';
+import { overrideFor } from './define-exercise';
 import type { DrillTarget } from './drill-load';
 import type { Sampler } from './exercise-input';
 import { loadSampler } from './exercise-input';
@@ -53,7 +54,8 @@ function verdictOf(
   if (/[:*]/.test(candidate.path))
     return { reason: 'its path takes a parameter the load cannot bind' };
   if (!candidate.anonymous) return { reason: 'its policy refuses an anonymous caller' };
-  const override = overrides?.entries.get(candidate.name);
+  // Kind-aware, as the pass: an `'action:<name>'` entry wins over a bare one a job may share.
+  const override = overrideFor(overrides, 'action', candidate.name);
   if (override === undefined) return { bind: undefined };
   if ('off' in override) return { reason: `exercise.ts turns it off: ${override.off.trim()}` };
   if (override.actor !== null) return { reason: 'exercise.ts runs it as a signed-in actor' };

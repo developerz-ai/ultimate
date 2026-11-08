@@ -13,7 +13,8 @@ import {
   runExercise,
   tryUseContext,
 } from '@ultimat3/core';
-import { statusFor, withScratchRateLimitStore } from '@ultimat3/http';
+import type { ExerciseRequestOption } from '@ultimat3/http';
+import { statusFor, withRequestAs, withScratchRateLimitStore } from '@ultimat3/http';
 import { admitsAnonymous } from '@ultimat3/policy';
 import { arbitrary } from '@ultimat3/schema/sample';
 import type { AnyAction } from './action';
@@ -48,6 +49,13 @@ export interface ExerciseActorOptions {
   readonly input?: (drawn: DrawnInput) => unknown;
   /** 1 to `EXERCISE_RUNS_MAX`; `EXERCISE_RUNS` when omitted. */
   readonly runs?: number;
+  /**
+   * What the call's request carries in: the cookie a first step set (a pending sign-in, an OAuth
+   * state), a header. A function is awaited before EACH call, as that call's actor, so it can mint
+   * a session for whoever acts. Read by `x exercise` and the contract step alike: each run is then
+   * invoked inside that request (`@ultimat3/http`'s `withRequestAs`) instead of the bare context.
+   */
+  readonly request?: ExerciseRequestOption;
 }
 
 /** No exercise, said out loud: the reason is listed in the assertion's name. */
@@ -95,8 +103,13 @@ export async function exerciseAction(
       accepts: (input) => acceptedBy(target, input, name),
       attempt: async (input): Promise<ExerciseAttempt> => {
         const before = handlerReached(target);
+        // The actor is ON the declared request, so `invoke` takes none: its impersonation path
+        // would rebuild a plain child context and drop the request's headers.
+        const { request } = options;
         const settled = await inRolledBackScope(() =>
-          invoke(target, input, { ctx: base, actor, surface: 'http' }),
+          request === undefined
+            ? invoke(target, input, { ctx: base, actor, surface: 'http' })
+            : withRequestAs(name, actor, request, () => invoke(target, input, { surface: 'http' })),
         );
         const reached = handlerReached(target) > before;
         return settled.ok ? { ok: true, reached } : { ok: false, reached, error: settled.error };

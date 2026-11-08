@@ -891,3 +891,9 @@ seam); the pool's sweep still retires it. The number, measured on loopback (cold
 Cost, stated: a pool saturated past 250 ms by the app's own work also degrades the limiter to per
 pod for those decisions — logged, and a weaker limit rather than none. Proof:
 `rate-limit-store-deadline.test.ts`, `packages/testing/src/rate-limit-store-blackhole.live.test.ts`.
+
+## No drain deadline
+
+`drain.deadlineMs` is the one drain budget (core, per role). The key `drainTimeoutMs` (deleted in
+25.0.0) is `X_CONFIG_INVALID` via `refuseDeletedHttpKeys`. `ServerOptions.drain` passes only
+`readinessGraceMs`, and only when declared.

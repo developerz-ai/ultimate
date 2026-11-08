@@ -4,6 +4,8 @@
 // Pure: JSON in, verdicts out (plan 101, 40-next-query-plans).
 
 import { columnsIn } from './plan-conditions';
+import type { ProbeScan } from './plan-probes';
+import { probesOf } from './plan-probes';
 import type { PlanUnservable, SortKeyRef } from './plan-sort-key';
 import { sortKeyPart, sortUnservable } from './plan-sort-key';
 
@@ -28,6 +30,11 @@ export interface PlanVerdict {
   readonly arms?: readonly (readonly string[])[];
   /** The alias the plan reads the table by, when it is not the table's own name. */
   readonly alias?: string;
+  /**
+   * Columns a join ties this whole read to a scan bound by its own key (`plan-probes.ts`): one
+   * that leads an index is a probe the planner had and declined on an empty table's costs.
+   */
+  readonly probes?: readonly string[];
 }
 
 interface PlanNode {
@@ -36,12 +43,14 @@ interface PlanNode {
   readonly alias: string | undefined;
   readonly conditions: readonly string[];
   readonly sortKey: readonly string[];
-  readonly indexCond: boolean;
+  readonly indexCond: string | undefined;
   readonly filter: boolean;
   readonly children: readonly PlanNode[];
 }
 
 const SCANS: ReadonlySet<string> = new Set(['Seq Scan', 'Index Scan', 'Index Only Scan']);
+/** Nodes that hold their child's rows for a join: the join's conditions are the child's still. */
+const HOLDS: ReadonlySet<string> = new Set(['Hash', 'Materialize', 'Memoize']);
 /** Conditions a join or a recheck carries for the scans beneath it. */
 const CONDITION_KEYS = ['Index Cond', 'Filter', 'Hash Cond', 'Merge Cond', 'Join Filter'] as const;
 
@@ -67,7 +76,7 @@ function nodeOf(value: unknown): PlanNode | undefined {
     alias: text(raw['Alias']),
     conditions: CONDITION_KEYS.flatMap((key) => text(raw[key]) ?? []),
     sortKey,
-    indexCond: text(raw['Index Cond']) !== undefined,
+    indexCond: text(raw['Index Cond']),
     filter: text(raw['Filter']) !== undefined,
     children: plans.flatMap((child) => nodeOf(child) ?? []),
   };
@@ -143,18 +152,22 @@ export type PlanTableColumns = ReadonlyMap<string, ReadonlySet<string>>;
 /**
  * Every red node of one plan. `Seq Scan` on a judged table; an index scan with no `Index Cond`,
  * unless a `Limit` above it stops it early and no `Filter` makes it walk on; a `Sort` under a
- * `Limit`. A join's conditions are handed down, so the scan of its inner side names its key.
+ * `Limit`. A join's conditions are handed down, through the nodes that only hold rows for it, so
+ * the scan of its inner side names its key — and a whole read tied to a keyed side, its probe.
  */
 export function judgePlan(answer: unknown, tables: PlanTableColumns): readonly PlanVerdict[] {
   const root = nodeOf(planRoot(answer));
   if (root === undefined) return [];
   const verdicts: PlanVerdict[] = [];
+  const scans: (ProbeScan & { readonly verdict: number | undefined })[] = [];
   const walk = (node: PlanNode, limited: boolean, inherited: readonly string[]): void => {
     const conditions = [...inherited, ...node.conditions];
     const columns = node.table === undefined ? undefined : tables.get(node.table);
-    if (node.table !== undefined && columns !== undefined && SCANS.has(node.type)) {
-      const unbounded = node.type === 'Seq Scan' || (!node.indexCond && (!limited || node.filter));
-      if (unbounded) {
+    if (node.table !== undefined && SCANS.has(node.type)) {
+      const judged = columns !== undefined;
+      const unbounded =
+        node.type === 'Seq Scan' || (node.indexCond === undefined && (!limited || node.filter));
+      if (judged && unbounded) {
         const found = columnsIn(conditions, node, columns);
         verdicts.push({
           code: 'X_QUERY_UNINDEXED',
@@ -165,6 +178,9 @@ export function judgePlan(answer: unknown, tables: PlanTableColumns): readonly P
           ...(node.alias === undefined || node.alias === node.table ? {} : { alias: node.alias }),
         });
       }
+      const { table, alias, indexCond } = node;
+      const verdict = judged && unbounded ? verdicts.length - 1 : undefined;
+      scans.push({ table, alias, indexCond, conditions, verdict });
     }
     if (node.type === 'Sort' && limited) {
       const sorted = sortVerdict(node, conditions, tables);
@@ -173,11 +189,15 @@ export function judgePlan(answer: unknown, tables: PlanTableColumns): readonly P
     const below = limited || node.type === 'Limit';
     // A join's conditions name both sides: each child keeps only the conjuncts about itself.
     const handed =
-      node.type.includes('Join') || node.type === 'Nested Loop' || node.type === 'Hash'
+      node.type.includes('Join') || node.type === 'Nested Loop' || HOLDS.has(node.type)
         ? conditions
         : [];
     for (const child of node.children) walk(child, below, handed);
   };
   walk(root, false, []);
-  return verdicts;
+  const probes = probesOf(scans);
+  return verdicts.map((verdict, at) => {
+    const found = probes[scans.findIndex((scan) => scan.verdict === at)] ?? [];
+    return found.length === 0 ? verdict : { ...verdict, probes: found };
+  });
 }

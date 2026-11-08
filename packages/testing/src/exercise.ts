@@ -5,30 +5,27 @@
 // Committed, never rolled back. Around that call the tenant proof runs: the pair's other tenant
 // calls with the first one's ids before and after it (`tenant-proof.ts`, plan 101, 40). A reached
 // job is then killed at every step boundary (`exercise-crash.ts`).
+//
+// Each record is its primitive's alone: an entry's input that throws is that primitive unreached,
+// what the input sent is never the call's, and a name two kinds share has an entry per kind.
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
-import { isUltimateError, renderThrowable, runExercise } from '@ultimat3/core';
+import { runExercise } from '@ultimat3/core';
 import { registeredJobs } from '@ultimat3/jobs';
 import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
-import { assertOverridesKnown, unknownDeclaration } from './define-exercise';
+import { assertOverridesKnown, overrideFor, unknownDeclaration } from './define-exercise';
 import type { RoleGrants } from './exercise-actor';
 import { chooseActor } from './exercise-actor';
 import { seatActorUsers } from './exercise-actor-user';
 import { proveCrash } from './exercise-crash';
 import { defectDetail } from './exercise-defect';
-import { driftOverrideLine } from './exercise-drift-hint';
 import type { IdLookup, Sampler } from './exercise-input';
-import {
-  bindIds,
-  drawInput,
-  idStem,
-  loadSampler,
-  namesActorEntity,
-  seededIds,
-} from './exercise-input';
+import { bindIds, drawInput, loadSampler, namesActorEntity, seededIds } from './exercise-input';
 import { ambientJobRows } from './exercise-job-run';
+import { judged, labelFor } from './exercise-judge';
+import { mergeObserved } from './exercise-observed';
 import type { OverrideInput } from './exercise-override-input';
-import { overrideInput } from './exercise-override-input';
+import { inputThrew, overrideInput } from './exercise-override-input';
 import type {
   EffectPayload,
   ExerciseEffect,
@@ -37,7 +34,7 @@ import type {
   ExerciseRoom,
   Observed,
 } from './exercise-report';
-import { openExerciseRoom, overrideLine } from './exercise-report';
+import { openExerciseRoom } from './exercise-report';
 import { withExerciseSetup } from './exercise-setup';
 import type { Subject } from './exercise-subjects';
 import { fixedTenant, seatIn, subjectsOf } from './exercise-subjects';
@@ -68,18 +65,10 @@ export interface ExercisePassOptions {
   readonly onPhases?: (ms: ExercisePhaseMs) => void;
 }
 
-const isOff = (overrides: ExerciseOverrides | undefined, name: string): boolean => {
-  const override = overrides?.entries.get(name);
+const isOff = (overrides: ExerciseOverrides | undefined, subject: Subject): boolean => {
+  const override = overrideFor(overrides, subject.kind, subject.name);
   return override !== undefined && 'off' in override;
 };
-
-const codeOf = (error: unknown): string | undefined => {
-  if (isUltimateError(error)) return error.code;
-  return typeof error === 'string' ? /^(X_[A-Z0-9_]+)/.exec(error)?.[1] : undefined;
-};
-
-const reasonOf = (error: unknown): string =>
-  isUltimateError(error) ? error.cause : typeof error === 'string' ? error : renderThrowable(error);
 
 /**
  * Jobs the primitive queued, its own job excepted. Never run: a job's children are left queued as
@@ -108,47 +97,11 @@ async function queuedPayloads(subject: Subject): Promise<readonly EffectPayload[
     }));
 }
 
-interface Run {
-  readonly verdict: ExerciseVerdict;
-  readonly answered: boolean;
-  readonly lastError: unknown;
-  readonly lastInput: unknown;
-}
-
-function judged(subject: Subject, run: Run, observed: Observed, sampler: Sampler) {
-  const idFields = (input: unknown): readonly string[] =>
-    typeof input === 'object' && input !== null
-      ? Object.keys(input).filter((key) => idStem(key) !== undefined)
-      : [];
-  const unreached = (code: string | undefined, reason: string) => ({
-    outcome: 'unreached' as const,
-    ...(code === undefined ? {} : { code }),
-    reason,
-    override: overrideLine(subject.name, idFields(run.lastInput)),
-  });
-  if (observed.refusedHosts.length > 0) {
-    // A call out is a refusal whatever the handler made of it: sealed, so never sent.
-    const hosts = [...new Set(observed.refusedHosts)].join(', ');
-    return unreached('X_TEST_NETWORK_SEALED', `called out to ${hosts}: sealed, never sent`);
-  }
-  if (run.verdict.kind === 'pass' && run.answered) return { outcome: 'reached' as const };
-  if (run.verdict.kind === 'drift') {
-    // The field no draw can fill, named: `...drawn` alone told the author nothing to write.
-    const fields = idFields(run.lastInput);
-    return {
-      ...unreached('X_CONTRACT_DRIFT', 'its input schema refused every generated value'),
-      override: driftOverrideLine(subject.name, subject.input, sampler, fields),
-    };
-  }
-  if (run.verdict.kind === 'defect') {
-    return unreached(codeOf(run.verdict.error) ?? 'X_CONTRACT_DEFECT', run.verdict.defect);
-  }
-  return unreached(codeOf(run.lastError), reasonOf(run.lastError));
-}
-
 /** Everything one primitive's calls share: who acts in each tenant, and how ids are bound. */
 interface Prepared {
   readonly subject: Subject;
+  /** The entry key and room label: `labelFor`'s. */
+  readonly key: string;
   readonly options: ExercisePassOptions;
   readonly tenant: string;
   readonly actor: Actor | null;
@@ -158,13 +111,21 @@ interface Prepared {
   readonly bindInput: OverrideInput | undefined;
 }
 
-/** A's positive control: 39's loop, as the pass has always run it. */
+/** Thrown out of 39's loop by a bind that failed: the record is the entry's, never the loop's. */
+class BindThrew {
+  constructor(readonly error: unknown) {}
+}
+
+/**
+ * A's positive control: 39's loop, as the pass has always run it. The room records each CALL
+ * alone: an override's input runs between calls, and what it sends is never this primitive's.
+ */
 async function control(
   run: Prepared,
   room: ExerciseRoom,
   sampler: Sampler,
 ): Promise<{ readonly record: ExerciseRecord; readonly output: unknown; readonly input: unknown }> {
-  const { subject, actor, tenant, declaredRuns, lookups, bindInput } = run;
+  const { subject, key, actor, tenant, declaredRuns, lookups, bindInput } = run;
   const { kind, name } = subject;
   let binds = 0;
   await using jobs = await testJobs();
@@ -172,43 +133,66 @@ async function control(
   let lastError: unknown;
   let lastInput: unknown;
   let output: unknown;
-  room.begin(name);
+  const segments: Observed[] = [];
   const started = performance.now();
-  const verdict = await runExercise({
-    name,
-    runs: run.runs,
-    stoppedLabel: 'stopped before the call answered',
-    // The minimal draw on every run the pass adds; 39's seeded draw only on runs an override asks.
-    draw: (at, n) => drawInput(sampler, subject.input, at, declaredRuns === undefined ? 0 : n),
-    bind: async (drawn) => {
-      const bound = bindIds(drawn, lookups[binds++ === 0 ? 0 : 1]);
-      const given = bindInput === undefined ? bound : await bindInput(bound, actor);
-      lastInput = seatIn(subject, given, tenant);
-      return lastInput;
-    },
-    accepts: async (input) =>
-      (await subject.input['~standard'].validate(input)).issues === undefined,
-    attempt: async (input): Promise<ExerciseAttempt> => {
-      try {
-        const answer = await subject.call(input, actor, tenant, jobs);
-        if ('failure' in answer) {
-          lastError = answer.failure;
-          return { ok: false, reached: true, error: answer.failure };
+  let verdict: ExerciseVerdict;
+  try {
+    verdict = await runExercise({
+      name,
+      runs: run.runs,
+      stoppedLabel: 'stopped before the call answered',
+      // The minimal draw on every run the pass adds; 39's seeded draw only on runs an override asks.
+      draw: (at, n) => drawInput(sampler, subject.input, at, declaredRuns === undefined ? 0 : n),
+      bind: async (drawn) => {
+        const bound = bindIds(drawn, lookups[binds++ === 0 ? 0 : 1]);
+        try {
+          const given = bindInput === undefined ? bound : await bindInput(bound, actor);
+          lastInput = seatIn(subject, given, tenant);
+        } catch (error) {
+          throw new BindThrew(error);
         }
-        answered = true;
-        output = answer.output;
-        return { ok: true, reached: true };
-      } catch (error) {
-        lastError = error;
-        return { ok: false, reached: false, error };
-      }
-    },
-    statusOf: (await import('@ultimat3/http')).statusFor,
-  });
+        return lastInput;
+      },
+      accepts: async (input) =>
+        (await subject.input['~standard'].validate(input)).issues === undefined,
+      attempt: async (input): Promise<ExerciseAttempt> => {
+        room.begin(key);
+        try {
+          const answer = await subject.call(input, actor, tenant, jobs);
+          if ('failure' in answer) {
+            lastError = answer.failure;
+            return { ok: false, reached: true, error: answer.failure };
+          }
+          answered = true;
+          output = answer.output;
+          return { ok: true, reached: true };
+        } catch (error) {
+          lastError = error;
+          return { ok: false, reached: false, error };
+        } finally {
+          segments.push(room.end());
+        }
+      },
+      statusOf: (await import('@ultimat3/http')).statusFor,
+    });
+  } catch (error) {
+    if (!(error instanceof BindThrew)) throw error;
+    const observed = mergeObserved(segments);
+    const record = {
+      kind,
+      name,
+      statements: observed.statements,
+      effects: observed.effects,
+      ms: Math.round(performance.now() - started),
+      ...inputThrew(name, key, error.error),
+    };
+    return { record, output, input: lastInput };
+  }
   const ms = Math.round(performance.now() - started);
-  const observed = room.end();
+  const observed = mergeObserved(segments);
   const effects = [...observed.effects, ...(await enqueued(subject, jobs))];
-  const verdictOf = judged(subject, { verdict, answered, lastError, lastInput }, observed, sampler);
+  const outcome = { verdict, answered, lastError, lastInput };
+  const verdictOf = judged(subject, key, outcome, observed, sampler);
   // A 5xx's cause, statement and fields: the code alone sent the author to reproduce it by hand.
   const defect =
     verdict.kind === 'defect' && verdictOf.outcome === 'unreached'
@@ -229,13 +213,14 @@ async function control(
 /** One B leg: B's actor, A's ids, a queue of its own. What it answered and every effect it had. */
 async function attack(
   subject: Subject,
+  key: string,
   input: unknown,
   actor: Actor | null,
   tenant: string,
   room: ExerciseRoom,
 ): Promise<LegAnswer> {
   await using jobs = await testJobs();
-  room.begin(subject.name);
+  room.begin(key);
   let output: unknown;
   // A job's org is re-seated in B's: B cannot enqueue a payload naming A (refused at the enqueue,
   // which proves nothing), so the attack that matters is a job of B's carrying A's ids.
@@ -261,6 +246,7 @@ async function attack(
 
 async function exerciseOne(
   subject: Subject,
+  key: string,
   options: ExercisePassOptions,
   [tenant, other]: readonly [string, string],
   graph: SeedGraph,
@@ -268,7 +254,7 @@ async function exerciseOne(
   sampler: Sampler,
 ): Promise<ExerciseRecord> {
   const { kind, name } = subject;
-  const override: ExerciseOverride | undefined = options.overrides?.entries.get(name);
+  const override: ExerciseOverride | undefined = overrideFor(options.overrides, kind, name);
   const none = { kind, name, statements: 0, effects: [], ms: 0 };
   if (override !== undefined && 'off' in override) {
     return { ...none, outcome: 'off', reason: override.off.trim() };
@@ -301,6 +287,7 @@ async function exerciseOne(
   ] as const;
   const run: Prepared = {
     subject,
+    key,
     options,
     tenant,
     actor,
@@ -311,7 +298,13 @@ async function exerciseOne(
   };
   // A's own first input, A's ids in it: B sends exactly what A legitimately would.
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookups[0]);
-  const given = bindInput === undefined ? drawn : await bindInput(drawn, actor);
+  let given: unknown;
+  try {
+    given = bindInput === undefined ? drawn : await bindInput(drawn, actor);
+  } catch (error) {
+    const threw = inputThrew(name, key, error);
+    return { ...none, ...threw, tenant: { verdict: 'unproven', reason: threw.reason } };
+  }
   const seat = subject.seat?.(given, tenant);
   if (seat?.kind === 'fixed') {
     const fixed = fixedTenant(name, seat.declared);
@@ -332,7 +325,7 @@ async function exerciseOne(
     read: kind === 'query',
     sweep: kind === 'job',
     tenantless: seat?.kind === 'none',
-    attack: () => attack(subject, input, intruder, other, room),
+    attack: () => attack(subject, key, input, intruder, other, room),
     control: async () => {
       const done = await control(run, room, sampler);
       reachedWith = done.input;
@@ -355,9 +348,14 @@ async function exerciseOne(
 export async function runExercisePass(
   options: ExercisePassOptions,
 ): Promise<readonly ExerciseRecord[]> {
-  const subjects = await subjectsOf();
+  // Each call's request is its entry's, read by kind: an action's cookies are never its job twin's.
+  const subjects = await subjectsOf((kind, name) => {
+    const entry = overrideFor(options.overrides, kind, name);
+    return entry === undefined || 'off' in entry ? undefined : entry.request;
+  });
   const known = new Set(subjects.map((subject) => subject.name));
-  assertOverridesKnown(options.overrides, known);
+  assertOverridesKnown(options.overrides, subjects);
+  const label = labelFor(subjects);
   if (options.only !== undefined && !known.has(options.only)) {
     throw unknownDeclaration([options.only], known, 'x exercise');
   }
@@ -367,7 +365,7 @@ export async function runExercisePass(
   const passSeed = options.seed ?? (crypto.getRandomValues(new Uint32Array(1))[0] as number);
   // The app's setup runs inside the seal, before the first row: its routes answer every call.
   const room = await withExerciseSetup(await openExerciseRoom(), options.overrides?.setup);
-  const live = chosen.filter((subject) => !isOff(options.overrides, subject.name));
+  const live = chosen.filter((subject) => !isOff(options.overrides, subject));
   const records: ExerciseRecord[] = [];
   let graph: SeedGraph;
   const seedStarted = performance.now();
@@ -387,7 +385,8 @@ export async function runExercisePass(
       const index = live.indexOf(subject);
       const at = Math.max(0, index);
       const view = pairGraph(graph, at);
-      records.push(await exerciseOne(subject, options, tenantPair(graph, at), view, room, sampler));
+      const pair = tenantPair(graph, at);
+      records.push(await exerciseOne(subject, label(subject), options, pair, view, room, sampler));
     }
   } catch (error) {
     await room[Symbol.asyncDispose]();
@@ -396,9 +395,12 @@ export async function runExercisePass(
   const seed = Math.round(primitivesStarted - seedStarted);
   const primitives = Math.round(performance.now() - primitivesStarted);
   // The sweeps: every reached primitive again at two sizes, then every statement planned.
-  const reached = new Set(records.filter((r) => r.outcome === 'reached').map((r) => r.name));
-  const swept = await attachSweeps(records, {
-    subjects: chosen.filter((subject) => reached.has(subject.name)),
+  const reached = new Set(records.filter((r) => r.outcome === 'reached').map(label));
+  const swept = await attachSweeps(records, label, {
+    // Named by label: the sweeps key their proofs by name, and a shared name is two primitives.
+    subjects: chosen
+      .filter((subject) => reached.has(label(subject)))
+      .map((subject) => ({ ...subject, name: label(subject) })),
     entities: options.entities,
     // The sized graphs close their cycles as the pass's did: a refused deferred key stays null.
     writer: deferredMayStayNull(options.writer),
@@ -407,7 +409,7 @@ export async function runExercisePass(
     room,
     factories: options.overrides?.factories,
     setup: async (subject, sized, tenant, self) => {
-      const full = chosen.find((one) => one.name === subject.name);
+      const full = chosen.find((one) => label(one) === subject.name);
       if (full === undefined) return undefined;
       const call = await sizedCall(full, options, sampler, { graph: sized, tenant, self });
       // Before the sweep's room opens: the sized tenant's actor is a user too.

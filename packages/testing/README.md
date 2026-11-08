@@ -26,7 +26,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `sealed-sockets.ts` | the `WebSocket` and `Bun.connect` patches, behind `sealed-network.ts`'s one gate |
 | `factories.ts` | `defineFactory` — seeded rows, traits, associations, `build` vs `create` |
 | `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, each value read off its column's declaration (default, enum, kind, money, nullability) through `$parse`, never off its name |
-| `seed-graph.ts` | `seedGraph(entities, { tenants, perTable, seed, factories })` — rows for every table with no factory written: parents first, same-tenant keys, every declared rule kept. Pure, same seed same bytes |
+| `seed-graph.ts` | `seedGraph(entities, { tenants, perTable, seed, factories, beside })` — rows for every table with no factory written: parents first, same-tenant keys, every declared rule kept. Pure, same seed same bytes |
 | `repro.ts` | `reproduce(bundle, { driver })` and `reproJob(runJobs, failure)` — what a test `x repro --write` generated calls: captured reads seeded, clock frozen at the failure, the same actor and input (masked fields stood in from the schema); a dead job's completed steps replayed from storage |
 | `seed-graph-plan.ts` | the plan's types and `insertSeedGraph(graph, writer)` — every insert, then every deferred key, sequentially |
 | `seed-graph-values.ts` | one column's candidate values, off its declaration, kept only where `$parse` accepts them — `factoriesFor`'s source too |
