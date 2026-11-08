@@ -15,6 +15,7 @@ import { assertOverridesKnown, unknownDeclaration } from './define-exercise';
 import type { RoleGrants } from './exercise-actor';
 import { chooseActor } from './exercise-actor';
 import { proveCrash } from './exercise-crash';
+import { defectDetail } from './exercise-defect';
 import type { IdLookup, Sampler } from './exercise-input';
 import {
   bindIds,
@@ -212,7 +213,20 @@ async function control(
   const observed = room.end();
   const effects = [...observed.effects, ...(await enqueued(subject, jobs, executions))];
   const verdictOf = judged(subject, { verdict, answered, lastError, lastInput }, observed);
-  const record = { kind, name, statements: observed.statements, effects, ms, ...verdictOf };
+  // A 5xx's cause, statement and fields: the code alone sent the author to reproduce it by hand.
+  const defect =
+    verdict.kind === 'defect' && verdictOf.outcome === 'unreached'
+      ? await defectDetail(verdict.error, verdict.input, subject.input)
+      : undefined;
+  const record = {
+    kind,
+    name,
+    statements: observed.statements,
+    effects,
+    ms,
+    ...verdictOf,
+    ...(defect === undefined ? {} : { defect }),
+  };
   return { record, output, input: lastInput };
 }
 

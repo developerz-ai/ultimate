@@ -45,6 +45,20 @@ export const exerciseCounts = (records: readonly ExerciseRecord[]): ExerciseCoun
 };
 
 /**
+ * A 5xx's own words — the cause testing recorded (credential values already masked there) and the
+ * fields a validation failure names. The statement is inside the cause, so it is not said twice.
+ */
+const defectOf = (record: ExerciseRecord): string => {
+  const defect = record.defect;
+  if (defect === undefined) return '';
+  const fields =
+    defect.fields === undefined
+      ? ''
+      : ` at ${defect.fields.map((field) => renderCauseValue(field)).join(', ')}`;
+  return ` — cause: ${renderCauseValue(defect.cause)}${fields}`;
+};
+
+/**
  * `X_CONTRACT_EXERCISE_UNREACHED`, `@ultimat3/action`'s code for the same silence one level up: a
  * primitive no run got to as an allowed actor. The fix is the override the pass printed, or the
  * input shape to fill when it printed none — then the one-primitive rerun that proves it.
@@ -56,7 +70,7 @@ const unreachedFinding = (record: ExerciseRecord): Finding => {
   const why = record.reason === undefined ? '' : ` (${renderCauseValue(record.reason)})`;
   return {
     code: 'X_CONTRACT_EXERCISE_UNREACHED',
-    cause: `${record.kind} ${renderCauseValue(record.name)} never reached its handler as an allowed actor in the exercise pass${stopped}${why}`,
+    cause: `${record.kind} ${renderCauseValue(record.name)} never reached its handler as an allowed actor in the exercise pass${stopped}${why}${defectOf(record)}`,
     fix:
       record.fix ??
       `defineExercise({ ${override} })   # paste the entry into ${EXERCISE_FILE}, or { off: '<why>' }; then: x exercise ${name} --json`,

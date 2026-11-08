@@ -12,6 +12,7 @@ import {
 } from '@ultimat3/db';
 import type { RowObserver } from '@ultimat3/entity';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
+import type { ExerciseDefect } from './exercise-defect';
 import { testMail } from './fixture-mail';
 import { routeMatches } from './mock-route';
 import type { PlanProof, SentStatement } from './plan-sweep';
@@ -97,6 +98,8 @@ export interface ExerciseRecord {
   readonly outcome: ExerciseOutcome;
   readonly code?: string;
   readonly reason?: string;
+  /** On an `unreached` one that answered a 5xx: its cause, statement and fields, values masked. */
+  readonly defect?: ExerciseDefect;
   readonly statements: number;
   readonly effects: readonly ExerciseEffect[];
   readonly ms: number;

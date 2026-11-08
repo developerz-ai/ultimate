@@ -200,6 +200,7 @@ export {
 export type { ExercisePassOptions } from './exercise';
 export { runExercisePass } from './exercise';
 export type { ActorChoice, RoleGrants } from './exercise-actor';
+export type { ExerciseDefect } from './exercise-defect';
 export type {
   CrashFinding,
   CrashProof,

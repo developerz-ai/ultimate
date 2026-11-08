@@ -196,6 +196,26 @@ describe('unit · exercise findings', () => {
     expect(finding?.fix).toContain('jobId}:fetch');
   });
 
+  // A 5xx carried only its code: every one had to be reproduced by hand to read its cause.
+  test('an unreached 5xx carries its cause, statement and fields into the finding', () => {
+    const [finding] = exerciseFindings([
+      record({
+        name: 'recordLedger',
+        outcome: 'unreached',
+        code: 'X_DB_STATEMENT_FAILED',
+        reason: 'answered X_DB_STATEMENT_FAILED, a 500',
+        defect: {
+          cause:
+            '[SQLSTATE 23502] null value in column "payload" — statement: insert into "ledger"',
+          statement: 'insert into "ledger"',
+          fields: ['items.0.sku'],
+        },
+      }),
+    ]);
+    expect(finding?.cause).toContain('null value in column \\"payload\\"');
+    expect(finding?.cause).toContain('items.0.sku');
+  });
+
   test('a job name a shell would split is a placeholder in the rerun', () => {
     const [finding] = exerciseFindings([{ ...leaky, name: 'a; rm -rf b' }]);
     expect(finding?.fix).toStartWith('x exercise <job> --json');
