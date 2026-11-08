@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/seo",
-  "version": "30.6.0",
+  "version": "30.7.0",
   "description": "Enforced SEO: typed meta, JSON-LD, sitemap, robots, feeds, responsive images, perf budgets",
   "keywords": [
     "ultimate",
@@ -42,7 +42,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "30.6.0",
-    "@ultimat3/schema": "30.6.0"
+    "@ultimat3/core": "30.7.0",
+    "@ultimat3/schema": "30.7.0"
   }
 }

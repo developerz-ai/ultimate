@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.7.0 - 2026-11-08
+
 ### Highlights
 
 - `x exercise` runs at the size of a real app. A crash proof costs the same over 1,500 seeded rows as over 3: one job's proof cost a 504-primitive app most of a 172-minute pass. Every record and the report now say where the time went.
@@ -65,6 +69,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **An `OR` is answered one index per arm.** `where a = $1 or b = $2` used to suggest one composite `[a, b]`, which does not serve an OR. Now each arm with no index of its own gets one finding with a single-arm index. When the entity declares an index for every arm, the read is credited: under a `LIMIT` the sweep's settings still pick a Seq Scan, but Postgres plans a BitmapOr. An OR beside an equality is bounded by that equality, as before.
 - **An index walk over a join takes its own table's order only.** The order part of the suggested index is now the leading plain columns of the walked table, in one direction, from the outermost `order by`. A column of a joined table, or one that changes direction, ends it there, and Postgres finishes with an incremental sort.
 - A sort keyed on a table the sweep does not judge (a declared `scan:`, a framework table) is no longer charged to an app table. A sort finding is never again printed as "reads <table> whole â€¦ `on: []`".
+
+### Commits
+
+- fix(exercise): x exercise at the size of a real app (#1022)
 
 ## 30.6.0 - 2026-11-08
 
