@@ -559,7 +559,7 @@ What the rendered result is then held to: [Interface rules](Interface-Rules).
 | `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` | the preload |
 | `network` | `offline()` · `drop()` · `online()` · `state()` | the preload |
 | `push` | `subscribe(actorId, { locale })` · `sent()` — each delivery decrypted, as the device shows it · `answerOnce(status)` | the preload |
-| `runJobs` | enqueue+drain, then `enqueue()` `drain()` `due()` `inFlight()` `depth()` → [A job under `runJobs`](#a-job-under-runjobs) | the preload |
+| `runJobs` | enqueue+drain, then `enqueue()` `drain()` `tick()` `due()` `inFlight()` `depth()` → [A job under `runJobs`](#a-job-under-runjobs) | the preload |
 | `statements` | `all()` · `count(fingerprint?)` · `shapes()` — and an N+1 fails the test | the preload |
 | `page` | `goto` · `gotoStreamed` · `getByRole` · `evaluate` · `waitForServiceWorker` | a browser driver |
 | `budget` | `jsBytes(route)` off the built output | a browser driver |
@@ -995,6 +995,7 @@ shape, same unreached code. `As of 2026-11`.
 | Actor | the first of `x policy explain`'s actors the policy allows, in the primitive's tenant. None allowed is `refused`, by design |
 | Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
 | A job's org | the field(s) its `tenant(input)` reads — any name, nested, left out of the draw, or under a parent the draw left out (a scoped backfill's `payload.input.orgId`) — are set to the tenant it is enqueued in, found by reading them: A's for the control, B's for the tenant proof (B's own job, carrying A's ids). A `tenant` no input field moves (one fixed org) is `unreached`, `X_JOB_TENANT_MISMATCH`, its `fix:` the declaration: `tenant: (input) => input.orgId` |
+| A job's run | its own execution alone: enqueued on a queue holding nothing else, run by one worker pass. What it enqueues is left queued, as an action's is — an `enqueue` effect on its record, searched by the tenant proof, never run in its room. Its `statements`, effects, verdict and scale and plan sweeps are its own body's: a job that queues one child per row is flat, a body that reads each row is still `X_QUERY_SCALES_WITH_ROWS`. A child is judged as its own primitive |
 | A job's failure | judged by the action rule: a coded refusal under 500 (an app's 409) is `unreached` under its own code, never a defect; an uncoded throw or a coded 5xx is `X_CONTRACT_DEFECT` |
 | Async input | an override's `input` may be `async`: it is awaited inside the call's request, as the call's actor, so it can mint what the action checks (a one-time token, a passkey assertion). `x drill`'s load skips an `async` input and says why |
 | Room | network sealed, mail captured, jobs in memory, clock frozen — from before the app loads and the scratch database boots, as `bun test`'s preload does, so the embedded Postgres never sees its clock jump. A call out is refused and counted, so the primitive is `unreached` |

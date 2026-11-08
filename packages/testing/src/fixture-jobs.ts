@@ -200,9 +200,7 @@ export async function testJobs(): Promise<RunJobs> {
   const history: JobExecution[] = [];
 
   const ctxFor = (options: JobDrainAs): Ctx =>
-    options.actor === undefined
-      ? anonymousWorker
-      : ctxOf({ role: 'worker', actor: options.actor });
+    options.actor === undefined ? anonymousWorker : ctxOf({ role: 'worker', actor: options.actor });
   const traced = (): JobRunTrace => ({ executions: [...history], steps: tallyOf(history) });
 
   const tick = async (options: JobDrainAs = {}): Promise<JobRunTrace> => {

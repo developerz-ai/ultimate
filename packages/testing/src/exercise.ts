@@ -15,7 +15,6 @@ import type { RoleGrants } from './exercise-actor';
 import { chooseActor } from './exercise-actor';
 import { proveCrash } from './exercise-crash';
 import { defectDetail } from './exercise-defect';
-import { ambientJobRows } from './exercise-job-run';
 import type { IdLookup, Sampler } from './exercise-input';
 import {
   bindIds,
@@ -25,6 +24,7 @@ import {
   namesActorEntity,
   seededIds,
 } from './exercise-input';
+import { ambientJobRows } from './exercise-job-run';
 import type { OverrideInput } from './exercise-override-input';
 import { overrideInput } from './exercise-override-input';
 import type {
