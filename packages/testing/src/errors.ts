@@ -150,9 +150,8 @@ registerErrorCodes(
   ),
 );
 
-// No `docs:` on the subclasses below: `UltimateError` fills it with core's `ERROR_DOCS_URL`, one
-// page for every code — a wiki TABLE ROW has no anchor, and the per-code links built until 9.x
-// answered 404. Restating the URL here would be one constant in eight places, waiting to drift.
+// No `docs:` below: `UltimateError` fills core's `ERROR_DOCS_URL`, one page per code set (a wiki
+// TABLE ROW has no anchor; per-code links answered 404 until 9.x). Restating it here would drift.
 
 /**
  * A test reached the network without a mock or an allowlist entry. Always a bug, never a flake.

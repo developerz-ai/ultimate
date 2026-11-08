@@ -12,7 +12,7 @@ test('an out-of-range runs names the defineExercise entry to fix', async () => {
     env: { NODE_ENV: 'test' },
     stoppedLabel: 'stopped',
     draw: () => ({}),
-    accepts: () => true,
+    accepts: async () => true,
     attempt: async () => ({ ok: true, reached: true }),
     statusOf: () => 500,
   }).catch((error: unknown) => error);

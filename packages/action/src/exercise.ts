@@ -39,7 +39,7 @@ export interface ExerciseActorOptions {
    * picks the first actor the policy allows (as it does with no entry); a contract test runs as
    * the signed-out caller when the policy admits one, else `X_CONTRACT_EXERCISE_UNDECLARED`.
    */
-  readonly actor?: Actor | null;
+  readonly actor?: Actor | null | undefined;
   /**
    * `(drawn) => ({ ...drawn, postId })`: the generated value, with what must resolve bound in.
    * May be `async`: `x exercise` awaits it inside the call's own request, so `useContext().actor`

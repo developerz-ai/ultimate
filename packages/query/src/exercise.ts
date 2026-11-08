@@ -35,7 +35,7 @@ import { queryName, sourceFor } from './read';
  * one, else `X_CONTRACT_EXERCISE_UNDECLARED`.
  */
 export interface QueryExerciseActorOptions {
-  readonly actor?: Actor | null;
+  readonly actor?: Actor | null | undefined;
   readonly input?: (drawn: DrawnInput) => unknown;
   readonly runs?: number;
 }
