@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/auth",
-  "version": "30.4.0",
+  "version": "30.5.0",
   "description": "Sessions, passwords, OAuth, MFA and api keys — resolved to one Actor",
   "keywords": [
     "ultimate",
@@ -47,8 +47,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "30.4.0",
-    "@ultimat3/db": "30.4.0",
-    "@ultimat3/schema": "30.4.0"
+    "@ultimat3/core": "30.5.0",
+    "@ultimat3/db": "30.5.0",
+    "@ultimat3/schema": "30.5.0"
   }
 }

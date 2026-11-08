@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.5.0 - 2026-11-08
+
 ### Highlights
 
 - `x exercise` reports what a 5xx said, seeds a NOT NULL `json(t.json())` column, resolves mocked hosts under the sealed network, and names the step a crash-proof effect ran inside.
@@ -25,6 +29,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `@ultimat3/testing`: an app's SSRF guard that resolves a host no longer fails `x exercise` and every test under the seal: the resolver was unsealed, so a mocked vendor's name went to real DNS.
 - `@ultimat3/testing`: the crash proof attributed a step body's effect to "outside every step, before the first step". It now says it runs inside that step, whose body runs again until the step completes, and the fix keys the call on `${jobId}:<step>`. A failing step's effect made fewer times by a kill that spent one of its attempts (the queue's lease accounting) is no longer `X_JOB_CRASH_DIVERGED`. `after` counts only completed steps, never a `failed` or `started` record.
 - `@ultimat3/testing`, `@ultimat3/cli`: an `x exercise` 5xx (`X_DB_STATEMENT_FAILED`, a 500 `X_VALIDATION_FAILED`) carries its cause, statement and fields into the record and the `X_CONTRACT_EXERCISE_UNREACHED` finding, where only the code was, so each had to be reproduced by hand.
+
+### Commits
+
+- fix(testing): x exercise fidelity â€” NOT NULL json seeds, sealed DNS, 5xx causes, unique ids under the frozen clock (#1018)
 
 ## 30.4.0 - 2026-11-07
 
