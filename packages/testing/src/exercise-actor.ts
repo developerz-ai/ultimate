@@ -119,6 +119,12 @@ const asRoleUser = (actor: Actor | null, name: string, tenant: string): Actor | 
 /** The seeded rows an actor can be one of: the pass's graph, read for one entity. */
 export interface ActorRows {
   readonly entity: { readonly $name: string; readonly $primaryKey: readonly string[] };
+  /**
+   * The column whose value IS the user (`memberships.userId`); omitted, the row's own key. A
+   * membership's id is not a user's id, and a handler that reads `ctx.actor.id` as `x_users`'s
+   * must find the membership by the column that holds it.
+   */
+  readonly column?: string;
   readonly rows: readonly {
     readonly tenant: string | null;
     readonly row: Readonly<Record<string, unknown>>;
@@ -127,13 +133,15 @@ export interface ActorRows {
 
 /**
  * The actor as a ROW of the entity the app named (`defineExercise(…, { actor: members })`): its
- * id becomes the key of a seeded row in its tenant, the one carrying one of its roles when any
- * does. Without it an actor's id is a role name, and every handler that writes `ctx.actor.id`
- * into a foreign key — `authorId` — is refused by the database.
+ * id becomes the key — or the named `column` — of a seeded row in its tenant, the one carrying
+ * one of its roles when any does. Without it an actor's id is `exerciseActorId(role, tenant)`, a
+ * user no table of the app's holds, so a handler writing `ctx.actor.id` into a foreign key —
+ * `authorId` — is refused by the database.
  */
 export function asSeededRow(actor: Actor | null, tenant: string, rows: ActorRows): Actor | null {
-  const key = rows.entity.$primaryKey[0];
-  if (actor === null || key === undefined || rows.entity.$primaryKey.length !== 1) return actor;
+  const key =
+    rows.column ?? (rows.entity.$primaryKey.length === 1 ? rows.entity.$primaryKey[0] : undefined);
+  if (actor === null || key === undefined) return actor;
   const own = rows.rows.filter((row) => row.tenant === tenant || row.tenant === null);
   const roles = actor.roles ?? [];
   const row =

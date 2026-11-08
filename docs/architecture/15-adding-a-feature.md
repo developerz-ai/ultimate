@@ -7,7 +7,7 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | # | Step | Command | Lands in |
 |---|---|---|---|
 | 0 | Pick the surface | — | see the table below |
-| 1 | Generate the slice | `x g resource post --admin` | 42 files — 39 without `--admin`; 44 and 41 once `x.manifest.json` and `openapi.json` exist (it re-projects both), `As of 2026-11-04`. A resource already ships a live list query; `--live` belongs to `x g query` and is refused here. What each file is: [`12-generated-app.md`](./12-generated-app.md). Re-derive with `--dry-run --json` and count `data.files`, plus `data.refreshes` when those two exist; a stale number here is `X_DOC_FILE_COUNT_STALE` from the gate's `manifest` step |
+| 1 | Generate the slice | `x g resource post --admin` | 43 files — 40 without `--admin`; 45 and 42 once `x.manifest.json` and `openapi.json` exist (it re-projects both), `As of 2026-11-08`. A resource already ships a live list query; `--live` belongs to `x g query` and is refused here. What each file is: [`12-generated-app.md`](./12-generated-app.md). Re-derive with `--dry-run --json` and count `data.files`, plus `data.refreshes` when those two exist; a stale number here is `X_DOC_FILE_COUNT_STALE` from the gate's `manifest` step |
 | 2 | Entity + invariants | edit | `apps/web/app/post/entity.ts` |
 | 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/<stamp>_create_posts.{sql,snapshot.json,hash}`, and the schema dump: `packages/db/schema/04_tables/posts.sql` plus its index and foreign-key files |
 | 4 | Apply | `x db migrate` | the dev database; the schema dump again, when a migration was written by hand |

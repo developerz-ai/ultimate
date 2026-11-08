@@ -52,3 +52,20 @@ describe('defineExercise() is the contract step’s declaration too', () => {
     expect(new Set(seen)).toEqual(new Set([`action:${ADA.id}`, `query:${ADA.id}`]));
   });
 });
+
+describe('defineExercise(…, { actor }) names whose rows ARE the actors', () => {
+  test('an entity alone: its key is the actor id', () => {
+    const exercise = defineExercise({}, { actor: { $name: 'members' } });
+    expect(exercise.actorEntity).toBe('members');
+    expect(exercise.actorColumn).toBeUndefined();
+  });
+
+  test('{ entity, column }: that column holds the user, and the pass is told which', () => {
+    const exercise = defineExercise(
+      {},
+      { actor: { entity: { $name: 'memberships' }, column: 'userId' } },
+    );
+    expect(exercise.actorEntity).toBe('memberships');
+    expect(exercise.actorColumn).toBe('userId');
+  });
+});

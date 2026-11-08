@@ -13,8 +13,10 @@ import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
 import { assertOverridesKnown, unknownDeclaration } from './define-exercise';
 import type { RoleGrants } from './exercise-actor';
 import { chooseActor } from './exercise-actor';
+import { seatActorUsers } from './exercise-actor-user';
 import { proveCrash } from './exercise-crash';
 import { defectDetail } from './exercise-defect';
+import { driftOverrideLine } from './exercise-drift-hint';
 import type { IdLookup, Sampler } from './exercise-input';
 import {
   bindIds,
@@ -113,7 +115,7 @@ interface Run {
   readonly lastInput: unknown;
 }
 
-function judged(subject: Subject, run: Run, observed: Observed) {
+function judged(subject: Subject, run: Run, observed: Observed, sampler: Sampler) {
   const idFields = (input: unknown): readonly string[] =>
     typeof input === 'object' && input !== null
       ? Object.keys(input).filter((key) => idStem(key) !== undefined)
@@ -131,7 +133,12 @@ function judged(subject: Subject, run: Run, observed: Observed) {
   }
   if (run.verdict.kind === 'pass' && run.answered) return { outcome: 'reached' as const };
   if (run.verdict.kind === 'drift') {
-    return unreached('X_CONTRACT_DRIFT', 'its input schema refused every generated value');
+    // The field no draw can fill, named: `...drawn` alone told the author nothing to write.
+    const fields = idFields(run.lastInput);
+    return {
+      ...unreached('X_CONTRACT_DRIFT', 'its input schema refused every generated value'),
+      override: driftOverrideLine(subject.name, subject.input, sampler, fields),
+    };
   }
   if (run.verdict.kind === 'defect') {
     return unreached(codeOf(run.verdict.error) ?? 'X_CONTRACT_DEFECT', run.verdict.defect);
@@ -201,7 +208,7 @@ async function control(
   const ms = Math.round(performance.now() - started);
   const observed = room.end();
   const effects = [...observed.effects, ...(await enqueued(subject, jobs))];
-  const verdictOf = judged(subject, { verdict, answered, lastError, lastInput }, observed);
+  const verdictOf = judged(subject, { verdict, answered, lastError, lastInput }, observed, sampler);
   // A 5xx's cause, statement and fields: the code alone sent the author to reproduce it by hand.
   const defect =
     verdict.kind === 'defect' && verdictOf.outcome === 'unreached'
@@ -275,10 +282,13 @@ async function exerciseOne(
   const intruder = withoutCrossTenant(
     theirs.kind === 'actor' ? seated(theirs.actor, other, rows) : null,
   );
+  // Both are users, as a request's actor always is: their `x_users` rows, before any call.
+  await seatActorUsers([actor, intruder]);
 
   const scope = { tenant, actorId: actor?.id, subject: name, actorEntity: rows?.entity.$name };
   const bindInput = overrideInput(name, override);
-  const declaredRuns = override !== undefined && 'actor' in override ? override.runs : undefined;
+  // `off` returned above: any other entry's `runs` is declared, with or without an `actor`.
+  const declaredRuns = override === undefined || 'off' in override ? undefined : override.runs;
   // A field naming the actor entity is tried as the actor's own row, then as somebody else's:
   // both readings are legitimate and only the handler knows which it meant. Same minimal draw.
   const twoWay =
@@ -398,9 +408,11 @@ export async function runExercisePass(
     factories: options.overrides?.factories,
     setup: async (subject, sized, tenant, self) => {
       const full = chosen.find((one) => one.name === subject.name);
-      return full === undefined
-        ? undefined
-        : await sizedCall(full, options, sampler, { graph: sized, tenant, self });
+      if (full === undefined) return undefined;
+      const call = await sizedCall(full, options, sampler, { graph: sized, tenant, self });
+      // Before the sweep's room opens: the sized tenant's actor is a user too.
+      if (call !== undefined) await seatActorUsers([call.actor]);
+      return call;
     },
   });
   options.onPhases?.({ seed, primitives, ...swept.ms });

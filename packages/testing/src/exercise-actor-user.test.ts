@@ -13,6 +13,7 @@ import { clearRegistry, entity, memoryDriver, text, uuid } from '@ultimat3/entit
 import { can, definePermissions, defineRoles, testActor } from '@ultimat3/policy';
 import { runExercisePass } from './exercise';
 import { exerciseActorId } from './exercise-actor';
+import { seatActorUsers } from './exercise-actor-user';
 import type { SeedWriter } from './seed-graph-plan';
 import { testName } from './test-types';
 
@@ -84,5 +85,20 @@ describe(testName('unit', 'the exercise actor is a user'), () => {
     expect(exerciseActorId('owner', 'tenant-a')).toBe(a);
     expect(exerciseActorId('owner', 'tenant-b')).not.toBe(a);
     expect(exerciseActorId('member', 'tenant-a')).not.toBe(a);
+  });
+
+  test('a refused insert is X_EXERCISE_ACTOR_USER_UNSEATED, never swallowed', async () => {
+    await client.execute(raw("alter table x_users add column eau_nick text not null default ''"));
+    await client.execute(raw('alter table x_users alter column eau_nick drop default'));
+    const actor = testActor('eauOwner', { roles: ['eauOwner'] }).actor;
+    const seated = { ...actor, id: exerciseActorId('eauOwner', 'refused') };
+    try {
+      await seatActorUsers([seated]);
+      expect.unreachable('the insert was refused, and the seat passed');
+    } catch (error) {
+      expect(error).toBeUltimateError('X_EXERCISE_ACTOR_USER_UNSEATED');
+    } finally {
+      await client.execute(raw('alter table x_users drop column eau_nick'));
+    }
   });
 });

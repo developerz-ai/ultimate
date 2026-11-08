@@ -19,9 +19,9 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import { statusFor, withScratchRateLimitStore } from '@ultimat3/http';
+import { admitsAnonymous } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { validateAsync } from '@ultimat3/schema';
-import { admitsAnonymous } from '@ultimat3/policy';
 import { arbitrary, describeSampleGap, sampleGaps } from '@ultimat3/schema/sample';
 import { QueryAuditSinkMissingError } from './audit-errors';
 import { QueryDeniedError } from './errors';

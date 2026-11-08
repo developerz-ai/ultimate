@@ -31,7 +31,12 @@ export const actorRowsOf = (options: CallOptions, graph: SeedGraph): ActorRows |
   const name = options.overrides?.actorEntity;
   const entity = options.entities.find((one) => one.$name === name);
   if (entity === undefined) return undefined;
-  return { entity, rows: graph.inserts.filter((row) => row.entity === entity.$name) };
+  const column = options.overrides?.actorColumn;
+  return {
+    entity,
+    rows: graph.inserts.filter((row) => row.entity === entity.$name),
+    ...(column === undefined ? {} : { column }),
+  };
 };
 
 /** The actor of `chosen`, seated as a row of the app's actor entity in `tenant` when it names one. */

@@ -15,9 +15,8 @@ export function overrideInput(
   name: string,
   override: ExerciseOverride | undefined,
 ): OverrideInput | undefined {
-  const bind = bindDrawn(
-    override !== undefined && 'actor' in override ? override.input : undefined,
-  );
+  // Any entry but `off` may bind: `{ input }` alone keeps the pass's own actor and still binds.
+  const bind = bindDrawn(override === undefined || 'off' in override ? undefined : override.input);
   if (bind === undefined) return undefined;
   return (drawn, actor) => withExerciseRequest(name, actor, async () => bind(drawn));
 }
@@ -29,6 +28,6 @@ export function overrideInput(
  */
 export const isAsyncInput = (override: ExerciseOverride | undefined): boolean =>
   override !== undefined &&
-  'actor' in override &&
+  !('off' in override) &&
   override.input !== undefined &&
   Object.prototype.toString.call(override.input) === '[object AsyncFunction]';
