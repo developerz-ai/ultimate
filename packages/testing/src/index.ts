@@ -445,6 +445,7 @@ export {
   allowHost,
   captureNetwork,
   isNetworkSealed,
+  MOCKED_HOST_ADDRESS,
   mockFetch,
   mockJson,
   networkState,

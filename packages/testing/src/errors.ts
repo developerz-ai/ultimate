@@ -163,7 +163,7 @@ export class NetworkSealedError extends UltimateError {
     url: string;
     method: string;
     allowed: readonly string[];
-    transport?: 'fetch' | 'socket' | undefined;
+    transport?: 'fetch' | 'socket' | 'dns' | undefined;
   }) {
     const allowCall = `allowHost('${hostOf(input.url)}')`;
     const allow = `${allowCall} if it must be real`;
@@ -175,7 +175,9 @@ export class NetworkSealedError extends UltimateError {
       fix:
         input.transport === 'socket'
           ? `${allowCall}   # only if it must be real — otherwise inject the transport: pass the code under test its \`connect\`/\`client\` option, or dial a Bun.listen server on 127.0.0.1 (loopback is never sealed)`
-          : `mockFetch('${input.url}', () => new Response('{}')) — or ${allow}`,
+          : input.transport === 'dns'
+            ? `mockFetch('https://${hostOf(input.url)}/*', () => new Response('{}'))   # a mocked host resolves — or ${allow}`
+            : `mockFetch('${input.url}', () => new Response('{}')) — or ${allow}`,
     });
   }
 }
