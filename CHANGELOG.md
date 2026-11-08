@@ -8,7 +8,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `x exercise` reports what a 5xx said, seeds a NOT NULL `json(t.json())` column, resolves mocked hosts under the sealed network, and names the step a crash-proof effect ran inside.
+
+### Added
+
+- `@ultimat3/testing`: the sealed network seals name resolution. `Bun.dns.lookup`, `dns.lookup` and `dns.promises.lookup` resolve a host a `mockFetch` route names to `MOCKED_HOST_ADDRESS` (`11.11.11.11`, a `public` address, so an SSRF screen passes it and the dial it pins meets the mock through its `Host`), hand this machine, an address literal and an `allowHost` name to the real resolver, refuse every name offline (`X_TEST_NETWORK_OFFLINE`) and any other as `X_TEST_NETWORK_SEALED`. A named ESM `import { lookup } from 'node:dns'` binds before the seal and is not covered, nor is `dns.resolve*`.
+- `@ultimat3/testing`: `ExerciseRecord.defect` — on a primitive that answered a 5xx, `{ cause, statement?, fields? }`: the coded error's cause, the SQL a database refusal names, the paths a validation failure names. A value the call's input held under a credential key or a `.sensitive()` field is `[redacted]` in it. Type `ExerciseDefect`.
+- `@ultimat3/testing`: `crashEffectPlace(where)` — the one phrase for where a crash-proof effect ran, used by `X_JOB_CRASH_DIVERGED` and the CLI's finding. A divergence and a `CrashFinding` carry `inside`, the step whose body made the effect.
+- `@ultimat3/jobs`: `currentStep()` — the name of the durable step whose body is running here, ambient across its awaits; `undefined` between steps.
+
+### Fixed
+
+- `@ultimat3/testing`: a NOT NULL `json(t.json())` column is never seeded with JSON `null`. `t.json()` accepts it and the sampler draws it, and the driver binds a JSON `null` as SQL NULL, so the seed insert failed; a NOT NULL column is now offered no value any driver stores as SQL NULL. A nullable one still is.
+- `@ultimat3/testing`: an app's SSRF guard that resolves a host no longer fails `x exercise` and every test under the seal: the resolver was unsealed, so a mocked vendor's name went to real DNS.
+- `@ultimat3/testing`: the crash proof attributed a step body's effect to "outside every step, before the first step". It now says it runs inside that step, whose body runs again until the step completes, and the fix keys the call on `${jobId}:<step>`. A failing step's effect made fewer times by a kill that spent one of its attempts (the queue's lease accounting) is no longer `X_JOB_CRASH_DIVERGED`. `after` counts only completed steps, never a `failed` or `started` record.
+- `@ultimat3/testing`, `@ultimat3/cli`: an `x exercise` 5xx (`X_DB_STATEMENT_FAILED`, a 500 `X_VALIDATION_FAILED`) carries its cause, statement and fields into the record and the `X_CONTRACT_EXERCISE_UNREACHED` finding, where only the code was, so each had to be reproduced by hand.
 
 ## 30.4.0 - 2026-11-07
 

@@ -212,8 +212,8 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `consumer.ts` / `consumer-loop.ts` / `consumer-types.ts` | `consumer()` — a job + `.supervisor` task; one run's turns; the shapes |
 | `consumer-registry.ts` / `consumer-guard.ts` / `consumer-errors.ts` | the `origin` stamp + `registeredConsumers`; the self-enqueue refusal; `X_CONSUMER_*` |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements; an `action-job` projection is `X_ACTION_JOB_UNBRIDGED` |
-| `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
-| `steps.ts` / `-core.ts` / `-wait.ts` / `-unwind.ts` | replay runner; shared core; `waitForEvent`; compensation |
+| `describe.ts` | one handle's JSON projection; `describeJobs()` maps it |
+| `steps.ts` / `-core.ts` / `-wait.ts` / `-unwind.ts` / `step-scope.ts` | replay runner; core; `waitForEvent`; compensation; `currentStep()` |
 | `steps-timeout.ts` / `steps-suspension.ts` | a step's ceiling; `StepSuspension`, `UnwindReached`, timeout marker |
 | `steps-api.ts` / `steps-store.ts` / `steps-output.ts` | `StepApi`, `EventLookup`; `StepRecord`, `StepFence`, `StepStore`; what a step answers, `StepOutput` and `jsonForm` |
 | `type-pins.ts` | compile-time pins for `StepOutput` and `waitForEvent` |
