@@ -57,6 +57,10 @@ afterEach(() => {
 
 const ORDER = { id: 'o-1' };
 
+// Foreign failures handed to a step body: test input, never a verdict.
+const PROVIDER_REFUSED = new TypeError('the provider refused');
+const PROVIDER_TIMED_OUT = new TypeError('the provider timed out');
+
 describe('crashProof: every boundary of the probe job, killed', () => {
   test('a call out between two steps is made twice when killed after it — and only then', async () => {
     const probe = declare('probe', async ({ step }) => {
@@ -122,6 +126,44 @@ describe('crashProof: every boundary of the probe job, killed', () => {
     const started = report.boundaries.find((one) => one.at === 'charge (started)');
     expect(started).toMatchObject({ state: 'dead', code: 'X_STEP_OUTCOME_UNKNOWN' });
     expect(report.divergences).toEqual([]);
+  });
+
+  // A step that fails after its call out runs again on every retry, and a kill that spends an
+  // attempt makes it run FEWER times. Neither is a call "outside every step": the queue's lease
+  // accounting is not the app's defect, and naming no step sent the author to the wrong line.
+  test('a failing step’s call out is attributed to that step; a kill that spends an attempt is not red', async () => {
+    const failing = declare(
+      'failing',
+      async ({ step }) => {
+        await step.run('load', () => 'loaded');
+        await step.run('charge', async () => {
+          await call('charge');
+          return Promise.reject(PROVIDER_REFUSED);
+        });
+      },
+      { attempts: 3 },
+    );
+    const report = await crashProof(failing, ORDER);
+    expect(report.boundaries.map((one) => one.at)).toContain('charge (failed)');
+    expect(report.divergences).toEqual([]);
+  });
+
+  test('a step body that makes its call more often when killed names the step it is inside', async () => {
+    let sent = 0;
+    const flaky = declare('inside', async ({ step }) => {
+      await step.run('charge', async () => {
+        sent += 1;
+        await call('charge');
+        // Planted: every second attempt fails after the call, so a replay sends it again.
+        if (sent % 2 === 0) return Promise.reject(PROVIDER_TIMED_OUT);
+        return 'charged';
+      });
+    });
+    const report = await crashProof(flaky, ORDER);
+    const [first] = report.divergences;
+    expect(first?.inside).toBe('charge');
+    expect(first?.error.cause).toContain('inside step "charge"');
+    expect(first?.error.cause).not.toContain('outside every step');
   });
 
   test('a job with no step has one boundary, the ack', async () => {

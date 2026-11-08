@@ -200,6 +200,7 @@ export {
 export type { ExercisePassOptions } from './exercise';
 export { runExercisePass } from './exercise';
 export type { ActorChoice, RoleGrants } from './exercise-actor';
+export type { ExerciseDefect } from './exercise-defect';
 export type {
   CrashFinding,
   CrashProof,
@@ -376,6 +377,7 @@ export { crashProof } from './job-crash-proof';
 export { jobDriverConformance } from './job-driver-conformance';
 export type { SimEffect } from './job-sim-effects';
 export {
+  crashEffectPlace,
   JobCrashDivergedError,
   JobSimInvariantError,
   JobSimNondeterministicError,
@@ -444,6 +446,7 @@ export {
   allowHost,
   captureNetwork,
   isNetworkSealed,
+  MOCKED_HOST_ADDRESS,
   mockFetch,
   mockJson,
   networkState,

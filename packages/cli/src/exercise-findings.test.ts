@@ -168,6 +168,54 @@ describe('unit · exercise findings', () => {
     expect(mail?.fix).toContain('before the first step');
   });
 
+  // A failing step's retry was reported "outside every step, before the first step": the effect
+  // ran INSIDE the step, so the finding names that step and the idempotency key, not a wrap.
+  test('a divergence made inside a step names the step, never "outside every step"', () => {
+    const inside = record({
+      name: 'syncFeed',
+      kind: 'job',
+      crash: {
+        verdict: 'diverged',
+        boundaries: 3,
+        reruns: 0,
+        findings: [
+          {
+            boundary: 'nack',
+            mode: 'clean',
+            effect: 'network:GET feeds.example/rss',
+            clean: 2,
+            killed: 3,
+            inside: 'fetch',
+          },
+        ],
+      },
+    });
+    const [finding] = exerciseFindings([inside]);
+    expect(finding?.cause).toContain('inside step "fetch"');
+    expect(finding?.cause).not.toContain('outside every step');
+    expect(finding?.fix).toContain('jobId}:fetch');
+  });
+
+  // A 5xx carried only its code: every one had to be reproduced by hand to read its cause.
+  test('an unreached 5xx carries its cause, statement and fields into the finding', () => {
+    const [finding] = exerciseFindings([
+      record({
+        name: 'recordLedger',
+        outcome: 'unreached',
+        code: 'X_DB_STATEMENT_FAILED',
+        reason: 'answered X_DB_STATEMENT_FAILED, a 500',
+        defect: {
+          cause:
+            '[SQLSTATE 23502] null value in column "payload" — statement: insert into "ledger"',
+          statement: 'insert into "ledger"',
+          fields: ['items.0.sku'],
+        },
+      }),
+    ]);
+    expect(finding?.cause).toContain('null value in column \\"payload\\"');
+    expect(finding?.cause).toContain('items.0.sku');
+  });
+
   test('a job name a shell would split is a placeholder in the rerun', () => {
     const [finding] = exerciseFindings([{ ...leaky, name: 'a; rm -rf b' }]);
     expect(finding?.fix).toStartWith('x exercise <job> --json');

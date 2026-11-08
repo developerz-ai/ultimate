@@ -12,6 +12,7 @@ import {
 } from '@ultimat3/db';
 import type { RowObserver } from '@ultimat3/entity';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
+import type { ExerciseDefect } from './exercise-defect';
 import { testMail } from './fixture-mail';
 import { routeMatches } from './mock-route';
 import type { PlanProof, SentStatement } from './plan-sweep';
@@ -72,8 +73,10 @@ export interface CrashFinding {
   readonly effect: string;
   readonly clean: number;
   readonly killed: number;
-  /** The last step the clean run had written before the effect; absent, before the first. */
+  /** The last step the clean run had completed before the effect; absent, before the first. */
   readonly after?: string;
+  /** The step whose body made the effect, when it was made inside one: it runs again on a retry. */
+  readonly inside?: string;
 }
 
 /** The crash proof's verdict on a reached job: killed at every step boundary (`crashProof`). */
@@ -95,6 +98,8 @@ export interface ExerciseRecord {
   readonly outcome: ExerciseOutcome;
   readonly code?: string;
   readonly reason?: string;
+  /** On an `unreached` one that answered a 5xx: its cause, statement and fields, values masked. */
+  readonly defect?: ExerciseDefect;
   readonly statements: number;
   readonly effects: readonly ExerciseEffect[];
   readonly ms: number;

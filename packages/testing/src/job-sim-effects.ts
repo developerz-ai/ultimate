@@ -18,15 +18,17 @@ export interface SimEffect {
   readonly key: string;
   /** The worker whose body made it; absent for the harness. */
   readonly worker?: string;
-  /** The last step that worker's run had written when the effect happened. */
+  /** The last step that worker's run had COMPLETED when the effect happened. */
   readonly after?: string;
+  /** The step whose body made it (`@ultimat3/jobs`' `currentStep()`); absent between steps. */
+  readonly inside?: string;
 }
 
 export interface EffectLog extends AsyncDisposable {
   /** The worker a call in flight belongs to: what `run` scoped it to. */
   readonly scope: AsyncContext<string>;
   record(key: string): void;
-  /** A worker's run wrote this step — what the next effect it makes is placed after. */
+  /** A worker's run completed this step — what the next effect it makes is placed after. */
   stepWritten(worker: string, step: string): void;
   effects(): readonly SimEffect[];
   clear(): void;
@@ -52,6 +54,7 @@ const methodOf = (input: RequestInfo | URL, init: RequestInit | undefined): stri
 
 export async function openEffectLog(options: EffectLogOptions): Promise<EffectLog> {
   const { setRowObserver } = await import('@ultimat3/entity');
+  const { currentStep } = await import('@ultimat3/jobs');
   const mail = await import('@ultimat3/mail');
   const scope = asyncContext<string>('the job simulation');
   const log: SimEffect[] = [];
@@ -61,10 +64,12 @@ export async function openEffectLog(options: EffectLogOptions): Promise<EffectLo
     const worker = scope.get();
     if (worker !== undefined && options.isDead(worker)) return;
     const after = worker === undefined ? undefined : lastStep.get(worker);
+    const inside = currentStep();
     log.push({
       key,
       ...(worker === undefined ? {} : { worker }),
       ...(after === undefined ? {} : { after }),
+      ...(inside === undefined ? {} : { inside }),
     });
   };
 

@@ -86,7 +86,10 @@ export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> 
     decide: (op) => options.decide(op),
     landed: (op, answer) => {
       remember(answer);
-      if (op.call === 'put' && op.step !== undefined) log?.stepWritten(op.worker, op.step);
+      // Completed only: a `failed` or `started` record is not a step the body has moved past.
+      if (op.call === 'put' && op.step !== undefined && op.status === 'completed') {
+        log?.stepWritten(op.worker, op.step);
+      }
       if ((op.call === 'enqueue' || op.call === 'enqueueMany') && log !== undefined) {
         const results = (Array.isArray(answer) ? answer : [answer]) as readonly EnqueueResult[];
         results.forEach((result, i) => {

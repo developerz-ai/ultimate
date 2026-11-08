@@ -430,6 +430,7 @@ export type { ScheduledFire, SchedulerState } from './scheduler-state';
 export { fireThroughDriver, memorySchedulerState } from './scheduler-state';
 export type { JobCompleted, JobFailed, JobSettled } from './settled';
 export { ON_SETTLED_ATTEMPTS, ON_SETTLED_TIMEOUT_MS } from './settled';
+export { currentStep } from './step-scope';
 export type {
   CompensateContext,
   EventLookup,

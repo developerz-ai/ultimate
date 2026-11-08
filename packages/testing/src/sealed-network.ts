@@ -1,14 +1,15 @@
-// Sealed network. Any egress a test did not explicitly mock or allow fails the test with the URL
-// and the line that fixes it. A test that quietly reaches the internet is a test that fails in CI
-// for reasons nobody can reproduce — so the default is "nothing gets out". Three dials are sealed:
-// `fetch` here, `WebSocket` and `Bun.connect` through `sealed-sockets.ts`, all behind one gate.
+// Sealed network: egress a test did not mock or allow fails with the URL and the line that fixes
+// it, so nothing reaches the internet unreproducibly. `fetch` here, `WebSocket`/`Bun.connect` via
+// `sealed-sockets.ts`, name resolution via `sealed-dns.ts` — one gate, one set of mocks and allows.
 
 import { isSelfOrigin, peerAddressClass } from '@ultimat3/core';
 import { NetworkOfflineError, NetworkRaceError, NetworkSealedError } from './errors';
 import type { MockHandler, MockRoute } from './mock-route';
-import { mockRoute, routeMatches } from './mock-route';
+import { mockRoute, routeMatches, routeNamesHost } from './mock-route';
 import type { LoggedRequest } from './request-log';
 import { hasStreamBody, headersOf, isOpenEnded, readBody, requestProbe } from './request-log';
+import type { DnsVerdict } from './sealed-dns';
+import { installDnsSeal } from './sealed-dns';
 import { installSocketSeal } from './sealed-sockets';
 
 export type FetchLike = typeof globalThis.fetch;
@@ -26,6 +27,8 @@ interface SealState {
   original: FetchLike | undefined;
   /** `installSocketSeal`'s undo, held beside `original` so one unseal restores all three dials. */
   restoreSockets: (() => void) | undefined;
+  /** `installDnsSeal`'s undo, likewise. */
+  restoreDns: (() => void) | undefined;
   network: NetworkState;
 }
 
@@ -35,8 +38,16 @@ const state: SealState = {
   log: [],
   original: undefined,
   restoreSockets: undefined,
+  restoreDns: undefined,
   network: 'online',
 };
+
+/**
+ * What a mocked host resolves to: one `public` address (`classifyAddress`), so an SSRF screen
+ * passes it, and never a host network — a screen refuses those. Never dialled: a dial pinned to it
+ * carries the name in `Host`, which is how the mock answers it (`mock-route.ts`'s `namedUrl`).
+ */
+export const MOCKED_HOST_ADDRESS = '11.11.11.11';
 
 const urlOf = (input: RequestInfo | URL): string => {
   if (typeof input === 'string') return input;
@@ -82,12 +93,40 @@ const socketRefusal = (url: string, method: string): Error | undefined => {
   return new NetworkSealedError({ url, method, allowed: [...state.allowed], transport: 'socket' });
 };
 
-/** Replace global fetch, `WebSocket` and `Bun.connect`. Idempotent: sealing twice keeps the one
- *  set of originals around. */
+/** A host the allow-list names, whatever port it was allowed on: a lookup carries no port. */
+const isAllowedName = (hostname: string): boolean =>
+  [...state.allowed].some((host) => safeHost(`https://${host}`)?.split(':')[0] === hostname);
+
+/**
+ * The resolver's gate, in `fetch`'s order: offline refuses every name, this machine and an allowed
+ * host resolve for real, a host a mock answers resolves to `MOCKED_HOST_ADDRESS`, the rest is
+ * `X_TEST_NETWORK_SEALED` — the code `fetch` would have raised a moment later.
+ */
+const dnsVerdict = (hostname: string): DnsVerdict => {
+  const name = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const url = `dns://${name}`;
+  if (state.network !== 'online') {
+    return { refused: new NetworkOfflineError({ url, method: 'LOOKUP', mode: state.network }) };
+  }
+  if (isThisMachine(name) || peerAddressClass(name) !== undefined || isAllowedName(name)) {
+    return { real: true };
+  }
+  if (state.mocks.some((route) => routeNamesHost(route, name))) {
+    return { answer: [MOCKED_HOST_ADDRESS] };
+  }
+  const allowed = [...state.allowed];
+  return {
+    refused: new NetworkSealedError({ url, method: 'LOOKUP', allowed, transport: 'dns' }),
+  };
+};
+
+/** Replace global fetch, `WebSocket`, `Bun.connect` and the resolvers. Idempotent: sealing twice
+ *  keeps the one set of originals around. */
 export function sealNetwork(): void {
   if (state.original !== undefined) return;
   state.original = globalThis.fetch;
   state.restoreSockets = installSocketSeal(socketRefusal);
+  state.restoreDns = installDnsSeal(dnsVerdict);
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = urlOf(input);
     const method = methodOf(input, init);
@@ -151,6 +190,8 @@ export function unsealNetwork(): void {
   state.original = undefined;
   state.restoreSockets?.();
   state.restoreSockets = undefined;
+  state.restoreDns?.();
+  state.restoreDns = undefined;
 }
 
 /** Whether the patch is installed. The `network` fixture seals before going offline, so that

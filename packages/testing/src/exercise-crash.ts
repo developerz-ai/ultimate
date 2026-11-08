@@ -18,6 +18,7 @@ const findingOf = (divergence: CrashDivergence): CrashFinding => {
     clean: divergence.clean,
     killed: divergence.killed,
     ...(typeof after === 'string' ? { after } : {}),
+    ...(divergence.inside === undefined ? {} : { inside: divergence.inside }),
   };
 };
 

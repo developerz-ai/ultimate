@@ -153,6 +153,12 @@ const parsed = (column: SeedColumn, value: unknown): { readonly ok: unknown } | 
 };
 
 /**
+ * What every driver binds as SQL NULL — a JSON `null` included (`pg-row.ts` `bindable`): `t.json()`
+ * accepts it and the sampler draws it, so a NOT NULL `jsonb` column must never be offered one.
+ */
+const storesAsSqlNull = (value: unknown): boolean => value === null || value === undefined;
+
+/**
  * Every storable value for this column, most plausible first: the declared default, then what the
  * kind offers, then `null` when the column allows it. Empty means nothing generated is storable.
  */
@@ -167,9 +173,8 @@ export function candidatesFor(
   const out: unknown[] = [];
   for (const value of raw) {
     const result = parsed(column, value);
-    if (result !== undefined && !out.some((seen) => Bun.deepEquals(seen, result.ok))) {
-      out.push(result.ok);
-    }
+    if (result === undefined || (meta.notNull && storesAsSqlNull(result.ok))) continue;
+    if (!out.some((seen) => Bun.deepEquals(seen, result.ok))) out.push(result.ok);
   }
   return keepsPatternsFirst(out, ctx.patterns ?? []);
 }
