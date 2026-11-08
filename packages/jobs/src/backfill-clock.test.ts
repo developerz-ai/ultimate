@@ -29,9 +29,8 @@ const SEED: readonly Row[] = Array.from({ length: BATCHES }, (_, index) => ({
 }));
 
 /**
- * The real-time budget the whole pass gets. Under the old pacer one interval alone (200ms at the
- * default rate) times 999 is minutes; the abort turns that into an `X_ABORTED` here, instead of a
- * test that hangs until the runner's own timeout says nothing about why.
+ * The real-time budget the whole pass gets. Under the old pacer 99 intervals of 200ms are ~20s,
+ * past bun's own per-test timeout, so a regression fails here without a wall-clock wait of ours.
  */
 const WALL_BUDGET_MS = 2_000;
 
@@ -49,31 +48,25 @@ describe('a backfill under a frozen clock', () => {
         swept += page.length;
       },
     });
-    const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), WALL_BUDGET_MS);
     const runner = stepRunner({
       runId: 'run-frozen',
       jobName: 'frozen-clock-sweep',
       store: memoryStepStore(),
-      signal: controller.signal,
+      signal: new AbortController().signal,
       clock,
     });
 
     const startedAt = performance.now();
-    try {
-      await sweep.run({
-        input: {},
-        step: runner.step,
-        ctx: ctxOf({ clock }),
-        attempt: 1,
-        finalAttempt: false,
-        progress: () => undefined,
-        jobId: 'job-frozen',
-        runId: 'run-frozen',
-      });
-    } finally {
-      clearTimeout(deadline);
-    }
+    await sweep.run({
+      input: {},
+      step: runner.step,
+      ctx: ctxOf({ clock }),
+      attempt: 1,
+      finalAttempt: false,
+      progress: () => undefined,
+      jobId: 'job-frozen',
+      runId: 'run-frozen',
+    });
 
     expect(swept).toBe(BATCHES);
     expect(performance.now() - startedAt).toBeLessThan(WALL_BUDGET_MS);
