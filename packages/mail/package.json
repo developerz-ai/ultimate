@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/mail",
-  "version": "30.5.0",
+  "version": "30.6.0",
   "description": "Transactional email as data: one template renders HTML and text, sent through a job.",
   "keywords": [
     "ultimate",
@@ -42,10 +42,10 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "30.5.0",
-    "@ultimat3/i18n": "30.5.0",
-    "@ultimat3/jobs": "30.5.0",
-    "@ultimat3/schema": "30.5.0",
-    "@ultimat3/time": "30.5.0"
+    "@ultimat3/core": "30.6.0",
+    "@ultimat3/i18n": "30.6.0",
+    "@ultimat3/jobs": "30.6.0",
+    "@ultimat3/schema": "30.6.0",
+    "@ultimat3/time": "30.6.0"
   }
 }
