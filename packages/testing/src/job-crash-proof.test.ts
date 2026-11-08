@@ -57,6 +57,10 @@ afterEach(() => {
 
 const ORDER = { id: 'o-1' };
 
+// Foreign failures handed to a step body: test input, never a verdict.
+const PROVIDER_REFUSED = new TypeError('the provider refused');
+const PROVIDER_TIMED_OUT = new TypeError('the provider timed out');
+
 describe('crashProof: every boundary of the probe job, killed', () => {
   test('a call out between two steps is made twice when killed after it — and only then', async () => {
     const probe = declare('probe', async ({ step }) => {
@@ -134,7 +138,7 @@ describe('crashProof: every boundary of the probe job, killed', () => {
         await step.run('load', () => 'loaded');
         await step.run('charge', async () => {
           await call('charge');
-          throw new TypeError('the provider refused');
+          return Promise.reject(PROVIDER_REFUSED);
         });
       },
       { attempts: 3 },
@@ -151,7 +155,8 @@ describe('crashProof: every boundary of the probe job, killed', () => {
         sent += 1;
         await call('charge');
         // Planted: every second attempt fails after the call, so a replay sends it again.
-        if (sent % 2 === 0) throw new TypeError('the provider timed out');
+        if (sent % 2 === 0) return Promise.reject(PROVIDER_TIMED_OUT);
+        return 'charged';
       });
     });
     const report = await crashProof(flaky, ORDER);
