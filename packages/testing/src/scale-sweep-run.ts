@@ -59,6 +59,9 @@ async function callAt(
   options: ScaleSweepOptions,
   self: boolean,
 ): Promise<Call> {
+  // Before the setup: an override's input binds on the queue this call runs on, so a job it
+  // enqueues is there when the call looks it up by id.
+  await using jobs = await testJobs();
   let prepared: Awaited<ReturnType<ScaleSetup>>;
   try {
     prepared = await options.setup(subject, graph, tenant, self);
@@ -68,7 +71,6 @@ async function callAt(
     return { failed: `its exercise.ts input threw: ${renderThrowable(error)}` };
   }
   if (prepared === undefined) return { failed: 'no actor its policy permits' };
-  await using jobs = await testJobs();
   options.room.begin();
   try {
     const answer = await subject.call(prepared.input, prepared.actor, tenant, jobs);

@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PlanTableColumns } from './plan-oracle';
-import { judgePlan, planRoot } from './plan-oracle';
+import { judgePlan, planLimited, planRoot } from './plan-oracle';
 
 const TABLES: PlanTableColumns = new Map([
   ['posts', new Set(['id', 'org_id', 'author_id', 'title', 'project_id', 'created_at'])],
@@ -439,6 +439,14 @@ describe('unit · plan oracle, the rules at their edges', () => {
     const plan = answer(scan('Seq Scan', 'posts'));
     expect(planRoot(JSON.stringify(plan))).toEqual(planRoot(plan));
     expect(judgePlan(JSON.stringify(plan), TABLES)).toHaveLength(1);
+  });
+
+  test('a plan is limited by a Limit at any depth; with none its sort is never planned', () => {
+    expect(planLimited(answer(limit(scan('Index Scan', 'posts'))))).toBe(true);
+    const nested = { 'Node Type': 'Nested Loop', Plans: [scan('Seq Scan', 'posts'), limit()] };
+    expect(planLimited(answer(nested))).toBe(true);
+    expect(planLimited(answer(sort(['title'], scan('Index Scan', 'posts'))))).toBe(false);
+    expect(planLimited([])).toBe(false);
   });
 
   test('an answer with no plan judges nothing', () => {

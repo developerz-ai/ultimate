@@ -5,6 +5,7 @@
 // deciding by `typeof` is answering a different question.
 
 import { keyOf } from './batch-read';
+import { columnFor } from './column';
 import { arrayContains, arrayOverlaps, jsonContains, jsonHasKey } from './containment';
 import { kindOf, valueAt } from './cursor';
 import type { EntityCore } from './entity';
@@ -12,6 +13,7 @@ import { EntityError } from './errors';
 import { searchInMemory } from './feature-errors';
 import { instantMicros } from './instant';
 import { isNullish as isNull } from './is-null';
+import { holdsJsonNull } from './json-null';
 import { likeMatches } from './like';
 import { DECIMAL_TEXT, numericOrder } from './numeric-compare';
 import { operatorUnknown } from './operator';
@@ -111,6 +113,10 @@ export const matchesPredicate = <Row>(
   // predicate and a money sort key both name.
   const kind = kindOf(entity, predicate.column);
   const actual = valueAt(row, predicate.column);
+  // The row side of every NULL test. A NOT NULL `jsonb` column holding `null` holds the JSON
+  // literal (`json-null.ts`), which Postgres' `is null` never matches and its `@>` compares.
+  const held = columnFor(entity.$columns, predicate.column);
+  const rowIsNull = isNull(actual) && !(held !== undefined && holdsJsonNull(held.$meta));
   /**
    * `col = <value>`, with SQL's three-valued logic on both sides: a NULL is never EQUAL to
    * anything, the other NULL included, so `equals` answers false the moment either side is one
@@ -124,34 +130,32 @@ export const matchesPredicate = <Row>(
    * `valueAt(row, 'price.minor')` has nothing to read.
    */
   const equals = (candidate: unknown): boolean =>
-    !isNull(actual) && !isNull(candidate) && sameValueOfKind(kind, actual, candidate);
+    !rowIsNull && !isNull(candidate) && sameValueOfKind(kind, actual, candidate);
   // `col > NULL` is UNKNOWN in SQL and UNKNOWN is not a match, so a NULL on EITHER side matches no
   // row here either — `predicateSql` emits a bare `"col" > $1` and Postgres returns nothing. Without
   // this the fall-through compared `String(null)` as the text `"null"`, which sorts after `"5"` and
   // before `"z"`: `gt(seats, 5)` answered the null row in memory and never in production, and
   // `lt(seats, null)` answered every row. The guard is HERE and not in `compareByKind`, which also
   // orders a page — a sort puts NULLs last (`asc nulls last`) rather than dropping them.
-  const unknown = (): boolean => isNull(actual) || isNull(predicate.value);
+  const unknown = (): boolean => rowIsNull || isNull(predicate.value);
   const order = (): number => compareByKind(kind, actual, predicate.value);
   switch (predicate.op) {
     // `predicateSql` compiles a null operand to `"col" is null` rather than binding it, so this
     // is the same predicate, not a widening of it.
     case 'eq':
-      return predicate.value === null ? isNull(actual) : equals(predicate.value);
+      return predicate.value === null ? rowIsNull : equals(predicate.value);
     // `is distinct from` reads a NULL as a value on BOTH sides: TRUE where one side is null and
     // the other is not, FALSE where both are. A bound `undefined` is a NULL parameter there, so
     // the operand side reads through `isNull` and the two spellings mean one thing.
     case 'neq':
-      return isNull(predicate.value) ? !isNull(actual) : !equals(predicate.value);
+      return isNull(predicate.value) ? !rowIsNull : !equals(predicate.value);
     // `in` reads a LIST or nothing: an operand that is not an array matches no row, which is what
     // `predicateSql` now compiles it to and what `@ultimat3/query` answers for the same operand.
     // A NULL inside the list is asked as `is null` beside the list there, for the same reason.
     case 'in':
       return (
         Array.isArray(predicate.value) &&
-        predicate.value.some((candidate) =>
-          isNull(candidate) ? isNull(actual) : equals(candidate),
-        )
+        predicate.value.some((candidate) => (isNull(candidate) ? rowIsNull : equals(candidate)))
       );
     case 'gt':
       return !unknown() && order() > 0;
@@ -166,22 +170,22 @@ export const matchesPredicate = <Row>(
     case 'like':
       return !unknown() && likeMatches(entity.$name, String(predicate.value), String(actual));
     case 'is-null':
-      return isNull(actual);
+      return rowIsNull;
     case 'is-not-null':
-      return !isNull(actual);
+      return !rowIsNull;
     // The containment half, decided by the column's DECLARED kind exactly as everything above it
     // is: `@>` on a `jsonb` is recursive structural containment and `@>` on an array is plain
     // element containment, and those are two different operators that happen to share a symbol.
     // A NULL column value matches nothing, which is what the SQL answers too.
     case 'contains':
-      return !isNull(actual) && containsBy(kind, actual, predicate.value);
+      return !rowIsNull && containsBy(kind, actual, predicate.value);
     case 'contained-by':
-      return !isNull(actual) && containsBy(kind, predicate.value, actual);
+      return !rowIsNull && containsBy(kind, predicate.value, actual);
     // `&&` is arrays only. A `jsonb` column reaching it is refused rather than guessed at: there
     // is no `jsonb && jsonb` in Postgres, so any answer here would be one no statement can make.
     case 'overlaps':
       return (
-        !isNull(actual) &&
+        !rowIsNull &&
         arrayOverlaps(
           asArray(entity, predicate, actual),
           asArray(entity, predicate, predicate.value),

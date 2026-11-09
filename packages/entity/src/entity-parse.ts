@@ -6,6 +6,7 @@ import { describeValue } from '@ultimat3/schema';
 import { entityNow } from './clock';
 import { newId } from './columns';
 import { invariantViolated } from './errors';
+import { holdsJsonNull } from './json-null';
 import { sealedMissing } from './sealed-errors';
 import type { AnyColumn, ColumnMeta } from './types';
 
@@ -41,7 +42,7 @@ export const rowParsers = <Row, Wire>(
       // spread of an omitted optional key produces and is the shape every existing caller has.
       const raw = input[property];
       const given = raw === undefined ? defaultValue(column.$meta) : raw;
-      if (given === undefined || given === null) {
+      if (given === undefined || (given === null && !holdsJsonNull(column.$meta))) {
         if (column.$meta.notNull) {
           // A required sealed column ABSENT from a row is nearly always a spread of a repository
           // row, which does not enumerate it — so the refusal names that, and the rewrite.
@@ -72,7 +73,7 @@ export const rowParsers = <Row, Wire>(
     for (const [property, column] of wireEntries) {
       const raw = input[property];
       const given = raw === undefined ? defaultValue(column.$meta) : raw;
-      if (given === undefined || given === null) {
+      if (given === undefined || (given === null && !holdsJsonNull(column.$meta))) {
         if (column.$meta.notNull) {
           throw invariantViolated(name, property, 'is required and has no default');
         }

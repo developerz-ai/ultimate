@@ -9,7 +9,7 @@ import { mockRoute, routeMatches, routeNamesHost } from './mock-route';
 import type { LoggedRequest } from './request-log';
 import { hasStreamBody, headersOf, isOpenEnded, readBody, requestProbe } from './request-log';
 import type { DnsVerdict } from './sealed-dns';
-import { installDnsSeal } from './sealed-dns';
+import { ADDRESS_QUERIES, installDnsSeal } from './sealed-dns';
 import { installSocketSeal } from './sealed-sockets';
 
 export type FetchLike = typeof globalThis.fetch;
@@ -99,25 +99,26 @@ const isAllowedName = (hostname: string): boolean =>
 
 /**
  * The resolver's gate, in `fetch`'s order: offline refuses every name, this machine and an allowed
- * host resolve for real, a host a mock answers resolves to `MOCKED_HOST_ADDRESS`, the rest is
- * `X_TEST_NETWORK_SEALED` — the code `fetch` would have raised a moment later.
+ * host resolve for real, as does a `LOOKUP` of an address literal (no query leaves; a `REVERSE` of
+ * one does), a host a mock answers resolves to `MOCKED_HOST_ADDRESS` for an address query only,
+ * the rest is `X_TEST_NETWORK_SEALED` — the code `fetch` would have raised a moment later.
  */
-const dnsVerdict = (hostname: string): DnsVerdict => {
+const dnsVerdict = (hostname: string, query: string): DnsVerdict => {
   const name = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const url = `dns://${name}`;
+  const method = query === 'LOOKUP' || query === 'REVERSE' ? query : `RESOLVE ${query}`;
   if (state.network !== 'online') {
-    return { refused: new NetworkOfflineError({ url, method: 'LOOKUP', mode: state.network }) };
+    return { refused: new NetworkOfflineError({ url, method, mode: state.network }) };
   }
-  if (isThisMachine(name) || peerAddressClass(name) !== undefined || isAllowedName(name)) {
-    return { real: true };
-  }
-  if (state.mocks.some((route) => routeNamesHost(route, name))) {
+  const literal = query === 'LOOKUP' && peerAddressClass(name) !== undefined;
+  if (isThisMachine(name) || literal || isAllowedName(name)) return { real: true };
+  if (ADDRESS_QUERIES.has(query) && state.mocks.some((route) => routeNamesHost(route, name))) {
     return { answer: [MOCKED_HOST_ADDRESS] };
   }
   const allowed = [...state.allowed];
-  return {
-    refused: new NetworkSealedError({ url, method: 'LOOKUP', allowed, transport: 'dns' }),
-  };
+  // A record no mock answers (MX, TXT, a reverse) is lifted by `allowHost` alone: say that first.
+  const transport = ADDRESS_QUERIES.has(query) ? 'dns' : 'dns-record';
+  return { refused: new NetworkSealedError({ url, method, allowed, transport }) };
 };
 
 /** Replace global fetch, `WebSocket`, `Bun.connect` and the resolvers. Idempotent: sealing twice

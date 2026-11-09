@@ -6,10 +6,12 @@
 // model, not UI copy read by a person, so they are not `t()` keys.
 
 import { toolDescription } from '@ultimat3/core';
+import type { WireJsonSchema } from '@ultimat3/schema';
 import { adminPermissionForAction, decideAction, permissionsForAction } from './action-gate';
 import type { AdminApp } from './admin';
 import { type AdminDecision, decideAll } from './authz';
 import { type CrudCtx, decideOperation, permissionsForOperation } from './crud';
+import { adminColumnsOf } from './entity-columns';
 import type { AdminFieldType } from './fields';
 import { type AdminOperation, type AdminPermission, adminPermissionFor } from './permissions';
 import type { AdminAction } from './registry';
@@ -23,6 +25,13 @@ export interface AdminToolField {
   readonly required: boolean;
   /** The argument is a LIST of `type`: the list tool's `where` is a list of predicates. */
   readonly list?: true;
+  /**
+   * The argument's exact JSON Schema, where `type` cannot say it: a `json()` or `arrayOf()`
+   * column's value is an array, an object, a scalar or `null` by its own schema, never "object".
+   */
+  readonly schema?: WireJsonSchema;
+  /** The column takes SQL NULL: the argument admits `null` beside its type (`mcp.ts`). */
+  readonly nullable?: true;
 }
 
 export interface AdminMcpTool {
@@ -83,12 +92,23 @@ const actionDescription = (action: AdminAction): string =>
       : ` Pass ids: [...] to run it once per row; the answer counts done, refused and failed${action.destructive === true ? ', and confirmation is "<entity>:<n> rows"' : ''}.`,
   ].join('');
 
-const formFields = (resource: AdminResource): readonly AdminToolField[] =>
-  resource.formFields.map((field) => ({
-    name: field.name,
-    type: field.type,
-    required: field.required,
-  }));
+/**
+ * Every form field, with what its column says beyond the type: a `json` one its value schema (`{}`,
+ * any, where none exists), a nullable one that it takes `null` — the form's empty box, over MCP.
+ */
+const formFields = (resource: AdminResource): readonly AdminToolField[] => {
+  const facts = new Map(adminColumnsOf(resource.entity).map((column) => [column.name, column]));
+  return resource.formFields.map((field) => {
+    const column = facts.get(field.name);
+    return {
+      name: field.name,
+      type: field.type,
+      required: field.required,
+      ...(field.type === 'json' ? { schema: column?.valueSchema ?? {} } : {}),
+      ...(column?.nullable === true ? { nullable: true as const } : {}),
+    };
+  });
+};
 
 /**
  * The list tool says what it filters by, because a schema cannot: `where` is a list of

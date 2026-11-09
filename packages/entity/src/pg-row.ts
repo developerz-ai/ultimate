@@ -10,6 +10,7 @@ import { kindOf } from './cursor';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
 import { pgInstantMicros, seekAlias } from './instant';
+import { holdsJsonNull } from './json-null';
 import { arrayFromDriver, NOT_AN_ARRAY } from './pg-array-decode';
 import type { SortKey } from './tenancy';
 import type { AnyColumn, MoneyValue, RowPatch } from './types';
@@ -142,6 +143,9 @@ export const arrayLiteral = (value: unknown): string =>
   `{${(Array.isArray(value) ? value : [value]).map(arrayElement).join(',')}}`;
 
 const bindable = (column: AnyColumn, value: unknown): unknown => {
+  // A NOT NULL `jsonb` column's `null` is the JSON literal, `'null'` cast back by the cell — bound
+  // as SQL NULL it was refused `23502` by the very column whose schema had just accepted it.
+  if (value === null && holdsJsonNull(column.$meta)) return JSON.stringify(null);
   if (value === null || value === undefined) return null;
   // A plain object is not a bindable parameter (`X_SQL_UNSAFE`), so a `jsonb` value crosses as its
   // TEXT and `pg-sql.ts`'s cell casts it back — see `cellCast` for why the cast is `::text::jsonb`.
@@ -232,7 +236,9 @@ export const decodeRow = <Row>(entity: EntityCore<Row>, source: PhysicalRow): Ro
       column.$meta.kind === 'money' && currency !== undefined
         ? moneyOf(source, head, currency, scale)
         : source[head];
-    if (value !== null && value !== undefined) {
+    // `holdsJsonNull`: what the driver hands back for a stored `'null'::jsonb` is a JS `null`, and
+    // in a NOT NULL `jsonb` column that is the JSON value — its schema judges it, as it judged it in.
+    if (value !== undefined && (value !== null || holdsJsonNull(column.$meta))) {
       // A sealed column's stored value is not the author's to parse: it goes up as it is, and the
       // sealing seam opens it — so a row somebody left in the clear is `X_SEAL_INVALID` there
       // rather than whatever the plaintext parser thinks of its length here.

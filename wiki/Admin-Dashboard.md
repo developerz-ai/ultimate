@@ -283,6 +283,7 @@ export const mcp = adminMcp({
 | `include: 'exposed'` | every action and query with `mcp: { expose: true }`, projected as on `/mcp` (opt-in, the one predicate), each under its kind's admin scope: a query `admin:read`, an action `admin:write` |
 | `actor({ token, facts })` | `facts` is how the request arrived (address, `Origin`) — what a development token is decided on |
 | where it is built | `apps/<app>/mcp.ts`, never under `apps/admin/app/`: the scan evaluates the former after every primitive registered; one built earlier is `X_MCP_INCLUDE_EARLY` at the mount |
+| a CRUD tool's arguments | one per form field, typed by the field; a `.nullable()` column's also takes `null` (`anyOf [type, null]`), a NOT NULL one does not. A `json()` / `arrayOf()` field is typed by the column's OWN schema — an array, an object, a scalar, `null` where the schema admits it — and untyped (`{}`) where the schema cannot be described; never a blanket `object`. `As of 2026-11` |
 
 ### Tool scopes
 

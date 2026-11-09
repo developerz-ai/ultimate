@@ -26,7 +26,7 @@ import { outsideRowScope, ROW_OUT_OF_SCOPE_REASON } from './row-scope-write';
 
 const { defineAdmin } = await import('./admin');
 const { adminCreate, adminUpdate } = await import('./crud');
-const { callAdminTool } = await import('./mcp');
+const { callAdminTool } = await import('./mcp-dispatch');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();

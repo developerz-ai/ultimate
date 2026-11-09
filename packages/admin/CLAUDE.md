@@ -95,7 +95,7 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 | `batch.ts` / `batch-queue.ts` / `batch-bar.tsx` / `batch-job.ts` | a batch through the gate / its queued half / the bar and row checkboxes / the `admin.batch` job |
 | `resource-fields.ts` / `resource-layout.ts` / `related.ts` / `list-columns.tsx` | one column → one field / sections and form groups / related lists / a resource's table columns |
 | `audit.ts` / `audit-pg.ts` / `json-text.ts` / `audit-request.ts` | the log interface + memory log / the Postgres log / readable JSON for a cell or a diff / the trail's URL ⇄ `AuditRequest`, the history cursor |
-| `mcp-tools.ts` / `mcp-scopes.ts` / `mcp.ts` | tool derivation, each tool's scope (pure) / scope → tools for `defineAppMcp`, a token's expanded scopes / transport wiring |
+| `mcp-tools.ts` / `mcp-scopes.ts` / `mcp.ts` / `mcp-dispatch.ts` | tool derivation, each tool's scope (pure) / scope → tools for `defineAppMcp`, a token's scopes / transport / one call |
 | `test-ctx.ts` | `adminTestCtx({ actor?, granted? })` — the `CrudCtx` a test hands a page or a CRUD call; `staticAuthz` over a grant list, its own audit log. What `x g admin:page`'s emitted render test calls |
 | `jobs/` | the jobs dashboard: entities, repos, the where translation, actions, labels, resources, the overview and its `/_x` tab |
 | `batch-matching.ts` / `audit-schema.ts` | a set-based "all matching" / the audit table's DDL, a leaf |

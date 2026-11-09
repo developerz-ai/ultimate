@@ -1,14 +1,14 @@
 // The plan sweep: every distinct statement the exercise pass sent whose first relation is an app
-// table, planned on the migrated database with sequential scans, bitmap scans and sorts disabled,
-// judged by `plan-oracle.ts`, each red node named as the `indexes:` entry that answers it.
-// Read-only: `PREPARE` in a read-only transaction whose settings die with it, then `DEALLOCATE`.
+// table, planned on the migrated database with sequential and bitmap scans disabled — and, for a
+// limited read's sort only, sorts too — judged by `plan-oracle.ts`, each red node named as the
+// `indexes:` entry that answers it. Read-only: `PREPARE` in a read-only transaction, `DEALLOCATE`.
 
 import { renderThrowable, UltimateError } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
 import { isReservable, raw, sql, withReadTransaction } from '@ultimat3/db';
 import './errors';
-import type { PlanTableColumns } from './plan-oracle';
-import { judgePlan } from './plan-oracle';
+import type { PlanTableColumns, PlanVerdict } from './plan-oracle';
+import { judgePlan, planLimited } from './plan-oracle';
 import type { PlanFinding } from './plan-sweep-fix';
 import { planFindings } from './plan-sweep-fix';
 import type { SeedEntity } from './seed-graph-shape';
@@ -47,13 +47,18 @@ export class QueryPlanUnavailableError extends UltimateError {
   }
 }
 
-/** The planner's choices the sweep removes: what remains is what the schema can serve. */
-const SETTINGS = {
+/**
+ * The planner's choices the sweep removes: what remains is what the schema can serve. The access
+ * path is judged with sorts allowed — off, an `order by` makes the planner walk whatever index
+ * holds the order, whole, instead of the one that keys the read. Only a sort under a `Limit` is
+ * judged, so only a limited read is planned again with sorts off, for its sort alone.
+ */
+const ACCESS = {
   enable_seqscan: 'off',
   enable_bitmapscan: 'off',
-  enable_sort: 'off',
   plan_cache_mode: 'force_generic_plan',
 } as const;
+const SORTS = { ...ACCESS, enable_sort: 'off' } as const;
 const PREPARED = 'x_plan_sweep';
 const FIRST_RELATION = /\b(?:from|into|update|join)\s+(?:"?\w+"?\.)?"?([A-Za-z_][\w$]*)"?/i;
 
@@ -66,7 +71,11 @@ interface Planned {
   readonly refused?: string;
 }
 
-async function explain(client: DbClient, statement: string): Promise<Planned> {
+async function explain(
+  client: DbClient,
+  statement: string,
+  settings: typeof ACCESS | typeof SORTS,
+): Promise<Planned> {
   const connection = isReservable(client) ? await client.reserve() : undefined;
   const on = connection ?? client;
   let prepared = false;
@@ -81,7 +90,7 @@ async function explain(client: DbClient, statement: string): Promise<Planned> {
           raw(`explain (format json) execute ${PREPARED}${args}`),
         );
       },
-      { settings: SETTINGS, client: on },
+      { settings, client: on },
     );
     return { plan: rows[0]?.['QUERY PLAN'] };
   } catch (error) {
@@ -91,6 +100,22 @@ async function explain(client: DbClient, statement: string): Promise<Planned> {
     if (prepared) await on.execute(raw(`deallocate ${PREPARED}`));
     connection?.release();
   }
+}
+
+/** One statement's verdicts: its access path planned as is, its limited sort with sorts off. */
+async function judge(
+  client: DbClient,
+  statement: string,
+  tables: PlanTableColumns,
+): Promise<{ readonly verdicts?: readonly PlanVerdict[]; readonly refused?: string }> {
+  const access = await explain(client, statement, ACCESS);
+  if (access.refused !== undefined) return { refused: access.refused };
+  const read = judgePlan(access.plan, tables).filter((v) => v.code === 'X_QUERY_UNINDEXED');
+  if (!planLimited(access.plan)) return { verdicts: read };
+  const sorted = await explain(client, statement, SORTS);
+  if (sorted.refused !== undefined) return { refused: sorted.refused };
+  const sorts = judgePlan(sorted.plan, tables).filter((v) => v.code === 'X_QUERY_SORT_UNSERVED');
+  return { verdicts: [...read, ...sorts] };
 }
 
 interface ProofBuilder {
@@ -132,7 +157,7 @@ export async function sweepPlans(
     if (entity === undefined) continue;
     const declared = entity.$describe().scan;
     const exemptBy = scan ?? declared;
-    const planned = exemptBy === undefined ? await explain(client, statement) : {};
+    const planned = exemptBy === undefined ? await judge(client, statement, judged) : {};
     for (const name of primitives) {
       const proof = proofOf(name);
       proof.planned += 1;
@@ -140,7 +165,7 @@ export async function sweepPlans(
       else if (planned.refused !== undefined) {
         proof.unplannable.push({ statement, reason: planned.refused });
       } else {
-        proof.findings.push(...planFindings(statement, judgePlan(planned.plan, judged), byTable));
+        proof.findings.push(...planFindings(statement, planned.verdicts ?? [], byTable));
       }
     }
   }

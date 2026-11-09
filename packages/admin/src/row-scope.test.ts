@@ -25,7 +25,7 @@ const { adminRouteMatch } = await import('./routes');
 const { adminDetail, adminList, adminUpdate } = await import('./crud');
 const { adminSearch } = await import('./search');
 const { adminLookup } = await import('./relations');
-const { callAdminTool } = await import('./mcp');
+const { callAdminTool } = await import('./mcp-dispatch');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();

@@ -16,7 +16,7 @@ import type { AdminAction } from './registry';
 const { defineAdmin } = await import('./admin');
 const { runAdminBatch } = await import('./batch');
 const { batchIdOf } = await import('./batch-queue');
-const { callAdminTool } = await import('./mcp');
+const { callAdminTool } = await import('./mcp-dispatch');
 
 /** A log that keeps what a transaction would: entries appended inside `atomic` land on commit. */
 interface Journal extends AuditLog {

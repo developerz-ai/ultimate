@@ -32,10 +32,8 @@ import {
   type AdminAction,
   type AdminEntity,
   AdminPolicyMissingError,
-  adminMcp,
   defineAdmin,
   errorGroupsPages,
-  requestActor,
 } from '@ultimat3/admin';
 import { useContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
@@ -145,6 +143,3 @@ export const admin = defineAdmin({
   // `/admin/errors`: one row per error fingerprint, under the operator's own `errors:read`.
   pages: errorGroupsPages({ store: errorGroups, navGroup: 'admin.group.ops' }),
 });
-
-/** The user's own agents drive the user's own product, with the user's own permissions. */
-export const adminAgents = adminMcp({ app: admin, actor: () => requestActor().actor });

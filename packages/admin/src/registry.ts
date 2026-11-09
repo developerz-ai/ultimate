@@ -42,6 +42,8 @@ export interface AdminColumnMeta {
    * server. Present means the admin derives NO readable field for it — see `entity-columns.ts`.
    */
   readonly sealed?: { readonly lookup: boolean };
+  /** `json(schema)`'s schema: what a `json()` column's MCP argument is typed by (`entity-columns.ts`). */
+  readonly schema?: unknown;
 }
 
 /** One column of a registered entity. An `@ultimat3/entity` `Column` satisfies this. */

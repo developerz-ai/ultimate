@@ -15,8 +15,18 @@ import type { ExerciseOverride } from './define-exercise';
 import { withExerciseRequest } from './exercise-request';
 import { testJobs } from './fixture-jobs';
 
+/**
+ * `onCallQueue`: the caller has installed the queue the call it feeds runs on (the control's), and
+ * the input binds on it — so a job it enqueues is there when the call looks it up by id. Without
+ * it the input gets a queue of its own for its duration: no call shares one with it (the tenant
+ * proof's B legs and the scale sweep each open theirs after the bind).
+ */
+export interface BindAt {
+  readonly onCallQueue?: boolean;
+}
+
 /** `(drawn, actor) => input`, or `undefined` when the override binds nothing. */
-export type OverrideInput = (drawn: unknown, actor: Actor | null) => Promise<unknown>;
+export type OverrideInput = (drawn: unknown, actor: Actor | null, at?: BindAt) => Promise<unknown>;
 
 export function overrideInput(
   name: string,
@@ -28,15 +38,18 @@ export function overrideInput(
   const entry = override === undefined || 'off' in override ? undefined : override;
   const declared = entry?.actor;
   // The entry's own request: the binder sees the cookies and headers the call itself will.
-  return async (drawn, actor) => {
-    // A queue of its own, as every call gets one: app code that enqueues has a driver, and what it
-    // queued is the input's, never counted as the primitive's enqueue.
+  return async (drawn, actor, at) => {
+    const run = async () =>
+      rehomed(
+        await withExerciseRequest(name, actor, async () => bind(drawn), entry?.request),
+        declared?.orgId,
+        actor?.orgId,
+      );
+    if (at?.onCallQueue === true) return run();
+    // No call's queue to share: one of its own, so app code that enqueues has a driver.
     await using _jobs = await testJobs();
-    return rehomed(
-      await withExerciseRequest(name, actor, async () => bind(drawn), entry?.request),
-      declared?.orgId,
-      actor?.orgId,
-    );
+    // Awaited HERE: a bare `return run()` leaves the block, and disposes the queue, mid-bind.
+    return await run();
   };
 }
 

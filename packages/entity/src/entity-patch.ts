@@ -3,6 +3,7 @@
 // would rewrite every column it did not name.
 
 import { invariantViolated } from './errors';
+import { holdsJsonNull } from './json-null';
 import { copyRow } from './sealed';
 import type { AnyColumn } from './types';
 
@@ -24,7 +25,8 @@ export const parseEntityPatch = <Patch>(
     const column = Object.hasOwn(columns, property) ? columns[property] : undefined;
     const value: unknown = descriptor.get === undefined ? descriptor.value : descriptor.get();
     if (column === undefined || value === undefined) continue;
-    if (value === null) {
+    // A NOT NULL `jsonb` column's `null` is the JSON value, judged by its schema below.
+    if (value === null && !holdsJsonNull(column.$meta)) {
       if (column.$meta.notNull) {
         throw invariantViolated(name, property, 'is required and has no default');
       }

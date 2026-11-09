@@ -11,6 +11,7 @@ import {
 } from '@ultimat3/schema';
 import { viewKeyUnknown } from './entity-error';
 import { invariantViolated } from './errors';
+import { holdsJsonNull } from './json-null';
 import type { AnyColumn, ColumnMap } from './types';
 import { columnIssue, missingIssue } from './view-issue';
 
@@ -151,7 +152,7 @@ export const viewFor = <Row, K extends keyof Row & string>(
     const issues: StandardIssue[] = [];
     for (const [key, column] of picked) {
       const given = input[key];
-      if (given === undefined || given === null) {
+      if (given === undefined || (given === null && !holdsJsonNull(column.$meta))) {
         // No default is filled in: a view projects a row that already exists, so an absent
         // required column is missing data, never a value the projection may invent.
         if (column.$meta.notNull) issues.push(missingIssue(key));
