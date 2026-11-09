@@ -12,10 +12,58 @@ import { parseSnapshots, snapshotExpression } from './cdp-snapshot';
 import type { ElementSnapshot } from './target';
 
 const CANDIDATES = ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
+
+/**
+ * A browser banner: a product this harness can drive, then a dotted version. The product is part of
+ * it because `--version` is not a browser's alone.
+ */
+const BROWSER_BANNER = /(?:chrome|chromium|edge)[^\n]*?\d+\.\d+/i;
+/** A candidate gets this long to answer `--version`; a warm Chrome answers in ~40 ms. */
+const PROBE_MS = 15_000;
+
+/**
+ * Whether this machine can START `candidate` — not merely whether the file exists. Ubuntu 24.04
+ * ships `/usr/bin/chromium-browser` as a wrapper around `snap`: present and executable on every
+ * install, and it exits 1 having started nothing where no snap cgroup exists (measured 2026-11). By
+ * existence alone this file picked it, and all three tests below reported a dump failure where the
+ * header promises a SKIP. TOTAL: an unspawnable, failing, silent or non-browser candidate is `false`.
+ */
+async function startsChrome(candidate: string): Promise<boolean> {
+  let child: ReturnType<typeof Bun.spawn>;
+  try {
+    child = Bun.spawn([candidate, '--version'], {
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'ignore',
+    });
+  } catch {
+    return false;
+  }
+  const banner = new Response(child.stdout as ReadableStream<Uint8Array>).text().catch(() => '');
+  try {
+    // Chrome's own `--version` is this child's time, not the test's — the deadline is the only way
+    // to tell a hung snap wrapper from a slow one.
+    // real-clock: awaits a spawned Chrome process, not a timer this test arms.
+    const exited = await Promise.race([child.exited, Bun.sleep(PROBE_MS).then(() => undefined)]);
+    if (exited === undefined || exited !== 0) return false;
+    const printed = (await banner).trim();
+    // Silence is accepted: Windows' `chrome.exe` prints no console banner even when it starts.
+    return printed === '' || BROWSER_BANNER.test(printed);
+  } finally {
+    child.kill();
+  }
+}
+
 const declared = process.env['CHROME_PATH'];
 const chrome = await (async () => {
-  for (const candidate of declared ? [declared] : CANDIDATES) {
-    if (await Bun.file(candidate).exists()) return candidate;
+  // `CHROME_PATH` is the operator's answer and is taken as given, unprobed: no list describes a
+  // wrapper or a non-standard build, and probing it would overrule the one caller who knows.
+  if (declared !== undefined && declared !== '') {
+    return (await Bun.file(declared).exists()) ? declared : undefined;
+  }
+  for (const candidate of CANDIDATES) {
+    if (!(await Bun.file(candidate).exists())) continue;
+    if (await startsChrome(candidate)) return candidate;
   }
   return undefined;
 })();

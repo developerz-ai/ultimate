@@ -65,7 +65,7 @@ export class McpTenantRequiredError extends UltimateError {
     super({
       code: 'X_MCP_TENANT_REQUIRED',
       cause: `this server acts every call in the tenant the call names, and this call's arguments carry no "${input.arg}"`,
-      fix: `list_tenants({}) — then send one of its values as "${input.arg}" in the arguments of every tools/call`,
+      fix: 'list_tenants({}) — then send one of its values as the tenant argument of every tools/call',
     });
   }
 }

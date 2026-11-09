@@ -93,7 +93,7 @@ strand a well-behaved client.
 | A predicate audience sees the caller and nothing else | it is handed `McpCaller` — never the call arguments, so two calls with different inputs cannot answer differently. Must return the literal `true`; if it throws, the tool is hidden |
 | `tools/list` is answered per caller | filtered on every call against the caller the transport resolved — one per HTTP request, one per stdio connection — never a static catalog |
 | Gate order | visibility → scope → arguments → policy; the scope gate never waits on a policy run against attacker-supplied input |
-| Every outcome is audited | one line per `tools/call`; hidden/scope/policy at `warn`, ok, invalid-args and unconfirmed at `info` — see `audit.ts`; the same decision reaches `onAudit` after the line. A tool that renders its OWN `isError` result may name the code it refused with (`McpToolResult.code`, audit-only, never on the wire) and is then classified by the same `outcomeForCode` a thrown error is — otherwise every self-rendered refusal lands in the `policy-denied` bucket a prober's name walk is alerted from |
+| Every outcome is audited | one line per `tools/call`; hidden/scope/policy at `warn`, and so is `refused` — a tenant-scoped server's call that named no tenant, refused BEFORE dispatch — while ok, invalid-args, unconfirmed and previewed log at `info` — see `audit.ts`; the same decision reaches `onAudit` after the line. A tool that renders its OWN `isError` result may name the code it refused with (`McpToolResult.code`, audit-only, never on the wire) and is then classified by the same `outcomeForCode` a thrown error is — otherwise every self-rendered refusal lands in the `policy-denied` bucket a prober's name walk is alerted from |
 | Audit lines carry no payload | tool, outcome, actor, code. Never arguments, never rows |
 | No trusted-tool mode | there is no flag that skips policy evaluation |
 
@@ -530,7 +530,7 @@ handed on. What an action or query DID still reaches core's `setAuditSink` (`sur
 
 | `event.kind` | When | Carries |
 |---|---|---|
-| `tool-call` | every `tools/call` outcome (`ok`, `hidden`, `scope-denied`, `policy-denied`, `invalid-args`, `unconfirmed`, `failed`) | `tool`, `outcome`, `caller`, `scope?`, `code?` |
+| `tool-call` | every `tools/call` outcome (`ok`, `hidden`, `scope-denied`, `refused`, `policy-denied`, `invalid-args`, `unconfirmed`, `previewed`, `failed`) — `refused` (at `warn`) is the pre-dispatch one: a `tenant:` server's call that named no tenant (`X_MCP_TENANT_REQUIRED`), answered before any tool ran. A `tenant.resolve` that throws or answers a non-agent is `X_MCP_TENANT_UNRESOLVED`, and lands in `failed` | `tool`, `outcome`, `caller`, `scope?`, `code?` |
 | `resource-read` | every `resources/read` outcome | `uri`, `outcome`, `caller`, `scope?`, `code?` |
 | `auth-refused` | a missing or rejected token, a non-agent actor, an address past its failure allowance, a cross-origin `Origin` (`origin-refused`, before the token is read) — also logged `mcp.auth.<reason>` at `warn` | `reason`, `status` (401/403/429), `facts` |
 
@@ -776,6 +776,9 @@ lists resources per caller — what `extraRecipes` is built on.
 | `X_INPUT_INVALID` | arguments failed the published `inputSchema` — an `isError` result since 22.10 |
 | `X_MCP_ARGS_INVALID` | no longer raised on the wire (22.10); `McpArgsInvalidError` stays exported |
 | `X_MCP_SURFACE_OVER_BUDGET` | `assertMcpSurfaceBudget` measured a surface over its declared ceiling |
+| `X_MCP_TENANT_REQUIRED` | a call on a `tenant:` server names no tenant (missing or empty `tenant.arg`); refused before dispatch, `list_tenants({})` names the values — `refused`, at `warn` |
+| `X_MCP_TENANT_UNRESOLVED` | `tenant.resolve` threw or answered a non-agent actor — never "not a member", which is the hidden-tool answer |
+| `X_MCP_TENANT_INVALID` | `tenant.arg` is not a plain name, or a tool's own input already declares it — at boot |
 | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an idempotent action's input declares `idempotencyKey`, the reserved retry-key argument |
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
 | `X_MCP_PROTOCOL_UNSUPPORTED` | the request names a protocol version this server does not serve (`-32022`, 400) |
@@ -841,6 +844,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpScopeUncoveredError` | `X_MCP_SCOPE_UNCOVERED` | `src/errors.ts` |
 | `McpScopeUnknownError` | `X_MCP_SCOPE_UNKNOWN` | `src/errors.ts` |
 | `McpSurfaceOverBudgetError` | `X_MCP_SURFACE_OVER_BUDGET` | `src/errors.ts` |
+| `McpTenantInvalidError` | `X_MCP_TENANT_INVALID` | `src/catalog-errors.ts` |
+| `McpTenantRequiredError` | `X_MCP_TENANT_REQUIRED` | `src/catalog-errors.ts` |
+| `McpTenantUnresolvedError` | `X_MCP_TENANT_UNRESOLVED` | `src/catalog-errors.ts` |
 | `McpToolDuplicateError` | `X_MCP_TOOL_DUPLICATE` | `src/errors.ts` |
 | `McpToolUndeclaredError` | `X_MCP_TOOL_UNDECLARED` | `src/errors.ts` |
 | `McpToolUnknownError` | `X_MCP_TOOL_UNKNOWN` | `src/errors.ts` |

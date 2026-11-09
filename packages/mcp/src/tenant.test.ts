@@ -7,8 +7,9 @@ import { agentActor, ctxOf, runWithContext, setLogSink, userActor } from '@ultim
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
+import { McpTenantRequiredError } from './catalog-errors';
 import type { McpCaller } from './registry';
-import { textResult } from './registry';
+import { ToolRegistry, textResult } from './registry';
 import type { McpTenant } from './tenant';
 import type { JsonRpcResponse } from './wire';
 import { METHOD_NOT_FOUND } from './wire';
@@ -109,6 +110,19 @@ describe('one token across tenants', () => {
     expect(resolveCalls).toBe(0);
   });
 
+  test('row 857 of the wiki page carries that fix verbatim', async () => {
+    // The page is the copy an agent reads before it has the code, so it says what the error says.
+    // `new-error-code` writes a row from the registered fix; this is the same identity, held the
+    // other way round, so hand-editing one of the two is what turns it red.
+    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes.md`).text();
+    const row = page.split('\n').find((line) => line.startsWith('| `X_MCP_TENANT_REQUIRED` |'));
+    const cells = (row ?? '').split('|').map((cell) => cell.trim());
+    // The Fix cell is the last one; `fixCell` wraps an unformatted fix in backticks.
+    const cell = (cells.at(-2) ?? '').replace(/^`|`$/g, '');
+    expect(cell).toBe(new McpTenantRequiredError({ arg: 'tenant' }).fix);
+    expect(cell).toContain('list_tenants({})');
+  });
+
   test('list_tenants answers the person’s tenants, with no tenant named', async () => {
     const text = textOf(await inRequest(() => server().handle(call('list_tenants'), person)));
     expect(JSON.parse(text)).toEqual({
@@ -196,6 +210,48 @@ describe('one token across tenants', () => {
       tenant: 'beta',
       actor: 'p_ada',
     });
+  });
+
+  test('resolve strips the tenant ARG NAME for a DIRECT caller, and only that name', () => {
+    // The server strips before dispatch, so this pins the SECOND half of the one mechanism: a
+    // direct `resolve` (the meta surface, an embedder, a test) cannot smuggle the reserved arg
+    // into input validation. The caller carries the tenant it CHOSE — `'acme'` — never the name
+    // it was sent under, which `tenantStep` sets from `args[tenant.arg]`. A fixture using the
+    // name as the value (`tenant: 'project'`) proves nothing: it strips a key no call carries.
+    const registry = new ToolRegistry('project').register({
+      name: 'orgName',
+      description: 'the acting org',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      handle: async () => textResult('{}'),
+    });
+    const inAcme: McpCaller = { ...person, tenant: 'acme' };
+    const resolved = registry.resolve('orgName', { project: 'acme' }, inAcme);
+    expect(resolved.kind).toBe('ok');
+    expect(resolved.kind === 'ok' ? resolved.args : undefined).toEqual({});
+    // Keying the strip on the VALUE deletes a legitimate argument named after the renter: this
+    // tool declares `acme`, and the call both names its tenant and sends that argument.
+    const declared = new ToolRegistry('project').register({
+      name: 'renter',
+      description: 'an argument named after a tenant',
+      inputSchema: {
+        type: 'object',
+        properties: { acme: { type: 'string' } },
+        additionalProperties: false,
+      },
+      handle: async () => textResult('{}'),
+    });
+    const kept = declared.resolve('renter', { project: 'acme', acme: 'kept' }, inAcme);
+    expect(kept.kind === 'ok' ? kept.args : undefined).toEqual({ acme: 'kept' });
+    // A registry told no tenant arg strips nothing: the arg survives and validation refuses it,
+    // which is the state `mcpServer` builds today — the EMPTY registry would answer `not-found`.
+    const bare = new ToolRegistry();
+    bare.register({
+      name: 'orgName',
+      description: 'the acting org',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      handle: async () => textResult('{}'),
+    });
+    expect(bare.resolve('orgName', { project: 'acme' }, inAcme).kind).toBe('invalid-args');
   });
 
   test('boot refuses an arg a tool already declares, or one that is not a name', () => {

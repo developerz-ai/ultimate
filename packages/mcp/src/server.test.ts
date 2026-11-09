@@ -1,13 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { UltimateError } from '@ultimat3/core';
+import { agentActor, UltimateError } from '@ultimat3/core';
 import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 import { textResult } from './registry';
 import { frameworkResources } from './resources';
 import { mcpServer } from './server';
 import { INTERNAL_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
-const agent = { kind: 'agent', id: 'agent-1' } as unknown as Actor;
+const agent = {
+  kind: 'agent',
+  id: 'agent-1',
+  orgId: 'org-a',
+  roles: [],
+  scopes: [],
+  permissions: [],
+} as unknown as Actor;
 
 function caller(role: string | undefined, scopes: readonly string[]): McpCaller {
   return role === undefined
@@ -58,6 +65,29 @@ const server = mcpServer({
   resources: frameworkResources({ manifest: () => '{"version":1}' }),
 });
 
+/** Which org a call ran for — read inside the handler, proving the per-call actor arrived. */
+const orgProbe: AnyMcpTool = {
+  name: 'renter.probe',
+  description: 'reports the orgId the actor it was dispatched with carries',
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  async handle(_args, caller) {
+    return textResult(`org=${String(caller.actor.orgId)}`);
+  },
+};
+
+/**
+ * The app's membership hook, the ONE shape: the person and the value the call named, answered as
+ * the actor to act as — `org-tenant` for everyone, and `null` (a non-member) for anything else.
+ */
+const memberships = ({ person, value }: { person: Actor; value: string }): Actor | null =>
+  value === 'org-tenant' ? agentActor({ id: person.id, orgId: value }) : null;
+
+const tenantServer = (tools: AnyMcpTool[]) =>
+  mcpServer({
+    tools,
+    tenant: { arg: 'tenant', resolve: memberships, list: () => [{ value: 'org-tenant' }] },
+  });
+
 const call = (method: string, params?: unknown) =>
   params === undefined
     ? { jsonrpc: '2.0' as const, id: 1, method }
@@ -106,21 +136,23 @@ describe('the envelope refusals carry the fix', () => {
 });
 
 describe('hidden is not forbidden', () => {
-  test('tools/list omits a tool hidden from the caller role', async () => {
-    const listed = await server.handle(call('tools/list'), caller('member', ['db:read']));
+  /**
+   * `tools/list` as a caller sees it — the one read the two visibility tests below both make.
+   */
+  const namesOn = async (role: string | undefined, scopes: readonly string[] = []) => {
+    const listed = await server.handle(call('tools/list'), caller(role, scopes));
     const result = listed?.result as { tools: { name: string }[] } | undefined;
-    expect(result).toBeDefined();
-    const names = (result?.tools ?? []).map((t) => t.name);
+    return (result?.tools ?? []).map((t) => t.name);
+  };
+
+  test('tools/list omits a tool hidden from the caller role', async () => {
+    const names = await namesOn('member', ['db:read']);
     expect(names).toEqual(['open.tool', 'scoped.tool']);
     expect(names).not.toContain('admin.only');
   });
 
   test('tools/list includes it for a role that may see it', async () => {
-    const listed = await server.handle(call('tools/list'), caller('admin', []));
-    const result = listed?.result as { tools: { name: string }[] } | undefined;
-    expect(result).toBeDefined();
-    const names = (result?.tools ?? []).map((t) => t.name);
-    expect(names).toContain('admin.only');
+    expect(await namesOn('admin')).toContain('admin.only');
   });
 
   test('calling a role-hidden tool answers ToolNotFound, never Forbidden', async () => {
@@ -140,6 +172,58 @@ describe('hidden is not forbidden', () => {
     expect(response?.error?.data).toBeUndefined();
     // No enumeration behind the curtain: the answer must not hint that the tool exists.
     expect(JSON.stringify(response)).not.toContain('scope');
+  });
+
+  test('the per-call tenant actor is built before policy — the tool reads the caller orgId', async () => {
+    const response = await tenantServer([orgProbe]).handle(
+      call('tools/call', { name: 'renter.probe', arguments: { tenant: 'org-tenant' } }),
+      caller(undefined, []),
+    );
+    const result = response?.result as { content: { text: string }[] } | undefined;
+    // 'org-tenant', not the token's orgId: the mutation test — deleting the rebuild makes this
+    // read the connection's org and the test goes red — is what pins "before policy".
+    expect(result?.content[0]?.text).toBe('org=org-tenant');
+  });
+
+  test('a tenant the caller is not a member of answers exactly what a hidden tool answers', async () => {
+    const probe = await tenantServer([orgProbe]).handle(
+      call('tools/call', { name: 'renter.probe', arguments: { tenant: 'org-not-ours' } }),
+      caller(undefined, []),
+    );
+    const absent = await server.handle(
+      call('tools/call', { name: 'renter.probe', arguments: {} }),
+      caller(undefined, []),
+    );
+    expect(probe?.error?.code).toBe(METHOD_NOT_FOUND);
+    expect(probe?.error?.message).toBe(absent?.error?.message);
+    expect(probe?.error?.data).toBeUndefined();
+    expect(JSON.stringify(probe)).toBe(JSON.stringify(absent));
+  });
+
+  test('a visible tool with no tenant arg refuses X_MCP_TENANT_REQUIRED, fix names list_tenants', async () => {
+    const response = await tenantServer([orgProbe]).handle(
+      call('tools/call', { name: 'renter.probe', arguments: {} }),
+      caller(undefined, []),
+    );
+    // The expected outcome the model can act on: an `isError` result with code/cause/fix — the
+    // same three lines an HTTP caller gets — never a transport failure.
+    const result = response?.result as
+      | { isError?: boolean; content: { text: string }[] }
+      | undefined;
+    expect(result?.isError).toBe(true);
+    const text = result?.content[0]?.text ?? '';
+    expect(text).toContain('X_MCP_TENANT_REQUIRED');
+    expect(text).toContain('list_tenants({})');
+  });
+
+  test('a role-hidden tool stays hidden even under a valid tenant arg', async () => {
+    // Both tools are on the server: the answer is about VISIBILITY, not the tenant.
+    const response = await tenantServer([orgProbe, adminOnly]).handle(
+      call('tools/call', { name: 'admin.only', arguments: { tenant: 'org-tenant' } }),
+      caller('member', []),
+    );
+    expect(response?.error?.code).toBe(METHOD_NOT_FOUND);
+    expect(response?.error?.message).toStartWith('tool not found: admin.only');
   });
 
   test('an absent tool answers the same instruction, so the hint reveals nothing', async () => {
@@ -196,7 +280,6 @@ describe('dispatch', () => {
     );
     const okResult = ok?.result as { content: { text: string }[] } | undefined;
     expect(okResult?.content[0]?.text).toBe('limit=10');
-
     const bad = await server.handle(
       call('tools/call', { name: 'scoped.tool', arguments: { limit: 0, nope: 1 } }),
       caller('member', ['db:read']),
@@ -218,8 +301,7 @@ describe('dispatch', () => {
     );
     const resourceResult = response?.result as { contents: { text: string }[] } | undefined;
     expect(resourceResult).toBeDefined();
-    const contents = resourceResult?.contents ?? [];
-    expect(contents[0]?.text).toBe('{"version":1}');
+    expect((resourceResult?.contents ?? [])[0]?.text).toBe('{"version":1}');
   });
 
   test('rate-limit class is read for chatter and write for a destructive tool', () => {
@@ -239,36 +321,27 @@ describe('a framework error reaches the model in the shape the terminal prints',
     fix: 'x policy explain refundOrder --json',
   });
 
-  const throwing: AnyMcpTool = {
-    name: 'orders.refund',
-    description: 'throws a real UltimateError, exactly as guard() throws it',
+  /** A tool that throws `value` — the one fixture the three rendering tests below peruse. */
+  const throwing = (name: string, value: unknown): AnyMcpTool => ({
+    name,
+    description: 'throws, exactly as guard() or a foreign package does',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    async handle(): Promise<McpToolResult> {
-      throw denial;
-    },
-  };
+    handle: () => Promise.reject(value),
+  });
 
-  /** A foreign object with `code`/`cause`/`fix` but no title — the fallback branch. */
-  const untitled: AnyMcpTool = {
-    name: 'orders.void',
-    description: 'throws a foreign coded object',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    async handle(): Promise<McpToolResult> {
-      throw { code: 'X_FOREIGN', cause: 'a package that is not core threw', fix: 'x doctor' };
-    },
-  };
-
-  /** A foreign object carrying a code and no `fix` at all — the substituted-fix branch. */
-  const unfixed: AnyMcpTool = {
-    name: 'orders.reopen',
-    description: 'throws a coded object with no fix',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    async handle(): Promise<McpToolResult> {
-      throw { code: 'X_FOREIGN', cause: 'a package that is not core threw' };
-    },
-  };
-
-  const guarded = mcpServer({ tools: [throwing, untitled, unfixed] });
+  // A foreign object with `code`/`cause`/`fix` but no title — the fallback branch; and one with a
+  // code and no `fix` at all — the substituted-fix branch.
+  const guarded = mcpServer({
+    tools: [
+      throwing('orders.refund', denial),
+      throwing('orders.void', {
+        code: 'X_FOREIGN',
+        cause: 'a package that is not core threw',
+        fix: 'x doctor',
+      }),
+      throwing('orders.reopen', { code: 'X_FOREIGN', cause: 'a package that is not core threw' }),
+    ],
+  });
 
   const textOf = async (name: string): Promise<string> => {
     const response = await guarded.handle(
@@ -305,14 +378,8 @@ describe('a framework error reaches the model in the shape the terminal prints',
    */
   test('a code that is not a code spelled the one way is never rendered into a command', async () => {
     for (const code of ['X_$(id)', 'X_`id`', 'X_a;rm -rf ~', 'X_ ', 'X_lower']) {
-      const rogue: AnyMcpTool = {
-        name: 'orders.rogue',
-        description: 'throws an object whose code is not a code',
-        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-        handle: () => Promise.reject({ code, cause: 'a package that is not core threw' }),
-      };
-      const server = mcpServer({ tools: [rogue] });
-      const response = await server.handle(
+      const rogue = throwing('orders.rogue', { code, cause: 'a package that is not core threw' });
+      const response = await mcpServer({ tools: [rogue] }).handle(
         call('tools/call', { name: 'orders.rogue', arguments: {} }),
         caller(undefined, []),
       );
@@ -332,9 +399,8 @@ describe('a framework error reaches the model in the shape the terminal prints',
 });
 
 // The transport's promise for anything that is NOT a framework error: `-32603`, no internals
-// leaked. It is reached past four property reads of a value an app's handler threw — a getter
-// call, or a `Proxy` trap — so the probe can raise where the catch block has nothing left to
-// answer with, and the JSON-RPC request then dies with no response at all.
+// leaked. It is reached past property reads of a value an app's handler threw — a getter call, or
+// a `Proxy` trap — so a probe can raise where the catch has nothing left to answer with.
 describe('a throw that fights being read is still an answer, never an escape', () => {
   const hostile = (value: unknown): AnyMcpTool => ({
     name: 'orders.hostile',
@@ -369,8 +435,7 @@ describe('a throw that fights being read is still an answer, never an escape', (
     ],
     ['a symbol', Symbol('thrown') as unknown],
   ])('%s becomes -32603, with the tool named and nothing leaked', async (_label, value) => {
-    const server = mcpServer({ tools: [hostile(value)] });
-    const response = await server.handle(
+    const response = await mcpServer({ tools: [hostile(value)] }).handle(
       call('tools/call', { name: 'orders.hostile', arguments: {} }),
       caller(undefined, []),
     );
@@ -423,8 +488,7 @@ describe('a self-rendered refusal names its code for the audit, never for the ca
   };
 
   test('the result carries content and isError, and no third key', async () => {
-    const self = mcpServer({ tools: [selfRefusing] });
-    const response = await self.handle(
+    const response = await mcpServer({ tools: [selfRefusing] }).handle(
       call('tools/call', { name: 'admin.create', arguments: {} }),
       caller(undefined, []),
     );

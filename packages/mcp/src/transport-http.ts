@@ -80,6 +80,7 @@ export type McpRateLimits = Readonly<Record<McpVerbClass, number>> & {
 
 /** What a token resolves to. `null` = unauthenticated, answered 401 with no catalog. */
 export interface ResolvedToken {
+  /** The actor half. Per-call tenancy is NOT here: a `tenant` option on the server refines the actor per call, server-side. */
   readonly actor: Actor;
   readonly scopes: ReadonlySet<string>;
   readonly role?: McpRole;

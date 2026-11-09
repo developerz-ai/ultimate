@@ -19,6 +19,12 @@ export type McpOutcome =
   | 'hidden'
   /** OUTCOME 2: visible, but the connection's token lacks the tool's scope. */
   | 'scope-denied'
+  /**
+   * Refused before dispatch by a gate that is not the tool's policy: a tenant-scoped tool called
+   * without its tenant arg (`X_MCP_TENANT_REQUIRED`). The answer names the miss, so it is not a
+   * probe signal — but a string of them is still an agent misusing the surface: `warn`.
+   */
+  | 'refused'
   /** OUTCOME 3: ran, and the tool's own policy refused this input. */
   | 'policy-denied'
   /** Arguments failed the schema the agent was handed. Not an authz outcome. */
@@ -66,12 +72,14 @@ const DENIAL_CODES: ReadonlySet<string> = new Set([
  * input this server already validated failing inside the action means the two have drifted, and
  * that wants a human.
  */
-const ARGUMENT_CODES: ReadonlySet<string> = new Set([
-  'X_ADMIN_INVALID',
-  'X_MCP_WRONG_TOOL',
-  // A call on a `tenant` server that named none: a client slip, answered with `list_tenants`.
-  'X_MCP_TENANT_REQUIRED',
-]);
+const ARGUMENT_CODES: ReadonlySet<string> = new Set(['X_ADMIN_INVALID', 'X_MCP_WRONG_TOOL']);
+
+/**
+ * Refused by a gate that is not the tool's policy, before dispatch: a call on a `tenant` server that
+ * named no tenant. The answer names the miss (so it leaks nothing), but a run of them is an agent
+ * misusing the surface, not a client misreading a schema — `refused`, at `warn`.
+ */
+const GATE_CODES: ReadonlySet<string> = new Set(['X_MCP_TENANT_REQUIRED']);
 
 /**
  * `mcpConfirmations`' answers for a call no live approval covers. A rejection is NOT here: a human
@@ -89,6 +97,7 @@ const UNCONFIRMED_CODES: ReadonlySet<string> = new Set([
 export function outcomeForCode(code: string): McpOutcome {
   if (DENIAL_CODES.has(code)) return 'policy-denied';
   if (UNCONFIRMED_CODES.has(code)) return 'unconfirmed';
+  if (GATE_CODES.has(code)) return 'refused';
   return ARGUMENT_CODES.has(code) ? 'invalid-args' : 'failed';
 }
 
@@ -138,6 +147,7 @@ const LEVEL: ReadonlyMap<McpOutcome, 'info' | 'warn' | 'error'> = new Map([
   ['ok', 'info'],
   ['hidden', 'warn'],
   ['scope-denied', 'warn'],
+  ['refused', 'warn'],
   ['policy-denied', 'warn'],
   ['invalid-args', 'info'],
   ['unconfirmed', 'info'],
@@ -195,6 +205,10 @@ function callerFields(entry: McpResourceAuditEntry | McpAuditEntry): LogFields {
     outcome: entry.outcome,
     actor: entry.caller.actor.id,
     actorKind: entry.caller.actor.kind,
+    // Which org the call ran for — the scoped identity, whatever rebuilt it. On a per-call
+    // tenant option this is the one field that makes a mixed-tenant log sortable by renter.
+    // Spread-gated like `role`: an actor with no org carries no field, not a null one.
+    ...(entry.caller.actor.orgId === undefined ? {} : { orgId: entry.caller.actor.orgId }),
     ...(entry.caller.role === undefined ? {} : { role: entry.caller.role }),
     // The tenant a `tenant` server resolved for this call — the decision's subject, not an argument.
     ...(entry.caller.tenant === undefined ? {} : { tenant: entry.caller.tenant }),

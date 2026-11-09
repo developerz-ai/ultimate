@@ -38,6 +38,7 @@ describe('audit levels', () => {
     hidden: 'warn',
     'scope-denied': 'warn',
     'policy-denied': 'warn',
+    refused: 'warn',
     'invalid-args': 'info',
     unconfirmed: 'info',
     previewed: 'info',
@@ -68,6 +69,62 @@ describe('audit levels', () => {
       role: 'member',
       scope: 'orders:write',
     });
+  });
+
+  test('the line carries the orgId the call ran for — the tenant, on every outcome', () => {
+    const { logger, lines } = capture();
+    // A per-call tenant: a REBUILT actor whose orgId names the renter, whatever the outcome was.
+    const tenantCaller: McpCaller = {
+      actor: agentActor({ id: 'agent-7', orgId: 'org-42' }),
+      scopes: new Set(),
+    };
+    auditToolCall({ tool: 'orders.refund', outcome: 'ok', caller: tenantCaller }, logger);
+    expect(lines[0]).toMatchObject({ orgId: 'org-42' });
+    // And on the tenancy refusal itself: one line still identifies which org was refused.
+    const refused = capture();
+    auditToolCall(
+      {
+        tool: 'orders.refund',
+        outcome: 'refused',
+        caller: { actor: tenantCaller.actor, scopes: new Set() },
+        code: 'X_MCP_TENANT_REQUIRED',
+      },
+      refused.logger,
+    );
+    expect(refused.lines[0]).toMatchObject({
+      orgId: 'org-42',
+      outcome: 'refused',
+      code: 'X_MCP_TENANT_REQUIRED',
+      level: 'warn',
+    });
+  });
+
+  test('a per-call tenant writes the CHOSEN tenant, and refuses at warn', () => {
+    const { logger, lines } = capture();
+    // `caller.tenant` is the value `tenantStep` put on the caller for THIS call — the decision's
+    // subject. Without it a mixed-tenant log cannot be sorted by renter, which is the whole point
+    // of auditing tenancy; the value is a tenant name, never a call's arguments.
+    const perCall: McpCaller = {
+      actor: agentActor({ id: 'agent-7', orgId: 'org-42' }),
+      scopes: new Set(),
+      tenant: 'org-42',
+    };
+    auditToolCall({ tool: 'orders.refund', outcome: 'ok', caller: perCall }, logger);
+    expect(lines[0]).toMatchObject({ tenant: 'org-42', orgId: 'org-42' });
+
+    const refused = capture();
+    auditToolCall(
+      {
+        tool: 'orders.refund',
+        outcome: 'refused',
+        caller: { actor: perCall.actor, scopes: new Set() },
+        code: 'X_MCP_TENANT_REQUIRED',
+      },
+      refused.logger,
+    );
+    expect(refused.lines[0]).toMatchObject({ level: 'warn', code: 'X_MCP_TENANT_REQUIRED' });
+    // No tenant on the caller = no field, never a null: the refusal happened before one existed.
+    expect(Object.hasOwn(refused.lines[0] ?? {}, 'tenant')).toBe(false);
   });
 
   test('optional fields are absent rather than null when they do not apply', () => {
@@ -108,8 +165,11 @@ describe('outcomeForCode', () => {
     expect(outcomeForCode('X_MCP_CONFIRMATION_EVIDENCE_INVALID')).toBe('policy-denied');
   });
 
-  test('a call on a tenant server that names no tenant is a client slip, not a denial', () => {
-    expect(outcomeForCode('X_MCP_TENANT_REQUIRED')).toBe('invalid-args');
+  test('a call on a tenant server that names no tenant is a refusal that leaks nothing', () => {
+    // The answer names the miss (so it is no probe oracle), but a run of them is an agent misusing
+    // a surface it can already see — the `refused` bucket at `warn`, not a schema misread.
+    expect(outcomeForCode('X_MCP_TENANT_REQUIRED')).toBe('refused');
+    // A lookup that failed wants a human: `resolve` answered a non-member or a non-agent.
     expect(outcomeForCode('X_MCP_TENANT_UNRESOLVED')).toBe('failed');
   });
 
