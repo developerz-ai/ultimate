@@ -26,6 +26,16 @@ Nothing grows super-linearly. Fixed costs dominate.
 | B4 | Med | static `islands/`: each island bundles the framework client prelude (63 KB per generated form island, no shared chunk); N islands on a page download it N times | one hashed shared chunk for framework client code; re-measure route budgets (`bun run budget-raises` if any rise, axiom 9) |
 | B5 | Low | `x g` loads the whole app per call (1.6 s → 4.0 s) | skip the app load when the generator's checks do not need it |
 
+## Monorepo layout (owner, 2026-11-09: a powerful layout to build anything web) — audit first, then fix
+Not audited by the 2026-11-09 sweep. The executor starts this part with a `dx-auditor` run on a scaffold grown to 3 apps (web, admin, api) and 2 shared packages (domain, ui), then turns each finding into a fixed row with a test.
+
+| # | Question | Expected answer, enforced |
+|---|---|---|
+| M1 | `x g app <name>` / `x g package <name>`: does a second app or shared package scaffold, wire into the workspace and gate green with one command? | yes; scaffold-smoke gains a multi-app shape |
+| M2 | Are imports between app and shared packages bounded (app → package only, packages never import apps, `site/` never `app/`) by a build error? | yes, the `boundaries` step on app workspaces |
+| M3 | Does `x verify --changed` (B2) and `x affected` gate only the touched workspaces in a multi-app repo? | yes; timed on the 3-app scaffold |
+| M4 | Can one deploy image serve several apps by `ROLE`/app, or each app ship its own image, with shared migrations owned once? | one documented answer in `wiki/`, refused otherwise by a coded error |
+
 ## Findings — horizontal scale (`docs/idea/17-scale-ladder.md`)
 | Claim | Verdict | Fix / benchmark |
 |---|---|---|
