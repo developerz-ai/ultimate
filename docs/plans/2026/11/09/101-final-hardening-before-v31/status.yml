@@ -1,0 +1,212 @@
+plan: 101-final-hardening-before-v31
+title: "Final hardening before v31: the last big change to Ultimate"
+status: not_started        # not_started | in_progress | blocked | complete | superseded
+created_by: sebi
+worked_by: ""
+owner: sebi
+percent: 0
+current_focus: "sweep 0: land #1028 and #1029, fix and land #1033, move the major window to v31, CI flakes and speed"
+slices:
+  - file: 28-open-prs.md
+    tier: 5
+    sweep: "0"
+    status: not_started
+    percent: 0
+  - file: 01-release-policy.md
+    tier: 0
+    sweep: "0"
+    status: not_started
+    percent: 0
+  - file: 24-ci-gate.md
+    tier: 0
+    sweep: "0"
+    status: not_started
+    percent: 0
+  - file: 02-core-schema.md
+    tier: 0
+    sweep: "1"
+    status: not_started
+    percent: 0
+  - file: 03-db.md
+    tier: 1
+    sweep: "1"
+    status: not_started
+    percent: 0
+  - file: 04-storage.md
+    tier: 0
+    sweep: "1"
+    status: not_started
+    percent: 0
+  - file: 05-cache.md
+    tier: 1
+    sweep: "1"
+    status: not_started
+    percent: 0
+  - file: 06-money-time-seo.md
+    tier: 1
+    sweep: "2"
+    status: not_started
+    percent: 0
+  - file: 08-http.md
+    tier: 2
+    sweep: "2"
+    status: not_started
+    percent: 0
+  - file: 09-auth.md
+    tier: 2
+    sweep: "2"
+    status: not_started
+    percent: 0
+  - file: 10-policy-guard.md
+    tier: 0
+    sweep: "2"
+    status: not_started
+    percent: 0
+  - file: 07-entity.md
+    tier: 2
+    sweep: "3"
+    status: not_started
+    percent: 0
+  - file: 11-action-query.md
+    tier: 3
+    sweep: "3"
+    status: not_started
+    percent: 0
+  - file: 12-jobs.md
+    tier: 3
+    sweep: "4"
+    status: not_started
+    percent: 0
+  - file: 13-realtime.md
+    tier: 3
+    sweep: "4"
+    status: not_started
+    percent: 0
+  - file: 14-render.md
+    tier: 4
+    sweep: "5"
+    status: not_started
+    percent: 0
+  - file: 15-ai-mcp.md
+    tier: 4
+    sweep: "5"
+    status: not_started
+    percent: 0
+  - file: 16-notify-pwa-scraping.md
+    tier: 4
+    sweep: "5"
+    status: not_started
+    percent: 0
+  - file: 25-helm-docker.md
+    tier: 5
+    sweep: "5"
+    status: not_started
+    percent: 0
+  - file: 17-cli-runtime.md
+    tier: 5
+    sweep: "6"
+    status: not_started
+    percent: 0
+  - file: 18-admin-testing.md
+    tier: 5
+    sweep: "6"
+    status: not_started
+    percent: 0
+  - file: 20-observability.md
+    tier: 0
+    sweep: "7"
+    status: not_started
+    percent: 0
+  - file: 21-adapter-wiring.md
+    tier: 0
+    sweep: "8"
+    status: not_started
+    percent: 0
+  - file: 19-conformance-suites.md
+    tier: 5
+    sweep: "9"
+    status: not_started
+    percent: 0
+  - file: 22-scale.md
+    tier: 2
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 23-feature-gaps.md
+    tier: 1
+    sweep: "12"
+    status: not_started
+    percent: 0
+  - file: 29-v31-deletions.md
+    tier: 0
+    sweep: "14"
+    status: not_started
+    percent: 0
+  - file: 27-trust-docs.md
+    tier: 5
+    sweep: "16"
+    status: not_started
+    percent: 0
+  - file: 39-v31-release.md
+    tier: 5
+    sweep: "17"
+    status: not_started
+    percent: 0
+  - file: 40-adopter-a.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 41-adopter-b.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 42-adopter-c.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 43-adopter-d.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 44-adopter-e.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 45-adopter-f.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 46-adopter-g.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 47-adopter-h.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 48-adopter-i.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 26-infra.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 90-owner-steps.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+evidence: []
+notes: "Sweeps 10 (19 part 9b + 21 part B), 13 (23 part 12b) and 15 (29 D10) carry second halves of slices listed above under their first sweep. Adopter letter mapping is off-tree with the owner."
+last_updated: 2026-11-09
