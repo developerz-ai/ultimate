@@ -1,5 +1,7 @@
 // The first-hour run against a fake runner: the steps in a stranger's order, the published
-// tarball named, and a failed step recorded with its real time and every later step skipped.
+// tarball named, a failed step recorded with its real time and every later step skipped, a tail
+// that names the step that failed, and the work directory a run records and either keeps or
+// removes.
 
 import { describe, expect, test } from 'bun:test';
 import type { Runner } from '@ultimat3/cli';
@@ -21,6 +23,27 @@ const runner =
       stdout: ok ? '' : 'X_TYPECHECK_FAILED',
       stderr: '',
       durationMs: 1234.4,
+    };
+  };
+
+/** One gate heartbeat, exactly as `verify-progress.ts` writes it to stderr. */
+const heartbeat = (name: string, ok: boolean): string => `{"step":"${name}","ok":${ok},"ms":12}`;
+
+/**
+ * A runner where every step passes except `bun run verify --json`, which answers with the output a
+ * red gate really leaves: the `--json` verdict on stdout, one heartbeat line per step on stderr.
+ */
+const redGate =
+  (stdout: string, stderr: string): Runner =>
+  async (command) => {
+    const failed = command.join(' ').includes('verify --json');
+    return {
+      command,
+      code: failed ? 1 : 0,
+      ok: !failed,
+      stdout: failed ? stdout : '',
+      stderr: failed ? stderr : '',
+      durationMs: 1,
     };
   };
 
@@ -67,12 +90,108 @@ describe('unit · first-hour', () => {
     ).toEqual(['docker', 'build']);
   });
 
+  test('a red gate names the step that failed, not the five that printed after it', async () => {
+    // The gate's own shape: a `--json` verdict on stdout, one heartbeat per step on stderr — so the
+    // last lines of the merge belong to the steps that finished LAST, and a plain tail of five
+    // would report `seo | i18n | policy | budgets | roadmap` and never the step that went red.
+    const heartbeats = [
+      heartbeat('manifest', false),
+      heartbeat('seo', true),
+      heartbeat('i18n', true),
+      heartbeat('policy', true),
+      heartbeat('budgets', true),
+      heartbeat('roadmap', true),
+    ];
+    const records = await runFirstHour(
+      input,
+      redGate('{\n  "ok": false,\n  "summary": "the gate is red"\n}', heartbeats.join('\n')),
+      {},
+    );
+    expect(records.find((record) => record.name === 'verify')?.tail).toBe(heartbeats.join(' | '));
+  });
+
+  test('a step that failed last is named once, not twice', async () => {
+    const late = [
+      heartbeat('seo', true),
+      heartbeat('i18n', true),
+      heartbeat('policy', true),
+      heartbeat('budgets', true),
+      heartbeat('manifest', false),
+    ].join('\n');
+    const records = await runFirstHour(input, redGate('', late), {});
+    expect(records.find((record) => record.name === 'verify')?.tail).toBe(
+      [
+        heartbeat('manifest', false),
+        heartbeat('seo', true),
+        heartbeat('i18n', true),
+        heartbeat('policy', true),
+        heartbeat('budgets', true),
+      ].join(' | '),
+    );
+  });
+
+  test('a heartbeat line that is not valid JSON is output, never a verdict', async () => {
+    const records = await runFirstHour(
+      input,
+      redGate('', `{"step":"manifest","ok":false\n${heartbeat('seo', true)}`),
+      {},
+    );
+    expect(records.find((record) => record.name === 'verify')?.tail).toBe(
+      `{"step":"manifest","ok":false | ${heartbeat('seo', true)}`,
+    );
+  });
+
   test('no step at all is not a first hour', () => {
     expect(firstHourOk([])).toBe(false);
   });
 });
 
 describe('unit · first-hour disk facts', () => {
+  test('a kept run leaves the scaffold its record points at, and every other run loses its tree', async () => {
+    // why: Bun has no temp-directory or recursive-remove API; `node:fs` owns the throwaway tree.
+    const { existsSync, mkdirSync, rmSync, statSync } = await import('node:fs');
+    // why: Bun exposes no path-join primitive.
+    const { join } = await import('node:path');
+    const { oneRun } = await import('./first-hour');
+
+    /**
+     * The published scaffold, faked: `create-ultimate` makes the app directory in the clean `work`,
+     * every later step only answers. Anything else it is asked is a command this fake cannot run.
+     */
+    const scaffolder =
+      (calls: { command: string; cwd: string }[]): Runner =>
+      async (command, options) => {
+        const line = command.join(' ');
+        calls.push({ command: line, cwd: options.cwd });
+        if (line.includes('create-ultimate'))
+          mkdirSync(join(options.cwd, 'firsthour'), { recursive: true });
+        return { command, code: 0, ok: true, stdout: '', stderr: '', durationMs: 7 };
+      };
+
+    const calls: { command: string; cwd: string }[] = [];
+    const kept = await oneRun('30.0.0', false, { keep: true, runner: scaffolder(calls) });
+    try {
+      // `.runs[-1].work` plus the `/firsthour` bench.yml appends is the scaffold it must mount.
+      expect(calls[0]).toEqual({
+        command: 'bun x create-ultimate@30.0.0 firsthour --no-git',
+        cwd: kept.work,
+      });
+      expect(existsSync(kept.work)).toBe(true);
+      expect(statSync(join(kept.work, 'firsthour')).isDirectory()).toBe(true);
+      // The hour ran on the injected runner, not on the real `exec` this machine must not call.
+      expect(firstHourOk(kept.steps)).toBe(true);
+    } finally {
+      rmSync(kept.work, { recursive: true, force: true });
+    }
+
+    const dropped = await oneRun('30.0.0', false, { runner: scaffolder([]) });
+    try {
+      expect(existsSync(dropped.work)).toBe(false);
+    } finally {
+      rmSync(dropped.work, { recursive: true, force: true });
+    }
+  });
+
   test('a symlink loop is not followed, and a hard link is counted once — as du counts', async () => {
     // why: Bun has no temp-directory, link or symlink API; `node:fs` owns the throwaway tree.
     const { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } = await import(
