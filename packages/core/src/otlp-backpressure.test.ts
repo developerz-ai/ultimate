@@ -24,6 +24,7 @@ const span = (index: number): ReadableSpan => ({
   durationMs: 1,
   attributes: {},
   events: [],
+  droppedEventsCount: 0,
   status: { code: 'ok' },
   links: [],
   resource: RESOURCE,

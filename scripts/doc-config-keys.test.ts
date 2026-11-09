@@ -219,10 +219,10 @@ describe('unit · a documented default is the one configDefaults() returns', () 
     ).toHaveLength(1);
   });
 
-  test('a derived default is compared with its placeholder, and a deleted row is not read', () => {
+  test('a documented default is compared with the real one, and a deleted row is not read', () => {
     const rows = documentedDefaults(
       page([
-        "| `jobs.queues` | `string[]` | `['<name>-default']` | derived |",
+        "| `jobs.queues` | `string[]` | `['default']` | the default queue |",
         '| ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** |',
         "| `theme.defaultMode` | `'light' \\| 'dark' \\| 'system'` | `'system'` | escaped pipes |",
       ]),

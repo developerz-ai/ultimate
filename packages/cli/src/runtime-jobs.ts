@@ -82,8 +82,8 @@ export function workerConfigOf(config: AppConfig | undefined, env: Env = {}): Wo
 
 /**
  * The queues a worker serves: the configured ones, then every queue a registered job is enqueued
- * on. The union and not the list, decided 2026-09-23: `x new` and the deployed demo configure
- * `['<app>-default']` while a `job()` naming no queue lands on `default`, so obeying the list alone
+ * on. The union and not the list, decided 2026-09-23: an app configured `['<app>-default']` (what
+ * `x new` wrote until 31.0.0) while a `job()` naming no queue lands on `default`, so the list alone
  * would leave every such job queued for ever — the silent direction. `exact` (a Deployment that
  * set `WORKER_QUEUES`) is the list alone: that operator split the queues across Deployments on
  * purpose, and widening one to the rest is what made their grace periods mean nothing (#673).

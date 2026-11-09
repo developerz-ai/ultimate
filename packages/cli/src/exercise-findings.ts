@@ -59,26 +59,41 @@ const defectOf = (record: ExerciseRecord): string => {
   return ` — cause: ${renderCauseValue(defect.cause)}${fields}`;
 };
 
+/** Whether the app has an `apps/web/exercise.ts` yet: what an unreached finding's fix pastes into. */
+export type ExerciseFileState = 'present' | 'absent';
+
+const PASTE_NOTE =
+  "an inline .contract({ exercise: {...} }) in a test is not read here: move it, then pass .contract({ exercise }); or give the entry { off: '<why>' }";
+
 /**
  * `X_CONTRACT_EXERCISE_UNREACHED`, `@ultimat3/action`'s code for the same silence one level up: a
- * primitive no run got to as an allowed actor. The fix is the override the pass printed, or the
- * input shape to fill when it printed none — then the one-primitive rerun that proves it.
+ * primitive no run got to as an allowed actor. The fix is pasted from its first character: into a
+ * file that exists, the bare entry (thirty findings are thirty entries inside the ONE export, never
+ * thirty `defineExercise` calls to unwrap); with no file yet, the whole file to create. Then the
+ * one-primitive rerun that proves it.
  */
-const unreachedFinding = (record: ExerciseRecord): Finding => {
-  const name = renderFixShellArg(record.name, '<name>');
-  const override = record.override ?? `${record.name}: { input: { /* a value it accepts */ } }`;
-  const stopped = record.code === undefined ? '' : ` — stopped on ${record.code}`;
-  const why = record.reason === undefined ? '' : ` (${renderCauseValue(record.reason)})`;
-  return {
-    code: 'X_CONTRACT_EXERCISE_UNREACHED',
-    cause: `${record.kind} ${renderCauseValue(record.name)} never reached its handler as an allowed actor in the exercise pass${stopped}${why}${defectOf(record)}`,
-    fix:
-      record.fix ??
-      `defineExercise({ ${override} })   # paste the entry into ${EXERCISE_FILE} (an inline .contract({ exercise: {...} }) in a test is not read here: move it, then pass .contract({ exercise })), or { off: '<why>' }; then: x exercise ${name} --json`,
-    docs: ERROR_DOCS_URL,
-    at: EXERCISE_FILE,
+const unreachedFinding =
+  (file: ExerciseFileState) =>
+  (record: ExerciseRecord): Finding => {
+    const name = renderFixShellArg(record.name, '<name>');
+    const entry = (
+      record.override ?? `${record.name}: { input: { /* a value it accepts */ } }`
+    ).replace(/[\s,]+$/, '');
+    const stopped = record.code === undefined ? '' : ` — stopped on ${record.code}`;
+    const why = record.reason === undefined ? '' : ` (${renderCauseValue(record.reason)})`;
+    const rerun = `then: x exercise ${name} --json`;
+    const paste =
+      file === 'present'
+        ? `${entry},   # paste inside export const exercise = defineExercise({ … }) in ${EXERCISE_FILE} (${PASTE_NOTE}); ${rerun}`
+        : `import { defineExercise } from '@ultimat3/testing'; export const exercise = defineExercise({ ${entry} });   # create ${EXERCISE_FILE} with this (${PASTE_NOTE}); ${rerun}`;
+    return {
+      code: 'X_CONTRACT_EXERCISE_UNREACHED',
+      cause: `${record.kind} ${renderCauseValue(record.name)} never reached its handler as an allowed actor in the exercise pass${stopped}${why}${defectOf(record)}`,
+      fix: record.fix ?? paste,
+      docs: ERROR_DOCS_URL,
+      at: EXERCISE_FILE,
+    };
   };
-};
 
 type CrashFinding = Extract<
   NonNullable<ExerciseRecord['crash']>,
@@ -133,8 +148,11 @@ export const crashFindingLines = (records: readonly ExerciseRecord[]): readonly 
  * A's row; then the crash proof's diverged jobs. `unproven`, either proof's, is reported on the
  * record and never red — the pass could not ask, which is not an answer.
  */
-export const exerciseFindings = (records: readonly ExerciseRecord[]): readonly Finding[] => [
-  ...records.filter((one) => one.outcome === 'unreached').map(unreachedFinding),
+export const exerciseFindings = (
+  records: readonly ExerciseRecord[],
+  file: ExerciseFileState = 'present',
+): readonly Finding[] => [
+  ...records.filter((one) => one.outcome === 'unreached').map(unreachedFinding(file)),
   ...tenantProofFindings(records).map((one) => ({ ...one, docs: ERROR_DOCS_URL })),
   ...records.flatMap(crashFindings),
   // The plan and scale sweeps: a statement no index serves, a shape that grows with the rows.

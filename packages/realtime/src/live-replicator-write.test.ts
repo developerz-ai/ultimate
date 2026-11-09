@@ -4,16 +4,8 @@
 // member's socket receives. A write outside any keyed request names nothing.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { userActor, withWriteOrigin, writeDigest } from '@ultimat3/core';
-import {
-  clearRegistry,
-  database,
-  entity,
-  memoryDriver,
-  setRowObserver,
-  text,
-  uuid,
-} from '@ultimat3/entity';
+import { resetInstrumentation, userActor, withWriteOrigin, writeDigest } from '@ultimat3/core';
+import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { ChannelHub } from './channel';
 import { channel } from './channel-decl';
 import { clearChannels } from './channel-registry';
@@ -53,7 +45,7 @@ class FakeWs implements WsLike {
 }
 
 afterEach(() => {
-  setRowObserver(null);
+  resetInstrumentation();
 });
 
 afterAll(() => {

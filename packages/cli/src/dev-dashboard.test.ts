@@ -12,17 +12,18 @@ import type { DevPanel, PanelPayload, TimelinePanelData } from '@ultimat3/admin/
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import {
-  configureTelemetry,
   ctxOf,
   NotImplementedError,
-  resetTelemetry,
   runWithContext,
+  SEMCONV,
+  subscribe,
   withSpan,
 } from '@ultimat3/core';
 import type { MailMessage, MemoryMailDriver, SendResult, SentMail } from '@ultimat3/mail';
 import { appManifest, writeAppManifest } from './app-manifest';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
+import { createInvalidationLog } from './dev-dashboard-invalidations';
 import { createStatementLedger } from './dev-n-plus-one';
 import { createTraceRecorder } from './dev-traces';
 import type { DevServices, ServiceBinding } from './runtime-bindings';
@@ -275,7 +276,10 @@ describe('unit · x dev mounts the dashboard', () => {
     // The server's own refusal around it — `readOnlySql`, never the plain `db.query` that ran
     // whatever the parse guard let through — and the statement itself read through a cursor that
     // fetches at most the panel's row ceiling.
-    expect(seen[0]).toBe('BEGIN READ ONLY');
+    // The read-only role's DDL may run first (admin's `readOnlySql` provisions it), so the
+    // transaction and the role are asserted present, not first.
+    expect(seen).toContain('BEGIN READ ONLY');
+    expect(seen).toContain('SET LOCAL ROLE "ultimate_readonly"');
     expect(seen.some((text) => text.includes('select n, label from t'))).toBe(true);
     expect(seen.at(-1)).toBe('ROLLBACK');
     expect(result.columns).toEqual(['n', 'label']);
@@ -334,16 +338,19 @@ describe('unit · x dev mounts the dashboard', () => {
   test('the recorder x dev installs becomes the timeline source', async () => {
     const recorder = createTraceRecorder();
     const input: DevDashboardInput = { ...inputFor(), traces: recorder };
-    configureTelemetry({ exporter: recorder.exporter });
+    const off = subscribe('span.end', (event) => recorder.exporter.export(event.payload));
     try {
       withSpan('GET /feed', (span) => {
-        span.setAttributes({ 'http.request_id': 'req_1', 'http.status_code': 200 });
+        span.setAttributes({
+          'ultimate.request_id': 'req_1',
+          [SEMCONV.httpResponseStatusCode]: 200,
+        });
       });
       const payload = await panelPayload(timelinePanel, devSources(input), new URLSearchParams());
       expect(payload.ok).toBe(true);
       expect(timelineData(payload).requests.map((entry) => entry.requestId)).toEqual(['req_1']);
     } finally {
-      resetTelemetry();
+      off();
     }
   });
 
@@ -365,11 +372,14 @@ describe('unit · x dev mounts the dashboard', () => {
     const recorder = createTraceRecorder();
     const ledger = createStatementLedger({ threshold: 2 });
     const input: DevDashboardInput = { ...inputFor(), traces: recorder, statements: ledger };
-    configureTelemetry({ exporter: recorder.exporter });
+    const off = subscribe('span.end', (event) => recorder.exporter.export(event.payload));
     try {
       runWithContext(ctxOf({ requestId: 'req_loop' }), () => {
         withSpan('GET /feed', (span) => {
-          span.setAttributes({ 'http.request_id': 'req_loop', 'http.status_code': 200 });
+          span.setAttributes({
+            'ultimate.request_id': 'req_loop',
+            [SEMCONV.httpResponseStatusCode]: 200,
+          });
         });
         for (let sent = 0; sent < 6; sent += 1) {
           ledger.observer.onStatement({
@@ -395,25 +405,39 @@ describe('unit · x dev mounts the dashboard', () => {
       expect(loops[0]?.count).toBe(6);
       expect(loops[0]?.subject).toBe('members.findById');
     } finally {
-      resetTelemetry();
+      off();
     }
   });
 
-  test('the cache log is the report invalidateTags already built, not a second record of it', async () => {
-    // The log is process-global, so this asserts on the delta rather than resetting it — a reset
-    // here would wipe whatever a neighbouring file is mid-way through asserting. `declareTags` is
-    // additive and equally global, and leaving it set turned tag validation on for every file that
-    // ran after this one; `restoreTags` in the afterAll below undoes it without touching a
-    // neighbour's declarations.
+  test('the cache log is the bus event invalidateTags emitted, not a second record of it', async () => {
+    // `declareTags` is additive and process-global, and leaving it set turned tag validation on for
+    // every file that ran after this one; `restoreTags` in the afterAll below undoes it without
+    // touching a neighbour's declarations.
     declareTags(['dashboardfixture']);
-    const before = (await devSources(inputFor()).invalidations()).length;
-    const report = await invalidateTags([tag('dashboardfixture', 'p_1')]);
-    const after = await devSources(inputFor()).invalidations();
+    const log = createInvalidationLog();
+    const off = subscribe('cache.invalidate', (event) => log.record(event.payload));
+    try {
+      const report = await invalidateTags([tag('dashboardfixture', 'p_1')]);
+      const after = await devSources({ ...inputFor(), invalidations: log }).invalidations();
+      expect(after).toHaveLength(1);
+      expect(after[0]?.tags).toEqual(report.tags);
+      // No span is active at this call, so the source is the function's name — never the
+      // `cache.invalidate` span the fan-out opens around itself.
+      expect(after[0]?.source).toBe('invalidateTags');
+      expect(Date.parse(after[0]?.at ?? '')).not.toBeNaN();
+    } finally {
+      off();
+    }
+  });
 
-    expect(after).toHaveLength(before + 1);
-    expect(after[0]?.tags).toEqual(report.tags);
-    expect(after[0]?.source.length).toBeGreaterThan(0);
-    expect(Date.parse(after[0]?.at ?? '')).not.toBeNaN();
+  test('a host that subscribed no cache log refuses, never an empty history', async () => {
+    const refused = await devSources(inputFor())
+      .invalidations()
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect((refused as { code?: string } | undefined)?.code).toBe('X_NOT_IMPLEMENTED');
   });
 
   test('the policy matrix comes from the app registries, so it is empty before the app loads', async () => {

@@ -32,10 +32,14 @@ export type {
 } from '../error-reporter-sentry';
 export {
   ErrorReporterDsnInvalidError,
+  isLocalErrorSink,
+  isSentryErrorReporter,
+  localErrorSink,
   parseSentryDsn,
   sentryEnvelope,
   sentryErrorReporter,
   sentryEvent,
+  sentryTransport,
 } from '../error-reporter-sentry';
 export type { SentryEvent, SentryReporterHooks } from '../error-reporter-sentry-hooks';
 export type {
@@ -60,6 +64,60 @@ export {
 export { resetFailureCaptureWindows, settleFailureCaptures } from '../failure-capture-flush';
 export type { CapturedValue } from '../failure-capture-mask';
 export { captureValue } from '../failure-capture-mask';
+export type {
+  InstrumentEvent,
+  InstrumentHandler,
+  InstrumentName,
+  InstrumentPattern,
+  MatchedName,
+} from '../instrument';
+export {
+  instrument,
+  resetInstrumentation,
+  subscribe,
+  subscribed,
+  subscriberCount,
+  subscriberFailures,
+} from '../instrument';
+export type {
+  ActionInvokeEvent,
+  AiLlmEvent,
+  CacheInvalidateEvent,
+  CacheLookupEvent,
+  CacheTierFailureEvent,
+  DbStatementEvent,
+  EntityBulkEvent,
+  EntityCrossTenantEvent,
+  EntityRowEvent,
+  EntityRowOp,
+  FrameworkEventMap,
+  FrameworkEventName,
+  HttpRequestEvent,
+  InstrumentEventMap,
+  InstrumentEventSpec,
+  InstrumentSpan,
+  JobEnqueueEvent,
+  JobPerformEvent,
+  LogRecordEvent,
+  MailDeliverEvent,
+  OutboundRequestEvent,
+  PolicyDecisionEvent,
+  QueryReadEvent,
+  RenderHoleEvent,
+  RenderIsrRegenerateEvent,
+  RenderPageEvent,
+  StatementAttribution,
+  StorageEvent,
+  TimedEvent,
+} from '../instrument-events';
+export { INSTRUMENT_EVENTS } from '../instrument-events';
+export { SEMCONV, SEMCONV_METRICS, SEMCONV_VALUES } from '../instrument-semconv';
+export {
+  callerStack,
+  captureStatementStacks,
+  resetStatementStacks,
+  statementStacksCaptured,
+} from '../instrument-stacks';
 export type { LogFields, Logger, LoggerOptions, LogLevel } from '../logger';
 export {
   isRedactedKey,
@@ -108,6 +166,7 @@ export {
   resetMetrics,
   startMetricExport,
 } from '../metrics';
+export { subscribeSemconvMetrics } from '../metrics-semconv';
 export { METRICS_CONTENT_TYPE, METRICS_PATH, metricsText } from '../metrics-text';
 export type { OtlpAnyValue, OtlpKeyValue, OtlpSignal } from '../otlp';
 export {
@@ -121,11 +180,18 @@ export {
   OtlpProtocolUnsupportedError,
   otlpAttributes,
   otlpEndpoint,
+  otlpEndpointLabel,
   otlpHeaders,
   otlpResource,
   tryOtlpEndpoint,
   unixNano,
 } from '../otlp';
+export type {
+  ExportedLogRecord,
+  OtlpLogExporter,
+  OtlpLogExporterOptions,
+} from '../otlp-log-exporter';
+export { otlpLogExporter, otlpLogsRequest } from '../otlp-log-exporter';
 export type { OtlpMetricExporter, OtlpMetricExporterOptions } from '../otlp-metric-exporter';
 export { otlpMetricExporter, otlpMetricsRequest } from '../otlp-metric-exporter';
 export type { OtlpSpanExporter, OtlpSpanExporterOptions } from '../otlp-span-exporter';
@@ -179,8 +245,8 @@ export {
   currentSampler,
   currentSpan,
   currentSpanContext,
+  MAX_SPAN_EVENTS,
   memoryExporter,
-  noopExporter,
   parseTraceparent,
   resetTelemetry,
   serviceResource,

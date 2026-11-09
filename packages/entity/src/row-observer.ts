@@ -1,5 +1,6 @@
-// Committed row changes, as the framework's own repositories saw them. One seam, above the driver,
-// so it reports the same changes whether rows live in memory or in Postgres.
+// Committed row changes, as the framework's own repositories saw them, emitted on the bus as
+// `entity.row` / `entity.bulk`. One emitter, above the driver, so it reports the same changes
+// whether rows live in memory or in Postgres.
 //
 // It exists because a change feed needs a source and only one of the two has one. Production
 // decodes the write-ahead log (`@ultimat3/realtime`'s `postgresChangeFeed()`); PGlite has no
@@ -13,7 +14,7 @@
 // the replicator — `@ultimat3/realtime`'s `selectChangeFeed` still decides, and this is never in
 // that decision.
 
-import { currentWriteOrigin } from '@ultimat3/core';
+import { currentWriteOrigin, type EntityRowOp, instrument, subscribed } from '@ultimat3/core';
 import { currentTx, expectedQueryLoop } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { memoryJournal } from './memory-journal';
@@ -23,70 +24,24 @@ import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { sealedFields } from './sealed';
 import type { IdOf, RowPatch } from './types';
 
-export type RowChangeOp = 'insert' | 'update' | 'delete';
-
 /**
- * One committed row change. `before`/`after` are whole rows, exactly as logical replication reports
- * them with `REPLICA IDENTITY FULL` — a consumer diffs them itself rather than trusting a patch it
- * did not compile.
- */
-export interface RowChange {
-  /** Entity name as declared, never a table name — the vocabulary a matcher's dependency set uses. */
-  readonly entity: string;
-  readonly op: RowChangeOp;
-  readonly before: Readonly<Record<string, unknown>> | null;
-  readonly after: Readonly<Record<string, unknown>> | null;
-  /**
-   * The keyed write this change belongs to — `@ultimat3/core`'s `currentWriteOrigin()` at the
-   * moment the repository wrote, i.e. the digest of the idempotency key the request arrived with.
-   * The WAL decoder reads the same fact off the transaction's opening message; absent both ways
-   * for a write no keyed request made.
-   */
-  readonly write?: string;
-}
-
-/**
- * A write this seam cannot itemise: `deleteWhere` and `updateWhere` name a filter, not a row, and
- * reading the matching rows first would turn one statement into two and change what the code under
- * test issues. Reported as a bulk fact so a consumer can re-read rather than be told nothing —
- * silence is the one answer that diverges silently, which is the failure `invalidate()` exists for.
- */
-export interface RowBulkChange {
-  readonly entity: string;
-  readonly op: 'delete' | 'update';
-  readonly rows: number;
-}
-
-export interface RowObserver {
-  onChange(change: RowChange): void;
-  /** Optional: an observer that re-reads everything on any change has nothing to do here. */
-  onBulk?(change: RowBulkChange): void;
-}
-
-let installed: RowObserver | null = null;
-
-/**
- * Install the process's row observer, or clear it with `null`. One per process, exactly like
- * `@ultimat3/db`'s `setStatementObserver` — a second observer would be a second consumer disagreeing
- * about what a write is, and the caller that wants two composes them itself.
+ * A committed row change is `entity.row` on the bus (`EntityRowEvent`, core's shape): `before` and
+ * `after` are whole rows, exactly as logical replication reports them with `REPLICA IDENTITY FULL`
+ * — a subscriber diffs them itself rather than trusting a patch it did not compile. `write` is
+ * `currentWriteOrigin()` at the moment the repository wrote; the WAL decoder reads the same fact.
  *
- * Returns the observer that was installed, so a harness restores rather than clears: `bun test`
- * shares one process across files, and a fixture that cleared unconditionally would take an outer
- * harness's observer with it.
+ * `deleteWhere` and `updateWhere` name a filter, not a row, and reading the matching rows first
+ * would turn one statement into two — so they are `entity.bulk` (`EntityBulkEvent`), a count a
+ * subscriber re-reads on rather than silence, which is the one answer that diverges silently.
  */
-export function setRowObserver(next: RowObserver | null): RowObserver | null {
-  const previous = installed;
-  installed = next;
-  return previous;
-}
-
-export const rowObserver = (): RowObserver | null => installed;
+const ROW = 'entity.row';
+const BULK = 'entity.bulk';
 
 /**
  * The reads a change needs and a plain write does not. `before` costs one `findById` per update and
- * per delete — paid ONLY while an observer is installed, which is why the guard is the first line of
- * every method below rather than a flag read once at wrap time. With no observer this wrapper is one
- * comparison and a delegation, on a path that already awaits a database.
+ * per delete — paid ONLY while `entity.row` has a subscriber, which is why the guard is the first line
+ * of every method below rather than a flag read once at wrap time. With none this wrapper is one map
+ * read and a delegation, on a path that already awaits a database.
  */
 const idOf = (value: unknown): string | undefined => {
   const id = (value as { readonly id?: unknown } | null)?.id;
@@ -114,7 +69,7 @@ const readsById = (entity: EntityCore<unknown>): boolean =>
  *
  * The `catch` is a FLOOR, not a case: no write in this repo is known to succeed while its own
  * `findById` refuses, because every guard a read applies — tenancy, soft delete — the write applies
- * too. It stays because the cost of being wrong is asymmetric: an observer is a diagnostic, and a
+ * too. It stays because the cost of being wrong is asymmetric: a subscriber is a diagnostic, and a
  * diagnostic that turns a working write into a failing one is worse than the gap it was closing.
  */
 const beforeOf = async <Row>(
@@ -129,7 +84,7 @@ const beforeOf = async <Row>(
     // caller's loop, reported on the caller's writes. Without the scope the same loop was reported
     // twice, the second verdict naming a `findById` no app code issued.
     return await expectedQueryLoop(
-      'the row observer reads the row a point write is about to change — one read per write',
+      'the entity.row event reads the row a point write is about to change — one read per write',
       () => repo.findById(id),
     );
   } catch {
@@ -180,7 +135,7 @@ const beforeAllOf = async <Row>(
 
 /**
  * Wrap one repository so its writes are reported. Applied by `database()` to every table it builds,
- * so an app opts in by installing an observer and never by choosing a different repository — the
+ * so an app opts in by subscribing to `entity.row` and never by choosing a different repository — the
  * rows under test are the rows the app reads, which is the whole reason `defaultDriver()` is
  * exported at all.
  */
@@ -216,28 +171,26 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
   };
 
   const emit = (
-    op: RowChangeOp,
+    op: EntityRowOp,
     before: unknown,
     after: unknown,
     options: RepoOptions | undefined,
   ): void => {
-    const observer = installed;
-    if (observer === null) return;
+    if (!subscribed(ROW)) return;
     const write = currentWriteOrigin();
-    const change: RowChange = {
+    const change = {
       entity: name,
       op,
       before: reported(before),
       after: reported(after),
       ...(write === undefined ? {} : { write }),
     };
-    afterCommit(options, () => observer.onChange(change));
+    afterCommit(options, () => instrument(ROW, change));
   };
 
   const bulk = (op: 'delete' | 'update', rows: number, options: RepoOptions | undefined): void => {
-    const observer = installed;
-    if (rows > 0 && observer?.onBulk !== undefined) {
-      afterCommit(options, () => observer.onBulk?.({ entity: name, op, rows }));
+    if (rows > 0 && subscribed(BULK)) {
+      afterCommit(options, () => instrument(BULK, { entity: name, op, rows }));
     }
   };
 
@@ -282,7 +235,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
      * did not occur.
      */
     upsertAll: async (rows: readonly Row[], args: UpsertArgs<Row>): Promise<readonly Row[]> => {
-      if (installed === null) return await repo.upsertAll(rows, args);
+      if (!subscribed(ROW)) return await repo.upsertAll(rows, args);
       const ids = [...new Set(rows.flatMap((row) => idOf(row) ?? []))];
       const before = await beforeAllOf(entity, repo, ids);
       const stored = await repo.upsertAll(rows, args);
@@ -295,7 +248,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
     },
 
     update: async (id, patch: RowPatch<Row>, options?: RepoOptions): Promise<Row> => {
-      if (installed === null) return await repo.update(id, patch, options);
+      if (!subscribed(ROW)) return await repo.update(id, patch, options);
       const before = await beforeOf(entity, repo, id);
       const after = await repo.update(id, patch, options);
       emit('update', before, after, options);
@@ -303,7 +256,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
     },
 
     delete: async (id, options?: RepoOptions): Promise<void> => {
-      if (installed === null) return await repo.delete(id, options);
+      if (!subscribed(ROW)) return await repo.delete(id, options);
       const before = await beforeOf(entity, repo, id);
       await repo.delete(id, options);
       emit('delete', before, null, options);

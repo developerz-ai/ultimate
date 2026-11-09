@@ -4,9 +4,8 @@
 // nothing in a running process keys the same way.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { Ctx } from '@ultimat3/core';
+import type { Ctx, StatementAttribution, DbStatementEvent as StatementEvent } from '@ultimat3/core';
 import { ctxOf, logger, runWithContext } from '@ultimat3/core';
-import type { StatementAttribution, StatementEvent } from '@ultimat3/db';
 import { N_PLUS_ONE_THRESHOLD } from '@ultimat3/entity';
 import { createStatementLedger } from './dev-n-plus-one';
 

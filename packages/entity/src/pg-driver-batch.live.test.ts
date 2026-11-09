@@ -5,14 +5,13 @@
 // `TEST_DATABASE_URL` is set, as every other live file in this package does.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext, subscribe } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
   postgresClient,
   raw,
   setDbClient,
-  setStatementObserver,
   statementsOf,
 } from '@ultimat3/db';
 import { text, uuid } from './columns';
@@ -104,15 +103,13 @@ describe.skipIf(!hasPostgres)('live · postgres · inBatches', () => {
   /** Every statement sent while `work` runs, filtered to the ones matching `match`. */
   const capturing = async <T>(match: string, work: () => Promise<T>): Promise<[T, string[]]> => {
     const seen: string[] = [];
-    setStatementObserver({
-      onStatement: (event) => {
-        if (event.text.includes(match)) seen.push(event.text);
-      },
+    const offStatements = subscribe('db.statement', ({ payload: event }) => {
+      if (event.text.includes(match)) seen.push(event.text);
     });
     try {
       return [await work(), seen];
     } finally {
-      setStatementObserver(undefined);
+      offStatements();
     }
   };
 

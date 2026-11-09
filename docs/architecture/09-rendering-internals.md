@@ -178,7 +178,7 @@ A rolled-back write never purges. A committed write always does. `x cache graph 
 what a write will evict before you run it — **planned, not shipped**: `x cache` is in the registry
 and `x help` lists it, and running it exits `X_NOT_IMPLEMENTED` naming its own fix,
 `x dev` and the cache panel at `/_x`. The graph itself is real — `x.manifest.json` carries it — and
-`recentInvalidations()` is what the panel reads.
+every bust is a `cache.invalidate` event the panel subscribes to and buffers.
 
 ## Codes
 

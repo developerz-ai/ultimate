@@ -13,13 +13,14 @@ import { join } from 'node:path';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import {
   ctxOf,
+  instrument,
   logger,
   NotImplementedError,
   resetLifecycle,
   runWithContext,
+  subscribed,
   userActor,
 } from '@ultimat3/core';
-import { statementObserver } from '@ultimat3/db';
 import { cspHashSource } from '@ultimat3/http';
 import { SyncSocket } from '@ultimat3/realtime/server';
 import type { DevServer } from './cmd-dev';
@@ -254,12 +255,12 @@ describe('unit · x dev boots the app', () => {
     expect(Object.keys(payload.data.totalsByKind)).toContain('http');
   });
 
-  // Installing a `StatementObserver` is the single switch that turns statement instrumentation on
-  // (`@ultimat3/db`'s `observe.ts`), and `x dev` is what throws it — `serve.ts` never does. Until
+  // Subscribing to `db.statement` is the single switch that makes `@ultimat3/db` build statement
+  // events, and `x dev` is what subscribes — `serve.ts` never does. Until
   // it did, the timeline had no DB children at all and `repeatedSql` grouped span names, which is
   // what made an N+1 invisible in the one panel built to show it.
   test('x dev installs the statement ledger, so the timeline has SQL children', async () => {
-    expect(statementObserver()).toBeDefined();
+    expect(subscribed('db.statement')).toBe(true);
     await runSql('select 1 as n');
 
     const payload = (await (await fetchDev('/_x/timeline?json=1')).json()) as {
@@ -280,11 +281,10 @@ describe('unit · x dev boots the app', () => {
   });
 
   // The four surfaces, wired to the one ledger. This proves the wiring end to end rather than the
-  // counting, which `dev-n-plus-one.test.ts` owns: the observer under test here is the one the
-  // running process installed, fed the events `@ultimat3/db`'s funnels feed it.
+  // counting, which `dev-n-plus-one.test.ts` owns: the events go through the bus the running
+  // process subscribed to, exactly as `@ultimat3/db`'s funnels publish them.
   test('a loop in one request reaches x dev, /_x, the overlay and the log — from one ledger', async () => {
-    const observer = statementObserver();
-    expect(observer).toBeDefined();
+    expect(subscribed('db.statement')).toBe(true);
 
     const before = server.findings.length;
     const lines: string[] = [];
@@ -296,7 +296,7 @@ describe('unit · x dev boots the app', () => {
     try {
       runWithContext(ctx, () => {
         for (let sent = 0; sent < 6; sent += 1) {
-          observer?.onStatement({
+          instrument('db.statement', {
             text: 'select "id" from "members" where "id" = $1',
             values: [],
             durationMs: 1,

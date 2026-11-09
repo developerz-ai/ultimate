@@ -131,10 +131,11 @@ describe('matcher bridge', () => {
 
 /**
  * #230's leak half, and it is independent of the ordering key. A `ChangeEvent` carries the whole
- * TABLE row — that is what logical replication emits and what `setRowObserver` emits — while a live
- * query's result set is whatever its `sql` returned. Every patch used to forward the change row
- * unnarrowed, so a projection's dropped columns went out on the socket: `examples/dummy`'s feed
- * projects ten columns and one publish delivered `body` to every subscriber.
+ * TABLE row — that is what logical replication emits and what an `entity.row` event carries —
+ * while a live query's result set is whatever its `sql` returned. Every patch used to forward the
+ * change row unnarrowed, so a projection's dropped columns went out on the socket:
+ * `examples/dummy`'s feed projects ten columns and one publish delivered `body` to every
+ * subscriber.
  */
 describe('a patch carries the result set\u2019s columns, never the table\u2019s', () => {
   const projection = new Set(['id', 'orgId', 'title', 'likes']);

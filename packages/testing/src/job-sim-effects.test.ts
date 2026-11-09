@@ -3,8 +3,8 @@
 // a dead worker's effect is dropped, and every borrowed seam is chained and handed back.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { RowBulkChange, RowObserver } from '@ultimat3/entity';
-import { rowObserver, setRowObserver } from '@ultimat3/entity';
+import type { EntityBulkEvent } from '@ultimat3/core';
+import { instrument, resetInstrumentation, subscribe, subscriberCount } from '@ultimat3/core';
 import type { MailMessage } from '@ultimat3/mail';
 import { memoryMailDriver, resetMailDriver, setMailDriver, tryMailDriver } from '@ultimat3/mail';
 import { effectCounts, openEffectLog } from './job-sim-effects';
@@ -19,34 +19,33 @@ const message = (mailId: string, to: readonly string[]): MailMessage => ({
   tz: 'UTC',
 });
 
-const priorRows = rowObserver();
 const priorMail = tryMailDriver();
 afterEach(() => {
-  setRowObserver(priorRows);
+  resetInstrumentation();
   if (priorMail === undefined) resetMailDriver();
   else setMailDriver(priorMail);
 });
 
 describe('openEffectLog', () => {
-  test('a bulk write is one effect per row, chained to the observer that was installed', async () => {
-    const seen: RowBulkChange[] = [];
-    const outer: RowObserver = { onChange: () => undefined, onBulk: (change) => seen.push(change) };
-    setRowObserver(outer);
+  test('a bulk write is one effect per row, beside the subscriber already listening', async () => {
+    const seen: EntityBulkEvent[] = [];
+    subscribe('entity.bulk', (event) => void seen.push(event.payload));
+    const before = subscriberCount();
     const log = await openEffectLog({ isDead: () => false });
     try {
-      rowObserver()?.onBulk?.({ entity: 'posts', op: 'delete', rows: 3 });
+      instrument('entity.bulk', { entity: 'posts', op: 'delete', rows: 3 });
       expect(effectCounts(log.effects()).get('row:posts:delete')).toBe(3);
       expect(seen).toEqual([{ entity: 'posts', op: 'delete', rows: 3 }]);
     } finally {
       await log[Symbol.asyncDispose]();
     }
-    expect(rowObserver()).toBe(outer);
+    expect(subscriberCount()).toBe(before);
   });
 
   test('a bulk write of zero rows records nothing', async () => {
     const log = await openEffectLog({ isDead: () => false });
     try {
-      rowObserver()?.onBulk?.({ entity: 'posts', op: 'update', rows: 0 });
+      instrument('entity.bulk', { entity: 'posts', op: 'update', rows: 0 });
       expect(log.effects()).toEqual([]);
     } finally {
       await log[Symbol.asyncDispose]();

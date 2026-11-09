@@ -2,16 +2,13 @@
 // swallows the refusal (a tier may never fail a business write), so without a `del` the previous
 // value serves from that tier for its whole lease — the one stale read that reports `errors: []`.
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
+import { recordCacheEvents } from './cache-events-fixture';
 import { lruTier } from './lru';
-import { isolateTierFailures, recentTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheSetOptions, CacheTier } from './tiers';
 import { cacheStack } from './tiers';
 
-// The failure log is the subject of one test below, so it is emptied per test and handed back.
-const restoreFailures = isolateTierFailures();
-afterAll(restoreFailures);
-beforeEach(resetTierFailures);
+const events = recordCacheEvents();
 
 /** A far tier that takes everything, so the near tier's refusal is the only thing in question. */
 function mapTier(name: CacheTier['name']): CacheTier & { readonly held: Map<string, unknown> } {
@@ -75,7 +72,7 @@ describe('a refused set in a fill deletes the key in THAT tier', () => {
     await stack.write('k', 'old');
     await stack.write('k', 'x'.repeat(500));
 
-    expect(recentTierFailures().map((failure) => `${failure.op}:${failure.code ?? ''}`)).toEqual([
+    expect(events.failures().map((failure) => `${failure.op}:${failure.code ?? ''}`)).toEqual([
       'set:X_CACHE_TOO_LARGE',
     ]);
   });

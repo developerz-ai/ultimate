@@ -122,7 +122,7 @@ describe('loadAppConfig', () => {
     expect([config?.pwa.backgroundSync, config?.pwa.push]).toEqual([false, false]);
     expect(config?.pwa.offline.fallback).toBeNull();
     expect(config?.cache.tiers).toEqual(['request-memo', 'lru']);
-    expect(config?.jobs.queues).toEqual(['bare-default']);
+    expect(config?.jobs.queues).toEqual(['default']);
     expect(config?.jobs.concurrency).toBe(8);
     expect(config?.jobs.visibilityTimeoutMs).toBe(30000);
     expect(config?.realtime).toEqual({ enabled: true, transport: 'memory', urlEnv: undefined });

@@ -5,14 +5,19 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   drain,
   exportMetrics,
+  logger,
   onShutdown,
   resetLifecycle,
   resetMetrics,
   resetTelemetry,
+  setLogSink,
   shutdownHookCount,
+  subscribed,
+  subscriberCount,
+  systemClock,
   withSpan,
 } from '@ultimat3/core';
-import { startOtlpExport } from './otlp-export';
+import { flushWithin, startOtlpExport } from './otlp-export';
 
 let release: (() => void) | undefined;
 
@@ -33,12 +38,74 @@ describe('OTLP export is driven by the variable the chart already sets', () => {
     expect(shutdownHookCount()).toBe(before);
   });
 
-  test('the generic endpoint installs both signals, each with its own drain hook', () => {
+  test('the generic endpoint installs all three signals behind ONE drain hook', () => {
     const before = shutdownHookCount();
     release = startOtlpExport({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318' });
-    // `phase: 'close'` on both: the last spans of a drain are the ones that explain the drain,
-    // and a process that exits with a full queue loses exactly the window an operator wanted.
-    expect(shutdownHookCount()).toBe(before + 2);
+    // `phase: 'close'`: the last spans of a drain are the ones that explain the drain. One hook,
+    // flushing all three in parallel, so a black-holed collector cannot cost the drain 3 × 10 s.
+    expect(shutdownHookCount()).toBe(before + 1);
+    expect(subscribed('log.record')).toBe(true);
+    expect(subscribed('span.end')).toBe(true);
+  });
+
+  test('a logs endpoint alone installs the logs exporter as a log.record subscriber', () => {
+    const before = shutdownHookCount();
+    release = startOtlpExport({
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: 'http://collector:4318/v1/logs',
+    });
+    expect(shutdownHookCount()).toBe(before + 1);
+    expect(subscribed('log.record')).toBe(true);
+    expect(subscribed('span.end')).toBe(false);
+  });
+
+  test('OTEL_<SIGNAL>_EXPORTER=none switches that one signal off — the OpenTelemetry spelling', () => {
+    // A collector with no logs pipeline answers 404 to every batch; the generic endpoint now names
+    // logs too, so the standard opt-out has to be honoured, per signal.
+    const before = shutdownHookCount();
+    release = startOtlpExport({
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318',
+      OTEL_LOGS_EXPORTER: ' NONE ',
+    });
+    expect(shutdownHookCount()).toBe(before + 1);
+    expect(subscribed('log.record')).toBe(false);
+    expect(subscribed('span.end')).toBe(true);
+  });
+
+  test('OTEL_SDK_DISABLED=true switches every signal off, the endpoint notwithstanding', () => {
+    const before = shutdownHookCount();
+    release = startOtlpExport({
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318',
+      OTEL_SDK_DISABLED: 'True',
+    });
+    expect(shutdownHookCount()).toBe(before);
+    expect(subscribed('span.end')).toBe(false);
+    expect(subscribed('log.record')).toBe(false);
+  });
+
+  test('the boot logs the endpoint without its query string', () => {
+    const lines: string[] = [];
+    const previous = setLogSink((line) => lines.push(line));
+    try {
+      release = startOtlpExport({
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318?api-key=s3cret',
+      });
+    } finally {
+      setLogSink(previous);
+    }
+    const boot = lines.filter((line) => line.includes('ultimate otlp'));
+    expect(boot.length).toBeGreaterThan(0);
+    expect(boot.join('')).not.toContain('s3cret');
+    expect(boot.join('')).toContain('http://collector:4318/v1/traces');
+  });
+
+  test('the semconv histograms are subscribed on every boot, collector or not, and released', () => {
+    // They feed `/metrics` as well as OTLP: a scrape-only deployment still gets them.
+    const stop = startOtlpExport({});
+    expect(subscribed('db.statement')).toBe(true);
+    expect(subscribed('job.perform')).toBe(true);
+    expect(subscribed('ai.llm')).toBe(true);
+    stop();
+    expect(subscribed('db.statement')).toBe(false);
   });
 
   test('a per-signal endpoint installs only that signal', () => {
@@ -51,8 +118,10 @@ describe('OTLP export is driven by the variable the chart already sets', () => {
 
   test('the release unregisters what it installed, so a second boot does not double up', () => {
     const before = shutdownHookCount();
+    const subscriptions = subscriberCount();
     startOtlpExport({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318' })();
     expect(shutdownHookCount()).toBe(before);
+    expect(subscriberCount()).toBe(subscriptions);
   });
 
   test('the env is the BOOT’s, never `process.env` — `runRole({ env })` is a real seam', () => {
@@ -116,7 +185,9 @@ describe('the release uninstalls the exporters, not only their timers', () => {
       // Awaited: the POST is chained onto a settled promise, so a synchronous read of `urls` here
       // is empty whatever the exporter is — an assertion that cannot fail.
       await Bun.sleep(5);
-      expect(posted.urls).toEqual([]);
+      // The release SHUTS the log exporter down, so the boot's own lines queued before it are
+      // delivered — that is the batch (c) keeps. Nothing reaches the metrics collector.
+      expect(posted.urls.filter((url) => !url.endsWith('/v1/logs'))).toEqual([]);
     } finally {
       posted.restore();
     }
@@ -133,7 +204,7 @@ describe('the release uninstalls the exporters, not only their timers', () => {
       }
       // The drain is chained through microtasks, so give it a turn before reading the calls.
       await Bun.sleep(5);
-      expect(posted.urls).toEqual([]);
+      expect(posted.urls.filter((url) => url.endsWith('/v1/traces'))).toEqual([]);
     } finally {
       posted.restore();
     }
@@ -172,5 +243,86 @@ describe('a span ended by a later close hook reaches the collector', () => {
       globalThis.fetch = real;
       resetLifecycle();
     }
+  });
+});
+
+describe('process log lines reach the collector over OTLP', () => {
+  test('a line logged after install is posted to /v1/logs by the drain', async () => {
+    resetLifecycle();
+    const posts: { url: string; body: string }[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      posts.push({
+        url: String(input instanceof Request ? input.url : input),
+        body: String(init?.body),
+      });
+      return new Response('', { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      release = startOtlpExport({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318' });
+      logger.warn('otlp.logs.smoke', { order: 'o-1' });
+      await drain('SIGTERM');
+      const logs = posts.filter((post) => post.url.endsWith('/v1/logs'));
+      expect(logs.map((post) => post.body).join('')).toContain('otlp.logs.smoke');
+    } finally {
+      globalThis.fetch = real;
+      resetLifecycle();
+    }
+  });
+});
+
+describe('the release ships what was queued before it', () => {
+  test('a span ended before the release is posted, not dropped with the exporter', async () => {
+    const bodies: string[] = [];
+    // The release's shutdown is not awaited by its caller: wait for the POST itself, never a guess
+    // at how long it takes. A dropped batch never posts, and the test times out naming it.
+    const posted = Promise.withResolvers<void>();
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      if (bodies.join('').includes('span-before-release')) posted.resolve();
+      return new Response('', { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const stop = startOtlpExport({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318' });
+      await withSpan('span-before-release', async () => 0);
+      stop();
+      await posted.promise;
+      expect(bodies.join('')).toContain('span-before-release');
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+});
+
+describe('the drain flush is bounded by the drain deadline', () => {
+  test('a black-holed collector costs the drain its share of the deadline, never more', async () => {
+    const hang = (): Promise<void> => new Promise<void>(() => undefined);
+    const previous = setLogSink(() => undefined);
+    const started = performance.now();
+    try {
+      await flushWithin([hang, hang, hang], { deadlineAt: systemClock.monotonic() + 100 });
+    } finally {
+      setLogSink(previous);
+    }
+    const took = performance.now() - started;
+    expect(took).toBeLessThan(100);
+    expect(took).toBeGreaterThanOrEqual(60);
+  });
+
+  test('flushes run in parallel: all three are started before any of them settles', async () => {
+    // Started is the observable, not elapsed time: a sequential run starts the second flush only
+    // after the first settles, so it would hold one pending flush here, not three.
+    const pending: (() => void)[] = [];
+    const slow = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        pending.push(resolve);
+      });
+    const flushed = flushWithin([slow, slow, slow], {
+      deadlineAt: systemClock.monotonic() + 5_000,
+    });
+    expect(pending).toHaveLength(3);
+    for (const resolve of pending) resolve();
+    await flushed;
   });
 });

@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode } from './error-codes';
 import { isUltimateError } from './errors';
+import { setLogSink } from './logger';
 import {
   OTLP_ENDPOINT_KEY,
   OTLP_HEADERS_KEY,
   OTLP_PROTOCOL_KEY,
   otlpAttributes,
   otlpEndpoint,
+  otlpEndpointLabel,
   otlpHeaders,
   otlpResource,
   postOtlp,
@@ -258,5 +260,65 @@ describe('otlpAttributes · a number the wire cannot spell', () => {
       { key: 'list', value: { arrayValue: { values: [{ intValue: '1' }, { intValue: '2' }] } } },
     ]);
     expect(JSON.stringify(attributes)).not.toContain('null');
+  });
+});
+
+describe('otlp · a credential in the endpoint is never logged', () => {
+  const thrownBy = (fn: () => unknown): string => {
+    try {
+      fn();
+    } catch (thrown) {
+      return isUltimateError(thrown)
+        ? `${thrown.code} ${thrown.cause} ${thrown.fix}`
+        : 'not ultimate';
+    }
+    return 'no throw';
+  };
+
+  test('userinfo in the endpoint is refused, and the refusal does not echo the password', () => {
+    const said = thrownBy(() =>
+      otlpEndpoint('traces', undefined, {
+        [OTLP_ENDPOINT_KEY]: 'https://me:hunter2@c.example:4318',
+      }),
+    );
+    expect(said).toContain('X_OTLP_ENDPOINT_INVALID');
+    expect(said).not.toContain('hunter2');
+    expect(said).toContain(OTLP_HEADERS_KEY);
+  });
+
+  test('an unparsable endpoint is refused without echoing it', () => {
+    const said = thrownBy(() =>
+      otlpEndpoint('traces', undefined, { [OTLP_ENDPOINT_KEY]: 'me:hunter2@ not a url' }),
+    );
+    expect(said).toContain('X_OTLP_ENDPOINT_INVALID');
+    expect(said).not.toContain('hunter2');
+  });
+
+  test('a query credential is allowed on the wire and cut from the label', () => {
+    const url = otlpEndpoint('traces', undefined, {
+      [OTLP_ENDPOINT_KEY]: 'https://c.example:4318?api-key=s3cret',
+    });
+    expect(url).toContain('s3cret');
+    expect(otlpEndpointLabel(url)).toBe('https://c.example:4318/v1/traces');
+  });
+
+  test('a failed export logs the label, never the query', async () => {
+    const lines: string[] = [];
+    const previous = setLogSink((line) => lines.push(line));
+    try {
+      await postOtlp({
+        url: 'https://c.example:4318/v1/traces?api-key=s3cret',
+        headers: {},
+        body: '{}',
+        timeoutMs: 1_000,
+        fetch: Object.assign(async () => new Response('', { status: 400 }), {
+          preconnect: (): void => {},
+        }),
+      });
+    } finally {
+      setLogSink(previous);
+    }
+    expect(lines.join('')).toContain('https://c.example:4318/v1/traces');
+    expect(lines.join('')).not.toContain('s3cret');
   });
 });

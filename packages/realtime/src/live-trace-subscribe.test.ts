@@ -5,11 +5,12 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
-  configureTelemetry,
   ctxOf,
   memoryExporter,
   parseTraceparent,
+  resetInstrumentation,
   resetTelemetry,
+  subscribe,
   userActor,
 } from '@ultimat3/core';
 import { from, query, registerQuery, resetQueries, t } from '@ultimat3/query';
@@ -30,6 +31,7 @@ const page = parseTraceparent(PAGE);
 
 afterEach(() => {
   resetTelemetry();
+  resetInstrumentation();
   resetQueries();
 });
 
@@ -126,7 +128,7 @@ const socket = (): SyncSocket =>
 describe('the node joins the trace', () => {
   test("the snapshot a subscribe causes is a child of the subscriber's trace", async () => {
     const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    subscribe('span.end', (event) => exporter.export(event.payload));
     const { frame } = await registry().subscribe({
       socket: socket(),
       name: 'tracedFeed',
@@ -141,7 +143,7 @@ describe('the node joins the trace', () => {
 
   test('a garbage header starts a fresh trace, and the subscribe is still served', async () => {
     const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    subscribe('span.end', (event) => exporter.export(event.payload));
     const { frame } = await registry().subscribe({
       socket: socket(),
       name: 'tracedFeed',

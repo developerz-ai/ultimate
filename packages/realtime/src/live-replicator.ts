@@ -6,8 +6,8 @@
 //
 // WHAT IS REAL HERE, and it is everything downstream of the decoder: the matcher, the shared window,
 // the per-subscriber `visible` gate, the cursor, the frames. This substitutes for the WAL DECODER
-// and for nothing else — `@ultimat3/entity`'s `setRowObserver` reports what a repository wrote, in
-// this process, and the events are shaped exactly as `PostgresChangeFeed` shapes them.
+// and for nothing else — `@ultimat3/entity`'s `entity.row` / `entity.bulk` events on core's
+// instrumentation bus report what a repository wrote, in this process, and the events are shaped exactly as `PostgresChangeFeed` shapes them.
 //
 // WHAT IS NOT: a write another process made is invisible, because nothing here reads a log. That is
 // the honest bound, and it is why `selectChangeFeed` never picks it — the boot that installs it
@@ -23,7 +23,8 @@
 // runs in that one process, so the bound above holds by construction — and a real `DATABASE_URL`
 // gets the decoder instead, never both.
 
-import type { RowBulkChange, RowChange, RowObserver } from '@ultimat3/entity';
+import type { EntityBulkEvent, EntityRowEvent } from '@ultimat3/core';
+import { subscribe } from '@ultimat3/core';
 import type { ChangeEvent, ChangeOp } from './changefeed';
 import type { Row } from './json';
 import type { LiveQueryRegistry } from './live-query';
@@ -73,13 +74,13 @@ const asRow = (value: Readonly<Record<string, unknown>> | null): Row | null =>
 const lsnOf = (position: number): string => position.toString(16).padStart(16, '0');
 
 /**
- * Install the replicator for the length of one test. It takes over the process row observer and
- * hands back whatever was installed before, because `bun test` shares one process across files and
- * an unconditional clear would take an outer harness's observer with it.
+ * Install the replicator for the length of one test. It SUBSCRIBES to the bus, so an outer
+ * harness's subscriber — or a second replicator — keeps hearing every write beside it; `stop()`
+ * releases this subscription and nobody else's.
  */
 export async function startLiveReplicator(options: LiveReplicatorOptions): Promise<LiveReplicator> {
-  // Awaited BEFORE the observer exists, so installation is the last thing this function does and
-  // no write between the call and the install can slip past unobserved.
+  // Awaited BEFORE the subscription exists, so subscribing is the last thing this function does and
+  // no write between the call and the subscribe can slip past unobserved.
   const entity = await import('@ultimat3/entity');
   const { registry } = options;
   const tenant = options.tenantColumn ?? 'orgId';
@@ -93,7 +94,7 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
   /**
    * The RELATION an entity's rows live in — what `ChangeEvent.table` carries on every producer:
    * the WAL decoder reads it off the Relation message, a channel matches `projection.table`, and a
-   * live shape is `from('<table>', …)`. The row observer reports the entity's declared NAME, which
+   * live shape is `from('<table>', …)`. The `entity.row` event reports the entity's declared NAME, which
    * is the table only until an entity adopts one (`entity('ledger', { table: 'gl_entries' })`);
    * passed through, such an entity reached no channel, no window and no bulk re-read here.
    */
@@ -107,8 +108,8 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
     });
   };
 
-  const observer: RowObserver = {
-    onChange(change: RowChange): void {
+  const handlers = {
+    onChange(change: EntityRowEvent): void {
       if (stopped) return;
       position += 1;
       const at = position;
@@ -147,7 +148,7 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
      * something", used here for the one write that genuinely does. Silence would be the
      * alternative, and a subscriber told nothing happened diverges with nobody ever asking again.
      */
-    onBulk(change: RowBulkChange): void {
+    onBulk(change: EntityBulkEvent): void {
       if (stopped) return;
       const table = tableOf(change.entity);
       registry.invalidate(table);
@@ -159,7 +160,9 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
     },
   };
 
-  const previous = entity.setRowObserver(observer);
+  // Handlers never throw: a strict subscriber's throw would reach the repository write.
+  const offRow = subscribe('entity.row', (event) => handlers.onChange(event.payload));
+  const offBulk = subscribe('entity.bulk', (event) => handlers.onBulk(event.payload));
 
   return {
     get delivered() {
@@ -175,9 +178,9 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
     },
     stop: () => {
       stopped = true;
-      // Restored, never cleared: one process runs every test file, and an outer harness's observer
-      // must survive an inner fixture finishing.
-      entity.setRowObserver(previous);
+      // This replicator's subscriptions only: an outer harness's survive an inner fixture finishing.
+      offRow();
+      offBulk();
     },
   };
 }

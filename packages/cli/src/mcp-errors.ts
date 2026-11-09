@@ -394,6 +394,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only boundaries --json — names the file and line; delete the upgrade and declare the socket with deviceSocket({ path, resolveToken, onFrame }) from @ultimat3/realtime/server',
   X_EXERCISE_FILE_UNEDITABLE:
     'edit apps/web/exercise.ts — paste the entry the finding names into export const exercise = defineExercise({ … })',
+  X_ERROR_REPORTER_DSN_UNCLAIMED:
+    'edit the file that calls configureErrorReporting: wrap your Sentry wrapper in sentryTransport(wrapper), or a reporter that keeps reports on the box in localErrorSink(sink)',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -73,6 +73,16 @@ for a host assembling its own stream; `enter(signal, run)` is the host's scope f
 `StreamHole` gains `error?` and `after?(outcome)` (asked on every reveal, failed ones too);
 `hydrateRuntime(directives, { async: true })` is the runtime for a document still parsing.
 
+## What a render tells the instrumentation bus
+
+| Event | When | Payload |
+|---|---|---|
+| `render.page` | each `renderComponent` — every mode | `route` (the registered PATTERN, `/blog/:slug`; the file for an unregistered one) |
+| `render.hole` | each streamed `<Hole>` fill | `route`, `hole` (its id) |
+| `render.isr.regenerate` | each ISR generation, never each request that joined it | `route`, `path` |
+
+Each is an internal span of the same name carrying `http.route`, and an event with `durationMs` and `error` on failure → [Observability](https://github.com/developerz-ai/ultimate/wiki/Observability).
+
 ## `load` is the one server-side data seam
 
 Optional, and the only way a page gets data. It runs **once per render** and the result is handed

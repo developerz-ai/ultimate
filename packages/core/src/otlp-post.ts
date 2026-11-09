@@ -78,12 +78,32 @@ const retryTimer = (ms: number): Promise<void> =>
     setTimeout(done, ms);
   });
 
+/**
+ * An endpoint as a log line may print it: origin and path only. A query string can carry a
+ * collector token (`?api-key=…`), and userinfo a password — neither is ever logged.
+ */
+export function otlpEndpointLabel(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    // Any other scheme is a value that only parsed by accident (`user:pass@…` reads as scheme
+    // `user:`), so its path may BE the credential: name the scheme alone.
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return `a ${url.protocol} URL`;
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return 'an OTLP endpoint that is not a URL';
+  }
+}
+
 function logOutcome(url: string, outcome: Outcome, attempts: number): void {
   if (outcome.kind === 'rejected') {
-    logger.warn('otlp export rejected', { url, status: outcome.status, attempts });
+    logger.warn('otlp export rejected', {
+      url: otlpEndpointLabel(url),
+      status: outcome.status,
+      attempts,
+    });
   } else if (outcome.kind === 'failed') {
     logger.warn('otlp export failed', {
-      url,
+      url: otlpEndpointLabel(url),
       attempts,
       // `renderThrowable`: the read that renders a caught value must not itself throw, or the
       // export failure this function exists to swallow escapes as an unhandled rejection.

@@ -33,7 +33,7 @@ export interface AiRuntimeInput {
    *
    * WHAT to remove is the app's decision, not the framework's: a PII classifier is a model choice
    * and ships in no framework (axiom 8). Ultimate ships the seam, the span attribute
-   * (`llm.redacted`) and the one rule it can enforce structurally — a `Secret` reaching `vars()`
+   * (`ultimate.llm.redacted`) and the one rule it can enforce structurally — a `Secret` reaching `vars()`
    * is `X_AI_PROMPT_SECRET`, whether or not a redactor is installed.
    */
   readonly redact?: Redactor;
@@ -46,7 +46,7 @@ export interface AiRuntimeInput {
  */
 export type Redactor = (text: string) => string;
 
-/** No app redactor installed. Named rather than inline so `llm.redacted` has one thing to mean. */
+/** No app redactor installed. Named rather than inline so `ultimate.llm.redacted` has one thing to mean. */
 const noRedaction: Redactor = (text) => text;
 
 interface AiRuntime {

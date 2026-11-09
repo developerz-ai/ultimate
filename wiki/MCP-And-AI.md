@@ -607,7 +607,7 @@ export const summarize = llm({
 | Caching | semantic cache from [Caching and invalidation](Caching-And-Invalidation) |
 | Provider prompt caching | the provider keeps a request's stable prefix; on by default for `agent()`, off for `llm()` → [Agents](Agents#provider-prompt-caching) |
 | Tracing | one OTel span per call with model, tokens, cache hit, prompt version |
-| Fallback | ordered provider list per model; the provider that answered is on the span as `llm.provider`, never silent. A refusal names a more capable model for the declaration to adopt — models are never swapped at runtime |
+| Fallback | ordered provider list per model; the provider that answered is on the span as `gen_ai.provider.name`, never silent. A refusal names a more capable model for the declaration to adopt — models are never swapped at runtime |
 | Money | `Money = { minor, currency }` — never a float → [Money](Money) |
 
 **A stream is the same action over a different transport, with one difference that is forced rather than chosen: there is no repair turn.** The non-streaming call retries once on a parse failure; a stream cannot, because the tokens are already on the reader's screen and a second answer is two answers to one question. So a stream yields **unvalidated** text increments plus one final `done` carrying the value that did satisfy `output`, and a schema disagreement is `X_LLM_STREAM_INVALID` naming the non-streaming call as the fix. A structured schema wants the non-streaming call.

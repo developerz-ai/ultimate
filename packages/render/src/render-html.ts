@@ -13,6 +13,7 @@ import {
 } from './errors';
 import type { IslandCollector } from './island-collector';
 import type { JsxComponent, JsxProps } from './jsx';
+import { instrumentedHoles, routeOfFile, timedRender } from './render-instrument';
 import type { StreamHole } from './render-stream';
 import { renderAlone } from './render-walk';
 
@@ -94,6 +95,21 @@ export async function renderComponent(
   props: JsxProps,
   file: string,
   options: RenderHtmlOptions = {},
+): Promise<string> {
+  // Reported AS the caller sees it: the coded failure below, never the raw throw it wraps.
+  const route = routeOfFile(file);
+  const walk =
+    options.holes === undefined
+      ? options
+      : { ...options, holes: instrumentedHoles(options.holes, route) };
+  return timedRender('render.page', { route }, () => renderPage(component, props, file, walk));
+}
+
+async function renderPage(
+  component: JsxComponent,
+  props: JsxProps,
+  file: string,
+  options: RenderHtmlOptions,
 ): Promise<string> {
   try {
     return await renderToHtml(component(props), options);

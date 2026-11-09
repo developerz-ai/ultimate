@@ -5,10 +5,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import {
-  configureTelemetry,
   memoryExporter,
   parseTraceparent,
+  resetInstrumentation,
   resetTelemetry,
+  subscribe,
   withSpan,
 } from '@ultimat3/core';
 import { traceLiveRead } from './live-trace';
@@ -16,11 +17,14 @@ import { traceLiveRead } from './live-trace';
 const PAGE = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
 const page = parseTraceparent(PAGE);
 
-afterEach(() => resetTelemetry());
+afterEach(() => {
+  resetTelemetry();
+  resetInstrumentation();
+});
 
 async function spansOf(run: () => Promise<unknown>): Promise<readonly ReadableSpan[]> {
   const exporter = memoryExporter();
-  configureTelemetry({ exporter });
+  subscribe('span.end', (event) => exporter.export(event.payload));
   await run();
   return exporter.spans;
 }
@@ -69,7 +73,7 @@ describe('traceLiveRead', () => {
 
   test('a read that rejects still rejects, with the span ended in error', async () => {
     const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    subscribe('span.end', (event) => exporter.export(event.payload));
     const failed = traceLiveRead('listPosts', 'snapshot', undefined, () =>
       Promise.reject(new Error('read failed')),
     );

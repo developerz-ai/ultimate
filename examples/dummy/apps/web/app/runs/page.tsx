@@ -178,7 +178,11 @@ export const config = defineRoute({
   // measured: 246931 B (2026-11-07, sweep 2; x build --target static) — why: the record envelope's `order` decode and the live refetch's retry (sweep 2). Sweep 1, 246537 B: core's `clientStream` sharing
   // `call()`'s unwrap (`settleAnswer`), `VirtualList` pruning heights of rows that left, the
   // router +122 B.
-  budget: { js: '242kb' },
+  // measured: 248127 B (2026-11-09, plan 101 wave C; x build --target static, against 247,740)
+  // — why: the page boot +360 B, core's `ids.ts` random pool and byte→hex table (`uuidV7` minted
+  // with no CSPRNG call per id), and `singleLine` reading its escape table through `Object.hasOwn`
+  // (+27 B, also the run console's). Raised 242kb → 242.4kb.
+  budget: { js: '242.4kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

@@ -2,7 +2,15 @@
 // write does, or turn a working write into a failing one.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext, userActor, withWriteOrigin } from '@ultimat3/core';
+import type { EntityBulkEvent, EntityRowEvent } from '@ultimat3/core';
+import {
+  ctxOf,
+  resetInstrumentation,
+  runWithContext,
+  subscribe,
+  userActor,
+  withWriteOrigin,
+} from '@ultimat3/core';
 import { recordingClient, setDbClient, withTransaction } from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { database, memoryDriver } from './database';
@@ -11,7 +19,7 @@ import { memoryTransactor } from './memory-repo';
 import { N_PLUS_ONE_THRESHOLD } from './n-plus-one';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import { observedRepo, type RowBulkChange, type RowChange, setRowObserver } from './row-observer';
+import { observedRepo } from './row-observer';
 
 // A foreign failure handed to the subject to end its transaction: test input, never its verdict.
 const ROLLED_BACK = new RangeError('rolled back');
@@ -42,14 +50,10 @@ const reads = entity('observed_reads', {
 
 const build = (): {
   db: ReturnType<typeof database<{ notes: typeof notes }>>;
-  seen: RowChange[];
+  seen: EntityRowEvent[];
 } => {
-  const seen: RowChange[] = [];
-  setRowObserver({
-    onChange: (change) => {
-      seen.push(change);
-    },
-  });
+  const seen: EntityRowEvent[] = [];
+  subscribe('entity.row', (event) => void seen.push(event.payload));
   return { db: database({ notes }, { driver: memoryDriver() }), seen };
 };
 
@@ -57,7 +61,7 @@ const asMember = <T>(work: () => Promise<T>): Promise<T> =>
   runWithContext(ctxOf({ actor: userActor({ id: 'm1', orgId: ORG, roles: [] }) }), work);
 
 afterEach(() => {
-  setRowObserver(null);
+  resetInstrumentation();
   setDbClient(undefined);
   clearRegistry();
 });
@@ -128,8 +132,8 @@ describe('every write verb reports what it committed', () => {
   // A collision is what separates an insert from an update, and nothing in the result says which
   // happened — so the `before` read per row is what decides it.
   test('upsertAll separates the rows it created from the rows it changed', async () => {
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     // `tags`, not `notes`: an updating upsert whose conflict target omits the tenant column is
     // refused (`X_TENANCY_UNSCOPED`), and `id` alone is the only unique key declared here.
     const db = database({ tags }, { driver: memoryDriver() });
@@ -147,16 +151,10 @@ describe('every write verb reports what it committed', () => {
 
 describe('a filtered write is reported as bulk, never as silence', () => {
   test('updateWhere and deleteWhere report a count, and no row change', async () => {
-    const bulk: RowBulkChange[] = [];
-    const seen: RowChange[] = [];
-    setRowObserver({
-      onChange: (change) => {
-        seen.push(change);
-      },
-      onBulk: (change) => {
-        bulk.push(change);
-      },
-    });
+    const bulk: EntityBulkEvent[] = [];
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
+    subscribe('entity.bulk', (event) => void bulk.push(event.payload));
     const db = database({ notes }, { driver: memoryDriver() });
     await asMember(async () => {
       await db.notes.insertAll([
@@ -176,8 +174,8 @@ describe('a filtered write is reported as bulk, never as silence', () => {
   });
 
   test('a write that matched nothing reports nothing', async () => {
-    const bulk: RowBulkChange[] = [];
-    setRowObserver({ onChange: () => undefined, onBulk: (change) => bulk.push(change) });
+    const bulk: EntityBulkEvent[] = [];
+    subscribe('entity.bulk', (event) => void bulk.push(event.payload));
     const db = database({ notes }, { driver: memoryDriver() });
     await asMember(() => db.notes.deleteWhere({ orgId: ORG }));
     expect(bulk).toEqual([]);
@@ -185,8 +183,8 @@ describe('a filtered write is reported as bulk, never as silence', () => {
 });
 
 describe('the observer never changes what a write does', () => {
-  test('with none installed, the write path is untouched', async () => {
-    setRowObserver(null);
+  test('with no subscriber, the write path is untouched', async () => {
+    resetInstrumentation();
     const db = database({ notes }, { driver: memoryDriver() });
     const row = await asMember(() => db.notes.insert({ id: ONE, orgId: ORG, title: 'one' }));
     expect(row).toMatchObject({ id: ONE, title: 'one', reads: 0 });
@@ -200,8 +198,8 @@ describe('the observer never changes what a write does', () => {
    * `REPLICA IDENTITY FULL`, so a consumer already handles it.
    */
   test('a composite key reports no before rather than the wrong row', async () => {
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     const db = database({ reads }, { driver: memoryDriver() });
     await db.reads.insert({ id: ONE, memberId: TWO, label: 'first' });
     await db.reads.updateWhere({ id: ONE, memberId: TWO }, { label: 'second' });
@@ -211,14 +209,19 @@ describe('the observer never changes what a write does', () => {
     expect(seen[0]?.before).toBeNull();
   });
 
-  // One process runs every test file, so an inner harness that cleared unconditionally would take
-  // an outer one's observer with it.
-  test('setRowObserver hands back what it replaced', () => {
-    const first = { onChange: () => undefined };
-    const second = { onChange: () => undefined };
-    expect(setRowObserver(first)).toBeNull();
-    expect(setRowObserver(second)).toBe(first);
-    expect(setRowObserver(null)).toBe(second);
+  // A bus, not a slot: a second consumer (the live replicator beside a test harness) hears every
+  // change too, and neither replaces the other.
+  test('every subscriber hears the change — a second one replaces nobody', async () => {
+    const first: EntityRowEvent[] = [];
+    const second: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void first.push(event.payload));
+    subscribe('entity', (event) => {
+      if (event.name === 'entity.row') second.push(event.payload);
+    });
+    const db = database({ tags }, { driver: memoryDriver() });
+    await db.tags.insert({ id: ONE, label: 'one' });
+    expect(first.map((change) => change.op)).toEqual(['insert']);
+    expect(second).toEqual(first);
   });
 });
 
@@ -233,8 +236,8 @@ describe('the before-read of a batch is one statement, never one per row', () =>
   }));
 
   test('an upsertAll reads its before-rows in ONE statement, and every row is still reported', async () => {
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     const recorded = recordingClient();
     setDbClient(recorded);
     // Two of the six are already stored, so the read has to answer per row, not just "some".
@@ -268,8 +271,8 @@ describe('the before-read of a batch is one statement, never one per row', () =>
   });
 
   test('the memory driver answers the same six changes, so the two drivers agree', async () => {
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     const db = database({ tags }, { driver: memoryDriver() });
     await db.tags.insertAll(batch.slice(0, 2).map((row) => ({ ...row, label: 'old' })));
     seen.length = 0;
@@ -290,8 +293,8 @@ describe('the before-read of a batch is one statement, never one per row', () =>
   });
 
   test('a read that refuses leaves the write alone: every row reports as an insert', async () => {
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     const recorded = recordingClient();
     recorded.on('insert into "observed_tags"', { rows: batch });
     // Every read refuses; the write goes through. The rejection is the subject's input, never a
@@ -320,8 +323,8 @@ describe('changes inside a transaction are reported at COMMIT', () => {
   const tagRow = (id: string) => ({ id, label: 'x' });
 
   test('memory: nothing before commit, the change after it; nothing at all on rollback', async () => {
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     const repo = observedRepo(tags, memoryDriver().repo(tags));
     const tx = memoryTransactor();
     await tx.run(async (open) => {
@@ -339,8 +342,8 @@ describe('changes inside a transaction are reported at COMMIT', () => {
   });
 
   test('memory, no tx named: the ambient transaction holds the change, a rollback drops it', async () => {
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     const repo = observedRepo(tags, memoryDriver().repo(tags));
     const tx = memoryTransactor();
     await tx
@@ -361,8 +364,8 @@ describe('changes inside a transaction are reported at COMMIT', () => {
     const client = recordingClient();
     client.on('observed_tags', { rows: [{ id: ONE, label: 'x' }] });
     setDbClient(client);
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     const repo = observedRepo(tags, postgresRepo(tags));
     await withTransaction(async () => {
       await repo.insert(tagRow(ONE));
@@ -377,8 +380,8 @@ describe('changes inside a transaction are reported at COMMIT', () => {
   });
 
   test('outside any transaction the change is reported at once, as before', async () => {
-    const seen: RowChange[] = [];
-    setRowObserver({ onChange: (change) => seen.push(change) });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
     const repo = observedRepo(tags, memoryDriver().repo(tags));
     await repo.insert(tagRow(ONE));
     expect(seen).toHaveLength(1);

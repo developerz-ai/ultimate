@@ -5,8 +5,7 @@
 
 import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
-import { configureTelemetry, noopExporter } from '@ultimat3/core';
-import { setStatementObserver } from '@ultimat3/db';
+import { subscribe, subscribeSemconvMetrics } from '@ultimat3/core';
 import type { OverlayNotice, RequestContext } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import { loadSignInPath } from './app-auth';
@@ -17,6 +16,7 @@ import { enableReloadTracking } from './app-reload-graph';
 import { loadAppRuntime } from './app-runtime';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devPanels } from './dev-dashboard';
+import { createInvalidationLog } from './dev-dashboard-invalidations';
 import { declareDevEnvironment, needsDevEnvironmentDeclaration } from './dev-environment';
 import { createStatementLedger } from './dev-n-plus-one';
 import type { DevState } from './dev-rebuild';
@@ -148,23 +148,36 @@ async function bootDev(
   appRuntime: RuntimeOverrides | undefined,
 ): Promise<DevServer> {
   // Installed before the app loads, so a span opened during registration is already recorded.
-  // Tracing is always on in the framework and free until an exporter is configured; `x dev` is
-  // what configures one, which is the whole reason `/_x/timeline` has anything to draw.
+  // Tracing is always on in the framework and free until something subscribes to `span.end`;
+  // `x dev`'s recorder is that subscriber, which is the whole reason `/_x/timeline` has anything.
   const traces = createTraceRecorder();
-  configureTelemetry({ exporter: traces.exporter });
+  const unsubscribeTraces = subscribe('span.end', (event) => traces.exporter.export(event.payload));
   acquired.push(() => {
-    configureTelemetry({ exporter: noopExporter });
+    unsubscribeTraces();
     traces.reset();
   });
-  // Installed at the same moment and for the same reason: an observer is the single switch that
-  // turns statement instrumentation on at all (`@ultimat3/db`'s `observe.ts`), so the timeline's
-  // SQL rows and the repeat counts arrive together rather than through two toggles. `serve.ts`
-  // installs neither — a production process pays the one `undefined` branch the seam costs
-  // uninstalled, and nothing more (axiom 6).
+  // Subscribed at the same moment and for the same reason: the timeline's SQL rows and the repeat
+  // counts arrive together. A subscriber, never a slot — the app's own `db.statement` listeners
+  // hear the same events beside it. The production boot subscribes ONE: the semconv histograms
+  // (`subscribeSemconvMetrics`), so every statement there pays a dispatch, an event object and a
+  // histogram record — never this ledger, which keeps every statement's text.
   const statements = createStatementLedger();
-  setStatementObserver(statements.observer);
+  const unsubscribeStatements = subscribe('db.statement', (event) =>
+    statements.observer.onStatement(event.payload),
+  );
+  // The semconv histograms (`db_client_operation_duration_seconds`, …) on `x dev`'s `/metrics` too,
+  // so a dashboard built against dev reads the series production exports.
+  const unsubscribeMetrics = subscribeSemconvMetrics();
+  // The `/_x` cache panel's history: the cache keeps no log of its own, the panel subscribes one.
+  const invalidations = createInvalidationLog();
+  const unsubscribeInvalidations = subscribe('cache.invalidate', (event) =>
+    invalidations.record(event.payload),
+  );
   acquired.push(() => {
-    setStatementObserver(undefined);
+    unsubscribeInvalidations();
+    invalidations.reset();
+    unsubscribeMetrics();
+    unsubscribeStatements();
     statements.reset();
   });
   // ONE load at boot, the same call the rebuild below makes: the manifest and the findings are
@@ -216,6 +229,7 @@ async function bootDev(
     }),
     traces,
     statements,
+    invalidations,
     ...envOf(options.env),
   };
   const panels = devPanels(dashboard).map((panel) => panel.key);

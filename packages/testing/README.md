@@ -36,7 +36,8 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `exercise.ts` | `runExercisePass({ entities, writer, roles, seed?, overrides?, only? })` — every registered action, query and job once, each on its own committed tenant pair, one `ExerciseRecord` per primitive, the tenant proof's verdict on its `tenant`. What `x exercise` runs |
 | `define-exercise.ts` | `defineExercise({ <name>: { actor, input?, runs? } \| { off: '<why>' } }, { actor?: <entity>, factories?: { <entity name>: defineFactory(…) }, setup?: () => mockFetch(…) \| cassette(…) })` — an app's overrides (the second argument names the entity whose rows are the actors, and the factories that build a table no generated row satisfies — a cross-column `satisfies` — keyed by entity name, unknown ones `X_DECLARATION_UNKNOWN`), `apps/web/exercise.ts`'s one export; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED`, an unknown name `X_DECLARATION_UNKNOWN` when the pass runs |
 | `exercise-setup.ts` | `withExerciseSetup(room, setup)`: the app's `setup` run inside the sealed room before the first row, its handle disposed before the room restores the network; an `allowHost` in it is `X_EXERCISE_SETUP_UNSEALED`. Types `ExerciseSetup`, `ExerciseSetupHandle` |
-| `exercise-actor.ts` · `exercise-input.ts` · `exercise-report.ts` | the first `x policy explain` actor the policy allows, minted in the primitive's tenant · the input: override, then a seeded id by field stem, then the minimal draw (`@ultimat3/schema/sample`, loaded dynamically) · the room one run executes in (network sealed, mail captured, clock frozen) and its record, `overrideLine` the entry to paste |
+| `exercise-actor.ts` · `exercise-input.ts` · `exercise-report.ts` | the first `x policy explain` actor the policy allows, minted in the primitive's tenant · the input: override, then a seeded id by field stem, then the minimal draw (`@ultimat3/schema/sample`, loaded dynamically) · the room one run executes in (network sealed, mail captured, clock frozen) and its record |
+| `exercise-override-line.ts` | `overrideLine`, the entry an unreached record says to paste: valid TS — the actor the pass ran as (`testActor(name, { roles, permissions }).actor`, `null` signed out, left out when the entry declares one) and each id field bound to the seeded row the pass used; an id it could not bind is the string `UNBOUND_ID` |
 | `tenant-proof.ts` | internal (`CROSS_TENANT_SCOPE` is `@ultimat3/entity`'s): `proveTenant` — B with A's ids, A's own call, B again; each B leg between two snapshots of A's rows. `withoutCrossTenant` strips `tenancy:cross` (`CROSS_TENANT_SCOPE`) from B; `publicReason` decides `public` |
 | `tenant-canary.ts` | internal: `tenantTaint` — one tenant's rows, ids and marks (row canaries, key parts of `MIN_TAINT_ID_LENGTH` 8 or more no other tenant shares); `findTaint` — every path holding one |
 | `exercise-crash.ts` | internal: `proveCrash` — a job the pass reached, run through `crashProof` with its control's input and actor, after the tenant proof; the `CrashProof` on `ExerciseRecord.crash` |
@@ -217,8 +218,8 @@ test('the feed reads its authors once', async ({ statements }) => {
 });
 ```
 
-Opting in is naming it. `statements` installs `@ultimat3/db`'s statement observer for the length of
-one test and hands the seam back afterwards, so there is no `strict: true` to remember and no
+Opting in is naming it. `statements` subscribes to the `db.statement` bus event for the length of
+one test and unsubscribes afterwards, so there is no `strict: true` to remember and no
 suite-wide switch to forget.
 
 | | |
@@ -226,7 +227,7 @@ suite-wide switch to forget.
 | **the unit of work is the test** | `x dev`'s ledger counts per request and skips a statement issued outside one; a unit test calling `posts.findById(id)` has no request anywhere, and that is the loop it was written to catch |
 | **one threshold** | `N_PLUS_ONE_THRESHOLD` from `@ultimat3/entity`, the number `x dev` warns at. A loop that fails a test and a loop that warns in dev are the same loop |
 | **one error** | `nPlusOne()`'s, so the `fix:` is the `preload()` the schema's own relations spell — never a line this package composes |
-| **it throws where it happened** | the loop's fifth statement rejects, so the failing line is the loop's own. Once per shape: a body that catches it gets one failure, not one per statement after it |
+| **it fails the test at teardown** | `As of 2026-11` (v31): the bus contains a subscriber's throw, so the loop runs to its end and the fixture raises the first verdict when it is disposed — the error names the shape (`members.findById`) and its count, and its stack is the looping line's: the fixture holds core's `captureStatementStacks()` for its lifetime, so both drivers stamp the sender's stack (`DbStatementEvent.callerStack`) before their first `await` — a cost production, which never holds it, does not pay. One verdict per shape, readable earlier through `verdicts()`; a body that swallows every error cannot swallow it |
 | **measurement ≠ verdict** | `all()` `count()` `shapes()` count every statement, `expectedQueryLoop` ones included; only the verdict honours the suppression |
 
 `expectedQueryLoop(reason, fn)` from `@ultimat3/db` stays the one way to declare a loop deliberate —

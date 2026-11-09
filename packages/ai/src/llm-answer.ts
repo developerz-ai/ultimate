@@ -3,6 +3,7 @@
 // under the same rules. Split from ./llm at its line ceiling.
 
 import type { Span, SpanAttributes } from '@ultimat3/core';
+import { SEMCONV } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
 import { runTotal } from './agent-usage';
@@ -20,17 +21,18 @@ import { parseJsonish } from './respond';
 import type { RunMeter } from './run-meter';
 
 /**
- * What one answered turn puts on the span. `llm.provider` is the half the LLM-gateway table
- * called "a fallback is recorded in the span, never silent": fallback in this framework is across
- * PROVIDERS serving one model, never across models, and until the gateway stamped the provider
- * that answered, a fallback was exactly as silent as no fallback at all.
+ * What one answered turn puts on the span. The provider that answered is the half the LLM-gateway
+ * table called "a fallback is recorded in the span, never silent": fallback in this framework is
+ * across PROVIDERS serving one model, never across models, and until the gateway stamped the
+ * provider that answered, a fallback was exactly as silent as no fallback at all. It lands as
+ * semconv's `gen_ai.provider.name`, with the token usage, when the call settles (`llm-instrument.ts`).
  */
 export function answerAttributes(result: GenerateResult): SpanAttributes {
   return {
-    'llm.stop': result.stopReason,
-    'llm.tokens': result.usage.inputTokens + result.usage.outputTokens,
-    'llm.cost.minor': result.cost.minor,
-    'llm.provider': result.provider ?? 'unknown',
+    'ultimate.llm.stop': result.stopReason,
+    'ultimate.llm.cost.minor': result.cost.minor,
+    [SEMCONV.genAiProviderName]: result.provider ?? 'unknown',
+    [SEMCONV.genAiResponseModel]: result.model,
   };
 }
 
@@ -59,7 +61,7 @@ export async function streamedAnswer<
 ): Promise<InferOutput<TOutput>> {
   const { output } = def;
   const result = await meter.call(streamOneTurn(gateway, request, sink));
-  span.setAttributes({ 'llm.attempts': 1, ...answerAttributes(result) });
+  span.setAttributes({ 'ultimate.llm.attempts': 1, ...answerAttributes(result) });
   await observeCall(def, meter, result, 1, undefined);
   if (result.stopReason === 'refusal') {
     throw new LlmRefusedError({

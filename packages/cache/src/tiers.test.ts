@@ -3,18 +3,14 @@
 // later reader the same round trip. Order, write-back, expiry and the refusal of a single tier
 // are the four things pinned.
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { CACHE_TIERS, type Clock, ctxOf, runWithContext } from '@ultimat3/core';
+import { recordCacheEvents } from './cache-events-fixture';
 import { lruTier } from './lru';
-import { isolateTierFailures, recentTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
 import { cacheStack, isExpired, nowMs, sortTiers } from './tiers';
 
-// The refusal suite below resets the swallowed-failure log per test; this hands back whatever a
-// neighbouring file had recorded in it.
-const restoreFailures = isolateTierFailures();
-
-afterAll(restoreFailures);
+const events = recordCacheEvents();
 
 /** Manual clock: `.now()` returns a `Date`, mirroring the real `Clock` contract. */
 function fakeClock(startMs: number): Clock {
@@ -199,6 +195,31 @@ describe('cacheStack read', () => {
     expect(value).toBe('from-lru');
     expect(calls).toEqual(['get:lru:k']);
   });
+
+  test('every rung asked is one cache.hit or cache.miss, in walk order', async () => {
+    const calls: string[] = [];
+    const lru = fakeTier('lru', calls);
+    const redis = seededTier('redis', calls, 'k', 'from-redis');
+    const stack = cacheStack([redis, lru]);
+
+    await stack.read('k', () => Promise.resolve('should-not-load'));
+    await stack.read('k', () => Promise.resolve('should-not-load'));
+
+    // The second read hits the LRU the first one promoted into, and never asks Redis.
+    expect(events.lookups()).toEqual(['miss:lru:k', 'hit:redis:k', 'hit:lru:k']);
+  });
+
+  test('an expired entry is a miss, not a hit', async () => {
+    const lru: CacheTier = {
+      ...fakeTier('lru', []),
+      get: <T>() => Promise.resolve({ value: 'stale' as T, tags: [], expiresAt: 1_000 }),
+    };
+    const stack = cacheStack([lru], { clock: fakeClock(2_000) });
+
+    await stack.read('k', () => Promise.resolve('loaded'));
+
+    expect(events.lookups()).toEqual(['miss:lru:k']);
+  });
 });
 
 describe('cacheStack write', () => {
@@ -233,7 +254,7 @@ describe('cacheStack drop', () => {
 
 describe('cacheStack: a refusing tier never fails the business call', () => {
   beforeEach(() => {
-    resetTierFailures();
+    events.clear();
   });
 
   test('an entry over the LRU byte budget still comes back from read()', async () => {
@@ -245,7 +266,7 @@ describe('cacheStack: a refusing tier never fails the business call', () => {
     const value = await stack.read('feed', () => Promise.resolve('x'.repeat(4096)));
 
     expect(value).toBe('x'.repeat(4096));
-    expect(recentTierFailures()[0]).toMatchObject({
+    expect(events.failures()[0]).toMatchObject({
       tier: 'lru',
       op: 'set',
       key: 'feed',
@@ -263,7 +284,7 @@ describe('cacheStack: a refusing tier never fails the business call', () => {
 
     expect(value).toBe('loaded');
     expect(calls).toEqual(['get:lru:k', 'get:redis:k', 'set:lru:k', 'del:lru:k', 'set:redis:k']);
-    expect(recentTierFailures().length).toBe(1);
+    expect(events.failures().length).toBe(1);
   });
 
   test('a tier that refuses get is skipped, and a further tier still answers', async () => {
@@ -275,7 +296,7 @@ describe('cacheStack: a refusing tier never fails the business call', () => {
     const value = await stack.read('k', () => Promise.resolve('should-not-load'));
 
     expect(value).toBe('from-redis');
-    expect(recentTierFailures()[0]).toMatchObject({ tier: 'lru', op: 'get', key: 'k' });
+    expect(events.failures()[0]).toMatchObject({ tier: 'lru', op: 'get', key: 'k' });
   });
 
   test('every tier refusing get falls through to load(), which runs exactly once', async () => {
@@ -292,7 +313,7 @@ describe('cacheStack: a refusing tier never fails the business call', () => {
 
     expect(value).toBe('loaded');
     expect(loads).toBe(1);
-    expect(recentTierFailures().map((failure) => failure.tier)).toEqual(['redis', 'lru']);
+    expect(events.failures().map((failure) => failure.tier)).toEqual(['redis', 'lru']);
   });
 
   test('a refused populate-up after a hit still returns the hit', async () => {
@@ -304,7 +325,7 @@ describe('cacheStack: a refusing tier never fails the business call', () => {
     const value = await stack.read('k', () => Promise.resolve('should-not-load'));
 
     expect(value).toBe('from-redis');
-    expect(recentTierFailures()[0]).toMatchObject({ tier: 'lru', op: 'set' });
+    expect(events.failures()[0]).toMatchObject({ tier: 'lru', op: 'set' });
   });
 
   test('load() itself still throws — it is the business read, not a tier', async () => {
@@ -314,7 +335,7 @@ describe('cacheStack: a refusing tier never fails the business call', () => {
     const read = stack.read('k', () => Promise.reject(new Error('source is down')));
 
     await expect(read).rejects.toThrow('source is down');
-    expect(recentTierFailures()).toEqual([]);
+    expect(events.failures()).toEqual([]);
   });
 
   test('write() survives a refusing tier and still writes the rest', async () => {
@@ -326,7 +347,7 @@ describe('cacheStack: a refusing tier never fails the business call', () => {
     await stack.write('k', 'v');
 
     expect(calls).toEqual(['set:lru:k', 'del:lru:k', 'set:redis:k']);
-    expect(recentTierFailures()[0]).toMatchObject({ tier: 'lru', op: 'set' });
+    expect(events.failures()[0]).toMatchObject({ tier: 'lru', op: 'set' });
   });
 
   test('drop() survives a refusing tier and still drops the rest', async () => {
@@ -338,7 +359,7 @@ describe('cacheStack: a refusing tier never fails the business call', () => {
     await stack.drop('k');
 
     expect(calls).toEqual(['del:redis:k', 'del:lru:k']);
-    expect(recentTierFailures()[0]).toMatchObject({ tier: 'lru', op: 'del', key: 'k' });
+    expect(events.failures()[0]).toMatchObject({ tier: 'lru', op: 'del', key: 'k' });
   });
 });
 

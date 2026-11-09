@@ -80,8 +80,8 @@ bun run verify --json   # the same, machine-readable
 
 Red is instructions, not a verdict: **every finding carries an executable `fix:` — run it verbatim
 before improvising**, and `bunx x errors explain <CODE>` expands any code it names. Never narrow the gate
-to make it pass: there is no `--only` and no `--skip`, on purpose, and disabling a lint rule or
-loosening a compiler flag is the same move wearing a different hat.
+to make it pass: `--only <step>` is an iteration loop, never a verdict, there is no `--skip`, and
+disabling a lint rule or loosening a compiler flag is the same move wearing a different hat.
 
 While you iterate, narrow the *feedback*, not the gate:
 
@@ -90,6 +90,7 @@ While you iterate, narrow the *feedback*, not the gate:
 | one test file | `bun test <path>/<file>.test.ts` |
 | one test by name | `bun test -t '<name>'` |
 | a whole type | `bunx x test unit` · `bunx x test contract` · `bunx x test e2e` |
+| one gate step | `bun run verify --only <step>` — feedback, not the verdict |
 | lint the files you touched | `bunx biome check --write <paths>` |
 | types, once, when otherwise done | `bun run typecheck` |
 | a broken environment | `bunx x doctor` |

@@ -165,7 +165,7 @@ export async function passwordFor(email: string): Promise<string | null> {
 | `entity.$schema` (an action's or query's `output`) | absent from the node and from the parsed value; the type is `WireRow` — the row without it |
 | `entity.$view([...])` | `X_ENTITY_SEALED_IN_VIEW` |
 | a record (`rowsOf`, `recordProjection`, the `persist: true` browser store) | dropped from every collected row; `projection.sealed` lists them |
-| a change reported to `setRowObserver` | dropped from `before` and `after` |
+| an `entity.row` event | dropped from `before` and `after` |
 | `decodeRow` on a write-ahead-log row | the stored string, never the plaintext (`@ultimat3/realtime` drops the property before a change leaves) |
 | a repository row serialised whole — a `query`'s rows, a loose `output`, a log line, an error's `meta`, an island prop, a job payload, a cache tier | absent: the property is **server-only** (below) |
 | `{ token: row.token }` — the secret named by hand | leaves. Naming it is the one read there is |
@@ -903,7 +903,7 @@ a `null` also matches the NULL rows, which `col = null` never does).
 | nested | a nested commit hands its undos **and its effects** up: an `onCommit` effect runs once the root commits, and never after the root rolls back |
 | ended | a write after the root ended — a promise `work` forgot to await — is `X_DB_TRANSACTION_CLOSED`, as a statement on a finished Postgres transaction is |
 | locks | a row or key lock taken with no `tx` inside a memory transaction is a savepoint of it, held to the root's end |
-| observers | the row observer and the action's cache bust wait for the root commit, and see nothing of a rollback |
+| observers | `entity.row` and the action's cache bust wait for the root commit, and see nothing of a rollback |
 
 `memoryJournal()` answers the open memory transaction of this async chain, or `undefined` — the
 memory twin of `@ultimat3/db`'s `currentTx()`, which `@ultimat3/action`'s commit scope reads.
@@ -1105,7 +1105,7 @@ one number both detectors read *is* here — `N_PLUS_ONE_THRESHOLD` (5), next to
 it triggers, so a loop that fails a test and a loop that warns in dev are the same loop.
 
 **Both drivers report**, `As of 2026-11-02`. `memoryRepo` sends no statement, so it reports one event
-per repository operation through `statementObserver()`, under the pair `postgresRepo` names
+per repository operation as a `db.statement` event on core's bus, under the pair `postgresRepo` names
 (`posts.findById`) and with no SQL text. A microtask's point lookups in one request are one event, as
 `coalesce.ts` makes them one statement. Postgres also serves a sibling lookup off a page it already
 read (`jit-preload.ts`); memory has no such page, so it counts that lookup and is the stricter driver.
@@ -1210,9 +1210,9 @@ await crossTenant('nightly invite expiry runs for every org', async () => {
 The scope needs the `tenancy:cross` capability on the actor (`scopes: ['tenancy:cross']`), proven
 at the call and again at every plan built inside it, so an impersonated child context cannot
 inherit it: `X_TENANCY_CROSS_DENIED` otherwise. A blank reason is refused — an escape with no
-argument is a pragma. `setCrossTenantObserver(fn | undefined)` installs the one process-wide
-witness told each reason once its capability is proven — `x exercise`'s tenant proof reads it to
-tell a job's declared sweep from a leak; an app has no use for it. There is no build-time tenancy check in `x verify`, and there cannot
+argument is a pragma. Each scope opened is an `entity.cross_tenant` event
+(`{ reason }`) on core's bus once its capability is proven — `x exercise`'s tenant proof subscribes
+to tell a job's declared sweep from a leak. There is no build-time tenancy check in `x verify`, and there cannot
 usefully be one: the tenant is a request-time value, so the seam every plan is built through is
 the enforcement.
 

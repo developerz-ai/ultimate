@@ -2,15 +2,9 @@
 // every allow and mock cleared, the mail fixture, the clock frozen, statements and committed rows
 // observed. Every seam is process-global, so the room hands back exactly what it found.
 
-import { isSelfOrigin, peerAddressClass } from '@ultimat3/core';
-import type { StatementObserver } from '@ultimat3/db';
-import {
-  expectedSeqScanReason,
-  setStatementObserver,
-  statementFingerprint,
-  statementObserver,
-} from '@ultimat3/db';
-import type { RowObserver } from '@ultimat3/entity';
+import type { DbStatementEvent } from '@ultimat3/core';
+import { isSelfOrigin, peerAddressClass, subscribe } from '@ultimat3/core';
+import { expectedSeqScanReason, statementFingerprint } from '@ultimat3/db';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import type { ExerciseDefect } from './exercise-defect';
 import { testMail } from './fixture-mail';
@@ -168,17 +162,6 @@ export interface EffectPayload {
   readonly value: unknown;
 }
 
-const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
-
-/** `publishPost: { actor, input: (drawn) => ({ ...drawn, postId: '<…>' }) },` — valid TS to paste. */
-export function overrideLine(name: string, idFields: readonly string[]): string {
-  const key = IDENTIFIER.test(name) ? name : JSON.stringify(name);
-  const bound = idFields
-    .map((field) => `, ${IDENTIFIER.test(field) ? field : JSON.stringify(field)}: '<a real id>'`)
-    .join('');
-  return `${key}: { actor: <an actor its policy permits>, input: (drawn) => ({ ...drawn${bound} }) },`;
-}
-
 const hostOf = (url: string): string => (URL.canParse(url) ? new URL(url).host : url);
 
 /** `sealed-network.ts`'s own exemption: this machine and a server this process booted. */
@@ -218,7 +201,6 @@ export interface ExerciseRoom extends AsyncDisposable {
 }
 
 export async function openExerciseRoom(): Promise<ExerciseRoom> {
-  const { setRowObserver } = await import('@ultimat3/entity');
   const clock = captureDeterminism();
   if (!clock.installed) installDeterminism();
   const network = captureNetwork();
@@ -234,35 +216,32 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
   const rows: string[] = [];
   const shapes = new Map<string, { count: number; unexpected: number; expected?: string }>();
   const sent = new Map<string, { primitives: Set<string>; scan?: string }>();
-  const previousStatements = statementObserver();
-  const counting: StatementObserver = {
-    onStatement: (event) => {
-      statements += 1;
-      const fingerprint = statementFingerprint(event);
-      const shape = shapes.get(fingerprint) ?? { count: 0, unexpected: 0 };
-      shape.count += 1;
-      if (event.expected === undefined) shape.unexpected += 1;
-      else shape.expected = event.expected;
-      shapes.set(fingerprint, shape);
-      if (subject === undefined) return;
-      // Whitespace collapsed, so one builder's two indentations are one statement to plan.
-      const text = event.text.replace(/\s+/g, ' ').trim();
-      const one = sent.get(text) ?? { primitives: new Set<string>() };
-      one.primitives.add(subject);
-      // Read here, in the sender's own async context: the scope is the statement's, not the room's.
-      const scan = expectedSeqScanReason();
-      if (scan !== undefined) one.scan = scan;
-      sent.set(text, one);
-    },
+  const counting = (event: DbStatementEvent): void => {
+    statements += 1;
+    const fingerprint = statementFingerprint(event);
+    const shape = shapes.get(fingerprint) ?? { count: 0, unexpected: 0 };
+    shape.count += 1;
+    if (event.expected === undefined) shape.unexpected += 1;
+    else shape.expected = event.expected;
+    shapes.set(fingerprint, shape);
+    if (subject === undefined) return;
+    // Whitespace collapsed, so one builder's two indentations are one statement to plan.
+    const text = event.text.replace(/\s+/g, ' ').trim();
+    const one = sent.get(text) ?? { primitives: new Set<string>() };
+    one.primitives.add(subject);
+    // Read here, in the sender's own async context: the scope is the statement's, not the room's.
+    const scan = expectedSeqScanReason();
+    if (scan !== undefined) one.scan = scan;
+    sent.set(text, one);
   };
-  setStatementObserver(counting);
-  const rowObserver: RowObserver = {
-    onChange: (change) => rows.push(`${change.entity}\u0000${change.op}`),
-    onBulk: (change) => {
-      for (let i = 0; i < change.rows; i += 1) rows.push(`${change.entity}\u0000${change.op}`);
-    },
-  };
-  const previousRows = setRowObserver(rowObserver);
+  // Subscribers on the bus, beside any outer one — released at dispose, never displacing it.
+  const offStatements = subscribe('db.statement', (event) => counting(event.payload));
+  const offRows = subscribe('entity', (event) => {
+    if (event.name === 'entity.row') rows.push(`${event.payload.entity}\u0000${event.payload.op}`);
+    if (event.name !== 'entity.bulk') return;
+    const { entity, op } = event.payload;
+    for (let i = 0; i < event.payload.rows; i += 1) rows.push(`${entity}\u0000${op}`);
+  });
 
   return {
     begin: (name) => {
@@ -327,8 +306,8 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
       try {
         mail[Symbol.dispose]();
       } finally {
-        setRowObserver(previousRows);
-        setStatementObserver(previousStatements);
+        offRows();
+        offStatements();
         restoreCapturedNetwork(network);
         if (!sealedBefore) unsealNetwork();
         restoreCapturedDeterminism(clock);

@@ -23,7 +23,7 @@ export const config = defineConfig({
   // The tiers ARE the selection: naming `redis` is what builds the shared rung, and it reads
   // `REDIS_URL` — there is no second `driver` field to agree with, and no env key to name.
   cache: { tiers: ['request-memo', 'lru', 'redis'] },
-  jobs: { queues: ['postly-default'], concurrency: 8 },
+  jobs: { queues: ['default'], concurrency: 8 },
   pwa: { enabled: true, offline: { fallback: '/offline' } },
 });
 ```
@@ -128,7 +128,7 @@ There is no `auth.trustedOrigins` in either place, and passkeys are `defineAuth`
 | field | type | default | notes |
 |---|---|---|---|
 | ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** It accepted `'postgres' \| 'redis' \| 'nats'` and was read by nothing: boot always built the Postgres driver, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently gave you Postgres. Which driver runs is `setJobDriver(driver)` and only that — `setJobDriver(postgresJobDriver({ executor }))`, or `setJobDriver(memoryJobDriver())` in a test ([Jobs and workflows](Jobs-And-Workflows)). Since 25.0.0 a config still writing it is refused at boot, `X_CONFIG_INVALID` naming that call |
-| `jobs.queues` | `string[]` | `['<name>-default']` | derived from `name`, not the literal `['default']`. A `worker` serves these **and** every queue a registered `job()` is enqueued on (the union, so a job naming no queue is never stranded on `default`). A Deployment that sets [`WORKER_QUEUES`](#env-vars) serves exactly that list instead. Empty is `X_CONFIG_INVALID` |
+| `jobs.queues` | `string[]` | `['default']` | the queue a `job()` naming none lands on (`['<name>-default']` until 31.0.0). A `worker` serves these **and** every queue a registered `job()` is enqueued on (the union, so a job naming no queue is never stranded on `default`). A Deployment that sets [`WORKER_QUEUES`](#env-vars) serves exactly that list instead. Empty is `X_CONFIG_INVALID` |
 | `jobs.concurrency` | `number \| Record<queue, number>` | `8` (`JOBS_CONCURRENCY_DEFAULT`) | slots per queue, per worker process. A number applies to every queue served; a table gives each its own (`{ banks: 4, 'banks-long': 2 }`), and a served queue the table does not name runs at `8`. `As of 25.0.0`. A count below 1 or not whole, an empty table or a blank queue name is `X_CONFIG_INVALID` naming the entry (`jobs.concurrency.banks`). An overlay's table replaces the base's whole |
 | `jobs.maxInFlight` | `number` | unset (no process cap) | runs one worker **process** holds at once across every queue it serves — Sidekiq's `concurrency`; `jobs.concurrency` still bounds each queue under it. At the cap the worker claims nothing; each run that ends frees one claim, given to the next queue in turn that has work, so no queue starves. `jobWorker`'s `maxInFlight`. `As of 2026-10-28`. Not a whole number of at least 1: `X_CONFIG_INVALID` |
 | `jobs.maxAttempts` | `number` | `5` | per-job `retry` overrides it |

@@ -1,15 +1,11 @@
-// The sink's whole reason to exist is the ALLOW: a denial already reaches a surface as a 403,
+// The event's whole reason to exist is the ALLOW: a denial already reaches a surface as a 403,
 // and "who was let in, and which rule let them" was the half nothing recorded. These tests lead
 // with that path, then pin the two properties an audit log is worthless without — it never
-// carries row data, and it can never turn an allowed request into a failure.
+// carries row data, and it is one bus event every subscriber hears, not a single slot.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  decisionSinkInstalled,
-  memoryDecisionSink,
-  type PolicyDecisionEvent,
-  resetDecisionSink,
-  setDecisionSink,
-} from './decisions';
+import type { PolicyDecisionEvent } from '@ultimat3/core';
+import { resetInstrumentation, subscribe } from '@ultimat3/core';
+import { decisionObserved } from './decisions';
 import { evaluate, resetPolicyTracing } from './evaluate';
 import { clearPermissions, definePermissions } from './permissions';
 import { and, can } from './policy';
@@ -29,7 +25,8 @@ interface Post {
 const input: Input = { postId: 'p1' };
 const row: Post = { authorId: 'editor', secret: 'ssn-123-45-6789' };
 
-const sink = memoryDecisionSink();
+/** What a subscriber heard, in emit order. */
+const sink = { events: [] as PolicyDecisionEvent[] };
 
 beforeEach(() => {
   clearPermissions();
@@ -37,12 +34,12 @@ beforeEach(() => {
   resetPolicyTracing();
   definePermissions(['post:publish', 'org:administer'] as const);
   defineRoles({ editor: { grants: ['post:publish'] } });
-  sink.reset();
-  setDecisionSink(sink);
+  sink.events.length = 0;
+  subscribe('policy.decision', (event) => void sink.events.push(event.payload));
 });
 
 afterEach(() => {
-  resetDecisionSink();
+  resetInstrumentation();
   clearPermissions();
   clearRoles();
   resetPolicyTracing();
@@ -51,8 +48,8 @@ afterEach(() => {
 const editor = testActor('editor', { roles: ['editor'], orgId: 'org-1' }).actor;
 const guest = testActor('guest', { roles: [] }).actor;
 
-describe('the policy decision sink', () => {
-  test('an ALLOWED decision reaches the sink — the path an audit log actually needs', () => {
+describe('the policy.decision event', () => {
+  test('an ALLOWED decision reaches subscribers — the path an audit log actually needs', () => {
     const policy = can<Input, Post>('post:publish');
     expect(evaluate(policy, { input, actor: editor, row }).allowed).toBe(true);
 
@@ -82,7 +79,7 @@ describe('the policy decision sink', () => {
     expect(sink.events[0]?.code).toBe('X_FORBIDDEN');
   });
 
-  test('a composite label and the deciding clause both survive to the sink', () => {
+  test('a composite label and the deciding clause both survive to the event', () => {
     evaluate(and(can<Input>('post:publish'), can<Input>('org:administer')), {
       input,
       actor: editor,
@@ -91,18 +88,17 @@ describe('the policy decision sink', () => {
     expect(sink.events[0]?.deciding).toBe('org:administer');
   });
 
-  test('a sink that throws never turns an allowed request into a failure', () => {
-    setDecisionSink({
-      record(): void {
-        throw new TypeError('sink is down');
-      },
-    });
-    expect(() => evaluate(can<Input>('post:publish'), { input, actor: editor })).not.toThrow();
+  test('every subscriber hears the decision — a second one replaces nobody', () => {
+    const second: PolicyDecisionEvent[] = [];
+    subscribe('policy', (event) => void second.push(event.payload));
+    evaluate(can<Input>('post:publish'), { input, actor: editor });
+    expect(sink.events).toHaveLength(1);
+    expect(second).toEqual(sink.events);
   });
 
-  test('with no sink installed nothing is recorded and nothing is asked for', () => {
-    resetDecisionSink();
-    expect(decisionSinkInstalled()).toBe(false);
+  test('with no subscriber nothing is recorded and nothing is asked for', () => {
+    resetInstrumentation();
+    expect(decisionObserved()).toBe(false);
     evaluate(can<Input>('post:publish'), { input, actor: editor });
     expect(sink.events).toHaveLength(0);
   });

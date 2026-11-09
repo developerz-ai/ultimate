@@ -148,9 +148,9 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 | `recordLeaseLost` | `@ultimat3/jobs` `heartbeat.ts`, once per lapsed lease |
 | `recordBreakerTransition` | `breaker.ts`, on every state change |
 
-- Tracing is three files: `telemetry.ts` builds spans, `sampler.ts` decides, `otlp*.ts` exports.
-  `span.end()` returns early when `traceFlags & 1` is 0. The default sampler reads
-  `OTEL_TRACES_SAMPLER*` at the first span, never at module scope. `resetTelemetry()` drops both.
+- **One bus, `instrument.ts`**: every observer is a `subscribe()` — OTLP spans (`span.end`, sampled
+  only), logs (`log.record`), metrics. No `set*Observer`/`set*Sink`/`recent*()` slot
+  (`X_INSTRUMENT_SLOT_FORBIDDEN`). Sampler reads `OTEL_TRACES_SAMPLER*` at the first span.
 - **An empty `spanId` means "no inbound decision"** — `startSpan` narrows through
   `inboundParent()`, carrying the trace id and never the synthesised sampling bit.
 - The OTLP exporters are built, not wrapped ([`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md)).

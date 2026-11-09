@@ -60,7 +60,7 @@ two differ, and it is why a surface that decides on input alone needs no edit.
 - A policy is pure and synchronous. No I/O, no `await`. Load the row first, then decide.
 - `reason` must be safe to log: name permissions and clauses, never row data or PII —
   `row` being in scope changes nothing about what a denial is allowed to say. The same
-  guarantee is what a `DecisionSink` event inherits: `decisions.ts` carries the label, the
+  guarantee is what a `policy.decision` event inherits: `decisions.ts` carries the label, the
   deciding clause and the actor's identifiers, and **never `row` or `input`**.
 - A missing policy is refused by the **type system**, not by a throw: `ActionDef.policy`
   is a required field in `@ultimat3/action`, so an action without one does not compile.
@@ -182,7 +182,7 @@ reappearing there is a failing test.
 | `policy.ts` | `can`/`allow`/`deny`/`and`/`or`/`not` + decision recording, and `policyPermissions` |
 | `policy-anonymous.ts` | `admitsAnonymous` — the one question a SURFACE asks of a built tree, apart from the file that builds them |
 | `evaluate.ts` | the single entry point; builds the trace, emits the one decision event |
-| `decisions.ts` | the `DecisionSink` seam — no-op default, one call site, never PII |
+| `decisions.ts` | the `policy.decision` bus event — built only while subscribed, one call site, never PII. No slot (`X_INSTRUMENT_SLOT_FORBIDDEN`) |
 | `surfaces.ts` | http/live/job/mcp adapters — the "one system" proof |
 | `guard-primitive.ts` | `guardPrimitive` — the one gate `action` and `query` run, and the per-primitive surface table |
 | `denial-parts.ts` | `denialCode` / `denialReason` — any `SurfaceDenial` read back as one code and one reason |
@@ -202,8 +202,8 @@ with 10k watchers is 10k evaluations in one tick. Two consequences, both load-be
   re-reads the user row every request and mints a fresh frozen actor, so a revoked role still
   takes effect on the next request and the entry dies with it. **Never cache an actor, or a
   grant set, across requests** — that is the stale-authz window the framework does not have.
-- The trace is opt-in: on outside production, and in production only once a `DecisionSink` is
-  installed. `evaluate(policy, args, { trace: true })` forces it — `policyMatrix()` does,
+- The trace is opt-in: on outside production, and in production only while `policy.decision` has a
+  subscriber. `evaluate(policy, args, { trace: true })` forces it — `policyMatrix()` does,
   because `deciding` *is* the matrix.
 
 ## Commands

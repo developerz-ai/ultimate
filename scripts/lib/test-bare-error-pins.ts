@@ -45,7 +45,7 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   cache: 5, // why: 3 -> 6, the K19 class list; the new sites are stubs (input). 6 -> 5: the duplicate redis fake in invalidate.test.ts is gone
   cli: 29, // why: 9 -> 29, the K19 class list; the new sites are stubs (input)
   core: 43, // why: 30 -> 43, the K19 class list; the new sites are stubs (input)
-  db: 34, // why: 24 -> 34, the K19 class list; the new sites are stubs (input)
+  db: 32, // why: 24 -> 34, the K19 class list; the new sites are stubs (input)
   entity: 25, // why: 17 -> 25, the K19 class list; the new sites are stubs (input)
   flags: 1,
   http: 32, // why: 11 -> 32, the K19 class list; the new sites are stubs (input)
@@ -53,7 +53,6 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   mail: 5, // why: 0 -> 5, the K19 class list; the new sites are stubs (input)
   mcp: 11, // why: 6 -> 11, the K19 class list; the new sites are stubs (input)
   notify: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
-  policy: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
   pwa: 4, // why: 0 -> 4, the K19 class list; the new sites are stubs (input)
   query: 12, // why: 11 -> 12, the K19 class list; the new sites are stubs (input)
   realtime: 50, // why: 25 -> 50, the K19 class list; the new sites are stubs (input)
@@ -62,7 +61,7 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   scraping: 1,
   scripts: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
   seo: 8,
-  testing: 24, // why: 19 -> 24, the K19 class list; the new sites are stubs (input)
+  testing: 23, // why: 19 -> 24, the K19 class list; the new sites are stubs (input)
   time: 1,
   ui: 11, // why: 6 -> 11, the K19 class list; the new sites are stubs (input)
 };

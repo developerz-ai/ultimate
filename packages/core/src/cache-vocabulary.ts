@@ -12,7 +12,7 @@
  * accepted `memo | lru | shared | isr | cdn` while the stack ordered `request-memo | lru | redis |
  * cdn`, so `cache: { tiers: ['isr'] }` typechecked and selected nothing. `memo`/`request-memo` and
  * `shared`/`redis` were one rung spelled twice; the ladder's spelling wins, because it is the one
- * a `TierInvalidation`, a `TierFailure` and the `/_x` panel already report.
+ * a `TierInvalidation`, a `cache.tier_failure` event and the `/_x` panel already report.
  *
  * **`isr` is not here and is not a cache tier.** It is a `RenderMode` (`route-vocabulary.ts`) — a
  * per-route rendering decision, revalidated by a tag bust — and `@ultimat3/cache` has no ISR store

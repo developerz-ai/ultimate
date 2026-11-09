@@ -80,7 +80,7 @@ export const config = defineConfig({
   // because `config.database`'s `urlEnv`/`poolSize` were read by nothing and were deleted
   // `As of 2026-08`.
   cache: { tiers: ['request-memo', 'lru'] },
-  jobs: { queues: ['social-media-clone-default'], concurrency: 4 },
+  jobs: { queues: ['default'], concurrency: 4 },
   // The deployment decides the bus: a NATS_URL set means every realtime role shares it, none means
   // one node's in-process bus. Declared from the same variable so config and env can never
   // disagree — the framework refuses to boot when they do (X_CONFIG_INVALID). Read raw, not through

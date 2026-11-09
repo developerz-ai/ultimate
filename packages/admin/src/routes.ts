@@ -5,6 +5,7 @@
 import { compilePattern, type RouteConfig, type RouteGuard } from '@ultimat3/render';
 import type { AdminApp, AdminRoute } from './admin';
 import { AdminPagePathInvalidError } from './errors';
+import { adminAppFor } from './localized-app';
 import { adminRouteDefinition } from './route-config';
 import type { AdminRouteRequest, AdminRouteResponse } from './screen-frame';
 import { screenFor } from './screens';
@@ -32,12 +33,19 @@ export interface AdminRouteConfig {
 /** One route of the table, with its gate, its served config and its screen. */
 export function adminRouteConfig(app: AdminApp, route: AdminRoute): AdminRouteConfig {
   const { policy, config } = adminRouteDefinition(route);
+  // Built now, so a route with nothing behind it is refused at mount, not at its first request.
+  const screen = screenFor(app, route);
   return {
     path: route.path,
     view: route.view,
     entity: route.entity,
     permissions: route.permissions,
-    respond: screenFor(app, route),
+    // Under a routed locale the screen is built over the admin as that locale spells it, so every
+    // link and redirect keeps the prefix (`localized-app.ts`).
+    respond: (request) => {
+      const under = adminAppFor(app, request.url);
+      return (under === app ? screen : screenFor(under, route))(request);
+    },
     policy,
     config,
   };

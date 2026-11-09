@@ -97,7 +97,7 @@ describe('unit · the app.config.ts x new writes', () => {
     const built = defineConfig({
       name: 'ledger-demo',
       cache: { tiers: ['request-memo', 'lru'] },
-      jobs: { queues: ['ledger-demo-default'], concurrency: 4 },
+      jobs: { queues: ['default'], concurrency: 4 },
       realtime: { enabled: true, transport: 'memory' },
       pwa: {
         enabled: true,
@@ -121,6 +121,13 @@ describe('unit · the app.config.ts x new writes', () => {
     expect(`app.config.ts names dead keys: ${dead.join(', ')}`).toBe(
       'app.config.ts names dead keys: ',
     );
+  });
+
+  // `default` is the queue every `job()` naming no queue lands on. `['<app>-default']` was a queue
+  // no job targets: every deployed app's worker polled it and logged `jobs.worker.queue-unregistered`
+  // on every boot (both production apps, 2026-11-09).
+  test('the worker serves the queue a job() naming none lands on, and nothing else', () => {
+    expect(source()).toContain("jobs: { queues: ['default'], concurrency: 4 },");
   });
 
   // Every key of it is wired, `As of 2026-08-27` (#362, then #390): `name`/`colors` are what

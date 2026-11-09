@@ -3,21 +3,20 @@
 // A stopped one refuses typed. `redis-deadline.test.ts` owns the mechanism; this file owns what
 // `stack.read` and a bust make of it.
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { DeadlineTimer } from '@ultimat3/core/outbound';
 import { redisClient } from '@ultimat3/core/redis';
+import { recordCacheEvents } from './cache-events-fixture';
 import { CacheDriverUnavailableError, CacheLimitInvalidError } from './errors';
 import type { RedisLike } from './redis';
 import { redisTier } from './redis';
 import { tag } from './tags';
-import { isolateTierFailures, recentTierFailures, resetTierFailures } from './tier-failures';
 import { cacheStack } from './tiers';
 
+const events = recordCacheEvents();
+
 const CONNECTION_CLOSED = 'ERR_REDIS_CONNECTION_CLOSED';
-const restoreFailures = isolateTierFailures();
-beforeEach(resetTierFailures);
-afterAll(restoreFailures);
 
 function pausedRedis() {
   const sent: string[] = [];
@@ -76,7 +75,7 @@ describe('unit · a paused redis under cacheStack', () => {
 
     // GET and PTTL went out together and missed together; the fill behind them was parked.
     expect(sent).toEqual(['GET', 'PTTL']);
-    const failures = recentTierFailures();
+    const failures = events.failures();
     expect(failures.every((failure) => failure.code === 'X_CACHE_DRIVER_UNAVAILABLE')).toBe(true);
     expect(failures.filter((failure) => failure.message.includes('did not answer'))).toHaveLength(
       1,
@@ -132,7 +131,7 @@ describe('unit · a paused redis under cacheStack', () => {
     expect(await cacheStack([tier], { clock }).read('k', () => Promise.resolve('loaded'))).toBe(
       'loaded',
     );
-    const failures = recentTierFailures();
+    const failures = events.failures();
     expect(failures.length).toBeGreaterThan(0);
     expect(failures.every((failure) => failure.code === 'X_CACHE_DRIVER_UNAVAILABLE')).toBe(true);
 

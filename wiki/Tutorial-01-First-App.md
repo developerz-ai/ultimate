@@ -163,7 +163,7 @@ bunx x dev --once --port 3100
 ```text
 {"ts":"2026-11-03T16:48:57.124Z","level":"info","msg":"ultimate web listening on http://localhost:3100"}
 {"ts":"2026-11-03T16:48:57.118Z","level":"info","msg":"sync node ready","buildId":"e6af64a2077e5d60","path":"/_x/sync"}
-{"ts":"2026-11-03T16:48:57.134Z","level":"info","msg":"jobs.worker.started","workerId":"worker-01a1a250-…","queues":["myapp-default","default"]}
+{"ts":"2026-11-03T16:48:57.134Z","level":"info","msg":"jobs.worker.started","workerId":"worker-01a1a250-…","queues":["default"]}
 {"ts":"2026-11-03T16:48:57.137Z","level":"info","msg":"jobs.scheduler.started","tasks":1}
 {"ts":"2026-11-03T16:48:57.142Z","level":"info","msg":"live feed in-process","detail":"the embedded database has no walsender; repository writes in this process reach subscribers"}
   roles web, sync, worker, scheduler

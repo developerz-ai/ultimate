@@ -24,11 +24,41 @@ const COUNTER_MAX = 0xfff;
 let lastEpochMs = -1;
 let counter = 0;
 
-function randomBytes(length: number): Uint8Array {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return bytes;
+/**
+ * CSPRNG bytes, drawn from a pool one `crypto.getRandomValues` fill at a time. Per call the fill
+ * was most of what an id cost — 974 ns for a trace id against the ≤ 1 µs a whole unsampled span
+ * may cost (plan 101 slice 20) — and the bytes are just as unpredictable 4 KiB at a time. A byte
+ * is handed out ONCE: the cursor only moves forward, and a request past the pool's tail refills
+ * rather than wrapping.
+ */
+export const RANDOM_POOL_BYTES = 4096;
+
+let pool = new Uint8Array(0);
+let poolAt = 0;
+
+/** Where `length` unhanded pool bytes start; the cursor is moved past them, so they are taken. */
+function take(length: number): number {
+  if (poolAt + length > pool.length) {
+    pool = crypto.getRandomValues(new Uint8Array(RANDOM_POOL_BYTES));
+    poolAt = 0;
+  }
+  const at = poolAt;
+  poolAt += length;
+  return at;
 }
+
+function randomBytes(length: number): Uint8Array {
+  // A request too big to pool is drawn on its own rather than draining the pool for one caller.
+  if (length > RANDOM_POOL_BYTES / 4) return crypto.getRandomValues(new Uint8Array(length));
+  const at = take(length);
+  return pool.subarray(at, at + length);
+}
+
+/** Every byte's two hex digits, so an id is one lookup per byte instead of two and a shift. */
+const HEX_PAIRS: readonly string[] = Array.from(
+  { length: 256 },
+  (_, byte) => `${HEX[byte >> 4]}${HEX[byte & 0x0f]}`,
+);
 
 /**
  * A full 10 bits, from both bytes. Reading `bytes[0]` alone masked an 8-bit value with a 10-bit
@@ -46,12 +76,25 @@ function seedCounter(): number {
  * same empty string, and every caller here (`uuidV7`, `traceId`, `spanId`) wants a width.
  */
 export function randomHex(byteLength: number): string {
-  const bytes = randomBytes(finiteCount('randomHex', 'byteLength', byteLength, 1));
-  let out = '';
-  for (const byte of bytes) {
-    out += HEX[byte >> 4];
-    out += HEX[byte & 0x0f];
+  return hexOf(finiteCount('randomHex', 'byteLength', byteLength, 1));
+}
+
+/**
+ * The unscreened body, for this file's fixed widths: `finiteCount` builds its refusal's two
+ * messages on every call, a cost a trace id minted per span cannot carry.
+ */
+function hexOf(byteLength: number): string {
+  if (byteLength > RANDOM_POOL_BYTES / 4) {
+    let out = '';
+    for (const byte of randomBytes(byteLength)) out += HEX_PAIRS[byte];
+    return out;
   }
+  // Indexed into the pool, never a `subarray` and `for…of`: the view and its iterator were most of
+  // what a 16-byte id cost (measured 585 ns against 190 ns).
+  const at = take(byteLength);
+  const bytes = pool;
+  let out = '';
+  for (let index = at; index < at + byteLength; index += 1) out += HEX_PAIRS[bytes[index] ?? 0];
   return out;
 }
 
@@ -151,11 +194,11 @@ export function parseId<K extends string>(kind: K, value: unknown): Id<K> {
 
 /** W3C trace-context ids: 16 bytes / 8 bytes of hex. */
 export function traceId(): string {
-  return randomHex(16);
+  return hexOf(16);
 }
 
 export function spanId(): string {
-  return randomHex(8);
+  return hexOf(8);
 }
 
 const TRACE_ID_RE = /^[0-9a-f]{32}$/;
@@ -180,6 +223,12 @@ export function isSpanId(value: unknown): boolean {
 }
 
 /** Test-only: reset the monotonic counter so a frozen clock produces a fresh sequence. */
+/** TEST SEAM: drop the pool, so the next id draws a fresh fill. */
+export function resetRandomPool(): void {
+  pool = new Uint8Array(0);
+  poolAt = 0;
+}
+
 export function resetIdCounter(): void {
   lastEpochMs = -1;
   counter = 0;

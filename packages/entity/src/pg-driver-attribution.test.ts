@@ -4,7 +4,7 @@
 // is `packages/db`'s (`client.test.ts`, `pglite.test.ts`); this file pins the producer.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, resetInstrumentation, runWithContext, subscribe, userActor } from '@ultimat3/core';
 import {
   type DbClient,
   type RecordingClient,
@@ -12,7 +12,6 @@ import {
   type SqlFragment,
   type StatementAttribution,
   setDbClient,
-  setStatementObserver,
   sql,
   statementAttribution,
 } from '@ultimat3/db';
@@ -126,11 +125,11 @@ beforeEach(() => {
   setDbClient(client);
   // Any observer opens the gate — which one is not what this file tests, and with none installed
   // the scope is never entered at all (the last test here is that branch).
-  setStatementObserver({ onStatement: () => undefined });
+  subscribe('db.statement', () => undefined);
 });
 
 afterEach(() => {
-  setStatementObserver(undefined);
+  resetInstrumentation();
 });
 
 afterAll(() => {
@@ -312,7 +311,7 @@ describe('what carries no pair', () => {
   // producer allocates nothing. A regression to "always enter the scope" fails right here.
   test('with no observer installed the scope is never entered', async () => {
     stubEverything();
-    setStatementObserver(undefined);
+    resetInstrumentation();
 
     await memberRepo().findById(ANA, { orgId: ORG });
     await memberRepo().insert(member(30));

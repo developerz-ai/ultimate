@@ -9,8 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { resetLifecycle } from '@ultimat3/core';
-import { statementObserver } from '@ultimat3/db';
+import { resetLifecycle, subscribed } from '@ultimat3/core';
 import { startDev } from './cmd-dev';
 import { resetRegistries } from './cmd-dev-fixture';
 
@@ -25,7 +24,7 @@ afterAll(async () => {
 
 describe('unit · a failed x dev boot gives back what it acquired', () => {
   test(
-    'the statement observer is uninstalled and the data directory is free for the retry',
+    'the statement subscriber is removed and the data directory is free for the retry',
     async () => {
       root = await mkdtemp(join(tmpdir(), 'x-dev-rollback-'));
       await Bun.write(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
@@ -38,7 +37,7 @@ describe('unit · a failed x dev boot gives back what it acquired', () => {
         () => 'refused',
       );
       expect(failed).toBe('refused');
-      expect(statementObserver()).toBeUndefined();
+      expect(subscribed('db.statement')).toBe(false);
 
       // Removed rather than rewritten: a module whose evaluation threw stays thrown in this process.
       await rm(join(root, 'apps/web/runtime.ts'));

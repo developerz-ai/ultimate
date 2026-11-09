@@ -1,0 +1,25 @@
+{
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel Core Processor (Haswell, no TSX)",
+    "cores": 12,
+    "memoryGb": 46,
+    "bun": "1.4.4",
+    "runner": "local"
+  },
+  "targetNs": 1000,
+  "results": [
+    {
+      "case": "unsampled root",
+      "nsPerSpan": 705
+    },
+    {
+      "case": "unsampled child",
+      "nsPerSpan": 498
+    },
+    {
+      "case": "sampled, no subscriber",
+      "nsPerSpan": 1028
+    }
+  ]
+}

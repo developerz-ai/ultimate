@@ -27,6 +27,7 @@ import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
 import { signalEnqueued } from './enqueue-signal';
+import { instrumentedFire } from './job-instrument';
 import { enqueuedAttempts } from './retry';
 import type { LeaderElection } from './scheduler-leader';
 import { soleLeader } from './scheduler-leader';
@@ -165,12 +166,15 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
     });
     // Jobs and watermark in ONE step (`SchedulerState.fire`). `undefined` is an occurrence some
     // other dispatcher already fired: nothing was queued, and nothing is reported as dispatched.
-    const results = await schedulerState.fire(options.driver, {
-      task: handle.name,
-      occurrenceMs,
-      ...(watermarkMs === undefined ? {} : { watermarkMs }),
-      jobs: requests,
-    });
+    // Under the fire's producer span, which stamps each request's `traceparent` (`job-instrument.ts`).
+    const results = await instrumentedFire(handle.name, requests, (jobs) =>
+      schedulerState.fire(options.driver, {
+        task: handle.name,
+        occurrenceMs,
+        ...(watermarkMs === undefined ? {} : { watermarkMs }),
+        jobs,
+      }),
+    );
     if (results === undefined) {
       logger.info('jobs.scheduler.already-fired', {
         task: handle.name,

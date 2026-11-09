@@ -27,8 +27,15 @@ const budgets = {
   phaseMs: 10,
 };
 
+/** The load's default lane count, which every test below that does not name one plays with. */
+const DEFAULT_LANES = 4;
+
 /** `down` answers what the web role says while the dependency is faulted. */
-function stage(down: () => Response, jobs = { ran: 2, stuck: 0, doubled: 0 }) {
+function stage(
+  down: () => Response,
+  jobs = { ran: 2, stuck: 0, doubled: 0 },
+  lanes = DEFAULT_LANES,
+) {
   let mode: FaultMode = { kind: 'pass' };
   let downAnswers = 0;
   let upAnswers = 0;
@@ -107,14 +114,18 @@ function stage(down: () => Response, jobs = { ran: 2, stuck: 0, doubled: 0 }) {
       });
     }
   };
-  // No wall clock. A fault phase lasts until the web role has answered three requests while down,
-  // the recovery wait until it has answered two more after; every other wait is one turn.
+  // No wall clock. A fault phase lasts until the web role has answered three requests while down;
+  // every other wait is one turn but recovery's. `recovers` reads a 2xx that STARTED after the
+  // fault cleared, and up to one request per lane was already on the wire when it did: those
+  // arrive as up answers too. So recovery waits for `lanes + 1` of them — at least one was sent
+  // after the clear. Two was a race: with every lane in flight both could be early ones, and
+  // the drill stopped on no recovery evidence (`recovers` red beside `requests-coded`).
   const sleep = async (ms: number): Promise<void> => {
     if (ms === budgets.phaseMs) {
       const target = downAnswers + 3;
       await until(() => downAnswers >= target);
     } else if (ms === budgets.recoveryMs) {
-      const target = upAnswers + 2;
+      const target = upAnswers + lanes + 1;
       await until(() => upAnswers >= target);
     } else {
       await new Promise((resolve) => setImmediate(resolve));
@@ -135,6 +146,7 @@ function stage(down: () => Response, jobs = { ran: 2, stuck: 0, doubled: 0 }) {
     state,
     sql,
     sleep,
+    lanes,
     answeredDown: () => downAnswers,
   };
 }
@@ -158,14 +170,14 @@ const coded = () =>
 
 describe('runDrill', () => {
   test('pg-blackhole: the phase, then pass; coded failures and a recovery hold', async () => {
-    const s = stage(coded);
+    const s = stage(coded, undefined, 2);
     const report = await runDrill({
       drill: drillNamed('pg-blackhole') ?? expect.unreachable(),
       fleet: s.fleet,
       budgets,
       targets: [{ method: 'GET', path: '/' }],
       sql: s.sql,
-      lanes: 2,
+      lanes: s.lanes,
       sleep: s.sleep,
     });
     expect(s.modes).toEqual([{ kind: 'blackhole' }, { kind: 'pass' }]);
@@ -177,14 +189,17 @@ describe('runDrill', () => {
     expect(report.verdict.ok).toBe(true);
   });
 
-  test('an uncoded 5xx while the dependency is down is red', async () => {
-    const s = stage(() => new Response('boom', { status: 500 }));
+  test('an uncoded 5xx while the dependency is down is red, and nothing else is', async () => {
+    // Many lanes, so many requests are on the wire when the fault clears: the recovery wait
+    // must not be satisfied by them, or `recovers` goes red on a drill that recovered.
+    const s = stage(() => new Response('boom', { status: 500 }), undefined, 32);
     const report = await runDrill({
       drill: drillNamed('pg-blackhole') ?? expect.unreachable(),
       fleet: s.fleet,
       budgets,
       targets: [{ method: 'GET', path: '/' }],
       sql: s.sql,
+      lanes: s.lanes,
       sleep: s.sleep,
     });
     expect(report.verdict.ok).toBe(false);

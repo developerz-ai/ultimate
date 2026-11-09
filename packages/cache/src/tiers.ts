@@ -4,7 +4,7 @@
 // sites. Order is data, not control flow.
 
 import type { CacheTierName, Clock, Scheduler } from '@ultimat3/core';
-import { CACHE_TIERS, singleFlight, systemClock, tryUseContext } from '@ultimat3/core';
+import { CACHE_TIERS, instrument, singleFlight, systemClock, tryUseContext } from '@ultimat3/core';
 import { CacheJitterInvalidError, CacheLimitInvalidError, CacheTtlInvalidError } from './errors';
 import type { CacheFence, FenceScope } from './fence';
 import { markInvalidated, sampleFence } from './fence';
@@ -28,7 +28,7 @@ export type TierName = CacheTierName;
 // Imported, never aliased under a second name here (`X_HELPER_COPY`).
 
 /**
- * Who a swallowed refusal is attributed to in `recentTierFailures()` and the `/_x` panel: every
+ * Who a swallowed refusal is attributed to on its `cache.tier_failure` event and in the `/_x` panel: every
  * rung of the ladder, plus a store that degrades the same way without being on it.
  *
  * Closed rather than a free-form string, and NOT a widening of `TierName`: `CACHE_TIERS` is the
@@ -360,11 +360,20 @@ export function cacheStack(
       const tier = ordered[i];
       if (tier === undefined) continue;
       const hit = await bestEffort(tier.name, 'get', key, () => tier.get<T>(key));
-      if (hit === undefined) continue;
+      // Every rung asked is one `cache.hit`/`cache.miss` — a refused `get` and an expired entry
+      // are misses, as the read sees them.
+      if (hit === undefined) {
+        instrument('cache.miss', { tier: tier.name, key });
+        continue;
+      }
       const now = nowMs(clock);
       // A tier may answer with an entry it has not reaped yet; expiry is decided here, once,
       // by the predicate this module already exported and nothing had ever called.
-      if (isExpired(hit, now)) continue;
+      if (isExpired(hit, now)) {
+        instrument('cache.miss', { tier: tier.name, key });
+        continue;
+      }
+      instrument('cache.hit', { tier: tier.name, key });
       // Populate every tier we walked past, closest-first on the next read — carrying the
       // entry's REMAINING life, never the caller's original ttlMs. Re-leasing a value one
       // second from expiry for a fresh five minutes on every read is a hot key that never

@@ -12,6 +12,7 @@
 import { REQUIRED_BUN } from '../../app-root';
 import type { GeneratedFile, NameSet } from '../naming';
 import { TEST_COMPOSE_PATH, TEST_ENV_PATH } from '../scaffold-test-services';
+import { DEPENDABOT_PATH, dependabot } from './dependabot.yml';
 import { IMAGE_WORKFLOW_PATH, imageWorkflow } from './image.yml';
 import { RUNS_ON } from './runner';
 
@@ -96,10 +97,11 @@ jobs:
       - run: bun run verify
 `;
 
-/** The CI a new app is born with, in the order a reader meets it: the gate, then the image. */
+/** The CI a new app is born with, in reading order: the gate, the image, the dependency updates. */
 export function githubFiles(app: NameSet): readonly GeneratedFile[] {
   return [
     { path: CI_WORKFLOW_PATH, contents: ci(app) },
     { path: IMAGE_WORKFLOW_PATH, contents: imageWorkflow(CI_WORKFLOW_NAME) },
+    { path: DEPENDABOT_PATH, contents: dependabot() },
   ];
 }

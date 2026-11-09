@@ -7,6 +7,7 @@ import {
   errorFingerprint,
   finiteCount,
   isRedactedKey,
+  localErrorSink,
   logger,
   REDACTED,
   renderThrowable,
@@ -158,7 +159,9 @@ export function errorGroupsSink(options: ErrorGroupsSinkOptions): ErrorGroupsSin
     }
   };
 
-  return {
+  // Local: the groups live in this app's own table, so a boot with `SENTRY_DSN` still adds its
+  // transport beside this sink rather than reading it as the app's monitor.
+  return localErrorSink({
     report(report: ErrorReport): void {
       try {
         if (options.ignore?.(report) === true) return;
@@ -177,5 +180,5 @@ export function errorGroupsSink(options: ErrorGroupsSinkOptions): ErrorGroupsSin
     async settled(): Promise<void> {
       while (pending.size > 0) await Promise.all([...pending]);
     },
-  };
+  });
 }

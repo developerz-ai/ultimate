@@ -19,7 +19,7 @@ $ARGUMENTS
 
    **Falsify the ask before planning it.** Read the code, not just the request. If a claim in the prompt is already false in the tree, say so in `overview.md` under *Risks* with the `file:line` that disproves it, and plan what is actually true.
 
-   **Cut the plan into sweeps.** A sweep = at most 4 parallel agents on disjoint file sets → **one PR, ≤ 100 changed files** → `bun run verify` green → CI green + agent reviews (CodeRabbit et al., when available) addressed → merged → `main` pulled → next sweep. Tier order is sweep order. Estimate each slice's file count from its *Files to change*; a slice over 100 files is split across sweeps, small slices of one tier band share a sweep. `overview.md` carries the sweep table (sweep → slices → agents → est. files); `status.yml` has one row per sweep (`sweep: "8a"` for a sub-sweep).
+   **Cut the plan into sweeps.** A sweep = at most 4 parallel agents on disjoint file sets → **one PR, ≤ 100 changed files** → `bun run verify` green → CI green + agent reviews (CodeRabbit et al., when available) addressed → merged → `main` pulled → next sweep. Tier order is sweep order. The 4-agent / 100-file caps are the default; an owner ruling in the ask widens them (plan 101's final run: 12 agents, ~300–400 files per PR, with the replacement review in `feature.md` — two area-split `bug-hunter` passes, `concurrency-auditor`, `security-auditor`), and the plan records the ruling in `overview.md`. Estimate each slice's file count from its *Files to change*; a slice over 100 files is split across sweeps, small slices of one tier band share a sweep. `overview.md` carries the sweep table (sweep → slices → agents → est. files); `status.yml` has one row per sweep (`sweep: "8a"` for a sub-sweep).
 
 3. **Write the plan as multiple files** in the plan dir — never one big `plan.md`. Always produce an `overview.md` index plus one `<NN>-<aspect>.md` per separable area (e.g. `01-entity.md`, `02-policy.md`, `03-action.md`, `04-route.md`, `05-cli.md`, `06-docs.md`). **Split by tier, then by area** — a slice must be independently executable, and imports only go down, so a tier-0/1 slice lands before the tier-3 slice that adopts it. Match the house style in `docs/idea/` and `docs/architecture/` — lead with the rule, fragments over sentences, tables for any ≥3-row structure, `file:line` refs, no meta-framing, no trailing summary.
 
@@ -71,7 +71,7 @@ Land lowest tier first. An import that would go up or sideways is a design error
 
 ## Tests
 - What to add/run. Tests next to source as `<file>.test.ts`. A test that can't fail isn't a test.
-- Command: `bun test packages/<pkg>/src/<file>.test.ts`, or `bun test -t '<name>'` for one.
+- Command: `bun test ./packages/<pkg>/src/<file>.test.ts`, `-t '<name>'` for one — always `./` (a bare `packages/<pkg>` also runs `examples/dummy/packages/<pkg>`).
 
 ## Done when
 - Verifiable acceptance criteria for this slice.
@@ -107,7 +107,7 @@ Execution follows [`feature.md` § Work as a hive mind](feature.md#work-as-a-hiv
 
 - **Coordinator + ≤ 4 workers per sweep.** Coordinator owns git, the gate, the PR, the reviews and the merge; it does not code.
 - **The file set is the lock.** The sweep table names each agent's **exclusive paths**; no path in two agents' sets. Two agents that must edit one file are one agent.
-- **Shared files are coordinator-only:** `CHANGELOG.md`, `wiki/Error-Codes.md`, `framework.manifest.json` (`bun run manifest`, once), `bun.lock`, `status.yml`.
+- **Shared files are coordinator-only:** `CHANGELOG.md` + `wiki/Upgrading.md` (they move together: `bun run changelog-check`), `wiki/Error-Codes.md` + `packages/http/src/error-map.ts` (`bun run new-error-code` writes both), `framework.manifest.json` (`bun run manifest`, once), `bun.lock`, `status.yml`.
 - **Workers are long-lived.** A sweep with more slices than 4 re-tasks a finished worker via `SendMessage` (keeps context + lock); never a fifth spawn.
 - **Workers never spawn, never git**, run checks narrowed to their own files; the coordinator runs `bun run verify` once per sweep.
 
@@ -130,6 +130,8 @@ Any plan that violates one is wrong, not "a tradeoff":
 5. **One command means shippable.** Every plan ends at `bun run verify` green — all 21 steps.
 6. **Static path never pays for the app path.** `site/` is 0kb JS and may not import `app/`; `shared/` is a leaf.
 7. **Deploy anywhere = containers only.** No platform primitives in the framework.
+8. **Ultimate ships mechanism; your app ships convention.** A business convention never ships in a package; an app encodes it by wrapping a primitive.
+9. **Useful, then efficient.** Never cut or stub a feature to hold a byte budget; raise it by the measured amount, reason in the same diff (`bun run budget-raises`).
 
 ### Stack rules
 
@@ -141,7 +143,7 @@ Any plan that violates one is wrong, not "a tradeoff":
 - SRP: one file, one job, target < 200 LOC, hard ceiling ~500 (the `filesize` step).
 - `--json` on every CLI command and every error.
 - No hardcoded user-facing strings (`t()`), no raw colours (semantic tokens only), no float money (`{ minor, currency }`), no date without an explicit IANA `timeZone`.
-- Route files: `page.tsx` under `site/`/`app/`, `route.ts` under `api/` — the directory is the URL.
+- Route files: `page.tsx` under `site/`/`app/` — the directory is the URL. `api/` holds no route file: actions and queries via `defineApi()`.
 - Every package carries `README.md` (public API) + `CLAUDE.md` (boundary, deps, commands). A plan that adds a package plans both.
 
 ### Commands the plan cites
@@ -151,15 +153,15 @@ Any plan that violates one is wrong, not "a tradeoff":
 | the gate | `bun run verify` |
 | typecheck / lint | `bun run typecheck` · `bun run lint` (`lint:fix`) |
 | import boundaries | `bun run boundaries` |
-| one test file / name | `bun test <path>` · `bun test -t '<name>'` |
-| the app gate (both tracked apps) | `bun run scripts/reference-app-gate.ts` |
+| one test file / name | `bun test ./<path>` · `bun test ./<path> -t '<name>'` |
+| the app gate (the three tracked apps) | `bun run scripts/reference-app-gate.ts` (`--app <dir>` for one) |
 | regenerate the manifest | `bun run manifest` (never hand-edit `framework.manifest.json`) |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | the CLI, in-repo | `bun run x -- <args>` |
 
 ### Cross-repo work
 
-One `<NN>-<aspect>.md` per repo. Infrastructure lives in `../infrastructure` and is edited **from its own repo**, never from here — a slice touching it says so in its header. **Never name another product, client or repository in a plan file**: plans are committed. Describe a comparison generically ("a sibling deployment on the same cluster"), and keep measured facts without the source's name.
+One `<NN>-<aspect>.md` per repo. Infrastructure lives in `../infrastructure` and is edited **from its own repo**, never from here — a slice touching it says so in its header. Another repo may be checked out on the owner's own branch: the executor works there in a git worktree (the no-worktree rule is this repo's only). **Never name another product, client or repository in a plan file**: plans are committed. Describe a comparison generically ("a sibling deployment on the same cluster"), and keep measured facts without the source's name.
 
 ## Output
 ```

@@ -1,5 +1,12 @@
 // The public surface of @ultimat3/entity. Explicit, never `export *`.
 
+// The `entity.*` payloads are core's (the bus is tier 0); re-exported, never a second shape.
+export type {
+  EntityBulkEvent,
+  EntityCrossTenantEvent,
+  EntityRowEvent,
+  EntityRowOp,
+} from '@ultimat3/core';
 /** Re-exported so an `entity` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
@@ -32,7 +39,7 @@ export type { Counter } from './counter';
 export { countersOf, describeCounter } from './counter';
 // `crossTenantReason` stays internal: an app that could read the flag would have a second way to
 // reason about tenant scope — branch on it — next to the one way, which is entering the scope.
-export { CROSS_TENANT_SCOPE, crossTenant, setCrossTenantObserver } from './cross-tenant';
+export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
 export type { DescribeInput } from './describe';
@@ -154,8 +161,7 @@ export type {
   UpsertArgs,
 } from './repo';
 export type { Retain, RetainInit } from './retain';
-export type { RowBulkChange, RowChange, RowChangeOp, RowObserver } from './row-observer';
-export { observedRepo, rowObserver, setRowObserver } from './row-observer';
+export { observedRepo } from './row-observer';
 export { rowSecuritySettings } from './row-security-settings';
 export type { RecordsByKey, RecordsByType } from './rows-of';
 export { hasEntityRows, projectionsIn, rowsOf } from './rows-of';

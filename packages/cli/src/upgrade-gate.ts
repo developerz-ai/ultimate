@@ -1,5 +1,5 @@
-// A hop's gate, run by the CLI the hop just installed: `x manifest`, `x doctor --json`, `x verify
-// --json`. Never in this process, because the installed CLI is the one that knows the installed
+// A hop's gate, run by the CLI the hop just installed: `x manifest`, `x doctor --json`, `x exercise
+// --json`, `x verify --json`. Never in this process, because the installed CLI is the one that knows the installed
 // framework (`local-cli.ts`), and it may be many majors older than this one: each answer is read as
 // a foreign document, and one that will not parse is a finding, never a green.
 
@@ -84,9 +84,21 @@ export interface HopGuards {
   readonly differs: readonly { readonly name: string; readonly refresh: string }[];
 }
 
+/**
+ * `x exercise`'s findings, listed before the gate: an upgrade spent its commits feeding the
+ * exercise one red gate at a time, and each of these fixes pastes as written.
+ */
+export interface HopExercise {
+  /** False when the hop's CLI answered no exercise document (none, or one predating it): unknown. */
+  readonly reported: boolean;
+  readonly ok: boolean;
+  readonly findings: readonly GateFinding[];
+}
+
 export interface HopGate {
   readonly manifest: { readonly ok: boolean; readonly findings: readonly GateFinding[] };
   readonly guards: HopGuards;
+  readonly exercise: HopExercise;
   readonly verify: {
     readonly ok: boolean;
     readonly summary: string;
@@ -164,6 +176,17 @@ const readManifest = (result: ExecResult): HopGate['manifest'] => {
   return { ok: result.ok, findings: flatten(document) };
 };
 
+/** Read like the manifest, except that no document is `reported: false`, never a finding. */
+const readExercise = (result: ExecResult): HopExercise => {
+  const parsed = MANIFEST.safeParse(documentIn(result.stdout));
+  if (parsed.issues !== undefined) return { reported: false, ok: false, findings: [] };
+  const document = parsed.value as {
+    readonly ok: boolean;
+    readonly findings?: readonly RawFinding[];
+  };
+  return { reported: true, ok: result.ok && document.ok, findings: flatten(document) };
+};
+
 /** A doctor that exits red is normal (a port, an env key); only its listing is read here. */
 const readGuards = (result: ExecResult): HopGuards => {
   const parsed = DOCTOR.safeParse(documentIn(result.stdout));
@@ -173,11 +196,11 @@ const readGuards = (result: ExecResult): HopGuards => {
   return { reported: true, missing: guards.missing ?? [], differs: guards.differs ?? [] };
 };
 
-/** The three, in order, each told apart by `onStage` so a long gate is not a long silence. */
+/** The four, in order, each told apart by `onStage` so a long gate is not a long silence. */
 export async function runHopGate(input: {
   readonly runner: Runner;
   readonly root: string;
-  readonly onStage: (stage: 'manifest' | 'doctor' | 'verify') => void;
+  readonly onStage: (stage: 'manifest' | 'doctor' | 'exercise' | 'verify') => void;
 }): Promise<HopGate> {
   const { runner, root, onStage } = input;
   const installed = (args: readonly string[]): Promise<ExecResult> =>
@@ -186,9 +209,11 @@ export async function runHopGate(input: {
   const manifest = readManifest(await installed(['manifest', '--json']));
   onStage('doctor');
   const guards = readGuards(await installed(['doctor', '--json']));
+  onStage('exercise');
+  const exercise = readExercise(await installed(['exercise', '--json']));
   onStage('verify');
   const verify = readVerify(await installed(['verify', '--json']));
-  return { manifest, guards, verify };
+  return { manifest, guards, exercise, verify };
 }
 
 /** What a repository with no app can still be asked, in the order an author would run them. */

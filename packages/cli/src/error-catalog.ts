@@ -135,6 +135,11 @@ export async function buildErrorCatalog(
  * `@ultimat3/core` at all. Nothing schema-specific happens here any more.
  */
 async function importAll(): Promise<ErrorCatalog> {
+  // `@ultimat3/admin` and `@ultimat3/ui` ship `.tsx`: without the render loader Bun compiles their
+  // JSX itself and the import dies on `Export named 'jsxDEV' not found`. The barrel installs it as
+  // a side effect, so it has to finish before the catalog imports run — not race them. The test
+  // preload installs it for every suite, which is why only `error-catalog-process.test.ts` sees it.
+  await import('@ultimat3/render/server');
   return buildErrorCatalog((specifier) => import(specifier));
 }
 

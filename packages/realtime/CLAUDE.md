@@ -57,22 +57,21 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `reauthorize` calls `book.retenant(socket)`.
 - **A cap is a RESERVATION taken before the first await**: `SubscriptionBook.reserve(socket, sid)`
   decides the sid claim, `maxPerSocket`, `maxPerTenant` and `maxPerActor` in one synchronous step;
-  `ChannelHub.subscribe` does the same for its caps. Released in a `finally`, idempotently.
+  `ChannelHub.subscribe` does the same for its caps. Released in a `finally`, idempotent.
 - **Readiness AND the connection cap are functions on `UpgradeDeps`**, re-asked after
-  `authenticate` (app code with an await) and right before `server.upgrade`. The recheck sheds with
-  the same 503 + `retry-after-ms` and spends no second `tryAccept()`.
+  `authenticate` and right before `server.upgrade`: the recheck sheds with the same 503 +
+  `retry-after-ms`, no second `tryAccept()`.
 
 ## Live queries
 
-- Policy is evaluated **once per subscriber**, never once per query (`live-query.test.ts`, and
-  `live-definition.test.ts` for a real `query({ live: true })`). Every policy call in `live-query.ts`
-  takes a `Subscriber`.
-- **A name nothing registered is `X_LIVE_QUERY_UNKNOWN`**, fix `x queries list --json`. The
-  registry is never enumerated over the wire.
+- Policy is evaluated **once per subscriber**, never once per query (`live-query.test.ts`,
+  `live-definition.test.ts`); every policy call in `live-query.ts` takes a `Subscriber`.
+- **An unregistered name is `X_LIVE_QUERY_UNKNOWN`** (`x queries list --json`); the registry is
+  never enumerated over the wire.
 - **One build per `(query, input)`**: `target.live()` returns the descriptor and runs the read
-  (`LiveQuery.execute`), never memoised.
+  (`LiveQuery.execute`), unmemoised.
 - `liveQueryDefinition` caches per query id the compiled source, shape, matcher and shared window —
-  never a decision. The shared half is built with `enforce: false` on purpose; `authorize` runs per socket.
+  never a decision: the shared half is `enforce: false`, `authorize` runs per socket.
 - **The row policy sees the WHOLE row from the shared window.** A patch whose row the window does not
   hold is WITHHELD (not denied, not a failure). A delta resume onto an unread entry fills it first
   (`entry.lsn === ''`).
@@ -87,9 +86,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   own subscribers; lanes chain on a settled shadow of each task. **A change enters only
   `LiveEntries.targets(table)`** (its table's readers + stale/unread windows; `live-deliver.test.ts`);
   a lane at `maxLaneDepth` (1,024) SHEDS it: window staled, `changesShed` counted.
-- **Two reads of one entry are ordered by a READ GENERATION**, never by an lsn (`QueryEntry.lsn` may
-  be `''`): `entry.generation` / `entry.applied` is an identity check. The lsn guard stays for the
-  other question — a read that resolved behind a change the fanout already folded.
+- **Two reads of one entry are ordered by a READ GENERATION**, never an lsn (`QueryEntry.lsn` may be
+  `''`): `entry.generation` / `entry.applied`. The lsn guard answers the other question — a read
+  that resolved behind a change the fanout already folded.
 - **The definition's read is once per entry**: a cold subscriber joins the in-flight read (a share,
   cleared on settle), and the result lands in the lane and never backwards.
 - **The shared read carries a deadline and frees the SLOT**: `startRead` races it against
@@ -105,16 +104,17 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `staleChanges`). **A gap is detected**: the replicator stamps `producer` + `seq`; a skipped
   sequence — or a NEW producer after a known one — stales every window; `refillWindowInLane` replaces it.
 - **A bulk write stales only its entity's readers**: windows + channel topics, `invalidate(entity)`
-  on both from `onBulk` (channels: not a `recordPublisher` table). **A stale window's re-read re-snapshots EVERY subscriber**, before the lsn
-  guard, even on a non-match (`live-replicator-bulk`, `live-fanout` tests).
-- **A WINDOW is per TENANT**: its id is `windowId(queryHash(name, input), tenant)` (`live-tenant.ts`;
-  tenant = the subscriber's `actor.orgId`). The read runs `readFor`
-  (`live-definition.ts`): the node's ctx, a service actor carrying ONLY that org — never the
-  subscriber. A cursor naming another window is a cold start; `reauthorize` re-seats a
+  on both from `onBulk` (channels: not a `recordPublisher` table). **A stale window's re-read
+  re-snapshots EVERY subscriber**, before the lsn guard, even on a non-match (`live-replicator-bulk`,
+  `live-fanout` tests).
+- **`startLiveReplicator` SUBSCRIBES to `entity.row`/`entity.bulk`**, never a slot: `stop()`
+  releases its own; two both hear a write (`live-replicator.test.ts`). Its handlers never throw.
+- **A WINDOW is per TENANT**: `windowId(queryHash(name, input), tenant)` (`live-tenant.ts`; tenant =
+  the subscriber's `actor.orgId`). The read runs `readFor` (`live-definition.ts`): the node's ctx, a
+  service actor carrying ONLY that org — never the subscriber. A cursor naming another window is a cold start; `reauthorize` re-seats a
   subscription whose actor changed org (`live-tenancy.test.ts`; `docs/history/realtime.md`).
-- **A `sid` is CLIENT data: a subscription is keyed by `(socket, sid)`**
-  (`subscription-book.ts` is the only spelling). Reusing a sid the same socket holds is
-  `X_SUBSCRIPTION_ID_TAKEN`.
+- **A `sid` is CLIENT data: a subscription is keyed by `(socket, sid)`** (`subscription-book.ts`);
+  reusing one the same socket holds is `X_SUBSCRIPTION_ID_TAKEN`.
 - **`rateLimit:` is spent once per NEW subscription** (`live-spend.ts`).
 - Truth is the server. A client is never the merge authority.
 
@@ -126,13 +126,13 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `'memory'` a set one. `use`: `'sockets'`/`'feed'` await a 15 s dial, then
   `X_TRANSPORT_UNAVAILABLE`; `'publish'` dials in background. Never `waitOnFirstConnect`
   (retries forever). A publish with no live connection is refused.
-- **`nats` is imported only by `nats-lib-client.ts`**; its reconnect re-subscribes. When it GIVES
-  UP (`onClosed`) `NatsTransport` re-dials on backoff and re-binds.
+- **`nats` is imported only by `nats-lib-client.ts`**; its reconnect re-subscribes. GIVEN UP
+  (`onClosed`), `NatsTransport` re-dials on backoff and re-binds.
 - **Nothing leaves `NatsTransport` uncoded** — `#translating` wraps `publish`/`subscribe` refusals
   as `X_TRANSPORT_UNAVAILABLE`. `#ensure` reuses a mid-reconnect client on purpose;
   `Transport.onReconnect(listener)` (required) announces each recovery.
 - **A bucket name is checked before interpolation** (`assertBucket`, `X_TRANSPORT_PROTOCOL`); a
-  presence key or member id is base64url-encoded (`encodeToken`), never validated.
+  presence key or member id is base64url-encoded (`encodeToken`).
 - **A socket closed during its presence write takes the write back** (`joinPresence`, asked after the
   awaits; `sync-frames.test.ts`).
 - Presence lives in `transport.shared`. The sync node is `PresenceRegistry`'s only caller:

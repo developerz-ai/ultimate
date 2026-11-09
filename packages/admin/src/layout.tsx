@@ -128,7 +128,7 @@ export function AdminLayout(props: AdminLayoutProps): JSX.Element {
 
         {/* The way out. The admin's route table never points back at the app, so without this an
             operator who opened the dashboard has no link home and edits the URL bar. */}
-        <a class={styles['navLink']} href="/">
+        <a class={styles['navLink']} href={props.app.home ?? '/'}>
           {t('admin.backToApp')}
         </a>
       </aside>

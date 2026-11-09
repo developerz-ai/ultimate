@@ -7,9 +7,13 @@ import {
   configureErrorReporting,
   errorReportersOf,
   installedErrorReporter,
+  isLocalErrorSink,
   isRole,
+  isSentryErrorReporter,
+  logger,
   ROLES,
   sentryErrorReporter,
+  UltimateError,
 } from '@ultimat3/core';
 import { PortInvalidError, RoleUnknownError } from './errors';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
@@ -115,20 +119,48 @@ export const ERROR_DSN_KEY = 'SENTRY_DSN';
 let vendor: ErrorReporter | undefined;
 
 /**
+ * Logged, never thrown: `SENTRY_DSN` is set and the app installed reporters that are neither its
+ * marked Sentry transport nor local sinks — so the boot adds none, and says how to mark them.
+ */
+export class ErrorReporterDsnUnclaimedError extends UltimateError {
+  constructor(reporters: number) {
+    super({
+      code: 'X_ERROR_REPORTER_DSN_UNCLAIMED',
+      cause: `${ERROR_DSN_KEY} is set and the app installed ${String(reporters)} error reporter(s) marked neither as its Sentry transport nor as a local sink — one may already send to a monitor, so the boot adds no second transport and nothing is sent to that DSN`,
+      fix: 'sentryTransport(yourWrapper)   // in the module that calls configureErrorReporting, around the reporter that wraps sentryErrorReporter — or localErrorSink(yourSink) when it keeps reports on the box, and the boot adds the DSN transport beside it',
+      meta: { key: ERROR_DSN_KEY, reporters },
+    });
+  }
+}
+
+/**
  * Switch reporting on for this process. Unset DSN leaves whatever the app installed (or core's
  * no-op) in place, so a laptop and a CI run pay nothing and page nobody — and the release every
  * event carries is the build id this boot already computed, never a second identity for the deploy.
  *
- * The transport is CHAINED beside the app's reporter, never over it: the app's modules import —
- * and install an `errorGroupsSink`, say — before this line runs, and replacing it here would
- * leave `/admin/errors` empty in exactly the deploys that set `SENTRY_DSN`.
+ * The rule (v31): the boot adds its `SENTRY_DSN` transport beside the app's reporters when every
+ * one of them is a LOCAL sink (`localErrorSink`: `errorGroupsSink`, `memoryErrorReporter`) — or
+ * there are none. An app whose reporters include its own Sentry transport (`sentryErrorReporter`,
+ * or a wrapper marked `sentryTransport`) keeps it as the only one: a boot that chained a second
+ * beside it sent every error twice, once unscrubbed. Any other reporter is `{ report }` and might
+ * be a transport, so the boot adds nothing beside it and logs `X_ERROR_REPORTER_DSN_UNCLAIMED`.
  */
 export function configureReporting(env: Env, buildId: string): void {
   const dsn = env[ERROR_DSN_KEY]?.trim();
-  // A malformed DSN throws here, at boot, rather than at the first outage: a monitor that was
-  // never connected looks exactly like an app that never failed.
-  const next = dsn === undefined || dsn.length === 0 ? undefined : sentryErrorReporter({ dsn });
   const app = errorReportersOf(installedErrorReporter()).filter((member) => member !== vendor);
+  // A malformed DSN throws here, at boot, rather than at the first outage: a monitor that was
+  // never connected looks exactly like an app that never failed — checked even when the app's
+  // reporters keep the boot from adding it, so a DSN that could never have connected is never silent.
+  const built = dsn === undefined || dsn.length === 0 ? undefined : sentryErrorReporter({ dsn });
+  const owned = app.some(isSentryErrorReporter);
+  const unmarked = app.filter(
+    (member) => !isSentryErrorReporter(member) && !isLocalErrorSink(member),
+  );
+  const next = owned || unmarked.length > 0 ? undefined : built;
+  if (built !== undefined && !owned && unmarked.length > 0) {
+    const unclaimed = new ErrorReporterDsnUnclaimedError(unmarked.length);
+    logger.warn(unclaimed.format(), { code: unclaimed.code, ...unclaimed.meta });
+  }
   vendor = next;
   configureErrorReporting({
     release: buildId,

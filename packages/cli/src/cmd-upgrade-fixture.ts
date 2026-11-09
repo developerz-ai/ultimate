@@ -98,6 +98,21 @@ export const VERIFY_RED = JSON.stringify({
     { name: 'lint', ok: true, findings: [] },
   ],
 });
+export const EXERCISE_GREEN = JSON.stringify({ ok: true, command: 'exercise', findings: [] });
+export const EXERCISE_RED = JSON.stringify({
+  ok: false,
+  command: 'exercise',
+  summary: '1 of 3 primitives refused',
+  findings: [
+    {
+      code: 'X_EXERCISE_INPUT_THREW',
+      cause: 'the input function of createPost threw before the pass could call it',
+      fix: 'x exercise createPost --json   # after the entry input in apps/web/exercise.ts returns a value',
+      at: 'apps/web/exercise.ts',
+      meta: { primitive: 'createPost' },
+    },
+  ],
+});
 const DOCTOR = JSON.stringify({
   ok: true,
   data: {
@@ -114,6 +129,8 @@ interface Script {
   readonly engines?: string;
   readonly installCode?: number;
   readonly doctor?: string;
+  readonly exercise?: string;
+  readonly exerciseCode?: number;
   readonly verify?: string;
   readonly verifyCode?: number;
   readonly manifestCode?: number;
@@ -163,6 +180,8 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
         );
       case 'x doctor':
         return answer(command, script.doctor ?? DOCTOR);
+      case 'x exercise':
+        return answer(command, script.exercise ?? EXERCISE_GREEN, script.exerciseCode ?? 0);
       case 'x verify':
         return answer(command, script.verify ?? VERIFY_GREEN, script.verifyCode ?? 0);
       default:
@@ -200,6 +219,11 @@ interface Output {
       readonly differs: readonly { name: string; refresh: string }[];
     } | null;
     readonly manifest: { ok: boolean } | null;
+    readonly exercise: {
+      readonly reported: boolean;
+      readonly ok: boolean;
+      readonly findings: readonly { code: string; cause: string; fix: string; at?: string }[];
+    } | null;
     readonly verify: {
       readonly ok: boolean;
       readonly summary: string;

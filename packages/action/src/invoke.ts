@@ -16,10 +16,12 @@ import {
   anonymousActor,
   ctxOf,
   failureCaptureActive,
+  instrument,
   isUltimateError,
   REDACTED,
   recordFailureInput,
   runWithContext,
+  subscribed,
   tryUseContext,
   useContext,
   withChildContext,
@@ -233,8 +235,13 @@ async function traced(
       'ultimate.actor.kind': ctx.actor.kind,
       'ultimate.idempotent': def.idempotent === true,
     });
+    const startedAt = performance.now();
     try {
       const value = await perform(def, name, raw, ctx, options, trace);
+      // Every invocation, sampled or not — the span reaches an exporter only when sampled.
+      if (subscribed('action.invoke')) {
+        instrument('action.invoke', { action: name, durationMs: performance.now() - startedAt });
+      }
       span.setAttributes({
         'ultimate.outcome': 'allowed',
         'ultimate.idempotency.replayed': trace.replayed,
@@ -248,6 +255,13 @@ async function traced(
       // are different questions, and a trace that called both "error" cannot separate them.
       span.setAttribute('ultimate.outcome', auditOutcomeFor(error));
       if (isUltimateError(error)) span.setAttribute('ultimate.error.code', error.code);
+      if (subscribed('action.invoke')) {
+        instrument('action.invoke', {
+          action: name,
+          durationMs: performance.now() - startedAt,
+          error,
+        });
+      }
       throw error;
     }
   });

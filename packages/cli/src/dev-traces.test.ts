@@ -4,8 +4,15 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { FrozenClock, SpanContext } from '@ultimat3/core';
-import { configureTelemetry, frozenClock, resetTelemetry, withSpan } from '@ultimat3/core';
-import { STATEMENT_ATTRIBUTE } from '@ultimat3/db';
+import {
+  configureTelemetry,
+  frozenClock,
+  resetInstrumentation,
+  resetTelemetry,
+  SEMCONV,
+  subscribe,
+  withSpan,
+} from '@ultimat3/core';
 import { createTraceRecorder } from './dev-traces';
 
 const install = (
@@ -13,11 +20,12 @@ const install = (
 ): { recorder: ReturnType<typeof createTraceRecorder>; clock: FrozenClock } => {
   const recorder = createTraceRecorder(limit === undefined ? {} : { limit });
   const clock = frozenClock('2026-08-10T00:00:00.000Z');
-  configureTelemetry({ exporter: recorder.exporter, clock });
+  configureTelemetry({ clock });
+  subscribe('span.end', (event) => recorder.exporter.export(event.payload));
   return { recorder, clock };
 };
 
-/** One request, exactly as the HTTP pipeline opens it: root span, `http.*` attributes, children. */
+/** One request, exactly as the HTTP pipeline opens it: root span, semconv attributes, children. */
 function request(
   clock: FrozenClock,
   facts: { id: string; method?: string; path: string; status?: number; parent?: SpanContext },
@@ -39,7 +47,7 @@ function request(
         withSpan(
           'db.select',
           (statement) => {
-            statement.setAttribute(STATEMENT_ATTRIBUTE, text);
+            statement.setAttribute(SEMCONV.dbQueryText, text);
             clock.advance(2);
           },
           { kind: 'client' },
@@ -47,10 +55,10 @@ function request(
       }
       clock.advance(1);
       span.setAttributes({
-        'http.request_id': facts.id,
-        'http.method': facts.method ?? 'GET',
-        'http.route': facts.path,
-        'http.status_code': facts.status ?? 200,
+        'ultimate.request_id': facts.id,
+        [SEMCONV.httpRequestMethod]: facts.method ?? 'GET',
+        [SEMCONV.httpRoute]: facts.path,
+        [SEMCONV.httpResponseStatusCode]: facts.status ?? 200,
       });
     },
     // Exactly `pipeline.ts`'s own call: `parent: correlation.parent`, which is defined whenever the
@@ -68,6 +76,7 @@ const inbound: SpanContext = {
 
 afterEach(() => {
   resetTelemetry();
+  resetInstrumentation();
 });
 
 describe('unit · the /_x timeline source', () => {
@@ -299,7 +308,7 @@ describe('unit · idle background roles do not crowd requests off the timeline (
         withSpan('query.first', () => clock.advance(1));
         await paused;
         withSpan('query.second', () => clock.advance(1));
-        span.setAttributes({ 'http.request_id': 'req_slow', 'http.route': '/slow' });
+        span.setAttributes({ 'ultimate.request_id': 'req_slow', [SEMCONV.httpRoute]: '/slow' });
       },
       { kind: 'server' },
     );

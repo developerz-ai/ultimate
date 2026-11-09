@@ -75,11 +75,10 @@ await withTransaction(async (tx) => {
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
 | `dbDiagnostics()` / `DIAGNOSTICS_LIMIT` / `DIAGNOSTICS_TIMEOUT_MS` (from `@ultimat3/db/diagnostics`) | `As of 2026-11`: what the database is doing now, as seven sections (`blockers`, `activity`, `slowQueries`, `unusedIndexes`, `invalidIndexes`, `notValidConstraints`, `deadTuples`), each `{ available: true, rows }` or `{ available: false, code, reason, fix }` → [Diagnostics](#diagnostics). `x db diagnostics` prints it |
-| `setStatementObserver()` / `statementObserver()` | `As of 2026-08`: one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
+| `DbStatementEvent` / `StatementAttribution` (types, core's) | `As of 2026-11` (v31): every settled statement, both drivers, is one `db.<verb>` client span — **always, production included** — carrying `db.system.name=postgresql`, `db.query.text` (parameterised) and `db.operation.name`; and one `db.statement` event on core's bus while anything subscribes: `subscribe('db.statement', (e) => …)`. No subscriber is one map read |
 | `expectedSeqScan()` / `expectedSeqScanReason()` | `As of 2026-11`: the one way a hand-written statement says it reads its table whole — `x exercise`'s plan sweep lists it exempt with the reason instead of `X_QUERY_UNINDEXED`. Same shape as `expectedQueryLoop()`: required, non-blank, innermost wins. A small table says it once on the entity: `scan: '<why>'` |
-| `expectedQueryLoop()` / `expectedQueryLoopReason()` | `As of 2026-08`: the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `StatementEvent.expected` |
-| `withStatementAttribution()` / `statementAttribution()` | `As of 2026-08`: the `{ entity, op }` pair on `StatementEvent.attribution`, scoped exactly like `expectedQueryLoop()` — `@ultimat3/entity`'s `postgresRepo` is the one producer |
-| `STATEMENT_ATTRIBUTE` | `As of 2026-08`: `db.statement`, the OTel attribute each span carries its text under — declared here, read by `x dev`'s timeline |
+| `expectedQueryLoop()` / `expectedQueryLoopReason()` | `As of 2026-08`: the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `DbStatementEvent.expected` |
+| `withStatementAttribution()` / `statementAttribution()` | `As of 2026-08`: the `{ entity, op }` pair on `DbStatementEvent.attribution`, scoped exactly like `expectedQueryLoop()` — `@ultimat3/entity`'s `postgresRepo` is the one producer |
 | `statementFingerprint()` / `statementKind()` / `statementVerb()` | `As of 2026-08`: what shape a statement is — `entity.op` when attributed else its own collapsed text, read or write from the leading verb. One rule, so two detectors group identically |
 | `recordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
@@ -675,9 +674,9 @@ reader cannot tell a considered loop from a silenced one.
 | | |
 |---|---|
 | Scope | core's `asyncContext<string>('the expected-loop reason')`, never a `new AsyncLocalStorage` here: it survives every `await` at any depth, and two loops running at once never read each other. Nesting keeps the innermost reason |
-| What it carries | `StatementEvent.expected`, stamped by both funnels at settle time — a diagnostic judging a whole request runs after every scope in it closed |
+| What it carries | `DbStatementEvent.expected`, stamped by both funnels at settle time — a diagnostic judging a whole request runs after every scope in it closed |
 | What it suppresses | a **verdict**, never a statement. The SQL is still sent, still observed, still a span: only the thing that warns is told the author already answered |
-| What it costs | nothing without a diagnostic — the reason is read inside the branch that already checks for an installed observer |
+| What it costs | nothing without a diagnostic — the reason is read only while `db.statement` has a subscriber |
 
 The framework's own deliberate loops declare themselves at source: `migrate()` and `rollback()`
 (one transaction per migration, so a failure leaves an exact ledger) and `@ultimat3/admin`'s
@@ -703,7 +702,7 @@ tree in the gate's `unit` step.
 
 ## A statement knows who compiled it
 
-`As of 2026-08`: `StatementEvent.attribution` is no longer always `undefined`.
+`As of 2026-08`: `DbStatementEvent.attribution` is no longer always `undefined`.
 
 ```ts
 return withStatementAttribution('members', 'findById', () =>
@@ -714,9 +713,9 @@ return withStatementAttribution('members', 'findById', () =>
 | | |
 |---|---|
 | Scope | core's `asyncContext<StatementAttribution>()`, `expectedQueryLoop()`'s own shape: it survives every `await` at any depth, and nesting keeps the innermost pair |
-| What it carries | `StatementEvent.attribution`, stamped by both funnels at settle time, next to `expected` |
+| What it carries | `DbStatementEvent.attribution`, stamped by both funnels at settle time, next to `expected` |
 | Producer | `@ultimat3/entity`'s `postgresRepo` — the last caller that still knows the entity and the operation once the SQL exists |
-| What it costs | nothing uninstalled — `statementObserver()` is read first, and with nothing installed `fn` runs directly; no scope entered, no object allocated |
+| What it costs | nothing unsubscribed — `subscribed('db.statement')` is read first, and with no subscriber `fn` runs directly; no scope entered, no object allocated |
 
 Hand-written SQL, a migration, a health probe, `x db` commands and `@ultimat3/jobs`' own queue
 statements still carry no `attribution` — nothing above them knows an entity to name, so the field

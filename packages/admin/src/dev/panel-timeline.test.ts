@@ -167,3 +167,30 @@ describe('timelinePanel renders the detector, it does not re-derive it', () => {
     ]);
   });
 });
+
+describe('timelinePanel draws every recorded span', () => {
+  test('a span whose parent is not in the recording is drawn at depth 0, never dropped', async () => {
+    // A span handed off after its trace's early spans were evicted arrives with a parent the
+    // recording no longer holds. It is still counted in `totalsByKind`; the flame must show it too.
+    const base = trace('req_orphan', [SELECT_MEMBER]);
+    const orphan: TimelineSpan = { ...sqlSpan('late', 'select 1', 50), parentId: 'evicted' };
+    const looped: TimelineSpan = { ...sqlSpan('self', 'select 2', 60), parentId: 'self' };
+    const pair: TimelineSpan[] = [
+      { ...sqlSpan('ca', 'select 3', 70), parentId: 'cb' },
+      { ...sqlSpan('cb', 'select 4', 80), parentId: 'ca' },
+    ];
+    const sources = staticDevSources({
+      traces: async () => [{ ...base, spans: [...base.spans, orphan, looped, ...pair] }],
+      statementLoops: async () => [],
+    });
+    const data = await timelinePanel.data(sources, new URLSearchParams());
+    expect(data.flame.map((row) => [row.span.id, row.depth])).toEqual([
+      ['root', 0],
+      ['s0', 1],
+      ['late', 0],
+      ['self', 0],
+      ['ca', 0],
+      ['cb', 1],
+    ]);
+  });
+});

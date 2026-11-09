@@ -131,7 +131,7 @@ export interface GenerateResult {
    * from one provider to the next is a gateway concept, and a `Provider` implementation an app
    * wrote cannot be asked to report on a decision it did not make. Optional for exactly that
    * reason — a provider's own result has not been through the router yet. `llm()` puts it on the
-   * span as `llm.provider`, which is what makes a fallback visible rather than silent.
+   * span as `gen_ai.provider.name`, which is what makes a fallback visible rather than silent.
    */
   readonly provider?: string;
   readonly text: string;

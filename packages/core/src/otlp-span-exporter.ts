@@ -1,5 +1,6 @@
 // Single responsibility: a `SpanExporter` that POSTs OTLP/HTTP JSON to a collector. Batched,
 // because `SpanExporter.export` is one span and a request per span is a second load generator.
+// Installed as a subscriber: `subscribe('span.end', (event) => exporter.export(event.payload))`.
 
 import { renderThrowable } from './error-render';
 import { logger } from './logger';
@@ -10,11 +11,13 @@ import {
   type OtlpPostOptions,
   otlpAttributes,
   otlpEndpoint,
+  otlpEndpointLabel,
   otlpHeaders,
   otlpResource,
   postOtlp,
   unixNano,
 } from './otlp';
+import { otlpBatcher } from './otlp-batch';
 import type {
   ReadableSpan,
   SpanContext,
@@ -49,6 +52,7 @@ interface OtlpSpanJson {
   readonly endTimeUnixNano: string;
   readonly attributes: readonly OtlpKeyValue[];
   readonly events: readonly unknown[];
+  readonly droppedEventsCount: number;
   readonly links: readonly unknown[];
   readonly status: { readonly code: number; readonly message?: string };
 }
@@ -72,6 +76,7 @@ function spanJson(span: ReadableSpan): OtlpSpanJson {
       name: event.name,
       attributes: otlpAttributes(event.attributes),
     })),
+    droppedEventsCount: span.droppedEventsCount,
     links: span.links.map(link),
     status: {
       code: STATUS_CODE[span.status.code],
@@ -141,10 +146,6 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
   );
   const send = options.fetch ?? globalThis.fetch;
   const seams = { sleep: options.sleep, random: options.random, now: options.now };
-  const queue: ReadableSpan[] = [];
-  /** The ONE batch in flight, or `undefined`. Never a chain: see `pump`. */
-  let sending: Promise<void> | undefined;
-
   const post = (batch: readonly ReadableSpan[]): Promise<void> => {
     const first = batch[0];
     if (first === undefined) return Promise.resolve();
@@ -158,7 +159,7 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
       body = JSON.stringify(otlpTraceRequest(batch, first.resource));
     } catch (failure) {
       logger.warn('otlp span batch dropped', {
-        url,
+        url: otlpEndpointLabel(url),
         spans: batch.length,
         error: renderThrowable(failure),
       });
@@ -167,63 +168,13 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
     return postOtlp({ url, headers, body, timeoutMs, fetch: send, ...seams });
   };
 
-  /**
-   * At most ONE batch in flight, and at most `maxBatchSize` spans in it. The queue used to be
-   * moved wholesale into a promise chain behind the previous POST, so a stalled collector held
-   * every span ever exported — 100k with `maxQueueSize: 2048` — and the bound was a bound on the
-   * queue, not on memory. Now spans WAIT IN the queue while a POST is unsettled, where drop-oldest
-   * applies, and what is held is `maxQueueSize` plus one batch. One at a time also keeps batches
-   * in order, so a parent span never arrives after its child. A POST cannot reject (`postOtlp`
-   * degrades to a log line) and `post` catches its own serialisation throw, so nothing here can
-   * poison the next send.
-   */
-  const pump = (): Promise<void> => {
-    if (sending !== undefined) return sending;
-    const batch = queue.splice(0, maxBatchSize);
-    if (batch.length === 0) return Promise.resolve();
-    const current = post(batch).then(
-      () => undefined,
-      () => undefined,
-    );
-    sending = current.then(() => {
-      sending = undefined;
-      // A full batch waiting behind a slow POST goes next without waiting for the timer.
-      if (queue.length >= maxBatchSize) void pump();
-    });
-    return sending;
-  };
-
-  /** Everything queued NOW, batch by batch. Bounded, so a busy exporter cannot keep it looping. */
-  const drainQueue = async (): Promise<void> => {
-    let rounds = Math.ceil(queue.length / maxBatchSize) + 1;
-    while (rounds > 0) {
-      rounds -= 1;
-      await pump();
-      if (queue.length === 0 && sending === undefined) return;
-    }
-  };
-
-  // Unref'd, so a pending flush never holds a draining process open — `shutdown()` is what
-  // decides the last batch leaves, exactly as `startMetricExport` defers to the drain hook.
-  // `pump`, never `drainQueue`: while a POST is stalled `pump` answers the send already in flight
-  // and allocates nothing, where a drain per tick would park one more waiter per interval.
-  const timer = setInterval(() => void pump(), flushIntervalMs);
-  timer.unref();
+  const batcher = otlpBatcher<ReadableSpan>({ maxBatchSize, maxQueueSize, flushIntervalMs, post });
 
   return {
     export(span: ReadableSpan): void {
-      // Drop the OLDEST: a bounded queue that drops the newest keeps a stale window forever, and
-      // the spans an operator wants during an incident are the ones happening now.
-      if (queue.length >= maxQueueSize) queue.shift();
-      queue.push(span);
-      if (queue.length >= maxBatchSize) void pump();
+      batcher.push(span);
     },
-    flush(): Promise<void> {
-      return drainQueue();
-    },
-    async shutdown(): Promise<void> {
-      clearInterval(timer);
-      await drainQueue();
-    },
+    flush: batcher.flush,
+    shutdown: batcher.shutdown,
   };
 }

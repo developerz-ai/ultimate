@@ -164,7 +164,7 @@ describe('an in-process refusal is bounded before it is serialised', () => {
   });
 });
 
-describe('llm.sampling.ignored names a knob the WIRE has no word for', () => {
+describe('ultimate.llm.sampling.ignored names a knob the WIRE has no word for', () => {
   test('seed on a model only an Anthropic-format provider serves', () => {
     registerModel({
       id: 'vendor/anthropic-format',

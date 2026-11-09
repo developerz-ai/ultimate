@@ -22,7 +22,6 @@ import {
   devDashboard,
   readOnlySql,
 } from '@ultimat3/admin/dev';
-import { recentInvalidations } from '@ultimat3/cache';
 import type { Role } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { jsonResponse } from '@ultimat3/http';
@@ -33,6 +32,7 @@ import type { Manifest } from '@ultimat3/manifest';
 import { appManifest, readAppManifest } from './app-manifest';
 import { appBoundaryFindings } from './boundary-findings';
 import { assertSameOrigin, hostRefusal, SQL_BODY, sqlOnGet } from './dev-dashboard-guard';
+import type { InvalidationLog } from './dev-dashboard-invalidations';
 import { mailTemplateFacts } from './dev-mail-templates';
 import type { StatementLedger } from './dev-n-plus-one';
 import { devPolicyMatrix } from './dev-policy';
@@ -60,8 +60,10 @@ export interface DevDashboardInput {
   readonly env?: string | undefined;
   /** The spans this process recorded. Absent when `x dev` did not install the exporter. */
   readonly traces?: TraceRecorder | undefined;
-  /** The statement shapes this process counted. Absent when `x dev` did not install the observer. */
+  /** The statement shapes this process counted. Absent when `x dev` did not subscribe a ledger. */
   readonly statements?: StatementLedger | undefined;
+  /** The busts this process emitted. Absent when `x dev` did not subscribe a log. */
+  readonly invalidations?: InvalidationLog | undefined;
 }
 
 /** `MailMessage.locale` is non-optional in `@ultimat3/mail`, so the panel never has to guess. */
@@ -102,18 +104,6 @@ async function manifestFact(root: string): Promise<ManifestFact> {
 }
 
 /**
- * `@ultimat3/cache` keeps the report of every `invalidateTags` fan-out; the panel reads it back
- * as its log. Only the shape differs — the cache owns the facts, /_x owns the rendering.
- */
-const invalidationFacts = (): readonly InvalidationFact[] =>
-  recentInvalidations().map((event) => ({
-    at: event.at,
-    tags: event.tags,
-    busted: event.busted,
-    source: event.source,
-  }));
-
-/**
  * Every source only this process can answer. It owns the SQL connection, the caught outbox, the
  * committed manifest on disk, the span exporter and the app's registries — no other host can.
  *
@@ -126,6 +116,7 @@ const invalidationFacts = (): readonly InvalidationFact[] =>
 export function devSources(input: DevDashboardInput): DevSources {
   const traces = input.traces;
   const statements = input.statements;
+  const invalidations = input.invalidations;
   // Only the memory driver retains what it accepted. Once a credential selects a real transport
   // the messages are at the provider, so the hook is omitted rather than answered with `[]` —
   // an empty outbox claims nobody was mailed, which is a different and unearned answer.
@@ -145,8 +136,14 @@ export function devSources(input: DevDashboardInput): DevSources {
       mailTemplates: async (): Promise<readonly MailTemplateFact[]> =>
         mailTemplateFacts((await appLocaleSet(input.root)).locales),
       manifest: (): Promise<ManifestFact> => manifestFact(input.root),
-      invalidations: (): Promise<readonly InvalidationFact[]> =>
-        Promise.resolve(invalidationFacts()),
+      // Spread for the traces' reason below: a host that subscribed no log falls back to the
+      // refusal, never to an empty list that would claim nothing was ever busted.
+      ...(invalidations === undefined
+        ? {}
+        : {
+            invalidations: (): Promise<readonly InvalidationFact[]> =>
+              Promise.resolve(invalidations.facts()),
+          }),
       // Read through the app's own policies at request time, so a reload that changes a rule
       // changes the matrix without a remount.
       policyMatrix: (): Promise<readonly PolicyFact[]> => Promise.resolve(devPolicyMatrix()),

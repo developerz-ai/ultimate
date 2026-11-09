@@ -1,15 +1,15 @@
 // THE single invalidation entry point. `action.cache.invalidates`, `x cache bust`, the MCP
 // tool and the admin panel all call this one function — nothing else may talk to a tier's
-// `invalidateTags` directly. One hop reaches memo, LRU, Redis, ISR routes and the CDN, and
-// the returned report is what the `/_x` cache panel renders, so "did it actually clear?" is
-// answerable without a log dive.
+// `invalidateTags` directly. One hop reaches memo, LRU, Redis, ISR routes and the CDN; the
+// returned report answers the caller, and one `cache.invalidate` event answers every subscriber
+// (the `/_x` cache panel keeps its own buffer), so "did it actually clear?" needs no log dive.
 
 import {
   CACHE_TIERS,
   currentSpan,
+  instrument,
   logger,
   renderThrowable,
-  systemClock,
   withSpan,
 } from '@ultimat3/core';
 import { markAllInvalidated, markInvalidated } from './fence';
@@ -17,7 +17,6 @@ import { dependentsOfKind, graphSnapshot } from './graph';
 import { logPartial, resetPartialLog } from './partial-log';
 import type { CacheTag } from './tags';
 import { assertKnownTags, knownTags, parseTag, serializeTags } from './tags';
-import { isolateTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
 import { sortTiers } from './tiers';
 
@@ -63,48 +62,6 @@ export interface InvalidationReport {
   readonly errors: readonly { tier: string; message: string }[];
 }
 
-/** One completed `invalidateTags` call, kept for the `/_x` cache panel. */
-export interface InvalidationEvent {
-  /** ISO-8601, from core's `systemClock` — never `new Date()`. */
-  readonly at: string;
-  /** Wire-form tags, exactly `report.tags`. */
-  readonly tags: readonly string[];
-  /**
-   * Everything the fan-out actually cleared: every tier key — the `cdn` tier's accepted purge
-   * keys included — plus the ISR paths and the live queries.
-   *
-   * Deliberately NOT `report.cdn`: that is the dependency graph's answer to "what depends on
-   * these tags", and folding it in here reported a path as busted when no `cdn` tier was
-   * registered to purge it. A partial bust that reads as a clean one is the failure this log
-   * exists to catch.
-   */
-  readonly busted: readonly string[];
-  /**
-   * What triggered it: the name of the span active when `invalidateTags` was called, or
-   * `'invalidateTags'`.
-   */
-  readonly source: string;
-  readonly durationMs: number;
-  /** Tier failures, verbatim from the report — a partial bust must not read as a clean one. */
-  readonly errors: readonly { readonly tier: string; readonly message: string }[];
-}
-
-// A dev log, not an audit trail — capped so a long-lived `x dev` process cannot grow it forever.
-const MAX_INVALIDATION_LOG = 100;
-
-/** Newest first. Module-private; read it through `recentInvalidations()`. */
-const invalidationLog: InvalidationEvent[] = [];
-
-function recordInvalidation(event: InvalidationEvent): void {
-  invalidationLog.unshift(event);
-  invalidationLog.length = Math.min(invalidationLog.length, MAX_INVALIDATION_LOG);
-}
-
-/** What the `/_x` cache panel renders: newest first, capped, a copy of the live log. */
-export function recentInvalidations(): readonly InvalidationEvent[] {
-  return [...invalidationLog];
-}
-
 const registry: CacheTier[] = [];
 let revalidator: Revalidator | undefined;
 let tagRevalidator: TagRevalidator | undefined;
@@ -122,24 +79,22 @@ export function registeredTiers(): readonly CacheTier[] {
 }
 
 /**
- * Test seam: drops every registered tier, the revalidator, the invalidation log and the
- * swallowed-failure log. One reset, so a suite cannot clear half the recorded state.
+ * Test seam: drops every registered tier, the revalidators and the broadcast. One reset, so a
+ * suite cannot clear half the registered state.
  */
 export function resetTiers(): void {
   registry.length = 0;
   revalidator = undefined;
   tagRevalidator = undefined;
   broadcast = undefined;
-  invalidationLog.length = 0;
-  resetTierFailures();
   resetPartialLog();
 }
 
 /**
  * `isolateDeclaredTags()`'s contract over everything `resetTiers()` drops — `tags.ts` carries the
  * why. It must live here because three of the four pieces are unreachable from a test file: the
- * revalidator has no reader, and neither log has a writer, so a suite that reset them could put
- * back only the tier registry:
+ * revalidators and the broadcast have no reader, so a suite that reset them could put back only
+ * the tier registry:
  *
  *   const restoreTiers = isolateTiers();
  *   afterAll(restoreTiers);
@@ -152,8 +107,6 @@ export function isolateTiers(): () => void {
   const capturedRevalidator = revalidator;
   const capturedTagRevalidator = tagRevalidator;
   const capturedBroadcast = broadcast;
-  const capturedLog = [...invalidationLog];
-  const restoreFailures = isolateTierFailures();
 
   return () => {
     resetTiers();
@@ -161,8 +114,6 @@ export function isolateTiers(): () => void {
     revalidator = capturedRevalidator;
     tagRevalidator = capturedTagRevalidator;
     broadcast = capturedBroadcast;
-    invalidationLog.push(...capturedLog);
-    restoreFailures();
   };
 }
 
@@ -220,6 +171,7 @@ export function receiveInvalidationBroadcast(wire: readonly string[]): Promise<I
 }
 
 interface FanOutOptions {
+  /** What triggered the bust — the `cache.invalidate` event's `source`, the `/_x` panel's column. */
   readonly source: string;
   /** Never widened to a public parameter: see `receiveInvalidationBroadcast`. */
   readonly emit: boolean;
@@ -322,15 +274,18 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
       errors,
     };
 
-    recordInvalidation({
-      at: systemClock.now().toISOString(),
+    // `busted` is everything the fan-out actually cleared — deliberately NOT `report.cdn`, the
+    // graph's answer to "what depends on these tags": folding it in reported a path as busted
+    // when no `cdn` tier was registered to purge it, and a partial bust that reads as a clean one
+    // is the failure this event exists to catch.
+    instrument('cache.invalidate', {
       tags: report.tags,
+      source,
       busted: dedupe([
         ...report.tiers.flatMap((entry) => entry.keys),
         ...report.isr,
         ...report.liveQueries,
       ]),
-      source,
       durationMs: report.durationMs,
       errors: report.errors,
     });
@@ -402,74 +357,78 @@ export const FLUSH_ALL_TAG = '*';
  * Never throws; the cost is one cold cache.
  */
 export function flushProcessTiers(source: string): Promise<InvalidationReport> {
-  return withSpan('cache.flush', async (): Promise<InvalidationReport> => {
-    const startedAt = performance.now();
-    markAllInvalidated();
-    const tiers: TierInvalidation[] = [];
-    const errors: { tier: string; message: string }[] = [];
-    for (const tier of sortTiers(registry)) {
-      if (tier.clear === undefined) continue;
-      try {
-        await tier.clear();
-        tiers.push({ tier: tier.name, keys: [] });
-      } catch (error) {
-        errors.push({ tier: tier.name, message: renderThrowable(error) });
+  return withSpan(
+    'cache.flush',
+    async (): Promise<InvalidationReport> => {
+      const startedAt = performance.now();
+      markAllInvalidated();
+      const tiers: TierInvalidation[] = [];
+      const errors: { tier: string; message: string }[] = [];
+      for (const tier of sortTiers(registry)) {
+        if (tier.clear === undefined) continue;
+        try {
+          await tier.clear();
+          tiers.push({ tier: tier.name, keys: [] });
+        } catch (error) {
+          errors.push({ tier: tier.name, message: renderThrowable(error) });
+        }
       }
-    }
-    // Read BEFORE the pages are revalidated: a purged page leaves the graph, and its tags are
-    // what the edge is purged by below.
-    const tagged = graphSnapshot().filter((entry) =>
-      entry.dependents.some((dep) => dep.kind === 'isr-route'),
-    );
-    const isrPaths = new Set(
-      tagged.flatMap((entry) =>
-        entry.dependents.filter((dep) => dep.kind === 'isr-route').map((dep) => dep.id),
-      ),
-    );
-    for (const path of isrPaths) {
+      // Read BEFORE the pages are revalidated: a purged page leaves the graph, and its tags are
+      // what the edge is purged by below.
+      const tagged = graphSnapshot().filter((entry) =>
+        entry.dependents.some((dep) => dep.kind === 'isr-route'),
+      );
+      const isrPaths = new Set(
+        tagged.flatMap((entry) =>
+          entry.dependents.filter((dep) => dep.kind === 'isr-route').map((dep) => dep.id),
+        ),
+      );
+      for (const path of isrPaths) {
+        try {
+          await revalidator?.(path);
+        } catch (error) {
+          errors.push({ tier: 'isr', message: renderThrowable(error) });
+        }
+      }
+      // And every page the holder has that the graph never named — as a bust asks it, by tag. A
+      // flush is at least a bust of everything: under `onInvalidate: 'purge'` those pages are deleted.
       try {
-        await revalidator?.(path);
+        for (const path of (await tagRevalidator?.(EVERY_TAG)) ?? []) isrPaths.add(path);
       } catch (error) {
         errors.push({ tier: 'isr', message: renderThrowable(error) });
       }
-    }
-    // And every page the holder has that the graph never named — as a bust asks it, by tag. A
-    // flush is at least a bust of everything: under `onInvalidate: 'purge'` those pages are deleted.
-    try {
-      for (const path of (await tagRevalidator?.(EVERY_TAG)) ?? []) isrPaths.add(path);
-    } catch (error) {
-      errors.push({ tier: 'isr', message: renderThrowable(error) });
-    }
-    const isr = [...isrPaths];
-    // The edge LAST, as in a bust, and for the pages THIS process could have handed it while it
-    // was deaf: a hit it answered from a copy a peer had already purged went out public, and the
-    // peer's own edge purge had run by then. Shared read tiers stay untouched — the sender's.
-    await purgeEdge(
-      sortTiers(registry),
-      tagged.map((entry) => parseTag(entry.tag)),
-      tiers,
-      errors,
-    );
-    const report: InvalidationReport = {
-      tags: [FLUSH_ALL_TAG],
-      tiers,
-      isr,
-      cdn: [],
-      liveQueries: [],
-      durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
-      errors,
-    };
-    recordInvalidation({
-      at: systemClock.now().toISOString(),
-      tags: report.tags,
-      busted: [...isr],
-      source,
-      durationMs: report.durationMs,
-      errors,
-    });
-    if (errors.length > 0) logger.warn('cache.flush.partial', { ...report });
-    return report;
-  });
+      const isr = [...isrPaths];
+      // The edge LAST, as in a bust, and for the pages THIS process could have handed it while it
+      // was deaf: a hit it answered from a copy a peer had already purged went out public, and the
+      // peer's own edge purge had run by then. Shared read tiers stay untouched — the sender's.
+      await purgeEdge(
+        sortTiers(registry),
+        tagged.map((entry) => parseTag(entry.tag)),
+        tiers,
+        errors,
+      );
+      const report: InvalidationReport = {
+        tags: [FLUSH_ALL_TAG],
+        tiers,
+        isr,
+        cdn: [],
+        liveQueries: [],
+        durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        errors,
+      };
+      instrument('cache.invalidate', {
+        tags: report.tags,
+        source,
+        busted: [...isr],
+        durationMs: report.durationMs,
+        errors,
+      });
+      if (errors.length > 0) logger.warn('cache.flush.partial', { ...report });
+      return report;
+    },
+    // Who asked for the flush rides on its span: the trace is where "why is the cache cold?" is read.
+    { attributes: { 'ultimate.cache.flush_source': source } },
+  );
 }
 
 /** First-seen order kept — a union of what actually changed, not a sorted report. */

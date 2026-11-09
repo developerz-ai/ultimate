@@ -49,14 +49,14 @@ confirming a symbol has no callers, not for finding bugs.
 **Prove your top findings empirically.** A `bun -e '...'` script importing from
 `packages/<pkg>/src/...` — never from `node_modules`, which resolves a published tarball and will
 make you report a bug that is already fixed. A proven finding is worth five reasoned ones. Run
-`bun test <path>` on suites you touch.
+`bun test ./<path>` on suites you touch — the `./` matters: a bare `packages/<pkg>` is a substring
+filter that also runs `examples/dummy/packages/<pkg>` under the wrong config.
 
 **Check the current tree, not the git history.** If a prior audit plan exists under `docs/plans/`,
 read it first so you do not re-report what has landed — then verify every candidate against the file
 as it is now. A finding you did not read the current code for is worthless.
 
-**Clean up.** Delete every probe file you create. Never commit. Never edit source except to prove a
-bug, and revert it immediately — `git status` must be clean of your changes when you finish.
+**Clean up.** **Read-only means no git writes.** The tree holds other agents' uncommitted work: never `git checkout`, `restore`, `stash`, `reset`, `clean`, `add` or `commit` — read with `git diff`, `git show`, `git status`. `git status` will not be clean, and making it clean destroys a teammate's slice. Probes go in the scratchpad or `node_modules/.cache/<run>/`, never in a tracked file; delete them when done. Never edit a tracked file — prove a bug from outside it.
 
 ## Output
 

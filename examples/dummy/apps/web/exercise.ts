@@ -4,18 +4,24 @@
 
 import { members } from '@postly/db';
 import { type SoftAuthenticator, softAuthenticator } from '@ultimat3/auth/soft-authenticator';
-import { assert, useContext, userActor } from '@ultimat3/core';
+import {
+  assert,
+  blankRaster,
+  encodeImage,
+  systemClock,
+  useContext,
+  userActor,
+} from '@ultimat3/core';
+import { acceptSignedPart, disk, grantMultipart, signPart } from '@ultimat3/storage';
 import { defineExercise } from '@ultimat3/testing';
 
 /** Re-homed by the pass into each primitive's own tenant, and bound to a seeded `owner` row. */
 const owner = userActor({ id: 'owner', roles: ['owner'] });
 const author = userActor({ id: 'author', roles: ['author'] });
 
-/** `x exercise` boots no runtime service a server's boot installs; each of these needs one. */
-const NO_STORAGE = 'x exercise installs no storage disk, and this reads or writes one';
-const NO_PUSH =
-  'x exercise installs no push transport (the VAPID pair is sealed, `x vapid create`)';
+/** The one service a server's boot installs that `x exercise` cannot: a real model behind `llm()`. */
 const NO_GATEWAY = 'calls a real LLM: x exercise installs no AI gateway';
+
 /**
  * The passkey ceremonies sign what the SERVER issued to one actor, which no draw can forge: each
  * input is computed from the pass's own state, inside the request the call runs in — so the actor
@@ -61,6 +67,61 @@ async function enrolled(userId: string): Promise<SoftAuthenticator> {
   const options = await passkeys.login.registerOptions({ userId });
   await passkeys.login.register({ userId, response: await device.create(options) });
   return device;
+}
+
+/** The one file `posts.import` reads, as `posts.export` writes its first line. */
+const CSV_HEADER = new TextEncoder().encode(
+  'id,slug,title,status,likeCount,publishedAt,createdAt\n',
+);
+
+/**
+ * An upload session `grantPostsImport` would open for the drawn org, through storage's own calls
+ * on the pass's disk — with its one part already sent when the call completes one.
+ */
+async function importSession(
+  drawn: Readonly<Record<string, unknown>>,
+  options: { readonly sent?: boolean } = {},
+) {
+  const { postsImportPolicy, postsImportTarget } = await import('./app/posts/import-upload');
+  const orgId = String(drawn['orgId']);
+  const policy = postsImportPolicy;
+  const grant = await grantMultipart({
+    disk: disk(),
+    orgId,
+    request: { filename: 'posts.csv', contentType: 'text/csv', size: CSV_HEADER.byteLength },
+    policy,
+    target: postsImportTarget(crypto.randomUUID()),
+    clock: systemClock,
+  });
+  const session = { orgId, key: grant.key, uploadId: grant.uploadId };
+  if (options.sent === true) {
+    const size = CSV_HEADER.byteLength;
+    const url = await signPart({ disk: disk(), ...session, partNumber: 1, size, policy });
+    await acceptSignedPart({ url, disk: disk(), orgId, bytes: CSV_HEADER });
+  }
+  return { ...session, size: CSV_HEADER.byteLength };
+}
+
+/** Unpadded base64url, the alphabet a subscription's keys are spelled in. */
+const base64url = (bytes: ArrayBuffer | Uint8Array): string =>
+  btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/, '');
+
+/** What `PushSubscription.toJSON()` carries for a Chromium browser, with a real ECDH key. */
+async function browserSubscription() {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, [
+    'deriveBits',
+  ]);
+  return {
+    endpoint: `https://fcm.googleapis.com/fcm/send/${crypto.randomUUID()}`,
+    expirationTime: null,
+    keys: {
+      p256dh: base64url(await crypto.subtle.exportKey('raw', pair.publicKey)),
+      auth: base64url(crypto.getRandomValues(new Uint8Array(16))),
+    },
+  };
 }
 
 export const exercise = defineExercise(
@@ -115,22 +176,45 @@ export const exercise = defineExercise(
     revokeRunKey: { off: 'revokes an x_api_keys row: framework schema, not an entity to seed' },
     'runs.sync': { off: 'queued only by startRun, which writes the runs row its events reference' },
     'posts.published.webhook': { off: 'delivers to a receiver URL: a real call out, sealed' },
-    grantAvatarUpload: { off: NO_STORAGE },
-    memberAvatar: { off: NO_STORAGE },
-    warmAvatar: { off: NO_STORAGE },
-    'runs.statement': { off: NO_STORAGE },
-    'posts.export': { off: NO_STORAGE },
-    'posts.import': { off: NO_STORAGE },
-    'posts.imports.purge': { off: NO_STORAGE },
-    grantPostsImport: { off: NO_STORAGE },
-    signPostsImportPart: { off: NO_STORAGE },
-    listPostsImportParts: { off: NO_STORAGE },
-    completePostsImport: { off: NO_STORAGE },
-    abortPostsImport: { off: NO_STORAGE },
-    // Both reach the avatars target or the export sink, a disk; the erase's tables are proved on
-    // their own by the subject proof (`subjectProof`), which needs none.
-    'members.export': { off: NO_STORAGE },
-    'members.erase': { off: NO_STORAGE },
+    // The draw's `sample` type and filename are refused by the upload policy before it signs.
+    grantAvatarUpload: {
+      input: (drawn) => ({ ...drawn, filename: 'me.png', contentType: 'image/png', size: 1024 }),
+    },
+    grantPostsImport: {
+      input: (drawn) => ({ ...drawn, filename: 'p.csv', contentType: 'text/csv', size: 1024 }),
+    },
+    // A key the job checks is inside the org it runs for, holding a real image to decode.
+    warmAvatar: {
+      input: async (drawn) => {
+        const key = `org/${String(drawn['orgId'])}/member/exercise/avatar/a.png`;
+        await disk().put(key, encodeImage(blankRaster(8, 8)), { contentType: 'image/png' });
+        return { ...drawn, key };
+      },
+    },
+    // The session calls act on a session grantPostsImport opened, which no draw names.
+    signPostsImportPart: {
+      input: async (drawn) => ({ ...drawn, ...(await importSession(drawn)), partNumber: 1 }),
+    },
+    listPostsImportParts: {
+      input: async (drawn) => ({ ...drawn, ...(await importSession(drawn)) }),
+    },
+    abortPostsImport: { input: async (drawn) => ({ ...drawn, ...(await importSession(drawn)) }) },
+    completePostsImport: {
+      input: async (drawn) => {
+        const session = await importSession(drawn, { sent: true });
+        return { ...drawn, ...session, parts: [{ partNumber: 1 }] };
+      },
+    },
+    // The file the import reads is the CSV `posts.export` writes; header only, it restores none.
+    'posts.import': {
+      input: async (drawn) => {
+        const orgId = String(drawn['orgId']);
+        const importId = crypto.randomUUID();
+        const key = `org/${orgId}/imports/posts/${importId}/posts.csv`;
+        await disk().put(key, CSV_HEADER, { contentType: 'text/csv' });
+        return { ...drawn, orgId, importId, key };
+      },
+    },
     // A device token is a provider's alphabet the draw does not produce: an iOS one is hex.
     registerDevice: {
       actor: owner,
@@ -145,9 +229,8 @@ export const exercise = defineExercise(
       actor: owner,
       input: (drawn) => ({ ...drawn, platform: 'ios', token: 'ab'.repeat(32) }),
     },
-    subscribePush: { off: NO_PUSH },
-    unsubscribePush: { off: NO_PUSH },
-    'post.commented': { off: NO_PUSH },
+    // A browser's subscription: a push service's URL and a real P-256 key, as the device makes.
+    subscribePush: { input: async (drawn) => ({ ...drawn, ...(await browserSubscription()) }) },
     passkeyRegisterOptions: {
       actor: author,
       input: async (drawn) => {
@@ -197,9 +280,6 @@ export const exercise = defineExercise(
     reviewDraft: { off: NO_GATEWAY },
     summarize: { off: NO_GATEWAY },
     'posts.review': { off: NO_GATEWAY },
-    deliverDigest: {
-      off: 'its rateLimit is fleet-wide and x exercise installs no shared store (X_RATE_LIMIT_NOT_SHARED)',
-    },
   },
   { actor: members },
 );

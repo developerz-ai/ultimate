@@ -7,7 +7,14 @@
 // concurrent requests — one of them ordinary — so it needs an async context. Opened through core's
 // one lazy seam rather than a `node:async_hooks` construction here, which threw at module
 // EVALUATION in a browser bundle (the bundler stubs the module to `{}`).
-import { actorLabel, assert, asyncContext, hasScope, tryUseContext } from '@ultimat3/core';
+import {
+  actorLabel,
+  assert,
+  asyncContext,
+  hasScope,
+  instrument,
+  tryUseContext,
+} from '@ultimat3/core';
 import { crossTenantDenied } from './errors';
 
 /**
@@ -19,18 +26,6 @@ import { crossTenantDenied } from './errors';
 export const CROSS_TENANT_SCOPE = 'tenancy:cross';
 
 const storage = asyncContext<string>('the cross-tenant reason');
-
-let witness: ((reason: string) => void) | undefined;
-
-/**
- * Install the one process-wide witness of every scope opened, or remove it with `undefined`. The
- * caller is `@ultimat3/testing`'s tenant proof: a job that crossed tenants under a declared reason
- * is a sweep, one that crossed without one is a leak, and only the scope itself knows which. One
- * witness, not a list (`setStatementObserver`'s rule), told only after the capability is proven.
- */
-export function setCrossTenantObserver(next: ((reason: string) => void) | undefined): void {
-  witness = next;
-}
 
 /**
  * Run `fn` with the tenant guard lifted — every read and write it issues, at any depth and across
@@ -59,7 +54,9 @@ export function crossTenant<T>(reason: string, fn: () => T): T {
     "pass why the read spans tenants: crossTenant('nightly expiry sweeps every org', fn)",
   );
   assertCrossTenant(reason);
-  witness?.(reason);
+  // Emitted only after the capability is proven: `@ultimat3/testing`'s tenant proof subscribes, and
+  // a job that crossed under a declared reason is a sweep, one that crossed without is a leak.
+  instrument('entity.cross_tenant', { reason });
   return storage.run(reason, fn);
 }
 

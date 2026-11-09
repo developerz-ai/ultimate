@@ -3,14 +3,9 @@
 // `pg-driver-attribution.test.ts` pins for the Postgres driver; no SQL is sent, so none is named.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext } from '@ultimat3/core';
-import type { StatementEvent } from '@ultimat3/db';
-import {
-  expectedQueryLoop,
-  setStatementObserver,
-  statementFingerprint,
-  statementKind,
-} from '@ultimat3/db';
+import type { DbStatementEvent } from '@ultimat3/core';
+import { ctxOf, resetInstrumentation, runWithContext, subscribe } from '@ultimat3/core';
+import { expectedQueryLoop, statementFingerprint, statementKind } from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
@@ -22,14 +17,14 @@ const notes = entity('notes', {
 const ID = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
 
-const watching = (): StatementEvent[] => {
-  const seen: StatementEvent[] = [];
-  setStatementObserver({ onStatement: (event) => void seen.push(event) });
+const watching = (): DbStatementEvent[] => {
+  const seen: DbStatementEvent[] = [];
+  subscribe('db.statement', (event) => void seen.push(event.payload));
   return seen;
 };
 
 afterEach(() => {
-  setStatementObserver(undefined);
+  resetInstrumentation();
 });
 
 afterAll(() => {
@@ -115,15 +110,14 @@ describe('unit · memoryRepo reports one attributed event per operation', () => 
     expect(seen[0]?.error).toBe(refused);
   });
 
-  test('a throw from the observer rejects the call that sent the statement', async () => {
+  // The bus contains a subscriber's throw: an observer can never fail the call it observes.
+  test('a throwing subscriber never rejects the call that sent the statement', async () => {
     const repo = memoryRepo(notes);
-    const verdict = new RangeError('the observer decided');
-    setStatementObserver({
-      onStatement: () => {
-        throw verdict;
-      },
+    const verdict = new RangeError('the subscriber decided');
+    subscribe('db.statement', () => {
+      throw verdict;
     });
-    expect(await repo.count().catch((error: unknown) => error)).toBe(verdict);
+    expect(await repo.count()).toBe(0);
   });
 
   test('the expected-loop reason rides on the event', async () => {

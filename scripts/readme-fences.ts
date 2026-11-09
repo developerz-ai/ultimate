@@ -13,7 +13,7 @@
 //   bun run scripts/readme-fences.ts [--json] [--pin]
 
 import { flagBool, parseScriptArgs } from './lib/args';
-import { fenceSite, loweredRows, pageOfSite, siteTally } from './lib/fence-sites';
+import { fenceSite, pageOfSite, pinnedBacklogSource, siteTally } from './lib/fence-sites';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { Diagnostic, Fence, Fixture } from './lib/readme-fences';
@@ -184,16 +184,18 @@ export async function readmeFenceFindings(root: string): Promise<readonly Findin
   return checkFences({ ...measured, backlog: README_FENCE_BACKLOG }).map(fenceGapFindingFor);
 }
 
-/** `--pin`: lower each row to what is measured. It never raises one — that is a reviewed edit. */
+/**
+ * `--pin`: lower each row to what is measured. It never raises one — that is a reviewed edit. The
+ * table is edited IN PLACE: row order and every `// why:` comment survive, and a comment leaves
+ * only with the row under it — a re-sorted, comment-stripped table turned a one-row removal into a
+ * diff nobody could review.
+ */
 export function pinnedSource(
   measured: Readonly<Record<string, number>>,
   backlog: Readonly<Record<string, number>>,
   source: string,
 ): string {
-  return source.replace(
-    /(export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = \{\n)[\s\S]*?(\n\};)/,
-    (_whole, open: string, close: string) => `${open}${loweredRows(measured, backlog)}${close}`,
-  );
+  return pinnedBacklogSource('README_FENCE_BACKLOG', measured, backlog, source);
 }
 
 if (import.meta.main) {

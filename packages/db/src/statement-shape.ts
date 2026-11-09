@@ -1,10 +1,10 @@
 // Single responsibility: what shape a statement is — the verb it opens with, whether that verb
 // writes, and the identity repeated statements are counted under. Two detectors above this package
 // group statements by that identity (`x dev`'s ledger, the `statements` test fixture) and a third
-// names spans from the same verb, so the rule lives once, next to the `StatementEvent` it reads.
+// names spans from the same verb, so the rule lives once, next to the `DbStatementEvent` it reads.
 // Nothing here counts anything: a threshold is a verdict's, and a verdict is `@ultimat3/entity`'s.
 
-import type { StatementEvent } from './observe';
+import type { DbStatementEvent } from '@ultimat3/core';
 
 const LEADING_WORD = /^[A-Za-z]+/;
 const WHITESPACE = /\s+/g;
@@ -51,7 +51,9 @@ export function statementKind(text: string): 'read' | 'write' {
  * own text, already `$n`-parameterized by `sql()`, with whitespace collapsed so a builder that
  * indents differently between two calls is still one shape rather than two.
  */
-export function statementFingerprint(event: StatementEvent): string {
+export function statementFingerprint(
+  event: Pick<DbStatementEvent, 'text' | 'attribution'>,
+): string {
   const attribution = event.attribution;
   if (attribution !== undefined) return `${attribution.entity}.${attribution.op}`;
   return event.text.replace(WHITESPACE, ' ').trim();

@@ -260,11 +260,11 @@ describe('writeAll under EAGAIN', () => {
         Buffer.from('x'),
         () => {
           calls += 1;
-          throw Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+          throw Object.assign(new Error('write EIO'), { code: 'EIO' });
         },
         () => {},
       ),
-    ).toThrow('EPIPE');
+    ).toThrow('EIO');
     expect(calls).toBe(1);
   });
 
@@ -281,5 +281,60 @@ describe('writeAll under EAGAIN', () => {
     );
     expect(ok).toBe(false);
     expect(calls).toBe(EAGAIN_ATTEMPTS);
+  });
+});
+
+/**
+ * `EPIPE` is the reader closing its end — `x errors list --json | head -c 10`. That is the reader's
+ * choice, not the command's failure: it stopped writing a stack trace and exiting 1, and it keeps
+ * whatever exit code the command itself decided.
+ */
+describe('writeAll under EPIPE', () => {
+  const epipe = (): never => {
+    throw Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+  };
+
+  // fd 9 and 8: a gone reader stays gone for the process, so it must not be the fd 1 the rest of
+  // this file writes through.
+  test('a closed reader is not a throw: the line is abandoned and the fd stays quiet after', () => {
+    const before = droppedLineCount();
+    let calls = 0;
+    const counting = (...args: Parameters<typeof epipe>): never => {
+      calls += 1;
+      return epipe(...args);
+    };
+    expect(writeAll(9, Buffer.from('first\n'), counting, () => {})).toBe(false);
+    expect(writeAll(9, Buffer.from('second\n'), counting, () => {})).toBe(false);
+    expect(calls).toBe(1);
+    // Not a drop to a slow reader: nothing was lost that anyone was still reading.
+    expect(droppedLineCount()).toBe(before);
+  });
+
+  test('a reader gone on one fd leaves the other fd writing', () => {
+    writeAll(8, Buffer.from('x\n'), epipe, () => {});
+    const out: number[] = [];
+    const ok = writeAll(
+      7,
+      Buffer.from('y'),
+      (_fd, data, offset, length) => {
+        out.push(...data.subarray(offset, offset + length));
+        return length;
+      },
+      () => {},
+    );
+    expect({ ok, out: Buffer.from(out).toString() }).toEqual({ ok: true, out: 'y' });
+  });
+
+  test('through a real pipe closed early, the process keeps its own exit code and says nothing', async () => {
+    const script = `const { writeLine } = await import(${JSON.stringify(MODULE)});
+       for (let i = 0; i < 2000; i += 1) writeLine('x'.repeat(1000));
+       process.exit(3);`;
+    // `pipefail`: the pipeline's status is the writer's, not `head`'s.
+    const child = Bun.spawn(
+      ['bash', '-c', 'set -o pipefail; bun -e "$0" | head -c 10 >/dev/null', script],
+      { stdout: 'pipe', stderr: 'pipe' },
+    );
+    const stderr = await new Response(child.stderr).text();
+    expect({ code: await child.exited, stderr }).toEqual({ code: 3, stderr: '' });
   });
 });

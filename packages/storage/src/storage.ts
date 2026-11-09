@@ -8,6 +8,7 @@ import { ConfigInvalidError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { diskUnknown } from './errors';
 import { isSafeKey, isTenantScoped } from './path';
+import { instrumentedDisk } from './storage-instrument';
 
 export interface StorageConfig {
   readonly disks: Readonly<Record<string, StorageDriver>>;
@@ -96,12 +97,12 @@ export function defineStorage(config: StorageConfig): Storage {
   // `.put()` was a bare `TypeError` inside app code — `diskUnknown` unreachable for `constructor`,
   // `toString`, `valueOf`, `hasOwnProperty` and `__proto__`. One function was already answering
   // one question two ways: `default: 'constructor'` is refused above, off `Object.keys`.
-  const disks = new Map(Object.entries(config.disks));
+  const declared = new Map(Object.entries(config.disks));
   // One driver instance, one disk name. A driver told two names keeps the last, and every URL it
   // minted under the first then resolves to a disk it is not — refused here rather than 404ing
   // one alias at a time. Two disks over one root are two `localDriver()` calls.
   const registered = new Map<StorageDriver, string>();
-  for (const [diskName, driver] of disks) {
+  for (const [diskName, driver] of declared) {
     const already = registered.get(driver);
     if (already !== undefined) {
       throw new ConfigInvalidError({
@@ -112,6 +113,11 @@ export function defineStorage(config: StorageConfig): Storage {
     registered.set(driver, diskName);
     driver.registerAs?.(diskName);
   }
+  // What `disk()` hands out: the declared driver, reporting each call on the bus (`storage.<verb>`).
+  // Built once per disk, so a disk is the same object on every resolution.
+  const disks = new Map(
+    [...declared].map(([diskName, driver]) => [diskName, instrumentedDisk(diskName, driver)]),
+  );
   const shared = sharedPrefixes(config.shared, names);
   const storageInstance: Storage = {
     defaultDisk,

@@ -105,6 +105,11 @@ export interface DefineAdminInput {
 
 export interface AdminApp {
   readonly basePath: string;
+  /**
+   * Where "back to the app" goes: `/` as declared; the root a request was served under behind an
+   * HTTP base path or a routed locale (`/myapp/es/`) — `adminAppFor`, `localized-app.ts`.
+   */
+  readonly home?: string;
   readonly branding: AdminBranding;
   readonly theme: ThemeAttributes;
   readonly resources: readonly AdminResource[];
@@ -414,6 +419,7 @@ export function defineAdmin(input: DefineAdminInput): AdminApp {
 
   const app: AdminApp = {
     basePath,
+    home: '/',
     branding,
     theme: themeAttributes(branding),
     resources,

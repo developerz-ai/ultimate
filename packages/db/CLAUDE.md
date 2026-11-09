@@ -77,19 +77,25 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 
 ## Observation
 
-- **`observe.ts`: one process-wide `StatementObserver`** (`setStatementObserver()`). Guard at the
-  call site; one observer, not a list; the seam swallows nothing; `onStatement` is synchronous and
-  must not issue SQL. Only `runOn` (`statement-funnel.ts`) and `statement()` (`pglite.ts`) invoke
-  it; both observe success and failure, and notify outside the statement's own `try`.
+- **No observer slot** (v31): every statement is a `db.statement` event on core's bus
+  (`instrument()`), emitted by `traceStatement` (`statement-span.ts`) — the ONE shell both funnels,
+  `runOn` (`statement-funnel.ts`) and `statement()` (`pglite.ts`), call. Guarded by
+  `subscribed('db.statement')`; emitted on success and failure, outside the statement's own `try`;
+  a subscriber's throw is contained by the bus, never the caller's. A subscriber must not issue SQL.
+  `bun run scripts/instrument-slots.ts` (`X_INSTRUMENT_SLOT_FORBIDDEN`) refuses a `set*Observer`.
+  Each funnel reads core's `callerStack()` at its ENTRY (before the pool/turn-queue `await`) and
+  hands it to `traceStatement` as `DbStatementEvent.callerStack` — `undefined`, nothing built,
+  unless `captureStatementStacks()` is held (the `statements` fixture; never production).
 - **`attribution.ts`**: `withStatementAttribution(entity, op, fn)` — guard first (two strings, no
-  allocation), a scope not a parameter, innermost pair wins; the funnels stamp it on both settle paths.
+  allocation; the guard is `subscribed('db.statement')`), a scope not a parameter, innermost pair wins; the funnels stamp it on both settle paths.
   `@ultimat3/entity`'s `postgresRepo` is the one producer.
 - **`statement-shape.ts`**: `statementFingerprint(event)` (`entity.op` when attributed, else collapsed
   text) and `statementKind(text)` off `statementVerb(text)`. Read by `x dev`'s ledger and
   `@ultimat3/testing`'s `statements` fixture. It counts nothing.
-- **`statement-span.ts`**: `withStatementSpan` wraps the send alone — `db.<verb>`, attribute
-  `STATEMENT_ATTRIBUTE` (`@ultimat3/cli`'s `dev-traces.ts` imports it), OTel kind `client`, opened
-  only when an observer is installed.
+- **`statement-span.ts`**: `withStatementSpan` wraps the send alone — `db.<verb>`, OTel kind
+  `client`, attributes from core's `SEMCONV` only (`db.system.name`, `db.query.text`,
+  `db.operation.name`; never the old `db.statement`). **Opened for every statement**, production
+  included, subscriber or not.
 - **`expected-loop.ts` is the ONLY suppression**: `expectedQueryLoop(reason, fn)`, innermost reason,
   blank is `X_INVARIANT`; the funnel stamps `expected`; it suppresses a verdict, never a statement.
   The framework's own loops declare themselves (`migrate()`, `rollback()`, admin's `search.ts`).
@@ -97,7 +103,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`failure-store-pg.ts` writes `x_failures` through `outsideTransaction`** — the 5xx rolled the
   request's transaction back. Table applied by the boot (`FRAMEWORK_SCHEMA`) whether capture is on
   or not; bundles only (counts are `x_error_groups`'). `failurePurgeTarget` has no default window.
-- `@ultimat3/jobs` never imports this package; its statements pass the observer through
+- `@ultimat3/jobs` never imports this package; its statements reach the bus through
   `dbExecutor` (`db-executor.ts`, the ONE `PgExecutor` builder; the CLI binds it), unattributed.
 
 ## Migrations

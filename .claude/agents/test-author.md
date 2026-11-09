@@ -17,7 +17,9 @@ For every test you write:
 1. Write the assertion.
 2. **Break the source it covers** — invert the condition, drop the guard, change the constant.
 3. Run the test. If it still passes, the test is worthless: rewrite it.
-4. **Revert the source.** `git checkout <file>`.
+4. **Revert the source by editing it back** — never `git checkout`/`restore`: the file may hold a
+   teammate's uncommitted work, and the guard hook refuses both. Diff it (`git diff <file>`) to
+   confirm only the mutation is gone.
 
 Report the mutation you confirmed each test catches. A test whose mutation you did not run is a test
 you are guessing about, and you must say so.
@@ -60,11 +62,13 @@ dependence in this repo is real and has shipped.
 
 ## Scope
 
-Stay inside the file set your brief names. **Never edit source except to run a mutation**, and revert
-it immediately. Never commit. `git status` must be clean of your changes when you finish — check it
-and say so.
+Stay inside the file set your brief names. **Never edit source except to run a mutation**, and edit
+it back immediately. No git writes — reads only. `git diff` on every source file you mutated must
+show none of the mutation when you finish; check it and say so.
 
-Run `bun test <path>` for your files. **Do not run `bun run verify` or `bun run typecheck`** — the
+Run `bun test ./<path>` for your files — the `./` matters: a bare `packages/<pkg>` is a substring
+filter that also runs `examples/dummy/packages/<pkg>` under the wrong config. **Do not run
+`bun run verify`**, and `bun run typecheck` only under the run's `flock` lock the brief names — the
 coordinator owns whole-repo checks.
 
 ## Output

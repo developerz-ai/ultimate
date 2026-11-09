@@ -116,6 +116,34 @@ describe('the ratchet only tightens', () => {
     expect(next).not.toContain('time');
   });
 
+  // A `// why:` comment is a reviewed decision about the row under it, and the table's order is
+  // the reviewer's: `--pin` that re-sorted the rows and dropped every comment turned a one-row
+  // removal into a diff nobody could review.
+  test('--pin keeps every // why: comment and the row order, dropping a comment with its row', () => {
+    const source = [
+      'export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {',
+      "  'zeta: z;': 2,",
+      '  // why: re-keyed, not raised — the rename changed this fence',
+      "  'alpha: a;': 3,",
+      '  // why: this row goes',
+      "  'gone: g;': 1,",
+      "  'beta: b;': 1,",
+      '};',
+    ].join('\n');
+    const backlog = { 'zeta: z;': 2, 'alpha: a;': 3, 'gone: g;': 1, 'beta: b;': 1 };
+    const next = pinnedSource({ 'zeta: z;': 1, 'alpha: a;': 3, 'beta: b;': 1 }, backlog, source);
+    expect(next).toBe(
+      [
+        'export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {',
+        "  'zeta: z;': 1,",
+        '  // why: re-keyed, not raised — the rename changed this fence',
+        "  'alpha: a;': 3,",
+        "  'beta: b;': 1,",
+        '};',
+      ].join('\n'),
+    );
+  });
+
   test('a key with a dollar sign or a backslash is written back verbatim', () => {
     expect(pinKey('ai: const $x = `\\$y`;')).toBe("'ai: const $x = `\\\\$y`;'");
     expect(pinKey('Actions')).toBe('Actions');

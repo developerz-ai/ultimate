@@ -126,7 +126,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'policy: // decides on input alone — `row` is null': 1,
   'policy: export const publishPost = action({': 1,
   'policy: interface PolicyArgs<I = unknown, R = unknown> {': 1,
-  'policy: setDecisionSink({': 1,
   'pwa: // The generated worker posts this to every page it controls, on activation — and this is the': 1,
   // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
   'pwa: const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);': 1,

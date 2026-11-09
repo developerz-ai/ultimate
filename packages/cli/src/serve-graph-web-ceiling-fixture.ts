@@ -54,7 +54,8 @@
  * raised 1036 → 1037, measured 1037 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
  * columns a transition's policy read, pinned into its compare-and-set (#702).
  * raised 1037 → 1038, measured 1038 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
- * the supported log tee, reached through `logger.ts` by every module that logs.
+ * the supported log tee, reached through `logger.ts` by every module that logs (retired in 31.0.0:
+ * the tee is `subscribe('log.record', …)` on core's instrumentation bus).
  * raised 1038 → 1039, measured 1039 (2026-10-08, 26.1.0): the module named on
  * `SERVING_ROLE_CEILING` for route-presented modals.
  * raised 1039 → 1053, measured 1053 (2026-10-08, Web Push): the two modules named on
@@ -172,5 +173,9 @@
  * raised 1458 → 1476, measured 1476 (2026-11-09, plan 101 v31 wave B): `SERVING_ROLE_CEILING`'s 17
  * and `mcp/src/meta-catalog-render.ts` (the web role's MCP catalog, split). No existing module
  * newly reached.
+ * raised 1476 → 1485, measured 1485 (2026-11-09, plan 101 v31 wave C, slice 20):
+ * `SERVING_ROLE_CEILING`'s 9. No existing module newly reached.
+ * raised 1485 → 1486, measured 1486 (2026-11-09, plan 101 v31 wave C gate fix):
+ * `SERVING_ROLE_CEILING`'s 1, `core/src/instrument-stacks.ts`. No existing module newly reached.
  */
-export const WEB_ROLE_CEILING = 1476;
+export const WEB_ROLE_CEILING = 1486;

@@ -37,9 +37,8 @@ interface InFlight<Owner> {
 }
 
 /**
- * Age is counted in ticks that FIRED, never read from a clock. The funnel promises a statement no
- * clock read when nothing observes it (`observe.test.ts`), and the count is also the right answer to
- * a frozen process: a long GC or a SIGSTOP costs one tick however long it lasted, so answers sitting
+ * Age is counted in ticks that FIRED, never read from a clock. A tick reads no clock at all, and
+ * the count is also the right answer to a frozen process: a long GC or a SIGSTOP costs one tick however long it lasted, so answers sitting
  * unread in their sockets are never judged late. A statement began somewhere inside its first tick,
  * hence the extra one: nothing is judged before the deadline, and everything within one interval of it.
  */

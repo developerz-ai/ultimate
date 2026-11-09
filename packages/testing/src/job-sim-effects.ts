@@ -1,7 +1,7 @@
-// The effect log a simulated run is judged by: row writes (the entity row observer), mail, calls
-// out and enqueues, each attributed to the worker whose body made it. Reads are not effects, and
-// neither is what the process reports. An effect a worker makes after it died is dropped. Every
-// seam it borrows is chained onto what was installed — the reporter set aside — and handed back.
+// The effect log a simulated run is judged by: row writes, mail, calls out and enqueues, each
+// attributed to the worker whose body made it — reads and process reports are not effects, and one
+// made after its worker died is dropped. Every borrowed seam is chained onto what was installed and
+// handed back; the rows are a bus subscription (`entity.row`/`entity.bulk`), released at dispose.
 
 import type { AsyncContext } from '@ultimat3/core';
 import {
@@ -9,8 +9,8 @@ import {
   configureErrorReporting,
   installedErrorReporter,
   noopErrorReporter,
+  subscribe,
 } from '@ultimat3/core';
-import type { RowObserver } from '@ultimat3/entity';
 import type { MailDriver } from '@ultimat3/mail';
 
 export interface SimEffect {
@@ -53,7 +53,6 @@ const methodOf = (input: RequestInfo | URL, init: RequestInit | undefined): stri
   ).toUpperCase();
 
 export async function openEffectLog(options: EffectLogOptions): Promise<EffectLog> {
-  const { setRowObserver } = await import('@ultimat3/entity');
   const { currentStep } = await import('@ultimat3/jobs');
   const mail = await import('@ultimat3/mail');
   const scope = asyncContext<string>('the job simulation');
@@ -73,18 +72,12 @@ export async function openEffectLog(options: EffectLogOptions): Promise<EffectLo
     });
   };
 
-  const previousRows = setRowObserver(null);
-  const rows: RowObserver = {
-    onChange: (change) => {
-      record(`row:${change.entity}:${change.op}`);
-      previousRows?.onChange(change);
-    },
-    onBulk: (change) => {
-      for (let i = 0; i < change.rows; i += 1) record(`row:${change.entity}:${change.op}`);
-      previousRows?.onBulk?.(change);
-    },
-  };
-  setRowObserver(rows);
+  const offRows = subscribe('entity', (event) => {
+    if (event.name === 'entity.row') record(`row:${event.payload.entity}:${event.payload.op}`);
+    if (event.name !== 'entity.bulk') return;
+    const { entity, op } = event.payload;
+    for (let i = 0; i < event.payload.rows; i += 1) record(`row:${entity}:${op}`);
+  });
 
   // A send with no mail driver installed is answered by an in-memory one: the effect is the send.
   const previousMail = mail.tryMailDriver();
@@ -133,7 +126,7 @@ export async function openEffectLog(options: EffectLogOptions): Promise<EffectLo
         configureErrorReporting({ reporter: previousReporter });
         if (previousMail === undefined) mail.resetMailDriver();
         else mail.setMailDriver(previousMail);
-        setRowObserver(previousRows);
+        offRows();
       }
     },
   };

@@ -70,18 +70,18 @@ Run everything from the repo root.
 | typecheck | `bun run typecheck` · start over: `bun run typecheck:clean` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included |
-| test (one file) | `bun test packages/core/src/errors.test.ts` |
+| test (one file) | `bun test ./packages/core/src/errors.test.ts` — **always `./`**: a bare `packages/<pkg>` is a substring filter that also runs `examples/dummy/packages/<pkg>` under the wrong config |
 | test services | `docker compose -f docker/docker-compose.test.yml up -d --wait`, then `set -a; . docker/test-services.env; set +a` — in RAM; unset, live suites skip |
-| test (one name) | `bun test packages/core/src/errors.test.ts -t '<name>'` — **always with a path** (a bare `-t` loads every file) |
+| test (one name) | `bun test ./packages/core/src/errors.test.ts -t '<name>'` — **always with a path** (a bare `-t` loads every file) |
 | coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
-| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds the three apps (`x build --target static`), then verifies. As of 2026-11 every `expectedRed` table (`scripts/lib/gated-apps.ts`) are empty: every step must pass. `--unpin <app>:<step>` drops a pin |
+| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds the three apps (`x build --target static`), then verifies. As of 2026-11 every `expectedRed` table (`scripts/lib/gated-apps.ts`) is empty: every step must pass. `--app <dir>` gates one |
 | a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket)` — writes the registration, its `wiki/Error-Codes.md` row and its HTTP status decision together. Tier ≤ 4 takes exactly one of the two flags, tier 5 neither |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |
 | both tracked apps' schema dumps | `bun run schema-dumps` regenerates `packages/db/schema/` in each · `--check` only reports |
 | stale `@ultimat3/*` ranges in `bun.lock` | `bun run lockfile` reports, `bun run lockfile:fix` edits |
-| the CLI, in-repo | `bun run x -- <args>` (e.g. `bun run x -- doctor --json`) |
-| dev MCP server | `bun run x -- mcp serve` — routes, schema, policies, tests, logs, read-only SQL: ask it before grepping |
+| the CLI, in-repo | `bun run x -- <args>`; an app command takes `--cwd examples/dummy` (at the root: `X_NOT_IN_APP`) |
+| dev MCP server | `bun run x -- mcp serve --cwd examples/dummy` — routes, schema, policies, tests, logs, read-only SQL: ask it before grepping |
 | **every guard** | [`docs/architecture/guards.md`](docs/architecture/guards.md) — generated from each guard's header by `bun run scripts/guards-doc.ts --write`, drift refused by `--check` |
 
 ## Layout
@@ -217,12 +217,10 @@ hasn't already asked for.
 
 ## Note
 
-Do not use git worktrees — work directly in this checkout. If a task is big enough to need
-subagents, run them as a team in this same checkout: split the work into disjoint pieces so no two
-agents touch the same files.
+No git worktrees in this checkout: a team of subagents shares it, on disjoint file sets. (Another
+repo the owner may be editing on a non-`main` checkout: work in a git worktree there.)
 
-**Only the top-level agent spawns subagents.** A subagent does the work it was given and reports
-back — it never delegates further. Nested fan-out is why a 4-agent sweep becomes 17 running agents:
-the count stops being knowable, the disjoint-files split stops holding, and two grandchildren edit
-the same file. A subagent that finds its scope too large says so in its report and returns; widening
-the split is the top-level agent's call.
+**Only the top-level agent spawns subagents.** A subagent does its work and reports back; it never
+delegates. Nested fan-out turned a 4-agent sweep into 17: the count stops being knowable and two
+grandchildren edit one file. Too large a scope is said in the report; widening the split is the
+top-level agent's call.

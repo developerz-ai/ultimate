@@ -39,23 +39,39 @@ export interface TimelinePanelData {
   readonly nPlusOne: readonly StatementLoopFact[] | null;
 }
 
+/**
+ * Depth-first by start time. A span whose parent is not in this recording — work handed off after
+ * its trace's early spans were evicted, or a host's own parenting — is drawn at depth 0, as is one
+ * caught in a parent cycle: `totalsByKind` counts every span, so the flame must draw every span,
+ * and a walk from `null` alone left those out of it without a word.
+ */
 function flatten(trace: RequestTrace): readonly FlameRow[] {
+  const ids = new Set(trace.spans.map((span) => span.id));
   const byParent = new Map<string | null, TimelineSpan[]>();
   for (const span of trace.spans) {
-    const bucket = byParent.get(span.parentId) ?? [];
+    const parent =
+      span.parentId !== null && span.parentId !== span.id && ids.has(span.parentId)
+        ? span.parentId
+        : null;
+    const bucket = byParent.get(parent) ?? [];
     bucket.push(span);
-    byParent.set(span.parentId, bucket);
+    byParent.set(parent, bucket);
   }
   const total = trace.totalMs === 0 ? 1 : trace.totalMs;
   const rows: FlameRow[] = [];
+  const drawn = new Set<TimelineSpan>();
+  const byStart = (spans: readonly TimelineSpan[]) =>
+    [...spans].sort((a, b) => a.startMs - b.startMs);
 
-  const walk = (parentId: string | null, depth: number): void => {
-    for (const span of (byParent.get(parentId) ?? []).sort((a, b) => a.startMs - b.startMs)) {
-      rows.push({ span, depth, offset: span.startMs / total, width: span.durationMs / total });
-      walk(span.id, depth + 1);
-    }
+  const draw = (span: TimelineSpan, depth: number): void => {
+    if (drawn.has(span)) return;
+    drawn.add(span);
+    rows.push({ span, depth, offset: span.startMs / total, width: span.durationMs / total });
+    for (const child of byStart(byParent.get(span.id) ?? [])) draw(child, depth + 1);
   };
-  walk(null, 0);
+  for (const span of byStart(byParent.get(null) ?? [])) draw(span, 0);
+  // Only a cycle of two or more spans is left: none of them is anyone's root.
+  for (const span of byStart(trace.spans)) draw(span, 0);
   return rows;
 }
 

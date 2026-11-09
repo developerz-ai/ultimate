@@ -55,6 +55,33 @@ describe('unit · exercise findings', () => {
     expect(fix).toContain('.contract({ exercise: {...} }) in a test is not read here');
   });
 
+  // Thirty unreached primitives used to be thirty `defineExercise({ … })` calls to unwrap by hand:
+  // into a file that exists, the fix is the ENTRY, pasted as-is inside the one export.
+  test('into an existing exercise file the fix is the bare entry, pasteable as-is', () => {
+    const fix = exerciseFindings(RECORDS, 'present')[0]?.fix ?? '';
+    expect(fix).toStartWith("publishPost: { input: { postId: '<a posts id>' } },   # ");
+    expect(fix).not.toContain('defineExercise({ publishPost');
+    expect(fix).toContain('inside export const exercise = defineExercise({ … })');
+  });
+
+  // An app with no `apps/web/exercise.ts` (every app upgrading into the step) is handed the file.
+  test('with no exercise file the fix is the whole file to create, entry inside', () => {
+    const fix = exerciseFindings(RECORDS, 'absent')[0]?.fix ?? '';
+    expect(fix).toStartWith(
+      "import { defineExercise } from '@ultimat3/testing'; export const exercise = defineExercise({ publishPost: { input: { postId: '<a posts id>' } } });",
+    );
+    expect(fix).toContain('create apps/web/exercise.ts');
+    expect(fix).toContain('x exercise publishPost --json');
+  });
+
+  test("an override's trailing comma is never doubled", () => {
+    const [finding] = exerciseFindings(
+      [record({ name: 'p', outcome: 'unreached', override: 'p: { off: "x" }, ' })],
+      'present',
+    );
+    expect(finding?.fix).toStartWith('p: { off: "x" },   # ');
+  });
+
   test('a record with no override still gets a fix naming the name, never a blank', () => {
     const [finding] = exerciseFindings([record({ name: 'shipOrder', outcome: 'unreached' })]);
     expect(finding?.fix).toContain('shipOrder: { input:');

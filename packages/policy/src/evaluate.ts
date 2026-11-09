@@ -1,10 +1,10 @@
 // One entry point for evaluating a policy, and the only place a decision trace is
 // built. The trace is what makes an authz denial debuggable: `/_x` renders it, policy
 // tests assert on it, and an agent reading a 403 can see which clause decided.
-// It is also the one place a decision reaches the `DecisionSink` — allowed decisions
+// It is also the one place a `policy.decision` event is emitted — allowed decisions
 // included, since "who was let in" is the half an audit actually needs.
 import { type Ctx, DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
-import { decisionSinkInstalled, emitDecision } from './decisions';
+import { decisionObserved, emitDecision } from './decisions';
 import type { Policy, PolicyDecision, TraceEntry } from './policy';
 import type { Actor } from './roles';
 import type { Surface } from './surfaces';
@@ -24,12 +24,12 @@ export interface EvaluateArgs<I, R = unknown> {
 
 export interface EvaluateOptions {
   /**
-   * Build the trace. Defaults to on outside production, and to on in production only once a
-   * `DecisionSink` is installed — a `TraceEntry[]` per evaluation is real allocation on the
+   * Build the trace. Defaults to on outside production, and to on in production only while
+   * `policy.decision` has a subscriber — a `TraceEntry[]` per evaluation is real allocation on the
    * live-query path, where one write fans out to one evaluation per subscriber.
    */
   readonly trace?: boolean | undefined;
-  /** Which adapter asked. Carried to the sink; the decision itself never depends on it. */
+  /** Which adapter asked. Carried on the event; the decision itself never depends on it. */
   readonly surface?: Surface | undefined;
 }
 
@@ -53,7 +53,7 @@ let outsideProduction: boolean | undefined;
  */
 const traceByDefault = (): boolean => {
   outsideProduction ??= (tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT) !== 'production';
-  return outsideProduction || decisionSinkInstalled();
+  return outsideProduction || decisionObserved();
 };
 
 /** Test seam: re-reads the environment on the next evaluation. */
@@ -91,7 +91,7 @@ export const evaluate = <I, R = unknown>(
     ) ??
     trace.find(agrees) ??
     null;
-  if (decisionSinkInstalled()) {
+  if (decisionObserved()) {
     emitDecision({
       label: policy.label,
       allowed: decision.allowed,

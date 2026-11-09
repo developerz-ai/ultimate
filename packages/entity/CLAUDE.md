@@ -206,9 +206,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   call; a generated PK the row does not name is refused; `upsert` reads with `includeDeleted` and
   SKIPS a soft-deleted match. **A dry run is the real run rolled back**
   (`Driver.transactor()`, REQUIRED). Full rule: `docs/history/entity.md`.
-- **`setRowObserver` reports committed row changes above the driver** — one per process (returns the
-  replaced one), applied by `database()`, one comparison per write when unset, `before` only when the PK
-  is `id`, a filtered write is `onBulk`. Not a second change-feed path.
+- **`row-observer.ts` emits committed row changes above the driver** as `entity.row` on core's bus
+  (`EntityRowEvent`), applied by `database()`; one map read per write with no subscriber, `before`
+  only when the PK is `id`, a filtered write is `entity.bulk`. No slot (v31,
+  `X_INSTRUMENT_SLOT_FORBIDDEN`). Not a second change-feed path. `crossTenant()` emits
+  `entity.cross_tenant` once the capability is proven; `memory-observed.ts` emits `db.statement`
+  for the memory driver.
 - **`appendOnly: true`** (`append-only.ts`): `appendOnlyRepo` wraps OUTSIDE `sealedRepo` in both
   drivers; every rewrite rejects before any statement (`X_ENTITY_APPEND_ONLY`). No bypass, backfills
   included. Full rule: `docs/history/entity.md`.
@@ -229,7 +232,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 - **Known gap: the row observer does not see trigger writes.** A history row and a counter move
   are the trigger's (memory: `memoryLifecycle`'s raw store), never a repository write, so
-  `setRowObserver` reports neither; a live counter on PGlite or memory moves on the parent's next
+  `entity.row` reports neither; a live counter on PGlite or memory moves on the parent's next
   write. The WAL replicator does report them. As of 2026-11.
 - **`read-capture.ts` is failure capture's read half**: `observedRepo`'s `findById`/`findMany` hand
   rows to core's `recordFailureFact` — sealed properties dropped first; one check when off.

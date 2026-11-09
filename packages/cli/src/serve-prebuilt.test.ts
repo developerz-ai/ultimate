@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { setLogSink } from '@ultimat3/core';
 import { setSassCacheDir } from '@ultimat3/render/server';
 import {
   adoptPrebuiltStyles,
@@ -73,7 +74,7 @@ const adopted = adoptPrebuiltStyles(dir);
 const builds = watchBootBuilds();
 await loadAppForRole(dir, 'web');
 const islands = await loadOrBuildIslands(dir);
-reportBootBuilds('web', builds(islands.built));
+reportBootBuilds('web', builds(islands.built), process.env);
 console.log(JSON.stringify({ probe: { built: islands.built ?? null, compiled: sassCompilations(), adopted } }));`;
 
 async function run(dir: string, script: string): Promise<readonly Record<string, unknown>[]> {
@@ -150,8 +151,8 @@ describe('unit · a container boots from the image build’s store', () => {
   });
 
   test('a boot that built nothing reports nothing; one that built anything reports once', () => {
-    expect(reportBootBuilds('web', { stylesheets: 0, elapsedMs: 12 })).toBe(false);
-    expect(reportBootBuilds('sync', { stylesheets: 3, elapsedMs: 12 })).toBe(true);
+    expect(reportBootBuilds('web', { stylesheets: 0, elapsedMs: 12 }, {})).toBe(false);
+    expect(reportBootBuilds('sync', { stylesheets: 3, elapsedMs: 12 }, {})).toBe(true);
   });
 
   test('the watch counts from where it started, and an island store that built no chunk is no build', () => {
@@ -182,5 +183,29 @@ describe('unit · a container boots from the image build’s store', () => {
     expect(
       new ImageNotPrebuiltError({ role: 'sync', stylesheets: 2, elapsedMs: 5 }).cause,
     ).toStartWith('the sync role compiled 2 stylesheet(s) the image holds no result for, 5 ms');
+  });
+
+  // Correct and only slow: a laptop or a test boot has no image to fix, so an `error` there is
+  // noise that buries real ones. A deploy that is not local — production, and staging, which
+  // exists to fail the way production fails — still pages at `error`, and so does a boot that
+  // declares no environment at all: an image with neither key set is a deploy until it says not.
+  test.each([
+    [{ NODE_ENV: 'test' }, 'warn'],
+    [{ ULTIMATE_ENV: 'development' }, 'warn'],
+    [{}, 'error'],
+    [{ NODE_ENV: 'production' }, 'error'],
+    [{ ULTIMATE_ENV: 'staging' }, 'error'],
+    [{ ULTIMATE_ENV: 'prod' }, 'error'],
+  ] as const)('the level follows the environment: %o logs at %s', (env, level) => {
+    const lines: { level?: string; code?: string }[] = [];
+    const previous = setLogSink((line) => {
+      lines.push(JSON.parse(line) as { level?: string; code?: string });
+    });
+    try {
+      reportBootBuilds('web', { stylesheets: 1, elapsedMs: 3 }, env);
+    } finally {
+      setLogSink(previous);
+    }
+    expect(lines.map((line) => [line.code, line.level])).toEqual([['X_IMAGE_NOT_PREBUILT', level]]);
   });
 });

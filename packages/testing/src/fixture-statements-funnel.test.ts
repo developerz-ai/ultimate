@@ -1,17 +1,12 @@
-// The half a synthetic event cannot prove: that the throw actually reaches the caller. Statements
-// go through `@ultimat3/db`'s real pooled funnel here — a fake `Bun.SQL` under a real
-// `postgresClient` — so the loop's fifth `await client.query(...)` is what rejects, which is
-// the whole promise of strict mode. The other half is the fix line: with a schema in the registry,
+// The half a synthetic event cannot prove: that a real loop through `@ultimat3/db`'s pooled
+// funnel — a fake `Bun.SQL` under a real `postgresClient` — reaches the verdict. The bus contains
+// a subscriber's throw, so every statement resolves and the verdict is raised at the fixture's
+// disposal: strict mode fails the test, never the read. The other half is the fix line: with a schema in the registry,
 // the failure names the `preload()` that ends the loop rather than the generic `in` form.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import {
-  expectedQueryLoop,
-  postgresClient,
-  setStatementObserver,
-  sql,
-  withStatementAttribution,
-} from '@ultimat3/db';
+import { resetInstrumentation } from '@ultimat3/core';
+import { expectedQueryLoop, postgresClient, sql, withStatementAttribution } from '@ultimat3/db';
 import { clearRegistry, entity, N_PLUS_ONE_THRESHOLD, text, uuid } from '@ultimat3/entity';
 import { type TestStatements, testStatements } from './fixture-statements';
 
@@ -38,7 +33,7 @@ function installFakeSql(): { readonly statements: string[] } {
 
 afterEach(() => {
   host.Bun.SQL = realBunSql;
-  setStatementObserver(undefined);
+  resetInstrumentation();
 });
 
 /** The rejection, or `undefined` when the call resolved — the assertion says which we got. */
@@ -61,24 +56,54 @@ async function loop(times: number, statements: TestStatements): Promise<void> {
   expect(statements.count()).toBe(times);
 }
 
-describe('unit · the loop fails at the statement that crossed the threshold', () => {
-  test('the first statements resolve and the one past the threshold rejects', async () => {
+/** Disposal raises the first verdict: the code, cause and fix are read off what it threw. */
+const verdictOf = (
+  statements: TestStatements,
+): { readonly code?: string; readonly cause?: string; readonly fix?: string } | undefined => {
+  try {
+    statements[Symbol.dispose]();
+    return undefined;
+  } catch (error) {
+    return error as { code?: string; cause?: string; fix?: string };
+  }
+};
+
+describe('unit · the loop runs to its end, and the verdict is raised at teardown', () => {
+  test('every statement resolves; the shape that crossed the threshold is the verdict', async () => {
     const pool = installFakeSql();
-    using statements = await testStatements();
+    const statements = await testStatements();
     const client = postgresClient({ url: TEST_URL });
     const one = (): Promise<unknown> =>
       client.query(sql`select "id" from "n1s_members" where "id" = ${1}`);
 
-    for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD - 1; sent += 1) {
+    for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD; sent += 1) {
       expect(await rejection(one)).toBeUndefined();
     }
-    const error = await rejection(one);
 
-    expect(error?.code).toBe('X_N_PLUS_ONE_QUERY');
-    // The statement itself still went out: the observer runs after it settled, so the row a caller
-    // was given is real and the failure is about the loop, not about this one read.
+    // The statements themselves went out and answered: the failure is about the loop.
     expect(pool.statements).toHaveLength(N_PLUS_ONE_THRESHOLD);
     expect(statements.count()).toBe(N_PLUS_ONE_THRESHOLD);
+    expect(verdictOf(statements)?.code).toBe('X_N_PLUS_ONE_QUERY');
+  });
+
+  // The emit runs after the driver's `await`, where no caller frame survives; the funnel captures
+  // the stack before it while the fixture holds `captureStatementStacks()`, so the verdict raised
+  // at teardown still points at the loop.
+  test('through the real funnel, the verdict names the function that looped', async () => {
+    installFakeSql();
+    const statements = await testStatements();
+    async function readsEachMember(): Promise<void> {
+      const client = postgresClient({ url: TEST_URL });
+      for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD; sent += 1) {
+        await client.query(sql`select "id" from "n1s_members" where "id" = ${sent}`);
+      }
+    }
+    await readsEachMember();
+
+    const error = verdictOf(statements) as { readonly stack?: string } | undefined;
+    expect(error?.stack).toContain('readsEachMember');
+    expect(error?.stack).toContain('fixture-statements-funnel.test.ts:');
+    expect(error?.stack).not.toContain('fixture-statements.ts:');
   });
 
   test('a loop declared with expectedQueryLoop runs to the end', async () => {
@@ -97,13 +122,12 @@ describe('unit · the loop fails at the statement that crossed the threshold', (
 
   test('an attributed loop is reported as the repository call, not as its SQL', async () => {
     installFakeSql();
-    using statements = await testStatements();
+    const statements = await testStatements();
 
-    const error = await rejection(() =>
-      withStatementAttribution('n1s_members', 'findById', () =>
-        loop(N_PLUS_ONE_THRESHOLD, statements),
-      ),
+    await withStatementAttribution('n1s_members', 'findById', () =>
+      loop(N_PLUS_ONE_THRESHOLD, statements),
     );
+    const error = verdictOf(statements);
 
     expect(error?.cause).toContain('n1s_members.findById');
     expect(statements.count('n1s_members.findById')).toBe(N_PLUS_ONE_THRESHOLD);
@@ -111,9 +135,10 @@ describe('unit · the loop fails at the statement that crossed the threshold', (
 
   test('a hand-written loop names its own text, since no chain compiled it', async () => {
     installFakeSql();
-    using statements = await testStatements();
+    const statements = await testStatements();
 
-    const error = await rejection(() => loop(N_PLUS_ONE_THRESHOLD, statements));
+    await loop(N_PLUS_ONE_THRESHOLD, statements);
+    const error = verdictOf(statements);
 
     expect(error?.code).toBe('X_N_PLUS_ONE_QUERY');
     expect(error?.cause).toContain('select "id" from "n1s_members" where "id" = $1');
@@ -144,26 +169,24 @@ describe('unit · the fix is the one the schema already declared', () => {
 
   test('a repeated findById on a referenced entity earns the preload that ends it', async () => {
     installFakeSql();
-    using statements = await testStatements();
+    const statements = await testStatements();
 
-    const error = await rejection(() =>
-      withStatementAttribution('n1s_members', 'findById', () =>
-        loop(N_PLUS_ONE_THRESHOLD, statements),
-      ),
+    await withStatementAttribution('n1s_members', 'findById', () =>
+      loop(N_PLUS_ONE_THRESHOLD, statements),
     );
+    const error = verdictOf(statements);
 
     expect(error?.fix).toContain("db.n1s_posts.preload('author')");
   });
 
   test('an entity nothing references falls back to the in form of its own statement', async () => {
     installFakeSql();
-    using statements = await testStatements();
+    const statements = await testStatements();
 
-    const error = await rejection(() =>
-      withStatementAttribution('n1s_posts', 'findById', () =>
-        loop(N_PLUS_ONE_THRESHOLD, statements),
-      ),
+    await withStatementAttribution('n1s_posts', 'findById', () =>
+      loop(N_PLUS_ONE_THRESHOLD, statements),
     );
+    const error = verdictOf(statements);
 
     expect(error?.fix).toContain("db.n1s_posts.andWhere('id', 'in', ids).all()");
   });

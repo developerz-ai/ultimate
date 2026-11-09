@@ -3,13 +3,20 @@
 // the pure helpers `codeOf()`/`reasonOf()` directly, since nothing else asserts on them in
 // isolation from a full evaluation.
 import { afterEach, describe, expect, test } from 'bun:test';
-import { userActor } from '@ultimat3/core';
-import { memoryDecisionSink, resetDecisionSink, setDecisionSink } from './decisions';
+import type { PolicyDecisionEvent } from '@ultimat3/core';
+import { resetInstrumentation, subscribe, userActor } from '@ultimat3/core';
 import { codeOf, evaluate, reasonOf, resetPolicyTracing } from './evaluate';
 import { clearPermissions, definePermissions } from './permissions';
 import { ALLOWED, can, denied, or } from './policy';
 import { clearRoles, defineRoles } from './roles';
 import { testActor } from './test-kit';
+
+/** Every `policy.decision` event from here on, in emit order — released by `resetInstrumentation`. */
+const recordDecisions = (): { readonly events: PolicyDecisionEvent[] } => {
+  const events: PolicyDecisionEvent[] = [];
+  subscribe('policy.decision', (event) => void events.push(event.payload));
+  return { events };
+};
 
 describe('reasonOf() / codeOf()', () => {
   test('an allowed decision has no reason and no code', () => {
@@ -36,7 +43,7 @@ describe('reasonOf() / codeOf()', () => {
 
 // A `TraceEntry[]` per evaluation is allocation on the one path with the least slack: a live
 // query evaluates policy per subscriber on every change event. Nobody reads it in production —
-// unless a decision sink is installed, which is the one thing that does.
+// unless a `policy.decision` subscriber is, which is the one thing that does.
 describe('the trace is opt-in in production', () => {
   const declared = process.env['ULTIMATE_ENV'];
 
@@ -49,7 +56,7 @@ describe('the trace is opt-in in production', () => {
     if (declared === undefined) delete process.env['ULTIMATE_ENV'];
     else process.env['ULTIMATE_ENV'] = declared;
     resetPolicyTracing();
-    resetDecisionSink();
+    resetInstrumentation();
     clearPermissions();
     clearRoles();
   });
@@ -71,10 +78,10 @@ describe('the trace is opt-in in production', () => {
     expect(evaluation.deciding).toBeNull();
   });
 
-  test('an installed decision sink turns it back on, in production', () => {
+  test('a policy.decision subscriber turns it back on, in production', () => {
     seed();
     inProduction();
-    setDecisionSink(memoryDecisionSink());
+    recordDecisions();
     const evaluation = evaluate(can('post:publish'), {
       input: {},
       actor: testActor('editor', { roles: ['editor'] }).actor,
@@ -94,12 +101,11 @@ describe('the trace is opt-in in production', () => {
   });
 
   // The whole record, not a field at a time: `reason: null` on an ALLOW is what "there is no code
-  // for yes" means, and a sink that started receiving a reason on an allow would be publishing a
+  // for yes" means, and a subscriber that started receiving a reason on an allow would be publishing a
   // second vocabulary for success — invisible to any assertion that only reads `allowed`.
   test('an allowed decision emits the full event, with no code and no reason', () => {
     seed();
-    const events = memoryDecisionSink();
-    setDecisionSink(events);
+    const events = recordDecisions();
 
     evaluate(
       can('post:publish'),

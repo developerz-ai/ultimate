@@ -48,24 +48,30 @@ wasted. Never block waiting for an answer that cannot arrive.
 ## Tests are part of the slice, not after it
 
 Write the failing test **first**, watch it fail for the right reason, then fix. A test that cannot
-fail is not a test — if you are unsure, break the source, confirm the test notices, and revert. Tests
+fail is not a test — if you are unsure, break the source, confirm the test notices, and edit it back
+(never `git checkout`: the guard hook refuses it, and the file may hold a teammate's work). Tests
 live next to source as `<file>.test.ts`; the opt-in suites use `.contract.`/`.live.`/`.job.`/`.e2e.`/
 `.eval.` suffixes.
 
 ## Checks: yours are narrow, the gate is the coordinator's
 
-Run lint and tests **narrowed to your own files** — `bun test <path>`, `bunx biome check <paths>`.
+Run lint and tests **narrowed to your own files** — `bun test ./<path>` (the `./` matters: a bare
+`packages/<pkg>` is a substring filter that also runs `examples/dummy/packages/<pkg>` under the
+wrong config), `bunx biome check <paths>`. `bun run typecheck` **once, when otherwise done, under the run's lock** — `mkdir -p
+node_modules/.cache/<run> && flock node_modules/.cache/<run>/tsc.lock bun run typecheck` (the brief
+names `<run>`). `tsc -b` writes `.tsbuildinfo` and `dist/` for every workspace; two unserialised
+runs produce errors that belong to neither.
 
-**Do not run `bun run verify`, `bun run typecheck` or `bun run manifest.`** `tsc -b` writes
-`.tsbuildinfo` and `dist/` for every workspace and two agents running it at once produce errors that
-belong to neither; `manifest` rewrites a generated file. Those are the coordinator's, once, at the
-end. Whole-repo green is never your job.
+**Do not run `bun run verify`, `bun run manifest` or `bun run new-error-code`** unless the brief
+hands it to you: the gate is the coordinator's, `manifest` rewrites a generated file, and
+`new-error-code` edits shared files (`wiki/Error-Codes.md`, the error map). Whole-repo green is never
+your job; `bun run x -- verify` at the root answers `X_NOT_IN_APP` anyway.
 
 ## Finishing
 
 Leave the tree clean of anything that is not the slice: no scratch probes, no debug logging, no
-stray `dist/`. **Never commit, never `git add`, never `git stash`** — one global stack shared with
-every concurrent agent. The coordinator owns git.
+stray `dist/`. **No git writes at all** — never `commit`, `add`, `stash`, `checkout`, `restore`,
+`reset`; reads (`git diff`, `git show`, `git status`) only. The coordinator owns git.
 
 ## Output
 

@@ -122,7 +122,7 @@ export function renderCauseValue(value: unknown): string {
 export function singleLine(text: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point.
   return text.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, (char) => {
-    const known = CONTROL_ESCAPES[char];
+    const known = Object.hasOwn(CONTROL_ESCAPES, char) ? CONTROL_ESCAPES[char] : undefined;
     if (known !== undefined) return known;
     return `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`;
   });

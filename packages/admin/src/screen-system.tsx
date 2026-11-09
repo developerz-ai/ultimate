@@ -100,6 +100,9 @@ export function auditScreen(app: AdminApp, route: AdminRoute): AdminScreen {
     // Refused before anything is read: a parameter this screen does not answer is a 400 naming
     // what it does (`guardedScreen`), never the unfiltered trail.
     const asked = auditRequestOf(new URL(request.url));
+    // The trail's links and its filter form point at the page AS SERVED — under `/es/admin/audit`
+    // that keeps the locale, where the declared `route.path` dropped it on every click.
+    const here = new URL(request.url).pathname;
     // The actor's tenant's trail: `audit:read` held in org A is not a read of org B's operators,
     // their ids or what they touched. An actor with no org — the platform — reads every tenant's.
     // Never a parameter: the URL cannot name another tenant.
@@ -128,7 +131,7 @@ export function auditScreen(app: AdminApp, route: AdminRoute): AdminScreen {
     const { before: _page, ...filters } = asked;
     return (
       <Card>
-        <AuditFilter action={route.path} asked={asked} />
+        <AuditFilter action={here} asked={asked} />
         {entries.length === 0 ? (
           <p class="x-admin-empty">{t('admin.audit.empty')}</p>
         ) : (
@@ -139,7 +142,7 @@ export function auditScreen(app: AdminApp, route: AdminRoute): AdminScreen {
               return (
                 <li>
                   <code>{entry.at}</code>{' '}
-                  <a href={auditHref(route.path, { ...filters, actorId: entry.actor.id })}>
+                  <a href={auditHref(here, { ...filters, actorId: entry.actor.id })}>
                     {entry.actor.id}
                   </a>{' '}
                   <span>{operationLabel(entry)}</span>{' '}
@@ -158,9 +161,7 @@ export function auditScreen(app: AdminApp, route: AdminRoute): AdminScreen {
           </ol>
         )}
         {last === null ? null : (
-          <Link href={auditHref(route.path, { ...filters, before: last })}>
-            {t('admin.audit.older')}
-          </Link>
+          <Link href={auditHref(here, { ...filters, before: last })}>{t('admin.audit.older')}</Link>
         )}
       </Card>
     );

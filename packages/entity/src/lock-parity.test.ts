@@ -4,14 +4,13 @@
 // proves is the driver's meaning, and `lock.live.test.ts` is what proves the same against real ones.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, isUltimateError, runWithContext, subscribe, userActor } from '@ultimat3/core';
 import {
   driverError,
   generateMigration,
   pgliteClient,
   raw,
   setDbClient,
-  setStatementObserver,
   statementsOf,
 } from '@ultimat3/db';
 import { integer, text, timestamp, uuid } from './columns';
@@ -280,10 +279,8 @@ describe('unit · what a diagnostic reads', () => {
     const id = idAt('9');
     await db.counters.insert({ id, orgId: ORG_A, hits: 0, deletedAt: null });
     const seen: string[] = [];
-    setStatementObserver({
-      onStatement: ({ attribution }) => {
-        if (attribution?.entity === 'lp_counters') seen.push(attribution.op);
-      },
+    const offStatements = subscribe('db.statement', ({ payload: { attribution } }) => {
+      if (attribution?.entity === 'lp_counters') seen.push(attribution.op);
     });
     try {
       await inOrg(ORG_A, () =>
@@ -291,7 +288,7 @@ describe('unit · what a diagnostic reads', () => {
       );
       await inOrg(ORG_A, () => db.counters.lockKey('k', () => undefined));
     } finally {
-      setStatementObserver(undefined);
+      offStatements();
     }
     expect(seen).toEqual(['lock', 'update', 'lockKey']);
   });

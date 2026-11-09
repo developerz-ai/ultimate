@@ -2,6 +2,8 @@
 // `@ultimat3/auth`, `@ultimat3/entity`, `@ultimat3/jobs` and the CLI are written against this
 // list, so anything not here is an implementation detail and may change.
 
+// The `db.statement` payload is core's (the bus is tier 0); re-exported, never a second shape.
+export type { DbStatementEvent, StatementAttribution } from '@ultimat3/core';
 export { statementAttribution, withStatementAttribution } from './attribution';
 export type { BranchInfo, BranchOptions, DropBranchOptions, ReapOptions } from './branch';
 export {
@@ -203,8 +205,6 @@ export {
   migrationViewDepends,
   rollbackStepsInvalid,
 } from './migration-errors';
-export type { StatementAttribution, StatementEvent, StatementObserver } from './observe';
-export { setStatementObserver, statementObserver } from './observe';
 export type {
   PgliteClient,
   PgliteDriver,
@@ -322,7 +322,6 @@ export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState, sqlStateCode }
 export type { StatementBoundOptions } from './statement-bound';
 export { withStatementTimeout } from './statement-bound';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
-export { STATEMENT_ATTRIBUTE } from './statement-span';
 export { statementsOf } from './statement-split';
 export {
   completeTransaction,

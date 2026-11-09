@@ -251,6 +251,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ISLAND_DISPOSER_MISSING',
   'X_SOCKET_HAND_ROLLED',
   'X_EXERCISE_FILE_UNEDITABLE',
+  'X_ERROR_REPORTER_DSN_UNCLAIMED',
 ] as const;
 
 /**
@@ -472,6 +473,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_ISLAND_DISPOSER_MISSING: "an island's mount returns no disposer",
   X_SOCKET_HAND_ROLLED: 'an app upgrades a websocket itself',
   X_EXERCISE_FILE_UNEDITABLE: 'x g could not add an entry to apps/web/exercise.ts',
+  X_ERROR_REPORTER_DSN_UNCLAIMED:
+    'SENTRY_DSN is set, and the app installed a reporter marked neither as its Sentry transport nor as a local sink',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

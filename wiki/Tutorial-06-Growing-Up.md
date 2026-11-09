@@ -95,14 +95,14 @@ Per-role HPAs target `rps`, `connections` and `queue_demand` — CPU is a laggin
 | custom Kubernetes over a managed chart | node pools with real taints, affinity to node-local storage, an ingress you control | wanting the chart to look impressive |
 | distributed SQL over one Postgres | multi-region **write** locality; surviving a zone loss with no manual failover | write throughput one Postgres has not actually failed to deliver |
 
-Observability is the part that is not optional here, and the framework's half is done `As of 2026-08` — but **the default exporter is still the no-op**, so it emits nothing until you say so. Two lines at boot:
+Observability is the part that is not optional here, and the framework's half is done `As of 2026-11`: there is no code to write. The production boot (`apps/web/server.ts`, every `ROLE`) reads the variables the OpenTelemetry SDKs read and wires all three signals — traces, metrics and **logs** — from them at boot:
 
-```ts
-configureTelemetry({ exporter: otlpSpanExporter() });   // OTEL_EXPORTER_OTLP_ENDPOINT
-configureMetrics({ exporter: otlpMetricExporter() });   // same endpoint, metrics signal
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318   # all three signals
+OTEL_LOGS_EXPORTER=none                                   # optional: one signal off
 ```
 
-Point `OTEL_EXPORTER_OTLP_ENDPOINT` at your collector's **HTTP** receiver, `:4318` — `:4317` is gRPC and is refused with `X_OTLP_PROTOCOL_UNSUPPORTED`, permanently, because HTTP/2 plus protobuf is a dependency and a second wire format. Metrics also stay scrapeable at `METRICS_PORT` if you prefer an agent. [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md) says what to scrape, what to alert on, and what is still missing — no logs signal, and a rejected export is dropped rather than retried.
+Point it at your collector's **HTTP** receiver, `:4318` — `:4317` is gRPC and is refused with `X_OTLP_PROTOCOL_UNSUPPORTED`, permanently, because HTTP/2 plus protobuf is a dependency and a second wire format. A credential goes in `OTEL_EXPORTER_OTLP_HEADERS`, never in the URL (`X_OTLP_ENDPOINT_INVALID`). `OTEL_SDK_DISABLED=true` turns all three off. Metrics also stay scrapeable at `METRICS_PORT` if you prefer an agent. [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md) says what to scrape and what to alert on; anything else that wants the stream subscribes to it — `subscribe('span.end', …)`, `subscribe('log.record', …)` ([Observability](Observability)).
 
 ## The seams, so nothing surprises you
 
@@ -115,7 +115,7 @@ Point `OTEL_EXPORTER_OTLP_ENDPOINT` at your collector's **HTTP** receiver, `:431
 | cache | `@ultimat3/cache` · `CacheTier` | `cache.tiers` + `REDIS_URL` |
 | object storage | `@ultimat3/storage` · `Driver` | `S3_ENDPOINT` |
 | mail | `@ultimat3/mail` · `Driver` | mail env |
-| tracing | `@ultimat3/core` · `SpanExporter` | `configureTelemetry()` — default no-op |
+| tracing | `@ultimat3/core` · `SpanExporter`, a `span.end` subscriber | `OTEL_EXPORTER_OTLP_ENDPOINT` — unset exports nothing |
 
 Every one keys on env or a boot-time constructor. One image resolves `x dev`, a Compose host and a cluster identically.
 

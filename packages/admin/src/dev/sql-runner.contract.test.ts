@@ -1,9 +1,10 @@
 // The `/_x` SQL runner against a real Postgres (embedded PGlite): a read answers its grid, and a
 // write that reached it anyway is refused by the SERVER — the read-only transaction — and leaves
-// the table as it was. The parse guard upstream is a different layer; this one cannot be talked to.
+// the table as it was, and the statement runs as the SELECT-only role, not the app's own user. The
+// parse guard upstream is a different layer; these cannot be talked to.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { pgliteClient, raw } from '@ultimat3/db';
+import { pgliteClient, READONLY_ROLE, raw } from '@ultimat3/db';
 import { DEV_SQL_MAX_ROWS, readOnlySql } from './sql-runner';
 
 // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
@@ -35,6 +36,15 @@ describe('contract · the /_x SQL runner is read-only at the server', () => {
       expect(result.columns).toEqual(['id', 'label']);
       expect(result.rows[0]).toEqual([1, 'row 1']);
       expect(result.rows).toHaveLength(DEV_SQL_MAX_ROWS);
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  test(
+    'the statement runs as the SELECT-only role, never as the connected user',
+    async () => {
+      const result = await readOnlySql(client)('select current_user as who');
+      expect(result.rows).toEqual([[READONLY_ROLE]]);
     },
     PGLITE_BOOT_MS,
   );

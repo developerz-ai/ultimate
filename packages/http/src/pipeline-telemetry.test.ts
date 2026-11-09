@@ -3,16 +3,18 @@
 // asks what the pipeline DOES, this one asks what it reports while doing it.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { ErrorReport, ReadableSpan } from '@ultimat3/core';
+import type { ErrorReport, HttpRequestEvent, ReadableSpan } from '@ultimat3/core';
 import {
   collectMetrics,
   configureErrorReporting,
-  configureTelemetry,
   memoryErrorReporter,
   memoryExporter,
   resetErrorReporting,
+  resetInstrumentation,
   resetMetrics,
   resetTelemetry,
+  SEMCONV,
+  subscribe,
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
@@ -140,14 +142,17 @@ describe('the request span', () => {
   // no attributes at all — an exporter got a name and a duration with nothing to correlate.
   const spansOf = async (run: () => Promise<Response>): Promise<readonly ReadableSpan[]> => {
     const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    const off = subscribe('span.end', (event) => exporter.export(event.payload));
     try {
       await run();
     } finally {
+      off();
       resetTelemetry();
     }
     return exporter.spans;
   };
+
+  afterEach(resetInstrumentation);
 
   test('is a server span naming the request id, method, route and status the client saw', async () => {
     const pipeline = pipelineWith({});
@@ -156,10 +161,23 @@ describe('the request span', () => {
     const root = spans.find((span) => span.parentSpanId === undefined);
     expect(root?.name).toBe('GET /public');
     expect(root?.kind).toBe('server');
-    expect(root?.attributes['http.method']).toBe('GET');
-    expect(root?.attributes['http.route']).toBe('/public');
-    expect(root?.attributes['http.status_code']).toBe(200);
-    expect(typeof root?.attributes['http.request_id']).toBe('string');
+    expect(root?.attributes[SEMCONV.httpRequestMethod]).toBe('GET');
+    expect(root?.attributes[SEMCONV.httpRoute]).toBe('/public');
+    expect(root?.attributes[SEMCONV.httpResponseStatusCode]).toBe(200);
+    expect(root?.attributes[SEMCONV.urlScheme]).toBe('http');
+    expect(root?.attributes[SEMCONV.serverAddress]).toBe('localhost');
+    expect(typeof root?.attributes['ultimate.request_id']).toBe('string');
+  });
+
+  // v31: OpenTelemetry's STABLE http names. A collector's HTTP dashboards key on these, and the
+  // legacy spellings beside them would double every series a reader has to reconcile.
+  test('carries no legacy http.* spelling', async () => {
+    const pipeline = pipelineWith({});
+    const spans = await spansOf(() => pipeline.handle(get('/public'), { role: 'web' }));
+    const root = spans.find((span) => span.parentSpanId === undefined);
+    for (const legacy of ['http.method', 'http.status_code', 'http.target', 'http.request_id']) {
+      expect(root?.attributes[legacy]).toBeUndefined();
+    }
   });
 
   test('a parameterised route names the PATTERN, never the concrete URL and the token in it', async () => {
@@ -179,7 +197,7 @@ describe('the request span', () => {
     );
     const root = spans.find((span) => span.parentSpanId === undefined);
     expect(root?.name).toBe('GET /r/:token');
-    expect(root?.attributes['http.route']).toBe('/r/:token');
+    expect(root?.attributes[SEMCONV.httpRoute]).toBe('/r/:token');
     expect(JSON.stringify(root)).not.toContain('secret-capability-token');
   });
 
@@ -188,7 +206,7 @@ describe('the request span', () => {
     const spans = await spansOf(() => pipeline.handle(get('/wp-admin/secret'), { role: 'web' }));
     const root = spans.find((span) => span.parentSpanId === undefined);
     expect(root?.name).toBe('GET');
-    expect(root?.attributes['http.route']).toBe('unmatched');
+    expect(root?.attributes[SEMCONV.httpRoute]).toBe('unmatched');
     expect(JSON.stringify(root)).not.toContain('wp-admin');
   });
 
@@ -206,7 +224,7 @@ describe('the request span', () => {
     // refutes it — so the comparison can never pass by both sides being missing.
     const headerId = answered[0]?.headers.get('x-request-id') ?? undefined;
     expect(headerId).toBeString();
-    expect(root?.attributes['http.request_id']).toBe(headerId);
+    expect(root?.attributes['ultimate.request_id']).toBe(headerId);
   });
 
   test('a refused request still reports the status it answered with', async () => {
@@ -216,7 +234,49 @@ describe('the request span', () => {
     const root = spans.find((span) => span.parentSpanId === undefined);
     // The refusal is the outcome worth finding in a timeline; a span that stopped at the throw
     // would report no status at all.
-    expect(root?.attributes['http.status_code']).toBe(403);
+    expect(root?.attributes[SEMCONV.httpResponseStatusCode]).toBe(403);
+  });
+});
+
+/** The bus event: every request, sampled or not, with the PATTERN and the status it answered. */
+describe('http.request on the instrumentation bus', () => {
+  afterEach(resetInstrumentation);
+
+  const heard = async (run: () => Promise<Response>): Promise<readonly HttpRequestEvent[]> => {
+    const seen: HttpRequestEvent[] = [];
+    const off = subscribe('http.request', (event) => seen.push(event.payload));
+    try {
+      await run();
+    } finally {
+      off();
+    }
+    return seen;
+  };
+
+  test('fires once per request with the method, the route pattern, the status and a duration', async () => {
+    const pipeline = pipelineWith({});
+    const seen = await heard(() => pipeline.handle(get('/posts/42'), { role: 'web' }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.method).toBe('GET');
+    expect(seen[0]?.route).toBe('/posts/:id');
+    expect(seen[0]?.status).toBe(200);
+    expect(seen[0]?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(seen[0]?.error).toBeUndefined();
+  });
+
+  test('an unmatched request reports route undefined, never the probed path', async () => {
+    const pipeline = pipelineWith({});
+    const seen = await heard(() => pipeline.handle(get('/wp-admin/secret'), { role: 'web' }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.route).toBeUndefined();
+    expect(seen[0]?.status).toBe(404);
+    expect(JSON.stringify(seen[0])).not.toContain('wp-admin');
+  });
+
+  test('a refused request is still a request', async () => {
+    const pipeline = pipelineWith({ actorId: 'u_1', decision: { allowed: false, reason: 'nope' } });
+    const seen = await heard(() => pipeline.handle(get('/guarded'), { role: 'web' }));
+    expect(seen.map((event) => event.status)).toEqual([403]);
   });
 });
 

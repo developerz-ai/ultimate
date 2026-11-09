@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0845d091adf1347f62e745cdbe39d520a47c8ba757a755be7936fb163ef82c3b",
+  "buildId": "5db6cbb3903cbcbcf528fa0a98b68d04f2e4ea8e255288c34b2b37c580a319fe",
   "tiers": {
     "0": [
       "core",
@@ -2000,6 +2000,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_ERROR_REPORTER_DSN_UNCLAIMED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ERROR_RETRY_INVALID",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -2533,6 +2538,16 @@
       "code": "X_INSTANT_INVALID",
       "owner": "time",
       "at": "packages/time/src/errors.ts"
+    },
+    {
+      "code": "X_INSTRUMENT_SLOT_ALLOWANCE_STALE",
+      "owner": "scripts",
+      "at": "scripts/instrument-slots.ts"
+    },
+    {
+      "code": "X_INSTRUMENT_SLOT_FORBIDDEN",
+      "owner": "scripts",
+      "at": "scripts/instrument-slots.ts"
     },
     {
       "code": "X_INTERNAL",

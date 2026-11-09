@@ -58,7 +58,7 @@ export interface RedisTierOptions {
   readonly client?: RedisLike;
   /**
    * How long one value-path command may take, in ms. Default `DEFAULT_REDIS_COMMAND_TIMEOUT_MS`
-   * (150). A miss is `X_CACHE_DRIVER_UNAVAILABLE` in `recentTierFailures()`, read as a cache miss,
+   * (150). A miss is `X_CACHE_DRIVER_UNAVAILABLE` as a `cache.tier_failure` event, read as a cache miss,
    * and parks the value path for `REDIS_PARK_MS`. A bust has its own, longer, unparked deadline.
    */
   readonly commandTimeoutMs?: number;

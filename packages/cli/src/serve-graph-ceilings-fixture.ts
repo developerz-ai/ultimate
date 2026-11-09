@@ -28,7 +28,8 @@
  * raised 629 → 630, measured 630 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
  * columns a transition's policy read, pinned into its compare-and-set (#702).
  * raised 630 → 631, measured 631 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
- * the supported log tee, reached through `logger.ts` by every module that logs.
+ * the supported log tee, reached through `logger.ts` by every module that logs (retired in 31.0.0:
+ * the tee is `subscribe('log.record', …)` on core's instrumentation bus).
  * raised 631 → 632, measured 632 (2026-10-08, Web Push): `pwa/src/push-schema.ts` — the leaf
  * `@ultimat3/pwa/schema` the boot applies `x_push_subscriptions` from, as the mcp leaf above.
  * raised 632 → 634, measured 634 (2026-10-09, #738): `core/src/app-dir.ts` (the one walk to the app
@@ -166,8 +167,17 @@
  * `jobs/src/events-cursor.ts` (an event never missed between INSERT and COMMIT) — and one existing
  * module newly reached: `core/src/page.ts`, which `action/src/errors*.ts` now import instead of
  * core's barrel (slice 11, K6) so the browser client carries no titles table.
+ * raised 902 → 908, measured 908 (2026-11-09, plan 101 v31 wave C, slice 20): the instrumentation
+ * bus — eight NEW modules, `core/src/{instrument,instrument-semconv,logger-record,metrics-semconv,
+ * otlp-batch,otlp-log-exporter,outbound-instrument}.ts` and `jobs/src/job-instrument.ts` — less two
+ * deleted, `core/src/log-tee.ts` (the tee is `log.record`) and `db/src/observe.ts` (the slot). No
+ * existing module newly reached.
+ * raised 908 → 909, measured 909 (2026-11-09, plan 101 v31 wave C gate fix): one NEW module,
+ * `core/src/instrument-stacks.ts` — the ref-counted opt-in that makes `db.statement` carry the
+ * stack it was sent from (the `statements` fixture names a loop's line by it), split out of
+ * `instrument.ts`. No existing module newly reached.
  */
-export const MIGRATE_CEILING = 902;
+export const MIGRATE_CEILING = 909;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -231,7 +241,8 @@ export const MIGRATE_CEILING = 902;
  * raised 924 → 925, measured 925 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
  * columns a transition's policy read, pinned into its compare-and-set (#702).
  * raised 925 → 926, measured 926 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
- * the supported log tee, reached through `logger.ts` by every module that logs.
+ * the supported log tee, reached through `logger.ts` by every module that logs (retired in 31.0.0:
+ * the tee is `subscribe('log.record', …)` on core's instrumentation bus).
  * raised 926 → 927, measured 927 (2026-10-08, 26.1.0 route-presented modals):
  * `render/src/navigation-modal-rules.ts` — `NAVIGATION_PRESENTATION_META`, the meta a
  * `navigation: 'modal'` document names, reached through `navigation-tags.ts` by the render barrel.
@@ -359,5 +370,10 @@ export const MIGRATE_CEILING = 902;
  * pg-replication-position,replication-resync,replicator-resync,replicator-subject}.ts`) and
  * `render/src/render-walk.ts` (the synchronous SSR walker, out of `render-html.ts`). No existing
  * module newly reached.
+ * raised 1293 → 1302, measured 1302 (2026-11-09, plan 101 v31 wave C, slice 20): `MIGRATE_CEILING`'s
+ * net 6, plus the emitters' `mail/src/deliver.ts`, `render/src/render-instrument.ts` and
+ * `storage/src/storage-instrument.ts`. No existing module newly reached.
+ * raised 1302 → 1303, measured 1303 (2026-11-09, plan 101 v31 wave C gate fix): `MIGRATE_CEILING`'s
+ * `core/src/instrument-stacks.ts`. No existing module newly reached.
  */
-export const SERVING_ROLE_CEILING = 1293;
+export const SERVING_ROLE_CEILING = 1303;

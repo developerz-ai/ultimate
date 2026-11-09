@@ -106,4 +106,36 @@ describe('ensureReadOnlyRole', () => {
     const result = await ensureReadOnlyRole(failing);
     expect(result).toBeNull();
   });
+
+  /** A client whose statement number `at` fails once with a driver error carrying `state`. */
+  const racing = (at: number, state: string, message: string) => {
+    const ran: string[] = [];
+    let n = 0;
+    const raced: DbClient = {
+      query: async () => [],
+      one: async () => null,
+      execute: async (fragment) => {
+        n += 1;
+        if (n === at)
+          throw Object.assign(new TypeError(message), { code: state, severity: 'ERROR' });
+        ran.push(fragment.text);
+        return 0;
+      },
+    };
+    return { raced, ran };
+  };
+
+  test('a concurrent session creating the role first is a race lost, and the role is answered', async () => {
+    const { raced, ran } = racing(1, '42710', 'role "ultimate_readonly" already exists');
+    expect(await ensureReadOnlyRole(raced)).toBe(READONLY_ROLE);
+    // The statements after the lost one still ran: the grants are this session's to make too.
+    expect(ran).toHaveLength(grantReadOnlySql().length - 1);
+  });
+
+  test('a concurrent GRANT is "tuple concurrently updated": a race lost, not a refusal', async () => {
+    const { raced } = racing(2, 'XX000', 'tuple concurrently updated');
+    expect(await ensureReadOnlyRole(raced)).toBe(READONLY_ROLE);
+    // Any other internal error is still a refusal.
+    expect(await ensureReadOnlyRole(racing(2, 'XX000', 'cache lookup failed').raced)).toBeNull();
+  });
 });

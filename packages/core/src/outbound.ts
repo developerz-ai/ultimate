@@ -17,6 +17,7 @@ import { runAttempt } from './outbound-attempt';
 import type { OutboundSite } from './outbound-errors';
 import { isCallerBound, outboundBodyInvalid, outboundRetryUnsafe } from './outbound-errors';
 import { redactedPath } from './outbound-hops';
+import { instrumentedCall } from './outbound-instrument';
 import type {
   OutboundAnswer,
   OutboundDeps,
@@ -170,10 +171,10 @@ export async function outbound(
       now: call.now,
       random: deps.random,
     });
-  const answer =
-    request.breaker === undefined
-      ? await work()
-      : await guarded(request.breaker, request.signal, work);
+  const answer = await instrumentedCall(
+    { vendor: call.site.vendor, method: call.method, url: call.url },
+    () => (request.breaker === undefined ? work() : guarded(request.breaker, request.signal, work)),
+  );
   if ('stream' in answer) return answer;
   return bytesAnswer(call.site, answer);
 }

@@ -125,8 +125,7 @@ export function resetDeclaredTags(): void {
  *   afterAll(restoreTags);
  *
  * This is the shape every process-global registry in this package is undone with — `isolateGraph()`
- * in `graph.ts`, `isolateTiers()` in `invalidate.ts`, `isolateTierFailures()` in
- * `tier-failures.ts` — and one reason covers all four: `@ultimat3/testing`'s leak guard compares
+ * in `graph.ts`, `isolateTiers()` in `invalidate.ts` — and one reason covers all three: `@ultimat3/testing`'s leak guard compares
  * its before/after samples for ADDITIONS only, so a file that DELETES what a neighbour registered
  * is invisible to it and surfaces instead as a failure in an innocent file with nothing in it to
  * explain the missing state. A reset in a test file is the one leak no mechanism catches for you.

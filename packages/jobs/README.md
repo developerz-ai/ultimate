@@ -1268,7 +1268,7 @@ export const wake = startQueueWake({ listener: client, executor });
 | a pause is read by the claim itself | `pauseQueue` stops claims at each worker's NEXT claim — no poll to wait for. `resumeQueue` announces the queue |
 | a paused task | checked when it is due, so the pause holds for the very next occurrence; a task found paused is looked at again after `PAUSE_RECHECK_MS` (5 s), which is the resume's latency |
 | a standby scheduler | asks for the lease every `renewEveryMs`, not every round |
-| a queue no registered job names | still polled — a per-call `enqueue({ queue })` may land there — and reported once at boot as `jobs.worker.queue-unregistered`; idle, it adds nothing to the one claim |
+| a queue no registered job names | still polled — a per-call `enqueue({ queue })` may land there — and reported once at boot as `jobs.worker.queue-unregistered`, `default` excepted (where a `job()` naming no queue lands); idle, it adds nothing to the one claim |
 | an enqueuer whose clock runs ahead of the database's | its "immediate" jobs are due a moment from now (`run_at` is the enqueuer's clock); up to 1 s ahead they are still announced, past that they start on the poll |
 
 Lower `idlePollMaxMs` to trade idle load for the no-wake bound; there is no flag for the old fixed interval.
@@ -1594,9 +1594,16 @@ aborts the attempt — `steps.ts` then refuses every write. `ack` and `nack` are
 
 ## Trace and actor
 
-An enqueue stamps the current span's `traceparent` onto the row, and the worker opens the job's
-span as a **child** of it: a checkout trace shows the HTTP span, the action span and the charge
-that ran two seconds later as one trace.
+Every `enqueue` / `enqueueMany` opens a `job.<name>.enqueue` **producer** span (a child of the
+current span, or a new root) and stamps ITS `traceparent` onto the row; the worker opens the run's
+`job.<name>` **consumer** span as a child of that: a checkout trace shows the HTTP span, the action
+span, the enqueue and the charge that ran two seconds later as one trace. Both carry
+OpenTelemetry's messaging attributes (`messaging.system=ultimate`, `messaging.operation.type`,
+`messaging.destination.name` = the queue, `messaging.message.id`) beside `ultimate.job.*`.
+
+On core's instrumentation bus, sampled or not: `job.enqueue` (`{ job, queue, id }`) per enqueued
+job, `job.perform` (`{ job, queue, id, attempt, durationMs, error? }`) per attempt that ran — a
+failed attempt carries its error. `subscribe('job.perform', …)` from `@ultimat3/core`.
 
 `handle.as(actor, input)` also records `enqueuedBy` — the actor's id. **Attribution, never
 authority.** A job body runs with system authority; the framework does not impersonate the

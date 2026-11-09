@@ -19,7 +19,7 @@ Who *raises* it is a separate question, and the answer differs by surface:
 
 | Surface | What happens at the threshold |
 |---|---|
-| `testStatements` (`@ultimat3/testing`) | **throws** `nPlusOne(…)` from inside `onStatement`, so the failing line is the loop's own line |
+| `testStatements` (`@ultimat3/testing`) | **records** `nPlusOne(…)` per shape and **throws it at disposal**, so the test fails — a bus subscriber's throw is contained, never the read's failure |
 | `x dev` (`packages/cli/src/dev-n-plus-one.ts`) | **records a verdict and logs one warning** per request per code — it never throws, because a reporting-only observer that threw would break the app it is watching |
 | `/_x` and the browser overlay | render the recorded verdict; they raise nothing |
 
@@ -81,22 +81,22 @@ Everything else about them differs, deliberately:
 | | `x dev`'s ledger | `testStatements` |
 |---|---|---|
 | Counting window | one `Ctx` — a `WeakMap` keyed on the request, which dies with it | fixture creation → disposal, including statements sent outside any request |
-| At the threshold | records a verdict, logs once per request per code | throws, once per shape |
-| `expectedQueryLoop` statements | not counted at all — this ledger *is* the verdict | counted by `count()` and `shapes()`, excluded only from the `unexpected` tally the throw reads |
+| At the threshold | records a verdict, logs once per request per code | records a verdict, once per shape; disposal throws the first |
+| `expectedQueryLoop` statements | not counted at all — this ledger *is* the verdict | counted by `count()` and `shapes()`, excluded only from the `unexpected` tally the verdict reads |
 
 So a shape can be visible in a test's `shapes()` and absent from `x dev`'s verdict list for the
 same run, and neither is wrong: one is measuring, the other is judging.
 
 ## The seam it rides on
 
-None of this reaches into the driver. `@ultimat3/db`'s `observe.ts` is a tier-1, process-wide
-`StatementObserver` seam — `setStatementObserver(observer)` installs one, `statementObserver()`
-reads it — that the two statement funnels (`runOn` in `statement-funnel.ts`, `statement()` in `pglite.ts`)
-call after every statement settles, success or failure. Every call site guards first: read the
-accessor, branch on `undefined`, and only build a `StatementEvent` once something is actually
-installed. Nothing is allocated on the path when nothing is watching — one property read and one
-branch, uninstalled — which is what makes this genuinely free in production (axiom 6): `serve.ts`
-never calls `setStatementObserver`, so a production process always takes that branch.
+None of this reaches into the driver. Every statement is a `db.statement` event on core's
+instrumentation bus, emitted by `traceStatement()` (`packages/db/src/statement-span.ts`), which
+both statement funnels (`runOn` in `statement-funnel.ts`, `statement()` in `pglite.ts`) call after
+every statement settles, success or failure; the memory driver emits one per repository operation.
+`subscribe('db.statement', handler)` hears it, beside every other subscriber. The emitter guards
+first — `subscribed('db.statement')` — and builds a `DbStatementEvent` only when something listens:
+one map read with no subscriber, which is what makes this free in production (axiom 6). `serve.ts`
+subscribes none. The statement's `db.<verb>` span opens either way. `As of 2026-11` (v31).
 
 `@ultimat3/entity`'s `postgresRepo` (`packages/entity/src/pg-driver.ts`) is what attaches an
 `entity`/`op` pair to each statement, via `withStatementAttribution(entity.$name, op, send)`. It is
@@ -109,11 +109,12 @@ it one-per-step by design, so a job of five steps is not a verdict against the f
 ## Where it installs: dev only
 
 `x dev` — `startDev()` in `packages/cli/src/cmd-dev.ts` — builds a `StatementLedger`
-(`createStatementLedger()`, `packages/cli/src/dev-n-plus-one.ts`) and installs its `observer` at
-boot, before the app's own modules load, alongside the trace recorder. The ledger keys its
+(`createStatementLedger()`, `packages/cli/src/dev-n-plus-one.ts`) and subscribes it at
+boot (`subscribe('db.statement', …)` in `packages/cli/src/dev-boot.ts`), before the app's own
+modules load, alongside the trace recorder. The ledger keys its
 per-shape counts on the request's `Ctx` object in a `WeakMap`, so state dies with the request it
 belongs to and nothing needs sweeping. `packages/cli/src/serve.ts` — the production entry point —
-never calls `setStatementObserver` at all. There is no flag to disable this in dev and no flag to
+never subscribes it. There is no flag to disable this in dev and no flag to
 enable it in prod; the wiring itself is the switch.
 
 ## Silencing a genuine one-per-row loop
@@ -159,7 +160,7 @@ one migration per transaction, one statement at a time, inside a scope naming wh
 
 `x dev` warns; CI is not attended. `@ultimat3/testing`'s `statements` fixture
 (`testStatements`, `packages/testing/src/fixture-statements.ts`) installs the identical
-detector in **throw** mode for the length of one test — destructuring `statements` is the whole
+detector in **strict** mode for the length of one test — its verdict fails the test at teardown — destructuring `statements` is the whole
 opt-in, there is no `strict: true` flag to forget:
 
 ```ts
@@ -174,19 +175,20 @@ test('the feed reads its authors once', async ({ statements }) => {
 It counts from the moment the fixture is built, not from a request boundary — a plain unit test
 calling `posts.findById(id)` in a loop has no `Ctx` anywhere, and that is exactly the loop this
 fixture exists to catch, unlike the dev ledger which only counts inside a request. The verdict
-still only counts unexpected statements — an `expectedQueryLoop` scope suppresses the throw the
+still only counts unexpected statements — an `expectedQueryLoop` scope suppresses the verdict the
 same way it suppresses the dev warning — while `count()` and `shapes()` report every statement sent,
 expected ones included, because a test asserting "this page issues two statements" must not see a
-different number depending on who declared what. It throws once per shape, at the statement that
-crosses the threshold, so the failing line is the loop's own line rather than a summary at
-teardown; `shapes()` still reports the whole loop afterward for a test that caught the error.
+different number depending on who declared what. One verdict per shape, recorded at the statement
+that crosses the threshold and raised when the fixture is disposed — the bus contains a
+subscriber's throw, so an observer can never fail the read it observes. The error names the shape
+and its count; `verdicts()` reads them before teardown, and `shapes()` reports the whole loop.
 
 ## Why this costs production nothing
 
-Three separate facts add up to zero production cost, not one flag: the `observe.ts` seam is
-guard-first and allocates nothing uninstalled; `withStatementAttribution` is the same shape,
+Three separate facts add up to zero production cost, not one flag: the `db.statement` emitter is
+guard-first and allocates nothing with no subscriber; `withStatementAttribution` is the same shape,
 guarding before it even opens its `AsyncLocalStorage` scope; and `serve.ts` — the only production
-entry point — never calls `setStatementObserver`. Turning the detector on is entirely a fact about
+entry point — never subscribes the ledger. Turning the detector on is entirely a fact about
 which binary is running: `x dev` wires it; `apps/web/server.ts` under any `ROLE` never does. There is no `x serve` command — the production entry is the scaffolded `server.ts`, run directly or through `x build`'s artifact.
 
 ## See also

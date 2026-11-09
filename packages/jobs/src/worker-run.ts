@@ -4,7 +4,7 @@
 // one is everything that has to be true for the duration of a single run.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { parseTraceparent, withSpan } from '@ultimat3/core';
+import { instrument, parseTraceparent, SEMCONV, subscribed, withSpan } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
 import { claimOf } from './driver';
 import { JobSlotLostError } from './errors';
@@ -12,6 +12,7 @@ import { executeJob } from './execute';
 import type { JobExecution } from './execute-result';
 import { startLeaseHeartbeat } from './heartbeat';
 import { getJob } from './job';
+import { messagingAttributes } from './job-instrument';
 import type { IntervalScheduler } from './renewal-timer';
 import type { RunSignal } from './run-signal';
 import { createRunSignal } from './run-signal';
@@ -82,6 +83,36 @@ function settlingStops(driver: JobDriver, stop: () => void): JobDriver {
   };
 }
 
+/** The outcomes that failed the attempt — `suspended` and `interrupted` are not the body's fault. */
+const FAILED_OUTCOMES: ReadonlySet<JobExecution['outcome']> = new Set([
+  'retried',
+  'dead-lettered',
+  'dropped',
+  'refused',
+]);
+
+const failureOf = (execution: JobExecution): { readonly error: unknown } | undefined =>
+  FAILED_OUTCOMES.has(execution.outcome)
+    ? { error: execution.error ?? execution.outcome }
+    : undefined;
+
+/** `job.perform` on the bus: every attempt that ran, sampled or not, failed or not. */
+function performed(
+  claimed: ClaimedJob,
+  startedAt: number,
+  failure: { readonly error: unknown } | undefined,
+): void {
+  if (!subscribed('job.perform')) return;
+  instrument('job.perform', {
+    job: claimed.name,
+    queue: claimed.queue,
+    id: claimed.id,
+    attempt: claimed.attempt,
+    durationMs: performance.now() - startedAt,
+    ...failure,
+  });
+}
+
 /** Run one claimed job under its lease, its slot and its span, and settle it with the driver. */
 export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExecution> {
   const { claimed, driver, fleetSlots, workerId, visibilityTimeoutMs } = options;
@@ -146,6 +177,8 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
   // each one depends on the last. `undefined` is "never taken", and both handbacks are idempotent.
   let runSignal: RunSignal | undefined;
   let stopSlotRenewal: (() => void) | undefined;
+  let startedAt = 0;
+  let reported = false;
 
   try {
     // The caller's context plus this lease's cancellation, so a job cancelled from outside — or
@@ -170,15 +203,16 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
       signal.abort(new JobSlotLostError({ job: claimed.name, jobId: claimed.id, slot: slot.slot }));
     });
 
-    // The job's span is a CHILD of the request that queued it when the row carries a trace. That
-    // link is what `04-jobs.md` promised and no column existed to hold: without it a checkout's
-    // `chargeCard` opens a fresh root two seconds later with nothing pointing back.
+    // The job's CONSUMER span is a child of the enqueue's producer span (itself a child of the
+    // request that queued it) when the row carries a trace. That link is what `04-jobs.md`
+    // promised: without it a checkout's `chargeCard` opens a fresh root two seconds later.
     const parent = parseTraceparent(claimed.traceparent);
 
-    return await withSpan(
+    const execution = await withSpan(
       `job.${handle.name}`,
       () => {
         started = true;
+        startedAt = performance.now();
         return executeJob({
           driver: settlingStops(driver, heartbeat.stop),
           claimed,
@@ -190,16 +224,26 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
         });
       },
       {
+        kind: 'consumer',
         ...(parent === undefined ? {} : { parent }),
         attributes: {
-          'job.name': handle.name,
-          'job.id': claimed.id,
-          'job.attempt': claimed.attempt,
-          ...(claimed.enqueuedBy === undefined ? {} : { 'job.enqueued_by': claimed.enqueuedBy }),
+          ...messagingAttributes('process', claimed.queue, handle.name),
+          [SEMCONV.messagingMessageId]: claimed.id,
+          'ultimate.job.attempt': claimed.attempt,
+          ...(claimed.enqueuedBy === undefined
+            ? {}
+            : { 'ultimate.job.enqueued_by': claimed.enqueuedBy }),
         },
       },
     );
+    // Marked BEFORE the emit: a strict subscriber's throw lands in the `catch`, which must not
+    // report the same attempt twice.
+    reported = true;
+    performed(claimed, startedAt, failureOf(execution));
+    return execution;
   } catch (error) {
+    // An attempt whose body started and then threw past `executeJob` is still an attempt.
+    if (started && !reported) performed(claimed, startedAt, { error });
     // Stopped BEFORE the row goes back, never after: a renewal landing on a handed-back row
     // answers "not yours", which `heartbeat.ts` reports as a lease lost under a running job.
     // Both are idempotent, so the `finally` repeating them costs nothing.

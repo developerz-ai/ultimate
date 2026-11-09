@@ -148,7 +148,7 @@ default store at `replicas: 6` is six ledgers of twenty million, which is a budg
 | A refusal is `X_LLM_REFUSED`, not a schema failure | it is a 200 with no answer in it, and a repair turn buys the same refusal again |
 | The refusal's `alternative` is only ever a **more capable** model | registration order is most-capable-first and `moreCapableThan` walks it upward; retrying a refusal on a weaker model is the one retry that cannot help, so an unbeatable model gets no suggestion at all |
 | A local refusal is never collected into `X_AI_PROVIDER_UNAVAILABLE` | `X_AI_KEY_MISSING` and `X_AI_REQUEST_INVALID` are raised before the request leaves; retrying them across providers burns attempts on the same answer and discards the runnable `fix:`. `generate()` and `stream()` therefore answer the same misconfiguration the same way |
-| Fallback is across **providers serving one model**, never across models | a silent model swap changes what answered, what it cost and which eval baseline the answer belongs to; the gateway stamps `result.provider`, and `llm()` puts it on the span as `llm.provider`, so the fallback that does exist is never silent |
+| Fallback is across **providers serving one model**, never across models | a silent model swap changes what answered, what it cost and which eval baseline the answer belongs to; the gateway stamps `result.provider`, and `llm()` puts it on the span as `gen_ai.provider.name`, so the fallback that does exist is never silent |
 | The repair turn replays the tool call's arguments, never an empty `text` | an answer through the `respond` tool leaves `text` empty, and an empty text block is a 400 — the repair came back as `X_AI_PROVIDER_UNAVAILABLE` |
 | `reserve()` **debits, then checks** | the in-memory scopes check and debit with no `await` between, the store's through its atomic `take`; a read-then-write let concurrent calls — one request per scope racing one org key — all read the same `spent()` and all pass. `record` reconciles and `release` gives it back |
 | The cache key is every tool **whole**, through core's `fingerprint` | every `llm()` tool is named `respond`, so a key over names served an answer shaped for an old `output` schema; a cache `set` that throws is logged, never turned into a failure of a call already paid for |
@@ -318,7 +318,7 @@ openAiProvider({
   apiKey: env.GATEWAY_TOKEN,
   baseUrl: 'https://llm.acme.internal/v1',
   models: ['llama-internal-70b'],
-  name: 'acme-gateway',            // what `result.provider` and `llm.provider` will say
+  name: 'acme-gateway',            // what `result.provider` and `gen_ai.provider.name` will say
   headers: { 'x-team': 'platform' },
 });
 
@@ -847,7 +847,7 @@ configureAi({ gateway, redact: (text) => scrubPatientIdentifiers(text) });
 
 The redactor sees the whole rendered prompt and the system prompt — template as well as values,
 because a redactor shown only the values cannot tell a name in a data slot from the same name in an
-instruction. Whether it changed anything is on the span as `llm.redacted`.
+instruction. Whether it changed anything is on the span as `ultimate.llm.redacted`.
 
 **What** to remove is yours: a PII classifier is a model choice, so the framework ships the seam
 and not the classifier. The one rule it does enforce, redactor or not: a `Secret` among the

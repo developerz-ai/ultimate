@@ -20,7 +20,8 @@ things do one job, say which one dies.
    config mechanisms, two ways to register or mount something, an escape hatch duplicating the
    sanctioned path, a legacy path kept beside a new one. Name both sites with `file:line`.
 2. **Wrong tier, wrong package.** A package whose real imports say it belongs lower (the rule is the
-   *lowest* tier its imports allow, and nothing currently checks the floor). A concept whose home is
+   *lowest* tier its imports allow; `boundaries` refuses one above its floor with no `FLOOR_ABOVE`
+   row — `X_TIER_FLOOR_UNDECLARED` — so judge whether each row's reason still holds). A concept whose home is
    split across two packages — apply the "where do I look for X" test. A declared sideways edge that
    does not earn its line. A package that should split, or two that should merge.
 3. **Leaky or pointless seams.** An interface exposing one implementation's details — could a second
@@ -57,12 +58,13 @@ different bytes". Not "this is inconsistent". If you cannot state the cost, it i
 ## Method
 
 Read whole packages rather than grepping fragments. `scripts/lib/tiers.ts` and `bun run boundaries`
-are ground truth for edges — but note `boundaries` checks only the ceiling, so derive the real import
-graph yourself when judging placement. Cross-check the documented dependency graph against actual
+are ground truth for edges — `boundaries` checks the ceiling and the floor (`FLOOR_ABOVE`), not
+whether a declared sideways edge still earns its line, so derive the real import graph yourself
+when judging placement. Cross-check the documented dependency graph against actual
 imports; where they disagree, the phantom edges usually mark exactly where something was duplicated
 instead of imported.
 
-Never edit, never commit. Read-only.
+**Read-only means no git writes.** The tree holds other agents' uncommitted work: never `git checkout`, `restore`, `stash`, `reset`, `clean`, `add` or `commit` — read with `git diff`, `git show`, `git status`. `git status` will not be clean, and making it clean destroys a teammate's slice. Probes go in the scratchpad or `node_modules/.cache/<run>/`, never in a tracked file; delete them when done.
 
 ## Output
 

@@ -3,13 +3,14 @@
 // cost was in building the source reported milliseconds under a parent that reported seconds.
 
 import { describe, expect, test } from 'bun:test';
-import type { ReadableSpan } from '@ultimat3/core';
+import type { QueryReadEvent, ReadableSpan } from '@ultimat3/core';
 import {
-  configureTelemetry,
   ctxOf,
   currentSpan,
   memoryExporter,
+  resetInstrumentation,
   resetTelemetry,
+  subscribe,
   userActor,
 } from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
@@ -61,12 +62,26 @@ const listOrders = (inside: ActiveSpans, cached: boolean) =>
 
 async function traced(run: () => Promise<unknown>): Promise<readonly ReadableSpan[]> {
   const exporter = memoryExporter();
-  configureTelemetry({ exporter });
+  const off = subscribe('span.end', (event) => exporter.export(event.payload));
   try {
     await run().catch(() => undefined);
     return exporter.spans;
   } finally {
+    off();
     resetTelemetry();
+    resetInstrumentation();
+  }
+}
+
+/** What the bus heard while `run` ran — every call, sampled or not. */
+async function heard(run: () => Promise<unknown>): Promise<readonly QueryReadEvent[]> {
+  const seen: QueryReadEvent[] = [];
+  const off = subscribe('query.read', (event) => seen.push(event.payload));
+  try {
+    await run().catch(() => undefined);
+    return seen;
+  } finally {
+    off();
   }
 }
 
@@ -106,5 +121,23 @@ describe('the query span covers the whole read', () => {
     const spans = await traced(() => listOrders({}, false)({ orgId: ORG }, { ctx: stranger }));
     expect(spans).toHaveLength(1);
     expect(spans[0]?.status.code).toBe('error');
+  });
+});
+
+describe('query.read on the instrumentation bus', () => {
+  test('a read emits once, named, with a duration and no error', async () => {
+    const seen = await heard(() => listOrders({}, false)({ orgId: ORG }, { ctx: reader }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.query).toBe('listOrders');
+    expect(seen[0]?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(seen[0]?.error).toBeUndefined();
+  });
+
+  test('a denied read is still a read, and carries its refusal', async () => {
+    const noGrants: Actor = { ...userActor({ id: 'u2' }), permissions: [] };
+    const stranger = ctxOf({ actor: noGrants });
+    const seen = await heard(() => listOrders({}, false)({ orgId: ORG }, { ctx: stranger }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.error).toBeDefined();
   });
 });

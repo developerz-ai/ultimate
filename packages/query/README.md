@@ -557,8 +557,8 @@ required positional argument of `cacheKeyFor`, because an optional one is one a 
 re-asks it per rung before each write, so a bust that lands mid-read cannot be republished for the
 whole TTL — the caller still gets the rows it read, because those are its answer; only publishing is
 refused. Every tier call goes through `bestEffort`, so a Redis refusal is a miss rather than a
-failed business read and shows up in `recentTierFailures()` under the name of the tier that
-refused. Concurrent misses of one key share one `load()`. `@ultimat3/query` used to carry its own
+failed business read and is published as a `cache.tier_failure` event under the name of the tier
+that refused — `subscribe('cache.tier_failure', handler)`. Concurrent misses of one key share one `load()`. `@ultimat3/query` used to carry its own
 copy of the first two and none of the third.
 
 `cache.ttlMs` is refused at `query()` unless it is positive and finite

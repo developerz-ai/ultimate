@@ -1,11 +1,13 @@
 // Single responsibility: structured JSON logging. One line per event, machine-readable by
-// default because the primary reader is an agent tailing `x logs --json`.
+// default because the primary reader is an agent tailing `x logs --json`. Every process-logger
+// line is also published as `log.record` on the instrumentation bus — the OTLP logs exporter's feed.
 
 import { assert } from './assert';
 import { type Clock, systemClock } from './clock';
 import { renderCauseValue } from './error-render';
 import { isUltimateError } from './errors';
-import { teeLogLine } from './log-tee';
+import { subscribed } from './instrument';
+import { publishRecord } from './logger-record';
 import { isSecret, REDACTED } from './secret';
 
 // Re-exported, not redefined: `secret.ts` owns the placeholder because a `Secret` has to render
@@ -192,7 +194,8 @@ let logSink: LogSink | undefined;
 /**
  * TEST SEAM. Every line with no explicit `writer` goes to `sink` INSTEAD of the process's streams,
  * until it is cleared with `undefined`. Returns the sink that was installed, so a caller restores
- * rather than clears — the shape `setRowObserver` has, for the same shared-process reason.
+ * rather than clears — one `bun test` process is shared, so a harness hands back what an outer
+ * one installed.
  *
  * It exists for two callers. A test preload installs a sink that drops every line, so a green run
  * prints its reporter and nothing else; and a test that asserts on what the PROCESS logger wrote
@@ -221,8 +224,6 @@ export function setLogSink(sink: LogSink | undefined): LogSink | undefined {
  */
 function defaultWriter(line: string, level: LogLevel): void {
   streamWriter(line, level);
-  // After the streams, so a sink can never cost a line its stdout (`addLogSink`, `log-tee.ts`).
-  teeLogLine(line, level, streamWriter);
 }
 
 /** The process's streams, or the `setLogSink` seam standing in for them. */
@@ -451,6 +452,11 @@ export function structuredLogger(options?: LoggerOptions): Logger {
       ...unreserved(caller),
     };
     writer(renderLine(line, lineLevel, message, line.ts), lineLevel);
+    // `log.record`, after the streams, so a subscriber can never cost a line its stdout. The process
+    // logger's population only: a logger given its own `writer` is a test's or a command's answer.
+    if (writer === defaultWriter && subscribed('log.record')) {
+      publishRecord(clock, lineLevel as Exclude<LogLevel, 'silent'>, message, caller);
+    }
   }
 
   return {

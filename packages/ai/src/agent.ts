@@ -52,6 +52,7 @@ import { runTotal } from './agent-usage';
 import { budgetKeysFor, currentBudget, withBudget } from './budget';
 import { AgentMaxTurnsError, AgentToolUnexposedError, LlmOutputInvalidError } from './errors';
 import { answerAttributes } from './llm-answer';
+import { reportedCall } from './llm-instrument';
 import type { PromptVars } from './prompt';
 import { promptCacheHint } from './prompt-cache';
 import type { AiMessage, GenerateRequest } from './provider';
@@ -219,8 +220,8 @@ async function run<
       'agent.prompt.hash': prompt.hash,
       'agent.tools': adapted.offered.length,
       'agent.max_turns': maxTurns,
-      'llm.redacted': rendered !== rawPrompt || !sameSystem(system, rawSystem),
-      'llm.prompt_cache': promptCache !== undefined,
+      'ultimate.llm.redacted': rendered !== rawPrompt || !sameSystem(system, rawSystem),
+      'ultimate.llm.prompt_cache': promptCache !== undefined,
     });
     // Read when the run ends, not here: the gateway may be what registers the model's row.
     const reportSampling = (): void => {
@@ -291,7 +292,9 @@ async function run<
       compacting,
       send: (request) => {
         assertCost(request);
-        return deadline.guard(meter.call(gateway.generate(request))).catch((error: unknown) => {
+        // `reportedCall`: each turn is one model call, so each is one `ai.llm` (`llm-instrument.ts`).
+        const answered = reportedCall(request.model ?? model, gateway.generate(request));
+        return deadline.guard(meter.call(answered)).catch((error: unknown) => {
           // The caller left mid-call: the aborted socket reads as a provider failure, which is
           // RETRYABLE. Say what happened instead.
           throwIfAborted(args.ctx);

@@ -3,12 +3,12 @@
 //
 // It is written against the whole stack on purpose. A test that drove `LiveQueryRegistry` with a
 // hand-built definition would prove the registry works — which `@ultimat3/realtime`'s own suites
-// already do — and say nothing about the two joins this driver adds: `setRowObserver` seeing a
-// committed write, and `liveQueryDefinition` turning a declared query into something subscribable.
+// already do — and say nothing about the two joins this driver adds: an `entity.row` subscriber hearing
+// a committed write, and `liveQueryDefinition` turning a declared query into something subscribable.
 
 import { afterEach, beforeEach, test as bunTest, describe, expect } from 'bun:test';
-import { type Actor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
-import { database, defaultDriver, entity, setRowObserver, text, uuid } from '@ultimat3/entity';
+import { type Actor, ctxOf, resetInstrumentation, runWithContext, userActor } from '@ultimat3/core';
+import { database, defaultDriver, entity, text, uuid } from '@ultimat3/entity';
 import { can, definePermissions, defineRoles } from '@ultimat3/policy';
 import { from, query, registerQueries, resetQueries, t } from '@ultimat3/query';
 import { type SubscribeDriver, subscribeDriver } from './fixture-subscribe';
@@ -97,9 +97,9 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
   afterEach(async () => {
     await driver.stop();
     resetQueries();
-    // The observer is process-global and `driver.stop()` restores what it replaced; this is the
-    // belt for a test that threw between `subscribeDriver` and here.
-    setRowObserver(null);
+    // The bus is process-global and `driver.stop()` unsubscribes; this is the belt for a test that
+    // threw between `subscribeDriver` and here.
+    resetInstrumentation();
   });
 
   bunTest('the snapshot is the rows the query reads, and only those', async () => {
@@ -113,7 +113,7 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
     expect(feed.patches()).toEqual([]);
   });
 
-  // The join this whole driver exists for. Without `setRowObserver` there is no change source in a
+  // The join this whole driver exists for. Without the `entity.row` event there is no change source in a
   // test process at all, and this assertion is the one that fails first when it is missing.
   bunTest('a committed write arrives as a patch, not as a second snapshot', async () => {
     const feed = await driver.subscribe<{ id: string; title: string }>(

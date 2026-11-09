@@ -54,14 +54,27 @@ async function waitFor(seen: () => string, marker: string): Promise<string> {
   }
 }
 
-/** A port the kernel just handed out and immediately gave back — what a platform would inject. */
+/** Every port `freePort` has answered in this file: a released port is the kernel's to re-hand. */
+const handedOut = new Set<number>();
+
+/**
+ * A port the kernel just handed out and immediately gave back — what a platform would inject —
+ * and never one this file already answered. Two calls in a row could otherwise return the SAME
+ * port (released, then re-handed), and a `PORT` equal to its `METRICS_PORT` is an X_PORT_IN_USE
+ * this test did not mean to provoke.
+ */
 function freePort(): number {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response('') });
-  const port = probe.port;
-  probe.stop(true);
-  // `Server.port` is `number | undefined` — a unix-socket server has none. `port: 0` always opens
-  // a TCP one, so an absent port is a broken assumption rather than a number to default.
-  return port ?? expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
+  for (;;) {
+    const probe = Bun.serve({ port: 0, fetch: () => new Response('') });
+    const port = probe.port;
+    probe.stop(true);
+    // `Server.port` is `number | undefined` — a unix-socket server has none. `port: 0` always
+    // opens a TCP one, so an absent port is a broken assumption rather than a number to default.
+    if (port === undefined) return expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
+    if (handedOut.has(port)) continue;
+    handedOut.add(port);
+    return port;
+  }
 }
 
 /** `realtime` is the section's source text; unset is the scaffold's own (the in-process bus). */

@@ -221,7 +221,7 @@ Scaling the two serving roles is the next rung, and it is not an edit to this fi
 | `/metrics` on the **app** port | `X_ROUTE_NOT_FOUND`, and that is deliberate. Every role — `web` included — serves `/metrics` on `METRICS_PORT`, default **9090**, because the Helm ingress routes `/` with no path exclusion and metrics on 3000 would be public. Scrape `http://<host>:9090/metrics`, not `:3000/metrics` |
 | `x logs tail` | planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix |
 | `x status` | planned — `x doctor --json` is the shipped answer |
-| OTLP export, on by default | the exporter **ships** — `otlpSpanExporter()` / `otlpMetricExporter()`, OTLP/HTTP JSON — but the default is still the no-op, so nothing leaves the process until you register one: `configureTelemetry({ exporter: otlpSpanExporter() })` with `OTEL_EXPORTER_OTLP_ENDPOINT` set to a collector's HTTP receiver (`:4318` — `:4317` is gRPC and is refused) |
+| OTLP export, on by default | on when **configured**: the production boot (`apps/web/server.ts`, every `ROLE`) wires traces, metrics and logs (OTLP/HTTP JSON) from `OTEL_EXPORTER_OTLP_ENDPOINT` set to a collector's HTTP receiver (`:4318` — `:4317` is gRPC and is refused). Unset, nothing leaves the process; there is no code to write |
 | a Helm chart in your app | **`x new` writes one** `As of 2026-11-03` — `docker/helm`, 10 files — so `x deploy --method helm` works here. On 3.0.0 and below it writes none: copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo, or stay on `--method compose` |
 
 ## Next

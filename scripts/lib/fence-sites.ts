@@ -55,3 +55,54 @@ export function loweredRows(
     .map(([site, count]) => `  ${pinKey(site)}: ${count},`)
     .join('\n');
 }
+
+const ROW_LINE = /^ {2}(.+): \d+,$/;
+
+/**
+ * `--pin` over a backlog table's BODY, edited in place: each row lowered as `loweredRows` would
+ * write it, a row at zero dropped with the `// why:` comments directly above it, every other line
+ * — comments, row order — kept. A re-sorted, comment-stripped table turned a one-row removal into a
+ * diff nobody could review. Shared by `readme-fences.ts` and `wiki-fences.ts`.
+ */
+export function lowerRowsInPlace(
+  measured: Readonly<Record<string, number>>,
+  backlog: Readonly<Record<string, number>>,
+  body: string,
+): string {
+  // One rendering per row, through the same `loweredRows` the table was first written with.
+  const lowered = new Map<string, string>();
+  for (const site of Object.keys(backlog)) {
+    lowered.set(pinKey(site), loweredRows(measured, { [site]: backlog[site] ?? 0 }));
+  }
+  const out: string[] = [];
+  let comments: string[] = [];
+  for (const line of body.split('\n')) {
+    if (line.trimStart().startsWith('//')) {
+      comments.push(line);
+      continue;
+    }
+    const key = ROW_LINE.exec(line)?.[1];
+    const row = key === undefined ? line : (lowered.get(key) ?? line);
+    if (row !== '') out.push(...comments, row);
+    comments = [];
+  }
+  out.push(...comments);
+  return out.join('\n');
+}
+
+/** `--pin` over a whole backlog FILE: the body of `export const <name> … = {` … `};` lowered in place. */
+export function pinnedBacklogSource(
+  name: string,
+  measured: Readonly<Record<string, number>>,
+  backlog: Readonly<Record<string, number>>,
+  source: string,
+): string {
+  const table = new RegExp(
+    `(export const ${name}: Readonly<Record<string, number>> = \\{\\n)([\\s\\S]*?)(\\n\\};)`,
+  );
+  return source.replace(
+    table,
+    (_whole, open: string, body: string, close: string) =>
+      `${open}${lowerRowsInPlace(measured, backlog, body)}${close}`,
+  );
+}

@@ -85,7 +85,7 @@ A number written into a file goes stale on the next commit; the command does not
 
 | Claim | Check it yourself |
 |---|---|
-| `x new` writes 224 files you never edit (191 with `--no-example`), asks 0 questions | `bun run scripts/generator-counts.ts --json` |
+| `x new` writes 225 files you never edit (192 with `--no-example`), asks 0 questions | `bun run scripts/generator-counts.ts --json` |
 | the gate's steps, in order, each with a verdict | `bun run x -- verify --json` |
 | a fresh scaffold is green on its first gate run, every push | the `scaffold-smoke` job in [`ci.yml`](.github/workflows/ci.yml) |
 | a rolling restart on Kubernetes drops no request (0 of 9,028, `As of 2026-09-24`) | the `deploy-proof` job in [`ci.yml`](.github/workflows/ci.yml), `docker/deploy-proof/run.sh` |

@@ -183,7 +183,7 @@ async function bootRoles(boot: {
   // Islands and stylesheets are the image build's to make (`x build --target prebuilt`). A role
   // that made either here served correctly and paid for it — seconds of CPU and a compiler's
   // memory, on every start of every replica — so it says so once, with the Dockerfile line.
-  reportBootBuilds(role, bootBuilds(web?.islandsBuilt));
+  reportBootBuilds(role, bootBuilds(web?.islandsBuilt), options.env);
   const port = options.port ?? portFromEnv(options.env);
   // An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
   // fixed 9090 would fail the next suite to boot beside it. An environment that names the port
