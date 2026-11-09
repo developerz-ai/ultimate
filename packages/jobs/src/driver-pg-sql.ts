@@ -258,12 +258,18 @@ select holder from x_job_leases
  * on commit, or "before" a question asked while the transaction was open
  * (`events-pg.live.test.ts`). Outside a transaction the two are the same instant.
  *
+ * The stamp is TRUNCATED to the millisecond, the unit every cursor is written in, so the
+ * `(published_at, id)` order the find sorts by is exactly the order a cursor compares — a
+ * microsecond stamp put an event of the cursor's millisecond with a smaller id after it. `xact`
+ * is the publishing transaction: what a wait's horizon asks about (`SQL_EVENT_FIND`).
+ *
  * $1 id, $2 name, $3 payload, $4 correlation key, $5 ttl (ms).
  */
 export const SQL_EVENT_PUBLISH = `
-insert into x_job_events (id, name, payload, correlation_key, published_at, expires_at)
-values ($1, $2, $3::jsonb, $4, statement_timestamp(),
-        statement_timestamp() + ($5::bigint * interval '1 millisecond'))
+insert into x_job_events (id, name, payload, correlation_key, published_at, expires_at, xact)
+values ($1, $2, $3::jsonb, $4, date_trunc('milliseconds', statement_timestamp()),
+        statement_timestamp() + ($5::bigint * interval '1 millisecond'),
+        pg_current_xact_id())
 returning floor(extract(epoch from published_at) * 1000)::bigint as published_at,
           floor(extract(epoch from expires_at)   * 1000)::bigint as expires_at
 `.trim();
@@ -274,26 +280,56 @@ select floor(extract(epoch from statement_timestamp()) * 1000)::bigint as now
 `.trim();
 
 /**
- * Earliest matching event at or after `afterMs`, so a resumed step consumes events in publication
- * order rather than jumping to the newest one — the memory bus's rule, in SQL. `$4` is the cursor a
- * refused event leaves: rows at or before it in `(published_at, id)` order are passed over, and a
- * cursor whose row is gone excludes nothing. `floor`, as `SQL_EVENT_PUBLISH` stamps: a rounding
- * cast answered a stamp up to half a ms LATER than the row, which a floor then stepped past. The
- * order is QUALIFIED: a bare `published_at` there names the floored output column, whose ties in
- * one millisecond then fell to the random id.
+ * A new wait's starting line: the bus's clock and the snapshot this statement reads under, in one
+ * statement so no commit falls between them. Every event that snapshot cannot see — a publish
+ * still in flight, or one not yet begun — is owed to the wait whatever its stamp.
+ */
+export const SQL_EVENT_MARK = `
+select floor(extract(epoch from statement_timestamp()) * 1000)::bigint as now,
+       pg_current_snapshot()::text as horizon
+`.trim();
+
+/**
+ * Earliest matching event past the cursor, so a resumed step consumes events in publication order
+ * rather than jumping to the newest one — `events-cursor.ts`'s rule, in SQL. Past the cursor is
+ * `(published_at, id) > ($3, $4)`, the nil uuid standing in for "no id": compared, never looked
+ * up, so a cursor whose event was purged still excludes what it excluded. The order is QUALIFIED:
+ * a bare `published_at` there names the floored output column.
  *
- * $1 name, $2 correlation key, $3 floor (ms), $4 cursor event id.
+ * OR invisible to `$5`, the wait's horizon (`SQL_EVENT_MARK`, or the snapshot of the search that
+ * found a refused event): stamped at INSERT, visible at COMMIT, so a publish committed after the
+ * wait began can carry a stamp before it. `xact >= xmin` is implied by "not visible" and is what
+ * lets the planner answer that half from `x_job_events_xact_idx`. A row from before `xact` was
+ * written has it null and is matched by its stamp alone. The cursor's own event never matches —
+ * a row stamped at microseconds, from before truncation, floors to a cursor it would sort past.
+ * The horizon of THIS search rides the hit, for the refusal that may follow it.
+ *
+ * `$6`/`$7` are the WAIT's own line (`EventSince`), which a refusal never moves: an event is the
+ * wait's only when stamped at or after it, or unseen by the mark's horizon. Without it, a refused
+ * owed event's cursor let one committed BEFORE the wait sort past it and be handed out.
+ *
+ * $1 name, $2 correlation key, $3 cursor (ms), $4 cursor event id, $5 the cursor search's horizon,
+ * $6 the wait's start (ms), $7 the wait's horizon (pg_snapshot text), $8 the ids it refused behind
+ * its cursor (JSON text, never a bound array: issue #384).
  */
 export const SQL_EVENT_FIND = `
-select id, payload, floor(extract(epoch from published_at) * 1000)::bigint as published_at
+select id, payload, floor(extract(epoch from published_at) * 1000)::bigint as published_at,
+       pg_current_snapshot()::text as horizon
   from x_job_events e
  where name = $1
    and expires_at > statement_timestamp()
-   and published_at >= to_timestamp($3 / 1000.0)
    and ($2::text is null or correlation_key = $2)
+   and e.id is distinct from $4::uuid
    and not exists (
-     select 1 from x_job_events c
-      where c.id = $4::uuid and (e.published_at, e.id) <= (c.published_at, c.id))
+     select 1 from json_array_elements_text(coalesce($8::json, '[]'::json)) r
+      where r.value::uuid = e.id)
+   and (e.published_at >= to_timestamp($6 / 1000.0)
+        or (e.xact >= pg_snapshot_xmin($7::pg_snapshot)
+            and not pg_visible_in_snapshot(e.xact, $7::pg_snapshot)))
+   and ((e.published_at, e.id) >
+          (to_timestamp($3 / 1000.0), coalesce($4::uuid, '00000000-0000-0000-0000-000000000000'))
+        or (e.xact >= pg_snapshot_xmin($5::pg_snapshot)
+            and not pg_visible_in_snapshot(e.xact, $5::pg_snapshot)))
  order by e.published_at, e.id
  limit 1
 `.trim();

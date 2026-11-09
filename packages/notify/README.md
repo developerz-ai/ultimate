@@ -110,7 +110,7 @@ declare const executor: PgExecutor;   // `@ultimat3/db`'s dbExecutor()
 declare const idempotency: { readonly windowMs: number };   // the boot's own store
 // The app's preference table, behind whatever taxonomy it named.
 declare const prefs: {
-  allows(recipient: string, notifier: string, channel: string, at: Date): boolean;
+  allowed(recipients: string[], notifier: string, channel: string, at: Date): Promise<string[]>;
 };
 
 setNotifyStores({
@@ -122,8 +122,9 @@ setNotifyStores({
   digest: postgresDigestStore({ executor }),
   preferences: {
     // The GATE ships; what it reads never does. Your taxonomy, your quiet hours.
-    allows: ({ recipient, notifier: name, channel, ctx }) =>
-      prefs.allows(recipient.id, name, channel, ctx.now()),
+    // ONE read per chunk of ≤ NOTIFY_CHUNK_SIZE (500) recipients: answer the ids that may be reached.
+    allowsMany: ({ recipients, notifier: name, channel, ctx }) =>
+      prefs.allowed(recipients.map((r) => r.id), name, channel, ctx.now()),
   },
 });
 ```

@@ -193,7 +193,13 @@ export const config = defineRoute({
   // measured: 211146 B (2026-11-07, sweep 2; x build --target static) — why: the record envelope's `order` decode (+63 B, core/page) and the live refetch's retry (`LiveHandle.retry`, use-query + client) — a newest-first list stays newest-first and pull-to-refresh re-asks a refused subscription. Sweep 1, 210815 B: the router 29,570 → 29,692 and
   // core's `clientStream` unwrapping a JSON answer as `call()` does (`settleAnswer`, records and
   // dates), +731 B over 210,084.
-  budget: { js: '207kb' },
+  // measured: 213453 B (2026-11-09, plan 101 sweep B; x build --target static, against 211,768)
+  // — why: the page boot +1,338 B — the offline queue's `maxQueued` cap and its
+  // `OfflineQueueFullError` (a write past the cap is refused, never dropped), and IndexedDB's
+  // blocked open waiting for the other tab instead of falling back to memory; core's decoded
+  // problem carrying `issuesTruncated` (+51 B); the feed island +275 B, realtime's four new error
+  // titles. Raised 207kb → 208.5kb.
+  budget: { js: '208.5kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

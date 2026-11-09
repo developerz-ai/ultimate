@@ -35,7 +35,17 @@ export interface ChannelRefInit<K extends string> {
    * The read a client re-runs on `replay-gap` or a new epoch — a query, by name. Read on every
    * access, never at declaration: `registerQueries()` stamps a declared query's name at boot.
    */
-  readonly catchUp: { readonly name: string };
+  readonly catchUp: CatchUpRead;
+}
+
+/**
+ * The read a client re-runs, as the declaration passed it: a declared query carries its `policy`,
+ * which `channel()` holds to the channel's own (`X_CHANNEL_CATCHUP_POLICY_MISMATCH`); a browser
+ * ref passes the name alone, and the server half cannot second-guess what it was not handed.
+ */
+export interface CatchUpRead {
+  readonly name: string;
+  readonly policy?: unknown;
 }
 
 /** What a browser subscribes by — `useChannel(ref, params)`. */
@@ -46,6 +56,14 @@ export interface ChannelHandle<K extends string = string> {
   readonly catchUp: string;
   /** The topic for one set of params — the one spelling both halves use. */
   topic(params: ChannelParams<K>): Topic;
+}
+
+/** Each ref's catch-up read as declared — held off the frozen ref so the ref's shape stays its own. */
+const READS = new WeakMap<ChannelHandle, CatchUpRead>();
+
+/** The catch-up read a ref was built with; `undefined` for a handle `channelRef` did not build. */
+export function catchUpReadOf(ref: ChannelHandle): CatchUpRead | undefined {
+  return READS.get(ref);
 }
 
 export function refuseChannel(name: string, detail: string, fix: string): never {
@@ -71,7 +89,7 @@ export function channelRef<const K extends string>(
   // inherited member would spell a topic nobody declared. Absent is `''`, which `topic()` refuses.
   const topicOf = (params: ChannelParams<K>): Topic =>
     topic(name, ...init.params.map((param) => (Object.hasOwn(params, param) ? params[param] : '')));
-  return Object.freeze({
+  const ref: ChannelHandle<K> = Object.freeze({
     kind: 'channel-ref' as const,
     name,
     params: init.params,
@@ -80,4 +98,6 @@ export function channelRef<const K extends string>(
     },
     topic: topicOf,
   });
+  READS.set(ref, init.catchUp);
+  return ref;
 }

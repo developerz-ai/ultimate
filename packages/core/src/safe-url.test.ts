@@ -77,3 +77,61 @@ describe('safeUrl', () => {
     expect(safeUrl('chrome-extension://abc/x.js', 'src')).toBeNull();
   });
 });
+
+// The fast path (no control character or space → no copy) must answer exactly what the code-point
+// strip answers. The reference below is that strip, verbatim, over a corpus of every scheme shape.
+describe('safeUrl · the fast path changes no answer', () => {
+  const SAFE = ['http:', 'https:', 'mailto:', 'tel:', 'sms:'];
+  const reference = (value: string, attribute: string): string | null => {
+    const stripped = [...value]
+      .filter((char) => {
+        const code = char.codePointAt(0) ?? 0;
+        return code > 0x20 && code !== 0x7f;
+      })
+      .join('');
+    const matched = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.exec(stripped);
+    if (matched === null) return value;
+    if (SAFE.includes(matched[0].toLowerCase())) return value;
+    if (attribute === 'src' && stripped.slice(0, 11).toLowerCase() === 'data:image/') {
+      return stripped.slice(11).toLowerCase().startsWith('svg') ? null : value;
+    }
+    return null;
+  };
+  const bases = [
+    '/a/b?c=1#d',
+    '//evil.test/x',
+    '/\\evil.test',
+    'relative/path',
+    '?q=1',
+    '#frag',
+    'https://ok.test/',
+    'HTTP://ok.test',
+    'mailto:a@b.c',
+    'javascript:alert(1)',
+    'vbscript:x',
+    'data:image/png;base64,AA',
+    'data:image/svg+xml,<svg>',
+    'data:text/html,x',
+    'ftp://x',
+    'c:\\windows',
+    '',
+  ];
+  const noise = ['', ' ', '\t', '\n', '\r', '\u0000', '\u001f', '\u007f', '\u00a0', '😀'];
+
+  test('every base, with noise before, inside and after it, in every URL attribute', () => {
+    for (const attribute of [...URL_ATTRIBUTES, 'data', 'poster']) {
+      for (const base of bases) {
+        for (const n of noise) {
+          const middle = Math.min(4, base.length);
+          for (const value of [
+            `${n}${base}`,
+            `${base.slice(0, middle)}${n}${base.slice(middle)}`,
+            `${base}${n}`,
+          ]) {
+            expect(safeUrl(value, attribute)).toBe(reference(value, attribute));
+          }
+        }
+      }
+    }
+  });
+});

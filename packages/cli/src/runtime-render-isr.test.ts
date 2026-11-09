@@ -98,17 +98,13 @@ describe('unit · a tag bust reaches the ISR page', () => {
     expect(fresh).toContain('version 2');
 
     // A page is stored and fresh, or the check below would pass over an empty store.
-    expect(isr.store().paths().length).toBeGreaterThan(0);
+    expect((await isr.store().paths()).length).toBeGreaterThan(0);
     release();
     version = 3;
     await invalidateTags([postTag]);
     // Released: the bust no longer reaches this controller's store.
-    expect(
-      isr
-        .store()
-        .paths()
-        .every((path) => isr.store().get(path)?.stale === false),
-    ).toBe(true);
+    const held = await Promise.all((await isr.store().paths()).map((p) => isr.store().get(p)));
+    expect(held.every((entry) => entry?.stale === false)).toBe(true);
   });
 });
 
@@ -152,7 +148,7 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
     release();
     // One miss rendered the page; the four hits answered from the store without touching `load`.
     expect(loads).toBe(1);
-    expect(isr.store().paths()).toHaveLength(1);
+    expect(await isr.store().paths()).toHaveLength(1);
   });
 
   test("a load's redirect under isr is answered, never stored, and decided again next time", async () => {
@@ -167,13 +163,13 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
       expect(response.headers.get('cache-control')).toBe('private, no-store');
     }
     expect(loads).toBe(2);
-    expect(isr.store().paths()).toHaveLength(0);
+    expect(await isr.store().paths()).toHaveLength(0);
     // The loader stops redirecting: the next request renders and stores the page.
     redirectTo = undefined;
     const page = await server.fetch(new Request('http://dev.test/pricing'));
     expect(page.status).toBe(200);
     expect(await page.text()).toContain('version 1');
-    expect(isr.store().paths()).toHaveLength(1);
+    expect(await isr.store().paths()).toHaveLength(1);
     release();
   });
 
@@ -182,8 +178,8 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
     const { isr, release } = attachedIsr({ buildId: BUILD_ID });
     const server = serverOver(appRoutes({ buildId: BUILD_ID, isr }));
     expect((await server.fetch(new Request('http://dev.test/pricing'))).status).toBe(200);
-    const [path] = isr.store().paths();
-    isr.markStale(path ?? '');
+    const [path] = await isr.store().paths();
+    await isr.markStale(path ?? '');
     redirectTo = '/moved';
     const lines: string[] = [];
     const collect: LogSink = (line) => {
@@ -204,7 +200,7 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
     }
     // A redirect is an outcome, not a failed regeneration: nothing is thrown into the controller.
     expect(lines.filter((line) => line.includes('isr.regenerate.failed'))).toEqual([]);
-    expect(isr.store().paths()).toHaveLength(0);
+    expect(await isr.store().paths()).toHaveLength(0);
     release();
   });
 
@@ -250,6 +246,6 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
       'private, no-store',
       'private, no-store',
     ]);
-    expect(isr.store().paths()).toHaveLength(0);
+    expect(await isr.store().paths()).toHaveLength(0);
   });
 });

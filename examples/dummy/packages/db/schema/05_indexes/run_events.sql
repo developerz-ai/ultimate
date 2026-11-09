@@ -2,7 +2,7 @@
 
 CREATE INDEX run_events_at_idx ON public.run_events USING btree (at);
 
-CREATE INDEX run_events_org_id_idx ON public.run_events USING btree (org_id);
+CREATE INDEX run_events_org_id_id_idx ON public.run_events USING btree (org_id, id);
 
 CREATE INDEX run_events_org_id_run_id_seq_idx ON public.run_events USING btree (org_id, run_id, seq);
 

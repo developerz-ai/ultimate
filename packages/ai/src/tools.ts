@@ -28,7 +28,7 @@ import {
 } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import {
-  isMcpExposed,
+  isAgentOffered,
   isUltimateError,
   stringField,
   toolDescription,
@@ -82,7 +82,11 @@ export interface LlmToolResult {
 export interface ProjectableAction {
   readonly name: string;
   readonly description?: string;
-  readonly mcp?: { readonly expose?: boolean; readonly description?: string };
+  readonly mcp?: {
+    readonly expose?: boolean;
+    readonly agents?: boolean;
+    readonly description?: string;
+  };
   readonly inputJsonSchema?: JsonSchema;
   /**
    * The tool runs IN PROCESS — the app's own code, called by its own agent — and is not the
@@ -194,19 +198,19 @@ export function toLlmTool(action: ProjectableAction): LlmTool {
 }
 
 /**
- * Whether an agent may be OFFERED this tool: an action an MCP surface exposes (`isMcpExposed`,
- * core's one predicate — an in-app agent and an external one see the same catalogue of ACTIONS), or
+ * Whether an agent may be OFFERED this tool: an action an MCP surface exposes or one declared
+ * `agents: true` (`isAgentOffered`, core's one predicate — an in-app agent sees every exposed
+ * action, plus the ones offered here and published nowhere, such as `mcpTools()`'s), or
  * a tool that is this process's alone (`inProcessTool()`), which no surface but the agent sees.
  */
 export const isOfferedTool = (tool: {
   readonly mcp?: ProjectableAction['mcp'];
   readonly inProcess?: boolean;
-}): boolean => tool.inProcess === true || isMcpExposed(tool.mcp);
+}): boolean => tool.inProcess === true || isAgentOffered(tool.mcp);
 
 /**
- * Every exposed action as a tool definition, in stable name order. The gateway and MCP ask
- * `isMcpExposed` — @ultimat3/core's one predicate — so an in-app agent and an external one are
- * offered exactly the same tools.
+ * Every offered action as a tool definition, in stable name order — `isOfferedTool`, so an in-app
+ * agent sees every action an external MCP client sees, plus those declared for agents only.
  */
 export function toLlmTools(actions: readonly ProjectableAction[]): readonly LlmTool[] {
   return actions

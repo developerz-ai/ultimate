@@ -2,7 +2,7 @@
 
 CREATE INDEX comments_author_id_idx ON public.comments USING btree (author_id);
 
-CREATE INDEX comments_org_id_idx ON public.comments USING btree (org_id);
+CREATE INDEX comments_org_id_id_idx ON public.comments USING btree (org_id, id);
 
 CREATE INDEX comments_post_id_created_at_idx ON public.comments USING btree (post_id, created_at);
 

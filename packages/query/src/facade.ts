@@ -38,6 +38,7 @@ export function facadeFor<
     ...(def.subscribes === undefined ? {} : { subscribes: def.subscribes }),
     ...(def.rows === undefined ? {} : { rows: def.rows }),
     ...(def.cache === undefined ? {} : { cache: def.cache }),
+    ...(def.maxPage === undefined ? {} : { maxPage: def.maxPage }),
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
     ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),
     ...(def.deprecated === undefined ? {} : { deprecated: def.deprecated }),

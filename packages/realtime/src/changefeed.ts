@@ -66,6 +66,12 @@ export interface ChangeFeedStartOptions {
    * was only recorded was a death nobody saw.
    */
   readonly onEnd?: (reason: string) => void;
+  /**
+   * The stream is no longer continuous with `from`: changes were committed that it will never
+   * deliver (a replication slot recreated under a resume position). Every reader must re-read
+   * now. Called at most once per `start()`, before its first change.
+   */
+  readonly onResync?: (reason: string) => void;
 }
 
 export interface ChangeFeed {
@@ -252,6 +258,7 @@ export class PostgresChangeFeed implements ChangeFeed {
       from: options.from,
       onChange: options.onChange,
       onEnd: options.onEnd,
+      onResync: options.onResync,
     });
   }
 

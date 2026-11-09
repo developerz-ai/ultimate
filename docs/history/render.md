@@ -189,3 +189,14 @@ Verbatim from [`packages/render/CLAUDE.md`](../../packages/render/CLAUDE.md), wh
 ## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
 
 - Client navigation: `refresh()` passes `{ history: 'none', refresh: run }`; what a refresh changes lives in `navigation-refresh.ts` (`holdFor`, `refreshYields`, `swapIn`, `landFocus`): no view transition, `markFocus`/`restoreFocus` (`navigation-dom.ts`) instead of `focusMain`, no announcer write, never aborts `inflight`, nothing under an open modal. `held` is asked again at the swap, and `refresh()` answers whether it landed, so `refresh-idle.ts` owes one that did not. `scheduleRefresh()`'s state sits on `window[Symbol.for('ultimate.refresh-idle')]`. `client-bundle.test.ts` pins it alone at 3,079 B (ceiling 3,584).
+
+## Moved out 2026-11-09 (plan 101 slice 14, the `CLAUDE.md` ceiling)
+
+- **Where `interaction` replays.** `aim(el, ev)`, never `ev.target` — `mount` usually clears the
+  root, detaching the pressed node. Kept → the original target; replaced → `path(el, target)`'s
+  structural walk (same tag, same place), then `document.elementFromPoint(ev.clientX, ev.clientY)`
+  (unless `ev.detail === 0`), then the island root. A hit outside the island falls back to the root.
+  `hydrate-replay.test.ts`.
+- **The sass cache.** `sass-cache.ts`: `.x/cache/sass/` under cwd, a hit only while every file the
+  compile read hashes the same; `setSassCacheDir(null)` turns it off, `setSassCacheDir(dir)` moves
+  it (the image's prebuilt store), `sassCompilations()` counts the misses a boot reports.

@@ -114,6 +114,28 @@ const SWEEP_EVERY_MS = 60_000;
  */
 export const DEFAULT_MAX_LIMIT_TENANTS = 20_000;
 
+/**
+ * One tenant's rate window: start stamps in the order taken, the spent ones before `head`. A queue
+ * with a head index, so a stamp leaving is one increment and never a copy of the window.
+ */
+interface StartWindow {
+  stamps: number[];
+  head: number;
+}
+
+/** Stamps still in the window. */
+const live = (window: StartWindow): number => window.stamps.length - window.head;
+
+/**
+ * Drop the spent prefix once it is both large and most of the array: a copy amortised over at least
+ * as many acquires as it moves, so the window costs O(1) a claim and its memory stays O(live).
+ */
+const compact = (window: StartWindow): void => {
+  if (window.head < 1_024 || window.head * 2 < window.stamps.length) return;
+  window.stamps = window.stamps.slice(window.head);
+  window.head = 0;
+};
+
 /** Tenant key resolution. Structural on purpose: `jobs` must not import the auth types. */
 export function tenantKeyFrom(actor: { readonly orgId?: string } | undefined): string {
   return actor?.orgId ?? NO_TENANT;
@@ -169,7 +191,7 @@ export function concurrencyLimiter(
   // `inFlight` had nothing to answer it from and silently widened to "this tenant, everywhere".
   // Deleted at zero by `bump`, exactly like the two above, so it is bounded by live leases.
   const byQueueTenant = new Map<string, number>();
-  const starts = new Map<string, number[]>();
+  const starts = new Map<string, StartWindow>();
   const refusals = new Map<string, { reason: LimitReason; atMs: number }>();
   let global = 0;
   let lastSweepMs = Number.NEGATIVE_INFINITY;
@@ -202,14 +224,16 @@ export function concurrencyLimiter(
    */
   const sweep = (at: number): void => {
     lastSweepMs = at;
-    for (const [tenant, stamps] of starts) {
-      if (stamps.length === 0 || (stamps.at(-1) ?? 0) <= at - rateWindowMs) starts.delete(tenant);
+    for (const [tenant, window] of starts) {
+      if (live(window) === 0 || (window.stamps.at(-1) ?? 0) <= at - rateWindowMs) {
+        starts.delete(tenant);
+      }
     }
     for (const [key, refusal] of refusals) {
       if (refusal.atMs <= at - REFUSAL_TTL_MS) refusals.delete(key);
     }
     if (starts.size > maxTenants) {
-      const emptiest = [...starts.entries()].sort((a, b) => a[1].length - b[1].length);
+      const emptiest = [...starts.entries()].sort((a, b) => live(a[1]) - live(b[1]));
       for (const [tenant] of emptiest) {
         if (starts.size <= evictTo) break;
         starts.delete(tenant);
@@ -237,12 +261,24 @@ export function concurrencyLimiter(
   const rateBlocked = (tenant: string, at: number): boolean => {
     const rate = config.ratePerTenant;
     if (rate === undefined) return false;
-    const window = (starts.get(tenant) ?? []).filter((stamp) => stamp > at - rate.windowMs);
-    // An empty window is a tenant with no rate state at all — deleted rather than stored as `[]`,
-    // which is what kept one array per org that ever ran a job.
-    if (window.length === 0) starts.delete(tenant);
-    else starts.set(tenant, window);
-    return window.length >= rate.limit;
+    const window = starts.get(tenant);
+    if (window === undefined) return rate.limit <= 0;
+    // Spent stamps leave from the HEAD, never by copying the window: a filter per acquire made a
+    // window of n stamps O(n) a claim — 20k acquires were 3.9 s of event loop.
+    while (
+      window.head < window.stamps.length &&
+      (window.stamps[window.head] ?? 0) <= at - rate.windowMs
+    ) {
+      window.head += 1;
+    }
+    // An empty window is a tenant with no rate state at all — deleted rather than kept, which is
+    // what kept one array per org that ever ran a job.
+    if (live(window) === 0) {
+      starts.delete(tenant);
+      return rate.limit <= 0;
+    }
+    compact(window);
+    return live(window) >= rate.limit;
   };
 
   return {
@@ -270,7 +306,9 @@ export function concurrencyLimiter(
       bump(byTenant, tenant, 1);
       bump(byQueueTenant, refusalKey, 1);
       if (config.ratePerTenant !== undefined) {
-        starts.set(tenant, [...(starts.get(tenant) ?? []), at]);
+        const window = starts.get(tenant);
+        if (window === undefined) starts.set(tenant, { stamps: [at], head: 0 });
+        else window.stamps.push(at);
       }
       refusals.delete(refusalKey);
       maybeSweep(at);
@@ -296,12 +334,12 @@ export function concurrencyLimiter(
           if (!free() || config.ratePerTenant === undefined) return;
           // ONE stamp of this lease's own instant: two leases taken in the same millisecond wrote
           // equal stamps, and either is this one. Absent when a sweep already dropped the window.
-          const stamps = starts.get(tenant);
-          const index = stamps?.lastIndexOf(at) ?? -1;
-          if (stamps === undefined || index === -1) return;
-          const rest = stamps.filter((_stamp, position) => position !== index);
-          if (rest.length === 0) starts.delete(tenant);
-          else starts.set(tenant, rest);
+          const window = starts.get(tenant);
+          const index = window?.stamps.lastIndexOf(at) ?? -1;
+          if (window === undefined || index < window.head) return;
+          // Searched from the tail, where a lease handed back unrun almost always is.
+          window.stamps.splice(index, 1);
+          if (live(window) === 0) starts.delete(tenant);
         },
       };
     },

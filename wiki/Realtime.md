@@ -340,6 +340,9 @@ const feed = useChannel(ORG_FEED, { orgId }, { onEvent: (event) => console.debug
 `channel(name, { params, catchUp, policy, … })` in one call still exists for a channel no browser
 holds. **`policy` is required** on either form: a declaration without one is refused
 (`X_CHANNEL_DECLARATION_INVALID`), and a public channel says so with `policy: allow('public')`.
+A `catchUp` passed as the query itself must decide with the channel's own `policy` object — the
+read is served with the channel params as input, so a wider rule answers what the subscribe
+refuses — or `channel()` throws `X_CHANNEL_CATCHUP_POLICY_MISMATCH` at load.
 The reference app's idiom is `examples/dummy/apps/web/app/posts/channel-ref.ts` beside `channels.ts`. The catch-up
 query's name is written by hand on the ref, like a `QueryRef`'s; `x build` emitting refs is
 plan-101 DX ledger #21.

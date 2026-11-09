@@ -24,6 +24,23 @@ const sign = <T extends number | bigint | string>(left: T, right: T): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
 /**
+ * Text in CODE-POINT order, which is byte order over UTF-8 and so Postgres' `C` collation — the
+ * order `auth`'s memory adapter already keeps. JS `<` compares UTF-16 code units, which puts an
+ * astral character (lead surrogate 0xD800–0xDBFF) ahead of U+E000–U+FFFF: `'😀' < '！'` is true
+ * here and false there, so a page cut on a text key differed between dev and prod. The first
+ * differing unit decides; `codePointAt` there reads the whole character when it is a lead surrogate.
+ */
+export const byCodePoint = (left: string, right: string): number => {
+  const shorter = Math.min(left.length, right.length);
+  for (let at = 0; at < shorter; at += 1) {
+    if (left.charCodeAt(at) !== right.charCodeAt(at)) {
+      return sign(left.codePointAt(at) ?? 0, right.codePointAt(at) ?? 0);
+    }
+  }
+  return sign(left.length, right.length);
+};
+
+/**
  * Two values of one column, ordered as Postgres orders that column. `-1`, `0` or `1` — never a
  * difference, so a `bigint` pair needs no subtraction it cannot express in a `number`.
  */
@@ -64,7 +81,7 @@ export const compareByKind = (
   // `undefined` means the pair is not a numeric comparison, and it falls through as text.
   const numeric = numericOrder(kind !== undefined && DECIMAL_TEXT.has(kind), left, right);
   if (numeric !== undefined) return numeric;
-  return sign(String(left), String(right));
+  return byCodePoint(String(left), String(right));
 };
 
 /**

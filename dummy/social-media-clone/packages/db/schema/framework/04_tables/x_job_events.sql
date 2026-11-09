@@ -7,5 +7,6 @@ create table "x_job_events" (
   "correlation_key" text,
   "published_at" timestamp with time zone default now() not null,
   "expires_at" timestamp with time zone not null,
+  "xact" xid8,
   constraint "x_job_events_pkey" PRIMARY KEY (id)
 );

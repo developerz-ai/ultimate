@@ -82,7 +82,7 @@ describe('unit · an isr page keys on the query its route declared', () => {
       expect(body).toContain('<link rel="canonical" href="http://dev.test/blog"');
     }
     expect(loads).toBe(1);
-    expect(isr.store().paths()).toHaveLength(1);
+    expect(await isr.store().paths()).toHaveLength(1);
     expect(seenUrls).toEqual(['http://dev.test/blog']);
     release();
   });
@@ -100,7 +100,7 @@ describe('unit · an isr page keys on the query its route declared', () => {
       expect(response.headers.get('location')).toBeNull();
     }
     expect(loads).toBe(1);
-    expect(isr.store().paths()).toHaveLength(1);
+    expect(await isr.store().paths()).toHaveLength(1);
     expect(seenUrls).toEqual(['http://dev.test/blog']);
     release();
   });
@@ -115,7 +115,7 @@ describe('unit · an isr page keys on the query its route declared', () => {
     expect(await (await get('/blog?pagina=3')).text()).toContain('page 3');
     expect(await (await get('/blog?gclid=1')).text()).toContain('page 1');
     expect(loads).toBe(3);
-    expect(isr.store().paths()).toHaveLength(3);
+    expect(await isr.store().paths()).toHaveLength(3);
     release();
   });
 });
@@ -133,7 +133,7 @@ describe('unit · the origin an isr page names', () => {
     const visitor = await (await get('/blog', 'dev.test')).text();
     expect(canonicalOf(visitor)).toBe('http://dev.test/blog');
     expect(visitor).not.toContain('evil.test');
-    expect(isr.store().paths()).toHaveLength(2);
+    expect(await isr.store().paths()).toHaveLength(2);
     expect(loads).toBe(2);
     release();
   });
@@ -148,7 +148,7 @@ describe('unit · the origin an isr page names', () => {
     }
     expect(seenUrls).toEqual(['https://public.test/blog']);
     expect(loads).toBe(1);
-    expect(isr.store().paths()).toHaveLength(1);
+    expect(await isr.store().paths()).toHaveLength(1);
     release();
   });
 
@@ -159,7 +159,7 @@ describe('unit · the origin an isr page names', () => {
     expect(canonicalOf(body)).toBe('https://public.test/blog');
     expect(seenUrls).toEqual(['https://public.test/blog']);
     expect(body).not.toContain('8443');
-    expect(isr.store().paths()).toHaveLength(1);
+    expect(await isr.store().paths()).toHaveLength(1);
     release();
   });
 
@@ -177,7 +177,7 @@ describe('unit · the origin an isr page names', () => {
     await get('/blog', 'evil.test');
     const visitor = await (await get('/blog', 'dev.test')).text();
     expect(visitor).not.toContain('evil.test');
-    expect(isr.store().paths()).toHaveLength(2);
+    expect(await isr.store().paths()).toHaveLength(2);
     release();
   });
 
@@ -186,10 +186,10 @@ describe('unit · the origin an isr page names', () => {
     const { isr, release, get } = serving();
     const real = await get('/blog', 'real.test');
     expect(real.headers.get('cache-control')).toContain('s-maxage');
-    const stored = isr.store().paths();
+    const stored = await isr.store().paths();
     for (let n = 0; n < ISR_MAX_REQUEST_ORIGINS * 3; n += 1) await get('/blog', `h${n}.test`);
-    expect(isr.store().paths()).toHaveLength(ISR_MAX_REQUEST_ORIGINS);
-    expect(isr.store().paths()).toContain(stored[0] as string);
+    expect(await isr.store().paths()).toHaveLength(ISR_MAX_REQUEST_ORIGINS);
+    expect(await isr.store().paths()).toContain(stored[0] as string);
 
     const before = loads;
     const refused = await get('/blog', 'one-more.test');
@@ -197,7 +197,7 @@ describe('unit · the origin an isr page names', () => {
     expect(refused.headers.get('cache-control')).toContain('no-store');
     expect(canonicalOf(await refused.text())).toBe('http://one-more.test/blog');
     expect(loads).toBe(before + 1);
-    expect(isr.store().paths()).toHaveLength(ISR_MAX_REQUEST_ORIGINS);
+    expect(await isr.store().paths()).toHaveLength(ISR_MAX_REQUEST_ORIGINS);
 
     // An origin admitted before the cap is still stored and still a hit.
     await get('/blog', 'real.test');
@@ -212,7 +212,7 @@ describe('unit · the origin an isr page names', () => {
       const response = await get('/blog', `h${n}.test`);
       expect(response.headers.get('cache-control')).toContain('s-maxage');
     }
-    expect(isr.store().paths()).toHaveLength(1);
+    expect(await isr.store().paths()).toHaveLength(1);
     release();
   });
 
@@ -234,12 +234,12 @@ describe('unit · an isr page whose read failed is not the stored page', () => {
     const failed = await get('/blog');
     expect(failed.status).toBe(503);
     expect(failed.headers.get('cache-control')).toContain('no-store');
-    expect(isr.store().paths()).toEqual([]);
+    expect(await isr.store().paths()).toEqual([]);
 
     read = 'ok';
     const recovered = await get('/blog');
     expect(recovered.status).toBe(200);
-    expect(isr.store().paths()).toHaveLength(1);
+    expect(await isr.store().paths()).toHaveLength(1);
     expect(loads).toBe(2);
     release();
   });
@@ -253,7 +253,7 @@ describe('unit · an isr page whose read failed is not the stored page', () => {
     expect(first.headers.get('cache-control')).toContain('no-store');
     await get('/blog');
     expect(loads).toBe(2);
-    expect(isr.store().paths()).toEqual([]);
+    expect(await isr.store().paths()).toEqual([]);
     release();
   });
 });

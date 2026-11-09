@@ -76,6 +76,22 @@ describeLive('live · pg connection session pins', () => {
     });
   }
 
+  // The server applies these to ITS end of the socket — what frees a lock whose holder vanished
+  // without a FIN. A TCP session takes them; read back as the server reports them.
+  for (const replication of [undefined, 'database'] as const) {
+    test(`the server probes the socket after 10 s idle (${replication ?? 'plain'} session)`, async () => {
+      const session = await connect({ user: ROLE, password: PASSWORD }, replication);
+      try {
+        const [idle] = await session.query('SHOW tcp_keepalives_idle');
+        const [interval] = await session.query('SHOW tcp_keepalives_interval');
+        const [count] = await session.query('SHOW tcp_keepalives_count');
+        expect([idle?.[0], interval?.[0], count?.[0]]).toEqual(['10', '5', '3']);
+      } finally {
+        await session.close();
+      }
+    });
+  }
+
   test('the seconds offset a non-UTC session writes decodes to the repository instant', async () => {
     // The decoder's half, held on the server's own text rather than a hand-typed fixture: a
     // session that overrides the pin is the one way left to receive a seconds offset.

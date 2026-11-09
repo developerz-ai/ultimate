@@ -19,8 +19,9 @@ pressure, where with a limit the kubelet evicts that pod alone.
 const networkPolicy = (app: NameSet): string => `{{/*
 One NetworkPolicy per enabled role: \`http\` (web, sync) from networkPolicy.httpFrom, \`metrics\`
 (every role) from networkPolicy.metricsFrom, nothing else. A \`from\` that renders empty is omitted,
-which Kubernetes reads as "any source". Egress is filtered only when networkPolicy.egress lists
-rules — the database, NATS and object store are your addresses, so list DNS too. Serving roles
+which Kubernetes reads as "any source". Egress renders networkPolicy.egress verbatim: values.yaml
+defaults it CLOSED (DNS, this namespace, the public internet minus metadata, CGNAT and private
+ranges); \`egress: []\` turns filtering off. Serving roles
 only: the migrate Job is a pre-install hook that runs before this exists, and opens no port.
 */}}
 {{- if .Values.networkPolicy.enabled }}

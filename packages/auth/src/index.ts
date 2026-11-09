@@ -67,7 +67,7 @@ export {
   UserSchema,
   VerificationSchema,
 } from './auth';
-export type { AuthorizationServer } from './authorization-server';
+export type { AuthorizationServer, ReadRequestOptions } from './authorization-server';
 export { AUTH_CODE_TTL_MS, authorizationServer } from './authorization-server';
 export type {
   RegisterClientInput,

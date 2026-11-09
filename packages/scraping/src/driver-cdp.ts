@@ -111,6 +111,9 @@ async function opened(
       browser,
       rules: init.rules,
       clock: init.clock,
+      // Through an exit the EXIT resolves names, so the browser leg's DNS screen stands down — the
+      // HTTP leg's rule, for the same reason (`browser-dial.ts`).
+      proxied: wiring.proxy !== undefined,
       ended,
     });
     if (init.restore !== undefined) await target.restore(init.restore);

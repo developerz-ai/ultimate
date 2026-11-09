@@ -112,6 +112,7 @@ export type {
 export { type LiveDefinitionOptions, liveQueryDefinition } from './live-definition';
 export {
   DEFAULT_MAX_ENTRIES,
+  DEFAULT_MAX_LANE_DEPTH,
   LiveQueryRegistry,
   type LiveQueryRegistryOptions,
 } from './live-query';

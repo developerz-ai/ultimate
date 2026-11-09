@@ -4,7 +4,7 @@
 // `index.ts` imports this bare, because `problemError` rebuilds a server's refusal by code and reads
 // its title from the registry; `errors.ts` and its two siblings import it bare as well.
 
-import { registerErrorCodes, registerErrorRetry } from '@ultimat3/core';
+import { registerErrorCodes, registerErrorRetry } from '@ultimat3/core/page';
 
 /**
  * Titles for the framework-wide code table — every one of them owned by this package.

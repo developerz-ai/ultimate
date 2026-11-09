@@ -81,10 +81,12 @@ const open = (start?: string) => {
   const rec = recorder(start);
   return {
     rec,
+    // EXACT rules: a wildcard-admitted name is resolved before it leaves (`browser-dial.ts`), and
+    // these tests read the ring synchronously, on the request's own tick.
     target: cdpTarget({
       page: rec.page,
       browser: rec.browser,
-      rules: { allowHosts: ['*'] },
+      rules: { allowHosts: ['shop.test', 'other.test'] },
       clock: testScrapeClock(),
     }),
   };

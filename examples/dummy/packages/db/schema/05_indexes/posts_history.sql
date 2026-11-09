@@ -2,6 +2,6 @@
 
 CREATE INDEX posts_history_at_idx ON public.posts_history USING btree (at);
 
-CREATE INDEX posts_history_org_id_idx ON public.posts_history USING btree (org_id);
+CREATE INDEX posts_history_org_id_id_idx ON public.posts_history USING btree (org_id, id);
 
 CREATE INDEX posts_history_org_id_row_id_at_idx ON public.posts_history USING btree (org_id, row_id, at);

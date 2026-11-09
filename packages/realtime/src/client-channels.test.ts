@@ -140,3 +140,21 @@ describe('an events frame', () => {
     expect(offline.membership.state()).toBe('offline');
   });
 });
+
+// Two holders passing ONE handlers object (a module-level const) are two holds: the first release
+// dropped the topic under the second, whose events then stopped with no error on either side.
+describe('two holders sharing one handlers object', () => {
+  test('releasing one keeps the membership, and its handler, for the other', () => {
+    const { book, sent, membership } = harness();
+    const seen: unknown[] = [];
+    const shared = { onEvent: (body: unknown) => seen.push(body) };
+    const first = book.hold(orgFeed, { orgId: 'o1' }, shared);
+    book.hold(orgFeed, { orgId: 'o1' }, shared);
+    membership.release();
+    first.release();
+    first.release();
+    expect(sent.filter((frame) => frame.op === 'drop')).toEqual([]);
+    book.event(event({ kind: 'typing' }));
+    expect(seen).toEqual([{ kind: 'typing' }]);
+  });
+});

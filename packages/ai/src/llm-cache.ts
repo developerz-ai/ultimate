@@ -66,7 +66,9 @@ export interface PromptCache {
 
 /**
  * The partition a declaration that named none gets: the narrowest key this call can prove, which
- * is the actor itself. Verbatim the shape `@ultimat3/query`'s `actorAuthority` builds, for the
+ * is the actor itself AND its grant set — one id is not one grant set (a role revoked inside the
+ * `ttl`, one identity holding two role sets), and `vars()` may read `ctx.actor.roles`, so an
+ * id-only key handed a member an admin's answer. Verbatim the shape `@ultimat3/query`'s `actorAuthority` builds, for the
  * same reason it is JSON rather than a joined string — an actor id is app data and may carry any
  * separator, and a value that can spell a boundary can spell somebody else's.
  *
@@ -79,8 +81,20 @@ export interface PromptCache {
  * everywhere else in the framework.
  */
 function actorScope(ctx: Ctx): string {
-  return JSON.stringify([ctx.actor.kind, ctx.actor.id, ctx.actor.orgId ?? null]);
+  const { actor } = ctx;
+  return JSON.stringify([
+    actor.kind,
+    actor.id,
+    actor.orgId ?? null,
+    grantSet(actor.roles),
+    grantSet(actor.scopes),
+    grantSet(actor.permissions),
+    actor.onBehalfOf === undefined ? null : [actor.onBehalfOf.actorKind, actor.onBehalfOf.actorId],
+  ]);
 }
+
+/** Sorted, de-duplicated: a set, so two orderings of one grant are one partition. */
+const grantSet = (values: readonly string[]): readonly string[] => [...new Set(values)].sort();
 
 /**
  * The semantic cache for one declaration, or `undefined` when none was declared. The instance

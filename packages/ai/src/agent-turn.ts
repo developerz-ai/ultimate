@@ -4,11 +4,14 @@
 
 import type { Span } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { SUBJECT } from './agent-declared';
 import type { AgentDef, AgentTurn } from './agent-def';
+import { LlmTruncatedError } from './answer-errors';
 import { LlmRefusedError } from './errors';
 import { moreCapableThan } from './models';
 import type { PromptVars } from './prompt';
 import type { GenerateRequest, GenerateResult } from './provider';
+import { isTruncated } from './provider';
 
 /**
  * One turn, reported twice: onto the span every run already opens, and to the declaration's own
@@ -43,6 +46,13 @@ export function assertAnswerable(
   name: string,
   request: GenerateRequest,
 ): void {
+  // A turn cut off at the ceiling carries arguments that stop wherever the ceiling fell — `{}` on
+  // both wires for a call that never reached its first byte — so running a tool on them is a side
+  // effect the model did not ask for, and validating them accepts an empty answer for any `output`
+  // of optional keys. Refused before a tool runs and before the answer is read.
+  if (isTruncated(result.stopReason)) {
+    throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens, subject: SUBJECT });
+  }
   if (result.stopReason !== 'refusal') return;
   throw new LlmRefusedError({
     prompt: name,

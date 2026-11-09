@@ -135,46 +135,85 @@ export function styleValue(value: unknown): string | null {
 }
 
 /**
+ * What a prop NAME means, decided once: the name every check below reads off is a pure function of
+ * the string, and a big page asks the same five names a million times. `null` = never emitted.
+ */
+interface NameVerdict {
+  readonly attribute: string;
+  readonly kind: 'plain' | 'style' | 'url';
+  /** The lowercased spelling `safeUrl` is keyed on. */
+  readonly folded: string;
+}
+
+function judgeName(name: string): NameVerdict | null {
+  if (NON_ATTRIBUTES.has(name)) return null;
+  if (!isAttributeName(name)) return null;
+  // Folded, because HTML attribute names are case-insensitive and the two checks below already
+  // fold: `ONERROR="alert(1)"` went out on the wire off a spread row for as long as this line was
+  // `name.startsWith('on')`.
+  if (name.length > 2 && name.toLowerCase().startsWith('on')) return null;
+  const attribute = ATTRIBUTE_ALIASES.get(name) ?? name;
+  const folded = attribute.toLowerCase();
+  if (REFUSED_ATTRIBUTES.has(folded)) return null;
+  if (attribute === 'style') return { attribute, kind: 'style', folded };
+  return { attribute, kind: URL_BEARING_ATTRIBUTES.has(folded) ? 'url' : 'plain', folded };
+}
+
+/**
+ * Bounded: a name can come off a spread row (`<div {...row} />`), so the set of names is the
+ * data's, not the code's. Past the cap a name is judged every time — correct, only slower.
+ */
+const NAME_CACHE_MAX = 1024;
+const nameCache = new Map<string, NameVerdict | null>();
+
+function verdictOf(name: string): NameVerdict | null {
+  const cached = nameCache.get(name);
+  if (cached !== undefined || nameCache.has(name)) return cached ?? null;
+  const verdict = judgeName(name);
+  if (nameCache.size < NAME_CACHE_MAX) nameCache.set(name, verdict);
+  return verdict;
+}
+
+/**
  * One prop → one attribute string, or `null` when it emits nothing. Event handlers are dropped
  * rather than stringified: the server has no listeners, and `onclick="function(){…}"` would ship
  * a broken inline handler that looks like it works.
  */
 export function attributePair(name: string, value: unknown): string | null {
-  if (NON_ATTRIBUTES.has(name)) return null;
   if (value === undefined || value === null || value === false) return null;
   if (typeof value === 'function') return null;
-  if (!isAttributeName(name)) return null;
-  // Folded, because HTML attribute names are case-insensitive and the two checks below already
-  // fold: `ONERROR="alert(1)"` went out on the wire off a spread row for as long as this line was
-  // `name.startsWith('on')`.
-  if (name.toLowerCase().startsWith('on') && name.length > 2) return null;
-
-  const attribute = ATTRIBUTE_ALIASES.get(name) ?? name;
-  if (REFUSED_ATTRIBUTES.has(attribute.toLowerCase())) return null;
+  const verdict = verdictOf(name);
+  if (verdict === null) return null;
+  const { attribute } = verdict;
   if (value === true) return attribute;
-  if (attribute === 'style') {
+  if (verdict.kind === 'style') {
     const style = styleValue(value);
     return style === null ? null : `style="${escapeHtml(style)}"`;
   }
-  const text = String(value);
+  const text = typeof value === 'string' ? value : String(value);
   // Escaping makes a value inert inside the quotes; it cannot make a SCHEME inert, because
   // `href="javascript:alert(1)"` never leaves them. One choke point for both, here, because this
   // module is the single place injection is prevented and an href off a database row is the shape
   // every app writes. A refused URL emits no attribute at all — an anchor with no `href` is inert
   // and still renders its text, where a blanked one is a live link nobody checked.
-  if (URL_BEARING_ATTRIBUTES.has(attribute.toLowerCase())) {
-    const url = safeUrl(text, attribute.toLowerCase());
+  if (verdict.kind === 'url') {
+    const url = safeUrl(text, verdict.folded);
     if (url === null) return null;
     return `${attribute}="${escapeHtml(url)}"`;
   }
   return `${attribute}="${escapeHtml(text)}"`;
 }
 
+/**
+ * Own enumerable keys, as `Object.entries` gave, without building a pair array per element: on a
+ * 50k-row page that allocation was the walker's single largest cost (plan 101 slice 14 P1).
+ */
 export function renderAttributes(props: JsxProps): string {
-  const parts: string[] = [];
-  for (const [name, value] of Object.entries(props)) {
-    const pair = attributePair(name, value);
-    if (pair !== null) parts.push(pair);
+  let out = '';
+  for (const name in props) {
+    if (!Object.hasOwn(props, name)) continue;
+    const pair = attributePair(name, props[name]);
+    if (pair !== null) out += ` ${pair}`;
   }
-  return parts.length === 0 ? '' : ` ${parts.join(' ')}`;
+  return out;
 }

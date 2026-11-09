@@ -6,12 +6,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import {
-  ChatCompletionStream,
-  parseChatCompletion,
-  parseFinishReason,
-  parseOpenAiUsage,
-} from './openai-wire';
+import { parseChatCompletion, parseFinishReason, parseOpenAiUsage } from './openai-wire';
+import { ChatCompletionStream } from './openai-wire-stream';
 import type { StreamChunk } from './provider';
 import type { SseFrame } from './sse';
 

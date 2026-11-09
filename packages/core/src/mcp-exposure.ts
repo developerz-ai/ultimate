@@ -49,6 +49,12 @@ export interface McpExposureDeclaration {
   /** Opt-in: only a literal `true` makes the primitive a tool. Silence exposes nothing. */
   readonly expose: boolean;
   /**
+   * Offered to this app's OWN `agent()`s without being published on its MCP surface. A literal
+   * `true` only. For a capability the app's agents may use and its `/mcp` must not re-serve — a
+   * remote server's tools through `mcpTools()`. `expose: true` already offers to both.
+   */
+  readonly agents?: boolean;
+  /**
    * Contract text, NOT UI text — deliberately outside `t()`. It becomes the OpenAPI operation
    * `summary`, and `buildOpenApi`'s bytes are what `x verify` diffs for contract drift. Resolving
    * it through the ambient, request-scoped translator would make `openapi.json` depend on
@@ -106,4 +112,15 @@ export function isMcpExposed(
   declared: Partial<Pick<McpExposureDeclaration, 'expose'>> | undefined,
 ): boolean {
   return declared?.expose === true;
+}
+
+/**
+ * Whether an in-app `agent()` may be offered the primitive: exposed (an in-app agent and an
+ * external one see the same catalogue of exposed actions), or declared `agents: true` — offered
+ * here and published nowhere. Literal `true` either way, for `isMcpExposed`'s reason.
+ */
+export function isAgentOffered(
+  declared: Partial<Pick<McpExposureDeclaration, 'expose' | 'agents'>> | undefined,
+): boolean {
+  return isMcpExposed(declared) || declared?.agents === true;
 }

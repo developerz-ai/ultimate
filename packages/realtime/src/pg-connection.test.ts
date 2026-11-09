@@ -48,6 +48,12 @@ const writeAt = (stream: FakeStream, index: number): Uint8Array => {
   return bytes;
 };
 
+/** Restated, never imported: the test pins what the server is sent, not what the source says. */
+const OUTPUT_PINS =
+  '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC';
+const KEEPALIVE_PINS =
+  '-c tcp_keepalives_idle=10 -c tcp_keepalives_interval=5 -c tcp_keepalives_count=3';
+
 // --- Tests -------------------------------------------------------------------------------------
 
 describe('open — startup packet', () => {
@@ -62,7 +68,7 @@ describe('open — startup packet', () => {
       application_name: 'ultimate-replicator',
       replication: 'database',
       // The output formats the WAL decoder assumes — asserted for what they are one test down.
-      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC',
+      options: `${OUTPUT_PINS} ${KEEPALIVE_PINS}`,
     });
     const withoutReplication = new FakeStream();
     await openTrusted(withoutReplication);
@@ -88,9 +94,26 @@ describe('open — startup packet', () => {
       const stream = new FakeStream();
       await openTrusted(stream, extra);
       const params = decodeStartup(writeAt(stream, 0)).params;
-      expect(params['options']).toBe(
-        '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC',
-      );
+      expect(params['options']).toStartWith(OUTPUT_PINS);
+    }
+  });
+
+  /**
+   * The SERVER's keepalives, not ours: a holder lost without a FIN (a failover, a NAT drop) left the
+   * replicator's advisory-lock session idle and held for the OS default ~2 h 11 m, so no standby
+   * ever took over. Probed after 10 s idle, every 5 s, dead after 3 missed: ~25 s. On every session,
+   * because the lock session and the walsender are both opened here.
+   */
+  test('asks the server to probe the socket, so a vanished holder frees its lock in seconds', async () => {
+    for (const extra of [{ replication: 'database' } as const, {}]) {
+      const stream = new FakeStream();
+      await openTrusted(stream, extra);
+      const options = decodeStartup(writeAt(stream, 0)).params['options'] ?? '';
+      expect(options.split(' -c ').slice(-3)).toEqual([
+        'tcp_keepalives_idle=10',
+        'tcp_keepalives_interval=5',
+        'tcp_keepalives_count=3',
+      ]);
     }
   });
 

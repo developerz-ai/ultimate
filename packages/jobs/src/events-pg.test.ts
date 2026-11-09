@@ -90,7 +90,10 @@ describe('the pg event bus', () => {
     // earliest match at or after the wait began, never an expired one, never another run's.
     expect(SQL_EVENT_FIND).toContain('order by e.published_at, e.id');
     expect(SQL_EVENT_FIND).toContain('expires_at > statement_timestamp()');
-    expect(SQL_EVENT_FIND).toContain('published_at >= to_timestamp($3 / 1000.0)');
+    expect(SQL_EVENT_FIND).toContain('(e.published_at, e.id) >');
+    expect(SQL_EVENT_FIND).toContain('(to_timestamp($3 / 1000.0), coalesce($4::uuid,');
+    // And whatever the wait's horizon could not see: stamped at INSERT, visible at COMMIT.
+    expect(SQL_EVENT_FIND).toContain('not pg_visible_in_snapshot(e.xact, $5::pg_snapshot)');
     expect(SQL_EVENT_FIND).toContain('($2::text is null or correlation_key = $2)');
   });
 

@@ -85,12 +85,17 @@ export interface IsrController {
   serve(path: string, render: IsrRenderFn): Promise<IsrServeResult>;
   /** Single-flight: concurrent callers for the same path share one render. */
   regenerate(path: string, render: IsrRenderFn): Promise<IsrEntry>;
-  markStale(path: string): boolean;
+  /**
+   * The page's fence is marked at once; the store's answer (`false`: it held no such page) arrives
+   * when the store does — a shared store is a round trip.
+   */
+  markStale(path: string): Promise<boolean>;
   /**
    * Invalidate every ISR page carrying one of these tags — the ones the cache graph knows AND the
-   * ones only the store holds — as each page's route declared: marked stale, or purged.
+   * ones only the store holds — as each page's route declared: marked stale, or purged. Async:
+   * the store is asked which pages it holds, and a shared store answers over the network.
    */
-  revalidateByTags(tags: readonly CacheTag[]): readonly string[];
+  revalidateByTags(tags: readonly CacheTag[]): Promise<readonly string[]>;
   inflight(): number;
   store(): IsrStore;
   /**

@@ -14,6 +14,14 @@ import type { ColumnMeta, EnumeratedColumn } from './types';
  * transaction on older servers.
  */
 export const enumerated = <const V extends readonly string[]>(values: V): EnumeratedColumn<V> => {
+  // An empty set renders `x in ()`, which `x db migrate` dies on with 42601 — refused here instead.
+  if (values.length === 0) {
+    refuseColumn(
+      'enum',
+      'the set of allowed values is empty — no row could ever hold this column',
+      "enumerated(['draft', 'published']) — declare at least one value; a column with no legal value is a column to delete",
+    );
+  }
   const allowed = new Set<string>(values);
   const parse = (value: unknown): V[number] =>
     typeof value === 'string' && allowed.has(value)

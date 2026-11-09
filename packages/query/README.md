@@ -221,7 +221,8 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
-| `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `@ultimat3/entity`'s `MAX_PAGE_SIZE` |
+| `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `MAX_WIRE_PAGE_SIZE` (500) or the read's `maxPage`; `assertMaxPage` |
+| `validate.ts` | the input parse: `X_INPUT_INVALID` carrying `issues` (by path) and `issuesTruncated` — action's `validate.ts` twin |
 | `openapi.ts` | the read half of `openapi.json` — one `GET` path item per registered query, publishing a declared `rows:` |
 | `openapi-errors.ts` | a read operation's `responses` with its declared `errors:` in them |
 | `declared-errors.ts` / `declared-errors-contract.ts` | `errors:` judged around `sql` and `execute`; `.contract()`'s scan of `sql`'s source |
@@ -420,7 +421,8 @@ GET /_x/query/live-feed?orgId=…                       → [ …rows ]   (uncha
 |---|---|
 | the keys are `_first` and `_after`, not `first` and `after` | the search string is ALSO the input, and an input member named `first` was legal on every release before this one — a listing's page-size field is the natural name for it. Reserving the bare names would have refused every such declaration at `query()`, in a minor. The underscore is the framework's own mark, as `/_x/` is |
 | a declaration naming either is refused at `query()` | `X_QUERY_INPUT_UNENCODABLE`, in the declaring file: the route strips the key before the schema runs, so the field could never be filled |
-| `_first` outside 1–10,000, not a whole number, or `_after` without `_first` | **400** `X_INPUT_INVALID` with the read's own fix line — judged at the wire (`page-controls.ts`), because `paginate` asserts the same bound as `X_INVARIANT`, which is a 500 blaming the server for a number the caller typed |
+| `_first` outside 1–500 (`MAX_WIRE_PAGE_SIZE`), not a whole number, or `_after` without `_first` | **400** `X_INPUT_INVALID` with the read's own fix line — judged at the wire (`page-controls.ts`), because `paginate` asserts the same bound as `X_INVARIANT`, which is a 500 blaming the server for a number the caller typed |
+| `query({ maxPage: 2000 })` | raises THIS read's wire bound, up to `MAX_PAGE_SIZE` (10,000); `openapi.json`'s `maximum` follows it. `As of 31.0.0`: the wire took 10,000 for every read, and 10,000 rows × a per-address budget (the demo's 120/s) is a table dump per second from one caller. A server `read.page()` keeps `MAX_PAGE_SIZE`. Not a whole number from 1 to 10,000: `X_QUERY_MAX_PAGE_INVALID` at `query()` |
 | a cursor that is not this read's | **400** `X_CURSOR_INVALID` — `decodeCursor` is the one judge of a cursor; the route checks only that `_after` is one non-empty string |
 | a control sent twice | refused, never resolved to the last one as a declared scalar is: two page sizes is two pages asked for in one request |
 | a declared `.limit()` is the size of the LISTING | `first` is the size of a page and never widens it: the window is `min(what the limit has left, first + 1)`, a limited read's cursor carries how many rows are already served, and the last page inside it answers `hasMore: false` with `nextCursor: null`. `As of 2026-10`; until then `first` REPLACED the limit, so `?_first=10000` walked a "top 3" to the end of the table. A read paged past its limit on purpose drops the `.limit()` |
@@ -541,7 +543,7 @@ declares who may be served one entry:
 
 | `scope` | Key holds | Use it when |
 |---|---|---|
-| `actor` (default) | the actor's kind, id and org | anything. Declaring nothing gets this, and this is always correct |
+| `actor` (default) | the actor's kind, id, org and GRANT SET (roles, scopes, permissions, `onBehalfOf`, order-free) — one id under two grant sets is two entries, so a role revoked inside `ttlMs` is never served the wider grant's rows (`As of 31.0.0`) | anything. Declaring nothing gets this, and this is always correct |
 | `tenant` | the actor's org — the actor itself when there is none | every member of one org sees the same rows |
 | `global` | nothing | the rows are the same for everyone, signed-in or not |
 
@@ -746,6 +748,7 @@ export const runRecording = query({
 | The route | `GET /_x/query/<kebab>` — the read's own. No `_token`: MINT (`application/json`). `_token`: SERVE (the bytes). `auth: 'public'`, `enforcedBy: 'handler'`, `cache: no-store` |
 | Policy | evaluated at MINT, exactly as for a rows read: actor half, the declared `rateLimit:`, the parse, the predicate. A refusal is the policy's own 401/403 |
 | The token | `seal()`ed (`@ultimat3/core`, AES-256-GCM under the app master key, purpose `ultimate.query.download:<name>`) claims: the query, `fingerprint()` of the PARSED input, the expiry on `ctx.now()`, the minting actor minus `facts`. The ACTOR is ciphertext — no id, role or grant readable; the query's path and its input are plain in the URL, as on any read |
+| Revocation | **the token IS the grant for its TTL** (`DEFAULT_DOWNLOAD_TTL_MS`, 5 min; `expiresInMs` up to 1 h): a logout, a revoked session or a lost role does not void a URL already minted — the serve checks no session. Keep `expiresInMs` as short as the player or tab needs |
 | The serve | the seal first (forged, truncated, another query's, a retired key → `X_QUERY_DOWNLOAD_TOKEN_INVALID`, 403), then the expiry (`X_QUERY_DOWNLOAD_TOKEN_EXPIRED`, 410), then the URL's input re-parsed against the bound fingerprint (edited → 403). `handle` runs as the MINTING actor; the policy is not re-run — it decided at mint, with `facts` the token cannot carry |
 | `handle`'s answer | `{ body: Uint8Array \| Blob \| ReadableStream, contentType, filename, disposition?: 'attachment' \| 'inline', size? }`, or `body: (range?) => BodyInit` (`DownloadBodyOpener`) with `size` required — bytes, never base64. Anything else is a 500 (`X_INVARIANT`) naming the fix |
 | Headers | `content-type`, `content-disposition` (`attachment` default; ASCII `filename` + exact `filename*=UTF-8''…`), `x-content-type-options: nosniff`, `content-security-policy: default-src 'none'; img-src 'self'; media-src 'self'; sandbox`, `referrer-policy: no-referrer`, `cache-control: no-store`; `content-length` only when the size is known — a `Uint8Array`, a `Blob`, or a stream with `size` |
@@ -775,10 +778,11 @@ or a stream with `size`, served without buffering.
 | `X_MATCHER_UNSUPPORTED` | live query the matcher cannot patch | reshape it, or `live: false` |
 | `X_CURSOR_INVALID` | tampered / foreign / malformed cursor | request the first page again |
 | `X_QUERY_NOT_PAGEABLE` | a paged or live read returned a row with no `id` | select the primary key: `db.<rows>.select({ id: true, … })` |
-| `X_INPUT_INVALID` | input failed the Standard Schema; a page control the wire refuses; a `search()` handed a blank term, a cursor, or a window that would cut rows | `x queries show <name> --json` |
+| `X_INPUT_INVALID` | input failed the Standard Schema (`meta.issues` by path, at most `MAX_ISSUES`, `meta.issuesTruncated` when cut); a page control the wire refuses; a `search()` handed a blank term, a cursor, or a window that would cut rows | `x queries show <name> --json` |
 | `X_QUERY_UNREGISTERED` | used before `registerQueries()` ran | register at boot |
 | `X_NOT_FOUND` | a `single: true` read matched no row — the HTTP route's 404, and the MCP tool's refusal (entity's code) | `x queries show <name> --json` prints the SQL |
 | `X_QUERY_SINGLE_INVALID` | `single:` declared as something other than a boolean | `single: true`, or drop the key |
+| `X_QUERY_MAX_PAGE_INVALID` | `maxPage:` not a whole number of rows from 1 to 10,000 | `query({ maxPage: 2000 })`, or drop the key for the 500-row wire cap |
 | `X_QUERY_FOREIGN` | a look-alike was projected as a query | declare it with `query({ … })` |
 | `X_CLIENT_TRANSPORT_FAILED` | `.client()` got no response, or a non-`problem+json` failure (core's code, since 21.0.0; was `X_RPC_FAILED`) | check the gateway in front of the app: `x doctor --json` |
 
@@ -805,6 +809,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `QueryDuplicateError` | `X_QUERY_DUPLICATE` | `src/errors.ts` |
 | `QueryForeignError` | `X_QUERY_FOREIGN` | `src/errors.ts` |
 | `QueryInputInvalidError` | `X_INPUT_INVALID` | `src/errors.ts` |
+| `QueryMaxPageInvalidError` | `X_QUERY_MAX_PAGE_INVALID` | `src/page-controls.ts` |
 | `QueryInputUnencodableError` | `X_QUERY_INPUT_UNENCODABLE` | `src/errors.ts` |
 | `QueryNotPageableError` | `X_QUERY_NOT_PAGEABLE` | `src/errors.ts` |
 | `QueryPolicyMissingError` | `X_QUERY_POLICY_MISSING` | `src/errors.ts` |

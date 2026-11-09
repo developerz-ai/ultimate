@@ -6,7 +6,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 
 - May import: `core`, `schema`, `entity`, `policy`, `cache`, `time` — and `db`, for
   `expectedQueryLoop` (`steps.ts` declares the per-step write one-per-step to the N+1 detector),
-  `outsideTransaction` (`execute.ts`), `refuseAbandoned` (`outbox.ts`) and `withTransaction`
+  `outsideTransaction` (`execute.ts`), `currentTx` (`events-pg.ts`), `refuseAbandoned` (`outbox.ts`) and `withTransaction`
   (`consumer-loop.ts`: a batch and its cursor commit together) — the ONE place a client is taken
   from it, the ambient `db()`. Never `render`, `ui`. `http` only from `webhook-receiver*.ts`, for the route
   (`Route`/`Bucket` types, `DEFAULT_WEBHOOK_BODY_LIMIT`, `HttpError`, `jsonResponse`).
@@ -254,7 +254,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
-| `events.ts` | stored event bus for `step.waitForEvent` |
+| `events.ts` / `-cursor.ts` | memory bus; the wait cursor, both buses |
 | `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume |
 | `introspection.ts` | `JobIntrospection`, every operator type, and the bounds |
@@ -282,7 +282,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `subject*.ts` | `subjectExport`/`subjectErase`; reach only via DELETED tables (README) |
 | `webhook-receiver.ts` / `-route.ts` / `-types.ts` / `-errors.ts` | `webhookReceiver()` and `webhookReceiverRoutes`; the route; `ReceivedEvent`, `WebhookInbound`; its three refusals |
 
-Commands: `bun test packages/jobs` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:
+Commands: `bun test ./packages/jobs/` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:
 history, "Moved 2026-10-01 — test harnesses".
 
-Why each rule above is shaped the way it is: [`docs/history/jobs.md`](../../docs/history/jobs.md).
+Why: [`docs/history/jobs.md`](../../docs/history/jobs.md).

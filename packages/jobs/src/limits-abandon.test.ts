@@ -102,29 +102,29 @@ function admission(grants: (SlotGrant | Error)[]) {
 describe('the admission hands the rate back with the slot', () => {
   test('a job shed over job.concurrency does not spend its tenant a start', async () => {
     const { admit, limiter } = admission([{ outcome: 'wait', limit: 1, key: undefined }]);
-    expect((await admit(claimed('j1'), 'default', [])).kind).toBe('waiting');
+    expect((await admit(claimed('j1'), 'default', () => [])).kind).toBe('waiting');
     expect(limiter.inFlight()).toBe(0);
     // limit 1: the shed above was the tenant's whole window before the fix.
-    expect((await admit(claimed('j1'), 'default', [])).kind).toBe('run');
+    expect((await admit(claimed('j1'), 'default', () => [])).kind).toBe('run');
   });
 
   test('a lease-store failure hands the rate back too', async () => {
     const { admit } = admission([new Error('57P01')]);
     let thrown: unknown;
     try {
-      await admit(claimed('j1'), 'default', []);
+      await admit(claimed('j1'), 'default', () => []);
     } catch (error) {
       thrown = error;
     }
     expect((thrown as Error).message).toBe('57P01');
-    expect((await admit(claimed('j1'), 'default', [])).kind).toBe('run');
+    expect((await admit(claimed('j1'), 'default', () => [])).kind).toBe('run');
   });
 
   test('an undecidable key STARTS — the attempt fails in executeJob — and keeps its stamp', async () => {
     const { admit } = admission([{ outcome: 'undecidable', error: new Error('no key') }]);
-    const first = await admit(claimed('j1'), 'default', []);
+    const first = await admit(claimed('j1'), 'default', () => []);
     expect(first.kind).toBe('run');
     if (first.kind === 'run') first.lease.release();
-    expect((await admit(claimed('j2'), 'default', [])).kind).toBe('waiting');
+    expect((await admit(claimed('j2'), 'default', () => [])).kind).toBe('waiting');
   });
 });

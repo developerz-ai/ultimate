@@ -96,6 +96,28 @@ describe('unit · eventPrompt answers from the bus', () => {
     expect(h.keepAlives()).toBe(3);
   });
 
+  // Over a database an answer is stamped at INSERT and visible at COMMIT: one whose transaction
+  // was open when the prompt was asked carries a stamp BEFORE "asked at". The prompt searches
+  // under the bus's mark, so the bus also answers what that mark could not yet see.
+  test('the prompt searches under the bus mark: an answer committed after the ask is taken', async () => {
+    const h = harness();
+    const sealed = await seal('482913', { purpose: promptEventName('run-1', 1), ...KEYS });
+    const asked: (string | undefined)[] = [];
+    const bus: EventBus = {
+      ...h.bus,
+      mark: async () => ({ at: 5_000, horizon: 'S0' }),
+      // Stamped at 4_000 — before the ask — and visible only to a search that names the horizon.
+      find: async (_name, _key, afterMs, _afterId, horizon) => {
+        asked.push(horizon);
+        expect(afterMs).toBe(5_000);
+        return horizon === 'S0' ? { id: 'ev', payload: sealed, publishedAt: 4_000 } : undefined;
+      },
+    };
+    const handler = eventPrompt({ timeout: 300_000, bus, keySource: KEYS });
+    expect(await handler(h.request())).toBe('482913');
+    expect(asked).toEqual(['S0']);
+  });
+
   // The bus stamps an answer with ITS clock — the database's, for the stored one — and the prompt
   // used to take "asked at" from the WORKER's. Two clocks: a worker running 30 s ahead of the bus
   // read every answer as published before it was asked for, and waited out its whole timeout

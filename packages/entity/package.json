@@ -25,6 +25,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./adapter": "./src/adapter.ts",
     "./record": "./src/record.ts"
   },
   "files": [

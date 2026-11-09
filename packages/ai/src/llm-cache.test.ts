@@ -6,6 +6,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx } from '@ultimat3/action';
 import { memorySemanticCache } from '@ultimat3/cache';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { providerGateway } from './gateway';
@@ -108,6 +109,30 @@ describe('the semantic cache', () => {
     await summarize({ postId: POST_ID }, { ctx: ctxFor('ada', 'org-a') });
     await summarize({ postId: POST_ID }, { ctx: ctxFor('linus', 'org-a') });
     expect(seen.length).toBe(2);
+  });
+
+  // One id is not one grant set: a role revoked inside the `ttl`, or one identity holding two role
+  // sets. `vars()` may read `ctx.actor.roles`, so an id-only key handed a member the admin's answer.
+  test('one actor id under two grant sets does not share an answer', async () => {
+    const { provider, seen } = stub(ANSWER, ANSWER, ANSWER, ANSWER, ANSWER, ANSWER, ANSWER);
+    install(provider);
+    const summarize = declare(promptFor(), { cache: { semantic: { threshold: 0.5 } } });
+    const as = (init: Partial<Parameters<typeof userActor>[0]>) =>
+      ctxOf({ actor: userActor({ id: 'ada', orgId: 'org-a', ...init }) });
+
+    await summarize({ postId: POST_ID }, { ctx: as({ roles: ['admin'] }) });
+    await summarize({ postId: POST_ID }, { ctx: as({ roles: ['member'] }) });
+    await summarize({ postId: POST_ID }, { ctx: as({ scopes: ['posts:read'] }) });
+    await summarize({ postId: POST_ID }, { ctx: as({ permissions: ['post:publish'] }) });
+    await summarize(
+      { postId: POST_ID },
+      { ctx: as({ onBehalfOf: { actorKind: 'user', actorId: 'grace' } }) },
+    );
+    expect(seen.length).toBe(5);
+    // A set: two orderings of one grant are one entry.
+    await summarize({ postId: POST_ID }, { ctx: as({ roles: ['a', 'b'] }) });
+    await summarize({ postId: POST_ID }, { ctx: as({ roles: ['b', 'a', 'a'] }) });
+    expect(seen.length).toBe(6);
   });
 
   /**

@@ -59,8 +59,12 @@ export const config = defineRoute({
    * measured: 110687 B (2026-11-09, plan 101 sweep 1; x build --target static) — why: the board
    * island 76,843 → 77,057 (+214 B), core's `boundedCause` in `UltimateError`'s constructor: every
    * cause, a decoded problem's included, is cut at 4 KiB. Raised 108kb → 108.25kb.
+   * measured: 110898 B (2026-11-09, plan 101 sweep B; x build --target static) — why: the board
+   * island 77,057 → 77,196 (+139 B), the action client and core's decoder carrying a problem's
+   * `issuesTruncated` onto the client error, so a cut issue list says it was cut. Raised
+   * 108.25kb → 108.3kb.
    */
-  budget: { js: '108.25kb' },
+  budget: { js: '108.3kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

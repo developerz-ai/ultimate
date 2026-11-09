@@ -110,6 +110,21 @@ export class OfflineQueueAbandonedError extends RealtimeError {
 }
 
 /**
+ * A write made while the outbox already holds its `maxQueued` unsent writes. REFUSED to the caller
+ * that made it, never made room for: dropping a queued write would lose an intent the user was
+ * shown as saved. A key already queued is no new write and is never refused.
+ */
+export class OfflineQueueFullError extends RealtimeError {
+  constructor(args: { name: string; maxQueued: number }) {
+    super({
+      code: 'X_OFFLINE_QUEUE_FULL',
+      cause: `the write "${args.name}" was refused: the offline queue already holds ${args.maxQueued} unsent writes (maxQueued), and none is dropped to make room — call the mutation again once the page is back online`,
+      fix: 'OfflineQueue.open(store, { maxQueued })   # raise the ceiling, or let the page reconnect so the queue drains',
+    });
+  }
+}
+
+/**
  * Something that can only mean "talk to the socket" ran on the server client — a mutation, a
  * publish, a topic subscription, a dial. There is no socket during a server render and there never
  * will be one: the document is built and sent, and the browser opens the connection.

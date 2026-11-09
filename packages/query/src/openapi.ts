@@ -23,7 +23,6 @@ import {
   templateParams,
   toOpenApiPath,
 } from '@ultimat3/core';
-import { MAX_PAGE_SIZE } from '@ultimat3/entity';
 import { policyCapability } from '@ultimat3/policy';
 import type { SchemaNode } from '@ultimat3/schema';
 import { nodeToJsonSchema, toWireOutputSchema, tryIntrospect } from '@ultimat3/schema';
@@ -31,7 +30,7 @@ import { DOWNLOAD_GRANT_PARAM } from './download-token';
 import { servedQueryPath } from './http-pin';
 import { withDeclaredErrors } from './openapi-errors';
 import { withValidatorDoc } from './openapi-etag';
-import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
+import { MAX_WIRE_PAGE_SIZE, PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import type { AnyQuery } from './query';
 import { defOf, queryName } from './read';
 import { answersRecords } from './record-answer';
@@ -131,7 +130,7 @@ function rowsOperation(target: AnyQuery, name: string): Record<string, unknown> 
     tags: [QUERY_TAG],
     summary: target.mcp?.description ?? name,
     ...(target.deprecated === undefined ? {} : { deprecated: true }),
-    parameters: [...inputParameters(target), ...PAGE_PARAMETERS],
+    parameters: [...inputParameters(target), ...pageParameters(target.maxPage)],
     responses: withDeclaredErrors(target, PROBLEM_SCHEMA_REF, {
       '200': {
         description: 'ok',
@@ -264,14 +263,19 @@ const MINTED_URL: Readonly<Record<string, unknown>> = {
   },
 };
 
-/** The two controls, spelled from `page-controls.ts` so the document cannot drift from the route. */
-const PAGE_PARAMETERS: readonly Record<string, unknown>[] = [
+/**
+ * The two controls, spelled from `page-controls.ts` so the document cannot drift from the route —
+ * the bound included: the read's declared `maxPage`, else the wire's `MAX_WIRE_PAGE_SIZE`.
+ */
+const pageParameters = (
+  maxPage: number = MAX_WIRE_PAGE_SIZE,
+): readonly Record<string, unknown>[] => [
   {
     name: PAGE_FIRST_KEY,
     in: 'query',
     required: false,
-    description: `page size; present, the response is the page envelope rather than the bare rows (1 to ${MAX_PAGE_SIZE})`,
-    schema: { type: 'integer', minimum: 1, maximum: MAX_PAGE_SIZE },
+    description: `page size; present, the response is the page envelope rather than the bare rows (1 to ${maxPage})`,
+    schema: { type: 'integer', minimum: 1, maximum: maxPage },
   },
   {
     name: PAGE_AFTER_KEY,

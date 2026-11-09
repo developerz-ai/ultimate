@@ -161,6 +161,8 @@ export interface ServerScript {
   readonly refuse?: string;
   /** `null` = no slot yet, so the feed has to create one. */
   readonly slotPlugin?: string | null;
+  /** The slot's `wal_status`; `'lost'` is a slot postgres invalidated. Default `'reserved'`. */
+  readonly slotWalStatus?: string;
   /** Table names `pg_class` reports with `relreplident <> 'f'`. Empty is the healthy answer. */
   readonly partialIdentity?: readonly string[];
   /** Table names `pg_class` reports as not FULL when asked on behalf of a params channel. */
@@ -173,7 +175,8 @@ export interface ServerScript {
  */
 export class FakeWalsender implements PgStream {
   readonly queries: string[] = [];
-  readonly standby: { position: bigint; at: number }[] = [];
+  /** Every standby status update, with whether it asked the walsender to answer at once. */
+  readonly standby: { position: bigint; at: number; replyRequested: number }[] = [];
   closed = false;
   // `undefined` is EOF: `PgStream.read()` already returns `Uint8Array | undefined`, so the queue
   // holds it honestly rather than letting `close()` cast one type into the other.
@@ -225,7 +228,12 @@ export class FakeWalsender implements PgStream {
     const position = reader.int64();
     reader.int64();
     reader.int64();
-    this.standby.push({ position, at: pgTimestampToEpochMs(reader.int64()) });
+    const at = pgTimestampToEpochMs(reader.int64());
+    const replyRequested = reader.uint8();
+    this.standby.push({ position, at, replyRequested });
+    // What a real walsender does with `replyRequested = 1` (`ProcessStandbyReplyMessage`): a
+    // keepalive back at once, asking nothing in return — the proof the far end is still there.
+    if (replyRequested === 1) this.push(keepalive(0n, 0));
   }
 
   #answer(sql: string): void {
@@ -268,7 +276,8 @@ export class FakeWalsender implements PgStream {
     }
     if (sql.includes('pg_replication_slots')) {
       const plugin = this.#script.slotPlugin === undefined ? 'pgoutput' : this.#script.slotPlugin;
-      const rows = plugin === null ? [] : [dataRow([plugin])];
+      const status = this.#script.slotWalStatus ?? 'reserved';
+      const rows = plugin === null ? [] : [dataRow([plugin, status])];
       this.push(joined(...rows, complete(), ready()));
       return;
     }

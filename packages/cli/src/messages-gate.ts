@@ -80,6 +80,10 @@ export const GATE_MESSAGES = {
   // The `errors` step's own coverage, in `output`: a scan without a parser reads most fix lines
   // and not all of them, and a step that reports findings alone claims a completeness it lacks.
   'cli.verify.fixCoverage': 'checked {checked} fix line(s), could not read {unreadable}',
+  // The `drift` step on an app whose only store is a `defineDriver` one: migrations describe
+  // Postgres, and that store owns its schema — said in `output`, so the step is not a silent green.
+  'cli.verify.driftNonSql':
+    'skipped: no SQL driver is configured — the app stores rows in {stores}, which owns its schema; migrations, drift and x db describe Postgres only',
   // Why a skipped step is a dash when the step can say so: the suite exists and not one of its
   // tests ran. Each test's own name carries the reason it skipped, and `bun test` prints only the
   // counts — so the line says how many and `x test <type>` prints the names.

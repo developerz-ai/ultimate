@@ -418,3 +418,16 @@ describe('a kind no cursor can carry', () => {
     ).not.toThrow();
   });
 });
+
+// A `uuid` is a value (`keyOf`): a store that spells it upper-case must mint the very cursor a
+// lower-case one does, or one position has two cursors and a page boundary depends on the store.
+describe('a uuid sort key is carried as its value', () => {
+  test('upper- and lower-case spellings mint one cursor', () => {
+    const plan: QueryPlan = { ...BASE, orderBy: by(['id', 'asc']) };
+    const upper = ROW.id.toUpperCase().replace('0000000002', 'ABCDEF0002');
+    const lower = upper.toLowerCase();
+    expect(cursorFor(posts, plan, { ...ROW, id: upper }, lower)).toBe(
+      cursorFor(posts, plan, { ...ROW, id: lower }, lower),
+    );
+  });
+});

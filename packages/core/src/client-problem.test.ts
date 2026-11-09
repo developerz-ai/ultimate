@@ -153,3 +153,20 @@ describe('problemError — a delay only the header may state', () => {
     expect(error.retry).toBe('retry-after');
   });
 });
+
+describe('problemError — a capped issue list', () => {
+  const issues = [{ path: 'input.a', expected: 'number', received: 'string', message: 'm' }];
+
+  test('carries the top-level issuesTruncated onto meta, only as true', () => {
+    const capped = problemError(400, refusal({ issues, issuesTruncated: true }), URL);
+    expect(capped.meta?.['issuesTruncated']).toBe(true);
+    expect(capped.meta?.['issues']).toEqual(issues);
+  });
+
+  test('anything but the literal true is not a truncation', () => {
+    for (const issuesTruncated of [undefined, false, 'true', 1]) {
+      const error = problemError(400, refusal({ issues, issuesTruncated }), URL);
+      expect(error.meta).not.toHaveProperty('issuesTruncated');
+    }
+  });
+});

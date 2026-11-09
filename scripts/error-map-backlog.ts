@@ -110,6 +110,7 @@ export const OFF_SOCKET: Pins = {
     'X_ENTITY_TENANT_UNDECLARED',
     'X_ENTITY_RETAIN_UNINDEXED',
     'X_ENTITY_COUNTS_INVALID',
+    'X_DRIVER_CAPABILITY_MISSING',
   ],
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],
@@ -165,6 +166,7 @@ export const OFF_SOCKET: Pins = {
     'X_QUERY_DOWNLOAD_INVALID',
     'X_QUERY_ETAG_INVALID',
     'X_QUERY_TIMEOUT_INVALID',
+    'X_QUERY_MAX_PAGE_INVALID',
   ],
   // tier 3 — the sync node's own vocabulary, answered on a WebSocket frame that carries a
   // `kind` and not a status; the HTTP upgrade has none of these. Revisit the day a frame kind
@@ -193,6 +195,9 @@ export const OFF_SOCKET: Pins = {
     // Not a frame: raised in the browser by `mutationWire` (`pinned-wire.ts`) before the write is
     // sent, when the input leaves a pinned path's `:param` unfilled. No request leaves the page.
     'X_MUTATION_PATH_UNFILLED',
+    'X_REPLICATION_SLOT_INVALIDATED',
+    'X_REPLICATION_SLOT_RECREATED',
+    'X_OFFLINE_QUEUE_FULL',
   ],
   // tier 4 — a test double's script running out, raised inside `bun test` by `scriptedProvider`,
   // which no served app installs.

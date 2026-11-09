@@ -997,6 +997,27 @@ of 2026-11:
 
 Prod ordering is fixed: `ROLE=migrate` completes, then `web` / `sync` / `worker` / `scheduler` roll. A generated migration is forward-compatible with the previous release, so a rolling restart never serves a request against a schema it cannot read: a column drop takes two releases through `retired: ['<c>']` (refused otherwise, `X_MIGRATION_ROLLING_UNSAFE`), and a key or CHECK on a live table is added without stopping writes → [Migrations And Backfills](Migrations-And-Backfills). See [Deployment](Deployment).
 
+## Custom drivers
+
+A store that is not Postgres — Mongo, Cassandra, a key-value store — is a `Driver` built with
+`defineDriver({ name, capabilities, repo })` from `@ultimat3/entity/adapter`. `As of 2026-11-09`.
+
+| The kit owns | The store owns |
+|---|---|
+| tenant scoping, soft delete, the page bound, the total order and the cursor — the store is handed a plan already scoped, never `FindManyArgs` | answering `plan.where` / `plan.orderBy` (`selectRows(entity, rows, read)` does it in process) |
+| narrowing, `assertRowTenant` and EVERY invariant, judged before a write reaches the store | its schema, its unique indexes (a duplicate key: `entityUniqueViolation(entity, constraint)`), its references |
+| refusing a returned row outside the plan (`X_DRIVER_ROW_OUT_OF_SCOPE`) | atomicity: declare `'transactions'` and a `transactor`, or every `{ tx }` and a seed dry run is refused |
+
+An undeclared capability (`upsert`, `matches`, `aggregate:<kind>`, `transactions`) is
+`X_DRIVER_UNSUPPORTED` with `meta.capability`; a declared one with no method behind it is
+`X_DRIVER_CAPABILITY_MISSING` when the table opens. `lock` and `series` undeclared answer the
+shipped `X_LOCK_UNSUPPORTED` / `X_ENTITY_SERIES_UNSUPPORTED`.
+
+**Migrations, drift and `x db` describe Postgres only.** A custom store owns its schema: `x verify`'s
+`drift` step skips an app whose only store is a `defineDriver` one and which has no migration, and
+prints why. An app mixing Postgres and a custom store keeps its migrations and its drift check for
+the Postgres tables.
+
 ## Drift is a `x verify` failure
 
 ```

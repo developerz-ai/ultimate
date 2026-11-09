@@ -54,6 +54,7 @@ export {
   NotifyFanoutTooWideError,
   NotifyStoreMissingError,
 } from './errors';
+export { NOTIFY_CHUNK_SIZE } from './fanout-walk';
 export type { FcmOptions } from './fcm';
 // `runFanout` is deliberately absent, for the reason `registerJob` is absent from
 // @ultimat3/jobs: a second way to execute a fan-out would bypass the job the factory built, and
@@ -108,7 +109,7 @@ export type {
   ResolvedDelivery,
 } from './plan';
 export { toDurationMs } from './plan';
-export type { MemoryPreferenceStore, PreferenceQuery, PreferenceStore } from './preferences';
+export type { MemoryPreferenceStore, PreferenceBatchQuery, PreferenceStore } from './preferences';
 export { allowAllPreferences, memoryPreferenceStore } from './preferences';
 export type { PushDeviceRecord, PushDeviceStore, PushPlatform } from './push-device';
 export { memoryPushDeviceStore, PUSH_PLATFORMS } from './push-device';

@@ -5,6 +5,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import { recordProjection } from '@ultimat3/entity/record';
+import type { QueryPolicy } from '@ultimat3/query';
 import { type ChannelEntity, channel } from './channel-decl';
 import { channelRef } from './channel-ref';
 import { clearChannels } from './channel-registry';
@@ -122,6 +123,33 @@ describe('catchUp', () => {
     const decl = channel('late', { params: [], catchUp: late, policy: OPEN_POLICY });
     late.name = 'stampedAtBoot';
     expect(decl.catchUp).toBe('stampedAtBoot');
+  });
+});
+
+// A catch-up read is served on its own route with the channel params as input, so a read whose
+// policy is wider than the channel's hands out what the channel refuses (plan 101 R9: an inbox
+// query checking only `notification:read` let any member read any user's notifications).
+describe('a catch-up read decides with the channel policy', () => {
+  const GRANT_ONLY: QueryPolicy = Object.freeze({ ...OPEN_POLICY, label: 'grant-only' });
+
+  test('a declared query whose policy is not the channel own is refused, by name and by ref', () => {
+    const wide = { name: 'inboxRead', policy: GRANT_ONLY };
+    expect(
+      codeOf(() => channel('mismatch', { params: [], catchUp: wide, policy: OPEN_POLICY })),
+    ).toBe('X_CHANNEL_CATCHUP_POLICY_MISMATCH');
+    const ref = channelRef('mismatch-ref', { params: [], catchUp: wide });
+    expect(codeOf(() => channel(ref, { policy: OPEN_POLICY }))).toBe(
+      'X_CHANNEL_CATCHUP_POLICY_MISMATCH',
+    );
+  });
+
+  test('the same policy object passes, and a name-only read is not second-guessed', () => {
+    const same = { name: 'sameRead', policy: OPEN_POLICY };
+    expect(
+      codeOf(() => channel('matched', { params: [], catchUp: same, policy: OPEN_POLICY })),
+    ).toBe('did not throw');
+    const ref = channelRef('matched-ref', { params: [], catchUp: same });
+    expect(codeOf(() => channel(ref, { policy: OPEN_POLICY }))).toBe('did not throw');
   });
 });
 

@@ -3,7 +3,7 @@
 // same declaration for a ref an island already holds (`channel-ref.ts`): the browser chunk then
 // carries the name and params, never `@ultimat3/entity` (plan 101, slice 09).
 
-import type { Ctx, Row } from '@ultimat3/core';
+import { assertCoded, type Ctx, type Row } from '@ultimat3/core';
 import {
   type ProjectedEntity,
   type RecordProjection,
@@ -11,9 +11,11 @@ import {
 } from '@ultimat3/entity/record';
 import type { QueryPolicy } from '@ultimat3/query';
 import {
+  type CatchUpRead,
   type ChannelHandle,
   type ChannelParams,
   type ChannelRefInit,
+  catchUpReadOf,
   channelRef,
   refuseChannel,
   SEGMENT,
@@ -37,6 +39,31 @@ function projectionFor(name: string, entity: ChannelEntity): RecordProjection {
       'list entities declared with entity() from @ultimat3/entity',
     );
   }
+}
+
+/**
+ * A catch-up read is served on its own route (`GET /_x/query/<name>`) with the channel params as
+ * input, so a read deciding with a WIDER policy hands any caller what the channel refuses — the
+ * demo's inbox did (plan 101 R9). Identity, not equivalence: two rules cannot be compared, one
+ * object can. A name-only read (a browser ref) carries no policy to hold.
+ */
+function assertCatchUpPolicy(
+  name: string,
+  read: CatchUpRead | undefined,
+  policy: QueryPolicy,
+): void {
+  if (read === undefined || !('policy' in read)) return;
+  if (read.policy === policy) return;
+  const label = (value: unknown): string =>
+    typeof value === 'object' && value !== null && typeof Reflect.get(value, 'label') === 'string'
+      ? String(Reflect.get(value, 'label'))
+      : 'an unlabelled policy';
+  assertCoded(
+    false,
+    'X_CHANNEL_CATCHUP_POLICY_MISMATCH',
+    `channel("${name}"): its catch-up read "${read.name || '(named at boot)'}" decides with ${label(read.policy)}, the channel with ${label(policy)} — the read is served with the channel params as input, so it would answer what the subscribe refuses`,
+    `set the catch-up query's policy: to the same object channel("${name}", { policy }) passes — export the rule from the feature's policy.ts and import it in both files`,
+  );
 }
 
 /** What only the server half declares: the rows it carries and who may join. */
@@ -114,6 +141,7 @@ export function channel<K extends string>(
       "add policy: can('<resource>:read') to the channel() call, or policy: allow('public') for a channel anyone may join",
     );
   }
+  assertCatchUpPolicy(name, catchUpReadOf(ref), policy);
   const records = (init.records ?? []).map((entity) => {
     const projection = projectionFor(name, entity);
     for (const param of ref.params) {

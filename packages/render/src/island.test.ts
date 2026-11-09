@@ -452,3 +452,17 @@ describe('island · declaring one is the whole declaration', () => {
     expect(orphanFix).not.toContain("remove hydrate: 'never'");
   });
 });
+
+// Plan 101 slice 14 P6. The SERVER half of an island is this walker, so a `javascript:` href in its
+// shell is dropped like any other. Once mounted, Solid's own setter writes the island's markup and
+// no `@ultimat3/render` code runs: that half is `safeUrl` at the call site (`@ultimat3/ui`'s Link).
+describe('island · a URL in the shell', () => {
+  test("a javascript: href in an island's server shell is not emitted", async () => {
+    const Card = island({ src: `./card${ISLAND_EXTENSION}` });
+    const html = await renderToHtml(h(Card, null, h('a', { href: 'java\tscript:alert(1)' }, 'x')), {
+      islands: islandCollector({ file: PAGE, hydrate: 'interaction' }),
+    });
+    expect(html).toContain('<a>x</a>');
+    expect(html).not.toContain('script:');
+  });
+});

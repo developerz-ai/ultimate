@@ -152,6 +152,20 @@ describe('an operator outside the vocabulary is one refusal in both drivers', ()
   });
 });
 
+// UTF-16 `<` puts an astral character (lead surrogate 0xD83D) BEFORE U+FF01; byte/code-point order
+// (Postgres `C`, what PGlite initialises with) puts it after — so a page cut on a text key differed.
+describe('a text column orders by code point in both drivers', () => {
+  test('an astral character sorts after a BMP one above the surrogate range', async () => {
+    const [memory, pg] = await both(async (db) => {
+      await db.ledger.update(idAt('0a'), { label: '\u{1F600}' });
+      await db.ledger.update(idAt('0b'), { label: '\uFF01' });
+      return (await db.ledger.orderBy('label', 'asc').all()).map((row) => row.label);
+    });
+    expect(pg).toEqual(['big', '\uFF01', '\u{1F600}']);
+    expect(memory).toEqual(pg);
+  });
+});
+
 describe('the rule itself, on the pairs no stored row can hold', () => {
   test.each<[ColumnKind | undefined, unknown, unknown, number]>([
     // One driver's `int8` beside a literal, with no declared kind at all.
@@ -169,6 +183,8 @@ describe('the rule itself, on the pairs no stored row can hold', () => {
     // Digits in a TEXT column are characters, and so are digits with no kind.
     ['text', '10', '9', -1],
     [undefined, '10', '9', -1],
+    ['text', '\u{1F600}', '\uFF01', 1],
+    [undefined, 'ab', 'a\u{1F600}', -1],
   ])('%p: %p against %p orders %p, and equality agrees', (kind, left, right, order) => {
     expect(compareByKind(kind, left, right)).toBe(order);
     expect(compareByKind(kind, right, left)).toBe(-order || 0);

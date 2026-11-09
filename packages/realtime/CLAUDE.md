@@ -84,7 +84,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `gateFailures` via `onGateFailed`, never `onRowDenied`.
 - **One serial lane per query id (`WindowLock`) is the only thing that orders a fanout.** `deliver`
   enters every lane before awaiting any; no fanout takes a second lane; a lane that fails desyncs its
-  own subscribers; lanes chain on a settled shadow of each task.
+  own subscribers; lanes chain on a settled shadow of each task. **A change enters only
+  `LiveEntries.targets(table)`** (its table's readers + stale/unread windows; `live-deliver.test.ts`);
+  a lane at `maxLaneDepth` (1,024) SHEDS it: window staled, `changesShed` counted.
 - **Two reads of one entry are ordered by a READ GENERATION**, never by an lsn (`QueryEntry.lsn` may
   be `''`): `entry.generation` / `entry.applied` is an identity check. The lsn guard stays for the
   other question — a read that resolved behind a change the fanout already folded.
@@ -96,12 +98,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   a non-positive or non-finite value takes the default (`query-window.test.ts`).
 - The retained change window stores **pre-policy** patches; resume re-filters them per subscriber,
   outside the lane, against the live window.
-- **`desynced` is a mark with a reader**: the next delivery serves a fresh snapshot out of the shared
-  window and only then clears it. **`result.refill` is checked BEFORE the mark** — a guessed window
-  never clears a mark (`live-fanout.test.ts`). **A quiet query has three more readers**
-  (`sync-drain.test.ts`): Bun's `drain` (`registry.repair`, which waits out a read in flight), a read
-  that lands, and the node's sweep (`registry.repairMarked`, on the idle interval), which also re-reads
-  a stale window that owes one, once a pass. Never out of a window stale or with a read not settled.
+- **`desynced` is a mark with a reader**: the next delivery re-snapshots out of the shared window,
+  then clears it; `result.refill` is checked BEFORE the mark. A quiet query's three other readers
+  (drain, a landed read, `repairMarked`): `docs/history/realtime.md` (2026-11-09).
 - **A change the window already holds is refused** (`change.lsn <= entry.lsn`, counted as
   `staleChanges`). **A gap is detected**: the replicator stamps `producer` + `seq`; a skipped
   sequence — or a NEW producer after a known one — stales every window; `refillWindowInLane` replaces it.
@@ -195,14 +194,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - Exactly one `replicator` per DB, by a session-level advisory lock. **`start()` and
   `PostgresAdvisoryLock.tryAcquire` are MEMOISED**; `stop()`/`release()` await the in-flight one. A start
   that FAILS hands the lock back; `running` is set once the feed pumps.
-- **The pump has one way out, `#die`**: failure recorded, timer stopped, connection closed, then
-  `onEnd(reason)`. `start()` awaits the previous pump. **`stop()` releases everything first.**
-- **A stream that ENDS is restarted**: feed then lock ABANDONED (synchronous, never asked);
-  `stop()` bounds both goodbyes by `STOP_DEADLINE_MS`; redial on `retryDelayMs` (injected
-  `schedule`) from `lastLsn` until `stop()`. The delay resets only when a change is PUBLISHED. A
-  rejected `publish` is one such end, and so is a LOST lock (`AdvisoryLock.onLost`), mid-dial
-  included. `running` = pumping AND no refused change owed; `onChange` is fenced per run and
-  REFUSES, never drops.
+- **The pump has one way out, `#die`**: failure, timer, connection, then `onEnd`. **A walsender
+  that stops answering is dead** — 3 intervals read-silent, or a confirm unsettled
+  (`pg-replication-liveness.ts`): destroyed, no goodbye. A run is fenced by its connection.
+- **A stream that ENDS, or a LOST lock, is restarted** from `lastLsn` on `retryDelayMs`, feed then
+  lock ABANDONED; `running` = pumping and no refused change owed (history, 2026-11-09).
+- **A slot is asked its `wal_status`**: `lost` is `X_REPLICATION_SLOT_INVALIDATED`; one created under
+  a resume is `X_REPLICATION_SLOT_RECREATED`, drops `from`, and owes `x.change.-resync` (a node
+  answers it as a reconnect) till published.
 - **A row crosses the bus through its entity's columns** (`replicator-row.ts`): `parseEnvelope`
   revives by `entityForTable` + `$parse`, bytes as base64 — by declared kind, never by shape.
 - **Cleartext/md5 auth is answered only under `sslmode` `require`, `verify-*` or `disable`**.
@@ -210,7 +209,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   entity table, or `ALTER … ADD TABLE` the missing; never a DROP, never `FOR ALL TABLES`.
 - **TLS is libpq's `sslmode`** (`pg-tls.ts`): only `verify-*` verify; the runtime never rejects,
   `judgeHandshake` decides; the raw socket is DEAF after `upgradeTLS`.
-- **Every session pins `datestyle=ISO`, `intervalstyle=postgres`, `extra_float_digits=3`, `TimeZone=UTC`**.
+- **Every session pins `datestyle=ISO`, `intervalstyle=postgres`, `extra_float_digits=3`, `TimeZone=UTC`**,
+  and asks for TCP keepalives (10 s/5 s/3): a lock holder lost without a FIN frees it in ~25 s.
 - A change lsn is `<16 hex commit position><8 hex row position>`; never order by one half, a wall
   time or a counter.
 - Slot, publication and entity names match `[a-z_][a-z0-9_]*` before interpolation — a security

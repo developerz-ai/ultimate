@@ -123,6 +123,9 @@ const serializeSortValue = (kind: ColumnKind, value: unknown): string | undefine
   if (kind === 'timestamptz') return instantMicros(value)?.toString();
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'bigint') return value.toString();
+  // A `uuid` as its value, the spelling `keyOf` gives it: a store answering upper case must mint
+  // the cursor a lower-case one does, or one position has two cursors.
+  if (kind === 'uuid') return String(value).toLowerCase();
   return String(value);
 };
 

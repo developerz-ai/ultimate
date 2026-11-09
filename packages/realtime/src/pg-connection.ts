@@ -124,7 +124,15 @@ export class PgConnection {
       // or role default like `America/New_York` writes a pre-1883 instant at its LMT offset,
       // `-04:56:02`. The decoder reads that too, but UTC text is the one form with no ambient zone
       // in it — and a client option outranks every server-side default, `ALTER ROLE … SET` included.
-      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC',
+      //
+      // Then the SERVER's TCP keepalives. Both sessions this opens are held idle for hours — the
+      // replicator's advisory lock IS its session — and a holder lost without a FIN (a failover
+      // moving the address, a NAT drop) kept the lock until the OS default, ~2 h 11 m: no standby
+      // took over. Probed after 10 s idle, every 5 s, dead after 3 misses — ~25 s. Ignored, not
+      // refused, on a Unix socket, where there is no TCP to probe.
+      options:
+        '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC ' +
+        '-c tcp_keepalives_idle=10 -c tcp_keepalives_interval=5 -c tcp_keepalives_count=3',
     };
     if (options.replication !== undefined) parameters['replication'] = options.replication;
     // A handshake fails on ordinary conditions — no password, an ErrorResponse, an EOF — and on

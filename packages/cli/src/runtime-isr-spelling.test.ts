@@ -193,9 +193,9 @@ describe.each(PAGES)('unit · $name, in every spelling the router accepts', (pag
         spelling,
         expect.stringContaining(`slug=[${page.slug}] at=[${page.pathname}]`),
       ]);
-      expect([spelling, app.isr.store().paths()]).toEqual([spelling, [page.key]]);
+      expect([spelling, await app.isr.store().paths()]).toEqual([spelling, [page.key]]);
     }
-    expect(app.isr.store().get(page.key)).toMatchObject({ ttlMs: 600_000, stale: false });
+    expect(await app.isr.store().get(page.key)).toMatchObject({ ttlMs: 600_000, stale: false });
   });
 
   test.each(page.spellings)('a purge takes it down for a request spelled %s', async (spelling) => {
@@ -203,7 +203,7 @@ describe.each(PAGES)('unit · $name, in every spelling the router accepts', (pag
     expect((await app.get(spelling)).status).toBe(200);
     published = false;
     expect((await invalidateTags([postTag])).isr).toEqual([page.key]);
-    expect(app.isr.store().paths()).toEqual([]);
+    expect(await app.isr.store().paths()).toEqual([]);
     for (const asked of [spelling, ...page.spellings]) {
       expect([asked, (await app.get(asked)).status]).toEqual([asked, 404]);
     }
@@ -214,7 +214,7 @@ describe.each(PAGES)('unit · $name, in every spelling the router accepts', (pag
     expect((await app.get(spelling)).status).toBe(200);
     published = false;
     expect((await invalidateTags([postTag])).isr).toEqual([page.key]);
-    expect(app.isr.store().get(page.key)?.stale).toBe(true);
+    expect((await app.isr.store().get(page.key))?.stale).toBe(true);
     // Stale-while-revalidate: the copy once more, MARKED, and the 404 renders behind it.
     const stale = await app.get(spelling);
     expect(stale.headers.get('x-ultimate-isr')).toBe('stale');
@@ -224,7 +224,7 @@ describe.each(PAGES)('unit · $name, in every spelling the router accepts', (pag
       next = await app.get(spelling);
     }
     expect(next.status).toBe(404);
-    expect(app.isr.store().paths()).toEqual([page.key]);
+    expect(await app.isr.store().paths()).toEqual([page.key]);
   });
 });
 
@@ -235,7 +235,7 @@ describe('unit · an address the router does not match stores nothing', () => {
       registerArticle('purge');
       const app = serving();
       expect((await app.get(path)).status).toBeGreaterThanOrEqual(400);
-      expect(app.isr.store().paths()).toEqual([]);
+      expect(await app.isr.store().paths()).toEqual([]);
     },
   );
 
@@ -246,7 +246,7 @@ describe('unit · an address the router does not match stores nothing', () => {
       registerArticle('purge');
       const app = serving();
       expect((await app.get(path)).status).toBe(404);
-      expect(app.isr.store().paths()).toEqual([]);
+      expect(await app.isr.store().paths()).toEqual([]);
     },
   );
 
@@ -260,7 +260,7 @@ describe('unit · an address the router does not match stores nothing', () => {
         await app.get(`/blog/${spelled.join('')}`);
       }
     }
-    expect(app.isr.store().paths()).toEqual([
+    expect(await app.isr.store().paths()).toEqual([
       '/blog/alpha?__x_locale=en',
       '/blog/bravo?__x_locale=en',
       '/blog/charlie?__x_locale=en',
@@ -297,13 +297,13 @@ describe('unit · a key that reads back as another route is not stored', () => {
     expect(await sectioned.text()).toContain('BY SECTION');
     expect(sectioned.headers.get('cache-control')).toBe('private, no-store');
     expect(sectioned.headers.get('surrogate-key')).toBeNull();
-    expect(app.isr.store().paths()).toEqual([]);
+    expect(await app.isr.store().paths()).toEqual([]);
 
     // The English `/news` page owns that key, and is never answered the other route's document.
     const english = await app.get('/en/news');
     expect(await english.text()).toContain('THE NEWS');
     expect(english.headers.get('cache-control')).toBe(SHARED);
-    expect(app.isr.store().paths()).toEqual(['/en/news?__x_locale=en']);
+    expect(await app.isr.store().paths()).toEqual(['/en/news?__x_locale=en']);
     expect(await (await app.get('//en/news')).text()).toContain('BY SECTION');
     expect(await (await app.get('/en/news')).text()).toContain('THE NEWS');
   });
@@ -330,6 +330,6 @@ describe('unit · a key that reads back as another route is not stored', () => {
     for (const spelling of ['/', '//']) {
       expect(await (await app.get(spelling)).text()).toContain('at=[/]');
     }
-    expect(app.isr.store().paths()).toEqual(['/?__x_locale=es-CO', '/en?__x_locale=en']);
+    expect(await app.isr.store().paths()).toEqual(['/?__x_locale=es-CO', '/en?__x_locale=en']);
   });
 });

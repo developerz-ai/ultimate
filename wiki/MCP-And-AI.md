@@ -200,6 +200,13 @@ posts (query scope app:use; action scope posts:write) — Blog posts
   publishPost (action; confirms) {postId: string} — Publish a draft post
 ```
 
+**A catalog too big for that: `catalogDetail: 'compact'`**, once, in `defineAppMcp` (`As of 2026-11`). Each resource line stays; its actions become ONE line of names, grouped by kind tag, with `confirms` and an unhoisted scope still on the action. Descriptions and parameter hints move to `describe_resource`, which the header tells the model to read before a resource's first call. Measured on a 46-resource, 322-action catalog: 95,318 characters full, 13,085 compact. Refused on a server no caller reads `list_resources` from (`X_MCP_SURFACE_INVALID`).
+
+```text
+posts (query scope app:use; action scope posts:write) — Blog posts
+  listPosts; action: publishPost (confirms), archivePost
+```
+
 The same catalog as data, for a test: `mcp.server.catalog(caller)` — every action keeps its own
 `scope` there. `describe_resource` stays compact JSON with the full schema — a schema is JSON.
 
@@ -497,7 +504,9 @@ Remote MCP tools as this app's actions — the app's `policy`, rate limit, confi
 | Reviewed | `allow` is required; `lock` is the committed `tools.lock.json` written by `x mcp lock <name>`; `x mcp lock <name> --check` writes nothing and fails on drift |
 | Drift | a missing, re-described or re-shaped tool is `X_MCP_REMOTE_TOOL_CHANGED` — at declaration against the lock, before the first call against the live server |
 | Wire | `outbound()` (`dial: 'public'` by default, deadline, size cap); modern era first, then legacy `initialize` + `Mcp-Session-Id`; JSON or SSE answers |
-| Untrusted | the answer arrives as `{ untrusted, isError }`, fenced `<untrusted source="mcp:<name>/<tool>">`, middle-cut past `maxResultChars` |
+| Untrusted | the answer arrives as `{ untrusted, isError }`, fenced `<untrusted source="mcp:<name>/<tool>">`, middle-cut past `maxResultChars`; invisible format characters stripped, then every `<` (and full-width `＜`, small `﹤`) written `&lt;` — no spelling of `</untrusted>` survives |
+| Exposed | `expose` defaults to `false`: the actions are this app's, not its `/mcp`'s, so `include: 'exposed'` leaves them out; they are declared `agents: true`, so this app's own `agent()`s are offered them anyway. `expose: true` opts one remote server in, and this app's `/mcp` then answers for a third party's tools |
+| Re-checked | the live list is held to the lock before the first call, on every `list_changed`, and again once a verdict is `reverifyMs` old (default 3,600,000) — a remote that changes silently is caught within the hour |
 | Read-only | only when a reviewer sets `readOnly: true` in the lock — the remote's hint is never trusted |
 | Failure | `X_MCP_REMOTE_REFUSED` (502), the cause names the status |
 

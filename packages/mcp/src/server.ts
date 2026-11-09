@@ -10,6 +10,7 @@ import type { McpAuditHook, McpAuditor } from './audit-hook';
 import { LOG_ONLY_AUDITOR, mcpAuditor } from './audit-hook';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
 import { metaCall } from './meta-call';
+import type { McpCatalogDetail } from './meta-catalog-render';
 import { META_UNKNOWN_FIX } from './meta-errors';
 import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
 import { MetaSurface } from './meta-surface';
@@ -39,7 +40,7 @@ import type { CatalogRefused, CatalogView, McpCatalogSource, PerCall } from './s
 import { catalogRefusal, viewOf } from './server-catalog';
 import { resourcesRead } from './server-resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
-import { instructionsFor, invalidArgsResult } from './server-voice';
+import { instructionsFor, invalidArgsResult, screenCatalogDetail } from './server-voice';
 import type { McpTenant } from './tenant';
 import { assertTenant, LIST_TENANTS, listTenantsTool, tenantStep, withTenantArg } from './tenant';
 import { admitted, thrownResponse } from './tool-thrown';
@@ -70,6 +71,11 @@ export interface McpServerInput {
   readonly surface?: McpSurfaceOption | undefined;
   /** The meta catalog's resources. Required with a surface that can be `'meta'`. */
   readonly groups?: McpResourceGroups | undefined;
+  /**
+   * How much of each action `list_resources` says: `'full'` (the default) or `'compact'` — names
+   * and tags, the rest in `describe_resource`. Needs a surface that can be `'meta'`.
+   */
+  readonly catalogDetail?: McpCatalogDetail | undefined;
   /**
    * `initialize`'s `instructions`: how to use this server, for a client that injects it into the
    * model's context (Claude Code does; many clients do not — never load-bear on it). A function
@@ -110,13 +116,18 @@ export function mcpServer(input: McpServerInput = {}): McpServer {
     groups: input.groups,
     tools: all,
   });
+  const catalogDetail = screenCatalogDetail(input.catalogDetail, input.surface);
   return new McpServer(
     tools,
     resources,
     input.prompts ?? [],
     input.serverInfo ?? defaultServerInfo(),
     meta,
-    { instructions: input.instructions, errorAudience: input.errorAudience ?? 'developer' },
+    {
+      instructions: input.instructions,
+      errorAudience: input.errorAudience ?? 'developer',
+      catalogDetail,
+    },
     input.onAudit === undefined && input.clock === undefined
       ? LOG_ONLY_AUDITOR
       : mcpAuditor({ onAudit: input.onAudit, clock: input.clock }),
@@ -349,6 +360,7 @@ export class McpServer {
         {
           tools: view.tools,
           audit: this.audit,
+          catalogDetail: this.voice.catalogDetail ?? 'full',
           dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who),
           notFound: (at, tool, who, fix) => this.notFound(at, tool, who, fix),
           refuse: (at, tool, error, who) =>

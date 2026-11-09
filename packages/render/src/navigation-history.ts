@@ -50,6 +50,18 @@ export function saveEntryScroll(win: Window, rendered: string): void {
 }
 
 /**
+ * The entry a swapped-in page gets: pushed for a new visit, replaced for the same URL (or when
+ * asked), none on a back/forward — whose entry already names the page.
+ */
+export function recordEntry(win: Window, landed: string, doc: string, mode: HistoryMode): void {
+  if (mode === 'none') return;
+  const same = landed === win.location.href || mode === 'replace';
+  const state = { [STATE_KEY]: { scroll: [0, 0], doc } satisfies EntryState };
+  if (same) win.history.replaceState(state, '', landed);
+  else win.history.pushState(state, '', landed);
+}
+
+/**
  * Where the new page lands: the saved offset on back/forward, the fragment's element, else the
  * top. `instant`, whatever the page's `scroll-behavior` says — `@ultimat3/ui`'s reset makes it
  * `smooth`, and a new page is a new place, which a full load jumps to rather than glides to.

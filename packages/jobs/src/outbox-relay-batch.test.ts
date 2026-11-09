@@ -101,3 +101,45 @@ describe('the relay publishes a claimed batch in two calls', () => {
     expect(calls.batches).toEqual([]);
   });
 });
+
+describe('a full batch is followed at once, not after the poll floor', () => {
+  /** Three committed rows behind a relay that claims `batchSize` at a time. */
+  async function relayOver(batchSize: number, failing?: string) {
+    const store = memoryOutboxStore();
+    const tx = { id: 'tx' } as unknown as Tx;
+    for (const index of [1, 2, 3]) await store.stage(tx, record(index));
+    await store.commit(tx);
+    const base = memoryJobDriver();
+    const driver: JobDriver =
+      failing === undefined
+        ? base
+        : {
+            ...base,
+            enqueueMany: () => Promise.reject(poison()),
+            enqueue: (request: EnqueueRequest) =>
+              request.idempotencyKey === failing ? Promise.reject(poison()) : base.enqueue(request),
+          };
+    return outboxRelay({ store, driver, batchSize, intervalMs: 200, drainOnShutdown: false });
+  }
+
+  test('a batch that came back full leaves a backlog: the next pass waits 0', async () => {
+    const relay = await relayOver(2);
+    expect(await relay.tick()).toBe(2);
+    // Was 200: a 100k backlog drained at 500 rows per 200 ms, 2,500 rows a second.
+    expect(relay.pollDelayMs()).toBe(0);
+    expect(await relay.tick()).toBe(1);
+    expect(relay.pollDelayMs()).toBe(200);
+  });
+
+  test('a short batch waits the floor', async () => {
+    const relay = await relayOver(10);
+    expect(await relay.tick()).toBe(3);
+    expect(relay.pollDelayMs()).toBe(200);
+  });
+
+  test('a full batch that stopped at a failing row waits the floor, never spins on it', async () => {
+    const relay = await relayOver(2, 'notify:2');
+    expect(await relay.tick()).toBe(1);
+    expect(relay.pollDelayMs()).toBe(200);
+  });
+});

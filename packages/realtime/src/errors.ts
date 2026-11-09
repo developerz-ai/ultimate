@@ -113,6 +113,7 @@ export {
   CursorStaleError,
   LocalStoreUnavailableError,
   OfflineQueueAbandonedError,
+  OfflineQueueFullError,
   ProtocolVersionError,
   RealtimeUninstalledError,
   RebaseConflictError,
@@ -130,6 +131,8 @@ export {
   ReplicaIdentityError,
   ReplicationFailedError,
   ReplicationProtocolError,
+  ReplicationSlotInvalidatedError,
+  ReplicationSlotRecreatedError,
   ReplicationTlsError,
   ReplicatorSlotHeldError,
 } from './replication-errors';

@@ -4,7 +4,7 @@
  * `registerErrorCodes` call, because a second registration is how two modules end up deciding a
  * title by load order. Imported bare, so constructing one of these registers its title first.
  */
-import { renderCauseValue, UltimateError } from '@ultimat3/core';
+import { renderCauseValue, UltimateError } from '@ultimat3/core/page';
 import './error-titles';
 // Type-only: `idempotency.ts` imports the classes below, and a runtime edge here would close the
 // cycle. `verbatimModuleSyntax` is what makes that guarantee mechanical.

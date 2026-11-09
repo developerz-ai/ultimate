@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "03278ca766d450ea2613f25118aacf79d2997dbe3e58c43c3269220348a87ca8",
+  "buildId": "0845d091adf1347f62e745cdbe39d520a47c8ba757a755be7936fb163ef82c3b",
   "tiers": {
     "0": [
       "core",
@@ -980,6 +980,11 @@
       "at": "scripts/lib/changelog-highlights.ts"
     },
     {
+      "code": "X_CHANNEL_CATCHUP_POLICY_MISMATCH",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
       "code": "X_CHANNEL_DECLARATION_INVALID",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
@@ -1765,9 +1770,24 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_DRIVER_CAPABILITY_MISSING",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_DRIVER_ROW_OUT_OF_SCOPE",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_DRIVER_UNAVAILABLE",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_DRIVER_UNSUPPORTED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_DST_AMBIGUOUS",
@@ -3575,6 +3595,11 @@
       "at": "packages/realtime/src/error-titles.ts"
     },
     {
+      "code": "X_OFFLINE_QUEUE_FULL",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
       "code": "X_OPENAPI_CONFIG_INVALID",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
@@ -4000,6 +4025,11 @@
       "at": "packages/query/src/errors.ts"
     },
     {
+      "code": "X_QUERY_MAX_PAGE_INVALID",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_NOT_PAGEABLE",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
@@ -4296,6 +4326,16 @@
     },
     {
       "code": "X_REPLICATION_PROTOCOL",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_REPLICATION_SLOT_INVALIDATED",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_REPLICATION_SLOT_RECREATED",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
     },

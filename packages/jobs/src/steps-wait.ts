@@ -8,10 +8,12 @@ import { formatIssues, validateAsync } from '@ultimat3/schema';
 import { finiteDurationMs } from './clock';
 import { JobTimeoutError } from './errors';
 import { JobEventInvalidError } from './errors-steps';
+import { eventBefore } from './events-cursor';
 import type { WaitForEventOptions } from './steps-api';
 import type { RunnerCore } from './steps-core';
 import { jsonForm } from './steps-output';
 import type { StepRecord } from './steps-store';
+import type { WaitFloor } from './steps-suspension';
 import {
   isWaitTimedOut,
   StepSuspension,
@@ -22,7 +24,12 @@ import {
 
 const DEFAULT_WAIT_MS = 86_400_000;
 
-type Hit = { readonly id: string; readonly payload: unknown; readonly publishedAt: number };
+type Hit = {
+  readonly id: string;
+  readonly payload: unknown;
+  readonly publishedAt: number;
+  readonly horizon?: string;
+};
 
 export function waitForEventStep(core: RunnerCore) {
   const { runId, jobName } = core;
@@ -50,7 +57,10 @@ export function waitForEventStep(core: RunnerCore) {
     const at = core.now();
     // A NEW wait is stamped by the bus, whose clock stamps every `publishedAt` it is compared
     // with; the runner's own only when there is no bus to ask. A re-poll keeps what it persisted.
-    const startedAt = existing?.startedAt ?? (await core.events?.now()) ?? at;
+    // Its horizon is read in the same statement and persisted as the floor: a publish whose
+    // transaction was open at this instant is stamped before it, and is owed to this wait.
+    const mark = existing === undefined ? await core.events?.mark?.() : undefined;
+    const startedAt = existing?.startedAt ?? mark?.at ?? (await core.events?.now()) ?? at;
     const timeoutMs = finiteDurationMs(
       waitOptions.timeout ?? DEFAULT_WAIT_MS,
       'step.waitForEvent',
@@ -61,7 +71,41 @@ export function waitForEventStep(core: RunnerCore) {
     const attempts = (existing?.attempts ?? 0) + 1;
     const keyed = correlationKey === undefined ? {} : { correlationKey };
 
-    const floor = waitFloorOf(existing?.output);
+    const floor =
+      waitFloorOf(existing?.output) ??
+      (mark?.horizon === undefined
+        ? undefined
+        : { afterMs: startedAt, horizon: mark.horizon, sinceHorizon: mark.horizon });
+    // The wait's own line, which a refusal's cursor never moves: `startedAt` and the mark's horizon.
+    const since = { at: startedAt, horizon: floor?.sinceHorizon, refused: floor?.refused };
+
+    /**
+     * The floor after `hit` is refused — monotone, so no refused event can match again. A hit past
+     * the cursor moves it there, under the horizon of the search that found it: what that search
+     * could not see is still owed, and everything it saw up to the hit is spent. A hit BEHIND the
+     * cursor (owed through a horizon) leaves the cursor where it is and is excluded by id: moving
+     * the cursor back re-opened every event between the two, the one refused before it included.
+     */
+    const refusedFloor = (hit: Hit): WaitFloor => {
+      const cursor = { publishedAt: floor?.afterMs ?? startedAt, id: floor?.afterId ?? '' };
+      const sinceHorizon =
+        floor?.sinceHorizon === undefined ? {} : { sinceHorizon: floor.sinceHorizon };
+      if (eventBefore(cursor, hit)) {
+        return {
+          afterMs: hit.publishedAt,
+          afterId: hit.id,
+          ...(hit.horizon === undefined ? {} : { horizon: hit.horizon }),
+          ...sinceHorizon,
+        };
+      }
+      return {
+        afterMs: cursor.publishedAt,
+        ...(floor?.afterId === undefined ? {} : { afterId: floor.afterId }),
+        ...(floor?.horizon === undefined ? {} : { horizon: floor.horizon }),
+        ...sinceHorizon,
+        refused: [...(floor?.refused ?? []), hit.id],
+      };
+    };
     const parked = {
       runId,
       name,
@@ -81,7 +125,7 @@ export function waitForEventStep(core: RunnerCore) {
         await core
           .put({
             ...parked,
-            output: waitFloor({ afterMs: hit.publishedAt, afterId: hit.id }),
+            output: waitFloor(refusedFloor(hit)),
             wakeAt: at,
           })
           .catch((unwritten: unknown) =>
@@ -108,6 +152,8 @@ export function waitForEventStep(core: RunnerCore) {
       correlationKey,
       floor?.afterMs ?? startedAt,
       floor?.afterId,
+      floor?.horizon,
+      since,
     );
     if (hit !== undefined) return consume(hit);
 
@@ -155,6 +201,8 @@ export function waitForEventStep(core: RunnerCore) {
         correlationKey,
         floor?.afterMs ?? startedAt,
         floor?.afterId,
+        floor?.horizon,
+        since,
       );
       if (late !== undefined) return consume(late);
     }

@@ -1,6 +1,6 @@
 // Single responsibility: continuing an `agent()` run — the transcript handle a finished run
-// leaves, the screen it passes when an app hands it back, the one user turn a continuation
-// appends, and `.run()` / `.continue()` on the action.
+// leaves, the screen it passes when an app hands it back, and the one user turn a continuation
+// appends. `.run()` / `.continue()` themselves are ./agent-session.
 //
 // It exists because the alternative is a whole new run: repairing one section of an article
 // re-pays the transcript and every tool result, and the model starts from nothing. A continuation
@@ -14,7 +14,6 @@
 
 import type { Action, InvokeOptions } from '@ultimat3/action';
 import {
-  asyncContext,
   CURSOR_SECRET_FIX,
   CURSOR_SECRET_KEY,
   canonicalJson,
@@ -135,63 +134,6 @@ export interface AgentAction<TInput extends StandardSchemaV1, TOutput extends St
     opts?: InvokeOptions,
   ): Promise<AgentRun<InferOutput<TOutput>>>;
   named(name: string): AgentAction<TInput, TOutput>;
-}
-
-/** One `.run()` / `.continue()` in flight: what to resume from, and where the loop leaves its run. */
-export interface AgentSession {
-  /**
-   * Which DECLARATION this session was opened for. The session rides the async context, so every
-   * agent that runs underneath — a tool that calls another agent — can see it; only the one whose
-   * token this is may take it, and only once.
-   */
-  readonly owner: object;
-  claimed: boolean;
-  readonly resume: AgentContinuation | undefined;
-  finished: Omit<AgentRun<unknown>, 'output'> | undefined;
-}
-
-// Core's lazy seam, like `llm-stream.ts`'s sink: the mark rides the invocation, so the action a
-// continuation calls is the one object the registry, the policy and the audit record know.
-const sessions = asyncContext<AgentSession>('an agent session');
-
-/**
- * The session of THIS run, taken — or `undefined` for a plain call, and for any other agent
- * running under somebody else's `.run()` / `.continue()`: a nested agent starts fresh.
- */
-export function claimAgentSession(owner: object): AgentSession | undefined {
-  const session = sessions.get();
-  if (session === undefined || session.owner !== owner || session.claimed) return undefined;
-  session.claimed = true;
-  return session;
-}
-
-/** `.run()` and `.continue()` for one action: each invokes THAT action inside a session. */
-export function sessionCalls<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
-  target: Action<TInput, TOutput>,
-  /** The declaration's own token: `named()` twins share it, no other agent has it. */
-  owner: object,
-): Pick<AgentAction<TInput, TOutput>, 'run' | 'continue'> {
-  const invoke = async (
-    input: InferInput<TInput>,
-    resume: AgentContinuation | undefined,
-    opts: InvokeOptions | undefined,
-  ): Promise<AgentRun<InferOutput<TOutput>>> => {
-    const session: AgentSession = { owner, claimed: false, resume, finished: undefined };
-    const output = await sessions.run(session, () => target(input, opts ?? {}));
-    const finished = session.finished;
-    if (finished === undefined) {
-      // The action answered without the loop running: something wrapped it and short-circuited.
-      throw new AgentTranscriptInvalidError({
-        agent: target.name ?? 'agent',
-        reason: 'the action returned without running the agent loop, so there is no transcript',
-      });
-    }
-    return { output, ...finished };
-  };
-  return {
-    run: (input, opts) => invoke(input, undefined, opts),
-    continue: (input, resume, opts) => invoke(input, resume, opts),
-  };
 }
 
 /**

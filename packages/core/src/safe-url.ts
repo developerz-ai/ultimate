@@ -21,6 +21,13 @@ const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 const DATA_IMAGE = 'data:image/';
 
 /**
+ * Every code unit up to U+0020, and DEL. Spelled as the complement of `!`..U+FFFF so the pattern
+ * holds no control character (Biome refuses one, rightly): a surrogate is above U+0020 either way,
+ * so by code unit this is the same set the browser strips by code point.
+ */
+const CONTROL_OR_SPACE = /[^!-\uffff]|\x7f/g;
+
+/**
  * The value to emit, or `null` when the attribute must not be emitted at all. An anchor with no
  * `href` is inert and still renders its text, which is strictly better than a live one nobody
  * checked.
@@ -31,14 +38,9 @@ export function safeUrl(value: string, attribute: string): string | null {
   // A browser deletes TAB, CR and LF anywhere in a URL and trims leading C0 controls and spaces
   // before parsing it, so `java\tscript:alert(1)` is `javascript:` by the time it is followed —
   // the scheme has to be read off the stripped form, never off the raw one.
-  // Built by code point rather than a regex character class because Biome refuses a control
-  // character in a pattern - and it is right to: this is the one place that wants them named.
-  const stripped = [...value]
-    .filter((char) => {
-      const code = char.codePointAt(0) ?? 0;
-      return code > 0x20 && code !== 0x7f;
-    })
-    .join('');
+  // One native pass (`CONTROL_OR_SPACE`): an href per table row made a per-character copy the
+  // SSR walker's second-largest cost (plan 101 slice 14).
+  const stripped = value.replace(CONTROL_OR_SPACE, '');
   const matched = SCHEME.exec(stripped);
   // No scheme at all: relative, absolute-path, protocol-relative, query or fragment. Nothing here
   // can execute, and refusing them would refuse most of the links an app writes.

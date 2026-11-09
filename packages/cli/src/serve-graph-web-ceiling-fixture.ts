@@ -169,5 +169,8 @@
  * raised 1441 → 1442, measured 1442 (2026-11-07, fix/exercise-fidelity): `MIGRATE_CEILING`'s 1.
  * raised 1442 → 1443, measured 1443 (2026-11-08, fix/followups): `MIGRATE_CEILING`'s 1.
  * raised 1443 → 1458, measured 1458 (2026-11-09, plan 101 v31 wave A): `SERVING_ROLE_CEILING`'s 15.
+ * raised 1458 → 1476, measured 1476 (2026-11-09, plan 101 v31 wave B): `SERVING_ROLE_CEILING`'s 17
+ * and `mcp/src/meta-catalog-render.ts` (the web role's MCP catalog, split). No existing module
+ * newly reached.
  */
-export const WEB_ROLE_CEILING = 1458;
+export const WEB_ROLE_CEILING = 1476;

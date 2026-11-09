@@ -47,15 +47,44 @@ tmp:
 #                in a namespace this chart cannot know; narrow it to that namespace, e.g.
 #                [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }]
 #   metricsFrom  who scrapes /metrics. Default: any pod in the cluster and no address outside it.
-#   egress       OFF while empty. A list turns on egress filtering with exactly those rules — the
-#                database, NATS, the object store and DNS are your addresses, not the chart's, so
-#                write all of them: a list that omits DNS resolves nothing.
+#   egress       CLOSED by default: DNS to the cluster, any pod in the release's namespace, the
+#                public internet — never 169.254.0.0/16 (the cloud metadata endpoint, which hands
+#                any pod the node's credentials), CGNAT, a private range or their IPv6 kin, so a
+#                compromised pod (a scraping worker fetching a hostile URL) reaches neither the node
+#                identity nor another tenant. The list is rendered verbatim and a list you set
+#                REPLACES it whole: to reach a database outside the namespace (RDS, another
+#                namespace's Postgres), copy these three rules into your values and add yours, e.g.
+#                  - to: [{ ipBlock: { cidr: 10.0.12.0/24 } }]
+#                    ports: [{ port: 5432, protocol: TCP }]
+#                `egress: []` turns egress filtering OFF. An IPv6 cluster whose pods hold GLOBAL
+#                addresses must narrow ::/0 — no except list knows another tenant's global prefix.
+#                scripts/helm-template.test.ts holds this.
 networkPolicy:
   enabled: true
   httpFrom: []
   metricsFrom:
     - namespaceSelector: {}
-  egress: []
+  egress:
+    # Port 53 to cluster pods (CoreDNS behind the kube-dns Service) and NodeLocal DNSCache's
+    # link-local 169.254.20.10 — never to any host, so 53 is no tunnel to a private resolver.
+    - to:
+        - namespaceSelector: {}
+        - ipBlock: { cidr: 169.254.20.10/32 }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    # The release's namespace: an in-namespace Postgres, NATS, Redis, object store or collector.
+    - to:
+        - podSelector: {}
+    # The public internet, minus metadata/link-local, CGNAT and every private range — which is
+    # where pod and service CIDRs live on every common distribution.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
+        - ipBlock:
+            cidr: ::/0
+            except: [fc00::/7, fe80::/10, fd00:ec2::254/128, 64:ff9b::/96]
 
 # The scrape listener every serving role opens, on its own port and never the app's: the ingress
 # below routes `/` to web, so `/metrics` beside `/healthz` on 3000 is `/metrics` on the internet.
