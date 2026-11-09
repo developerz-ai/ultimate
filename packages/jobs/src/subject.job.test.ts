@@ -7,8 +7,8 @@ import { ctxOf, userActor } from '@ultimat3/core';
 import type { Driver, Repo } from '@ultimat3/entity';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { ClaimedJob, JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { DriverUnavailableError } from './errors';
 import { executeJob } from './execute';
@@ -166,7 +166,7 @@ beforeEach(async () => {
   resetSubjects();
   rows = failing(memoryDriver());
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
   failTable = undefined;
   await seed();
 });

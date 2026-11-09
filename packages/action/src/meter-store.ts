@@ -4,6 +4,7 @@
  * the pool it opened, so a tenant's day is one counter across every replica and every restart.
  */
 
+import { adapterSlot } from '@ultimat3/core/adapter';
 import { memoryMeterStore } from './meter-memory';
 
 /** One counter: whose, which meter, which period declaration. */
@@ -45,17 +46,24 @@ export interface MeterStore {
   releaseWarning(key: MeterKey, periodStartMs: number): Promise<void>;
 }
 
-let installed: MeterStore = memoryMeterStore();
+let base: MeterStore = memoryMeterStore();
+/** The installed store: a stack over the process default, released in any order. */
+const slot = adapterSlot<MeterStore>(() => base);
 
-export function setMeterStore(store: MeterStore): void {
-  installed = store;
+/**
+ * The boot's installer (its release removes THIS install only, in any order — `adapterSlot`), on `@ultimat3/action/adapter` and never the `.` barrel: an app swaps the
+ * store with `meterStore:` in `apps/<app>/runtime.ts`.
+ */
+export function installMeterStore(store: MeterStore): () => void {
+  return slot.install(store);
 }
 
 export function getMeterStore(): MeterStore {
-  return installed;
+  return slot.current();
 }
 
 /** Back to a fresh process default. The boot's teardown, and a test's. */
 export function resetMeterStore(): void {
-  installed = memoryMeterStore();
+  slot.reset();
+  base = memoryMeterStore();
 }

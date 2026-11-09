@@ -43,13 +43,6 @@ import { ROLES, type Role } from './roles';
 export const THEME_MODES = ['light', 'dark', 'system'] as const;
 export type ThemeMode = (typeof THEME_MODES)[number];
 /**
- * The buses `@ultimat3/realtime`'s `selectTransport` builds, and nothing else. `'redis'` was in
- * this union until 22.0.0 with no Redis transport anywhere: it booted whatever `NATS_URL` chose.
- */
-export const REALTIME_TRANSPORTS = ['memory', 'nats'] as const;
-export type RealtimeTransport = (typeof REALTIME_TRANSPORTS)[number];
-
-/**
  * No `tokens` (deleted in 25.0.0): read by nothing once the theme seam landed — the app's theme is
  * `export const brand = defineTheme(…)` from `@ultimat3/ui`. A second theming path nothing read.
  */
@@ -152,10 +145,11 @@ export interface JobsConfig {
    * silently gave you Postgres. Deleted 2026-08-20 (5.0.0); since 25.0.0 a config still writing it
    * is REFUSED by name (`config-removed.ts`) rather than carried through the spread.
    *
-   * The seam that works is `setJobDriver(driver)` —
-   * `setJobDriver(postgresJobDriver({ executor }))`, or `setJobDriver(memoryJobDriver())` in a
-   * test. Swap the driver, zero job-code change, which is the whole of what the `JobDriver`
-   * interface buys. There is no config line, and one that cannot be honoured is worse than none.
+   * The seam that works is the `jobs` adapter port (`ADAPTER_PORTS`): `export const runtime = {
+   * jobs: postgresJobDriver({ executor }) }` in `apps/<app>/runtime.ts`, or `@ultimat3/testing`'s
+   * per-test override. Swap the driver, zero job-code change, which is the whole of what the
+   * `JobDriver` interface buys. There is no config line, and one that cannot be honoured is worse
+   * than none.
    */
   readonly queues: readonly string[];
   /**
@@ -188,12 +182,12 @@ export interface JobsConfig {
  * No `heartbeatMs` (deleted 2026-08-19) and no `tier` (deleted 2026-08-23): read by nothing. The
  * socket beat is `new LiveClient({ heartbeatMs })`, the presence beat is derived, and an app's
  * realtime tier is what it DECLARES (a `channel()`, a `live: true` query) — never a config key.
- * `transport`, `urlEnv` and the two per-actor caps are the fields code reads.
+ * No `transport` and no `urlEnv` either (deleted in 31.0.0): the bus is the `transport` adapter
+ * port — `NATS_URL` set builds NATS, unset builds the in-process bus, and any other `Transport` is
+ * `runtime.ts`'s `transport` — so a closed two-member union here could only refuse a third bus.
  */
 export interface RealtimeConfig {
   readonly enabled: boolean;
-  readonly transport: RealtimeTransport;
-  readonly urlEnv: string | undefined;
   /** Live subscriptions one actor (or anonymous network) may hold per sync node. Unset: 1,000. */
   readonly maxSubscriptionsPerActor?: number | undefined;
   /** Sockets one actor (or anonymous network) may hold per sync node. Unset: 16. */
@@ -313,7 +307,6 @@ function validate(config: AppConfig): void {
       : routePathIssue('auth.signInPath', config.auth.signInPath),
     booleanIssue('ai.mcp.expose', config.ai.mcp.expose),
     booleanIssue('realtime.enabled', config.realtime.enabled),
-    oneOfIssue('realtime.transport', config.realtime.transport, REALTIME_TRANSPORTS),
     ...(['maxSubscriptionsPerActor', 'maxSocketsPerActor'] as const).map((key) =>
       config.realtime[key] === undefined
         ? undefined
@@ -324,9 +317,6 @@ function validate(config: AppConfig): void {
   ];
   for (const issue of perKey) if (issue !== undefined) issues.push(issue);
   nameListIssues('jobs.queues', config.jobs.queues, 'queue', issues);
-  if (config.realtime.transport === 'nats' && config.realtime.urlEnv === undefined) {
-    issues.push(`realtime.transport "nats" requires realtime.urlEnv`);
-  }
   // `undefined` (never swept) or a positive, finite count of ms. Zero is refused, never read as
   // "immediately": a sweep at age 0 is an inbox that silently receives nothing. `describeValue`:
   // this is the boundary a JS app's untyped config crosses, so the value is `unknown` in practice.

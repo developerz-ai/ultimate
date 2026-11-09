@@ -21,7 +21,8 @@ import {
   throwIfAborted,
 } from '@ultimat3/core';
 import { type PgliteClient, pgliteClient, withTransaction } from '@ultimat3/db';
-import { type JobDriver, resetJobDriver, setJobDriver } from './driver';
+import { installJobDriver, resetJobDriver } from './adapter';
+import type { JobDriver } from './driver';
 import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { type JobHandle, type JobRunArgs, job, resetJobs } from './job';
@@ -102,7 +103,7 @@ let app: PgliteClient | undefined;
 
 beforeEach(async () => {
   driver = await harness.driver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterEach(() => {

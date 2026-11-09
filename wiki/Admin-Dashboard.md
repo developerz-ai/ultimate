@@ -131,7 +131,7 @@ An edit form carries the row's version (`_version`); a row someone changed after
 | Redaction | a `sensitive` or sealed value is only ever `[redacted]`, in the diff and on screen |
 | Where it shows | the detail page's history card — `audit.entries({ entity, entityId, changes: true })`, keyset by `?history=`; `/admin/audit` (`audit:read`) for the whole trail, 100 per page, older pages by keyset. Both read only the actor's tenant's entries (`orgId`) when the actor has an org |
 | Searching the trail | `As of 2026-11`. `/admin/audit` is one native GET form: `?entity=` `?actor=` `?outcome=allowed\|denied\|failed` `?since=` `?until=` (ISO-8601 with an offset or `Z`, `YYYY-MM-DD` as that day's first UTC instant, or the form's `YYYY-MM-DDTHH:mm`, read as the UTC its label says; `until` exclusive). A store (`AuditQuery`) takes only the first two: a zoneless time is refused `?changes=1` `?before=<at>~<id>`. The older link carries the filters. Any other parameter — `?org=` included, the tenant is the actor's — or an unreadable value is a 400, `X_ADMIN_FILTER_INVALID`, never the unfiltered trail. `auditHref(path, request)` builds a link to a filtered trail. An entry links to its row when the resource is mounted and the actor may open it. No CSV: an `AdminCustomPage` with `exportRows()` composes one |
-| A copy elsewhere | `memoryAuditLog({ sinks })` / `postgresAuditLog({ sinks })` — each `AuditSink` gets a copy of every entry; a sink is write-only and never read back |
+| A copy elsewhere | `memoryAuditLog({ sinks })` / `postgresAuditLog({ sinks })` — each `AuditSink` (`@ultimat3/core/adapter`'s, the one audit port since 31.0.0) gets a copy of every entry; a sink is write-only and never read back |
 
 ## Errors
 

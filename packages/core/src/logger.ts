@@ -3,7 +3,7 @@
 // line is also published as `log.record` on the instrumentation bus — the OTLP logs exporter's feed.
 
 import { assert } from './assert';
-import { type Clock, systemClock } from './clock';
+import { type Clock, liveClock } from './clock';
 import { renderCauseValue } from './error-render';
 import { isUltimateError } from './errors';
 import { subscribed } from './instrument';
@@ -434,7 +434,7 @@ function unreserved(fields: Record<string, unknown>): Record<string, unknown> {
 export function structuredLogger(options?: LoggerOptions): Logger {
   const level = options?.level === undefined ? envLevel() : resolveLevel(options.level);
   const bound = options?.fields ?? {};
-  const clock = options?.clock ?? systemClock;
+  const clock = options?.clock ?? liveClock;
   const writer = options?.writer ?? defaultWriter;
   const threshold = LEVEL_WEIGHT[level];
 

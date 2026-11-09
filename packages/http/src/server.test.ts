@@ -227,8 +227,10 @@ describe('rate limiting across replicas', () => {
     return { scope: 'shared', take: backing.take, peek: backing.peek, reset: backing.reset };
   };
 
-  const replica = (store: RateLimitStore) =>
-    httpServer({
+  /** One replica, counting in whatever the boot installed — there is no per-server store. */
+  const replica = (store: RateLimitStore) => {
+    installRateLimitStore(store);
+    return httpServer({
       routes,
       role: 'web',
       config: defineHttpConfig({
@@ -242,8 +244,8 @@ describe('rate limiting across replicas', () => {
           buckets: { default: { capacity: 3, refillPerSecond: 0.0001 } },
         },
       }),
-      rateLimitStore: store,
     });
+  };
 
   test('two replicas behind one store spend a single burst between them', async () => {
     const store = sharedStore();
@@ -257,50 +259,58 @@ describe('rate limiting across replicas', () => {
   });
 
   test('a shared declaration on a per-process store refuses at boot, not at the first burst', () => {
-    const refused = memoryRateLimitStore();
-    expect(() => replica(refused)).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
-    // A boot that refused keeps nothing it took: the slot is not left holding the refused store.
-    expect(installedRateLimitStore()).not.toBe(refused);
+    expect(() => replica(memoryRateLimitStore())).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
   });
 
-  test('the store a server is handed is the one primitives spend from — one source of truth', async () => {
+  test('a route spends from the store primitives spend from — one source of truth', async () => {
     const store = sharedStore();
     const handle = replica(store);
+    await handle.fetch(new Request('http://local/ping'));
+    // The burst is 3: one spent through the route leaves 2 in the INSTALLED store's bucket.
+    const left = await installedRateLimitStore().peek(
+      'ping|ip:unknown',
+      { capacity: 3, refillPerSecond: 0.0001 },
+      Date.now(),
+    );
     expect(installedRateLimitStore()).toBe(store);
-    await handle.stop();
-    expect(installedRateLimitStore()).not.toBe(store);
+    expect(left.remaining).toBeLessThan(3);
   });
 
-  test('a store the boot already installed is not clobbered by a server handed another', async () => {
-    const booted = sharedStore();
-    installRateLimitStore(booted);
-    const handle = replica(sharedStore());
-    expect(installedRateLimitStore()).toBe(booted);
-    await handle.stop();
-    expect(installedRateLimitStore()).toBe(booted);
-  });
-
-  test('a shared declaration refuses a per-process store installed for the primitives', () => {
-    installRateLimitStore(memoryRateLimitStore());
-    expect(() => replica(sharedStore())).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
-  });
-
-  test('a refusal AFTER the pipeline — a taken mount path — still gives the slot back', () => {
-    const store = sharedStore();
-    expect(() =>
-      httpServer({
-        routes,
-        role: 'web',
-        rateLimitStore: store,
-        websocket: {
-          path: '/healthz',
-          fetch: () => new Response('never reached', { status: 426 }),
-          websocket: { open: () => undefined, message: () => undefined, close: () => undefined },
+  test('a store installed AFTER the server was built is the one its requests spend from', async () => {
+    const handle = httpServer({
+      routes,
+      role: 'web',
+      config: defineHttpConfig({
+        port: 0,
+        dev: false,
+        rateLimit: {
+          enabled: true,
+          scope: 'process',
+          defaultBucket: 'default',
+          buckets: { default: { capacity: 3, refillPerSecond: 0.0001 } },
         },
-        config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
       }),
-    ).toThrow();
-    expect(installedRateLimitStore()).not.toBe(store);
+    });
+    // A test's override seam, or a boot that installs after the server exists: either way the
+    // request reads the slot as it stands, not as it stood when the server was built.
+    const later = memoryRateLimitStore();
+    const release = installRateLimitStore(later);
+    await handle.fetch(new Request('http://local/ping'));
+    release();
+    const left = await later.peek(
+      'ping|ip:unknown',
+      { capacity: 3, refillPerSecond: 0.0001 },
+      Date.now(),
+    );
+    expect(left.remaining).toBeLessThan(3);
+  });
+
+  test('httpServer takes no store of its own: the option is gone, not ignored', () => {
+    const options: Parameters<typeof httpServer>[0] = { routes };
+    expect('rateLimitStore' in options).toBe(false);
+    // @ts-expect-error — removed in 31.0.0; `rateLimitStore` lives in apps/<app>/runtime.ts.
+    const stale: Parameters<typeof httpServer>[0] = { routes, rateLimitStore: sharedStore() };
+    expect(stale.routes).toBe(routes);
   });
 
   test('the default declaration still boots on the memory store', () => {

@@ -218,7 +218,7 @@ describe('unit · x upgrade with no app.config.ts: pins and no app (one adopter)
     await git(dir, 'commit', '-qm', 'an app below');
     const { output } = await run(dir, recording().runner);
     expect(output.findings?.[0]?.code).toBe('X_NOT_IN_APP');
-    expect(output.findings?.[0]?.fix).toBe('cd apps/game && x upgrade --json');
+    expect(output.findings?.[0]?.fix).toBe('cd apps/game && bunx @ultimat3/cli upgrade --json');
   });
 });
 

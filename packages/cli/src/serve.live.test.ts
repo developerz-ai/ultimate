@@ -297,7 +297,7 @@ describe('the scaffolded production entry is a runnable artifact', () => {
 // boot in. A unit test can assert the label; only a booted process shows the LINE an operator
 // reads — and that the web role reaches it at all with nothing listening where NATS should be.
 describe('the boot line says where the bus is', () => {
-  const NATS = "{ enabled: true, transport: 'nats', urlEnv: 'NATS_URL' }";
+  const NATS = '{ enabled: true }';
   const natsUrl = Bun.env['TEST_NATS_URL'];
 
   async function bootWeb(

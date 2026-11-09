@@ -15,7 +15,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { GenerateResult, Provider, StreamChunk } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import { scriptedProvider } from './scripted-provider';
 
 useFixtureModels();
@@ -88,9 +88,9 @@ describe('llm() over its own route', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [heldProvider(held)] }),
-    });
+    installAiGateway(
+      providerGateway({ defaultModel: FIXTURE_MODEL, providers: [heldProvider(held)] }),
+    );
     const target = summarize();
     const method = target.client({ baseUrl: 'http://dev.test', fetch: fetchFor(target) });
     const stream = method.stream({ postId: 'p1' });
@@ -103,9 +103,7 @@ describe('llm() over its own route', () => {
 
   test('a JSON caller gets the drained, non-streamed call — the respond tool, not the stream', async () => {
     const provider = scriptedProvider({ turns: [{ answer: { value: 'a summary' } }] });
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     const target = summarize();
     const api = rpc<{ summarize: typeof target }>({
       baseUrl: 'http://dev.test',
@@ -120,9 +118,7 @@ describe('llm() over its own route', () => {
 
   test('a caller the policy refuses never reaches the provider, streamed or not', async () => {
     const provider = scriptedProvider({ turns: [] });
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     const target = summarize(can('posts:summarize'));
     const method = target.client({
       baseUrl: 'http://dev.test',

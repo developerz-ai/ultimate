@@ -3,6 +3,7 @@
 // there is deliberately no update or delete on this interface.
 
 import { canonicalJson, finiteCount, REDACTED } from '@ultimat3/core';
+import type { AuditSink } from '@ultimat3/core/adapter';
 import type { AdminActor, AdminDecision } from './authz';
 import { AdminFilterInvalidError } from './errors';
 import { instantOf } from './list-filters';
@@ -53,11 +54,6 @@ export interface AuditDraft {
   readonly outcome: AuditOutcome;
   readonly reason: string;
   readonly diff?: readonly AuditFieldDiff[];
-}
-
-/** Where a copy of every entry goes besides the log's own store: stdout as JSON lines, OTel. */
-export interface AuditSink {
-  write(entry: AuditEntry): Promise<void> | void;
 }
 
 /** A position in the trail: the entry a page ended on. Entries are ordered `at` then `id`. */
@@ -113,7 +109,11 @@ export interface AuditLog {
 }
 
 export interface AuditLogOptions {
-  readonly sinks?: readonly AuditSink[];
+  /**
+   * Where a copy of every entry goes besides the log's own store: stdout as JSON lines, OTel.
+   * `@ultimat3/core`'s one `AuditSink`, over this package's entry — there is no second interface.
+   */
+  readonly sinks?: readonly AuditSink<AuditEntry>[];
   /** Injected so tests get deterministic timestamps and ids. */
   readonly now?: () => Date;
   readonly nextId?: () => string;

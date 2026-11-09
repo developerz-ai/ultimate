@@ -12,7 +12,7 @@
 // what `job.concurrency` is enforced with.
 
 import type { Clock } from '@ultimat3/core';
-import { assert, finiteCount, systemClock } from '@ultimat3/core';
+import { assert, finiteCount, liveClock } from '@ultimat3/core';
 import { nowMs } from './clock';
 
 export interface RateLimit {
@@ -143,7 +143,7 @@ export function tenantKeyFrom(actor: { readonly orgId?: string } | undefined): s
 
 export function concurrencyLimiter(
   config: LimitConfig,
-  clock: Clock = systemClock,
+  clock: Clock = liveClock,
   options: { readonly maxTenants?: number | undefined } = {},
 ): Limiter {
   const requested = options.maxTenants ?? DEFAULT_MAX_LIMIT_TENANTS;

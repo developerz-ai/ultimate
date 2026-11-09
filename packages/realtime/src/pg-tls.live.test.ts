@@ -15,7 +15,7 @@
 //     docker-entrypoint.sh postgres -c wal_level=logical -c ssl=on \
 //     -c ssl_cert_file=/tmp/server.crt -c ssl_key_file=/tmp/server.key'
 //   TEST_TLS_REPLICATION_URL=postgres://ultimate:ultimate@localhost:5440/postgres \
-//   TEST_TLS_ROOT_CERT="$PWD/ca.crt" bun test packages/realtime/src/pg-tls.live.test.ts
+//   TEST_TLS_ROOT_CERT="$PWD/ca.crt" bun test ./packages/realtime/src/pg-tls.live.test.ts
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, entityForTable, text } from '@ultimat3/entity';

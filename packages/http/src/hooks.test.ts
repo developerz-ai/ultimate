@@ -9,7 +9,13 @@ import { defineHttpConfig } from './config';
 import { requestContext } from './context';
 import { routeNotFound } from './errors';
 import type { AuthzDecision, ServerHooks } from './hooks';
-import { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
+import {
+  configureAuthenticator,
+  configuredAuthenticator,
+  configuredCredentialTtlMs,
+  MAX_CREDENTIAL_TTL_MS,
+  resetAuthenticator,
+} from './hooks';
 import { UltimateRequest } from './request';
 import { textResponse } from './response';
 import type { Route } from './router';
@@ -171,5 +177,50 @@ describe('configureAuthenticator', () => {
     configureAuthenticator(first);
     configureAuthenticator(second);
     expect(configuredAuthenticator()).toBe(second);
+  });
+
+  // `RuntimeOverrides.syncAuthenticate` existed only to state a credential lifetime the sync node
+  // could not learn; the lifetime is the AUTHENTICATOR's fact, so it is declared beside it.
+  test('a credential lifetime is declared with the authenticator, and read back', () => {
+    expect(configuredCredentialTtlMs()).toBeUndefined();
+    configureAuthenticator(() => null, { credentialTtlMs: 60_000 });
+    expect(configuredCredentialTtlMs()).toBe(60_000);
+  });
+
+  test('a later declaration without one forgets the earlier lifetime', () => {
+    configureAuthenticator(() => null, { credentialTtlMs: 60_000 });
+    configureAuthenticator(() => null);
+    expect(configuredCredentialTtlMs()).toBeUndefined();
+  });
+
+  test('a lifetime that is not a whole number of at least 1ms is refused, and changes nothing', () => {
+    const kept = () => null;
+    configureAuthenticator(kept, { credentialTtlMs: 5_000 });
+    for (const bad of [0, Number.NaN, Number.POSITIVE_INFINITY, 1.5]) {
+      expect(() => configureAuthenticator(() => null, { credentialTtlMs: bad })).toThrow(
+        /X_ASSERTION_FAILED|credentialTtlMs/,
+      );
+    }
+    expect(configuredAuthenticator()).toBe(kept);
+    expect(configuredCredentialTtlMs()).toBe(5_000);
+  });
+
+  // A lifetime is a SHORTENING of how long a websocket grant stands, never a lengthening: a 30-day
+  // token lifetime here would turn off the re-check that makes logout and revokeSession close the
+  // socket. The ceiling is the sync node's own five minutes.
+  test('a lifetime longer than the re-check window is refused, and changes nothing', () => {
+    expect(MAX_CREDENTIAL_TTL_MS).toBe(5 * 60_000);
+    configureAuthenticator(() => null, { credentialTtlMs: MAX_CREDENTIAL_TTL_MS });
+    expect(configuredCredentialTtlMs()).toBe(MAX_CREDENTIAL_TTL_MS);
+    expect(() =>
+      configureAuthenticator(() => null, { credentialTtlMs: 30 * 24 * 60 * 60_000 }),
+    ).toThrow(/X_INVARIANT[\s\S]*credentialTtlMs/);
+    expect(configuredCredentialTtlMs()).toBe(MAX_CREDENTIAL_TTL_MS);
+  });
+
+  test('reset forgets the lifetime with the function', () => {
+    configureAuthenticator(() => null, { credentialTtlMs: 60_000 });
+    resetAuthenticator();
+    expect(configuredCredentialTtlMs()).toBeUndefined();
   });
 });

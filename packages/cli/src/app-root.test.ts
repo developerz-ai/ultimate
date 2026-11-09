@@ -24,9 +24,9 @@ const tree = async (files: readonly string[], manifest?: string): Promise<string
   return dir;
 };
 
-const refusal = (from: string): NotInAppError => {
+const refusal = (from: string, command = 'upgrade'): NotInAppError => {
   try {
-    requireAppRoot('upgrade', from);
+    requireAppRoot(command, from);
   } catch (error) {
     return error as NotInAppError;
   }
@@ -39,7 +39,24 @@ describe('unit · X_NOT_IN_APP', () => {
     const error = refusal(dir);
     expect(error.code).toBe('X_NOT_IN_APP');
     expect(error.cause).toContain('apps/game');
-    expect(error.fix).toBe('cd apps/game && x upgrade --json');
+    // Never a bare `x` (on no PATH) nor `bunx x` (with no node_modules, an unrelated npm package).
+    expect(error.fix).toBe('cd apps/game && bunx @ultimat3/cli upgrade --json');
+  });
+
+  test('a root with its own `x` script is told to run it with --cwd, never a bare `x`', async () => {
+    // The framework repo: `bun run x -- verify` at its root lands here, and `x` is on no PATH.
+    const dir = await tree(
+      ['examples/dummy/app.config.ts'],
+      '{ "scripts": { "x": "bun run bin.ts" } }',
+    );
+    expect(refusal(dir, 'verify').fix).toBe('bun run x -- verify --cwd examples/dummy --json');
+  });
+
+  test('a two-word command pastes back as two arguments, not one quoted string', async () => {
+    const dir = await tree(['web/app.config.ts']);
+    expect(refusal(dir, 'vapid create').fix).toBe(
+      'cd web && bunx @ultimat3/cli vapid create --json',
+    );
   });
 
   test('a project on the framework with no config is not told to scaffold a second app', async () => {

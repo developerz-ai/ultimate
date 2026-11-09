@@ -17,7 +17,7 @@ import { chatCompletionBody } from './openai-body';
 import { definePrompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { anthropicProvider, costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
 const MODEL = 'anthropic/claude-sonnet-5.5';
@@ -124,7 +124,7 @@ function install(): GenerateRequest[] {
   resetAiRuntime();
   register();
   const { provider, seen } = scripted();
-  configureAi({ gateway: providerGateway({ defaultModel: MODEL, providers: [provider] }) });
+  installAiGateway(providerGateway({ defaultModel: MODEL, providers: [provider] }));
   return seen;
 }
 

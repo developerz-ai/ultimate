@@ -48,7 +48,10 @@ export async function discoverTests(
 ): Promise<readonly TestFile[]> {
   const filters = filter === undefined ? undefined : typeof filter === 'string' ? [filter] : filter;
   const files: TestFile[] = [];
-  for await (const found of new Bun.Glob(TEST_GLOB).scan({ cwd: root, absolute: false })) {
+  // `dot: true`: a hook's test under `.claude/hooks/` is a test; `.git` and `.x` are refused by the
+  // one ignore policy below (`test-ignores.ts`), never by the glob.
+  const glob = new Bun.Glob(TEST_GLOB);
+  for await (const found of glob.scan({ cwd: root, absolute: false, dot: true })) {
     const path = found.split('\\').join('/');
     if (isIgnoredTestPath(path)) continue;
     if (filters !== undefined && !filters.some((part) => path.includes(part))) continue;

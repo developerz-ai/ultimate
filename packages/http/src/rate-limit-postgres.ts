@@ -155,19 +155,17 @@ export interface PostgresRateLimitStore extends RateLimitStore {
 }
 
 /**
- * **Install it at boot, beside the config that declares the scope.** The app owes two lines:
+ * **The boot installs it** over the pool it opened (`x dev`, `x serve`); an app names another
+ * store, or this one over another executor, in one place:
  *
  * ```ts
- * // app.config.ts — what this deployment REQUIRES
- * http: { rateLimit: { scope: 'shared' } }
- *
- * // apps/web/server.ts — what PROVIDES it
+ * // apps/web/runtime.ts — what PROVIDES it
  * const client = db();
- * httpServer({
+ * export const runtime = {
  *   rateLimitStore: postgresRateLimitStore({
  *     executor: { query: (text, values) => client.query({ text, values }) },
  *   }),
- * });
+ * };
  * ```
  *
  * `assertRateLimitScope` compares the two once, inside `httpPipeline`, and a `'shared'`

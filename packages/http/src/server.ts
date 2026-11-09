@@ -27,9 +27,9 @@ import type { ServerHooks } from './hooks';
 import { socketIdleTimeoutSeconds } from './idle-timeout';
 import type { Middleware } from './middleware';
 import { httpPipeline, type Pipeline } from './pipeline';
-import { type RateLimitStore, rateLimiter } from './rate-limit';
+import { rateLimiter } from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
-import { adoptRateLimitStore } from './rate-limit-installed';
+import { liveRateLimitStore } from './rate-limit-installed';
 import { jsonResponse } from './response';
 import { describeRoutes, httpRouter, type Route } from './router';
 import { serverWebSockets, type WebSocketOption } from './server-websocket';
@@ -65,13 +65,6 @@ export interface ServerOptions {
   readonly role?: Role;
   readonly hooks?: ServerHooks;
   readonly middleware?: readonly Middleware[];
-  /**
-   * Where the rate limiter keeps its counters. Omitted means `memoryRateLimitStore()`, which is
-   * one process' worth of state — correct for dev and tests, and N × every configured number for
-   * N replicas. An app that runs more than one process declares `rateLimit.scope: 'shared'` and
-   * passes a store that says the same, or `httpServer` refuses here.
-   */
-  readonly rateLimitStore?: RateLimitStore;
   /**
    * A websocket served on THIS socket, beside the pipeline. Omitted, the `web` role opens no
    * websocket at all — which is what it did everywhere, and is why the sync node was only ever
@@ -165,25 +158,9 @@ const BODY_POLL_MS = 5;
 
 const roleFromEnv = (): Role => (Bun.env['ROLE'] ?? 'web') as Role;
 
-export const httpServer = (options: ServerOptions): ServerHandle => {
-  // The store this server is handed is also the one actions and queries spend their declared
-  // `rateLimit:` from — adopted BEFORE the pipeline, whose boot check reads it, and never over a
-  // store the boot already chose (`keepChosen`). Given back on `stop()`, or by ANY refusal from
-  // here to the handle — the pipeline's checks, `configureLifecycle`, `assertMountPathFree` — so a
-  // boot that never produced a server leaves nothing behind it.
-  const releaseStore =
-    options.rateLimitStore === undefined
-      ? () => undefined
-      : adoptRateLimitStore(options.rateLimitStore, { keepChosen: true });
-  try {
-    return buildServer(options, releaseStore);
-  } catch (error) {
-    releaseStore();
-    throw error;
-  }
-};
+export const httpServer = (options: ServerOptions): ServerHandle => buildServer(options);
 
-const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHandle => {
+const buildServer = (options: ServerOptions): ServerHandle => {
   const role = options.role ?? roleFromEnv();
   const table = httpRouter(options.routes);
   // Merged here as well as in `httpPipeline`, and for the store's sake: the limiter below is
@@ -192,18 +169,17 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
   // the pipeline's second pass changes nothing. `handle.config` is the merged one for the same
   // reason: `server.config.rateLimit.buckets` has to be what the limiter runs on.
   const config = withRouteBuckets(options.config ?? defineHttpConfig(), table.routes);
-  // The store feeds the limiter seam `PipelineDeps` already had, rather than becoming a second
-  // one: the bucket maths stays in `rateLimiter`, so every driver agrees on the numbers.
+  // The INSTALLED store — the one actions and queries spend their declared `rateLimit:` from —
+  // read on every request (`liveRateLimitStore`), so a route's bucket and a primitive's count in
+  // one place, and a store installed after this server was built is the one it spends from.
+  // It feeds the limiter seam `PipelineDeps` already had, rather than becoming a second one: the
+  // bucket maths stays in `rateLimiter`, so every driver agrees on the numbers.
   const pipeline = httpPipeline({
     table,
     config,
     ...(options.hooks === undefined ? {} : { hooks: options.hooks }),
     ...(options.middleware === undefined ? {} : { middleware: options.middleware }),
-    ...(options.rateLimitStore === undefined
-      ? {}
-      : {
-          limiter: rateLimiter({ config: config.rateLimit, store: options.rateLimitStore }),
-        }),
+    limiter: rateLimiter({ config: config.rateLimit, store: liveRateLimitStore }),
   });
 
   // No deadline is set here. `drain.deadlineMs` is the one budget, applied per role by
@@ -439,7 +415,6 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
       // core's `shutdownHookCount()` exists to make visible. The shape `worker.ts`'s teardown
       // holds: the unregisters are the closure's, not the drain's.
       const releaseHooks = (): void => {
-        releaseStore();
         unregister?.();
         unregisterBodies?.();
         unregisterClose?.();

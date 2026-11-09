@@ -12,6 +12,12 @@
       "path": "../action"
     },
     {
+      "path": "../ai"
+    },
+    {
+      "path": "../auth"
+    },
+    {
       "path": "../cache"
     },
     {
@@ -36,6 +42,9 @@
       "path": "../mail"
     },
     {
+      "path": "../notify"
+    },
+    {
       "path": "../policy"
     },
     {
@@ -52,6 +61,9 @@
     },
     {
       "path": "../schema"
+    },
+    {
+      "path": "../scraping"
     },
     {
       "path": "../time"

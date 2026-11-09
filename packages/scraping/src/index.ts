@@ -34,21 +34,13 @@ export type { CdpResolution, CdpResolver, CdpResolverRequest } from './cdp-resol
 export { snapshotExpression } from './cdp-snapshot';
 export type { CdpTargetInit } from './cdp-target';
 export { CDP_DRIVER, cdpTarget } from './cdp-target';
-export type { Deadline, ScrapeClock, TestScrapeClock } from './clock';
-export {
-  deadline,
-  noWaitClock,
-  resetScrapeClock,
-  scrapeClock,
-  setScrapeClock,
-  systemScrapeClock,
-  testScrapeClock,
-} from './clock';
+export type { Deadline } from './clock';
+export { deadline } from './clock';
 export type { ColorScheme } from './color-scheme';
 export { COLOR_SCHEMES, isColorScheme } from './color-scheme';
 export { cookieHeaderFor } from './cookie-scope';
 export type { ScrapeDriver, ScrapeSession, SessionInit } from './driver';
-export { resetScrapeDriver, scrapeDriver, setScrapeDriver } from './driver';
+export { scrapeDriver } from './driver';
 export type { BrowserOptions, LocalBrowserOptions, RemoteBrowserOptions } from './driver-cdp';
 export { localBrowser, remoteBrowser } from './driver-cdp';
 export type { FakeBrowserOptions, FakePageOptions, FakePages } from './driver-fake';

@@ -6,10 +6,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
-import { resetJobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { t } from '@ultimat3/schema';
+import { installMailDriver, resetMailDriver } from './adapter';
 import { blocks } from './blocks';
-import { resetMailDriver, setMailDriver } from './driver';
 import { smtpMailDriver } from './driver-smtp';
 import { assertEnvelopeAddress, envelopeAddress } from './envelope-address';
 import { defineMail, send } from './mail';
@@ -88,7 +88,7 @@ beforeEach(() => {
 
 test('an inline send cannot smuggle a second RCPT TO through bcc', async () => {
   const stream = new AgreeableStream();
-  setMailDriver(
+  installMailDriver(
     smtpMailDriver({
       url: 'smtps://mail.example.test:465',
       from: 'Postly <no-reply@postly.test>',

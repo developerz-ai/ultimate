@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/schema';
-import { resetJobDriver, setJobDriver } from './driver';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import { directRequest, stagedRecord } from './enqueue-record';
 import { job, resetJobs } from './job';
@@ -53,7 +53,7 @@ describe('the unwind margin', () => {
 
   test('handle.enqueue writes the row with it', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     await declare(true).enqueue({ id: 'o-1' });
     expect((await driver.introspect?.list())?.[0]?.maxAttempts).toBe(6);
   });

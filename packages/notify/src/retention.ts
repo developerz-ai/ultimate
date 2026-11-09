@@ -1,5 +1,5 @@
 // The three sweeps over this package's tables, read off the installed seam rather than off a store
-// somebody handed the caller. `setNotifyStores` is an APP's boot line and runs after the boot that
+// somebody handed the caller. The stores are an APP's `runtime.ts` line, installed after the boot that
 // owns the hourly sweep, so the sweep cannot hold the stores — it can only ask, per attempt, what
 // is installed now. Same shape and the same reason as `purgeAuthLimits()`.
 

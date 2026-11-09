@@ -8,7 +8,8 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { getIdempotencyStore } from '@ultimat3/action';
 import { POOL_MAX_ENV, REPLICA_URL_ENV, raw, setDbClient, withTransaction } from '@ultimat3/db';
 import { configureHttp, resetHttpConfig } from '@ultimat3/http';
-import { eventBus, jobDriver, memoryJobDriver, resetJobDriver } from '@ultimat3/jobs';
+import { eventBus, jobDriver, memoryJobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { resolveServices } from './runtime-bindings';
 import type { RunningQueue } from './runtime-queue';
 import { startDb, startQueue } from './runtime-queue';
@@ -78,8 +79,10 @@ describe('startQueue', () => {
     async () => {
       const queue = await startQueue(resolveServices(ROOT, {}));
       running = queue;
-      expect(queue.idempotency.scope).toBe('shared');
-      expect(getIdempotencyStore()).toBe(queue.idempotency);
+      // `runtime.ts` supplied none, so the boot built — and installed — its own.
+      const own = queue.idempotency ?? expect.unreachable('the boot builds the default store');
+      expect(own.scope).toBe('shared');
+      expect(getIdempotencyStore()).toBe(own);
     },
     BOOT_TIMEOUT_MS,
   );
@@ -94,16 +97,16 @@ describe('startQueue', () => {
       running = queue;
       // Reserved inside a transaction and never settled: the record a dead request leaves.
       await withTransaction(async () => {
-        expect((await queue.idempotency.reserve('k', 'hash')).created).toBe(true);
+        expect((await queue.idempotency?.reserve('k', 'hash'))?.created).toBe(true);
       });
       await queue.db.execute(
         raw("update x_idempotency set created_at = created_at - interval '10 seconds'"),
       );
 
       // Ten seconds old, under the 30s default: still somebody's.
-      expect((await queue.idempotency.reserve('k', 'hash')).created).toBe(false);
+      expect((await queue.idempotency?.reserve('k', 'hash'))?.created).toBe(false);
       configureHttp({ requestTimeoutMs: 5_000 });
-      expect((await queue.idempotency.reserve('k', 'hash')).created).toBe(true);
+      expect((await queue.idempotency?.reserve('k', 'hash'))?.created).toBe(true);
     },
     BOOT_TIMEOUT_MS,
   );

@@ -47,6 +47,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `declared-errors-contract.ts` | `.contract()`'s source scan |
 | `openapi-errors.ts` | core's builder bound to http's status and `problemTypeFor` |
 | `idempotency.ts` | the store SEAM: types, the installed-store slot, the scope declaration + `assertIdempotencyScope`, and `withIdempotency` — the replay-or-run gate |
+| `adapter.ts` | `@ultimat3/action/adapter`: both stores' installers (each returns a release removing that install alone) + resets, port types, store errors, and `overrideHandler`. Never the barrel |
+| `handler-override.ts` | the slot `overrideHandler` writes: a test double where `handle` is, keyed by the stored declaration and read per call by `invoke` (`run`) and, for a stream, by the drain (`action-stream.ts`) — so policy, parse, meter, idempotency and output parse still run on every surface. `@ultimat3/testing`'s `stub()` is its one caller (`handler-override.test.ts`) |
 | `idempotency-key.ts` | the namespaced key — action + actor + the caller's key, as one JSON tuple — and the refusal of one that names no request |
 | `idempotency-memory.ts` | the process default: bounded, swept, `scope: 'process'` |
 | `idempotency-redact.ts` | `restingAnswer` — the copy of an answer a store may keep: core's `isRedactedKey` + `isSecret`, the SAME reference when nothing is redacted |
@@ -184,8 +186,6 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **Flight control is `@ultimat3/core`'s, and NOT re-exported** — its values are imported from
   core (`X_HELPER_COPY` refuses a re-export); only the types `ClientFlight`/`ClientRetry`. Fix the
   pipeline in `packages/core/src/client-flight.ts`. No new code, curve, fence or retry loop here (`bun run flight-copies`).
-- **`isTransientFailure` INVERTS `retryDecision`'s unclassified default** (a caller's `AbortError`
-  is terminal). Must survive.
 - **`ClientFlight` is a TYPE inside `client.ts`, never a value.** Measured,
   `bun build --target=browser --minify`, one entry importing from `@ultimat3/action` — **the ONE
   table for these figures** (`packages/core/CLAUDE.md` points here):
@@ -195,13 +195,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   | `rpc` | 24,473 B, pinned ≤ 25,000 (`client-bundle.test.ts`); 29,972 B while it read core's barrel |
   | `rpc` + `clientFlight` from `@ultimat3/core/page` | 32,929 B (38,416 B from the barrel) |
 
-- **The client graph imports `@ultimat3/core/page`, never the barrel** (`client.ts`, `errors*.ts`,
-  `error-titles.ts`, `wire-issues.ts`); `client-bundle.test.ts` fails on a titles table or a warning.
-
-- **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
-  titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do
-  not. An http refusal needs no http module: core's decoders take its title off the body and its
-  `retry-after` off the header (`rpc-refusal.test.ts`).
+- `isTransientFailure`'s inversion, the client graph's import rule, `sideEffects`: still rules, in
+  `docs/history/action-client-graph.md` (moved 2026-11-09).
 
 ## Invariants — idempotency
 
@@ -266,7 +261,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 ## Commands
 
 ```
-bun test packages/action
+bun test ./packages/action/
 bun run typecheck
 ```
 

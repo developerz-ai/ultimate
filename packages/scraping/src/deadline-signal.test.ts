@@ -3,8 +3,8 @@
 // of every request for the life of the run, and an armed timer per request behind it.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { type DeadlineTimer, deadlineSignal } from '@ultimat3/core/outbound';
-import { testScrapeClock } from './clock';
 import { httpOverFetch } from './http';
 import type { NetworkEntry } from './rings';
 import { boundedRing } from './rings';
@@ -58,7 +58,7 @@ describe('unit · deadlineSignal', () => {
     const timer = manualTimer();
     const http = httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),

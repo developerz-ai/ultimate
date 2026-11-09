@@ -5,12 +5,11 @@
 // And a login that succeeded is not undone by a failure to SAVE it.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, structuredLogger } from '@ultimat3/core';
+import { ctxOf, frozenClock, structuredLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { AuthPlanInput } from './auth';
 import { burnSession, ensureAuthenticated, markRefused } from './auth';
-import { testScrapeClock } from './clock';
 import { fakeBrowser, fakePage } from './driver-fake';
 import { authFailed, blocked } from './error-throws';
 import type { ScrapeDefinition } from './scrape';
@@ -52,7 +51,7 @@ const planOver = (
   scrape: 'bank',
   auth: { store, login: () => Promise.resolve() },
   key: KEY,
-  clock: testScrapeClock(new Date(T1)),
+  clock: frozenClock(new Date(T1)),
   logger,
 });
 
@@ -128,7 +127,7 @@ const define = (
   tenant: 'none',
   allowHosts: ['shop.test'],
   robots: { ignore: 'fixture host' },
-  clock: testScrapeClock(new Date(T1)),
+  clock: frozenClock(new Date(T1)),
   driver: fakeBrowser([{ url: URL_A, html: '<p class="row" data-id="1">One</p>' }]),
   run: () => Promise.resolve([{ id: '1' }]),
   ...over,

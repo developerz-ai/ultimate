@@ -151,12 +151,10 @@ services:
       migrate: { condition: service_completed_successfully }
     # OFF by default (zero replicas). A sync node on this database hears committed changes only
     # from a replicator it can reach, and this file runs none: booted anyway it is refused
-    # (X_REALTIME_TOPOLOGY). To turn live queries and channels on: declare realtime: { enabled:
-    # true, transport: 'nats', urlEnv: 'NATS_URL' } in app.config.ts, add a NATS service and set the
+    # (X_REALTIME_TOPOLOGY). To turn live queries and channels on: add a NATS service and set the
     # SAME NATS_URL for web, sync and a replicator service (ROLE=replicator, exactly one), start
     # Postgres with wal_level=logical and a REPLICATION role on a cluster dedicated to this app (the replicator creates its publication at boot), then set replicas: 1.
-    # A NATS_URL under transport 'memory' refuses the boot (X_CONFIG_INVALID), and so does 'nats'
-    # without one.
+    # NATS_URL alone selects the bus: unset, each process fans out in-process only.
     deploy: { replicas: 0 } # when on: scales on concurrent websockets — pinned to 1 by the port
     # The sync role binds PORT + 1. PORT is unset here, so it is 3000 and this listens on 3001.
     ports: ['3001:3001']

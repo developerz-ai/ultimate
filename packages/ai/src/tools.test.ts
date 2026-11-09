@@ -9,12 +9,8 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import { driverError } from '@ultimat3/db';
-import {
-  registerErrorStatus,
-  registerProblemMeta,
-  resetErrorStatus,
-  resetRateLimitStore,
-} from '@ultimat3/http';
+import { registerErrorStatus, registerProblemMeta, resetErrorStatus } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { allow, policyForbidden } from '@ultimat3/policy';
 import { t, toWireSchema } from '@ultimat3/schema';
 import type { ProjectableAction } from './tools';

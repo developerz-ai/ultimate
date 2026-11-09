@@ -218,6 +218,64 @@ describe('a feed whose stop() never settles', () => {
   });
 });
 
+describe('a stop while the feed is still dialling', () => {
+  // A dial can sit in preflight — a slot whose last walsender has not let go (`pg-slot-release.ts`),
+  // a server that does not answer. A SIGTERM must not wait on it past the stop deadline.
+  test('waits the deadline, abandons both sessions, and the late dial tears itself down', async () => {
+    const { lock, feed, timers, replicator } = rig();
+    let dialled = (): void => undefined;
+    feed.dialling = new Promise((resolve) => {
+      dialled = resolve;
+    });
+    void replicator.start().catch(() => undefined);
+    await turns();
+    expect(feed.starts).toBe(1);
+
+    let stopped = false;
+    const stopping = replicator.stop().then(() => {
+      stopped = true;
+    });
+    await turns();
+    expect(stopped).toBe(false);
+
+    timers.fire();
+    await stopping;
+    expect(feed.order).toEqual(['feed.abandon', 'lock.abandon']);
+    expect(lock.held).toBe(false);
+
+    // The dial lands after the stop: the run is over, so it stops what it started.
+    dialled();
+    await turns();
+    expect(feed.pumping).toBe(false);
+    expect(feed.stops).toBe(1);
+    expect(replicator.running).toBe(false);
+  });
+});
+
+describe('a stop while the lock is still being asked for', () => {
+  test('a grant that lands after the stop is handed straight back, and no feed starts', async () => {
+    const { lock, feed, timers, replicator } = rig();
+    const asked = Promise.withResolvers<boolean>();
+    lock.tryAcquire = async (): Promise<boolean> => {
+      lock.acquired += 1;
+      const granted = await asked.promise;
+      lock.held = granted;
+      return granted;
+    };
+    const starting = replicator.start();
+    await turns();
+    const stopping = replicator.stop();
+    await turns();
+    timers.fire();
+    await stopping;
+
+    asked.resolve(true);
+    expect(await starting).toBe(false);
+    expect(feed.starts).toBe(0);
+    expect(lock.held).toBe(false);
+  });
+});
+
 describe('changes still buffered when the lock is lost', () => {
   test('are not published by a run that no longer holds it', async () => {
     const published: string[] = [];

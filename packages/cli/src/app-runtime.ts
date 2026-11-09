@@ -9,6 +9,7 @@
 import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; each candidate is joined to the app root.
 import { join } from 'node:path';
+import { assertRuntimeKeys } from './runtime-keys';
 import type { RuntimeOverrides } from './runtime-overrides';
 
 /** The one file an app writes, per app directory. */
@@ -40,7 +41,10 @@ export async function loadAppRuntime(root: string): Promise<RuntimeOverrides | u
   for (const file of files.sort()) {
     const module = (await import(join(root, file))) as Record<string, unknown>;
     const exported = module[APP_RUNTIME_EXPORT];
-    if (isRecord(exported)) return exported as RuntimeOverrides;
+    if (isRecord(exported)) {
+      assertRuntimeKeys(file, exported);
+      return exported as RuntimeOverrides;
+    }
   }
   return undefined;
 }

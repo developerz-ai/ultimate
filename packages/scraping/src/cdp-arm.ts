@@ -4,10 +4,10 @@
 // three verbs `press`/`focus`/`accessibility` did not fit under it. Since 31.0.0 an allowed request
 // is released only after `browser-dial.ts` screens a wildcard-admitted name's addresses.
 
+import type { SleepClock } from '@ultimat3/core';
 import { resolveDialHost } from '@ultimat3/core/outbound';
 import { type BrowserDialScreen, browserDialRefusal } from './browser-dial';
 import type { CdpBrowserLike, CdpPageLike, CdpRequestLike } from './cdp-port';
-import type { ScrapeClock } from './clock';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
 import type { HostResolve } from './pinned-host';
@@ -34,7 +34,7 @@ export interface CdpDialInit {
 export interface CdpArmInit extends CdpDialInit {
   readonly page: CdpPageLike;
   readonly rules: InterceptRules;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
 }
 
 const dialScreen = (init: CdpDialInit & { readonly rules: InterceptRules }): BrowserDialScreen => ({
@@ -263,7 +263,7 @@ export async function armBrowser(
   init: CdpDialInit & {
     readonly browser: CdpBrowserLike;
     readonly rules: InterceptRules;
-    readonly clock: ScrapeClock;
+    readonly clock: SleepClock;
   },
   network: NetworkRing,
 ): Promise<void> {

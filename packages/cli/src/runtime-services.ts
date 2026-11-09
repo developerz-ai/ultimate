@@ -3,14 +3,7 @@
 // `db()`, `jobDriver()`, `mailDriver()` and the realtime transport are the objects a production
 // boot installs, only backed by embedded drivers. The storage disk is `runtime-storage-boot.ts`.
 
-import {
-  configureAuthLimiters,
-  configureTotpReplay,
-  postgresAuthLimiter,
-  postgresTotpReplayGuard,
-  resetAuthLimiters,
-  resetTotpReplay,
-} from '@ultimat3/auth';
+import { postgresAuthLimiter, postgresTotpReplayGuard } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
 import {
@@ -19,22 +12,19 @@ import {
   registerReadinessCheck,
   systemClock,
 } from '@ultimat3/core';
+import type { FailureStore } from '@ultimat3/core/adapter';
 import { dbExecutor } from '@ultimat3/db';
 import type { RateLimitStore } from '@ultimat3/http';
-import { adoptRateLimitStore, postgresRateLimitStore } from '@ultimat3/http';
+import { postgresRateLimitStore } from '@ultimat3/http';
 import type { EventBus, JobDriver, OutboxStore } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
-import {
-  isMemoryDriver,
-  isUnconfiguredDriver,
-  resetMailDriver,
-  setMailDriver,
-} from '@ultimat3/mail';
+import { isMemoryDriver, isUnconfiguredDriver } from '@ultimat3/mail';
 import type { BusUse, Transport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
 import { loadAppConfig } from './app-config-load';
 import { msg } from './messages';
 import type { DevServices, Env } from './runtime-bindings';
+import { installBootPorts } from './runtime-boot-ports';
 import { selectBus } from './runtime-bus';
 import { cacheTiersOf, startCacheTiers } from './runtime-cache';
 import { type WorkerConfig, workerConfigOf } from './runtime-jobs';
@@ -42,6 +32,8 @@ import { jobsRetentionTargets } from './runtime-jobs-retention';
 import { selectAppMailDriver } from './runtime-mail';
 import { inboxRetentionOf } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
+import { PORT_BINDINGS } from './runtime-port-bindings';
+import { installPorts, suppliedOr } from './runtime-ports';
 import { installRetentionSweep } from './runtime-purge';
 import { installAppWebPush, selectWebPush } from './runtime-push';
 import { type DevDbClient, type SchemaMode, startQueue } from './runtime-queue';
@@ -58,8 +50,8 @@ export interface RunningServices {
   readonly events: EventBus;
   readonly transport: Transport;
   /**
-   * `app.config.ts`'s `realtime` section as this boot obeyed it. `transport` and `urlEnv` chose
-   * `transport` above; `enabled` is what `startRoles` reads before it starts `sync` or a replicator.
+   * `app.config.ts`'s `realtime` section as this boot obeyed it: `enabled` is what `startRoles`
+   * reads before it starts `sync` or a replicator. The bus is `NATS_URL`'s or `runtime.transport`.
    */
   readonly realtime: RealtimeConfig;
   /**
@@ -106,6 +98,11 @@ export interface RunningServices {
    */
   readonly rateLimitStore?: RateLimitStore;
   readonly purge: PurgeDriver;
+  /**
+   * `runtime.ts`'s `failureStore`, carried to the boot step that arms capture after `loadApp`
+   * (`failure-capture-boot.ts`); `undefined` is its Postgres default.
+   */
+  readonly failureStore?: FailureStore | undefined;
   /** Same rule as `mailDetail`: the env key that selected the CDN, never the token behind it. */
   readonly purgeDetail: string;
   stop(): Promise<void>;
@@ -237,6 +234,49 @@ export async function releaseOrThrow(
   if (failures.length > 0) throw failures[0];
 }
 
+interface PrepareInput {
+  readonly services: DevServices;
+  readonly env: Env;
+  readonly overrides: RuntimeOverrides | undefined;
+  readonly schema: SchemaMode;
+  readonly roles: readonly Role[] | undefined;
+  readonly dev: boolean;
+}
+
+/** Everything selected before a service runs, and the queue — the first thing that does. */
+async function prepareServices(input: PrepareInput) {
+  const { services, env, overrides, schema, roles, dev } = input;
+  // The app's config is loaded ONCE, here, first, and every section below is read out of that one
+  // validated object — mail's `retainMime` is the first reader, so it is loaded before mail.
+  const config = await loadAppConfig(services.root);
+  // Before the queue: selection is pure — it parses `SMTP_URL` and builds a transport, it does
+  // not dial. A typo'd credential must fail on the spot rather than after PGlite has started and
+  // been unwound again, and it must fail at boot rather than on the first mail nobody receives.
+  // `mail.retainMime` rides along (`runtime-mail.ts`), refused here the same way.
+  const selection = selectAppMailDriver(env, config);
+  // Same reason, same place: building a purge driver reads env and dials nothing, so a half-set
+  // `FASTLY_API_TOKEN` without its service id fails here rather than on the first stale page.
+  const cdn = selectPurgeDriver(env);
+  // Third of the same kind: `runtime.transport`, else `NATS_URL` set is NATS and unset the
+  // in-process bus — a bucket name NATS cannot take refuses here, before any service. Which KV
+  // bucket and which presence TTL is `@ultimat3/realtime`'s decision, and it is the same call a
+  // `ROLE=sync` container makes, so this process cannot resolve the bus differently from the
+  // container it stands in for. What the bus is USED for is the roles' (`runtime-bus.ts`).
+  const realtime = realtimeConfigOf(config);
+  // Fourth: `pwa.push` and its VAPID pair (`runtime-push.ts`). Resolving the pair reads env and
+  // signs one probe — a deploy with no keys, or two halves of different pairs, refuses here.
+  const push = await selectWebPush(config, env);
+  const workerConfig = workerConfigOf(config, env);
+  const bus = selectBus({ env, realtime, roles, override: overrides?.transport, dev });
+  // `env`, not the ambient one: this function is HANDED the boot's environment and every other
+  // reader here already uses it, so a queue that asked `process.env` would decide the standby from
+  // a different answer than the middleware that routes to it.
+  const queue = await startQueue(services, overrides, env, schema);
+  return { config, selection, cdn, realtime, push, workerConfig, bus, queue };
+}
+
+type Prepared = Awaited<ReturnType<typeof prepareServices>>;
+
 export async function startServices(
   services: DevServices,
   env: Env,
@@ -251,71 +291,66 @@ export async function startServices(
   /** `x dev`: a bus the realtime roles need is waited for in the background, never refused. */
   dev = false,
 ): Promise<RunningServices> {
-  // The app's config is loaded ONCE, here, first, and every section below is read out of that one
-  // validated object — mail's `retainMime` is the first reader, so it is loaded before mail.
-  const config = await loadAppConfig(services.root);
-  // Before the queue: selection is pure — it parses `SMTP_URL` and builds a transport, it does
-  // not dial. A typo'd credential must fail on the spot rather than after PGlite has started and
-  // been unwound again, and it must fail at boot rather than on the first mail nobody receives.
-  // `mail.retainMime` rides along (`runtime-mail.ts`), refused here the same way.
-  const selection = selectAppMailDriver(env, config);
-  // Same reason, same place: building a purge driver reads env and dials nothing, so a half-set
-  // `FASTLY_API_TOKEN` without its service id fails here rather than on the first stale page.
-  const cdn = selectPurgeDriver(env);
-  // Third of the same kind. `realtime.transport` selects the bus and `realtime.urlEnv` names the
-  // variable holding its url; a config and an environment that disagree refuse here, before any
-  // service starts, rather than quietly keeping the in-process bus. Which transport, which KV
-  // bucket and which presence TTL is `@ultimat3/realtime`'s decision, and it is the same call a
-  // `ROLE=sync` container makes, so this process cannot resolve the bus differently from the
-  // container it stands in for. What the bus is USED for is the roles' (`runtime-bus.ts`).
-  const realtime = realtimeConfigOf(config);
-  // Fourth: `pwa.push` and its VAPID pair (`runtime-push.ts`). Resolving the pair reads env and
-  // signs one probe — a deploy with no keys, or two halves of different pairs, refuses here.
-  const push = await selectWebPush(config, env);
-  const workerConfig = workerConfigOf(config, env);
-  const bus = selectBus({ env, realtime, roles, override: overrides?.transport, dev });
-  // `env`, not the ambient one: this function is HANDED the boot's environment and every other
-  // reader here already uses it, so a queue that asked `process.env` would decide the standby from
-  // a different answer than the middleware that routes to it.
-  const queue = await startQueue(services, overrides, env, schema);
+  // Before ANYTHING evaluates the app's config: `app.config.ts`'s `installSecrets()` asks the
+  // secret source, and every "now" from here on reads the clock. `runtime.ts`'s, or the defaults.
+  const booted = await installBootPorts(overrides);
+  let prepared: Prepared;
+  try {
+    prepared = await prepareServices({ services, env, overrides, schema, roles, dev });
+  } catch (error) {
+    await release(booted);
+    throw error;
+  }
+  const { config, selection, cdn, realtime, push, workerConfig, bus, queue } = prepared;
   const { db, jobs, outbox, events } = queue;
   await reportStatementBound(db);
   // The same executor the jobs driver, the outbox, the event bus and the idempotency store run
   // on — one pool, one `Bun.sql` that does NOT satisfy `PgExecutor` (`Bun.sql.query` is
   // `undefined`), one wrapper.
   const executor = dbExecutor(() => db);
-  const rateLimitStore = postgresRateLimitStore({ executor });
+  // Built only when `runtime.ts` is silent, so the retention sweep below expires the boot's own
+  // tables and never a store the app handed over.
+  const rateLimit = suppliedOr(overrides?.rateLimitStore, () =>
+    postgresRateLimitStore({ executor }),
+  );
+  const rateLimitStore = rateLimit.value;
+  const totpReplay = suppliedOr(overrides?.totpReplay, () => postgresTotpReplayGuard({ executor }));
   // Boot is a sequence of external resources, and every step after the first can reject — the
   // queue is already up, so from here an unwind must release it exactly like everything after it.
   // Which is why the `try` opens on the NEXT line and not eight steps further down: it did, and
-  // the steps above it registered process-wide state (`configureAuthLimiters`, the `purge()` job
+  // the steps above it registered process-wide state (the auth limiters, the `purge()` job
   // and its `task`) that throws on a name a previous boot in this process left in the registry —
   // `X_JOB_NAME_TAKEN`, outside the unwind, so `x dev` exited holding the PGlite lock, the pool
   // and the ambient accessors. Nothing may be pushed onto `started` from outside this block.
-  const started: (() => void | Promise<void>)[] = [() => queue.stop()];
+  const started: (() => void | Promise<void>)[] = [...booted, () => queue.stop()];
   try {
-    // Where failed sign-ins are counted, installed BEFORE `loadApp` for the reason the idempotency
-    // store is: `defineAuth` is the app's call and it runs when the app's modules import, so a seam
-    // filled afterwards is one every app would have to fill itself. A FACTORY and not a limiter —
-    // the app declares `maxAttempts`/`windowMs`/`lockoutMs` and this boot has not read them yet, so
-    // a limiter built here would be refused by `assertAuthLimiterPolicy` on any app that tuned one.
+    // The `services` ports, in ONE loop, BEFORE `loadApp`: `defineAuth`, `registerAction` and
+    // every notifier are the app's calls and run when its modules import, so a seam filled
+    // afterwards is one every app would have to fill itself.
     //
-    // Until this line every deployment the framework produces counted lockouts per POD, while
-    // `x new` scaffolds `replicas: 2` and `docker/helm` runs three — `maxAttempts × N` guesses per
-    // account, and a lockout one replica established invisible to the rest.
-    configureAuthLimiters((policy) =>
-      postgresAuthLimiter({ executor, clock: systemClock, policy }),
+    // `authLimiter` is a FACTORY and not a limiter — the app declares `maxAttempts`/`windowMs`/
+    // `lockoutMs` and this boot has not read them yet. Until it was installed here every deployment
+    // counted lockouts per POD while `docker/helm` runs three: `maxAttempts × N` guesses per
+    // account. `totpReplay`: a code one replica accepted must be refused by the rest.
+    // `rateLimitStore`: an action's or a query's declared `rateLimit:` is counted on every surface,
+    // so a task spends from the fleet's table too; `startRoles` stacks the same store again.
+    // `mail`: with no credential the memory driver — caught, not sent, so the `/_x` mail panel can
+    // show it; `SMTP_URL` or `RESEND_API_KEY` makes it a real transport.
+    const clock = overrides?.clock ?? systemClock;
+    const mail = overrides?.mail ?? selection.driver;
+    started.push(
+      ...(await installPorts(PORT_BINDINGS, 'services', {
+        aiGateway: overrides?.aiGateway,
+        auditSink: overrides?.auditSink,
+        authLimiter:
+          overrides?.authLimiter ?? ((policy) => postgresAuthLimiter({ executor, clock, policy })),
+        mail,
+        notifyStores: overrides?.notifyStores,
+        rateLimitStore,
+        scrapeDriver: overrides?.scrapeDriver,
+        totpReplay: totpReplay.value,
+      })),
     );
-    started.push(() => resetAuthLimiters());
-    // Where spent TOTP steps are kept, for the same reason: a code one replica accepted must be
-    // refused by the rest, and `defineAuth` runs when the app's modules import.
-    const totpReplay = postgresTotpReplayGuard({ executor });
-    configureTotpReplay(() => totpReplay);
-    started.push(() => resetTotpReplay());
-    // Where an action's or a query's declared `rateLimit:` is counted — on every surface, so a
-    // task or a one-off command spends from the fleet's table too, not one process' memory. Before
-    // `loadApp` for the auth limiters' reason; `startRoles` stacks a deployment's override over it.
-    started.push(adoptRateLimitStore(rateLimitStore));
     // The hourly sweep over the framework tables this boot is responsible for. Every one of them
     // ships a `purgeExpired()` that nothing called, so every row written was a row kept —
     // `x_rate_limit` takes one upsert per request the web role serves, assets included.
@@ -325,9 +360,10 @@ export async function startServices(
     // indistinguishable from an app that chose it.
     started.push(
       installRetentionSweep({
+        // The boot's OWN stores only: one `runtime.ts` supplied is the app's to expire.
         idempotency: queue.idempotency,
-        rateLimit: rateLimitStore,
-        totpReplay,
+        rateLimit: rateLimit.own,
+        totpReplay: totpReplay.own,
         events,
         ...jobsRetentionTargets(executor, config),
         inboxRetention: inboxRetentionOf(config),
@@ -349,15 +385,10 @@ export async function startServices(
     const transport = running.transport;
     // Before `loadApp` for the auth limiters' reason: `pushSubscribe()` is declared when the app's
     // modules import, and reads this runtime per call.
-    if (push !== undefined) started.push(await installAppWebPush(push, executor));
+    if (push !== undefined) {
+      started.push(await installAppWebPush(push, executor, overrides?.pushSubscriptionStore));
+    }
     const storage = startStorage(services, env, overrides?.storage);
-    // With no credential this is the memory driver: caught, not sent, so the `/_x` mail panel can
-    // show what a template renders in every locale without a mailbox or a message escaping to a
-    // real address. `SMTP_URL` or `RESEND_API_KEY` makes it a real transport instead — the same
-    // "an unset variable means the embedded default" law the other three bindings follow.
-    const mail = overrides?.mail ?? selection.driver;
-    setMailDriver(mail);
-    started.push(() => resetMailDriver());
     const purge = overrides?.purge ?? cdn.driver;
     // Every tier this process reads through, plus the cross-instance invalidation hop, in one
     // call. The CDN tier used to be the only one registered here — so `redisTier`,
@@ -393,6 +424,7 @@ export async function startServices(
       presenceTtlMs: bus.presenceTtlMs,
       purge,
       purgeDetail: cdn.detail,
+      failureStore: overrides?.failureStore,
       // The same list the boot unwind uses, in the same reverse order, so a service added to the
       // boot is released by both paths — a second copy of these steps is how one of them came to
       // release three things and the other four. A stop that fails says so, unlike that unwind:

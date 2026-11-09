@@ -2,10 +2,10 @@
 // sizes is refused before any driver, and the offline driver answers different bytes per layout.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpPageLike, CdpPdfOptions } from './cdp-port';
 import { cdpTarget } from './cdp-target';
-import { testScrapeClock } from './clock';
 import { fakePage } from './driver-fake';
 import type { ScrapePage } from './page';
 import { pageOverTarget } from './page-over-target';
@@ -52,11 +52,11 @@ async function cdpPage(): Promise<{ readonly page: ScrapePage; readonly asked: C
       process: () => null,
     },
     rules: { allowHosts: ['app.test'] },
-    clock: testScrapeClock(),
+    clock: frozenClock(),
   });
   return {
     page: pageOverTarget(target, {
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       allowHosts: ['app.test'],
       defaultTimeoutMs: 100,
     }),
@@ -126,7 +126,7 @@ describe('unit · the offline driver answers different bytes per layout', () => 
   const text = (bytes: Uint8Array): string => new TextDecoder().decode(bytes);
 
   test('no layout is the old constant; a4 and letter are two documents', async () => {
-    const page = fakePage('<p>invoice</p>', { clock: testScrapeClock(), timeoutMs: 100 });
+    const page = fakePage('<p>invoice</p>', { clock: frozenClock(), timeoutMs: 100 });
     expect(text(await page.pdf())).toBe('%PDF-1.4 offline');
     const a4 = text(await page.pdf({ format: 'a4', marginMm: { top: 10 } }));
     const letter = text(await page.pdf({ format: 'letter' }));

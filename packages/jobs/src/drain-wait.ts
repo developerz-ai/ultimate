@@ -92,6 +92,7 @@ export async function settleAllBy(
     // timer on a macrotask.
     const unwatch = budget.watch((deadlineAt) => {
       if (timer !== undefined) clearTimeout(timer);
+      // Real time, not `liveClock`: this races a real `setTimeout`, and a frozen clock under it never fires.
       timer = setTimeout(() => decide(false), Math.max(0, deadlineAt - systemClock.monotonic()));
       timer.unref?.();
     });

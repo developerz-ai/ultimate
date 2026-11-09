@@ -6,12 +6,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import type { RateLimitStore } from '@ultimat3/http';
-import {
-  adoptRateLimitStore,
-  installedRateLimitStore,
-  memoryRateLimitStore,
-  resetRateLimitStore,
-} from '@ultimat3/http';
+import { installedRateLimitStore, memoryRateLimitStore } from '@ultimat3/http';
+import { installRateLimitStore, resetRateLimitStore } from '@ultimat3/http/adapter';
 import type { RunningRoles } from './role-start';
 import { selectRoles, startRoles } from './role-start';
 import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
@@ -68,7 +64,7 @@ describe('the store primitives spend their declared limits from', () => {
   test('stopping takes back only this boot’s frame, not a store adopted after it', async () => {
     running = await boot('worker', shared());
     const later = shared();
-    const releaseLater = adoptRateLimitStore(later);
+    const releaseLater = installRateLimitStore(later);
     await running.stop();
     running = undefined;
     // The roles' stop restored "what was there before" over `later`, which was still in use.

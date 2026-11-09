@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { logger } from '@ultimat3/core';
 import { memoryRepo, tableFor } from '@ultimat3/entity';
+import { resetJobDriver } from './adapter';
 import { backfill } from './backfill';
 import {
   ctx,
@@ -18,7 +19,6 @@ import {
   rows,
   SEED,
 } from './backfill-pass-fixture';
-import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
 import { StepSuspension, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';

@@ -105,6 +105,234 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
 );
 
 /**
+ * One swappable backend: the slot an app fills in `apps/<app>/runtime.ts`, the package that owns
+ * the interface, the default the boot builds from the environment when that file says nothing, and
+ * the `@ultimat3/testing` suite a hand-written adapter proves itself with.
+ */
+export interface AdapterPort {
+  /** The `RuntimeOverrides` field and the key of `@ultimat3/testing`'s per-test override seam. */
+  readonly port: string;
+  /** The package whose `./adapter` subpath exports `interface` and the errors a driver throws. */
+  readonly pkg: `@ultimat3/${string}`;
+  /** The type an adapter author implements, exported under this exact name by `pkg`. */
+  readonly interface: string;
+  /** What the boot builds when `runtime.ts` is silent — the only other selector there is. */
+  readonly envDefault: string;
+  /** `<interface>Conformance` in `@ultimat3/testing`. Named before it exists: part B enforces it. */
+  readonly conformance: `${string}Conformance`;
+}
+
+const PG = 'over DATABASE_URL';
+
+/**
+ * Every backend an app may swap, one row each (plan 101 slice 21). Extension is adapters, wrapped
+ * primitives and event subscriptions — there is no plugin API (axiom 8) — so a backend with no row
+ * here is one an app cannot replace without a fork. Six ways to swap a backend (setters, constructor
+ * arguments, env switches, a config enum) collapse into one: a field of `runtime.ts`, keyed by
+ * `port`. `@ultimat3/cli`'s boot loops over this table; `X_ADAPTER_PORT_INCOMPLETE` (part B) refuses
+ * a row missing its slot, its `./adapter` export or its suite, and an exported setter beside it.
+ *
+ * Sorted by port name. Rows and list frozen, like `PRIMITIVE_FACTORIES`.
+ */
+const ADAPTER_PORT_ROWS = [
+  {
+    port: 'aiGateway',
+    pkg: '@ultimat3/ai',
+    interface: 'Gateway',
+    envDefault: 'none: the first model call is refused (X_AI_GATEWAY_MISSING)',
+    conformance: 'gatewayConformance',
+  },
+  {
+    port: 'auditSink',
+    pkg: '@ultimat3/core',
+    interface: 'AuditSink',
+    envDefault: 'none: an audit: true primitive is refused (X_AUDIT_SINK_MISSING)',
+    conformance: 'auditSinkConformance',
+  },
+  {
+    port: 'authLimiter',
+    pkg: '@ultimat3/auth',
+    interface: 'AuthLimiterFactory',
+    envDefault: `postgresAuthLimiter ${PG}`,
+    conformance: 'authLimiterFactoryConformance',
+  },
+  {
+    port: 'authServerStore',
+    pkg: '@ultimat3/auth',
+    interface: 'AuthServerStore',
+    envDefault: `postgresAuthServerStore ${PG}`,
+    conformance: 'authServerStoreConformance',
+  },
+  {
+    port: 'cacheTiers',
+    pkg: '@ultimat3/cache',
+    interface: 'CacheTier',
+    envDefault: "the rungs cache.tiers names; 'redis' reads REDIS_URL",
+    conformance: 'cacheTierConformance',
+  },
+  {
+    port: 'clock',
+    pkg: '@ultimat3/core',
+    interface: 'SleepClock',
+    envDefault: 'systemClock',
+    conformance: 'sleepClockConformance',
+  },
+  {
+    port: 'errorReporter',
+    pkg: '@ultimat3/core',
+    interface: 'ErrorReporter',
+    envDefault: 'SENTRY_DSN set: sentryErrorReporter; unset: the log line only',
+    conformance: 'errorReporterConformance',
+  },
+  {
+    port: 'eventBus',
+    pkg: '@ultimat3/jobs',
+    interface: 'EventBus',
+    envDefault: `postgresEventBus ${PG}`,
+    conformance: 'eventBusConformance',
+  },
+  {
+    port: 'failureStore',
+    pkg: '@ultimat3/core',
+    interface: 'FailureStore',
+    envDefault: `postgresFailureStore ${PG}, while failureCapture is on`,
+    conformance: 'failureStoreConformance',
+  },
+  {
+    port: 'idempotencyStore',
+    pkg: '@ultimat3/action',
+    interface: 'IdempotencyStore',
+    envDefault: `postgresIdempotencyStore ${PG}`,
+    conformance: 'idempotencyStoreConformance',
+  },
+  {
+    port: 'images',
+    pkg: '@ultimat3/seo',
+    interface: 'ImageTransformDriver',
+    envDefault: 'builtinImageDriver',
+    conformance: 'imageTransformDriverConformance',
+  },
+  {
+    port: 'isrStore',
+    pkg: '@ultimat3/render',
+    interface: 'IsrStore',
+    envDefault: 'a memory store per process',
+    conformance: 'isrStoreConformance',
+  },
+  {
+    port: 'jobs',
+    pkg: '@ultimat3/jobs',
+    interface: 'JobDriver',
+    envDefault: `postgresJobDriver ${PG}`,
+    conformance: 'jobDriverConformance',
+  },
+  {
+    port: 'mail',
+    pkg: '@ultimat3/mail',
+    interface: 'MailDriver',
+    envDefault:
+      'SMTP_URL set: smtp; RESEND_API_KEY set: resend; neither: refused at the first send',
+    conformance: 'mailDriverConformance',
+  },
+  {
+    port: 'mcpConfirmationStore',
+    pkg: '@ultimat3/mcp',
+    interface: 'McpConfirmationStore',
+    envDefault: `postgresConfirmationStore ${PG}`,
+    conformance: 'mcpConfirmationStoreConformance',
+  },
+  {
+    port: 'meterStore',
+    pkg: '@ultimat3/action',
+    interface: 'MeterStore',
+    envDefault: `postgresMeterStore ${PG}`,
+    conformance: 'meterStoreConformance',
+  },
+  {
+    port: 'notifyStores',
+    pkg: '@ultimat3/notify',
+    interface: 'NotifyStores',
+    envDefault: 'a memory delivery ledger, allow-all preferences, no inbox, no digest',
+    conformance: 'notifyStoresConformance',
+  },
+  {
+    port: 'outboxStore',
+    pkg: '@ultimat3/jobs',
+    interface: 'OutboxStore',
+    envDefault: `postgresOutboxStore ${PG}`,
+    conformance: 'outboxStoreConformance',
+  },
+  {
+    port: 'purge',
+    pkg: '@ultimat3/cache',
+    interface: 'PurgeDriver',
+    envDefault:
+      'CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID: cloudflare; FASTLY_API_TOKEN + FASTLY_SERVICE_ID: fastly; neither: none',
+    conformance: 'purgeDriverConformance',
+  },
+  {
+    port: 'pushSubscriptionStore',
+    pkg: '@ultimat3/pwa',
+    interface: 'PushSubscriptionStore',
+    envDefault: `postgresPushSubscriptionStore ${PG}, while VAPID keys are set`,
+    conformance: 'pushSubscriptionStoreConformance',
+  },
+  {
+    port: 'rateLimitStore',
+    pkg: '@ultimat3/http',
+    interface: 'RateLimitStore',
+    envDefault: `postgresRateLimitStore ${PG}`,
+    conformance: 'rateLimitStoreConformance',
+  },
+  {
+    port: 'scrapeDriver',
+    pkg: '@ultimat3/scraping',
+    interface: 'ScrapeDriver',
+    envDefault: 'none: a scrape() declaring no driver is refused at its first run',
+    conformance: 'scrapeDriverConformance',
+  },
+  {
+    port: 'secretSource',
+    pkg: '@ultimat3/core',
+    interface: 'SecretSource',
+    envDefault: 'ULTIMATE_SECRETS_KEY, then the .secrets.key file',
+    conformance: 'secretSourceConformance',
+  },
+  {
+    port: 'storage',
+    pkg: '@ultimat3/storage',
+    interface: 'StorageDriver',
+    envDefault: 'S3_ENDPOINT set: s3; unset: the embedded disk',
+    conformance: 'storageDriverConformance',
+  },
+  {
+    port: 'totpReplay',
+    pkg: '@ultimat3/auth',
+    interface: 'TotpReplayGuard',
+    envDefault: `postgresTotpReplayGuard ${PG}`,
+    conformance: 'totpReplayGuardConformance',
+  },
+  {
+    port: 'transport',
+    pkg: '@ultimat3/realtime',
+    interface: 'Transport',
+    envDefault: 'NATS_URL set: nats; unset: memory (one node)',
+    conformance: 'transportConformance',
+  },
+] as const satisfies readonly AdapterPort[];
+
+/** One port's name — `Record<AdapterPortName, …>` is how a consumer is made to cover every row. */
+export type AdapterPortName = (typeof ADAPTER_PORT_ROWS)[number]['port'];
+
+export const ADAPTER_PORTS = Object.freeze<readonly AdapterPort[]>(
+  ADAPTER_PORT_ROWS.map((row) => Object.freeze({ ...row })),
+);
+
+export const ADAPTER_PORT_NAMES: readonly AdapterPortName[] = Object.freeze(
+  ADAPTER_PORT_ROWS.map((row) => row.port),
+);
+
+/**
  * What a registrar hands back: the primitives it actually took, each carrying the name
  * registration stamped on it. Returning the registered set — rather than nothing — is what lets
  * a caller build its API map from what registered instead of from what a module exported.

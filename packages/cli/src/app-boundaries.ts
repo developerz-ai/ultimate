@@ -18,7 +18,7 @@
 import { join as joinPath } from 'node:path';
 // The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
 import { dirname, join, normalize, relative } from 'node:path/posix';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ADAPTER_PORTS, ERROR_DOCS_URL } from '@ultimat3/core';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
 import { checkSurfaceBoundary, importGraph, SURFACES } from '@ultimat3/render';
 import { commentSafe } from './comment-safe';
@@ -35,6 +35,7 @@ export const BOUNDARY_CODES = [
   'X_BOUNDARY_ROUTE_TO_DB',
   'X_BOUNDARY_SERVICE_TO_HTTP',
   'X_BOUNDARY_SURFACE_IMPORT',
+  'X_BOUNDARY_ADAPTER_IMPORT',
   // `package-boundaries.ts`'s: it reads `packages/`, which this module's surface graph never holds.
   'X_BOUNDARY_PACKAGE_TO_APP',
 ] as const;
@@ -220,6 +221,21 @@ const routeToDbFix = (path: string, specifier: string): string => {
   return `x g query ${query} --feature ${quoteArg(slice)}   # ${then}`;
 };
 
+/** A package's `./adapter` subpath: the installers `runtime.ts` and the boot own, never an app module. */
+const ADAPTER_SUBPATH = /^@ultimat3\/[a-z-]+\/adapter$/;
+
+/**
+ * The `runtime.ts` field an import of `specifier` stands in for: the port named after its package
+ * (`@ultimat3/jobs/adapter` → `jobs`), else that package's first row. A real field, never a
+ * placeholder — the fix's runnable half is pasted as it stands.
+ */
+const portOf = (specifier: string): string => {
+  const pkg = specifier.slice(0, -'/adapter'.length);
+  const rows = ADAPTER_PORTS.filter((row) => row.pkg === pkg);
+  const named = rows.find((row) => `@ultimat3/${row.port}` === pkg);
+  return (named ?? rows[0])?.port ?? 'jobs';
+};
+
 /**
  * Both fixes are one runnable line, with the rest of the instruction behind a `#` — a fix a
  * caller has to edit before it runs is prose, and prose is what "errors are instructions" bans.
@@ -228,6 +244,16 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of scanned) {
     for (const specifier of file.imports) {
+      // `file.imports` is runtime imports only: `import type { Gateway }` from an adapter is fine.
+      if (ADAPTER_SUBPATH.test(specifier)) {
+        findings.push({
+          code: 'X_BOUNDARY_ADAPTER_IMPORT',
+          cause: `an app module imports "${specifier}" at runtime — its installers are the boot's, and one called from here races it (X_RUNTIME_DRIVER_SPLIT)`,
+          fix: `export const runtime = { ${quoteArg(portOf(specifier))}: yourDriver } satisfies RuntimeOverrides;   # in apps/web/runtime.ts, then delete the import from ${commentSafe(file.path)}`,
+          docs: ERROR_DOCS_URL,
+          at: file.path,
+        });
+      }
       if (isRoute(file.path) && isDbSpecifier(specifier)) {
         findings.push({
           code: 'X_BOUNDARY_ROUTE_TO_DB',

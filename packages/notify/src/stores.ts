@@ -1,10 +1,11 @@
-// The four seams a fan-out reads, installed once per process. Same shape as `setJobDriver` in
-// @ultimat3/jobs and for the same reason: a notifier is declared at import time, long before a
+// The four seams a fan-out reads, installed once per process. Same shape as `installJobDriver` in
+// @ultimat3/jobs/adapter and for the same reason: a notifier is declared at import time, long before a
 // boot has a database, so the store cannot be a constructor argument.
 //
 // One installer, never four. Handing them over in one call is what makes "the ledger is Postgres
 // but the inbox is still the memory one" a visible line of code rather than a forgotten fifth call.
 
+import { adapterSlot } from '@ultimat3/core/adapter';
 import type { DigestStore } from './digest';
 import { NotifyStoreMissingError } from './errors';
 import type { InboxStore } from './inbox';
@@ -45,36 +46,43 @@ const defaults = (): InstalledNotifyStores => ({
   digest: undefined,
 });
 
-let installed: InstalledNotifyStores = defaults();
+let base: InstalledNotifyStores = defaults();
+/** The installed stores: a stack over the defaults, released in any order. */
+const slot = adapterSlot<InstalledNotifyStores>(() => base);
 
-/** Whole-object replacement, never a merge: two calls with different halves is the split-brain
- * `RuntimeOverrides` exists to refuse, and a merge would hide the second call's omissions. */
-export function setNotifyStores(stores: NotifyStores): void {
-  installed = {
+/**
+ * The boot's installer (its release removes THIS install only, in any order — `adapterSlot`), on `@ultimat3/notify/adapter` and never the `.` barrel: an app hands its
+ * stores over with `notifyStores:` in `apps/<app>/runtime.ts`. Whole-object replacement, never a
+ * merge: two calls with different halves is the split-brain `RuntimeOverrides` exists to refuse,
+ * and a merge would hide the second call's omissions.
+ */
+export function installNotifyStores(stores: NotifyStores): () => void {
+  return slot.install({
     ledger: stores.ledger ?? memoryDeliveryLedger(),
     inbox: stores.inbox,
     preferences: stores.preferences ?? allowAllPreferences(),
     digest: stores.digest,
-  };
+  });
 }
 
-export const notifyStores = (): InstalledNotifyStores => installed;
+export const notifyStores = (): InstalledNotifyStores => slot.current();
 
 /** Tests only — the same escape `resetJobDriver` offers, so one suite cannot leak into the next. */
 export function resetNotifyStores(): void {
-  installed = defaults();
+  slot.reset();
+  base = defaults();
 }
 
 /** The inbox, or the refusal that names the install call. Never an optional chain at the call
  * site: a silently skipped inbox write is a notification the user never sees and nobody logs. */
 export function requireInbox(notifier: string): InboxStore {
-  const store = installed.inbox;
+  const store = slot.current().inbox;
   if (store === undefined) throw new NotifyStoreMissingError({ notifier, store: 'inbox' });
   return store;
 }
 
 export function requireDigest(notifier: string): DigestStore {
-  const store = installed.digest;
+  const store = slot.current().digest;
   if (store === undefined) throw new NotifyStoreMissingError({ notifier, store: 'digest' });
   return store;
 }

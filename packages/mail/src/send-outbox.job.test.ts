@@ -14,13 +14,13 @@ import {
   outboxRelay,
   postgresJobDriver,
   postgresOutboxStore,
-  resetJobDriver,
   resetJobsFacade,
   SQL_JOBS_TABLE,
-  setJobDriver,
   setJobsFacade,
 } from '@ultimat3/jobs';
-import { type MemoryMailDriver, memoryMailDriver, resetMailDriver, setMailDriver } from './driver';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
+import { installMailDriver, resetMailDriver } from './adapter';
+import { type MemoryMailDriver, memoryMailDriver } from './driver';
 import { type SendOptions, send } from './mail';
 import { welcomeMail } from './templates';
 
@@ -35,7 +35,7 @@ let mail: MemoryMailDriver;
 const freshMailDriver = (): void => {
   resetMailDriver();
   mail = memoryMailDriver();
-  setMailDriver(mail);
+  installMailDriver(mail);
 };
 
 afterEach(() => {
@@ -69,7 +69,7 @@ describe('memory outbox: send() rides the caller’s transaction', () => {
   const wire = (): { queue: JobDriver; store: OutboxStore; tx: Tx } => {
     freshMailDriver();
     const queue = memoryJobDriver();
-    setJobDriver(queue);
+    installJobDriver(queue);
     const store = memoryOutboxStore();
     const tx = { id: 'request' } as unknown as Tx;
     setJobsFacade(outboxJobsFacade({ store, driver: queue }, () => tx));
@@ -160,7 +160,7 @@ describe.skipIf(url === undefined)('pg outbox: send() stages on the caller’s c
     freshMailDriver();
     const executor = executorOf(client);
     const queue = postgresJobDriver({ executor });
-    setJobDriver(queue);
+    installJobDriver(queue);
     let bound: PgExecutor | undefined;
     const tx = { id: 'request' } as unknown as Tx;
     const store = postgresOutboxStore({

@@ -56,12 +56,31 @@ export interface GeneratedFoundationFile {
 }
 
 /**
+ * A file the base scaffold writes and a later generator owns a richer version of — `x g sign-in`'s
+ * `apps/web/runtime.ts`. Written when absent, REPLACED when the copy on disk is still byte-for-byte
+ * `pristine` (the scaffold's own, untouched), and a conflict once the author has edited it: their
+ * ports are theirs, and only `--force` overwrites them.
+ */
+export interface GeneratedReplacingFile {
+  /** POSIX path relative to the app root. */
+  readonly path: string;
+  readonly contents: string;
+  readonly merge: 'replaces-pristine';
+  /** The exact bytes this file may replace without asking. */
+  readonly pristine: string;
+}
+
+/**
  * Split on `merge` rather than widening one shape's `contents` in place, so the split is
  * load-bearing, not cosmetic: a `merge: 'json'` file's `contents` stays a plain `string` at the
  * type level, which is what stops a byte-carrying file from ever reaching
  * `cmd-generate.ts`'s JSON parser — the compiler refuses the call before the code can run.
  */
-export type GeneratedFile = GeneratedJsonFile | GeneratedSourceFile | GeneratedFoundationFile;
+export type GeneratedFile =
+  | GeneratedJsonFile
+  | GeneratedSourceFile
+  | GeneratedFoundationFile
+  | GeneratedReplacingFile;
 
 const words = (input: string): readonly string[] =>
   input

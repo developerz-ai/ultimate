@@ -765,7 +765,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   builds another config object.
 
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in
-  `e2e/` and run with `bun test packages/http/e2e`, sealed: `start()` calls core's
+  `e2e/` and run with `bun test ./packages/http/e2e/`, sealed: `start()` calls core's
   `markListening()`, so the seal treats our own port as self, not egress. Never unseal.
 
 ## 2026-10-02 — plan 101 slice 04: what the edge stopped assuming

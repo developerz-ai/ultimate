@@ -26,7 +26,7 @@ import type {
   TokenUsage,
 } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
 const usd = (minor: number): Money => ({ minor, currency: 'USD' });
@@ -155,7 +155,7 @@ export function scripted(
     providers: [provider],
     sleep: () => Promise.resolve(),
   });
-  configureAi({ gateway });
+  installAiGateway(gateway);
   return { seen, loop, summaries, gateway };
 }
 

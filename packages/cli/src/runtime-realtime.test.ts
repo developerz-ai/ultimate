@@ -31,15 +31,11 @@ afterEach(() => {
 });
 
 describe('realtimeConfigOf, over the one loader', () => {
-  test('reads all three keys out of the app own config', async () => {
+  test('reads the section out of the app own config', async () => {
     const root = await appRoot(
-      "export const config = { name: 'demo', realtime: { enabled: true, transport: 'nats', urlEnv: 'BUS_URL' } };\n",
+      "export const config = { name: 'demo', realtime: { enabled: false, maxSocketsPerActor: 4 } };\n",
     );
-    expect(await loadRealtimeConfig(root)).toEqual({
-      enabled: true,
-      transport: 'nats',
-      urlEnv: 'BUS_URL',
-    });
+    expect(await loadRealtimeConfig(root)).toMatchObject({ enabled: false, maxSocketsPerActor: 4 });
   });
 
   // Core's `defaults()`: on, in-process — an app with no section keeps 21.x's `sync` in `x dev`, and
@@ -50,7 +46,7 @@ describe('realtimeConfigOf, over the one loader', () => {
     expect(
       await loadRealtimeConfig(await appRoot("export const config = { name: 'demo' };\n")),
     ).toEqual(REALTIME_DEFAULTS);
-    expect(REALTIME_DEFAULTS).toEqual({ enabled: true, transport: 'memory', urlEnv: undefined });
+    expect(REALTIME_DEFAULTS).toMatchObject({ enabled: true });
     expect(defineConfig({ name: 'myapp' }).realtime).toEqual(REALTIME_DEFAULTS);
   });
 
@@ -58,18 +54,14 @@ describe('realtimeConfigOf, over the one loader', () => {
     const root = await appRoot(
       "export const config = { name: 'demo', realtime: { enabled: false } };\n",
     );
-    expect(await loadRealtimeConfig(root)).toEqual({
-      enabled: false,
-      transport: 'memory',
-      urlEnv: undefined,
-    });
+    expect(await loadRealtimeConfig(root)).toEqual({ ...REALTIME_DEFAULTS, enabled: false });
   });
 
-  // A hand-built object is held to `defineConfig`'s validator by the one loader. Guessing a bus for
-  // a value nothing builds is how `'redis'` booted NATS for two majors.
-  test('a transport nothing builds is refused, naming the key', async () => {
+  // A hand-built object is held to `defineConfig`'s validator by the one loader: the v31-removed
+  // `realtime.transport` is refused by name, with the `runtime.ts` instruction.
+  test('the removed transport key is refused, naming the key', async () => {
     const root = await appRoot(
-      "export const config = { name: 'demo', realtime: { enabled: true, transport: 'redis' } };\n",
+      "export const config = { name: 'demo', realtime: { enabled: true, transport: 'nats' } };\n",
     );
     const error: unknown = await loadRealtimeConfig(root).then(
       () => undefined,

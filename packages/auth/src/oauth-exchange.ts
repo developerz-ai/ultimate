@@ -6,11 +6,11 @@
 import type { Clock } from '@ultimat3/core';
 import {
   EnvMissingError,
+  liveClock,
   logger,
   renderCauseValue,
   renderFixShellArg,
   renderThrowable,
-  systemClock,
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
 import { type IdTokenClaims, verifyIdToken } from './id-token';
@@ -326,7 +326,7 @@ export async function exchangeOAuthCode(
 ): Promise<OAuthTokens> {
   assertOAuthCallback(handshake, callback);
   const provider = providerFor(handshake.provider);
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock ?? liveClock;
 
   const body = new URLSearchParams({
     grant_type: 'authorization_code',

@@ -70,7 +70,7 @@ export function withDeclaredExercises(files: readonly GeneratedFile[]): readonly
     throw new UltimateError({
       code: 'X_EXERCISE_FILE_UNEDITABLE',
       cause: `x new's own ${EXERCISE_FILE} ${edit.reason}, so its contract tests would read no entry`,
-      fix: 'bun test packages/cli/src/generate-exercise.test.ts   # the scaffold template and the editor disagree',
+      fix: 'bun test ./packages/cli/src/generate-exercise.test.ts   # the scaffold template and the editor disagree',
     });
   }
   return files.map((one, index) => (index === at ? { ...one, contents: edit.source } : one));

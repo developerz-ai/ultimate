@@ -95,16 +95,14 @@ recipients cannot collide with the framework's own key.
 
 ## Installing the stores
 
-One call, at boot. Whole-object replacement, never a merge.
+One field, `notifyStores:`, in `apps/<app>/runtime.ts`; the boot installs it. Whole-object
+replacement, never a merge. A store's author imports the interfaces and `installNotifyStores`
+from `@ultimat3/notify/adapter` — never the `.` barrel.
 
 ```ts
 import type { PgExecutor } from '@ultimat3/jobs';
-import {
-  postgresDeliveryLedger,
-  postgresDigestStore,
-  postgresInboxStore,
-  setNotifyStores,
-} from '@ultimat3/notify';
+import type { NotifyStores } from '@ultimat3/notify';
+import { postgresDeliveryLedger, postgresDigestStore, postgresInboxStore } from '@ultimat3/notify';
 
 declare const executor: PgExecutor;   // `@ultimat3/db`'s dbExecutor()
 declare const idempotency: { readonly windowMs: number };   // the boot's own store
@@ -113,7 +111,7 @@ declare const prefs: {
   allowed(recipients: string[], notifier: string, channel: string, at: Date): Promise<string[]>;
 };
 
-setNotifyStores({
+const notifyStores: NotifyStores = {
   // `windowMs` is how long a settled claim is kept. NEVER SHORTER than your idempotency window —
   // a job replayed inside that window against a purged claim claims cleanly and sends twice.
   ledger: postgresDeliveryLedger({ executor, windowMs: idempotency.windowMs }),
@@ -126,7 +124,9 @@ setNotifyStores({
     allowsMany: ({ recipients, notifier: name, channel, ctx }) =>
       prefs.allowed(recipients.map((r) => r.id), name, channel, ctx.now()),
   },
-});
+};
+
+export const runtime = { notifyStores };
 ```
 
 | Store | Default | Why |

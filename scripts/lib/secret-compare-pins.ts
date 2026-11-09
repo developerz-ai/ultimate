@@ -322,6 +322,36 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A supplied signing secret against `DEV_SIGNING_SECRET`, the SHIPPED DEV CONSTANT, so `localDriver()` can refuse it outside development — a published literal, no byte an attacker does not already hold.',
   },
+  'packages/testing/src/factory-associations.ts: reference.property === foreignKey': {
+    // why: new in plan 101 wave D with the factories rewrite (d-fac); the word this rule holds as a
+    // secret is the `foreignKey` column name a `belongsTo`/`hasMany` link carries.
+    count: 1,
+    reason: 'foreignKey is the name of a foreign-key column, not a secret',
+  },
+  'packages/testing/src/factory-pipeline.ts: link.foreignKey === tenantColumn': {
+    // why: new in plan 101 wave D — the factories' tenant fix (d-fac) moved the tenant-column check
+    // here; the word this rule holds as a secret is the `foreignKey` column name a link carries.
+    count: 1,
+    reason: 'foreignKey is the name of a foreign-key column, not a secret',
+  },
+  'packages/testing/src/factory-pipeline.ts: a.foreignKey === column': {
+    // why: new in plan 101 wave D with the factories rewrite (d-fac); the word this rule holds as a
+    // secret is the `foreignKey` column name a `belongsTo`/`hasMany` link carries.
+    count: 1,
+    reason: 'foreignKey is the name of a foreign-key column, not a secret',
+  },
+  'packages/testing/src/factory-pipeline.ts: b.foreignKey === column': {
+    // why: new in plan 101 wave D with the factories rewrite (d-fac); the word this rule holds as a
+    // secret is the `foreignKey` column name a `belongsTo`/`hasMany` link carries.
+    count: 1,
+    reason: 'foreignKey is the name of a foreign-key column, not a secret',
+  },
+  'packages/testing/src/factory-pipeline.ts: childTenant !== link.foreignKey': {
+    // why: new in plan 101 wave D with the factories rewrite (d-fac); the word this rule holds as a
+    // secret is the `foreignKey` column name a `belongsTo`/`hasMany` link carries.
+    count: 1,
+    reason: 'foreignKey is the name of a foreign-key column, not a secret',
+  },
   'packages/testing/src/subject-proof.ts: parent[via.parentKey] === row[via.property]': {
     // why: new with `subjectProof()` in plan 101 wave 9.
     count: 1,

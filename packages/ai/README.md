@@ -15,7 +15,6 @@ example).
 ```ts
 import {
   budgetKeysFor,
-  configureAi,
   providerGateway,
   openAiProvider,
   registerModel,
@@ -39,7 +38,8 @@ export const ai = providerGateway({
   budget: { request: 40_000, actor: 500_000, org: 20_000_000 },  // tokens
   cache: memoCache,
 });
-configureAi({ gateway: ai });
+// apps/web/runtime.ts — the boot installs it: `aiGateway` is the one way a gateway arrives.
+export const runtime = { aiGateway: ai };
 
 // Budgets are scoped, and every nested call inside the scope shares one ledger. `llm()`, `agent()`
 // and `hive()` open one keyed on their caller (`budgetKeysFor(ctx.actor)`) without being asked.
@@ -216,7 +216,7 @@ registerModel({
   reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
 });
 
-configureAi({ gateway: providerGateway({ providers: [new InternalGatewayProvider()] }) });
+export const runtime = { aiGateway: providerGateway({ providers: [new InternalGatewayProvider()] }) };
 ```
 
 Two optional per-model rows: `sampling: { temperature: true, seed: true }` (the model takes the `temperature` / `seed` an `llm()` or `agent()` declares — absent, they are not sent) and `forcedToolChoice: false` (the model rejects a forced `tool_choice`, so `llm()`'s one `respond` tool is offered under the endpoint's default).
@@ -842,7 +842,7 @@ runs — and the redactor sits on both, between the row and a third-party endpoi
 `vars()` alone until 2026-09-23, so an agent's tool results left the process unredacted.
 
 ```ts
-configureAi({ gateway, redact: (text) => scrubPatientIdentifiers(text) });
+configureAi({ redact: (text) => scrubPatientIdentifiers(text) });
 ```
 
 The redactor sees the whole rendered prompt and the system prompt — template as well as values,
@@ -854,12 +854,24 @@ and not the classifier. The one rule it does enforce, redactor or not: a `Secret
 variables is `X_AI_PROMPT_SECRET`. Not a leak — `Secret` renders `[redacted]` by value — but a
 prompt that reads fine, means something else, and costs full price.
 
+### The `aiGateway` port
+
 The gateway is ambient, installed once at boot — a declaration is evaluated at module scope,
-long before a provider exists:
+long before a provider exists. One way in (31.0.0): `aiGateway` in `apps/<app>/runtime.ts`.
 
 ```ts
-configureAi({ gateway: providerGateway({ providers: [yourProvider], defaultModel: 'house-large' }) });
+// apps/web/runtime.ts
+export const runtime = {
+  aiGateway: providerGateway({ providers: [yourProvider], defaultModel: 'house-large' }),
+};
 ```
+
+The boot installs it through `installAiGateway(gateway): () => void`, on `@ultimat3/ai/adapter`
+only — with the `Gateway` interface, its request/answer types and the errors a gateway driver
+throws (`AiProviderUnavailableError`, `AiKeyMissingError`, `AiModelUnknownError`,
+`AiRequestInvalidError`). A test swaps the gateway the same way and calls the release to put the
+previous one back. `configureAi` configures the rest (`embedder`, `semanticCache`, `redact`) and
+takes no `gateway`.
 
 Missing at call time is `X_AI_GATEWAY_MISSING`, never a silent default provider.
 
@@ -1124,7 +1136,7 @@ fail-closed `terminal` default.
 |---|---|
 | `X_AI_PROVIDER_UNAVAILABLE` | every provider for the model was unreachable; lists what each said. A TRANSPORT failure only — a coded refusal raised before the socket opens (`X_AI_KEY_MISSING`, `X_AI_REQUEST_INVALID`) reaches the caller as itself, `As of 2026-08-23`, because the same rejection waits on every provider and every attempt and its `fix:` is the whole point of it |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains |
-| `X_AI_GATEWAY_MISSING` | an `llm()` action ran before `configureAi` |
+| `X_AI_GATEWAY_MISSING` | an `llm()` action ran with no `aiGateway` installed |
 | `X_AI_PROMPT_VERSION` | version drift, or a render missing a declared variable |
 | `X_AI_MODEL_UNKNOWN` | a model id nothing called `registerModel` for; names the registered set |
 | `X_AI_CONTENT_UNSUPPORTED` | an image or document block the role, the model's `input` row or the wire format cannot take; names which, refused before the socket |

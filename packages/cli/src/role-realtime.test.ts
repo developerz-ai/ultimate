@@ -11,8 +11,8 @@ import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
 
 const ROOT = `${import.meta.dir}/../.roles-realtime-fixture`;
 
-const OFF: RealtimeConfig = { enabled: false, transport: 'memory', urlEnv: undefined };
-const ON: RealtimeConfig = { enabled: true, transport: 'memory', urlEnv: undefined };
+const OFF: RealtimeConfig = { enabled: false };
+const ON: RealtimeConfig = { enabled: true };
 
 function refusal(run: () => unknown): unknown {
   try {

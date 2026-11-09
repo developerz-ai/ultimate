@@ -131,7 +131,7 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 - **Semantic scopes are separate cache INSTANCES** (key: prompt hash AND `ctx.locale`); **the
   default scope is the calling ACTOR**; widening is `scope: () => 'global'`; the map is bounded.
   `cache.invalidates` is not on `llm()`: version bump + `ttl` is the invalidation.
-- The gateway is ambient (`configureAi`); absent at call time is `X_AI_GATEWAY_MISSING`.
+- The gateway is the `aiGateway` port: one slot, `installAiGateway` on `./adapter` only (`adapter.test.ts`), never `configureAi` (v31); absent at call time is `X_AI_GATEWAY_MISSING`.
 - **`llm()` forwards `ctx.signal`** onto `GenerateRequest`; `.stream()` inherits it.
 - **`.stream()` is the SAME action**, marked with an ambient sink: UNVALIDATED text, then one `done`
   with the validated value; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool. LAZY.
@@ -272,13 +272,13 @@ retrieval is hybrid only; an unbound store read under an org actor is `X_VECTOR_
 ## Commands
 
 ```
-bun test packages/ai
+bun test ./packages/ai/
 bun run --filter @ultimat3/ai typecheck
 
 # the live vector suite — needs the extension, not just a Postgres
 docker run -d -e POSTGRES_PASSWORD=ultimate -p 5432:5432 pgvector/pgvector:pg17
 TEST_DATABASE_URL=postgres://postgres:ultimate@localhost:5432/postgres \
-  bun test packages/ai/src/pg-vector.live.test.ts
+  bun test ./packages/ai/src/pg-vector.live.test.ts
 ```
 
 Why each rule above is shaped the way it is: [`docs/history/ai.md`](../../docs/history/ai.md).

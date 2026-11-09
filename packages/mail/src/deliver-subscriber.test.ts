@@ -5,8 +5,9 @@
 import { afterEach, expect, test } from 'bun:test';
 import type { MailDeliverEvent } from '@ultimat3/core';
 import { resetInstrumentation, setLogSink, subscribe, subscriberFailures } from '@ultimat3/core';
+import { installMailDriver, resetMailDriver } from './adapter';
 import { deliverMail } from './deliver';
-import { memoryMailDriver, resetMailDriver, setMailDriver } from './driver';
+import { memoryMailDriver } from './driver';
 
 afterEach(() => {
   resetInstrumentation();
@@ -15,7 +16,7 @@ afterEach(() => {
 
 test('a subscriber that throws on success: sent once, one ok event, no throw', async () => {
   const driver = memoryMailDriver();
-  setMailDriver(driver);
+  installMailDriver(driver);
   const events: MailDeliverEvent[] = [];
   subscribe('mail.deliver', (event) => events.push(event.payload));
   const bug = new RangeError('subscriber bug');

@@ -3,15 +3,12 @@
 // path MCP `ui.interact` drives, is a new target that interception never saw — and it reached an
 // off-list host. Skips with no Chrome, and refuses to skip under `E2E_BROWSER_REQUIRED=1`.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { systemClock } from '@ultimat3/core/adapter';
 import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
-import type { ShotClock, ShotSession } from './browser-launcher-port';
+import type { ShotSession } from './browser-launcher-port';
 import { cdpShotDriver } from './cdp-shot-driver';
 
-const clock: ShotClock = {
-  now: () => new Date(),
-  monotonic: () => performance.now(),
-  sleep: (ms) => Bun.sleep(ms),
-};
+const clock = systemClock;
 
 const chrome = await findChrome(process.env);
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';

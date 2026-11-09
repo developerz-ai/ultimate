@@ -147,14 +147,13 @@ export class NotifyStoreMissingError extends UltimateError {
   constructor(input: { notifier: string; store: 'inbox' | 'digest' }) {
     const what =
       input.store === 'inbox' ? 'a channel that writes the in-app inbox' : 'a digest window';
-    const install =
-      input.store === 'inbox'
-        ? 'memoryInboxStore() }) at boot, or postgresInboxStore({ executor }) to share it across replicas'
-        : 'memoryDigestStore() }) at boot';
     super({
       code: 'X_NOTIFY_STORE_MISSING',
       cause: `notifier "${input.notifier}" delivers through ${what} and no ${input.store} store is installed, so the rows have nowhere to go`,
-      fix: `call setNotifyStores({ ${input.store}: ${install}`,
+      fix:
+        input.store === 'inbox'
+          ? 'memoryInboxStore()   # notifyStores: { inbox } in apps/<app>/runtime.ts — postgresInboxStore({ executor }) to share it across replicas'
+          : 'memoryDigestStore()   # notifyStores: { digest } in apps/<app>/runtime.ts — postgresDigestStore({ executor }) to share it across replicas',
       meta: { notifier: input.notifier, store: input.store },
     });
   }

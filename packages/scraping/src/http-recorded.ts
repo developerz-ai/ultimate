@@ -5,7 +5,7 @@
 // real network would make the hybrid path — which is where the interesting code lives — the one
 // path a test never really covers.
 
-import type { ScrapeClock } from './clock';
+import type { SleepClock } from '@ultimat3/core';
 import { fixtureMissing, fixtureStale, hostBlocked } from './error-throws';
 import type { HttpRequestInit, ScrapeHttp, ScrapeResponse } from './http';
 import { responseOver } from './http';
@@ -26,7 +26,7 @@ export interface RecordedHttpInit {
   readonly lookup: HttpRecordingLookup;
   readonly rules: InterceptRules;
   readonly network: NetworkRing;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   readonly source: string;
   /**
    * The SAME gate the page leg holds. Without it a hybrid scrape whose JSON endpoint is

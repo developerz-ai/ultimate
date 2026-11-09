@@ -2,9 +2,10 @@
 // that asked for them, and an undeclared trait fails at the line that named it.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { EntityLike } from './factories';
-import { associate, defineFactory, seedFor } from './factories';
+import { defineFactory, seedFor } from './factories';
+import { belongsTo } from './factory-associations';
 import { clearPersister, usePersister } from './factory-persist';
+import type { EntityLike } from './factory-types';
 import { testName } from './test-types';
 
 interface Org {
@@ -44,19 +45,18 @@ const postFactory = () =>
       published: { published: true },
       popular: (index: number): Partial<Post> => ({ views: index * 100 }),
     },
-    associations: { orgId: associate(orgFactory(), (org: Org) => org.id) },
+    belongsTo: { org: belongsTo(orgFactory(), 'orgId') },
   });
 
 /** Every `create()` in this file goes through one recorder; a leaked one would fail the next file. */
 const recorder = () => {
-  // A `Map`, not a spread into a `Record`: `Persister.insert` receives `TRow extends object`, and
-  // an `interface` row has no index signature — which is exactly why `defineFactory` constrains
-  // `TRow` to `object` and not to `Record<string, unknown>`. Enumerating the columns once, here,
-  // is what keeps every assertion below free of a cast.
+  // A `Map`, not a spread into a `Record`: an `interface` row has no index signature, and
+  // enumerating the columns once, here, keeps every assertion below free of a cast.
   const written: { table: string; row: ReadonlyMap<string, unknown> }[] = [];
   usePersister({
-    insert: async <TRow extends object>(table: string, row: TRow) => {
-      written.push({ table, row: new Map<string, unknown>(Object.entries(row)) });
+    insert: async (entity, row) => {
+      written.push({ table: entity.$table, row: new Map<string, unknown>(Object.entries(row)) });
+      return row;
     },
   });
   return written;
@@ -68,7 +68,7 @@ afterEach(() => {
 
 describe(testName('unit', 'defineFactory'), () => {
   test('is reproducible: two factories over the same entity emit the same rows', () => {
-    expect(postFactory().buildMany(3)).toEqual(postFactory().buildMany(3) as Post[]);
+    expect(postFactory().buildList(3)).toEqual(postFactory().buildList(3) as Post[]);
   });
 
   test('gives each table its own id stream, so a post and an org never share an id', () => {
@@ -116,7 +116,7 @@ describe(testName('unit', 'factory traits'), () => {
   });
 
   test('a function trait sees the row index', () => {
-    const [first, second] = postFactory().with('popular').buildMany(2);
+    const [first, second] = postFactory().with('popular').buildList(2);
     expect(second?.views).toBe((first?.views ?? 0) + 100);
   });
 
@@ -213,7 +213,7 @@ describe(testName('unit', 'factory associations'), () => {
         views: 0,
       }),
       traits: { hosted: { orgId: 'fixed-org' } },
-      associations: { orgId: associate(orgFactory(), (org: Org) => org.id) },
+      belongsTo: { org: belongsTo(orgFactory(), 'orgId') },
     });
     await factory.with('hosted').create();
     expect(written.map((entry) => entry.table)).toEqual(['posts']);
@@ -221,9 +221,9 @@ describe(testName('unit', 'factory associations'), () => {
 });
 
 describe(testName('unit', 'factory create'), () => {
-  test('createMany writes one row per count, in order', async () => {
+  test('createList writes one row per count, in order', async () => {
     const written = recorder();
-    const rows = await orgFactory().createMany(3);
+    const rows = await orgFactory().createList(3);
     expect(rows).toHaveLength(3);
     expect(written.map((entry) => entry.row.get('id'))).toEqual(rows.map((row) => row.id));
   });

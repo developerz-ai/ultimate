@@ -32,10 +32,14 @@ describe('overlays merge key by key', () => {
 
   test('an overlay section set to undefined changes nothing', () => {
     const config = defineConfig(
-      { name: 'app', realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } },
+      { name: 'app', realtime: { enabled: true, maxSocketsPerActor: 4 } },
       { realtime: undefined, roles: undefined },
     );
-    expect(config.realtime).toEqual({ enabled: true, transport: 'nats', urlEnv: 'NATS_URL' });
+    expect(config.realtime).toEqual({
+      enabled: true,
+      maxSocketsPerActor: 4,
+      maxSubscriptionsPerActor: undefined,
+    });
     expect(config.roles).toEqual(['web', 'sync', 'worker', 'scheduler', 'migrate', 'replicator']);
   });
 

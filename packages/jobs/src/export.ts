@@ -16,7 +16,7 @@
 // and `backfill-pass.ts` already have.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { assert, systemClock } from '@ultimat3/core';
+import { assert, liveClock } from '@ultimat3/core';
 import type { ReadBuilder } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Pacer } from './backfill-rate';
@@ -171,7 +171,7 @@ export function exportRows<Row, I>(definition: ExportDefinition<Row, I>): JobHan
     `export "${definition.name}" declares ${definition.columns.length} column(s) and ${new Set(definition.columns).size} distinct one(s)`,
     `declare at least one column on exportRows("${definition.name}") and no duplicates — the list is the csv header and the ndjson key order, and a repeat writes the same cell twice`,
   );
-  const clock = definition.clock ?? systemClock;
+  const clock = definition.clock ?? liveClock;
   // Built at declaration for the reason `backfill()` builds its own there: the interval belongs to
   // the table and the pool, not to whichever attempt holds the run.
   const pace =

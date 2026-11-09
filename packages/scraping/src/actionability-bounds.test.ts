@@ -9,9 +9,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { isUltimateError, renderThrowable } from '@ultimat3/core';
+import { frozenClock, isUltimateError, renderThrowable } from '@ultimat3/core';
 import { awaitActionable } from './actionability';
-import { testScrapeClock } from './clock';
 import type { ElementSnapshot } from './target';
 
 /** The three values a `??` default never fires for, and that `Math.min` propagates rather than screens. */
@@ -78,7 +77,7 @@ describe('unit · a wait budget that is not a number', () => {
           url: 'https://shop.test/',
           state: 'visible',
           timeoutMs: value,
-          clock: testScrapeClock(),
+          clock: frozenClock(),
           snapshot: page.snapshot,
         }),
       );
@@ -100,7 +99,7 @@ describe('unit · a wait budget that is not a number', () => {
           state: 'visible',
           timeoutMs: 5_000,
           pollMs: value,
-          clock: testScrapeClock(),
+          clock: frozenClock(),
           snapshot: page.snapshot,
         }),
       );
@@ -122,7 +121,7 @@ describe('unit · a wait budget that is not a number', () => {
         state: 'visible',
         timeoutMs: 5_000,
         pollMs: 0,
-        clock: testScrapeClock(),
+        clock: frozenClock(),
         snapshot: page.snapshot,
       }),
     );
@@ -140,7 +139,7 @@ describe('unit · a wait budget that is not a number', () => {
       state: 'visible',
       timeoutMs: 5_000,
       pollMs: 1,
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       snapshot: page.snapshot,
     });
     expect(found.visible).toBe(true);
@@ -157,7 +156,7 @@ describe('unit · a wait budget that is not a number', () => {
         url: 'https://shop.test/',
         state: 'visible',
         timeoutMs: 0,
-        clock: testScrapeClock(),
+        clock: frozenClock(),
         snapshot: page.snapshot,
       }),
     );

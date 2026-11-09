@@ -22,13 +22,8 @@ import { ctxOf, probeDatabaseName, sweepProbeDatabases, systemClock } from '@ult
 import { dbExecutor } from '@ultimat3/db';
 import type { PurgeReport } from '@ultimat3/jobs';
 import { getJob, memoryStepStore, resetJobs, resetTasks, stepRunner } from '@ultimat3/jobs';
-import {
-  postgresDeliveryLedger,
-  postgresDigestStore,
-  postgresInboxStore,
-  resetNotifyStores,
-  setNotifyStores,
-} from '@ultimat3/notify';
+import { postgresDeliveryLedger, postgresDigestStore, postgresInboxStore } from '@ultimat3/notify';
+import { installNotifyStores, resetNotifyStores } from '@ultimat3/notify/adapter';
 import { resolveServices } from './runtime-bindings';
 import { PURGE_JOB_NAME } from './runtime-purge';
 import type { RunningServices } from './runtime-services';
@@ -230,7 +225,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       expect(await countIn('x_job_steps')).toBe(0);
       // Three dead rows gone, the live attempt kept: the purge measures against the caller's
       // clock, so a sweep that read `now()` on the server would take a different set. The three
-      // notify targets contribute nothing here — no `setNotifyStores` ran, which is the state of
+      // notify targets contribute nothing here — no `installNotifyStores` ran, which is the state of
       // an app that never wired the Postgres stores, and it must be zero rather than a throw.
       expect(report.removed).toBe(6);
       expect(await countIn('x_auth_lockouts')).toBe(1);
@@ -259,7 +254,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       const executor = dbExecutor(() => started.db);
       const ledger = postgresDeliveryLedger({ executor, windowMs: 60_000 });
       const inbox = postgresInboxStore({ executor });
-      setNotifyStores({ ledger, inbox });
+      installNotifyStores({ ledger, inbox });
       try {
         const now = systemClock.now();
         const old = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -339,7 +334,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         executor: dbExecutor(() => started.db),
         retentionMs: 60_000,
       });
-      setNotifyStores({ digest });
+      installNotifyStores({ digest });
       try {
         const now = systemClock.now().getTime();
         const slot = (recipient: string) => ({

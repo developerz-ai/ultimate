@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { ctxOf, frozenClock, userActor } from '@ultimat3/core';
-import { resetRateLimitStore } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { ActionRateLimit } from './action';

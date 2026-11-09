@@ -5,14 +5,7 @@
 
 import type { Ctx } from '@ultimat3/core';
 import { ctxOf } from '@ultimat3/core';
-import type {
-  EnqueueResult,
-  EventBus,
-  JobDriver,
-  JobExecution,
-  JobHandle,
-  JobRecord,
-} from '@ultimat3/jobs';
+import type { EnqueueResult, JobDriver, JobExecution, JobHandle, JobRecord } from '@ultimat3/jobs';
 import {
   captureDeterminism,
   installDeterminism,
@@ -67,6 +60,7 @@ export interface SimWorld extends AsyncDisposable {
 
 export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> {
   const jobs = await import('@ultimat3/jobs');
+  const adapter = await import('@ultimat3/jobs/adapter');
   const clock = captureDeterminism();
   if (!clock.installed) installDeterminism();
   Math.random = seededRandom(options.seed);
@@ -114,10 +108,8 @@ export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> 
   const ambientDriver: JobDriver = new Proxy(base, {
     get: (_target, key) => Reflect.get(ambient(), key),
   });
-  const previousDriver = jobs.jobDriver();
-  jobs.setJobDriver(ambientDriver);
-  const previousBus: EventBus = jobs.eventBus();
-  jobs.setEventBus(jobs.memoryEventBus());
+  const releaseDriver = adapter.installJobDriver(ambientDriver);
+  const releaseBus = adapter.installEventBus(jobs.memoryEventBus());
   const renewals = frozenScheduler();
   const anonymous = ctxOf({ role: 'worker' });
   const context = options.context ?? (() => anonymous);
@@ -201,9 +193,8 @@ export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> 
         await effectLog[Symbol.asyncDispose]();
       } finally {
         renewals[Symbol.dispose]();
-        jobs.setEventBus(previousBus);
-        if (previousDriver === undefined) jobs.resetJobDriver();
-        else jobs.setJobDriver(previousDriver);
+        releaseBus();
+        releaseDriver();
         await base.close();
         restoreCapturedDeterminism(clock);
       }

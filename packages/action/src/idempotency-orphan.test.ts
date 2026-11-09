@@ -10,12 +10,8 @@ import { pgliteClient, raw, sql, withTransaction } from '@ultimat3/db';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
-import {
-  configureIdempotency,
-  idempotencyCeilingMs,
-  resetIdempotency,
-  withIdempotency,
-} from './idempotency';
+import { resetIdempotency } from './adapter';
+import { configureIdempotency, idempotencyCeilingMs, withIdempotency } from './idempotency';
 import { memoryIdempotencyStore } from './idempotency-memory';
 import {
   memoryUnderTest,

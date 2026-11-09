@@ -5,10 +5,10 @@
 // why: no Bun native joins a path; `Bun.write` takes one already joined.
 import { join } from 'node:path';
 import { finiteCount } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core/adapter';
 import type { IslandShotTarget, IslandViewport } from '@ultimat3/testing';
 import { islandStatesFile } from '@ultimat3/testing';
 import type { CaptureClip, ShotDriver, ShotSession } from './browser-launcher-port';
-import { systemShotClock } from './cdp-shot-clock';
 import { ISLAND_HARNESS_PATH } from './island-harness';
 import { readinessProbe } from './island-harness-script';
 import { IslandRequestUnstubbedError, IslandUnphotographableError } from './island-shot-errors';
@@ -194,7 +194,7 @@ export async function captureIslandState(
     session = await driver.open({
       name: 'x shot --island',
       rules: { allowHosts: allowHostsFrom(server.url, options.extraHosts) },
-      clock: systemShotClock,
+      clock: systemClock,
       timeoutMs: options.timeoutMs,
       ...(options.cookies === undefined || options.cookies.length === 0
         ? {}

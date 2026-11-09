@@ -15,14 +15,8 @@ import {
   userActor,
 } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from '@ultimat3/jobs';
-import {
-  executeJob,
-  memoryJobDriver,
-  resetJobDriver,
-  resetJobs,
-  resetJobsFacade,
-  setJobDriver,
-} from '@ultimat3/jobs';
+import { executeJob, memoryJobDriver, resetJobs, resetJobsFacade } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AgentCompaction } from './agent';
 import { dense, denseAgent, OVERFLOW_TEXT } from './agent-compact-dense-fixture';
 import { compactedHead, ctx, INPUT, ROOM, SUMMARY_USAGE } from './agent-compact-fixture';
@@ -64,7 +58,7 @@ beforeEach(() => {
   resetJobs();
   resetJobsFacade();
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterAll(() => {

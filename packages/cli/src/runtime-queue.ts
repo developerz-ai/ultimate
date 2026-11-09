@@ -9,10 +9,6 @@ import {
   postgresIdempotencyStore,
   postgresMeterStore,
   requestDeadlineMs,
-  resetIdempotency,
-  resetMeterStore,
-  setIdempotencyStore,
-  setMeterStore,
 } from '@ultimat3/action';
 import type { PgliteClient, PostgresClient } from '@ultimat3/db';
 import {
@@ -34,17 +30,15 @@ import {
   postgresEventBus,
   postgresJobDriver,
   postgresOutboxStore,
-  resetEventBus,
-  resetJobDriver,
   resetJobsFacade,
-  setEventBus,
-  setJobDriver,
   setJobsFacade,
 } from '@ultimat3/jobs';
 import { applyLockedSchema, ensureSchema, verifySchema } from './framework-schema-apply';
 import { appExtensions } from './migration-extensions';
 import type { DevServices } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
+import { QUEUE_PORT_BINDINGS } from './runtime-port-bindings-queue';
+import { installPorts, type PortRelease, suppliedOr } from './runtime-ports';
 import { attachReplica, type ReplicaEnv, replicaUrlFor } from './runtime-replica';
 
 /** Both embedded and external clients boot lazily and close explicitly. */
@@ -67,12 +61,13 @@ export interface RunningQueue {
   /** The `x_job_events` bus a `step.waitForEvent` resumes from. Durable, not per-process. */
   readonly events: EventBus;
   /**
-   * The `x_idempotency` store this boot installed behind `idempotent: true`. Returned for the
-   * reason `outbox` is: the retention sweep over that table is a ROLE's work, not the queue's,
-   * and it has to sweep the store that was INSTALLED — a second one built beside it would purge
-   * on the default window even where this boot had configured another.
+   * The `x_idempotency` store this boot BUILT behind `idempotent: true` — `undefined` when
+   * `runtime.ts` supplied its own, which is then the app's to expire. Returned for the reason
+   * `outbox` is: the retention sweep over that table is a ROLE's work, not the queue's, and it has
+   * to sweep the store that was INSTALLED — a second one built beside it would purge on the
+   * default window even where this boot had configured another.
    */
-  readonly idempotency: PostgresIdempotencyStore;
+  readonly idempotency: PostgresIdempotencyStore | undefined;
   stop(): Promise<void>;
 }
 
@@ -157,18 +152,20 @@ async function applySchema(client: DevDbClient, mode: SchemaMode): Promise<void>
  * one-live-job-per-key index all behave here exactly as in production. A memory queue in dev
  * would hide every bug this driver exists to make impossible.
  *
- * Three ambient installs, not one, and they go in together because they are one decision:
+ * Five ambient installs, not one, and they go in together because they are one decision. Each is
+ * a port (`ADAPTER_PORTS`): `runtime.ts`'s value or the default below, installed by the
+ * one loop in `runtime-ports.ts` (`PORT_BINDINGS`' `queue` rows).
  *
- * - `setJobDriver` is what `jobDriver()` answers and what a worker claims from.
- * - `setJobsFacade` is what `handle.enqueue()` routes through, so an enqueue inside a request's
- *   transaction STAGES a row that commits or vanishes with the business rows. Without it the
+ * - `jobs` is what `jobDriver()` answers and what a worker claims from.
+ * - `outboxStore`, behind the facade, is what `handle.enqueue()` routes through, so an enqueue
+ *   inside a request's transaction STAGES a row that commits or vanishes with the business rows. Without it the
  *   fallback facade publishes straight to the driver, and a job for a transaction that rolled
  *   back still runs. `currentTx()` resolves the executor because a `DbTx` IS a client on the
  *   transaction's own connection, while the `Tx` token `@ultimat3/entity` hands over is not that
  *   object — so the token is a key and the ALS is the lookup.
- * - `setEventBus` makes `step.waitForEvent` durable. The memory bus this replaced forgot every
+ * - `eventBus` makes `step.waitForEvent` durable. The memory bus this replaced forgot every
  *   pending correlation on restart, which is a job that waits forever.
- * - `setIdempotencyStore` makes `idempotent: true` mean it across replicas. The memory default is
+ * - `idempotencyStore` makes `idempotent: true` mean it across replicas. The memory default is
  *   one process' worth of keys, so a client retrying `POST /api/payments/charge` after a timeout
  *   lands on a replica that has never seen the key and charges the card a second time.
  *
@@ -190,46 +187,66 @@ async function startJobs(
   // Bound to `client`, never the ambient `db()`: the queue and the idempotency reservations stay
   // on the boot's pool whatever transaction is open.
   const executor = dbExecutor(() => client);
-  const driver = overrides?.jobs ?? postgresJobDriver({ executor });
-  setJobDriver(driver);
-  const outbox = postgresOutboxStore({
-    executor,
-    // The open transaction is a client on its own connection; the `Tx` token is not that object.
-    txExecutor: () => dbExecutor(() => currentTx() ?? client),
-  });
-  setJobsFacade(
-    outboxJobsFacade({ store: outbox, driver }, () => currentTx() as unknown as Tx | undefined),
+  // Built only when `runtime.ts` is silent: the retention sweep expires the boot's own store and
+  // never one the app handed over.
+  const idempotency = suppliedOr(overrides?.idempotencyStore, () =>
+    postgresIdempotencyStore({
+      executor,
+      // `baseClient`, read per call and never `client`: a transaction's origin is the AMBIENT
+      // client `startDb` installed, which is the replicated pair when a standby is configured.
+      origin: baseClient,
+      // The app's own `requestTimeoutMs`, read per reservation — declared after this boot.
+      reclaimAfterMs: requestDeadlineMs,
+    }),
   );
+  const idempotencyStore = idempotency.value;
+  // Each port: `runtime.ts`'s value, else the env default — one `??`, and nothing else selects.
+  const jobs = overrides?.jobs ?? postgresJobDriver({ executor });
+  const outboxStore =
+    overrides?.outboxStore ??
+    postgresOutboxStore({
+      executor,
+      // The open transaction is a client on its own connection; the `Tx` token is not that object.
+      txExecutor: () => dbExecutor(() => currentTx() ?? client),
+    });
   // The open transaction's connection, as the outbox beside it: an answer belongs to the unit of
   // work that gave it, so a refusal that rolls back never resumes the run waiting on it.
   //
   // `wakes` only when the queue in hand is the boot's own `postgresJobDriver`: the wake is an update
   // of `x_jobs` on this database, and an override driver (Redis) keeps no rows here — its waiters
   // keep the 30 s poll. Waking, a parked wait's backstop is 15 min instead.
-  const events = postgresEventBus({
-    executor: dbExecutor(() => currentTx() ?? client),
-    wakes: overrides?.jobs === undefined,
-  });
-  setEventBus(events);
-  const idempotency = postgresIdempotencyStore({
-    executor,
-    // `baseClient`, read per call and never `client`: a transaction's origin is the AMBIENT client
-    // `startDb` installed, which is the replicated pair when a standby is configured.
-    origin: baseClient,
-    // The app's own `requestTimeoutMs`, read per reservation — it is declared after this boot.
-    reclaimAfterMs: requestDeadlineMs,
-  });
-  setIdempotencyStore(idempotency);
+  const eventBus =
+    overrides?.eventBus ??
+    postgresEventBus({
+      executor: dbExecutor(() => currentTx() ?? client),
+      wakes: overrides?.jobs === undefined,
+    });
   // `meter:` counters on the boot's pool, never the open transaction: a draw is the caller's
   // whether or not the business write commits, and one tenant's day is one row on every replica.
-  setMeterStore(postgresMeterStore({ executor }));
+  const meterStore = overrides?.meterStore ?? postgresMeterStore({ executor });
+  const releases = await installPorts(QUEUE_PORT_BINDINGS, 'queue', {
+    jobs,
+    eventBus,
+    idempotencyStore,
+    meterStore,
+  });
+  // The outbox port is read here, not installed by the loop: the facade `handle.enqueue()` routes
+  // through needs BOTH it and the queue, so an enqueue inside a request's transaction STAGES a row
+  // that commits or vanishes with the business rows. The `Tx` token is a key; the ALS holds the client.
+  setJobsFacade(
+    outboxJobsFacade(
+      { store: outboxStore, driver: jobs },
+      () => currentTx() as unknown as Tx | undefined,
+    ),
+  );
+  releases.push(resetJobsFacade);
   return {
     db: client,
-    jobs: driver,
-    outbox,
-    events,
-    idempotency,
-    stop: () => releaseQueue(client, driver, replica),
+    jobs,
+    outbox: outboxStore,
+    events: eventBus,
+    idempotency: idempotency.own,
+    stop: () => releaseQueue(client, jobs, replica, releases),
   };
 }
 
@@ -247,14 +264,12 @@ async function releaseQueue(
   db: DevDbClient,
   jobs: JobDriver | undefined,
   replica?: PostgresClient,
+  releases: readonly PortRelease[] = [],
 ): Promise<void> {
-  // The idempotency store goes back to the memory default for the same reason the facade does: it
-  // holds this client, and the next command in this process would reserve keys over a closed one.
-  resetIdempotency();
-  resetMeterStore();
-  resetJobsFacade();
-  resetEventBus();
-  resetJobDriver();
+  // Every queue port back to its package default, newest first — the idempotency store, the
+  // facade and the bus all hold this client, and the next command in this process would otherwise
+  // reserve keys, stage rows or publish over a closed one.
+  for (const release of [...releases].reverse()) await release();
   setDbClient(undefined);
   await jobs?.close?.();
   await db.close();

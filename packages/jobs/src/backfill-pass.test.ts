@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { expectedQueryLoopReason } from '@ultimat3/db';
 import { memoryRepo, tableFor } from '@ultimat3/entity';
+import { resetJobDriver } from './adapter';
 import { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
 import {
   BackfillHandleFailure,
@@ -17,7 +18,6 @@ import {
   RUN_ID,
   rows,
 } from './backfill-pass-fixture';
-import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
 import type { StepStore } from './steps';
 import { stepRunner } from './steps';

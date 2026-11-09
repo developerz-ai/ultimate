@@ -21,7 +21,7 @@ export class DeviceOfflineError extends RealtimeError {
     super({
       code: 'X_DEVICE_OFFLINE',
       cause: `deviceSocket("${args.path}") holds no open socket for device ${JSON.stringify(args.deviceId)} under the caller's tenant: ${args.reason}`,
-      fix: `x doctor --json   # then retry deviceLink.request(ctx, '${idArg(args.deviceId)}', frame) once the device redials; across replicas realtime.transport must be 'nats'`,
+      fix: `x doctor --json   # then retry deviceLink.request(ctx, '${idArg(args.deviceId)}', frame) once the device redials; across replicas every role needs NATS_URL set (or one transport in apps/<app>/runtime.ts)`,
     });
   }
 }

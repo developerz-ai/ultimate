@@ -3,7 +3,7 @@
 // ITS topic), the certificate URL pinned to `https://sns.<topic region>.amazonaws.com`, the
 // canonical string per message type, RSA-SHA1 (v1) or RSA-SHA256 (v2) through Web Crypto.
 
-import { type Clock, systemClock } from '@ultimat3/core';
+import { type Clock, liveClock } from '@ultimat3/core';
 import { t, validate } from '@ultimat3/schema';
 import { deliveryInstant } from './delivery-event';
 import { deliveryEventInvalid, deliveryEventUnverified } from './delivery-event-errors';
@@ -157,7 +157,7 @@ export async function verifySnsMessage(
   }
   // After the signature, like `@ultimat3/http`'s receiver: "stale" then always means authentic.
   const sentAt = deliveryInstant('ses', fields.Timestamp).getTime();
-  const now = (options.clock ?? systemClock).now().getTime();
+  const now = (options.clock ?? liveClock).now().getTime();
   if (Math.abs(now - sentAt) > options.toleranceMs) {
     throw deliveryEventUnverified('ses', 'stale');
   }

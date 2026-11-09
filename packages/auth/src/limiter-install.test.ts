@@ -6,9 +6,9 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { defineAuth } from './auth';
 import {
-  configureAuthLimiters,
-  configureTotpReplay,
+  installAuthLimiters,
   installedLimiterCount,
+  installTotpReplay,
   purgeAuthLimits,
   resetAuthLimiters,
   resetTotpReplay,
@@ -59,10 +59,10 @@ afterEach(() => {
   resetTotpReplay();
 });
 
-describe('configureAuthLimiters', () => {
+describe('installAuthLimiters', () => {
   test('an app that declares nothing gets the host limiter, not one process worth of memory', () => {
     const seen: AuthRateLimitPolicy[] = [];
-    configureAuthLimiters((policy) => {
+    installAuthLimiters((policy) => {
       seen.push(policy);
       return tableLimiter(policy, 0);
     });
@@ -78,7 +78,7 @@ describe('configureAuthLimiters', () => {
   });
 
   test('the factory is handed the RESOLVED policy, so a tuned app still boots', () => {
-    configureAuthLimiters((policy) => tableLimiter(policy, 0));
+    installAuthLimiters((policy) => tableLimiter(policy, 0));
     // A limiter built from the framework default would report `maxAttempts: 5` here and
     // `assertAuthLimiterPolicy` would refuse it — the failure a boot-built limiter cannot avoid.
     const auth = defineAuth({ adapter: adapter(), rateLimit: { maxAttempts: 3, scope: 'shared' } });
@@ -92,7 +92,7 @@ describe('configureAuthLimiters', () => {
       lockoutMs: 1,
       scope: 'shared',
     };
-    configureAuthLimiters(() => tableLimiter(wrong, 0));
+    installAuthLimiters(() => tableLimiter(wrong, 0));
     expect(codeOf(() => defineAuth({ adapter: adapter(), rateLimit: { maxAttempts: 3 } }))).toBe(
       'X_AUTH_LIMITER_POLICY_MISMATCH',
     );
@@ -103,7 +103,7 @@ describe('configureAuthLimiters', () => {
     // the second comparison. Until it ran, the installed org limiter enforced whatever the host
     // built while `Auth.orgRateLimit` reported what the app declared — one factory, refused for
     // one bucket and trusted for the other.
-    configureAuthLimiters((policy) =>
+    installAuthLimiters((policy) =>
       tableLimiter(policy.maxAttempts === 100 ? { ...policy, maxAttempts: 5 } : policy, 0),
     );
     expect(codeOf(() => defineAuth({ adapter: adapter() }))).toBe('X_AUTH_LIMITER_POLICY_MISMATCH');
@@ -126,7 +126,7 @@ describe('configureAuthLimiters', () => {
 
   test('an explicitly passed limiter still wins over the installed factory', () => {
     let calls = 0;
-    configureAuthLimiters((policy) => {
+    installAuthLimiters((policy) => {
       calls += 1;
       return tableLimiter(policy, 0);
     });
@@ -137,8 +137,29 @@ describe('configureAuthLimiters', () => {
     expect(calls).toBe(1);
   });
 
+  test('the installer answers a release that puts back the factory it replaced', () => {
+    const outer = (policy: AuthRateLimitPolicy): AuthLimiter => tableLimiter(policy, 0);
+    installAuthLimiters(outer);
+    const inner = (): AuthLimiter =>
+      expect.unreachable('the inner factory is released before defineAuth asks it');
+    const release = installAuthLimiters(inner);
+    release();
+    expect(defineAuth({ adapter: adapter() }).limiter.policy.scope).toBe('shared');
+    release();
+    expect(defineAuth({ adapter: adapter() }).limiter.policy.scope).toBe('shared');
+  });
+
+  test('limiter releases out of order: the earlier release leaves the later factory standing', () => {
+    const releaseA = installAuthLimiters((policy) => tableLimiter(policy, 0));
+    const releaseB = installAuthLimiters((policy) => tableLimiter(policy, 0));
+    releaseA();
+    expect(defineAuth({ adapter: adapter() }).limiter.policy.scope).toBe('shared');
+    releaseB();
+    expect(defineAuth({ adapter: adapter() }).limiter.policy.scope).toBe('process');
+  });
+
   test('resetAuthLimiters puts the per-process default back', () => {
-    configureAuthLimiters((policy) => tableLimiter(policy, 0));
+    installAuthLimiters((policy) => tableLimiter(policy, 0));
     resetAuthLimiters();
     expect(defineAuth({ adapter: adapter() }).limiter.policy.scope).toBe('process');
   });
@@ -150,7 +171,7 @@ describe('purgeAuthLimits', () => {
   });
 
   test('skips a limiter that bounds itself', async () => {
-    configureAuthLimiters((policy) =>
+    installAuthLimiters((policy) =>
       memoryAuthLimiter({ now: () => new Date(0), monotonic: () => 0 }, policy),
     );
     defineAuth({ adapter: adapter() });
@@ -159,7 +180,7 @@ describe('purgeAuthLimits', () => {
 
   test('sweeps only the WIDEST window, never the narrow one beside it', async () => {
     const built: (AuthLimiter & { readonly sweeps: () => number })[] = [];
-    configureAuthLimiters((policy) => {
+    installAuthLimiters((policy) => {
       const limiter = tableLimiter(policy, rowsFor(policy.windowMs));
       built.push(limiter);
       return limiter;
@@ -186,7 +207,7 @@ describe('purgeAuthLimits', () => {
   // sweeps exactly ONE of them however many were retained, so nothing about behaviour could see
   // the growth: this counter is the only observation there is.
   test('what is retained is one limiter per window, not one per defineAuth', () => {
-    configureAuthLimiters((policy) => tableLimiter(policy, 0));
+    installAuthLimiters((policy) => tableLimiter(policy, 0));
     for (let boot = 0; boot < 50; boot += 1) defineAuth({ adapter: adapter() });
 
     // 100 limiters built — the account/IP bucket and the tenant bucket per call — over ONE window,
@@ -195,7 +216,7 @@ describe('purgeAuthLimits', () => {
   });
 
   test('a distinct window is still kept, or the widest could not be found', async () => {
-    configureAuthLimiters((policy) => tableLimiter(policy, rowsFor(policy.windowMs)));
+    installAuthLimiters((policy) => tableLimiter(policy, rowsFor(policy.windowMs)));
     defineAuth({ adapter: adapter() });
     defineAuth({ adapter: adapter(), rateLimit: { windowMs: 1_800_000 } });
 
@@ -206,32 +227,32 @@ describe('purgeAuthLimits', () => {
   test('a second install forgets what the first built', async () => {
     // Every limiter the first factory built is REACHABLE here — the collector holds the same
     // instances the factory returned. Returning a second, different limiter made both assertions
-    // below hold whether or not `configureAuthLimiters` released the previous pool.
+    // below hold whether or not `installAuthLimiters` released the previous pool.
     const first: (AuthLimiter & { readonly sweeps: () => number })[] = [];
-    configureAuthLimiters((policy) => {
+    installAuthLimiters((policy) => {
       const limiter = tableLimiter(policy, 4);
       first.push(limiter);
       return limiter;
     });
     defineAuth({ adapter: adapter() });
     // The next boot's pool is a different pool; a purge through the closed one is not a sweep.
-    configureAuthLimiters((policy) => tableLimiter(policy, 0));
+    installAuthLimiters((policy) => tableLimiter(policy, 0));
     expect(await purgeAuthLimits()).toBe(0);
     expect(first.filter((limiter) => limiter.sweeps() > 0)).toEqual([]);
   });
 });
 
-describe('configureTotpReplay', () => {
+describe('installTotpReplay', () => {
   const installed: TotpReplayGuard = { claim: async () => true };
 
   test('an app that declares nothing gets the host guard, not one process worth of memory', () => {
-    configureTotpReplay(() => installed);
+    installTotpReplay(() => installed);
     expect(defineAuth({ adapter: adapter() }).totpReplay).toBe(installed);
   });
 
   test('an explicitly passed guard still wins over the installed factory', () => {
     let calls = 0;
-    configureTotpReplay(() => {
+    installTotpReplay(() => {
       calls += 1;
       return installed;
     });
@@ -240,8 +261,24 @@ describe('configureTotpReplay', () => {
     expect(calls).toBe(0);
   });
 
+  test('the installer answers a release that puts back the guard factory it replaced', () => {
+    installTotpReplay(() => installed);
+    const release = installTotpReplay(() => memoryTotpReplayGuard());
+    release();
+    expect(defineAuth({ adapter: adapter() }).totpReplay).toBe(installed);
+  });
+
+  test('guard releases out of order: the earlier release leaves the later factory standing', () => {
+    const releaseA = installTotpReplay(() => memoryTotpReplayGuard());
+    const releaseB = installTotpReplay(() => installed);
+    releaseA();
+    expect(defineAuth({ adapter: adapter() }).totpReplay).toBe(installed);
+    releaseB();
+    expect(defineAuth({ adapter: adapter() }).totpReplay).not.toBe(installed);
+  });
+
   test('with nothing installed, and after a reset, each Auth holds its own memory', () => {
-    configureTotpReplay(() => installed);
+    installTotpReplay(() => installed);
     resetTotpReplay();
     const first = defineAuth({ adapter: adapter() }).totpReplay;
     expect(first).not.toBe(installed);
@@ -250,7 +287,7 @@ describe('configureTotpReplay', () => {
   });
 
   test('a factory that builds a guard of the old shape is refused too', () => {
-    configureTotpReplay(() => ({ isUsed: () => false }) as unknown as TotpReplayGuard);
+    installTotpReplay(() => ({ isUsed: () => false }) as unknown as TotpReplayGuard);
     expect(codeOf(() => defineAuth({ adapter: adapter() }))).toBe('X_CONFIG_INVALID');
   });
 });

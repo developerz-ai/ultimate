@@ -5,7 +5,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { defineConfig } from '@ultimat3/core';
-import { DEV_VAPID_KEYS, generateVapidKeys, installedVapid, resetWebPush } from '@ultimat3/pwa';
+import {
+  DEV_VAPID_KEYS,
+  generateVapidKeys,
+  installedVapid,
+  memoryPushSubscriptionStore,
+  resetWebPush,
+  webPushRuntime,
+} from '@ultimat3/pwa';
 import { installAppWebPush, pushSubjectOf, selectWebPush } from './runtime-push';
 
 afterEach(() => resetWebPush());
@@ -70,5 +77,14 @@ describe('unit · web push at boot', () => {
       ULTIMATE_VAPID_PRIVATE_KEY: pair.privateKey,
     });
     expect(selection?.resolved).toEqual({ keys: pair, source: 'environment' });
+  });
+
+  test("the pushSubscriptionStore port: runtime.ts's store is the one pushes read", async () => {
+    const selection = await selectWebPush(withPush, { ULTIMATE_ENV: 'development' });
+    if (selection === undefined) return expect.unreachable('push is on');
+    const mine = memoryPushSubscriptionStore();
+    const release = await installAppWebPush(selection, executor, mine);
+    expect(webPushRuntime('test').store).toBe(mine);
+    release();
   });
 });

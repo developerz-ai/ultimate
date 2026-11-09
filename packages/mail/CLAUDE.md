@@ -11,7 +11,8 @@
 | `blocks.ts` | the template vocabulary: `MailBlock`, `blocks`, `MailTemplate`, `TemplateArgs` |
 | `render.ts` | blocks → HTML **and** text, plus the layout call and the footer slots |
 | `layout.ts` | `MAIL_TOKENS` (light + dark), the 600px table shell, layout registry |
-| `driver.ts` | `MailDriver` + memory/log/unconfigured + `resultFor` + the `setMailDriver` seam |
+| `adapter.ts` | `@ultimat3/mail/adapter`: `installMailDriver` + reset, the `MailDriver` port, `MailError`/`sendFailed` — never on the `.` barrel; an app's line is `mail:` in `apps/<app>/runtime.ts` |
+| `driver.ts` | `MailDriver` + memory/log/unconfigured + `resultFor` + the `installMailDriver` seam (on `./adapter`) |
 | `driver-env.ts` | `selectMailDriver`: which transport an environment installs, and nothing else |
 | `header-safety.ts` | `assertHeaderSafe`: the CR/LF gate on a `MailMessage`, so every driver refuses the same one |
 | `driver-smtp.ts` | `smtpMailDriver`: `SMTP_URL` parsing, the pool ceiling, one send |
@@ -116,7 +117,7 @@
   capability. `staging` refuses too, because staging exists to fail the way production fails —
   which is `isLocal()`'s own rule, read from **core** rather than restated here, so mail and storage
   cannot disagree about which deploy this is. And it is its **own code**: `X_MAIL_DRIVER_UNAVAILABLE`
-  is a developer who never called `setMailDriver`, this is an operator who set no variable, and one
+  is a developer who installed no driver, this is an operator who set no variable, and one
   code for two audiences is a `fix:` that is wrong half the time.
 - **The CR/LF header rule is a property of the MESSAGE, checked at `renderMessage` and again in
   `sendMailJob`** (`As of 2026-08`). `mime.ts` held the only copy, so a subject an SMTP deploy
@@ -239,7 +240,7 @@
 ## Commands
 
 ```bash
-bun test packages/mail
+bun test ./packages/mail/
 bun run --filter @ultimat3/mail typecheck
 ```
 

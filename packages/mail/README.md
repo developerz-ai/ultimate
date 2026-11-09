@@ -71,8 +71,11 @@ setMailTransform(async (rendered, meta) =>
 
 ## Drivers
 
-`setMailDriver(driver)` once at boot. Asking for one that was never set is
-`X_MAIL_DRIVER_UNAVAILABLE`.
+The boot installs one from the environment; an app swaps it with `mail:` in
+`apps/<app>/runtime.ts` (`export const runtime = { mail: memoryMailDriver() }`). Asking for one
+that was never installed is `X_MAIL_DRIVER_UNAVAILABLE`. A driver's author imports the
+interface, `MailError`/`sendFailed` and the installer from `@ultimat3/mail/adapter` — never the
+`.` barrel.
 
 | Driver | Use | Behaviour |
 |---|---|---|
@@ -105,8 +108,8 @@ own a second reading of it.
 
 Both credentials at once is `X_CONFIG_INVALID` rather than a winner picked for you, and a
 transport with no `MAIL_FROM` is refused at boot instead of on the first send. A host that is not
-`x dev` calls `selectMailDriver` itself, or constructs a driver directly — `setMailDriver` is the
-only seam either way.
+`x dev` calls `selectMailDriver` itself, or constructs a driver directly — `installMailDriver`
+(`@ultimat3/mail/adapter`) is the only seam either way.
 
 ### SMTP
 
@@ -227,7 +230,7 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_DUPLICATE` | rename one of two `defineMail({ id })` declarations |
 | `X_MAIL_KEY_MISSING` | `x i18n sync <locale>`, then translate `meta.keys`; pass the vars `meta.slots` names |
 | `X_MAIL_TEXT_MISSING` | add a text-bearing block to the template |
-| `X_MAIL_DRIVER_UNAVAILABLE` | `setMailDriver(memoryMailDriver())` at boot — a wiring bug |
+| `X_MAIL_DRIVER_UNAVAILABLE` | `mail: memoryMailDriver()` in `apps/<app>/runtime.ts` — a wiring bug |
 | `X_MAIL_CREDENTIAL_MISSING` | set `SMTP_URL` (or `RESEND_API_KEY`) and `MAIL_FROM` in the deployment — an operations one |
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
 | `X_MAIL_ADDRESS_INVALID` | a recipient may hold no control character, its mailbox no `<`/`>` and no non-ASCII byte (`meta.reason`); `Jane Doe <jane@x.test>` is fine |
@@ -249,6 +252,6 @@ a job boundary the class is gone and the `code` is what survives — match on th
 ## Commands
 
 ```bash
-bun test packages/mail
+bun test ./packages/mail/
 bun run --filter @ultimat3/mail typecheck
 ```

@@ -3,7 +3,7 @@
 // table before a row is touched. Who may call them is the app's action: no route, no MCP tool.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { liveClock } from '@ultimat3/core';
 import { registeredEntities } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
@@ -85,7 +85,7 @@ export function subjectErase<I>(definition: SubjectJobDefinition<I>): JobHandle<
 
 export function subjectExport<I>(definition: SubjectExportDefinition<I>): JobHandle<I> {
   const { subject } = definition;
-  const clock = definition.clock ?? systemClock;
+  const clock = definition.clock ?? liveClock;
   return job<I>({
     ...common(definition),
     // One live pass per artifact, derived as `exportRows()` derives it.

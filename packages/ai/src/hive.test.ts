@@ -16,7 +16,7 @@ import { providerGateway } from './gateway';
 import { hive } from './hive';
 import { byPrompt, ctxAs, modelWorker, ticks, worker } from './hive-fixture';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import { asProjectableAction, toLlmTool } from './tools';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
@@ -105,9 +105,7 @@ describe('the actor boundary holds on the fan-out path', () => {
 describe('ran-and-failed is not never-ran', () => {
   test("onMemberError: 'abort' skips the siblings, and their provider is never called", async () => {
     const { provider, seen } = byPrompt((prompt) => prompt.includes('bad'));
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const fanOut = hive({
       input: t.object({}),
@@ -134,9 +132,7 @@ describe('ran-and-failed is not never-ran', () => {
 
   test("onMemberError: 'collect' harvests the rest", async () => {
     const { provider, seen } = byPrompt((prompt) => prompt.includes('bad'));
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const fanOut = hive({
       input: t.object({}),
@@ -159,9 +155,7 @@ describe('the ceiling holds under concurrency', () => {
   // one fits refuses the other two — no new budget machinery, and none needed.
   test('three members against a ceiling only one fits leaves exactly one ok', async () => {
     const { provider } = byPrompt(() => false, 200);
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const fanOut = hive({
       input: t.object({}),

@@ -4,6 +4,9 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
+  ADAPTER_PORT_NAMES,
+  ADAPTER_PORTS,
+  type AdapterPortName,
   hasPrimitiveRegistrar,
   type ModuleRegistrar,
   PRIMITIVE_FACTORIES,
@@ -212,5 +215,84 @@ describe('primitiveRegistrar', () => {
       const manifest = Bun.file(new URL(`../../${name}/package.json`, import.meta.url));
       expect([kind, await manifest.exists()]).toEqual([kind, true]);
     }
+  });
+});
+
+/**
+ * Every backend an app may swap, one row each. `@ultimat3/cli`'s boot loops over this table and
+ * `@ultimat3/testing`'s per-test override seam is keyed by its names, so a row that drifts from the
+ * code it names is a slot nothing fills — spelled out here, and each name checked against the
+ * owning package's source.
+ */
+describe('ADAPTER_PORTS', () => {
+  test('the shipped rows, spelled out, so a table that lost one cannot pass', () => {
+    expect(ADAPTER_PORTS.map((row) => `${row.port}=${row.pkg}#${row.interface}`)).toEqual([
+      'aiGateway=@ultimat3/ai#Gateway',
+      'auditSink=@ultimat3/core#AuditSink',
+      'authLimiter=@ultimat3/auth#AuthLimiterFactory',
+      'authServerStore=@ultimat3/auth#AuthServerStore',
+      'cacheTiers=@ultimat3/cache#CacheTier',
+      'clock=@ultimat3/core#SleepClock',
+      'errorReporter=@ultimat3/core#ErrorReporter',
+      'eventBus=@ultimat3/jobs#EventBus',
+      'failureStore=@ultimat3/core#FailureStore',
+      'idempotencyStore=@ultimat3/action#IdempotencyStore',
+      'images=@ultimat3/seo#ImageTransformDriver',
+      'isrStore=@ultimat3/render#IsrStore',
+      'jobs=@ultimat3/jobs#JobDriver',
+      'mail=@ultimat3/mail#MailDriver',
+      'mcpConfirmationStore=@ultimat3/mcp#McpConfirmationStore',
+      'meterStore=@ultimat3/action#MeterStore',
+      'notifyStores=@ultimat3/notify#NotifyStores',
+      'outboxStore=@ultimat3/jobs#OutboxStore',
+      'purge=@ultimat3/cache#PurgeDriver',
+      'pushSubscriptionStore=@ultimat3/pwa#PushSubscriptionStore',
+      'rateLimitStore=@ultimat3/http#RateLimitStore',
+      'scrapeDriver=@ultimat3/scraping#ScrapeDriver',
+      'secretSource=@ultimat3/core#SecretSource',
+      'storage=@ultimat3/storage#StorageDriver',
+      'totpReplay=@ultimat3/auth#TotpReplayGuard',
+      'transport=@ultimat3/realtime#Transport',
+    ]);
+  });
+
+  test('is sorted by port name and names each port once', () => {
+    const names = ADAPTER_PORTS.map((row) => row.port);
+    expect(names).toEqual([...names].sort());
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual([...ADAPTER_PORT_NAMES]);
+  });
+
+  test('every row names a default, and a conformance suite spelled after its interface', () => {
+    for (const row of ADAPTER_PORTS) {
+      expect([row.port, row.envDefault.trim().length > 0]).toEqual([row.port, true]);
+      const suite = `${row.interface.charAt(0).toLowerCase()}${row.interface.slice(1)}Conformance`;
+      expect([row.port, row.conformance]).toEqual([row.port, suite]);
+    }
+  });
+
+  test('every interface is exported by the package the row names', async () => {
+    const glob = new Bun.Glob('src/**/*.ts');
+    for (const row of ADAPTER_PORTS) {
+      const pkg = row.pkg.replace('@ultimat3/', '');
+      const dir = Bun.fileURLToPath(new URL(`../../${pkg}/`, import.meta.url));
+      const declared = new RegExp(`export (interface|type) ${row.interface}\\b`);
+      let found = false;
+      for await (const file of glob.scan({ cwd: dir })) {
+        if (file.endsWith('.test.ts')) continue;
+        if (declared.test(await Bun.file(`${dir}${file}`).text())) {
+          found = true;
+          break;
+        }
+      }
+      expect([row.port, found]).toEqual([row.port, true]);
+    }
+  });
+
+  test('the table and every row in it are frozen', () => {
+    expect(Object.isFrozen(ADAPTER_PORTS)).toBe(true);
+    expect(ADAPTER_PORTS.filter((row) => !Object.isFrozen(row))).toEqual([]);
+    const port: AdapterPortName = 'jobs';
+    expect(ADAPTER_PORT_NAMES).toContain(port);
   });
 });

@@ -5,12 +5,25 @@
  */
 
 import { configureAi, echoProvider, modelSpec, providerGateway } from '@ultimat3/ai';
-import { expect, test } from '@ultimat3/testing';
+import type { Gateway } from '@ultimat3/ai/adapter';
+import { installAiGateway } from '@ultimat3/ai/adapter';
+import { afterEach, expect, test } from '@ultimat3/testing';
 import { APP_MODELS, CLAUDE_SONNET_5_5, claudeSonnet55 } from './models';
 import { reviewDraft } from './posts/actions/review-draft';
 import { summarize } from './posts/actions/summarize';
 import { reviewDraftPrompt } from './posts/prompts/review-draft';
 import { summarizePrompt } from './posts/prompts/summarize';
+
+// The gateway is `aiGateway` in apps/web/runtime.ts at boot; a test installs its own through the
+// adapter installer, and `configureAi()` still clears the semantic cache. Undone after each test.
+const releases: (() => void)[] = [];
+const useGateway = (gateway: Gateway): void => {
+  configureAi();
+  releases.push(installAiGateway(gateway));
+};
+afterEach(() => {
+  for (const release of releases.splice(0).reverse()) release();
+});
 
 /** Every prompt artifact the app ships. A new one is added here with its eval. */
 const PROMPTS = [summarizePrompt, reviewDraftPrompt];
@@ -46,7 +59,7 @@ test('the model-backed actions resolve and price on the app rows, with no gatewa
       ? JSON.stringify({ verdict: 'ready', notes: 'Ready.' })
       : JSON.stringify({ summary: 'Minor units and a currency.', tags: ['money'] });
   // No `defaultModel`: each declaration's prompt names its model, so the gateway is never asked.
-  configureAi({ gateway: providerGateway({ providers: [echoProvider({ fallback: reply })] }) });
+  useGateway(providerGateway({ providers: [echoProvider({ fallback: reply })] }));
   const { draft, bruno } = await seed('dev').pick({
     draft: 'post:draft-money',
     bruno: 'member:bruno',

@@ -26,7 +26,7 @@ import { ANSWER, declare, POST_ID, promptFor, stub } from './llm-fixture';
 import { FIXTURE_MODEL, registerFixtureModels } from './model-fixture';
 import { resetModels } from './models';
 import type { Provider } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 
 const spans = memoryExporter();
 
@@ -80,21 +80,21 @@ function lazyAgent(sampling: { temperature?: number; seed?: number } = {}) {
 
 describe('a catalogue registered by the gateway on first use', () => {
   test('agent(): the first call answers', async () => {
-    configureAi({ gateway: lazyGateway(stub({ answer: 'done' }).provider) });
+    installAiGateway(lazyGateway(stub({ answer: 'done' }).provider));
     const run = lazyAgent().named('lazyCatalogueAgent');
     expect(await run({ postId: POST_ID }, { ctx: anonymousCtx() })).toEqual({ answer: 'done' });
     expect(attribute('ai.agent')).toBe('');
   });
 
   test('llm(): the first call answers', async () => {
-    configureAi({ gateway: lazyGateway(stub(ANSWER).provider) });
+    installAiGateway(lazyGateway(stub(ANSWER).provider));
     const call = declare(promptFor(), { model: FIXTURE_MODEL });
     expect(await call({ postId: POST_ID }, { ctx: anonymousCtx() })).toEqual(ANSWER);
     expect(attribute('ai.llm')).toBe('');
   });
 
   test('a knob the row does not take is still reported, once the row is there', async () => {
-    configureAi({ gateway: lazyGateway(stub({ answer: 'done' }).provider) });
+    installAiGateway(lazyGateway(stub({ answer: 'done' }).provider));
     // The fixture rows declare no `sampling`, so both knobs are left out of the request.
     const run = lazyAgent({ temperature: 0, seed: 7 }).named('lazyCatalogueSampledAgent');
     expect(await run({ postId: POST_ID }, { ctx: anonymousCtx() })).toEqual({ answer: 'done' });
@@ -102,7 +102,7 @@ describe('a catalogue registered by the gateway on first use', () => {
   });
 
   test('llm() with knobs: answered, and the span names what was left out', async () => {
-    configureAi({ gateway: lazyGateway(stub(ANSWER).provider) });
+    installAiGateway(lazyGateway(stub(ANSWER).provider));
     const call = declare(promptFor(), { model: FIXTURE_MODEL, temperature: 0 });
     expect(await call({ postId: POST_ID }, { ctx: anonymousCtx() })).toEqual(ANSWER);
     expect(attribute('ai.llm')).toBe('temperature');
@@ -122,14 +122,14 @@ describe('the report never changes the call it describes', () => {
         });
       },
     } as Gateway;
-    configureAi({ gateway: throwing });
+    installAiGateway(throwing);
     const run = lazyAgent({ temperature: 0 }).named('lazyCatalogueThrowingWiresAgent');
     expect(await run({ postId: POST_ID }, { ctx: anonymousCtx() })).toEqual({ answer: 'done' });
     expect(attribute('ai.agent')).toBeUndefined();
   });
 
   test('a failed run still reports what was left out', async () => {
-    configureAi({ gateway: lazyGateway(stub({ wrong: 1 }).provider) });
+    installAiGateway(lazyGateway(stub({ wrong: 1 }).provider));
     const run = lazyAgent({ seed: 7 }).named('lazyCatalogueFailingAgent');
     await expect(run({ postId: POST_ID }, { ctx: anonymousCtx() })).rejects.toBeDefined();
     expect(attribute('ai.agent')).toBe('seed');
@@ -146,16 +146,14 @@ describe('the report never changes the call it describes', () => {
     const refuse = (): never => {
       throw own;
     };
-    configureAi({
-      gateway: {
-        defaultModel: undefined,
-        generate: refuse,
-        stream: refuse,
-        scope: refuse,
-        spent: refuse,
-        callLedger: refuse,
-      } as unknown as Gateway,
-    });
+    installAiGateway({
+      defaultModel: undefined,
+      generate: refuse,
+      stream: refuse,
+      scope: refuse,
+      spent: refuse,
+      callLedger: refuse,
+    } as unknown as Gateway);
     const run = agent({
       input: t.object({ postId: t.uuid }),
       output: t.object({ answer: t.string }),

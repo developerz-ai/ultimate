@@ -12,7 +12,7 @@ import { type BootedHold, holdWhileBooting } from './hold';
 import { rolePorts, startMetricsEndpoint } from './metrics-endpoint';
 import { readMigrations } from './migrations';
 import { resolveServices } from './runtime-bindings';
-import { startQueue } from './runtime-queue';
+import { startQueueWithBoot } from './runtime-boot-ports';
 import { containerBinding, metricsPortFor, portFromEnv, roleFromEnv } from './serve-env';
 import type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve-types';
 
@@ -51,7 +51,7 @@ export async function runMigrations(options: ServeOptions): Promise<MigratedApp>
   // `'apply'`, never the stamp-first default: this IS the step that applies, and an operator
   // re-running it is how a dropped framework table comes back.
   const services = resolveServices(options.root, options.env);
-  const queue = await startQueue(services, options.runtime, options.env, 'apply');
+  const queue = await startQueueWithBoot(services, options.runtime, options.env, 'apply');
   try {
     const migrations = await readMigrations(options.root);
     // PGlite with `database.rowSecurity`: the app's migrations run as `x_migrator` for their scope.

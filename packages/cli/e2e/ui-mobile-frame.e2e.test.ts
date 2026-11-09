@@ -7,9 +7,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no path API — nothing native joins paths.
 import { join } from 'node:path';
+import type { SleepClock } from '@ultimat3/core';
 import { registeredStylesheets } from '@ultimat3/render/server';
 import { DEFAULT_CDP_TIMEOUT_MS, E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
-import type { ShotClock, ShotSession } from '../src/browser-launcher-port';
+import type { ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 import { buildIslands } from '../src/island-bundle';
 import type { FixtureApp } from '../src/templates/island-fixture';
@@ -134,7 +135,7 @@ const drag = (share: number): string => `(() => {
   return true;
 })()`;
 
-const clock: ShotClock = {
+const clock: SleepClock = {
   now: () => new Date(),
   monotonic: () => performance.now(),
   // real-clock: the poll waits on Chrome, another process, which no fake timer moves.

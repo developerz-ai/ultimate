@@ -128,7 +128,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     true,
   );
   // The events binding the boot line reports is the bus the runtime chose, read off it.
-  const services = withRealtimeEvents(resolved, env, runtime.realtime);
+  const services = withRealtimeEvents(resolved, env, appRuntime?.transport !== undefined);
   // `serve.ts`'s `releaseBoot` shape: everything acquired from here on is released, newest first,
   // if the boot throws — a failed `x dev` left PGlite holding `.x/pgdata` for the retry to meet.
   const acquired: (() => void | Promise<void>)[] = [() => runtime.stop()];
@@ -201,7 +201,7 @@ async function bootDev(
     }),
   );
   // ON in `x dev` whatever `app.config.ts` says: a 5xx here is one `x repro <requestId>` away.
-  acquired.push(armFailureCapture(appConfig, { force: true }));
+  acquired.push(armFailureCapture(appConfig, { force: true, store: runtime.failureStore }));
   // The manifest's build id is a content hash of every fact below it, so a dev document's
   // `x-ultimate-build` header names the exact shape the client was served against. Pinned at
   // boot on purpose: the header is handed to the HTTP config and the render modes once, and a

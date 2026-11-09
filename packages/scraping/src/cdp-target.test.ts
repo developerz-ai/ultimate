@@ -4,11 +4,10 @@
 // event payloads, so the offline drivers cannot pin any of them.
 
 import { describe, expect, test } from 'bun:test';
-import { NotImplementedError } from '@ultimat3/core';
+import { frozenClock, NotImplementedError } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
-import { testScrapeClock } from './clock';
 import { DEFAULT_RING_CAPACITY } from './rings';
 import type { SessionSnapshot } from './session-state';
 
@@ -87,7 +86,7 @@ const open = (start?: string) => {
       page: rec.page,
       browser: rec.browser,
       rules: { allowHosts: ['shop.test', 'other.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
     }),
   };
 };
@@ -173,7 +172,7 @@ describe('unit · a network entry says what the request actually was', () => {
       page: rec.page,
       browser: rec.browser,
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
     });
     rec.emit('request', request('https://evil.test/api', 'PUT'));
     expect(page.network.entries().map((entry) => [entry.method, entry.refused])).toEqual([
@@ -311,7 +310,7 @@ describe('unit · an uncaught page exception is recorded, and is NOT a console l
       page: rec.page,
       browser: rec.browser,
       rules: { allowHosts: ['*'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
     });
     const overflow = DEFAULT_RING_CAPACITY + 2;
     for (let index = 1; index <= overflow; index += 1) {
@@ -372,7 +371,7 @@ describe('unit · the browser`s own keys are read, never refused by name', () =>
       page: cdp.page,
       browser: cdp.browser,
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
     });
     const [element] = await target.query('.row');
     expect(element?.attrs['constructor']).toBe('Foo');
@@ -391,7 +390,7 @@ describe('unit · the browser`s own keys are read, never refused by name', () =>
       // A jar is required to read a session at all; this test is about the storage half.
       browser: { ...cdp.browser, cookies: () => Promise.resolve([]) },
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
     });
     const session = await target.session();
     expect(session.storage['constructor']).toBe('v');
@@ -406,7 +405,7 @@ describe('unit · the browser`s own keys are read, never refused by name', () =>
       page: cdp.page,
       browser: cdp.browser,
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
     });
     let code: string | undefined;
     try {
@@ -430,7 +429,7 @@ describe('unit · setOfflineMode on a launcher that does not have it', () => {
       page: rec.page,
       browser: rec.browser,
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
     });
     let thrown: { code?: string; fix?: string } = {};
     try {
@@ -458,7 +457,7 @@ describe('unit · setOfflineMode on a launcher that does not have it', () => {
       },
       browser: rec.browser,
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
     });
     await target.setOfflineMode(true);
     await target.setOfflineMode(false);

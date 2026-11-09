@@ -123,7 +123,7 @@ export function beginDeviceSocketGeneration(): void {
   generation += 1;
 }
 
-/** Test seam: forget every declaration, the state a process boots in — `resetChannelTransport`'s twin. */
+/** Test seam: forget every declaration, the state a process boots in. */
 export function forgetDeviceSockets(): void {
   declared.clear();
 }

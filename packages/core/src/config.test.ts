@@ -38,13 +38,13 @@ describe('defineConfig', () => {
     const config = defineConfig(
       { name: 'myapp', roles: ['web', 'worker'] },
       { jobs: { concurrency: 32 } },
-      { realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } },
+      { realtime: { enabled: true, maxSocketsPerActor: 4 } },
     );
 
     expect(config.jobs.concurrency).toBe(32);
     // untouched keys still come from defaults
     expect(config.jobs.maxAttempts).toBe(5);
-    expect(config.realtime.transport).toBe('nats');
+    expect(config.realtime.maxSocketsPerActor).toBe(4);
     expect(config.roles).toEqual(['web', 'worker']);
   });
 
@@ -87,38 +87,19 @@ describe('defineConfig', () => {
     expect(isUltimateError(error) ? error.fix : '').toContain('x verify');
   });
 
-  test('a non-memory transport without a url env is a config error, not a runtime crash', () => {
-    const causeOf = (input: () => void): string => {
-      try {
-        input();
-      } catch (thrown) {
-        return (thrown as UltimateError).cause;
-      }
-      throw new Error('expected defineConfig to throw');
-    };
-
-    const realtime = causeOf(() =>
-      defineConfig({ name: 'myapp', realtime: { transport: 'nats' } }),
-    );
-    expect(realtime).toContain('realtime.urlEnv');
-  });
-
-  // `'redis'` was accepted and no Redis transport exists: it booted whichever bus NATS_URL chose.
-  // Now that `@ultimat3/realtime` builds what `transport` says, a value it cannot build is refused
-  // here, where an untyped config or a pre-22 app compiled against the old union reaches.
-  test('a transport the framework cannot build is refused, naming the ones it can', () => {
+  // 31.0.0 deleted `realtime.transport` and `realtime.urlEnv`: the bus is the `transport` adapter
+  // port. A pre-31 config still writing either is refused by name (`config-removed.ts`), including
+  // the `'redis'` an untyped config could carry — no union is left to name it against.
+  test('a transport written in app.config.ts is refused, naming runtime.ts', () => {
     let thrown: unknown;
     try {
-      defineConfig({
-        name: 'myapp',
-        realtime: JSON.parse('{"transport":"redis","urlEnv":"REDIS_URL"}'),
-      });
+      defineConfig({ name: 'myapp', realtime: JSON.parse('{"transport":"redis"}') });
     } catch (error) {
       thrown = error;
     }
     expect((thrown as UltimateError).code).toBe('X_CONFIG_INVALID');
-    expect((thrown as UltimateError).cause).toContain('realtime.transport "redis"');
-    expect((thrown as UltimateError).cause).toContain('memory, nats');
+    expect((thrown as UltimateError).cause).toContain('realtime.transport was removed in 31.0.0');
+    expect((thrown as UltimateError).fix).toContain('apps/<app>/runtime.ts');
   });
 });
 
@@ -199,7 +180,7 @@ describe('database config carries only what something reads', () => {
 });
 
 describe('realtime section', () => {
-  const KEYS = ['enabled', 'maxSocketsPerActor', 'maxSubscriptionsPerActor', 'transport', 'urlEnv'];
+  const KEYS = ['enabled', 'maxSocketsPerActor', 'maxSubscriptionsPerActor'];
   // Two fields have been deleted from this section for one reason. `heartbeatMs` was declared,
   // defaulted to 15_000 and read by NOTHING — the socket heartbeat is the client's own option and
   // the presence beat is derived from the TTL (`PresenceRegistry.heartbeatMs`). `tier` accepted
@@ -222,11 +203,11 @@ describe('realtime section', () => {
   test('an overlay that patches the section adds no key to it', () => {
     const config = defineConfig(
       { name: 'myapp' },
-      { realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } },
+      { realtime: { enabled: false, maxSocketsPerActor: 2 } },
     );
 
     expect(Object.keys(config.realtime).sort()).toEqual(KEYS);
-    expect(config.realtime.transport).toBe('nats');
+    expect(config.realtime.enabled).toBe(false);
   });
 });
 
@@ -251,7 +232,7 @@ describe('the dead jobs.driver field', () => {
    * one. Until 25.0.0 it booted and the key rode through the spread, selecting nothing — the silent
    * Postgres it always was. It is REFUSED now (`config-removed.ts`), naming the seam that works.
    */
-  test('a stale config carrying one is refused, naming setJobDriver', () => {
+  test('a stale config carrying one is refused, naming the runtime.ts line', () => {
     try {
       defineConfig({ name: 'myapp' }, { jobs: { driver: 'redis', concurrency: 3 } } as never);
       expect.unreachable('jobs.driver was accepted');
@@ -259,8 +240,10 @@ describe('the dead jobs.driver field', () => {
       if (!isUltimateError(error)) return expect.unreachable('defineConfig threw its own error');
       expect(error.code).toBe('X_CONFIG_INVALID');
       expect(error.cause).toContain('jobs.driver was removed in 5.0.0');
-      expect(error.fix).toContain('setJobDriver(postgresJobDriver({ executor }))');
-      expect(error.fix).toContain('memoryJobDriver()');
+      expect(error.fix).toContain(
+        'export const runtime = { jobs: postgresJobDriver({ executor }) }',
+      );
+      expect(error.fix).toContain('apps/<app>/runtime.ts');
     }
   });
 });

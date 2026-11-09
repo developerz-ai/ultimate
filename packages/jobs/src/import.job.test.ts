@@ -7,8 +7,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:tes
 import { ctxOf, userActor } from '@ultimat3/core';
 import { clearRegistry, entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { ClaimedJob, JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { DriverUnavailableError } from './errors';
 import { executeJob } from './execute';
@@ -113,7 +113,7 @@ beforeEach(() => {
   resetJobs();
   table = tableFor(people, memoryRepo(people, []));
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterEach(() => {

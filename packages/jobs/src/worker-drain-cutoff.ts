@@ -51,6 +51,7 @@ export function armDrainCutoff(
     for (const timer of timers.splice(0)) clearTimeout(timer);
   };
   const at = (instant: number, fire: () => void): void => {
+    // Real time, not `liveClock`: this races a real `setTimeout`, and a frozen clock under it never fires.
     const timer = setTimeout(fire, Math.max(0, instant - systemClock.monotonic()));
     timer.unref?.();
     timers.push(timer);

@@ -2,7 +2,7 @@
 // nowhere else. `cdp-shot-driver.ts` implements it over raw CDP; a test hands in a fake. Every
 // member is one a shot or a `ui.*` call reads. A member nothing reads is one the raw driver would
 // have to build and nothing would test, and that is how a port rots.
-import type { Clock } from '@ultimat3/core';
+import type { SleepClock } from '@ultimat3/core';
 
 /** What the browser is told the OS prefers. `'no-preference'` CLEARS the override. */
 export type ShotColorScheme = 'light' | 'dark' | 'no-preference';
@@ -103,11 +103,6 @@ export interface AccessibilityOptions {
   readonly max?: number | undefined;
 }
 
-/** Every wait goes through this, so a test of a 30-second deadline finishes in microseconds. */
-export interface ShotClock extends Clock {
-  sleep(ms: number, signal?: AbortSignal): Promise<void>;
-}
-
 export interface ShotPage {
   url(): string;
   /** Refused before a byte leaves when the host is outside the session's `allowHosts`. */
@@ -142,7 +137,8 @@ export interface ShotSessionInit {
   readonly name: string;
   /** Never `*` from a shot: a headless browser inside your network is an SSRF surface. */
   readonly rules: { readonly allowHosts: readonly string[] };
-  readonly clock: ShotClock;
+  /** Every wait goes through it, so a test of a 30-second deadline finishes in microseconds. */
+  readonly clock: SleepClock;
   /** Per-operation default, in ms. */
   readonly timeoutMs: number;
   /** CSS pixels the page is laid out in. Absent: the driver's own default. */

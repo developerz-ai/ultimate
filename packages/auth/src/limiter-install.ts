@@ -15,6 +15,7 @@
 // make every app that tunes its own numbers fail at boot with `X_AUTH_LIMITER_POLICY_MISMATCH`.
 // The factory is called WITH the resolved policy, so the two halves cannot disagree.
 
+import { adapterSlot } from '@ultimat3/core/adapter';
 import type { TotpReplayGuard } from './mfa';
 import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
 
@@ -25,7 +26,8 @@ import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
  */
 export type AuthLimiterFactory = (policy: AuthRateLimitPolicy) => AuthLimiter;
 
-let factory: AuthLimiterFactory | undefined;
+/** Core's one slot shape: installs stack, each release removes its own, in any order. */
+const factory = /* @__PURE__ */ adapterSlot<AuthLimiterFactory | undefined>(() => undefined);
 /**
  * The limiters a purge can still reach, ONE per distinct window.
  *
@@ -42,21 +44,27 @@ let factory: AuthLimiterFactory | undefined;
 let built = new Map<number, AuthLimiter>();
 
 /**
- * The ONE install point, the same shape as `configureKdfGate` beside it: a host that owns the
- * database connection says where failed attempts are counted, and every `defineAuth` in the
- * process picks it up without the app declaring anything.
+ * The ONE install point: a host that owns the database connection says where failed attempts are
+ * counted, and every `defineAuth` in the process picks it up without the app declaring anything.
+ * On `@ultimat3/auth/adapter` only — the boot calls it with what `apps/<app>/runtime.ts` named.
  *
  * A second install replaces the first and forgets what the first built — a limiter over a pool
- * the previous boot has closed is not something a purge should still be sweeping through.
+ * the previous boot has closed is not something a purge should still be sweeping through. Answers
+ * the release that removes THIS install and no other, in any order, once (core's `adapterSlot`);
+ * the limiters built so far are forgotten with it.
  */
-export function configureAuthLimiters(next: AuthLimiterFactory): void {
-  factory = next;
+export function installAuthLimiters(next: AuthLimiterFactory): () => void {
+  const release = factory.install(next);
   built = new Map();
+  return () => {
+    release();
+    built = new Map();
+  };
 }
 
 /** Back to `memoryAuthLimiter`, the per-process default. A host that installs one calls this on stop. */
 export function resetAuthLimiters(): void {
-  factory = undefined;
+  factory.reset();
   built = new Map();
 }
 
@@ -67,8 +75,9 @@ export function resetAuthLimiters(): void {
  * back to the in-memory limiter.
  */
 export function installedAuthLimiter(policy: AuthRateLimitPolicy): AuthLimiter | undefined {
-  if (factory === undefined) return undefined;
-  const limiter = factory(policy);
+  const current = factory.current();
+  if (current === undefined) return undefined;
+  const limiter = current(policy);
   if (!built.has(policy.windowMs)) built.set(policy.windowMs, limiter);
   return limiter;
 }
@@ -116,20 +125,21 @@ export async function purgeAuthLimits(): Promise<number> {
 /** Build the guard an `Auth` keeps its spent TOTP steps in. Called once per `defineAuth`. */
 export type TotpReplayFactory = () => TotpReplayGuard;
 
-let replayFactory: TotpReplayFactory | undefined;
+const replayFactory = /* @__PURE__ */ adapterSlot<TotpReplayFactory | undefined>(() => undefined);
 
 /**
  * The host's install point for where spent steps are kept, for the limiter's reason: `defineAuth`
  * is the app's call and the app does not know which database this process opened. Until a boot
- * filled this, one code signed in once per replica. A second install replaces the first.
+ * filled this, one code signed in once per replica. A second install stacks over the first; its
+ * release removes THIS install and no other, in any order, once (core's `adapterSlot`).
  */
-export function configureTotpReplay(next: TotpReplayFactory): void {
-  replayFactory = next;
+export function installTotpReplay(next: TotpReplayFactory): () => void {
+  return replayFactory.install(next);
 }
 
 /** Back to `memoryTotpReplayGuard`, the per-process default. A host that installs one calls this on stop. */
 export function resetTotpReplay(): void {
-  replayFactory = undefined;
+  replayFactory.reset();
 }
 
 /**
@@ -137,5 +147,5 @@ export function resetTotpReplay(): void {
  * reason. `undefined` means no host installed one, and the caller falls back to memory.
  */
 export function installedTotpReplay(): TotpReplayGuard | undefined {
-  return replayFactory?.();
+  return replayFactory.current()?.();
 }

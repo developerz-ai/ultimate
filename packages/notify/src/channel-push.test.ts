@@ -5,12 +5,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { memoryStepStore, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { resetNotifyStores } from './adapter';
 import type { DataPusher, NotifyPushMessage, Pusher } from './channel-push';
 import { PUSH_CHANNEL, pushChannel } from './channel-push';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { driver } from './notify-fixture';
-import { resetNotifyStores } from './stores';
 
 const POST = '00000000-0000-7000-8000-00000000beef';
 const params: TestParams = { postId: POST };

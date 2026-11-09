@@ -5,9 +5,10 @@
  */
 
 import { driver } from '@postly/db';
-import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, noWaitClock, runWithContext, userActor } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 import { jobDriver } from '@ultimat3/jobs';
-import { answerPrompt, noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
+import { answerPrompt } from '@ultimat3/scraping';
 import type { MemoryStorageDriver } from '@ultimat3/storage';
 import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, expect, type JobRunTrace, jobTest } from '@ultimat3/testing';
@@ -35,15 +36,17 @@ const until = async <T>(ready: () => Promise<T | null>): Promise<T> => {
 
 let sessions: MemoryStorageDriver;
 
+// The ambient clock's install answers its own undo.
+let releaseClock = (): void => {};
 beforeEach(() => {
   sessions = memoryStorageDriver();
   defineStorage({ disks: { sessions } });
   // No wall-clock wait in this file: a poll is one turn of the event loop.
-  setScrapeClock(noWaitClock);
+  releaseClock = installClock(noWaitClock);
 });
 
 afterEach(() => {
-  resetScrapeClock();
+  releaseClock();
   resetStorage();
   driver.reset?.();
 });

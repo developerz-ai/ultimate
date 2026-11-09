@@ -9,8 +9,7 @@
 // refusal has to come first.
 
 import { describe, expect, test } from 'bun:test';
-import { isUltimateError, renderThrowable } from '@ultimat3/core';
-import { testScrapeClock } from './clock';
+import { frozenClock, isUltimateError, renderThrowable } from '@ultimat3/core';
 import { httpOverFetch } from './http';
 import type { NetworkEntry } from './rings';
 import { boundedRing } from './rings';
@@ -38,7 +37,7 @@ const transport = (timeoutMs = 1_000) => {
   const network = boundedRing<NetworkEntry>();
   const http = httpOverFetch({
     rules: { allowHosts: ['api.test'] },
-    clock: testScrapeClock(),
+    clock: frozenClock(),
     timeoutMs,
     network,
     session: () => Promise.resolve(EMPTY_SESSION),

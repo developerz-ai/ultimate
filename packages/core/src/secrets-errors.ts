@@ -4,7 +4,7 @@
 // command that undoes it. No error here ever carries a key, a ciphertext or a decrypted value.
 
 import { registerErrorCodes } from './error-codes';
-import { renderFixShellArg } from './error-render';
+import { renderCauseValue, renderFixShellArg } from './error-render';
 import { UltimateError } from './errors';
 
 /** Codes `@ultimat3/core` owns for the encrypted-secrets file. */
@@ -60,36 +60,56 @@ const ENV_VAR_NAME = /^[A-Z_][A-Z0-9_]*$/;
  * that authenticates against nothing and reports itself healthy.
  */
 export class SecretsKeyMissingError extends UltimateError {
-  constructor(input: { envVar: string; keyPath: string }) {
+  /** `source`: the `name` of an app-installed `SecretSource` that answered no key. */
+  constructor(input: { envVar: string; keyPath: string; source?: string }) {
     super({
       code: 'X_SECRETS_KEY_MISSING',
-      cause: `${input.envVar} is unset and ${input.keyPath} does not exist, so nothing can open the encrypted secrets`,
-      fix: ENV_VAR_NAME.test(input.envVar)
-        ? `export ${input.envVar}="$(cat ${renderFixShellArg(input.keyPath, '<the key file the cause names>')})"   # in a repo that has no key yet: x secrets init`
-        : "set the variable this error's cause names to the contents of the key file beside it, in whatever way this shell spells an assignment — in a repo that has no key yet: x secrets init",
-      meta: { keyPath: input.keyPath },
+      cause:
+        input.source === undefined
+          ? `${input.envVar} is unset and ${input.keyPath} does not exist, so nothing can open the encrypted secrets`
+          : `the secret source ${renderCauseValue(input.source)} installed from runtime.ts answered no master key, so nothing can open the encrypted secrets`,
+      fix:
+        input.source !== undefined
+          ? 'export const runtime = { secretSource }   # apps/<app>/runtime.ts — that source must answer a master key (check the KMS key or Vault path it reads); delete it to fall back to ULTIMATE_SECRETS_KEY, then .secrets.key'
+          : ENV_VAR_NAME.test(input.envVar)
+            ? `export ${input.envVar}="$(cat ${renderFixShellArg(input.keyPath, '<the key file the cause names>')})"   # in a repo that has no key yet: x secrets init`
+            : "set the variable this error's cause names to the contents of the key file beside it, in whatever way this shell spells an assignment — in a repo that has no key yet: x secrets init",
+      meta: {
+        keyPath: input.keyPath,
+        ...(input.source === undefined ? {} : { source: input.source }),
+      },
     });
   }
 }
 
+/** Where a key was read, from its `at`: the env var, a key file (live or staged), or an app's source. */
+const keySourceOf = (at: string): 'env' | 'file' | 'source' =>
+  at === 'ULTIMATE_SECRETS_KEY' ? 'env' : /\.secrets\.key(\.next)?$/.test(at) ? 'file' : 'source';
+
 /** Key material that is not 64 lowercase hex characters. A truncated paste is the usual cause. */
 export class SecretsKeyInvalidError extends UltimateError {
   constructor(input: { at: string; found: number; expected: number }) {
+    const from = keySourceOf(input.at);
     super({
       code: 'X_SECRETS_KEY_INVALID',
       // The lost-key sentence is CAUSE, not fix: a `fix:` is one command, and no command restores
       // a key file — so the file branch says what cannot be done here and the fix measures it.
       cause:
-        input.at === 'ULTIMATE_SECRETS_KEY'
+        from === 'env'
           ? `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters`
-          : `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters — the key FILE is what is wrong, so re-exporting it changes nothing: restore it from wherever the team keeps the key, because a lost key cannot be recovered or regenerated`,
+          : from === 'file'
+            ? `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters — the key FILE is what is wrong, so re-exporting it changes nothing: restore it from wherever the team keeps the key, because a lost key cannot be recovered or regenerated`
+            : `the master key the installed secret source read at ${renderCauseValue(input.at)} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters`,
       // Branches on WHERE the bad key was read. From the variable, re-reading the file repairs
       // it. From the FILE, that same line reads the truncated file into the variable and is
-      // refused again, so the command is the measurement that says when the restore worked.
+      // refused again, so the command is the measurement that says when the restore worked. From
+      // an app's source (a KMS ARN, a Vault path) there is no file to measure: the source is fixed.
       fix:
-        input.at === 'ULTIMATE_SECRETS_KEY'
+        from === 'env'
           ? `export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"   # the key file holds the ${input.expected} characters on one line`
-          : `wc -c ${renderFixShellArg(input.at, '<the key file the cause names>')}   # ${input.expected + 1} is a whole key and its newline; any other count is the truncated or padded file to restore`,
+          : from === 'file'
+            ? `wc -c ${renderFixShellArg(input.at, '<the key file the cause names>')}   # ${input.expected + 1} is a whole key and its newline; any other count is the truncated or padded file to restore`
+            : `export const runtime = { secretSource }   # apps/<app>/runtime.ts — that source must answer the key as ${input.expected} lowercase hex characters (hex-encode a KMS data key)`,
       meta: { at: input.at },
     });
   }

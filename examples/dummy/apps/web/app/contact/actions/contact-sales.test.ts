@@ -2,16 +2,17 @@
 // receipt quotes the amount they meant — `1.234,56` on the Spanish page is twelve hundred euros,
 // never 1.234 — and a reading the currency cannot hold is a 422 on this request, never a rounding.
 
-import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { jobDriver, memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 import { afterEach, beforeEach, expect, unitTest } from '@ultimat3/testing';
 import { contactSales } from './contact-sales';
 
-const previous = jobDriver();
-beforeEach(() => setJobDriver(memoryJobDriver()));
-afterEach(() => {
-  if (previous === undefined) resetJobDriver();
-  else setJobDriver(previous);
+// The install answers its own undo, which puts back whatever was installed before it.
+let release = (): void => {};
+beforeEach(() => {
+  release = installJobDriver(memoryJobDriver());
 });
+afterEach(() => release());
 
 const enquiry = {
   email: 'ada@example.test',

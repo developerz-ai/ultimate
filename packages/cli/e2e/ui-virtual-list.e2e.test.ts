@@ -5,9 +5,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no path API — nothing native joins paths.
 import { join } from 'node:path';
+import type { SleepClock } from '@ultimat3/core';
 import { stylesFor } from '@ultimat3/render/server';
 import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
-import type { ShotClock, ShotSession } from '../src/browser-launcher-port';
+import type { ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 import { buildIslands } from '../src/island-bundle';
 import type { FixtureApp } from '../src/templates/island-fixture';
@@ -100,7 +101,7 @@ const SETTLE = `await (async () => {
 
 const box = (id: string): string => `document.querySelector('#${id} ul').parentElement`;
 
-const clock: ShotClock = {
+const clock: SleepClock = {
   now: () => new Date(),
   monotonic: () => performance.now(),
   // real-clock: the shot driver's waits are on Chrome's time, another process's.

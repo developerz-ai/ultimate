@@ -11,13 +11,13 @@ import { ctxOf, isRole, logger, markReady, ROLES } from '@ultimat3/core';
 import { dbExecutor } from '@ultimat3/db';
 import type { RateLimitStore, Route, ServerHandle, WebSocketMount } from '@ultimat3/http';
 import {
-  adoptRateLimitStore,
   configuredAuthenticator,
   configuredHttp,
   defineHttpConfig,
   httpServer,
   mergeHttpConfig,
 } from '@ultimat3/http';
+import { installRateLimitStore } from '@ultimat3/http/adapter';
 import type { OutboxRelay } from '@ultimat3/jobs';
 import {
   jobDriver,
@@ -194,7 +194,8 @@ function startWeb(
     ...(options.overrides?.middleware === undefined
       ? {}
       : { middleware: options.overrides.middleware }),
-    ...(store === undefined ? {} : { rateLimitStore: store }),
+    // No store here: `httpServer` reads the INSTALLED one, which `startRoles` installed (the same
+    // `rateLimitStoreFor` answer) before any role could serve.
     // The app's own declaration UNDERNEATH, this boot's facts on top. Without the first half the
     // entire HTTP tuning surface was unreachable from a shipped app — this literal was its only
     // construction, so `cors.origins` stayed `[]` in every deployment (no cross-origin call could
@@ -242,7 +243,7 @@ function startWeb(
  * The one moment the boot can still see both answers.
  *
  * `startServices` captures the drivers it built; `loadApp` imports the app's modules after it, and
- * a module calling `setJobDriver()` at import time moves the ambient slot and leaves the capture
+ * a module calling `installJobDriver()` at import time moves the ambient slot and leaves the capture
  * alone. From here on the two are indistinguishable at every call site: `handle.enqueue()` reads
  * the ambient one, `jobWorker` claims from the captured one, and `/_x` reads the ambient one —
  * so the dashboard agrees with the enqueue side and disagrees with reality.
@@ -281,7 +282,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // A frame of its own over what `startServices` adopted, popped by its own undo — so stopping
     // these roles takes back exactly this install, whatever else stacked over or under it.
     const limits = rateLimitStoreFor(options);
-    const restoreLimits = limits === undefined ? () => undefined : adoptRateLimitStore(limits);
+    const restoreLimits = limits === undefined ? () => undefined : installRateLimitStore(limits);
     started.push(async () => restoreLimits());
     // First, and for every role rather than only the two that open an HTTP socket: `worker` and
     // `sync` are precisely the roles whose HPAs read a series the process itself has to publish,

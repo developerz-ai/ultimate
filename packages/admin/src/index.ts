@@ -72,7 +72,6 @@ export {
   type AuditLogOptions,
   type AuditOutcome,
   type AuditQuery,
-  type AuditSink,
   auditCursorOf,
   auditEntry,
   auditEntryMatches,

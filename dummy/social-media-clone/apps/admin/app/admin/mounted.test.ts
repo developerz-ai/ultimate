@@ -6,7 +6,7 @@
 // framework's own server renderer, with the actor carried on core's request context exactly as the
 // HTTP pipeline carries it.
 
-import { beforeAll, expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
 // Side-effect import: `defineCatalogs()` runs on the way through, and without it every `t()` in
 // the tree renders `⟦key⟧`. The dev server gets this for free — the framework's module scan walks
 // `packages/*/src/**` — but a test file reaches the admin directly and has to say so.
@@ -15,7 +15,8 @@ import { seedDemo } from '@social-media-clone/db';
 import { MCP_SCOPE, mcpOAuth } from '@social-media-clone/web/app/oauth/server';
 import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
-import { memoryJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 
 // Loaded after `@ultimat3/render/server` has installed its `.tsx` loader, and never statically:
 // `admin.ts` statically imports `pages/ops.tsx`. The rule is enforced by
@@ -63,11 +64,14 @@ const ask = (
     },
   );
 
+// `/admin/jobs` reads the process's queue, as it does under `x dev` and in the container. The
+// install answers its own undo, so the next file in this process inherits nothing.
+let releaseQueue = (): void => {};
 beforeAll(async () => {
-  // `/admin/jobs` reads the process's queue, as it does under `x dev` and in the container.
-  setJobDriver(memoryJobDriver());
+  releaseQueue = installJobDriver(memoryJobDriver());
   await seedDemo();
 });
+afterAll(() => releaseQueue());
 
 test('this app serves the dashboard with NO page file — the declaration is the whole host', async () => {
   const pages: string[] = [];

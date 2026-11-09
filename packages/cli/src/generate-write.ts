@@ -5,8 +5,8 @@
 
 // why: `resolve`/`sep` and not `join`: only resolving the assembled path can prove it stayed
 // inside the app root, and `node:path` is the only API that resolves one. `node:fs` for the exists
-// check.
-import { existsSync } from 'node:fs';
+// check, and the synchronous read a `replaces-pristine` file is compared through.
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { commentSafe } from './comment-safe';
@@ -211,6 +211,12 @@ function planFile(
     return existsSync(absolute)
       ? { kind: 'skip' }
       : { kind: 'write', file, absolute, contents: file.contents };
+  }
+  // The scaffold's own copy, untouched, is replaced without asking; an edited one is the author's.
+  if (file.merge === 'replaces-pristine' && existsSync(absolute)) {
+    if (readFileSync(absolute, 'utf8') === file.pristine) {
+      return { kind: 'write', file, absolute, contents: file.contents };
+    }
   }
   if (!force && existsSync(absolute)) {
     return {

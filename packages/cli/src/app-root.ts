@@ -63,6 +63,7 @@ export function requireAppRoot(command: string, from: string): AppRoot {
       from: dir,
       below: appDirsBelow(dir),
       adopter: dependsOnFramework(dir),
+      xScript: hasXScript(dir),
     });
   }
   return root;
@@ -89,6 +90,18 @@ export function appDirsBelow(from: string): readonly string[] {
 function dependsOnFramework(from: string): boolean {
   try {
     return readFileSync(join(from, 'package.json'), 'utf8').includes('"@ultimat3/');
+  } catch {
+    return false;
+  }
+}
+
+/** Whether `from`'s manifest declares an `x` script — the framework repo's root does. Never throws. */
+function hasXScript(from: string): boolean {
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(join(from, 'package.json'), 'utf8'));
+    if (typeof manifest !== 'object' || manifest === null || !('scripts' in manifest)) return false;
+    const { scripts } = manifest;
+    return typeof scripts === 'object' && scripts !== null && 'x' in scripts;
   } catch {
     return false;
   }

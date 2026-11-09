@@ -11,6 +11,7 @@
 //   bun test packages/scraping/src/session.job.test.ts
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import type { SleepClock } from '@ultimat3/core';
 import {
   ctxOf,
   isSealed,
@@ -18,6 +19,7 @@ import {
   structuredLogger,
   sweepProbeDatabases,
 } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core/adapter';
 import type { JobDriver, JobRecord, PgExecutor, Worker } from '@ultimat3/jobs';
 import {
   jobWorker,
@@ -29,8 +31,6 @@ import {
 import { t } from '@ultimat3/schema';
 import { memoryStorageDriver } from '@ultimat3/storage';
 import type { PromptRequest } from './auth';
-import type { ScrapeClock } from './clock';
-import { systemScrapeClock } from './clock';
 import type { ScrapeDriver } from './driver';
 import { fakeBrowser } from './driver-fake';
 import { eventPrompt } from './event-prompt';
@@ -72,10 +72,10 @@ const adminExecutor = {
  * The REAL clock, read past the test preload's frozen `Date`: the answering process is a plain
  * `bun` with no preload, and "published after the prompt was asked" compares the two.
  */
-const realClock: ScrapeClock = {
+const realClock: SleepClock = {
   now: () => new Date(performance.timeOrigin + performance.now()),
   monotonic: () => performance.now(),
-  sleep: (ms, signal) => systemScrapeClock.sleep(ms, signal),
+  sleep: (ms, signal) => systemClock.sleep(ms, signal),
 };
 
 interface Input {

@@ -10,6 +10,14 @@ import { existsSync, readFileSync } from 'node:fs';
 // Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { isUltimateError } from './errors';
+import type { MasterKeyRef } from './secret-source';
+import {
+  builtInMasterKey,
+  masterKeyPath,
+  resolveMasterKey,
+  SECRETS_KEY_ENV,
+  secretSource,
+} from './secret-source';
 import type { SecretValues } from './secrets';
 import { masterKeyId, openSecrets, parseMasterKey, sealSecrets } from './secrets';
 import { SecretsFileMissingError, SecretsKeyMissingError } from './secrets-errors';
@@ -17,29 +25,15 @@ import { OWNER_ONLY_MODE, renameOver, writeOwnerOnlyFile } from './secrets-key-f
 
 /** Committed. Encrypted at rest, diffable, and the only file `x secrets` writes into the repo. */
 export const SECRETS_FILE = 'secrets.enc.json';
-/** Never committed — `x secrets init` writes the ignore rule before it writes this. */
-export const SECRETS_KEY_FILE = '.secrets.key';
-/** Read first, so a container gets its key from the platform's secret store and never from a file. */
-export const SECRETS_KEY_ENV = 'ULTIMATE_SECRETS_KEY';
 /**
  * Owner read/write. A key file the rest of the box can read is a key file that has leaked. On
  * Windows the mode is not what keeps other accounts out — the ACL is, and the writers set it.
  */
 export const SECRETS_KEY_MODE = OWNER_ONLY_MODE;
 
-export type MasterKeySource = 'env' | 'file';
-
-export interface MasterKeyRef {
-  readonly hex: string;
-  readonly source: MasterKeySource;
-  /** The env var name or the file path, for an error's `cause` — never the key itself. */
-  readonly at: string;
-}
-
 type EnvRecord = Record<string, string | undefined>;
 
 export const secretsPath = (root: string): string => join(root, SECRETS_FILE);
-export const masterKeyPath = (root: string): string => join(root, SECRETS_KEY_FILE);
 export const secretsFileExists = (root: string): boolean => existsSync(secretsPath(root));
 /**
  * Where `x secrets rotate` STAGES a new key before sealing the committed file with it; the rename
@@ -75,27 +69,36 @@ async function openWithStaged(
 }
 
 /**
- * Env var first, key file second. That order is what makes one image run everywhere: a container
- * is handed `ULTIMATE_SECRETS_KEY` and never ships a key file, while a checkout has the file and
- * needs no exported variable.
+ * The BUILT-IN lookup — env var first, key file second — synchronously, for the tools that manage
+ * those two (`x secrets`, `x doctor`). A booting process asks the installed `SecretSource` instead
+ * (`requireInstalledMasterKey`), so a KMS source is the answer there and only there.
  */
 export function findMasterKey(
   root: string,
   env: EnvRecord = process.env,
 ): MasterKeyRef | undefined {
-  const fromEnv = env[SECRETS_KEY_ENV];
-  if (fromEnv !== undefined && fromEnv.trim().length > 0) {
-    return { hex: fromEnv.trim(), source: 'env', at: SECRETS_KEY_ENV };
-  }
-  const path = masterKeyPath(root);
-  if (!existsSync(path)) return undefined;
-  return { hex: readFileSync(path, 'utf-8').trim(), source: 'file', at: path };
+  return builtInMasterKey({ root, env });
 }
 
 export function requireMasterKey(root: string, env: EnvRecord = process.env): MasterKeyRef {
   const found = findMasterKey(root, env);
   if (found !== undefined) return found;
   throw new SecretsKeyMissingError({ envVar: SECRETS_KEY_ENV, keyPath: masterKeyPath(root) });
+}
+
+/** The installed source's key, or `X_SECRETS_KEY_MISSING` naming that source. */
+export async function requireInstalledMasterKey(
+  root: string,
+  env: EnvRecord = process.env,
+): Promise<MasterKeyRef> {
+  const found = await resolveMasterKey(root, env);
+  if (found !== undefined) return found;
+  const source = secretSource().name;
+  throw new SecretsKeyMissingError({
+    envVar: SECRETS_KEY_ENV,
+    keyPath: masterKeyPath(root),
+    ...(source === 'default' ? {} : { source }),
+  });
 }
 
 /** The key's public id. Safe to print, safe to commit — it is what names a rotation in a diff. */
@@ -164,7 +167,8 @@ export interface SecretsInstallOptions {
 export interface SecretsInstallReport {
   readonly present: boolean;
   readonly path: string;
-  readonly keySource: MasterKeySource | undefined;
+  /** The `name` of the source that found the key. */
+  readonly keySource: string | undefined;
   readonly keyId: string | undefined;
   /** Variables this call set. */
   readonly installed: readonly string[];
@@ -212,7 +216,7 @@ export async function installSecrets(
       skipped: [],
     };
   }
-  const { values, key } = await openWithStaged(root, requireMasterKey(root, env));
+  const { values, key } = await openWithStaged(root, await requireInstalledMasterKey(root, env));
   const installed: string[] = [];
   const skipped: string[] = [];
   for (const [name, value] of Object.entries(values)) {

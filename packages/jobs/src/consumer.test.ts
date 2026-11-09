@@ -6,10 +6,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { type PgliteClient, pgliteClient, setDbClient } from '@ultimat3/db';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { consumer } from './consumer';
 import { consumerDeclarationOf, consumerRow, registeredConsumers } from './consumer-registry';
 import type { ConsumerDefinition } from './consumer-types';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { getJob, isJobHandle, resetJobs } from './job';
 import { type KeyedHarness, workerOn } from './keyed-concurrency-fixture';
@@ -70,7 +70,7 @@ let db: PgliteClient | undefined;
 beforeEach(() => {
   db ??= pgliteClient();
   setDbClient(db);
-  setJobDriver(memoryJobDriver({ clock }));
+  installJobDriver(memoryJobDriver({ clock }));
 });
 
 afterEach(() => {
@@ -150,7 +150,7 @@ describe('one run on the memory queue', () => {
       },
     });
     const driver = memoryJobDriver({ clock });
-    setJobDriver(driver);
+    installJobDriver(driver);
     const worker = workerOn(harness, driver, 'w-arm');
 
     const fired = await handle.supervisor.enqueue();
@@ -191,7 +191,7 @@ describe('the self-enqueue trap', () => {
       },
     });
     const driver = memoryJobDriver({ clock });
-    setJobDriver(driver);
+    installJobDriver(driver);
     await handle.enqueue({ key: 'acct-1' });
     const outcomes = (await workerOn(harness, driver, 'w-self').tick()).map((run) => run.outcome);
 

@@ -6,19 +6,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { ctxOf } from '@ultimat3/core';
+import { installClock, noWaitClock } from '@ultimat3/core/adapter';
 import type { JobDriver, JobHandle } from '@ultimat3/jobs';
-import {
-  jobWorker,
-  memoryEventBus,
-  memoryJobDriver,
-  resetEventBus,
-  resetJobs,
-  setEventBus,
-} from '@ultimat3/jobs';
+import { jobWorker, memoryEventBus, memoryJobDriver, resetJobs } from '@ultimat3/jobs';
+import { installEventBus, resetEventBus } from '@ultimat3/jobs/adapter';
 import { t } from '@ultimat3/schema';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import type { PromptRequest } from './auth';
-import { noWaitClock, resetScrapeClock, setScrapeClock } from './clock';
 import type { ScrapeDriver, SessionInit } from './driver';
 import { fakeBrowser } from './driver-fake';
 import { answerPrompt, eventPrompt } from './event-prompt';
@@ -108,16 +102,18 @@ const enqueue = (handle: JobHandle<Input>, connectionId = 'conn-1') => {
   });
 };
 
+let releaseClock: () => void = () => undefined;
+
 beforeEach(() => {
   queue = memoryJobDriver();
-  setEventBus(memoryEventBus());
+  installEventBus(memoryEventBus());
   // No test below waits on a wall clock, and none sets a clock on its definition — the run takes
   // the process's, which is the seam. Real time, and every sleep one turn of the event loop.
-  setScrapeClock(noWaitClock);
+  releaseClock = installClock(noWaitClock);
 });
 
 afterEach(() => {
-  resetScrapeClock();
+  releaseClock();
   resetEventBus();
   resetStorage();
   resetJobs();

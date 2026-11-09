@@ -79,10 +79,12 @@ installTabA11yAudit();
 // the worker answering 503 X_DRAINING for a reason nothing in that file explains. Each file starts
 // from a live lifecycle, as a file run alone would have it.
 if (Bun.env[ISOLATED_ENV] !== '1') {
-  const { forgetHandedOutActionPaths, resetMeterStore } = await import('@ultimat3/action');
+  const { forgetHandedOutActionPaths } = await import('@ultimat3/action');
   onFileBoundary(forgetHandedOutActionPaths);
+  // The meter store's reset is its port's, on the `./adapter` subpath (slice 21).
+  const { resetMeterStore } = await import('@ultimat3/action/adapter');
   onFileBoundary(resetMeterStore);
-  const { resetRateLimitStore } = await import('@ultimat3/http');
+  const { resetRateLimitStore } = await import('@ultimat3/http/adapter');
   onFileBoundary(resetRateLimitStore);
   const { resetLifecycle } = await import('@ultimat3/core');
   onFileBoundary(resetLifecycle);

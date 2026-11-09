@@ -18,7 +18,7 @@ import { openAiProvider } from './openai-provider';
 import { definePrompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider } from './provider';
 import { anthropicProvider, costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import { ignoredSampling } from './sampling';
 import { replaying } from './sse-transcript-fixture';
 import { runLlmToolCall } from './tools';
@@ -61,9 +61,7 @@ describe("a tool that itself calls a model: its spend is the run's spend", () =>
       },
       stream: (request) => echoProvider().stream(request),
     };
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
   }
   const declare = (name: string) => {
     const inner = llm({

@@ -4,6 +4,7 @@
 // found. All three are declared structurally, which keeps the import boundary intact and keeps
 // the pipeline testable.
 import type { Actor, UltimateError } from '@ultimat3/core';
+import { assert, finiteCount } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import type { OverlayNotice } from './overlay';
 import type { UltimateRequest } from './request';
@@ -79,15 +80,57 @@ export type Authenticator = NonNullable<ServerHooks['authenticate']>;
  * place both are in scope, and that is where the wire belongs.
  */
 let configured: Authenticator | undefined;
+let credentialTtl: number | undefined;
 
-export const configureAuthenticator = (authenticate: Authenticator): void => {
+/**
+ * The longest `credentialTtlMs` may be: the `sync` node's own re-check window. The option may only
+ * SHORTEN how long a websocket grant stands — a longer one turns off the re-check that makes
+ * `logout`, `revokeSession` and `disableUser` close a socket, for as long as the token lives.
+ */
+export const MAX_CREDENTIAL_TTL_MS = 5 * 60_000;
+
+export interface AuthenticatorOptions {
+  /**
+   * How long an identity this authenticator resolved may stand on a LONG-LIVED connection — a
+   * websocket, which carries no request to re-authenticate — before the host asks again. The
+   * credential's lifetime is this function's fact (it knows what a token is worth), so it is
+   * declared here and not as a second authenticator on the boot. Omitted, the host's own default
+   * (the `sync` node's five minutes). A whole number of milliseconds, 1 to `MAX_CREDENTIAL_TTL_MS`.
+   */
+  readonly credentialTtlMs?: number;
+}
+
+/**
+ * Declare the app's authenticator, and with it what its credentials are worth. A second call
+ * replaces the first WHOLE — a lifetime left over from an earlier declaration would be a fact
+ * about a function that no longer answers.
+ */
+export const configureAuthenticator = (
+  authenticate: Authenticator,
+  options: AuthenticatorOptions = {},
+): void => {
+  // Screened BEFORE the swap, so a refused call leaves the previous declaration standing.
+  const ttl =
+    options.credentialTtlMs === undefined
+      ? undefined
+      : finiteCount('configureAuthenticator', 'credentialTtlMs', options.credentialTtlMs, 1);
+  assert(
+    ttl === undefined || ttl <= MAX_CREDENTIAL_TTL_MS,
+    `configureAuthenticator credentialTtlMs is ${String(ttl)}, past the ${String(MAX_CREDENTIAL_TTL_MS)}ms re-check window — a longer grant keeps a revoked actor's websocket open for as long as the token lives`,
+    `credentialTtlMs: ${String(MAX_CREDENTIAL_TTL_MS)}   # or less: it shortens the sync re-check, never lengthens it`,
+  );
   configured = authenticate;
+  credentialTtl = ttl;
 };
 
 /** What a host passes as `hooks.authenticate`. `undefined` means every request is anonymous. */
 export const configuredAuthenticator = (): Authenticator | undefined => configured;
 
+/** The declared `credentialTtlMs`, or `undefined` for "the host's default". */
+export const configuredCredentialTtlMs = (): number | undefined => credentialTtl;
+
 /** Test seam. Production configures once at boot and never unconfigures. */
 export const resetAuthenticator = (): void => {
   configured = undefined;
+  credentialTtl = undefined;
 };

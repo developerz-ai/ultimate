@@ -73,7 +73,7 @@ export function eventPrompt(options: EventPromptOptions): PromptHandler {
         driver: 'event bus',
         cause:
           'eventPrompt() was asked on the in-memory event bus — the answer is published by another process and can never reach this one',
-        fix: 'call setEventBus(postgresEventBus({ executor })) at boot — x dev and the served roles do — or pass bus: postgresEventBus({ executor }) to eventPrompt()',
+        fix: 'export const runtime = { eventBus: postgresEventBus({ executor }) }   # apps/<app>/runtime.ts — or delete that line: x dev and the served roles install it — or pass bus: postgresEventBus({ executor }) to eventPrompt()',
       });
     }
     const event = promptEventName(request.runId, request.index);

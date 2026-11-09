@@ -2,12 +2,8 @@
 // of their own, so the same file's next HTTP call is not a 429 the exercise left behind.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  defineHttpConfig,
-  httpServer,
-  installedRateLimitStore,
-  resetRateLimitStore,
-} from '@ultimat3/http';
+import { defineHttpConfig, httpServer, installedRateLimitStore } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';

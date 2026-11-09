@@ -5,6 +5,14 @@
 
 import type { GeneratedFile } from './naming';
 import { authModule } from './scaffold-auth';
+import {
+  baseRuntimeSource,
+  baseRuntimeTest,
+  RUNTIME_HEADER,
+  RUNTIME_MODULE,
+  RUNTIME_TEST,
+  runtimePortLines,
+} from './scaffold-runtime-ports';
 import { destroySessionTest } from './sign-in-action-tests';
 
 /** Every generated file lives under the scaffold's own auth slice, beside `auth.ts`. */
@@ -215,8 +223,6 @@ const styleSource =
 `;
 
 /** The files both shapes write, with the guard over this shape's settings. */
-/** Where the generated runtime lives: `apps/<app>/runtime.ts` is what both boots read first. */
-export const RUNTIME_MODULE = 'apps/web/runtime.ts';
 
 /** The plain routes a shape mounts: an import line, and the expression `routes:` takes. */
 export interface RuntimeRoutes {
@@ -224,16 +230,17 @@ export interface RuntimeRoutes {
   readonly expression: string;
 }
 
-const runtimeSource = (
-  routes: RuntimeRoutes | undefined,
-): string => `// What this app hands the framework's boot — \`x dev\` and the container both import it before a
-// port is bound. The sign-in guard runs HERE for that reason: a throw in this module stops the
-// role, where the same throw in a module the app scan imports is logged and the boot goes on.
+const runtimeSource = (routes: RuntimeRoutes | undefined): string => `${RUNTIME_HEADER}
+// The sign-in guard runs HERE: a throw in this module stops the role, where the same throw in a
+// module the app scan imports is logged and the boot goes on.
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
 import { assertSignInConfigured } from './app/auth/sign-in-guard';${routes === undefined ? '' : `\n${routes.importLine}`}
 
 assertSignInConfigured(process.env);
 
-export const runtime = {${routes === undefined ? '' : ` routes: ${routes.expression} `}};
+export const runtime = {
+${routes === undefined ? '' : `  routes: ${routes.expression},\n`}${runtimePortLines()}
+} satisfies RuntimeOverrides;
 `;
 
 const runtimeTest = (
@@ -253,8 +260,19 @@ export function sharedSignInFiles(
   routes?: RuntimeRoutes,
 ): readonly GeneratedFile[] {
   return [
-    { path: RUNTIME_MODULE, contents: runtimeSource(routes) },
-    { path: 'apps/web/runtime.test.ts', contents: runtimeTest(routes) },
+    // Over `x new`'s own pair while it is untouched; an author's edited copy is a conflict.
+    {
+      path: RUNTIME_MODULE,
+      contents: runtimeSource(routes),
+      merge: 'replaces-pristine',
+      pristine: baseRuntimeSource(),
+    },
+    {
+      path: RUNTIME_TEST,
+      contents: runtimeTest(routes),
+      merge: 'replaces-pristine',
+      pristine: baseRuntimeTest(),
+    },
     { path: `${AUTH_DIR}/sign-in-flow.ts`, contents: flowSource() },
     { path: `${AUTH_DIR}/sign-in-flow.test.ts`, contents: flowTest() },
     { path: `${AUTH_DIR}/sign-in-guard.ts`, contents: guardSource(keys, why) },

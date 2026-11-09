@@ -16,7 +16,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
-import { configureAi } from './runtime';
+import { installAiGateway } from './runtime';
 import type { ProjectableAction } from './tools';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
@@ -122,9 +122,7 @@ describe('every tool_use the transcript replays is answered', () => {
       },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const support = agent({
       input: Input,
@@ -160,9 +158,7 @@ describe('every tool_use the transcript replays is answered', () => {
       { calls: [{ name: 'respond', input: { answer: 42 } }] },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const support = agent({
       input: Input,
@@ -206,9 +202,7 @@ describe('every tool_use the transcript replays is answered', () => {
       },
       stream: (request) => echoProvider().stream(request),
     };
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const support = agent({
       input: Input,

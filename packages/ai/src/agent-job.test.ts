@@ -15,11 +15,10 @@ import {
   executeJob,
   isJobHandle,
   memoryJobDriver,
-  resetJobDriver,
   resetJobs,
   resetJobsFacade,
-  setJobDriver,
 } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
@@ -31,7 +30,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
@@ -147,7 +146,7 @@ beforeEach(() => {
   resetJobs();
   resetJobsFacade();
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterAll(() => {
@@ -157,9 +156,7 @@ afterAll(() => {
 
 describe('an agent is durable work — issue #125', () => {
   test('agentJob() produces a handle the queue accepts, where .job() never could', () => {
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
     const summarise = summariser('summariseAgent');
 
     // The shape this replaces. `isJobHandle` needs `kind === 'job'` AND membership of a WeakMap
@@ -181,9 +178,7 @@ describe('an agent is durable work — issue #125', () => {
   });
 
   test('the queue key is the declared name, never the export name', () => {
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
     const handle = agentJob(summariser('renamedAgent'), {
       name: 'stable-queue-key',
       tenant: 'none',
@@ -200,9 +195,7 @@ describe('the action projection is read lazily, at boot order', () => {
   // agentJob(summarise, ...)` both run at module scope, and `registerActions(module)` names them
   // after. Reading `target.job()` eagerly makes that ordinary file `X_ACTION_UNREGISTERED`.
   test('agentJob() on an action nothing has named yet still declares, and keys off it later', () => {
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
     const unnamed = agent({
       input: Input,
       output: Output,
@@ -224,9 +217,7 @@ describe('the action projection is read lazily, at boot order', () => {
   });
 
   test('a declared idempotencyKey wins over the projection default', () => {
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
     const handle = agentJob(summariser('keyedAgent'), {
       name: 'keyed',
       tenant: 'none',
@@ -239,9 +230,7 @@ describe('the action projection is read lazily, at boot order', () => {
 
 describe('tenant and retry are required, and stay required', () => {
   test('a missing tenant is refused at declaration, not at the first claim', () => {
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
     const summarise = summariser('untenantedAgent');
     expect(() =>
       // The runtime backstop behind the compile error, for generated code and JS callers.
@@ -252,9 +241,7 @@ describe('tenant and retry are required, and stay required', () => {
   });
 
   test('a retry policy that can never run is refused at declaration', () => {
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
     const summarise = summariser('unrunnableAgent');
     expect(() =>
       agentJob(summarise, { name: 'unrunnable', tenant: 'none', retry: { attempts: 0 } }),
@@ -266,9 +253,9 @@ describe('the agent runs on the job path, under the job’s identity', () => {
   test('enqueued, claimed and executed — and the actor is the worker context, never the model', async () => {
     const seenActors: { id: string; orgId: string | undefined }[] = [];
     const provider = scripted(true);
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
-    });
+    installAiGateway(
+      providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
+    );
     const summarise = summariser('actorAgent', [actorProbe(seenActors)]);
     const handle = agentJob(summarise, {
       name: 'summarise-actor',
@@ -289,9 +276,9 @@ describe('the agent runs on the job path, under the job’s identity', () => {
 
   test('a completed run settles as completed', async () => {
     const provider = scripted();
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
-    });
+    installAiGateway(
+      providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
+    );
     const handle = agentJob(summariser('happyAgent'), {
       name: 'summarise-happy',
       tenant: (input) => input.orgId,
@@ -307,9 +294,9 @@ describe('the agent runs on the job path, under the job’s identity', () => {
 describe('the ceilings shipped for the request path hold on the job path too', () => {
   test('a per-run token budget stops the loop mid-way, driven from the queue', async () => {
     const provider = scripted(true);
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
-    });
+    installAiGateway(
+      providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
+    );
     const handle = agentJob(
       // Enough for the first turn's estimate, not for a second.
       summariser('cappedAgent', [actorProbe([])], { tokensPerRun: 4_200 }),
@@ -329,9 +316,9 @@ describe('the ceilings shipped for the request path hold on the job path too', (
 
   test('a run stopped for repeating itself is dead-lettered on attempt one, never bought three times', async () => {
     const provider = scripted(true);
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
-    });
+    installAiGateway(
+      providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
+    );
     const handle = agentJob(summariser('loopingJobAgent', [actorProbe([])], undefined, 3), {
       name: 'summarise-looping',
       tenant: (input) => input.orgId,
@@ -361,7 +348,7 @@ describe('the ceilings shipped for the request path hold on the job path too', (
       },
       stream: (request) => echoProvider().stream(request),
     };
-    configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [hung] }) });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [hung] }));
     const handle = agentJob(summariser('abandonedAgent'), {
       name: 'summarise-abandoned',
       tenant: 'none',
@@ -385,9 +372,9 @@ describe('the ceilings shipped for the request path hold on the job path too', (
 
   test("the job's ctx.signal reaches the agent's turn loop, so a cancelled attempt buys nothing", async () => {
     const provider = scripted(true);
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
-    });
+    installAiGateway(
+      providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
+    );
     const handle = agentJob(summariser('cancellableAgent', [actorProbe([])]), {
       name: 'summarise-cancellable',
       tenant: 'none',

@@ -20,7 +20,7 @@ import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { Auth } from './auth';
 import { defineAuth, login, register } from './auth';
-import { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
+import { installAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
 import { memoryAuthAdapter } from './memory-adapter';
 import type { AuthRateLimitPolicy } from './rate-limit';
 import { postgresAuthLimiter, SQL_AUTH_LIMIT_TABLES } from './rate-limit-postgres';
@@ -100,7 +100,7 @@ beforeEach(async () => {
   clock.set(START_MS);
   await sql.unsafe('delete from x_auth_lockouts', []);
   // What a host boot does once, before it imports a single app module.
-  configureAuthLimiters((policy) =>
+  installAuthLimiters((policy) =>
     postgresAuthLimiter({ executor: executorOn(sql), clock, policy }),
   );
 });

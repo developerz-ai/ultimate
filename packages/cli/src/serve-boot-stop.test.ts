@@ -6,7 +6,8 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
-import { installedFailureStore, resetLifecycle, setFailureStore } from '@ultimat3/core';
+import { installedFailureStore, resetLifecycle } from '@ultimat3/core';
+import { installFailureStore } from '@ultimat3/core/adapter';
 import { processRoot } from './process-root-fixture';
 import { serveApp } from './serve';
 
@@ -14,7 +15,7 @@ const ROOT = processRoot(join(import.meta.dir, '..', '.serve-stop-fixture'));
 
 afterAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
-  setFailureStore(null);
+  installFailureStore(null);
   resetLifecycle();
 });
 
@@ -30,7 +31,7 @@ describe('unit · ServedApp.stop releases the whole boot', () => {
       "import { defineConfig } from '@ultimat3/core';\n" +
         "export const config = defineConfig({ name: 'serve-stop-fixture', failureCapture: { enabled: true } });\n",
     );
-    setFailureStore(null);
+    installFailureStore(null);
     const env = { NODE_ENV: 'test', ULTIMATE_STATE_DIR: join(ROOT, '.x') };
     const worker = await serveApp({ root: ROOT, env, role: 'worker', port: 0, metricsPort: 0 });
     expect(installedFailureStore()).not.toBeNull();

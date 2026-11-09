@@ -4,13 +4,12 @@
 // provider API told to end a session that now belongs to another run.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, structuredLogger, UltimateError } from '@ultimat3/core';
+import { ctxOf, frozenClock, structuredLogger, UltimateError } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpBrowserLike, CdpLauncherLike } from './cdp-port';
 import type { CdpResolverRequest } from './cdp-resolver';
-import { testScrapeClock } from './clock';
 import type { SessionInit } from './driver';
 import { remoteBrowser } from './driver-cdp';
 import type { ScrapeDefinition } from './scrape';
@@ -70,7 +69,7 @@ const rental = (
 const init = (over: Partial<SessionInit> = {}): SessionInit => ({
   name: 'orders',
   rules: { allowHosts: ['shop.test'] },
-  clock: testScrapeClock(),
+  clock: frozenClock(),
   timeoutMs: 1_000,
   logger: structuredLogger({ writer: () => undefined }),
   ...over,
@@ -103,7 +102,7 @@ const define = (
   tenant: 'none',
   allowHosts: ['shop.test'],
   robots: { ignore: 'a fake browser: there is no origin to ask' },
-  clock: testScrapeClock(),
+  clock: frozenClock(),
   egress: () => 'http://exit-7.test:8080',
   driver: remoteBrowser({ launcher: held.launcher, cdpUrl: held.resolve }),
   run,

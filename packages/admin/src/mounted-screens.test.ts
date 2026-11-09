@@ -17,7 +17,8 @@ import {
   uuid,
 } from '@ultimat3/entity';
 import { registerCatalog, resetCatalogs } from '@ultimat3/i18n';
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import {
   defineRoles,
   knownPermissions,
@@ -129,7 +130,7 @@ let rowId = '';
 beforeAll(async () => {
   process.env[KEY_ENV] = generateMasterKey();
   // `/admin/jobs` reads the process's queue, as it does in a served app.
-  setJobDriver(memoryJobDriver());
+  installJobDriver(memoryJobDriver());
   defineRoles({
     ...previousRoles,
     viewer: { grants: [...READ] },

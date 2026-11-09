@@ -67,7 +67,7 @@ Run everything from the repo root.
 | install | `bun install` |
 | fresh clone to running | `bun run setup` — idempotent; safe to re-run after every pull |
 | **the gate** | `bun run verify` — `x verify` at the repo root, 21 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. Green = shippable. The list is `VERIFY_STEP_NAMES` in `packages/cli/src/verify-step.ts` |
-| typecheck | `bun run typecheck` · start over: `bun run typecheck:clean` |
+| typecheck | `bun run typecheck` · shared: `bun run typecheck:locked` · start over: `bun run typecheck:clean` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included |
 | test (one file) | `bun test ./packages/core/src/errors.test.ts` — **always `./`**: a bare `packages/<pkg>` is a substring filter that also runs `examples/dummy/packages/<pkg>` under the wrong config |

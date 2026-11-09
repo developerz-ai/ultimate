@@ -5,9 +5,9 @@
 // through to the network would make a green offline suite that is secretly hitting production —
 // the exact failure an offline driver exists to prevent.
 
+import type { SleepClock } from '@ultimat3/core';
 import { NotImplementedError } from '@ultimat3/core';
 import type { CaptureClip } from './capture-clip';
-import type { ScrapeClock } from './clock';
 import type { ColorScheme } from './color-scheme';
 import { browserUnreachable, downloadTimeout, fixtureMissing, fixtureStale } from './error-throws';
 import { queryHtml } from './html-query';
@@ -84,7 +84,7 @@ export interface HtmlTargetInit {
   readonly driver: string;
   readonly lookup: RecordingLookup;
   readonly rules: InterceptRules;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   /** Where recordings come from, for the cause line: a directory, or `fakeBrowser()`. */
   readonly source: string;
   readonly start?: PageRecording | undefined;

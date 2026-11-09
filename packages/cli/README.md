@@ -192,6 +192,8 @@ that name where there is one (`x new` writes all twenty), the blank template oth
 | `app-load.ts` | import an app's modules so the framework registries hold it |
 | `app-mcp.ts` | the app's own MCP endpoint: `apps/<app>/mcp.ts` exports `mcp`, and both boots mount `POST` at each endpoint's own `defineAppMcp({ path })` through this one call |
 | `app-runtime.ts` | the app's `RuntimeOverrides`: `apps/<app>/runtime.ts` exports `runtime`, read by `x dev` and by `runRole` when its caller passed none |
+| `runtime-overrides.ts` / `runtime-ports.ts` / `runtime-port-bindings.ts` | one `RuntimeOverrides` field per `ADAPTER_PORTS` row (`PortValues`), and where the boot honours each: installed by ONE loop over the table (`boot` → `queue` → `services` phases), read as a value where used, or pending with the package that owes an installer. A row core adds without a binding is a build error (`PortBindings` is a `Record` over `AdapterPortName`). `import type { RuntimeOverrides } from '@ultimat3/cli/serve'` types an app's `runtime.ts` |
+| `verify-factories.ts` | the `unit` step's factory lint: `<app>/packages/db/factories.ts` exporting `factories` is linted in a child from the app root (`X_TEST_FACTORY_INVALID`, naming the factory and trait); no file, no lint |
 | `local-cli.ts` | which `x` runs: a global CLI inside an app hands over to the app's own, because a second module instance is an empty registry |
 | `measurement-actor.ts` | the actor a weigh-and-discard render runs as — every permission, never served |
 | `runtime-live-feed.ts` | what feeds the sync node this process booted: the in-process row observer under the embedded database, the WAL decoder with a real one, nothing without the role — `live=` on the ready line |
@@ -237,7 +239,8 @@ apps/web/{site,app}/<path>/<name>.island.tsx     # x g island <name> --at <dir>
 apps/admin/app/admin/pages/<name>.tsx            # x g admin:page <name> --permission p
 guards/<name>.ts                                 # x g guard <name>
 apps/web/app/auth/{sign-in,actions,…}            # x g sign-in --password | --oidc <provider>
-apps/web/runtime.ts                              #   …and the boot guard it calls
+apps/web/runtime.ts                              #   …and the boot guard it calls (x new writes the
+                                                 #   port-commented one; replaced only while untouched)
 docker/helm/templates/{servicemonitor,alert-rules}.yaml   # x g chart-alerts [--print]
 ```
 

@@ -123,8 +123,8 @@ export interface PipelineDeps {
   readonly hooks?: ServerHooks;
   readonly middleware?: readonly Middleware[];
   /**
-   * A limiter built elsewhere — `httpServer({ rateLimitStore })` is the one supported way, and
-   * it hands over a limiter built from the SAME merged config this constructor would have built.
+   * A limiter built elsewhere — `httpServer` is the one supported way, and it hands over a
+   * limiter over the INSTALLED store built from the SAME merged config this constructor would.
    * One passed from anywhere else resolves bucket names against the table IT closed over, which
    * is why `assertRouteBuckets` compares that table against the routes' declarations and refuses
    * a limiter that cannot enforce one (`X_RATE_LIMIT_BUCKET_UNBOUND`) rather than letting the

@@ -10,7 +10,7 @@
 // become — the checkpoints are transactional with the work, and this row is not.
 
 import type { Clock } from '@ultimat3/core';
-import { describeValue, finiteCount, systemClock, UltimateError } from '@ultimat3/core';
+import { describeValue, finiteCount, liveClock, UltimateError } from '@ultimat3/core';
 import { nowMs } from './clock';
 
 /**
@@ -153,7 +153,7 @@ export function decideBackfill(
   return { run: force, previous: completed, changed: completed.checksum !== checksum };
 }
 
-export function memoryBackfillLedger(clock: Clock = systemClock): BackfillLedger {
+export function memoryBackfillLedger(clock: Clock = liveClock): BackfillLedger {
   const runs = new Map<string, BackfillRun>();
   const patch = (runId: string, fields: Partial<BackfillRun>): void => {
     const existing = runs.get(runId);

@@ -7,8 +7,8 @@ import type { HttpConfig } from '@ultimat3/http';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
+import { resetIdempotency } from './adapter';
 import { toRoute } from './http';
-import { resetIdempotency } from './idempotency';
 import { mutator } from './mutator';
 
 const POST_ID = '00000000-0000-4000-8000-0000000000aa';

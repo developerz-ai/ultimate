@@ -26,7 +26,7 @@ export class NewShapeGenerateError extends UltimateError {
         `cd ${renderFixShellArg(input.target, '<the new app directory>')}`,
         '&&',
         ...['bunx', 'x', ...input.argv, '--json'].map(quoteArg),
-        '  # reproduces it; then bun test packages/cli/src/templates/shapes',
+        '  # reproduces it; then bun test ./packages/cli/src/templates/shapes',
       ].join(' '),
     });
   }

@@ -55,6 +55,7 @@ const methodOf = (input: RequestInfo | URL, init: RequestInit | undefined): stri
 export async function openEffectLog(options: EffectLogOptions): Promise<EffectLog> {
   const { currentStep } = await import('@ultimat3/jobs');
   const mail = await import('@ultimat3/mail');
+  const mailAdapter = await import('@ultimat3/mail/adapter');
   const scope = asyncContext<string>('the job simulation');
   const log: SimEffect[] = [];
   const lastStep = new Map<string, string>();
@@ -90,7 +91,7 @@ export async function openEffectLog(options: EffectLogOptions): Promise<EffectLo
       return sent;
     },
   };
-  mail.setMailDriver(recording);
+  const releaseMail = mailAdapter.installMailDriver(recording);
 
   // Set aside, never chained: a report is the process telling its operator, not the body acting.
   // An app's sink keeps state across runs (`errorGroupsSink` enqueues on a group's FIRST sighting),
@@ -124,8 +125,7 @@ export async function openEffectLog(options: EffectLogOptions): Promise<EffectLo
         globalThis.fetch = previousFetch;
       } finally {
         configureErrorReporting({ reporter: previousReporter });
-        if (previousMail === undefined) mail.resetMailDriver();
-        else mail.setMailDriver(previousMail);
+        releaseMail();
         offRows();
       }
     },

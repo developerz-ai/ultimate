@@ -177,5 +177,10 @@
  * `SERVING_ROLE_CEILING`'s 9. No existing module newly reached.
  * raised 1485 → 1486, measured 1486 (2026-11-09, plan 101 v31 wave C gate fix):
  * `SERVING_ROLE_CEILING`'s 1, `core/src/instrument-stacks.ts`. No existing module newly reached.
+ * raised 1486 → 1501, measured 1501 (2026-11-09, plan 101 v31 slice 21 W2): `SERVING_ROLE_CEILING`'s
+ * 15 — the port bindings and the `./adapter` entries the installers come from. Nothing web-only.
+ * raised 1501 → 1502, measured 1502 (2026-11-09, same slice): `cli/src/runtime-boot-ports.ts`.
+ * raised 1502 → 1503, measured 1503 (2026-11-09, same slice): `core/src/sleep-clock.ts`.
+ * raised 1503 → 1507, measured 1507 (2026-11-09, same wave): `SERVING_ROLE_CEILING`'s 4. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1486;
+export const WEB_ROLE_CEILING = 1507;

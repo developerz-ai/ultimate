@@ -131,6 +131,6 @@ Imported by every package that renders a string.
 ## Commands
 
 ```
-bun test packages/i18n
+bun test ./packages/i18n/
 bun run --filter @ultimat3/i18n typecheck
 ```

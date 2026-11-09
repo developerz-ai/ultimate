@@ -356,7 +356,7 @@ let ambient: JobsFacade | undefined;
 let fallback: JobsFacade | undefined;
 
 /**
- * Installed once at boot, next to `setJobDriver`, with the app's outbox store and its
+ * Installed once at boot, next to the job driver, with the app's outbox store and its
  * transaction accessor. `handle.enqueue()` then joins the caller's transaction wherever it is
  * called from — which is the only reason the outbox protects anything.
  */
@@ -373,7 +373,7 @@ export function jobsFacade(): JobsFacade {
   if (ambient !== undefined) return ambient;
   fallback ??= outboxJobsFacade(
     {
-      // A getter, not a snapshot: `setJobDriver()` after the first enqueue is honoured, and a
+      // A getter, not a snapshot: a driver installed after the first enqueue is honoured, and a
       // missing driver is an error at the call rather than at import time.
       get driver(): JobDriver {
         const installed = jobDriver();
@@ -381,7 +381,7 @@ export function jobsFacade(): JobsFacade {
           throw new DriverUnavailableError({
             driver: 'none',
             cause: 'no queue driver is installed in this process',
-            fix: 'call setJobDriver(memoryJobDriver()) before enqueuing, or setJobDriver(postgresJobDriver()) for a real queue',
+            fix: 'memoryJobDriver()   # jobs: in apps/<app>/runtime.ts — or enqueue from a process the boot started (x dev, or the serve entry), which builds postgresJobDriver() over DATABASE_URL',
           });
         }
         return installed;

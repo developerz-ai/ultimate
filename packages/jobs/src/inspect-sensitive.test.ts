@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { REDACTED } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
-import { resetJobDriver } from './driver';
+import { resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import { inspectJob } from './inspect';
 import { job, resetJobs } from './job';

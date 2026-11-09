@@ -13,8 +13,8 @@ import {
   shutdownHookCount,
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { resetJobDriver } from './adapter';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
-import { resetJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';

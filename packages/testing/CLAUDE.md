@@ -2,8 +2,8 @@
 
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
-Deps (16): `core` `schema`; `cache` `db` `i18n` `time`; `entity` `http` `policy`; `action`
-`jobs` `query` `realtime`; `mail` `pwa` `render`. Static in `.`: `cache`
+Deps (20): `core` `schema`; `cache` `db` `i18n` `time`; `auth` `entity` `http` `policy`; `action`
+`jobs` `query` `realtime`; `ai` `mail` `notify` `pwa` `render` `scraping` (`ai`, `auth`, `notify`, `scraping` for `swapAdapter`, dynamic-only). Static in `.`: `cache`
 (`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
 (`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
 `action`, `http`, `mail`, `pwa`, `query`, `render`, `schema` (`exercise-input.ts:16`), `time` — no `mail` destructure, no mail
@@ -37,14 +37,17 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | One body shape, five registrars | `test` (= `fixtureTest`), `unitTest`, `contractTest`, `liveTest`, `jobTest` all take `FixtureBody` + `{ timeoutMs }`: `unitTest('…', async ({ runJobs }) => …)`. Never `describe(testName('unit', …))` + `test` to get a fixture |
 | `runJobs` says who and what | `{ actor }` is the WORKER's identity (the org stays the job's declared tenant), `{ tenantId }` the enqueuer's row; `executions[n].result` is the body's return. A fresh event bus per fixture. Bodies run on the preload's frozen clock (`ctx.clock`), so a `backfill()` throttle moves `Date.now()` instead of sleeping |
 | A `runJobs` pass is a real worker's `tick()` | `fixture-jobs.ts` builds an unstarted `jobWorker` per pass, so admission runs: `concurrency` waits and `whenBusy: 'fail'` refuses (`X_JOB_KEY_BUSY`) exactly as in a fleet. Full rule: `docs/history/testing.md` |
-| Per-test state is `per-test-reset.ts` | the app preload's `beforeEach` resets the jobs event bus — only when `@ultimat3/jobs` is already loaded, so the reset never loads it |
+| One test double per need | `stub(action \| llm() \| query \| job)` replaces the BODY only (action: `overrideHandler`; query: `overrideRows`, both `./adapter`; job: `handle.run`), so policy, parse, output check and every surface stay real; `swapAdapter(port, impl)` borrows a port's `./adapter` installer. Both are undone by the preload's own hooks (`test-scope.ts`): in a test, after it; outside one, at the file boundary — never an `afterEach` a skipped block could miss |
+| A port is swappable or says why not | `swap-adapter.ts`: `BINDINGS` + `UNSWAPPED` cover `ADAPTER_PORTS` as a `Record` — a new core row is a compile error here |
+| `toHaveBeenCalledWith` is bun's name | on a `stub()` it parses the expected input by the primitive's schema (`X_TEST_EXPECTED_INPUT_INVALID`); any other receiver goes to bun's own matcher, captured once (`matcher-stub.ts`) |
+| Per-test state is `per-test-reset.ts` | the app preload's `beforeEach` resets the jobs event bus — only when `@ultimat3/jobs` is already loaded, so the reset never loads it — and `installPerTestReset` installs the test-double scope, so both preloads get it from one call |
 | A `mock.module` ends with its file | `module-mock-boundary.ts` wraps it (and `vi.mock`/`jest.mock`): the real namespace is snapshotted on a file's first mock, so its top-level code RUNS, and mocked back at the boundary. A preload's mock is left. A real one that throws on load: the next file fails `X_TEST_MODULE_MOCK_UNRESTORABLE` |
 | **The frozen clock is reset at every file boundary** | `preload.ts`, `clock-file-boundary.test.ts`: `advanceClock` / `setFrozenClock` move one process-wide instant, and a file that left it moved handed the next file on its worker a different `Date.now()` |
 | An island test is `describeIslandState` | one block per declared state: mounted in `beforeAll` (60 s), disposed in `afterAll`, one build per file. `mountIslandState` + `using` for one test's own mount; an undeclared id is `X_TEST_ISLAND_STATE_UNKNOWN` |
 | An authenticator is tested with `authRequest()` | the hook's own two arguments, real — never `as unknown as Parameters<…>` |
 | `LOG_LEVEL` above `info` filters the TERMINAL | `quiet-logs.ts` pins the logger at `info` while core loads, so a collecting `setLogSink` still sees `warn` under `LOG_LEVEL=error`. It stays the preload's FIRST import |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
-| Fixtures | the preload registers the framework bag — an app registers only what it alone knows (`seed`, `actorFor`) |
+| Fixtures | the preload registers the framework bag — an app registers only what it alone knows: `seed` as `seedFixture({ seeds, driver })` (`fixture-seed.ts`: once per test per name, rows captured on the way in, picked by label), `actorFor` |
 | Every `e2eTest` is audited | `e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (per-test run, `allow`, dedupe), `ax-node.ts` (the one AX reader); full tree only in `cdp-e2e-page.ts`. No switch; `allow` needs a `because`. Raw tabs: `e2e-a11y-tabs.ts` ([history](../../docs/history/testing.md#a11y-on-raw-tabs)) |
 | The exercise pass runs what is registered | `exercise.ts` (`runExercisePass`): every action, query and job once, its own tenant pair off one `seedGraph`, an actor `exercise-actor.ts` picks, `runExercise` (39) the verdict. Rows COMMITTED. Overrides only via `defineExercise` (blank `off` refused). A job runs ALONE (`exercise-job-run.ts`): a fresh queue, one `tick()`, what it queued left unrun on the caller's queue, never a `drain()` |
 | An override `input` is awaited, as the call's actor | `exercise-override-input.ts`: run inside the call's own request, so `useContext().actor` is the seated actor; the one way to a signed input. `async` ones are left out of `x drill`'s load |
@@ -85,9 +88,12 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | A found template is not a migrated one | `template-db.ts` tolerates "already exists" for the `CREATE DATABASE` alone. `config.migrate` runs unconditionally; drop + clone hold the same lock |
 | Fixture teardown | a fixture that installs process-global state (the ambient job or mail driver) implements `Symbol.dispose` / `Symbol.asyncDispose` and restores what was there |
 | Building one by hand | `testJobs()` outside a fixture body is not disposed for you — dispose it in `afterEach`, or the next file inherits your queue and your event bus |
-| Factory strategy | an association is built with the strategy that asked for it: `build()` never reaches a database, `create()` writes the parent first. Never a third strategy |
-| One write seam | `usePersister` is the only place `create()` writes. A factory that took a repo argument would put the seam at every call site |
-| Factory seeds | derived from the table name unless given, so two entities never draw the same uuid stream. `reset()` cascades into associated parents — a half-reset row is worse than none |
+| Factory strategy | `build` (memory), `create` (STORED row), `attributesFor` (an input: no key, no parent key), `buildList`/`createList`. An association uses the strategy that asked: `build()` never reaches a database. Never a fifth strategy |
+| One write seam | `create()` writes through `persistRow`: the installed `usePersister`, else `entityPersister()` — the entity's own repository on `defaultDriver()`, `$parse` then `insert`, answering the stored row. A lookalike `EntityLike` with nothing installed is `X_TEST_FACTORY_NOT_PERSISTED` |
+| One row pipeline | `factory-pipeline.ts` is a generator both strategies drive: `build` answers each yield in memory, `create` awaits it. Never a second copy of the row order — the seeded draws depend on it |
+| Associations | `belongsTo(parent, 'fk')` (the `defaults` must name `fk` — that is the compile-time check), `hasMany(child, 'fk')` (keyed on the child's column; children non-enumerable on the answer). The tenant column follows the parent; the tenant-column association resolves first. A two-way pair closes with `extend({ hasMany })` |
+| Factory seeds | derived from the table name unless given. `reset()` cascades into parents and children, cycle-guarded. `factorySeed` restarts EVERY sequence (`resetFactorySequences`) so a replay draws the same ids |
+| Factory lint | `lintFactories(set)` / `assertFactoriesValid(set)` (`X_TEST_FACTORY_INVALID`): each factory and each trait alone, built (`$parse` + `$assert`, unknown keys) and created into its OWN fresh memory driver |
 | Shared examples | `behavesLike` calls `describe`, so it goes at declaration scope; bun rejects a `describe` inside a test body |
 | A port's contract is shared examples | `jobDriverConformance`, `budgetStoreConformance` — `behavesLike(…, () => yours)` |
 | An island needs a BUILDER, not an import | `buildIslands` is `@ultimat3/cli`'s; `testing → cli` fails `bun run boundaries` |
@@ -116,7 +122,7 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 
 Through one `instantMs` and core's `finiteOption`/`finiteCount` (`determinism-bounds.test.ts`). Full rule: `docs/history/testing.md`.
 
-Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
+Commands: `bun test ./packages/testing/` (from the repo root — the `./` keeps `examples/dummy` out), `bunx tsc --noEmit -p tsconfig.json`.
 
 Entry points: `.` (the API), `./preload` (side effects for bunfig) and `./registry-isolation`
 (`isolateEntityRegistry()`, kept off `.` because it loads `@ultimat3/entity`).
@@ -125,29 +131,10 @@ The island fixture's cost and its whole-chain proof: `docs/history/testing.md`.
 
 ## The browser-backed e2e driver (moved here from `@ultimat3/cli` in 22.0.0)
 
-Raw CDP: `@ultimat3/core` and Bun, nothing else; `cli` imports it over `cli -> testing`. Full rule: `docs/history/testing.md`.
-
-| File | Job |
-|---|---|
-| `e2e-driver.ts` | `installE2eDriver({ page, baseUrl })` — the ONE call an app's test preload makes. Registers `page` over its declaration and installs the `e2eTest` seam; returns the undo |
-| `e2e-page.ts` | `PageLike` over four members of `ScrapePage`, declared structurally so a test stands one up in six lines |
-| `e2e-locator.ts` | `LocatorLike` — a handle that resolves nothing until asked, one round trip per question |
-| `e2e-selection.ts` | what a locator SELECTS, as data, and the one in-page expression that resolves it |
-| `e2e-evaluate.ts` | the closure→string crossing, which is the only lossy edge in the adapter |
-| `e2e-errors.ts` | one constructor per refusal |
-| `e2e-dom-fixture.ts` | a document small enough to hold in a test and real enough to RUN the expressions above |
-| `cdp-browser.ts` | the two doors: `openE2eBrowserIfAvailable()` (undefined when there is no browser) and `openE2eBrowser()` (refuses by name), and the close that undoes both halves |
-| `cdp-launch.ts` | which Chrome, its flags, the launch deadline (`LAUNCH_TIMEOUT_MS`, 60 s — a cold start is not a call) and the ONE relaunch (`LAUNCH_ATTEMPTS`) |
-| `cdp-launch-probe.ts` | `startsChrome`: `--version` under a deadline; skipped on `win32` (never exits) |
-| `cdp-launch-attempt.ts` | one start in its own group; on no answer a full reap (group, then profile + singleton dir: `cdp-launch-profile.ts`). ONE awaited `close()` |
-| `cdp-connection.ts` | CDP over a transport — the launched Chrome's pipe (`cdp-pipe.ts`), a remote one's `WebSocket` (`cdpConnect`): reply correlation by `id`, event waiters, the per-call deadline; why one went unanswered is `cdp-wire-watch.ts` |
-| `cdp-e2e-session.ts` | the BROWSER half, `E2eSession`: every target PAUSED until its Network domain is on |
-| `cdp-e2e-page.ts` | one TAB, `E2eTab`: `E2eBrowserPage`'s six methods (`accessibilityTree` required) plus `reload`, `waitFor`, `indexedDbNames`, `close`. `offline()` forwards to the session — the switch is browser-wide |
-| `e2e-app.ts` | `startE2eApp({ root, mode, seed })`: a THROWAWAY `ULTIMATE_STATE_DIR`, `/readyz`-gated; `stop()` removes it. Full rule: `docs/history/testing.md` |
-| `failure-context.ts` | a FAILED test's message ends with the e2e app's last 40 log lines (≤ 4 kB): `e2e-run.ts` installs `app.log()`, `fixtureTest` and `e2eTest` append it. Never on a pass |
-| `e2e-preload.ts` + `e2e-browser-handle.ts` | the `e2e` step's preload (`@ultimat3/testing/e2e-preload`): with `ULTIMATE_E2E_ROOT` set it spawns the app, opens ONE browser, installs its first tab, and publishes `e2eBrowser()`, `e2eApp()`, `e2eBaseUrl()` |
-| `packages/cli/src/verify-e2e.ts` | `withE2eApp` (cli's): in an app on a machine with Chrome, the `e2e` step runs the suite with that preload; otherwise exactly as before |
-| `cdp-errors.ts` | one constructor per way the browser half refuses |
+Raw CDP: `@ultimat3/core` and Bun, nothing else; `cli` imports it over `cli -> testing`. One job per
+file (`e2e-*.ts`, `cdp-*.ts`); the table of which file does what is
+[`docs/history/testing-e2e-driver.md`](../../docs/history/testing-e2e-driver.md). The ONE call an
+app's test preload makes is `installE2eDriver({ page, baseUrl })` (`e2e-driver.ts`).
 
 **Absent by default** until `installE2eDriver`: [`docs/history/testing.md`](../../docs/history/testing.md#the-browser-backed-e2e-driver-moved-here-from-ultimat3cli-in-2200).
 

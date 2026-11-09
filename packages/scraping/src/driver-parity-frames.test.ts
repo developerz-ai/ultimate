@@ -8,9 +8,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { structuredLogger } from '@ultimat3/core';
+import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
-import { testScrapeClock } from './clock';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
@@ -79,7 +78,7 @@ const forEachFrameDriver = async (
       name: 'login',
       logger: structuredLogger({ writer: () => undefined }),
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 5_000,
     });
     try {

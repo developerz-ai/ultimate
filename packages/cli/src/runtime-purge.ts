@@ -47,18 +47,20 @@ export const PURGE_TASK_NAME = 'x.purge.hourly';
  * deletes reservations a retry is still entitled to.
  *
  * The auth limiter is absent on purpose: it does not exist yet at boot. `defineAuth` builds it
- * through the factory `configureAuthLimiters` installed, and that happens when the app's modules
+ * through the `authLimiter` port's factory, and that happens when the app's modules
  * import — after this. `purgeAuthLimits()` is the seam that reads whatever was built.
  */
 export interface RetentionStores {
-  readonly idempotency: PostgresIdempotencyStore;
-  readonly rateLimit: PostgresRateLimitStore;
+  /** `undefined` when `runtime.ts` supplied the store: the app's backend is the app's to expire. */
+  readonly idempotency: PostgresIdempotencyStore | undefined;
+  /** `undefined` for `idempotency`'s reason. */
+  readonly rateLimit: PostgresRateLimitStore | undefined;
   /**
-   * The guard this boot installed through `configureTotpReplay`. Unlike the limiter it takes
-   * nothing from the app, so it exists here. REQUIRED, or `x_totp_steps` keeps a row per second
-   * factor for the life of the deployment.
+   * The guard this boot built for the `totpReplay` port. Unlike the limiter it takes nothing from
+   * the app, so it exists here. Passed whenever the boot built it, or `x_totp_steps` keeps a row
+   * per second factor for the life of the deployment; `undefined` when `runtime.ts` supplied one.
    */
-  readonly totpReplay: PostgresTotpReplayGuard;
+  readonly totpReplay: PostgresTotpReplayGuard | undefined;
   /**
    * The bus this boot installed for `step.waitForEvent`. REQUIRED: `x_job_events` takes a row per
    * publish and `find` only filters an expired one, so a boot that left it out is the table
@@ -85,9 +87,9 @@ export interface RetentionStores {
 
 /**
  * The three notify tables, and no store is in `RetentionStores` — deliberately, and for the
- * reason `authTarget` is not either. `setNotifyStores` is an APP's boot line and runs when the
- * app's modules import, which is AFTER this install; `framework-schema.ts` says so where it
- * applies the DDL "whether or not this boot calls `setNotifyStores`". So the sweep can only ask,
+ * reason `authTarget` is not either. The `notifyStores` port is `runtime.ts`'s and the boot builds
+ * no default (`framework-schema.ts` applies the DDL whether or not one is supplied). So the sweep
+ * can only ask,
  * per attempt, what is installed now — `purgeNotifyInbox`/`purgeNotifyDeliveries` answer 0 for a
  * memory store or none at all, which is a boot that made a decision, not a failure.
  */
@@ -122,7 +124,7 @@ function notifyTargets(retention: InboxRetention): readonly PurgeTarget[] {
 /**
  * Read per attempt by the job, and emptied by the disposer `installRetentionSweep` returns: a
  * sweep left declared after its boot has stopped must not reach through a closed pool. Module
- * scope for the reason `setJobDriver` and `configureKdfGate` are — a process has one boot at a
+ * scope for the reason the installed job driver and `configureKdfGate` are — a process has one boot at a
  * time, and the registry the job lives in is process-wide too.
  */
 let installed: readonly PurgeTarget[] = [];
@@ -141,26 +143,37 @@ const authTarget: PurgeTarget = {
   purgeExpired: () => purgeAuthLimits(),
 };
 
+/** The sweep over a store this boot built, or none when `runtime.ts` supplied it. */
+const own = (target: PurgeTarget | undefined): readonly PurgeTarget[] =>
+  target === undefined ? [] : [target];
+
 function retentionTargets(stores: RetentionStores): readonly PurgeTarget[] {
+  const { idempotency, rateLimit, totpReplay } = stores;
   return [
-    {
-      name: 'x_idempotency',
-      purgeExpired: (): Promise<number> => stores.idempotency.purgeExpired(),
-    },
-    {
-      name: 'x_rate_limit',
-      // The job's clock, not the server's. `last_ms` is written by whichever process took the
-      // token, so a purge measured against `now()` in Postgres computes a refill from the offset
-      // between two clocks — and against a frozen one it read 20,000,000 seconds of refill and
-      // deleted a bucket holding 0 of 4 tokens, which is a free limit reset from the cleanup.
-      purgeExpired: (nowMs: number): Promise<number> => stores.rateLimit.purgeExpired(nowMs),
-    },
+    ...own(
+      idempotency && {
+        name: 'x_idempotency',
+        purgeExpired: (): Promise<number> => idempotency.purgeExpired(),
+      },
+    ),
+    ...own(
+      rateLimit && {
+        name: 'x_rate_limit',
+        // The job's clock, not the server's. `last_ms` is written by whichever process took the
+        // token, so a purge measured against `now()` in Postgres computes a refill from the offset
+        // between two clocks — and against a frozen one it read 20,000,000 seconds of refill and
+        // deleted a bucket holding 0 of 4 tokens, which is a free limit reset from the cleanup.
+        purgeExpired: (nowMs: number): Promise<number> => rateLimit.purgeExpired(nowMs),
+      },
+    ),
     authTarget,
-    {
-      name: 'x_totp_steps',
-      // The job's clock: `verifyTotp` derived every step in that table from a process's clock.
-      purgeExpired: (nowMs: number): Promise<number> => stores.totpReplay.purgeExpired(nowMs),
-    },
+    ...own(
+      totpReplay && {
+        name: 'x_totp_steps',
+        // The job's clock: `verifyTotp` derived every step in that table from a process's clock.
+        purgeExpired: (nowMs: number): Promise<number> => totpReplay.purgeExpired(nowMs),
+      },
+    ),
     ...notifyTargets(stores.inboxRetention ?? NO_INBOX_RETENTION),
     // Its own clock, and so no `nowMs`: every instant in that table is the database's.
     eventsPurgeTarget(stores.events),

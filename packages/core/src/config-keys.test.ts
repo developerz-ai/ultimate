@@ -83,13 +83,13 @@ describe('an unknown key is refused by its full path', () => {
   test('a key with no near neighbour lists what the section does hold', () => {
     const error = refusalOf({ name: 'myapp', realtime: { zzzzzzzz: 1 } });
     expect(error.fix).toStartWith('delete realtime.zzzzzzzz from app.config.ts');
-    expect(error.fix).toContain('enabled, transport, urlEnv');
+    expect(error.fix).toContain('enabled, maxSubscriptionsPerActor, maxSocketsPerActor');
   });
 
   test('an object at a key whose default is undefined knows no keys', () => {
-    const error = refusalOf({ name: 'myapp', realtime: { urlEnv: { name: 'NATS_URL' } } });
-    expect(error.meta?.['unknown']).toEqual(['realtime.urlEnv.name']);
-    expect(error.fix).toContain('realtime.urlEnv is a value, not a section');
+    const error = refusalOf({ name: 'myapp', realtime: { maxSocketsPerActor: { max: 4 } } });
+    expect(error.meta?.['unknown']).toEqual(['realtime.maxSocketsPerActor.max']);
+    expect(error.fix).toContain('realtime.maxSocketsPerActor is a value, not a section');
   });
 
   test('every unknown key in one config is named in one refusal', () => {
@@ -108,10 +108,10 @@ describe('what stays open', () => {
   test('a key declared optional with an undefined default is a key', () => {
     const config = defineConfig({
       name: 'myapp',
-      realtime: { transport: 'nats', urlEnv: 'NATS_URL', maxSocketsPerActor: 4 },
+      realtime: { maxSocketsPerActor: 4 },
       notify: { inboxReadRetentionMs: 1000 },
     });
-    expect(config.realtime.urlEnv).toBe('NATS_URL');
+    expect(config.realtime.maxSocketsPerActor).toBe(4);
   });
 
   test('site.favicon is accepted', () => {

@@ -13,7 +13,7 @@ import {
   withSpan,
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { resetJobDriver, setJobDriver } from './driver';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -49,7 +49,7 @@ describe('the trace link across the queue', () => {
   test('an enqueue inside a span stamps its producer span, a child of that span, onto the row', async () => {
     const spans = collectSpans();
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
 
     const chargeCard = job({
       tenant: 'none',
@@ -77,7 +77,7 @@ describe('the trace link across the queue', () => {
   test('the job span is a CHILD of the enqueuing request, not a new root', async () => {
     const spans = collectSpans();
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
 
     job({
       tenant: 'none',
@@ -120,7 +120,7 @@ describe('the trace link across the queue', () => {
   // never the all-zero span id a context with no span renders, which every collector rejects.
   test('an enqueue outside any trace carries its producer root, never a malformed header', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const sendDigest = job({
       tenant: 'none',
       name: 'sendDigest',
@@ -144,7 +144,7 @@ describe('the trace link across the queue', () => {
 
   test('handle.as(actor) records WHO asked and grants them nothing', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const exportLedger = job({
       tenant: 'none',
       name: 'exportLedger',

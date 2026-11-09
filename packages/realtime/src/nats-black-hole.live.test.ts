@@ -12,7 +12,7 @@
 // Skips unless a JetStream-enabled server is configured. Slow by construction — the window is the
 // subject — so both processes sit behind ONE relay and wait out one window, in one test:
 //
-//   TEST_NATS_URL=nats://localhost:4222 bun test packages/realtime/src/nats-black-hole.live.test.ts
+//   TEST_NATS_URL=nats://localhost:4222 bun test ./packages/realtime/src/nats-black-hole.live.test.ts
 
 import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import { frozenClock, isUltimateError, logger } from '@ultimat3/core';

@@ -237,21 +237,28 @@ which is why `onSettled` hands a failed run its last attempt's `usage`. No quota
 
 ### The clock, and a test's
 
-A run waits on the PROCESS's clock — `scrapeClock()`, the system's — unless its definition pins
-one with `clock:`. A test replaces it the way it replaces the queue driver:
+A run waits on the PROCESS's clock — `@ultimat3/core`'s `ambientClock()`, the system's unless
+`clock` in `apps/<app>/runtime.ts` says otherwise — unless its definition pins one with `clock:`.
+Since 31.0.0 the clocks are core's `SleepClock`s; this package has none of its own. A test
+replaces the process clock through core's installer, which answers its release:
 
 ```ts
-import { noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
+import { noWaitClock } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 
-setScrapeClock(noWaitClock); // in a beforeEach
-resetScrapeClock(); // in the afterEach
+const release = installClock(noWaitClock); // in a beforeEach
+release(); // in the afterEach
 ```
 
-| Clock | Sleeping | For |
+| Clock (`@ultimat3/core`) | Sleeping | For |
 |---|---|---|
-| `systemScrapeClock` | waits | production |
+| `systemClock` | waits | production |
 | `noWaitClock` | one turn of the event loop, whatever was asked; `now()` and deadlines are real | a test whose run waits on something that really happens in the same process — an answer the test publishes |
-| `testScrapeClock()` | advances virtual time and yields a microtask | a test of a timeout: thirty seconds pass in none |
+| `frozenClock()` | advances virtual time and yields a microtask | a test of a timeout: thirty seconds pass in none |
+
+The browser is chosen the same way: `scrapeDriver` in `apps/<app>/runtime.ts`, which the boot
+installs through `installScrapeDriver` on `@ultimat3/scraping/adapter` (the `.` barrel has no
+setter); a definition's own `driver:` overrides it.
 
 A third-party driver takes part by reading three `SessionInit` fields: dial `proxy` or throw
 `egressUnsupported()`, pass `usage` to `pageOverTarget` and its HTTP transport, and answer

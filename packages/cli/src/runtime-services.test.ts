@@ -9,7 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { defineAuth, memoryAuthAdapter, resetAuthLimiters, totpStep } from '@ultimat3/auth';
+import { defineAuth, memoryAuthAdapter, totpStep } from '@ultimat3/auth';
+import { resetAuthLimiters } from '@ultimat3/auth/adapter';
 import { registeredTiers, resetTiers } from '@ultimat3/cache';
 import { registerReadinessCheck } from '@ultimat3/core';
 import { raw } from '@ultimat3/db';
@@ -78,9 +79,8 @@ describe('startServices', () => {
    * threaded through, or selection moved after `startQueue`, this would boot instead of throwing.
    */
   test('refuses two credentials before any service starts', async () => {
-    // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
-    // read. The state dir is never created — the refusal is ahead of every service.
-    const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
+    // The state dir is never created — the refusal is ahead of every service.
+    const natsRoot = rootWithRealtime('{ enabled: true }');
     const unusable = { root: natsRoot, stateDir: join(natsRoot, '.x-never-read') } as DevServices;
     const failure = await startServices(unusable, {
       SMTP_URL: 'smtps://user:pass@mail.test:465',
@@ -290,9 +290,8 @@ describe('startServices', () => {
    * write, and finding that out after PGlite has started and been unwound again helps nobody.
    */
   test('an unusable KV bucket refuses before any service starts', async () => {
-    // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
-    // read. The state dir is never created — the refusal is ahead of every service.
-    const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
+    // The state dir is never created — the refusal is ahead of every service.
+    const natsRoot = rootWithRealtime('{ enabled: true }');
     const unusable = { root: natsRoot, stateDir: join(natsRoot, '.x-never-read') } as DevServices;
     const failure = await startServices(unusable, {
       NATS_URL: 'nats://bus.test:4222',
@@ -304,38 +303,6 @@ describe('startServices', () => {
 
     expect(failure?.code).toBe('X_TRANSPORT_PROTOCOL');
     expect(failure?.fix).toContain('NATS_KV_BUCKET');
-  });
-
-  // The boot reads `realtime.transport` off the app's own file: `nats` with the variable unset
-  // refuses before any service starts, where it used to boot the in-process bus and reach nobody.
-  test('a config saying nats with no bus url refuses before any service starts', async () => {
-    const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'BUS_URL' }");
-    const unbooted = { root: natsRoot, stateDir: join(natsRoot, '.x-never-read') } as DevServices;
-    const failure = await startServices(unbooted, DEV_ENV).then(
-      () => undefined,
-      (error: unknown) => error as { code?: string; cause?: string },
-    );
-
-    expect(failure?.code).toBe('X_CONFIG_INVALID');
-    expect(failure?.cause).toContain('BUS_URL');
-  });
-
-  test('a config saying memory with NATS_URL set refuses before any service starts', async () => {
-    const memoryRoot = rootWithRealtime("{ enabled: true, transport: 'memory' }");
-    const unbooted = {
-      root: memoryRoot,
-      stateDir: join(memoryRoot, '.x-never-read'),
-    } as DevServices;
-    const failure = await startServices(unbooted, {
-      ...DEV_ENV,
-      NATS_URL: 'nats://bus.test:4222',
-    }).then(
-      () => undefined,
-      (error: unknown) => error as { code?: string; cause?: string },
-    );
-
-    expect(failure?.code).toBe('X_CONFIG_INVALID');
-    expect(failure?.cause).toContain('realtime.transport');
   });
 
   test(
@@ -382,9 +349,8 @@ describe('startServices', () => {
   );
 
   test('a half-set CDN pair refuses before any service starts', async () => {
-    // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
-    // read. The state dir is never created — the refusal is ahead of every service.
-    const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
+    // The state dir is never created — the refusal is ahead of every service.
+    const natsRoot = rootWithRealtime('{ enabled: true }');
     const unusable = { root: natsRoot, stateDir: join(natsRoot, '.x-never-read') } as DevServices;
     const failure = await startServices(unusable, { FASTLY_API_TOKEN: 'fastly-token' }).then(
       () => undefined,

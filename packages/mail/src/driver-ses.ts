@@ -10,6 +10,7 @@ import {
   EnvMissingError,
   finiteCount,
   isUltimateError,
+  liveClock,
   nanoid,
   renderFixShellArg,
   renderThrowable,
@@ -133,7 +134,8 @@ export function sesMailDriver(options: SesDriverOptions): MailDriver {
     1,
   );
   const retain = resolveRetainMime('sesMailDriver', options.retainMime);
-  const clock = options.clock ?? systemClock;
+  // AWS signing stays on real time (core's rule): SES checks the signature's date against its own.
+  const signingClock = options.clock ?? systemClock;
   // `outbound()` always hands it the attempt's signal.
   const doFetch: MailFetch =
     options.fetch ??
@@ -148,7 +150,7 @@ export function sesMailDriver(options: SesDriverOptions): MailDriver {
     const raw = buildMimeMessage(message, {
       from,
       messageId: `<${message.mailId}.${mailMessageIdToken(message)}@${addressDomain(from)}>`,
-      date: clock.now(),
+      date: (options.clock ?? liveClock).now(),
       boundary: `x-ultimate-${nanoid(20)}`,
     });
     const body = bodyFor(message, from, raw, options.configurationSet);
@@ -163,7 +165,7 @@ export function sesMailDriver(options: SesDriverOptions): MailDriver {
         credentials,
         region,
         service: 'ses',
-        clock,
+        clock: signingClock,
       });
       // Through core's `outbound()`: `timeoutMs` bounds the send, the ambient job's signal ends it,
       // and it is ONE attempt — a signed POST with no idempotency header is never replayed.

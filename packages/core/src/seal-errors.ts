@@ -13,12 +13,22 @@ import { UltimateError } from './errors';
  * the key was missing is the failure a sealed column exists to prevent, and it would look healthy.
  */
 export class SealKeyMissingError extends UltimateError {
-  constructor(input: { envVar: string; keyPath: string }) {
+  /** `source`: the `name` of an app-installed `SecretSource` that answered no key. */
+  constructor(input: { envVar: string; keyPath: string; source?: string }) {
     super({
       code: 'X_SEAL_KEY_MISSING',
-      cause: `${input.envVar} is unset and ${input.keyPath} does not exist, so there is no master key to seal or open a value with`,
-      fix: 'x secrets init   # or, where the key already exists: export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"',
-      meta: { keyPath: input.keyPath },
+      cause:
+        input.source === undefined
+          ? `${input.envVar} is unset and ${input.keyPath} does not exist, so there is no master key to seal or open a value with`
+          : `the secret source ${renderCauseValue(input.source)} installed from runtime.ts answered no master key, so there is no key to seal or open a value with`,
+      fix:
+        input.source === undefined
+          ? 'x secrets init   # or, where the key already exists: export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"'
+          : 'export const runtime = { secretSource }   # apps/<app>/runtime.ts — that source must answer a master key (check the KMS key or Vault path it reads)',
+      meta: {
+        keyPath: input.keyPath,
+        ...(input.source === undefined ? {} : { source: input.source }),
+      },
     });
   }
 }

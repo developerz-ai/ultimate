@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock, JobEnqueueEvent, ReadableSpan } from '@ultimat3/core';
 import { resetInstrumentation, resetTelemetry, subscribe } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { resetJobDriver } from './driver';
+import { resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';

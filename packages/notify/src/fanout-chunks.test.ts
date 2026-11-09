@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { memoryStepStore, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { installNotifyStores, resetNotifyStores } from './adapter';
 import { memoryDigestStore } from './digest';
 import { NOTIFY_CHUNK_SIZE } from './fanout-walk';
 import { memoryDeliveryLedger } from './ledger';
@@ -13,7 +14,6 @@ import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { driver, RUN_ID, recorder } from './notify-fixture';
 import type { PreferenceBatchQuery, PreferenceStore } from './preferences';
-import { resetNotifyStores, setNotifyStores } from './stores';
 
 const POST = '00000000-0000-7000-8000-00000000beef';
 const params: TestParams = { postId: POST };
@@ -56,7 +56,7 @@ const handleFor = (log: ReturnType<typeof recorder>) =>
 describe('unit · a 10k audience fans out in bounded round trips', () => {
   test('preference reads ≤ 2 × ⌈10k/chunk⌉ per channel, each read ≤ one chunk', async () => {
     const prefs = countingPreferences();
-    setNotifyStores({ preferences: prefs.store });
+    installNotifyStores({ preferences: prefs.store });
     const log = recorder();
     const report = await driver().finish(handleFor(log), { params, recipients });
     const bound = 2 * Math.ceil(AUDIENCE / NOTIFY_CHUNK_SIZE);
@@ -68,7 +68,7 @@ describe('unit · a 10k audience fans out in bounded round trips', () => {
   });
 
   test('durable steps per channel are ⌈10k/chunk⌉, not one per recipient', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const store = memoryStepStore();
     await driver({ store }).finish(handleFor(recorder()), { params, recipients });
     const names = (await store.list(RUN_ID)).map((record) => record.name);
@@ -80,7 +80,7 @@ describe('unit · a 10k audience fans out in bounded round trips', () => {
   test('step names are stable across a replay, and a replay sends nothing', async () => {
     // Two channels × 10k claims: past the memory ledger's default cap, which would evict.
     const ledger = memoryDeliveryLedger({ max: 2 * AUDIENCE });
-    setNotifyStores({ ledger });
+    installNotifyStores({ ledger });
     const log = recorder();
     const handle = handleFor(log);
     const first = memoryStepStore();
@@ -98,7 +98,7 @@ describe('unit · a 10k audience fans out in bounded round trips', () => {
   test('a recipient denied in one chunk is suppressed on that channel only', async () => {
     const denied = new Set(['r0', `r${String(NOTIFY_CHUNK_SIZE + 1)}`]);
     const prefs = countingPreferences(denied);
-    setNotifyStores({ preferences: prefs.store });
+    installNotifyStores({ preferences: prefs.store });
     const log = recorder();
     const report = await driver().finish(handleFor(log), { params, recipients });
     expect(report.suppressed).toBe(2 * denied.size);
@@ -106,7 +106,7 @@ describe('unit · a 10k audience fans out in bounded round trips', () => {
   });
 
   test('an id the store answers that is not in the chunk admits nobody extra', async () => {
-    setNotifyStores({
+    installNotifyStores({
       preferences: { allowsMany: (query) => ['intruder', ...query.recipients.map((r) => r.id)] },
     });
     const log = recorder();
@@ -120,7 +120,7 @@ describe('unit · a digest fan-out reads preferences per chunk and sends per chu
 
   test('reads ≤ 2 per chunk; one send step per chunk; append and drain stay per recipient', async () => {
     const prefs = countingPreferences();
-    setNotifyStores({ preferences: prefs.store, digest: memoryDigestStore() });
+    installNotifyStores({ preferences: prefs.store, digest: memoryDigestStore() });
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.digested',

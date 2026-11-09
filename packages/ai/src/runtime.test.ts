@@ -8,15 +8,15 @@ import { memorySemanticCache } from '@ultimat3/cache';
 import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
 import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
-import { configureAi, resetAiRuntime, semanticCacheFor } from './runtime';
+import { configureAi, installAiGateway, resetAiRuntime, semanticCacheFor } from './runtime';
 
 const built: string[] = [];
 
 beforeEach(() => {
   resetAiRuntime();
   built.length = 0;
+  installAiGateway(providerGateway({ providers: [echoProvider()] }));
   configureAi({
-    gateway: providerGateway({ providers: [echoProvider()] }),
     semanticCache: (scope) => {
       built.push(scope);
       return memorySemanticCache();
@@ -57,8 +57,8 @@ describe('semanticCacheFor', () => {
 
   test('a new runtime drops every instance — vectors from two embedders are not comparable', () => {
     semanticCacheFor('org-a');
+    installAiGateway(providerGateway({ providers: [echoProvider()] }));
     configureAi({
-      gateway: providerGateway({ providers: [echoProvider()] }),
       semanticCache: (scope) => {
         built.push(scope);
         return memorySemanticCache();

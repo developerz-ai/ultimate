@@ -169,6 +169,6 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 ## Commands
 
 ```
-bun test packages/seo
+bun test ./packages/seo/
 bun run --filter @ultimat3/seo typecheck
 ```

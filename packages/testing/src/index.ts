@@ -221,21 +221,43 @@ export type {
   TenantProof,
 } from './exercise-report';
 export type { ExerciseSetup, ExerciseSetupHandle } from './exercise-setup';
-export type {
-  Association,
-  AssociationMap,
-  EntityLike,
-  Factory,
-  FactoryIds,
-  FactoryOptions,
-  Trait,
-  TraitMap,
-} from './factories';
-export { associate, defineFactory, seedFor } from './factories';
-export type { Persister } from './factory-persist';
-export { clearPersister, persisterInstalled, usePersister } from './factory-persist';
+export { defineFactory, seedFor } from './factories';
+export type { AnyFactory, Factory, FactoryExtension, FactoryOptions } from './factory-api';
+export type { BelongsToOptions, HasManyOptions } from './factory-associations';
+export { belongsTo, hasMany } from './factory-associations';
+export type { FactoryFinding } from './factory-errors';
+export { FactoryInvalidError } from './factory-errors';
+export type { FactorySet } from './factory-lint';
+export { assertFactoriesValid, lintFactories } from './factory-lint';
+export type { Persister, PersisterTarget } from './factory-persist';
+export {
+  clearPersister,
+  entityPersister,
+  persisterInstalled,
+  usePersister,
+} from './factory-persist';
 export type { EntityRegistry, FactoryRegistry } from './factory-registry';
 export { factoriesFor } from './factory-registry';
+export type {
+  AttributesFor,
+  BelongsTo,
+  BelongsToMap,
+  Built,
+  Created,
+  EntityLike,
+  FactoryContext,
+  FactoryIds,
+  FactoryLike,
+  FactoryOverrides,
+  ForeignKeysOf,
+  HasMany,
+  HasManyMap,
+  None,
+  StoredOf,
+  Trait,
+  TraitMap,
+  WriteBound,
+} from './factory-types';
 export type {
   FakeIdentityProvider,
   FakeIdentityProviderInput,
@@ -286,6 +308,8 @@ export type { TestNetwork } from './fixture-network';
 export { testNetwork } from './fixture-network';
 export type { TestPush, TestPushMessage } from './fixture-push';
 export { testPush } from './fixture-push';
+export type { SeededRow, SeedFixtureOptions, SeedHandle } from './fixture-seed';
+export { seedFixture } from './fixture-seed';
 export type { ObservedStatement, StatementShape, TestStatements } from './fixture-statements';
 export { testStatements } from './fixture-statements';
 export type { SubscribeDriver } from './fixture-subscribe';
@@ -406,6 +430,7 @@ export { liveNode } from './live-node';
 // The store a mutator's `local()` half writes into under test — the Map every app hand-rolled.
 export type { LocalRows, MemoryLocalTx } from './local-tx';
 export { memoryLocalTx } from './local-tx';
+export type { EnqueuedJobRef, MatcherMailRef, SentMailMatch } from './matcher-surface';
 /**
  * The budget `toBeVisible(options?)` takes. Exported because it is in a public matcher's signature;
  * `retryUntil` and `RetryBudget` deliberately are NOT — nothing outside this package calls them,
@@ -465,6 +490,7 @@ export {
   sealNetwork,
   unsealNetwork,
 } from './sealed-network';
+export { factorySeed } from './seed-factories';
 // Rows for every table with no factory written (plan 101 / 40, phase 1): parents first, same-tenant
 // keys, values off each column's declaration. Types only from `@ultimat3/entity`, so no registry.
 export { seedGraph } from './seed-graph';
@@ -488,9 +514,24 @@ export type { EntitySeedWriterOptions, SeedWriterTarget } from './seed-writer';
 export { entitySeedWriter } from './seed-writer';
 export type { SharedExamples } from './shared-examples';
 export { behavesLike, sharedExamples } from './shared-examples';
+// Test doubles: `stub(primitive)` replaces an action's, an llm()'s or a job's body, `swapAdapter`
+// an adapter port; both are put back after the test that made them (`test-scope.ts`).
+export { stub } from './stub';
+export {
+  TestAdapterPortUnswappableError,
+  TestExpectedInputInvalidError,
+  TestMailExpectedError,
+  TestRunJobsExpectedError,
+  TestScopeUninstalledError,
+  TestStubTargetUnsupportedError,
+  TestStubUnansweredError,
+} from './stub-errors';
+export type { Stub, StubCall } from './stub-script';
 export type { SubjectProofOptions, SubjectProofResult } from './subject-proof';
 export { subjectProof } from './subject-proof';
 export { SubjectEraseIncompleteError } from './subject-proof-error';
+export type { SwappableAdapters, SwappablePort } from './swap-adapter';
+export { swapAdapter, UNSWAPPED } from './swap-adapter';
 export type {
   DisposableWorkerDatabase,
   SqlRunner,

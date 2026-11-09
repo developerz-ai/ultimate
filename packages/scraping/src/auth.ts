@@ -17,9 +17,8 @@
 // rejected credential. A rejected credential is `X_SCRAPE_AUTH_FAILED`, terminal, and the refusal
 // is written into the session record so the NEXT attempt fails before reaching the login form.
 
-import type { Logger } from '@ultimat3/core';
+import type { Logger, SleepClock } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';
-import type { ScrapeClock } from './clock';
 import { authFailed, promptUnanswered, scrapeSessionExpired } from './error-throws';
 import type { ScrapePage } from './page';
 import type { ScrapeSecrets } from './secrets';
@@ -45,7 +44,7 @@ export interface PromptRequest<I = unknown> {
   /** 1 for the first prompt of this attempt, 2 for the next. */
   readonly index: number;
   /** The run's clock. A handler that waits, waits on this — never on a timer of its own. */
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   /** The run's cancellation. A handler that waits past it holds a browser nobody is using. */
   readonly signal: AbortSignal | undefined;
   /**
@@ -110,7 +109,7 @@ export interface PromptInit<I = unknown> {
   readonly input: I;
   readonly page: ScrapePage;
   readonly runId: string;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   readonly signal?: AbortSignal | undefined;
   /** The run's secret set. Every answer is concealed in it before the body sees the answer. */
   readonly secrets?: ScrapeSecrets | undefined;
@@ -156,7 +155,7 @@ export interface AuthPlanInput<I> {
   readonly scrape: string;
   readonly auth: ScrapeAuth<I> | undefined;
   readonly key: string;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   readonly logger: Logger;
 }
 

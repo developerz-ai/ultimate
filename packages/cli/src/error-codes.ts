@@ -3,6 +3,8 @@
 // the CLI is the surface an agent reads first — a failure here has to be actionable without a doc
 // lookup or a second round-trip. The classes that throw these codes live in `./errors`.
 import { registerErrorCodes } from '@ultimat3/core';
+import type { CliBoundaryErrorCode } from './error-codes-boundary';
+import { CLI_BOUNDARY_ERROR_CODES, CLI_BOUNDARY_ERROR_TITLES } from './error-codes-boundary';
 import type { CliShotErrorCode } from './error-codes-shot';
 import { CLI_SHOT_ERROR_CODES, CLI_SHOT_ERROR_TITLES } from './error-codes-shot';
 import type { CliToolingErrorCode } from './error-codes-tooling';
@@ -91,7 +93,7 @@ export const CLI_OWNED_ERROR_CODES = [
   // so the remedy printed was `kill <self>` — unrunnable, and a cause that was simply untrue.
   'X_DEV_LOCK_UNREADABLE',
   // The boot's own consistency check. `startServices` captures the drivers it built, and
-  // `loadApp` runs AFTER it — so an app module calling `setJobDriver(theirs)` moved the ambient
+  // `loadApp` runs AFTER it — so an app module calling `installJobDriver(theirs)` moved the ambient
   // slot and left the captured object alone: every `handle.enqueue()` went to their queue while
   // the worker claimed from Postgres, and the `/_x` panel read the ambient one and agreed with
   // the enqueue side. Nothing failed. Refused here rather than documented, per axiom 3.
@@ -131,14 +133,6 @@ export const CLI_OWNED_ERROR_CODES = [
   // `x errors explain` hand back the one remedy — name the tier — instead of the flag code's
   // "unknown flag, missing value, or a value the command refuses", which covers a dozen causes.
   'X_SEED_ENVIRONMENT',
-  // The five app-surface boundary codes. `@ultimat3/render` owns the *rule* (`checkSurfaceBoundary`)
-  // and the CLI owns the diagnostic, because `x verify` and `x fix boundary` are the two commands
-  // that report it — see `app-boundaries.ts`, which holds the one rule-to-code table.
-  'X_BOUNDARY_SITE_TO_APP',
-  'X_BOUNDARY_SHARED_LEAF',
-  'X_BOUNDARY_APP_TO_API',
-  'X_BOUNDARY_ROUTE_TO_DB',
-  'X_BOUNDARY_SERVICE_TO_HTTP',
   // The three ways an app's own guard can fail to be one. A guard is the app's convention made
   // into a build error, so a guard the gate cannot trust has to be a finding rather than a skip:
   // an app that believes its rule is enforced and is not is worse off than one with no rule.
@@ -173,7 +167,6 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_CI_RUN_NOT_FOUND',
   'X_APP_NAME_EMPTY',
   'X_APP_EMPTY',
-  'X_BOUNDARY_SURFACE_IMPORT',
   'X_PERMISSION_UNGRANTED',
   'X_JOB_UNREGISTERED',
   'X_FEATURE_UNKNOWN',
@@ -227,7 +220,6 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_DEPLOY_BUILD_MISMATCH',
   'X_JOB_OUTLASTS_DRAIN',
   'X_FEATURE_REQUIRED',
-  'X_BOUNDARY_PACKAGE_TO_APP',
   'X_APP_IMPORT_UNRESOLVED',
   'X_STREAM_ALREADY_FLUSHED',
   'X_QUERY_SLICE_ENTITY',
@@ -287,6 +279,7 @@ export const CLI_BORROWED_ERROR_CODES = [
 /** Every code the CLI can throw: the ones it owns plus the one it borrows. */
 export const CLI_ERROR_CODES = [
   ...CLI_OWNED_ERROR_CODES,
+  ...CLI_BOUNDARY_ERROR_CODES,
   ...CLI_SHOT_ERROR_CODES,
   ...CLI_TOOLING_ERROR_CODES,
   ...CLI_BORROWED_ERROR_CODES,
@@ -294,7 +287,11 @@ export const CLI_ERROR_CODES = [
 
 /** The codes listed in THIS file — the ones `CLI_ERROR_TITLES` below must title. */
 type CliListedErrorCode = (typeof CLI_OWNED_ERROR_CODES)[number];
-export type CliOwnedErrorCode = CliListedErrorCode | CliShotErrorCode | CliToolingErrorCode;
+export type CliOwnedErrorCode =
+  | CliListedErrorCode
+  | CliBoundaryErrorCode
+  | CliShotErrorCode
+  | CliToolingErrorCode;
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
 
 /**
@@ -359,11 +356,6 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_DB_BRANCH_FAILED: 'an x db branch step failed',
   X_DB_STUDIO_FAILED: 'x db studio failed',
   X_SEED_ENVIRONMENT: 'the seed tier is not one this environment runs',
-  X_BOUNDARY_SITE_TO_APP: 'site/ imported app/',
-  X_BOUNDARY_SHARED_LEAF: 'shared/ imported a surface',
-  X_BOUNDARY_APP_TO_API: 'app/ imported api/ at runtime',
-  X_BOUNDARY_ROUTE_TO_DB: 'a route touched the database',
-  X_BOUNDARY_SERVICE_TO_HTTP: 'a service imported HTTP',
   X_GUARD_INVALID: 'a file in guards/ exports no usable guard',
   X_GUARD_FAILED: 'an app guard threw instead of returning findings',
   X_GUARD_FINDING_INVALID: "an app guard's finding breaks the error contract",
@@ -384,7 +376,6 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_CI_RUN_NOT_FOUND: 'no workflow run for this branch',
   X_APP_NAME_EMPTY: 'the app name has no letters or digits',
   X_APP_EMPTY: 'an app with an app.config.ts registered no primitive',
-  X_BOUNDARY_SURFACE_IMPORT: 'a surface imports one SURFACE_SPECS does not allow',
   X_PERMISSION_UNGRANTED: 'an action, query or route requires a permission no role grants',
   X_JOB_UNREGISTERED: 'a job reached the manifest under its positional anonymous name',
   X_FEATURE_UNKNOWN: 'x g --feature names a slice that does not exist',
@@ -447,7 +438,6 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_DEPLOY_BUILD_MISMATCH: 'production never served this build',
   X_JOB_OUTLASTS_DRAIN: "a job's declared timeout outlasts the worker's budget",
   X_FEATURE_REQUIRED: 'x g query or x g backfill named no slice to read',
-  X_BOUNDARY_PACKAGE_TO_APP: 'packages/ imported apps/ at runtime',
   X_APP_IMPORT_UNRESOLVED: 'an app module imports what does not resolve',
   X_STREAM_ALREADY_FLUSHED: 'a response header was written after the stream flushed',
   X_QUERY_SLICE_ENTITY: 'x g query into a slice whose entity is not the one it scaffolds',
@@ -483,6 +473,7 @@ registerErrorCodes(
   Object.fromEntries(
     Object.entries({
       ...CLI_ERROR_TITLES,
+      ...CLI_BOUNDARY_ERROR_TITLES,
       ...CLI_SHOT_ERROR_TITLES,
       ...CLI_TOOLING_ERROR_TITLES,
     }).map(([code, title]) => [code, { title }]),

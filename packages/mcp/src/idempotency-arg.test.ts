@@ -4,14 +4,8 @@
 // idempotent action was idempotent on every surface but this one.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  action,
-  memoryIdempotencyStore,
-  registerAction,
-  resetActions,
-  resetIdempotency,
-  setIdempotencyStore,
-} from '@ultimat3/action';
+import { action, memoryIdempotencyStore, registerAction, resetActions } from '@ultimat3/action';
+import { installIdempotencyStore, resetIdempotency } from '@ultimat3/action/adapter';
 import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,
@@ -83,7 +77,7 @@ const listedSchema = async (server: ReturnType<typeof defineAppMcp>['server']) =
 beforeEach(() => {
   runs = 0;
   seen = [];
-  setIdempotencyStore(memoryIdempotencyStore());
+  installIdempotencyStore(memoryIdempotencyStore());
   definePermissions(['card:charge']);
   defineRoles({ owner: { grants: ['card:charge'] } });
 });

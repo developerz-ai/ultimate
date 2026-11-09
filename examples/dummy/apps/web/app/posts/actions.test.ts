@@ -14,11 +14,24 @@ import {
   providerGateway,
   scriptedProvider,
 } from '@ultimat3/ai';
-import { beforeEach, expect, test } from '@ultimat3/testing';
+import type { Gateway } from '@ultimat3/ai/adapter';
+import { installAiGateway } from '@ultimat3/ai/adapter';
+import { afterEach, beforeEach, expect, test } from '@ultimat3/testing';
 import { requestPostsExport } from './actions/request-posts-export';
 import { reviewDraft } from './actions/review-draft';
 import { summarizePosts } from './actions/summarize-posts';
 import { exportPosts, postsExportPrefix } from './jobs/export-posts';
+
+// The gateway is `aiGateway` in apps/web/runtime.ts at boot; a test installs its own through the
+// adapter installer, and `configureAi()` still clears the semantic cache. Undone after each test.
+const releases: (() => void)[] = [];
+const useGateway = (gateway: Gateway): void => {
+  configureAi();
+  releases.push(installAiGateway(gateway));
+};
+afterEach(() => {
+  for (const release of releases.splice(0).reverse()) release();
+});
 
 /** Every prompt the provider was sent, so a refusal can be shown to have cost nothing. */
 const sent: string[] = [];
@@ -33,7 +46,7 @@ const answer = (prompt: string): string => {
 // test answers from a summary another one cached.
 beforeEach(() => {
   sent.length = 0;
-  configureAi({ gateway: providerGateway({ providers: [echoProvider({ fallback: answer })] }) });
+  useGateway(providerGateway({ providers: [echoProvider({ fallback: answer })] }));
 });
 
 test('summarizePosts answers one member per post, in the order asked, and a foreign post fails alone', async ({
@@ -92,7 +105,7 @@ test('reviewDraft calls its summarize tool, then answers a verdict in its schema
       { answer: { verdict: 'revise', notes: 'Say which rounding rule the body defends.' } },
     ],
   });
-  configureAi({ gateway: providerGateway({ providers: [model] }) });
+  useGateway(providerGateway({ providers: [model] }));
 
   const { value, billed } = await meteredRun(() =>
     reviewDraft.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId }),
@@ -116,7 +129,7 @@ test('reviewDraft is refused for a member of another org, at no cost', async ({
     mara: 'member:mara',
   });
   const model = scriptedProvider({ turns: [] });
-  configureAi({ gateway: providerGateway({ providers: [model] }) });
+  useGateway(providerGateway({ providers: [model] }));
 
   await expect(
     reviewDraft.as(actorFor(mara), { postId: draft.id, orgId: draft.orgId }),

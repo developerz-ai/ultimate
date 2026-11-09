@@ -5,6 +5,7 @@
 // answers, so an upgrade moves them without a codemod in every app that ever shipped.
 
 import type { GeneratedFile } from './naming';
+import { baseRuntimeFiles } from './scaffold-runtime-ports';
 
 const server =
   (): string => `// The production entry. \`docker/Dockerfile\` starts this, and \`x build --target binary\` compiles it.
@@ -131,8 +132,12 @@ if (import.meta.main) {
 }
 `;
 
-/** The two files, in the order a deploy meets them: the process, then the artifact. */
+/**
+ * The process, its runtime (every adapter port, commented — `scaffold-runtime-ports.ts`), then the
+ * artifact, in the order a deploy meets them.
+ */
 export const entryFiles = (): readonly GeneratedFile[] => [
   { path: 'apps/web/server.ts', contents: server() },
+  ...baseRuntimeFiles(),
   { path: 'apps/web/prerender.ts', contents: prerender() },
 ];

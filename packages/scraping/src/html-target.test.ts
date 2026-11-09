@@ -3,8 +3,7 @@
 // and a lookup that walks the prototype chain answers a function where the fixture has nothing.
 
 import { describe, expect, test } from 'bun:test';
-import { NotImplementedError } from '@ultimat3/core';
-import { testScrapeClock } from './clock';
+import { frozenClock, NotImplementedError } from '@ultimat3/core';
 import { htmlTarget } from './html-target';
 import type { PageRecording } from './recording';
 
@@ -15,7 +14,7 @@ const targetOver = (recording: PageRecording) =>
     driver: 'fixture',
     lookup: (url) => Promise.resolve(url === recording.url ? recording : undefined),
     rules: { allowHosts: ['shop.test'] },
-    clock: testScrapeClock(),
+    clock: frozenClock(),
     source: 'test/fixtures',
     start: recording,
   });

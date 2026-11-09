@@ -15,9 +15,10 @@ import {
 } from 'bun:test';
 import { configureLifecycle, ctxOf, drain, isUltimateError, resetLifecycle } from '@ultimat3/core';
 import { db, type PgliteClient, pgliteClient, setDbClient } from '@ultimat3/db';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { consumer } from './consumer';
 import type { ConsumerHandle } from './consumer-types';
-import { type JobDriver, resetJobDriver, setJobDriver } from './driver';
+import type { JobDriver } from './driver';
 import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { job, resetJobs } from './job';
@@ -146,7 +147,7 @@ function declare(hooks: Hooks = {}): ConsumerHandle {
 
 beforeEach(async () => {
   driver = await harness.driver();
-  setJobDriver(driver);
+  installJobDriver(driver);
   await appTables();
 });
 

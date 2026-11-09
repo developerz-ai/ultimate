@@ -109,6 +109,6 @@ From the repo root — the seal-key preload is the root's, so `bun test --filter
 directory fails on the first sealed column:
 
 ```bash
-bun test packages/admin
+bun test ./packages/admin/
 bunx tsc --noEmit -p packages/admin/tsconfig.json
 ```

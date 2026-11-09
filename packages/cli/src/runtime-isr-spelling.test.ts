@@ -7,6 +7,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { invalidateTags, isolateGraph, tag } from '@ultimat3/cache';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { clearRoutes, defineRoute, h, registerRoute, withStatus } from '@ultimat3/render';
 import type { IsrController } from '@ultimat3/render/server';
@@ -57,6 +58,9 @@ const restoreGraph = isolateGraph();
 const releases: (() => void)[] = [];
 
 afterEach(() => {
+  // Every `httpServer` limits through the ONE installed store since v31, so a test's requests
+  // would spend the next test's bucket; the preload resets it only per file.
+  resetRateLimitStore();
   for (const release of releases.splice(0)) release();
   clearRoutes();
   resetLocaleConfig();

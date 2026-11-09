@@ -18,7 +18,7 @@ import { openAiProvider } from './openai-provider';
 import { definePrompt } from './prompt';
 import type { Provider } from './provider';
 import { anthropicProvider } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
 useFixtureModels();
@@ -103,7 +103,7 @@ beforeEach(() => {
 describe('a respond call cut off at the ceiling is X_LLM_TRUNCATED, never an empty answer', () => {
   for (const { wire, model, provider } of wires()) {
     test(`llm() over the ${wire} wire`, async () => {
-      configureAi({ gateway: providerGateway({ providers: [provider()], defaultModel: model }) });
+      installAiGateway(providerGateway({ providers: [provider()], defaultModel: model }));
       const write = llm({
         input: Input,
         output: Output,
@@ -119,7 +119,7 @@ describe('a respond call cut off at the ceiling is X_LLM_TRUNCATED, never an emp
     });
 
     test(`agent() over the ${wire} wire`, async () => {
-      configureAi({ gateway: providerGateway({ providers: [provider()], defaultModel: model }) });
+      installAiGateway(providerGateway({ providers: [provider()], defaultModel: model }));
       const write = agent({
         input: Input,
         output: Output,
@@ -146,8 +146,8 @@ describe('an agent turn cut off while it was asking for a tool', () => {
       stop_reason: 'max_tokens',
       usage: { input_tokens: 10, output_tokens: 4_096 },
     };
-    configureAi({
-      gateway: providerGateway({
+    installAiGateway(
+      providerGateway({
         providers: [
           anthropicProvider({
             apiKey: 'k',
@@ -157,7 +157,7 @@ describe('an agent turn cut off while it was asking for a tool', () => {
         ],
         defaultModel: 'claude-opus-5',
       }),
-    });
+    );
     const write = agent({
       input: Input,
       output: Output,

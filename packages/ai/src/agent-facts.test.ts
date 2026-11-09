@@ -14,7 +14,7 @@ import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
@@ -43,9 +43,7 @@ beforeEach(() => {
   resetAiRuntime();
   resetAgents();
   resetActions();
-  configureAi({
-    gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-  });
+  installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
 });
 
 describe('describeAgents', () => {
@@ -91,9 +89,9 @@ describe('describeAgents', () => {
   // The row names the model a call would run on: `run()` reads the gateway's `defaultModel` after
   // the declaration and its prompt, so a row that skipped it described a model nobody calls.
   test("an undeclared model is the gateway's defaultModel, and says so", () => {
-    configureAi({
-      gateway: providerGateway({ providers: [echoProvider()], defaultModel: 'claude-sonnet-5' }),
-    });
+    installAiGateway(
+      providerGateway({ providers: [echoProvider()], defaultModel: 'claude-sonnet-5' }),
+    );
     const prompt = promptFor();
     const base = {
       input: Input,
@@ -122,7 +120,7 @@ describe('describeAgents', () => {
   // M12: no fourth place. A declaration naming no model, under a gateway with no `defaultModel`,
   // is described as naming none — never as a vendor id the framework picked for it.
   test('an agent nothing names a model for is published with model null, not a vendor default', () => {
-    configureAi({ gateway: providerGateway({ providers: [echoProvider()] }) });
+    installAiGateway(providerGateway({ providers: [echoProvider()] }));
     registerAction(
       'unchosenAgent',
       agent({

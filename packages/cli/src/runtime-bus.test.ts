@@ -20,13 +20,15 @@ import {
   BUS_CONNECT_WAIT_MS,
   FakeNatsBroker,
   fakeNatsConnect,
+  InProcessTransport,
   publishChannelEvent,
 } from '@ultimat3/realtime/server';
 import { busLabel, busUseFor, DEV_BUS_WAIT_MS, selectBus } from './runtime-bus';
 
 const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
-const NATS = { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } as const;
-const MEMORY = { enabled: true, transport: 'memory', urlEnv: undefined } as const;
+// v31: the bus is `NATS_URL`'s alone; the section only says whether realtime runs.
+const NATS = { enabled: true } as const;
+const MEMORY = { enabled: true } as const;
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -337,5 +339,39 @@ describe('selectBus(), the cases that are not NATS', () => {
     await running.stop();
     expect(closed).toBe(0);
     await close();
+  });
+});
+
+// v31 dropped `realtime.transport`, so a forgotten `NATS_URL` no longer refuses: it runs the
+// in-process bus. A production boot that does says so, once — never silently one node's worth of
+// fanout behind a load balancer.
+describe('the in-process bus in production', () => {
+  const pick = (env: Record<string, string>, override?: boolean) => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      selectBus({
+        env,
+        realtime: { enabled: true },
+        roles: ['web'],
+        ...(override === true ? { override: new InProcessTransport() } : {}),
+      });
+      return warn.mock.calls.filter(([message]) => String(message).includes('in-process bus'));
+    } finally {
+      warn.mockRestore();
+    }
+  };
+
+  test('is warned about, naming NATS_URL and runtime.ts transport', () => {
+    const calls = pick({ NODE_ENV: 'production' });
+    expect(calls).toHaveLength(1);
+    const fields = JSON.stringify(calls[0]?.[1]);
+    expect(fields).toContain('NATS_URL');
+    expect(fields).toContain('runtime.ts');
+  });
+
+  test('is not warned about in development, with NATS_URL, or with a runtime.ts transport', () => {
+    expect(pick({})).toHaveLength(0);
+    expect(pick({ NODE_ENV: 'production', NATS_URL: 'nats://bus.test:4222' })).toHaveLength(0);
+    expect(pick({ NODE_ENV: 'production' }, true)).toHaveLength(0);
   });
 });

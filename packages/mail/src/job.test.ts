@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { JobRunArgs } from '@ultimat3/jobs';
+import { installMailDriver, resetMailDriver } from './adapter';
 import type { MailMessage } from './driver';
-import { resetMailDriver, setMailDriver } from './driver';
 import { driverUnavailable } from './errors';
 import { mailIdempotencyKey } from './idempotency';
 import { mailMessageSchema, sendMailJob } from './job';
@@ -65,7 +65,7 @@ test("the caller's idempotency key wins over the derived one", () => {
 test('a queued payload with a line break in its subject never reaches a driver', async () => {
   resetMailDriver();
   const reached: string[] = [];
-  setMailDriver({
+  installMailDriver({
     name: 'probe',
     send: (message) => {
       reached.push(message.subject);

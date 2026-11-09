@@ -14,7 +14,8 @@ import {
   uuid,
 } from '@ultimat3/entity';
 import { configureLocales, resetLocaleConfig, unlocalizedPath } from '@ultimat3/i18n';
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import {
   defineRoles,
   knownPermissions,
@@ -43,7 +44,7 @@ let rowId = '';
 
 beforeAll(async () => {
   configureLocales({ supported: ['en', 'es'], fallback: 'en' });
-  setJobDriver(memoryJobDriver());
+  installJobDriver(memoryJobDriver());
   defineRoles({
     ...previousRoles,
     operator: {

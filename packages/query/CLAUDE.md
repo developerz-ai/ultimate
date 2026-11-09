@@ -14,6 +14,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 |---|---|
 | `query.ts` | the primitive: `query()`, `describeQuery`, `queryHash`; the front door for the read path |
 | `read.ts` | **the one read path** (`runQuery`, `sourceFor`) + the private declaration store `sql` lives in |
+| `rows-override.ts`, `adapter.ts` | `@ultimat3/query/adapter`'s `overrideRows(query, rows \| fn \| undefined)`: canned rows where `sql()` is, answered in `buildSource` AFTER the parse and the policy, never cached (`rows-override.test.ts`). Never on the barrel — `@ultimat3/testing`'s `stub()` is its one caller |
 | `contract-test.ts` | `.contract()`, the generated suite. The three `X_CONTRACT_*` codes and `X_CONTRACT_DRIFT` are borrowed (`QUERY_BORROWED_ERROR_CODES`) |
 | `exercise.ts` | the exercise twin. "Reached" means `sql()` built a source, read off the refusal (`beforeSql`), because `read.ts` keeps no counter. No transaction: a read writes nothing |
 | `exercise-declarations.ts` | action's twin: `.contract({ exercise })` takes the app's `defineExercise()` value and reads the entry by the query's name (`apps/web/exercise.ts`, the one home) |
@@ -278,7 +279,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 ## Commands
 
 ```
-bun test packages/query
+bun test ./packages/query/
 bun run typecheck
 ```
 

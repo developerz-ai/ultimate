@@ -8,7 +8,10 @@ export const SECRETS_SUBCOMMANDS = ['show', 'init', 'edit', 'set', 'rotate'] as 
 
 export const secretsSpec: CommandSpec = {
   name: 'secrets',
-  summary: `the committed encrypted secrets, decrypted into the ${ENV_SCHEMA_EXPORT} variables of the same names`,
+  // The key is read from the env and the file only, and the summary says so: importing
+  // `apps/<app>/runtime.ts` for its `secretSource` would run the app's boot guards, which may need
+  // the very secrets this command edits. A KMS/Vault source is the booted app's (`runtime.ts`).
+  summary: `the committed encrypted secrets, decrypted into the ${ENV_SCHEMA_EXPORT} variables of the same names; the master key is ULTIMATE_SECRETS_KEY or .secrets.key only — a runtime.ts secretSource is the booted app's`,
   usage: 'x secrets [show|init|edit|set <NAME>|rotate [--drop <keyId>]] [--json]',
   requiresApp: true,
   subcommands: [...SECRETS_SUBCOMMANDS],

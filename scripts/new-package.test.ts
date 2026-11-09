@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { PACKAGE_FILES } from '@ultimat3/cli';
+import { checkDocTestPaths } from './doc-test-paths';
 import { registerIn } from './lib/error-code-plan';
 import { allowedTiersFor, TIERS } from './lib/tiers';
 import {
@@ -34,6 +35,16 @@ describe('unit · a scaffolded package opens its npm page the way the gate asks'
     };
     expect(frontFindingsFor(pkg, {})).toEqual([]);
     expect(manifest['homepage']).toBe(WIKI_ROOT);
+  });
+});
+
+describe('unit · a scaffolded package hands its reader a test command that runs only its tests', () => {
+  // It wrote `bun test` — run from the root, every suite in the repo; a bare `packages/<name>` is
+  // a substring filter that also runs `examples/dummy/packages/<name>`. The page rule judges it.
+  test('its CLAUDE.md names the package path, anchored with ./', () => {
+    const page = fileNamed('widgets', 1, 'CLAUDE.md');
+    expect(page).toContain('`bun test ./packages/widgets/`');
+    expect(checkDocTestPaths([{ path: 'packages/widgets/CLAUDE.md', text: page }])).toEqual([]);
   });
 });
 

@@ -12,10 +12,10 @@ import type { Ctx } from '@ultimat3/core';
 import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { clearRegistry, entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { BackfillInput } from './backfill';
 import { backfill } from './backfill';
 import type { ClaimedJob, JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
@@ -123,7 +123,7 @@ beforeEach(() => {
   resetJobs();
   table = tableFor(posts, memoryRepo(posts, SEED));
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterEach(() => {

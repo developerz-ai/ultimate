@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { isUltimateError, logger, resetLifecycle } from '@ultimat3/core';
+import { configureAuthenticator, resetAuthenticator } from '@ultimat3/http';
 import { clearChannels } from '@ultimat3/realtime';
 import { FakeNatsBroker, fakeNatsConnect } from '@ultimat3/realtime/server';
 import type { StartRolesOptions } from './role-start';
@@ -12,7 +13,7 @@ import { selectBus } from './runtime-bus';
 import type { RunningServices } from './runtime-services';
 
 const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
-const NATS = { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } as const;
+const REALTIME = { enabled: true } as const;
 const takes = { upgrade: () => true, requestIP: () => null };
 
 const waitFor = async (done: () => boolean, polls = 500): Promise<void> => {
@@ -25,13 +26,14 @@ afterEach(async () => {
   for (const stop of stops.splice(0).reverse()) await stop();
   resetLifecycle();
   clearChannels();
+  resetAuthenticator();
 });
 
 /** The bus as `x dev` (or a container) boots it with NATS down, and the sync role over it. */
 async function boot(broker: FakeNatsBroker, dev: boolean) {
   const bus = selectBus({
     env: ENV,
-    realtime: NATS,
+    realtime: REALTIME,
     roles: ['web', 'sync', 'worker', 'scheduler'],
     dev,
     select: {
@@ -48,6 +50,8 @@ async function boot(broker: FakeNatsBroker, dev: boolean) {
     presenceTtlMs: bus.presenceTtlMs,
     busTolerated: bus.tolerant,
   };
+  // The app's own resolver, answering nobody: an admitted upgrade is then refused 401, not shed.
+  configureAuthenticator(async () => null);
   return prepareSync({
     roles: ['sync'],
     port: 0,
@@ -55,7 +59,6 @@ async function boot(broker: FakeNatsBroker, dev: boolean) {
     runtime: runtime as unknown as RunningServices,
     routes: [],
     env: {},
-    overrides: { syncAuthenticate: async () => null },
   } as StartRolesOptions);
 }
 

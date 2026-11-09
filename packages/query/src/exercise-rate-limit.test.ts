@@ -4,12 +4,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
-import {
-  installedRateLimitStore,
-  installRateLimitStore,
-  memoryRateLimitStore,
-  resetRateLimitStore,
-} from '@ultimat3/http';
+import { installedRateLimitStore, memoryRateLimitStore } from '@ultimat3/http';
+import { installRateLimitStore, resetRateLimitStore } from '@ultimat3/http/adapter';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { exerciseQuery } from './exercise';

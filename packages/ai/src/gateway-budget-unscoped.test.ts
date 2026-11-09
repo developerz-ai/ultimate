@@ -10,7 +10,7 @@ import { providerGateway } from './gateway';
 import { ANSWER, declare, POST_ID, promptFor, stub } from './llm-fixture';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { Provider } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
@@ -74,13 +74,13 @@ describe('a declared budget with no scope open', () => {
 
   test('an llm() action runs under the gateway ceiling', async () => {
     const { provider, seen } = stub(ANSWER);
-    configureAi({
-      gateway: providerGateway({
+    installAiGateway(
+      providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [provider],
         budget: { request: 1 },
       }),
-    });
+    );
     const summarize = declare(promptFor());
     await expect(summarize({ postId: POST_ID }, { ctx: anonymousCtx() })).rejects.toMatchObject({
       code: 'X_AI_BUDGET_EXCEEDED',

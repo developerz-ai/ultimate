@@ -4,9 +4,9 @@
 // at 460 of its 500 lines.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { fakeCdpBrowser } from './cdp-fake-fixture';
 import { cdpTarget } from './cdp-target';
-import { testScrapeClock } from './clock';
 import {
   COLOR_SCHEME_FEATURE,
   COLOR_SCHEMES,
@@ -41,7 +41,7 @@ describe('unit · the CDP driver', () => {
   test('the scheme reaches the browser as the media feature, by name', async () => {
     const browser = fakeCdpBrowser({ url: URL, html: '<p>hi</p>' });
     const page = await browser.newPage();
-    const target = await cdpTarget({ page, browser, rules: RULES, clock: testScrapeClock() });
+    const target = await cdpTarget({ page, browser, rules: RULES, clock: frozenClock() });
 
     await target.setColorScheme('dark');
     expect(browser.colorScheme).toBe('dark');
@@ -61,7 +61,7 @@ describe('unit · the CDP driver', () => {
 
     const browser = fakeCdpBrowser({ url: URL, html: '<p>hi</p>' });
     const page = await browser.newPage();
-    const target = await cdpTarget({ page, browser, rules: RULES, clock: testScrapeClock() });
+    const target = await cdpTarget({ page, browser, rules: RULES, clock: frozenClock() });
 
     await target.setColorScheme('dark');
     await target.setColorScheme('no-preference');
@@ -79,7 +79,7 @@ describe('unit · the CDP driver', () => {
     const { emulateMediaFeatures: _dropped, ...page } = rich as typeof rich & {
       emulateMediaFeatures?: unknown;
     };
-    const target = await cdpTarget({ page, browser, rules: RULES, clock: testScrapeClock() });
+    const target = await cdpTarget({ page, browser, rules: RULES, clock: frozenClock() });
 
     let thrown: { code?: string; fix?: string } = {};
     try {
@@ -112,7 +112,7 @@ describe('unit · the offline drivers', () => {
       source: 'test',
       lookup: (url) => Promise.resolve(url === URL ? RECORDING : undefined),
       rules: RULES,
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       start: RECORDING,
     });
 

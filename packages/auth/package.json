@@ -28,6 +28,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./adapter": "./src/adapter-subpath.ts",
     "./client": "./src/client.ts",
     "./soft-authenticator": "./src/soft-authenticator.ts"
   },

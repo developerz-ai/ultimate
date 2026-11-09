@@ -84,7 +84,9 @@ describe('RegistryLeakError', () => {
     expect(error.fix).not.toContain('resetTiers');
     expect(error.fix).toContain('packages/cli/src/cmd-dev.test.ts');
     // Axiom 4: the fix ends in something the reader runs, not in a description of the edit.
-    expect(error.fix).toContain('bun test "packages/cli/src/cmd-dev.test.ts"');
+    // `./` first: a bare relative path is a SUBSTRING filter to `bun test`, which would also run
+    // `examples/dummy/packages/cli/src/cmd-dev.test.ts` under the wrong config.
+    expect(error.fix).toContain('bun test "./packages/cli/src/cmd-dev.test.ts"');
   });
 
   // The path arrives from `Bun.plugin`'s `onLoad` and the names from the app's own `declareTags`,
@@ -96,7 +98,7 @@ describe('RegistryLeakError', () => {
 
     expect(error.cause).toContain(String.raw`"a file\" with a quote.test.ts"`);
     expect(error.cause).toContain(String.raw`["fixture\"tag"]`);
-    expect(error.fix).toContain(String.raw`bun test "a file\" with a quote.test.ts"`);
+    expect(error.fix).toContain(String.raw`bun test "./a file\" with a quote.test.ts"`);
   });
 
   test('one error carries every leaker, because the run ends once', () => {

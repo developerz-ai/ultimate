@@ -1,11 +1,11 @@
 // Single responsibility: the key ring `seal()` and `open()` work under. The CURRENT key is the one
 // `x secrets` already manages — `ULTIMATE_SECRETS_KEY` first, `.secrets.key` second, through
-// `findMasterKey`, no second variable. RETIRED keys are one more env var, which `x secrets rotate`
+// the installed `SecretSource` (`secret-source.ts`), no second variable. RETIRED keys are one more env var, which `x secrets rotate`
 // writes into the committed file and `installSecrets()` carries into the process like any secret.
 
 import { SealKeyMissingError } from './seal-errors';
+import { masterKeyPath, resolveMasterKey, SECRETS_KEY_ENV, secretSource } from './secret-source';
 import { importKey, masterKeyId, parseMasterKey } from './secrets';
-import { findMasterKey, masterKeyPath, SECRETS_KEY_ENV } from './secrets-store';
 
 /**
  * Master keys that no longer seal but still open: 64 hex characters each, separated by commas or
@@ -91,14 +91,18 @@ async function buildRing(
 let memo: { readonly source: string; readonly ring: Promise<SealKeyRing> } | undefined;
 
 /** The ring in force now, or `X_SEAL_KEY_MISSING`. A malformed key is `X_SECRETS_KEY_INVALID`. */
-export function resolveSealKeys(source: SealKeySource = {}): Promise<SealKeyRing> {
+export async function resolveSealKeys(source: SealKeySource = {}): Promise<SealKeyRing> {
   const root = source.root ?? process.cwd();
   const env = source.env ?? (process.env as EnvRecord);
-  const found = findMasterKey(root, env);
+  // The installed `SecretSource`, the one `installSecrets()` asks: a KMS-held key seals too.
+  const found = await resolveMasterKey(root, env);
   if (found === undefined) {
-    return Promise.reject(
-      new SealKeyMissingError({ envVar: SECRETS_KEY_ENV, keyPath: masterKeyPath(root) }),
-    );
+    const name = secretSource().name;
+    throw new SealKeyMissingError({
+      envVar: SECRETS_KEY_ENV,
+      keyPath: masterKeyPath(root),
+      ...(name === 'default' ? {} : { source: name }),
+    });
   }
   const retired = env[SECRETS_RETIRED_KEYS_ENV] ?? '';
   const key = `${found.hex}\n${retired}`;

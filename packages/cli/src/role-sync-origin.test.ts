@@ -2,7 +2,12 @@
 // served on another origin than the node sees is admitted, any other is refused before
 // `authenticate`), and `http.healthDetailPeers` (who the node's health paths tell the detail to).
 import { afterEach, describe, expect, test } from 'bun:test';
-import { configureHttp, resetHttpConfig } from '@ultimat3/http';
+import {
+  configureAuthenticator,
+  configureHttp,
+  resetAuthenticator,
+  resetHttpConfig,
+} from '@ultimat3/http';
 import { InProcessTransport } from '@ultimat3/realtime/server';
 import type { StartRolesOptions } from './role-start';
 import { prepareSync } from './role-sync';
@@ -12,12 +17,14 @@ const stops: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const stop of stops.splice(0)) await stop();
   resetHttpConfig();
+  resetAuthenticator();
 });
 
 const takes = { upgrade: () => true, requestIP: () => null };
 
 describe('unit · prepareSync', () => {
   test('passes allowedOrigins from APP_URL to the node', async () => {
+    configureAuthenticator(async () => null);
     // Only the two fields `prepareSync` reads off the runtime; the rest belongs to other roles.
     const runtime = { transport: new InProcessTransport(), presenceTtlMs: 30_000 };
     const prepared = await prepareSync({
@@ -27,7 +34,6 @@ describe('unit · prepareSync', () => {
       runtime: runtime as unknown as RunningServices,
       routes: [],
       env: { APP_URL: 'https://www.example.com' },
-      overrides: { syncAuthenticate: async () => null },
     } as StartRolesOptions);
     stops.push(() => prepared.stop());
     const dial = (origin: string) =>
@@ -43,6 +49,7 @@ describe('unit · prepareSync', () => {
 
 describe('unit · prepareSync · health detail', () => {
   const prepare = async () => {
+    configureAuthenticator(async () => null);
     const runtime = { transport: new InProcessTransport(), presenceTtlMs: 30_000 };
     const prepared = await prepareSync({
       roles: ['sync'],
@@ -51,7 +58,6 @@ describe('unit · prepareSync · health detail', () => {
       runtime: runtime as unknown as RunningServices,
       routes: [],
       env: {},
-      overrides: { syncAuthenticate: async () => null },
     } as StartRolesOptions);
     stops.push(() => prepared.stop());
     return async (address: string): Promise<boolean> => {

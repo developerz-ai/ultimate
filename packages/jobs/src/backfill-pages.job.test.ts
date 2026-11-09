@@ -14,10 +14,11 @@ import {
 } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { backfill } from './backfill';
 import type { BackfillPage } from './backfill-definition';
 import { backfillOrigin } from './backfill-registry';
-import { type JobDriver, resetJobDriver, setJobDriver } from './driver';
+import type { JobDriver } from './driver';
 import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { resetJobs } from './job';
@@ -72,7 +73,7 @@ const named = (what: string): string => {
 
 beforeEach(async () => {
   driver = await harness.driver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterEach(() => {

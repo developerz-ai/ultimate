@@ -130,9 +130,15 @@ export class NotInAppError extends UltimateError {
     below?: readonly string[];
     /** `from` already depends on the framework, so `x new` would be a second project, not a fix. */
     adopter?: boolean;
+    /** `from`'s `package.json` has an `x` script (the framework repo): `bun run x -- … --cwd`. */
+    xScript?: boolean;
   }) {
     const [first] = input.below ?? [];
     const found = (input.below ?? []).join(', ');
+    // Word by word: `'vapid create'` pasted as one quoted token is a command `x` does not have.
+    // Assembled from arrays of screened words, so no value is spliced where a shell runs it.
+    const argv = input.command.split(' ').map(quoteArg);
+    const words = argv.join(' ');
     super({
       code: 'X_NOT_IN_APP',
       cause:
@@ -143,9 +149,13 @@ export class NotInAppError extends UltimateError {
             : `"x ${input.command}" must run inside an Ultimate app; no app.config.ts at or above ${input.from}`,
       fix:
         first !== undefined
-          ? `cd ${quoteArg(first)} && x ${quoteArg(input.command)} --json`
+          ? // Never a bare `x` (on no PATH outside an app), nor `bunx x`: with no `node_modules` it
+            // fetches the unrelated npm package `x`. The framework's own package name always resolves.
+            input.xScript === true
+            ? ['bun', 'run', 'x', '--', ...argv, '--cwd', quoteArg(first), '--json'].join(' ')
+            : ['cd', quoteArg(first), '&&', 'bunx', '@ultimat3/cli', ...argv, '--json'].join(' ')
           : input.adopter === true
-            ? `x new scratch-app --dry-run --json   # its file list carries app.config.ts; write one at the app root, then re-run: x ${quoteArg(input.command)} --json`
+            ? `x new scratch-app --dry-run --json   # its file list carries app.config.ts; write one at the app root, then re-run: x ${words} --json`
             : 'bunx create-ultimate myapp && cd myapp',
     });
   }
@@ -195,7 +205,7 @@ export class ScaffoldPathEscapeError extends UltimateError {
       cause: `generated path "${input.path}" resolves outside ${input.dir}`,
       fix:
         input.fix ??
-        `make the path relative to the app root with no ".." segment, then re-run: bun test packages/cli/src/scaffold-typecheck.contract.test.ts`,
+        `make the path relative to the app root with no ".." segment, then re-run: bun test ./packages/cli/src/scaffold-typecheck.contract.test.ts`,
     });
   }
 }
@@ -211,7 +221,7 @@ export class GenerateJsonInvalidError extends UltimateError {
     super({
       code: 'X_GENERATE_JSON_INVALID',
       cause: `${input.path} is declared merge: 'json' but the generator's own contents for it do not parse as a JSON object`,
-      fix: `fix the template that emits ${input.path}, then re-run: bun test packages/cli/src/cmd-generate.test.ts`,
+      fix: `fix the template that emits ${input.path}, then re-run: bun test ./packages/cli/src/cmd-generate.test.ts`,
     });
   }
 }
@@ -407,8 +417,8 @@ export class RoleUnknownError extends UltimateError {
  * The enqueue side and the claim side are looking at two different queues.
  *
  * `startServices` builds the drivers and captures them; `loadApp` imports the app's modules after
- * it, and a module calling `setJobDriver()` at import time moves the ambient slot without touching
- * the captured object. The worker then claims from what was captured while every
+ * it, and a module calling `installJobDriver()` (`@ultimat3/jobs/adapter`, since v31 the only
+ * installer) at import time moves the ambient slot without touching the captured object. The worker then claims from what was captured while every
  * `handle.enqueue()` publishes to what is ambient — jobs that are accepted, acknowledged, visible
  * in `/_x` and never run. Refused at boot, because the alternative is a deployment that only ever
  * looks healthy.
@@ -420,7 +430,7 @@ export class RuntimeDriverSplitError extends UltimateError {
       // Both names are printed even when they are the same string — two `memory` drivers are two
       // queues, and "they match" is exactly the reading that makes this bug invisible.
       cause: `an app module installed a ${input.driver} driver (ambient: "${input.ambient}") that is not the object this boot captured ("${input.captured}"), so enqueues and claims would use different queues`,
-      fix: `pass the driver to the boot instead of installing it from an app module: runRole({ root, env, runtime: { ${input.driver}: yourDriver } })`,
+      fix: `export const runtime = { ${quoteArg(input.driver)}: yourDriver } satisfies RuntimeOverrides;   // in apps/web/runtime.ts — and delete the module's own install call`,
     });
   }
 }

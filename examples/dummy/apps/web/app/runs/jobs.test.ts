@@ -4,8 +4,8 @@
 
 import { driver } from '@postly/db';
 import type { Ctx } from '@ultimat3/core';
-import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
-import { answerPrompt, noWaitClock } from '@ultimat3/scraping';
+import { ctxOf, noWaitClock, runWithContext, userActor } from '@ultimat3/core';
+import { answerPrompt } from '@ultimat3/scraping';
 import { afterEach, beforeEach, expect, unitTest } from '@ultimat3/testing';
 import { askConsole, PROMPT_LABEL, recordedUsage, syncConnection } from './jobs/sync-connection';
 import * as repo from './repo';

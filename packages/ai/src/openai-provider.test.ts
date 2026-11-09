@@ -26,7 +26,7 @@ import { modelSpec, registerModel, resetModels } from './models';
 import { openAiProvider } from './openai-provider';
 import { definePrompt } from './prompt';
 import { costOf, type GenerateRequest, STREAM_ONLY_MAX_TOKENS, type StreamChunk } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
@@ -444,7 +444,7 @@ describe('through llm()', () => {
         ),
       ),
     });
-    configureAi({ gateway: providerGateway({ providers: [openai] }) });
+    installAiGateway(providerGateway({ providers: [openai] }));
 
     const answer = await summarizer()({ postId: 'p-1' }, { ctx: anonymousCtx() });
 
@@ -470,7 +470,7 @@ describe('through llm()', () => {
         jsonResponse(completion({ content: null, refusal: 'I will not do that' })),
       ),
     });
-    configureAi({ gateway: providerGateway({ providers: [openai] }) });
+    installAiGateway(providerGateway({ providers: [openai] }));
 
     await expect(summarizer()({ postId: 'p-1' }, { ctx: anonymousCtx() })).rejects.toMatchObject({
       code: 'X_LLM_REFUSED',

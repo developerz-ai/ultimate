@@ -108,16 +108,13 @@ const backfillTest = (
 ): string => `// ${name.camel}'s durable identity: one live run per name, retried under the same key. The work
 // itself — the pass over real rows and the projection it applies — is the unit suite's, next door.
 
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
-import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { beforeAll, expect, jobTest, swapAdapter } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
-// The driver is process-global, so it is installed and released around this file rather than
-// left behind for whichever test happens to run next.
-beforeAll(() => {
-  setJobDriver(memoryJobDriver());
-});
-afterAll(resetJobDriver);
+// The queue is a process-global adapter port, so it is swapped for this file and put back when the
+// file ends, never left behind for whichever test happens to run next.
+beforeAll(() => swapAdapter('jobs', memoryJobDriver()));
 
 // The durable name this sweep runs under, spelled once — so the assertion below carries the
 // backfill's own name and still fits the formatter width the app's \`lint\` step enforces.

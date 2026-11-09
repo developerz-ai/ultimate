@@ -62,10 +62,10 @@ export const dailyOrders = scrape({
 | `onSettled` | — | how the run ended, told once: the `ScrapeReport` on `completed`, the `code` and the last attempt's `usage` otherwise — see [Usage](#usage) |
 | `recover` | — | a function — see [Recovery](#recovery) |
 | `artifacts` | — | where a failed run's HTML is written: `{ storage: () => disk('artifacts') }` — a thunk, read per write |
-| `driver` | — | which browser. Absent uses the process-wide `setScrapeDriver()` |
+| `driver` | — | which browser. Absent uses the process's — `scrapeDriver` in `apps/<app>/runtime.ts` |
 | `watchdog` | — | `{ idleMs, graceMs }`, defaults `120000` / `5000` |
 | `retry` / `timeout` / `pageTimeout` / `queue` / `concurrency` | — | the job knobs, unchanged — `concurrency` takes the job's keyed form too ([Jobs and workflows](Jobs-And-Workflows)) |
-| `clock` | — | pins this definition's clock. Absent uses the process's — `setScrapeClock()`, which is what a test replaces |
+| `clock` | — | pins this definition's clock. Absent uses the process's — `@ultimat3/core`'s ambient clock, which is what a test replaces |
 
 The CLI has no scrape command and no scrape generator `As of 2026-08-20` — `g` ships thirteen positionals and `scrape` is not one of them. A scrape is reached through the job CLI:
 
@@ -119,7 +119,7 @@ overlay made it worse — `page.values('#password')` read back what was typed in
 `driver-parity-frames.test.ts` pins every frame verb across all three drivers, because the parity
 suite that exists to catch a CDP/offline divergence had no frame coverage at all.
 
-`screenshot`/`pdf` take **no `timeout`** — `CaptureRequest.timeout` and the port's `CaptureOptions.timeoutMs` were deleted in 4.0.0 ([Upgrading](Upgrading)). No driver had ever honoured them, and a deadline enforced above the driver would have had to race `ScrapeClock.sleep`, which under `testScrapeClock` resolves on the first microtask — so every capture in every test would have timed out. The driver's own default is the honest bound.
+`screenshot`/`pdf` take **no `timeout`** — `CaptureRequest.timeout` and the port's `CaptureOptions.timeoutMs` were deleted in 4.0.0 ([Upgrading](Upgrading)). No driver had ever honoured them, and a deadline enforced above the driver would have had to race the clock's `sleep`, which under a test's `frozenClock()` resolves on the first microtask — so every capture in every test would have timed out. The driver's own default is the honest bound.
 
 **`pageErrors()` is a separate stream from `console()`, and that is not tidiness.** An uncaught
 exception calls no console method, so a page whose script died can answer `console(): []` — gate on
@@ -393,16 +393,21 @@ throws is `X_JOB_ON_SETTLED_FAILED` and changes nothing. `run({ progress })` is 
 ### A test's clock
 
 ```ts
-import { noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
+import { afterEach, beforeEach } from 'bun:test';
+import { noWaitClock } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 
-beforeEach(() => setScrapeClock(noWaitClock));
-afterEach(() => resetScrapeClock());
+let release = (): void => {};
+beforeEach(() => {
+  release = installClock(noWaitClock);
+});
+afterEach(() => release());
 ```
 
-| Clock | Sleeping | For |
+| Clock (`@ultimat3/core`, since 31.0.0) | Sleeping | For |
 |---|---|---|
 | `noWaitClock` | one turn of the event loop; `now()` and deadlines are real | a run that waits on something the test does — an answer it publishes, a second run it starts |
-| `testScrapeClock()` | advances virtual time | a test OF a timeout |
+| `frozenClock()` | advances virtual time | a test OF a timeout |
 
 A run waits on the process's clock unless its definition pins one, so the declaration under test
 carries no `clock:` written for the test's sake.

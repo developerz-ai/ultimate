@@ -9,7 +9,7 @@
 // A step record saying "logged in" would be a checkpoint asserting something about a session that
 // may have expired an hour ago.
 
-import { finiteCount, finiteOption } from '@ultimat3/core';
+import { ambientClock, finiteCount, finiteOption } from '@ultimat3/core';
 import type { JobRunArgs } from '@ultimat3/jobs';
 import { parse } from '@ultimat3/schema';
 import { artifactWriter } from './artifacts';
@@ -22,7 +22,6 @@ import {
   persistSession,
   scrapePrompt,
 } from './auth';
-import { scrapeClock } from './clock';
 import type { ScrapeSession } from './driver';
 import { scrapeDriver } from './driver';
 import { driverUnknown, outputInvalid } from './error-throws';
@@ -88,7 +87,7 @@ export async function runScrape<I, Row>(
   definition: ScrapeDefinition<I, Row>,
   args: JobRunArgs<I>,
 ): Promise<ScrapeReport<Row>> {
-  const clock = definition.clock ?? scrapeClock();
+  const clock = definition.clock ?? ambientClock();
   const driver = definition.driver ?? scrapeDriver();
   // The scrape's name goes in the SCRAPE slot: there is no driver here to name, which is the
   // whole failure.
@@ -342,7 +341,7 @@ async function bodyWithRecovery<I, Row>(
     });
   try {
     return await withStepEvent(
-      { name: 'body', logger, clock: definition.clock ?? scrapeClock(), attempt: args.attempt },
+      { name: 'body', logger, clock: definition.clock ?? ambientClock(), attempt: args.attempt },
       body,
     );
   } catch (thrown) {

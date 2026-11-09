@@ -3,7 +3,7 @@
 // actions, gated by the same decision: `job:read` lists them, `job:manage` runs them.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { resetJobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AdminApp } from '../admin';
 import { jobsAdmin, MANAGER, READER, type Seeded, seedQueue } from './jobs-fixture';
 

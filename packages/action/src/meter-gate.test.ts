@@ -8,9 +8,9 @@ import { ctxOf, frozenClock, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
+import { resetMeterStore } from './adapter';
 import type { MeterWarnEnqueueOptions, MeterWarning, ResolvedLimit } from './meter';
 import { meterSubject } from './meter-gate';
-import { resetMeterStore } from './meter-store';
 import { withCallerAddress, withJobFrame } from './rate-limit-gate';
 
 beforeEach(() => resetMeterStore());

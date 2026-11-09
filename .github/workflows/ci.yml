@@ -1188,10 +1188,11 @@ jobs:
   # `bun`. And `--shard` deals units by measured core-seconds (`UNIT_SECONDS`), so `cli`, which
   # outweighs every other unit together, gets a shard to itself.
   #
-  # Measured LOCALLY 2026-11-05, pinned to four cores (`taskset -c 0-3`) on a shared box, no CI
-  # number yet: before, shard 1/2 81 s and 2/2 402 s; after, 1/2 (`cli` alone, four workers)
-  # 249-286 s and 2/2 (the other 31 units) 129-159 s. `cli` on one process on the same four cores:
-  # 432 s. Still at the 5-minute target, not under it, if a runner is as slow as this box.
+  # THREE shards, 2026-11-09. On CI (runs 42695992610, 42697551693) two shards ran `cli` alone in
+  # 305 s and the other 31 units in 329-350 s: the rest, not `cli`, was the slowest job of the run.
+  # A third free runner splits those 31 into two ~660 core-second halves (`UNIT_SECONDS`, now CI
+  # numbers), so the job ends when `cli` does. Same units, same bars — only who runs them moved.
+  # `cli` itself is the floor: its coverage is one suite's, so it cannot be split across runners.
   #
   # No services, deliberately: `scripts/lib/coverage-pins.ts` explains that the pins are measured
   # with no Postgres, no Redis and no NATS so the number is identical on a laptop and on a runner.
@@ -1205,7 +1206,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1/2, 2/2]
+        shard: [1/3, 2/3, 3/3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

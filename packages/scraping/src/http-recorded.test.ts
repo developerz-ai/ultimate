@@ -3,9 +3,8 @@
 // production one.
 
 import { describe, expect, test } from 'bun:test';
-import { structuredLogger } from '@ultimat3/core';
+import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
-import { testScrapeClock } from './clock';
 import { fakeBrowser } from './driver-fake';
 import { recordedHttp } from './http-recorded';
 import type { HttpRecording } from './recording';
@@ -36,7 +35,7 @@ const offline = (robots = true) =>
       Promise.resolve(recordings.find((r) => r.method === method && r.url === url)),
     rules: { allowHosts: ['shop.test'] },
     network: boundedRing<NetworkEntry>(),
-    clock: testScrapeClock(),
+    clock: frozenClock(),
     source: 'test',
     ...(robots
       ? {
@@ -96,7 +95,7 @@ describe('unit · the recorded leg redacts the same body the live leg does', () 
       name: 'orders',
       logger: structuredLogger({ writer: () => undefined }),
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       secrets: secretBag(['SHOP_PASSWORD'], () => SECRET),
     });
@@ -130,7 +129,7 @@ describe('unit · a recording whose age cannot be read is stale, never fresh', (
         }),
       rules: { allowHosts: ['shop.test'] },
       network: boundedRing<NetworkEntry>(),
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       source: 'test',
       maxAgeMs: 86_400_000,
     });
@@ -148,7 +147,7 @@ describe('unit · a recording whose age cannot be read is stale, never fresh', (
   });
 
   test('a fresh, parseable recordedAt still replays', async () => {
-    const now = testScrapeClock().now().toISOString();
+    const now = frozenClock().now().toISOString();
     expect((await aged(now).request('https://shop.test/api/public/orders')).status).toBe(200);
   });
 });

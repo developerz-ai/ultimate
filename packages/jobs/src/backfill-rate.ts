@@ -113,6 +113,7 @@ export function backfillPacer(options: PacerOptions): Pacer {
   return {
     rate: options.rate,
     async wait({ signal, step, clock: runClock }) {
+      // Real time by default: the pacer's wait is a real timer between batches, not a reading of now.
       const clock = options.clock ?? runClock ?? systemClock;
       const sleep = options.sleep ?? clockSleep(clock);
       const aborted = (): JobAbortedError =>

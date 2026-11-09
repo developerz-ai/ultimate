@@ -63,6 +63,7 @@ import { cliOutboundFindings } from './cli-outbound';
 import { docCommandFindings } from './doc-commands';
 import { docFixFindings } from './doc-fixes';
 import { docPathFindings } from './doc-paths';
+import { docTestPathFindings } from './doc-test-paths';
 import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
 import { fixProseFindings } from './fix-prose';
@@ -97,6 +98,7 @@ import { testFixFindings } from './test-fix-citations';
 import { realSleepFindings } from './test-real-sleep';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
+import { tsconfigPathFindings } from './tsconfig-paths';
 import { versionStampFindings } from './version-stamps';
 import { wikiAnchorFindings } from './wiki-anchors';
 import { wikiFenceFindings } from './wiki-fences';
@@ -307,6 +309,8 @@ export const errorContract: HostCheck = async (root) => [
  * | `frameDocFindings` | `wiki/Realtime.md` names the frames the wire actually sends | `FRAME_KINDS` |
  * | `chartVersionFindings` | `docker/helm/Chart.yaml` is on the lockstep version — it sat at 0.0.1, and `appVersion` IS the default image tag | the publishable workspaces' version |
  * | `docCommandFindings` | every `` `x …` `` on a page an agent reads is an invocation this build can run | `loadCommandCatalog()` |
+ * | `docTestPathFindings` | every `bun test <path>` on a page an agent reads is anchored with `./` — bare, Bun reads it as a substring filter and also runs `examples/dummy/packages/<pkg>` under the wrong config; ~40 pages wrote it while CLAUDE.md said "always `./`" | the spans `scanDocSpans` reads |
+ * | `tsconfigPathFindings` | every TypeScript subpath a package exports has its `tsconfig.base.json` `paths` row — nine v31 `./adapter` subpaths resolved in the apps and were TS2307 at the root | each package manifest's `exports` |
  * | `docPathFindings` | every backticked `packages/…`, `scripts/…` or `docs/…` path on a published page exists — eight package CLAUDE.md files named `dev-*` modules 22.0.0 had renamed | the tree, and the two tracked apps |
  * | `gateStepFindings` | a page stating how many steps `x verify` runs, or enumerating them, describes this build's gate — 17 documented against 18 shipped, in 20 files, through a whole major | `VERIFY_STEP_NAMES` |
  * | `versionStampFindings` | one page stamps a version, it is the shipped one, and the workspaces agree | every workspace manifest |
@@ -344,6 +348,8 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await frameDocFindings(root)),
   ...(await chartVersionFindings(root)),
   ...(await docCommandFindings(root)),
+  ...(await docTestPathFindings(root)),
+  ...(await tsconfigPathFindings(root)),
   ...(await docPathFindings(root)),
   ...(await gateStepFindings(root)),
   ...(await versionStampFindings(root)),

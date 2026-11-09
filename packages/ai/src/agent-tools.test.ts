@@ -17,7 +17,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { LlmToolCall, ProjectableAction } from './tools';
 
 useFixtureModels();
@@ -122,9 +122,9 @@ describe('agent({ maxToolConcurrency })', () => {
 
   const run = async (count: number, maxToolConcurrency?: number) => {
     resetAiRuntime();
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [oneTurnOf(count)] }),
-    });
+    installAiGateway(
+      providerGateway({ defaultModel: FIXTURE_MODEL, providers: [oneTurnOf(count)] }),
+    );
     const { seen, tool } = counted();
     const fanned = agent({
       input: t.object({}),
@@ -157,9 +157,7 @@ describe('agent({ maxToolConcurrency })', () => {
 
   test('a tool declared for agents only is offered without being exposed', async () => {
     resetAiRuntime();
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [oneTurnOf(1)] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [oneTurnOf(1)] }));
     const { seen, tool } = counted();
     const agentsOnly: ProjectableAction = { ...tool, mcp: { expose: false, agents: true } };
     const fanned = agent({

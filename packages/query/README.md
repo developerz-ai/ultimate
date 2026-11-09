@@ -220,6 +220,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `facade.ts` | binds each projection to the query; re-implements none of them |
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
+| `adapter.ts` | `@ultimat3/query/adapter` — `overrideRows`, the test seam `@ultimat3/testing`'s `stub()` drives |
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
 | `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `MAX_WIRE_PAGE_SIZE` (500) or the read's `maxPage`; `assertMaxPage` |
 | `validate.ts` | the input parse: `X_INPUT_INVALID` carrying `issues` (by path) and `issuesTruncated` — action's `validate.ts` twin |
@@ -818,6 +819,15 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `QuerySubscribesDriftError` | `X_QUERY_SUBSCRIBES_DRIFT` | `src/errors.ts` |
 | `QuerySubscribesInvalidError` | `X_QUERY_SUBSCRIBES_INVALID` | `src/errors.ts` |
 | `QueryUnregisteredError` | `X_QUERY_UNREGISTERED` | `src/errors.ts` |
+
+## `@ultimat3/query/adapter` — canned rows for a test
+
+`overrideRows(target, rows | (({ input, ctx }) => rows) | undefined)` answers a read with canned
+rows where its `sql()` is. The actor half, the declared rate limit, the input parse and the policy
+still run first, so a stubbed read still refuses whoever its policy refuses; every surface (route,
+MCP, live, pages) gets the same rows, and none is cached, so nothing outlives `undefined`, which
+restores the declared read. Not on the `.` barrel: an app module cannot answer a read with rows its
+`sql()` did not produce. Reach it through `@ultimat3/testing`'s `stub()`.
 
 ## Boundaries
 

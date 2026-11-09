@@ -38,6 +38,31 @@ describe('unit · app boundaries', () => {
     expect(findings[0]?.code).toBe('X_BOUNDARY_SHARED_LEAF');
   });
 
+  // An installer on a package's `./adapter` subpath is the boot's: an app module calling one races
+  // it (`X_RUNTIME_DRIVER_SPLIT`). The one way to swap a backend is `runtime.ts`, outside surfaces.
+  test('a runtime import of an ./adapter subpath is refused; a type import and the barrel are not', () => {
+    const runtime = checkImportRules([
+      file(
+        'apps/web/app/jobs/setup.ts',
+        "import { installJobDriver } from '@ultimat3/jobs/adapter';\ninstallJobDriver(x);",
+      ),
+    ]);
+    expect(runtime.map((finding) => finding.code)).toEqual(['X_BOUNDARY_ADAPTER_IMPORT']);
+    expect(runtime[0]?.at).toBe('apps/web/app/jobs/setup.ts');
+    expect(runtime[0]?.fix).toStartWith('export const runtime = { jobs: yourDriver }');
+    expect(runtime[0]?.fix).toContain('apps/web/app/jobs/setup.ts');
+    expect(
+      checkImportRules([
+        file('apps/web/shared/ai.ts', "import type { Gateway } from '@ultimat3/ai/adapter';"),
+      ]),
+    ).toEqual([]);
+    expect(
+      checkImportRules([
+        file('apps/web/api/index.ts', "import { systemClock } from '@ultimat3/core';"),
+      ]),
+    ).toEqual([]);
+  });
+
   test('app/ may import api/ types but not api/ values', () => {
     const typeOnly = checkImportRules([
       file('apps/web/app/orders/page.tsx', "import type { Order } from '../../api/orders';"),

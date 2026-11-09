@@ -8,9 +8,9 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { nowMs } from './clock';
 import { describeJob } from './describe';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
@@ -140,7 +140,7 @@ describe('the job DSL surface', () => {
   test('.enqueue() and .as() go through one path: the ambient jobs facade', async () => {
     const handle = defineJob();
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
 
     await handle.enqueue({ orgId: 'org-1' });
     await handle.as({ orgId: 'org-2' }, { orgId: 'org-2' });
@@ -191,7 +191,7 @@ describe('the task DSL surface', () => {
   test('.enqueue() fires each entry through the job handle it declared, not a copy', async () => {
     const notify = defineJob();
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
 
     const handle = task({
       name: 'dslDigest3',

@@ -3,6 +3,7 @@
 // `@ultimat3/flags`' evaluations) record into it; a 5xx HOLDS the buffer on the thrown value, and
 // `reportError` releases it with the report's own fingerprint. With no store, nothing allocates.
 
+import { adapterSlot } from './adapter-slot';
 import { asyncContext } from './async-context';
 import { tryUseContext } from './context';
 import { renderThrowable } from './error-render';
@@ -81,23 +82,31 @@ export type FailureFact =
   | { readonly kind: 'flag'; readonly key: string; readonly value: unknown };
 
 const buffers = asyncContext<Buffer>('failure capture');
-let store: FailureStore | null = null;
-let limits: FailureCaptureLimits = { perHour: 5, maxRows: 50, maxBytes: 64 * 1024 };
+const DEFAULT_LIMITS: FailureCaptureLimits = { perHour: 5, maxRows: 50, maxBytes: 64 * 1024 };
+/** One frame per install: the store and the limits in force with it. Nothing installed is "off". */
+const installed = adapterSlot<{
+  readonly store: FailureStore | null;
+  readonly limits: FailureCaptureLimits;
+}>(() => ({ store: null, limits: DEFAULT_LIMITS }));
 /** Held on the thrown value itself, so no request id has to survive the trip to the reporter. */
 const held = new WeakMap<object, HeldFailure>();
 
-/** Install the store (capture on) or `null` (off). Returns the previous one, for a harness. */
-export function setFailureStore(
+/**
+ * Install the store (capture on) or `null` (off). Returns the release, which removes THIS
+ * install's frame (store and limits) whatever order installers stop in (`adapter-slot.ts`). On
+ * `@ultimat3/core/adapter` only, never the barrel: the boot calls it with `runtime.ts`'s
+ * `failureStore`, and `@ultimat3/testing` for one test — an app module calling it would race the
+ * boot, the split `X_RUNTIME_DRIVER_SPLIT` exists to refuse.
+ */
+export function installFailureStore(
   next: FailureStore | null,
   options: Partial<FailureCaptureLimits> = {},
-): FailureStore | null {
-  const previous = store;
-  store = next;
-  limits = { ...limits, ...options };
-  return previous;
+): () => void {
+  // Limits layer over the ones in force, so a store installed with `{ perHour: 2 }` keeps the rest.
+  return installed.install({ store: next, limits: { ...installed.current().limits, ...options } });
 }
 
-export const failureCaptureLimits = (): FailureCaptureLimits => limits;
+export const failureCaptureLimits = (): FailureCaptureLimits => installed.current().limits;
 
 /** Whether a call in flight is being captured: a seam asks this before it builds anything. */
 export const failureCaptureActive = (): boolean => buffers.get() !== undefined;
@@ -110,7 +119,7 @@ export function recordFailureFact(fact: FailureFact): void {
     if (!buffer.flags.has(fact.key)) buffer.flags.set(fact.key, captureValue(fact.value).value);
     return;
   }
-  if (buffer.reads.length >= limits.maxRows) {
+  if (buffer.reads.length >= failureCaptureLimits().maxRows) {
     buffer.truncated = true;
     return;
   }
@@ -167,7 +176,7 @@ export async function withFailureCapture<T>(
   statusOf: (code: string) => number,
   run: () => Promise<T>,
 ): Promise<T> {
-  if (store === null || buffers.get() !== undefined) return run();
+  if (installed.current().store === null || buffers.get() !== undefined) return run();
   const buffer: Buffer = {
     primitive,
     name,
@@ -197,7 +206,7 @@ export function takeHeldFailure(error: unknown): HeldFailure | undefined {
   return found;
 }
 
-export const installedFailureStore = (): FailureStore | null => store;
+export const installedFailureStore = (): FailureStore | null => installed.current().store;
 
 /** A store that refused is logged and never reaches the response that is already on its way. */
 export function failureStoreRefused(failure: unknown): void {

@@ -1,7 +1,7 @@
 // The seam that closes the walls, and the boot check that makes the driver split impossible.
 //
 // The failure case comes first, because it is the bug: `startServices` captures the drivers it
-// built and `loadApp` runs after it, so an app module calling `setJobDriver(theirs)` moved the
+// built and `loadApp` runs after it, so an app module calling `installJobDriver(theirs)` moved the
 // ambient slot and left the capture alone. Every `handle.enqueue()` then went to their queue while
 // the worker claimed from Postgres — and `/_x` read the ambient one, so the dashboard agreed with
 // the enqueue side and disagreed with reality. Nothing failed. Nothing logged.
@@ -16,12 +16,11 @@ import {
   memoryEventBus,
   memoryJobDriver,
   memoryOutboxStore,
-  resetJobDriver,
   resetJobs,
   resetJobsFacade,
   resetTasks,
-  setJobDriver,
 } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { memoryMailDriver } from '@ultimat3/mail';
 import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime/server';
 import { defineStorage, localDriver } from '@ultimat3/storage';
@@ -69,9 +68,9 @@ afterEach(async () => {
 describe('an override that reaches the enqueue side but not the worker is refused', () => {
   test('a driver installed after the boot captured its own is a coded boot failure', async () => {
     const runtime = fakeRuntime();
-    // Exactly what an app module doing `setJobDriver(memoryJobDriver())` at import time does:
+    // Exactly what an app module doing `installJobDriver(memoryJobDriver())` at import time does:
     // `loadApp` runs after `startServices`, so this lands between the capture and `startRoles`.
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
 
     const boot = startRoles({
       roles: ['worker'],
@@ -85,13 +84,14 @@ describe('an override that reaches the enqueue side but not the worker is refuse
     // The whole point: it is refused, with a code, and the fix names the field that does work.
     await expect(boot).rejects.toThrow(/X_RUNTIME_DRIVER_SPLIT/);
     const error = await boot.catch((thrown: unknown) => thrown);
-    expect((error as UltimateError).fix).toContain('runtime: { jobs: yourDriver }');
+    expect((error as UltimateError).fix).toContain('export const runtime = { jobs: yourDriver }');
+    expect((error as UltimateError).fix).toContain('apps/web/runtime.ts');
   });
 
   test('the same driver on both sides boots — the check refuses divergence, not installation', async () => {
     const runtime = fakeRuntime();
     // What `runtime-queue.ts` does: install the driver it is about to hand back, so the two agree.
-    setJobDriver(runtime.jobs);
+    installJobDriver(runtime.jobs);
 
     running = await startRoles({
       roles: ['worker'],

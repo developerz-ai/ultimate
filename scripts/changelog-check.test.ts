@@ -8,6 +8,7 @@ import {
   BREAKING_ENTRY,
   CHANGELOG_PATH,
   changelogFinding,
+  changelogFindings,
   checkChangelog,
   parseChangelog,
   parseDerivedTotal,
@@ -418,6 +419,15 @@ describe('the committed CHANGELOG.md and wiki/Upgrading.md', () => {
     expect(
       checkChangelog({ changelog, upgrading, taggedVersion: await taggedVersion(root) }),
     ).toEqual([]);
+  });
+
+  // `checkChangelog` is the COUNT rule only. The gate runs `changelogFindings` — count, pairing,
+  // the Entry-by-entry intro's package ranges, claims, the stability rules — and this file is the
+  // one a slice is told to keep green. Asserting the count rule alone let Upgrading rows #29–#31
+  // land outside the intro's ranges with this file green (plan 101, wave C): the red surfaced only
+  // at the gate. The file an author runs now asks what the gate asks.
+  test('pass the whole rule set the gate runs, not just the count rule', async () => {
+    expect(await changelogFindings(repoRoot())).toEqual([]);
   });
 
   test('the same files WOULD be refused if this commit were tagged with breaking entries stranded', async () => {

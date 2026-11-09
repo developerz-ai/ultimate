@@ -217,14 +217,17 @@ A limiter of your own implements the same five members:
 `defineAuth` in the process picks it up:
 
 ```ts
-import { configureAuthLimiters, type PgExecutor, postgresAuthLimiter } from '@ultimat3/auth';
+// The HOST's code, not an app's: `@ultimat3/cli`'s boot does exactly this. The installer is on
+// `@ultimat3/auth/adapter` only (31.0.0) — the `.` barrel carries no setter.
+import { type PgExecutor, postgresAuthLimiter } from '@ultimat3/auth';
+import { installAuthLimiters } from '@ultimat3/auth/adapter';
 import type { Clock } from '@ultimat3/core';
 
 declare const bootExecutor: PgExecutor;
 declare const bootClock: Clock;
 
 // In the HOST, before the app's modules import.
-configureAuthLimiters((policy) =>
+installAuthLimiters((policy) =>
   postgresAuthLimiter({ executor: bootExecutor, clock: bootClock, policy }),
 );
 ```
@@ -234,7 +237,7 @@ limiter enforces against what the app declared, so a limiter built at boot on th
 defaults would be `X_AUTH_LIMITER_POLICY_MISMATCH` for every app that tuned its numbers. The
 factory is called once per bucket, with the resolved policy, so the two halves cannot disagree.
 Precedence is `defineAuth({ limiter })` → the installed factory → `memoryAuthLimiter`, and
-`resetAuthLimiters()` puts the per-process default back. `@ultimat3/cli`'s `startServices` calls it
+`resetAuthLimiters()` (also `@ultimat3/auth/adapter`) puts the per-process default back. `@ultimat3/cli`'s `startServices` calls it
 on every boot, so a scaffolded app gets a fleet-wide lockout with nothing to remember.
 
 The table does not forget on its own, and `purgeAuthLimits()` is the framework's reader for that:
@@ -463,7 +466,7 @@ every enrolled user's second factor.
 | `TotpReplayGuard` | one atomic method, `claim(subject, step, at): Promise<boolean>`: `true` the first time, `false` for a replay. A store that cannot answer rejects: a down database is a fault, never a wrong code |
 | `memoryTotpReplayGuard(drift?, maxSubjects?)` | the in-process guard, `{ claim, isUsed, size }`; `isUsed` is for a test. The default only where no host installed one |
 | `postgresTotpReplayGuard({ executor })` | the shared guard: `x_totp_steps` (`SQL_TOTP_REPLAY_TABLE`), one `insert … on conflict do nothing` per claim, `purgeExpired(nowMs)` for the sweep. A framework boot installs it |
-| `configureTotpReplay(() => guard)` / `resetTotpReplay()` | the host's install point, beside `configureAuthLimiters`. Precedence: `defineAuth({ totpReplay })` → the installed factory → memory |
+| `installTotpReplay(() => guard)` (`@ultimat3/auth/adapter`) / `resetTotpReplay()` (both `@ultimat3/auth/adapter`) | the host's install point, beside `installAuthLimiters`. Precedence: `defineAuth({ totpReplay })` → the installed factory → memory |
 | `generateRecoveryCodes(count = 10)` | `{ codes, hashes }`. `codes` is shown once and is never re-derivable |
 | `recoveryCodeHash(code)` | what a code is stored and looked up as — dashes, spaces and case removed first. `auth.adapter.consumeRecoveryCode(userId, hash)` removes it in ONE statement and answers whether it was there, so two requests carrying one code cannot both redeem it |
 | `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code. `totpCode` throws `X_MFA_SECRET_INVALID` on a secret that decodes to zero bytes |
@@ -1064,7 +1067,7 @@ user in several orgs is erased from all of them: list it `{ target, retain }` wh
 | `X_AUTH_SIGN_IN_UNCONFIGURED` | `signInUnconfigured(role, missing)`, thrown by the boot guard `x g sign-in` writes into the app: a `web` or `sync` role outside development and test with sign-in keys unset. Off the socket — a boot refusal, never a response |
 
 ```bash
-bun test packages/auth
+bun test ./packages/auth/
 bun run --filter @ultimat3/auth typecheck
 ```
 
@@ -1089,7 +1092,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `WorkloadCheck` · `WorkloadTokenCheck` | `checkWorkloadToken`'s verdict: the token, or the check that refused it |
 | `PostgresTotpReplayGuard` | the `TotpReplayGuard` `postgresTotpReplayGuard` returns |
 | `PostgresTotpReplayGuardOptions` | what `postgresTotpReplayGuard` takes |
-| `TotpReplayFactory` | `() => TotpReplayGuard`: what `configureTotpReplay` takes |
+| `TotpReplayFactory` | `() => TotpReplayGuard`: what `installTotpReplay` takes (`@ultimat3/auth/adapter`) |
 | `PasskeyPolicy` · `PasskeyPolicyInput` · `PasskeyRelyingParty` · `DEFAULT_PASSKEY_CHALLENGE_TTL_MS` | the `passkeys` block, resolved and as written; the `{ rpId, origins }` a verifier needs |
 | `PasskeyCredential` · `PasskeyChallengeRecord` · `PasskeyEvidence` · `PasskeyCeremony` · `PasskeyStore` | the passkey rows and the adapter slice that stores them |
 | `PasskeyCreationOptions` · `PasskeyRequestOptions` · `PasskeyRegistrationResponse` · `PasskeyAssertionResponse` · `PasskeyCredentialDescriptor` | the JSON wire of a ceremony (WebAuthn L3's `*JSON` dictionaries) |
