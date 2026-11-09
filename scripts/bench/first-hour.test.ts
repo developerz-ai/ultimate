@@ -192,6 +192,29 @@ describe('unit · first-hour disk facts', () => {
     }
   });
 
+  test('of three runs, only the last keeps its tree — the one bench.yml mounts', async () => {
+    // why: Bun has no recursive-remove or existence-check API; `node:fs` owns the throwaway tree.
+    const { existsSync, mkdirSync, rmSync } = await import('node:fs');
+    // why: Bun exposes no path-join primitive.
+    const { join } = await import('node:path');
+    const { runAll } = await import('./first-hour');
+
+    /** Same fake scaffold as above: `create-ultimate` makes the app directory, nothing else runs. */
+    const scaffolder = (): Runner => async (command, options) => {
+      if (command.join(' ').includes('create-ultimate'))
+        mkdirSync(join(options.cwd, 'firsthour'), { recursive: true });
+      return { command, code: 0, ok: true, stdout: '', stderr: '', durationMs: 7 };
+    };
+
+    const runs = await runAll(3, '30.0.0', false, scaffolder());
+    try {
+      expect(runs).toHaveLength(3);
+      expect(runs.map((run) => existsSync(run.work))).toEqual([false, false, true]);
+    } finally {
+      for (const run of runs) rmSync(run.work, { recursive: true, force: true });
+    }
+  });
+
   test('a symlink loop is not followed, and a hard link is counted once — as du counts', async () => {
     // why: Bun has no temp-directory, link or symlink API; `node:fs` owns the throwaway tree.
     const { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } = await import(

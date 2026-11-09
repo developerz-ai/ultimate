@@ -165,6 +165,25 @@ const figuresOf = (run: FirstHourRun) => ({
   ...run.sizes,
 });
 
+/**
+ * `count` clean hours, in order: every run but the last has its tree removed, so only the final
+ * run's `work` — the one `.github/workflows/bench.yml` mounts via `.runs[-1].work` — still exists
+ * on disk afterward. `runner` is the subprocess boundary: `exec` for a real hour, a fake in a test.
+ */
+export async function runAll(
+  count: number,
+  version: string,
+  image: boolean,
+  runner?: Runner,
+): Promise<FirstHourRun[]> {
+  const runs: FirstHourRun[] = [];
+  for (let index = 0; index < count; index += 1)
+    runs.push(
+      await oneRun(version, image, { keep: index === count - 1, ...(runner ? { runner } : {}) }),
+    );
+  return runs;
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const version = String(args.flags.get('version') ?? 'latest');
@@ -173,9 +192,7 @@ if (import.meta.main) {
   if (typeof count !== 'number') {
     report({ ok: false, script: 'first-hour', summary: 'no run', findings: [count] }, args.json);
   }
-  const runs: FirstHourRun[] = [];
-  for (let index = 0; index < count; index += 1)
-    runs.push(await oneRun(version, image, { keep: index === count - 1 }));
+  const runs = await runAll(typeof count === 'number' ? count : 1, version, image);
   const data = { version, box: boxFacts(Bun.env), runs, spread: spreads(runs.map(figuresOf)) };
   const out = args.flags.get('out');
   if (typeof out === 'string') await Bun.write(out, `${JSON.stringify(data, null, 2)}\n`);
