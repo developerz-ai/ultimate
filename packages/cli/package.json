@@ -52,7 +52,7 @@
     "dev": "bun run src/bin.ts dev"
   },
   "dependencies": {
-    "@babel/core": "^8.0.7",
+    "@babel/core": "^8.0.9",
     "@ultimat3/action": "30.9.0",
     "@ultimat3/admin": "30.9.0",
     "@ultimat3/ai": "30.9.0",
