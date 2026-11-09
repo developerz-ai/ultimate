@@ -21,6 +21,15 @@ export interface PinnedRead {
   readonly range?: ByteRange | undefined;
 }
 
+/** Closed, whatever the close says: a read that has its answer does not trade it for a close error. */
+const closeQuietly = async (handle: FileHandle | undefined): Promise<void> => {
+  try {
+    await handle?.close();
+  } catch {
+    // Already closed, or the OS refused: either way the descriptor is no longer this read's.
+  }
+};
+
 /**
  * One open file, proved to be revision `etag`: opened FIRST, then described by path. A write landing
  * in between leaves the handle on the old bytes and the description on the new ones, so it refuses
@@ -36,7 +45,7 @@ async function openChecked(read: PinnedRead): Promise<{ handle: FileHandle; size
     if (entry.etag !== etag) throw revisionChanged(disk, key, etag);
     return { handle, size: (await handle.stat()).size };
   } catch (error) {
-    await handle.close().catch(() => undefined);
+    await closeQuietly(handle);
     throw error;
   }
 }
@@ -48,18 +57,14 @@ async function openChecked(read: PinnedRead): Promise<{ handle: FileHandle; size
  * puts left v3 at v1's inode number and it was served under v1's etag.
  */
 export async function streamPinned(read: PinnedRead): Promise<ReadableStream<Uint8Array>> {
-  const { key, disk, etag, range } = read;
+  const { key, range } = read;
   const checked = await openChecked(read);
-  await checked.handle.close().catch(() => undefined);
+  await closeQuietly(checked.handle);
   const { size } = checked;
   const [first, last] =
     range === undefined ? [0, size - 1] : streamedRange('local', key, range, size);
-  const reopen = async (): Promise<FileHandle> => {
-    const again = await openChecked(read);
-    if (again.size === size) return again.handle;
-    await again.handle.close().catch(() => undefined);
-    throw revisionChanged(disk, key, etag);
-  };
+  // The same etag is the same bytes, so the same size: the etag check is the whole proof.
+  const reopen = async (): Promise<FileHandle> => (await openChecked(read)).handle;
   return streamOf(reopen, first, last + 1);
 }
 
@@ -72,7 +77,7 @@ function streamOf(
   let position = first;
   let handle: FileHandle | undefined;
   const close = async (): Promise<void> => {
-    await handle?.close().catch(() => undefined);
+    await closeQuietly(handle);
     handle = undefined;
   };
   return new ReadableStream<Uint8Array>(

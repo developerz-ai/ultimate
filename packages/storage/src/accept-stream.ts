@@ -38,6 +38,15 @@ async function readHead(
   return { chunks, size, done: false };
 }
 
+/** The uploader's body, no longer wanted: cancelled so the socket stops, whatever cancel answers. */
+async function stopReading(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  try {
+    await reader.cancel();
+  } catch {
+    // An already-errored body cannot be cancelled, and has stopped anyway.
+  }
+}
+
 const concat = (chunks: readonly Uint8Array[]): Uint8Array =>
   new Uint8Array(Bun.concatArrayBuffers([...chunks]));
 
@@ -57,7 +66,7 @@ export async function acceptSignedUploadStream(
   try {
     head = await readHead(reader, key, SNIFF_WINDOW_BYTES, ceiling);
   } catch (error) {
-    await reader.cancel().catch(() => undefined);
+    await stopReading(reader);
     throw error;
   }
   const whole =
@@ -79,7 +88,7 @@ export async function acceptSignedUploadStream(
         chunks.push(next.value);
       }
     } finally {
-      await reader.cancel().catch(() => undefined);
+      await stopReading(reader);
     }
     return acceptSignedUpload({ ...input, bytes: concat(chunks) });
   }

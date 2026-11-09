@@ -122,4 +122,50 @@ describe('acceptSignedUploadStream', () => {
       expect(await disk.exists(grant.key)).toBe(false);
     }
   });
+
+  test('a grant smaller than the sniff window is held to it while the head is read', async () => {
+    const { grant, stored } = await accept('application/pdf', pdf(SNIFF_WINDOW_BYTES), {
+      maxBytes: 4096,
+    });
+    await expect(stored).rejects.toBeUltimateError('X_STORAGE_TOO_LARGE');
+    expect(await disk.exists(grant.key)).toBe(false);
+  });
+
+  test('a disk that gives up part-way cancels the uploader’s body: no socket read to the end', async () => {
+    const policy = uploadPolicy({ maxBytes: MAX, allowedContentTypes: ['application/pdf'] });
+    const request = { filename: 'a.pdf', contentType: 'application/pdf', size: MAX };
+    const grant = await grantUpload({ disk, orgId: ORG, policy, clock, request });
+    let cancelled = false;
+    const bytes = pdf(MAX);
+    let at = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(bytes.slice(at, at + 4096));
+        at += 4096;
+      },
+      cancel: () => {
+        cancelled = true;
+      },
+    });
+    const quitting: StorageDriver = {
+      ...disk,
+      async putStream(_key, stream) {
+        const reader = stream.getReader();
+        await reader.read();
+        await reader.cancel('the disk gave up');
+        return expect.unreachable('a disk that gave up returns nothing');
+      },
+    };
+    await acceptSignedUploadStream({
+      url: grant.url,
+      disk: quitting,
+      orgId: ORG,
+      body,
+      declaredContentType: 'application/pdf',
+      policy,
+      clock,
+    }).catch(() => undefined);
+    expect(cancelled).toBe(true);
+    expect(at).toBeLessThan(MAX);
+  });
 });

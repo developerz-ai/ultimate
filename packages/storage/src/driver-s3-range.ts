@@ -24,6 +24,15 @@ export interface S3RangeDeps {
 
 const CONTENT_RANGE = /^bytes (\d+)-(\d+)\/(\d+)$/;
 
+/** An answer refused before its body is read: the body is dropped, never left on the socket. */
+async function discardBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // A body that cannot be cancelled is already done: the refusal is the answer either way.
+  }
+}
+
 /**
  * The window asked, CAPPED at `maxGetBytes` before it is sent: the ceiling bounds the range, and the
  * object's size is not known until the answer — so at most the ceiling crosses the wire, and an
@@ -50,13 +59,13 @@ export async function readS3Range(
   const { response } = result;
   const window = CONTENT_RANGE.exec(response.headers.get('content-range') ?? '');
   if (response.status !== 206 || window === null) {
-    await response.body?.cancel().catch(() => undefined);
+    await discardBody(response);
     return deps.unreadable(key, `the ranged GET answered ${response.status} with no byte range`);
   }
   const served: ByteRange = [Number(window[1]), Number(window[2])];
   const size = Number(window[3]);
   if (served[0] !== first || served[1] > capped) {
-    await response.body?.cancel().catch(() => undefined);
+    await discardBody(response);
     return deps.unreadable(
       key,
       `asked bytes ${first}-${capped}, answered ${served[0]}-${served[1]}`,
@@ -64,7 +73,7 @@ export async function readS3Range(
   }
   // Cut by the CAP, not by the end of the object: the range asked is over the ceiling.
   if (last > capped && size - 1 > capped) {
-    await response.body?.cancel().catch(() => undefined);
+    await discardBody(response);
     throw rangeTooLarge(deps.driver, key, [first, Math.min(last, size - 1)], deps.maxGetBytes);
   }
   let bytes: Uint8Array;

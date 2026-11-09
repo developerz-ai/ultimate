@@ -182,6 +182,18 @@ describe('answers with nothing to go on', () => {
   });
 });
 
+describe('an abort whose own answer is lost', () => {
+  test('the refused part is what the caller reads, never the abort’s transport error', async () => {
+    fake.failPartWith = s3Error('SlowDown', 503, KEY);
+    fake.loseAnswerOf = 'abort-before';
+    const refused = await catchError(() =>
+      disk.putStream(KEY, chunksOf(10, MIB), { maxBytes: 64 * MIB }),
+    );
+    expect(anyCode(refused)).toBe('X_STORAGE_PUT_FAILED');
+    expect(isUltimateError(refused) ? refused.cause : '').toContain('SlowDown');
+  });
+});
+
 describe('parts in flight', () => {
   test('a slow provider is sent several parts at once, never more buffers than the bound', async () => {
     let sending = 0;

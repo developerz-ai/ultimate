@@ -44,4 +44,27 @@ describe('a pinned local read', () => {
     const body = await disk.stream(KEY, { etag: object?.etag ?? '' });
     expect(await new Response(body).text()).toBe('only version');
   });
+
+  test('a key deleted before the first pull is X_STORAGE_NOT_FOUND, never an empty body', async () => {
+    await disk.put(KEY, bytesOf('soon gone'));
+    const object = await disk.stat(KEY);
+    const body = await disk.stream(KEY, { etag: object?.etag ?? '' });
+    await disk.delete(KEY);
+    const read = await new Response(body).text().catch((error: unknown) => error);
+    expect(read).toBeUltimateError('X_STORAGE_NOT_FOUND');
+  });
+
+  test('a reader that cancels part-way releases the file, and a later pinned read still serves', async () => {
+    const big = new Uint8Array(1024 * 1024).fill(9);
+    await disk.put(KEY, big);
+    const object = await disk.stat(KEY);
+    const reader = (await disk.stream(KEY, { etag: object?.etag ?? '' })).getReader();
+    const first = await reader.read();
+    expect(first.value?.byteLength).toBeLessThan(big.byteLength);
+    await reader.cancel();
+    const again = await disk.streamRange(KEY, [10, 19], { etag: object?.etag ?? '' });
+    expect([...new Uint8Array(await new Response(again).arrayBuffer())]).toEqual(
+      new Array<number>(10).fill(9),
+    );
+  });
 });

@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { PutOptions } from './driver';
 import { s3Driver } from './driver-s3';
-import { COPY_PART_BYTES, copyPartBytes, copyS3InParts } from './driver-s3-copy-parts';
+import { COPY_PART_BYTES, copyPartBytes, copyS3, copyS3InParts } from './driver-s3-copy-parts';
 import { bytesOf, FAKE_ENV, FakeS3Client, s3Error, textOf } from './driver-s3-fixture';
 import type { S3FetchLike, S3Refusal } from './driver-s3-signed';
 
@@ -140,6 +140,109 @@ describe('copyS3InParts, when a part or the Complete goes wrong', () => {
     expect(caught).toBeInstanceOf(TypeError);
     expect(fake.openUploads()).toEqual([]);
     expect(fake.store.has('org/o/copy.bin')).toBe(false);
+  });
+});
+
+describe('copyS3InParts, when the provider answers with nothing to go on', () => {
+  const refusalOf = (caught: unknown): string =>
+    caught instanceof Refused ? caught.refusal.code : `not refused: ${String(caught)}`;
+
+  test('a HEAD with no Content-Length is refused before any upload opens', async () => {
+    const { fake, target, stat } = await wired(
+      undefined,
+      (fake) => async (url, init) =>
+        init.method === 'HEAD'
+          ? new Response(null, { status: 200, headers: { etag: '"e"' } })
+          : fake.fetch(url, init),
+    );
+    const caught = await copyS3InParts(target, {
+      source: 'org/o/big.bin',
+      stat,
+      partBytes: 4,
+    }).catch((error: unknown) => error);
+    expect(refusalOf(caught)).toBe('UnreadableAnswer');
+    expect(fake.signedCalls.some((call) => call.url.searchParams.has('uploads'))).toBe(false);
+  });
+
+  test('an UploadPartCopy answered 200 with an <Error> body is that refusal, and aborted', async () => {
+    const { fake, target, stat } = await wired(
+      undefined,
+      (fake) => async (url, init) =>
+        new URL(url).searchParams.has('partNumber') && init.method === 'PUT'
+          ? new Response('<Error><Code>InternalError</Code><Message>copy failed</Message></Error>')
+          : fake.fetch(url, init),
+    );
+    const caught = await copyS3InParts(target, {
+      source: 'org/o/big.bin',
+      stat,
+      partBytes: 4,
+    }).catch((error: unknown) => error);
+    expect(refusalOf(caught)).toBe('InternalError');
+    expect(fake.openUploads()).toEqual([]);
+  });
+
+  test('a lost Complete over a source with metadata a HEAD cannot prove is said to be unknown', async () => {
+    const { fake, target, stat } = await wired();
+    fake.loseAnswerOf = 'complete-after';
+    const caught = await copyS3InParts(target, {
+      source: 'org/o/big.bin',
+      stat,
+      partBytes: 4,
+    }).catch((error: unknown) => error);
+    expect(caught).toBeUltimateError('X_STORAGE_WRITE_OUTCOME_UNKNOWN');
+  });
+});
+
+describe('copyS3InParts, when the abort is lost too', () => {
+  test('the part’s refusal is what the caller reads, not the abort’s lost answer', async () => {
+    const { fake, target, stat } = await wired();
+    fake.failPartWith = s3Error('SlowDown', 503, 'org/o/copy.bin');
+    fake.loseAnswerOf = 'abort-before';
+    const caught = await copyS3InParts(target, {
+      source: 'org/o/big.bin',
+      stat,
+      partBytes: 4,
+    }).catch((error: unknown) => error);
+    expect(caught instanceof Refused ? caught.refusal.code : 'not the part refusal').toBe(
+      'SlowDown',
+    );
+  });
+});
+
+describe('copyS3', () => {
+  test('a source past CopyObject’s 5 GiB ceiling goes in parts, never one CopyObject', async () => {
+    const { fake, target, stat } = await wired();
+    await copyS3(
+      target.wire,
+      {
+        source: 'org/o/big.bin',
+        destination: 'org/o/copy.bin',
+        ifMatch: undefined,
+        size: 6 * 1024 ** 3,
+        stat,
+      },
+      target.refused,
+    );
+    const ranged = fake.signedCalls.filter((call) => call.headers['x-amz-copy-source-range']);
+    expect(ranged.length).toBe(1);
+    expect(textOf(fake.store.get('org/o/copy.bin')?.bytes ?? new Uint8Array())).toBe('abcdefghij');
+  });
+
+  test('a source under the ceiling is one CopyObject, and its refusal goes to `refused`', async () => {
+    const { fake, target, stat } = await wired();
+    const caught = await copyS3(
+      target.wire,
+      {
+        source: 'org/o/big.bin',
+        destination: 'org/o/copy.bin',
+        ifMatch: '"stale"',
+        size: 10,
+        stat,
+      },
+      target.refused,
+    ).catch((error: unknown) => error);
+    expect(caught instanceof Refused ? caught.refusal.statusCode : 0).toBe(412);
+    expect(fake.signedCalls.some((call) => call.headers['x-amz-copy-source-range'])).toBe(false);
   });
 });
 
