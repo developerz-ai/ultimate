@@ -1,7 +1,12 @@
 // OAuth 2.0 Protected Resource Metadata (RFC 9728) for the MCP endpoint — the framework half of
-// the MCP authorization spec (2025-06-18, unchanged in 2025-11-25): a 401 names where the metadata
-// lives (`WWW-Authenticate: Bearer resource_metadata="…"`), and the metadata names the
-// authorization server(s) a client goes to for a token. The server itself is `@ultimat3/auth`'s
+// the MCP authorization spec's discovery, which the revisions this transport serves (`wire.ts`)
+// do not define alike. The revisions served are 2026-07-28 (`MCP_MODERN_VERSIONS`) and 2025-11-25 /
+// 2025-06-18 / 2025-03-26 (`MCP_LEGACY_VERSIONS`). All but 2025-03-26 require RFC 9728: a 401 names
+// where the metadata lives (`WWW-Authenticate: Bearer resource_metadata="…"`), the metadata names
+// the authorization server(s) a client goes to for a token. 2025-11-25 made that header optional
+// with a `.well-known` fallback (SEP-985); 2025-06-18 required it. 2025-03-26 defines no
+// protected-resource metadata at all — its discovery is RFC 8414 authorization-server metadata at
+// the origin — so it reads none of this. The server itself is `@ultimat3/auth`'s
 // `authorizationServer`, bound to one endpoint by `mcpAuthorizationServer` (`oauth-server.ts`).
 
 import { McpOAuthInvalidError } from './errors-transport';
@@ -128,8 +133,10 @@ export function assertScopeTokens(scopes: readonly string[]): void {
 /**
  * The challenge a 401 carries. `error="invalid_token"` only when a token WAS sent (RFC 6750
  * §3.1: a request with no credential gets no error code). `scope` names what the resource
- * supports (RFC 6750 §3, MCP authorization 2025-06-18 / 2025-11-25 "scope selection"), so a
- * client can ask for it without first fetching the metadata; omitted when there is none.
+ * supports (RFC 6750 §3), so a client can ask for it without first fetching the metadata;
+ * omitted when there is none. Scope selection on the challenge is the MCP authorization spec's
+ * from 2025-11-25 (SEP-835), and modern 2026-07-28 keeps it; the 2025-06-18 and 2025-03-26
+ * revisions carry no scope guidance there.
  */
 export function bearerChallenge(
   metadataUrl: string | undefined,
