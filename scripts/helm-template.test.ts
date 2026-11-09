@@ -1,6 +1,7 @@
-// docker/helm's NetworkPolicy, held closed in BOTH directions by default: a pod reaches DNS, its own
-// namespace and the public internet — never the cloud metadata endpoint (169.254.169.254 hands out
-// the node's credentials), link-local, CGNAT or a private range another tenant's pods live in.
+// docker/helm's NetworkPolicy filters egress by default: a pod reaches DNS, every cluster pod and
+// every routable address — private ranges included, where a managed database lives (RDS on 10.x) —
+// and never the cloud metadata endpoint (169.254.169.254 hands out the node's credentials) or
+// link-local, over IPv4, IPv6 or NAT64.
 //
 // The values assertions always run; the render ones when a helm binary is on PATH (CI ships one).
 
@@ -14,15 +15,11 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 const CHART = join(repoRoot(), 'docker', 'helm');
 const HELM = Bun.which('helm');
 
-/** What no default egress rule may reach: metadata, link-local, CGNAT, every private range. */
-const CLOSED_V4 = [
-  '10.0.0.0/8',
-  '100.64.0.0/10',
-  '169.254.0.0/16',
-  '172.16.0.0/12',
-  '192.168.0.0/16',
-];
-const CLOSED_V6 = ['fc00::/7', 'fe80::/10', 'fd00:ec2::254/128', '64:ff9b::/96'];
+/** What no default egress rule may reach: metadata and link-local, by every address family. */
+const CLOSED_V4 = ['169.254.0.0/16'];
+const CLOSED_V6 = ['fe80::/10', 'fd00:ec2::254/128', '64:ff9b::a9fe:a9fe/128'];
+/** What the default must NOT close: a private backend the chart cannot know the address of. */
+const PRIVATE = ['10.0.0.0/8', '100.64.0.0/10', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7'];
 
 /** NodeLocal DNSCache's well-known address: the one fixed block a default may name, on 53 only. */
 const NODE_LOCAL_DNS = '169.254.20.10/32';
@@ -65,9 +62,6 @@ function openings(rules: readonly EgressRule[]): readonly string[] {
     const dnsOnly =
       (rule.ports?.length ?? 0) > 0 && (rule.ports ?? []).every((port) => port.port === 53);
     for (const peer of rule.to) {
-      if (peer.namespaceSelector !== undefined && rule.ports === undefined) {
-        found.push(`rule ${index}: every port of another namespace`);
-      }
       const block = peer.ipBlock;
       if (block === undefined) continue;
       const closed = block.cidr.includes(':') ? CLOSED_V6 : CLOSED_V4;
@@ -92,8 +86,15 @@ describe('unit · docker/helm egress, closed by default', () => {
     expect((await defaultEgress()).length).toBeGreaterThan(0);
   });
 
-  test('no default rule reaches metadata, link-local, CGNAT or a private range', async () => {
+  test('no default rule reaches metadata or link-local', async () => {
     expect(openings(await defaultEgress())).toEqual([]);
+  });
+
+  test('private ranges stay reachable — a managed database on a VPC address survives the upgrade', async () => {
+    const excepted = (await defaultEgress()).flatMap((rule) =>
+      (rule.to ?? []).flatMap((peer) => peer.ipBlock?.except ?? []),
+    );
+    expect(PRIVATE.filter((cidr) => excepted.includes(cidr))).toEqual([]);
   });
 
   test('DNS goes to cluster pods and NodeLocal DNSCache only, never any host', async () => {
@@ -112,16 +113,16 @@ describe('unit · docker/helm egress, closed by default', () => {
     expect([...new Set(dns)].sort()).toEqual(['TCP', 'UDP']);
   });
 
-  test('the release’s own namespace stays reachable — the in-namespace database, NATS, collector', async () => {
-    const own = (await defaultEgress()).some((rule) =>
-      (rule.to ?? []).some(
-        (peer) =>
-          peer.namespaceSelector === undefined &&
-          peer.ipBlock === undefined &&
-          JSON.stringify(peer.podSelector) === '{}',
-      ),
+  test('every cluster pod stays reachable on every port — a CNI whose ipBlock skips pods included', async () => {
+    const pods = (await defaultEgress()).some(
+      (rule) =>
+        rule.ports === undefined &&
+        (rule.to ?? []).some(
+          (peer) =>
+            JSON.stringify(peer.namespaceSelector) === '{}' && peer.podSelector === undefined,
+        ),
     );
-    expect(own).toBe(true);
+    expect(pods).toBe(true);
   });
 
   test('the check itself notices an open rule', () => {
