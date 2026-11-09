@@ -45,7 +45,10 @@ import { QueryForeignError, QueryUnregisteredError } from './errors';
 import { guardQuery, guardQueryBeforeInput } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
 import { spendReadLimit } from './rate-limit-gate';
+import type { RowsOverride } from './rows-override';
+import { rowsOverrideOf, setRowsOverride } from './rows-override';
 import type { SqlSource } from './source';
+import { from } from './source';
 import { parsedOrNothing, parseQueryInput } from './validate';
 
 /**
@@ -70,6 +73,15 @@ export function defOf(target: AnyQuery): AnyQueryDef {
   const def = DECLARATIONS.get(target);
   if (def === undefined) throw new QueryForeignError(target.name);
   return def;
+}
+
+/**
+ * Canned rows where `target`'s `sql()` is, on every read surface — the actor half, the declared
+ * limit, the parse and the policy still run first. `undefined` restores. On
+ * `@ultimat3/query/adapter` only: `@ultimat3/testing`'s `stub()` is its caller.
+ */
+export function overrideRows(target: AnyQuery, rows: RowsOverride | undefined): void {
+  setRowsOverride(defOf(target), rows);
 }
 
 /** Projections need a stable name; an unregistered query has none yet. */
@@ -268,6 +280,9 @@ async function readRowsIn(
   // a cache whose lifetime is the request. It still *publishes* into the memo: this read is the
   // newest answer the request has, so the next plain read of the key joins it rather than the
   // entry a write earlier in the request already moved past.
+  // Canned rows are never stored — not in the tier, not in the request memo (a `fresh` read
+  // publishes into it): an entry filled from a stub would outlive its undo.
+  if (rowsOverrideOf(def) !== undefined) return await read();
   if (options.fresh === true) return await readFresh(ctx, key, read);
   // `cache:` buys the tier, never the memo: a read asked twice in one request is one execution
   // whether or not its author opted into caching.
@@ -321,6 +336,13 @@ async function buildSource(
   trace: ReadTrace | null,
 ): Promise<SqlSource<object>> {
   const input = await admit(target, raw, ctx, options, trace);
+  const canned = rowsOverrideOf(defOf(target));
+  if (canned !== undefined) {
+    const rows = canned;
+    return from(queryName(target), () =>
+      typeof rows === 'function' ? rows({ input, ctx }) : rows,
+    );
+  }
   // `sql` and the source's `execute` are where `errors:` judges a throw (`declared-errors.ts`).
   const source = judgedSql(target, queryName(target), () => defOf(target).sql(input, ctx));
   // A live window is served in the order its patches are placed in. The matcher breaks a tie on

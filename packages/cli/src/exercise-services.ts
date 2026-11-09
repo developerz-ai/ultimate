@@ -5,7 +5,8 @@
 
 import type { AppConfig, PgExecutor } from '@ultimat3/core';
 import { ENVIRONMENT_KEY } from '@ultimat3/core';
-import { adoptRateLimitStore, postgresRateLimitStore } from '@ultimat3/http';
+import { postgresRateLimitStore } from '@ultimat3/http';
+import { installRateLimitStore } from '@ultimat3/http/adapter';
 import {
   definedStorage,
   defineStorage,
@@ -72,7 +73,7 @@ export async function installExerciseServices(inputs: ExerciseServiceInputs): Pr
     released.push(installStorage());
     // `scope: 'shared'`, as the boot's: a `rateLimit: { scope: 'shared' }` declaration is judged
     // against the installed store, and one process' memory refused it with X_RATE_LIMIT_NOT_SHARED.
-    released.push(adoptRateLimitStore(postgresRateLimitStore({ executor: inputs.executor })));
+    released.push(installRateLimitStore(postgresRateLimitStore({ executor: inputs.executor })));
     // Last, and the one that can refuse (a half VAPID pair): what is already in is undone first.
     released.push(await installPush(inputs));
   } catch (error) {

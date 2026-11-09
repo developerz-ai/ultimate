@@ -12,8 +12,7 @@ import type { CliCommand, CommandContext } from './command';
 import { ok } from './command';
 import { msg } from './messages';
 import type { CommandResult } from './output';
-import { resolveServices } from './runtime-bindings';
-import { startQueue } from './runtime-queue';
+import { openAppQueue } from './runtime-boot-ports';
 
 export interface OpenAuthStore extends MfaSecretStore {
   close(): Promise<void>;
@@ -25,7 +24,8 @@ export interface OpenAuthStore extends MfaSecretStore {
  * exits holding the PGlite lock breaks the next command run against this app.
  */
 async function openAppAuthStore(root: string, ctx: CommandContext): Promise<OpenAuthStore> {
-  const queue = await startQueue(resolveServices(root, ctx.env), undefined, ctx.env);
+  // `runtime.ts` read: sealing asks the master key, and a KMS app's key is its `secretSource`'s.
+  const queue = await openAppQueue(root, ctx.env);
   return { adapter: postgresAuthAdapter(queue.db), close: () => queue.stop() };
 }
 

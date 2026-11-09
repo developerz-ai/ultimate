@@ -127,7 +127,7 @@ There is no `auth.trustedOrigins` in either place, and passkeys are `defineAuth`
 
 | field | type | default | notes |
 |---|---|---|---|
-| ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** It accepted `'postgres' \| 'redis' \| 'nats'` and was read by nothing: boot always built the Postgres driver, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently gave you Postgres. Which driver runs is `setJobDriver(driver)` and only that — `setJobDriver(postgresJobDriver({ executor }))`, or `setJobDriver(memoryJobDriver())` in a test ([Jobs and workflows](Jobs-And-Workflows)). Since 25.0.0 a config still writing it is refused at boot, `X_CONFIG_INVALID` naming that call |
+| ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** It accepted `'postgres' \| 'redis' \| 'nats'` and was read by nothing: boot always built the Postgres driver, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently gave you Postgres. Which driver runs is `jobs:` in `apps/<app>/runtime.ts` and only that — absent, the boot installs `postgresJobDriver()`; a test uses `installJobDriver(memoryJobDriver())` from `@ultimat3/jobs/adapter` ([Jobs and workflows](Jobs-And-Workflows)). Since 25.0.0 a config still writing it is refused at boot, `X_CONFIG_INVALID` naming that seam |
 | `jobs.queues` | `string[]` | `['default']` | the queue a `job()` naming none lands on (`['<name>-default']` until 31.0.0). A `worker` serves these **and** every queue a registered `job()` is enqueued on (the union, so a job naming no queue is never stranded on `default`). A Deployment that sets [`WORKER_QUEUES`](#env-vars) serves exactly that list instead. Empty is `X_CONFIG_INVALID` |
 | `jobs.concurrency` | `number \| Record<queue, number>` | `8` (`JOBS_CONCURRENCY_DEFAULT`) | slots per queue, per worker process. A number applies to every queue served; a table gives each its own (`{ banks: 4, 'banks-long': 2 }`), and a served queue the table does not name runs at `8`. `As of 25.0.0`. A count below 1 or not whole, an empty table or a blank queue name is `X_CONFIG_INVALID` naming the entry (`jobs.concurrency.banks`). An overlay's table replaces the base's whole |
 | `jobs.maxInFlight` | `number` | unset (no process cap) | runs one worker **process** holds at once across every queue it serves — Sidekiq's `concurrency`; `jobs.concurrency` still bounds each queue under it. At the cap the worker claims nothing; each run that ends frees one claim, given to the next queue in turn that has work, so no queue starves. `jobWorker`'s `maxInFlight`. `As of 2026-10-28`. Not a whole number of at least 1: `X_CONFIG_INVALID` |
@@ -152,13 +152,11 @@ Each worker then claims its list and nothing else. Every entry must be a queue t
 
 ## `realtime`
 
-`RealtimeConfig` is five fields and no more `As of 2026-10-05` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
+`RealtimeConfig` is three fields and no more `As of 2026-11-09` (31.0.0 removed `transport` and `urlEnv`) ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
 
 | field | type | default | notes |
 |---|---|---|---|
 | `realtime.enabled` | `boolean` | `true` | **on by default since 22.0.0**, when the boot began obeying the key: an app with no `realtime` section keeps the `sync` node it always got. `enabled: false` is the opt-out — for an app that declares no `channel()` topic and no `live: true` query |
-| `realtime.transport` | `'memory' \| 'nats' \| 'redis'` | `'memory'` | `memory` = in-process, single node, dev and small deploys. `redis` type-checks and is never built — `selectTransport` resolves in-process or NATS only |
-| `realtime.urlEnv` | `string` | — | the **env key name**, never a URL. Required unless `memory`; missing → `X_CONFIG_INVALID` |
 | `realtime.maxSubscriptionsPerActor` | `number` | unset = `1000` | live-query subscriptions one actor may hold on one `sync` node, **across all its sockets**. An anonymous socket counts against the client NETWORK resolved at the upgrade — an IPv4 address exactly, an IPv6 address by its /64, an IPv4-mapped IPv6 as its IPv4 (`TRUSTED_PROXY_HOPS` honoured, as `ctx.ip` is). Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `actor`. A whole number ≥ 1, else `X_CONFIG_INVALID` |
 | `realtime.maxSocketsPerActor` | `number` | unset = `16` | sockets one signed-in actor may hold on one `sync` node. An anonymous NETWORK (keyed exactly as above) gets **8 ×** this — 128 at the default — because it is often many people: one office behind a corporate NAT viewing a public live page. The next upgrade is refused before a socket exists: `429 X_SOCKET_LIMIT`. Closing a socket frees its slot. 16 × the per-socket 128 subscriptions passes the 1,000 above, so normal tabs hit neither. A whole number ≥ 1, else `X_CONFIG_INVALID` |
 
@@ -171,7 +169,7 @@ Each worker then claims its list and nothing else. Every entry must be a queue t
 export const config = defineConfig({ name: 'shop', realtime: { maxSubscriptionsPerActor: 200 } });
 ```
 
-Since 22.0.0 the transport is chosen by `realtime.transport`, never by `NATS_URL` alone — the config decides, the env supplies the URL `realtime.urlEnv` names. `'memory'` with `NATS_URL` set, and `'nats'` with the named variable unset, are both `X_CONFIG_INVALID` at boot ([`17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md)).
+Since 31.0.0 the transport is not config: `NATS_URL` set is NATS, unset is the in-process bus (one node — dev and small deploys). A bus of the app's own is `transport` in `export const runtime = { … }` in `apps/<app>/runtime.ts`. Both keys were removed: a `realtime.transport` or `realtime.urlEnv` left in `app.config.ts` is refused at boot ([Upgrading](Upgrading), 30 → 31 entry 32; [`17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md)).
 
 **`realtime.tier` is gone**, `As of 2026-08-23` — the same shape as `jobs.driver` and
 `realtime.heartbeatMs` before it. It accepted
@@ -195,7 +193,7 @@ is refused at boot since 25.0.0** (`realtime.heartbeatMs was removed in 4.0.0`,
 `heartbeatMs` was silently kept at runtime and only `TS2353` caught it — never for an app that built
 its config into a variable first.
 
-**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, transport, urlEnv, maxSubscriptionsPerActor, maxSocketsPerActor }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure (`TS2353`, excess property on `Input<RealtimeConfig>`) and, since 25.0.0, a boot refusal (`X_CONFIG_INVALID`, the closed shape above) for a config the compiler never saw. The caps and the ring are **constructor options**, passed where the node is built:
+**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, maxSubscriptionsPerActor, maxSocketsPerActor }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure (`TS2353`, excess property on `Input<RealtimeConfig>`) and, since 25.0.0, a boot refusal (`X_CONFIG_INVALID`, the closed shape above) for a config the compiler never saw. The caps and the ring are **constructor options**, passed where the node is built:
 
 | Option | Where | Default | Effect |
 |---|---|---|---|
@@ -606,7 +604,7 @@ receives nothing.
 
 **The sweep only runs against the Postgres inbox.** `postgresInboxStore` carries `purgeBefore`; the
 memory inbox does not, and a boot that installed the memory one — or no inbox at all — sweeps
-nothing and logs nothing. Installing the store is `setNotifyStores`, your app's boot line; the
+nothing and logs nothing. Installing the store is `notifyStores:` in `apps/<app>/runtime.ts`; the
 framework applies the DDL either way.
 
 **`x_notify_deliveries` has no config key**, deliberately. Its window is
@@ -695,7 +693,7 @@ production, never two.
 
 ```ts
 // apps/web/runtime.ts
-import type { ServeOptions } from '@ultimat3/cli/serve';
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
 import type { Middleware } from '@ultimat3/http';
 
 // `ctx.headers` is merged into whatever response the route produces.
@@ -704,7 +702,7 @@ const servedBy: Middleware = (request, ctx, next) => {
   return next(request, ctx);
 };
 
-export const runtime: NonNullable<ServeOptions['runtime']> = { middleware: [servedBy] };
+export const runtime = { middleware: [servedBy] } satisfies RuntimeOverrides;
 ```
 
 Every field is optional, and every field **replaces** the default the environment would have
@@ -722,7 +720,8 @@ picked — it never sits beside it. The type is `RuntimeOverrides` (`packages/cl
 | `middleware` | nothing — prepended to the request pipeline, outermost first |
 | `routes` | nothing — plain HTTP routes at paths no primitive projects to (an OAuth token endpoint, a feed with its own content type; every declared `webhookReceiver()`'s are mounted beside them without a line here), mounted after the framework's routes and before the pages, through the whole pipeline |
 | `images` | `builtinImageDriver`, the `/media/*` transform |
-| `syncAuthenticate` | the adapter over the app's own `configureAuthenticator()` that authenticates a `sync` socket |
+
+The adapter ports (`ADAPTER_PORTS` in `@ultimat3/core`) are fields of the same object; `x new` writes each as a commented line. A `sync` socket is authenticated by the app's own `configureAuthenticator(fn, { credentialTtlMs })` — `syncAuthenticate` was deleted in 31.0.0.
 
 ### What middleware can and cannot see
 
@@ -770,7 +769,7 @@ Rules:
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
 | `env.X` reads through `defineEnv`'s schema | a declared key that is missing or malformed is `X_ENV_MISSING` at boot, every offender in one error. A `process.env` read outside the schema is a lint error, never a runtime one |
-| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale or two spellings of one, an unknown time zone, a section or list of the wrong shape (`jobs: null`), a value outside its closed set (`roles`, `jobs.backoff`, `theme.defaultMode`), a switch that is not a boolean (`database.ssl: 'false'`), `jobs.concurrency < 1`, a `realtime.transport` other than `memory` with no `realtime.urlEnv`, a `cache.tiers` entry the environment cannot supply — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), more than one of `SMTP_URL` / `RESEND_API_KEY` / `SES_REGION`, or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
+| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale or two spellings of one, an unknown time zone, a section or list of the wrong shape (`jobs: null`), a value outside its closed set (`roles`, `jobs.backoff`, `theme.defaultMode`), a switch that is not a boolean (`database.ssl: 'false'`), `jobs.concurrency < 1`, a removed key such as `realtime.transport`, a `cache.tiers` entry the environment cannot supply — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), more than one of `SMTP_URL` / `RESEND_API_KEY` / `SES_REGION`, or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
 | `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |

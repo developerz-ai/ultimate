@@ -6,7 +6,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { ctxOf, userActor } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
-import { installRateLimitStore, memoryRateLimitStore, resetRateLimitStore } from '@ultimat3/http';
+import { memoryRateLimitStore } from '@ultimat3/http';
+import { installRateLimitStore, resetRateLimitStore } from '@ultimat3/http/adapter';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';

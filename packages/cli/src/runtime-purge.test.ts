@@ -9,13 +9,8 @@ import type {
   IdempotencyReservation,
   PostgresIdempotencyStore,
 } from '@ultimat3/action';
-import {
-  configureAuthLimiters,
-  defineAuth,
-  memoryAuthAdapter,
-  type PostgresTotpReplayGuard,
-  resetAuthLimiters,
-} from '@ultimat3/auth';
+import { defineAuth, memoryAuthAdapter, type PostgresTotpReplayGuard } from '@ultimat3/auth';
+import { installAuthLimiters, resetAuthLimiters } from '@ultimat3/auth/adapter';
 import { ctxOf } from '@ultimat3/core';
 import type { PostgresRateLimitStore, RateLimitDecision, RateLimitPeek } from '@ultimat3/http';
 import type { EventBus, PurgeReport, PurgeTarget } from '@ultimat3/jobs';
@@ -29,7 +24,8 @@ import {
   stepRunner,
 } from '@ultimat3/jobs';
 import type { InboxPurgeBefore, PostgresInboxStore } from '@ultimat3/notify';
-import { memoryInboxStore, resetNotifyStores, setNotifyStores } from '@ultimat3/notify';
+import { memoryInboxStore } from '@ultimat3/notify';
+import { installNotifyStores, resetNotifyStores } from '@ultimat3/notify/adapter';
 import type { RetentionStores } from './runtime-purge';
 import { installRetentionSweep, PURGE_JOB_NAME, PURGE_TASK_NAME } from './runtime-purge';
 
@@ -98,7 +94,7 @@ const eventsRemoving = (removed: number): EventBus => ({
  * is nothing to sweep — which is the honest answer for a deployment with no auth at all.
  */
 const installAuthLimiter = (removed: number): void => {
-  configureAuthLimiters((policy) => ({
+  installAuthLimiters((policy) => ({
     policy: { ...policy, scope: 'shared' },
     reserve: async (key) => ({ key, atMs: 0 }),
     refund: async (): Promise<void> => undefined,
@@ -238,7 +234,7 @@ describe('installRetentionSweep', () => {
   // windows have to stay apart — a read window applied to unread rows deletes messages nobody read.
   test('each inbox window reaches the store as its own cutoff, off the job clock', async () => {
     const seen: InboxPurgeBefore[] = [];
-    setNotifyStores({
+    installNotifyStores({
       inbox: {
         ...memoryInboxStore(),
         purgeBefore: (before: InboxPurgeBefore) => {
@@ -269,7 +265,7 @@ describe('installRetentionSweep', () => {
   // of `now - undefined`, which is `NaN` and a date every row is older than.
   test('an unset window is absent at the store, never a NaN cutoff', async () => {
     const seen: InboxPurgeBefore[] = [];
-    setNotifyStores({
+    installNotifyStores({
       inbox: {
         ...memoryInboxStore(),
         purgeBefore: (before: InboxPurgeBefore) => {

@@ -110,8 +110,14 @@ export {
   clientAddress,
   forwardedElement,
 } from './forwarded';
-export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
-export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
+export type { Authenticator, AuthenticatorOptions, AuthzDecision, ServerHooks } from './hooks';
+export {
+  configureAuthenticator,
+  configuredAuthenticator,
+  configuredCredentialTtlMs,
+  MAX_CREDENTIAL_TTL_MS,
+  resetAuthenticator,
+} from './hooks';
 export {
   BUN_MAX_IDLE_TIMEOUT_S,
   IDLE_TIMEOUT_MARGIN_S,
@@ -180,14 +186,9 @@ export {
   tenantBucketUnknown,
 } from './rate-limit-errors';
 export { publishRateLimit, rateLimitHeaders } from './rate-limit-headers';
-export type { AdoptRateLimitStoreOptions } from './rate-limit-installed';
 export {
-  adoptRateLimitStore,
   assertInstalledRateLimitScope,
   installedRateLimitStore,
-  installRateLimitStore,
-  resetRateLimitStore,
-  withScratchRateLimitStore,
 } from './rate-limit-installed';
 export type { RateLimitPeek } from './rate-limit-peek';
 export { rateLimitPeek, refilledTokens } from './rate-limit-peek';

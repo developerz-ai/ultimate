@@ -11,9 +11,10 @@ import {
   subscribe,
 } from '@ultimat3/core';
 import type { JobRunArgs } from '@ultimat3/jobs';
+import { installMailDriver, resetMailDriver } from './adapter';
 import { deliverMail } from './deliver';
 import type { MailDriver, MailMessage } from './driver';
-import { memoryMailDriver, resetMailDriver, setMailDriver } from './driver';
+import { memoryMailDriver } from './driver';
 import { driverUnavailable } from './errors';
 import { sendMailJob } from './job';
 
@@ -46,7 +47,7 @@ afterEach(() => {
 describe('unit · mail · mail.deliver', () => {
   test('a delivery is one event and one client span, counting every envelope recipient', async () => {
     configureTelemetry({ sampler: alwaysOnSampler });
-    setMailDriver(memoryMailDriver());
+    installMailDriver(memoryMailDriver());
     const seen = listen();
     await deliverMail(message);
     expect(seen.events).toHaveLength(1);
@@ -62,7 +63,7 @@ describe('unit · mail · mail.deliver', () => {
   test('a refused delivery is still an event, carrying the error the caller receives', async () => {
     const refusal = driverUnavailable('a test transport that refuses every send');
     const broken: MailDriver = { name: 'broken', send: () => Promise.reject(refusal) };
-    setMailDriver(broken);
+    installMailDriver(broken);
     const seen = listen();
     await expect(deliverMail(message)).rejects.toBe(refusal);
     expect(seen.events).toHaveLength(1);
@@ -70,7 +71,7 @@ describe('unit · mail · mail.deliver', () => {
   });
 
   test('the queued job hands off through the same door', async () => {
-    setMailDriver(memoryMailDriver());
+    installMailDriver(memoryMailDriver());
     const seen = listen();
     // The body reads `input` and calls `step.run` — a step that just runs is the whole seam.
     const step = { run: (_name: string, work: () => Promise<unknown>) => work() };

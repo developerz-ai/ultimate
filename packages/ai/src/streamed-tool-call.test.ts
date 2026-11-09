@@ -22,7 +22,7 @@ import { openAiProvider } from './openai-provider';
 import { definePrompt } from './prompt';
 import { anthropicProvider } from './provider';
 import { sseResponse } from './provider-fixture';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ScriptedCall } from './sse-transcript-fixture';
 import { replaying, transcript } from './sse-transcript-fixture';
 
@@ -175,7 +175,7 @@ describe('a streamed tool call cut off at the output ceiling', () => {
       usage: USAGE,
     });
     const { provider: endpoint, replay } = provider(text);
-    configureAi({ gateway: providerGateway({ providers: [endpoint], defaultModel: MODEL }) });
+    installAiGateway(providerGateway({ providers: [endpoint], defaultModel: MODEL }));
     const write = llm({
       input: t.object({ topic: t.string }),
       output: t.object({ title: t.string, body: t.string, tags: t.array(t.string) }),

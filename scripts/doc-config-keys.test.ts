@@ -215,7 +215,9 @@ describe('unit · a documented default is the one configDefaults() returns', () 
     );
     expect(stale).toEqual([]);
     expect(
-      staleDefaults(page(['| `realtime.transport` | `string` | — | wrong |'])).stale,
+      // A key WITH a default (`true`) documented as no value is stale. It was `realtime.transport`
+      // until 31.0.0 removed that key.
+      staleDefaults(page(['| `realtime.enabled` | `boolean` | — | wrong |'])).stale,
     ).toHaveLength(1);
   });
 

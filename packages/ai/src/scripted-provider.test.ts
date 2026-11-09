@@ -11,7 +11,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { registerModel } from './models';
 import { definePrompt } from './prompt';
 import type { StreamChunk, TokenUsage } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ScriptedProvider } from './scripted-provider';
 import { scriptedProvider } from './scripted-provider';
 import type { ProjectableAction } from './tools';
@@ -36,7 +36,7 @@ const tool = (name: string): ProjectableAction => ({
 let seq = 0;
 function install(provider: ScriptedProvider) {
   resetAiRuntime();
-  configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+  installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
   seq += 1;
   return agent({
     input: t.object({ topic: t.string }),

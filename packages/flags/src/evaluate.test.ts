@@ -3,7 +3,7 @@
 // permanent flag never reports, and a key nobody declared is an error rather than a quiet `false`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { MemoryErrorReporter, UltimateError } from '@ultimat3/core';
+import type { MemoryErrorReporter, SleepClock, UltimateError } from '@ultimat3/core';
 import {
   anonymousActor,
   configureErrorReporting,
@@ -12,9 +12,21 @@ import {
   resetErrorReporting,
   userActor,
 } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 import { isEnabled } from './evaluate';
 import { defineFlag, resetFlags } from './registry';
 import { configureFlags, resetFlagReporting } from './runtime';
+
+/** Installs `clock` as the process clock until the test ends — core's one ambient clock. */
+let releaseClock: (() => void) | undefined;
+const useClock = (clock: SleepClock): void => {
+  releaseClock?.();
+  releaseClock = installClock(clock);
+};
+afterEach(() => {
+  releaseClock?.();
+  releaseClock = undefined;
+});
 
 const EXPIRY = '2026-01-01';
 const LONG_AFTER = '2026-03-05T00:00:00.000Z';
@@ -61,7 +73,7 @@ describe('unit · an overdue temporary flag', () => {
   };
 
   test('reports itself to the error monitor when it is evaluated past its expiry', () => {
-    configureFlags({ clock: frozenClock(LONG_AFTER) });
+    useClock(frozenClock(LONG_AFTER));
     declareOverdue();
 
     expect(isEnabled('checkout.new-tax-engine', actor)).toBe(true);
@@ -74,7 +86,8 @@ describe('unit · an overdue temporary flag', () => {
   });
 
   test('is rate-limited: a hundred evaluations inside the window are still one report', () => {
-    configureFlags({ clock: frozenClock(LONG_AFTER), reportEveryMs: REPORT_EVERY_MS });
+    useClock(frozenClock(LONG_AFTER));
+    configureFlags({ reportEveryMs: REPORT_EVERY_MS });
     declareOverdue();
 
     for (let call = 0; call < 100; call += 1) isEnabled('checkout.new-tax-engine', actor);
@@ -84,7 +97,8 @@ describe('unit · an overdue temporary flag', () => {
 
   test('reports again once the window has passed, so the debt does not go quiet', () => {
     const clock = frozenClock(LONG_AFTER);
-    configureFlags({ clock, reportEveryMs: REPORT_EVERY_MS });
+    useClock(clock);
+    configureFlags({ reportEveryMs: REPORT_EVERY_MS });
     declareOverdue();
 
     isEnabled('checkout.new-tax-engine', actor);
@@ -98,7 +112,7 @@ describe('unit · an overdue temporary flag', () => {
   });
 
   test('still answers its targeting — an expiry is a debt, not an outage', () => {
-    configureFlags({ clock: frozenClock(LONG_AFTER) });
+    useClock(frozenClock(LONG_AFTER));
     declareOverdue();
 
     expect(isEnabled('checkout.new-tax-engine', actor)).toBe(true);
@@ -106,7 +120,7 @@ describe('unit · an overdue temporary flag', () => {
   });
 
   test('does not report before its expiry', () => {
-    configureFlags({ clock: frozenClock('2025-12-31T00:00:00.000Z') });
+    useClock(frozenClock('2025-12-31T00:00:00.000Z'));
     declareOverdue();
 
     isEnabled('checkout.new-tax-engine', actor);
@@ -115,7 +129,7 @@ describe('unit · an overdue temporary flag', () => {
   });
 
   test('a monitor that throws does not take the evaluation down with it', () => {
-    configureFlags({ clock: frozenClock(LONG_AFTER) });
+    useClock(frozenClock(LONG_AFTER));
     configureErrorReporting({
       reporter: {
         report(): void {
@@ -131,7 +145,7 @@ describe('unit · an overdue temporary flag', () => {
 
 describe('unit · a permanent flag', () => {
   test('never reports, however far in the future it is evaluated', () => {
-    configureFlags({ clock: frozenClock('2099-01-01T00:00:00.000Z') });
+    useClock(frozenClock('2099-01-01T00:00:00.000Z'));
     defineFlag({
       kind: 'permanent',
       key: 'billing.dunning-emails',

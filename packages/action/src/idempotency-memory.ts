@@ -3,7 +3,7 @@
  * and for tests, and refused at registration under a `shared` declaration — its `scope` says so.
  * Shaped after `@ultimat3/http`'s `memoryRateLimitStore`, including the deliberate eviction order.
  */
-import { finiteCount, logger, uuidV7 } from '@ultimat3/core';
+import { finiteCount, liveClock, logger, uuidV7 } from '@ultimat3/core';
 import { IdempotencyReservationLostError } from './errors-idempotency';
 import type {
   IdempotencyFailure,
@@ -88,7 +88,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     );
     // Batched down to 90% so the eviction sort is paid once per 10% of the cap, not per write.
     this.#evictTo = Math.max(1, Math.floor(this.#maxKeys * 0.9));
-    this.#now = options.now ?? ((): number => Date.now());
+    this.#now = options.now ?? ((): number => liveClock.now().getTime());
     this.#reclaimAfterMs = options.reclaimAfterMs ?? requestDeadlineMs;
   }
 

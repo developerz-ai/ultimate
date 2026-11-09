@@ -5,7 +5,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { AppConfig, PgExecutor } from '@ultimat3/core';
 import { defineConfig, isUltimateError } from '@ultimat3/core';
-import { installedRateLimitStore, resetRateLimitStore } from '@ultimat3/http';
+import { installedRateLimitStore } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { resetWebPush, webPushRuntime } from '@ultimat3/pwa';
 import { defineStorage, disk, memoryStorageDriver, resetStorage, storage } from '@ultimat3/storage';
 import { installExerciseServices } from './exercise-services';

@@ -134,6 +134,4 @@ export type { InstalledNotifyStores, NotifyStores } from './stores';
 export {
   notifyStores,
   requireInbox,
-  resetNotifyStores,
-  setNotifyStores,
 } from './stores';

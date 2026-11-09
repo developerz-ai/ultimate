@@ -209,7 +209,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 ## Commands
 
 ```
-bun test packages/cache
+bun test ./packages/cache/
 bun run --filter @ultimat3/cache typecheck
 ```
 

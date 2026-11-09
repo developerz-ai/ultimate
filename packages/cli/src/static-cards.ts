@@ -6,9 +6,10 @@
 // why: Bun exposes no path-join primitive, and every card path is relative to the export root.
 import { join } from 'node:path';
 import { probeImage, transformImageBytes } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core/adapter';
 import type { OpenGraphImage } from '@ultimat3/seo';
 import type { ShotDriver } from './browser-launcher-port';
-import { DEFAULT_PAGE_TIMEOUT_MS, systemShotClock } from './cdp-shot-clock';
+import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
 import { CardBrowserMissingError, CardRouteUnknownError } from './static-capture-errors';
 import { serveExport } from './static-cards-serve';
 
@@ -72,7 +73,7 @@ export function staticCards(): StaticCards {
       const session = await driver.open({
         name: 'x build cards',
         rules: { allowHosts: ['127.0.0.1'] },
-        clock: systemShotClock,
+        clock: systemClock,
         timeoutMs: DEFAULT_PAGE_TIMEOUT_MS,
         viewport: CARD_SIZE,
       });

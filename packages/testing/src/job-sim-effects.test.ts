@@ -6,7 +6,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { EntityBulkEvent } from '@ultimat3/core';
 import { instrument, resetInstrumentation, subscribe, subscriberCount } from '@ultimat3/core';
 import type { MailMessage } from '@ultimat3/mail';
-import { memoryMailDriver, resetMailDriver, setMailDriver, tryMailDriver } from '@ultimat3/mail';
+import { memoryMailDriver, tryMailDriver } from '@ultimat3/mail';
+import { installMailDriver, resetMailDriver } from '@ultimat3/mail/adapter';
 import { effectCounts, openEffectLog } from './job-sim-effects';
 
 const message = (mailId: string, to: readonly string[]): MailMessage => ({
@@ -23,7 +24,7 @@ const priorMail = tryMailDriver();
 afterEach(() => {
   resetInstrumentation();
   if (priorMail === undefined) resetMailDriver();
-  else setMailDriver(priorMail);
+  else installMailDriver(priorMail);
 });
 
 describe('openEffectLog', () => {
@@ -68,7 +69,7 @@ describe('openEffectLog', () => {
 
   test('a send reaches the installed driver, which is put back on dispose', async () => {
     const outer = memoryMailDriver();
-    setMailDriver(outer);
+    installMailDriver(outer);
     const log = await openEffectLog({ isDead: () => false });
     try {
       expect(tryMailDriver()).not.toBe(outer);

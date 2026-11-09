@@ -3,12 +3,11 @@
 // re-resolution, host enforcement and secret taint are written once and cannot drift between the
 // driver a test uses and the driver production uses.
 
-import type { Secret } from '@ultimat3/core';
+import type { Secret, SleepClock } from '@ultimat3/core';
 import { finiteCount, hostDecision, isSecret, revealSecret } from '@ultimat3/core';
 import type { ActionabilityState } from './actionability';
 import { awaitActionable } from './actionability';
 import { assertCaptureFraming } from './capture-clip';
-import type { ScrapeClock } from './clock';
 import { deadline } from './clock';
 import type { ColorScheme } from './color-scheme';
 import { hostBlocked, secretExposed, selectorMissing } from './error-throws';
@@ -39,7 +38,7 @@ import { ROOT_SELECTOR } from './target';
 import type { UsageMeter } from './usage';
 
 export interface PageContext {
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   /**
    * Called before EVERY operation, poll included. This is what the wedge watchdog measures: the
    * gap between two of these is the definition of "the browser stopped answering", and putting

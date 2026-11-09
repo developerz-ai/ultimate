@@ -13,7 +13,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { entity, memoryRepo, tableFor, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
-import { backfill, memoryJobDriver, resetJobDriver, resetJobs, setJobDriver } from '@ultimat3/jobs';
+import { backfill, memoryJobDriver, resetJobs } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { REQUIRED_BUN } from './app-root';
 import { DB_SUBCOMMANDS, dbCommand } from './cmd-db';
 import type { CommandContext } from './command';
@@ -45,7 +46,7 @@ async function runBackfill(
   argv: readonly string[],
   prepare: (root: string) => Promise<void> = async () => {},
 ): Promise<CommandResult> {
-  setJobDriver(driver);
+  installJobDriver(driver);
   const root = await appRoot();
   await prepare(root);
   try {

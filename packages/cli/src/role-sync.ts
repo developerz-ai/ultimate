@@ -256,15 +256,14 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
   const hub = new ChannelHub({ transport: options.runtime.transport, sockets });
   // The node evaluated no credential of its own and no host ever handed it one, so every socket
   // the framework opened was anonymous and every guard, gate, presence entry and tenant cap
-  // decided against `null`. An explicit override first, then the app's own HTTP resolver, then
-  // nothing at all, which is what `x dev` with no authenticator should stay.
+  // decided against `null`. The app's own HTTP resolver, or nothing at all — which is what `x dev`
+  // with no authenticator should stay. ONE seam: the `runtime.syncAuthenticate` override beside it
+  // was deleted in v31, so a socket and a request can never be answered by two identities.
   //
-  // BOTH of the first two re-authorize: `syncAuthenticator` carries an `expiresAt` and a `refresh`
-  // of its own (`SYNC_GRANT_TTL_MS`), re-asking the app's resolver with the upgrade's own
-  // `cookie`/`authorization`, so `logout` closes the socket and not only the HTTP session. The
-  // override is how a deployment states a window its credential already declares (a token's
-  // `exp`), or resolves identity from a header the adapter deliberately does not retain.
-  const authenticate = options.overrides?.syncAuthenticate ?? syncAuthenticator(options.buildId);
+  // It re-authorizes: `syncAuthenticator` carries an `expiresAt` and a `refresh` of its own
+  // (`MAX_CREDENTIAL_TTL_MS`), re-asking the app's resolver with the upgrade's own
+  // `cookie`/`authorization`, so `logout` closes the socket and not only the HTTP session.
+  const authenticate = syncAuthenticator(options.buildId);
   const registry = registerLiveQueries(options);
   const origins = syncOriginsFrom(options.env);
   const node = syncNode({

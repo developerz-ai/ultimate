@@ -22,7 +22,7 @@ import { openAiProvider } from './openai-provider';
 import { definePrompt } from './prompt';
 import type { Provider } from './provider';
 import { anthropicProvider, costOf } from './provider';
-import { configureAi } from './runtime';
+import { installAiGateway } from './runtime';
 
 useFixtureModels();
 
@@ -126,7 +126,7 @@ describe('a call that names no model is refused, naming the three places', () =>
 
   test('llm() under a gateway with no defaultModel, on a prompt with none', async () => {
     const { provider, asked } = spy();
-    configureAi({ gateway: providerGateway({ providers: [provider] }) });
+    installAiGateway(providerGateway({ providers: [provider] }));
     const unchosen = llm({
       input: Input,
       output: Output,
@@ -142,7 +142,7 @@ describe('a call that names no model is refused, naming the three places', () =>
 
   test('agent() the same way', async () => {
     const { provider, asked } = spy();
-    configureAi({ gateway: providerGateway({ providers: [provider] }) });
+    installAiGateway(providerGateway({ providers: [provider] }));
     const unchosen = agent({
       input: Input,
       output: Output,
@@ -158,7 +158,7 @@ describe('a call that names no model is refused, naming the three places', () =>
   });
 
   test("a prompt's model needs no gateway default, and the gateway's answers when nothing else does", () => {
-    configureAi({ gateway: providerGateway({ providers: [], defaultModel: FIXTURE_MODEL }) });
+    installAiGateway(providerGateway({ providers: [], defaultModel: FIXTURE_MODEL }));
     expect(modelForCall('llm', 'p@1', undefined, 'claude-haiku-4-5')).toBe('claude-haiku-4-5');
     expect(modelForCall('llm', 'p@1', undefined, undefined)).toBe(FIXTURE_MODEL);
   });

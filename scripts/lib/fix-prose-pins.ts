@@ -13,30 +13,30 @@
 export const FIX_PROSE_PINS_FILE = 'scripts/lib/fix-prose-pins.ts';
 
 export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
-  action: 27,
-  admin: 31,
+  action: 26,
+  admin: 30,
   ai: 21,
   auth: 47,
   cache: 10,
-  cli: 79,
+  cli: 78,
   core: 51,
   db: 28,
   entity: 49,
   flags: 7,
-  http: 25,
-  jobs: 37,
+  http: 24,
+  jobs: 33,
   mail: 40,
   manifest: 6,
   mcp: 34,
   money: 10,
-  notify: 5,
+  notify: 4,
   policy: 6,
   pwa: 11,
   query: 16,
-  realtime: 45,
+  realtime: 43,
   render: 48,
   schema: 7,
-  scraping: 54,
+  scraping: 52,
   // 173 → 174: the `commits-only` finding in `changelog-check.ts`, one more fix: line in that file.
   // why: the edit it names is to write release notes into CHANGELOG.md, which no command in this
   // repo performs, so the line cannot open with a command — the seven sibling findings that edit

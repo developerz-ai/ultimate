@@ -23,9 +23,15 @@ import {
   defineFixtures,
   e2eBaseUrl,
   e2eBrowser,
+  entityPersister,
   testNetwork,
   unavailableFixture,
+  usePersister,
 } from '@ultimat3/testing';
+
+// A factory's `create()` writes through the entity's own repository. Postly names its driver
+// (`@postly/db`'s `selectDriver(Bun.env)`), so the factories write where the app's reads look.
+usePersister(entityPersister({ driver: appDriver }));
 
 /** Every seeded row carries an id; the rest of the columns are the entity's business. */
 export interface SeedRow {

@@ -9,9 +9,11 @@ import { UltimateError } from './errors';
 import type { FailureBundle, FailureStore } from './failure-capture';
 import {
   failureCaptureActive,
+  failureCaptureLimits,
+  installedFailureStore,
+  installFailureStore,
   recordFailureFact,
   recordFailureInput,
-  setFailureStore,
   withFailureCapture,
 } from './failure-capture';
 import { resetFailureCaptureWindows, settleFailureCaptures } from './failure-capture-flush';
@@ -24,7 +26,7 @@ const memoryStore = (): FailureStore & { readonly saved: FailureBundle[] } => {
 };
 
 afterEach(() => {
-  setFailureStore(null, { perHour: 5, maxRows: 50, maxBytes: 64 * 1024 });
+  installFailureStore(null, { perHour: 5, maxRows: 50, maxBytes: 64 * 1024 });
   resetFailureCaptureWindows();
 });
 
@@ -54,7 +56,7 @@ test('off: no buffer is opened, so a seam below records nothing and allocates no
 
 test('a 5xx holds the bundle on the thrown value and reportError stores it, masked', async () => {
   const store = memoryStore();
-  setFailureStore(store);
+  installFailureStore(store);
   const ctx = ctxOf({ actor: userActor({ id: 'm1', orgId: 'o1', roles: ['owner'] }) });
   const error = await runWithContext(ctx, () =>
     caught(() => withFailureCapture('action', 'createPost', statusOf, failing('X_BOOM'))),
@@ -78,7 +80,7 @@ test('a 5xx holds the bundle on the thrown value and reportError stores it, mask
 
 test('a 4xx holds nothing', async () => {
   const store = memoryStore();
-  setFailureStore(store);
+  installFailureStore(store);
   const error = await caught(() =>
     withFailureCapture('action', 'createPost', statusOf, failing('X_NOPE')),
   );
@@ -89,7 +91,7 @@ test('a 4xx holds nothing', async () => {
 
 test('per fingerprint per hour, then rows past maxRows are dropped and the bundle says so', async () => {
   const store = memoryStore();
-  setFailureStore(store, { perHour: 2, maxRows: 0 + 1 });
+  installFailureStore(store, { perHour: 2, maxRows: 0 + 1 });
   for (let i = 0; i < 3; i += 1) {
     const error = await caught(() =>
       withFailureCapture('action', 'a', statusOf, async () => {
@@ -108,7 +110,7 @@ test('per fingerprint per hour, then rows past maxRows are dropped and the bundl
 
 test('a bundle over maxBytes loses rows, not the input', async () => {
   const store = memoryStore();
-  setFailureStore(store, { maxBytes: 1200 });
+  installFailureStore(store, { maxBytes: 1200 });
   const error = await caught(() =>
     withFailureCapture('action', 'a', statusOf, async () => {
       recordFailureInput({ title: 'kept' });
@@ -131,7 +133,7 @@ test('a bundle over maxBytes loses rows, not the input', async () => {
 });
 
 test('a store that refuses leaves the failure exactly as it was thrown', async () => {
-  setFailureStore({ save: () => Promise.reject(new Error('database away')) });
+  installFailureStore({ save: () => Promise.reject(new Error('database away')) });
   const error = await caught(() =>
     withFailureCapture('query', 'feed', statusOf, failing('X_BOOM')),
   );
@@ -142,7 +144,7 @@ test('a store that refuses leaves the failure exactly as it was thrown', async (
 
 test('a call inside a call keeps the outer one: one buffer, the outer input', async () => {
   const store = memoryStore();
-  setFailureStore(store);
+  installFailureStore(store);
   const error = await caught(() =>
     withFailureCapture('action', 'outer', statusOf, async () => {
       recordFailureInput({ from: 'outer' });
@@ -154,4 +156,14 @@ test('a call inside a call keeps the outer one: one buffer, the outer input', as
   expect(store.saved.map((bundle) => [bundle.name, bundle.input])).toEqual([
     ['outer', { from: 'outer' }],
   ]);
+});
+
+test('installFailureStore returns the release, which restores the previous store and limits', () => {
+  const first = memoryStore();
+  installFailureStore(first, { perHour: 7 });
+  const release = installFailureStore(memoryStore(), { perHour: 1 });
+  expect(failureCaptureLimits().perHour).toBe(1);
+  release();
+  expect(installedFailureStore()).toBe(first);
+  expect(failureCaptureLimits().perHour).toBe(7);
 });

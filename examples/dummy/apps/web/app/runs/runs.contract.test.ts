@@ -11,7 +11,8 @@ import { driver } from '@postly/db';
 import { derivePath } from '@ultimat3/action';
 import { apiMountRoutes } from '@ultimat3/cli';
 import { defineHttpConfig, httpServer, mountedPath } from '@ultimat3/http';
-import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { jobDriver, memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, beforeEach, expect, test } from '@ultimat3/testing';
 import { connectSite } from './actions/connect-site';
@@ -24,15 +25,15 @@ const grants = ['run:read', 'run:write', 'run:key'];
 const admin = testActor('admin', { orgId: ORG, permissions: grants }).actor;
 const otherAdmin = testActor('other-admin', { orgId: OTHER_ORG, permissions: grants }).actor;
 
-const previous = jobDriver();
+// The install answers its own undo, which puts back whatever was installed before it.
+let release = (): void => {};
 
 beforeEach(() => {
-  setJobDriver(memoryJobDriver());
+  release = installJobDriver(memoryJobDriver());
 });
 
 afterEach(() => {
-  if (previous === undefined) resetJobDriver();
-  else setJobDriver(previous);
+  release();
   driver.reset?.();
 });
 

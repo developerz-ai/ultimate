@@ -212,8 +212,8 @@ export const config = defineConfig({
   // \`REDIS_URL\` and refuses the boot when it is unset.
   cache: { tiers: ['request-memo', 'lru'] },
   jobs: { queues: ['default'], concurrency: 4 },
-  // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
-  realtime: { enabled: true, transport: 'memory' },
+  // The bus is NATS_URL's: unset, one node's in-process fanout; set it to scale past one node.
+  realtime: { enabled: true },
   // \`name\` and \`colors\` are what an install prompt shows and what a browser paints the splash
   // with before any stylesheet has loaded — the four values the framework cannot derive, so
   // \`defineConfig\` refuses \`pwa.enabled: true\` without them. Raw hex is legal here and nowhere

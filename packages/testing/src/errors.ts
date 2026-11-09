@@ -68,6 +68,14 @@ export const TESTING_ERROR_CODES = [
   'X_JOB_CRASH_UNBOUNDED',
   'X_EXERCISE_ACTOR_USER_UNSEATED',
   'X_EXERCISE_INPUT_THREW',
+  'X_TEST_SCOPE_UNINSTALLED',
+  'X_TEST_STUB_UNANSWERED',
+  'X_TEST_STUB_TARGET_UNSUPPORTED',
+  'X_TEST_EXPECTED_INPUT_INVALID',
+  'X_TEST_RUN_JOBS_EXPECTED',
+  'X_TEST_MAIL_EXPECTED',
+  'X_TEST_ADAPTER_PORT_UNSWAPPABLE',
+  'X_TEST_FACTORY_INVALID',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -136,6 +144,16 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_JOB_CRASH_UNBOUNDED: 'a crash proof needs more kill points than its bound',
   X_EXERCISE_ACTOR_USER_UNSEATED: "the exercise pass could not seat its actor's x_users row",
   X_EXERCISE_INPUT_THREW: "an exercise entry's input threw",
+  X_TEST_SCOPE_UNINSTALLED:
+    'a test double was made in a process the testing preload did not set up',
+  X_TEST_STUB_UNANSWERED: 'a stubbed primitive was called before any answer was scripted',
+  X_TEST_STUB_TARGET_UNSUPPORTED:
+    'stub() was handed something that is not an action, llm(), query or job',
+  X_TEST_EXPECTED_INPUT_INVALID: "an assertion named an input its primitive's schema rejects",
+  X_TEST_RUN_JOBS_EXPECTED: 'toHaveEnqueued was handed something other than the runJobs fixture',
+  X_TEST_MAIL_EXPECTED: 'toHaveSentMail was handed something other than the mail fixture',
+  X_TEST_ADAPTER_PORT_UNSWAPPABLE: 'swapAdapter() was named a port it cannot swap for one test',
+  X_TEST_FACTORY_INVALID: 'a factory builds a row its own entity refuses',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -409,8 +427,8 @@ export class FactoryNotPersistedError extends UltimateError {
   constructor(input: { table: string }) {
     super({
       code: 'X_TEST_FACTORY_NOT_PERSISTED',
-      cause: `factory "${input.table}".create() ran with no persister in this process`,
-      fix: 'usePersister({ insert: (table, row) => repoFor(table).insert(row) }) in the test preload — or build() for an in-memory row',
+      cause: `factory "${input.table}".create() has nowhere to write: no persister is installed and its entity is not an entity() value, so it has no repository`,
+      fix: 'defineFactory(<the entity() value>, …) — create() then writes through its repository — or usePersister(entityPersister({ driver })) in the test preload, or build() for an in-memory row',
     });
   }
 }

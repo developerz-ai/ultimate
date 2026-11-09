@@ -9,27 +9,19 @@ import { finiteCount, systemClock } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import {
   configuredAuthenticator,
+  configuredCredentialTtlMs,
   defineHttpConfig,
+  MAX_CREDENTIAL_TTL_MS,
   requestContext,
   UltimateRequest,
 } from '@ultimat3/http';
 import type { SyncAuthenticator, SyncGrant } from '@ultimat3/realtime/server';
 
-/**
- * How long one grant stands before the node re-decides it.
- *
- * A grant with no expiry never appears in `GrantBook.expired()`, so `sweepGrants` — the only path
- * to `hub.onActorChange` and `registry.reauthorize` — never fired for a socket this adapter opened.
- * `logout`, `revokeSession`, `disableUser` and `updatePrivileges` closed the HTTP session and never
- * the websocket, and the client's 15s heartbeat beats the 120s idle sweep, so the socket stayed up
- * with the revoked actor's authority for as long as the tab was open.
- *
- * Five minutes, against `DEFAULT_REAUTH_INTERVAL_MS` (30s): the window a revoked actor keeps its
- * socket is this plus one sweep, and the cost is one resolver call per socket per window — 167/s
- * on the 50,000-socket node this repo has measured, against 1,667/s at a 30s TTL. A deployment
- * whose credential has a shorter real lifetime passes `runtime.syncAuthenticate` and states it.
- */
-export const SYNC_GRANT_TTL_MS = 5 * 60_000;
+// How long one grant stands before the node re-decides it is `@ultimat3/http`'s
+// `MAX_CREDENTIAL_TTL_MS` (five minutes) — one constant, the ceiling an app's `credentialTtlMs` is
+// held to. A grant with no expiry never reaches `sweepGrants`, so `logout` closed the HTTP session
+// and never the socket; five minutes is one resolver call per socket per window (167/s at 50,000
+// sockets, against 1,667/s at 30 s).
 
 /**
  * The credential this adapter retains per socket, and nothing else.
@@ -41,7 +33,7 @@ export const SYNC_GRANT_TTL_MS = 5 * 60_000;
  * Dropping the rest can only make a refresh MORE restrictive, never more permissive: an app that
  * resolves identity from some other header sees its refresh answer `null`, which closes the socket
  * with `1008` and the client re-dials carrying that header again. One reconnect per window, not an
- * escalation — and `runtime.syncAuthenticate` is the declared seam for stating something else.
+ * escalation.
  */
 const CREDENTIAL_HEADERS = ['cookie', 'authorization'] as const;
 
@@ -77,7 +69,7 @@ function credentialOf(request: Request): Credential {
 export interface SyncAuthenticatorOptions {
   /** The clock a grant's window is measured on. Injected so a re-auth is provable without sleeping. */
   readonly clock?: Clock;
-  /** Overrides `SYNC_GRANT_TTL_MS`. A test names its own window; nothing in the boot passes one. */
+  /** Overrides `MAX_CREDENTIAL_TTL_MS`. A test names its own window; nothing in the boot passes one. */
   readonly ttlMs?: number;
 }
 
@@ -108,7 +100,14 @@ export function syncAuthenticator(
   // long as the tab is open. That is the hole this whole file was written to close, and a `??`
   // does not close it: `NaN` is not nullish. At least 1ms — a window that has already shut when
   // the grant is minted is not a window.
-  const ttlMs = finiteCount('syncAuthenticator', 'ttlMs', options.ttlMs ?? SYNC_GRANT_TTL_MS, 1);
+  const ttlMs = finiteCount(
+    'syncAuthenticator',
+    'ttlMs',
+    // The app's own credential lifetime, declared beside its resolver (`configureAuthenticator(fn,
+    // { credentialTtlMs })`) — what `runtime.syncAuthenticate` was the second way to state.
+    options.ttlMs ?? configuredCredentialTtlMs() ?? MAX_CREDENTIAL_TTL_MS,
+    1,
+  );
 
   const resolve = async (credential: Credential): Promise<SyncGrant | null> => {
     const request = new Request(credential.url, {

@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import type { HttpError } from './errors';
 import { httpPipeline } from './pipeline';
-import { type Bucket, memoryRateLimitStore, rateLimiter } from './rate-limit';
+import { type Bucket, rateLimiter } from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
 import { httpRouter, type Route } from './router';
 import { httpServer } from './server';
@@ -115,7 +115,6 @@ describe('withRouteBuckets', () => {
     const server = httpServer({
       routes: [route('contactSales', TIGHT)],
       config: PROCESS_SCOPED,
-      rateLimitStore: memoryRateLimitStore(),
     });
     const call = (): Promise<Response> =>
       server.fetch(new Request('http://dev.test/api/contactSales', { method: 'POST' }));
@@ -145,7 +144,7 @@ describe('withRouteBuckets', () => {
     expect(error?.cause).toContain('5 / 0.008');
     expect(error?.cause).toContain('would run on the default one');
     // Axiom 4: one executable path out, not "reconcile your limiter".
-    expect(error?.fix).toContain('httpServer({ routes, rateLimitStore })');
+    expect(error?.fix).toContain('httpServer({ routes })');
   });
 
   test('a limiter holding the right name but the wrong numbers is refused too', () => {
@@ -324,7 +323,6 @@ describe('a bucket named after an Object.prototype member is a bucket like any o
     const server = httpServer({
       routes: [route('constructor', TIGHT)],
       config: PROCESS_SCOPED,
-      rateLimitStore: memoryRateLimitStore(),
     });
     expect(Object.hasOwn(server.config.rateLimit.buckets, 'constructor')).toBe(true);
     const call = (): Promise<Response> =>
@@ -336,7 +334,6 @@ describe('a bucket named after an Object.prototype member is a bucket like any o
     const server = httpServer({
       routes: [route('__proto__', TIGHT)],
       config: PROCESS_SCOPED,
-      rateLimitStore: memoryRateLimitStore(),
     });
     const buckets = server.config.rateLimit.buckets;
     expect(Object.hasOwn(buckets, '__proto__')).toBe(true);

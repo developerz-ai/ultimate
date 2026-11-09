@@ -47,8 +47,8 @@ const WEB_ONLY =
  */
 const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
   // 66 vendor modules, ~545 kB of source, loaded by every app with realtime on or off — until
-  // `@ultimat3/realtime/server` put the adapter behind `nats-open.ts`. Opened when an app's
-  // `realtime.transport` is `'nats'`.
+  // `@ultimat3/realtime/server` put the adapter behind `nats-open.ts`. Opened when `NATS_URL` is
+  // set.
   ['the nats client', /\/node_modules\/(?:nats|nkeys\.js|tweetnacl)\//],
   // Ten modules only `x db gen`, `x db migrate` and the gate's `drift` step call; they rode
   // `@ultimat3/db`'s barrel until they moved to `@ultimat3/db/schema-dump`.

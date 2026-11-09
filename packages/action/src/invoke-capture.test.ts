@@ -7,11 +7,11 @@ import {
   ctxOf,
   REDACTED,
   reportError,
-  setFailureStore,
   settleFailureCaptures,
   UltimateError,
   userActor,
 } from '@ultimat3/core';
+import { installFailureStore } from '@ultimat3/core/adapter';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -33,12 +33,12 @@ const payer = ctxOf({
 const saved: FailureBundle[] = [];
 
 afterEach(() => {
-  setFailureStore(null);
+  installFailureStore(null);
   saved.length = 0;
 });
 
 const run = async (raw: unknown): Promise<void> => {
-  setFailureStore({ save: async (bundle) => void saved.push(bundle) });
+  installFailureStore({ save: async (bundle) => void saved.push(bundle) });
   try {
     await invoke(pay, raw, { ctx: payer, surface: 'http' });
   } catch (error) {

@@ -4,6 +4,7 @@
  * a value or a failure — and a concurrent duplicate is refused rather than run twice, because a
  * double charge is worse than a 409.
  */
+
 import {
   compareFingerprint,
   finiteCount,
@@ -15,6 +16,7 @@ import {
   runToCompletion,
   tryUseContext,
 } from '@ultimat3/core';
+import { adapterSlot } from '@ultimat3/core/adapter';
 import {
   IdempotencyConflictError,
   IdempotencyNotSharedError,
@@ -178,7 +180,9 @@ export interface IdempotencyConfig {
 export const DEFAULT_IDEMPOTENCY_CONFIG: IdempotencyConfig = Object.freeze({ scope: 'process' });
 
 let config: IdempotencyConfig = DEFAULT_IDEMPOTENCY_CONFIG;
-let defaultStore: IdempotencyStore = memoryIdempotencyStore();
+let baseStore: IdempotencyStore = memoryIdempotencyStore();
+/** The installed store: a stack over the process default, released in any order. */
+const storeSlot = adapterSlot<IdempotencyStore>(() => baseStore);
 
 /** Declared at boot, before `registerActions()`. Nothing infers a replica count. */
 export function configureIdempotency(next: IdempotencyConfig): void {
@@ -208,18 +212,24 @@ export function idempotencyCeilingMs(): number {
   return deadline > 0 ? Math.ceil(2 * deadline) : CEILING_WITHOUT_DEADLINE_MS;
 }
 
-export function setIdempotencyStore(store: IdempotencyStore): void {
-  defaultStore = store;
+/**
+ * The boot's installer (its release removes THIS install only, in any order — `adapterSlot`), on `@ultimat3/action/adapter` and never the `.` barrel: the boot installs
+ * `postgresIdempotencyStore` over its pool, and an app swaps it with `idempotencyStore:` in
+ * `apps/<app>/runtime.ts`.
+ */
+export function installIdempotencyStore(store: IdempotencyStore): () => void {
+  return storeSlot.install(store);
 }
 
 export function getIdempotencyStore(): IdempotencyStore {
-  return defaultStore;
+  return storeSlot.current();
 }
 
 /** Test-only. A process configures its idempotency once at boot and never reconfigures it. */
 export function resetIdempotency(): void {
   config = DEFAULT_IDEMPOTENCY_CONFIG;
-  defaultStore = memoryIdempotencyStore();
+  storeSlot.reset();
+  baseStore = memoryIdempotencyStore();
 }
 
 /**

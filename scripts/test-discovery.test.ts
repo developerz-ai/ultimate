@@ -41,6 +41,16 @@ async function seeded(
 }
 
 describe('unit · the discovery guard refuses a test file the gate cannot yield', () => {
+  // A dot-directory is walked too: `.claude/hooks/` holds a suite, and a walk that skipped every
+  // dot-directory answered "nothing refused" about files it never read (plan 101, wave D).
+  test('a refused shape under a dot-directory is a finding, not an unread file', async () => {
+    await seeded({ '.claude/hooks/a.spec.ts': "test('seeded', () => {});\n" }, async (root) => {
+      const scan = scanTree(root);
+      expect(scan.files).toBe(1);
+      expect(scan.hits).toEqual(['.claude/hooks/a.spec.ts']);
+    });
+  });
+
   const positives: readonly (readonly [seed: string, at: string])[] = [
     ['a.spec.ts', 'a.spec.ts'],
     ['b_spec.ts', 'b_spec.ts'],

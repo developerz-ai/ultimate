@@ -14,7 +14,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { TokenUsage } from './provider';
 import { meteredRun } from './run-meter';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ScriptedTurn } from './scripted-provider';
 import { scriptedProvider } from './scripted-provider';
 
@@ -31,7 +31,7 @@ const ANSWER = { summary: 'a post about caching', tags: ['cache'] };
 function install(...turns: readonly ScriptedTurn[]) {
   resetAiRuntime();
   const provider = scriptedProvider({ turns, usage: USAGE });
-  configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+  installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
   return provider;
 }
 

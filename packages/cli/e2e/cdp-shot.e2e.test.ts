@@ -3,8 +3,9 @@
 // chord the page reads as `metaKey`, the emulated scheme, the accessibility tree and a clipped
 // PNG. Skips with no Chrome, and refuses to skip under `E2E_BROWSER_REQUIRED=1`.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { SleepClock } from '@ultimat3/core';
 import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
-import type { ShotClock, ShotSession } from '../src/browser-launcher-port';
+import type { ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 
 const DOCUMENT = `<!doctype html><html><head><title>Shot fixture</title>
@@ -25,7 +26,7 @@ const DOCUMENT = `<!doctype html><html><head><title>Shot fixture</title>
   setTimeout(() => { throw new TypeError('island exploded'); }, 0);
 </script></body></html>`;
 
-const clock: ShotClock = {
+const clock: SleepClock = {
   now: () => new Date(),
   monotonic: () => performance.now(),
   sleep: (ms) => Bun.sleep(ms),

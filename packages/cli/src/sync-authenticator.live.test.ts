@@ -37,7 +37,7 @@ const BUILD_ID = 'build-1';
  * `Date`, so the grant's `expiresAt` and the sweep's `now` both read the frozen instant and a real
  * five-minute wait would prove nothing anyway. The sweep INTERVAL is a `setInterval`, which runs
  * on the real clock — so it is the one number here that is milliseconds of actual waiting.
- * `SYNC_GRANT_TTL_MS` itself is asserted in the unit twin.
+ * `MAX_CREDENTIAL_TTL_MS` itself is asserted in the unit twin.
  */
 const TTL_MS = 60_000;
 const SWEEP_MS = 20;

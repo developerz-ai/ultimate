@@ -14,13 +14,8 @@ import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { StepRunner, StepStore } from '@ultimat3/jobs';
 import { memoryStepStore, stepRunner } from '@ultimat3/jobs';
 import type { MailDriver, MailMessage, SendResult, SentMail } from '@ultimat3/mail';
-import {
-  driverUnavailable,
-  memoryMailDriver,
-  resetMailDriver,
-  setMailDriver,
-  tryMailDriver,
-} from '@ultimat3/mail';
+import { driverUnavailable, memoryMailDriver } from '@ultimat3/mail';
+import { installMailDriver } from '@ultimat3/mail/adapter';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { jobTest, simulateJobs } from '@ultimat3/testing';
 import { publishPost } from './actions/publish-post';
@@ -117,7 +112,6 @@ interface BlippingMail {
 
 const mailFailingOn = (nth: number): BlippingMail => {
   const memory = memoryMailDriver();
-  const previous = tryMailDriver();
   let sends = 0;
   const driver: MailDriver = {
     name: 'test',
@@ -128,14 +122,9 @@ const mailFailingOn = (nth: number): BlippingMail => {
       return memory.send(message);
     },
   };
-  setMailDriver(driver);
-  return {
-    outbox: () => memory.outbox(),
-    restore: () => {
-      if (previous === undefined) resetMailDriver();
-      else setMailDriver(previous);
-    },
-  };
+  // The install answers its own undo, which puts back whatever was installed before it.
+  const release = installMailDriver(driver);
+  return { outbox: () => memory.outbox(), restore: release };
 };
 
 const runnerOn = (store: StepStore): StepRunner =>

@@ -6,8 +6,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { assert, NotImplementedError, type UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { resetJobDriver } from './adapter';
 import type { JobDriver } from './driver';
-import { resetJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import {
   inspectDeadLetters,
@@ -156,7 +156,7 @@ function driverWithoutIntrospect(): JobDriver {
 }
 
 const INTROSPECT_FIX =
-  'call setJobDriver(postgresJobDriver()) at boot — only the pg driver implements introspect — then: x jobs list --json';
+  'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — only the pg driver implements introspect — then: x jobs list --json';
 
 async function expectIntrospectionRequired(call: () => Promise<unknown>): Promise<void> {
   let thrown: unknown;

@@ -399,7 +399,7 @@ including the three that open no other socket — `queue_depth` belongs to one o
 installs `@ultimat3/testing`'s matchers, and Bun reads `bunfig.toml` from the cwd — so `bun test`
 run inside `packages/core` loads no preload and 17 tests in `secrets.test.ts` die on
 `expect(...).rejects.toBeUltimateError is not a function`, which reads as this package's failure
-and is the shell's. `.github/workflows/ci.yml`'s `package` job spawns `bun test packages/<pkg>`
+and is the shell's. `.github/workflows/ci.yml`'s `package` job spawns `bun test ./packages/<pkg>`
 with `cwd` at the root for the same reason (`scripts/coverage-gate.ts`).
 
 `markReady()` means **bound**, and readiness means **usable** — two different facts since

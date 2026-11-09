@@ -59,6 +59,26 @@ describe('realtime barrels', () => {
     }
   });
 
+  // An app swaps its bus in `apps/<app>/runtime.ts`; the boot and the test seam install it from
+  // `./adapter`. A public setter on either barrel is a second way to do it.
+  test('the transport installer is on ./adapter alone', async () => {
+    const adapter = await import('./adapter');
+    expect(adapter.installChannelTransport).toBeTypeOf('function');
+    expect(adapter.TransportUnavailableError).toBeTypeOf('function');
+    for (const name of [
+      'installChannelTransport',
+      'setChannelTransport',
+      'resetChannelTransport',
+    ]) {
+      expect(Object.keys(client)).not.toContain(name);
+      expect(Object.keys(server)).not.toContain(name);
+    }
+    const manifest = (await Bun.file(`${import.meta.dir}/../package.json`).json()) as {
+      exports?: Record<string, string>;
+    };
+    expect(manifest.exports?.['./adapter']).toBe('./src/adapter.ts');
+  });
+
   test('the server entry carries the bus, the WAL and the node', () => {
     expect(server.openNatsClient).toBeTypeOf('function');
     expect(server.bunPgStream).toBeTypeOf('function');

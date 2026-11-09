@@ -162,13 +162,9 @@ import. The CLI wires it.
   wrapper since 25.0.0) — the one answer shared with `action`, `query`, `ai`, `manifest`; the pin
   lives in `@ultimat3/cli`. Never spell `=== true` inline here again.
 - Exposure is declared at the primitive, never in `defineAppMcp`. A primitive NAMED in
-  `actions:`/`queries:` without `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot —
-  a written-out list is a request, so filtering it would ship a catalog missing a tool its
-  author believes is there. `include: 'exposed'` sweeps the registries and therefore skips,
-  because that list is every primitive the app registered, not one anyone wrote out.
-  `actions:` and `queries:` go through **one** `toolsListed` call over the concatenation: it
-  collects every offender before throwing, so one boot names all of them and one edit closes
-  all of them. Two calls would throw on the first array and never examine the second.
+  `actions:`/`queries:` without `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot;
+  `include: 'exposed'` sweeps the registries and skips. Both lists go through **one**
+  `toolsListed` call, so one boot names every offender. Why: `docs/history/mcp.md`.
 - `actions:`/`queries:` take the **real primitives** (`actions: [publishPost]`), adapted by
   `projectable.ts` into the same `ProjectablePrimitive` the sweep builds. `ProjectablePrimitive`
   stays in the union for programmatic catalogs (`@ultimat3/admin`); `isAction`/`isQuery` read each
@@ -269,7 +265,7 @@ import. The CLI wires it.
 ## Commands
 
 ```
-bun test packages/mcp
+bun test ./packages/mcp/
 bun run --filter @ultimat3/mcp typecheck
 ```
 

@@ -12,7 +12,7 @@ import { streamOf } from './agent-stream';
 import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import { scriptedProvider } from './scripted-provider';
 import type { ProjectableAction } from './tools';
 
@@ -70,8 +70,8 @@ const framesOf = (text: string) =>
 describe('agent() on the wire', () => {
   test('two turns and a tool stream as chunks, then one done with the answer', async () => {
     resetAiRuntime();
-    configureAi({
-      gateway: providerGateway({
+    installAiGateway(
+      providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [
           scriptedProvider({
@@ -82,7 +82,7 @@ describe('agent() on the wire', () => {
           }),
         ],
       }),
-    });
+    );
     const response = await post(support('streamedSupport'));
     expect(response.headers.get('content-type')).toStartWith('text/event-stream');
     const frames = framesOf(await response.text());
@@ -100,13 +100,13 @@ describe('agent() on the wire', () => {
 
   test('a run that fails mid-stream ends with one error frame carrying its code', async () => {
     resetAiRuntime();
-    configureAi({
-      gateway: providerGateway({
+    installAiGateway(
+      providerGateway({
         defaultModel: FIXTURE_MODEL,
         // The script runs out after the tool turn: the second turn is refused.
         providers: [scriptedProvider({ turns: [{ calls: [{ call: 'lookup', input: {} }] }] })],
       }),
-    });
+    );
     const frames = framesOf(await (await post(support('failingSupport'))).text());
     expect(frames.at(-1)?.event).toBe('error');
     expect(frames.filter((frame) => frame.event === 'done')).toHaveLength(0);

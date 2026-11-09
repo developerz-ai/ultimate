@@ -6,6 +6,20 @@
 import type { VisibleOptions } from './matcher-visible';
 import type { OpenApiLike } from './test-types';
 
+/** A `defineMail()` handle, or its id. Structural, so this file imports no package. */
+export type MatcherMailRef = string | { readonly id: string };
+
+/** Who a mail must have gone to, beside which mail it was. */
+export interface SentMailMatch {
+  readonly to?: string;
+}
+
+/** The two members of a job handle `toHaveEnqueued` reads; `I` types the expected input. */
+export interface EnqueuedJobRef<I> {
+  readonly name: string;
+  parse(raw: unknown): I;
+}
+
 /**
  * One entry per `expect.extend` implementation in `matchers.ts`, and `T` is what the matcher
  * answers with. Adding a matcher is one edit here: `matchers.ts` will not compile until it has an
@@ -38,6 +52,13 @@ export interface UltimateMatchers<T> {
    * assertion: it fails on a page that simply has not painted yet.
    */
   toBeVisible(options?: VisibleOptions): Promise<T>;
+  /**
+   * On the `runJobs` fixture: a row for `job`, in any state, whose input equals `input` once both
+   * are parsed by the job's schema (an input it refuses is `X_TEST_EXPECTED_INPUT_INVALID`).
+   */
+  toHaveEnqueued<I>(job: EnqueuedJobRef<I>, input?: I): Promise<T>;
+  /** On the `mail` fixture: that mail was sent — to `to`, when named. */
+  toHaveSentMail(mail: MatcherMailRef, match?: SentMailMatch): T;
 }
 
 declare module 'bun:test' {

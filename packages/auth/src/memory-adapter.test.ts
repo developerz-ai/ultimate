@@ -3,6 +3,8 @@
 // double-consume, double-revoke, sort order) directly until now.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 import type { AuthAccount, AuthApiKeyRecord, AuthSession, AuthVerification } from './adapter';
 import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 
@@ -186,6 +188,19 @@ describe('verifications', () => {
 
     const second = await adapter.takeVerification('email-verify', 'a@example.com', 'hash');
     expect(second).toBeNull();
+  });
+
+  test('with no clock passed, the stamp follows the clock port — installed after construction', async () => {
+    const adapter = memoryAuthAdapter();
+    await adapter.putVerification(record());
+    const at = '2026-11-09T12:00:00.000Z';
+    const release = installClock(frozenClock(at));
+    try {
+      const taken = await adapter.takeVerification('email-verify', 'a@example.com', 'hash');
+      expect(taken?.consumedAt?.toISOString()).toBe(at);
+    } finally {
+      release();
+    }
   });
 
   test('takeVerification returns null for an unknown purpose/identifier pair', async () => {

@@ -22,7 +22,7 @@ import {
 import { openAiProvider } from './openai-provider';
 import type { GenerateRequest, Provider } from './provider';
 import { anthropicProvider } from './provider';
-import { configureAi } from './runtime';
+import { installAiGateway } from './runtime';
 
 useFixtureModels();
 
@@ -167,13 +167,13 @@ describe('nothing retries an overflow', () => {
 
   test('llm() raises it as itself, after one call', async () => {
     const calls = { n: 0 };
-    configureAi({
-      gateway: providerGateway({
+    installAiGateway(
+      providerGateway({
         providers: [overflowing('a', calls)],
         defaultModel: FIXTURE_MODEL,
         sleep: () => Promise.resolve(),
       }),
-    });
+    );
     const summarize = declare(promptFor());
     const error = await failureOf(() => summarize({ postId: POST_ID }, { ctx: anonymousCtx() }));
     expect(stringField(error, 'code')).toBe('X_AI_CONTEXT_OVERFLOW');

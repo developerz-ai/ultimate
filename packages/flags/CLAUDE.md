@@ -113,13 +113,14 @@ what lets `policy` (tier 2) call it from inside a predicate.
 - **`configureFlags` screens `reportEveryMs` with `finiteCount`, before it touches anything.**
   `now - previous < NaN` is false, so a `NaN` interval reported on every evaluation; `Infinity`
   muted the flag for good. `0` is legal — a caller may choose it.
-- **`configureFlags` clears the report watermarks when it swaps the clock, and only then.** A
-  monotonic reading is meaningful only against the clock that produced it: a process that reported
-  at monotonic 10,000,000 and then took a clock starting at 0 computed `now - previous` as
-  -10,000,000, below every interval, so that key could never report again — on a frozen test clock,
-  never. `resetFlagReporting()` always did this; `configureFlags` is what apps and test kits call.
+- **The clock is core's `ambientClock()`, never this package's** (v31: `configureFlags({ clock })`
+  is gone; `clock` in `apps/<app>/runtime.ts`, or `installClock` in a test). **`flagsClock()` clears
+  the report watermarks when the ambient clock is a different object from the one they were read
+  on, and only then.** A monotonic reading is meaningful only against the clock that produced it: a
+  process that reported at monotonic 10,000,000 and then took a clock starting at 0 computed
+  `now - previous` as -10,000,000, below every interval — on a frozen test clock, never again.
   An interval change re-reads the SAME clock and must NOT clear, or the rate limit becomes a
-  suggestion one configure call can bypass.
+  suggestion one configure call can bypass (`runtime.test.ts`).
 
 ## Open
 
@@ -134,6 +135,6 @@ what lets `policy` (tier 2) call it from inside a predicate.
 ## Commands
 
 ```
-bun test packages/flags
+bun test ./packages/flags/
 bun run --filter @ultimat3/flags typecheck
 ```

@@ -22,7 +22,7 @@ import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateRequest } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 
 useFixtureModels();
 beforeEach(resetRuns);
@@ -91,8 +91,8 @@ describe('limits() lowers the declared ceilings for one run', () => {
   test('a ceiling the declaration leaves unset may be set by a run: a deadline', async () => {
     const seen: GenerateRequest[] = [];
     resetAiRuntime();
-    configureAi({
-      gateway: providerGateway({
+    installAiGateway(
+      providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [
           {
@@ -109,7 +109,7 @@ describe('limits() lowers the declared ceilings for one run', () => {
           },
         ],
       }),
-    });
+    );
     const write = declare({ limits: () => ({ deadlineMs: 30 }) });
 
     await expect(write(FREE, { ctx: ctx() })).rejects.toMatchObject({

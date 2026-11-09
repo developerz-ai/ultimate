@@ -7,10 +7,10 @@ import type { Ctx, Environment } from '@ultimat3/core';
 import { assert, ctxOf } from '@ultimat3/core';
 import type { BatchIterator, ReadBuilder, Repo } from '@ultimat3/entity';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
+import { installJobDriver } from './adapter';
 import type { BackfillInput } from './backfill';
 import { backfill } from './backfill';
 import type { BackfillLedger } from './backfill-ledger';
-import { setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { StepRecord, StepStore } from './steps';
 import { stepRunner } from './steps';
@@ -184,7 +184,7 @@ export const harness = (
  */
 export const installLedger = (): BackfillLedger => {
   const driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
   const ledger = driver.backfills;
   // Never a bare `Error`: `backfills` is optional on `JobDriver`, so this is a claim about the
   // memory driver, and the fix names the file that would have to change for it to stop holding.

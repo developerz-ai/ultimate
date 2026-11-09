@@ -10,11 +10,11 @@ import type { Clock, Scheduler } from '@ultimat3/core';
 import {
   generationFence,
   isFixShellSafe,
+  liveClock,
   logger,
   renderFixShellArg,
   renderThrowable,
   singleFlight,
-  systemClock,
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
 import { decodeJwtSegment, isRecord } from './json';
@@ -134,7 +134,7 @@ const KID_LESS = '\u0000';
  * key already held answering for `JWKS_STALE_IF_ERROR_MS`.
  */
 export function jwksClient(options: JwksClientOptions): JwksKeySource {
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock ?? liveClock;
   const ttlMs = options.ttlMs ?? DEFAULT_JWKS_TTL_MS;
   assertFiniteAuthCount(
     'jwks.ttlMs',

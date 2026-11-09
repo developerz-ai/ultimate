@@ -43,7 +43,7 @@ export const REMOVED_CONFIG_KEYS: Readonly<Record<string, RemovedConfigKey>> = O
   'jobs.driver': {
     removedIn: '5.0.0',
     instead:
-      'nothing read it and boot always built Postgres; the driver is code — setJobDriver(postgresJobDriver({ executor })) from @ultimat3/jobs, or setJobDriver(memoryJobDriver()) in a test',
+      "nothing read it and boot always built Postgres; the driver is the jobs adapter port — export const runtime = { jobs: postgresJobDriver({ executor }) } in apps/<app>/runtime.ts (postgresJobDriver from @ultimat3/jobs), or @ultimat3/testing's per-test override in a test",
   },
   'realtime.heartbeatMs': {
     removedIn: '4.0.0',
@@ -99,6 +99,16 @@ export const REMOVED_CONFIG_KEYS: Readonly<Record<string, RemovedConfigKey>> = O
     removedIn: '25.0.0',
     instead:
       "nothing read it; the app's theme is declared once with export const brand = defineTheme({ … }) from @ultimat3/ui, in apps/web/shared/theme.ts",
+  },
+  'realtime.transport': {
+    removedIn: '31.0.0',
+    instead:
+      'the bus is the transport adapter port: NATS_URL set builds NATS, unset builds the in-process bus — any other Transport is export const runtime = { transport } in apps/<app>/runtime.ts',
+  },
+  'realtime.urlEnv': {
+    removedIn: '31.0.0',
+    instead:
+      'the bus url is the NATS_URL environment variable, read by the boot — rename the variable urlEnv named (BUS_URL, …) to NATS_URL for every realtime role (web, sync, replicator), or hand a NatsTransport as transport in apps/<app>/runtime.ts',
   },
   'ai.mcp.path': {
     removedIn: '25.0.0',

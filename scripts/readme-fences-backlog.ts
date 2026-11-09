@@ -44,7 +44,8 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'ai: // `ProjectableAction` — `{ name, mcp?, inputJsonSchema?, run }`, the projection SEAM.': 1,
   'ai: // app/support/summarize.eval.test.ts — the suite `x verify` runs': 1,
   'ai: // app/support/summarize.evals.ts — the declaration the gate reads': 1,
-  'ai: configureAi({ gateway, redact: (text) => scrubPatientIdentifiers(text) });': 1,
+  // why: re-keyed, not raised — 31.0.0 moved `gateway` off configureAi (Upgrading #41); same fence
+  'ai: configureAi({ redact: (text) => scrubPatientIdentifiers(text) });': 1,
   "ai: const store = postgresVectorStore({ name: 'doc_chunks', dimension: 256 });   // memoryVectorStore() in dev": 1,
   "ai: const tenantStore = store.scoped({ tenant: orgId, allow: { visibility: ['public', 'internal'] } });": 1,
   'ai: export const summarize = definePrompt<{ ticket: string }>({': 1,
@@ -151,7 +152,8 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'storage: const grant = await grantUpload({ disk, orgId, request, quarantine: true });': 1,
   "storage: import { defineStorage, disk, localDriver, s3Driver, scopedKey } from '@ultimat3/storage';": 1,
   "testing: const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {": 1,
-  'testing: const orgs = defineFactory(orgEntity, {': 1,
+  // why: re-keyed, not raised — the 31.0.0 factories rewrite (Upgrading #40) reopened this fence
+  "testing: import { belongsTo, defineFactory, hasMany } from '@ultimat3/testing';": 1,
   'testing: defineFixtures({ seed: () => loadSeed, actorFor: () => actorFor });': 1,
   "testing: test('the feed reads its authors once', async ({ statements }) => {": 1,
   "time: import { formatWithOffset, fromIso, nextLocalSlot, now, toZoned } from '@ultimat3/time';": 1,
@@ -160,7 +162,8 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   "ui: import { Button, Field, Input } from '@ultimat3/ui';": 1,
   "ui: import { Icon } from '@ultimat3/ui';": 1,
   // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  "ai: configureAi({ gateway: providerGateway({ providers: [yourProvider], defaultModel: 'house-large' }) });": 1,
+  // why: re-keyed, not raised — 31.0.0 moved the gateway to apps/<app>/runtime.ts (Upgrading #41)
+  'ai: // apps/web/runtime.ts': 1,
   // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
   "ai: const embedder = remoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY": 1,
   // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count

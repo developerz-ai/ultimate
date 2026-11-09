@@ -15,8 +15,8 @@ import {
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
+import { resetIdempotency } from './adapter';
 import { toRoute } from './http';
-import { resetIdempotency } from './idempotency';
 
 afterEach(() => resetIdempotency());
 

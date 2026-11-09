@@ -3,13 +3,14 @@
 // off the error. Also the producer half of that row: every key it names, this error must set.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { defineHttpConfig, httpServer, resetRateLimitStore, toProblem } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, toProblem } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
+import { resetMeterStore } from './adapter';
 import { MeterExceededError } from './errors-meter';
 import { toRoute } from './http';
-import { resetMeterStore } from './meter-store';
 
 beforeEach(() => {
   resetMeterStore();

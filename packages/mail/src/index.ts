@@ -30,8 +30,6 @@ export {
   mailDriver,
   memoryMailDriver,
   messageHeaders,
-  resetMailDriver,
-  setMailDriver,
   tryMailDriver,
   unconfiguredMailDriver,
 } from './driver';

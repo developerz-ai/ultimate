@@ -5,6 +5,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, structuredLogger } from '@ultimat3/core';
+import { installMailDriver, resetMailDriver } from './adapter';
 import {
   isMemoryDriver,
   isUnconfiguredDriver,
@@ -13,8 +14,6 @@ import {
   type MailMessage,
   mailDriver,
   memoryMailDriver,
-  resetMailDriver,
-  setMailDriver,
   tryMailDriver,
   UNCONFIGURED_DRIVER_NAME,
   unconfiguredMailDriver,
@@ -33,17 +32,13 @@ const message: MailMessage = {
   bcc: ['ops@example.test'],
 };
 
-// The ambient driver is process-global; capture whatever was installed before this file ran and
-// hand it back, rather than resetting unconditionally.
-const installed = tryMailDriver();
-
 beforeEach(() => {
   resetMailDriver();
 });
 
+// Left empty: a re-install "to restore" would push a frame that outlives this file.
 afterAll(() => {
   resetMailDriver();
-  if (installed !== undefined) setMailDriver(installed);
 });
 
 describe('the ambient driver slot', () => {
@@ -58,9 +53,9 @@ describe('the ambient driver slot', () => {
     expect(code).toBe('X_MAIL_DRIVER_UNAVAILABLE');
   });
 
-  test('tryMailDriver hands back the very object setMailDriver was given', () => {
+  test('tryMailDriver hands back the very object installMailDriver was given', () => {
     const memory = memoryMailDriver();
-    setMailDriver(memory);
+    installMailDriver(memory);
     // Identity, not shape: a host reads `outbox()` off this and must see the same array `send()`
     // pushed into.
     expect(tryMailDriver()).toBe(memory);
@@ -69,11 +64,11 @@ describe('the ambient driver slot', () => {
     expect(tryMailDriver()).toBeUndefined();
   });
 
-  test('the last setMailDriver wins — one driver per process', () => {
+  test('the last installMailDriver wins — one driver per process', () => {
     const first = memoryMailDriver();
     const second = logMailDriver(structuredLogger({ writer: () => undefined }));
-    setMailDriver(first);
-    setMailDriver(second);
+    installMailDriver(first);
+    installMailDriver(second);
     expect(tryMailDriver()).toBe(second);
   });
 });

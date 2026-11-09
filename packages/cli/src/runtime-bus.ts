@@ -17,8 +17,9 @@
 
 import type { RealtimeConfig, Role } from '@ultimat3/core';
 import { isUltimateError, logger, registerReadinessCheck } from '@ultimat3/core';
+import { installChannelTransport } from '@ultimat3/realtime/adapter';
 import type { BusUse, SelectTransportOptions, Transport } from '@ultimat3/realtime/server';
-import { selectTransport, setChannelTransport } from '@ultimat3/realtime/server';
+import { selectTransport } from '@ultimat3/realtime/server';
 import type { Env } from './runtime-bindings';
 
 /**
@@ -99,17 +100,34 @@ export interface SelectBusInput {
 }
 
 /**
- * Selection is pure — it parses env and constructs, it dials nothing — so a config and an
- * environment that disagree refuse here, before any service starts (`selectTransport`).
+ * A production boot on the in-process bus, said once. Since v31 nothing refuses it — the
+ * `realtime.transport` declaration is gone, and `NATS_URL` alone selects — so a forgotten variable
+ * is one replica's worth of fanout behind a load balancer. Warned, never refused: a single-replica
+ * deploy is legal, and `X_REALTIME_TOPOLOGY` stays the hard check for a topology that cannot work.
+ */
+function warnInProcessInProduction(input: SelectBusInput, mode: 'embedded' | 'external'): void {
+  if (input.env['NODE_ENV'] !== 'production' || mode !== 'embedded') return;
+  if (input.override !== undefined) return;
+  logger.warn('ultimate bus is the in-process bus', {
+    cause:
+      'NATS_URL is unset and apps/<app>/runtime.ts supplies no transport, so channel events, live queries and cache invalidations reach this replica only',
+    fix: 'NATS_URL=nats://<host>:4222   # in the deploy environment of every role; or `transport` in apps/<app>/runtime.ts — leave both unset only for a single-replica deploy',
+  });
+}
+
+/**
+ * Selection is pure — it parses env and constructs, it dials nothing — so nothing is refused for a
+ * bus that is merely away until a role that needs it dials (`selectTransport`).
  */
 export function selectBus(input: SelectBusInput): SelectedBus {
   const use = busUseFor(input.roles, input.realtime);
   const tolerant = input.dev === true && use !== 'publish';
-  const selection = selectTransport(input.env, input.realtime, {
+  const selection = selectTransport(input.env, {
     ...(tolerant ? { connectWithinMs: DEV_BUS_WAIT_MS } : {}),
     ...input.select,
     use,
   });
+  warnInProcessInProduction(input, selection.mode);
   return {
     use,
     tolerant,
@@ -155,7 +173,7 @@ export function selectBus(input: SelectBusInput): SelectedBus {
         // role: the hub is the `sync` role's, so a job or an action reached none, and an
         // events-only channel — the one kind that needs no replicator — could be fed by nothing
         // but a socket.
-        started.push(setChannelTransport(transport));
+        started.push(installChannelTransport(transport));
         // Only a transport that can be disconnected gets a check. `NatsTransport.connected` is a
         // synchronous getter over the client's own state, so no probe is needed; the in-process
         // bus has nothing to lose a connection to, and a check that can only answer `true` is a

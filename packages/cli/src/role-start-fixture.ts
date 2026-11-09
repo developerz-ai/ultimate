@@ -29,7 +29,7 @@ import type { RunningServices } from './runtime-services';
  * so two files sharing one on-disk storage root cannot leave the other's fixture half-removed.
  */
 /** Enabled, in-process: the section every role test before 22.0.0 was implicitly booting. */
-const REALTIME_ON: RealtimeConfig = { enabled: true, transport: 'memory', urlEnv: undefined };
+const REALTIME_ON: RealtimeConfig = { enabled: true };
 
 export function fixtureRuntime(root: string, realtime = REALTIME_ON): RunningServices {
   const services = resolveServices(root, {});

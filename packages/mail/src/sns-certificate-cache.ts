@@ -3,7 +3,7 @@
 // and an allowed topic ARN is not a secret, so a forger can name a fresh path per request. Four
 // bounds hold that to a fixed cost: LRU positives, a negative TTL, an in-flight cap, coalescing.
 
-import { type Clock, isUltimateError, renderThrowable, systemClock } from '@ultimat3/core';
+import { type Clock, isUltimateError, liveClock, renderThrowable } from '@ultimat3/core';
 import { deliveryProviderUnreachable } from './delivery-event-errors';
 import { certificateSpki, pemCertificateDer } from './x509-spki';
 
@@ -32,7 +32,7 @@ export interface SnsCertificateCacheOptions {
 export function createSnsCertificateCache(
   options: SnsCertificateCacheOptions,
 ): SnsCertificateCache {
-  const clock = options.clock ?? systemClock;
+  const clock: Clock = options.clock ?? liveClock;
   // Insertion order is recency order: a hit is deleted and re-set, so the first key is the LRU.
   const verified = new Map<string, Uint8Array<ArrayBuffer>>();
   const failedUntil = new Map<string, number>();

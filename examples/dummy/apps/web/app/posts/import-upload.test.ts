@@ -4,7 +4,8 @@
 // keeps one org's session out of another's reach.
 
 import { userActor } from '@ultimat3/core';
-import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { jobDriver, memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 import {
   acceptSignedPart,
   defineStorage,
@@ -42,19 +43,19 @@ const reader = userActor({
 const SIZE = 5 * 1024 * 1024 + 7;
 const file = new Uint8Array(SIZE).map((_, at) => at % 251);
 
-const previous = jobDriver();
+// The install answers its own undo, which puts back whatever was installed before it.
+let release = (): void => {};
 beforeEach(() => {
   resetStorage();
   defineStorage({
     disks: { local: memoryStorageDriver({ signingSecret: 'test' }) },
     default: 'local',
   });
-  setJobDriver(memoryJobDriver());
+  release = installJobDriver(memoryJobDriver());
 });
 afterEach(() => {
   resetStorage();
-  if (previous === undefined) resetJobDriver();
-  else setJobDriver(previous);
+  release();
 });
 
 const open = () =>

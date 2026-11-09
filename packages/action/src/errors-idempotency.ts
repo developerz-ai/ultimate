@@ -78,7 +78,7 @@ export class IdempotencyNotSharedError extends UltimateError {
       // positional form is `unsafe`), so that line compiled and would have thrown on the first
       // reservation. The framework's own boot already installs this store; a host booting the
       // framework itself wraps the client it opened.
-      fix: "the framework boot installs a shared store — reach this only from a host that boots it itself: setIdempotencyStore(postgresIdempotencyStore({ executor: { query: (text, values) => client.query({ text, values }) }, origin: () => client, reclaimAfterMs: requestDeadlineMs })) from '@ultimat3/action', or drop the declaration to configureIdempotency({ scope: 'process' })",
+      fix: "postgresIdempotencyStore({ executor: { query: (text, values) => client.query({ text, values }) }, origin: () => client, reclaimAfterMs: requestDeadlineMs })   # idempotencyStore: in apps/<app>/runtime.ts, or drop that field and the boot builds a shared one over DATABASE_URL — or declare configureIdempotency({ scope: 'process' })",
       meta: { storeScope: storeScope ?? null },
     });
   }

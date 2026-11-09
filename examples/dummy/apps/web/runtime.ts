@@ -4,6 +4,7 @@
  * `/.well-known/oauth-authorization-server` and `POST /oauth/{token,revoke,introspect}`.
  */
 
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
 import { partnerOAuth } from './app/partners/oauth';
 
-export const runtime = { routes: partnerOAuth.routes };
+export const runtime = { routes: partnerOAuth.routes } satisfies RuntimeOverrides;

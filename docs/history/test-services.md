@@ -112,7 +112,7 @@ was measured on Versity v1.8.0 with versioning. The compose gateway still has no
    `x-amz-bucket-object-lock-enabled: true`; a lock cannot be turned on after creation. Either
    `aws s3api create-bucket --bucket locked --object-lock-enabled-for-bucket --endpoint-url http://127.0.0.1:9100`,
    or a signed `PUT /locked` through `signAwsRequest({ service: 's3', region: 'auto', … })`.
-3. `TEST_S3_URL=http://ultimate:ultimate-test@127.0.0.1:9100/plain S3_OBJECT_LOCK_BUCKET=locked bun test packages/storage/src/driver-s3.live.test.ts`
+3. `TEST_S3_URL=http://ultimate:ultimate-test@127.0.0.1:9100/plain S3_OBJECT_LOCK_BUCKET=locked bun test ./packages/storage/src/driver-s3.live.test.ts`
 4. `docker stop lock-s3` — the tmpfs goes with it, so no locked object outlives the run.
 
 What it showed: a DELETE without a version id on a locked object SUCCEEDS (a delete marker) and an

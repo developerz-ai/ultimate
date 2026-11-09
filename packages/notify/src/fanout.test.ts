@@ -5,13 +5,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { memoryStepStore, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { installNotifyStores, resetNotifyStores } from './adapter';
 import { memoryDigestStore } from './digest';
 import { memoryDeliveryLedger } from './ledger';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { driver, recorder } from './notify-fixture';
 import { memoryPreferenceStore } from './preferences';
-import { resetNotifyStores, setNotifyStores } from './stores';
 
 const POST = '00000000-0000-7000-8000-00000000beef';
 const params: TestParams = { postId: POST };
@@ -32,7 +32,7 @@ describe('unit · fan-out', () => {
     // matters: the process died, another node claimed the run, and the ONLY thing left saying the
     // email already went out is the ledger.
     const ledger = memoryDeliveryLedger();
-    setNotifyStores({ ledger });
+    installNotifyStores({ ledger });
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.liked',
@@ -58,7 +58,7 @@ describe('unit · fan-out', () => {
   test('an opt-out silences ONE channel and leaves the others firing', async () => {
     const preferences = memoryPreferenceStore();
     preferences.deny({ recipient: 'ana', notifier: 'post.commented', channel: 'email' });
-    setNotifyStores({ preferences });
+    installNotifyStores({ preferences });
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.commented',
@@ -79,7 +79,7 @@ describe('unit · fan-out', () => {
   });
 
   test('a bulk channel sends one payload for the whole audience', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.flagged',
@@ -102,7 +102,7 @@ describe('unit · fan-out', () => {
   });
 
   test('`if` is evaluated AFTER the wait, so a condition that goes false during it sends nothing', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const log = recorder();
     let stillWanted = true;
     const handle = notifier<TestParams>({
@@ -127,7 +127,7 @@ describe('unit · fan-out', () => {
   });
 
   test('`unless` is read on the same pass, and a wait that changes nothing still delivers', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const log = recorder();
     let muted = false;
     const handle = notifier<TestParams>({
@@ -161,7 +161,7 @@ describe('unit · fan-out', () => {
   });
 
   test('a declared `recipients` resolver runs on the worker, in a durable step', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const log = recorder();
     let resolved = 0;
     const handle = notifier<TestParams>({
@@ -187,7 +187,7 @@ describe('unit · fan-out', () => {
   });
 
   test('an audience wider than the ceiling is refused with both numbers', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.broadcast',
@@ -209,7 +209,7 @@ describe('unit · fan-out', () => {
 
   test('a throwing channel settles `failed`, so the job retry decides and the ledger does not', async () => {
     const ledger = memoryDeliveryLedger();
-    setNotifyStores({ ledger });
+    installNotifyStores({ ledger });
     const log = recorder();
     // A foreign error handed to the code under test is legitimate INPUT, not a test verdict.
     const handle = notifier<TestParams>({
@@ -236,7 +236,7 @@ describe('unit · fan-out', () => {
   });
 
   test('a channel with no wait fires immediately even when a later one waits an hour', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.mentioned',
@@ -260,7 +260,7 @@ describe('unit · fan-out', () => {
   // so `[u1, u2, u1, u3]` failed `X_STEP_DUPLICATE` after u2, u3 was never notified, and every retry
   // failed the same way. One person is one delivery per channel, whichever path named them twice.
   test('a repeated recipient id is one delivery, and the rest of the audience still gets theirs', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.repeated',
@@ -284,7 +284,7 @@ describe('unit · fan-out', () => {
   });
 
   test('a repeated recipient id lands in its digest window once', async () => {
-    setNotifyStores({ digest: memoryDigestStore() });
+    installNotifyStores({ digest: memoryDigestStore() });
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.repeated-digest',

@@ -3,10 +3,9 @@
 // call blocked on the socket is closing the browser. Before the fire closed it, this test hung.
 
 import { describe, expect, test } from 'bun:test';
-import { structuredLogger } from '@ultimat3/core';
+import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
-import { testScrapeClock } from './clock';
 import { remoteBrowser } from './driver-cdp';
 
 /** A remote browser whose `evaluate`, once `wedge()` is called, settles only when it is closed. */
@@ -67,7 +66,7 @@ describe('unit · a hung evaluate on an attached browser ends at the fire', () =
       name: 'orders',
       logger: structuredLogger({ writer: () => undefined }),
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       watchdog: { idleMs: 1_000, graceMs: 5_000 },
     });

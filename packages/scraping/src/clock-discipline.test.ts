@@ -4,19 +4,17 @@
 
 import { describe, expect, test } from 'bun:test';
 
-/** The one file allowed to make time pass, and the ones allowed to hand a deadline to `fetch`. */
-const CLOCK_FILE = 'clock.ts';
 /** Every file that dials the platform's own `fetch`, and no others. */
 const DEADLINE_FILES = new Set(['http.ts', 'robots-fetch.ts']);
 
 const TIMERS = /\b(?:setTimeout|setInterval|Bun\.sleep|AbortSignal\.timeout)\s*\(/;
 
-describe('unit · no file but clock.ts may make time pass', () => {
+describe('unit · no file here may make time pass — core’s SleepClock does', () => {
   test('nothing outside the clock reaches for a timer', async () => {
     const glob = new Bun.Glob('*.ts');
     const offenders: string[] = [];
     for await (const path of glob.scan({ cwd: import.meta.dir, absolute: false })) {
-      if (path === CLOCK_FILE || path.endsWith('.test.ts')) continue;
+      if (path.endsWith('.test.ts')) continue;
       const source = await Bun.file(`${import.meta.dir}/${path}`).text();
       // Comments quote the banned spellings on purpose (they explain why the rule exists), so the
       // scan reads code only — a rule that could be defeated by a comment is not a rule.

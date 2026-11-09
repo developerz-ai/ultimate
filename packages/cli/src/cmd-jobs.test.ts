@@ -4,7 +4,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { JobDriver } from '@ultimat3/jobs';
-import { memoryJobDriver, resetJobDriver, resetJobs } from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobs } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { JOBS_SUBCOMMANDS, jobsCommand } from './cmd-jobs';
 import { appRoot, contextFor, enqueue, runJobs } from './cmd-jobs-fixture';
 import { BadFlagError, MissingPositionalError } from './errors';

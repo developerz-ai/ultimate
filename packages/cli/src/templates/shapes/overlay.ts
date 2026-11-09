@@ -32,7 +32,7 @@ export interface ShapeOverlay {
 const CATALOG = 'packages/i18n/catalogs/en.json';
 
 /** A stale overlay is the framework's bug, never the app's: the shape tests name which one. */
-const FIX = 'bun test packages/cli/src/templates/shapes';
+const FIX = 'bun test ./packages/cli/src/templates/shapes';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);

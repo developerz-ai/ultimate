@@ -174,16 +174,11 @@ export {
   configureKdfGate,
   kdfGate,
 } from './kdf-gate';
-export type { AuthLimiterFactory, TotpReplayFactory } from './limiter-install';
 // `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
 // caller building limiters out of band would be a second answer to where failures are counted.
-export {
-  configureAuthLimiters,
-  configureTotpReplay,
-  purgeAuthLimits,
-  resetAuthLimiters,
-  resetTotpReplay,
-} from './limiter-install';
+// The installers and their factory types are `@ultimat3/auth/adapter`'s, and only its: the boot
+// calls them with what `apps/<app>/runtime.ts` named.
+export { purgeAuthLimits } from './limiter-install';
 export type { HandleDirectory } from './login-identity';
 export { normaliseHandle } from './login-identity';
 export { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';

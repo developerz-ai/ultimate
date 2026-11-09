@@ -177,8 +177,6 @@ export {
   idempotencyCeilingMs,
   idempotencyConfig,
   isIdempotencyStatus,
-  resetIdempotency,
-  setIdempotencyStore,
   withIdempotency,
 } from './idempotency';
 export { idempotencyKeyFor, MAX_IDEMPOTENCY_KEY_LENGTH } from './idempotency-key';
@@ -223,7 +221,7 @@ export { DEFAULT_MAX_METER_KEYS, memoryMeterStore } from './meter-memory';
 export type { PostgresMeterStoreOptions } from './meter-postgres';
 export { postgresMeterStore, SQL_METER_TABLE } from './meter-postgres';
 export type { MeterDraw, MeterDrawResult, MeterKey, MeterStore } from './meter-store';
-export { getMeterStore, resetMeterStore, setMeterStore } from './meter-store';
+export { getMeterStore } from './meter-store';
 export type {
   LocalTable,
   LocalTableName,

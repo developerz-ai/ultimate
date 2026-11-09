@@ -1,8 +1,9 @@
 // The offline driver every `x shot` / `ui.*` test runs on. What it may answer from markup, it does;
 // what only a browser knows — a layout box, an accessibility tree — it refuses rather than invents.
+
 import { describe, expect, test } from 'bun:test';
+import { systemClock } from '@ultimat3/core/adapter';
 import { fakeShotDriver } from './browser-launcher-fake-fixture';
-import { systemShotClock } from './cdp-shot-clock';
 
 const HTML =
   '<main><a id="go" href="/next">Next</a><button id="off" disabled>Off</button>' +
@@ -15,7 +16,7 @@ const open = () =>
   ]).open({
     name: 'x shot',
     rules: { allowHosts: ['localhost'] },
-    clock: systemShotClock,
+    clock: systemClock,
     timeoutMs: 200,
   });
 

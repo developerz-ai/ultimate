@@ -2,8 +2,9 @@
 // nullability, enumerated values, money parts, default — through the seed graph's one value
 // source. Enough for the rows a test does not care about; `defineFactory` is for the ones it does.
 
-import type { EntityLike, Factory, FactoryIds } from './factories';
 import { defineFactory } from './factories';
+import type { Factory } from './factory-api';
+import type { EntityLike, FactoryIds } from './factory-types';
 import { seedGraphUnsatisfied } from './seed-graph-error';
 import { declaredPatterns } from './seed-graph-patterns';
 import { SEED_SOFT_DELETE_PROPERTY, type SeedEntity } from './seed-graph-shape';

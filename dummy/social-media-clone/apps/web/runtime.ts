@@ -2,6 +2,7 @@
 // primitive projects to. Today that is the MCP authorization server's RFC wire —
 // `/.well-known/oauth-authorization-server`, `POST /oauth/{token,register,revoke,…}`.
 
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
 import { mcpOAuth } from './app/oauth/server';
 
-export const runtime = { routes: mcpOAuth.routes };
+export const runtime = { routes: mcpOAuth.routes } satisfies RuntimeOverrides;

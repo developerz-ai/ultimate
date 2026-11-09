@@ -1,8 +1,7 @@
 // The vocabulary's own traps, on the fake driver — no browser, no port.
 
 import { describe, expect, test } from 'bun:test';
-import { structuredLogger } from '@ultimat3/core';
-import { testScrapeClock } from './clock';
+import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeBrowser, fakePage } from './driver-fake';
 import { downloadTimeout } from './error-throws';
 import { htmlTarget } from './html-target';
@@ -42,7 +41,7 @@ describe('unit · frame() re-resolves on every call', () => {
       name: 'bank',
       logger: structuredLogger({ writer: () => undefined }),
       rules: { allowHosts: ['bank.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
     });
     await session.page.goto('https://bank.test/step1');
@@ -56,7 +55,7 @@ describe('unit · frame() re-resolves on every call', () => {
   });
 
   test('a frame that never appears is X_SCRAPE_SELECTOR_MISSING, not a silent empty read', async () => {
-    const page = fakePage('<p>no frames here</p>', { clock: testScrapeClock(), timeoutMs: 100 });
+    const page = fakePage('<p>no frames here</p>', { clock: frozenClock(), timeoutMs: 100 });
     expect(await codeOf(page.frame('missing').text('#x'))).toBe('X_SCRAPE_SELECTOR_MISSING');
   });
 });
@@ -96,7 +95,7 @@ describe('unit · interception is recorded, never silent', () => {
       name: 'shop',
       logger: structuredLogger({ writer: () => undefined }),
       rules: { allowHosts: ['shop.test'], block: ['image'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
     });
     await session.page.goto('https://shop.test/');
@@ -130,7 +129,7 @@ describe('unit · pageErrors() reports what the DRIVER saw, drops included', () 
       driver: 'fixture',
       lookup: () => Promise.resolve(recording),
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       source: 'test/fixtures',
       start: recording,
     });
@@ -141,7 +140,7 @@ describe('unit · pageErrors() reports what the DRIVER saw, drops included', () 
 
   const pageOver = (target: ScrapeTarget) =>
     pageOverTarget(target, {
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       allowHosts: ['shop.test'],
       defaultTimeoutMs: 100,
     });
@@ -186,7 +185,7 @@ describe('unit · a promise-typed page method rejects whatever the driver under 
       driver: 'fixture',
       lookup: () => Promise.resolve(recording),
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       source: 'test/fixtures',
       start: recording,
     });
@@ -197,7 +196,7 @@ describe('unit · a promise-typed page method rejects whatever the driver under 
       },
     };
     const page = pageOverTarget(rude, {
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       allowHosts: ['shop.test'],
       defaultTimeoutMs: 100,
     });
@@ -217,7 +216,7 @@ describe('unit · what a capture actually asks the driver for', () => {
    *
    * Implementing it was the tempting answer and it is the wrong one twice over. The CDP port's
    * `screenshot({ fullPage })` has no timeout slot, and a generic race in this file would have to
-   * race `clock.sleep`, which under `testScrapeClock` resolves on the FIRST microtask — so every capture
+   * race `clock.sleep`, which under `frozenClock` resolves on the FIRST microtask — so every capture
    * in every test would have timed out instead of running. A knob no driver ever honoured takes
    * nothing away when it goes; a deadline that fires in tests and not in production would.
    *
@@ -230,7 +229,7 @@ describe('unit · what a capture actually asks the driver for', () => {
       driver: 'fixture',
       lookup: () => Promise.resolve(recording),
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       source: 'test/fixtures',
       start: recording,
     });
@@ -247,7 +246,7 @@ describe('unit · what a capture actually asks the driver for', () => {
       },
     };
     const page = pageOverTarget(target, {
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       allowHosts: ['shop.test'],
       defaultTimeoutMs: 100,
     });
@@ -267,7 +266,7 @@ describe('unit · capture framing — the crop rectangle', () => {
   const UNCLIPPED = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
   const page = (): ScrapePage =>
     fakePage('<main><p id="a">hi</p></main>', {
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
     });
 
@@ -360,14 +359,14 @@ describe('unit · what leaves the page is redacted by VALUE, not only its HTML',
       driver: 'fixture',
       lookup: () => Promise.resolve(recording),
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       source: 'test/fixtures',
       start: recording,
     });
     return {
       target,
       page: pageOverTarget(target, {
-        clock: testScrapeClock(),
+        clock: frozenClock(),
         allowHosts: ['shop.test'],
         defaultTimeoutMs: 100,
         secrets: secretBag(['SHOP_PASSWORD'], () => SECRET),
@@ -410,12 +409,12 @@ describe('unit · what leaves the page is redacted by VALUE, not only its HTML',
       driver: 'fixture',
       lookup: () => Promise.resolve(recording),
       rules: { allowHosts: ['shop.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       source: 'test/fixtures',
       start: recording,
     });
     const page = pageOverTarget(target, {
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       allowHosts: ['shop.test'],
       defaultTimeoutMs: 100,
     });

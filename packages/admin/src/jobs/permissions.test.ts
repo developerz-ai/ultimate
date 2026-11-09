@@ -3,7 +3,7 @@
 // fleet — no other org's job, no queue to pause — on a screen, a forged post and "all matching".
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { resetJobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AdminApp } from '../admin';
 import { ask, jobsAdmin, MANAGER, READER, type Seeded, seedQueue } from './jobs-fixture';
 

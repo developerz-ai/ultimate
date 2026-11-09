@@ -9,8 +9,8 @@
 **The app names every model an agent runs on, and the provider that serves it.** `As of 2026-10`. The framework ships the mechanism — the `Provider` contract, two wire-format adapters as peers, the gateway, budgets, `registerModel` — and no vendor choice. Full reference: [`packages/ai/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/README.md).
 
 ```ts
-// app.config.ts, or any module the boot imports
-import { configureAi, providerGateway, openAiProvider, registerModel } from '@ultimat3/ai';
+// apps/web/runtime.ts — the boot installs `aiGateway` (31.0.0; `configureAi` takes no gateway)
+import { providerGateway, openAiProvider, registerModel } from '@ultimat3/ai';
 
 registerModel({
   id: 'house-large',
@@ -22,8 +22,8 @@ registerModel({
   reasoning: { effort: true, adaptive: false, disableThinkingUpTo: undefined },
 });
 
-configureAi({
-  gateway: providerGateway({
+export const runtime = {
+  aiGateway: providerGateway({
     providers: [
       openAiProvider({
         apiKey: Bun.env['LLM_TOKEN'] ?? '',
@@ -33,7 +33,7 @@ configureAi({
     ],
     defaultModel: 'house-large',
   }),
-});
+};
 ```
 
 | Provider | Speaks |
@@ -904,7 +904,7 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 | `X_HIVE_EMPTY` | `split()` produced zero members | return at least one member input, or guard the call site |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains | raise that scope's ceiling, or shorten the prompt |
 | `X_AI_PROMPT_SECRET` | `vars()` returned a `Secret` | drop the key from `vars()` and the template, or `revealSecret(value)` if the model genuinely has to read it |
-| `X_AI_GATEWAY_MISSING` | the agent ran before `configureAi`; the cause lists the peer providers | `configureAi({ gateway: providerGateway({ providers: [provider] }) })` at boot, with `provider` your choice — [above](#register-your-models-pick-your-provider) |
+| `X_AI_GATEWAY_MISSING` | the agent ran with no gateway installed; the cause lists the peer providers | `apps/<app>/runtime.ts: export const runtime = { aiGateway: providerGateway({ providers: [provider] }) }` — in a test, `installAiGateway(gateway)` from `@ultimat3/ai/adapter`, with `provider` your choice — [above](#register-your-models-pick-your-provider) |
 | `X_ABORTED` | `ctx.signal` fired mid-run | pass a longer deadline, or run it as a job |
 
 Full list: [Error codes](Error-Codes).

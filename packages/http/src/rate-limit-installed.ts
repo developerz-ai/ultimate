@@ -1,72 +1,62 @@
-// The store a PRIMITIVE's declared `rateLimit:` is counted in — `@ultimat3/action`'s `invoke` and
-// `@ultimat3/query`'s read path both spend from it, on every surface. One slot, here, so the two
-// tier-3 packages (which cannot import each other) count in one place, and the boot fills it with
-// the same instance it hands `httpServer({ rateLimitStore })`.
+// The store a PRIMITIVE's declared `rateLimit:` is counted in — and, since 31.0.0, the one the
+// HTTP pipeline's limiter counts in too. `@ultimat3/action`'s `invoke` and `@ultimat3/query`'s
+// read path both spend from it, on every surface; one slot, here, so the two tier-3 packages
+// (which cannot import each other) and every `httpServer` count in one place.
 
-import type { RateLimitConfig, RateLimitStore } from './rate-limit';
+import { adapterSlot } from '@ultimat3/core/adapter';
+import type { Bucket, RateLimitConfig, RateLimitStore } from './rate-limit';
 import { memoryRateLimitStore } from './rate-limit';
 import { rateLimitNotShared } from './rate-limit-errors';
 
-/** What a process falls back to when nothing chose: one process' memory. */
+/** What a process falls back to when nothing installed one: one process' memory. */
 let base: RateLimitStore = memoryRateLimitStore();
-let baseChosen = false;
 /**
- * Adopted stores, newest last. A STACK of frames, each popped only by its own adopter: two
- * servers started A-then-B and stopped A-then-B used to have A's stop restore what A replaced —
- * reverting the slot under B while B still served. A frame object is its own identity, so the
- * same store adopted twice is two frames.
+ * Installed stores over the base: core's `adapterSlot`, a stack each release pops only its own
+ * frame from — two boots stopped in either order never revert the slot under the one still serving.
  */
-const frames: { readonly store: RateLimitStore }[] = [];
+const slot = /* @__PURE__ */ adapterSlot<RateLimitStore>(() => base);
 
-const current = (): RateLimitStore => frames.at(-1)?.store ?? base;
-const isChosen = (): boolean => baseChosen || frames.length > 0;
+const current = (): RateLimitStore => slot.current();
 
 /**
- * The embedder's one-line install, for a process that builds its own boot: the base everything
- * else stacks over. Left at the default it is one process' memory — right for dev and tests, and
- * N × every declared limit behind N replicas, which `assertInstalledRateLimitScope` refuses under
- * a `'shared'` declaration. A boot that has to give the slot back uses `adoptRateLimitStore`.
+ * The boot's install, and the only one: exported from `@ultimat3/http/adapter`, never from the
+ * package's `.` barrel. An app does not call it — it names its store as `rateLimitStore` in
+ * `apps/<app>/runtime.ts` and the boot installs that, or `postgresRateLimitStore` over the pool it
+ * opened. Answers the undo that removes THIS frame and no other, whatever order installers stop in.
  */
-export const installRateLimitStore = (store: RateLimitStore): void => {
-  base = store;
-  baseChosen = true;
-};
+export const installRateLimitStore = (store: RateLimitStore): (() => void) => slot.install(store);
 
 export const installedRateLimitStore = (): RateLimitStore => current();
 
-/** Test-only. Every frame and the base, back to one process' memory. */
-export const resetRateLimitStore = (): void => {
-  frames.length = 0;
-  base = memoryRateLimitStore();
-  baseChosen = false;
-};
-
-export interface AdoptRateLimitStoreOptions {
-  /**
-   * `httpServer`'s rule: never over a store something already CHOSE. The boot installs its own
-   * before any server exists, and a server handed a different one must not move every action's
-   * counters out from under it — the chosen one stands, and `assertInstalledRateLimitScope` still
-   * holds it to the declaration.
-   */
-  readonly keepChosen?: boolean;
-}
+/**
+ * The slot as a store: every call reads whatever is installed AT THAT CALL. What `httpServer`'s
+ * limiter counts in, so a store installed after the server was built — a test's override seam, a
+ * boot that orders its installs differently — is the one a request spends from. Its `scope` is
+ * read live too; the boot check reads it once, when the pipeline is built.
+ */
+export const liveRateLimitStore: RateLimitStore = Object.freeze({
+  get scope() {
+    return current().scope;
+  },
+  take: (key: string, bucket: Bucket, cost: number, nowMs: number) =>
+    current().take(key, bucket, cost, nowMs),
+  peek: (key: string, bucket: Bucket, nowMs: number) => current().peek(key, bucket, nowMs),
+  reset: (key: string) => current().reset(key),
+});
 
 /**
- * Push `store` as the one primitives spend from, and answer the undo that removes THIS frame and
- * no other — whatever order the adopters stop in. The boot (`startServices`, `startRoles`) and
- * `httpServer` all go through it, so every install has a matching, order-proof release.
+ * The per-test reset: the DEFAULT memory store's buckets emptied, every installed store left where
+ * it is. A suite that installed a shared store once (a live Redis or Postgres run) keeps running on
+ * it; only the fallback a plain unit test counts in forgets what the previous test spent.
  */
-export const adoptRateLimitStore = (
-  store: RateLimitStore,
-  options: AdoptRateLimitStoreOptions = {},
-): (() => void) => {
-  if (options.keepChosen === true && isChosen() && current() !== store) return () => undefined;
-  const frame = { store };
-  frames.push(frame);
-  return () => {
-    const at = frames.indexOf(frame);
-    if (at !== -1) frames.splice(at, 1);
-  };
+export const clearDefaultRateLimitBuckets = (): void => {
+  base = memoryRateLimitStore();
+};
+
+/** Test-only. Every frame and the base, back to one process' memory. */
+export const resetRateLimitStore = (): void => {
+  slot.reset();
+  base = memoryRateLimitStore();
 };
 
 /**
@@ -86,7 +76,7 @@ export const assertInstalledRateLimitScope = (config: RateLimitConfig): void => 
  */
 export async function withScratchRateLimitStore<T>(fn: () => Promise<T>): Promise<T> {
   const scratch = memoryRateLimitStore();
-  const release = adoptRateLimitStore({
+  const release = installRateLimitStore({
     scope: current().scope,
     take: (key, bucket, cost, nowMs) => scratch.take(key, bucket, cost, nowMs),
     peek: (key, bucket, nowMs) => scratch.peek(key, bucket, nowMs),

@@ -9,12 +9,12 @@ import {
   ctxOf,
   isAnonymous,
   type Logger,
+  liveClock,
   traceId as newTraceId,
   type Role,
   readCookie,
   runWithContext,
   type ServiceBag,
-  systemClock,
   useContext,
   uuidV7,
   withChildContext,
@@ -176,7 +176,8 @@ export interface RequestContextInit {
 }
 
 export const requestContext = (init: RequestContextInit): RequestContext => {
-  const clock = init.clock ?? systemClock;
+  // The `clock` port's clock as of THIS request, never one captured at boot.
+  const clock = init.clock ?? liveClock;
   const requestId = init.requestId ?? uuidV7(clock);
   // core's `traceId()`, never `uuid()`: a dashed UUIDv7 is not a 32-hex W3C trace id, and a
   // collector rejects the span that carries one — while the log lines beside it, which quote the

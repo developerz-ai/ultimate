@@ -137,7 +137,6 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'Scraping: const waitForAnswer = eventPrompt({ timeout: 300_000 });': 1,
   'Scraping: expect: { minRows: 1, maxDrop: 0.5, window: 7 },': 1,
   'Scraping: export const dailyOrders = scrape({': 1,
-  "Scraping: import { noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';": 1,
   'Scraping: recover: async ({ page, failure, attempt }) => { /* return true to re-run the body once */ }': 1,
   "Scraping: secrets: ['SHOP_PASSWORD'],": 1,
   "Static-Assets: import { setAssetResolver } from '@ultimat3/render';": 1,
@@ -186,6 +185,9 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'Upgrading: // before — compiles, and is circular: the factory that BUILDS ctx.posts': 1,
   "Upgrading: case 'missing-check':": 1,
   'Upgrading: configureLifecycle({ deadlineMs: 600_000 });   // and terminationGracePeriodSeconds >= 600': 1,
+  // why: the 24.x → 25.0.0 walkthrough's model fence compiled against 25.0.0 and is a record of that
+  // release; 31.0.0 moved `gateway` off configureAi (Upgrading #41), so it stops compiling here.
+  "Upgrading: import { anthropicProvider, configureAi, providerGateway, registerModel } from '@ultimat3/ai';": 1,
   'Upgrading: generateServiceWorker(routes, config, buildId);   // from @ultimat3/pwa': 1,
   'Upgrading: mcpHttpRoute({ server, resolveToken, rateLimitStore: postgresRateLimitStore({ executor }) });': 1,
   'Upgrading: mcpHttpRoute({ server, resolveToken, rateLimits: { read: 600, write: 60 } });': 1,

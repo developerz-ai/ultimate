@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { resetJobDriver, setJobDriver } from './driver';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
@@ -198,7 +198,7 @@ describe('task', () => {
   test('enqueue() fires every declared entry now, once each', async () => {
     const clock = fakeClock(T0);
     const driver = memoryJobDriver({ clock });
-    setJobDriver(driver);
+    installJobDriver(driver);
     const nightly = task({
       name: 'nightlyDigest',
       cron: '0 3 * * *',
@@ -220,7 +220,7 @@ describe('task', () => {
   test('a manual enqueue() uses the job plain key; the scheduler stays occurrence-scoped', async () => {
     const clock = fakeClock(T0);
     const driver = memoryJobDriver({ clock });
-    setJobDriver(driver);
+    installJobDriver(driver);
     const nightly = task({
       name: 'nightlyDigest',
       cron: '0 3 * * *',

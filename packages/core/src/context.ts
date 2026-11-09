@@ -32,7 +32,7 @@
 
 import { type Actor, anonymousActor } from './actor';
 import { asyncContext } from './async-context';
-import { type Clock, systemClock } from './clock';
+import { type Clock, liveClock } from './clock';
 import { DEFAULT_LOCALE, DEFAULT_TIME_ZONE } from './default-locale';
 import { isUltimateError, UltimateError } from './errors';
 import { finiteOption } from './finite-option';
@@ -163,7 +163,7 @@ function buildId(): string {
 }
 
 export function ctxOf(init: CtxInit = {}): Ctx {
-  const clock = init.clock ?? systemClock;
+  const clock = init.clock ?? liveClock;
   const requestId = init.requestId ?? uuidV7(clock);
   const trace = init.traceId ?? newTraceId();
   const base = init.logger ?? rootLogger;

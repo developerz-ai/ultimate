@@ -11,6 +11,8 @@ export {
   SECRET_BRAND,
   secret,
 } from '../secret';
+export type { MasterKeyRef } from '../secret-source';
+export { masterKeyPath, SECRETS_KEY_ENV, SECRETS_KEY_FILE } from '../secret-source';
 export type {
   SecretSummary,
   SecretsEnvelope,
@@ -49,8 +51,6 @@ export {
 } from '../secrets-errors';
 export { SecretsKeyAclError } from '../secrets-key-file';
 export type {
-  MasterKeyRef,
-  MasterKeySource,
   SecretsInstallOptions,
   SecretsInstallReport,
 } from '../secrets-store';
@@ -58,13 +58,10 @@ export {
   findMasterKey,
   installSecrets,
   masterKeyIdOf,
-  masterKeyPath,
   promoteStagedMasterKey,
   readSecretsFile,
   requireMasterKey,
   SECRETS_FILE,
-  SECRETS_KEY_ENV,
-  SECRETS_KEY_FILE,
   SECRETS_KEY_MODE,
   secretsFileExists,
   secretsPath,

@@ -16,13 +16,12 @@ import {
   type JobDriver,
   job,
   memoryJobDriver,
-  resetJobDriver,
   resetJobs,
   resetTasks,
-  setJobDriver,
   t,
   task,
 } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { REQUIRED_BUN } from './app-root';
 import { tasksCommand } from './cmd-tasks';
 import type { CommandContext } from './command';
@@ -141,7 +140,7 @@ function registerNightlyPing(): void {
 let driver: JobDriver;
 beforeEach(() => {
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterEach(() => {
@@ -248,7 +247,7 @@ describe('unit · x tasks list', () => {
     const base = memoryJobDriver();
     const introspect = base.introspect;
     if (introspect === undefined) expect.unreachable('the memory driver introspects');
-    setJobDriver({
+    installJobDriver({
       ...base,
       introspect: {
         ...introspect,
@@ -264,7 +263,7 @@ describe('unit · x tasks list', () => {
   test('a driver with no introspection lists every task as never fired', async () => {
     registerNightlyPing();
     const { introspect: _none, ...bare } = memoryJobDriver();
-    setJobDriver(bare);
+    installJobDriver(bare);
     const result = await tasksCommand.run(contextFor(appRoot(), { subcommand: 'list' }));
     expect(result.data).toEqual([expect.objectContaining({ name: 'nightlyPing', lastMs: null })]);
   });

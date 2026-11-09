@@ -92,46 +92,47 @@ export function leasePool<T, R>(
 }
 
 /**
- * Core-seconds each unit cost — wall seconds × the workers it ran on, as the gate's `--json`
- * reports them — what `--shard` deals units by. Measured locally 2026-11-05, Bun 1.4.4, pinned to
- * four cores (`taskset -c 0-3`, a free runner's count) with no services, the CI job's condition;
- * the box was shared, so read each as ±30%. `cli` is 286 s on its four workers, `scripts` 77 s on
- * two. A drifted number only moves the balance, never a verdict; a unit missing weighs the median.
- * Refresh: `taskset -c 0-3 bun run scripts/coverage-gate.ts --all --json | jq -r '.data[] | "\(.pkg) \(.seconds * .workers)"'`.
+ * Core-seconds each unit cost — wall seconds × the workers it ran on, as the gate prints them
+ * (`305.4s  cli … (4 workers)`) — what `--shard` deals units by. Measured ON CI 2026-11-09, run
+ * 42697551693 (`packages (1/2)` and `(2/2)`, ubuntu-latest, four cores, no services), replacing the
+ * 2026-11-05 local `taskset` table that read `scripts`, `jobs`, `db`, `core` and `realtime` at under
+ * half their runner cost. A drifted number only moves the balance, never a verdict; a unit missing
+ * weighs the median. Refresh from a run's two `packages` logs:
+ * `gh api repos/developerz-ai/ultimate/actions/jobs/<id>/logs | grep -E '^\S+ +[0-9.]+s +[a-z-]+ '`.
  */
 export const UNIT_SECONDS: Readonly<Record<string, number>> = {
-  action: 47,
-  admin: 36,
+  action: 36,
+  admin: 25,
   ai: 5,
-  auth: 47,
-  cache: 5,
-  cli: 1144,
-  core: 12,
-  'create-ultimate': 3,
-  db: 96,
-  entity: 78,
+  auth: 30,
+  cache: 7,
+  cli: 1221,
+  core: 58,
+  'create-ultimate': 2,
+  db: 229,
+  entity: 60,
   flags: 1,
-  http: 24,
+  http: 21,
   i18n: 1,
-  jobs: 106,
-  mail: 13,
-  manifest: 2,
+  jobs: 269,
+  mail: 9,
+  manifest: 1,
   mcp: 2,
   money: 1,
-  notify: 1,
+  notify: 5,
   policy: 1,
   pwa: 2,
   query: 2,
-  realtime: 9,
+  realtime: 67,
   render: 10,
   schema: 1,
-  scraping: 4,
-  scripts: 154,
-  seo: 1,
+  scraping: 6,
+  scripts: 311,
+  seo: 3,
   storage: 7,
-  testing: 64,
-  time: 5,
-  ui: 13,
+  testing: 136,
+  time: 4,
+  ui: 6,
 };
 
 /** What `name` weighs when shards are dealt: its measured core-seconds, or the median's. */

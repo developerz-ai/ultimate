@@ -4,10 +4,10 @@
 // view before measuring, and a read never moves the page.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
-import { testScrapeClock } from './clock';
 import { pageOverTarget } from './page-over-target';
 
 const SCROLL = 'scrollIntoView';
@@ -58,10 +58,10 @@ const pageOver = async (page: CdpPageLike) => {
     page,
     browser,
     rules: { allowHosts: ['shop.test'] },
-    clock: testScrapeClock(),
+    clock: frozenClock(),
   });
   return pageOverTarget(target, {
-    clock: testScrapeClock(),
+    clock: frozenClock(),
     allowHosts: ['shop.test'],
     defaultTimeoutMs: 1_000,
   });

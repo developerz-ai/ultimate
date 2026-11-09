@@ -11,8 +11,7 @@
 // of a log line: `ScrapeEventFields` has no key to put one in, and core's logger redacts the
 // remaining spellings by key and every `Secret` by value.
 
-import type { Logger } from '@ultimat3/core';
-import type { ScrapeClock } from './clock';
+import type { Logger, SleepClock } from '@ultimat3/core';
 import { errorCode } from './failures';
 
 export interface ScrapeEventFields {
@@ -48,7 +47,7 @@ export const scrapeLogger = (logger: Logger, fields: ScrapeEventFields): Logger 
 export interface StepEvent {
   readonly name: string;
   readonly logger: Logger;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   readonly attempt?: number | undefined;
 }
 

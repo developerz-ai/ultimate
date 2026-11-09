@@ -4,43 +4,75 @@
 // its own. This type is the seam that removes the need to, and every field is read exactly once,
 // as the first arm of `overrides?.x ?? <the env-selected default>`.
 
+import type { IdempotencyStore, MeterStore } from '@ultimat3/action/adapter';
+import type { Gateway } from '@ultimat3/ai/adapter';
+import type { AuthLimiterFactory, TotpReplayGuard } from '@ultimat3/auth/adapter';
 import type { PurgeDriver } from '@ultimat3/cache';
-import type { Middleware, RateLimitStore, Route } from '@ultimat3/http';
-import type { JobDriver } from '@ultimat3/jobs';
-import type { MailDriver } from '@ultimat3/mail';
-import type { SyncAuthenticator, Transport } from '@ultimat3/realtime/server';
+import type { AuditSink, FailureStore, SecretSource, SleepClock } from '@ultimat3/core/adapter';
+import type { Middleware, Route } from '@ultimat3/http';
+import type { RateLimitStore } from '@ultimat3/http/adapter';
+import type { OutboxStore } from '@ultimat3/jobs';
+import type { EventBus, JobDriver } from '@ultimat3/jobs/adapter';
+import type { MailDriver } from '@ultimat3/mail/adapter';
+import type { NotifyStores } from '@ultimat3/notify/adapter';
+import type { PushSubscriptionStore } from '@ultimat3/pwa';
+import type { Transport } from '@ultimat3/realtime/adapter';
 import type { IsrStore } from '@ultimat3/render/server';
+import type { ScrapeDriver } from '@ultimat3/scraping/adapter';
 import type { ImageTransformDriver } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';
 
 /**
- * What a deployment may substitute for a boot decision the environment would otherwise make.
- *
- * Every field is OPTIONAL and every field REPLACES the default rather than sitting beside it: the
- * env switch each one used to be is now the `??` arm of one expression, so there is exactly one
- * answer to "which driver is this process running" (axiom 1). A field nothing consumes is not
- * here — the entity `Driver` in particular, because `@ultimat3/entity` exposes no installer for
- * one (`database(entities, { driver })` is the app's own call), and a slot the boot cannot honour
- * is the class of defect this seam exists to end.
+ * One field per `ADAPTER_PORTS` row this boot honours, named by the row's `port`. Every field is
+ * read exactly once, as the first arm of `runtime.x ?? <the env default>`; `runtime-ports.ts`
+ * binds each to its installer or reader, and a row with no field here is listed there as pending.
  */
-export interface RuntimeOverrides {
+export interface PortValues {
+  /** The model gateway every `llm()`/`agent()` call goes through. No default: refused at first call. */
+  readonly aiGateway: Gateway;
+  /** Where `audit: true` primitives write. No default: an audited primitive is refused without one. */
+  readonly auditSink: AuditSink;
+  /**
+   * Where failed sign-ins are counted — a FACTORY, one limiter per policy, because `defineAuth`
+   * declares `maxAttempts`/`windowMs`/`lockoutMs` after this boot. Default `postgresAuthLimiter`.
+   */
+  readonly authLimiter: AuthLimiterFactory;
+  /** The process's clock: every "now" and every wait not handed one. Default `systemClock`. */
+  readonly clock: SleepClock;
+  /** The durable bus `step.waitForEvent` resumes from. Default `postgresEventBus`. */
+  readonly eventBus: EventBus;
+  /** Where `failureCapture` keeps a 5xx's bundle, while it is on. Default `postgresFailureStore`. */
+  readonly failureStore: FailureStore;
+  /**
+   * Where `idempotent: true` reservations live. Default `postgresIdempotencyStore`; one whose scope
+   * is `'process'` is legal and warned about — a retry on another replica runs twice.
+   */
+  readonly idempotencyStore: IdempotencyStore;
+  /** The `/media/*` transform. Omitted, `builtinImageDriver` — core's PNG/JPEG/WebP pipeline. */
+  readonly images: ImageTransformDriver;
+  /**
+   * Where regenerated ISR pages live. Omitted, `isrController` keeps a per-process memory
+   * store — twelve replicas then hold twelve of them, and a purge tag reaches one twelfth of the
+   * fleet.
+   */
+  readonly isrStore: IsrStore;
   /**
    * The queue every enqueue AND every claim uses. Installed as the ambient driver too, so
    * `jobDriver()` and the worker cannot disagree — `startRoles` refuses to boot when they do.
    */
-  readonly jobs?: JobDriver;
-  /** Replaces the `S3_ENDPOINT`/embedded-disk decision whole: disks, default disk and all. */
-  readonly storage?: Storage;
+  readonly jobs: JobDriver;
   /** Replaces the `SMTP_URL` / `RESEND_API_KEY` selection. */
-  readonly mail?: MailDriver;
-  /**
-   * Replaces the `NATS_URL` selection. Already connected when it arrives, and NOT closed by
-   * `stop()`: whoever built it owns its socket, exactly as `httpServer` does not close a
-   * `rateLimitStore` it was handed.
-   */
-  readonly transport?: Transport;
+  readonly mail: MailDriver;
+  /** `meter:` counters. Default `postgresMeterStore`, one row per tenant-day on every replica. */
+  readonly meterStore: MeterStore;
+  /** A notifier's ledger, preferences, inbox and digest. Omitted, notify's memory defaults. */
+  readonly notifyStores: NotifyStores;
+  /** The `x_outbox` store behind `handle.enqueue()`. Default `postgresOutboxStore`. */
+  readonly outboxStore: OutboxStore;
   /** Replaces the `CLOUDFLARE_*` / `FASTLY_*` selection behind the `cdn` cache tier. */
-  readonly purge?: PurgeDriver;
+  readonly purge: PurgeDriver;
+  /** Where Web Push subscriptions live, while `pwa.vapid` is set. Default the Postgres store. */
+  readonly pushSubscriptionStore: PushSubscriptionStore;
   /**
    * Where the HTTP rate limiter keeps its counters. It also DECIDES `rateLimit.scope`: a store
    * that says `'shared'` is a deployment declaring fleet-wide numbers, and `assertRateLimitScope`
@@ -51,13 +83,37 @@ export interface RuntimeOverrides {
    * is `'process'` is legal and warned about: it is every declared limit enforced once per
    * replica, and `docker/helm/values.yaml` runs three.
    */
-  readonly rateLimitStore?: RateLimitStore;
+  readonly rateLimitStore: RateLimitStore;
+  /** The browser a `scrape()` declaring no driver of its own runs on. No default: refused at run. */
+  readonly scrapeDriver: ScrapeDriver;
   /**
-   * Where regenerated ISR pages live. Omitted, `isrController` keeps a per-process memory
-   * store — twelve replicas then hold twelve of them, and a purge tag reaches one twelfth of the
-   * fleet.
+   * Where the secrets master key comes from. Installed before `app.config.ts` evaluates, so its
+   * `installSecrets()` asks this. Default `ULTIMATE_SECRETS_KEY`, then `.secrets.key`.
    */
-  readonly isrStore?: IsrStore;
+  readonly secretSource: SecretSource;
+  /** Replaces the `S3_ENDPOINT`/embedded-disk decision whole: disks, default disk and all. */
+  readonly storage: Storage;
+  /** Where spent TOTP steps are kept, fleet-wide. Default `postgresTotpReplayGuard`. */
+  readonly totpReplay: TotpReplayGuard;
+  /**
+   * Replaces the `NATS_URL` selection — any `Transport`. Already connected when it arrives, and
+   * NOT closed by `stop()`: whoever built it owns its socket.
+   */
+  readonly transport: Transport;
+}
+
+/**
+ * What a deployment may substitute for a boot decision the environment would otherwise make —
+ * the `runtime` export of `apps/<app>/runtime.ts`, the ONE place an app swaps a backend.
+ *
+ * Every field is OPTIONAL and every field REPLACES the default rather than sitting beside it: the
+ * env switch each one used to be is now the `??` arm of one expression, so there is exactly one
+ * answer to "which driver is this process running" (axiom 1). A field nothing consumes is not
+ * here — the entity `Driver` in particular, because `@ultimat3/entity` exposes no installer for
+ * one (`database(entities, { driver })` is the app's own call), and a slot the boot cannot honour
+ * is the class of defect this seam exists to end.
+ */
+export interface RuntimeOverrides extends Partial<PortValues> {
   /** Prepended to the pipeline by `httpServer`, which `startRoles` never passed one. */
   readonly middleware?: readonly Middleware[];
   /**
@@ -69,15 +125,4 @@ export interface RuntimeOverrides {
    * answers a document, and a protocol that fixes its own error shape is neither.
    */
   readonly routes?: readonly Route[];
-  /** The `/media/*` transform. Omitted, `builtinImageDriver` — core's PNG/JPEG/WebP pipeline. */
-  readonly images?: ImageTransformDriver;
-  /**
-   * Who is dialling the `sync` node. Omitted, the app's own `configureAuthenticator()` is adapted
-   * — and that adapter now carries `expiresAt` and `refresh` of its own (`SYNC_GRANT_TTL_MS`),
-   * re-asking the app's resolver with the upgrade's own `cookie`/`authorization`. So this field is
-   * no longer the only way to get re-authorization; it is how a deployment states a window the
-   * credential itself declares (a token's `exp`), or resolves identity from a header the adapter
-   * deliberately does not retain per socket.
-   */
-  readonly syncAuthenticate?: SyncAuthenticator;
 }

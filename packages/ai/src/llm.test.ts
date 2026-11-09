@@ -353,7 +353,7 @@ describe('the ambient runtime', () => {
     await expect(summarize({ postId: POST_ID }, { ctx: anonymousCtx() })).rejects.toMatchObject({
       code: 'X_AI_GATEWAY_MISSING',
       cause: expect.stringContaining('ungatewayed@1.0.0'),
-      fix: expect.stringContaining('configureAi'),
+      fix: expect.stringContaining('aiGateway: providerGateway'),
     });
   });
 });

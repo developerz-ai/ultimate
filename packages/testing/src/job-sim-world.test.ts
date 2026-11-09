@@ -4,7 +4,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { JobDriver } from '@ultimat3/jobs';
-import { job, jobDriver, memoryJobDriver, resetJobDriver, setJobDriver, t } from '@ultimat3/jobs';
+import { job, jobDriver, memoryJobDriver, t } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { SimOp } from './job-sim-driver';
 import { SEND_AND_ANSWER } from './job-sim-driver';
 import { openSimWorld } from './job-sim-world';
@@ -44,7 +45,7 @@ beforeEach(() => {
 afterEach(() => {
   restoreCapturedNetwork(network);
   if (priorDriver === undefined) resetJobDriver();
-  else setJobDriver(priorDriver);
+  else installJobDriver(priorDriver);
 });
 
 describe('openSimWorld', () => {
@@ -99,7 +100,7 @@ describe('openSimWorld', () => {
 
   test('the job driver installed before the world is the one installed after it', async () => {
     const outer = memoryJobDriver();
-    setJobDriver(outer);
+    installJobDriver(outer);
     {
       await using world = await openSimWorld({ seed: 1, decide: () => SEND_AND_ANSWER });
       expect(jobDriver()).not.toBe(outer);

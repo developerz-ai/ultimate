@@ -183,7 +183,7 @@ by the CLI, not imported.
 ## Commands
 
 ```
-bun test packages/manifest
+bun test ./packages/manifest/
 bun run --filter @ultimat3/manifest typecheck
 x manifest        # build + emit
 x verify          # drift + contract gate, and the AGENTS.md check under the `manifest` step

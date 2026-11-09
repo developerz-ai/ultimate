@@ -116,11 +116,13 @@ export const AUDIT_RECORD_FIELDS: readonly (keyof AuditRecord)[] = Object.freeze
 
 /**
  * Where a record goes: a table, an append-only hash chain, an OTel log, a queue — the app's.
- * `@ultimat3/admin`'s `AuditSink` is the same noun one tier up over its own fixed entry type.
- * A sink that throws is never swallowed; each primitive's audit gate says which failure wins.
+ * The framework's ONE audit-sink interface: generic over the record so `@ultimat3/admin` writes
+ * its own `AuditEntry` through `AuditSink<AuditEntry>` instead of declaring a second noun (there
+ * were two until 31.0.0). The default record is the primitive attempt `action` and `query` write.
+ * A sink that throws is never swallowed; each caller's audit gate says which failure wins.
  */
-export interface AuditSink {
-  write(record: AuditRecord): Promise<void> | void;
+export interface AuditSink<TRecord = AuditRecord> {
+  write(record: TRecord): Promise<void> | void;
 }
 
 /**

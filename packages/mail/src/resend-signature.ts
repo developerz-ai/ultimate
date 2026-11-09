@@ -3,7 +3,7 @@
 // or more `v1,<mac>` entries in `svix-signature` (more than one while a secret rotates). The mac is
 // compared in constant time, and checked BEFORE the window, so "stale" always means authentic.
 
-import { type Clock, ConfigInvalidError, systemClock, timingSafeEqual } from '@ultimat3/core';
+import { type Clock, ConfigInvalidError, liveClock, timingSafeEqual } from '@ultimat3/core';
 import { deliveryEventUnverified } from './delivery-event-errors';
 
 /** Svix's own default, and the replay bound every Svix sender already assumes. */
@@ -85,7 +85,7 @@ export async function verifySvix(
     if (timingSafeEqual(candidate, expected)) matched = true;
   }
   if (!matched) throw deliveryEventUnverified('resend', 'signature');
-  const now = (options.clock ?? systemClock).now().getTime();
+  const now = (options.clock ?? liveClock).now().getTime();
   if (Math.abs(now - Number(timestamp) * 1000) > options.toleranceMs) {
     throw deliveryEventUnverified('resend', 'stale');
   }

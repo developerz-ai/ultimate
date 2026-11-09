@@ -45,7 +45,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | a poll a hidden tab and a lost session stop — `visibleInterval(run, ms, { maxMs? })`: no call while hidden, one when shown, a failed run doubling the wait up to `maxMs` (jittered) and a success resetting it, an idempotent disposer; on `./page` (6,045 B alone, `page-bundle.test.ts`) | `visible-interval.ts` |
 | which row survives a conflict — `server-wins`, `last-write-wins`, `custom` | `conflict-policy.ts` |
 | the four shapes an async region can be in | `async-state.ts` |
-| the audit seam `action` and `query` share — `AuditRecord` (`name`, `primitive`, `surface`, `outcome`, the parsed `input`; `action` is a deprecated alias of `name` until 25.0.0), `AuditSink`, the ONE installed sink (`setAuditSink` / `getAuditSink` / `resetAuditSink`, re-exported by `@ultimat3/action`), and `AUDIT_RECORD_FIELDS`, the field list both primitives' tests pin their records to | `audit.ts` |
+| the audit seam `action` and `query` share — `AuditRecord` (`name`, `primitive`, `surface`, `outcome`, the parsed `input`; `action` is a deprecated alias of `name` until 25.0.0), `AuditSink<TRecord = AuditRecord>` (the framework's one sink interface — `@ultimat3/admin` writes `AuditSink<AuditEntry>`), the ONE installed sink (`setAuditSink` / `getAuditSink` / `resetAuditSink`, re-exported by `@ultimat3/action`), and `AUDIT_RECORD_FIELDS`, the field list both primitives' tests pin their records to | `audit.ts` |
 | is this `unknown` a keyed record? | `json-object.ts` |
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
@@ -103,7 +103,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | the network a caller's address keys a per-caller budget on — `addressNetwork`: IPv4 exact, IPv4-mapped as IPv4, IPv6 as its /64 | `address-class.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
 | `defineService('orgs', …)` → `ctx.orgs`, rebuilt per actor | `service.ts` |
-| the registrar table one same-tier package reaches another through | `registrar.ts` |
+| the registrar table one same-tier package reaches another through; `PRIMITIVE_FACTORIES`; `ADAPTER_PORTS` / `ADAPTER_PORT_NAMES` / `AdapterPortName` — every swappable backend, one row each (port = `runtime.ts` field, owning package, interface, env default, conformance suite) | `registrar.ts` |
 | decode → resize → encode, the one image pipeline (over `Bun.Image`) | `image/` |
 | `assertNever`, `assertCoded`, `assert` | `assert.ts` |
 | the one HTML character table — `escapeHtml`, text and attributes alike (`& < > " '`) | `html-escape.ts` |
@@ -478,6 +478,13 @@ only writer.
 | AAD | `v`, `alg` and `kid`, so a downgraded header fails the tag rather than changing how the body is read |
 | `kid` | a domain-separated, truncated SHA-256 of the master key. Safe to commit, and what makes *wrong key* (`X_SECRETS_KEY_MISMATCH`) a different code from *edited file* (`X_SECRETS_TAMPERED`) |
 
+**Where the key comes from is the `secretSource` adapter port.** The default asks
+`envSecretSource` then `fileSecretSource`; a KMS or Vault lookup is an app-written `SecretSource`
+(`{ name, masterKey({ root, env }) }`, async allowed) set as `secretSource` in
+`apps/<app>/runtime.ts`. `installSecrets()` and the seal ring both ask the installed source;
+`findMasterKey` / `requireMasterKey` are the built-in lookup `x secrets` and `x doctor` read.
+`MasterKeyRef.source` is the source's `name` (31.0.0 removed the closed `MasterKeySource` union).
+
 A missing file is not an error — an app may declare no secrets. A file with **no key to open it**
 is `X_SECRETS_KEY_MISSING` and fatal: a process that booted past its secrets authenticates against
 nothing and still reports healthy.
@@ -535,6 +542,15 @@ match with `sealAll()`; uniqueness cannot be held across keys.
 ## Time, ids, telemetry, drain
 
 - Never call `Date.now()`. Take a `Clock`; tests pass `frozenClock('2026-07-26T10:00:00Z')`.
+- `liveClock` is the clock to default to when none is passed: the `clock` port's now/monotonic at
+  each call (`installClock`, `runtime.ts`'s `clock`), else the system's. `ctxOf()` and the logger
+  default to it; never copy it into a package.
+- Never arm a timer to wait: take a `SleepClock` (`sleep(ms, signal?)`, rejecting with the signal's
+  reason verbatim). `ambientClock()` is the process's — the system clock with `sleep` unless the
+  `clock` port swapped it through `installClock` on `@ultimat3/core/adapter` (returns the release);
+  `frozenClock()` advances on `sleep`; `noWaitClock` is real time with one loop turn per sleep. The
+  barrel's and `./page`'s `systemClock` is a plain `Clock` — browser code reads it and nothing there
+  waits; the sleeping one is `./adapter`'s `systemClock` (`sleep-clock.ts`, server-only).
 - `uuidV7()` is UUIDv7: time-prefixed, monotonic within a millisecond, never backwards on clock
   skew. `typedId<'post'>()` brands it so a post id cannot be passed where a user id is wanted.
 - `withSpan('action.publishPost', fn)` builds no record until something subscribes to `span.end`.
@@ -673,7 +689,7 @@ reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'P
 | Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEvent(report, { dsn, eventId, fingerprint? })` → the event, `sentryEnvelope(report, { dsn, eventId, fingerprint? })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |
 | `errorReport(error, options)` | the normalisation on its own, for a transport's test or a surface that enriches before sending |
 | `errorFingerprint(report)` | 16 hex, which reports are one fault: `code`, `source`, `scope.operation`, and for `X_INTERNAL` the top application frame (function and root-relative path, no line). Never `cause`, `meta`, an id or `release`. Total; the Sentry envelope sends it as `fingerprint` |
-| `setFailureStore(store)` / `withFailureCapture(primitive, name, statusOf, run)` / `recordFailureFact(fact)` | the 5xx bundle `x repro` replays (`failureCapture` in `app.config.ts`). No store, no buffer. A 5xx is held on the thrown value and stored at `reportError` under its `errorFingerprint`; masked input listed in `masked` |
+| `withFailureCapture(primitive, name, statusOf, run)` / `recordFailureFact(fact)` | the 5xx bundle `x repro` replays (`failureCapture` in `app.config.ts`). No store, no buffer. The store is the `failureStore` port: `runtime.ts`'s `failureStore`, installed by the boot through `installFailureStore` on `@ultimat3/core/adapter` (never the barrel). A 5xx is held on the thrown value and stored at `reportError` under its `errorFingerprint`; masked input listed in `masked` |
 
 `As of 2026-08` four packages call `reportError`, seven call sites in all: `@ultimat3/http`'s
 `stages.ts` (`status >= 500` only), `@ultimat3/jobs`' `executeJob` — the one frame still holding the
@@ -953,6 +969,19 @@ hand-rolled JPEG and PNG codecs is what put it there.
 
 `image/image-fixture.ts` is byte-exact output from Pillow and ffmpeg on purpose: a codec that only round
 trips against itself proves nothing. Never regenerate a fixture with our own encoder.
+
+## `@ultimat3/core/adapter` — core's ports, for adapter authors and the boot
+
+Interfaces (`AuditSink`, `SleepClock`, `ErrorReporter`, `FailureStore`, `SecretSource`), the
+built-ins to copy or compose (`systemClock`, `noWaitClock`, `envSecretSource`, `fileSecretSource`,
+`defaultSecretSource`), the error a source raises (`SecretsKeyMissingError`), and the INSTALLERS —
+`installClock`, `installFailureStore`, `installSecretSource` — and `adapterSlot(fallback)`, the one
+slot every package's installer is built on. Every installer returns its release (`() => void`), which
+removes ITS install alone: installers may stop in any order, and a second release is a no-op.
+`ctxOf()` and the logger read the installed clock at each call, so `runtime.ts`'s `clock` reaches
+every action, query and job; deadlines racing real timers, AWS signing and a bare `uuidV7()` stay
+on the system clock. Their callers are the boot (reading
+`apps/<app>/runtime.ts`) and `@ultimat3/testing`; the barrel exports none of them.
 
 ## Supporting exports
 

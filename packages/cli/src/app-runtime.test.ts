@@ -43,6 +43,36 @@ describe('loadAppRuntime', () => {
     expect(await loadAppRuntime(other)).toBeUndefined();
   });
 
+  // A key `RuntimeOverrides` does not declare is a backend the app believes it swapped: refused by
+  // name, never ignored — a non-literal object slips past `satisfies`, a deleted field past both.
+  test('an unknown runtime key is refused, naming it; a deleted one names its replacement', async () => {
+    const refusal = async (
+      name: string,
+      body: string,
+    ): Promise<{ code?: string; cause?: string; fix?: string }> =>
+      loadAppRuntime(await fixture(name, { 'apps/web/runtime.ts': body })).then(
+        () => ({}),
+        (error: { code?: string; cause?: string; fix?: string }) => error,
+      );
+    const deleted = await refusal(
+      'deleted-key',
+      'const extra = { syncAuthenticate: async () => null };\nexport const runtime = { ...extra };\n',
+    );
+    expect(deleted.code).toBe('X_CONFIG_INVALID');
+    expect(deleted.cause).toContain('syncAuthenticate');
+    expect(deleted.fix).toContain('credentialTtlMs');
+    const typo = await refusal('typo-key', 'export const runtime = { jobDriver: {} };\n');
+    expect(typo.code).toBe('X_CONFIG_INVALID');
+    expect(typo.cause).toContain('jobDriver');
+    // A pending port is no field yet: said so, not misnamed as a typo.
+    const pending = await refusal(
+      'pending-key',
+      'export const runtime = { authServerStore: {} };\n',
+    );
+    expect(pending.cause).toContain('authServerStore');
+    expect(pending.cause).toContain('not a runtime.ts field yet');
+  });
+
   // The production boot: `runRole` reads `runtime.ts` FIRST, before anything on `@ultimat3/cli/serve`'s
   // static graph has imported `@ultimat3/render/server`, so a component that file reaches was
   // compiled by Bun's own loader — `jsx: "preserve"` → `React.createElement` — and cached that way
@@ -55,11 +85,12 @@ describe('loadAppRuntime', () => {
       }),
       'apps/web/shared/badge.tsx': 'export const Badge = () => <b>ok</b>;\n',
       'apps/web/runtime.ts':
-        "import { Badge } from './shared/badge';\nexport const runtime = { badge: Badge };\n",
+        // Under a declared field: an undeclared key is refused at load (`runtime-keys.ts`).
+        "import { Badge } from './shared/badge';\nexport const runtime = { middleware: [Badge] };\n",
     });
     const script = `const { loadAppRuntime } = await import(${JSON.stringify(join(import.meta.dir, 'app-runtime.ts'))});
 const runtime = await loadAppRuntime(process.cwd());
-try { const node = runtime.badge(); console.log(typeof node === 'object' && node !== null ? 'node' : typeof node); }
+try { const node = runtime.middleware[0](); console.log(typeof node === 'object' && node !== null ? 'node' : typeof node); }
 catch (error) { console.log(String(error)); }`;
     const child = Bun.spawn(['bun', '-e', script], { cwd: root, stdout: 'pipe', stderr: 'pipe' });
     const [out, err, code] = await Promise.all([

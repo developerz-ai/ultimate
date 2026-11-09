@@ -58,7 +58,6 @@ export {
   installedFailureStore,
   recordFailureFact,
   recordFailureInput,
-  setFailureStore,
   withFailureCapture,
 } from '../failure-capture';
 export { resetFailureCaptureWindows, settleFailureCaptures } from '../failure-capture-flush';

@@ -6,11 +6,11 @@
 // Its own file because `cdp-target.test.ts` is at the 500-line ceiling.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { fakeCdpBrowser } from './cdp-fake-fixture';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
-import { testScrapeClock } from './clock';
 import type { ScrapeTarget } from './target';
 
 /** A page with NONE of the three optional members, and one frame. */
@@ -61,7 +61,7 @@ const targetOver = (page: CdpPageLike): Promise<ScrapeTarget> =>
     page,
     browser: browserOver(page),
     rules: { allowHosts: ['shop.test'] },
-    clock: testScrapeClock(),
+    clock: frozenClock(),
   });
 
 const refusalOf = async (

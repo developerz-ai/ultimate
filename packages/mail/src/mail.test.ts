@@ -6,20 +6,14 @@ import {
   memoryJobDriver,
   memoryOutboxStore,
   outboxJobsFacade,
-  resetJobDriver,
   resetJobsFacade,
-  setJobDriver,
   setJobsFacade,
 } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { t } from '@ultimat3/schema';
+import { installMailDriver, resetMailDriver } from './adapter';
 import { blocks } from './blocks';
-import {
-  type MemoryMailDriver,
-  memoryMailDriver,
-  messageHeaders,
-  resetMailDriver,
-  setMailDriver,
-} from './driver';
+import { type MemoryMailDriver, memoryMailDriver, messageHeaders } from './driver';
 import { mailMessageSchema } from './job';
 import {
   defineMail,
@@ -86,7 +80,7 @@ let memory: MemoryMailDriver;
 beforeEach(() => {
   resetMailDriver();
   memory = memoryMailDriver();
-  setMailDriver(memory);
+  installMailDriver(memory);
   // `send` enqueues whenever a job driver is ambient, and the driver is process-global. These
   // tests assert on the inline path, so they state that precondition instead of inheriting
   // whichever driver an earlier file in this bun process happened to leave behind.
@@ -271,7 +265,7 @@ describe('the queue path', () => {
   // Through the handle, so a queued mail gets the producer span and `job.enqueue` every other
   // enqueue gets — the facade alone skipped both.
   test('a queued mail is one job.enqueue on the bus', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const seen: JobEnqueueEvent[] = [];
     subscribe('job.enqueue', (event) => seen.push(event.payload));
     const result = await send(basicMail, { name: 'Ada' }, { to: 'ada@example.test', locale: 'en' });
@@ -281,7 +275,7 @@ describe('the queue path', () => {
   });
 
   test('a configured job driver means the message is enqueued, not delivered', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const result = await send(basicMail, { name: 'Ada' }, { to: 'ada@example.test', locale: 'en' });
 
     expect(result.queued).toBe(true);
@@ -294,7 +288,7 @@ describe('the queue path', () => {
   });
 
   test('the queued result reports every envelope recipient, cc and bcc included', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const result = await send(
       basicMail,
       { name: 'Ada' },
@@ -310,7 +304,7 @@ describe('the queue path', () => {
   });
 
   test('two identical sends dedupe onto one queue row', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const options: SendOptions = { to: 'ada@example.test', locale: 'en' };
     const first = await send(basicMail, { name: 'Ada' }, options);
     const second = await send(basicMail, { name: 'Ada' }, options);
@@ -327,7 +321,7 @@ describe('the queue path', () => {
   // row — nothing reaches the queue until that transaction commits.
   test('inside a transaction the send is staged on it, not published to the queue', async () => {
     const queue = memoryJobDriver();
-    setJobDriver(queue);
+    installJobDriver(queue);
     const store = memoryOutboxStore();
     const tx = { id: 'request-tx' } as unknown as Tx;
     setJobsFacade(outboxJobsFacade({ store, driver: queue }, () => tx));
@@ -348,7 +342,7 @@ describe('the queue path', () => {
   });
 
   test('sync: true delivers inline even with a queue configured', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const result = await send(
       basicMail,
       { name: 'Ada' },
@@ -471,7 +465,7 @@ describe('a mail with an unresolved key', () => {
 
   test('the refusal comes before the transform and before the queue', async () => {
     const queue = memoryJobDriver();
-    setJobDriver(queue);
+    installJobDriver(queue);
     let ran = 0;
     setMailTransform((message) => {
       ran += 1;

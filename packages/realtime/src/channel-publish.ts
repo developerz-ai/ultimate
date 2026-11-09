@@ -4,6 +4,7 @@
 // The frame and its subject are spelled here once; the hub's own `emit` publishes through them.
 
 import { assertCoded } from '@ultimat3/core';
+import { adapterSlot } from '@ultimat3/core/adapter';
 import type { Channel, Topic } from './channel-decl';
 import type { ChannelEventsFrame } from './channel-wire';
 import { InProcessTransport, type Transport } from './fanout';
@@ -26,28 +27,25 @@ export async function sendChannelEvent(
 }
 
 /**
- * The bus this process publishes on. A heap bus nobody subscribes to until a boot installs the
- * real one — `jobs`' `setEventBus` arrangement — so a unit test, or a script that booted nothing,
- * publishes to nobody instead of throwing in the middle of the write it follows.
+ * The buses installed, newest last, over the heap bus a process boots with — nobody subscribes to
+ * that one, so a unit test or a script that booted nothing publishes to nobody instead of throwing
+ * in the middle of the write it follows. Core's one frame stack: a release puts back what was there
+ * before it, and one transport installed twice is two frames.
  */
-let ambient: Transport = new InProcessTransport();
+const booted: Transport = new InProcessTransport();
+const installed = adapterSlot<Transport>(() => booted);
 
 /**
- * Called by the boot (`startServices`) with the transport `selectTransport` chose, in EVERY role:
- * the same object the `sync` role's hub subscribes on, so under `x dev` a publish reaches this
- * process's own sockets and under NATS every node's. Answers the release, which puts a fresh heap
- * bus back only while this install is still the current one.
+ * Called by the boot (`startServices`) with the process's transport — `apps/<app>/runtime.ts`'s
+ * `transport`, else the one `selectTransport` chose — in EVERY role: the same object the `sync`
+ * role's hub subscribes on, so under `x dev` a publish reaches this process's own sockets and under
+ * NATS every node's. Answers the release, which takes THIS install off the stack and so restores
+ * whatever was current before it (the boot's bus under a test's override); idempotent, and a
+ * release out of order removes only its own entry. Public on `@ultimat3/realtime/adapter` only: an
+ * app swaps the bus in `runtime.ts`, never by calling this.
  */
-export function setChannelTransport(transport: Transport): () => void {
-  ambient = transport;
-  return () => {
-    if (ambient === transport) resetChannelTransport();
-  };
-}
-
-/** Test seam: back to a fresh heap bus, the state a process boots in. */
-export function resetChannelTransport(): void {
-  ambient = new InProcessTransport();
+export function installChannelTransport(transport: Transport): () => void {
+  return installed.install(transport);
 }
 
 /**
@@ -71,5 +69,5 @@ export async function publishChannelEvent<K extends string>(
     `channel("${declared.name}") declares no events, so nothing may publish one on it`,
     `declare it with events: true: channel('${declared.name}', { …, events: true })`,
   );
-  await sendChannelEvent(ambient, declared.topic(params), event);
+  await sendChannelEvent(installed.current(), declared.topic(params), event);
 }

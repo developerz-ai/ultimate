@@ -5,7 +5,7 @@
 // gives its slot back by expiry rather than by cleanup nobody runs.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { liveClock } from '@ultimat3/core';
 import { nowMs } from './clock';
 
 /** A granted slot. `slot` plus `holder` is what renew and release are addressed by. */
@@ -63,7 +63,7 @@ export const LEASE_SWEEP_INTERVAL_MS = 60_000;
  * "a second worker is refused" test is a real test rather than a pg-only one.
  */
 export function memoryLeaseStore(options: MemoryLeaseStoreOptions = {}): MemoryLeaseStore {
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock ?? liveClock;
   type Slots = Map<number, { holder: string; expiresAt: number }>;
   const slots = new Map<string, Slots>();
 

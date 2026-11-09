@@ -50,12 +50,18 @@ function spansOf(line: string, fence: string | undefined): readonly string[] {
   return [...line.matchAll(CODE_SPAN)].map((match) => match[2] ?? '');
 }
 
+/** One runnable-looking span: a shell-fenced line or an inline code span, with its 1-based line. */
+export interface DocSpan {
+  readonly line: number;
+  readonly span: string;
+}
+
 /**
- * Every `x <command> …` a page presents as runnable. Pure over the file's text, so the negative
- * case is a fixture rather than an edit to a page three other people are rewriting.
+ * Every span a page presents as runnable, fence state tracked across lines. Shared by every rule
+ * that judges what a reader would paste, so two rules never disagree about what counts as one.
  */
-export function scanDocCitations(file: MarkdownFile): readonly DocCitation[] {
-  const found: DocCitation[] = [];
+export function scanDocSpans(file: MarkdownFile): readonly DocSpan[] {
+  const found: DocSpan[] = [];
   const lines = file.text.split('\n');
   let fence: string | undefined;
   for (let index = 0; index < lines.length; index += 1) {
@@ -65,13 +71,19 @@ export function scanDocCitations(file: MarkdownFile): readonly DocCitation[] {
       fence = fence === undefined ? (opener[1] ?? '').toLowerCase() : undefined;
       continue;
     }
-    for (const span of spansOf(line, fence)) {
-      for (const citation of fixCitations(span)) {
-        found.push({ path: file.path, line: index + 1, span: span.trim(), citation });
-      }
-    }
+    for (const span of spansOf(line, fence)) found.push({ line: index + 1, span });
   }
   return found;
+}
+
+/**
+ * Every `x <command> …` a page presents as runnable. Pure over the file's text, so the negative
+ * case is a fixture rather than an edit to a page three other people are rewriting.
+ */
+export function scanDocCitations(file: MarkdownFile): readonly DocCitation[] {
+  return scanDocSpans(file).flatMap(({ line, span }) =>
+    fixCitations(span).map((citation) => ({ path: file.path, line, span: span.trim(), citation })),
+  );
 }
 
 /**

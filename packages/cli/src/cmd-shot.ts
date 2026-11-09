@@ -8,12 +8,13 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { renderFixShellArg } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core/adapter';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
 import type { ShotColorScheme, ShotDriver, ShotPage, ShotSession } from './browser-launcher-port';
-import { DEFAULT_PAGE_TIMEOUT_MS, systemShotClock } from './cdp-shot-clock';
+import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
 import {
   islandShot,
   islandShotResult,
@@ -265,7 +266,7 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       // inside your network is the widest SSRF surface an app can own, and a screenshot command is
       // not the place to open it by default. Every refusal lands in the verdict's `refused` count.
       rules: { allowHosts: allowHostsFrom(server.url, options.extraHosts) },
-      clock: systemShotClock,
+      clock: systemClock,
       timeoutMs: options.timeoutMs,
       ...(options.viewport === undefined ? {} : { viewport: options.viewport }),
       ...(options.acceptLanguage === undefined

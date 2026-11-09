@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { JobDriver } from '@ultimat3/jobs';
-import { setJobDriver } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 import { REQUIRED_BUN } from './app-root';
 import { jobsCommand } from './cmd-jobs';
 import type { CommandContext } from './command';
@@ -65,7 +65,7 @@ export const contextFor = (root: string, options: RunOptions): CommandContext =>
 
 /** Install the driver `withJobDriver` must reuse, so no command under test boots a second queue. */
 export function runJobs(driver: JobDriver, options: RunOptions = {}): Promise<CommandResult> {
-  setJobDriver(driver);
+  installJobDriver(driver);
   return jobsCommand.run(contextFor(appRoot(), options));
 }
 

@@ -11,10 +11,10 @@ import {
   job,
   type MemoryJobDriver,
   memoryJobDriver,
-  setJobDriver,
   t,
   task,
 } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 import type { AdminApp } from '../admin';
 import type { AdminActor } from '../authz';
 import { staticAuthz } from '../authz';
@@ -89,7 +89,7 @@ async function claimOne(driver: JobDriver, id: string, workerId: string): Promis
 /** One job in every state the queue has, each tenant `org-a` except the `ready` one. */
 export async function seedQueue(): Promise<Seeded> {
   const driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
   const operator = driver.introspect;
   if (operator === undefined) return expect.unreachable('the memory driver ships introspection');
   const handle = fixtureJob();

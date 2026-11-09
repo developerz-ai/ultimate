@@ -19,7 +19,8 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import type { ExerciseRequestOption } from '@ultimat3/http';
-import { statusFor, withRequestAs, withScratchRateLimitStore } from '@ultimat3/http';
+import { statusFor, withRequestAs } from '@ultimat3/http';
+import { withScratchRateLimitStore } from '@ultimat3/http/adapter';
 import { admitsAnonymous } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { validateAsync } from '@ultimat3/schema';

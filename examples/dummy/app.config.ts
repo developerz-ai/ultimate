@@ -37,12 +37,10 @@ export const config = defineConfig({
 
   jobs: { queues: ['default', 'mail', 'digest'], concurrency: 8 },
 
-  // In-process, because this is what the app's own gate boots: `x dev` and `apps/web/server.ts`
-  // under e2e, with no bus. Since 22.0.0 the boot BUILDS what this says — `'nats'` with NATS_URL
-  // unset refuses (`X_CONFIG_INVALID`), where it used to fall back to in-process in silence. To run
-  // more than one node: `{ enabled: true, transport: 'nats', urlEnv: 'NATS_URL' }` and the same
-  // NATS_URL on web, sync and the replicator. There is no `tier:` key: nothing ever read it.
-  realtime: { enabled: true, transport: 'memory' },
+  // The bus is not config (31.0.0): NATS_URL unset is the in-process bus this app's own gate boots
+  // (`x dev`, `apps/web/server.ts` under e2e). To run more than one node, set the same NATS_URL on
+  // web, sync and the replicator. There is no `tier:` key: nothing ever read it.
+  realtime: { enabled: true },
 
   pwa: {
     enabled: true,

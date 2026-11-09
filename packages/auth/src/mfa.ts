@@ -241,7 +241,7 @@ const newestStep = (steps: ReadonlySet<number>): number => {
 
 /**
  * One process' table: the default when no host installed a guard, so a code is single-use per
- * replica. A framework boot installs `postgresTotpReplayGuard` instead (`configureTotpReplay`).
+ * replica. A framework boot installs `postgresTotpReplayGuard` instead (`installTotpReplay`).
  * Steps older than the drift window are dropped — nothing outside it can be replayed anyway.
  *
  * Bounded, because the subject map only ever grew: pruning happened inside one subject's `Set`

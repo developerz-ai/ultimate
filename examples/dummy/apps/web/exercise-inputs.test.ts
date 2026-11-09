@@ -2,7 +2,8 @@
 // each must hand its primitive a value the primitive really takes — an upload session the posts
 // import actions resume, a key inside the org the job runs for, a subscription a browser would send.
 import { userActor } from '@ultimat3/core';
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, expect, unitTest } from '@ultimat3/testing';
 import { abortPostsImport } from './app/posts/actions/abort-posts-import';
@@ -46,17 +47,19 @@ const bytesOf = (text: string): Uint8Array => {
   );
 };
 
+// The install answers its own undo, which puts back whatever was installed before it.
+let release = (): void => {};
 beforeEach(() => {
   resetStorage();
   defineStorage({
     disks: { local: memoryStorageDriver({ signingSecret: 'test' }) },
     default: 'local',
   });
-  setJobDriver(memoryJobDriver());
+  release = installJobDriver(memoryJobDriver());
 });
 afterEach(() => {
   resetStorage();
-  resetJobDriver();
+  release();
 });
 
 unitTest('the upload grants draw a filename and type the policy signs', async () => {

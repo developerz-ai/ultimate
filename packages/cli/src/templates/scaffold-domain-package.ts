@@ -42,7 +42,7 @@ export const ${app.pascal}CurrencyMismatchError = defineError<CurrencyPair>({
   cause: (pair) =>
     \`cannot add \${pair.left} to \${pair.right}: Money is only additive inside one currency\`,
   fix: (pair) =>
-    \`bun test packages/domain/src/index.test.ts   # add() is defined only inside one currency — convert \${pair.right} to \${pair.left} before calling it\`,
+    \`bun test ./packages/domain/src/index.test.ts   # add() is defined only inside one currency — convert \${pair.right} to \${pair.left} before calling it\`,
 });
 
 export const zero = (currency: string): Money => ({ minor: 0, currency });

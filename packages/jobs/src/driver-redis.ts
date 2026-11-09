@@ -13,7 +13,7 @@
 //   steps:<runId> HASH   step name → record JSON
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, finiteOption, systemClock, uuidV7 } from '@ultimat3/core';
+import { finiteCount, finiteOption, liveClock, uuidV7 } from '@ultimat3/core';
 import { redisClient } from '@ultimat3/core/redis';
 import { nowMs } from './clock';
 import type {
@@ -158,7 +158,7 @@ function answerOf(reply: readonly unknown[], at: number, runId: string): Enqueue
 
 export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
   const client = typedRefusals(options.client ?? redisClient());
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock ?? liveClock;
   const ns = `{${options.prefix ?? 'x:jobs'}}`;
   const doneTtlMs = finiteCount(
     'redisJobDriver',

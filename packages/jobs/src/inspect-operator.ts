@@ -13,7 +13,7 @@ function operatorOf(driver: JobDriver): JobIntrospection {
   if (driver.introspect === undefined) {
     throw new NotImplementedError({
       cause: `the operator surface of the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
-      fix: 'call setJobDriver(postgresJobDriver()) at boot — the pg driver implements introspect — then: x jobs list --json',
+      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — the pg driver implements introspect — then: x jobs list --json',
     });
   }
   return driver.introspect;
@@ -63,7 +63,7 @@ export function resolveJobStep(
   if (operator.resolveStep === undefined) {
     throw new NotImplementedError({
       cause: `the "${driver.name}" jobs driver keeps no step records an operator can resolve: its introspect has no resolveStep`,
-      fix: 'setJobDriver(postgresJobDriver())   # at boot: the pg and memory drivers implement resolveStep — then x jobs resolve-step <id> <step> --ran --output <json>',
+      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — the pg and memory drivers implement resolveStep — then x jobs resolve-step <id> <step> --ran --output <json>',
     });
   }
   return operator.resolveStep(jobId, step, resolution);

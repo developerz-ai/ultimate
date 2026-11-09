@@ -3,7 +3,8 @@
 // handed the caller a cursor to an EMPTY page whenever the last page happened to be full.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { MAX_JOB_PAGE, memoryJobDriver, resetJobDriver, resetJobs } from '@ultimat3/jobs';
+import { MAX_JOB_PAGE, memoryJobDriver, resetJobs } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { enqueue, runJobs } from './cmd-jobs-fixture';
 import { BadFlagError } from './errors';
 import { msg } from './messages';

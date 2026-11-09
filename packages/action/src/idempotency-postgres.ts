@@ -5,7 +5,7 @@
  * Statements are spelled out so an agent can run the exact one it saw in a log.
  */
 import type { PgExecutor } from '@ultimat3/core';
-import { finiteCount, logger, uuidV7 } from '@ultimat3/core';
+import { finiteCount, liveClock, logger, uuidV7 } from '@ultimat3/core';
 import { IdempotencyReservationLostError, IdempotencyStatusUnknownError } from './errors';
 import type {
   IdempotencyFailure,
@@ -172,7 +172,7 @@ export interface PostgresIdempotencyStore extends IdempotencyStore {
 /**
  * **The boot installs this for you — an app declares the scope and nothing else.**
  * `@ultimat3/cli`'s `startServices` builds a `PgExecutor` from the client it already resolved and
- * calls `setIdempotencyStore(postgresIdempotencyStore({ executor, origin, reclaimAfterMs }))` before `loadApp`, so the
+ * installs `postgresIdempotencyStore({ executor, origin, reclaimAfterMs })` before `loadApp`, so the
  * store is in place by the time `registerAction` evaluates a declaration against it. All an app
  * owes is the one line `x new` scaffolds into `apps/web/server.ts`:
  *
@@ -180,19 +180,19 @@ export interface PostgresIdempotencyStore extends IdempotencyStore {
  * configureIdempotency({ scope: 'shared' });
  * ```
  *
- * Installing one by hand is for a host that boots the framework itself, and it needs a real
+ * Handing one over is `idempotencyStore:` in `apps/<app>/runtime.ts`, and it needs a real
  * `PgExecutor` — never `Bun.sql`, which has no `.query`. Wrap the client this process already
  * opened, so a second pool is not opened against a URL the boot resolved once:
  *
  * ```ts
  * const client = db();
- * setIdempotencyStore(
- *   postgresIdempotencyStore({
+ * export const runtime = {
+ *   idempotencyStore: postgresIdempotencyStore({
  *     executor: { query: (text, values) => client.query({ text, values }) },
  *     origin: () => client,
  *     reclaimAfterMs: requestDeadlineMs, // the app's `requestTimeoutMs`, from '@ultimat3/action'
  *   }),
- * );
+ * };
  * ```
  */
 export function postgresIdempotencyStore(
@@ -219,7 +219,7 @@ export function postgresIdempotencyStore(
     const tx = liveTransaction();
     return tx !== undefined && tx.origin === options.origin() ? tx.executor : undefined;
   };
-  const now = options.now ?? ((): number => Date.now());
+  const now = options.now ?? ((): number => liveClock.now().getTime());
 
   const fetch = async (key: string): Promise<IdempotencyRecord | undefined> => {
     const rows = await exec.query<IdempotencyRow>(SQL_IDEMPOTENCY_GET, [key, windowSecs]);

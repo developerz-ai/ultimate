@@ -22,6 +22,10 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `harness.ts` | `describeApp()` / `testApp()` — boot an app in-process with its own database |
 | `template-db.ts` | N workers, N databases, one migrated template, `CREATE DATABASE ... TEMPLATE` |
 | `determinism.ts` | frozen clock, seeded RNG, seeded uuids, `assertDeterministic` |
+| `stub.ts` | `stub(action \| llm() \| query \| job)` — the body answers from a script (`stub-script.ts`); see [Test doubles](#test-doubles) |
+| `swap-adapter.ts` | `swapAdapter(port, impl)` — one `ADAPTER_PORTS` port replaced for one test, through its `./adapter` installer |
+| `test-scope.ts` | when a double is put back: after its test, or at its file's end — the preload's hooks, never the file's |
+| `matcher-stub.ts` · `matcher-doubles.ts` | `toHaveBeenCalledWith` on a stub; `toHaveEnqueued`, `toHaveSentMail` |
 | `sealed-network.ts` | any unmocked `fetch`, `WebSocket` or `Bun.connect` egress fails, with the URL and the line that fixes it |
 | `sealed-sockets.ts` | the `WebSocket` and `Bun.connect` patches, behind `sealed-network.ts`'s one gate |
 | `factories.ts` | `defineFactory` — seeded rows, traits, associations, `build` vs `create` |
@@ -206,6 +210,75 @@ unitTest('the sweep runs as the billing worker', async ({ runJobs }) => {
 | **a real worker's pass** | each round is `jobWorker(...).tick()`: admission, the limiter and keyed `concurrency` (`whenBusy: 'fail'` settles `refused`, `X_JOB_KEY_BUSY`) hold exactly as in production |
 | **a cancel reaches a running body** | the worker renews its lease on the TEST clock — every millisecond of it — and a renewal that misses the row aborts `ctx.signal` with `X_JOB_LEASE_LOST`: start `runJobs.drain()`, cancel the row (`cancelJob(jobDriver(), id)` or the app's own action), `clock.advance(1)`, await the drain. No hand-built worker, no sleep, no wall-clock timer |
 
+## Test doubles
+
+One way per need. Every double is put back by the preload's own hooks: made inside a test, after
+that test; made outside one (`beforeAll`, module scope), at the end of its file. No `afterEach`, no
+`restore()`, nothing a skipped block can leave behind.
+
+| Need | The one way |
+|---|---|
+| an action, an `llm()`, a query or a job answers what the test says | `const s = await stub(chargeCard); s.returns(out)` — `.returns(a, b)` answers in order, the last repeats; `.throws(new YourError(…))` |
+| it was called, with this input | `expect(s).toHaveBeenCalledWith(input)` — the input is parsed by the primitive's schema first |
+| who called it, how often | `s.calls` — `{ input, actor }[]`, oldest first |
+| a backend (queue, mail driver, event bus, store, clock, transport…) is a fake | `await swapAdapter('jobs', memoryJobDriver())` — any port in `SwappablePort` |
+| a job was enqueued | `await expect(runJobs).toHaveEnqueued(sendWelcome, { userId })` |
+| a mail was sent | `expect(mail).toHaveSentMail(welcomeMail, { to: address })` |
+| a vendor's HTTP answer | `mockFetch` / `cassette()` — [Sealed network](#sealed-network) |
+| time | the `clock` fixture |
+| rows a test reads by name | `const { ada } = await seed('demo').pick({ ada: 'member:ada' })` — the app registers `defineFixtures({ seed: seedFixture({ seeds: [demo], driver: () => appDriver }) })` once; `demo` is a `factorySeed` ([Factories](#factories)) |
+| one row, here | a factory: `await postFactory.create()` ([Factories](#factories)) |
+
+```ts
+import type { Action } from '@ultimat3/action';
+import type { Actor } from '@ultimat3/core';
+import type { JobHandle } from '@ultimat3/jobs';
+import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { expect, stub, unitTest } from '@ultimat3/testing';
+
+// Yours: two actions (or an llm()), a job, a mail and a member.
+declare const chargeCard: Action<
+  StandardSchemaV1<{ cartId: string; cents: number }>,
+  StandardSchemaV1<{ chargeId: string }>
+>;
+declare const checkout: Action<StandardSchemaV1<{ cartId: string }>, StandardSchemaV1<unknown>>;
+declare const sendReceipt: JobHandle<{ cartId: string }>;
+declare const receiptMail: { readonly id: string };
+declare const member: Actor & { readonly email: string };
+declare const cartId: string;
+
+unitTest('checkout charges the cart and queues the receipt', async ({ runJobs, mail }) => {
+  const charged = await stub(chargeCard);
+  charged.returns({ chargeId: 'ch_1' });
+  await checkout.as(member, { cartId });             // the real action, calling the stubbed one
+  expect(charged).toHaveBeenCalledWith({ cartId, cents: 1200 });
+  await expect(runJobs).toHaveEnqueued(sendReceipt, { cartId });
+  await runJobs.drain();
+  expect(mail).toHaveSentMail(receiptMail, { to: member.email });
+});
+```
+
+What a stub replaces is the BODY, and nothing else:
+
+| Still real | Why it matters |
+|---|---|
+| the policy, the input parse, the rate limit, the meter, idempotency | a stub cannot hide a refusal the caller would meet |
+| the output schema | a canned answer the declaration would reject fails the call, as it would in production |
+| every surface — a direct call, `.as()`, HTTP, MCP, `.job()`, a worker pass | the stub is seen wherever the primitive is reached |
+| `errors:` | a scripted `throws` of an undeclared code is `X_ERROR_UNDECLARED`, as a real one is |
+
+| Refusal | When |
+|---|---|
+| `X_TEST_STUB_UNANSWERED` | the stub was called before `.returns()` / `.throws()` |
+| `X_TEST_STUB_TARGET_UNSUPPORTED` | `stub()` was handed something that is not an action, `llm()`, query or job |
+| `X_TEST_EXPECTED_INPUT_INVALID` | an assertion's expected input fails the primitive's own schema — no call could have matched it |
+| `X_TEST_ADAPTER_PORT_UNSWAPPABLE` | the port has no process-global slot; the cause says what a test does instead (`UNSWAPPED`) |
+| `X_TEST_SCOPE_UNINSTALLED` | no `@ultimat3/testing/preload`, so nothing would put the double back |
+| `X_TEST_RUN_JOBS_EXPECTED` / `X_TEST_MAIL_EXPECTED` | the matcher's receiver is not the `runJobs` / `mail` fixture |
+
+`toHaveBeenCalledWith` keeps bun's meaning for a `mock()` or a `spyOn`: only a `stub()` receiver is
+schema-checked. `As of 2026-11`.
+
 ## An N+1 fails the test it happened in
 
 ```ts
@@ -280,28 +353,48 @@ themselves, not from a directory convention.
 ## Factories
 
 ```ts
-const orgs = defineFactory(orgEntity, {
-  defaults: (n, ids): Org => ({ id: ids.uuid(), name: `org-${n}` }),
-});
+import { belongsTo, defineFactory, hasMany } from '@ultimat3/testing';
 
-const posts = defineFactory(postEntity, {
-  defaults: (n, ids): Post => ({ id: ids.uuid(), title: `post-${n}`, orgId: '', published: false }),
-  traits: { published: { published: true }, popular: (n) => ({ views: n * 100 }) },
-  associations: { orgId: associate(orgs, (org) => org.id) },
+const orgFactory = defineFactory(orgs, {
+  defaults: (n, ids) => ({ id: ids.uuid(), slug: `org-${n}`, name: `Org ${n}` }),
 });
+const postBase = defineFactory(posts, {
+  defaults: (n, ids) => ({ id: ids.uuid(), orgId: '', slug: `post-${n}`, title: `Post ${n}` }),
+  traits: { published: { status: 'published', publishedAt: new Date('2026-01-05T09:00:00Z') } },
+  transient: { shout: false },
+  belongsTo: { org: belongsTo(orgFactory, 'orgId') },
+  afterBuild: (post, { transient }) => {
+    if (transient.shout) post.title = post.title.toUpperCase();
+  },
+});
+const commentFactory = defineFactory(comments, {
+  defaults: (n, ids) => ({ id: ids.uuid(), orgId: '', postId: '', body: `Comment ${n}` }),
+  belongsTo: { post: belongsTo(postBase, 'postId') },
+});
+const postFactory = postBase.extend({ hasMany: { comments: hasMany(commentFactory, 'postId') } });
 
-posts.with('published').build();          // in memory, org built alongside it, no database
-await posts.with('published').create();   // org written first, then the post
+postFactory.build();                                    // memory: org built alongside, nothing written
+const post = await postFactory.with('published').create({ comments: 2 }); // the STORED row
+const org = await orgFactory.create();
+await postFactory.createList(3, { org });               // reuses that org, makes none
+postFactory.attributesFor();                            // an action input: no id, no orgId
 ```
 
 | | |
 |---|---|
-| **trait** | a named partial. `with('a', 'b')` composes left to right; an explicit override still wins |
-| **association** | a column whose value comes from another factory, built with the **same strategy** — `build` leaves the parent in memory, `create` writes it |
-| **overrides suppress associations** | a column the caller (or a trait) supplied never creates a parent row nobody asked for |
-| **`build` vs `create`** | `build` never touches a database; `create` writes through `usePersister` and fails as `X_TEST_FACTORY_NOT_PERSISTED` when nothing installed one |
-| **seeded per table** | the default seed is derived from the table name, so a post and an org never draw the same uuid. Pass `seed` only to replay an older recording |
-| **`with()` validates** | an undeclared trait fails at the line that named it, listing the declared ones (`X_TEST_FACTORY_TRAIT_UNKNOWN`) |
+| **strategies** | `build` (memory, never a database), `create` (writes, answers the row AS STORED: declared defaults, generated columns, timestamps), `attributesFor` (an input: no primary key, no `belongsTo` key, no transient), `buildList` / `createList` |
+| **sequence** | `index` (`n` above), per factory, shared by every `with()` view and `extend()` child — ids never repeat |
+| **trait** | a named partial (or `(n, ids, transient) => partial`). `with('a', 'b')` composes left to right; a call's override wins. An undeclared one fails at `with()` (`X_TEST_FACTORY_TRAIT_UNKNOWN`) |
+| **transient** | declared defaults a call may override; read by `defaults`, traits and callbacks; never written |
+| **callbacks** | `afterBuild(row, ctx)` on both strategies before any write; `afterCreate(storedRow, ctx)` after the row and its children are stored |
+| **inheritance** | `factory.extend({ defaults, traits, transient, hasMany, afterBuild, afterCreate })` — same table, same sequence, its defaults over the parent's, callbacks chained after |
+| **`belongsTo`** | the parent made with the child's strategy; `{ org: row }` reuses a row; `{ orgId }` makes none. The `defaults` must name the key, so a key that is not a column does not compile |
+| **`hasMany`** | `{ comments: 2 }` or `{ comments: [{ body: 'a' }, {}] }`: made after the parent, key set from the stored parent; on the answer as a non-enumerable `post.comments`, so the row itself `toEqual`s a read of the table |
+| **tenant** | the tenant column follows the parent; the tenant's own association resolves first, so a comment, its post and its post's author share one org |
+| **persister** | `create()` writes through the entity's own repository on `defaultDriver()`; an app that names its driver installs `usePersister(entityPersister({ driver }))` (or `{ client }`) once in its test preload |
+| **seeded per table** | the default seed is derived from the table name, so two tables never draw the same uuid |
+| **lint** | `await assertFactoriesValid({ orgFactory, postFactory, … })`: every factory and each trait alone, built and created against its entity on a throwaway driver; one `X_TEST_FACTORY_INVALID` naming each `factory.with('trait').strategy()` and the entity's own code |
+| **seeds** | `factorySeed('demo', async ({ id }) => { await postFactory.create({ org: await orgFactory.create({ id: id('org:acme') }) }) })` is a `Seed` (`x db seed demo`, or `.run({ driver })`): every sequence restarts, every write is the seed's idempotent insert — a replay writes nothing |
 
 `factoriesFor(registry)` builds one factory per registered entity, each value read off the
 column's declaration — its default, an enumerated value, its kind, `null` only where nullable — and
@@ -1105,8 +1198,8 @@ what was named), and installs the filter. It is the preload's first import for t
 
 `bun test` runs every file of one invocation in the same process — only `x verify`'s shards pass
 `--isolate`. A file that leaves a process-global registry dirty therefore changes what every later
-file sees, and the failure lands on an innocent suite in another package: `bun test packages/query
-packages/cli` failed five tests in `query`, all of them installed by `cli`, while either package
+file sees, and the failure lands on an innocent suite in another package: `bun test ./packages/query/
+./packages/cli/` failed five tests in `query`, all of them installed by `cli`, while either package
 alone was green.
 
 The preload installs the guard. It samples the cache tag set and the cache tier registry once per
@@ -1118,7 +1211,7 @@ X_TEST_REGISTRY_LEAK: a test file left a process-global registry dirty —
 "packages/cli/src/cmd-dev.test.ts" left cache tags declared ["devfixture"] after its last test
   fix: in "packages/cli/src/cmd-dev.test.ts" add: import { isolateDeclaredTags } from
        '@ultimat3/cache'; const restoreTags = isolateDeclaredTags(); afterAll(restoreTags);
-       — then re-run: bun test "packages/cli/src/cmd-dev.test.ts"
+       — then re-run: bun test "./packages/cli/src/cmd-dev.test.ts"
 ```
 
 The baseline is not a `beforeEach`: a file's own `beforeAll` runs **before** a preload's

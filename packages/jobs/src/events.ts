@@ -3,7 +3,8 @@
 // 12:00:10, so a fire-and-forget emitter would silently strand every waiting run.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteOption, logger, systemClock, uuidV7 } from '@ultimat3/core';
+import { finiteOption, liveClock, logger, uuidV7 } from '@ultimat3/core';
+import { adapterSlot } from '@ultimat3/core/adapter';
 import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
 import { eventBefore, pastCursor } from './events-cursor';
@@ -55,7 +56,7 @@ export interface MemoryEventBusOptions {
 const SWEEP_EVERY_MS = 1_000;
 
 export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock ?? liveClock;
   // TWO screens, because these are two knobs: the default is declared at construction and belongs
   // to whoever built the bus, `ttl` rides the publish CALL. One screen over `ttl ?? defaultTtl`
   // told a caller who wrote `{ ttl: NaN }` to "pass a finite defaultTtl" — an instruction naming an
@@ -186,21 +187,24 @@ export function eventsPurgeTarget(bus: EventBus): PurgeTarget {
   return { name: EVENTS_PURGE_TARGET, purgeExpired: () => bus.purgeExpired() };
 }
 
-let ambientBus: EventBus = memoryEventBus();
+/** The process default under every installed bus — replaced only by `freshDefaultEventBus()`. */
+let base: EventBus = memoryEventBus();
+/** The installed bus: a stack over `base`, so boots and tests release in any order. */
+const slot = adapterSlot<EventBus>(() => base);
 
 /**
- * **Install `postgresEventBus({ executor })` here in any deployment with more than one process.**
- * The default above is one process's heap: the pod that publishes and the pod that resumes are
- * never the same one, so a webhook landing on web-3 strands a run on worker-7 until its 24h
- * timeout dead-letters it, with nothing logged before then. This line used to promise a
- * "NATS/Redis-streams bus swapped at boot"; no such bus existed and boot installed the memory one.
+ * The boot's installer (its release removes THIS install only, in any order — `adapterSlot`), on `@ultimat3/jobs/adapter` and never the `.` barrel: the boot installs
+ * `postgresEventBus({ executor })` over its pool, and an app swaps it with `eventBus:` in
+ * `apps/<app>/runtime.ts`. The default above is one process's heap: the pod that publishes and the
+ * pod that resumes are never the same one, so a webhook landing on web-3 strands a run on worker-7
+ * until its 24h timeout dead-letters it, with nothing logged before then.
  */
-export function setEventBus(bus: EventBus): void {
-  ambientBus = bus;
+export function installEventBus(bus: EventBus): () => void {
+  return slot.install(bus);
 }
 
 export function eventBus(): EventBus {
-  return ambientBus;
+  return slot.current();
 }
 
 /**
@@ -210,7 +214,16 @@ export function eventBus(): EventBus {
  * wait before that test has asked anything — call this between tests.
  */
 export function resetEventBus(): void {
-  ambientBus = memoryEventBus();
+  slot.reset();
+  base = memoryEventBus();
+}
+
+/**
+ * The per-test reset: a FRESH default bus under whatever is installed, which stays installed — a
+ * `beforeAll` swap survives every test while a test on the default still starts with no events.
+ */
+export function freshDefaultEventBus(): void {
+  base = memoryEventBus();
 }
 
 /** The one function app code calls to unblock a waiting step. */
@@ -219,5 +232,5 @@ export function publishEvent(
   payload: unknown,
   options?: PublishOptions,
 ): Promise<JobEvent> {
-  return ambientBus.publish(name, payload, options);
+  return slot.current().publish(name, payload, options);
 }

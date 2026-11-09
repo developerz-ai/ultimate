@@ -26,15 +26,11 @@ const withRoot = <T>(body: (root: string) => T): T => {
 describe('unit · dev services · what a report may carry', () => {
   test('an external binding is reported without its password', () => {
     withRoot((root) => {
-      const services = resolveServices(
-        root,
-        {
-          DATABASE_URL: 'postgres://app:hunter2@db.internal:5432/app',
-          NATS_URL: 'nats://token:s3cr3t@nats.internal:4222',
-          S3_ENDPOINT: 'https://AKIA:supersecret@s3.internal',
-        },
-        { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' },
-      );
+      const services = resolveServices(root, {
+        DATABASE_URL: 'postgres://app:hunter2@db.internal:5432/app',
+        NATS_URL: 'nats://token:s3cr3t@nats.internal:4222',
+        S3_ENDPOINT: 'https://AKIA:supersecret@s3.internal',
+      });
       // The bindings keep the real url — `runtime-queue.ts` has to connect with it. Only the REPORT
       // is redacted, so a leak here cannot be fixed by a caller remembering to redact.
       expect(services.db.url).toContain('hunter2');
@@ -148,17 +144,15 @@ test('a state directory that cannot be created is X_STORAGE_UNWRITABLE, naming b
   });
 });
 
-// The bus is `realtime.transport`'s and the variable is the one `realtime.urlEnv` names — the pair
-// the runtime's `selectTransport` obeys. `NATS_URL` read literally reported `events=embedded` over
-// an app that named its own variable and had dialled NATS.
-test('the events binding reads the variable realtime.urlEnv names, only under transport nats', () => {
-  const env = { BUS_URL: 'nats://bus.internal:4222', NATS_URL: 'nats://other:4222' };
-  const nats = { enabled: true, transport: 'nats', urlEnv: 'BUS_URL' } as const;
-  expect(eventsBinding(env, nats)).toMatchObject({
+// v31: `NATS_URL` alone selects the bus — the same rule the runtime's `selectTransport` obeys.
+test('the events binding is NATS_URL: set is external, unset or blank is embedded', () => {
+  expect(eventsBinding({ NATS_URL: 'nats://bus.internal:4222' })).toMatchObject({
     mode: 'external',
     url: 'nats://bus.internal:4222',
+    detail: 'NATS_URL',
   });
-  expect(eventsBinding(env, { ...nats, transport: 'memory' }).mode).toBe('embedded');
+  expect(eventsBinding({}).mode).toBe('embedded');
+  expect(eventsBinding({ NATS_URL: '  ' }).mode).toBe('embedded');
 });
 
 // W18: a Windows state directory is a tagged PATH, read back by stripping the prefix — never

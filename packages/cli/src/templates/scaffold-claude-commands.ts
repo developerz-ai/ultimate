@@ -87,8 +87,9 @@ bun run verify --json   # the same, machine-readable
 
 Red is instructions, not a verdict: **every finding carries an executable \`fix:\` — run it verbatim
 before improvising**, and \`bunx x errors explain <CODE>\` expands any code it names. Never narrow the gate
-to make it pass: there is no \`--only\` and no \`--skip\`, on purpose, and disabling a lint rule or
-loosening a compiler flag is the same move wearing a different hat.
+to make it pass: \`--only <step>\` narrows feedback and prints \`NOT A GATE RUN\`, so it is never the
+verdict; there is no \`--skip\`, on purpose; disabling a lint rule or loosening a compiler flag is the
+same move wearing a different hat.
 
 While you iterate, narrow the *feedback*, not the gate:
 
@@ -97,6 +98,7 @@ While you iterate, narrow the *feedback*, not the gate:
 | one test file | \`bun test <path>/<file>.test.ts\` |
 | one test by name | \`bun test -t '<name>'\` |
 | a whole type | \`bunx x test unit\` · \`bunx x test contract\` · \`bunx x test e2e\` |
+| one gate step | \`bunx x verify --only <step> --json\` — \`NOT A GATE RUN\` |
 | lint the files you touched | \`bunx biome check --write <paths>\` |
 | types, once, when otherwise done | \`bun run typecheck\` |
 | a broken environment | \`bunx x doctor\` |
@@ -213,7 +215,8 @@ executable \`fix:\` — **run the \`fix:\` verbatim before improvising**, and us
 when the cause is not enough. \`bun run verify --json\` gives the same steps machine-readably; \`bunx x doctor\`
 covers the case where the environment, not the code, is what is broken.
 
-Do not narrow the gate to make it pass. There is no \`--only\` and no \`--skip\`; disabling a lint rule,
+Do not narrow the gate to make it pass. \`bunx x verify --only <step>\` re-runs one step while you fix it,
+and says \`NOT A GATE RUN\`: green is the run with no flag. There is no \`--skip\`; disabling a lint rule,
 loosening a compiler flag, or deleting an assertion is the same evasion. Fix the code.
 
 Report one line per fix: the code, the file, what changed.

@@ -156,7 +156,7 @@ export interface AuthConfigInput {
   readonly mfa?: Partial<AuthMfaPolicy> | undefined;
   /**
    * Which TOTP steps have been spent, claimed by `completeMfa`. Omitted means the guard the host
-   * installed (`configureTotpReplay`; a framework boot's is `postgresTotpReplayGuard`), then
+   * installed (`installTotpReplay`; a framework boot's is `postgresTotpReplayGuard`), then
    * `memoryTotpReplayGuard()` — one process' worth of memory, so a code is single-use per replica.
    */
   readonly totpReplay?: TotpReplayGuard | undefined;
@@ -214,7 +214,7 @@ export function defineAuth(config: AuthConfigInput): Auth {
   assertPasswordPolicy(password);
   assertRateLimitPolicy(rateLimit);
   // Three answers in precedence order, and the middle one is why the seam exists: what this call
-  // passed, then what the HOST installed (`configureAuthLimiters`, filled by the boot that owns
+  // passed, then what the HOST installed (`installAuthLimiters`, filled by the boot that owns
   // the database connection), then one process' worth of state. Without the middle arm a
   // scaffolded app had to remember to build a shared limiter itself, which is the opposite of
   // what this framework promises — and `x new` scaffolds two replicas.

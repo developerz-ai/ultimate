@@ -41,7 +41,7 @@ export type MailTransform = (
 
 let ambient: MailTransform | undefined;
 
-/** Install the app's transform; `undefined` removes it. One per process, like `setMailDriver`. */
+/** Install the app's transform; `undefined` removes it. One per process, like the mail driver. */
 export function setMailTransform(transform: MailTransform | undefined): void {
   ambient = transform;
 }

@@ -1,8 +1,11 @@
 // The raw-CDP shot driver's fake WIRE, shared by the driver's unit files: every call goes through
 // the real `cdpConnectOver` framing, so what a test asserts is the CDP a real browser receives.
+
+import type { SleepClock } from '@ultimat3/core';
+import { frozenClock } from '@ultimat3/core';
 import type { CdpTransport } from '@ultimat3/testing';
 import { cdpConnectOver } from '@ultimat3/testing';
-import type { ShotClock, ShotSessionInit } from './browser-launcher-port';
+import type { ShotSessionInit } from './browser-launcher-port';
 import { cdpShotDriver } from './cdp-shot-driver';
 
 export interface Call {
@@ -42,17 +45,7 @@ export function fakeWire(answer: Answer = () => undefined) {
 }
 
 /** Sleeping IS advancing: a 30-second deadline finishes in microseconds. */
-export const testClock = (): ShotClock => {
-  let mono = 0;
-  return {
-    now: () => new Date(1_700_000_000_000 + mono),
-    monotonic: () => mono,
-    sleep: async (ms) => {
-      mono += ms;
-      await Promise.resolve();
-    },
-  };
-};
+export const testClock = (): SleepClock => frozenClock(1_700_000_000_000);
 
 export const init = (overrides: Partial<ShotSessionInit> = {}): ShotSessionInit => ({
   name: 'x shot',

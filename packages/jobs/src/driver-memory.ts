@@ -3,7 +3,7 @@
 // real claim/ack/nack paths rather than a mock that always succeeds.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, systemClock, uuidV7 } from '@ultimat3/core';
+import { finiteCount, liveClock, uuidV7 } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { memoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -66,7 +66,7 @@ export interface MemoryJobDriverOptions {
 export type MemoryJobDriver = JobDriver & { close(): Promise<void> };
 
 export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJobDriver {
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock ?? liveClock;
   const stepStore = options.steps ?? memoryStepStore();
   // `SQL_STEP_PUT`'s fence: a write made under a claim lands only while that claim holds the row.
   const steps: StepStore = {

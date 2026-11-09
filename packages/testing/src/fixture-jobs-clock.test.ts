@@ -6,7 +6,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Actor, serviceActor } from '@ultimat3/core';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
-import { backfill, DEFAULT_BACKFILL_RATE, resetJobDriver } from '@ultimat3/jobs';
+import { backfill, DEFAULT_BACKFILL_RATE } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { frozenNow } from './determinism';
 import { type RunJobs, testJobs } from './fixture-jobs';
 

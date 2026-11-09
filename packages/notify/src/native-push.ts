@@ -137,6 +137,7 @@ export function nativePush(options: NativePushOptions): NativePusher {
   const deps = {
     fetch: options.fetch ?? platformFetch,
     env: options.env ?? Bun.env,
+    // Real time: a provider JWT's `iat` is judged by APNs/FCM against their own clocks.
     clock: options.clock ?? systemClock,
     deadlineMs: finiteCount(
       'nativePush()',

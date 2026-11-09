@@ -7,8 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
+import { resetJobDriver } from './adapter';
 import { harness, ORG, RUN_ID } from './backfill-pass-fixture';
-import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
 
 const previous = process.env['ULTIMATE_ENV'];

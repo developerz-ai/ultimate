@@ -1,127 +1,128 @@
 plan: 101-final-hardening-before-v31
 title: "Final hardening before v31: the last big change to Ultimate"
-status: not_started        # not_started | in_progress | blocked | complete | superseded
+status: in_progress        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
-worked_by: ""
+worked_by: "sebi + claude"
 owner: sebi
-percent: 0
-current_focus: "sweep 0: land #1028 and #1029, fix and land #1033, move the major window to v31, CI flakes and speed"
+percent: 55
+current_focus: "sweep 8: slice 21 part A (adapter ports, setter deletions, runtime.ts), testing DX (stubs, factories), DX enforcement"
 slices:
   - file: 28-open-prs.md
     tier: 5
     sweep: "0"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 01-release-policy.md
     tier: 0
     sweep: "0"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 24-ci-gate.md
     tier: 0
     sweep: "0"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 02-core-schema.md
     tier: 0
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 03-db.md
     tier: 1
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 04-storage.md
     tier: 0
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 05-cache.md
     tier: 1
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 06-money-time-seo.md
     tier: 1
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 08-http.md
     tier: 2
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 09-auth.md
     tier: 2
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 10-policy-guard.md
     tier: 0
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 07-entity.md
     tier: 2
     sweep: "3"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 11-action-query.md
     tier: 3
     sweep: "3"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 12-jobs.md
     tier: 3
     sweep: "4"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 13-realtime.md
     tier: 3
     sweep: "4"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 14-render.md
     tier: 4
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 15-ai-mcp.md
     tier: 4
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 16-notify-pwa-scraping.md
     tier: 4
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 25-helm-docker.md
     tier: 5
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 17-cli-runtime.md
     tier: 5
     sweep: "6"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 18-admin-testing.md
     tier: 5
     sweep: "6"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 20-observability.md
     tier: 0
     sweep: "7"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 21-adapter-wiring.md
     tier: 0
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 20
+    notes: "part A in wave D (adapter ports, setter deletions, runtime.ts); part B in sweep 10"
   - file: 19-conformance-suites.md
     tier: 5
     sweep: "9"
@@ -200,13 +201,14 @@ slices:
   - file: 26-infra.md
     tier: 5
     sweep: "18"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 70
+    notes: "F1, F3, F4, F5, F8 merged (infrastructure #2232, #2234, #2236, #2237, #2238); F2 (#2233, the ultimate-social-db image move, ~11 s restart) parked for the owner restart window; F6 and F7 after the v31 rollout"
   - file: 90-owner-steps.md
     tier: 5
     sweep: "18"
     status: not_started
     percent: 0
-evidence: []
+evidence: ["#1035", "#1037", "#1038"]
 notes: "Sweeps 10 (19 part 9b + 21 part B), 13 (23 part 12b) and 15 (29 D10) carry second halves of slices listed above under their first sweep. Adopter letter mapping is off-tree with the owner."
 last_updated: 2026-11-09

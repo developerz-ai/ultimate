@@ -12,6 +12,7 @@ import {
 import type { PgConnection } from './pg-connection';
 import { assertIdentifier } from './pg-identifier';
 import { ensurePublication } from './pg-publication';
+import { awaitSlotReleased } from './pg-slot-release';
 
 /**
  * The four things that are always misconfigured. `wal_level` and the slot produce an unreadable
@@ -48,8 +49,10 @@ export async function preflight(
   await warnChannelIdentity(connection, entities, fullIdentity);
   // `wal_status` in the same statement: `lost` is a slot postgres invalidated, which no restart
   // can stream from — said with its own code, never as the generic failure START_REPLICATION gives.
+  // `active_pid` too: a walsender still on its way out holds the slot, and START_REPLICATION would
+  // refuse a restart right behind it with 55006 (`pg-slot-release.ts`).
   const [existing] = await connection.query(
-    `SELECT plugin, wal_status FROM pg_replication_slots WHERE slot_name = '${slot}'`,
+    `SELECT plugin, wal_status, active_pid FROM pg_replication_slots WHERE slot_name = '${slot}'`,
   );
   if (existing === undefined) {
     // Plain SQL rather than CREATE_REPLICATION_SLOT: the replication command exports a snapshot
@@ -66,6 +69,7 @@ export async function preflight(
     });
   }
   if (existing[1] === 'lost') throw new ReplicationSlotInvalidatedError({ slot });
+  await awaitSlotReleased(connection, slot, existing[2]);
   return 'existing';
 }
 

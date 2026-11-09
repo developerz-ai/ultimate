@@ -3,7 +3,7 @@
 // redacted input and its steps, the tasks, the workers and the search. Zero script on any of them.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { resetJobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AdminApp } from '../admin';
 import { ask, jobsAdmin, type Seeded, seedQueue } from './jobs-fixture';
 

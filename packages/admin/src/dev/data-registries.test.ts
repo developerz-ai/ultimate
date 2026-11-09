@@ -11,16 +11,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { registerDependent, unregisterDependent } from '@ultimat3/cache';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
-import {
-  job,
-  memoryJobDriver,
-  resetJobDriver,
-  resetJobs,
-  resetTasks,
-  setJobDriver,
-  t,
-  task,
-} from '@ultimat3/jobs';
+import { job, memoryJobDriver, resetJobs, resetTasks, t, task } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { clearRoutes, defineRoute, registerMountedRoutes, registerRoute } from '@ultimat3/render';
 import { defaultDevSources } from './data';
 
@@ -38,7 +30,7 @@ beforeAll(() => {
   resetJobs();
   resetTasks();
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterAll(async () => {
@@ -295,7 +287,7 @@ describe('queues() and jobRuns()', () => {
       expect(noRuns).toBeUltimateError('X_NOT_IMPLEMENTED');
       expect((noQueues as { cause: string }).cause).toContain('jobs');
     } finally {
-      setJobDriver(driver);
+      installJobDriver(driver);
     }
   });
 });

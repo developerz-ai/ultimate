@@ -33,7 +33,7 @@ await commentPosted.enqueue({ params: { postId, orgId, author } });
 
 ## The stores
 
-`setNotifyStores({ ledger, inbox, digest, preferences })` once at boot, whole-object replacement:
+`notifyStores: { ledger, inbox, digest, preferences }` in `export const runtime = { … }` (`apps/<app>/runtime.ts`), installed once by the boot, whole-object replacement (a test: `installNotifyStores` from `@ultimat3/notify/adapter`):
 
 | Store | Default | Postgres |
 |---|---|---|

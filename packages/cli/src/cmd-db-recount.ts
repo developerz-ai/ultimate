@@ -12,6 +12,7 @@ import {
 } from '@ultimat3/db';
 import { countersOf, describeCounter, getEntity } from '@ultimat3/entity';
 import { loadApp } from './app-load';
+import { loadAppRuntime } from './app-runtime';
 import type { CommandContext } from './command';
 import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
 import { BadFlagError } from './errors';
@@ -19,6 +20,7 @@ import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagBool } from './parse';
 import { resolveServices } from './runtime-bindings';
+import { installBootPorts } from './runtime-boot-ports';
 import { startDb } from './runtime-queue';
 import { quoteArg } from './shell-quote';
 
@@ -54,7 +56,20 @@ function counterNamed(target: string) {
   return { parent, counter: describeCounter(counter) };
 }
 
+/**
+ * `runtime.ts`'s boot ports first: `loadApp` evaluates the app's modules, and one that seals or
+ * reads a secret at module scope must see the app's own source and clock (`runtime-boot-ports.ts`).
+ */
 export async function runRecountCommand(ctx: CommandContext, root: string): Promise<CommandResult> {
+  const booted = await installBootPorts(await loadAppRuntime(root));
+  try {
+    return await recount(ctx, root);
+  } finally {
+    for (const release of booted.reverse()) await release();
+  }
+}
+
+async function recount(ctx: CommandContext, root: string): Promise<CommandResult> {
   const target = ctx.args.positionals[0];
   if (target === undefined) return refuse('', 'is missing: name the counter as <entity>.<column>');
   const { findings } = await loadApp(root);

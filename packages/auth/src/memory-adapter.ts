@@ -2,7 +2,7 @@
 // database exists and the one every test in this package runs against — the same interface
 // Postgres and Better Auth implement, so a flow that works here works there or the seam is wrong.
 
-import { type Clock, systemClock, timingSafeEqual } from '@ultimat3/core';
+import { type Clock, liveClock, timingSafeEqual } from '@ultimat3/core';
 import type {
   AuthAccount,
   AuthAdapter,
@@ -68,9 +68,9 @@ export class MemoryAuthAdapter implements AuthAdapter {
   /**
    * The clock every instant this adapter stamps comes from — one argument, because a stamp is a
    * fact about WHEN a call happened and a test that cannot move it can only assert a range.
-   * Defaults to `systemClock`, so `memoryAuthAdapter()` is what it always was.
+   * Defaults to the `clock` port (`liveClock`, read per call), so `installClock` reaches it.
    */
-  constructor(clock: Clock = systemClock) {
+  constructor(clock: Clock = liveClock) {
     this.#clock = clock;
   }
 
@@ -370,6 +370,6 @@ export class MemoryAuthAdapter implements AuthAdapter {
  * The one way to build the in-memory adapter — the twin of `postgresAuthAdapter()`. The class is a
  * type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
  */
-export function memoryAuthAdapter(clock: Clock = systemClock): MemoryAuthAdapter {
+export function memoryAuthAdapter(clock: Clock = liveClock): MemoryAuthAdapter {
   return new MemoryAuthAdapter(clock);
 }

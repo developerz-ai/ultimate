@@ -10,11 +10,12 @@
 import { beforeEach, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
-import { resetJobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { t } from '@ultimat3/schema';
+import { installMailDriver, resetMailDriver } from './adapter';
 import { blocks } from './blocks';
 import type { MailDriver } from './driver';
-import { memoryMailDriver, resetMailDriver, setMailDriver } from './driver';
+import { memoryMailDriver } from './driver';
 import { type MailFetch, resendMailDriver } from './driver-resend';
 import { smtpMailDriver } from './driver-smtp';
 import { mailIdempotencyKey } from './idempotency';
@@ -150,7 +151,7 @@ function codeOf(value: unknown): string {
 
 /** `<driver name>:<verdict>`, so a failing expectation names which side moved. */
 async function outcome(driver: MailDriver, name: string): Promise<string> {
-  setMailDriver(driver);
+  installMailDriver(driver);
   const verdict = await send(parityMail, { name }, { to: TO, locale: 'en', sync: true }).then(
     () => 'ok',
     (error: unknown) => codeOf(error),

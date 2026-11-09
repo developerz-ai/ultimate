@@ -5,11 +5,10 @@
 // the attempt with nobody holding a handle to it.
 
 import { describe, expect, test } from 'bun:test';
-import { structuredLogger } from '@ultimat3/core';
+import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
-import { testScrapeClock } from './clock';
 import type { SessionInit } from './driver';
 import { localBrowser, remoteBrowser } from './driver-cdp';
 
@@ -60,7 +59,7 @@ const init = (over: Partial<SessionInit> = {}): SessionInit => ({
   name: 'orders',
   logger: structuredLogger({ writer: () => undefined }),
   rules: { allowHosts: ['shop.test'] },
-  clock: testScrapeClock(),
+  clock: frozenClock(),
   timeoutMs: 1_000,
   ...over,
 });

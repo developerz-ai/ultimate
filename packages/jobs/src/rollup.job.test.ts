@@ -14,8 +14,8 @@ import {
   timestamp,
   uuid,
 } from '@ultimat3/entity';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { ClaimedJob, JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { DriverUnavailableError } from './errors';
 import { executeJob } from './execute';
@@ -126,7 +126,7 @@ beforeEach(() => {
   likesTable = tableFor(likes, memoryRepo(likes, []));
   dailyTable = tableFor(daily, memoryRepo(daily, []));
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
   failOn = undefined;
   atFailure = undefined;
 });

@@ -6,10 +6,11 @@
 // stale `jobs.driver` in `app.config.ts` is refused by `defineConfig` (25.0.0; it was read by
 // nothing since 5.0.0). `postgresJobDriver`, `redisJobDriver` and `memoryJobDriver` are the three
 // that exist — 25.0.0 deleted the all-throw `redis` and `nats` stubs, and #710 built the Redis one
-// for real. Swapping the driver is `setJobDriver(other)` and ZERO job-code change, and that
-// is what the interface buys.
+// for real. Swapping the driver is `jobs: other` in `apps/<app>/runtime.ts` and ZERO job-code
+// change, and that is what the interface buys.
 
 import { assert, finiteCount, finiteOption } from '@ultimat3/core';
+import { adapterSlot } from '@ultimat3/core/adapter';
 import type { BackfillLedger } from './backfill-ledger';
 import { ClaimQueuesEmptyError } from './errors';
 import type { JobIntrospection, JobProgress } from './introspection';
@@ -381,15 +382,20 @@ export interface JobDriver {
 export const DEFAULT_QUEUE = 'default';
 export const DEFAULT_VISIBILITY_TIMEOUT_MS = 30_000;
 
-let ambient: JobDriver | undefined;
+/** The installed queue: a stack, so boots and tests release in any order (`adapterSlot`). */
+const slot = adapterSlot<JobDriver | undefined>(() => undefined);
 
-/** Set once at boot over the database binding, never a config key. One instance per process. */
-export function setJobDriver(driver: JobDriver): void {
-  ambient = driver;
+/**
+ * The boot's installer (its release removes THIS install only, in any order — `adapterSlot`), on `@ultimat3/jobs/adapter` and never the `.` barrel: an app swaps the queue
+ * with `jobs:` in `apps/<app>/runtime.ts` (`RuntimeOverrides`), and a test with `@ultimat3/testing`.
+ * One instance per process, never a config key.
+ */
+export function installJobDriver(driver: JobDriver): () => void {
+  return slot.install(driver);
 }
 
 export function jobDriver(): JobDriver | undefined {
-  return ambient;
+  return slot.current();
 }
 
 /**
@@ -398,7 +404,7 @@ export function jobDriver(): JobDriver | undefined {
  * same bun process silently enqueues where it meant to run inline.
  */
 export function resetJobDriver(): void {
-  ambient = undefined;
+  slot.reset();
 }
 
 /**

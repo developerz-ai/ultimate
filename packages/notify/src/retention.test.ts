@@ -3,6 +3,7 @@
 // zero and silent, because a boot that never configured retention has made a decision.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { installNotifyStores, resetNotifyStores } from './adapter';
 import { memoryDigestStore } from './digest';
 import type { PostgresDigestStore } from './digest-pg';
 import { memoryInboxStore } from './inbox';
@@ -10,7 +11,6 @@ import type { InboxPurgeBefore, PostgresInboxStore } from './inbox-pg';
 import { memoryDeliveryLedger } from './ledger';
 import type { PostgresDeliveryLedger } from './ledger-pg';
 import { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from './retention';
-import { resetNotifyStores, setNotifyStores } from './stores';
 
 const AT = new Date('2026-08-24T09:00:00Z');
 
@@ -36,7 +36,7 @@ afterEach(() => resetNotifyStores());
 
 describe('unit · notify retention seam', () => {
   test('no inbox installed sweeps nothing and does not throw', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     expect(await purgeNotifyInbox({ read: AT })).toBe(0);
   });
 
@@ -44,27 +44,27 @@ describe('unit · notify retention seam', () => {
   // inbox is a heap map bounded by process life. Reaching for a method it does not have is a
   // `TypeError` inside the hourly sweep, which would take the other four targets down with it.
   test('a memory inbox sweeps nothing and does not throw', async () => {
-    setNotifyStores({ inbox: memoryInboxStore() });
+    installNotifyStores({ inbox: memoryInboxStore() });
     expect(await purgeNotifyInbox({ read: AT, unread: AT })).toBe(0);
   });
 
   test('a purgeable inbox is handed both cutoffs verbatim', async () => {
     const calls: InboxPurgeBefore[] = [];
-    setNotifyStores({ inbox: purgeableInbox(calls) });
+    installNotifyStores({ inbox: purgeableInbox(calls) });
     expect(await purgeNotifyInbox({ read: AT })).toBe(7);
     expect(calls).toEqual([{ read: AT }]);
   });
 
-  // The default ledger is the MEMORY one — `setNotifyStores({})` installs it rather than leaving
+  // The default ledger is the MEMORY one — `installNotifyStores({})` installs it rather than leaving
   // the seam empty — so this is the state every app that never wired Postgres notify is in.
   test('the default memory ledger sweeps nothing', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     expect(await purgeNotifyDeliveries(AT.getTime())).toBe(0);
   });
 
   test('a purgeable ledger is handed the caller clock', async () => {
     const calls: number[] = [];
-    setNotifyStores({ ledger: purgeableLedger(calls) });
+    installNotifyStores({ ledger: purgeableLedger(calls) });
     expect(await purgeNotifyDeliveries(AT.getTime())).toBe(3);
     expect(calls).toEqual([AT.getTime()]);
   });
@@ -74,15 +74,15 @@ describe('unit · notify retention seam', () => {
   // share the name but is not callable is not a store this can sweep either.
   test('a foreign store carrying a non-function of the same name is not swept', async () => {
     const notAMethod = { ...memoryInboxStore(), purgeBefore: 'soon' };
-    setNotifyStores({ inbox: notAMethod as unknown as PostgresInboxStore });
+    installNotifyStores({ inbox: notAMethod as unknown as PostgresInboxStore });
     expect(await purgeNotifyInbox({ read: AT })).toBe(0);
   });
 
   // A window whose flush dead-lettered, on a slot that never digests again, is drained by nobody.
   test('no digest store or a memory one sweeps nothing; a Postgres one gets the caller clock', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     expect(await purgeNotifyDigests(AT.getTime())).toBe(0);
-    setNotifyStores({ digest: memoryDigestStore() });
+    installNotifyStores({ digest: memoryDigestStore() });
     expect(await purgeNotifyDigests(AT.getTime())).toBe(0);
 
     const calls: number[] = [];
@@ -94,7 +94,7 @@ describe('unit · notify retention seam', () => {
         return Promise.resolve(4);
       },
     };
-    setNotifyStores({ digest: store });
+    installNotifyStores({ digest: store });
     expect(await purgeNotifyDigests(AT.getTime())).toBe(4);
     expect(calls).toEqual([AT.getTime()]);
   });

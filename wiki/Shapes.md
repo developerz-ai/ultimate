@@ -42,7 +42,7 @@ scaffold's: `bunx x g --help`.
 |---|---|---|
 | `X_NEW_SHAPE_UNKNOWN` | `--shape` names no shape | `bunx @ultimat3/cli help new` lists them |
 | `X_NEW_SHAPE_CONFLICT` | `--shape` with `--no-example` | drop `--no-example`: a shape is its own example |
-| `X_NEW_SHAPE_GENERATE_FAILED` | a generator the shape runs in the new app (`dashboard`: `x g sign-in --password`) refused or failed | the `cd … && bunx x g … --json` it prints reproduces it; the framework's bug, so `bun test packages/cli/src/templates/shapes` |
+| `X_NEW_SHAPE_GENERATE_FAILED` | a generator the shape runs in the new app (`dashboard`: `x g sign-in --password`) refused or failed | the `cd … && bunx x g … --json` it prints reproduces it; the framework's bug, so `bun test ./packages/cli/src/templates/shapes` |
 
 The first two refuse before a file is written, `--dry-run` included. A shape whose capability a
 generator owns runs that generator after its files land (`ShapeOverlay.generate`), never a copy of
@@ -52,7 +52,7 @@ its output: `--dry-run` lists those runs under `data.generate`.
 
 | Proof | Where |
 |---|---|
-| file set, leave-outs, no provider, every path `CLAUDE.md` names is written | `bun test packages/cli/src/templates/shapes` |
+| file set, leave-outs, no provider, every path `CLAUDE.md` names is written | `bun test ./packages/cli/src/templates/shapes` |
 | each shape typechecks, lints and meets the error contract as written | the `x new --shape <shape>` variants in `packages/cli/src/scaffold-fixture.ts`, read by `emitted-contract`, `emitted-routes`, `emitted-suites` and `scaffold-typecheck.contract` |
 | `bun run setup && bun run verify` green on the first pass, then again over every generator | `scaffold-smoke` in `.github/workflows/ci.yml`, one row per shape — `scripts/ci-workflow-shape.test.ts` refuses a shape with no row |
 

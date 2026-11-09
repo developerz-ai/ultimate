@@ -24,7 +24,8 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./adapter": "./src/adapter.ts"
   },
   "sideEffects": [
     "./src/errors.ts"

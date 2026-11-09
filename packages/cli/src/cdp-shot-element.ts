@@ -2,7 +2,8 @@
 // (layout box and hit-test included, which no DOM-only check can see), and the poll that waits for
 // the first match to reach a state. Two refusals, because they are two questions: the page does
 // not have the element, or it does and something keeps it from being acted on.
-import type { ActionabilityState, ElementSnapshot, ShotClock } from './browser-launcher-port';
+import type { SleepClock } from '@ultimat3/core';
+import type { ActionabilityState, ElementSnapshot } from './browser-launcher-port';
 import { ShotElementMissingError, ShotElementUnreadyError } from './cdp-shot-errors';
 
 /** JSON text, so the answer has one deserialiser: `parseSnapshots` below. */
@@ -108,7 +109,7 @@ export interface ReadyWait {
   readonly selector: string;
   readonly state: ActionabilityState;
   readonly timeoutMs: number;
-  readonly clock: ShotClock;
+  readonly clock: SleepClock;
   /** Re-read on every poll: never a handle captured before the loop. */
   readonly snapshot: () => Promise<ElementSnapshot | undefined>;
   readonly url: () => string;

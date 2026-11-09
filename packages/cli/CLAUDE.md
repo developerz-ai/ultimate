@@ -5,7 +5,7 @@ dashboard), `cli → testing` (islands, the e2e step, `x shot`'s `launchChrome`)
 this except `create-ultimate`. The reasoning behind every rule below, verbatim and dated, is
 [`docs/history/cli.md`](../../docs/history/cli.md); where the two disagree this file wins.
 
-Commands: `bun test packages/cli` (from the repo root: the preload),
+Commands: `bun test ./packages/cli/` (repo root: the preload),
 `bunx tsc --noEmit -p packages/cli/tsconfig.json`.
 
 ## Rules
@@ -48,10 +48,11 @@ Commands: `bun test packages/cli` (from the repo root: the preload),
 | `coverage-floor.ts` / `coverage-lcov.ts` / `coverage-source.ts` / `verify-coverage-run.ts` | an APP's `unit` step holds `coverage` in `x.verify.json` over its whole source tree, in fixed slices, never `--parallel --coverage`; `coverage-lcov.ts` is the ONE lcov reader. Full rule: `docs/history/cli.md` |
 | `verify-deadline.ts` / `verify-stalled.ts` / `verify-progress.ts` | a step past its deadline is `X_VERIFY_STEP_TIMEOUT`: its children carry `ULTIMATE_VERIFY_STEP` and are killed by that tag; the finding names the test file `bun test` had not finished. Full rule: `docs/history/cli.md` |
 | `load-findings.ts` | module-load failures are reported once, by `manifest`; other steps point there |
+| `verify-factories.ts` | `unit` lints `<app>/packages/db/factories.ts` (`X_TEST_FACTORY_INVALID`) |
 | `boundary-findings.ts` / `app-boundaries.ts` / `boundary-cuts.ts` / `package-boundaries.ts` | `package-boundaries.ts`: `X_BOUNDARY_PACKAGE_TO_APP`, its own read of `packages/`, never `readAppSources`. surface + layer rules; a finding's `fix:` is the concrete cut |
 | `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport. Never a `guards/` file: an app must not be able to delete it. Full rule: `docs/history/cli.md` |
 | `guards.ts` / `guard-sources.ts` | an app's `guards/*.ts`, discovered, run on `boundaries`, held to the error contract; every `check(root, sources)` shares ONE walk, read and Sass compile per file (`GuardSources`) |
-| `templates/scaffold-guards.ts` | `SHIPPED` — the one list of the twenty-one shipped guards: `x new` writes all, `x g guard <name>` writes one, `doctor-guards.ts` lists the ones an app lacks (a listing, never a finding). Full rule: `docs/history/cli.md` |
+| `templates/scaffold-guards.ts` | `SHIPPED`, the one list of the twenty-one shipped guards: `x new` writes all, `x g guard <name>` one, `doctor-guards.ts` lists the missing (never a finding). Full rule: `docs/history/cli.md` |
 | `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file |
 | `workspace-checks.ts` / `test-only-shipped.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize`. Full rule: `docs/history/cli.md` |
 | `app-permissions.ts` / `permission-grants.ts` / `app-permissions-borrowed.ts` / `app-permissions-site.ts` | `policy`: every permission granted or required is declared and granted (`X_PERMISSION_UNGRANTED`, `X_PERMISSION_BORROWED`). Full rule: `docs/history/cli.md` |
@@ -104,13 +105,13 @@ Commands: `bun test packages/cli` (from the repo root: the preload),
 |---|---|
 | `serve.ts` / `serve-boot.ts` / `serve-entry.ts` / `serve-env.ts` | the production entry: roles from `ROLE`, bindings from env, `ROLE=migrate` = `x db migrate`; a module that fails to load stops it (`X_APP_MODULE_LOAD_FAILED`) |
 | `role-load.ts` / `document-graph.ts` / `serve-web.ts` | a role imports what it runs: `ROLE_LOADS`, verified against `x.manifest.json` (`X_ROLE_LOAD_INCOMPLETE` imports everything); `serve-web.ts` behind `await import()`. Full rule: `docs/history/cli.md` |
-| `module-imports.ts` | the files a module's source imports, resolved once for both graphs: `referenced` (reload) and `evaluated` (document) |
-| `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` | `x dev`: the command (`cmd-dev.ts`, re-exports `startDev`); the boot — every role in one process, `/_x`, the watcher (`dev-boot.ts`); one save rebuilt as one generation (`dev-rebuild.ts`) |
-| `runtime-bindings.ts` | which service each binding points at (embedded or external); events follow `realtime.transport` / `urlEnv` |
+| `module-imports.ts` | a module's imports, resolved once for both graphs: `referenced` (reload), `evaluated` (document) |
+| `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` | `x dev`: the command (re-exports `startDev`); the boot — every role in one process, `/_x`, the watcher; one save rebuilt as one generation (`dev-rebuild.ts`) |
+| `runtime-bindings.ts` | which service each binding points at (embedded or external); events follow `NATS_URL` |
 | `runtime-queue.ts` / `runtime-services.ts` / `runtime-bus.ts` | db + queue; every other accessor; the bus |
 | `framework-schema-apply.ts` / `framework-schema-stamp.ts` | the framework tables: `ROLE=migrate`, `x dev` and every CLI command APPLY them in one transaction behind `MIGRATION_LOCK_KEY` (`pg_advisory_xact_lock`) with a bounded `lock_timeout`. Full rule: `docs/history/cli.md` |
 | `runtime-isr.ts` | the ISR controller both boots serve through, ATTACHED to `invalidateTags` and released on stop (`attachedIsr`); `appRoutes` without one builds and attaches its own |
-| `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` | boot warnings an operator can act on: unsealed MFA secrets (web role, `x auth seal-mfa`), a per-process idempotency store after the app loaded |
+| `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` | boot warnings: unsealed MFA secrets (web role, `x auth seal-mfa`), a per-process idempotency store after the app loaded |
 | `app-config-load.ts` | the ONE reader of an app's `app.config.ts`: `loadAppConfig(root)` — the `config` export through core's `defineConfig`, so validated and default-merged; `undefined` with no file; no `config` object is `X_CONFIG_INVALID`. Full rule: `docs/history/cli.md` |
 | `theme-brand.ts` | the ONE reader of an app's theme: `export const brand` in `apps/web/shared/theme.ts` (ui's `defineTheme`), inlined after the surface stylesheet with its hash in `style-src`; none → nothing emitted |
 | `runtime-jobs.ts` / `runtime-realtime.ts` / `runtime-notify-retention.ts` / `runtime-cache.ts` / `runtime-purge.ts` / `runtime-replica.ts` | `app.config.ts` sections the boot obeys (`*Of(config)` over the one loaded config), and what each wires |
@@ -122,7 +123,7 @@ Commands: `bun test packages/cli` (from the repo root: the preload),
 | `runtime-render.ts` / `runtime-render-document.ts` / `runtime-isr-outcome.ts` / `route-islands.ts` / `runtime-assets.ts` / `runtime-storage.ts` / `runtime-hooks.ts` / `api-routes.ts` | the HTTP surface: pages, `/icons` + `/media`, `/_storage`, authz, the app's API, bearer mounts and pages' bound `POST`s, mounted by BOTH boots. `isr` and `static` render as nobody. Full rule: `docs/history/cli.md` |
 | `client-{errors,vitals}-*.ts` | `clientErrors` (and `.vitals`): the script on `app/` (vitals: listed) documents, its `POST` route, mounted by BOTH boots. Full rule: `docs/history/cli.md` |
 | `retained-assets.ts` / `-layout.ts` / `-sweep.ts` / `-read.ts` / `-boot.ts` | `assets.retain`: the web boot publishes this build's hashed files before `/readyz`; `withRetainedAssets` answers an assets 404 a retained manifest names. `x dev` never wraps. Full rule: `docs/history/cli.md` |
-| `runtime-overrides.ts` | the one field a host hands the framework a driver through — and `routes`, the plain routes for a wire format no primitive speaks (OAuth token endpoint); a webhook receiver needs no line here |
+| `runtime-overrides.ts` / `runtime-ports.ts` / `runtime-port-bindings.ts` | `runtime.ts`: a field per `ADAPTER_PORTS` row, installed by ONE loop or read where used; unbound row = build error. Plus `routes`. `docs/history/cli-adapter-ports.md` |
 | `plain-routes.ts` | the plain routes both boots mount and `x routes` lists: `runtime.routes`, then every declared `webhookReceiver()`'s, each once |
 | `app-openapi.ts` | `openapi.json` (complete when `defineApi({ openapi })` is declared) and each bearer mount's own document; staleness for all of them |
 | `script-csp.ts` / `style-csp.ts` / `style-bundle.ts` / `page-sync.ts` / `worker-bundle.ts` | CSP hashes, the CSS file, the page's sync target and worker |

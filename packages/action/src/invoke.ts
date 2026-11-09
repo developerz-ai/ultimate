@@ -31,6 +31,7 @@ import {
 import { statusFor } from '@ultimat3/http';
 import { maskSensitive } from '@ultimat3/schema';
 import type { AnyAction, AnyActionDef, InvokeOptions } from './action';
+import { declarationOf, drainsItsHandler } from './action-stream';
 import type { AuditRecord } from './audit';
 import {
   auditFailureFor,
@@ -42,6 +43,8 @@ import {
 import { bustAfterCommit } from './cache-gate';
 import { judgedHandler } from './declared-errors';
 import { ActionForeignError, ActionUnregisteredError } from './errors';
+import type { HandlerOverride } from './handler-override';
+import { handlerOverrideOf, setHandlerOverride } from './handler-override';
 import { getIdempotencyStore, withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
 import { drawMeter } from './meter-gate';
@@ -83,6 +86,15 @@ const HANDLER_REACHED = new WeakMap<AnyActionDef, number>();
 /** Starts of `target`'s handler so far, across every surface. Off the barrel on purpose. */
 export function handlerReached(target: AnyAction): number {
   return HANDLER_REACHED.get(defOf(target)) ?? 0;
+}
+
+/**
+ * A test double where `target`'s `handle` is, on every surface — policy, rate limit, input parse,
+ * meter, idempotency and output parse still run. `undefined` restores the declared handler. On
+ * `@ultimat3/action/adapter` only: `@ultimat3/testing`'s `stub()` is its caller.
+ */
+export function overrideHandler(target: AnyAction, handle: HandlerOverride | undefined): void {
+  setHandlerOverride(declarationOf(defOf(target)), handle);
 }
 
 /** Projections need a stable name; an unregistered action has none yet. */
@@ -359,7 +371,9 @@ async function perform(
     HANDLER_REACHED.set(def, (HANDLER_REACHED.get(def) ?? 0) + 1);
     // Read here, not closed over: under a key this runs in `runToCompletion`'s scope, and a handler
     // passing the outer `ctx.signal` onward would fail its vendor call and settle a failure.
-    const produced = await judgedHandler(def, name, () => def.handle({ input, ctx: useContext() }));
+    const override = drainsItsHandler(def) ? undefined : handlerOverrideOf(def);
+    const handle = override ?? def.handle.bind(def);
+    const produced = await judgedHandler(def, name, () => handle({ input, ctx: useContext() }));
     return validateOutput(def.output, produced, name);
   };
   // The meter is drawn LAST before the handler, on every surface `surface: 'server'` included: a

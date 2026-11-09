@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 // Every tracked app's own `x verify`, built first, run as a BLOCKING check on this repo —
-// `examples/dummy` and the deployed `dummy/social-media-clone`. A ratchet rather
+// `examples/dummy`, the deployed `dummy/social-media-clone` and `dummy/docs-site`. A ratchet rather
 // than a pass/fail: every step passing today must keep passing, every step pinned in that app's
 // `expectedRed` must still be failing, and the moment an app's `typecheck` comes off the pin it
 // has to join the root `tsc -b` solution. Red never becomes the resting state.
@@ -9,8 +9,8 @@
 //   bun run scripts/reference-app-gate.ts [--app <dir>] [--jobs N] [--json]   # --app: one app, its own CI runner
 //   bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]   # retained for future pins
 //
-// As of 2026-11, both expectedRed tables are empty and every declared step is asserted;
-// neither tracked app currently has a pin to remove. New red steps remain regressions, not pins.
+// As of 2026-11, all three expectedRed tables are empty and every declared step is asserted;
+// no tracked app currently has a pin to remove. New red steps remain regressions, not pins.
 // The pins live in scripts/lib/gated-apps.ts; this file owns only what the ratchet does with them.
 // `--app` is scripts/lib/app-select.ts and the `--unpin` edit is scripts/reference-app-unpin.ts.
 

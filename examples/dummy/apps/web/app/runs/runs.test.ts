@@ -6,11 +6,11 @@
  */
 
 import { driver } from '@postly/db';
-import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, noWaitClock, runWithContext, userActor } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 import type { JobDriver, JobRecord } from '@ultimat3/jobs';
 import { jobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
-import { noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
 import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, describe, expect, test, testName } from '@ultimat3/testing';
 import { answerPrompt } from './actions/answer-prompt';
@@ -98,14 +98,16 @@ const until = async <T>(ready: () => Promise<T | null>): Promise<T> => {
 const statusOf = async (runId: string) => (await connectedAs(() => repo.runById(runId)))?.status;
 
 describe(testName('unit', 'one run per connection'), () => {
+  // The ambient clock's install answers its own undo.
+  let releaseClock = (): void => {};
   beforeEach(() => {
     defineStorage({ disks: { sessions: memoryStorageDriver() } });
     // A parked run looks for its answer once per turn of the event loop, never once per 250 ms.
-    setScrapeClock(noWaitClock);
+    releaseClock = installClock(noWaitClock);
   });
 
   afterEach(() => {
-    resetScrapeClock();
+    releaseClock();
     resetStorage();
     driver.reset?.();
   });

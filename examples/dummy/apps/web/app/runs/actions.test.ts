@@ -3,7 +3,8 @@
 // each says when there is no queue to ask.
 import { driver } from '@postly/db';
 import { ctxOf, runWithContext } from '@ultimat3/core';
-import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { jobDriver, memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, expect, unitTest } from '@ultimat3/testing';
 import { answerPrompt } from './actions/answer-prompt';
@@ -24,11 +25,14 @@ const admin = testActor('admin', { orgId: ORG, permissions: grants }).actor;
 const writer = testActor('writer', { orgId: ORG, permissions: ['run:read', 'run:write'] }).actor;
 const elsewhere = testActor('elsewhere', { orgId: OTHER_ORG, permissions: grants }).actor;
 
-const previous = jobDriver();
+// Each install answers its own undo; undone newest first, the file ends on what it started with.
+const releases: (() => void)[] = [];
+const useMemoryQueue = (): void => {
+  releases.push(installJobDriver(memoryJobDriver()));
+};
 
 afterEach(() => {
-  if (previous === undefined) resetJobDriver();
-  else setJobDriver(previous);
+  for (const release of releases.splice(0).reverse()) release();
   driver.reset?.();
 });
 
@@ -73,7 +77,7 @@ unitTest('a started run is queued with ids: the exit stays on the connection row
   const exit = 'http://session-41:hunter2hunter2@exit-7.example:8080';
   const input = { orgId: ORG, label: 'Ledger', credential: 'hunter2-hunter2', exit };
   const made = await connectSite.as(writer, input);
-  setJobDriver(memoryJobDriver());
+  useMemoryQueue();
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
   const row = await jobDriver()?.introspect?.job(run.jobId);
   // Both ids name the queue row, on whichever path the enqueue took.
@@ -118,7 +122,7 @@ unitTest('a key from another org, or one nobody issued, cannot be revoked', asyn
 
 unitTest('a cancel names its missing queue instead of failing on undefined', async () => {
   const made = await connectSite.as(writer, { orgId: ORG, label: 'Ledger', credential: 'x' });
-  setJobDriver(memoryJobDriver());
+  useMemoryQueue();
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
   resetJobDriver();
   const refused = await cancelRun
@@ -129,7 +133,7 @@ unitTest('a cancel names its missing queue instead of failing on undefined', asy
 
 unitTest('a started run has its own row, queued, naming the job that runs it', async () => {
   const made = await connectSite.as(writer, { orgId: ORG, label: 'Ledger', credential: 'x' });
-  setJobDriver(memoryJobDriver());
+  useMemoryQueue();
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
   const row = await runWithContext(ctxOf({ actor: writer }), () => repo.runById(run.runId));
   expect(row).toMatchObject({
@@ -142,7 +146,7 @@ unitTest('a started run has its own row, queued, naming the job that runs it', a
 });
 
 unitTest('a run nobody started, or another org’s, cannot be cancelled', async () => {
-  setJobDriver(memoryJobDriver());
+  useMemoryQueue();
   const made = await connectSite.as(writer, { orgId: ORG, label: 'Ledger', credential: 'x' });
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
   const theirs = { orgId: OTHER_ORG, runId: run.runId };

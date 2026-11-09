@@ -60,7 +60,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   and never a second table: only the row the statement locks is re-read after a wait. No row back is never an
   admission; a live lockout is never rewritten. Full rule: `docs/history/auth.md`. `PgExecutor` (`@ultimat3/core`'s, re-exported) is structural:
   the pool is the host's.
-- **`configureAuthLimiters` is the HOST's install point and takes a FACTORY**, called with the
+- **`installAuthLimiters` is the HOST's install point and takes a FACTORY** — on
+  `@ultimat3/auth/adapter` (`adapter-subpath.ts`) with `installTotpReplay`, never `.` (v31), called with the
   RESOLVED policy once per bucket; the comparison still runs on what comes back. Precedence:
   `config.limiter` → the installed factory → `memoryAuthLimiter`. `installedAuthLimiter` and
   `installedLimiterCount()` are NOT in `src/index.ts`. `purgeAuthLimits()` sweeps only the
@@ -194,7 +195,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   never reaches `cause:`/`fix:`. No length floor beyond one byte.
 - **`TotpReplayGuard` is one atomic `claim(subject, step, at): Promise<boolean>`**; a rejection is
   no verdict (`attempt.release()`, rethrown). Precedence: `config.totpReplay` →
-  `configureTotpReplay`'s factory → memory. `postgresTotpReplayGuard`: `x_totp_steps`, one
+  `installTotpReplay`'s factory → memory. `postgresTotpReplayGuard`: `x_totp_steps`, one
   `on conflict do nothing`; `purgeExpired(nowMs)` keeps slack past the drift.
 - **`memoryTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
   whose steps are all below the drift floor are forgotten first; past `DEFAULT_MAX_TOTP_SUBJECTS`,
@@ -216,6 +217,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
+| `adapter-subpath.ts` | `@ultimat3/auth/adapter`: the `authLimiter`/`totpReplay`/`authServerStore` port types and the two installers |
 | `builtin-adapter-violation.ts` | a Postgres unique violation on an auth table → `authUniqueViolation` |
 | `rate-limit.ts` | per-ip, per-account and per-org buckets as reservations, lockout, scope check, `loginFailed()` |
 | `login-attempt.ts` | one attempt's reservations across the three buckets, taken before the check and settled after it |
@@ -254,7 +256,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `client-scope.ts` | `clientScopeOf(actor)`, the OPAQUE id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`, else a per-process key and one warning) over kind, id, impersonator; `''` anonymous |
 
 ```bash
-bun test packages/auth
+bun test ./packages/auth/
 bun run --filter @ultimat3/auth typecheck
 ```
 

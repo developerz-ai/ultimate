@@ -147,7 +147,7 @@ Tier ${tier}. May import tiers ${allowedTiersFor(tier)}. Never sideways, never u
 | Errors | \`src/errors.ts\`, subclass \`UltimateError\`, never a bare \`Error\` |
 | Files | one responsibility each, < 200 lines, tests beside the source |
 
-Commands: \`bun test\`, \`bunx tsc --noEmit -p tsconfig.json\`.
+Commands: \`bun test ./packages/${name}/\` (the \`./\` matters: a bare path is a substring filter), \`bunx tsc --noEmit -p tsconfig.json\`.
 `,
     },
     {

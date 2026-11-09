@@ -12,7 +12,7 @@ import { providerGateway } from './gateway';
 import { FIXTURE_MODEL } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { GenerateRequest, TokenUsage } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ScriptedCall } from './scripted-provider';
 import { scriptedProvider } from './scripted-provider';
 import type { ProjectableAction } from './tools';
@@ -44,7 +44,7 @@ export const PUBLISH: Step = { call: 'publish', input: {} };
 export function scripted(...steps: readonly Step[]): { seen: readonly GenerateRequest[] } {
   const provider = scriptedProvider({ turns: steps, usage: USAGE });
   resetAiRuntime();
-  configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+  installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
   return { seen: provider.seen };
 }
 

@@ -158,7 +158,14 @@ export { clientTransport } from './client-transport';
 export type { WireAnswer } from './client-wire';
 export { FRAMEWORK_CODE, problemOf, retryForStatus, traceHeaders } from './client-wire';
 export { notifyClientWrite, onClientWrite } from './client-writes';
-export { type Clock, type FrozenClock, frozenClock, systemClock } from './clock';
+export {
+  type Clock,
+  type FrozenClock,
+  frozenClock,
+  liveClock,
+  type SleepClock,
+  systemClock,
+} from './clock';
 export type {
   AppConfig,
   AppConfigInput,
@@ -170,7 +177,6 @@ export type {
   NotifyConfig,
   PwaConfigInput,
   RealtimeConfig,
-  RealtimeTransport,
   ThemeConfig,
   ThemeMode,
 } from './config';
@@ -672,7 +678,6 @@ export {
   sentryEvent,
   sentryTransport,
   serviceResource,
-  setFailureStore,
   setLoggerContextFields,
   setLogStream,
   settleFailureCaptures,
@@ -693,7 +698,6 @@ export {
 } from './exports/observability';
 export type {
   MasterKeyRef,
-  MasterKeySource,
   Secret,
   SecretSummary,
   SecretsEnvelope,
@@ -963,12 +967,16 @@ export { RECORDS_OPENAPI_HEADER, recordEnvelopeSchema } from './record-envelope-
 export type { PageClient, RecordSink } from './record-sink';
 export { pageClient } from './record-sink';
 export type {
+  AdapterPort,
+  AdapterPortName,
   ModuleRegistrar,
   PrimitiveFactory,
   PrimitiveKind,
   RegisteredPrimitive,
 } from './registrar';
 export {
+  ADAPTER_PORT_NAMES,
+  ADAPTER_PORTS,
   hasPrimitiveRegistrar,
   PRIMITIVE_FACTORIES,
   PRIMITIVE_KINDS,
@@ -1030,6 +1038,7 @@ export {
 export { onSessionLost, sessionIsLost } from './session-lost';
 export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
 export { singleFlight } from './single-flight';
+export { ambientClock, noWaitClock } from './sleep-clock';
 export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
 export type { StoreMode } from './store-mode';
 export { STORE_MODES, storeMode } from './store-mode';

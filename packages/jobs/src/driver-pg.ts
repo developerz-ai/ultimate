@@ -5,7 +5,7 @@
 // they run against in `driver-pg-ddl.ts`, and the row-to-record decoding in `driver-pg-rows.ts`.
 
 import type { Clock, PgExecutor } from '@ultimat3/core';
-import { finiteCount, renderCauseValue, systemClock, uuidV7 } from '@ultimat3/core';
+import { finiteCount, liveClock, renderCauseValue, uuidV7 } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { listedRunId } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -86,7 +86,7 @@ function resolveExecutor(injected: PgExecutor | undefined): PgExecutor {
     // be "not configured". An executor is injected by the boot or the driver has none.
     cause:
       'postgresJobDriver() was called with no executor, and this driver has no ambient fallback',
-    fix: 'set DATABASE_URL in .env so the boot builds one — x db migrate then x dev — or hand this process a queue with no database: setJobDriver(memoryJobDriver())',
+    fix: 'set DATABASE_URL in .env so the boot builds one — x db migrate then x dev — or hand this process a queue with no database: export const runtime = { jobs: memoryJobDriver() } in apps/<app>/runtime.ts',
   });
 }
 
@@ -201,7 +201,7 @@ function postgresLeaseStore(exec: () => PgExecutor): LeaseStore {
 }
 
 export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDriver {
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock ?? liveClock;
   let executor: PgExecutor | undefined;
   const exec = (): PgExecutor => {
     executor ??= resolveExecutor(options.executor);

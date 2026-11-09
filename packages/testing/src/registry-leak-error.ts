@@ -31,9 +31,16 @@ const FILE_PLACEHOLDER = '<the file the cause names>';
  */
 const DOUBLE_QUOTE_LIVE = /[$`!]/;
 
+/**
+ * A relative path gets `./`: to `bun test` a bare one is a SUBSTRING filter, so
+ * `packages/cli/x.test.ts` also ran `examples/dummy/packages/cli/x.test.ts` under the wrong config.
+ */
+const anchored = (file: string): string =>
+  file.startsWith('/') || file.startsWith('./') || file.startsWith('../') ? file : `./${file}`;
+
 const rerunArg = (file: string): string =>
   isFixShellSafe(file) || !DOUBLE_QUOTE_LIVE.test(file)
-    ? renderFixLiteral(file, FILE_PLACEHOLDER)
+    ? renderFixLiteral(anchored(file), FILE_PLACEHOLDER)
     : `'${FILE_PLACEHOLDER}'`;
 
 /** Every leaked file as `bun test` arguments — one screen, so the fix-shell-arg guard can see it. */

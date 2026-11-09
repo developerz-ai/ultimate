@@ -7,7 +7,7 @@
 //   docker run -d --name x-repl -e POSTGRES_PASSWORD=ultimate -e POSTGRES_USER=ultimate \
 //     -p 5433:5432 postgres:17-alpine -c wal_level=logical
 //   TEST_REPLICATION_URL=postgres://ultimate:ultimate@localhost:5433/postgres \
-//     bun test packages/realtime/src/pg-advisory-lock.live.test.ts
+//     bun test ./packages/realtime/src/pg-advisory-lock.live.test.ts
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { selectChangeFeed } from './changefeed-env';

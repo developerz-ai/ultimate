@@ -176,8 +176,19 @@
  * `core/src/instrument-stacks.ts` — the ref-counted opt-in that makes `db.statement` carry the
  * stack it was sent from (the `statements` fixture names a loop's line by it), split out of
  * `instrument.ts`. No existing module newly reached.
+ * raised 909 → 913, measured 913 (2026-11-09, plan 101 v31 slice 21 W2): `cli/src/runtime-ports.ts`
+ * (the one install loop over `ADAPTER_PORTS`), `cli/src/runtime-port-bindings-queue.ts` (the queue
+ * phase's rows, split so migrate never loads the AI/auth/mail/notify/scraping adapters), and the
+ * `jobs/src/adapter.ts` / `action/src/adapter.ts` entries the queue installers now come from.
+ * raised 913 → 915, measured 915 (2026-11-09, same slice): `cli/src/runtime-boot-ports.ts` and
+ * `core/src/adapter.ts` — `ROLE=migrate` installs `runtime.ts`'s clock and secret source too.
+ * raised 915 → 916, measured 916 (2026-11-09, same slice): `core/src/sleep-clock.ts`, the waiting
+ * `systemClock` core split out of `clock.ts` so a browser bundle never carries `sleep`.
+ * raised 916 → 919, measured 919 (2026-11-09, same wave): `cli/src/runtime-keys.ts` (an unknown
+ * `runtime.ts` key refused at load), core's `adapter-slot.ts` (the shared release-restoring slot)
+ * and auth's `port-clock.ts` (auth reads the ambient clock port).
  */
-export const MIGRATE_CEILING = 909;
+export const MIGRATE_CEILING = 919;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -259,7 +270,7 @@ export const MIGRATE_CEILING = 909;
  * named on `MIGRATE_CEILING`.
  * raised 935 → 936, measured 936 (2026-10-10, channel events from app code):
  * `realtime/src/channel-publish.ts` — `publishChannelEvent` and the process bus the boot installs
- * (`setChannelTransport`), so a job or an action publishes on a declared channel with no hub.
+ * (`installChannelTransport`), so a job or an action publishes on a declared channel with no hub.
  * raised 936 → 938, measured 938 (2026-10-10, #752): the two entity modules named on
  * `MIGRATE_CEILING` for #752, which every role reaches through the entity barrel.
  * raised 938 → 939, measured 939 (2026-10-10, the bus is not a boot dependency of a publisher):
@@ -375,5 +386,15 @@ export const MIGRATE_CEILING = 909;
  * `storage/src/storage-instrument.ts`. No existing module newly reached.
  * raised 1302 → 1303, measured 1303 (2026-11-09, plan 101 v31 wave C gate fix): `MIGRATE_CEILING`'s
  * `core/src/instrument-stacks.ts`. No existing module newly reached.
+ * raised 1303 → 1318, measured 1318 (2026-11-09, plan 101 v31 slice 21 W2): the migrate raise's 4,
+ * then `cli/src/runtime-port-bindings.ts` and the `./adapter` entries every installer now comes from
+ * (`core`, `http`, `mail`, `notify`, `auth`, `realtime`) with the modules they re-export. The AI and
+ * scraping adapters stay behind `await import()`, loaded only when `runtime.ts` supplies one.
+ * raised 1318 → 1319, measured 1319 (2026-11-09, same slice): `cli/src/runtime-boot-ports.ts`, the
+ * one boot-port helper every `runtime.ts` reader shares (`core/src/adapter.ts` was already in).
+ * raised 1319 → 1320, measured 1320 (2026-11-09, same slice): `MIGRATE_CEILING`'s
+ * `core/src/sleep-clock.ts`.
+ * raised 1320 → 1324, measured 1324 (2026-11-09, same wave): `MIGRATE_CEILING`'s 3 (`runtime-keys.ts`,
+ * `adapter-slot.ts`, `port-clock.ts`) plus one serving-only module the wave's peers added.
  */
-export const SERVING_ROLE_CEILING = 1303;
+export const SERVING_ROLE_CEILING = 1324;

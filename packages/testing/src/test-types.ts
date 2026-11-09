@@ -155,7 +155,7 @@ export const hasE2eDriver = (): boolean => e2eDriver !== undefined;
  * Put the seam back. The counterpart `useE2eDriver` shipped without, and the module scope it
  * writes to is process-global: `bun test` shares one process across files, so a file that installs
  * a browser and does not undo it hands every later file an `e2eTest` that opens a page nobody
- * asked for. Same shape and same reason as `@ultimat3/scraping`'s `resetScrapeDriver()`.
+ * asked for. Same shape and same reason as `resetScrapeDriver()` on `@ultimat3/scraping/adapter`.
  */
 export const resetE2eDriver = (): void => {
   e2eDriver = undefined;

@@ -1,5 +1,6 @@
-// Single responsibility: the two ambient things an evaluation needs that the declaration cannot
-// carry — what "now" is, and how often the same overdue flag may report.
+// Single responsibility: how often the same overdue flag may report, and the watermarks that rate
+// limit keeps. "Now" is not this package's: it is core's `ambientClock()`, which the boot fills
+// from `clock` in `apps/<app>/runtime.ts` and a test from `@ultimat3/testing` (v31).
 //
 // The reporter itself is NOT here. `@ultimat3/core`'s `ErrorReporter` is the framework's one
 // error-monitoring seam; a second one in this package would be a second place an app has to wire
@@ -8,7 +9,7 @@
 // caught failure, while a flag is evaluated on every request.
 
 import type { Clock, UltimateError } from '@ultimat3/core';
-import { finiteCount, recordFailureFact, reportError, systemClock } from '@ultimat3/core';
+import { ambientClock, finiteCount, recordFailureFact, reportError } from '@ultimat3/core';
 
 /**
  * One hour. Small enough that an overdue flag shows up the same day, large enough that a flag read
@@ -18,27 +19,36 @@ import { finiteCount, recordFailureFact, reportError, systemClock } from '@ultim
 export const DEFAULT_REPORT_INTERVAL_MS = 60 * 60 * 1000;
 
 export interface FlagsRuntimeOptions {
-  readonly clock?: Clock | undefined;
   /** Minimum gap between two reports of the SAME flag key. */
   readonly reportEveryMs?: number | undefined;
 }
 
-let clock: Clock = systemClock;
 let reportEveryMs = DEFAULT_REPORT_INTERVAL_MS;
 const lastReportedAt = new Map<string, number>();
+/** The clock every watermark in `lastReportedAt` was read from. */
+let watermarkClock: Clock | undefined;
 
 /**
- * Swapping the clock CLEARS the watermarks, because a monotonic reading is only meaningful against
- * the clock that produced it. A process that reported at monotonic 10_000_000 and then took a
- * clock starting at 0 computed `now - previous` as -10_000_000 — below every interval, so that key
- * could never report again until the new clock passed the old one's reading, which on a frozen
- * test clock is never. `resetFlagReporting()` always did this; `configureFlags` is what apps and
- * test kits actually call.
+ * The process clock, and the watermarks forgotten whenever it is a DIFFERENT clock from the one
+ * they were read on: a monotonic reading is only meaningful against the clock that produced it. A
+ * process that reported at monotonic 10_000_000 and then took a clock starting at 0 computed
+ * `now - previous` as -10_000_000 — below every interval, so that key could never report again
+ * until the new clock passed the old one's reading, which on a frozen test clock is never.
  *
- * Only the clock. An interval change re-reads the SAME clock, so clearing there would let a report
- * through on every configure call and turn the rate limit into a suggestion.
- *
- * `reportEveryMs` is screened, and BEFORE the clock is touched so a refused call changes nothing.
+ * Only on a clock change. An interval change re-reads the SAME clock, so clearing there would let
+ * a report through on every configure call and turn the rate limit into a suggestion.
+ */
+export const flagsClock = (): Clock => {
+  const clock = ambientClock();
+  if (clock !== watermarkClock) {
+    lastReportedAt.clear();
+    watermarkClock = clock;
+  }
+  return clock;
+};
+
+/**
+ * `reportEveryMs` is screened, and BEFORE anything is touched so a refused call changes nothing.
  * `now - previous < NaN` is false, so a `NaN` interval — `Number(process.env.X)` on an unset
  * variable — removed the rate limit entirely and an overdue flag reported on every evaluation;
  * `Infinity` did the opposite and muted it for good. `0` stays legal: every evaluation reporting
@@ -49,14 +59,8 @@ export function configureFlags(options: FlagsRuntimeOptions): void {
     options.reportEveryMs === undefined
       ? reportEveryMs
       : finiteCount('configureFlags', 'reportEveryMs', options.reportEveryMs);
-  if (options.clock !== undefined && options.clock !== clock) {
-    clock = options.clock;
-    lastReportedAt.clear();
-  }
   reportEveryMs = interval;
 }
-
-export const flagsClock = (): Clock => clock;
 
 /**
  * Report `build()`'s error through core's seam at most once per `reportEveryMs` for this key, and
@@ -71,7 +75,7 @@ export const flagsClock = (): Clock => clock;
  * happened to evaluate it first.
  */
 export function reportOnce(key: string, build: () => UltimateError): boolean {
-  const now = clock.monotonic();
+  const now = flagsClock().monotonic();
   const previous = lastReportedAt.get(key);
   if (previous !== undefined && now - previous < reportEveryMs) return false;
   lastReportedAt.set(key, now);
@@ -92,7 +96,7 @@ export function recordEvaluation(key: string, on: boolean): boolean {
 
 /** Test-only, and the counterpart to every other reset in the framework. */
 export function resetFlagReporting(): void {
-  clock = systemClock;
+  watermarkClock = undefined;
   reportEveryMs = DEFAULT_REPORT_INTERVAL_MS;
   lastReportedAt.clear();
 }

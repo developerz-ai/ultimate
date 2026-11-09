@@ -6,14 +6,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { ctxOf, frozenClock, runWithContext, UltimateError, userActor } from '@ultimat3/core';
 import type { MemoryJobDriver } from '@ultimat3/jobs';
-import {
-  job,
-  jobWorker,
-  memoryJobDriver,
-  resetJobDriver,
-  resetJobs,
-  setJobDriver,
-} from '@ultimat3/jobs';
+import { job, jobWorker, memoryJobDriver, resetJobs } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AnyQuery } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
@@ -86,7 +80,7 @@ const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf(
 
 beforeEach(() => {
   driver = memoryJobDriver({ clock });
-  setJobDriver(driver);
+  installJobDriver(driver);
   finished = [];
   readers.length = 0;
 });

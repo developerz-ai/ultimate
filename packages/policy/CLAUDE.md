@@ -209,6 +209,6 @@ with 10k watchers is 10k evaluations in one tick. Two consequences, both load-be
 ## Commands
 
 ```
-bun test packages/policy
+bun test ./packages/policy/
 bun run --filter @ultimat3/policy typecheck
 ```

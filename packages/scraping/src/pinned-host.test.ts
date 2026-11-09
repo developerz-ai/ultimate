@@ -3,7 +3,7 @@
 // sealed here and a real lookup would make the suite depend on the machine's DNS.
 
 import { describe, expect, test } from 'bun:test';
-import { testScrapeClock } from './clock';
+import { frozenClock } from '@ultimat3/core';
 import { httpOverFetch, type ScrapeFetchInit } from './http';
 import type { HostResolve } from './pinned-host';
 import { dialTarget } from './pinned-host';
@@ -111,7 +111,7 @@ describe('unit · both legs this package dials pin, and refuse an inward name', 
   const http = (call: ReturnType<typeof recordingFetch>['call'], proxy?: string) =>
     httpOverFetch({
       rules: { allowHosts: ['*'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),

@@ -76,11 +76,11 @@ const numberAt = (reply: unknown, index: number): number | null => {
 };
 
 /**
- * **Install it at boot**, as the Postgres store is:
+ * **Name it in `apps/<app>/runtime.ts`**, the one place a store is chosen:
  *
  * ```ts
  * import { redisClient } from '@ultimat3/core/redis';
- * httpServer({ rateLimitStore: redisRateLimitStore({ client: redisClient() }) });
+ * export const runtime = { rateLimitStore: redisRateLimitStore({ client: redisClient() }) };
  * ```
  *
  * `scope: 'shared'`, so it satisfies `rateLimit: { scope: 'shared' }`. A Redis that is down or

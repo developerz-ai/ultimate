@@ -171,26 +171,20 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Rules — rate limiting
 
-- **An address key is core's `addressNetwork(ip)`**: IPv4 whole, IPv6 its `/64` (v31).
-- **One request spends a LIST of keys**: the caller's and, when `rateLimit.tenantBucket` is declared,
-  `tenant|org:<id>` (not route-scoped); stop at the first refusal; an undeclared name is
-  `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN`. Headers report the bucket closest to refusing.
-- **The memory store is bounded** (`forgetAtMs` sweep, `DEFAULT_MAX_RATE_LIMIT_KEYS`, evicting the
-  entries closest to FULL first — never LRU).
-- **The limiter takes a `Clock`** (`rateLimiter({ clock })`); `deps.limiter` is the one seam.
-- **The scope is DECLARED, with no default**: an enabled limiter without `scope` is
-  `X_RATE_LIMIT_SCOPE_UNSET`; `assertRateLimitScope` (in `httpPipeline`) refuses `'shared'` over a
-  per-process store (`X_RATE_LIMIT_NOT_SHARED`). Install through `httpServer({ rateLimitStore })`.
-- **A failed `auth: 'required'` is metered in the `auth` stage**. Full rule: `docs/history/http.md`.
-- **`redisRateLimitStore({ client })`**: one Lua bucket, tokens as a string, expires at full; degrades as Postgres does (+ `ERR_REDIS_CONNECTION_CLOSED`). `rate-limit-redis.live.test.ts`.
-- **`postgresRateLimitStore({ executor })` is the shared store**, over `@ultimat3/core`'s structural
-  `PgExecutor` (re-exported here). The
-  refill expression is repeated inside `on conflict do update` on purpose; `spent` is a stored column;
-  `purgeExpired(nowMs)` takes the caller's clock.
-- **A bucket a route names must be registered**: `withRouteBuckets` merges `meta.rateLimitBucket`
-  into the table in `httpServer` and `httpPipeline`; any disagreement is
-  `X_RATE_LIMIT_BUCKET_CONFLICT`. **The installed limiter must hold it too** — `RateLimiter.buckets`
-  is declared and `assertRouteBuckets` refuses, never rebinds.
+Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/history/http-rate-limit.md).
+
+- **An address key is core's `addressNetwork(ip)`** (IPv6 `/64`). **One request spends a LIST of
+  keys** (caller's, then `tenant|org:<id>` when declared); stop at the first refusal.
+- **The memory store is bounded** (`DEFAULT_MAX_RATE_LIMIT_KEYS`, evicts closest-to-FULL first).
+- **The scope is DECLARED, with no default** (`X_RATE_LIMIT_SCOPE_UNSET`); `'shared'` over a
+  per-process store is `X_RATE_LIMIT_NOT_SHARED`, checked in `httpPipeline`.
+- **ONE store slot** (`rate-limit-installed.ts`): routes AND primitives count in
+  `installedRateLimitStore()`; a server reads it PER REQUEST (`liveRateLimitStore`). Installer and
+  reset are on `@ultimat3/http/adapter` only (`adapter.test.ts`); an app names `rateLimitStore` in
+  `apps/<app>/runtime.ts`. `httpServer` takes no store (v31).
+- **A bucket a route names must be registered** (`withRouteBuckets`, `X_RATE_LIMIT_BUCKET_CONFLICT`)
+  and held by the limiter (`assertRouteBuckets`, `X_RATE_LIMIT_BUCKET_UNBOUND`).
+- Shared stores: `postgresRateLimitStore({ executor })`, `redisRateLimitStore({ client })`.
 
 ## Rules — webhooks and tests
 
@@ -203,7 +197,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`verifyWebhookSignature` and `verifyBodyHmac` share ONE secret screen** (`assertWebhookSecrets`)
   and one pair of refusals (`webhookSecretMissing`, `webhookSignatureInvalid`), each naming its caller.
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in `e2e/` (`bun test
-  packages/http/e2e`), sealed; `start()` calls core's `markListening()`. Never unseal.
+  ./packages/http/e2e/`), sealed; `start()` calls core's `markListening()`. Never unseal.
 
 ## Files
 
@@ -217,7 +211,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `error-map.ts` | the code → status table, closed: COMPOSES the slices and holds no row of its own |
 | `error-map-http.ts`, `error-map-tier-<0-4>.ts` | the rows, one slice per owning tier. `bun run new-error-code` appends to its `--package`'s slice; a code in two is refused by `error-map.test.ts` |
 | `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document (including the issue list and the opacity rule over it), the three terminal lines |
-| `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices`, `errorPage`, `explainMiss` (asked ONLY on a `not-found` match, synchronously, with the request line alone; its error replaces `X_ROUTE_NOT_FOUND`) + the app's `configureAuthenticator()` |
+| `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices`, `errorPage`, `explainMiss` (asked ONLY on a `not-found` match, synchronously, with the request line alone; its error replaces `X_ROUTE_NOT_FOUND`) + the app's `configureAuthenticator(fn, { credentialTtlMs })` |
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |
 | `overlay-style.ts` | the overlay's one stylesheet, split out so `security-headers.ts` hashes it |
@@ -231,6 +225,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `error-log-level.ts` | the `error-map` line's level: `error` 5xx, `warn` 401/403/429, `info` the rest and a `routineRefusal` (`unauthenticated()`) |
 | `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `httpRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
 | `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver |
+| `adapter.ts` | `@ultimat3/http/adapter`: the store port's interface, driver error, and the boot's installer |
 | `rate-limit-config.ts` | the bucket table, its resolver and `toBucket` |
 | `rate-limit-postgres.ts` | the SHARED store: one table, one `insert … on conflict` per take, over a structural `PgExecutor` |
 | `rate-limit-redis.ts` | the other shared store: one Lua token bucket per take |
@@ -258,7 +253,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 ## Commands
 
 ```
-bun test packages/http
+bun test ./packages/http/
 bun run --filter @ultimat3/http typecheck
 ```
 

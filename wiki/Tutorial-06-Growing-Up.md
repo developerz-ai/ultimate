@@ -24,7 +24,7 @@ Skipping a rung to look serious buys a second product to maintain. A Kubernetes 
 |---|---|
 | `DATABASE_URL`, `REDIS_URL`, `NATS_URL`, `S3_ENDPOINT` | any file under `apps/` or `packages/` |
 | `ROLE` — which process this container is | the eight primitives, their shapes, their authz |
-| driver constructors at boot (`setJobDriver`, `setDbClient`, `configureTelemetry`) | call sites: `db()`, `ctx.jobs.enqueue()`, `query()`, `live()` |
+| driver constructors at boot (`apps/<app>/runtime.ts`, `setDbClient`, `configureTelemetry`) | call sites: `db()`, `ctx.jobs.enqueue()`, `query()`, `live()` |
 | replica counts, HPA targets | the manifest, the OpenAPI, the typed client, the MCP tools |
 | `app.config.ts` declarations | migrations already applied |
 
@@ -109,7 +109,7 @@ Point it at your collector's **HTTP** receiver, `:4318` — `:4317` is gRPC and 
 | Concern | Interface | Decided by |
 |---|---|---|
 | rows | `@ultimat3/db` · `DbClient` | `DATABASE_URL` — unset is PGlite, and PGlite is `x dev` only |
-| job queue | `@ultimat3/jobs` · `JobDriver` | `setJobDriver(postgresJobDriver({ executor }))` — there is no `jobs.driver` config line, and 5.0.0 deleted the one that never worked. Redis is an interface-complete stub that throws `X_NOT_IMPLEMENTED`; there is no NATS job driver since 25.0.0 |
+| job queue | `@ultimat3/jobs` · `JobDriver` | `postgresJobDriver()`, installed by the boot; another is `jobs:` in `apps/<app>/runtime.ts` — there is no `jobs.driver` config line, and 5.0.0 deleted the one that never worked. Redis is an interface-complete stub that throws `X_NOT_IMPLEMENTED`; there is no NATS job driver since 25.0.0 |
 | realtime fanout | `@ultimat3/realtime` · `Transport` | `NATS_URL` |
 | change feed | `@ultimat3/realtime` · `ChangeFeed` | `REPLICATION_*` |
 | cache | `@ultimat3/cache` · `CacheTier` | `cache.tiers` + `REDIS_URL` |

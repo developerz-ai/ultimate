@@ -5,8 +5,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import { ctxOf } from '@ultimat3/core';
+import { resetJobDriver } from './adapter';
 import type { JobDriver } from './driver';
-import { resetJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { setWakeLive, signalEnqueued } from './enqueue-signal';
 import { resetJobs } from './job';

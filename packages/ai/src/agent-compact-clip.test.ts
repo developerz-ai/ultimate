@@ -31,7 +31,7 @@ import { providerGateway } from './gateway';
 import { registerModel } from './models';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
 const MODEL = 'compact-clip';
@@ -99,9 +99,9 @@ function provider(): Run {
     cacheMinimumTokens: 1_024,
     reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
   });
-  configureAi({
-    gateway: providerGateway({ defaultModel: MODEL, providers: [gen], sleep: async () => {} }),
-  });
+  installAiGateway(
+    providerGateway({ defaultModel: MODEL, providers: [gen], sleep: async () => {} }),
+  );
   return run;
 }
 

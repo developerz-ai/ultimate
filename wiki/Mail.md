@@ -55,7 +55,7 @@ between environments — the credential does.
 
 Every key, with what it means: [Configuration → `mail`](Configuration#mail). More than one of
 `SMTP_URL`, `RESEND_API_KEY` and `SES_REGION` is `X_CONFIG_INVALID` rather than a silent winner.
-`setMailDriver(driver)` is the one seam for a host that builds its own.
+`mail:` in `export const runtime = { … }` (`apps/<app>/runtime.ts`) is the one seam for an app that builds its own; a test installs one with `installMailDriver` from `@ultimat3/mail/adapter`, whose return is the undo.
 
 ## Keeping the sent bytes: `mail.retainMime`
 

@@ -16,7 +16,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 
 useFixtureModels();
 const USAGE = { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 };
@@ -50,7 +50,7 @@ function model(outer: readonly ('ask' | 'answer')[]): { seen: GenerateRequest[] 
     stream: (request) => echoProvider().stream(request),
   };
   resetAiRuntime();
-  configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+  installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
   return { seen };
 }
 

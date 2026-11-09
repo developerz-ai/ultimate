@@ -7,9 +7,22 @@
  */
 
 import { configureAi, providerGateway, scriptedProvider } from '@ultimat3/ai';
+import type { Gateway } from '@ultimat3/ai/adapter';
+import { installAiGateway } from '@ultimat3/ai/adapter';
 import { agentActor } from '@ultimat3/core';
-import { expect, test } from '@ultimat3/testing';
+import { afterEach, expect, test } from '@ultimat3/testing';
 import { webMcp } from './mcp-tools';
+
+// The gateway is `aiGateway` in apps/web/runtime.ts at boot; a test installs its own through the
+// adapter installer, and `configureAi()` still clears the semantic cache. Undone after each test.
+const releases: (() => void)[] = [];
+const useGateway = (gateway: Gateway): void => {
+  configureAi();
+  releases.push(installAiGateway(gateway));
+};
+afterEach(() => {
+  for (const release of releases.splice(0).reverse()) release();
+});
 
 interface Member {
   readonly id: string;
@@ -55,13 +68,13 @@ test('draftReview answers running, and job_status reaches done with the kept rev
     draft: 'post:draft-money', // Bruno's
     bruno: 'member:bruno',
   });
-  configureAi({
-    gateway: providerGateway({
+  useGateway(
+    providerGateway({
       providers: [
         scriptedProvider({ turns: [{ answer: { verdict: 'ready', notes: 'Ship it.' } }] }),
       ],
     }),
-  });
+  );
   const mcp = webMcp();
   const args = { postId: draft.id, orgId: draft.orgId };
 

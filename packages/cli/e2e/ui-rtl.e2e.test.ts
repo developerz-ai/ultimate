@@ -5,8 +5,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no path API — nothing native joins paths.
 import { join } from 'node:path';
+import type { SleepClock } from '@ultimat3/core';
 import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
-import type { ShotClock, ShotSession } from '../src/browser-launcher-port';
+import type { ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 
 const UI = join(import.meta.dir, '..', '..', 'ui', 'src');
@@ -58,7 +59,7 @@ const BODY = `
 </div>
 <dialog class="palette" open id="palette"><div class="panel">Palette</div></dialog>`;
 
-const clock: ShotClock = {
+const clock: SleepClock = {
   now: () => new Date(),
   monotonic: () => performance.now(),
   sleep: (ms) => Bun.sleep(ms),

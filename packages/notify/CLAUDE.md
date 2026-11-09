@@ -117,7 +117,8 @@ so an `open` checkpointed with duplicates by an earlier version is repaired on r
 | `inbox.ts` · `inbox-pg.ts` | the in-app inbox, memory and Postgres |
 | `preferences.ts` · `digest.ts` | the gate and the window, as seams |
 | `digest-pg.ts` | the digest window in Postgres: one row per window, at most one OPEN per slot |
-| `stores.ts` | the one installer for all four |
+| `stores.ts` | the one installer for all four (`installNotifyStores`) and the reads behind it |
+| `adapter.ts` | `@ultimat3/notify/adapter`: the installer + reset, the four store interfaces, `NotifyStoreMissingError` — never the `.` barrel; an app's line is `notifyStores:` in `apps/<app>/runtime.ts` |
 | `retention.ts` | the three sweeps, read off the installed seam |
 | `errors.ts` | this package's `X_NOTIFY_*` codes and their titles |
 | `native-push.ts` | `nativePush()`: every device of a person, dead tokens dropped, bad tokens counted, a credential refusal ending its provider's fan-out, refusals coded |
@@ -163,7 +164,7 @@ it the two would split on exactly the Unicode keys nobody writes a test for.
 ## Retention
 
 All three tables are swept by the boot's hourly `x.purge` job, and no store is handed to it:
-`setNotifyStores` is an APP's boot line that runs when the app's modules import, after the boot that
+the stores are an APP's `notifyStores:` line in `apps/<app>/runtime.ts`, installed after the boot that
 installs the sweep. So `retention.ts` reads the seam **per attempt** — the same shape as
 `purgeAuthLimits()` — and answers `0` for a memory store or none at all, which is a boot that made a
 decision rather than a failure.
@@ -188,8 +189,8 @@ slot that never digests again — is the sweep's (`purgeNotifyDigests` → `Post
 `DIGEST_PURGE_BATCH` and at most `DIGEST_PURGE_MAX_BATCHES` statements per pass.
 
 `packages/cli/src/framework-schema.ts` applies every notify table's DDL on every boot, **whether or not that
-boot calls `setNotifyStores`** — this file said it did not until 2026-08-27, which is a sentence that
+boot installs notify stores** — this file said it did not until 2026-08-27, which is a sentence that
 outlived its fact.
 
-Commands: `bun test packages/notify/src`, `bun run boundaries`,
+Commands: `bun test ./packages/notify/`, `bun run boundaries`,
 `bunx biome check packages/notify`.

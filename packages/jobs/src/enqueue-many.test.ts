@@ -5,8 +5,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ctxOf, runToCompletion, runWithContext, UltimateError } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { EnqueueRequest, JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
@@ -154,7 +154,7 @@ describe('enqueueMany, straight to the driver', () => {
 
   test('the handle reaches it through the ambient facade', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const results = await declared().enqueueMany(items(2));
     expect(
       await inputsOf(

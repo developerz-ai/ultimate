@@ -6,7 +6,7 @@
 // Skips unless a JetStream-enabled server is configured. Locally:
 //
 //   docker run -d --name x-nats -p 4222:4222 nats:2.11-alpine -js
-//   TEST_NATS_URL=nats://localhost:4222 bun test packages/realtime/src/presence.live.test.ts
+//   TEST_NATS_URL=nats://localhost:4222 bun test ./packages/realtime/src/presence.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { topic } from './channel';
@@ -23,7 +23,6 @@ const selected: TransportSelection[] = [];
 async function node(ttlMs?: number): Promise<PresenceRegistry> {
   const selection = selectTransport(
     { NATS_URL: url ?? '', NATS_KV_BUCKET: BUCKET },
-    { transport: 'nats', urlEnv: 'NATS_URL' },
     ttlMs === undefined ? {} : { presenceTtlMs: ttlMs },
   );
   selected.push(selection);

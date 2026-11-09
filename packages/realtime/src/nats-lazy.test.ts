@@ -10,7 +10,7 @@ const loaded = () => Object.keys(require.cache).filter((key) => /\\/node_modules
 const server = await import(${JSON.stringify(`${import.meta.dir}/server.ts`)});
 const imported = loaded();
 // The in-process bus and a NATS transport nobody has dialled yet: neither needs the library.
-server.selectTransport({}, { enabled: true, transport: 'memory' });
+server.selectTransport({});
 new server.NatsTransport({ url: 'nats://127.0.0.1:1', bucket: 'x' });
 const constructed = loaded();
 // Opening a client is the point of use. A budget that is no number is refused before any socket

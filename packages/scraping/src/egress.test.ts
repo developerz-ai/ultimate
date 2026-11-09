@@ -4,12 +4,11 @@
 // by name instead of dialling its own constant.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, structuredLogger } from '@ultimat3/core';
+import { ctxOf, frozenClock, structuredLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpBrowserLike, CdpLauncherLike } from './cdp-port';
-import { testScrapeClock } from './clock';
 import type { ScrapeDriver, SessionInit } from './driver';
 import { localBrowser, remoteBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
@@ -51,7 +50,7 @@ const define = (over: Partial<ScrapeDefinition<Input, { id: string }>> = {}) =>
     idempotencyKey: () => 'orders',
     tenant: 'none',
     allowHosts: ['shop.test'],
-    clock: testScrapeClock(),
+    clock: frozenClock(),
     // An offline driver has no origin to ask: under the sealed network the read is unreachable,
     // which is complete disallow. The robots tests below opt back in with `robots: 'obey'`.
     robots: { ignore: 'offline fixture, no origin to ask' },
@@ -97,7 +96,7 @@ const sessionInit = (over: Partial<SessionInit> = {}): SessionInit => ({
   name: 'orders',
   logger: structuredLogger({ writer: () => undefined }),
   rules: { allowHosts: ['shop.test'] },
-  clock: testScrapeClock(),
+  clock: frozenClock(),
   timeoutMs: 1_000,
   ...over,
 });

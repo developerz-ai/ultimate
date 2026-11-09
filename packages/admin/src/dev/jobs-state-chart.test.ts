@@ -3,7 +3,8 @@
 // included. The admin's own overview follows it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { staticDevSources } from './data';
 import type { JobRunFact } from './facts';
 import { jobsPanel } from './panel-jobs';
@@ -34,7 +35,7 @@ const RUNS = [
 const sources = staticDevSources({ jobRuns: () => Promise.resolve(RUNS) });
 
 beforeAll(() => {
-  setJobDriver(memoryJobDriver());
+  installJobDriver(memoryJobDriver());
 });
 
 afterAll(() => {

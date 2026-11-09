@@ -10,8 +10,8 @@
 // socket die, which is what turns an infinite await into a catchable `X_SCRAPE_WEDGED` — and a
 // graceful-quit CEILING on shutdown, past which the same kill runs.
 
+import type { SleepClock } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';
-import type { ScrapeClock } from './clock';
 import { watchdogStopped, wedged } from './error-throws';
 
 export const DEFAULT_IDLE_MS = 120_000;
@@ -19,7 +19,7 @@ export const DEFAULT_GRACE_MS = 5_000;
 const WATCH_POLL_MS = 250;
 
 export interface WedgeGuardInit {
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   /** Longest gap between two browser operations before the process is killed. */
   readonly idleMs?: number | undefined;
   /** How long a graceful quit may take before the same kill runs. */
@@ -129,7 +129,7 @@ export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
       }
     }
   };
-  // Never floating. `ScrapeClock` is a seam an app implements and `init.kill()` comes from a
+  // Never floating. `SleepClock` is a seam an app implements and `init.kill()` comes from a
   // driver, so this loop can reject on somebody else's code — and a bare `void` turned that into
   // an unhandled rejection, a process-level event belonging to no run, with the guard silently
   // dead behind it. A guard that stopped measuring is incident #1 with nothing armed, so the run

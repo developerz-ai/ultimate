@@ -4,8 +4,8 @@
 // Opt-in (`.job.`): booting Postgres costs seconds.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { resetJobs } from './job';
@@ -25,7 +25,7 @@ beforeEach(async () => {
   const pg = await embeddedPg();
   await pg.reset();
   driver = postgresJobDriver({ executor: pg.executor });
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterEach(() => {

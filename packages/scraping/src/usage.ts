@@ -2,8 +2,8 @@
 // and nothing else: no quota, no plan, no ledger — what a number here is worth, and what happens
 // when it is too high, is the app's (`docs/idea/19-mechanism-not-convention.md`).
 
+import type { SleepClock } from '@ultimat3/core';
 import type { MoneyValue } from '@ultimat3/schema';
-import type { ScrapeClock } from './clock';
 
 export interface ScrapeUsage {
   /** Milliseconds the browser session was held, from before `driver.open()` to this report. */
@@ -43,7 +43,7 @@ export interface RunUsageMeter extends UsageMeter {
 }
 
 /** Built BEFORE `driver.open()`, so the time a rented browser took to arrive is time it was held. */
-export function usageMeter(clock: ScrapeClock): RunUsageMeter {
+export function usageMeter(clock: SleepClock): RunUsageMeter {
   const startedAt = clock.monotonic();
   let navigations = 0;
   let httpRequests = 0;

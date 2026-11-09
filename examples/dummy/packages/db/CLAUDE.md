@@ -20,6 +20,7 @@ Entities + migrations + cache tags + seeds. Nothing else.
 | `migrations/*.sql` | the applied schema. `x db gen` is the only writer of NEW ones; `0001_init` and `0002_money_scale` predate it here and say so in their own headers |
 | `migrations/*.snapshot.json` | what a migration left behind — what the NEXT `x db gen` diffs against. `0002`'s is hand-written for the same reason, and `migrations.test.ts` checks it against the SQL |
 | `seeds/dev.ts` | the deterministic dev + test fixture graph |
+| `factories.ts` | test-only row factories; `factories` is the set `x verify`'s unit step lints. The one file here that imports `@ultimat3/testing`, and no app module imports it |
 
 ## Commands
 

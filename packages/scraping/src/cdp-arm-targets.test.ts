@@ -4,10 +4,9 @@
 // `page.setRequestInterception` never sees it. Browser-level `Fetch` does; the fake models it.
 
 import { describe, expect, test } from 'bun:test';
-import { structuredLogger } from '@ultimat3/core';
+import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
-import { testScrapeClock } from './clock';
 import type { SessionInit } from './driver';
 import { localBrowser, remoteBrowser } from './driver-cdp';
 
@@ -15,7 +14,7 @@ const init: SessionInit = {
   name: 'orders',
   logger: structuredLogger({ writer: () => undefined }),
   rules: { allowHosts: ['shop.test'], block: ['image'] },
-  clock: testScrapeClock(),
+  clock: frozenClock(),
   timeoutMs: 1_000,
 };
 

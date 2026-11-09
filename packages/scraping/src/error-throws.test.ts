@@ -20,7 +20,7 @@ describe('unit · X_SCRAPE_DRIVER_UNKNOWN reads as a sentence', () => {
     const error = driverUnknown(undefined, [], 'orders.daily');
     expect(error.code).toBe('X_SCRAPE_DRIVER_UNKNOWN');
     expect(error.cause).toBe(
-      'scrape "orders.daily" has no browser driver: nothing called setScrapeDriver() and the definition declares no driver; installed: none',
+      'scrape "orders.daily" has no browser driver: apps/<app>/runtime.ts names no scrapeDriver and the definition declares no driver; installed: none',
     );
   });
 
@@ -29,6 +29,12 @@ describe('unit · X_SCRAPE_DRIVER_UNKNOWN reads as a sentence', () => {
     expect(error.cause).toContain('installed: puppeteer, fixture');
     expect(error.cause).not.toContain('driver named "orders.daily"');
     expect(error.meta).toEqual({ driver: 'none', scrape: 'orders.daily' });
+  });
+
+  test('the fix names the runtime.ts slot, never the setter 31.0.0 deleted', () => {
+    const error = driverUnknown(undefined, [], 'orders.daily');
+    expect(error.fix).toContain('runtime.ts');
+    expect(error.fix).not.toContain('setScrapeDriver');
   });
 
   test('a named-but-missing driver keeps its own cause', () => {

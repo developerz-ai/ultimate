@@ -116,10 +116,10 @@ means it rewrites that file in place** — the same safe fixes \`biome check --w
 repo-wide, but your working tree does change after every agent edit. Scoped to one file, so it costs
 milliseconds, and it settles formatting arguments before they reach a diff.
 
-It is not a typecheck, because a *scoped* one does not exist: \`tsc\` needs the project, and \`bunx x verify\`
-takes no \`--only\` and no \`--skip\` by design — narrowing the gate would make "green" mean whatever
-the caller chose. If you want types on every edit, \`bun run typecheck\` is the whole project and you
-are choosing to pay for it.
+It is not a typecheck, because a *scoped* one does not exist: \`tsc\` needs the project, and even
+\`bunx x verify --only typecheck\` checks the whole tree — and says \`NOT A GATE RUN\`, because green
+means the run with no flag. There is no \`--skip\`. If you want types on every edit, \`bun run typecheck\`
+is the whole project and you are choosing to pay for it.
 
 ## Where the rules live
 

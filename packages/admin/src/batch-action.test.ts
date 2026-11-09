@@ -6,14 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { ctxOf, runWithContext, UltimateError } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { registerCatalog } from '@ultimat3/i18n';
-import {
-  getJob,
-  type JobDriver,
-  jobWorker,
-  memoryJobDriver,
-  resetJobDriver,
-  setJobDriver,
-} from '@ultimat3/jobs';
+import { getJob, type JobDriver, jobWorker, memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AdminApp } from './admin';
 import { type AdminAuthz, adminAllowed, adminDenied } from './authz';
 import type { BatchEnqueue } from './batch';
@@ -108,7 +102,7 @@ const insert = async (title: string, state = 'idle'): Promise<string> =>
 
 beforeAll(() => {
   jobs = memoryJobDriver();
-  setJobDriver(jobs);
+  installJobDriver(jobs);
 });
 
 beforeEach(() => {

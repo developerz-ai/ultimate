@@ -204,13 +204,13 @@ export const driverUnavailable = (what: string): MailError =>
   new MailError({
     code: 'X_MAIL_DRIVER_UNAVAILABLE',
     cause: `${what} — nothing can deliver the message`,
-    fix: 'setMailDriver(memoryMailDriver()) in dev, smtpMailDriver({ url: env.SMTP_URL }) live',
+    fix: 'export const runtime = { mail: memoryMailDriver() } in apps/<app>/runtime.ts for dev, or set SMTP_URL (or RESEND_API_KEY) in .env so the boot selects a live driver',
     meta: { what },
   });
 
 /**
  * A DEPLOYMENT set neither credential, where `X_MAIL_DRIVER_UNAVAILABLE` is a WIRING bug — one is
- * fixed by an operator setting a variable, the other by a developer calling `setMailDriver`, so
+ * fixed by an operator setting a variable, the other by a developer's `mail:` line in `apps/<app>/runtime.ts`, so
  * they are two codes and not one cause string.
  *
  * Raised on the send rather than at boot, deliberately: a boot refusal turns a working deploy of an

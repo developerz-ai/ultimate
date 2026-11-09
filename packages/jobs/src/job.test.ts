@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { describeJobs, getJob, job, registeredJobs, resetJobs, restoreJobs } from './job';
@@ -126,7 +126,7 @@ describe('job() refuses a concurrency that can never be filled', () => {
 
 describe('handle.enqueue', () => {
   test('queues a row under the handle own idempotency key, and dedupes a repeat', async () => {
-    setJobDriver(driver);
+    installJobDriver(driver);
 
     const first = await notify.enqueue({ orgId: 'org-1' });
     expect(first.deduped).toBe(false);
@@ -146,7 +146,7 @@ describe('handle.enqueue', () => {
 
   test('honours a driver installed after the first handle was built', async () => {
     // The fallback facade reads `jobDriver()` per call, so boot order cannot strand an enqueue.
-    setJobDriver(driver);
+    installJobDriver(driver);
     await notify.enqueue({ orgId: 'org-late' });
     expect(((await driver.introspect?.list()) ?? []).length).toBe(1);
   });
@@ -158,7 +158,7 @@ describe('handle.enqueue', () => {
 
 describe('handle.as', () => {
   test('stamps tenantId from the actor org so per-tenant limits apply', async () => {
-    setJobDriver(driver);
+    installJobDriver(driver);
     await notify.as({ orgId: 'org-7' }, { orgId: 'org-7' });
 
     const rows = (await driver.introspect?.list()) ?? [];
@@ -166,7 +166,7 @@ describe('handle.as', () => {
   });
 
   test('leaves an explicitly passed tenantId alone', async () => {
-    setJobDriver(driver);
+    installJobDriver(driver);
     await notify.as({ orgId: 'org-7' }, { orgId: 'org-7' }, { tenantId: 'org-override' });
 
     const rows = (await driver.introspect?.list()) ?? [];
@@ -174,7 +174,7 @@ describe('handle.as', () => {
   });
 
   test('an actor with no org leaves the row untenanted — the limiter buckets it globally', async () => {
-    setJobDriver(driver);
+    installJobDriver(driver);
     await notify.as(null, { orgId: 'org-1' });
 
     const rows = (await driver.introspect?.list()) ?? [];
@@ -182,7 +182,7 @@ describe('handle.as', () => {
   });
 
   test('queues rather than running the handler inline — the queue is the execution surface', async () => {
-    setJobDriver(driver);
+    installJobDriver(driver);
     let ran = false;
     const audit = job<OrgInput>({
       tenant: 'none',
@@ -331,7 +331,7 @@ describe('an unregistered job', () => {
   // and must stay so — 1.0.0 semver, and every existing caller declares without registering.
   test('still takes a positional name and is still enqueueable under it', async () => {
     resetJobs();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const orphan = job<OrgInput>({
       tenant: 'none',
       input: passthrough<OrgInput>(),

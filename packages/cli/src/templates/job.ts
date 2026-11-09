@@ -129,8 +129,8 @@ const jobTest = (
   name: NameSet,
 ): string => `// ${name.camel} against a real driver: enqueue, drain, assert. Retries and the dead-letter path
 // are the framework's, so what this pins is that THIS job's steps run and are idempotent.
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
-import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { beforeAll, expect, jobTest, swapAdapter } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
 const id = '00000000-0000-4000-8000-000000000001';
@@ -140,12 +140,9 @@ const input = { id, orgId };
 // the job's own name and still fits the formatter width the app's \`lint\` step enforces.
 const expectedKey = \`${name.kebab}:\${id}\`;
 
-// The driver is process-global, so it is installed and released around this file rather than
-// left behind for whichever test happens to run next.
-beforeAll(() => {
-  setJobDriver(memoryJobDriver());
-});
-afterAll(resetJobDriver);
+// The queue is a process-global adapter port, so it is swapped for this file and put back when the
+// file ends, never left behind for whichever test happens to run next.
+beforeAll(() => swapAdapter('jobs', memoryJobDriver()));
 
 jobTest('${name.camel} declares a key and a retry policy', () => {
   expect(${name.camel}.kind).toBe('job');
@@ -186,8 +183,8 @@ const neutralJobTest = (
   name: NameSet,
 ): string => `// ${name.camel} against a real driver: enqueue, drain, assert. Retries and the dead-letter path
 // are the framework's, so what this pins is that THIS job's steps run and are idempotent.
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
-import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { beforeAll, expect, jobTest, swapAdapter } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
 const id = '00000000-0000-4000-8000-000000000001';
@@ -196,12 +193,9 @@ const input = { id };
 // the job's own name and still fits the formatter width the app's \`lint\` step enforces.
 const expectedKey = \`${name.kebab}:\${id}\`;
 
-// The driver is process-global, so it is installed and released around this file rather than
-// left behind for whichever test happens to run next.
-beforeAll(() => {
-  setJobDriver(memoryJobDriver());
-});
-afterAll(resetJobDriver);
+// The queue is a process-global adapter port, so it is swapped for this file and put back when the
+// file ends, never left behind for whichever test happens to run next.
+beforeAll(() => swapAdapter('jobs', memoryJobDriver()));
 
 jobTest('${name.camel} declares a key and a retry policy', () => {
   expect(${name.camel}.kind).toBe('job');
@@ -243,15 +237,12 @@ const taskTest = (
   jobName: NameSet,
 ): string => `// ${name.camel}: the schedule it declares, the timezone it declares it in, and the job it
 // enqueues. A cron with no explicit IANA zone fires at a different hour twice a year.
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
-import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { beforeAll, expect, jobTest, swapAdapter } from '@ultimat3/testing';
 import { ${jobName.camel} } from '../jobs/${jobName.kebab}';
 import { ${name.camel} } from './${name.kebab}';
 
-beforeAll(() => {
-  setJobDriver(memoryJobDriver());
-});
-afterAll(resetJobDriver);
+beforeAll(() => swapAdapter('jobs', memoryJobDriver()));
 
 jobTest('${name.camel} declares a cron with an explicit time zone', () => {
   expect(${name.camel}.kind).toBe('task');

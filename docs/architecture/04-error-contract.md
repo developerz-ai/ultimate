@@ -241,12 +241,12 @@ For deliberately unimplemented paths, the throw is still typed and still actiona
 throw new UltimateError({
   code: 'X_NOT_IMPLEMENTED',
   cause: 'jobs driver "redis" has no claim implementation yet',
-  fix: 'call setJobDriver(postgresJobDriver()) at boot instead of this driver; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it',
+  fix: 'drop the jobs: field from apps/<app>/runtime.ts so the boot installs postgresJobDriver() over DATABASE_URL; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it',
 });
 ```
 
 Not a config edit. `JobsConfig.driver` was deleted in 5.0.0 for having no reader, so there is no
-key that selects a driver — `setJobDriver` is the seam, and the fix has to name the one that
+key that selects a driver — `jobs:` in `export const runtime = { … }` (`apps/<app>/runtime.ts`) is the seam (31.0.0 deleted `setJobDriver`), and the fix has to name the one that
 actually replaces the stub. It names no drain: `x jobs drain` is a planned subcommand
 (`X_NOT_IMPLEMENTED`, `packages/cli/src/cmd-planned.ts`) — a planned command in a `fix` is
 `X_ERROR_FIX_INVALID` — and `enqueue` on a stub refused, so nothing was ever queued onto it; the

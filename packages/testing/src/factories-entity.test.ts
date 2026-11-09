@@ -3,7 +3,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { boolean, entity, integer, text, uuid } from '@ultimat3/entity';
-import { associate, defineFactory, seedFor } from './factories';
+import { defineFactory, seedFor } from './factories';
+import { belongsTo } from './factory-associations';
 import { clearPersister, usePersister } from './factory-persist';
 import { factoriesFor } from './factory-registry';
 import { testName } from './test-types';
@@ -31,8 +32,9 @@ afterEach(() => {
 
 const record = (): void =>
   usePersister({
-    insert: async (table) => {
-      written.push(table);
+    insert: async (entity, row) => {
+      written.push(entity.$table);
+      return row;
     },
   });
 
@@ -49,7 +51,7 @@ describe(testName('unit', 'factories over a real entity'), () => {
         published: false,
         views: 0,
       }),
-      associations: { orgId: associate(orgs, (row) => row.id) },
+      belongsTo: { org: belongsTo(orgs, 'orgId') },
     });
     expect(orgs.table).toBe('legacy_orgs');
     expect(orgs.build().name).toBe('org-1');

@@ -35,8 +35,8 @@ export const rateLimitNotShared = (found: 'process' | 'disabled' | 'installed'):
           : "http.rateLimit.scope is 'shared' but the installed store keeps its counters in this process, so each replica would enforce the full bucket on its own",
     fix:
       found === 'installed'
-        ? 'installRateLimitStore(rateLimitStore) at boot, with the same postgresRateLimitStore({ executor }) passed to httpServer({ routes, rateLimitStore })'
-        : "httpServer({ routes, rateLimitStore: postgresRateLimitStore({ executor: { query: (text, values) => db().query({ text, values }) } }) }) — or defineHttpConfig({ rateLimit: { scope: 'process' } }) to accept per-replica limits",
+        ? "defineHttpConfig({ rateLimit: { scope: 'process' } })   # to accept per-replica limits — or delete rateLimitStore from apps/<app>/runtime.ts so the boot installs postgresRateLimitStore over the pool it opened, or name a store whose scope is 'shared'"
+        : "export const runtime = { rateLimitStore: postgresRateLimitStore({ executor: { query: (text, values) => db().query({ text, values }) } }) }   # apps/<app>/runtime.ts — or defineHttpConfig({ rateLimit: { scope: 'process' } }) to accept per-replica limits",
   });
 
 /**
@@ -135,7 +135,7 @@ export const rateLimitBucketUnbound = (input: {
         ? 'does not hold that bucket, so the route would run on the default one'
         : `holds ${numbers(input.found)} for it`
     }`,
-    fix: 'pass the STORE and let the pipeline build the limiter — httpServer({ routes, rateLimitStore }) — so the bucket table is the one the routes registered',
+    fix: 'httpServer({ routes })   # drop PipelineDeps.limiter: the server builds the limiter over the installed store (rateLimitStore in apps/<app>/runtime.ts), so the bucket table is the one the routes registered',
   });
 
 /**
@@ -151,7 +151,7 @@ export const rateLimitScopeUnset = (): HttpError =>
     code: 'X_RATE_LIMIT_SCOPE_UNSET',
     cause:
       'http.rateLimit is enabled and the deployment has not declared http.rateLimit.scope, so the numbers below it are per replica rather than per fleet',
-    fix: "defineHttpConfig({ rateLimit: { scope: 'process' } }) if this app runs as ONE replica, or scope: 'shared' plus httpServer({ routes, rateLimitStore: postgresRateLimitStore({ executor }) }) for a fleet-wide limit — a process booted by x dev or apps/web/server.ts derives it from the store it installed and never declares it",
+    fix: "defineHttpConfig({ rateLimit: { scope: 'process' } }) if this app runs as ONE replica, or scope: 'shared' plus rateLimitStore: postgresRateLimitStore({ executor }) in apps/<app>/runtime.ts for a fleet-wide limit — a process booted by x dev or apps/web/server.ts derives it from the store it installed and never declares it",
   });
 
 /**

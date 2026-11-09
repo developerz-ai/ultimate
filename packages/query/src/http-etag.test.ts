@@ -4,7 +4,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
-import { defineHttpConfig, httpServer, resetRateLimitStore } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';

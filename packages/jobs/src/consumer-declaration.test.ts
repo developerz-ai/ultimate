@@ -6,10 +6,10 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:tes
 import { isUltimateError } from '@ultimat3/core';
 import { type PgliteClient, pgliteClient, setDbClient } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { consumer } from './consumer';
 import { isConsumer } from './consumer-registry';
 import type { ConsumerDefinition } from './consumer-types';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -95,7 +95,7 @@ describe('a consumer handle', () => {
 
   test('enqueueMany from outside a run enqueues one row per key', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const handle = consumer(definition());
     const results = await handle.enqueueMany([{ key: 'a' }, { key: 'b' }]);
     expect(results.map((result) => result.deduped)).toEqual([false, false]);

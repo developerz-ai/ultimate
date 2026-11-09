@@ -1,13 +1,13 @@
 // The browser contract. Every driver implements exactly this, so a scrape's body never names one
 // — the same shape `packages/jobs/src/driver.ts` gives the queue, for the same reason: swapping
-// the browser is `setScrapeDriver(other)` and ZERO run-body change.
+// the browser is `scrapeDriver: other` in `apps/<app>/runtime.ts` and ZERO run-body change.
 //
 // Two methods. `open` hands back a session; `close` ends it. Everything else a scraper does goes
 // through `ScrapePage`, which is driver-blind by construction.
 
-import type { Logger } from '@ultimat3/core';
+import type { Logger, SleepClock } from '@ultimat3/core';
+import { adapterSlot } from '@ultimat3/core/adapter';
 import type { MoneyValue } from '@ultimat3/schema';
-import type { ScrapeClock } from './clock';
 import type { ScrapeHttp } from './http';
 import type { InterceptRules } from './intercept';
 import type { ScrapePage } from './page';
@@ -20,7 +20,7 @@ export interface SessionInit {
   /** The scrape's name — every error cause raised inside the session carries it. */
   readonly name: string;
   readonly rules: InterceptRules;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   /**
    * The run's logger — `scrapeLogger()`'s child, so every line carries the scrape and the run.
    * Required, because `close()` never throws: a teardown that failed (a rented browser its
@@ -100,22 +100,27 @@ export interface ScrapeDriver {
   open(init: SessionInit): Promise<ScrapeSession>;
 }
 
-let ambient: ScrapeDriver | undefined;
+const ambient = /* @__PURE__ */ adapterSlot<ScrapeDriver | undefined>(() => undefined);
 
-/** Set once by the app at boot — no config key names it. A scrape's own `driver:` overrides it. */
-export function setScrapeDriver(driver: ScrapeDriver): void {
-  ambient = driver;
+/**
+ * The boot's install, from `scrapeDriver` in `apps/<app>/runtime.ts` — exported from
+ * `@ultimat3/scraping/adapter` only, never the `.` barrel, so that file is the one place an app
+ * chooses a browser. A scrape's own `driver:` overrides it. Answers the release that removes THIS
+ * install and no other (core's `adapterSlot`), in any order, once.
+ */
+export function installScrapeDriver(driver: ScrapeDriver): () => void {
+  return ambient.install(driver);
 }
 
 export function scrapeDriver(): ScrapeDriver | undefined {
-  return ambient;
+  return ambient.current();
 }
 
 /**
- * Test/CLI seam: forget the ambient driver. The counterpart to `resetJobDriver()` — a test that
+ * Test/CLI seam: forget the ambient driver. The counterpart to `resetJobDriver()` (`@ultimat3/jobs/adapter`) — a test that
  * installs a browser has to be able to put the process back, or every later file in the same bun
  * process runs against a driver it never asked for.
  */
 export function resetScrapeDriver(): void {
-  ambient = undefined;
+  ambient.reset();
 }

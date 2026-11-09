@@ -470,7 +470,7 @@ call (`surface: 'server'` — a service, a seed, a test) is app code, not a call
 | Fact | Answer |
 |---|---|
 | whose bucket | the caller's: actor → org → connection address (`@ultimat3/http`'s `rateLimitSpends`). An anonymous caller with no address (MCP, a job) shares one bucket |
-| where it is counted | `@ultimat3/http`'s installed store (`installRateLimitStore()`) — the slot `@ultimat3/query` spends from too; the boot fills it with the SAME instance it gives `httpServer({ rateLimitStore })`, on every role. Default: one process' memory |
+| where it is counted | `@ultimat3/http`'s installed store — the slot `@ultimat3/query` spends from too; the boot fills it from `rateLimitStore` in `apps/<app>/runtime.ts` (else Postgres over its pool), on every role |
 | what HTTP answers | `RateLimit-*` from the bucket closest to refusing, and on a refusal `429` + `Retry-After` — the pipeline's own shape |
 | a retry | an admitted attempt spends one token; a refused one spends nothing. A job refused `X_RATE_LIMITED` is rescheduled for its `Retry-After` WITHOUT counting an attempt, so a backlog is delayed, never dead-lettered |
 | an idempotent replay | spends nothing: the stored answer is served, never a 429 |
@@ -480,15 +480,13 @@ call (`surface: 'server'` — a service, a seed, a test) is app code, not a call
 
 ```ts
 import type { PgExecutor } from '@ultimat3/core';
-import { installRateLimitStore, postgresRateLimitStore } from '@ultimat3/http';
+import { postgresRateLimitStore } from '@ultimat3/http';
 
-declare const executor: PgExecutor; // the pool this boot already opened
+declare const executor: PgExecutor; // the pool this process already opened
 
-// Boot, before the first call — the one store every surface and every replica counts in.
-// `x dev` and a container boot do this themselves, and `httpServer({ rateLimitStore })` adopts
-// the store it is handed; a process with no server (a worker of your own) installs it here.
-const rateLimitStore = postgresRateLimitStore({ executor });
-installRateLimitStore(rateLimitStore);
+// apps/<app>/runtime.ts — the one store every surface and every replica counts in. `x dev` and a
+// container boot install Postgres over their own pool without it; this line replaces that store.
+export const runtime = { rateLimitStore: postgresRateLimitStore({ executor }) };
 ```
 
 `toBucket` is the only conversion — `capacity: limit`, `refillPerSecond: limit / (windowMs / 1000)`
@@ -604,13 +602,8 @@ must say so and bring a store that can keep it, or the retry that lands on anoth
 no record and runs the handler again:
 
 ```ts
-// boot, before registerActions()
-import {
-  configureIdempotency,
-  postgresIdempotencyStore,
-  requestDeadlineMs,
-  setIdempotencyStore,
-} from '@ultimat3/action';
+// apps/<app>/runtime.ts — the boot installs the store before registerActions()
+import { configureIdempotency, postgresIdempotencyStore, requestDeadlineMs } from '@ultimat3/action';
 import { db } from '@ultimat3/db';
 
 const client = db();
@@ -618,17 +611,17 @@ const client = db();
 // NOT `executor: Bun.sql` — `Bun.sql.query` is `undefined` `As of 2026-08` (it is a tagged
 // template whose positional form is `unsafe`), so that line compiles and throws on the first
 // reservation.
-// The framework boot installs this store for you; reach for it by hand only from a host that
-// boots the framework itself, and wrap the client that host already opened.
-setIdempotencyStore(
-  postgresIdempotencyStore({
+// The framework boot installs this store for you; hand it one only to replace it, and wrap the
+// client this process already opened.
+export const runtime = {
+  idempotencyStore: postgresIdempotencyStore({
     executor: { query: (text, values) => client.query({ text, values }) },
     // The client transactions on THIS database open on: a settle rides one of those and no other.
     origin: () => client,
     // The app's `requestTimeoutMs` (`configureHttp`), read per reservation — never a number here.
     reclaimAfterMs: requestDeadlineMs,
   }),
-);
+};
 configureIdempotency({ scope: 'shared' });
 ```
 
@@ -955,6 +948,18 @@ is `X_CONTRACT_EXERCISE_UNREACHED`. Full rules: [Testing](https://github.com/dev
 Pass `input:` when the schema carries a constraint the IR cannot invert (a bare `pattern`) or
 when `row:` needs an id that resolves. Anything thrown *before* the policy decides is drift,
 never a pass — the assertion says which code got in the way and names `input:` as the fix.
+
+## `@ultimat3/action/adapter` — the stores' installers and the handler override
+
+The boot's installers live here, never on the `.` barrel: `installIdempotencyStore(store)` and
+`installMeterStore(store)` each return a release that removes that install alone, in any order, beside
+`resetIdempotency()` / `resetMeterStore()`, the port types and the errors a store throws. An app
+swaps a store with `idempotencyStore:` / `meterStore:` in `apps/<app>/runtime.ts`.
+
+`overrideHandler(action, handle | undefined)` puts a test double where `handle` is, on every
+surface — a direct call, `.as()`, HTTP, MCP, `.job()`, `.stream()` (the drain reads it per call).
+The policy, the rate limit, the input parse, the meter, idempotency and the output parse still run
+around it; `undefined` restores the declared handler. `@ultimat3/testing`'s `stub()` drives it.
 
 ## Errors
 

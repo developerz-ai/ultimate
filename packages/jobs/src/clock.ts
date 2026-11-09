@@ -2,13 +2,13 @@
 // injected Clock, so tests never sleep and a frozen clock cannot be bypassed.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteOption, systemClock } from '@ultimat3/core';
+import { finiteOption, liveClock } from '@ultimat3/core';
 import { parseDuration } from '@ultimat3/time';
 
 export type DurationInput = string | number;
 
 /** A Clock may hand back a `Date` or epoch ms; scheduling needs one comparable number. */
-export function nowMs(clock: Clock = systemClock): number {
+export function nowMs(clock: Clock = liveClock): number {
   const reading: unknown = clock.now();
   if (reading instanceof Date) return reading.getTime();
   return Number(reading);

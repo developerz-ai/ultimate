@@ -5,11 +5,11 @@ import { afterAll, afterEach, expect, test } from 'bun:test';
 import type { FailureBundle } from '@ultimat3/core';
 import {
   reportError,
-  setFailureStore,
   settleFailureCaptures,
   UltimateError,
   withFailureCapture,
 } from '@ultimat3/core';
+import { installFailureStore } from '@ultimat3/core/adapter';
 import { text, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -25,11 +25,18 @@ const vaults = entity('rc_vaults', {
 });
 
 afterAll(() => clearRegistry());
-afterEach(() => setFailureStore(null));
+let releaseStore: () => void = () => undefined;
+afterEach(() => releaseStore());
+
+/** Every capture below saves into its own list; the previous test's store is released first. */
+const useStore = (saved: FailureBundle[]): void => {
+  releaseStore();
+  releaseStore = installFailureStore({ save: async (bundle) => void saved.push(bundle) });
+};
 
 const captured = async (read: () => Promise<unknown>): Promise<FailureBundle[]> => {
   const saved: FailureBundle[] = [];
-  setFailureStore({ save: async (bundle) => void saved.push(bundle) });
+  useStore(saved);
   try {
     await withFailureCapture(
       'action',
@@ -75,7 +82,7 @@ test('a read outside a captured call records nothing', async () => {
   const table = database({ vaults }, { driver: memoryDriver() }).vaults;
   await table.insert({ name: 'Bo', apiKey: 'k', secret: 's' });
   const saved: FailureBundle[] = [];
-  setFailureStore({ save: async (bundle) => void saved.push(bundle) });
+  useStore(saved);
   await table.all();
   await settleFailureCaptures();
   expect(saved).toEqual([]);

@@ -133,8 +133,6 @@ export {
   LEASE_LAPSED_FINAL_ATTEMPT,
   LIVE_STATES,
   nackState,
-  resetJobDriver,
-  setJobDriver,
 } from './driver';
 export type { MemoryJobDriver, MemoryJobDriverOptions } from './driver-memory';
 export { memoryJobDriver } from './driver-memory';
@@ -200,8 +198,6 @@ export {
   eventsPurgeTarget,
   memoryEventBus,
   publishEvent,
-  resetEventBus,
-  setEventBus,
 } from './events';
 export type { PostgresEventBusOptions } from './events-pg';
 export { postgresEventBus } from './events-pg';
