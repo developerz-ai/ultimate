@@ -78,6 +78,17 @@ const expPassThrows = action({
   policy: can('exp-note:write'),
   handle: () => Promise.reject(new TypeError('the handler broke')),
 });
+/** Every id the refusing handler below was handed: the override must name that same row. */
+const boundIds: string[] = [];
+const expPassBound = action({
+  input: t.object({ expNoteId: t.uuid }),
+  output: Ok,
+  policy: can('exp-note:read'),
+  handle: ({ input }) => {
+    boundIds.push(input.expNoteId);
+    return refuse();
+  },
+});
 const expPassToggle = action({
   input: t.object({}),
   output: Ok,
@@ -148,6 +159,7 @@ registerActions({
   expScaleFlat,
   expScaleLoop,
   expPassAdmin,
+  expPassBound,
   expPassCallsOut,
   expPassCreate,
   expPassMagic,
@@ -252,7 +264,20 @@ describe(testName('unit', 'runExercisePass'), () => {
     const record = await one('expPassThrows');
     expect(record.outcome).toBe('unreached');
     expect(record.reason).toContain('TypeError');
-    expect(record.override).toStartWith('expPassThrows: { actor: ');
+    // Valid TS, exactly the actor the pass ran as: the paste compiles and changes nothing else.
+    expect(record.override).toBe(
+      'expPassThrows: { actor: testActor("writer", { permissions: ["exp-note:write", "exp-note:read"] }).actor, input: (drawn) => ({ ...drawn }) }, // testActor: @ultimat3/policy',
+    );
+  });
+
+  test('the override binds the seeded row the pass bound, by its real id', async () => {
+    boundIds.length = 0;
+    const record = await one('expPassBound');
+    expect(record.outcome).toBe('unreached');
+    const [id] = boundIds;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(record.override).toContain(`input: (drawn) => ({ ...drawn, expNoteId: "${id}" })`);
+    expect(record.override).not.toContain('<');
   });
 
   test('a mutated handler changes the outcome', async () => {

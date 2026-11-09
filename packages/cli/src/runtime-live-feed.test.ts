@@ -2,8 +2,7 @@
 // subscription on the real node under the embedded database, one repository write, one patch —
 // lives in `cmd-dev.test.ts`, because a process has ONE lifecycle and that file owns the boot.
 import { describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
-import { rowObserver } from '@ultimat3/entity';
+import { instrument, isUltimateError, subscribed, subscriberCount } from '@ultimat3/core';
 import { liveFeedLabel, startLiveFeed } from './runtime-live-feed';
 
 describe('startLiveFeed decides by the database, never by guessing', () => {
@@ -25,16 +24,16 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
     });
     expect(external.feed).toBe('replication');
     expect(external.bridge).toBeNull();
-    // Neither installed anything, so stopping either is a no-op that leaves the observer alone.
-    const before = rowObserver();
+    // Neither subscribed anything, so stopping either is a no-op that leaves the bus alone.
+    const before = subscriberCount();
     none.stop();
     external.stop();
-    expect(rowObserver()).toBe(before);
+    expect(subscriberCount()).toBe(before);
     expect(liveFeedLabel('in-process')).toBe('live=in-process');
   });
 
-  test('the embedded database installs the bridge, and stop() hands the observer back', async () => {
-    const before = rowObserver();
+  test('the embedded database subscribes the bridge, and stop() unsubscribes it', async () => {
+    const before = subscriberCount();
     const live = await startLiveFeed({
       sync: {
         url: 'ws://x',
@@ -49,9 +48,10 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
     });
     expect(live.feed).toBe('in-process');
     expect(live.bridge).not.toBeNull();
-    expect(rowObserver()).not.toBe(before);
+    expect(subscribed('entity.row')).toBe(true);
+    expect(subscriberCount()).toBeGreaterThan(before);
     live.stop();
-    expect(rowObserver()).toBe(before);
+    expect(subscriberCount()).toBe(before);
   });
 
   test('a change nobody could fan out is logged and never takes the bridge down', async () => {
@@ -67,7 +67,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
     // write made under `x dev`, and a second tab stayed on the old row.
     const channelled: unknown[] = [];
     const hub = { deliverChange: (change: unknown) => channelled.push(change) } as never;
-    const before = rowObserver();
+    const before = subscriberCount();
     const live = await startLiveFeed({
       sync: { url: 'ws://x', registry, hub, stop: async () => undefined },
       dbMode: 'embedded',
@@ -76,8 +76,18 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
       readsChanges: true,
     });
     try {
-      rowObserver()?.onChange({ entity: 'notes', op: 'insert', before: null, after: { id: 'n1' } });
-      rowObserver()?.onChange({ entity: 'notes', op: 'insert', before: null, after: { id: 'n2' } });
+      instrument('entity.row', {
+        entity: 'notes',
+        op: 'insert',
+        before: null,
+        after: { id: 'n1' },
+      });
+      instrument('entity.row', {
+        entity: 'notes',
+        op: 'insert',
+        before: null,
+        after: { id: 'n2' },
+      });
       await live.bridge?.settled();
       // Both were attempted: the first failure did not silence the change behind it.
       expect(attempts).toBe(2);
@@ -86,7 +96,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
     } finally {
       live.stop();
     }
-    expect(rowObserver()).toBe(before);
+    expect(subscriberCount()).toBe(before);
   });
 });
 

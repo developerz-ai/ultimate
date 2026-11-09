@@ -28,7 +28,7 @@ export const FRAMEWORK_FIXTURE_NAMES = [
   'statements',
   // Moved here from `DRIVER_FIXTURE_NAMES` on 2026-08-20: the driver it was waiting for is
   // `subscribeDriver()`, and the framework can build one — a whole `sync` node in this
-  // process, over the change source `@ultimat3/entity`'s `setRowObserver` gives it. The four left
+  // process, over the change source `@ultimat3/entity`'s `entity.row` event gives it. The four left
   // in that list all need something the framework genuinely cannot bundle: a browser, or a
   // second build.
   'subscribe',

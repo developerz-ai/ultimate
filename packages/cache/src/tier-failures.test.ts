@@ -1,28 +1,13 @@
 // Swallowing a tier refusal is only correct if it stays visible: what is pinned here is that
 // `bestEffort` hands back the tier's answer untouched on success, absorbs every throw shape on
-// failure, and that the log it writes is bounded, newest-first and a copy.
+// failure, and that every refusal is one `cache.tier_failure` event on the bus.
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
-import { isolateTiers, resetTiers } from './invalidate';
-import type { TierFailure } from './tier-failures';
-import {
-  bestEffort,
-  isolateTierFailures,
-  recentTierFailures,
-  resetTierFailures,
-} from './tier-failures';
+import { describe, expect, test } from 'bun:test';
+import { setLogSink, subscribe, UltimateError } from '@ultimat3/core';
+import { recordCacheEvents } from './cache-events-fixture';
+import { bestEffort } from './tier-failures';
 
-// An empty log is what every assertion below counts from, so the per-test reset stays. The
-// `resetTiers()` further down is the destructive one: it drops a neighbouring file's tiers,
-// revalidator and both logs, and only this restores them.
-const restoreTiers = isolateTiers();
-
-beforeEach(() => {
-  resetTierFailures();
-});
-
-afterAll(restoreTiers);
+const events = recordCacheEvents();
 
 describe('bestEffort', () => {
   test('returns the tier answer unchanged and records nothing when the call succeeds', async () => {
@@ -31,17 +16,17 @@ describe('bestEffort', () => {
     );
 
     expect(answer).toEqual({ value: 'v', tags: [] });
-    expect(recentTierFailures()).toEqual([]);
+    expect(events.failures()).toEqual([]);
   });
 
   test('a resolved undefined is not a failure — a miss is an answer', async () => {
     const answer = await bestEffort('lru', 'get', 'k', () => Promise.resolve(undefined));
 
     expect(answer).toBeUndefined();
-    expect(recentTierFailures()).toEqual([]);
+    expect(events.failures()).toEqual([]);
   });
 
-  test('a cache OFF the ladder degrades into the same one log', async () => {
+  test('a cache OFF the ladder degrades into the same one event', async () => {
     // `@ultimat3/query`'s read cache is not a rung of the ladder and refuses the same way. It has
     // to reach this log, not a private try/catch of its own: a second, invisible failure record
     // is exactly what one bounded log exists to prevent — and it needs a name it can pass
@@ -51,7 +36,7 @@ describe('bestEffort', () => {
     );
 
     expect(answer).toBeUndefined();
-    expect(recentTierFailures()[0]).toMatchObject({
+    expect(events.failures()[0]).toMatchObject({
       tier: 'query-read',
       op: 'get',
       key: 'cache:posts',
@@ -67,7 +52,7 @@ describe('bestEffort', () => {
     );
 
     expect(answer).toBeUndefined();
-    expect(recentTierFailures().length).toBe(1);
+    expect(events.failures().length).toBe(1);
   });
 
   test('a synchronous throw inside the callback is absorbed too', async () => {
@@ -76,18 +61,18 @@ describe('bestEffort', () => {
     });
 
     expect(answer).toBeUndefined();
-    expect(recentTierFailures()[0]?.message).toBe('Error: sync boom');
+    expect(events.failures()[0]?.message).toBe('Error: sync boom');
   });
 
-  test('records tier, op, key, message and an ISO timestamp', async () => {
+  test('emits tier, op, key and message — and no timestamp, a subscriber reads its own clock', async () => {
     await bestEffort('redis', 'del', 'feed:org-1', () => Promise.reject(new Error('no socket')));
 
-    const [failure] = recentTierFailures();
+    const [failure] = events.failures();
     expect(failure?.tier).toBe('redis');
     expect(failure?.op).toBe('del');
     expect(failure?.key).toBe('feed:org-1');
     expect(failure?.message).toBe('Error: no socket');
-    expect(failure?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(Object.hasOwn(failure ?? {}, 'at')).toBe(false);
   });
 
   test('carries the X_* code when the tier threw an UltimateError', async () => {
@@ -97,13 +82,13 @@ describe('bestEffort', () => {
       ),
     );
 
-    expect(recentTierFailures()[0]?.code).toBe('X_CACHE_TOO_LARGE');
+    expect(events.failures()[0]?.code).toBe('X_CACHE_TOO_LARGE');
   });
 
   test('omits the code entirely for a throw that is not an UltimateError', async () => {
     await bestEffort('cdn', 'set', 'k', () => Promise.reject(new Error('plain')));
 
-    const [failure] = recentTierFailures();
+    const [failure] = events.failures();
     expect(failure?.code).toBeUndefined();
     expect(Object.hasOwn(failure ?? {}, 'code')).toBe(false);
   });
@@ -113,60 +98,51 @@ describe('bestEffort', () => {
 
     // Quoted, because `renderCauseValue` is the one renderer that cannot throw on an arbitrary
     // value, and a quoted string is what distinguishes a thrown `'null'` from a thrown `null`.
-    expect(recentTierFailures()[0]?.message).toBe('"just a string"');
+    expect(events.failures()[0]?.message).toBe('"just a string"');
   });
 });
 
-describe('recentTierFailures', () => {
-  test('is newest first', async () => {
-    await bestEffort('lru', 'set', 'first', () => Promise.reject(new Error('one')));
-    await bestEffort('redis', 'set', 'second', () => Promise.reject(new Error('two')));
-
-    expect(recentTierFailures().map((failure) => failure.key)).toEqual(['second', 'first']);
+describe('cache.tier_failure', () => {
+  // Observability must never turn a degraded cache into a failed read: the bus contains a
+  // subscriber that throws and logs it once.
+  test('a throwing subscriber never escapes into the business read, and is logged once', async () => {
+    const lines: string[] = [];
+    const previous = setLogSink((line) => void lines.push(line));
+    const broken = new RangeError('subscriber is broken');
+    const off = subscribe('cache.tier_failure', () => {
+      throw broken;
+    });
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        const answer = await bestEffort('redis', 'get', `k${i}`, () =>
+          Promise.reject(new Error('down')),
+        );
+        expect(answer).toBeUndefined();
+      }
+    } finally {
+      off();
+      setLogSink(previous);
+    }
+    expect(lines.filter((line) => line.includes('instrument.subscriber_failed'))).toHaveLength(1);
   });
 
-  test('is capped at 100 entries', async () => {
-    for (let i = 0; i < 105; i += 1) {
-      await bestEffort('lru', 'set', `k${i}`, () => Promise.reject(new Error(`boom ${i}`)));
+  test('one event per absorbed refusal, every subscriber hearing it', async () => {
+    const second: string[] = [];
+    const off = subscribe('cache.tier_failure', (event) => void second.push(event.payload.key));
+    try {
+      await bestEffort('lru', 'set', 'first', () => Promise.reject(new Error('one')));
+      await bestEffort('redis', 'set', 'second', () => Promise.reject(new Error('two')));
+    } finally {
+      off();
     }
 
-    const log = recentTierFailures();
-    expect(log.length).toBe(100);
-    expect(log[0]?.key).toBe('k104');
-    expect(log.at(-1)?.key).toBe('k5');
+    expect(events.failures().map((failure) => failure.key)).toEqual(['second', 'first']);
+    expect(second).toEqual(['first', 'second']);
   });
 
-  test('hands back a copy: mutating it does not change the next answer', async () => {
-    await bestEffort('lru', 'set', 'k', () => Promise.reject(new Error('boom')));
-
-    const first = recentTierFailures() as TierFailure[];
-    first.length = 0;
-
-    expect(recentTierFailures().length).toBe(1);
-  });
-});
-
-describe('resetTiers', () => {
-  test('clears the swallowed-failure log too, not just the invalidation one', async () => {
-    await bestEffort('lru', 'set', 'k', () => Promise.reject(new Error('boom')));
-    expect(recentTierFailures().length).toBe(1);
-
-    resetTiers();
-
-    expect(recentTierFailures()).toEqual([]);
-  });
-});
-
-describe('isolateTierFailures', () => {
-  test('puts back exactly what it found, dropping only what was recorded after it', async () => {
-    await bestEffort('lru', 'set', 'neighbour', () => Promise.reject(new Error('theirs')));
-
-    const restore = isolateTierFailures();
-    await bestEffort('redis', 'set', 'mine', () => Promise.reject(new Error('mine')));
-    resetTierFailures();
-    restore();
-
-    expect(recentTierFailures().map((failure) => failure.key)).toEqual(['neighbour']);
+  test('a call the tier answered emits nothing', async () => {
+    expect(await bestEffort('lru', 'get', 'k', async () => 'value')).toBe('value');
+    expect(events.failures()).toEqual([]);
   });
 });
 
@@ -193,7 +169,7 @@ describe('bestEffort absorbs a throwable that fights being read', () => {
     const answer = await bestEffort('lru', 'get', 'k', () => Promise.reject(trapped()));
 
     expect(answer).toBeUndefined();
-    const [failure] = recentTierFailures();
+    const [failure] = events.failures();
     expect(failure?.tier).toBe('lru');
     expect(failure?.key).toBe('k');
     expect(typeof failure?.message).toBe('string');
@@ -207,7 +183,7 @@ describe('bestEffort absorbs a throwable that fights being read', () => {
     );
 
     expect(answer).toBeUndefined();
-    expect(recentTierFailures()).toHaveLength(1);
-    expect(typeof recentTierFailures()[0]?.message).toBe('string');
+    expect(events.failures()).toHaveLength(1);
+    expect(typeof events.failures()[0]?.message).toBe('string');
   });
 });

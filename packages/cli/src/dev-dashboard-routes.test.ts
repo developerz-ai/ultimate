@@ -151,7 +151,11 @@ describe('unit · the SQL panel runs a statement on a same-origin POST only', ()
     expect(payload.ok).toBe(true);
     expect(payload.data.sql).toBe('select 1 as one');
     expect(payload.data.result?.columns).toEqual(['one']);
-    expect(sent[0]).toBe('BEGIN READ ONLY');
+    // The read-only role is provisioned first (admin's `readOnlySql`), then the read runs in its
+    // own read-only transaction, as that role, and is rolled back.
+    const begin = sent.indexOf('BEGIN READ ONLY');
+    expect(begin).toBeGreaterThan(0);
+    expect(sent.indexOf('SET LOCAL ROLE "ultimate_readonly"')).toBeGreaterThan(begin);
     expect(sent.at(-1)).toBe('ROLLBACK');
   });
 

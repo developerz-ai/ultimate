@@ -57,6 +57,7 @@ setMailTransform(async (rendered, meta) =>
 |---|---|
 | `locale` is required by the **type** | a mail is read hours later; there is no ambient request locale to fall back to. `X_MAIL_LOCALE_MISSING` is the backstop for JS callers |
 | An unresolved key is never sent | `send()` refuses a key the locale lacks, a catalog value still holding `⟦…⟧`, or a `{slot}` with no value (`X_MAIL_KEY_MISSING`, terminal), before the transform and the queue. `renderMessage()` keeps the `⟦…⟧` for a preview, and `renderMail()` reports it as `misses` (`TranslationMiss[]`, recorded by `@ultimat3/i18n`'s `recordingTranslator`). It reads what the renderer resolved, never the bytes: a `⟦` from data sends |
+| One hand-off, observed | inline and queued sends both reach the transport through `deliverMail`: one `mail.deliver` client span and bus event (`{ transport, recipients, durationMs, error? }`) — a recipient COUNT, never an address |
 | Text part is mandatory | HTML-only mail scores as spam and is unreadable to screen readers. Empty text ⇒ `X_MAIL_TEXT_MISSING` |
 | Text is derived from blocks | never scraped out of the HTML, so the two parts cannot drift |
 | Every string is a key | `mail.<id>.<slot>`; English lives in `src/catalog.ts` and app catalogs override it |

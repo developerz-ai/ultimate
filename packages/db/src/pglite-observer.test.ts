@@ -4,12 +4,12 @@
 // expected-loop reason stamped on the event.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { DbStatementEvent } from '@ultimat3/core';
+import { resetInstrumentation, subscribe } from '@ultimat3/core';
 import { withStatementAttribution } from './attribution';
 import { setDbClient } from './client';
 import { expectedQueryLoop } from './expected-loop';
 import { fakeDriver } from './fake-pglite-fixture';
-import type { StatementEvent, StatementObserver } from './observe';
-import { setStatementObserver } from './observe';
 import { pgliteClient } from './pglite';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
@@ -23,20 +23,17 @@ const failure = async (run: () => Promise<unknown>): Promise<{ code: string; fix
   throw new Error('expected the call to reject');
 };
 
-function recorder(): StatementObserver & { readonly seen: StatementEvent[] } {
-  const seen: StatementEvent[] = [];
-  return {
-    seen,
-    onStatement(event: StatementEvent): void {
-      seen.push(event);
-    },
-  };
+/** Every `db.statement` from here on; `off()` unsubscribes, `resetInstrumentation` is the backstop. */
+function recorder(): { readonly seen: DbStatementEvent[]; readonly off: () => void } {
+  const seen: DbStatementEvent[] = [];
+  const off = subscribe('db.statement', (event) => void seen.push(event.payload));
+  return { seen, off };
 }
 
 describe('the statement observer', () => {
   afterEach(() => {
     // Both are process-wide: leaving either installed makes every later test observe this one's.
-    setStatementObserver(undefined);
+    resetInstrumentation();
     setDbClient(undefined);
   });
 
@@ -48,7 +45,6 @@ describe('the statement observer', () => {
     const client = pgliteClient({ driver });
     setDbClient(client);
     const observer = recorder();
-    setStatementObserver(observer);
 
     await client.query(sql`select id from posts where org = ${'o_1'}`);
     await withTransaction(async (tx) => {
@@ -76,7 +72,6 @@ describe('the statement observer', () => {
   test('counts rows the way execute does: the command tag for a write', async () => {
     const client = pgliteClient({ driver: fakeDriver({ rows: [], affectedRows: 3 }) });
     const observer = recorder();
-    setStatementObserver(observer);
 
     expect(await client.execute(sql`delete from posts`)).toBe(3);
     expect(observer.seen[0]?.rows).toBe(3);
@@ -90,7 +85,6 @@ describe('the statement observer', () => {
       },
     });
     const observer = recorder();
-    setStatementObserver(observer);
 
     const error = await failure(() => client.query(sql`selct 1`));
 
@@ -100,24 +94,21 @@ describe('the statement observer', () => {
     expect(observer.seen[0]?.rows).toBe(0);
   });
 
-  // Strict test mode is an observer that throws, and the throw must arrive as itself. Notifying
-  // inside the statement's own `try` would report a statement that succeeded as X_DB_UNAVAILABLE.
-  test('a throwing observer reaches the caller as its own error, not a database failure', async () => {
-    const client = pgliteClient({ driver: fakeDriver({ rows: [] }) });
-    setStatementObserver({
-      onStatement(): void {
-        throw new Error('n+1 in a strict test');
-      },
+  // The bus contains a subscriber's throw: an observer can never fail the statement it observes.
+  test('a throwing subscriber never reaches the caller, and the statement still succeeds', async () => {
+    const client = pgliteClient({ driver: fakeDriver({ rows: [{ id: 1 }] }) });
+    const broken = new RangeError('a broken subscriber');
+    subscribe('db.statement', () => {
+      throw broken;
     });
 
-    await expect(client.query(sql`select 1`)).rejects.toThrow('n+1 in a strict test');
+    expect(await client.query(sql`select 1`)).toEqual([{ id: 1 }]);
   });
 
   test('booting, reserving and closing are not statements', async () => {
     const driver = fakeDriver({ rows: [] });
     const client = pgliteClient({ driver });
     const observer = recorder();
-    setStatementObserver(observer);
 
     await client.ping();
     (await client.reserve()).release();
@@ -128,8 +119,7 @@ describe('the statement observer', () => {
 
   test('an uninstalled seam observes nothing, which is the production path', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
-    setStatementObserver(undefined);
+    observer.off();
 
     await pgliteClient({ driver: fakeDriver({ rows: [] }) }).query(sql`select 1`);
 
@@ -139,7 +129,6 @@ describe('the statement observer', () => {
   test('carries the attribution declared by the scope, undefined outside every scope', async () => {
     const client = pgliteClient({ driver: fakeDriver({ rows: [] }) });
     const observer = recorder();
-    setStatementObserver(observer);
 
     await withStatementAttribution('members', 'findById', () => client.query(sql`select 1`));
     await client.query(sql`select 2`);
@@ -155,7 +144,6 @@ describe('the statement observer', () => {
       driver: { query: () => Promise.reject(new Error('boom')), close: async () => undefined },
     });
     const observer = recorder();
-    setStatementObserver(observer);
 
     await failure(() =>
       withStatementAttribution('members', 'findById', () => client.query(sql`selct 1`)),
@@ -169,7 +157,6 @@ describe('the statement observer', () => {
   test('attribution and an expected-loop reason are stamped together, independently', async () => {
     const client = pgliteClient({ driver: fakeDriver({ rows: [] }) });
     const observer = recorder();
-    setStatementObserver(observer);
 
     await withStatementAttribution('members', 'findMany', () =>
       expectedQueryLoop('one lookup per id', () => client.query(sql`select 1`)),

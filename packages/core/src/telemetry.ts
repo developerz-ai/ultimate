@@ -1,6 +1,7 @@
-// Single responsibility: OpenTelemetry-shaped tracing that is always on. The default exporter
-// is a no-op so unconfigured apps pay nothing, and trace context is serialised explicitly
-// (`traceparent`) so a trace survives HTTP -> job -> live query.
+// Single responsibility: OpenTelemetry-shaped tracing that is always on. An ended, sampled span
+// is published on the instrumentation bus as `span.end` — every exporter is a subscriber, so an
+// app with none pays nothing — and trace context is serialised explicitly (`traceparent`) so a
+// trace survives HTTP -> job -> live query.
 
 import { asyncContext } from './async-context';
 import { type Clock, systemClock } from './clock';
@@ -8,6 +9,7 @@ import { tryUseContext } from './context';
 import { renderThrowable } from './error-render';
 import { isUltimateError } from './errors';
 import { isSpanId, isTraceId, spanId as newSpanId, traceId as newTraceId } from './ids';
+import { instrument, subscribed } from './instrument';
 import { installTraceHeaders } from './outbound-headers';
 import { defaultSampler, resetDefaultSampler, type Sampler } from './sampler';
 
@@ -50,6 +52,8 @@ export interface ReadableSpan {
   readonly durationMs: number;
   readonly attributes: SpanAttributes;
   readonly events: readonly SpanEvent[];
+  /** Events past `MAX_SPAN_EVENTS`, counted and not kept — OTLP's `droppedEventsCount`. */
+  readonly droppedEventsCount: number;
   readonly status: SpanStatus;
   readonly links: readonly SpanContext[];
   readonly resource: SpanResource;
@@ -78,9 +82,20 @@ export interface Span {
   end(): void;
 }
 
+/**
+ * What an exporter does with one span. Installed by SUBSCRIBING, never configured:
+ * `subscribe('span.end', (event) => exporter.export(event.payload))`.
+ */
 export interface SpanExporter {
   export(span: ReadableSpan): void;
 }
+
+/**
+ * The most events one span keeps. A span is held until it ends, and a loop that records an event
+ * per row grew it without bound; past this the events are counted, not kept — the OTel SDK's own
+ * default (`OTEL_SPAN_EVENT_COUNT_LIMIT=128`), and OTLP carries the count as `droppedEventsCount`.
+ */
+export const MAX_SPAN_EVENTS = 128;
 
 export interface StartSpanOptions {
   readonly kind?: SpanKind | undefined;
@@ -91,7 +106,6 @@ export interface StartSpanOptions {
 }
 
 export interface TelemetryOptions {
-  readonly exporter?: SpanExporter | undefined;
   readonly clock?: Clock | undefined;
   readonly serviceName?: string | undefined;
   readonly serviceVersion?: string | undefined;
@@ -100,18 +114,15 @@ export interface TelemetryOptions {
   readonly sampler?: Sampler | undefined;
 }
 
-export const noopExporter: SpanExporter = Object.freeze({
-  export(): void {
-    // Intentionally empty: tracing is always on, and free until an exporter is configured.
-  },
-});
-
 export interface MemoryExporter extends SpanExporter {
   readonly spans: readonly ReadableSpan[];
   reset(): void;
 }
 
-/** For tests, and for reading back what a run traced with no collector on the box. */
+/**
+ * For tests, and for reading back what a run traced with no collector on the box. Subscribe it:
+ * `const off = subscribe('span.end', (event) => spans.export(event.payload))`.
+ */
 export function memoryExporter(): MemoryExporter {
   const spans: ReadableSpan[] = [];
   return {
@@ -130,14 +141,12 @@ export function memoryExporter(): MemoryExporter {
 // `@ultimat3/core` down with it. `async-context.ts` owns the argument.
 const activeSpan = asyncContext<Span>('the active span');
 
-let exporter: SpanExporter = noopExporter;
 let clock: Clock = systemClock;
 let enabled = true;
 let sampler: Sampler | undefined;
 let resource: SpanResource = Object.freeze({ serviceName: 'ultimate', serviceVersion: '0.0.1' });
 
 export function configureTelemetry(options: TelemetryOptions): void {
-  if (options.exporter !== undefined) exporter = options.exporter;
   if (options.clock !== undefined) clock = options.clock;
   if (options.enabled !== undefined) enabled = options.enabled;
   if (options.sampler !== undefined) sampler = options.sampler;
@@ -150,7 +159,6 @@ export function configureTelemetry(options: TelemetryOptions): void {
 }
 
 export function resetTelemetry(): void {
-  exporter = noopExporter;
   clock = systemClock;
   enabled = true;
   sampler = undefined;
@@ -197,7 +205,45 @@ export function currentSpanContext(): SpanContext | undefined {
  * exact pair — and the one lever between "tracing is on" and "the collector melts" did nothing.
  */
 function inboundParent(parent: SpanContext | undefined): SpanContext | undefined {
-  return parent === undefined || parent.spanId === '' ? undefined : parent;
+  if (parent === undefined) return undefined;
+  // A span this process started IS a real parent — asked first, because reading its `spanId`
+  // would mint the id an unsampled span deliberately left unminted.
+  if (parent instanceof LazySpanContext || parent instanceof SampledSpanContext) return parent;
+  return parent.spanId === '' ? undefined : parent;
+}
+
+/**
+ * A SAMPLED span's context: three own, enumerable fields, so a spread, `JSON.stringify` and
+ * `structuredClone` carry all of them. A class, so `inboundParent` brands it with `instanceof`
+ * instead of reading `spanId` (measured: an object literal with a getter and a symbol brand cost
+ * ten times a class to build).
+ */
+class SampledSpanContext implements SpanContext {
+  readonly spanId: string;
+  readonly traceFlags = 1;
+  constructor(readonly traceId: string) {
+    this.spanId = newSpanId();
+  }
+}
+
+/**
+ * An UNSAMPLED span's context: its id is minted only when something reads it — a `traceparent`
+ * sent onward, a sampled child's `parentSpanId` — because nothing else ever does, and the draw was
+ * most of what an unsampled span cost (plan 101 slice 20: ≤ 1 µs). The getter lives on the
+ * prototype, which a spread and `structuredClone` skip; `toJSON` keeps `JSON.stringify` whole, and
+ * a caller copying a context reads `spanId` by name, as `SpanContext` declares it.
+ */
+class LazySpanContext implements SpanContext {
+  readonly traceFlags = 0;
+  #spanId: string | undefined;
+  constructor(readonly traceId: string) {}
+  get spanId(): string {
+    this.#spanId ??= newSpanId();
+    return this.#spanId;
+  }
+  toJSON(): SpanContext {
+    return { traceId: this.traceId, spanId: this.spanId, traceFlags: this.traceFlags };
+  }
 }
 
 export function startSpan(initialName: string, options?: StartSpanOptions): Span {
@@ -206,7 +252,8 @@ export function startSpan(initialName: string, options?: StartSpanOptions): Span
   installTraceHeaders();
   const parent = options?.parent ?? currentSpanContext();
   const inbound = inboundParent(parent);
-  const attributes: Record<string, AttributeValue> = { ...(options?.attributes ?? {}) };
+  const given = options?.attributes;
+  const attributes: Record<string, AttributeValue> = given === undefined ? {} : { ...given };
   // The bit is decided ONCE, here, and every child of this span inherits it through `parent` —
   // so one trace is sampled or not sampled as a whole. Before this, `traceFlags` was hardcoded to
   // 1 for a root and `end()` exported regardless, which made the bit a value the framework
@@ -214,14 +261,19 @@ export function startSpan(initialName: string, options?: StartSpanOptions): Span
   // The id is resolved BEFORE the decision, because the decision may be a function of it: a
   // `traceidratio` sampler hashes the trace id, and a root's id exists nowhere else to hash.
   const traceId = parent?.traceId ?? newTraceId();
-  const context: SpanContext = {
-    traceId,
-    spanId: newSpanId(),
-    traceFlags: currentSampler().shouldSample(name, inbound, attributes, traceId) ? 1 : 0,
-  };
+  const sampled = currentSampler().shouldSample(name, inbound, attributes, traceId);
+  const context: SpanContext = sampled
+    ? new SampledSpanContext(traceId)
+    : new LazySpanContext(traceId);
   const events: SpanEvent[] = [];
-  const startedAt = clock.now().getTime();
-  const startedMono = clock.monotonic();
+  let droppedEventsCount = 0;
+  const pushEvent = (event: SpanEvent): void => {
+    if (events.length < MAX_SPAN_EVENTS) events.push(event);
+    else droppedEventsCount += 1;
+  };
+  // Read only for a span that can be exported: an unsampled one never reports a time.
+  const startedAt = sampled ? clock.now().getTime() : 0;
+  const startedMono = sampled ? clock.monotonic() : 0;
   let status: SpanStatus = { code: 'unset' };
   let ended = false;
 
@@ -242,7 +294,8 @@ export function startSpan(initialName: string, options?: StartSpanOptions): Span
       return span;
     },
     addEvent(eventName, eventAttributes) {
-      events.push({
+      if (!sampled) return span;
+      pushEvent({
         name: eventName,
         at: clock.now().getTime(),
         attributes: eventAttributes ?? {},
@@ -257,11 +310,13 @@ export function startSpan(initialName: string, options?: StartSpanOptions): Span
       // A throw here substitutes the tracer's own TypeError for the caller's real failure and
       // leaves the span it was annotating unended.
       const message = renderThrowable(error);
-      events.push({
-        name: 'exception',
-        at: clock.now().getTime(),
-        attributes: { 'error.code': code, 'error.message': message },
-      });
+      if (sampled) {
+        pushEvent({
+          name: 'exception',
+          at: clock.now().getTime(),
+          attributes: { 'error.code': code, 'error.message': message },
+        });
+      }
       status = { code: 'error', message };
       return span;
     },
@@ -280,10 +335,13 @@ export function startSpan(initialName: string, options?: StartSpanOptions): Span
       // The whole point of propagating a sampling bit is that somebody obeys it. A span still
       // exists, still parents its children and still carries the decision onward in
       // `traceparent`; it is simply not exported.
-      if ((context.traceFlags & 1) === 0) return;
+      if (!sampled) return;
+      // Nobody exporting: no record is built. Checked after the sampling bit, so `span.end` is
+      // the export stream — a subscriber that wants every occurrence hears the domain event.
+      if (!subscribed('span.end')) return;
       const endedAt = clock.now().getTime();
       const parentSpanId = inbound?.spanId;
-      exporter.export({
+      instrument('span.end', {
         name,
         kind: options?.kind ?? 'internal',
         context,
@@ -293,6 +351,7 @@ export function startSpan(initialName: string, options?: StartSpanOptions): Span
         durationMs: clock.monotonic() - startedMono,
         attributes,
         events,
+        droppedEventsCount,
         status,
         links: options?.links ?? [],
         resource,

@@ -4,12 +4,12 @@
 // stamped onto the event it reports.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { DbStatementEvent } from '@ultimat3/core';
+import { resetInstrumentation, subscribe } from '@ultimat3/core';
 import { withStatementAttribution } from './attribution';
 import { postgresClient } from './client';
-import { DbError } from './errors';
+import type { DbError } from './errors';
 import { expectedQueryLoop } from './expected-loop';
-import type { StatementEvent, StatementObserver } from './observe';
-import { setStatementObserver } from './observe';
 import { sql } from './sql';
 
 /**
@@ -29,7 +29,7 @@ const realBunSql = host.Bun.SQL;
 afterEach(() => {
   host.Bun.SQL = realBunSql;
   // Process-wide, so a test that installs one and leaves it behind observes every later test.
-  setStatementObserver(undefined);
+  resetInstrumentation();
 });
 
 interface FakeSqlOptions {
@@ -62,14 +62,11 @@ function installFakeSql(options: FakeSqlOptions = {}): void {
 const rejection = (promise: Promise<unknown>): Promise<unknown> =>
   promise.catch((error: unknown) => error);
 
-function recorder(): StatementObserver & { readonly seen: StatementEvent[] } {
-  const seen: StatementEvent[] = [];
-  return {
-    seen,
-    onStatement(event: StatementEvent): void {
-      seen.push(event);
-    },
-  };
+/** Every `db.statement` from here on; `off()` unsubscribes, `resetInstrumentation` is the backstop. */
+function recorder(): { readonly seen: DbStatementEvent[]; readonly off: () => void } {
+  const seen: DbStatementEvent[] = [];
+  const off = subscribe('db.statement', (event) => void seen.push(event.payload));
+  return { seen, off };
 }
 
 describe('the statement observer', () => {
@@ -78,7 +75,6 @@ describe('the statement observer', () => {
   // loops live.
   test('sees every statement once, pooled and pinned alike', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     installFakeSql({ rows: [{ id: 1 }, { id: 2 }] });
     const client = postgresClient({ url: TEST_URL });
 
@@ -98,7 +94,6 @@ describe('the statement observer', () => {
 
   test('reports a failed statement with the error the caller is about to be thrown', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     installFakeSql({ statementError: new DriverFailure('deadlock detected') });
     const connection = await postgresClient({ url: TEST_URL }).reserve();
 
@@ -111,29 +106,26 @@ describe('the statement observer', () => {
     connection.release();
   });
 
-  // Strict test mode is an observer that throws, and the throw must arrive as itself. Notifying
-  // inside the statement's own `try` would re-report a statement that succeeded as X_DB_UNAVAILABLE.
-  test('a throwing observer reaches the caller as its own error, not a database failure', async () => {
-    installFakeSql();
-    // A bare `Error` on purpose: the observer is app-supplied, an app can throw anything, and
-    // "arrives as itself" is the claim. Hoisted so the assertion can be identity — message
-    // equality passes on a re-wrapped copy, which is exactly the failure this test exists to see.
-    const thrown = new Error('n+1 in a strict test');
-    setStatementObserver({
-      onStatement(): void {
-        throw thrown;
-      },
+  // The bus contains a subscriber's throw: an observer can never fail the statement it observes,
+  // and the statement is reported once, as the success it was.
+  test('a throwing subscriber never reaches the caller, and the statement still succeeds', async () => {
+    installFakeSql({ rows: [{ id: 1 }] });
+    const observer = recorder();
+    // Input, not a verdict: the subscriber is app-supplied and an app can throw anything.
+    const thrown = new Error('a broken subscriber');
+    subscribe('db.statement', () => {
+      throw thrown;
     });
 
-    const caught = await rejection(postgresClient({ url: TEST_URL }).query(sql`select 1`));
+    const answer = await rejection(postgresClient({ url: TEST_URL }).query(sql`select 1`));
 
-    expect(caught).not.toBeInstanceOf(DbError);
-    expect(caught).toBe(thrown);
+    expect(answer).toEqual([{ id: 1 }]);
+    expect(observer.seen).toHaveLength(1);
+    expect(observer.seen[0]).not.toHaveProperty('error');
   });
 
   test('reserving a connection and closing the pool are not statements', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     installFakeSql();
     const client = postgresClient({ url: TEST_URL });
 
@@ -145,8 +137,7 @@ describe('the statement observer', () => {
 
   test('an uninstalled seam observes nothing, which is the production path', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
-    setStatementObserver(undefined);
+    observer.off();
     installFakeSql();
 
     await postgresClient({ url: TEST_URL }).query(sql`select 1`);
@@ -156,7 +147,6 @@ describe('the statement observer', () => {
 
   test('carries the attribution declared by the scope, undefined outside every scope', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     installFakeSql();
     const client = postgresClient({ url: TEST_URL });
 
@@ -171,7 +161,6 @@ describe('the statement observer', () => {
 
   test('the failing statement path still carries the attribution', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     installFakeSql({ statementError: new DriverFailure('deadlock detected') });
     const connection = await postgresClient({ url: TEST_URL }).reserve();
 
@@ -188,7 +177,6 @@ describe('the statement observer', () => {
   // Two independent scopes: an expected-loop reason does not crowd out the attribution.
   test('attribution and an expected-loop reason are stamped together, independently', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     installFakeSql();
     const client = postgresClient({ url: TEST_URL });
 

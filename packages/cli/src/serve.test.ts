@@ -2,15 +2,21 @@ import { expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; the fixture is joined to this file's directory.
 import { join } from 'node:path';
+import { errorGroupsSink, memoryErrorGroupsStore } from '@ultimat3/admin/error-groups';
 import type { ErrorReport } from '@ultimat3/core';
 import {
+  chainErrorReporters,
   configureErrorReporting,
   errorReportersOf,
   InternalError,
   installedErrorReporter,
+  isSentryErrorReporter,
+  logger,
   memoryErrorReporter,
   reportError,
   resetErrorReporting,
+  sentryErrorReporter,
+  sentryTransport,
 } from '@ultimat3/core';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import { processRoot } from './process-root-fixture';
@@ -155,20 +161,118 @@ test('every report a container sends is tagged with the build id this boot compu
   resetErrorReporting();
 });
 
-test("a DSN chains the transport BESIDE the app's own reporter, and a re-boot swaps it", () => {
+const DSN = { [ERROR_DSN_KEY]: 'https://public@monitor.example.invalid/7' };
+
+/** A `fetch` that records each envelope body: one entry is one send to a monitor. */
+const recordingFetch = (sent: string[]) =>
+  ((_url: string | URL | Request, init?: RequestInit) => {
+    sent.push(String(init?.body ?? ''));
+    return Promise.resolve(new Response());
+  }) as typeof globalThis.fetch;
+
+/** Boot with `SENTRY_DSN`, raise one error, answer the warn codes logged and the reporters left. */
+const bootAndReport = () => {
+  const warned: string[] = [];
+  const printWarning = logger.warn;
+  logger.warn = (_line: string, fields?: Record<string, unknown>): void => {
+    warned.push(String(fields?.['code']));
+  };
+  try {
+    configureReporting(DSN, 'build-abc');
+  } finally {
+    logger.warn = printWarning;
+  }
+  reportError(new InternalError({ cause: 'boom', fix: 'x doctor --json' }), { source: 'http' });
+  return { warned, members: errorReportersOf(installedErrorReporter()) };
+};
+
+test('an app with no reporter of its own gets the DSN transport, and a re-boot swaps it', () => {
   resetErrorReporting();
-  const app = memoryErrorReporter();
-  configureErrorReporting({ reporter: app });
-  const dsn = { [ERROR_DSN_KEY]: 'https://public@monitor.example.invalid/7' };
-  configureReporting(dsn, 'build-abc');
-  const first = errorReportersOf(installedErrorReporter());
-  expect(first).toHaveLength(2);
-  expect(first[0]).toBe(app);
+  configureReporting(DSN, 'build-abc');
+  const [first] = errorReportersOf(installedErrorReporter());
+  expect(first !== undefined && isSentryErrorReporter(first)).toBe(true);
   // A second boot in one process replaces its own transport rather than stacking a second one.
-  configureReporting(dsn, 'build-abc');
-  expect(errorReportersOf(installedErrorReporter())).toHaveLength(2);
+  configureReporting(DSN, 'build-abc');
+  expect(errorReportersOf(installedErrorReporter())).toHaveLength(1);
   configureReporting({}, 'build-abc');
-  expect(installedErrorReporter()).toBe(app);
+  expect(errorReportersOf(installedErrorReporter())).toEqual([]);
+  resetErrorReporting();
+});
+
+// An app that installed its own Sentry transport (its own `beforeSend` scrubbing) and also set
+// `SENTRY_DSN` used to be reported TWICE per error — once scrubbed by its transport, once raw by the
+// boot's chained one. Its transport is the only one; its other sinks stay.
+test("an app's own Sentry transport is the only one, so each error is sent once, scrubbed", () => {
+  resetErrorReporting();
+  const sent: string[] = [];
+  const groups = memoryErrorReporter();
+  const scrubbing = sentryErrorReporter({
+    dsn: 'https://app@monitor.example.invalid/1',
+    fetch: recordingFetch(sent),
+    beforeSend: (event) => ({ ...event, scrubbed: true }),
+  });
+  configureErrorReporting({ reporter: chainErrorReporters(groups, scrubbing) });
+  const { warned, members } = bootAndReport();
+  expect(members).toEqual([groups, scrubbing]);
+  expect(warned).toEqual([]);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toContain('"scrubbed":true');
+  expect(groups.events).toHaveLength(1);
+  resetErrorReporting();
+});
+
+// A wrapper (`{ report }` adding a tag) is not recognisable by shape. Marked, it is the transport.
+test('a wrapper marked with sentryTransport is the app transport: one send, no warning', () => {
+  resetErrorReporting();
+  const sent: string[] = [];
+  const inner = sentryErrorReporter({
+    dsn: 'https://app@monitor.example.invalid/1',
+    fetch: recordingFetch(sent),
+  });
+  const wrapper = sentryTransport({
+    report: (report: ErrorReport) =>
+      inner.report({ ...report, meta: { ...report.meta, team: 'core' } }),
+  });
+  configureErrorReporting({ reporter: wrapper });
+  const { warned, members } = bootAndReport();
+  expect(members).toEqual([wrapper]);
+  expect(warned).toEqual([]);
+  expect(sent).toHaveLength(1);
+  resetErrorReporting();
+});
+
+// Unmarked, the boot cannot tell the wrapper from a sink: it adds nothing — never a second,
+// unscrubbed send — and says how to claim the DSN.
+test('an unmarked app reporter keeps the boot transport out, and the boot says so once', () => {
+  resetErrorReporting();
+  const sent: string[] = [];
+  const inner = sentryErrorReporter({
+    dsn: 'https://app@monitor.example.invalid/1',
+    fetch: recordingFetch(sent),
+  });
+  const wrapper = { report: (report: ErrorReport) => inner.report(report) };
+  configureErrorReporting({ reporter: wrapper });
+  const { warned, members } = bootAndReport();
+  expect(members).toEqual([wrapper]);
+  expect(warned).toEqual(['X_ERROR_REPORTER_DSN_UNCLAIMED']);
+  expect(sent).toHaveLength(1);
+  resetErrorReporting();
+});
+
+// A sink that keeps reports on the box is not a monitor: the DSN transport goes beside it. Before
+// the local-sink mark, an app with `/admin/errors` and `SENTRY_DSN` lost its Sentry reporting.
+test('local sinks (errorGroupsSink, a memory reporter) get the DSN transport chained beside them', () => {
+  resetErrorReporting();
+  const memory = memoryErrorReporter();
+  const groups = errorGroupsSink({ store: memoryErrorGroupsStore() });
+  configureErrorReporting({ reporter: chainErrorReporters(groups, memory) });
+  const { warned, members } = bootAndReport();
+  expect(members).toHaveLength(3);
+  expect(members.slice(0, 2)).toEqual([groups, memory]);
+  const added = members[2];
+  expect(added !== undefined && isSentryErrorReporter(added)).toBe(true);
+  expect(warned).toEqual([]);
+  expect(memory.events).toHaveLength(1);
   resetErrorReporting();
 });
 

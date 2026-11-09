@@ -31,6 +31,7 @@ configureHttp({ bodyLimitBytes: 8 * 1024 * 1024, requestTimeoutMs: 300_000 });
 | the request deadline and `ctx.signal` | `deadline.ts` |
 | the caller's real address behind a proxy | `forwarded.ts` |
 | the inbound request id and trace, read before the span | `correlation.ts` |
+| the `server` span (OpenTelemetry's stable `http.*`/`url.*`/`server.*` names, `ultimate.request_id`) and `http.request` on core's instrumentation bus, once per request | `pipeline.ts` |
 | dev error overlay | `overlay.ts` |
 
 ## What an app declares: `configureHttp()`

@@ -194,9 +194,6 @@ export async function unknownConfigKeys(
  */
 export const DEFAULTS_PAGE = 'wiki/Configuration.md';
 
-/** `defineConfig({ name })` — the placeholder the page writes inside a derived default. */
-const NAME_PLACEHOLDER = '<name>';
-
 export interface DocumentedDefault {
   readonly line: number;
   readonly key: string;
@@ -283,7 +280,7 @@ export function staleDefaults(markdown: string): {
   readonly checked: number;
   readonly stale: readonly StaleDefault[];
 } {
-  const defaults = configDefaults(NAME_PLACEHOLDER);
+  const defaults = configDefaults();
   const stale: StaleDefault[] = [];
   let checked = 0;
   for (const documented of documentedDefaults(markdown)) {

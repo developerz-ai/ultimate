@@ -88,7 +88,7 @@ export interface ProviderGatewayInput {
 }
 
 export interface Gateway {
-  /** The wire formats of the providers serving `model` — what `llm.sampling.ignored` is read from. */
+  /** The wire formats of the providers serving `model` — what `ultimate.llm.sampling.ignored` is read from. */
   samplingWires?(model: ModelId): readonly SamplingWire[];
   /**
    * Whether a provider serving `model` would send a hinted request with a cache mark — so its

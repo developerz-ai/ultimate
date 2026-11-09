@@ -144,7 +144,7 @@ export { OVERLAY_STYLE } from './overlay-style';
 export type { PeerIdentity } from './peer-identity';
 export { peerIdentity } from './peer-identity';
 export type { HandleInit, Pipeline, PipelineDeps } from './pipeline';
-export { httpPipeline, PIPELINE_STAGES } from './pipeline';
+export { httpPipeline, PIPELINE_STAGES, REQUEST_ID_ATTRIBUTE } from './pipeline';
 export type { ProblemMeta, ProblemMetaDeclaration, ProblemMetaValue } from './problem-meta';
 export { MAX_PROBLEM_META_BYTES, registerProblemMeta } from './problem-meta';
 export type {

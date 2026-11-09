@@ -11,7 +11,7 @@
 //   bun run scripts/wiki-fences.ts [--json] [--pin]
 
 import { flagBool, parseScriptArgs } from './lib/args';
-import { loweredRows, siteTally } from './lib/fence-sites';
+import { pinnedBacklogSource, siteTally } from './lib/fence-sites';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { Fence } from './lib/readme-fences';
@@ -117,16 +117,16 @@ export async function wikiFenceFindings(root: string): Promise<readonly Finding[
   return checkWikiFences(await wikiFenceFailures(root)).map(wikiFenceFinding);
 }
 
-/** `--pin`: lower each row to what is measured; never raise one — that is a reviewed edit. */
+/**
+ * `--pin`: lower each row to what is measured; never raise one — that is a reviewed edit. In
+ * place: row order and every `// why:` comment survive (`lowerRowsInPlace`).
+ */
 export function pinnedWikiSource(
   measured: Readonly<Record<string, number>>,
   backlog: Readonly<Record<string, number>>,
   source: string,
 ): string {
-  return source.replace(
-    /(export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = \{\n)[\s\S]*?(\n\};)/,
-    (_whole, open: string, close: string) => `${open}${loweredRows(measured, backlog)}${close}`,
-  );
+  return pinnedBacklogSource('WIKI_FENCE_BACKLOG', measured, backlog, source);
 }
 
 if (import.meta.main) {

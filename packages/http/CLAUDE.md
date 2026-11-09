@@ -58,7 +58,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A route may
   REPLACE it with `meta.authenticate` (never run beside it): `bearerMount` sets it so a session
   cookie authenticates nothing on `/v1/*`.
-- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage, outside the scopes is `X_ROUTE_NOT_FOUND`, the prefix is opaque. The token allowance is spent once, in the authenticator, for every resolved token. A declared `rateLimit` REPLACES `default` on the mount's routes; a route's own `meta.rateLimit` and the tenant allowance stay. A successor `Link` is rewritten to the mounted path when in the cut, else removed (`bearer-mount-wire.test.ts`). Full rule: `docs/history/http.md`.
+- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage (outside it: `X_ROUTE_NOT_FOUND`); the token allowance is spent once, in the authenticator; a declared `rateLimit` REPLACES `default`, a route's own and the tenant allowance stay; a successor `Link` is rewritten or removed (`bearer-mount-wire.test.ts`). Full rule: `docs/history/http.md`.
 - **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
 - **A dev 4xx asks `hooks.errorPage` first; a 5xx is always the overlay** (#492): the app's file
   when it has one, else the overlay. Production asks for every status (`stages-error-page.test.ts`).
@@ -70,9 +70,11 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `finalize.ts` owns the tail. Imports go `pipeline.ts` → `stages.ts`; a stage reads
   `StageRunnersInput`, never `PipelineDeps`. A new stage is an entry in both `PIPELINE_STAGES` and the
   `Record<StageName, StageRun>` table, with a `why` and a test.
-- **The request span is named by the route PATTERN** (`GET /r/:token`, `routeSpanName`), started
-  as the bare method and renamed after the match; `http.route` is the pattern or `unmatched`. A
-  concrete URL carries tokens and is attacker-chosen — never a span name, attribute or label.
+- **The request span is named by the route PATTERN** (`GET /r/:token`, `routeSpanName`), renamed
+  on match; `http.route` is the pattern or `unmatched`. A concrete URL (tokens,
+  attacker-chosen) is never a span name, attribute or label — no `url.path`. Keys: core's
+  `SEMCONV`; the id is `ultimate.request_id`. **`http.request` is emitted once, in the same
+  `finally`**, after `deadline.clear()` (`pipeline-telemetry.test.ts`).
 - **The CSP `connect-src` is `'self' blob:`** — no bare `ws:`/`wss:`. A cross-origin sync node is
   the boot's `csp.extend` of that origin exactly. `security.hsts` merges key by key.
 - **The two inbound ids are read BEFORE the context and the span** (`correlation.ts`, core's

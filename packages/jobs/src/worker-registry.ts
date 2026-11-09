@@ -6,7 +6,7 @@
 import type { Clock } from '@ultimat3/core';
 import { logger, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
-import type { JobDriver } from './driver';
+import { DEFAULT_QUEUE, type JobDriver } from './driver';
 import { MAX_WORKER_IN_FLIGHT } from './introspection';
 import { registeredJobs } from './job';
 import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
@@ -122,13 +122,15 @@ export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegis
 
 /**
  * A queue this worker polls that NO registered job names. Not refused: a per-call
- * `enqueue({ queue })` may still land work there, and an idle pass is one statement however many
- * queues it covers. Said once, at boot, because it is almost always a config leftover — `x new`
- * configures `['<app>-default']` while a `job()` naming no queue lands on `default`.
+ * `enqueue({ queue })` may still land work there — `jobs.queues` exists to name exactly those — and
+ * an idle pass is one statement however many queues it covers. Said once, at boot, because it is
+ * almost always a config leftover (`x new` configured `['<app>-default']` until 31.0.0).
+ * `DEFAULT_QUEUE` is never one: it is where every `job()` naming no queue lands and what a worker
+ * with no list serves, so an app with no such job yet logged this on every boot of every pod.
  */
 export function reportUnregisteredQueues(workerId: string, queues: readonly string[]): void {
   const named = new Set(registeredJobs().map((handle) => handle.queue));
-  const unnamed = queues.filter((queue) => !named.has(queue));
+  const unnamed = queues.filter((queue) => queue !== DEFAULT_QUEUE && !named.has(queue));
   if (unnamed.length === 0) return;
   logger.info('jobs.worker.queue-unregistered', {
     workerId,

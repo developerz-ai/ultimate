@@ -16,6 +16,7 @@ import {
   type OtlpPostOptions,
   otlpAttributes,
   otlpEndpoint,
+  otlpEndpointLabel,
   otlpHeaders,
   otlpResource,
   postOtlp,
@@ -169,7 +170,7 @@ export function otlpMetricExporter(options: OtlpMetricExporterOptions = {}): Otl
         body = JSON.stringify(otlpMetricsRequest(collection, startedAtMs));
       } catch (failure) {
         logger.warn('otlp metric snapshot dropped', {
-          url,
+          url: otlpEndpointLabel(url),
           metrics: collection.metrics.length,
           error: renderThrowable(failure),
         });

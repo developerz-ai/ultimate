@@ -94,6 +94,42 @@ describe('the wiki-fence ratchet', () => {
     expect(next).not.toContain('Money');
   });
 
+  // A `// why:` comment is a reviewed decision about the row under it, and the order is the
+  // reviewer's: `--pin` that re-sorted the rows and dropped every comment made a one-row removal a
+  // diff nobody could review.
+  test('--pin keeps every // why: comment and the row order, dropping a comment with its row', () => {
+    const source = [
+      '// header comment above the table',
+      'export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {',
+      "  'Zeta: z;': 2,",
+      '  // why: re-keyed, not raised — the rename changed this fence',
+      "  'Alpha: a;': 3,",
+      '  // why: this row goes',
+      "  'Gone: g;': 1,",
+      "  'Beta: b;': 1,",
+      '};',
+      '',
+    ].join('\n');
+    const backlog = { 'Zeta: z;': 2, 'Alpha: a;': 3, 'Gone: g;': 1, 'Beta: b;': 1 };
+    const next = pinnedWikiSource(
+      { 'Zeta: z;': 1, 'Alpha: a;': 3, 'Beta: b;': 1 },
+      backlog,
+      source,
+    );
+    expect(next).toBe(
+      [
+        '// header comment above the table',
+        'export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {',
+        "  'Zeta: z;': 1,",
+        '  // why: re-keyed, not raised — the rename changed this fence',
+        "  'Alpha: a;': 3,",
+        "  'Beta: b;': 1,",
+        '};',
+        '',
+      ].join('\n'),
+    );
+  });
+
   test('a page is named by its file stem, as the wiki links it', () => {
     expect(pageOf('wiki/Error-Codes.md')).toBe('Error-Codes');
   });

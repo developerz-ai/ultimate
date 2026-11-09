@@ -123,9 +123,9 @@ still live fails its joiners too.
 | stopped | refused at once → a miss | refused at once → `report.errors`; the same tags again once it answers |
 | restarted | every pod reconnects on its own, no restart | answers |
 
-A missed deadline or a park is `X_CACHE_DRIVER_UNAVAILABLE` in `recentTierFailures()`; a stopped server's refusal is recorded with Bun's `ERR_REDIS_CONNECTION_CLOSED` message and no `code`. While the store is gone each pod still collapses its own concurrent misses to one `load()`; across pods, Postgres takes one load per pod per key — the rung's known cost. The jobs queue on the same client refuses an enqueue with `X_DRIVER_UNAVAILABLE` instead of waiting ([Jobs](Jobs-And-Workflows)).
+A missed deadline or a park is a `cache.tier_failure` event with `X_CACHE_DRIVER_UNAVAILABLE`; a stopped server's refusal is recorded with Bun's `ERR_REDIS_CONNECTION_CLOSED` message and no `code`. While the store is gone each pod still collapses its own concurrent misses to one `load()`; across pods, Postgres takes one load per pod per key — the rung's known cost. The jobs queue on the same client refuses an enqueue with `X_DRIVER_UNAVAILABLE` instead of waiting ([Jobs](Jobs-And-Workflows)).
 
-The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU or the Redis tier (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
+The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU or the Redis tier (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal is one `cache.tier_failure` event on core's instrumentation bus — `subscribe('cache.tier_failure', …)`, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn; a subscriber that throws is contained by the bus and logged once, never the read's failure. Every rung a read asks is a `cache.hit` or `cache.miss` event, and every bust a `cache.invalidate` event. `As of 2026-11` (v31). The one call left to throw is the load itself: it *is* the business read.
 
 ## Failure modes removed
 
@@ -253,5 +253,5 @@ Verbatim shapes: [`packages/cache/src/errors.ts`](https://github.com/developerz-
 - `flushAll` has no shipped caller: `x cache clear` is planned, and there is no runtime API for it.
 - Cache misses must be correct and merely slower — no code path may depend on a hit.
 - Prefer `tag.post.id(x)` over `tag.post`. Narrow eviction is the default, not an optimization.
-- A cache tier may never fail a business read or write. Tier errors land in the invalidation report, or in `recentTierFailures()` on the read ladder.
+- A cache tier may never fail a business read or write. Tier errors land in the invalidation report, or in a `cache.tier_failure` event on the read ladder.
 - Realtime is not a cache tier. Live queries flow from logical replication on their own path ([Realtime](Realtime)).

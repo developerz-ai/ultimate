@@ -14,7 +14,7 @@ const storage = asyncContext<string>('the expected-loop reason');
 
 /**
  * Run `fn` with every statement it issues — at any depth, across every `await` — marked expected
- * and carrying `reason`. The reason rides on the `StatementEvent` (`expected`), so a diagnostic
+ * and carrying `reason`. The reason rides on the `DbStatementEvent` (`expected`), so a diagnostic
  * that buffers a request's statements and judges them at the end still holds the argument long
  * after this scope closed.
  *
@@ -45,8 +45,8 @@ export function expectedQueryLoop<T>(reason: string, fn: () => T): T {
 
 /**
  * The innermost enclosing reason, or `undefined` outside every scope — which is every statement in
- * an app that never calls `expectedQueryLoop`. Read by the two funnels when an observer is
- * installed, and by nothing else: a diagnostic reads `StatementEvent.expected`, which is the same
+ * an app that never calls `expectedQueryLoop`. Read by `traceStatement` while `db.statement`
+ * has a subscriber, and by nothing else: a subscriber reads `DbStatementEvent.expected`, which is the same
  * answer captured at the moment the statement settled.
  */
 export function expectedQueryLoopReason(): string | undefined {

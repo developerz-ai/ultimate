@@ -3,8 +3,10 @@
 // Postgres itself refuses the write. `NOLOGIN` means it is reachable only via `SET LOCAL ROLE`
 // inside an already-`READ ONLY` transaction, never by a connection string.
 
+import { stringField } from '@ultimat3/core';
 import type { DbClient } from './client';
 import { identifier, literal, raw, type SqlFragment, sql } from './sql';
+import { sqlState } from './sqlstate';
 
 /** The role `ensureReadOnlyRole` creates and `readOnlyQuery` assumes by default. */
 export const READONLY_ROLE = 'ultimate_readonly';
@@ -90,6 +92,41 @@ export function grantReadOnlySql(options?: ReadOnlyRoleOptions): readonly SqlFra
 }
 
 /**
+ * Two sessions running this DDL at once — `x mcp serve` and the `/_x` panel, two replicas — collide
+ * in the catalog: the loser's `CREATE ROLE` is `42710 duplicate_object` past the existence check,
+ * and a concurrent GRANT is `XX000 tuple concurrently updated`. Either way the other session made
+ * the statement true, so the role is there; read as a refusal, it dropped the layer for the
+ * session. Any other `XX000` is still a failure.
+ */
+function lostRace(error: unknown): boolean {
+  const state = sqlState(error);
+  if (state === DUPLICATE_OBJECT) return true;
+  return (
+    state === INTERNAL_ERROR && /tuple concurrently (updated|deleted)/.test(messageChain(error))
+  );
+}
+
+const DUPLICATE_OBJECT = '42710';
+const INTERNAL_ERROR = 'XX000';
+
+/** Every message down the `sourceError` chain a `DbError` wraps its driver error in. */
+function messageChain(error: unknown): string {
+  const messages: string[] = [];
+  let value = error;
+  for (let depth = 0; depth < 4 && value !== null && value !== undefined; depth += 1) {
+    const message = stringField(value, 'message');
+    if (message !== undefined) messages.push(message);
+    // A getter or a Proxy may throw on the read: a chain that fights being walked ends here.
+    try {
+      value = typeof value === 'object' ? Reflect.get(value, 'sourceError') : undefined;
+    } catch {
+      value = undefined;
+    }
+  }
+  return messages.join('\n');
+}
+
+/**
  * Create/refresh the role and make it assumable by the current user.
  *
  * Returns the role name when the role exists and may be assumed, `null` when the connection is
@@ -104,7 +141,10 @@ export async function ensureReadOnlyRole(
   const role = options?.role ?? READONLY_ROLE;
   try {
     for (const statement of grantReadOnlySql(options)) {
-      await client.execute(statement);
+      // A lost race is not a refusal: skip the statement the other session already made true.
+      await client.execute(statement).catch((error: unknown) => {
+        if (!lostRace(error)) throw error;
+      });
     }
     return role;
   } catch {

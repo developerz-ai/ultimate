@@ -117,7 +117,8 @@ async function exercise(
     ...(only === undefined ? entityTenantFindings(describeEntities()) : []),
     ...subjectStatic,
     ...subjectProofs,
-    ...exerciseFindings(records),
+    // The fix pastes into the file the app has, or hands it the file it lacks.
+    ...exerciseFindings(records, overrides === undefined ? 'absent' : 'present'),
   ];
   return {
     ok: findings.length === 0,

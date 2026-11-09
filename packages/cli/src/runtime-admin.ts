@@ -77,7 +77,11 @@ async function answer(
   // Dynamic, and only here: reached only when an admin is mounted, by which point the app has
   // already loaded the package — and after `loadApp` installed the `.tsx` loader its screens need.
   const { adminRouteMatch } = await import('@ultimat3/admin');
-  const matched = app === undefined ? null : adminRouteMatch(app, request.url.pathname);
+  // The path the route table MATCHED — routed locale prefix and base path removed — never the raw
+  // pathname: the router serves `/en/admin/jobs` through `${base}/*rest`, and asking the admin
+  // for `/en/admin/jobs` was a 404 in every locale but the default (adopter-found).
+  const path = context.routePath ?? request.url.pathname;
+  const matched = app === undefined ? null : adminRouteMatch(app, path);
   if (app === undefined || matched === null) throw routeNotFound(method, request.url.pathname);
 
   const form = method === 'POST' ? await request.bodyRaw() : null;

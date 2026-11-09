@@ -181,7 +181,6 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'Tutorial-04-Jobs-And-Realtime: export const reindexTodo = job({': 1,
   'Tutorial-04-Jobs-And-Realtime: export const todoList = query({': 1,
   'Tutorial-06-Growing-Up: // app.config.ts': 1,
-  'Tutorial-06-Growing-Up: configureTelemetry({ exporter: otlpSpanExporter() });   // OTEL_EXPORTER_OTLP_ENDPOINT': 1,
   'UI-Components: <Link appearance="button" variant="secondary" size="sm" href="/posts/new">{t(\'posts.new\')}</Link>': 1,
   'Upgrading: // before — answered ALLOWED, and admitsAnonymous() agreed, so http did not 401 first': 1,
   'Upgrading: // before — compiles, and is circular: the factory that BUILDS ctx.posts': 1,

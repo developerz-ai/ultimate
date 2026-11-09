@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import type { JobEnqueueEvent } from '@ultimat3/core';
+import { isUltimateError, resetInstrumentation, subscribe } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import {
   memoryJobDriver,
@@ -264,6 +265,19 @@ describe('the registry', () => {
 describe('the queue path', () => {
   afterEach(() => {
     resetJobDriver();
+    resetInstrumentation();
+  });
+
+  // Through the handle, so a queued mail gets the producer span and `job.enqueue` every other
+  // enqueue gets — the facade alone skipped both.
+  test('a queued mail is one job.enqueue on the bus', async () => {
+    setJobDriver(memoryJobDriver());
+    const seen: JobEnqueueEvent[] = [];
+    subscribe('job.enqueue', (event) => seen.push(event.payload));
+    const result = await send(basicMail, { name: 'Ada' }, { to: 'ada@example.test', locale: 'en' });
+
+    expect(seen).toEqual([{ job: 'mail.send', queue: seen[0]?.queue ?? '', id: result.id }]);
+    expect(seen[0]?.queue).not.toBe('');
   });
 
   test('a configured job driver means the message is enqueued, not delivered', async () => {

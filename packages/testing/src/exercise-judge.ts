@@ -8,8 +8,8 @@ import { exerciseEntryKey } from './define-exercise';
 import { driftOverrideLine } from './exercise-drift-hint';
 import type { Sampler } from './exercise-input';
 import { idStem } from './exercise-input';
+import { type OverrideHint, overrideLine } from './exercise-override-line';
 import type { Observed } from './exercise-report';
-import { overrideLine } from './exercise-report';
 import type { Subject } from './exercise-subjects';
 
 /**
@@ -38,6 +38,8 @@ export interface Run {
   readonly answered: boolean;
   readonly lastError: unknown;
   readonly lastInput: unknown;
+  /** Who the pass ran as and the rows it bound: what makes the paste line exact. */
+  readonly hint?: OverrideHint | undefined;
 }
 
 export function judged(
@@ -55,7 +57,7 @@ export function judged(
     outcome: 'unreached' as const,
     ...(code === undefined ? {} : { code }),
     reason,
-    override: overrideLine(key, idFields(run.lastInput)),
+    override: overrideLine(key, idFields(run.lastInput), run.hint),
   });
   if (observed.refusedHosts.length > 0) {
     // A call out is a refusal whatever the handler made of it: sealed, so never sent.
@@ -68,7 +70,7 @@ export function judged(
     const fields = idFields(run.lastInput);
     return {
       ...unreached('X_CONTRACT_DRIFT', 'its input schema refused every generated value'),
-      override: driftOverrideLine(key, subject.input, sampler, fields),
+      override: driftOverrideLine(key, subject.input, sampler, fields, run.hint?.ids),
     };
   }
   if (run.verdict.kind === 'defect') {

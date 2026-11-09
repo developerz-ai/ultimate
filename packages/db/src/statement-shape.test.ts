@@ -3,11 +3,11 @@
 // whether a statement is the same one again — so these are the cases both inherit.
 
 import { describe, expect, test } from 'bun:test';
-import type { StatementEvent } from './observe';
+import type { DbStatementEvent } from '@ultimat3/core';
 import { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 import { statementSpanName } from './statement-span';
 
-const event = (text: string, attribution?: { entity: string; op: string }): StatementEvent => ({
+const event = (text: string, attribution?: { entity: string; op: string }): DbStatementEvent => ({
   text,
   values: [],
   durationMs: 1,

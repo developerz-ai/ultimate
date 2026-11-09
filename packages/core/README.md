@@ -71,14 +71,19 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |
-| structured JSON logging + redaction; `setLogSink(sink)` — the test seam that sends every default-writer line to a sink instead of the process's streams (a test preload drops them; a test asserting on the process logger collects them) | `logger.ts` |
-| `addLogSink(sink)` — the supported tee: every default-writer line, after redaction, to `sink` **beside** the streams (or a `setLogSink` seam), never instead; returns the unsubscribe. A sink that throws is skipped and reported once (`log.sink_failed`); a line a sink logs is not teed back | `log-tee.ts` |
-| OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
+| structured JSON logging + redaction; `setLogSink(sink)` — the test seam that sends every default-writer line to a sink instead of the process's streams (a test preload drops them; a test asserting on the process logger collects them). The tee is the bus: every such line, redacted, is the `log.record` event — `subscribe('log.record', handler)` | `logger.ts` |
+| the ONE instrumentation bus: `subscribe(pattern, handler)` → unsubscribe (exact name, dot-segment prefix, `'*'`), `subscribed(name)`, `instrument(name, payload)`; synchronous, registration order, fired before sampling, a throwing handler reaches the emitter. `subscriberCount()` / `resetInstrumentation()` for tests | `instrument.ts` |
+| the event vocabulary: `INSTRUMENT_EVENTS`, every payload type, `InstrumentEventMap` (augmentable — an app's own names ride the same bus) | `instrument-events.ts` |
+| semconv names: `SEMCONV` (span attribute keys), `SEMCONV_VALUES`, `SEMCONV_METRICS` | `instrument-semconv.ts` |
+| `subscribeSemconvMetrics()` — the semconv histograms (`db_client_operation_duration_seconds`, `job_duration_seconds`, `gen_ai_client_token_usage`) as one bus subscriber; boot calls it once | `metrics-semconv.ts` |
+| OTel-shaped spans, always on; a SAMPLED span goes out as `span.end` on the bus. `configureTelemetry({ exporter })` and `noopExporter` are gone (31.0): `subscribe('span.end', (e) => exporter.export(e.payload))` | `telemetry.ts` |
 | the sampling decision, and `OTEL_TRACES_SAMPLER*` | `sampler.ts` |
 | OTLP/HTTP JSON: endpoint, headers, value encoding | `otlp.ts` |
 | one OTLP POST, retried on the specification's transient answers | `otlp-post.ts` |
 | `SpanExporter` on the wire, batched | `otlp-span-exporter.ts` |
 | `MetricExporter` on the wire | `otlp-metric-exporter.ts` |
+| `otlpLogExporter()` — OTLP logs (`/v1/logs`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`), installed as `subscribe('log.record', (e) => logs.export(e.payload))`; `log.record` is every process-logger line after redaction, joined to the active trace | `otlp-log-exporter.ts` |
+| `outbound()` on the bus: one `outbound.request` event and one `outbound.<vendor>` client span per call (retries inside), `server.address` / `http.request.method` / `http.response.status_code`, never the path or query | `outbound-instrument.ts` |
 | may a caller read this 5xx code's `cause`? `hasPublicCause(code)` — one predicate for the HTTP problem document, MCP error data and an agent `tool_result` | `public-cause.ts` |
 | `reportError` + the `ErrorReporter` seam, no-op by default | `error-reporter.ts` |
 | that seam on the wire, Sentry's envelope and DSN | `error-reporter-sentry.ts` |
@@ -532,7 +537,7 @@ match with `sealAll()`; uniqueness cannot be held across keys.
 - Never call `Date.now()`. Take a `Clock`; tests pass `frozenClock('2026-07-26T10:00:00Z')`.
 - `uuidV7()` is UUIDv7: time-prefixed, monotonic within a millisecond, never backwards on clock
   skew. `typedId<'post'>()` brands it so a post id cannot be passed where a user id is wanted.
-- `withSpan('action.publishPost', fn)` is free until `configureTelemetry({ exporter })`.
+- `withSpan('action.publishPost', fn)` builds no record until something subscribes to `span.end`.
   Traces cross process boundaries via `traceparent()` / `parseTraceparent()`, whose ids come from
   `traceId()` / `spanId()` — **never `uuidV7()`**, whose dashed 36 characters every collector
   rejects. `isTraceId()` / `isSpanId()` are the one definition of the valid shape.
@@ -544,8 +549,8 @@ match with `sealAll()`; uniqueness cannot be held across keys.
   trace half exported, which is orphan children under a root the collector never saw.
 - **The OTLP exporters ship**, speaking OTLP/HTTP JSON, no dependency:
   `otlpSpanExporter({ endpoint })` (batched, with `flush()` / `shutdown()`) and
-  `otlpMetricExporter({ endpoint })`. Both default to `OTEL_EXPORTER_OTLP_ENDPOINT`;
-  `tryOtlpEndpoint('traces')` answers `undefined` when nobody configured one, so a boot can skip
+  `otlpMetricExporter({ endpoint })` and `otlpLogExporter({ endpoint })`. All three default to
+  `OTEL_EXPORTER_OTLP_ENDPOINT`; `tryOtlpEndpoint('traces' | 'metrics' | 'logs')` answers `undefined` when nobody configured one, so a boot can skip
   the exporter instead of throwing. **gRPC (`:4317`) is out of scope** and says so with
   `X_OTLP_PROTOCOL_UNSUPPORTED`.
 - **A transient export is sent again** (`postOtlp`, `otlp-post.ts`): 429, 502, 503, 504 or a
@@ -662,7 +667,7 @@ reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'P
 | `ErrorScope` | `requestId` `traceId` `spanId` `role` `operation` `actorId` `extra`. `operation` is a route **pattern** or a job name, never a concrete path or a row id |
 | `ErrorReport` | `code` `title` `cause` `fix` `docs` + `meta` `stack` `resource` `environment` `release` `scope`, and the thrown value under `error` |
 | `configureErrorReporting({ reporter, clock, release, environment, enabled })` | the one install point; `resetErrorReporting()` puts the no-op back |
-| Reporters | `noopErrorReporter` (default), `memoryErrorReporter()` (`.events`, `.reset()`), `sentryErrorReporter({ dsn, fetch?, clientName?, beforeSend?, ignore?, fingerprint?, sampleRate? })` |
+| Reporters | `noopErrorReporter` (default), `memoryErrorReporter()` (`.events`, `.reset()`), `sentryErrorReporter({ dsn, fetch?, clientName?, beforeSend?, ignore?, fingerprint?, sampleRate? })`; `isSentryErrorReporter(reporter)` — whether one was built by it, so the container's `SENTRY_DSN` boot skips its own transport when the app installed one (31.0) |
 | Sentry hooks | `beforeSend(event)` → the event (rewritten or not) or `null` to drop — scrub by value here; a hook that throws drops the event. `ignore(code)` → `true` drops before the event is built. `fingerprint(report)` → the grouping, replacing `errorFingerprint`'s. `sampleRate` 0..1 (`X_CONFIG_INVALID` outside it). A throwing `ignore`/`fingerprint` falls back to the default |
 | Several at once | `chainErrorReporters(...reporters)` — one reporter handing each report to every member in order; a member that throws is logged and costs only itself; chains flatten, a member listed twice reports once, none is the no-op. `errorReportersOf(reporter)` reads the members back; `installedErrorReporter()` the one installed now. The container chains its `SENTRY_DSN` transport after what the app installed (`As of 2026-11`) |
 | Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEvent(report, { dsn, eventId, fingerprint? })` → the event, `sentryEnvelope(report, { dsn, eventId, fingerprint? })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |

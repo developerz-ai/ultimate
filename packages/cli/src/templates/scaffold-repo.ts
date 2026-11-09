@@ -211,7 +211,7 @@ export const config = defineConfig({
   // The tiers ARE the cache selection: add 'redis' to build the shared rung, which reads
   // \`REDIS_URL\` and refuses the boot when it is unset.
   cache: { tiers: ['request-memo', 'lru'] },
-  jobs: { queues: ['${app.kebab}-default'], concurrency: 4 },
+  jobs: { queues: ['default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, transport: 'memory' },
   // \`name\` and \`colors\` are what an install prompt shows and what a browser paints the splash

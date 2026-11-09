@@ -9,8 +9,9 @@ import { existsSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
 import type { Role } from '@ultimat3/core';
-import { logger, UltimateError } from '@ultimat3/core';
+import { logger, tryResolveEnvironment, UltimateError } from '@ultimat3/core';
 import { sassCompilations, setSassCacheDir } from '@ultimat3/render/server';
+import type { Env } from './runtime-bindings';
 import { PREBUILT_COMMAND, PREBUILT_SASS_DIR } from './serve-prebuilt-paths';
 
 /**
@@ -75,10 +76,20 @@ export function watchBootBuilds(): (islands?: BootBuilds['islands']) => BootBuil
   });
 }
 
-/** One `error` line when the boot built anything, and nothing when it built nothing. */
-export function reportBootBuilds(role: Role, builds: BootBuilds): boolean {
+/**
+ * One line when the boot built anything, and nothing when it built nothing. `warn` only where the
+ * environment is DECLARED local (`ULTIMATE_ENV` or `NODE_ENV` = `development`/`test`): no image
+ * exists to fix, and an `error` in every test boot buries the real ones. `error` everywhere else —
+ * `staging` fails the way production does, and a container that declares nothing, or names no
+ * environment, is read as production: the direction that still pages.
+ */
+export function reportBootBuilds(role: Role, builds: BootBuilds, env: Env): boolean {
   if (builds.islands === undefined && builds.stylesheets === 0) return false;
   const error = new ImageNotPrebuiltError({ role, ...builds });
-  logger.error(error.format(), { code: error.code, ...error.meta });
+  const environment = tryResolveEnvironment({ env, fallback: 'production' });
+  const local = environment === 'development' || environment === 'test';
+  const fields = { code: error.code, ...error.meta };
+  if (local) logger.warn(error.format(), fields);
+  else logger.error(error.format(), fields);
   return true;
 }

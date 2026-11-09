@@ -5,7 +5,8 @@
 // persisted record without any of those packages knowing what sealed means.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { isSealed } from '@ultimat3/core';
+import type { EntityRowEvent } from '@ultimat3/core';
+import { isSealed, subscribe } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import { text, uuid } from './columns';
 import { database, memoryDriver } from './database';
@@ -13,8 +14,6 @@ import { entity } from './entity';
 import { decodeRow } from './pg-row';
 import { recordProjection } from './record-projection';
 import { clearRegistry } from './registry';
-import type { RowChange } from './row-observer';
-import { setRowObserver } from './row-observer';
 import { rowsOf } from './rows-of';
 
 const accounts = entity('se_accounts', {
@@ -77,15 +76,15 @@ describe('unit · a sealed column leaves the server through no path', () => {
   });
 
   test('a committed change reported to a live query omits it, before and after', async () => {
-    const changes: RowChange[] = [];
-    const previous = setRowObserver({ onChange: (change) => changes.push(change) });
+    const changes: EntityRowEvent[] = [];
+    const off = subscribe('entity.row', (event) => void changes.push(event.payload));
     try {
       const table = database({ accounts }, { driver: memoryDriver() }).accounts;
       const made = await table.insert({ name: 'Ada', secret: 'hunter2', email: 'ada@example.com' });
       await table.update(made.id, { secret: 'rotated' });
       await table.delete(made.id);
     } finally {
-      setRowObserver(previous);
+      off();
     }
     expect(changes.map((change) => change.op)).toEqual(['insert', 'update', 'delete']);
     expect(JSON.stringify(changes)).not.toMatch(/hunter2|rotated|ada@example\.com/);

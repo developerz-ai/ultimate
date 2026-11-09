@@ -5,16 +5,8 @@
 // dropped it as stale, and the desynced subscriber was never re-snapshotted.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type Actor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
-import {
-  clearRegistry,
-  database,
-  entity,
-  memoryDriver,
-  setRowObserver,
-  text,
-  uuid,
-} from '@ultimat3/entity';
+import { type Actor, ctxOf, resetInstrumentation, runWithContext, userActor } from '@ultimat3/core';
+import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { from, query, registerQuery, resetQueries, t } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { liveQueryDefinition } from './live-definition';
@@ -124,7 +116,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   replicator.stop();
-  setRowObserver(null);
+  resetInstrumentation();
 });
 
 afterAll(() => {

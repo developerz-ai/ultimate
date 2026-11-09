@@ -382,7 +382,7 @@ function validate(config: AppConfig): void {
  * defaults, which is the reference `shapeIssues` compares each layer against.
  */
 function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
-  const base = configDefaults(name);
+  const base = configDefaults();
   return {
     name,
     theme: layered(

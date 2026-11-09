@@ -20,6 +20,7 @@ const span = (overrides: Partial<ReadableSpan> = {}): ReadableSpan => ({
   durationMs: 120,
   attributes: { 'http.route': '/posts/:id', 'http.status_code': 200 },
   events: [],
+  droppedEventsCount: 0,
   status: { code: 'ok' },
   links: [],
   resource: RESOURCE,
@@ -175,6 +176,7 @@ describe('otlpTraceRequest', () => {
         span({
           parentSpanId: '00f067aa0ba902b7',
           events: [{ name: 'exception', at: 1_767_225_600_050, attributes: { 'error.code': 'X' } }],
+          droppedEventsCount: 3,
           status: { code: 'error', message: 'boom' },
         }),
       ],
@@ -212,6 +214,7 @@ describe('otlpTraceRequest', () => {
                       attributes: [{ key: 'error.code', value: { stringValue: 'X' } }],
                     },
                   ],
+                  droppedEventsCount: 3,
                   links: [],
                   status: { code: 2, message: 'boom' },
                 },

@@ -68,9 +68,10 @@ that says more than its harness measured.
 
 ## Scope
 
-Stay inside the file set your brief names. Never commit. Do not run `bun run verify` or
-`bun run manifest` — the coordinator owns those. `bun run x -- <cmd>` to check a command is real is
-expected and fine.
+Stay inside the file set your brief names. No git writes — reads only; never commit. Do not run
+`bun run verify` or `bun run manifest` — the coordinator owns those. `bun run x -- <cmd>` to check a
+command is real is expected and fine; an app command needs `--cwd examples/dummy` (at the bare root
+it answers `X_NOT_IN_APP`). A documented `bun test` path starts `./`.
 
 ## Output
 

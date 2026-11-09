@@ -103,8 +103,8 @@ export const database = <E extends EntitySet>(
   const tables: Record<string, unknown> = {};
   for (const [key, entity] of Object.entries(entities)) {
     // Wrapped here rather than in a driver, so a committed row change is reported the same whether
-    // rows live in memory or in Postgres — `setRowObserver` is the seam, and with none installed the
-    // wrapper is one comparison per write. `related` below stays unwrapped on purpose: a relation
+    // rows live in memory or in Postgres — `entity.row` on the bus, and with no subscriber the
+    // wrapper is one map read per write. `related` below stays unwrapped on purpose: a relation
     // preload is a READ, and a change feed has nothing to say about one.
     tables[key] = tableFor(entity, observedRepo(entity, driver.repo(entity)), related);
   }

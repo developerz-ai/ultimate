@@ -4,7 +4,14 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
-import { configureTelemetry, ctxOf, resetTelemetry, traceparent, withSpan } from '@ultimat3/core';
+import {
+  ctxOf,
+  resetInstrumentation,
+  resetTelemetry,
+  subscribe,
+  traceparent,
+  withSpan,
+} from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -27,16 +34,19 @@ afterEach(() => {
   resetJobDriver();
   resetJobsFacade();
   resetTelemetry();
+  resetInstrumentation();
 });
 
 const collectSpans = (): ReadableSpan[] => {
   const spans: ReadableSpan[] = [];
-  configureTelemetry({ exporter: { export: (span) => spans.push(span) } });
+  subscribe('span.end', (event) => spans.push(event.payload));
   return spans;
 };
 
 describe('the trace link across the queue', () => {
-  test('an enqueue inside a span stamps that span onto the row', async () => {
+  // v31: the row carries the enqueue's PRODUCER span, a child of the caller's — OpenTelemetry's
+  // messaging shape, so the run hangs off the enqueue and the enqueue off the request.
+  test('an enqueue inside a span stamps its producer span, a child of that span, onto the row', async () => {
     const spans = collectSpans();
     const driver = memoryJobDriver();
     setJobDriver(driver);
@@ -50,15 +60,18 @@ describe('the trace link across the queue', () => {
       run: () => Promise.resolve(),
     });
 
-    let expected = '';
+    let checkoutSpanId = '';
     await withSpan('action.checkout', async (span) => {
-      expected = traceparent(span.context);
+      checkoutSpanId = span.context.spanId;
       await chargeCard.enqueue({ orderId: 'o-1' });
     });
 
+    const producer = spans.find((span) => span.name === 'job.chargeCard.enqueue');
+    expect(producer?.parentSpanId).toBe(checkoutSpanId);
     const [row] = (await driver.introspect?.list()) ?? [];
-    expect(row?.traceparent).toBe(expected);
-    expect(spans.some((span) => span.name === 'action.checkout')).toBe(true);
+    expect(row?.traceparent).toBe(
+      producer === undefined ? 'no producer' : traceparent(producer.context),
+    );
   });
 
   test('the job span is a CHILD of the enqueuing request, not a new root', async () => {
@@ -103,7 +116,9 @@ describe('the trace link across the queue', () => {
     expect(jobSpan?.parentSpanId).toBe(requestSpanId);
   });
 
-  test('an enqueue outside any trace carries no header rather than a malformed one', async () => {
+  // v31: outside any trace the enqueue's producer span is the ROOT, so the row carries that span —
+  // never the all-zero span id a context with no span renders, which every collector rejects.
+  test('an enqueue outside any trace carries its producer root, never a malformed header', async () => {
     const driver = memoryJobDriver();
     setJobDriver(driver);
     const sendDigest = job({
@@ -115,10 +130,16 @@ describe('the trace link across the queue', () => {
       run: () => Promise.resolve(),
     });
 
-    // A script, a cron, a test. An all-zero span id renders a traceparent every collector rejects.
+    // A script, a cron, a test.
+    const spans = collectSpans();
     await sendDigest.enqueue({});
     const [row] = (await driver.introspect?.list()) ?? [];
-    expect(row?.traceparent).toBeUndefined();
+    const producer = spans.find((span) => span.name === 'job.sendDigest.enqueue');
+    expect(producer?.parentSpanId).toBeUndefined();
+    expect(row?.traceparent).toMatch(/^00-[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-0[01]$/);
+    expect(row?.traceparent).toBe(
+      producer === undefined ? 'no producer' : traceparent(producer.context),
+    );
   });
 
   test('handle.as(actor) records WHO asked and grants them nothing', async () => {

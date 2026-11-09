@@ -152,8 +152,10 @@ tier that did not answer, so `read`, `write` and `drop` carry on. A feed too big
 to throw is `load()` — it *is* the business read, and absorbing it would hand back `undefined` as
 though it were the value.
 
-`recentTierFailures()` is where those refusals go: last 100, newest first, each naming the tier, the
-operation, the key and the `X_*` code, and each one also logged as `cache.tier.failed`. Same
+Each refusal is one `cache.tier_failure` event on core's instrumentation bus (`CacheTierFailureEvent`,
+`As of 2026-11`, v31), naming the tier, the operation, the key and the `X_*` code, and each one also
+logged as `cache.tier.failed` — `subscribe('cache.tier_failure', …)` to keep them. Every rung a read
+asks is a `cache.hit` or `cache.miss` event (`{ tier, key }`). Same
 bargain as `report.errors` on the invalidation side — degraded is visible, not merely slow.
 
 `bestEffort(label, op, key, run)` is that guard, exported: a cache that is not a rung of this ladder
@@ -284,7 +286,7 @@ a paused server hung `stack.read` 45 s and a bust 20 s, on an action's commit pa
 | stopped | refused at once (no offline queue) → a miss | refused at once → `report.errors`; retry with the same tags |
 | back | the client reconnects on its own, every pod, no restart | answers |
 
-A missed deadline or a parked command is `X_CACHE_DRIVER_UNAVAILABLE` in `recentTierFailures()`,
+A missed deadline or a parked command is a `cache.tier_failure` event with `X_CACHE_DRIVER_UNAVAILABLE`,
 the cause naming the deadline or the park left; a stopped server's refusal is recorded with Bun's
 own `ERR_REDIS_CONNECTION_CLOSED` message and no `code`. The client is core's `redisClient()` (`@ultimat3/core/redis`,
 `REDIS_URL`), never `Bun.redis`: its default offline queue made the first read against a stopped
@@ -307,13 +309,15 @@ for the same reason.
 `cdn` is what the dependency graph hangs off these tags, not what cleared: the `cdn` tier purges
 those paths (as surrogate keys, alongside the tags), so what actually cleared is that tier's row
 in `tiers`. With no `cdn` tier registered the list purges nowhere, which is why
-`recentInvalidations()` reports `busted` from `tiers` and never from `cdn` — a partial bust that
-reads as a clean one is the failure that log exists to catch.
+the `cache.invalidate` event reports `busted` from `tiers` and never from `cdn` — a partial bust
+that reads as a clean one is the failure that event exists to catch.
 
-Every report is also kept: `recentInvalidations()` hands back the last 100, newest first, each
-one naming the span that triggered it. That is the log the `/_x` cache panel renders — "did it
-actually clear?" is answerable without a log dive because the one fan-out path retained the
-answer, not because a second recorder was wired next to it.
+Every bust is also one `cache.invalidate` event on core's bus (`CacheInvalidateEvent`: `tags`,
+`busted`, `errors`, `durationMs`, and `source` — the span that called `invalidateTags`, else
+`'invalidateTags'`; `'cache.broadcast'` for a peer's bust; a flush's own source). The `/_x` cache panel subscribes and keeps its own bounded buffer — "did it
+actually clear?" is answerable without a log dive because the one fan-out path emits the answer,
+not because a second recorder was wired next to it. A flush's `source` also rides on its `cache.flush`
+span as `ultimate.cache.flush_source`.
 
 ### The order of one bust
 
@@ -381,7 +385,7 @@ afterAll(restoreTags);
 |---|---|
 | `isolateDeclaredTags()` | the declared-tag set |
 | `isolateGraph()` | every tag → dependent edge, across all three indexes |
-| `isolateTiers()` | everything `resetTiers()` drops: the tier registry in registration order, the revalidator, the invalidation broadcast, `recentInvalidations()` and `recentTierFailures()` |
+| `isolateTiers()` | everything `resetTiers()` drops: the tier registry in registration order, the revalidators and the invalidation broadcast |
 
 Each returns the function that puts back **exactly what it found**, so a per-test `resetGraph()` is
 still fine — pair it with the module-scope isolate and the process gets its baseline back. A reset
@@ -389,12 +393,8 @@ alone is not a substitute: it drops what a neighbouring file registered, and
 `@ultimat3/testing`'s leak guard compares its samples for *additions*, so the loss is invisible to
 it and surfaces as a failure in an innocent file. That is the one leak no mechanism catches for you.
 The last two live in the modules that own the state because a test file cannot reach it: the
-revalidator has no reader, and neither log has a writer.
-
-**`resetTierFailures()` and `isolateTierFailures()` are deliberately off `index.ts`.** Nothing
-outside this package clears that log except through `resetTiers()`, which `isolateTiers()` already
-covers — so a suite outside `packages/cache` isolates the tiers and gets the failure log with them.
-`recentTierFailures()` is the only member of that module the public surface carries.
+revalidator has no reader. The events this package emits hold no state here: a test subscribes and
+unsubscribes (core's `resetInstrumentation()` is the backstop).
 
 ## CDN
 
@@ -442,7 +442,7 @@ nothing loads that file's contents at runtime:
 A `cdn` tier holding the noop driver answers an invalidation with
 `{ tier: 'cdn', keys: [], skipped: 'no purge driver configured' }` — never a list of keys. The noop
 echoes what it is handed, so reporting its reply as accepted made every tag read as CLEARED in
-`report.tiers` and in `recentInvalidations().busted`, with `errors: []`, in the default state of a
+`report.tiers` and in the `cache.invalidate` event's `busted`, with `errors: []`, in the default state of a
 deployment that has no CDN at all. `isNoopPurgeDriver(driver)` is the same probe, exported.
 
 Both pairs at once is `X_CONFIG_INVALID`: one process purges exactly one edge. Half a pair

@@ -1,5 +1,5 @@
 // The framework's own step write, as the N+1 detector sees it. `x dev`'s ledger judges a
-// request's statements by `StatementEvent.expected` — `if (event.expected !== undefined) return;`
+// request's statements by `DbStatementEvent.expected` — `if (event.expected !== undefined) return;`
 // in `@ultimat3/cli`'s `dev-n-plus-one.ts` — and every job of five or more steps tripped it:
 //
 //   X_N_PLUS_ONE_WRITE: insert into x_job_steps (run_id, name, status, output, …) on conflict
@@ -12,9 +12,10 @@
 // reason back would be asserting about itself, not about what the ledger receives.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { PgExecutor } from '@ultimat3/core';
-import type { DbClient, SqlFragment, StatementEvent } from '@ultimat3/db';
-import { postgresClient, setStatementObserver } from '@ultimat3/db';
+import type { DbStatementEvent, PgExecutor } from '@ultimat3/core';
+import { resetInstrumentation, subscribe } from '@ultimat3/core';
+import type { DbClient, SqlFragment } from '@ultimat3/db';
+import { postgresClient } from '@ultimat3/db';
 import { postgresJobDriver } from './driver-pg';
 import { SQL_STEP_LIST, SQL_STEP_PUT } from './driver-pg-sql';
 import { JobTimeoutError } from './errors';
@@ -28,8 +29,8 @@ const realBunSql = host.Bun.SQL;
 
 afterEach(() => {
   host.Bun.SQL = realBunSql;
-  // Process-wide, so a test that installs one and leaves it behind observes every later test.
-  setStatementObserver(undefined);
+  // Process-wide, so a test that subscribes and leaves it behind observes every later test.
+  resetInstrumentation();
 });
 
 /** Answers no rows to everything; what the statements were is the observer's answer. */
@@ -56,12 +57,8 @@ const executorOver = (client: DbClient): PgExecutor => ({
 
 describe('the step write and the N+1 detector', () => {
   test('every SQL_STEP_PUT reaches the funnel expected, and nothing else does', async () => {
-    const seen: StatementEvent[] = [];
-    setStatementObserver({
-      onStatement(event: StatementEvent): void {
-        seen.push(event);
-      },
-    });
+    const seen: DbStatementEvent[] = [];
+    subscribe('db.statement', (event) => seen.push(event.payload));
     installFakeSql();
     const driver = postgresJobDriver({
       executor: executorOver(postgresClient({ url: TEST_URL })),

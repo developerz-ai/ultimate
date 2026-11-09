@@ -5,13 +5,12 @@
 // the write-loop sibling — all through `@ultimat3/db`'s actual observer funnel.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext, subscribe } from '@ultimat3/core';
 import {
   expectedQueryLoop,
   type PgliteDriver,
   type PgliteResult,
   pgliteClient,
-  setStatementObserver,
 } from '@ultimat3/db';
 import {
   database,
@@ -84,14 +83,17 @@ function stubbedDriver(): PgliteDriver & { on(match: RegExp, response: StubRespo
 }
 
 let ledger: StatementLedger;
+let unsubscribe: () => void = () => undefined;
 
+// Subscribed the way `x dev` subscribes it: the ledger hears `db.statement` off the bus.
 beforeEach(() => {
   ledger = createStatementLedger();
-  setStatementObserver(ledger.observer);
+  const observer = ledger.observer;
+  unsubscribe = subscribe('db.statement', (event) => observer.onStatement(event.payload));
 });
 
 afterEach(() => {
-  setStatementObserver(undefined);
+  unsubscribe();
 });
 
 const inRequest = <T>(work: () => Promise<T>): Promise<T> => runWithContext(ctxOf(), work);

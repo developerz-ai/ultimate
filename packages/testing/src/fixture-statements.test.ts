@@ -1,11 +1,18 @@
-// The fixture, driven the way `@ultimat3/db`'s funnels drive it: `StatementEvent`s handed to the
-// installed `observer.onStatement`. What the funnel then does with a throw from there is
+// The fixture, driven the way `@ultimat3/db`'s funnels drive it: `db.statement` events emitted on
+// the instrumentation bus. What the funnel then does with a throw from there is
 // `fixture-statements-funnel.test.ts`'s; this file pins what the fixture counts, what it lets
 // through, and what it hands back on disposal.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import type { StatementAttribution, StatementEvent, StatementObserver } from '@ultimat3/db';
-import { expectedQueryLoop, setStatementObserver, statementObserver } from '@ultimat3/db';
+import type { DbStatementEvent, StatementAttribution } from '@ultimat3/core';
+import {
+  instrument,
+  resetInstrumentation,
+  subscribe,
+  subscribed,
+  subscriberCount,
+} from '@ultimat3/core';
+import { expectedQueryLoop } from '@ultimat3/db';
 import {
   clearRegistry,
   entity,
@@ -14,7 +21,7 @@ import {
   text,
   uuid,
 } from '@ultimat3/entity';
-import { testStatements } from './fixture-statements';
+import { type TestStatements, testStatements } from './fixture-statements';
 import { runWithFixtures } from './fixtures';
 
 /** Everything a funnel puts on an event that this fixture reads; the rest is fixed. */
@@ -24,7 +31,7 @@ interface Sent {
   readonly error?: unknown;
 }
 
-const statement = (text: string, sent: Sent = {}): StatementEvent => ({
+const statement = (text: string, sent: Sent = {}): DbStatementEvent => ({
   text,
   values: [],
   durationMs: 1,
@@ -36,14 +43,12 @@ const FIND_BY_ID: StatementAttribution = { entity: 'members', op: 'findById' };
 const SELECT_ONE = 'select "id" from "members" where "id" = $1';
 const INSERT_ONE = 'insert into "members" ("id") values ($1)';
 
-/** The seam the fixture installed into, so a test drives exactly what a funnel would. */
-const send = (event: StatementEvent): void => {
-  const observer = statementObserver();
-  if (observer === undefined) throw new Error('the fixture installed no observer');
-  observer.onStatement(event);
+/** Emitted on the bus exactly as a funnel emits, so a test drives what a funnel would. */
+const send = (event: DbStatementEvent): void => {
+  instrument('db.statement', event);
 };
 
-const sendTimes = (times: number, event: StatementEvent): void => {
+const sendTimes = (times: number, event: DbStatementEvent): void => {
   for (let sent = 0; sent < times; sent += 1) send(event);
 };
 
@@ -59,9 +64,9 @@ const caught = (
   }
 };
 
-// Process-wide, so a fixture left installed by a failing assertion would observe every later file.
+// Process-wide, so a fixture left subscribed by a failing assertion would observe every later file.
 afterEach(() => {
-  setStatementObserver(undefined);
+  resetInstrumentation();
 });
 
 describe('unit · the statements fixture measures every statement', () => {
@@ -121,22 +126,29 @@ describe('unit · the statements fixture measures every statement', () => {
   });
 });
 
-describe('unit · a shape past the threshold fails the test it happened in', () => {
-  test('one under the threshold is quiet; the one that crosses it throws', async () => {
-    using statements = await testStatements();
-    sendTimes(N_PLUS_ONE_THRESHOLD - 1, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+/** Disposal raises the first verdict: the code, cause and fix are read off what it threw. */
+const verdictOf = (statements: TestStatements): ReturnType<typeof caught> =>
+  caught(() => statements[Symbol.dispose]());
 
-    expect(statements.count('members.findById')).toBe(N_PLUS_ONE_THRESHOLD - 1);
-    expect(caught(() => send(statement(SELECT_ONE, { attribution: FIND_BY_ID })))?.code).toBe(
-      'X_N_PLUS_ONE_QUERY',
-    );
+describe('unit · a shape past the threshold fails the test it happened in', () => {
+  test('one under the threshold is quiet; the one that crosses it is the verdict', async () => {
+    const statements = await testStatements();
+    sendTimes(N_PLUS_ONE_THRESHOLD - 1, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+    expect(statements.verdicts()).toEqual([]);
+
+    // The bus contains a subscriber's throw, so the statement itself never fails: the verdict is
+    // recorded where the shape crossed, and raised at disposal.
+    expect(caught(() => send(statement(SELECT_ONE, { attribution: FIND_BY_ID })))).toBeUndefined();
+    expect(statements.count('members.findById')).toBe(N_PLUS_ONE_THRESHOLD);
+    expect(statements.verdicts().map((error) => error.code)).toEqual(['X_N_PLUS_ONE_QUERY']);
+    expect(verdictOf(statements)?.code).toBe('X_N_PLUS_ONE_QUERY');
   });
 
   test('the error names the shape, its count and the entity the loop repeated on', async () => {
-    using _statements = await testStatements();
-    sendTimes(N_PLUS_ONE_THRESHOLD - 1, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+    const statements = await testStatements();
+    sendTimes(N_PLUS_ONE_THRESHOLD, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
 
-    const error = caught(() => send(statement(SELECT_ONE, { attribution: FIND_BY_ID })));
+    const error = verdictOf(statements);
     expect(error?.code).toBe('X_N_PLUS_ONE_QUERY');
     expect(error?.cause).toContain('members.findById');
     expect(error?.cause).toContain(String(N_PLUS_ONE_THRESHOLD));
@@ -146,55 +158,75 @@ describe('unit · a shape past the threshold fails the test it happened in', () 
   });
 
   test('a repeated single-row write is the write code, not the read one', async () => {
-    using _statements = await testStatements();
-    sendTimes(N_PLUS_ONE_THRESHOLD - 1, statement(INSERT_ONE));
+    const statements = await testStatements();
+    sendTimes(N_PLUS_ONE_THRESHOLD, statement(INSERT_ONE));
 
-    expect(caught(() => send(statement(INSERT_ONE)))?.code).toBe('X_N_PLUS_ONE_WRITE');
+    expect(verdictOf(statements)?.code).toBe('X_N_PLUS_ONE_WRITE');
   });
 
   test('a statement that threw is still a statement', async () => {
-    using statements = await testStatements();
+    const statements = await testStatements();
     const failed = statement(SELECT_ONE, { attribution: FIND_BY_ID, error: new Error('timeout') });
-    sendTimes(N_PLUS_ONE_THRESHOLD - 1, failed);
+    sendTimes(N_PLUS_ONE_THRESHOLD, failed);
 
-    expect(caught(() => send(failed))?.code).toBe('X_N_PLUS_ONE_QUERY');
     expect(statements.count('members.findById')).toBe(N_PLUS_ONE_THRESHOLD);
+    expect(verdictOf(statements)?.code).toBe('X_N_PLUS_ONE_QUERY');
   });
 
-  test('a shape throws once and keeps counting, so a swallowed failure is still reported', async () => {
-    using statements = await testStatements();
-    sendTimes(N_PLUS_ONE_THRESHOLD - 1, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
-    expect(caught(() => send(statement(SELECT_ONE, { attribution: FIND_BY_ID })))).toBeDefined();
+  test('a shape is one verdict however long the loop runs, and the count is the whole loop', async () => {
+    const statements = await testStatements();
+    sendTimes(N_PLUS_ONE_THRESHOLD + 3, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
 
-    // The loop that swallowed it keeps running: no second throw, and the count is the whole loop.
-    expect(
-      caught(() => sendTimes(3, statement(SELECT_ONE, { attribution: FIND_BY_ID }))),
-    ).toBeUndefined();
+    expect(statements.verdicts()).toHaveLength(1);
     expect(statements.count('members.findById')).toBe(N_PLUS_ONE_THRESHOLD + 3);
     expect(statements.shapes()[0]?.count).toBe(N_PLUS_ONE_THRESHOLD + 3);
+    expect(verdictOf(statements)).toBeDefined();
   });
 
-  test('two shapes are two verdicts: one throwing does not silence the other', async () => {
-    using _statements = await testStatements();
-    caught(() =>
-      sendTimes(N_PLUS_ONE_THRESHOLD, statement(SELECT_ONE, { attribution: FIND_BY_ID })),
-    );
+  // The verdict is built inside the subscriber, which the bus calls synchronously on the
+  // statement's own stack — so the error raised at teardown still points at the looping line.
+  test('the verdict raised at teardown carries the stack of the statement that crossed', async () => {
+    const statements = await testStatements();
+    function loopsOverMembers(): void {
+      sendTimes(N_PLUS_ONE_THRESHOLD, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+    }
+    loopsOverMembers();
 
-    expect(caught(() => sendTimes(N_PLUS_ONE_THRESHOLD, statement(INSERT_ONE)))?.code).toBe(
+    const error = verdictOf(statements) as { readonly stack?: string } | undefined;
+    expect(error?.stack).toContain('loopsOverMembers');
+  });
+
+  test('disposal raises the verdict once, so a second dispose is quiet', async () => {
+    const statements = await testStatements();
+    sendTimes(N_PLUS_ONE_THRESHOLD, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+
+    expect(verdictOf(statements)?.code).toBe('X_N_PLUS_ONE_QUERY');
+    expect(verdictOf(statements)).toBeUndefined();
+  });
+
+  test('two shapes are two verdicts, in the order they crossed; disposal raises the first', async () => {
+    const statements = await testStatements();
+    sendTimes(N_PLUS_ONE_THRESHOLD, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+    sendTimes(N_PLUS_ONE_THRESHOLD, statement(INSERT_ONE));
+
+    expect(statements.verdicts().map((error) => error.code)).toEqual([
+      'X_N_PLUS_ONE_QUERY',
       'X_N_PLUS_ONE_WRITE',
-    );
+    ]);
+    expect(verdictOf(statements)?.code).toBe('X_N_PLUS_ONE_QUERY');
   });
 });
 
 describe('unit · an expected loop is measured and never judged', () => {
-  test('a declared loop never throws, however long it runs', async () => {
+  test('a declared loop is never a verdict, however long it runs', async () => {
     using statements = await testStatements();
     const expected = statement(SELECT_ONE, {
       attribution: FIND_BY_ID,
       expected: 'one indexed lookup per searchable field',
     });
 
-    expect(caught(() => sendTimes(N_PLUS_ONE_THRESHOLD * 2, expected))).toBeUndefined();
+    sendTimes(N_PLUS_ONE_THRESHOLD * 2, expected);
+    expect(statements.verdicts()).toEqual([]);
     // Still counted: `count()` measures, and a test asserting "this page issues N statements" must
     // not read a different number because somebody declared the loop deliberate.
     expect(statements.count('members.findById')).toBe(N_PLUS_ONE_THRESHOLD * 2);
@@ -202,55 +234,54 @@ describe('unit · an expected loop is measured and never judged', () => {
   });
 
   test('only the undeclared statements of a shape count toward its verdict', async () => {
-    using _statements = await testStatements();
+    const statements = await testStatements();
     sendTimes(
       N_PLUS_ONE_THRESHOLD,
       statement(SELECT_ONE, { attribution: FIND_BY_ID, expected: 'seeding' }),
     );
     sendTimes(N_PLUS_ONE_THRESHOLD - 1, statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+    expect(statements.verdicts()).toEqual([]);
 
-    expect(caught(() => send(statement(SELECT_ONE, { attribution: FIND_BY_ID })))?.code).toBe(
-      'X_N_PLUS_ONE_QUERY',
-    );
+    send(statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+    expect(verdictOf(statements)?.code).toBe('X_N_PLUS_ONE_QUERY');
   });
 });
 
-describe('unit · the fixture hands the seam back', () => {
-  test('disposal uninstalls it, and nothing after the test is counted', async () => {
+describe('unit · the fixture releases its subscription', () => {
+  test('disposal unsubscribes, and nothing after the test is counted', async () => {
     const statements = await testStatements();
     send(statement(SELECT_ONE));
     statements[Symbol.dispose]();
+    send(statement(SELECT_ONE));
 
-    expect(statementObserver()).toBeUndefined();
+    expect(subscribed('db.statement')).toBe(false);
     expect(statements.count()).toBe(1);
   });
 
-  test('an observer installed before the test is displaced, then put back', async () => {
+  test('a subscriber added before the test keeps hearing every statement, beside the fixture', async () => {
     const seen: string[] = [];
-    const outer: StatementObserver = {
-      onStatement: (event) => {
-        seen.push(event.text);
-      },
-    };
-    setStatementObserver(outer);
+    const off = subscribe('db.statement', (event) => void seen.push(event.payload.text));
 
     const statements = await testStatements();
     send(statement(SELECT_ONE));
-    expect(seen).toEqual([]);
+    expect(seen).toEqual([SELECT_ONE]);
+    expect(statements.count()).toBe(1);
 
     statements[Symbol.dispose]();
-    expect(statementObserver()).toBe(outer);
+    expect(subscribed('db.statement')).toBe(true);
+    off();
   });
 
-  test('the registered fixture is installed for the body and gone after it', async () => {
-    let inside: StatementObserver | undefined;
+  test('the registered fixture is subscribed for the body and gone after it', async () => {
+    const before = subscriberCount();
+    let inside = false;
     await runWithFixtures(async ({ statements }) => {
-      inside = statementObserver();
+      inside = subscribed('db.statement');
       expect(statements.count()).toBe(0);
     });
 
-    expect(inside).toBeDefined();
-    expect(statementObserver()).toBeUndefined();
+    expect(inside).toBe(true);
+    expect(subscriberCount()).toBe(before);
   });
 
   test('a body that loops fails, and the fixture is still disposed', async () => {
@@ -260,7 +291,7 @@ describe('unit · the fixture hands the seam back', () => {
     });
 
     await expect(run).rejects.toMatchObject({ code: 'X_N_PLUS_ONE_QUERY' });
-    expect(statementObserver()).toBeUndefined();
+    expect(subscribed('db.statement')).toBe(false);
   });
 });
 
@@ -277,23 +308,29 @@ describe('unit · the verdict holds on the memory driver, where generated tests 
     clearRegistry();
   });
 
-  test('a findById loop throws X_N_PLUS_ONE_QUERY, from the loop own lookup', async () => {
-    using statements = await testStatements();
+  test('a findById loop is X_N_PLUS_ONE_QUERY, attributed to the loop own lookup', async () => {
+    const statements = await testStatements();
     const repo = memoryRepo(members);
-    const refused = await (async () => {
-      for (const id of IDS) await repo.findById(id);
-    })().catch((error: unknown) => error);
-    expect(refused).toBeUltimateError('X_N_PLUS_ONE_QUERY');
-    expect(statements.count('fixture_memory_members.findById')).toBe(N_PLUS_ONE_THRESHOLD);
+    for (const id of IDS) await repo.findById(id);
+    expect(statements.count('fixture_memory_members.findById')).toBe(IDS.length);
+    expect(verdictOf(statements)).toBeUltimateError('X_N_PLUS_ONE_QUERY');
   });
 
-  test('a write loop throws X_N_PLUS_ONE_WRITE', async () => {
-    using _statements = await testStatements();
+  test('the verdict points at the loop in the test, not at the driver', async () => {
+    const statements = await testStatements();
     const repo = memoryRepo(members);
-    const refused = await (async () => {
-      for (const id of IDS) await repo.insert({ id, name: 'a' });
-    })().catch((error: unknown) => error);
-    expect(refused).toBeUltimateError('X_N_PLUS_ONE_WRITE');
+    for (const id of IDS) await repo.findById(id);
+    const error = verdictOf(statements) as { readonly stack?: string } | undefined;
+    expect(error?.stack).toContain('fixture-statements.test.ts:');
+    // The sender's stack, not the subscriber's that built the error.
+    expect(error?.stack).not.toContain('fixture-statements.ts:');
+  });
+
+  test('a write loop is X_N_PLUS_ONE_WRITE', async () => {
+    const statements = await testStatements();
+    const repo = memoryRepo(members);
+    for (const id of IDS) await repo.insert({ id, name: 'a' });
+    expect(verdictOf(statements)).toBeUltimateError('X_N_PLUS_ONE_WRITE');
   });
 
   test('expectedQueryLoop still suppresses the verdict, and never the measurement', async () => {

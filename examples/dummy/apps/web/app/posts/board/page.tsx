@@ -63,8 +63,11 @@ export const config = defineRoute({
    * island 77,057 → 77,196 (+139 B), the action client and core's decoder carrying a problem's
    * `issuesTruncated` onto the client error, so a cut issue list says it was cut. Raised
    * 108.25kb → 108.3kb.
+   * measured: 110925 B (2026-11-09, plan 101 wave C; x build --target static, against 110,898)
+   * — why: core's `singleLine` reading its escape table through `Object.hasOwn` (+27 B), so a
+   * key on `Object.prototype` is never taken for an escape. Raised 108.3kb → 108.4kb.
    */
-  budget: { js: '108.3kb' },
+  budget: { js: '108.4kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

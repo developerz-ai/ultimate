@@ -16,7 +16,7 @@ import {
 import { seedGraph } from './seed-graph';
 import { entitiesOf, TRACKED_APPS } from './seed-graph-apps-fixture';
 import { insertSeedGraph } from './seed-graph-plan';
-import { entitySeedWriter } from './seed-writer';
+import { digestRow, entitySeedWriter } from './seed-writer';
 import { testName } from './test-types';
 
 const orgs = entity('sw_orgs', { columns: { id: uuid().primaryKey() } });
@@ -143,6 +143,15 @@ describe(testName('unit', 'entitySeedWriter'), () => {
     // The other tenant's rows are read under their own tenant, untouched.
     const theirs = graph.inserts.filter((row) => row.tenant === other && row.entity !== 'sw_orgs');
     expect((await writer.snapshot(theirs)).every((digest) => digest !== null)).toBe(true);
+  });
+
+  test('a row digest is injective: bytes, their hex text, a date and its ISO text differ', () => {
+    const at = new Date('2026-11-09T10:00:00.000Z');
+    expect(digestRow({ v: new Uint8Array([0xab]) })).not.toBe(digestRow({ v: 'ab' }));
+    expect(digestRow({ v: at })).not.toBe(digestRow({ v: at.toISOString() }));
+    expect(digestRow({ v: 5n })).not.toBe(digestRow({ v: '5' }));
+    // Key order is not part of a row.
+    expect(digestRow({ a: 1, b: 2 })).toBe(digestRow({ b: 2, a: 1 }));
   });
 
   test('an entity the writer was not handed is refused, naming the set it was', async () => {

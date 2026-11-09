@@ -58,6 +58,8 @@ const stored = [...sessions.objects().values()].map((bytes) => new TextDecoder()
 
 Server-side only, like both other drivers: nothing an island imports reaches it.
 
+Every call on a disk `defineStorage` resolves is a `storage.<verb>` event on `@ultimat3/core`'s instrumentation bus (`put`, `get`, `stat`, `copy`, `delete`, `list`; `{ disk, key, bytes?, durationMs, error? }`) inside a `storage.<verb>` client span. `disk()` hands out that instrumented view, so it is not `===` the driver you declared — compare `.name`. A driver you hold directly reports nothing.
+
 `region` is what requests are signed for; unset, that is `auto`. An endpoint that expects another
 region refuses the first write, list or delete with `X_CONFIG_INVALID`, and the fix names the
 `S3_REGION` to set.

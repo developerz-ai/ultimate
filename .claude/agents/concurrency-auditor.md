@@ -55,7 +55,8 @@ Check the harness too when a claim rests on one. A benchmark that records a coun
 measures reachability, not correctness — and a repo can ship a number that says more than its harness
 proves.
 
-Delete every probe. Never commit. Revert any source you touched and confirm `git status` is clean.
+**Read-only means no git writes.** The tree holds other agents' uncommitted work: never `git checkout`, `restore`, `stash`, `reset`, `clean`, `add` or `commit` — read with `git diff`, `git show`, `git status`. `git status` will not be clean, and making it clean destroys a teammate's slice. Probes go in the scratchpad or `node_modules/.cache/<run>/`, never in a tracked file; delete them when done. Never edit a tracked file; a temporary interleaving test lives outside the tree and imports
+`packages/<pkg>/src/…` by path.
 
 ## Output
 

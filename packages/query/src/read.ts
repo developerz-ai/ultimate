@@ -14,10 +14,12 @@ import {
   ctxOf,
   failureCaptureActive,
   finiteOption,
+  instrument,
   logger,
   REDACTED,
   recordFailureInput,
   runWithContext,
+  subscribed,
   tryUseContext,
   useContext,
   withChildContext,
@@ -210,7 +212,20 @@ function readRows(
       // read is filled — and which of the two a slow read took is the first thing to ask.
       'ultimate.cached': defOf(target).cache !== undefined,
     });
-    const rows = await readRowsIn(target, raw, ctx, options, trace);
+    const startedAt = performance.now();
+    let rows: readonly object[];
+    try {
+      rows = await readRowsIn(target, raw, ctx, options, trace);
+    } catch (error) {
+      // A refused or failed read is still a read; the bus hears it sampled or not.
+      if (subscribed('query.read')) {
+        instrument('query.read', { query: name, durationMs: performance.now() - startedAt, error });
+      }
+      throw error;
+    }
+    if (subscribed('query.read')) {
+      instrument('query.read', { query: name, durationMs: performance.now() - startedAt });
+    }
     span.setAttribute('ultimate.rows', rows.length);
     return rows;
   });

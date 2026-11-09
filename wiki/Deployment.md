@@ -249,7 +249,7 @@ services:
   # service, so the other worker names every remaining queue itself. Unset, a worker claims
   # jobs.queues plus every queue a registered job is enqueued on; set, `jobs.worker.queue-unserved`
   # names the registered queues it leaves that NO live worker serves — none, once `integrations` is up.
-  worker:     { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: 'myapp-default,default' },
+  worker:     { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: default },
                 deploy: { replicas: 4 } }
   worker-integrations: { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: integrations },
                 deploy: { replicas: 1 } }

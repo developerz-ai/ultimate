@@ -221,6 +221,8 @@ function toUrlSegment(segment: string): string {
 }
 
 const routes = new Map<string, RouteEntry>();
+/** route file → its URL pattern: what `render.page` reports a component's render under. */
+const patternsByFile = new Map<string, string>();
 /**
  * The config each path's module EXPORTED, before `withIslandBudget` may have copied it: a mount's
  * `claimable` answers by identity, and the entry's own config is not always that object.
@@ -301,6 +303,7 @@ export function registerRoute<TData = RouteData>(
     ...(input.component === undefined ? {} : { component: input.component }),
   };
   routes.set(path, entry as RouteEntry);
+  patternsByFile.set(input.file, path);
   declaredConfigs.set(path, input.config as RouteConfig);
   described = undefined;
   return entry;
@@ -350,6 +353,7 @@ export function registerMountedRoutes(
 
 export function clearRoutes(): void {
   routes.clear();
+  patternsByFile.clear();
   declaredConfigs.clear();
   clearMountedRoutes();
   described = undefined;
@@ -367,6 +371,11 @@ export function routeEntries(): readonly RouteEntry[] {
 
 export function routeFor(path: string): RouteEntry | undefined {
   return routes.get(path);
+}
+
+/** The URL pattern a registered route FILE serves (`/blog/:slug`), or `undefined` for none. */
+export function routePatternOfFile(file: string): string | undefined {
+  return patternsByFile.get(file);
 }
 
 /**

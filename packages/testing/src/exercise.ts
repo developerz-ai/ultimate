@@ -10,7 +10,7 @@
 // what the input sent is never the call's, and a name two kinds share has an entry per kind.
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
-import { runExercise } from '@ultimat3/core';
+import { runExercise, subscribe } from '@ultimat3/core';
 import { LIVE_STATES, registeredJobs } from '@ultimat3/jobs';
 import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
 import { assertOverridesKnown, overrideFor, unknownDeclaration } from './define-exercise';
@@ -26,6 +26,7 @@ import { judged, labelFor } from './exercise-judge';
 import { mergeObserved } from './exercise-observed';
 import type { OverrideInput } from './exercise-override-input';
 import { inputThrew, overrideInput } from './exercise-override-input';
+import { actorHintOf, type OverrideHint, seededIn } from './exercise-override-line';
 import type {
   EffectPayload,
   ExerciseEffect,
@@ -117,6 +118,8 @@ interface Prepared {
   readonly declaredRuns: number | undefined;
   readonly lookups: readonly [IdLookup, IdLookup];
   readonly bindInput: OverrideInput | undefined;
+  /** The actor the pass picked, as the paste line spells it (`exercise-override-line.ts`). */
+  readonly actorHint: OverrideHint['actor'];
 }
 
 /** Thrown out of 39's loop by a bind that failed: the record is the entry's, never the loop's. */
@@ -204,7 +207,8 @@ async function control(
   const ms = Math.round(performance.now() - started);
   const observed = mergeObserved(segments);
   const effects = [...observed.effects, ...(await enqueued(subject, mine))];
-  const outcome = { verdict, answered, lastError, lastInput };
+  const hint = { actor: run.actorHint, ids: seededIn(lastInput, lookups) };
+  const outcome = { verdict, answered, lastError, lastInput, hint };
   const verdictOf = judged(subject, key, outcome, observed, sampler);
   // A 5xx's cause, statement and fields: the code alone sent the author to reproduce it by hand.
   const defect =
@@ -239,10 +243,11 @@ async function attack(
   // which proves nothing), so the attack that matters is a job of B's carrying A's ids.
   const sent = seatIn(subject, input, tenant);
   // Every `crossTenant()` B's call opened: a job's declared sweep is told from a leak by it alone.
-  // Loaded here, never at the top: the barrel stays entity-free (`seed-writer.ts`'s rule).
-  const { setCrossTenantObserver } = await import('@ultimat3/entity');
+  // On the bus, so the barrel stays entity-free (`seed-writer.ts`'s rule) with no import at all.
   const crossings: string[] = [];
-  setCrossTenantObserver((reason) => crossings.push(reason));
+  const offCrossings = subscribe('entity.cross_tenant', (event) => {
+    crossings.push(event.payload.reason);
+  });
   try {
     const answer = await subject.call(sent, actor, tenant, jobs);
     output = answer.output;
@@ -250,7 +255,7 @@ async function attack(
     // B's refusal is the answer a scoped primitive gives: only what B got back, and what B's call
     // did to A's rows, is judged — never whether B was refused.
   } finally {
-    setCrossTenantObserver(undefined);
+    offCrossings();
   }
   const observed = room.end();
   const payloads = [...observed.payloads, ...(await queuedPayloads(subject))];
@@ -308,6 +313,7 @@ async function exerciseOne(
     declaredRuns,
     lookups,
     bindInput,
+    actorHint: actorHintOf(chosen, override),
   };
   // A's own first input, A's ids in it: B sends exactly what A legitimately would.
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookups[0]);

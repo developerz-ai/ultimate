@@ -3,19 +3,17 @@
 // The module is resolved at first query and never at import: it is an OPTIONAL peer, and an image
 // that only ever talks to a managed Postgres must not carry 26 MB of WASM it will never load.
 
-import { statementAttribution } from './attribution';
+import { callerStack } from '@ultimat3/core';
 import { refuseUnsendable } from './bound-parameters';
 import type { DbClient, DbConnection, ReservableClient } from './client';
 import { refuseRolledBackCommit } from './commit-tag';
 import { DbError, driverError } from './errors';
-import { expectedQueryLoopReason } from './expected-loop';
 import {
   assertListenChannel,
   type DbSubscription,
   type ListeningClient,
   listenUnsupported,
 } from './listen';
-import { statementObserver } from './observe';
 import { PGLITE_INSTANT_PARSERS } from './pg-instant';
 import { linkPgliteExtensions, type PgliteExtensionLoader } from './pglite-extensions';
 import { PGLITE_PACKAGE } from './pglite-package';
@@ -30,7 +28,7 @@ import {
 import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
 import { statementExcerpt } from './statement-excerpt';
-import { withStatementSpan } from './statement-span';
+import { traceStatement } from './statement-span';
 import { liveTxConnection } from './transaction';
 
 /** What PGlite answers with. `rows` is empty for a write, which is why the count is separate. */
@@ -249,7 +247,7 @@ export interface PgliteClient extends ReservableClient, ListeningClient {
 // PGlite counts MODIFIED rows, so a SELECT that returned rows still reports `affectedRows: 0` —
 // `??` would answer 0 for every read and disagree with `PostgresClient.execute`. A write that
 // modified nothing returned no rows either, so falling back to the row count stays 0 there. One
-// definition, shared: `execute()` and the observer's event must not disagree about how many rows a
+// definition, shared: `execute()` and the `db.statement` event must not disagree about how many rows a
 // statement accounted for.
 function rowsOf(result: PgliteResult): number {
   return result.affectedRows !== undefined && result.affectedRows > 0
@@ -299,56 +297,21 @@ export function pgliteClient(options: PgliteOptions = {}): PgliteClient {
   }
 
   /**
-   * The funnel — queued, in-transaction and pinned statements all arrive here, so the observer
-   * hangs off this one function and nowhere else. Uninstalled it costs one property read and one
-   * branch: no clock read, no span, no event object, and `send` receives exactly the call
-   * `statement` made before the seam existed (axiom 6). Same shape as `runOn` in `client.ts`, one
-   * driver up.
+   * The funnel — queued, in-transaction and pinned statements all arrive here, so the span and the
+   * `db.statement` event hang off this one function (`traceStatement`, shared with `runOn`).
    */
-  async function statement(driver: PgliteDriver, fragment: SqlFragment): Promise<PgliteResult> {
-    const observer = statementObserver();
-    if (observer === undefined) return send(driver, fragment);
-    // Read here for the same reason as `runOn`: the scope is gone by the time a per-request
-    // detector judges what it collected, so the reason travels with the statement it defends.
-    const expected = expectedQueryLoopReason();
-    // And the pair `postgresRepo` left above this frame, for the same reason again: it is what
-    // reports a repository loop as "50× findById on members" rather than as fifty rows of SQL.
-    const attribution = statementAttribution();
-    const started = performance.now();
-    let result: PgliteResult;
-    try {
-      // The span wraps the send and nothing else, so its duration is the statement's and the
-      // observer's own work is not charged to the database.
-      result = await withStatementSpan(fragment.text, () => send(driver, fragment));
-    } catch (error) {
-      // The failing path is observed too — the error is already `X_DB_UNAVAILABLE`, and a throw
-      // from `onStatement` replaces it, which is why `observe.ts` says a reporting-only observer
-      // must not throw.
-      observer.onStatement({
-        text: fragment.text,
-        values: fragment.values,
-        durationMs: performance.now() - started,
-        rows: 0,
-        error,
-        attribution,
-        expected,
-      });
-      throw error;
-    }
-    // Outside the `try` deliberately: a throw from `onStatement` is the observer's, not the
-    // database's, and catching it above would report a statement that succeeded as failed.
-    observer.onStatement({
-      text: fragment.text,
-      values: fragment.values,
-      durationMs: performance.now() - started,
-      rows: rowsOf(result),
-      attribution,
-      expected,
-    });
-    return result;
+  function statement(
+    driver: PgliteDriver,
+    fragment: SqlFragment,
+    sentFrom: string | undefined,
+  ): Promise<PgliteResult> {
+    return traceStatement(fragment, () => send(driver, fragment), rowsOf, sentFrom);
   }
 
   async function run(fragment: SqlFragment): Promise<PgliteResult> {
+    // Before the boot's and the turn queue's `await`s, which keep no caller frames: the stack a
+    // `db.statement` carries while `captureStatementStacks()` is held. Nothing is built otherwise.
+    const sentFrom = callerStack();
     const driver = await connect();
     // A statement issued inside an open transaction is already inside it — there is one
     // connection and that transaction is holding the turn, so waiting for a turn we are already
@@ -366,8 +329,8 @@ export function pgliteClient(options: PgliteOptions = {}): PgliteClient {
     // about who holds this queue, and skipping it put the statement inside whatever transaction
     // this session was running — rolled back with it (`pglite-two-clients.test.ts`).
     const live = liveTxConnection();
-    if (live !== undefined && issued.has(live)) return statement(driver, fragment);
-    return turns.run(() => statement(driver, fragment));
+    if (live !== undefined && issued.has(live)) return statement(driver, fragment, sentFrom);
+    return turns.run(() => statement(driver, fragment, sentFrom));
   }
 
   return {
@@ -391,8 +354,12 @@ export function pgliteClient(options: PgliteOptions = {}): PgliteClient {
       // released the handle has no claim on the connection, and a leaked `tx` writing straight to
       // it would land inside whatever transaction holds it now, with no error to read; so a late
       // statement queues like any other caller and waits for its own turn.
-      const on = (fragment: SqlFragment): Promise<PgliteResult> =>
-        held ? statement(driver, fragment) : turns.run(() => statement(driver, fragment));
+      const on = (fragment: SqlFragment): Promise<PgliteResult> => {
+        const sentFrom = callerStack();
+        return held
+          ? statement(driver, fragment, sentFrom)
+          : turns.run(() => statement(driver, fragment, sentFrom));
+      };
       // Idempotent for free: `turn.release()` is a settled promise's `resolve`, not a counter, so
       // a second call cannot hand out a second turn (`pglite-turns.ts`). `[Symbol.dispose]` below
       // is that same call.

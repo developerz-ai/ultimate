@@ -1,16 +1,16 @@
 // Single responsibility: tests for the attribution scope itself — installed vs. uninstalled
 // (axiom 6: nothing allocated when no observer is watching), across awaits and a microtask,
 // under nesting, under two scopes running at once, and on a throw. Whether the two funnels
-// actually stamp `StatementEvent.attribution` from this scope is client.test.ts/pglite.test.ts's.
+// actually stamp `DbStatementEvent.attribution` from this scope is client.test.ts/pglite.test.ts's.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { StatementAttribution } from '@ultimat3/core';
+import { resetInstrumentation, subscribe } from '@ultimat3/core';
 import { statementAttribution, withStatementAttribution } from './attribution';
-import type { StatementAttribution } from './observe';
-import { setStatementObserver } from './observe';
 
-/** Any installed observer opens the gate — which one is not what this file is testing. */
+/** Any `db.statement` subscriber opens the gate — which one is not what this file is testing. */
 function installObserver(): void {
-  setStatementObserver({ onStatement: () => undefined });
+  subscribe('db.statement', () => undefined);
 }
 
 /** Two scopes interleave deterministically only if each can hand the turn over on demand. */
@@ -23,7 +23,7 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
 }
 
 afterEach(() => {
-  setStatementObserver(undefined);
+  resetInstrumentation();
 });
 
 describe('withStatementAttribution', () => {

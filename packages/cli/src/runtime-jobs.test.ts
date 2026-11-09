@@ -68,13 +68,15 @@ describe('workerConfigOf, over the one loader', () => {
 
   // Core's defaults, the ones the app's own `config` object holds — a hand-built object with no
   // section used to read as "the worker's own", disagreeing with that object.
-  test('a config with no jobs section is core default: <name>-default, 8, 30 s', async () => {
+  // `default`, where a `job()` naming no queue lands — `<name>-default` until 31.0.0, a queue no
+  // job targeted, polled and reported on every boot of every deployed app.
+  test('a config with no jobs section is core default: default, 8, 30 s', async () => {
     expect(
       await loadWorkerConfig(await appRoot("export const config = { name: 'demo' };\n")),
     ).toEqual({
-      queues: ['demo-default'],
+      queues: ['default'],
       exact: false,
-      configured: ['demo-default'],
+      configured: ['default'],
       concurrency: 8,
       visibilityTimeoutMs: 30_000,
     });
@@ -90,8 +92,9 @@ describe('workerQueuesFor', () => {
     ]);
   });
 
-  // `x new` and the demo configure `['<app>-default']`, while a `job()` naming no queue lands on
-  // `default`. Serving the configured list alone would leave every such job queued for ever.
+  // An app configuring `['<app>-default']` (`x new` until 31.0.0), while a `job()` naming no
+  // queue lands on `default`. Serving the configured list alone would leave every such job queued
+  // for ever.
   test('a job on a queue the config never named is still served', () => {
     expect(workerQueuesFor(['myapp-default'], ['default'])).toEqual(['myapp-default', 'default']);
   });

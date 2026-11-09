@@ -24,7 +24,7 @@
 import type { InvokeOptions, StreamAction } from '@ultimat3/action';
 import { action, chunksRead } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
-import { finiteCount, withSpan } from '@ultimat3/core';
+import { finiteCount, SEMCONV, withSpan } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, t, validateAsync } from '@ultimat3/schema';
 import { LlmTruncatedError } from './answer-errors';
@@ -34,6 +34,7 @@ import { AiTransportError, LlmOutputInvalidError, LlmRefusedError } from './erro
 import { accept, answerAttributes, observeCall, streamedAnswer } from './llm-answer';
 import { openCache } from './llm-cache';
 import type { LlmBudget, LlmDef } from './llm-def';
+import { llmReport } from './llm-instrument';
 import type { LlmStreamChunk } from './llm-stream';
 import { currentLlmSink, llmStream, withLlmSink } from './llm-stream';
 import { modelForCall } from './model-resolve';
@@ -197,136 +198,156 @@ async function generate<
   const redacted = rendered !== rawPrompt || system !== prompt.system;
   const promptCache = promptCacheHint(def.promptCache, 'off', args);
 
-  return withSpan('ai.llm', async (span) => {
-    span.setAttributes({
-      'llm.model': model,
-      'llm.prompt': prompt.ref,
-      'llm.prompt.hash': prompt.hash,
-      // Whether the installed redactor changed anything. Recorded because "we redact" is a claim
-      // an audit asks evidence for, and a redactor that silently stopped matching looks identical
-      // to one that had nothing to remove until this attribute separates them.
-      'llm.redacted': redacted,
-    });
-    // Read when the call ends, not here: the gateway may be what registers the model's row.
-    const reportSampling = (): void => {
-      span.setAttributes(
-        ignoredSamplingAttribute(model, sampling, () => installedGateway()?.samplingWires?.(model)),
-      );
-    };
-
-    // A cached answer is still data of unknown provenance, so it goes through the schema like
-    // any other. One that no longer fits — the schema moved under it — is a miss, not a
-    // failure: the model can produce a fresh answer, and refusing would be worse than paying.
-    const cache = await openCache({
-      cache: def.cache,
-      prompt: { ref: prompt.ref, hash: prompt.hash },
-      input: args.input,
-      ctx: args.ctx,
-      rendered,
-    });
-    const hit = await accept(def.output, await cache?.lookup());
-    span.setAttribute('llm.cache.hit', hit !== undefined);
-    if (hit !== undefined) {
-      reportSampling();
-      return hit.value;
-    }
-
-    // No `tools` yet: the `respond` projection belongs to the non-streaming path alone. A tool
-    // call is emitted whole, so forcing the answer through one leaves a stream with nothing to
-    // deliver until it is already over.
-    const base: GenerateRequest = {
-      model,
-      ...(system === undefined ? {} : { system }),
-      ...(promptCache === undefined ? {} : { promptCache }),
-      messages: [{ role: 'user', content: rendered }],
-      maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
-      ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
-      ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
-      ...sampling,
-      // The caller's own signal, forwarded to the transport exactly as `agent()` does — and
-      // inherited by `streamedAnswer` from this same `base`. Without it a disconnected caller left
-      // the provider call in flight, billed and unread, and the repair turn bought a SECOND one.
-      signal: args.ctx.signal,
-    };
-    const request: GenerateRequest = { ...base, tools: [respond.tool] };
-
-    // A ledger derived from the ambient one, so a per-call budget can only TIGHTEN the actor
-    // and org ceilings this call runs inside, never widen them. The gateway reserves against
-    // it before the provider is touched — that is where `X_AI_BUDGET_EXCEEDED` comes from.
-    // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
-    const gateway = aiGateway(name);
-    // Keyed on the CALLER, so the gateway's `actor` / `org` ceilings count this call against them.
-    const ledger = (currentBudget() ?? gateway.callLedger(budgetKeysFor(args.ctx.actor))).derive(
-      limits,
-    );
-    const sink = currentLlmSink();
-
-    // Every provider call goes through the meter, so a failure AFTER one answered — a refusal, a
-    // truncation, a schema no repair satisfied — is thrown carrying what it was billed.
-    const meter = runMeter();
-    const answer = async (): Promise<InferOutput<TOutput>> => {
-      if (sink !== undefined) {
-        const value = await streamedAnswer(def, name, gateway, base, sink, span, meter);
-        await cache?.remember(value);
-        return value;
-      }
-      let messages: readonly AiMessage[] = request.messages;
-      let issues = 'no output';
-      let rejected: readonly string[] | undefined;
-      for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-        const result = await meter.call(gateway.generate({ ...request, messages }));
-        span.setAttributes({ 'llm.attempts': attempt, ...answerAttributes(result) });
-        await observeCall(def, meter, result, attempt, rejected);
-        // Branch on the stop reason BEFORE reading the answer. A refusal carries empty or partial
-        // content, so parsing it first reports a schema disagreement — a cause that is wrong, a
-        // fix that does not apply, and a repair turn spent buying the same refusal again.
-        if (result.stopReason === 'refusal') {
-          throw new LlmRefusedError({
-            prompt: name,
-            model: result.model,
-            // The fix names a model the caller can paste, and only ever a MORE capable one:
-            // "the first id that differs" answered a refusal on the default model with the next
-            // entry down the ladder, which is a retry that cannot succeed.
-            alternative: moreCapableThan(result.model, request),
-            category: result.stopDetails?.category,
-            explanation: result.stopDetails?.explanation,
-          });
-        }
-        // Cut off, so there is no answer to read — and it is read BEFORE the schema for the reason
-        // the refusal is: a `respond` call stopped at the ceiling arrives with no arguments, both
-        // wires read that as `{}`, and `{}` SATISFIES an `output` whose keys are optional. The
-        // ceiling is the same on the next attempt, so the repair turn is a second truncation.
-        if (isTruncated(result.stopReason)) {
-          throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
-        }
-        const parsed = await validateAsync(def.output, respond.read(result));
-        if (parsed.issues === undefined) {
-          await cache?.remember(parsed.value);
-          return parsed.value;
-        }
-        rejected = formatIssues(parsed.issues);
-        issues = rejected.join('; ');
-        const echo = assistantEcho(result);
-        messages =
-          echo === undefined
-            ? [...messages, repair(issues)]
-            : [...messages, { role: 'assistant', content: echo }, repair(issues)];
-      }
-      throw new LlmOutputInvalidError({
-        prompt: name,
-        attempts: ATTEMPTS,
-        issues,
-        ...(rejected === undefined ? {} : { list: rejected }),
+  return withSpan(
+    'ai.llm',
+    async (span) => {
+      // OpenTelemetry's gen_ai names for what semconv covers (v31); the framework's own facts are
+      // `ultimate.llm.*`. The provider, response model and token usage land when the call settles.
+      span.setAttributes({
+        [SEMCONV.genAiOperationName]: 'chat',
+        [SEMCONV.genAiRequestModel]: model,
+        'ultimate.llm.prompt': prompt.ref,
+        'ultimate.llm.prompt.hash': prompt.hash,
+        // Whether the installed redactor changed anything. Recorded because "we redact" is a claim
+        // an audit asks evidence for, and a redactor that silently stopped matching looks identical
+        // to one that had nothing to remove until this attribute separates them.
+        'ultimate.llm.redacted': redacted,
       });
-    };
-    return withBudget(ledger, () =>
-      answer()
-        .catch((error: unknown) => {
-          throw meter.fail(error);
-        })
-        .finally(reportSampling),
-    );
-  });
+      // Read when the call ends, not here: the gateway may be what registers the model's row.
+      const reportSampling = (): void => {
+        span.setAttributes(
+          ignoredSamplingAttribute(model, sampling, () =>
+            installedGateway()?.samplingWires?.(model),
+          ),
+        );
+      };
+
+      // A cached answer is still data of unknown provenance, so it goes through the schema like
+      // any other. One that no longer fits — the schema moved under it — is a miss, not a
+      // failure: the model can produce a fresh answer, and refusing would be worse than paying.
+      const cache = await openCache({
+        cache: def.cache,
+        prompt: { ref: prompt.ref, hash: prompt.hash },
+        input: args.input,
+        ctx: args.ctx,
+        rendered,
+      });
+      const hit = await accept(def.output, await cache?.lookup());
+      span.setAttribute('ultimate.llm.cache.hit', hit !== undefined);
+      // Every provider call below goes through this meter, so the report sees who answered.
+      const report = llmReport(span, model, runMeter());
+      const meter = report.meter;
+      if (hit !== undefined) {
+        reportSampling();
+        report.settle({ cacheHit: true });
+        return hit.value;
+      }
+
+      // No `tools` yet: the `respond` projection belongs to the non-streaming path alone. A tool
+      // call is emitted whole, so forcing the answer through one leaves a stream with nothing to
+      // deliver until it is already over.
+      const base: GenerateRequest = {
+        model,
+        ...(system === undefined ? {} : { system }),
+        ...(promptCache === undefined ? {} : { promptCache }),
+        messages: [{ role: 'user', content: rendered }],
+        maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
+        ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
+        ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
+        ...sampling,
+        // The caller's own signal, forwarded to the transport exactly as `agent()` does — and
+        // inherited by `streamedAnswer` from this same `base`. Without it a disconnected caller left
+        // the provider call in flight, billed and unread, and the repair turn bought a SECOND one.
+        signal: args.ctx.signal,
+      };
+      const request: GenerateRequest = { ...base, tools: [respond.tool] };
+
+      // A ledger derived from the ambient one, so a per-call budget can only TIGHTEN the actor
+      // and org ceilings this call runs inside, never widen them. The gateway reserves against
+      // it before the provider is touched — that is where `X_AI_BUDGET_EXCEEDED` comes from.
+      // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
+      const gateway = aiGateway(name);
+      // Keyed on the CALLER, so the gateway's `actor` / `org` ceilings count this call against them.
+      const ledger = (currentBudget() ?? gateway.callLedger(budgetKeysFor(args.ctx.actor))).derive(
+        limits,
+      );
+      const sink = currentLlmSink();
+
+      // Every provider call goes through the meter, so a failure AFTER one answered — a refusal, a
+      // truncation, a schema no repair satisfied — is thrown carrying what it was billed.
+      const answer = async (): Promise<InferOutput<TOutput>> => {
+        if (sink !== undefined) {
+          const value = await streamedAnswer(def, name, gateway, base, sink, span, meter);
+          await cache?.remember(value);
+          return value;
+        }
+        let messages: readonly AiMessage[] = request.messages;
+        let issues = 'no output';
+        let rejected: readonly string[] | undefined;
+        for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+          const result = await meter.call(gateway.generate({ ...request, messages }));
+          span.setAttributes({ 'ultimate.llm.attempts': attempt, ...answerAttributes(result) });
+          await observeCall(def, meter, result, attempt, rejected);
+          // Branch on the stop reason BEFORE reading the answer. A refusal carries empty or partial
+          // content, so parsing it first reports a schema disagreement — a cause that is wrong, a
+          // fix that does not apply, and a repair turn spent buying the same refusal again.
+          if (result.stopReason === 'refusal') {
+            throw new LlmRefusedError({
+              prompt: name,
+              model: result.model,
+              // The fix names a model the caller can paste, and only ever a MORE capable one:
+              // "the first id that differs" answered a refusal on the default model with the next
+              // entry down the ladder, which is a retry that cannot succeed.
+              alternative: moreCapableThan(result.model, request),
+              category: result.stopDetails?.category,
+              explanation: result.stopDetails?.explanation,
+            });
+          }
+          // Cut off, so there is no answer to read — and it is read BEFORE the schema for the reason
+          // the refusal is: a `respond` call stopped at the ceiling arrives with no arguments, both
+          // wires read that as `{}`, and `{}` SATISFIES an `output` whose keys are optional. The
+          // ceiling is the same on the next attempt, so the repair turn is a second truncation.
+          if (isTruncated(result.stopReason)) {
+            throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
+          }
+          const parsed = await validateAsync(def.output, respond.read(result));
+          if (parsed.issues === undefined) {
+            await cache?.remember(parsed.value);
+            return parsed.value;
+          }
+          rejected = formatIssues(parsed.issues);
+          issues = rejected.join('; ');
+          const echo = assistantEcho(result);
+          messages =
+            echo === undefined
+              ? [...messages, repair(issues)]
+              : [...messages, { role: 'assistant', content: echo }, repair(issues)];
+        }
+        throw new LlmOutputInvalidError({
+          prompt: name,
+          attempts: ATTEMPTS,
+          issues,
+          ...(rejected === undefined ? {} : { list: rejected }),
+        });
+      };
+      return withBudget(ledger, () =>
+        answer()
+          .then(
+            (value) => {
+              report.settle({ cacheHit: false });
+              return value;
+            },
+            (error: unknown) => {
+              const billed = meter.fail(error);
+              report.settle({ cacheHit: false, error: billed });
+              throw billed;
+            },
+          )
+          .finally(reportSampling),
+      );
+    },
+    { kind: 'client' },
+  );
 }
 
 function repair(issues: string): AiMessage {

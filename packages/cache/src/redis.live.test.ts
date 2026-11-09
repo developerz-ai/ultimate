@@ -9,14 +9,14 @@
 //   TEST_REDIS_URL=redis://localhost:6379 bun test packages/cache/src/redis.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { frozenClock, systemClock } from '@ultimat3/core';
+import type { CacheTierFailureEvent } from '@ultimat3/core';
+import { frozenClock, subscribe, systemClock } from '@ultimat3/core';
 import { redisClient } from '@ultimat3/core/redis';
 import { lruTier } from './lru';
 import type { RedisLike } from './redis';
 import { redisTier } from './redis';
 import { BUST_PAGE_SIZE, TAG_GRACE_MS } from './redis-buckets';
 import { tag } from './tags';
-import { isolateTierFailures, recentTierFailures } from './tier-failures';
 import type { CacheTier } from './tiers';
 import { cacheStack, nowMs } from './tiers';
 
@@ -345,7 +345,8 @@ describe.skipIf(!hasRedis)(
       };
 
       test('CLIENT KILL: the read is its load inside 50 ms, recorded, and the next one hits', async () => {
-        const restoreFailures = isolateTierFailures();
+        const failures: CacheTierFailureEvent[] = [];
+        const off = subscribe('cache.tier_failure', (event) => void failures.push(event.payload));
         // core's client, the one the tier takes when none is handed in, on a path of its own.
         const client = redisClient(`${url ?? ''}/1`);
         try {
@@ -360,7 +361,7 @@ describe.skipIf(!hasRedis)(
           const started = performance.now();
           expect(await stack.read('outage-feed', () => Promise.resolve('loaded'))).toBe('loaded');
           expect(performance.now() - started).toBeLessThan(50);
-          expect(recentTierFailures()[0]?.message).toContain('offline queue is disabled');
+          expect(failures[0]?.message).toContain('offline queue is disabled');
 
           await until(
             async () =>
@@ -370,7 +371,7 @@ describe.skipIf(!hasRedis)(
           await tier.del('outage-feed');
         } finally {
           client.close();
-          restoreFailures();
+          off();
         }
       });
     });

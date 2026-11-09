@@ -29,13 +29,13 @@ export async function observeTurn<
   span.addEvent('agent.turn', {
     'agent.turn': event.turn,
     'agent.turn.tool_calls': event.toolCalls.length,
-    'llm.stop': event.stopReason,
-    'llm.cost.minor': event.cost.minor,
+    'ultimate.llm.stop': event.stopReason,
+    'ultimate.llm.cost.minor': event.cost.minor,
     'agent.turn.repair': event.repairOf !== undefined,
     // What the provider's prompt cache did for this turn — the two numbers that say whether the
     // stable prefix is really stable.
-    'llm.cache.read_tokens': event.usage.cacheReadTokens,
-    'llm.cache.write_tokens': event.usage.cacheWriteTokens,
+    'ultimate.llm.cache.read_tokens': event.usage.cacheReadTokens,
+    'ultimate.llm.cache.write_tokens': event.usage.cacheWriteTokens,
   });
   await def.onTurn?.(event);
 }

@@ -174,7 +174,7 @@ export function cdnTier(options: CdnTierOptions = {}): CacheTier {
     async invalidateTags(tags: readonly CacheTag[]): Promise<TierInvalidation> {
       // The default state of any deployment with no CDN credentials, and it has to say so: the
       // noop driver ECHOES its argument, so every tag came back as an accepted purge and
-      // `recentInvalidations().busted` listed keys nothing had cleared, `errors: []`. `skipped`
+      // the invalidation event's `busted` listed keys nothing had cleared, `errors: []`. `skipped`
       // is the field that already exists for this — a tier that did not run, named as one.
       if (isNoopPurgeDriver(driver)) {
         return { tier: 'cdn', keys: [], skipped: 'no purge driver configured' };

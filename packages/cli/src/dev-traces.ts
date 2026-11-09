@@ -1,20 +1,21 @@
 // The `/_x` timeline panel's source: core's own spans, recorded in this process. `x dev` installs
-// the exporter at boot, so every `withSpan` the framework already opens — the request, the action,
+// a `span.end` subscriber at boot, so every `withSpan` the framework already opens — the request, the action,
 // the query, the cache bust — arrives here and is assembled back into the tree the flame draws.
 // A tracer written here instead would be a second one, disagreeing with `x trace` by construction.
 
 import type { RequestTrace, SpanKind, TimelineSpan } from '@ultimat3/admin/dev';
 import type { ReadableSpan, SpanExporter } from '@ultimat3/core';
-import { finiteCount } from '@ultimat3/core';
-// The attribute name is `@ultimat3/db`'s to declare — this reads it rather than restating it, so
-// renaming it there is a compile error here instead of a panel that silently groups nothing.
-import { STATEMENT_ATTRIBUTE } from '@ultimat3/db';
+// The attribute names are core's semconv table — read, never restated, so a rename there is a
+// compile error here instead of a panel that silently groups nothing.
+import { finiteCount, SEMCONV } from '@ultimat3/core';
+// `@ultimat3/http`'s pipeline stamps it on the request's root span and on nothing else.
+import { REQUEST_ID_ATTRIBUTE } from '@ultimat3/http';
 
 /** Traces retained. A dev panel shows recent requests; it does not page through history. */
 const DEFAULT_LIMIT = 50;
 
 export interface TraceRecorder {
-  /** Hand this to `configureTelemetry({ exporter })`. */
+  /** Feed it every ended span: `subscribe('span.end', (e) => recorder.exporter.export(e.payload))`. */
   readonly exporter: SpanExporter;
   /** Complete request traces, newest first. */
   traces(): readonly RequestTrace[];
@@ -60,21 +61,21 @@ const attrNumber = (span: ReadableSpan, key: string): number | undefined => {
 };
 
 /**
- * The pipeline names its root span `<METHOD> <path>` and tags it with `http.*`. Reading the
+ * The pipeline names its root span `<METHOD> <path>` and tags it with semconv's `http.*`. Reading the
  * attributes first and the name only as a fallback keeps the panel working against a root span
  * from any host, while still preferring the facts the pipeline states outright.
  */
 function requestFacts(root: ReadableSpan): { method: string; path: string } {
   const [namedMethod = '', namedPath = ''] = root.name.split(' ');
   return {
-    method: attrString(root, 'http.method') ?? namedMethod,
-    path: attrString(root, 'http.route') ?? namedPath,
+    method: attrString(root, SEMCONV.httpRequestMethod) ?? namedMethod,
+    path: attrString(root, SEMCONV.httpRoute) ?? namedPath,
   };
 }
 
-/** `http.request_id` is stamped by the pipeline's root and by nothing else; the name is a fallback. */
+/** The request id is stamped by the pipeline's root and by nothing else; the name is a fallback. */
 const isHttpRoot = (span: ReadableSpan): boolean =>
-  span.attributes['http.request_id'] !== undefined || /^[A-Z]+ \//.test(span.name);
+  span.attributes[REQUEST_ID_ATTRIBUTE] !== undefined || /^[A-Z]+ \//.test(span.name);
 
 /**
  * The request's own span among a trace's. `parentSpanId === undefined` was a third CONDITION
@@ -98,10 +99,10 @@ function toTrace(root: ReadableSpan, spans: readonly ReadableSpan[]): RequestTra
   const { method, path } = requestFacts(root);
   const origin = root.startedAt;
   return {
-    requestId: attrString(root, 'http.request_id') ?? root.context.traceId,
+    requestId: attrString(root, REQUEST_ID_ATTRIBUTE) ?? root.context.traceId,
     method,
     path,
-    status: attrNumber(root, 'http.status_code') ?? 0,
+    status: attrNumber(root, SEMCONV.httpResponseStatusCode) ?? 0,
     startedAt: new Date(origin).toISOString(),
     totalMs: root.durationMs,
     spans: spans
@@ -116,9 +117,9 @@ function toTrace(root: ReadableSpan, spans: readonly ReadableSpan[]): RequestTra
           startMs: Math.max(0, span.startedAt - origin),
           durationMs: span.durationMs,
           // The panel counts repeats of `detail` to find the N+1. A statement states its own
-          // identity (`STATEMENT_ATTRIBUTE`, set by `@ultimat3/db`'s funnels); for every other span
+          // identity (`db.query.text`, set by `@ultimat3/db`'s funnels); for every other span
           // the name is that identity — `query.feed` twice is two reads of one query.
-          detail: attrString(span, STATEMENT_ATTRIBUTE) ?? span.name,
+          detail: attrString(span, SEMCONV.dbQueryText) ?? span.name,
         }),
       )
       .sort((a, b) => a.startMs - b.startMs),

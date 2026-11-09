@@ -4,8 +4,8 @@
 // whichever surface rendered the denial.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
-import { memoryDecisionSink, resetDecisionSink, setDecisionSink } from './decisions';
+import type { PolicyDecisionEvent } from '@ultimat3/core';
+import { isUltimateError, resetInstrumentation, subscribe } from '@ultimat3/core';
 import {
   type GuardedPrimitive,
   guardPrimitive,
@@ -16,6 +16,13 @@ import { clearPermissions, definePermissions } from './permissions';
 import { allow, can } from './policy';
 import { clearRoles, defineRoles } from './roles';
 import { testActor } from './test-kit';
+
+/** Every `policy.decision` event from here on, in emit order — released by `resetInstrumentation`. */
+const recordDecisions = (): { readonly events: PolicyDecisionEvent[] } => {
+  const events: PolicyDecisionEvent[] = [];
+  subscribe('policy.decision', (event) => void events.push(event.payload));
+  return { events };
+};
 
 interface Input {
   readonly ownerId: string;
@@ -29,7 +36,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  resetDecisionSink();
+  resetInstrumentation();
 });
 
 afterAll(() => {
@@ -91,8 +98,7 @@ describe('one surface table for both primitives', () => {
   }
 
   test('the decision event names the policy surface the projection mapped to', () => {
-    const sink = memoryDecisionSink();
-    setDecisionSink(sink);
+    const sink = recordDecisions();
     guardPrimitive('query', policy, full(), 'mcp');
     guardPrimitive('action', policy, full(), 'server');
     expect(sink.events.map((event) => event.surface)).toEqual(['mcp', 'job']);
@@ -138,8 +144,7 @@ describe('the before-input stage', () => {
   });
 
   test('undecided — a predicate would have to read the input — passes, and emits nothing', () => {
-    const sink = memoryDecisionSink();
-    setDecisionSink(sink);
+    const sink = recordDecisions();
     let ran = false;
     const reads = can<Input>('post:read', () => {
       ran = true;

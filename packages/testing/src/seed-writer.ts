@@ -6,6 +6,7 @@
 // `@ultimat3/entity` loads on the first write, never on import: this module is on the barrel, and
 // the barrel stays entity-free.
 
+import { fingerprint } from '@ultimat3/core';
 import type { DbClient, SqlFragment } from '@ultimat3/db';
 import { identifier, join, sql } from '@ultimat3/db';
 import type { Driver, EntityCore, Repo } from '@ultimat3/entity';
@@ -14,25 +15,13 @@ import type { SeedRow, SeedUpdate, SeedWriter } from './seed-graph-plan';
 
 type SeedRepo = Repo<Record<string, unknown>>;
 
-/** Stable text for one row: keys sorted, an instant as ISO, bytes as hex — never insertion order. */
-const stable = (value: unknown): unknown => {
-  if (value instanceof Date) return value.toISOString();
-  if (value instanceof Uint8Array) {
-    return Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
-  }
-  if (typeof value === 'bigint') return value.toString();
-  if (Array.isArray(value)) return value.map(stable);
-  if (typeof value !== 'object' || value === null) return value;
-  const record = value as Record<string, unknown>;
-  return Object.fromEntries(
-    Object.keys(record)
-      .sort()
-      .map((key) => [key, stable(record[key])]),
-  );
-};
-
-const digestRow = (row: unknown): string =>
-  new Bun.CryptoHasher('md5').update(JSON.stringify(stable(row))).digest('hex');
+/**
+ * One row's digest: core's `fingerprint`, over `canonicalJson` — the framework's one INJECTIVE
+ * form: keys sorted, and a date, bytes and a bigint each tagged. A private copy rendered bytes as
+ * bare hex, one digest with the text holding that hex — a hash form must never fold two values
+ * onto one string, and a second hasher is where the next copy drifts.
+ */
+export const digestRow = (row: unknown): string => fingerprint(row);
 
 /** The physical columns of an entity's primary key, in key order. */
 const keyColumns = (entity: EntityCore): readonly string[] => {

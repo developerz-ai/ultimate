@@ -51,14 +51,21 @@ let dropped = 0;
 /**
  * Per fd, because fd 1 and fd 2 are two readers. `degraded`: the last line was dropped, so the next
  * gets one attempt. `torn`: it was dropped HALF-written, so the next line that arrives opens with
- * the newline the torn one never got — otherwise the two glue into one unparseable line.
+ * the newline the torn one never got — otherwise the two glue into one unparseable line. `gone`:
+ * the reader closed its end (`EPIPE`, `| head -c 10`) and nothing written to it can arrive again.
  */
-const pipes = new Map<number, { degraded: boolean; torn: boolean }>();
+interface PipeState {
+  degraded: boolean;
+  torn: boolean;
+  gone: boolean;
+}
 
-const pipeOf = (fd: number): { degraded: boolean; torn: boolean } => {
+const pipes = new Map<number, PipeState>();
+
+const pipeOf = (fd: number): PipeState => {
   let pipe = pipes.get(fd);
   if (pipe === undefined) {
-    pipe = { degraded: false, torn: false };
+    pipe = { degraded: false, torn: false, gone: false };
     pipes.set(fd, pipe);
   }
   return pipe;
@@ -71,7 +78,7 @@ export const droppedLineCount = (): number => dropped;
 
 /**
  * Write every byte of `buffer` to `fd`, or drop it after `EAGAIN_ATTEMPTS` stalls in a row — one
- * stall while the fd is degraded. Returns whether it all arrived. A write of zero bytes is a stall
+ * stall while the fd is degraded — or abandon it, and every later line, once the reader is gone. Returns whether it all arrived. A write of zero bytes is a stall
  * too, so no path spins.
  */
 export function writeAll(
@@ -81,6 +88,7 @@ export function writeAll(
   sleep: (ms: number) => void = Bun.sleepSync,
 ): boolean {
   const pipe = pipeOf(fd);
+  if (pipe.gone) return false;
   const prefix = pipe.torn ? 1 : 0;
   const bytes = prefix === 0 ? buffer : Buffer.concat([Uint8Array.of(NEWLINE), buffer]);
   let written = 0;
@@ -93,7 +101,14 @@ export function writeAll(
       // `stringField`, never a cast plus a property read — the rule `metrics-endpoint.ts` states
       // and `caught-value-reads.test.ts` enforces. Here it is also the difference between
       // rethrowing and retrying: a `code` that cannot be read must not read as `EAGAIN`.
-      if (stringField(cause, 'code') !== 'EAGAIN') throw cause;
+      const code = stringField(cause, 'code');
+      // The reader closed its end: its choice, not the command's failure. Stop writing to it and
+      // let the command exit with the code it decided — never a stack trace and exit 1.
+      if (code === 'EPIPE') {
+        pipe.gone = true;
+        return false;
+      }
+      if (code !== 'EAGAIN') throw cause;
     }
     if (progress > 0) {
       written += progress;

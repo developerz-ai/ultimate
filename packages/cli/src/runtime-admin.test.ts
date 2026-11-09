@@ -15,6 +15,7 @@ import {
   uuid,
 } from '@ultimat3/entity';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
+import { configureLocales, localeConfig } from '@ultimat3/i18n';
 import { frameworkSources } from '@ultimat3/manifest';
 import {
   defineRoles,
@@ -242,6 +243,24 @@ describe('unit · the admin mount', () => {
 
   test('a URL under the base path that the admin does not declare is the ordinary 404', async () => {
     expect((await get(VIEWER, '/admin/nope/at/all')).status).toBe(404);
+  });
+
+  // Adopter-found: the router strips a routed locale's prefix before it matches, so `/en/admin/…`
+  // reached the catch-all — and the screen was looked up by the RAW pathname, a 404 in every
+  // locale but the default. The screen is the path the table matched, prefix and mount removed.
+  test('under a routed locale prefix every screen answers as it does unprefixed', async () => {
+    const before = localeConfig();
+    configureLocales({ supported: ['es', 'en'], fallback: 'es' });
+    try {
+      expect((await get(VIEWER, '/en/admin')).status).toBe(200);
+      const list = await get(VIEWER, '/en/admin/cli_admin_parts');
+      expect(list.status).toBe(200);
+      expect(await list.text()).toContain('Sprocket');
+      expect((await get(VIEWER, `/en/admin/cli_admin_parts/${rowId}`)).status).toBe(200);
+      expect((await get(VIEWER, '/en/admin/nope/at/all')).status).toBe(404);
+    } finally {
+      configureLocales(before);
+    }
   });
 
   test('a cross-site POST is refused before the screen runs', async () => {

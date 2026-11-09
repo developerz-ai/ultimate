@@ -6,8 +6,9 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { CacheTier } from '@ultimat3/cache';
-import { isolateTiers, recentTierFailures, registerTier, resetTiers } from '@ultimat3/cache';
-import { ctxOf } from '@ultimat3/core';
+import { isolateTiers, registerTier, resetTiers } from '@ultimat3/cache';
+import type { CacheTierFailureEvent } from '@ultimat3/core';
+import { ctxOf, resetInstrumentation, subscribe } from '@ultimat3/core';
 import { readThrough } from './cache';
 
 let restore: (() => void) | undefined;
@@ -15,6 +16,7 @@ let restore: (() => void) | undefined;
 afterEach(() => {
   restore?.();
   restore = undefined;
+  resetInstrumentation();
 });
 
 describe('a read tier that refuses', () => {
@@ -34,25 +36,25 @@ describe('a read tier that refuses', () => {
     },
   });
 
-  // Keyed uniquely rather than reset: the failure log is process-global, capped, and has no
-  // exported way back — a file that cleared it would be deleting a neighbouring suite's evidence.
   const KEY = 'query-read-refusal-probe';
 
   test('answers the read from the source instead of failing it', async () => {
     restore = isolateTiers();
     resetTiers();
     registerTier(refusingTier());
+    const failures: CacheTierFailureEvent[] = [];
+    subscribe('cache.tier_failure', (event) => failures.push(event.payload));
 
     expect(await readThrough(ctxOf({}), KEY, 60_000, async () => 'rows', [])).toBe('rows');
 
-    // Degraded, and SAYABLE: the refusal reaches `recentTierFailures()` under the name of the tier
+    // Degraded, and SAYABLE: the refusal reaches `cache.tier_failure` under the name of the tier
     // that actually refused, so a stack running without its cache is answerable instead of merely
     // looking slow. It used to be labelled `query-read` — this package's own seam, which was the
     // whole problem: a rung nothing had registered and no fan-out could reach.
-    const failures = recentTierFailures().filter((failure) => failure.key === KEY);
-    // Newest first: the `del` is the fill's repair of a refused `set` — a tier that refuses
+    // In order: the `del` is the fill's repair of a refused `set` — a tier that refuses
     // everything refuses that too, and says so rather than leaving a stale entry unreported.
-    expect(failures.map((failure) => failure.op)).toEqual(['del', 'set', 'get']);
+    expect(failures.map((failure) => failure.op)).toEqual(['get', 'set', 'del']);
+    expect(failures.every((failure) => failure.key === KEY)).toBe(true);
     expect(failures.every((failure) => failure.tier === 'redis')).toBe(true);
   });
 });

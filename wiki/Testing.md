@@ -759,7 +759,7 @@ terminal and never the logger, so a test asserting on an `info` audit line passe
 
 ## An N+1 fails the test it happened in
 
-`x dev` warns about a query loop; CI is where nobody is watching. Destructuring `statements` installs the same detector in **throw** mode for the length of one test:
+`x dev` warns about a query loop; CI is where nobody is watching. Destructuring `statements` installs the same detector in **strict** mode for the length of one test:
 
 ```ts
 test('the feed reads its authors once', async ({ statements }) => {
@@ -770,7 +770,7 @@ test('the feed reads its authors once', async ({ statements }) => {
 });
 ```
 
-The loop's fifth statement is what rejects, so the failing line is the loop's own — not a summary at teardown. Opting in is naming the fixture: there is no `strict: true` to remember and no switch left on for the next file.
+The loop runs to its end and the verdict is raised when the fixture is disposed — the bus never lets an observer fail the read it observes — naming the shape and its count; `statements.verdicts()` reads it earlier. Opting in is naming the fixture: there is no `strict: true` to remember and no switch left on for the next file.
 
 | What | Rule |
 |---|---|

@@ -4,13 +4,13 @@
 // that an int8 count arrives as a `number`. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { subscribe } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
   postgresClient,
   raw,
   setDbClient,
-  setStatementObserver,
   statementsOf,
 } from '@ultimat3/db';
 import { integer, text, timestamp, uuid } from './columns';
@@ -79,15 +79,13 @@ describe.skipIf(!hasPostgres)('live · postgres · grouped counts', () => {
   /** What a call produced, and every statement it sent that matched — the N+1 claim needs both. */
   const counting = async <T>(match: string, work: () => Promise<T>): Promise<[T, string[]]> => {
     const seen: string[] = [];
-    setStatementObserver({
-      onStatement: (event) => {
-        if (event.text.includes(match)) seen.push(event.text);
-      },
+    const offStatements = subscribe('db.statement', ({ payload: event }) => {
+      if (event.text.includes(match)) seen.push(event.text);
     });
     try {
       return [await work(), seen];
     } finally {
-      setStatementObserver(undefined);
+      offStatements();
     }
   };
 

@@ -3,7 +3,15 @@
 // middleware stack, so nothing can skip a stage and `/_x` and `pipeline.test.ts` can both read it.
 // The other two thirds of the lifecycle are siblings: `stages.ts` owns what each stage does, and
 // `finalize.ts` owns the promise that the tail always answers rather than rejecting.
-import { beginWork, recordRequest, runWithContext, withSpan } from '@ultimat3/core';
+import {
+  beginWork,
+  instrument,
+  recordRequest,
+  runWithContext,
+  SEMCONV,
+  subscribed,
+  withSpan,
+} from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfig } from './config';
 import { asCtx, elapsedMs, type RequestContext, requestContext } from './context';
 import { readCorrelation } from './correlation';
@@ -140,6 +148,9 @@ export interface Pipeline {
    */
   handle(request: Request, init: HandleInit): Promise<Response>;
 }
+
+/** The request span's id attribute: framework-specific, so `ultimate.*` — `x dev` joins on it. */
+export const REQUEST_ID_ATTRIBUTE = 'ultimate.request_id';
 
 export const httpPipeline = (deps: PipelineDeps): Pipeline => {
   // Routes first, config second, and the merge here: `defineHttpConfig` cannot see a route, so a
@@ -294,23 +305,29 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
             // rejection nothing here predicted still counts, at the 500 such a request gets from
             // the caller either way.
             let status = 500;
+            let failure: { readonly error: unknown } | undefined;
             try {
               const response = await execute(request, ctx, deadline);
               status = response.status;
               span.updateName(routeSpanName(ctx.method, ctx.route?.path));
               // The root span of every request carried no attributes at all, so an exporter got a
               // name and a duration and nothing to correlate: which request, which outcome. These
-              // four are what a reader joins on — `x-request-id` off the response, the status the
-              // client saw, and the method/path split out of the span name.
+              // are what a reader joins on — `x-request-id` off the response, the status the client
+              // saw, and the method/route split out of the span name. OpenTelemetry's STABLE http server names (v31). `url.path` is deliberately absent:
+              // it is the concrete path, and a capability URL (`/r/<token>`) would put the token
+              // in every trace store this span is exported to — `http.route` carries the pattern.
               span.setAttributes({
-                'http.request_id': ctx.requestId,
-                'http.method': ctx.method,
-                // The PATTERN (`/r/:token`), the OpenTelemetry meaning of `http.route` — the
-                // concrete path leaked every token a URL carries into the trace store.
-                'http.route': ctx.route?.path ?? UNMATCHED_ROUTE,
-                'http.status_code': response.status,
+                [REQUEST_ID_ATTRIBUTE]: ctx.requestId,
+                [SEMCONV.httpRequestMethod]: ctx.method,
+                [SEMCONV.httpRoute]: ctx.route?.path ?? UNMATCHED_ROUTE,
+                [SEMCONV.httpResponseStatusCode]: response.status,
+                [SEMCONV.urlScheme]: ctx.https ? 'https' : 'http',
+                [SEMCONV.serverAddress]: url.hostname,
               });
               return response;
+            } catch (error) {
+              failure = { error };
+              throw error;
             } finally {
               // The route PATTERN (`/posts/:id`), exactly as the span above is named: a metric is
               // a stored series per label set, and a concrete path is attacker-chosen and may
@@ -325,6 +342,18 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
               // A live timer keeps the event loop from going idle, so a process that answered
               // every request would still refuse to exit for the length of one timeout.
               deadline.clear();
+              // The bus event, last so a throwing (strict) subscriber cannot leak the timer. Every
+              // request, sampled or not — the span reaches an exporter only when sampled. `route`
+              // is the PATTERN, or `undefined` when nothing matched.
+              if (subscribed('http.request')) {
+                instrument('http.request', {
+                  method: ctx.method,
+                  route: ctx.route?.path,
+                  status,
+                  durationMs: elapsedMs(ctx),
+                  ...failure,
+                });
+              }
             }
           },
           {

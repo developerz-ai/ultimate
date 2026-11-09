@@ -3,7 +3,7 @@
 // neither is told what to implement.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, subscribe } from '@ultimat3/core';
 import { text, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -11,7 +11,6 @@ import { memoryRepo } from './memory-repo';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
 import type { Repo } from './repo';
-import { setRowObserver } from './row-observer';
 
 afterAll(() => {
   clearRegistry();
@@ -37,15 +36,15 @@ describe('unit · the wrappers forward both', () => {
     expect(await db.ledger.lockKey('k', () => 'held')).toBe('held');
   });
 
-  test('the row observer: both pass through it with one installed', async () => {
-    const previous = setRowObserver({ onChange: () => undefined });
+  test('the row event: both pass through it with a subscriber', async () => {
+    const off = subscribe('entity.row', () => undefined);
     try {
       const db = database({ notes }, { driver: memoryDriver() });
       await db.notes.insert({ id: ID, body: 'x' });
       expect(await db.notes.lock(ID, (row) => row.body)).toBe('x');
       expect(await db.notes.lockKey('k', () => 'held')).toBe('held');
     } finally {
-      setRowObserver(previous);
+      off();
     }
   });
 });

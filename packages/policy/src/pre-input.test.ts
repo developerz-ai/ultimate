@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { memoryDecisionSink, resetDecisionSink, setDecisionSink } from './decisions';
+import type { PolicyDecisionEvent } from '@ultimat3/core';
+import { resetInstrumentation, subscribe } from '@ultimat3/core';
 import { evaluate } from './evaluate';
 import { clearPermissions, definePermissions } from './permissions';
 import type { Policy } from './policy';
@@ -8,6 +9,13 @@ import { decideBeforeInput, enforceBeforeInput } from './pre-input';
 import type { Actor } from './roles';
 import { clearRoles, defineRoles } from './roles';
 import { testActor } from './test-kit';
+
+/** Every `policy.decision` event from here on, in emit order — released by `resetInstrumentation`. */
+const recordDecisions = (): { readonly events: PolicyDecisionEvent[] } => {
+  const events: PolicyDecisionEvent[] = [];
+  subscribe('policy.decision', (event) => void events.push(event.payload));
+  return { events };
+};
 
 interface Input {
   readonly ownerId: string;
@@ -23,7 +31,7 @@ beforeEach(() => {
 afterAll(() => {
   clearPermissions();
   clearRoles();
-  resetDecisionSink();
+  resetInstrumentation();
 });
 
 const reader = testActor('reader', { roles: ['reader'] }).actor;
@@ -129,8 +137,7 @@ describe('enforceBeforeInput renders the surface denial, once', () => {
   });
 
   test('an allowed or undecided caller passes, and emits no decision', () => {
-    const sink = memoryDecisionSink();
-    setDecisionSink(sink);
+    const sink = recordDecisions();
     expect(enforceBeforeInput('mcp', can('staff:refund'), { actor: staff })).toBeUndefined();
     expect(enforceBeforeInput('mcp', can<Input>('post:read', owns), { actor: reader })).toBe(
       undefined,
@@ -139,6 +146,6 @@ describe('enforceBeforeInput renders the surface denial, once', () => {
     enforceBeforeInput('job', can('staff:refund'), { actor: reader });
     expect(sink.events).toHaveLength(1);
     expect(sink.events[0]).toMatchObject({ allowed: false, deciding: 'staff:refund' });
-    resetDecisionSink();
+    resetInstrumentation();
   });
 });

@@ -7,6 +7,7 @@ import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
 import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from './environment';
 import { renderThrowable } from './error-render';
+import { localErrorSink } from './error-reporter-sentry';
 import { failureStack } from './error-stack';
 import { toUltimateError } from './errors';
 import { releaseHeldFailure } from './failure-capture-flush';
@@ -82,7 +83,8 @@ export interface MemoryErrorReporter extends ErrorReporter {
 /** For tests, and for a `x dev` process that shows its own failures without leaving the box. */
 export function memoryErrorReporter(): MemoryErrorReporter {
   const events: ErrorReport[] = [];
-  return {
+  // Local: what it holds never leaves the process, so a boot with `SENTRY_DSN` still adds its own.
+  return localErrorSink({
     events,
     report(event: ErrorReport): void {
       events.push(event);
@@ -90,7 +92,7 @@ export function memoryErrorReporter(): MemoryErrorReporter {
     reset(): void {
       events.length = 0;
     },
-  };
+  });
 }
 
 export interface ErrorReportingOptions {

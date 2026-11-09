@@ -5,6 +5,7 @@
 import { renderDrawnInput, renderExerciseKey, sampleGapBinding } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Sampler } from './exercise-input';
+import { UNBOUND_ID } from './exercise-override-line';
 
 /** `idFields` are the input's id-shaped keys: each wants a real row's id, as the other hints say. */
 export function driftOverrideLine(
@@ -12,13 +13,15 @@ export function driftOverrideLine(
   schema: StandardSchemaV1,
   sampler: Sampler,
   idFields: readonly string[],
+  /** Each id field's seeded value, where the pass bound one: the line binds that row. */
+  ids: Readonly<Record<string, string>> = {},
 ): string {
   const gaps = sampler.sampleGaps(schema);
   const bindings = [
     ...gaps.map((path) => sampleGapBinding(path, sampler.describeSampleGap(schema, path))),
     ...idFields
       .filter((field) => !gaps.includes(field))
-      .map((field) => ({ path: field, placeholder: '<a real id>' })),
+      .map((field) => ({ path: field, placeholder: ids[field] ?? UNBOUND_ID })),
   ];
   const input =
     bindings.length === 0

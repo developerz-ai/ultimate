@@ -124,6 +124,7 @@ axiom 6). Never `cli` (upward).
 | Router: nothing is sent twice | every fetch `cache: 'no-cache'` (#693), `redirect: 'manual'`, a POST never re-sent; the cache answers only a reusable 2xx and is emptied by every write signal; an answer is bounded by `NAVIGATION_TIMEOUT_MS`, past it a network failure, a refresh's QUIET (`navigation-deadline.ts`) ([full rule](../../docs/history/render.md#router-nothing-is-sent-twice)) |
 | `Hole` | `hole.ts` imports only `@ultimat3/core/render-node` and is a branded array like `IslandNode`; every walker tests `isHoleNode` before `Array.isArray`. `render-html.ts`'s `HoleSink` is per render (`renderToHtml(tree, { islands, holes })`); only the CLI's `stream` branch passes one. Sinkless: children inline, so `budgets` weighs a hole's island; under a hole nested holes are inline |
 | `hydrateRuntime(directives, { async })` | async while a hole is open and no boot is in the document; `route-islands.ts`'s `streamScripts` decides. Body and hash unchanged. Proof: `packages/cli/e2e/stream-hole.e2e.test.ts`, which fails without it |
+| Instrumentation | `render-instrument.ts`: `render.page`/`.hole`/`.isr.regenerate` spans + bus events, keyed on the route pattern |
 | A hole's failure | `error` markup, the log line, `reportError(source: 'http')`, `X_TIMEOUT` for a deadline; nothing once the client cancelled |
 
 Cross-package: `@ultimat3/pwa` consumes route descriptors as **data**, never by import.

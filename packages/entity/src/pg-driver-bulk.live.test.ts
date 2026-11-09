@@ -4,14 +4,13 @@
 // framework's own migration wrote. Skips unless `TEST_DATABASE_URL` is set, as the live suite does.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, subscribe } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
   postgresClient,
   raw,
   setDbClient,
-  setStatementObserver,
   statementsOf,
   withTransaction,
 } from '@ultimat3/db';
@@ -136,15 +135,13 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
   /** What a call produced, and how many statements against one table it took. */
   const counting = async <T>(match: string, work: () => Promise<T>): Promise<[T, number]> => {
     const seen: string[] = [];
-    setStatementObserver({
-      onStatement: (event) => {
-        if (event.text.includes(match)) seen.push(event.text);
-      },
+    const offStatements = subscribe('db.statement', ({ payload: event }) => {
+      if (event.text.includes(match)) seen.push(event.text);
     });
     try {
       return [await work(), seen.length];
     } finally {
-      setStatementObserver(undefined);
+      offStatements();
     }
   };
 

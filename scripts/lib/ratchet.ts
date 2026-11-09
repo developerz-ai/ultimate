@@ -129,7 +129,9 @@ export async function applyUnpin(
     const found = counts[pkg] ?? 0;
     if (found >= pinnedFor(pkg, pins)) continue;
     const key = `(?<q>['"]?)${RegExp.escape(pkg)}\\k<q>`;
-    const flat = new RegExp(`^(\\s*${key}:\\s*)\\d+,\\n`, 'm');
+    // A `// why:` may trail the row itself (`pin-raises` accepts it there): kept, never matched as
+    // the end of the row — a flat pattern that wanted `,\n` lowered no row that carried one.
+    const flat = new RegExp(`^(\\s*${key}:\\s*)\\d+,(?<why>(?:[ \\t]*//[^\\n]*)?)\\n`, 'm');
     // Comment lines may sit between the brace and the count: `pin-raises` asks for a `// why:`
     // on a raised row and accepts one inside it, and a row carrying one matched nothing here.
     const nested = new RegExp(`^(\\s*${key}:\\s*\\{\\s*(?://[^\\n]*\\n\\s*)*count:\\s*)\\d+,`, 'm');
@@ -137,7 +139,8 @@ export async function applyUnpin(
     const whole = new RegExp(`^\\s*${key}:\\s*\\{(?:[^\\n]*\\},|[\\s\\S]*?\\n\\s*\\},)\\n`, 'm');
     const before = text;
     if (flat.test(text)) {
-      text = found === 0 ? text.replace(flat, '') : text.replace(flat, `$1${String(found)},\n`);
+      text =
+        found === 0 ? text.replace(flat, '') : text.replace(flat, `$1${String(found)},$<why>\n`);
     } else if (nested.test(text)) {
       text = found === 0 ? text.replace(whole, '') : text.replace(nested, `$1${String(found)},`);
     }

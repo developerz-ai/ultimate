@@ -199,7 +199,12 @@ export const config = defineRoute({
   // blocked open waiting for the other tab instead of falling back to memory; core's decoded
   // problem carrying `issuesTruncated` (+51 B); the feed island +275 B, realtime's four new error
   // titles. Raised 207kb → 208.5kb.
-  budget: { js: '208.5kb' },
+  // measured: 214173 B (2026-11-09, plan 101 wave C; x build --target static, against 213,453)
+  // — why: core's `ids.ts` drawing its random bytes from one 4 KiB `getRandomValues` pool with a
+  // byte→hex table (+333 B, in BOTH the page boot and the feed island, which each bundle it), so a
+  // `uuidV7` the tab mints costs a table lookup and no CSPRNG call; and `singleLine` reading its
+  // escape table through `Object.hasOwn` (+27 B per chunk). Raised 208.5kb → 209.2kb.
+  budget: { js: '209.2kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

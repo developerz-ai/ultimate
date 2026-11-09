@@ -195,8 +195,9 @@ describe('unit · this repo', () => {
   );
 
   test('checks every committed run, so none can drift unwatched', () => {
-    // The two realtime runs, the first hour, http-hello's two targets and the big-page render.
-    expect(new Set(CLAIMS.map((one) => one.file)).size).toBe(6);
+    // The two realtime runs, the first hour, http-hello's two targets, the big-page render and the
+    // span overhead.
+    expect(new Set(CLAIMS.map((one) => one.file)).size).toBe(7);
     expect(CLAIMS.length).toBeGreaterThan(9);
   });
 });

@@ -1,6 +1,7 @@
 // The `scheduler` role: catch-up policy, the occurrence a late dispatch builds its payload from,
 // and the leader that decides whether this node dispatches at all. Lifecycle — one round at a
-// time, the drain, the shutdown hook — is `scheduler-lifecycle.test.ts`.
+// time, the drain, the shutdown hook — is `scheduler-lifecycle.test.ts`; a fire on the
+// instrumentation bus is `scheduler-instrument.test.ts`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';

@@ -58,8 +58,9 @@ outranks one behind three flags.
 
 ## Discipline
 
-Keep every scaffold in the scratchpad; the repo must be untouched — verify with `git status` and say
-so. Never commit. Quote real terminal output rather than paraphrasing; a session log is evidence and
+Keep every scaffold in the scratchpad; the repo must be untouched by you — compare `git status` before
+and after (other agents' work may already be in it; never `checkout`/`restore`/`stash` to "clean"
+it) and say so. No git writes. Never commit. Quote real terminal output rather than paraphrasing; a session log is evidence and
 paraphrase is not.
 
 ## Output

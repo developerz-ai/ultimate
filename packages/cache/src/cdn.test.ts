@@ -164,7 +164,7 @@ describe('cdnTier', () => {
   test('a tier with no purge driver reports SKIPPED, never a list of cleared keys', async () => {
     // The default state of every deployment with no CDN credentials — `selectPurgeDriver` answers
     // `noopPurgeDriver()` for exactly that env. The noop echoes its argument back, so the tier
-    // reported every tag as CLEARED and `recentInvalidations().busted` picked it up with no
+    // reported every tag as CLEARED and the invalidation event's `busted` picked it up with no
     // errors: a partial bust reading as a clean one, which is the log's whole job to prevent.
     const tier = cdnTier();
 

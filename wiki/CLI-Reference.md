@@ -1340,7 +1340,9 @@ effects, ms, override? }`. A `<name>` runs that one primitive; an unknown name i
 `X_DECLARATION_UNKNOWN`.
 
 `unreached` is red: `X_CONTRACT_EXERCISE_UNREACHED`, and its `fix:` is the entry to paste into
-`apps/web/exercise.ts` — the `exercise` option `.contract()` takes, one shape:
+`apps/web/exercise.ts` — valid TS naming the actor the pass ran as (`testActor(…).actor`, imported
+from `@ultimat3/policy`) and the seeded row each id field was bound to (`As of 2026-11`). The
+`exercise` option `.contract()` takes, one shape:
 
 ```ts
 import type { Actor } from '@ultimat3/core';
@@ -1528,7 +1530,7 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 | 3 | `bun pm view @ultimat3/cli versions`: the next major's newest; the last major's newest when no later major exists | `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_BUN_VERSION` |
 | 4 | write exact pins, raise the Bun floor | — |
 | 5 | `bun install` | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
-| 6 | the installed CLI: `x manifest`, `x doctor --json`, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
+| 6 | the installed CLI: `x manifest`, `x doctor --json`, `x exercise --json`, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
 
 A dry run refuses exactly what the real run would, then stops before step 4. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
 
@@ -1548,10 +1550,11 @@ A dry run refuses exactly what the real run would, then stops before step 4. It 
 | `agentsMd` | `link`: `AGENTS.md` was byte-identical to `CLAUDE.md` and the hop makes it a relative symlink to it · `linked`: already one · `differs`: two different files, left alone; merge what only `AGENTS.md` says into `CLAUDE.md`, then `ln -sf CLAUDE.md AGENTS.md` · `none`: one of the two is missing · `null`: no hop planned |
 | `guards` | `{ reported, missing[], differs[] }` from the hop's own `x doctor`. Offered, never overwritten: `x g guard <name> --force` is yours. `reported: false` is a CLI too old to list them, which is not the same as none |
 | `manifest` | `{ ok, findings[] }`. A failure does not stop the gate |
+| `exercise` | `{ reported, ok, findings[] }` from the hop's own `x exercise --json`, listed (and printed) before the gate's findings; each `fix` pastes as written. `reported: false`: the hop's CLI answered no exercise document — unknown, never a finding |
 | `verify` | `{ ok, summary, failed[], findings[] }`, each finding `{ step?, code, cause, fix, at? }` |
 | `then` | the next thing to do, in a sentence naming the commands |
 
-`null` for `guards`, `manifest` and `verify` means no gate ran: a dry run, already there, or no app.
+`null` for `guards`, `manifest`, `exercise` and `verify` means no gate ran: a dry run, already there, or no app.
 
 **Pins and no `app.config.ts`.** Needs no app: the root is the app at or above the cwd, else the nearest manifest holding `@ultimat3/*` pins, or the workspace root claiming it. No such manifest is `X_UPGRADE_PIN_UNREADABLE`; an app below that root is `X_NOT_IN_APP`, with the `cd`. With no app, `x manifest`, `x doctor` and `x verify` cannot run, so the hop runs the `typecheck` and `test` scripts the root declares: `data.scripts[]` is `{ name, ok, code, output }`, `proof` is `scripts`, and the summary says no `x verify` ran. Neither script declared: `proof: none`, `done: false`, red. It checked nothing, so it never claims otherwise.
 

@@ -1,10 +1,111 @@
 # Observability
 
-Metrics, spans, and structured logs — all in `@ultimat3/core`, all dependency-free.
+One instrumentation bus, OpenTelemetry semantic conventions, and OTLP spans, logs and metrics — all in `@ultimat3/core`, all dependency-free.
 
-`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+`As of 2026-11` (31.0). Stable API — semver from here ([Upgrading](Upgrading)).
 
-Counter, gauge and histogram sit on the OpenTelemetry data model, aggregate in process, and are read through one `collectMetrics()`. The wire format is a **driver**: `MetricExporter` is the seam, the default is a no-op, and `metricsText()` renders the Prometheus/OpenMetrics scrape body. An **OTLP client ships** `As of 2026-08`: `otlpMetricExporter()` and `otlpSpanExporter()` speak OTLP/HTTP JSON over `fetch` and read `OTEL_EXPORTER_OTLP_ENDPOINT` (and the `_METRICS_`/`_TRACES_ENDPOINT`, `_HEADERS`, `_PROTOCOL` variants), with no new dependency. Two limits: **gRPC on `:4317` is refused** with `X_OTLP_PROTOCOL_UNSUPPORTED` and will stay refused — HTTP/2 plus protobuf is a dependency and a second wire format, so point the collector's HTTP receiver at `:4318` — and there is **no logs signal**. Scraping `metricsText()` with an agent remains equally supported.
+Every observer — the OTLP exporters, the semconv histograms, `x dev`'s recorder, the `/_x` panels, an app's own code — is a **subscriber on one bus**. No package keeps a `set*Observer`, `set*Sink`, single-exporter slot or `recent*()` ring buffer of its own: the `boundaries` step refuses one (`X_INSTRUMENT_SLOT_FORBIDDEN`).
+
+## The instrumentation bus
+
+```ts
+import { logger, subscribe } from '@ultimat3/core';
+
+// Every slow statement, sampled trace or not — the "subscribe to every slow query" recipe.
+const off = subscribe('db.statement', ({ payload }) => {
+  if (payload.durationMs > 250) logger.warn('db.slow', { sql: payload.text, ms: payload.durationMs });
+});
+off(); // the unsubscribe; calling it twice is a no-op
+```
+
+| Call | What it does |
+|---|---|
+| `subscribe(pattern, handler)` | hear an exact name (`'db.statement'`), a dot-SEGMENT prefix (`'entity'` hears `entity.row`, `entity.bulk`, `entity.cross_tenant`; `'ent'` does not compile) or `'*'`. Returns the unsubscribe |
+| `subscribed(name)` | whether anything hears `name` — an emitter asks before building a costly payload |
+| `instrument(name, payload)` | publish one event |
+| `subscriberCount()` / `resetInstrumentation()` | a test's leak check / backstop |
+
+| Rule | |
+|---|---|
+| Order | handlers run synchronously, on the emitter's stack, in registration order — `tryUseContext()` and `currentSpanContext()` inside one answer for the emitter |
+| Sampling | every occurrence is emitted, BEFORE and regardless of trace sampling: a counter sees unsampled traffic. Only `span.end` is sampled spans alone |
+| A throwing handler | CONTAINED: the other handlers still run and the emitter never sees it — a subscriber can never break the work it observes (a `mail.deliver` one cannot make a sent message retry; a `policy.decision` one cannot deny). An `async` handler's rejection is contained too. Logged once per handler and event as `instrument.subscriber_failed`; `subscriberFailures()` counts every one |
+| Re-entry | a handler may emit other names; one re-emitting its OWN name is not re-delivered (the loop a logging `'*'` subscriber would spin) |
+| Cost | no subscriber: one map read per event, no allocation |
+| Not on the bus | durable ports — `AuditSink`, `FailureStore` — the error-reporter chain, jobs' internal wake, and `publishEvent`: a domain event is durable data an app consumes, an instrumentation event is a fact about the process that nobody has to hear |
+
+### The events
+
+`INSTRUMENT_EVENTS` is the table as a value. Payload types are exported from `@ultimat3/core`; every timed event carries `durationMs`, and `error` on failure (the value the caller receives). An emitter reports a failed operation too.
+
+| Event | Payload | Span (kind) | Emitted by |
+|---|---|---|---|
+| `http.request` | `method`, `route` (pattern), `status` | `GET /posts/:id` (server) | `@ultimat3/http` |
+| `db.statement` | `text` (parameterised), `values`, `rows`, `attribution?`, `expected?` | `db.<verb>` (client) | `@ultimat3/db` |
+| `entity.row` · `entity.bulk` · `entity.cross_tenant` | the row change · the bulk count · the reason | — | `@ultimat3/entity` |
+| `policy.decision` | `label`, `allowed`, `code`, `reason`, actor, `surface` | — | `@ultimat3/policy` |
+| `action.invoke` · `query.read` | `action` · `query` | `action.<name>` · `query.<name>` (internal) | `@ultimat3/action` · `@ultimat3/query` |
+| `job.enqueue` · `job.perform` | `job`, `queue`, `id` (+ `attempt`) | producer · consumer | `@ultimat3/jobs` |
+| `ai.llm` | `provider`, `model`, `inputTokens`, `outputTokens`, `cacheHit` | `ai.llm` (client) | `@ultimat3/ai` |
+| `render.page` · `render.hole` · `render.isr.regenerate` | `route` (pattern) · + `hole` id · + `path` | internal, `http.route` set | `@ultimat3/render` |
+| `outbound.request` | `vendor`, `method`, `host`, `status?` (absent when no answer came) | `outbound.<vendor>` (client) | `outbound()`, `@ultimat3/core/outbound` |
+| `mail.deliver` | `transport`, `recipients` (a COUNT — no address rides an event) | client | `@ultimat3/mail` |
+| `storage.put` `.get` `.stat` `.copy` `.delete` `.list` | `disk`, `key`, `bytes?` | client | every disk `defineStorage` resolves |
+| `cache.hit` · `cache.miss` · `cache.invalidate` · `cache.tier_failure` | tier + key · tags, busted, errors · the failure | `cache.invalidate` (internal) | `@ultimat3/cache` |
+| `span.end` | a `ReadableSpan` — SAMPLED spans only | — | core's tracer |
+| `log.record` | `at`, `level`, `message`, `fields` — after redaction | — | core's process logger |
+
+One `render.isr.regenerate` per generation, never per request that joined it. One `outbound.request` per call, retries inside it. A `storage.*` call a driver makes on itself is not counted twice; a driver held directly, never resolved through `defineStorage`, reports nothing.
+
+### Semantic-convention names
+
+Span attribute keys come from `SEMCONV` (no string literal), metric names from `SEMCONV_METRICS`. The legacy `http.method`, `http.status_code`, `http.target`, `db.statement` and `llm.*` attributes are gone (`As of 31.0`). Framework-specific attributes are `ultimate.*`.
+
+| Span | Attributes |
+|---|---|
+| HTTP server | `http.request.method`, `http.response.status_code`, `http.route`, `url.path`, `url.scheme`, `server.address`, `ultimate.request_id` |
+| Database client | `db.system.name` = `postgresql`, `db.query.text` (parameterised, never values), `db.operation.name` |
+| Jobs | `messaging.system` = `ultimate`, `messaging.operation.type` (`create` / `process`), `messaging.destination.name` |
+| LLM | `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` |
+| Outbound | `server.address`, `server.port`, `http.request.method`, `http.response.status_code` — never the path or the query |
+| Render | `http.route` |
+
+### An app's own events
+
+Augment the map, then emit with the same `instrument()` — one bus, typed end to end:
+
+```ts
+import { counter, instrument, subscribe } from '@ultimat3/core';
+import type { Money } from '@ultimat3/money';
+
+declare module '@ultimat3/core' {
+  interface InstrumentEventMap {
+    'billing.charged': { readonly orgId: string; readonly amount: Money };
+  }
+}
+
+const charges = counter('billing_charges_total', { unit: '{charge}' });
+subscribe('billing', ({ payload }) => charges.add(1, { currency: payload.amount.currency }));
+instrument('billing.charged', { orgId: 'org_1', amount: { minor: 1200, currency: 'EUR' } });
+```
+
+A name is lowercase dot-segments; the framework's first segments (`INSTRUMENT_EVENTS`) are taken.
+
+## Exporting: OTLP spans, logs and metrics
+
+The container boot (`startOtlpExport`) installs one exporter per signal an endpoint names, each a bus subscriber with its own `close`-phase flush, and releases them on stop:
+
+| Signal | Variable | Subscriber |
+|---|---|---|
+| traces | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, else `OTEL_EXPORTER_OTLP_ENDPOINT` + `/v1/traces` | `subscribe('span.end', (e) => otlpSpanExporter().export(e.payload))` |
+| logs | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, else `…_ENDPOINT` + `/v1/logs` | `subscribe('log.record', (e) => otlpLogExporter().export(e.payload))` — the process logger's lines, redacted, joined to the active trace |
+| metrics | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, else `…_ENDPOINT` + `/v1/metrics` | `configureMetrics({ exporter: otlpMetricExporter() })`, pushed every 60 s |
+
+Every boot, collector or not, also subscribes `subscribeSemconvMetrics()`: `db_client_operation_duration_seconds` (from `db.statement`), `job_duration_seconds` (from `job.perform`) and `gen_ai_client_token_usage` (from `ai.llm`) — on `/metrics` and over OTLP alike. OTLP/HTTP JSON over `fetch`, no dependency; `_HEADERS` and `_PROTOCOL` are read too. **gRPC on `:4317` is refused** with `X_OTLP_PROTOCOL_UNSUPPORTED` and will stay refused — HTTP/2 plus protobuf is a dependency and a second wire format, so point the collector's HTTP receiver at `:4318`. Scraping `metricsText()` remains equally supported.
+
+Proof, `As of 2026-11-09`: `packages/cli/src/otlp-export.live.test.ts` sends one request through an action that queries Postgres and reads, off the collector's wire, an HTTP server span with the `db.select` client span beneath it in one trace, semconv names only.
+
+**Span cost.** An unsampled span costs 3.3 µs (root) / 2.0 µs (child), against a 1 µs target (`scripts/bench/results/span-overhead.json`, `As of 2026-11-09`): ids and clock reads are still paid before the sampling decision is known. Known gap, pinned by `scripts/bench/span-overhead.bench.test.ts`.
 
 ## Instruments
 
@@ -157,11 +258,11 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 
 `x db diagnostics --json` (`As of 2026-11`) answers what the series cannot: who blocks whom (`data.blockers.rows[].blockedBy`), what each session is doing, the slowest statements (`pg_stat_statements`, when an operator installed it), unused and invalid indexes, `NOT VALID` constraints, dead tuples and the last autovacuum. Facts only, exit 0; `/readyz` stays the one-`select 1` probe. Read-only, 2 s per statement, no user table read, literals printed as `?`; whoever runs it sees the redacted SQL of every session on the app's database role → [CLI reference](CLI-Reference#x-db). The same report is `dbDiagnostics()` from `@ultimat3/db`.
 
-## Spans and logs
+## Spans and logs, in detail
 
 | Concern | Where |
 |---|---|
-| Tracing | always on, not a flag. `otel.endpoint` absent means spans are still recorded and exported nowhere → [Configuration](Configuration) |
+| Tracing | always on, not a flag. No `span.end` subscriber means a span is still opened, propagated and sampled, and built into no record → [Configuration](Configuration) |
 | Head sampling | `otel.sampling`, default `0.1`; errors are always sampled |
 | OTLP delivery | a 429, 502, 503, 504 or a transport failure is retried, 3 attempts with full jitter and `Retry-After` honoured, inside the exporter's `timeoutMs` (default 10 s, the whole export); any other status is one POST. One `otlp export rejected`/`failed` line per batch, with `attempts`. A collector that accepted and then answered 503 receives that batch twice; span ids dedupe it |
 | Error grouping | `errorFingerprint(report)`: 16 hex over `code`, `source`, `scope.operation`, plus the top application frame (function and root-relative path, no line) for `X_INTERNAL`. Never the cause or an id, so two throws differing in a row id are one group, and a deploy is not a new one. The Sentry envelope sends it as `fingerprint` |

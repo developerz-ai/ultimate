@@ -179,6 +179,51 @@ export interface SentryReporterOptions extends SentryReporterHooks {
 }
 
 /**
+ * Every reporter that is an app's Sentry transport: built by `sentryErrorReporter`, or marked by
+ * `sentryTransport`. Identity, never shape: a reporter is `{ report }`, and the boot must tell an
+ * app's own transport from its `errorGroupsSink` exactly.
+ */
+const built = new WeakSet<ErrorReporter>();
+
+/**
+ * Whether `reporter` is the app's Sentry transport — built by `sentryErrorReporter` or marked by
+ * `sentryTransport` — not a chain holding one (`errorReportersOf` flattens a chain to ask its
+ * members). The `SENTRY_DSN` boot asks it so an app's transport is the only one, never doubled.
+ */
+export function isSentryErrorReporter(reporter: ErrorReporter): boolean {
+  return built.has(reporter);
+}
+
+/**
+ * The one way to WRAP the Sentry transport: `sentryTransport({ report: (r) => inner.report(tag(r)) })`.
+ * Marks `reporter` as the app's Sentry transport and returns it, so a boot with `SENTRY_DSN` set
+ * adds no second, unscrubbed one beside it — a wrapper is `{ report }` and could be anything else.
+ */
+export function sentryTransport<R extends ErrorReporter>(reporter: R): R {
+  built.add(reporter);
+  return reporter;
+}
+
+/** Every reporter marked by `localErrorSink`: its reports stay on the box. */
+const local = new WeakSet<ErrorReporter>();
+
+/**
+ * Marks `reporter` as a LOCAL sink — it keeps reports on the box (a table, memory, the log) and
+ * sends nothing to a monitor — and returns it. The `SENTRY_DSN` boot still adds its transport
+ * beside reporters that are all local sinks; an unmarked one might be a transport, so it does not.
+ * The framework's own are marked: `memoryErrorReporter`, `@ultimat3/admin`'s `errorGroupsSink`.
+ */
+export function localErrorSink<R extends ErrorReporter>(reporter: R): R {
+  local.add(reporter);
+  return reporter;
+}
+
+/** Whether `localErrorSink` marked `reporter` — a single reporter, never a chain. */
+export function isLocalErrorSink(reporter: ErrorReporter): boolean {
+  return local.has(reporter);
+}
+
+/**
  * Fire-and-forget on purpose. A report is not the request, and awaiting the monitor would add its
  * latency — and its outages — to every failure the app already knows how to answer.
  */
@@ -188,7 +233,7 @@ export function sentryErrorReporter(options: SentryReporterOptions): ErrorReport
   const send = options.fetch ?? globalThis.fetch;
   const client = options.clientName ?? 'ultimate';
   const auth = `Sentry sentry_version=7, sentry_client=${client}, sentry_key=${dsn.publicKey}`;
-  return {
+  const reporter: ErrorReporter = {
     report(report: ErrorReport): void {
       if (!admitted(report, options, rate)) return;
       const envelope = {
@@ -225,4 +270,6 @@ export function sentryErrorReporter(options: SentryReporterOptions): ErrorReport
       });
     },
   };
+  built.add(reporter);
+  return reporter;
 }

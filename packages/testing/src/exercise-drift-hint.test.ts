@@ -56,6 +56,11 @@ describe(testName('unit', 'x exercise · the drift hint'), () => {
     expect(driftOverrideLine('a', schema, sampler, ['postId'])).toBe(
       'a: { input: (drawn) => ({ ...drawn, code: "<must match ^(?=x)y$>", postId: "<a real id>" }) },',
     );
+    // A field the pass bound to a seeded row is bound to that row, not to a placeholder.
+    const id = '0b6f4c1e-7d2a-4c55-9a51-3f0c8e2b9d10';
+    expect(driftOverrideLine('a', schema, sampler, ['postId'], { postId: id })).toBe(
+      `a: { input: (drawn) => ({ ...drawn, code: "<must match ^(?=x)y$>", postId: "${id}" }) },`,
+    );
     expect(driftOverrideLine('b', t.object({ n: t.string }), sampler, [])).toBe(
       "b: { input: (drawn) => ({ ...drawn, field: '<a value the refinement accepts>' }) },",
     );

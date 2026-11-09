@@ -10,7 +10,7 @@ describe('defineConfig', () => {
     expect(config.theme).toEqual({ defaultMode: 'system' });
     expect(config.pwa.enabled).toBe(false);
     expect(config.database).toEqual({ driver: 'postgres', ssl: false, rowSecurity: false });
-    expect(config.jobs.queues).toEqual(['myapp-default']);
+    expect(config.jobs.queues).toEqual(['default']);
     expect(config.ai.mcp).toEqual({ expose: true });
     expect(Object.isFrozen(config)).toBe(true);
   });

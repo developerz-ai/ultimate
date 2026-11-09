@@ -5,16 +5,12 @@ import {
   ctxOf,
   runWithContext,
   serviceActor,
+  subscribe,
   userActor,
   withChildContext,
 } from '@ultimat3/core';
 import { text, uuid } from './columns';
-import {
-  CROSS_TENANT_SCOPE,
-  crossTenant,
-  crossTenantReason,
-  setCrossTenantObserver,
-} from './cross-tenant';
+import { CROSS_TENANT_SCOPE, crossTenant, crossTenantReason } from './cross-tenant';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
 import { clearRegistry } from './registry';
@@ -131,7 +127,7 @@ describe('the scope', () => {
 describe('the witness', () => {
   test('every scope opened is reported with its reason; a refused one declares nothing', async () => {
     const seen: string[] = [];
-    setCrossTenantObserver((reason) => seen.push(reason));
+    const off = subscribe('entity.cross_tenant', (event) => void seen.push(event.payload.reason));
     try {
       await inRequest(support, () =>
         crossTenant('outer sweep', async () => {
@@ -142,10 +138,10 @@ describe('the witness', () => {
         expect(() => crossTenant('not granted', () => null)).toThrow(/X_TENANCY_CROSS_DENIED/);
       });
     } finally {
-      setCrossTenantObserver(undefined);
+      off();
     }
     expect(seen).toEqual(['outer sweep', 'inner sweep']);
-    // Uninstalled, nothing is told: the witness is the proof's, for the length of one call.
+    // Unsubscribed, nothing is heard: the subscription is the proof's, for the length of one call.
     await inRequest(support, () => crossTenant('after', async () => null));
     expect(seen).toHaveLength(2);
   });

@@ -208,6 +208,19 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A Postgres SQLSTATE `state` against `25P03`, choosing the idle-in-transaction fix line — a five-character code the server prints in its own error text.',
   },
+  // why: new 2026-11-09 (plan 101 v31 wave C) — the read-only role's DDL reads a lost race between
+  // two sessions off the server's SQLSTATE.
+  'packages/db/src/readonly-role.ts: state === DUPLICATE_OBJECT': {
+    count: 1,
+    reason:
+      'A Postgres SQLSTATE `state` against `42710`, reading a concurrent `CREATE ROLE` as the race it lost — a five-character code the server prints in its own error text.',
+  },
+  // why: new 2026-11-09 (plan 101 v31 wave C) — the same lost race, read off a concurrent GRANT.
+  'packages/db/src/readonly-role.ts: state === INTERNAL_ERROR': {
+    count: 1,
+    reason:
+      'A Postgres SQLSTATE `state` against `XX000`, reading a concurrent `GRANT` as the race it lost — a five-character code the server prints in its own error text.',
+  },
   // why: new 2026-10-17 (a DB blip degrades the limiter) — the rate-limit store reads the same
   // SQLSTATE the retry above does, to tell an unreachable database from a wrong answer.
   "packages/http/src/rate-limit-degrade.ts: [' ', ' ', ' ', ' '].includes(state)": {

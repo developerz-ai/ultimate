@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import { createUpgradeCommand } from './cmd-upgrade';
 import {
+  EXERCISE_RED,
   fixture,
   git,
   REQUIRED_BUN,
@@ -21,7 +22,7 @@ import { SPECS } from './registry';
 afterEach(removeFixtures);
 
 describe('unit · x upgrade, the walk', () => {
-  test('order is registry, pins, install, manifest, doctor, verify', async () => {
+  test('order is registry, pins, install, manifest, doctor, exercise, verify', async () => {
     const dir = await fixture();
     const { runner, spawned } = recording();
     const { code, output } = await run(dir, runner);
@@ -31,6 +32,7 @@ describe('unit · x upgrade, the walk', () => {
       'install',
       'x manifest',
       'x doctor',
+      'x exercise',
       'x verify',
     ]);
     expect(code).toBe(0);
@@ -126,6 +128,37 @@ describe('unit · x upgrade, the walk', () => {
     expect(await git(dir, 'status', '--porcelain')).toContain('package.json');
   });
 
+  // `x exercise` is where an upgrade spends its commits: seeding, per-call state. Its findings are
+  // listed on their own, each fix pasteable as written, so the agent has the whole list before the
+  // gate's red verdict — not one finding per gate run.
+  test('exercise findings are listed with each fix, before the gate', async () => {
+    const dir = await fixture();
+    const { runner } = recording({
+      exercise: EXERCISE_RED,
+      exerciseCode: 1,
+      verify: VERIFY_RED,
+      verifyCode: 1,
+    });
+    const { output } = await run(dir, runner);
+    expect(output.data?.exercise).toEqual({
+      reported: true,
+      ok: false,
+      findings: [
+        {
+          code: 'X_EXERCISE_INPUT_THREW',
+          cause: 'the input function of createPost threw before the pass could call it',
+          fix: 'x exercise createPost --json   # after the entry input in apps/web/exercise.ts returns a value',
+          at: 'apps/web/exercise.ts',
+        },
+      ],
+    });
+    const { lines } = await run(await fixture(), runner, [], { json: false });
+    const text = lines.join('\n');
+    const exerciseFix = text.indexOf('x exercise createPost --json');
+    expect(exerciseFix).toBeGreaterThan(-1);
+    expect(exerciseFix).toBeLessThan(text.indexOf('x verify --only typecheck'));
+  });
+
   test('a red gate exits non-zero with done false, every finding carried', async () => {
     const dir = await fixture();
     const { runner } = recording({ verify: VERIFY_RED, verifyCode: 1 });
@@ -200,6 +233,17 @@ describe('unit · x upgrade, an installed CLI much older than this one', () => {
     expect(output.data?.done).toBe(false);
   });
 
+  test('a CLI with no `x exercise` is unknown, never a finding of its own', async () => {
+    const dir = await fixture();
+    const { runner } = recording({
+      exercise: 'error: unknown command "exercise"\n',
+      exerciseCode: 1,
+    });
+    const { code, output } = await run(dir, runner);
+    expect(code).toBe(0);
+    expect(output.data?.exercise).toEqual({ reported: false, ok: false, findings: [] });
+  });
+
   test('a manifest that failed still runs the gate, and says so', async () => {
     const dir = await fixture();
     const { runner, spawned } = recording({ manifestCode: 1 });
@@ -226,6 +270,7 @@ describe('unit · x upgrade, on stderr while it runs', () => {
       'install',
       'manifest',
       'doctor',
+      'exercise',
       'verify',
     ]);
   });

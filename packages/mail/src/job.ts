@@ -4,7 +4,8 @@
 
 import { type JobHandle, job } from '@ultimat3/jobs';
 import { type StandardSchemaV1, t } from '@ultimat3/schema';
-import { type MailMessage, mailDriver, type SendResult } from './driver';
+import { deliverMail } from './deliver';
+import type { MailMessage, SendResult } from './driver';
 import { addressRefusal } from './envelope-address';
 import { assertHeaderSafe } from './header-safety';
 import { mailIdempotencyKey } from './idempotency';
@@ -60,6 +61,6 @@ export const sendMailJob: JobHandle<MailMessage> = job<MailMessage>({
     // A step, so a worker that dies after the provider accepted the message and before the ack
     // replays the recorded result instead of sending the mail a second time (the exercise pass's
     // crash proof found the double send: `X_JOB_CRASH_DIVERGED`).
-    return await step.run('send', () => mailDriver().send(input));
+    return await step.run('send', () => deliverMail(input));
   },
 });

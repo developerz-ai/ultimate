@@ -3,12 +3,14 @@
 // lost to it — and the only correct answer to "which entries are stale" is "any of them".
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import type { ReadableSpan } from '@ultimat3/core';
+import { subscribe } from '@ultimat3/core';
+import { recordCacheEvents } from './cache-events-fixture';
 import { sampleFence } from './fence';
 import { isolateGraph, registerDependent, resetGraph } from './graph';
 import {
   flushProcessTiers,
   isolateTiers,
-  recentInvalidations,
   registerInvalidationBroadcast,
   registerRevalidator,
   registerTier,
@@ -17,6 +19,8 @@ import {
 import { lruTier } from './lru';
 import { isolateDeclaredTags, resetDeclaredTags, tag } from './tags';
 import type { CacheTier } from './tiers';
+
+const events = recordCacheEvents();
 
 const restoreRegistries = [isolateTiers(), isolateDeclaredTags(), isolateGraph()];
 
@@ -94,7 +98,7 @@ describe('flushProcessTiers', () => {
     expect(sampleFence({ key: 'post:1' }).isValid()).toBe(true);
   });
 
-  test('never re-emits, is recorded under its source, and survives a tier that will not clear', async () => {
+  test('never re-emits, traces its source, and survives a tier that will not clear', async () => {
     let sends = 0;
     registerInvalidationBroadcast(() => {
       sends += 1;
@@ -105,11 +109,15 @@ describe('flushProcessTiers', () => {
       clear: () => Promise.reject(new RangeError('the tier refused')),
     });
 
-    const report = await flushProcessTiers('cache.broadcast');
+    const spans: ReadableSpan[] = [];
+    const off = subscribe('span.end', (event) => void spans.push(event.payload));
+    const report = await flushProcessTiers('cache.broadcast').finally(off);
 
     expect(sends).toBe(0);
     expect(report.errors).toEqual([{ tier: 'lru', message: expect.stringContaining('refused') }]);
-    expect(recentInvalidations()[0]?.source).toBe('cache.broadcast');
-    expect(recentInvalidations()[0]?.tags).toEqual(['*']);
+    const flush = spans.find((span) => span.name === 'cache.flush');
+    expect(flush?.attributes['ultimate.cache.flush_source']).toBe('cache.broadcast');
+    expect(events.invalidations()[0]?.tags).toEqual(['*']);
+    expect(events.invalidations()[0]?.source).toBe('cache.broadcast');
   });
 });

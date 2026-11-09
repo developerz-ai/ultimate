@@ -201,6 +201,12 @@ export type { ExercisePassOptions } from './exercise';
 export { runExercisePass } from './exercise';
 export type { ActorChoice, RoleGrants } from './exercise-actor';
 export type { ExerciseDefect } from './exercise-defect';
+export {
+  type OverrideActor,
+  type OverrideHint,
+  overrideLine,
+  UNBOUND_ID,
+} from './exercise-override-line';
 export type {
   CrashFinding,
   CrashProof,
@@ -214,7 +220,6 @@ export type {
   TenantLeg,
   TenantProof,
 } from './exercise-report';
-export { overrideLine } from './exercise-report';
 export type { ExerciseSetup, ExerciseSetupHandle } from './exercise-setup';
 export type {
   Association,

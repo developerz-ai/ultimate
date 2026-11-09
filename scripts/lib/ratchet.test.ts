@@ -79,6 +79,21 @@ describe('unit · --unpin edits the pins file', () => {
     });
   });
 
+  test('a flat row carrying a trailing why: comment is lowered, and the comment kept', async () => {
+    // `pin-raises` accepts `db: 34, // why: …` on the row itself, and the flat pattern wanted the
+    // newline straight after the comma: --unpin answered "nothing to lower" for a stale pin.
+    const text = 'export const P = {\n  db: 34, // why: 24 -> 34, stubs\n  ui: 2, // why: x\n};\n';
+    await withPins(text, async (dir) => {
+      expect(await applyUnpin(dir, FILE, ['db', 'ui'], { db: 32 }, { db: 34, ui: 2 })).toEqual([
+        'db -> 32',
+        'ui -> 0',
+      ]);
+      expect(await Bun.file(join(dir, FILE)).text()).toBe(
+        'export const P = {\n  db: 32, // why: 24 -> 34, stubs\n};\n',
+      );
+    });
+  });
+
   test('a key with a metacharacter lowers its own quoted row, never a neighbour it matches', async () => {
     await withPins('export const P = {\n  axb: 4,\n  "a.b": 3,\n};\n', async (dir) => {
       expect(await applyUnpin(dir, FILE, ['a.b'], { 'a.b': 1 }, { axb: 4, 'a.b': 3 })).toEqual([

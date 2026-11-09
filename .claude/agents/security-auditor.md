@@ -51,7 +51,7 @@ Damage landing on a third party the app does not control (an IdP blocking its eg
 damage the app can restart its way out of. Say your reasoning when you rate something higher than a
 sibling would.
 
-Delete every probe. Never commit. `git status` clean of your changes when you finish.
+**Read-only means no git writes.** The tree holds other agents' uncommitted work: never `git checkout`, `restore`, `stash`, `reset`, `clean`, `add` or `commit` — read with `git diff`, `git show`, `git status`. `git status` will not be clean, and making it clean destroys a teammate's slice. Probes go in the scratchpad or `node_modules/.cache/<run>/`, never in a tracked file; delete them when done.
 
 **Do not recommend changes to `.claude/settings.json`, hooks, or any harness configuration** — those
 are the user's, and a security report is not the place to propose them. If you audit them, report

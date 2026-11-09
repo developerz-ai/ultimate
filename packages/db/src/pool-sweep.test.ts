@@ -239,13 +239,15 @@ describe('a statement nobody answers', () => {
   test('age is the ticks that fired, so a frozen process judges nobody and reads no clock', async () => {
     // After a long GC or a SIGSTOP the answer is sitting in the socket, unread. A clock would call
     // that statement late on the first tick after the thaw and throw a healthy pool away; here the
-    // whole freeze is one tick. No clock also keeps the funnel's promise (`observe.test.ts`).
+    // whole freeze is one tick. The spy opens once the statement is out: its span reads the clock
+    // when it starts and ends, and neither of those is the sweep's judgement.
     const pools = installPools();
     const time = manualTime();
     const db = client(1_000, time);
+    const statement = db.query(sql`select 'frozen'`).catch((error: unknown) => error);
+    await settled();
     const clock = spyOn(performance, 'now');
     try {
-      const statement = db.query(sql`select 'frozen'`).catch((error: unknown) => error);
       time.step();
       await settled();
       expect(pools[0]?.closes).toEqual([]);

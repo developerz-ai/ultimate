@@ -3,13 +3,14 @@
 // needs — ran inside no span, and a 2s p99 reported 40ms with a 1.96s gap nothing named.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { ReadableSpan } from '@ultimat3/core';
+import type { ActionInvokeEvent, ReadableSpan } from '@ultimat3/core';
 import {
-  configureTelemetry,
   ctxOf,
   currentSpan,
   memoryExporter,
+  resetInstrumentation,
   resetTelemetry,
+  subscribe,
   userActor,
 } from '@ultimat3/core';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
@@ -88,12 +89,26 @@ function publishPost(inside: { row?: string | undefined; policy?: string | undef
 
 async function traced(run: () => Promise<unknown>): Promise<readonly ReadableSpan[]> {
   const exporter = memoryExporter();
-  configureTelemetry({ exporter });
+  const off = subscribe('span.end', (event) => exporter.export(event.payload));
   try {
     await run().catch(() => undefined);
     return exporter.spans;
   } finally {
+    off();
     resetTelemetry();
+    resetInstrumentation();
+  }
+}
+
+/** What the bus heard while `run` ran — every call, sampled or not. */
+async function heard(run: () => Promise<unknown>): Promise<readonly ActionInvokeEvent[]> {
+  const seen: ActionInvokeEvent[] = [];
+  const off = subscribe('action.invoke', (event) => seen.push(event.payload));
+  try {
+    await run().catch(() => undefined);
+    return seen;
+  } finally {
+    off();
   }
 }
 
@@ -152,5 +167,21 @@ describe('the span says who, where and how it ended', () => {
   test('a call with no key carries no key attribute at all', async () => {
     const spans = await traced(() => invoke(publishPost(), { postId: 'p1' }, { ctx: editor }));
     expect('ultimate.idempotency.key' in (spans[0]?.attributes ?? {})).toBe(false);
+  });
+});
+
+describe('action.invoke on the instrumentation bus', () => {
+  test('an allowed call emits once, named, with a duration and no error', async () => {
+    const seen = await heard(() => invoke(publishPost(), { postId: 'p1' }, { ctx: editor }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.action).toBe('publishPost');
+    expect(seen[0]?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(seen[0]?.error).toBeUndefined();
+  });
+
+  test('a denial is still an invocation, and carries what the caller was thrown', async () => {
+    const seen = await heard(() => invoke(publishPost(), { postId: 'p1' }, { ctx: stranger }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.error).toMatchObject({ code: 'X_FORBIDDEN' });
   });
 });

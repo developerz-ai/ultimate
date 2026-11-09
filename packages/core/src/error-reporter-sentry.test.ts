@@ -5,12 +5,22 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
 import { errorFingerprint } from './error-fingerprint';
-import { configureErrorReporting, errorReport, resetErrorReporting } from './error-reporter';
+import {
+  configureErrorReporting,
+  errorReport,
+  memoryErrorReporter,
+  resetErrorReporting,
+} from './error-reporter';
+import { chainErrorReporters } from './error-reporter-chain';
 import {
   ErrorReporterDsnInvalidError,
+  isLocalErrorSink,
+  isSentryErrorReporter,
+  localErrorSink,
   parseSentryDsn,
   sentryEnvelope,
   sentryErrorReporter,
+  sentryTransport,
 } from './error-reporter-sentry';
 import { UltimateError } from './errors';
 import { REDACTED } from './logger';
@@ -389,5 +399,48 @@ describe('sentryErrorReporter hooks', () => {
         expect.objectContaining({ code: 'X_CONFIG_INVALID' }),
       );
     }
+  });
+});
+
+// The boot asks this before it adds its own `SENTRY_DSN` transport: an app that installed one
+// already (its own scrubbing, its own hooks) is reported once, by that one — never a second time,
+// unscrubbed, by the boot's.
+describe('isSentryErrorReporter', () => {
+  const dsn = 'https://key@sentry.example/42';
+  // Bun's `fetch` carries `preconnect` beside the call: a bare arrow is not `typeof fetch`.
+  const answering: typeof globalThis.fetch = Object.assign(() => Promise.resolve(new Response()), {
+    preconnect: (): void => {},
+  });
+
+  test('knows a reporter sentryErrorReporter built, and nothing else', () => {
+    expect(isSentryErrorReporter(sentryErrorReporter({ dsn, fetch: answering }))).toBe(true);
+    expect(isSentryErrorReporter(memoryErrorReporter())).toBe(false);
+    // Shape is not proof: an object that merely looks like one is not one.
+    expect(isSentryErrorReporter({ report: () => undefined })).toBe(false);
+  });
+
+  // The one way to wrap: a reporter that adds a tag and calls the transport is still the app's
+  // Sentry transport, and only the app can say so.
+  test('sentryTransport marks a wrapper as the app’s Sentry transport, and hands it back', () => {
+    const inner = sentryErrorReporter({ dsn, fetch: answering });
+    const wrapper = { report: (r: Parameters<typeof inner.report>[0]) => inner.report(r) };
+    expect(isSentryErrorReporter(wrapper)).toBe(false);
+    expect(sentryTransport(wrapper)).toBe(wrapper);
+    expect(isSentryErrorReporter(wrapper)).toBe(true);
+  });
+
+  test('localErrorSink marks a reporter as keeping reports on the box; the memory one is', () => {
+    const sink = { report: () => undefined };
+    expect(isLocalErrorSink(sink)).toBe(false);
+    expect(localErrorSink(sink)).toBe(sink);
+    expect([isLocalErrorSink(sink), isSentryErrorReporter(sink)]).toEqual([true, false]);
+    expect(isLocalErrorSink(memoryErrorReporter())).toBe(true);
+    const transport = sentryErrorReporter({ dsn, fetch: answering });
+    expect(isLocalErrorSink(transport)).toBe(false);
+  });
+
+  test('a chain is not itself one — its members are asked one by one', () => {
+    const sentry = sentryErrorReporter({ dsn, fetch: answering });
+    expect(isSentryErrorReporter(chainErrorReporters(memoryErrorReporter(), sentry))).toBe(false);
   });
 });

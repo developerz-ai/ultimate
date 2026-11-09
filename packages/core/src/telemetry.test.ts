@@ -2,17 +2,19 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
 import { ctxOf, runWithContext } from './context';
 import { traceId as newTraceId, spanId, uuidV7 } from './ids';
+import { resetInstrumentation, subscribe } from './instrument';
 import {
   alwaysOffSampler,
   alwaysOnSampler,
   parentBasedRatioSampler,
   ratioSampler,
 } from './sampler';
-import type { SpanContext } from './telemetry';
+import type { MemoryExporter, SpanContext } from './telemetry';
 import {
   configureTelemetry,
   currentSpan,
   currentSpanContext,
+  MAX_SPAN_EVENTS,
   memoryExporter,
   parseTraceparent,
   resetTelemetry,
@@ -24,7 +26,15 @@ import {
 
 afterEach(() => {
   resetTelemetry();
+  resetInstrumentation();
 });
+
+/** A memory exporter, subscribed the one way an exporter is installed. */
+function exported(): MemoryExporter {
+  const exporter = memoryExporter();
+  subscribe('span.end', (event) => exporter.export(event.payload));
+  return exporter;
+}
 
 describe('telemetry', () => {
   test('is free when unconfigured — the default exporter drops spans', () => {
@@ -34,8 +44,8 @@ describe('telemetry', () => {
   });
 
   test('updateName renames a live span and is exported under the new name; ended spans keep theirs', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter, clock: frozenClock(0) });
+    const exporter = exported();
+    configureTelemetry({ clock: frozenClock(0) });
     const span = startSpan('GET');
     span.updateName('GET /r/:token');
     expect(span.name).toBe('GET /r/:token');
@@ -46,8 +56,8 @@ describe('telemetry', () => {
   });
 
   test('nested spans share the trace and record the parent', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter, clock: frozenClock(0) });
+    const exporter = exported();
+    configureTelemetry({ clock: frozenClock(0) });
 
     withSpan('outer', (outer) => {
       withSpan('inner', (inner) => {
@@ -63,8 +73,7 @@ describe('telemetry', () => {
   });
 
   test('adopts the request traceId so HTTP -> job -> live query is one trace', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    const exporter = exported();
     const ctx = ctxOf({});
 
     runWithContext(ctx, () => {
@@ -75,8 +84,7 @@ describe('telemetry', () => {
   });
 
   test('async spans end on rejection and record the error code', async () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    const exporter = exported();
 
     await expect(
       withSpan('job.onboardOrg', async () => {
@@ -96,8 +104,7 @@ describe('telemetry', () => {
     // the framework did not build. `withSpan` wraps `cache.invalidate`, `db.<verb>` and every
     // HTTP and job span, so a throw HERE substitutes the tracer's TypeError for the failure the
     // caller was about to handle — and the span it was meant to annotate is never ended.
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    const exporter = exported();
     const real = new Proxy(new Error('real failure'), {
       getPrototypeOf(): never {
         throw new TypeError('proxy trap');
@@ -119,8 +126,7 @@ describe('telemetry', () => {
   });
 
   test('a bigint thrown out of a span is recorded, not rethrown as a TypeError', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    const exporter = exported();
     expect(() =>
       withSpan('job.tick', () => {
         throw 10n;
@@ -130,8 +136,7 @@ describe('telemetry', () => {
   });
 
   test('traceparent round-trips for cross-process propagation', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    const exporter = exported();
     const outbound = startSpan('http.client');
     const header = traceparent(outbound.context);
     expect(header).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
@@ -147,8 +152,7 @@ describe('telemetry', () => {
 
 describe('sampling', () => {
   test("an upstream's 'do not sample' is obeyed, not just forwarded", () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter });
+    const exporter = exported();
     withSpanContext(
       { traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331', traceFlags: 0 },
       'GET /posts',
@@ -167,8 +171,8 @@ describe('sampling', () => {
   });
 
   test('a configured sampler overrides the env default', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter, sampler: alwaysOffSampler });
+    const exporter = exported();
+    configureTelemetry({ sampler: alwaysOffSampler });
     startSpan('dropped').end();
     expect(exporter.spans).toHaveLength(0);
 
@@ -178,12 +182,65 @@ describe('sampling', () => {
   });
 
   test('a sampled parent keeps every child in the same trace exported', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter, sampler: alwaysOnSampler });
+    const exporter = exported();
+    configureTelemetry({ sampler: alwaysOnSampler });
     withSpan('outer', () => {
       withSpan('inner', () => undefined);
     });
     expect(exporter.spans.map((span) => span.name)).toEqual(['inner', 'outer']);
+  });
+
+  test('a span keeps MAX_SPAN_EVENTS events and counts the rest as dropped', () => {
+    const exporter = exported();
+    withSpan('loop', (span) => {
+      for (let index = 0; index < MAX_SPAN_EVENTS + 5; index += 1) span.addEvent(`row ${index}`);
+      span.recordError(new RangeError('the last one'));
+    });
+    const [only] = exporter.spans;
+    expect(only?.events).toHaveLength(MAX_SPAN_EVENTS);
+    expect(only?.events.at(-1)?.name).toBe(`row ${MAX_SPAN_EVENTS - 1}`);
+    expect(only?.droppedEventsCount).toBe(6);
+    // The status still records the failure even when its event was dropped.
+    expect(only?.status.code).toBe('error');
+  });
+
+  test('span.end carries sampled spans only, to every subscriber in order', () => {
+    const order: string[] = [];
+    subscribe('span.end', (event) => order.push(`a:${event.payload.name}`));
+    subscribe('span', (event) => order.push(`b:${event.payload.name}`));
+    configureTelemetry({ sampler: alwaysOffSampler });
+    startSpan('unsampled').end();
+    configureTelemetry({ sampler: alwaysOnSampler });
+    startSpan('sampled').end();
+    expect(order).toEqual(['a:sampled', 'b:sampled']);
+  });
+
+  test('an unsampled span mints its id lazily, once, and still parents a sampled child', () => {
+    const exporter = exported();
+    configureTelemetry({ sampler: alwaysOffSampler });
+    const parent = startSpan('unsampled');
+    const header = traceparent(parent.context);
+    expect(parseTraceparent(header)?.spanId).toBe(parent.context.spanId);
+    expect(parent.context.spanId).toBe(parent.context.spanId);
+    configureTelemetry({ sampler: alwaysOnSampler });
+    startSpan('child', { parent: parent.context }).end();
+    expect(exporter.spans[0]?.parentSpanId).toBe(parent.context.spanId);
+  });
+
+  test('a span context survives JSON, and a sampled one a spread and structuredClone too', () => {
+    configureTelemetry({ sampler: alwaysOffSampler });
+    const lazy = startSpan('unsampled').context;
+    expect(JSON.parse(JSON.stringify(lazy))).toEqual({
+      traceId: lazy.traceId,
+      spanId: lazy.spanId,
+      traceFlags: 0,
+    });
+    configureTelemetry({ sampler: alwaysOnSampler });
+    const sampled = startSpan('sampled').context;
+    const whole = { traceId: sampled.traceId, spanId: sampled.spanId, traceFlags: 1 };
+    expect({ ...sampled }).toEqual(whole);
+    expect(structuredClone(sampled)).toEqual(whole);
+    expect(JSON.parse(JSON.stringify(sampled))).toEqual(whole);
   });
 
   test('resetTelemetry drops a configured sampler', () => {
@@ -200,8 +257,8 @@ describe('sampling', () => {
    * `withSpan`, which is this exact pair.
    */
   test('a request context is a trace id, never an upstream sampling decision', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter, sampler: parentBasedRatioSampler(0) });
+    const exporter = exported();
+    configureTelemetry({ sampler: parentBasedRatioSampler(0) });
 
     runWithContext(ctxOf({}), () => {
       withSpan('GET /posts', () => undefined);
@@ -211,8 +268,8 @@ describe('sampling', () => {
   });
 
   test('sampled inside a request context, the root span still has no parent span', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter, sampler: parentBasedRatioSampler(1) });
+    const exporter = exported();
+    configureTelemetry({ sampler: parentBasedRatioSampler(1) });
     const ctx = ctxOf({});
 
     runWithContext(ctx, () => {
@@ -225,8 +282,8 @@ describe('sampling', () => {
   });
 
   test('a real inbound parent is still obeyed, sampled or not', () => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter, sampler: parentBasedRatioSampler(0) });
+    const exporter = exported();
+    configureTelemetry({ sampler: parentBasedRatioSampler(0) });
     const parent = { traceId: newTraceId(), spanId: spanId(), traceFlags: 1 } as const;
 
     runWithContext(ctxOf({}), () => {
@@ -245,10 +302,8 @@ describe('sampling', () => {
    * decision — and the sampler was re-rolling per span.
    */
   test('traceidratio decides once per trace, root and children alike', () => {
-    const exporter = memoryExporter();
     let rolls = 0;
     configureTelemetry({
-      exporter,
       sampler: ratioSampler(0.5, () => (rolls++ % 2 === 0 ? 0.1 : 0.9)),
     });
 

@@ -41,18 +41,20 @@ describe('defineStorage', () => {
     const configured = defineStorage({ disks: { uploads, media } });
     expect(configured.defaultDisk).toBe('uploads');
     expect(configured.diskNames).toEqual(['uploads', 'media']);
-    expect(configured.disk()).toBe(uploads);
-    expect(configured.disk('media')).toBe(media);
+    expect(configured.disk().name).toBe(uploads.name);
+    expect(configured.disk('media').name).toBe(media.name);
   });
 
   test('honours an explicit default', () => {
-    expect(defineStorage({ disks: { uploads, media }, default: 'media' }).disk()).toBe(media);
+    expect(defineStorage({ disks: { uploads, media }, default: 'media' }).disk().name).toBe(
+      media.name,
+    );
   });
 
   test('installs itself as the module-level storage', () => {
     defineStorage({ disks: { uploads, media } });
-    expect(storage().disk('media')).toBe(media);
-    expect(disk('uploads')).toBe(uploads);
+    expect(storage().disk('media').name).toBe(media.name);
+    expect(disk('uploads').name).toBe(uploads.name);
   });
 
   test('rejects a default that is not a configured disk', () => {

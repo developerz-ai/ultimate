@@ -32,6 +32,6 @@ export function systemOf(
   return fixed === undefined && stable === '' ? undefined : stable;
 }
 
-/** Whether two composed prompts are the same text — what `llm.redacted` compares. */
+/** Whether two composed prompts are the same text — what `ultimate.llm.redacted` compares. */
 export const sameSystem = (a: SystemPrompt | undefined, b: SystemPrompt | undefined): boolean =>
   JSON.stringify(a) === JSON.stringify(b);

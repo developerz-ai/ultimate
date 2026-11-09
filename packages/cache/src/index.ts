@@ -1,5 +1,11 @@
 // Public API of @ultimat3/cache. Explicit, no `export *`.
 
+// The `cache.*` payloads are core's (the bus is tier 0); re-exported, never a second shape.
+export type {
+  CacheInvalidateEvent,
+  CacheLookupEvent,
+  CacheTierFailureEvent,
+} from '@ultimat3/core';
 export type { CacheHeaderOptions, CdnTierOptions, PurgeDriver } from './cdn';
 export {
   cacheHeaders,
@@ -36,7 +42,6 @@ export {
 } from './graph';
 export type {
   InvalidationBroadcast,
-  InvalidationEvent,
   InvalidationReport,
   Revalidator,
   TagRevalidator,
@@ -50,7 +55,6 @@ export {
   isolateTiers,
   purgeEdgeAgain,
   receiveInvalidationBroadcast,
-  recentInvalidations,
   registeredTiers,
   registerInvalidationBroadcast,
   registerRevalidator,
@@ -58,7 +62,6 @@ export {
   resetTiers,
 } from './invalidate';
 export type { LruOptions, LruStats } from './lru';
-
 export { estimateBytes, LruCache, lruTier } from './lru';
 export { clearMemo, memoSize, memoTier } from './memo';
 export type { CloudflarePurgeOptions } from './purge-cloudflare';
@@ -99,8 +102,8 @@ export {
   tagsFor,
   tagsIntersect,
 } from './tags';
-export type { TierFailure, TierOperation } from './tier-failures';
-export { bestEffort, recentTierFailures } from './tier-failures';
+export type { TierOperation } from './tier-failures';
+export { bestEffort } from './tier-failures';
 export type { FenceVerdict, TierFence } from './tier-fence';
 export type {
   CacheEntry,

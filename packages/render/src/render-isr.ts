@@ -22,6 +22,7 @@ import { finiteCount, logger, renderThrowable, singleFlight } from '@ultimat3/co
 import { finiteStatus } from './finite-status';
 import type { RouteDescriptor } from './registry';
 import { describePages } from './registry';
+import { timedRender } from './render-instrument';
 import { DEFAULT_ISR_FAILURE_COOLDOWN_MS, failureCooldown } from './render-isr-cooldown';
 import { entryTtlMs, isrResult } from './render-isr-result';
 import type { IsrPolicy } from './render-isr-routes';
@@ -212,7 +213,14 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
         // And the STORE's own fence, for a store another process writes: read before the rows are.
         const entities = entitiesOf(policy.tags);
         const reading = await store.tagFence?.sample(entities);
-        const rendered = renderedOf(await render(path));
+        // One event per GENERATION — the requests that joined this flight are not renders.
+        const rendered = renderedOf(
+          await timedRender(
+            'render.isr.regenerate',
+            { route: descriptor?.path ?? path, path },
+            async () => await render(path),
+          ),
+        );
         const entry: IsrEntry = {
           path,
           html: rendered.html,

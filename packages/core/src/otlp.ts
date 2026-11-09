@@ -1,9 +1,12 @@
-// Single responsibility: the pieces both OTLP exporters share — endpoint resolution from the env
-// an operator already sets, header parsing, the OTLP/JSON value encoding, and (from `otlp-post.ts`) one POST that
-// never throws. A serialisation, not a vendor (axiom 7), exactly as `metrics-text.ts` is to Prometheus.
+// Single responsibility: the pieces every OTLP exporter (traces, metrics, logs) shares — endpoint
+// resolution from the env an operator already sets, header parsing, the OTLP/JSON value encoding,
+// and (from `otlp-post.ts`) one POST that never throws. A serialisation, not a vendor (axiom 7),
+// exactly as `metrics-text.ts` is to Prometheus.
 
 import { assert } from './assert';
+import { renderFixShellArg } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
+import { otlpEndpointLabel } from './otlp-post';
 import type { AttributeValue, SpanResource } from './telemetry';
 
 export class OtlpEndpointInvalidError extends UltimateError {
@@ -36,7 +39,7 @@ export class OtlpProtocolUnsupportedError extends UltimateError {
   }
 }
 
-export type OtlpSignal = 'traces' | 'metrics';
+export type OtlpSignal = 'traces' | 'metrics' | 'logs';
 
 export const OTLP_ENDPOINT_KEY = 'OTEL_EXPORTER_OTLP_ENDPOINT';
 export const OTLP_HEADERS_KEY = 'OTEL_EXPORTER_OTLP_HEADERS';
@@ -77,17 +80,27 @@ function parseEndpoint(signal: OtlpSignal, raw: string, perSignal: boolean, env:
   try {
     url = new URL(raw);
   } catch {
+    // Not echoed: an unparsable value may still be `user:password@…` with one character wrong.
     throw new OtlpEndpointInvalidError({
-      cause: `"${raw}" is not a URL`,
+      cause: `the ${signal} OTLP endpoint is not a URL (${raw.length} characters, not echoed: it may carry a credential)`,
       fix: `set ${OTLP_ENDPOINT_KEY}=http://otel-collector:4318`,
-      meta: { endpoint: raw, signal },
+      meta: { signal },
     });
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new OtlpEndpointInvalidError({
-      cause: `"${raw}" is ${url.protocol}, and OTLP/HTTP needs http or https`,
+      cause: `"${otlpEndpointLabel(raw)}" is ${url.protocol}, and OTLP/HTTP needs http or https`,
       fix: `set ${OTLP_ENDPOINT_KEY}=http://otel-collector:4318`,
-      meta: { endpoint: raw, signal },
+      meta: { endpoint: otlpEndpointLabel(raw), signal },
+    });
+  }
+  // A credential in the URL rides every log line that names the endpoint; the spec's place for
+  // one is `OTEL_EXPORTER_OTLP_HEADERS`, whose values are never logged.
+  if (url.username !== '' || url.password !== '') {
+    throw new OtlpEndpointInvalidError({
+      cause: `the OTLP endpoint ${otlpEndpointLabel(url.toString())} carries a user name or password in the URL, which every export log line would print`,
+      fix: `export OTEL_EXPORTER_OTLP_ENDPOINT=${renderFixShellArg(otlpEndpointLabel(url.toString()), '<the endpoint, without the credential>')} OTEL_EXPORTER_OTLP_HEADERS='authorization=Basic%20<base64>'   # the credential moves to the headers, which are never logged`,
+      meta: { endpoint: otlpEndpointLabel(url.toString()), signal },
     });
   }
   assertHttpJson(signal, url, env);
@@ -269,4 +282,9 @@ export function otlpResource(resource: SpanResource): {
 export const OTLP_SCOPE = Object.freeze({ name: '@ultimat3/core' });
 
 // Delivery, retry included, is its own module; re-exported so the exporters' one import stays.
-export { OTLP_RETRY_STATUSES, type OtlpPostOptions, postOtlp } from './otlp-post';
+export {
+  OTLP_RETRY_STATUSES,
+  type OtlpPostOptions,
+  otlpEndpointLabel,
+  postOtlp,
+} from './otlp-post';

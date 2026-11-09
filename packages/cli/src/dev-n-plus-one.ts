@@ -5,9 +5,8 @@
 // It counts and it warns once; what a verdict *means* — which code, which `fix:` — is
 // `statement-loop.ts`'s, so all four surfaces read one answer.
 
-import type { Ctx } from '@ultimat3/core';
+import type { Ctx, StatementAttribution, DbStatementEvent as StatementEvent } from '@ultimat3/core';
 import { assert, tryUseContext } from '@ultimat3/core';
-import type { StatementAttribution, StatementEvent, StatementObserver } from '@ultimat3/db';
 import { statementFingerprint, statementKind } from '@ultimat3/db';
 import { N_PLUS_ONE_THRESHOLD } from '@ultimat3/entity';
 import { loopFacts, warnLoop } from './statement-loop';
@@ -32,8 +31,13 @@ export interface RepeatedStatement {
   readonly traceId: string;
 }
 
+/** What the ledger hears: one `db.statement` payload, handed over by `x dev`'s bus subscriber. */
+interface StatementObserver {
+  onStatement(event: StatementEvent): void;
+}
+
 export interface StatementLedger {
-  /** Hand this to `setStatementObserver()`. */
+  /** `x dev` subscribes this to `db.statement`: `subscribe('db.statement', (e) => observer.onStatement(e.payload))`. */
   readonly observer: StatementObserver;
   /** Shapes that crossed the threshold, newest first. */
   repeats(): readonly RepeatedStatement[];

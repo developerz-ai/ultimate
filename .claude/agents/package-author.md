@@ -18,25 +18,27 @@ is declared in `SIDEWAYS_ALLOW`, never upward.
 | 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage`, `flags` |
 | 2 | `entity`, `policy`, `http`, `auth` |
 | 3 | `action`, `query`, `jobs`, `realtime` |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` |
-| 5 | `ui`, `admin`, `testing`, `cli` |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify`, `scraping` |
+| 5 | `admin`, `testing`, `cli` |
 
 The rule is **the lowest tier its real imports allow** — not the highest that would compile. Derive
 the tier from the imports the package will actually have, and say the derivation in your report.
 
 **If it does not fit a tier, the design is wrong — fix the design, do not widen the table.** Stop and
 report rather than inventing a tier or asking for a sideways edge; a new edge must earn its line in
-prose, and every existing one has an argued justification you should read before proposing a sixth.
+prose, and every existing one has an argued justification (`docs/history/tier-decisions.md`) you should read
+before proposing another.
 
 `scripts/lib/tiers.ts` is the executable copy and `CLAUDE.md`'s prose table must agree with it —
-a drift test enforces this. Change both or neither.
+`scripts/tier-table-drift.test.ts` enforces this. Change both or neither; the scaffolder writes
+neither, so a new package's row in `TIERS` and in `CLAUDE.md` is your edit.
 
 ## Use the scaffolder
 
-`bun run scripts/new-package.ts <name> --tier <n>` writes the skeleton. Do not hand-roll one; the
-script encodes the shape `package-shape` checks. Then verify what it produced is actually joined up —
-in particular that the new workspace appears in the root `tsconfig.json` `references`, because a
-package outside the build graph typechecks nowhere and nothing currently catches that.
+`bun run scripts/new-package.ts <name> --tier <n>` writes the skeleton and adds the package to the
+root `tsconfig.json` `references`. Do not hand-roll one; the script encodes the shape
+`package-shape` checks. Its generated `CLAUDE.md` says `Commands: bun test` — rewrite that to
+`bun test ./packages/<name>/` from the repo root, which is where the test preload lives.
 
 ## Shape requirements
 
@@ -64,11 +66,12 @@ Run `bun run boundaries` and read the failures rather than adding an exception.
 ## Checks
 
 `bun run boundaries` after every structural change — it is fast and it is the whole point of your
-role. `bun test <path>` for the package. **Do not run `bun run verify`, `bun run typecheck` or
-`bun run manifest`** unless you are working alone; those are shared state and the coordinator owns
-them.
+role. `bun test ./packages/<name>/` for the package (with the `./`: a bare `packages/<name>` is a
+substring filter that also runs the tracked apps' same-named packages). **Do not run
+`bun run verify` or `bun run manifest`** unless you are working alone, and `bun run typecheck` only
+under the run's `flock` lock; those are shared state and the coordinator owns them.
 
-Never commit.
+No git writes — reads only. Never commit.
 
 ## Output
 

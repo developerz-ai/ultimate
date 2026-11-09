@@ -22,6 +22,7 @@ import { blocksOf, COMPACTED_MARK, summaryCall } from './agent-compact-request';
 import { AgentContextExhaustedError } from './agent-errors';
 import type { RunDeadline } from './agent-guards';
 import type { Gateway } from './gateway';
+import { reportedCall } from './llm-instrument';
 import type { ModelId } from './models';
 import { modelSpec } from './models';
 import type { AiMessage, GenerateRequest, GenerateResult, TokenUsage } from './provider';
@@ -118,7 +119,7 @@ export function compactor(input: CompactorInput): Compactor {
             'agent.compact.clipped_turns': event.clipped ?? 0,
             'agent.compact.omitted_turns': event.omitted ?? 0,
           }),
-      ...(event.cost === undefined ? {} : { 'llm.cost.minor': event.cost.minor }),
+      ...(event.cost === undefined ? {} : { 'ultimate.llm.cost.minor': event.cost.minor }),
     });
     await input.onCompact?.(event);
   };
@@ -193,7 +194,9 @@ export function compactor(input: CompactorInput): Compactor {
     try {
       // Its own meter, inside the run's: the bill reaches the run as a nested call's does — on the
       // same ledger, in `tokensPerRun` and `costPerRun`, priced at the summary model's own rates.
-      result = await input.deadline.guard(runMeter().call(input.gateway.generate(request)));
+      result = await input.deadline.guard(
+        runMeter().call(reportedCall(request.model ?? writer, input.gateway.generate(request))),
+      );
     } catch (error) {
       throwIfAborted(input.ctx);
       const code = stringField(error, 'code');

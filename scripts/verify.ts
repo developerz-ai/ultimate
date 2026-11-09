@@ -70,6 +70,7 @@ import { gateStepFindings } from './gate-steps';
 import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
 import { imageContractFindings } from './image-contract';
+import { instrumentSlotFindings } from './instrument-slots';
 import { keyedHasherFindings } from './keyed-hasher';
 import { knownGapLinkFindings } from './known-gaps-links';
 import { flagBool, parseScriptArgs } from './lib/args';
@@ -159,6 +160,9 @@ export const tierBoundaries: HostCheck = async (root) => {
     ...(await privateNameFindings(root, process.env)),
     // wiki/Stability.md: the major window, Highlights, no break on main, the deprecation window.
     ...(await stabilityFindings(root)),
+    // One instrumentation bus: no package exports a `set*Observer`/`set*Sink`/`set*Exporter` slot
+    // or a `recent*()` ring buffer beside core's `subscribe()` (`X_INSTRUMENT_SLOT_FORBIDDEN`).
+    ...(await instrumentSlotFindings(root)),
   ];
 };
 

@@ -51,13 +51,13 @@ describe('x dev stays up until it is signalled', () => {
         `import { defineConfig } from '@ultimat3/core';\nexport const config = defineConfig({ name: 'dev-hold-fixture' });\n`,
       );
 
-      // Its own scrape port: the default 9090 may be a developer's running `x dev`.
-      const probe = Bun.serve({ port: 0, fetch: () => new Response() });
-      const metrics = String(probe.port);
-      probe.stop(true);
+      // Its own scrape port, and an EPHEMERAL one (`METRICS_PORT=0`): the default 9090 may be a
+      // developer's running `x dev`, and a port probed free and then released here is one the
+      // supervisor's own `--port 0` pick could be handed next — the X_PORT_IN_USE this test once
+      // failed on. A port the kernel picks while the web port is held can never equal it.
       const child = Bun.spawn(['bun', BIN, 'dev', '--port', '0', '--json'], {
         cwd: HOLD_ROOT,
-        env: { ...Bun.env, METRICS_PORT: metrics },
+        env: { ...Bun.env, METRICS_PORT: '0' },
         stdout: 'pipe',
         stderr: 'pipe',
       });

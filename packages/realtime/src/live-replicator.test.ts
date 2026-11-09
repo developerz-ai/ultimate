@@ -2,15 +2,8 @@
 // stopping it puts back the observer it replaced.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import {
-  clearRegistry,
-  database,
-  entity,
-  memoryDriver,
-  setRowObserver,
-  text,
-  uuid,
-} from '@ultimat3/entity';
+import { resetInstrumentation, subscribe } from '@ultimat3/core';
+import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { startLiveReplicator } from './live-replicator';
 
 const ONE = '00000000-0000-4000-8000-000000000001';
@@ -24,7 +17,7 @@ const fakeRegistry = (deliver: () => Promise<number>) =>
   ({ deliver, invalidate: () => 0 }) as never;
 
 afterEach(() => {
-  setRowObserver(null);
+  resetInstrumentation();
   clearRegistry();
 });
 
@@ -85,11 +78,11 @@ describe('the in-process replicator', () => {
     replicator.stop();
   });
 
-  // `bun test` shares one process across files, so an inner harness that cleared unconditionally
-  // would take an outer one's observer with it.
-  test('stopping restores the observer it replaced, and reports nothing after', async () => {
-    const outer = { onChange: () => undefined };
-    setRowObserver(outer);
+  // `bun test` shares one process across files, so an inner harness must never take an outer
+  // one's subscription with it — the slot this replaced did exactly that (v31).
+  test('stopping releases only its own subscription, and reports nothing after', async () => {
+    const outer: string[] = [];
+    const offOuter = subscribe('entity.row', (event) => outer.push(event.payload.entity));
     const replicator = await startLiveReplicator({
       registry: fakeRegistry(() => Promise.resolve(1)),
     });
@@ -99,6 +92,20 @@ describe('the in-process replicator', () => {
     await db.memos.insert({ id: ONE, label: 'one' });
     await replicator.settled();
     expect(replicator.delivered).toBe(0);
-    expect(setRowObserver(null)).toBe(outer);
+    expect(outer).toEqual(['replicated_memos']);
+    offOuter();
+  });
+
+  test('two replicators both hear a write: the bus fans out, a slot replaced', async () => {
+    const first = await startLiveReplicator({ registry: fakeRegistry(() => Promise.resolve(1)) });
+    const second = await startLiveReplicator({ registry: fakeRegistry(() => Promise.resolve(1)) });
+
+    const db = database({ memos }, { driver: memoryDriver() });
+    await db.memos.insert({ id: ONE, label: 'one' });
+    await first.settled();
+    await second.settled();
+    expect([first.delivered, second.delivered]).toEqual([1, 1]);
+    first.stop();
+    second.stop();
   });
 });

@@ -9,6 +9,7 @@ export const RESULTS_FIRST_HOUR = 'scripts/bench/results/first-hour.json';
 export const RESULTS_HTTP_HOME = 'scripts/bench/results/http-hello.json';
 export const RESULTS_HTTP_QUERY = 'scripts/bench/results/http-hello-query.json';
 export const RESULTS_RENDER = 'scripts/bench/results/render-html.json';
+export const RESULTS_SPAN = 'scripts/bench/results/span-overhead.json';
 export const COMPARED = 'wiki/Compared.md';
 
 /** How a measured number is spelled in prose. */
@@ -225,6 +226,31 @@ const RENDER_CLAIMS: readonly BenchClaim[] = [
   },
 ];
 
+/** One span's cost, unsampled and sampled-with-no-subscriber (plan 101 slice 20, ≤ 1 µs target). */
+const SPAN_CLAIMS: readonly BenchClaim[] = [
+  {
+    label: 'an unsampled child span',
+    file: RESULTS_SPAN,
+    path: 'results.1.nsPerSpan',
+    format: 'plain',
+    pattern: /an unsampled child span costs \*\*(\d+) ns\*\*/,
+  },
+  {
+    label: 'an unsampled root span',
+    file: RESULTS_SPAN,
+    path: 'results.0.nsPerSpan',
+    format: 'plain',
+    pattern: /an unsampled root \*\*(\d+) ns\*\*/,
+  },
+  {
+    label: 'a sampled span with no subscriber',
+    file: RESULTS_SPAN,
+    path: 'results.2.nsPerSpan',
+    format: 'plain',
+    pattern: /a sampled span with no `span\.end` subscriber \*\*(\d+) ns\*\*/,
+  },
+];
+
 /**
  * Anchored patterns, never a bare search for the digits: `50,000` appears four times in this file,
  * and "the number is somewhere on the page" would pass over a sentence that had been rewritten to
@@ -318,4 +344,5 @@ export const CLAIMS: readonly BenchClaim[] = [
   ...FIRST_HOUR_CLAIMS,
   ...HTTP_CLAIMS,
   ...RENDER_CLAIMS,
+  ...SPAN_CLAIMS,
 ];

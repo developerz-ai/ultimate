@@ -74,13 +74,13 @@ describe('x dev restarts on a save it cannot serve in process', () => {
       for (const [path, contents] of Object.entries(FILES))
         await Bun.write(join(ROOT, path), contents);
       // `--port 0`: the supervisor pins ONE free port, so the second child binds the first's.
-      // Its own scrape port too: the default 9090 may be a developer's running `x dev`.
-      const probe = Bun.serve({ port: 0, fetch: () => new Response() });
-      const metrics = String(probe.port);
-      probe.stop(true);
+      // Its own scrape port, and an EPHEMERAL one (`METRICS_PORT=0`): the default 9090 may be a
+      // developer's running `x dev`, and a port probed free and then released here is one the
+      // supervisor's own `--port 0` pick could be handed next — the X_PORT_IN_USE this test once
+      // failed on. A port the kernel picks while the web port is held can never equal it.
       const child = Bun.spawn(['bun', BIN, 'dev', '--port', '0', '--json'], {
         cwd: ROOT,
-        env: { ...Bun.env, METRICS_PORT: metrics },
+        env: { ...Bun.env, METRICS_PORT: '0' },
         stdout: 'pipe',
         stderr: 'pipe',
       });

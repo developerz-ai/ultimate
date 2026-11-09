@@ -1,22 +1,22 @@
-// The funnel is the ONE place the observer hangs off, so "exactly one event per settled statement"
-// is its contract and not the observer's. Colocated because `client-observer.test.ts` asserts what
-// an observer SEES; this asserts what the funnel EMITS, including on the path that then throws.
+// The funnel is the ONE place `db.statement` is emitted from, so "exactly one event per settled statement"
+// is its contract and not the subscriber's. Colocated because `client-observer.test.ts` asserts what
+// a subscriber SEES; this asserts what the funnel EMITS, including on the path that then throws.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
-import { type StatementEvent, setStatementObserver } from './observe';
+import type { DbStatementEvent } from '@ultimat3/core';
+import { resetInstrumentation, subscribe, UltimateError } from '@ultimat3/core';
 import { raw } from './sql';
 import { affectedBy, rowsOf, runOn } from './statement-funnel';
 
-const collect = (): StatementEvent[] => {
-  const seen: StatementEvent[] = [];
-  setStatementObserver({ onStatement: (event) => void seen.push(event) });
+const collect = (): DbStatementEvent[] => {
+  const seen: DbStatementEvent[] = [];
+  subscribe('db.statement', (event) => void seen.push(event.payload));
   return seen;
 };
 
 // Process-wide state: a suite that installs one and never removes it hands it to every later FILE
 // in the run, and the failure lands somewhere innocent.
-afterEach(() => setStatementObserver(undefined));
+afterEach(() => resetInstrumentation());
 
 describe('runOn emits exactly one event per settled statement', () => {
   test('a statement that succeeds emits one event carrying its row count', async () => {
@@ -60,33 +60,27 @@ describe('runOn emits exactly one event per settled statement', () => {
     }
   });
 
-  test('an observer that throws on success does not report the statement as failed', async () => {
-    // The success event is emitted OUTSIDE the try deliberately: a throw from `onStatement` is the
-    // OBSERVER's, not the database's, and catching it would emit a SECOND event reporting a
-    // statement that succeeded as failed. Asserting only that the throw escapes cannot see that —
-    // it escapes either way — so the discriminating assertion is the event LEDGER, not the throw.
-    const seen: StatementEvent[] = [];
+  test('a subscriber that throws on success does not report the statement as failed', async () => {
+    // The success event is emitted OUTSIDE the try deliberately, and the bus contains a
+    // subscriber's throw: the statement resolves, and it is reported once, as a success.
+    const seen: DbStatementEvent[] = [];
     // Constructed as DATA, not raised at the throw site: this error is the subject's INPUT — a
     // deliberately broken observer — not this test's verdict, and `bun run scripts/test-bare-error.ts`
     // reads a literal throw of a freshly constructed Error as a verdict wherever it appears,
     // callback included — and its string-literal exemption does not cover comments either.
     const observerFailure = new Error('observer is broken');
-    setStatementObserver({
-      onStatement: (event) => {
-        seen.push(event);
-        throw observerFailure;
-      },
+    subscribe('db.statement', (event) => {
+      seen.push(event.payload);
+      throw observerFailure;
     });
 
-    await expect(runOn({ unsafe: async () => [] }, raw('select 4'))).rejects.toThrow(
-      'observer is broken',
-    );
+    expect(await runOn({ unsafe: async () => [] }, raw('select 4'))).toEqual([]);
 
     expect(seen).toHaveLength(1);
     expect(seen[0]?.error).toBeUndefined();
   });
 
-  test('no observer installed means no event and the same call the driver always got', async () => {
+  test('no subscriber means no event and the same call the driver always got', async () => {
     let sawText: string | undefined;
     const result = await runOn(
       {

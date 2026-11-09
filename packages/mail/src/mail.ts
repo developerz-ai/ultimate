@@ -5,10 +5,11 @@
 
 import { assert, DEFAULT_TIME_ZONE, tryUseContext } from '@ultimat3/core';
 import type { TranslationMiss } from '@ultimat3/i18n';
-import { jobDriver, jobsFacade } from '@ultimat3/jobs';
+import { jobDriver } from '@ultimat3/jobs';
 import { parse, type StandardSchemaV1, t } from '@ultimat3/schema';
 import type { MailTemplate } from './blocks';
-import { envelopeRecipients, type MailMessage, mailDriver, type SendResult } from './driver';
+import { deliverMail } from './deliver';
+import { envelopeRecipients, type MailMessage, type SendResult } from './driver';
 import { assertRecipientAddress } from './envelope-address';
 import { localeMissing, mailDuplicate, mailKeyMissing, templateUnknown } from './errors';
 import { assertHeaderSafe } from './header-safety';
@@ -228,14 +229,15 @@ export async function send<I>(
 
   if (options.sync === true || jobDriver() === undefined) {
     // The key is reported even inline, so a caller can dedupe its own retries either way.
-    return { ...(await mailDriver().send(message)), idempotencyKey: key };
+    return { ...(await deliverMail(message)), idempotencyKey: key };
   }
 
-  // Through the facade, never `queue.enqueue`: inside a transaction the row is STAGED on the
-  // caller's connection and published after COMMIT, so a handler that rolls back after sending
-  // mails nobody (`s1-con #3`). Outside one, the facade publishes straight to the same driver.
-  // The key is the handle's own `mailIdempotencyKey`, and the driver dedupes on it by default.
-  const enqueued = await jobsFacade().enqueue(sendMailJob, message);
+  // Through the handle, which is the facade under the producer span — never `queue.enqueue`:
+  // inside a transaction the row is STAGED on the caller's connection and published after COMMIT,
+  // so a handler that rolls back after sending mails nobody (`s1-con #3`). Outside one, the facade
+  // publishes straight to the same driver. The handle adds the `job.enqueue` event and the span a
+  // bare `jobsFacade().enqueue` skipped. The key is `mailIdempotencyKey`; the driver dedupes on it.
+  const enqueued = await sendMailJob.enqueue(message);
 
   return {
     id: enqueued.id,

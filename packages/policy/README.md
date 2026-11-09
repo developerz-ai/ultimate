@@ -216,26 +216,30 @@ editor  deny   post:read predicate returned false
 viewer  deny   actor lacks post:publish
 ```
 
-Building it is opt-in: on outside production, and in production only once a decision sink is
-installed. A live query evaluates policy per subscriber on every change event, so an unread
+Building it is opt-in: on outside production, and in production only while a `policy.decision`
+subscriber is listening. A live query evaluates policy per subscriber on every change event, so an unread
 `TraceEntry[]` per evaluation is real allocation on the busiest path there is. Force it with
 `evaluate(policy, args, { trace: true })`.
 
 ## The decision log
 
 ```ts
-setDecisionSink({
-  record(event) {
-    // { label, allowed, code, reason, actorId, actorKind, orgId, surface, deciding }
-  },
+import { subscribe } from '@ultimat3/core';
+
+// { label, allowed, code, reason, actorId, actorKind, orgId, surface, deciding }
+export const stopAudit = subscribe('policy.decision', ({ payload }) => {
+  void payload.label;
 });
 ```
 
-No-op until installed, emitted from **one place** — inside `evaluate()`, so a fifth surface
-inherits it — and it records the **allow** as well as the denial, which is the half an access
-review actually asks for. It never carries `row` or `input`: `reason` is safe to log by
-construction, and the sink inherits that guarantee. A sink that throws is logged and swallowed;
-it never turns an allowed request into a 500.
+`As of 2026-11` (v31): every evaluation is one `policy.decision` event on core's instrumentation
+bus (`PolicyDecisionEvent`, re-exported here). Nothing is built until something subscribes, it is
+emitted from **one place** — inside `evaluate()`, so a fifth surface inherits it — and it records
+the **allow** as well as the denial, which is the half an access review actually asks for. It never
+carries `row` or `input`: `reason` is safe to log by construction, and the event inherits that
+guarantee. Every subscriber hears it — there is no slot to replace. A subscriber's throw is
+contained by the bus, as on every event: an observer is not an authorization input, so it can
+neither deny nor break the evaluation.
 
 ## Errors
 

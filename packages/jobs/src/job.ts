@@ -18,6 +18,7 @@ import { DEFAULT_QUEUE } from './driver';
 import { IdempotencyRequiredError, JobNameTakenError } from './errors';
 import { JobDeclarationInvalidError, missingJobFields } from './errors-declaration';
 import type { EnqueueManyOptions } from './job-enqueue-many';
+import { instrumentedEnqueue } from './job-instrument';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
@@ -180,11 +181,16 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
       // the cast restores exactly the types the declaration wrote.
       return definition.onSettled?.(settled as JobSettled<I, R>) ?? Promise.resolve();
     },
+    // Under the producer span, so the row's `traceparent` is the enqueue's own (`job-instrument.ts`).
     enqueue(input: I, options?: EnqueueOptions): Promise<EnqueueResult> {
-      return jobsFacade().enqueue(handle, input, options);
+      return instrumentedEnqueue(handle.name, options?.queue ?? handle.queue, () =>
+        jobsFacade().enqueue(handle, input, options),
+      );
     },
     enqueueMany(inputs: readonly I[], options?: EnqueueManyOptions) {
-      return jobsFacade().enqueueMany(handle, inputs, options);
+      return instrumentedEnqueue(handle.name, options?.queue ?? handle.queue, () =>
+        jobsFacade().enqueueMany(handle, inputs, options),
+      );
     },
     as(actor: JobActor | null, input: I, options: EnqueueOptions = {}): Promise<EnqueueResult> {
       const tenantId = options.tenantId ?? tenantFor(actor);

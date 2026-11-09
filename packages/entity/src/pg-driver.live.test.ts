@@ -11,14 +11,13 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Page } from '@ultimat3/core';
-import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, subscribe, userActor } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
   postgresClient,
   raw,
   setDbClient,
-  setStatementObserver,
   statementsOf,
 } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
@@ -294,10 +293,8 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     // The observer is how "one statement" is asserted against a real server: there is no
     // recording client here, and the count is the whole claim.
     const reads: string[] = [];
-    setStatementObserver({
-      onStatement: (event) => {
-        if (event.text.includes('from "pg_live_invoices"')) reads.push(event.text);
-      },
+    const offStatements = subscribe('db.statement', ({ payload: event }) => {
+      if (event.text.includes('from "pg_live_invoices"')) reads.push(event.text);
     });
     try {
       const rows = await inRequestFor(acme, () =>
@@ -323,7 +320,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
         'INV-batch-1',
       ]);
     } finally {
-      setStatementObserver(undefined);
+      offStatements();
     }
   });
 
@@ -345,11 +342,8 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     // statement in this window — a connection-checkout `set`, a pool keepalive, a `begin` — would
     // otherwise read as "expected 2, got 3" with nothing naming the intruder.
     const statements: string[] = [];
-    setStatementObserver({
-      onStatement: (event) => {
-        if (/from "pg_live_(?:invoice_tags|invoices)"/.test(event.text))
-          statements.push(event.text);
-      },
+    const offStatements = subscribe('db.statement', ({ payload: event }) => {
+      if (/from "pg_live_(?:invoice_tags|invoices)"/.test(event.text)) statements.push(event.text);
     });
     try {
       const references = await inRequestFor(org, async () => {
@@ -369,7 +363,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       expect(invoiceReads[0]).toContain('"id" in ($1, $2, $3)');
       expect(references.slice().sort()).toEqual(['JIT-1', 'JIT-2', 'JIT-3']);
     } finally {
-      setStatementObserver(undefined);
+      offStatements();
     }
   });
 

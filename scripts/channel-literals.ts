@@ -12,6 +12,9 @@
 //     a `const`/`let` NAMED for a topic or channel initialised from a `${…}` template or a `+` join.
 // A first argument that is a declaration, a call or a plain identifier is never reported: that is
 // what passing a channel looks like. `channel('posts', …)` itself is the declaration and is exempt.
+// So is `subscribe('cache.invalidate', …)` on core's INSTRUMENTATION bus: its name is checked by
+// the compiler against `InstrumentEventMap`, so it cannot drift. Exempt are exactly the names the
+// event table (`INSTRUMENT_EVENTS`) declares, their dot-prefixes and `'*'`, read from the scanned set.
 //
 //   bun run scripts/channel-literals.ts [--json]
 
@@ -49,6 +52,31 @@ const NAMED_BINDING =
   /\b(?:const|let|var)\s+([\w$]*(?:topic|channel)[\w$]*)\s*(?::[^=\n]+)?=(?!=)\s*/gi;
 const QUOTE = /^\s*[`'"]/;
 
+/** The instrumentation bus's event table: a framework name is a key of `INSTRUMENT_EVENTS`. */
+export const INSTRUMENT_EVENTS_FILE = 'packages/core/src/instrument-events.ts';
+
+/**
+ * Every pattern the bus's `subscribe` accepts for a framework event: each declared name, each of
+ * its dot-prefixes (`'render.isr'`, `'render'`), and `'*'`. Read off the table's own text, so a
+ * name added there is exempt here with no second list to keep.
+ */
+export function instrumentPatterns(source: string): ReadonlySet<string> {
+  const table = /INSTRUMENT_EVENTS\s*=\s*Object\.freeze\(\{([\s\S]*?)\n\}/.exec(source)?.[1];
+  const patterns = new Set<string>();
+  for (const key of (table ?? '').matchAll(/^\s*'([a-z][\w.]*)'\s*:/gm)) {
+    const segments = (key[1] ?? '').split('.');
+    for (let end = 1; end <= segments.length; end += 1) {
+      patterns.add(segments.slice(0, end).join('.'));
+    }
+  }
+  if (patterns.size > 0) patterns.add('*');
+  return patterns;
+}
+
+/** The literal's contents when it is one plain string, no substitution — else undefined. */
+const plainLiteral = (text: string): string | undefined =>
+  /^\s*(['"`])([^'"`$\\]*)\1\s*$/.exec(text)?.[2];
+
 /**
  * Joined with `+`, or a template carrying a `${…}` substitution. The `+` is looked for in the
  * MASKED text — a `+` inside a string is a character, not a join — and the template in the real one.
@@ -83,7 +111,11 @@ const firstOf = (text: string, masked: string): { text: string; masked: string }
   return { text: text.slice(lead, lead + first.length), masked: first };
 };
 
-export function channelLiterals(file: string, source: string): readonly ChannelLiteral[] {
+export function channelLiterals(
+  file: string,
+  source: string,
+  busPatterns: ReadonlySet<string> = new Set(),
+): readonly ChannelLiteral[] {
   if (file === CHANNEL_SEAM || isTestPath(file)) return [];
   const text = stripComments(source);
   const masked = maskLiterals(source);
@@ -96,7 +128,9 @@ export function channelLiterals(file: string, source: string): readonly ChannelL
     const via = `${call[1] ?? ''}(`;
     const line = lineOf(masked, call.index);
     if (isBuilt(first.text, first.masked)) found.push({ file, line, kind: 'built', via });
-    else if (QUOTE.test(first.masked)) found.push({ file, line, kind: 'literal', via });
+    else if (QUOTE.test(first.masked) && !onBus(call[1], first.text, busPatterns)) {
+      found.push({ file, line, kind: 'literal', via });
+    }
   }
   for (const binding of masked.matchAll(NAMED_BINDING)) {
     const start = binding.index + binding[0].length;
@@ -107,6 +141,13 @@ export function channelLiterals(file: string, source: string): readonly ChannelL
   }
   return found.sort((a, b) => a.line - b.line);
 }
+
+/** `subscribe('<a declared event>', …)`: the instrumentation bus, whose names the compiler checks. */
+const onBus = (call: string | undefined, text: string, patterns: ReadonlySet<string>): boolean => {
+  if (call !== 'subscribe') return false;
+  const name = plainLiteral(text);
+  return name !== undefined && patterns.has(name);
+};
 
 export function channelFinding(site: ChannelLiteral): Finding {
   const what =
@@ -127,7 +168,9 @@ export interface SourceText {
 }
 
 export function channelResult(files: readonly SourceText[]): ScriptResult {
-  const sites = files.flatMap((file) => channelLiterals(file.path, file.source));
+  const events = files.find((file) => file.path === INSTRUMENT_EVENTS_FILE);
+  const patterns = instrumentPatterns(events?.source ?? '');
+  const sites = files.flatMap((file) => channelLiterals(file.path, file.source, patterns));
   const findings = sites.map(channelFinding);
   if (!files.some((file) => file.path === CHANNEL_SEAM)) {
     findings.unshift({

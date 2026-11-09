@@ -35,6 +35,7 @@
 | `mime.ts` | `MailMessage` → RFC 5322: header order, RFC 2047, folding, quoted-printable |
 | `base64.ts` | base64 over UTF-8 bytes, shared by RFC 2047 and SMTP AUTH |
 | `job.ts` | `sendMailJob` and the envelope schema |
+| `deliver.ts` | `deliverMail`: the ONE hand-off to the transport, inline and queued — a `mail.deliver` client span and bus event, a recipient count, never an address |
 | `transform.ts` | `setMailTransform`: the app's outbound hook, run once per `send()` before the key |
 | `idempotency.ts` | `mailIdempotencyKey` — apart from `job.ts` because the transports need it too |
 | `catalog.ts` | English source strings for `mail.*`. Data, not code |
@@ -48,8 +49,8 @@
   result is re-checked by `assertHeaderSafe`; a throw or a malformed result is
   `X_MAIL_TRANSFORM_FAILED` and nothing is sent. None installed ⇒ the same object, byte-identical.
 
-- **`send()` enqueues through `jobsFacade().enqueue(sendMailJob, message)`, never `jobDriver().enqueue`**
-  (`As of 2026-10-02`). The driver call published on the pool, autocommitted, so a handler that
+- **`send()` enqueues through `sendMailJob.enqueue(message)` — the facade under the handle's
+  producer span and `job.enqueue` (`As of 2026-11-09`) — never `jobDriver().enqueue`** (`As of 2026-10-02`). The driver call published on the pool, autocommitted, so a handler that
   rolled back after `send()` still mailed — and under `{ retry }` each re-run could mail again.
   Through the facade an ambient transaction STAGES the row and the relay publishes it after COMMIT.
   `send-outbox.job.test.ts` proves a rollback delivers nothing, on the memory pair and on Postgres.

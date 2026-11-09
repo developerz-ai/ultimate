@@ -7,12 +7,13 @@ import type { ReadableSpan } from '@ultimat3/core';
 import {
   beginWork,
   configureLifecycle,
-  configureTelemetry,
   drain,
   markReady,
   memoryExporter,
+  resetInstrumentation,
   resetLifecycle,
   resetTelemetry,
+  subscribe,
   throwIfAborted,
   useContext,
   useService,
@@ -104,9 +105,12 @@ describe('the root span', () => {
   const exporter = memoryExporter();
   beforeEach(() => {
     exporter.reset();
-    configureTelemetry({ exporter });
+    subscribe('span.end', (event) => exporter.export(event.payload));
   });
-  afterEach(() => resetTelemetry());
+  afterEach(() => {
+    resetInstrumentation();
+    resetTelemetry();
+  });
 
   const spanOf = (): ReadableSpan => {
     const span = exporter.spans[0];

@@ -11,15 +11,19 @@ Ship the feature described in `$ARGUMENTS`.
 3. **Pick the primitive.** Everything is one of: `entity` `policy` `action` `mutator` `query` `job`
    `route` `task`. If it fits none, the design is wrong — do not invent a ninth. A new capability
    arrives as a factory over an existing primitive.
-4. **Scaffold, do not hand-write:** `x g resource|action|mutator|query|job|route|policy|entity|task`.
+4. **Scaffold, do not hand-write:** `bunx x g <kind> <name> --feature <slice>` — `bunx x g --help`
+   is the only list of kinds.
 5. **Build.** Server-authoritative and online-only → `action`. Must work offline → `mutator` with
    `local`/`server`/`conflict`. Reads that must stay fresh → `query({ live: true })`, ordered and
    bounded. Work outliving the request → `job` with a required `idempotencyKey`. Scheduled → `task`
    with an explicit IANA `tz`; a task only enqueues.
 6. **Ship the guard with the fix.** A rule that is not a build error does not exist. Climb as high as
-   you can afford: type → assertion → contract test → `scripts/lint/<rule>.ts`.
-7. **Gate:** `bun run verify`. Green means shippable. Never merge red.
-8. **PR.** One slice, one PR. Include the `## Live test` block with the commands that prove it.
+   you can afford: type → assertion at the seam → contract test. A check `bun run verify` does not
+   run is not a guard.
+7. **Gate:** `bun run verify`. Green means shippable. Never merge red. While iterating,
+   `bun run verify --only <step>` narrows the feedback, never the verdict.
+8. **PR.** One slice, one PR. Fill the template's `## Verification` block with the commands that
+   prove it and their output.
 
 Stop and report if the work needs a file another agent holds, or if the right fix is outside the
 slice. Never edit across the line.

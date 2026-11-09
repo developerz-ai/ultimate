@@ -4,10 +4,10 @@
 // diagnostic that judges a request after its scopes have all closed and so has to guess.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { DbStatementEvent } from '@ultimat3/core';
+import { resetInstrumentation, subscribe } from '@ultimat3/core';
 import { postgresClient, setDbClient } from './client';
 import { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
-import type { StatementEvent, StatementObserver } from './observe';
-import { setStatementObserver } from './observe';
 import { type PgliteDriver, pgliteClient } from './pglite';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
@@ -37,14 +37,11 @@ const fakeDriver = (fail?: Error): PgliteDriver => ({
   close: async () => undefined,
 });
 
-function recorder(): StatementObserver & { readonly seen: StatementEvent[] } {
-  const seen: StatementEvent[] = [];
-  return {
-    seen,
-    onStatement(event: StatementEvent): void {
-      seen.push(event);
-    },
-  };
+/** Every `db.statement` from here on; `off()` unsubscribes, `resetInstrumentation` is the backstop. */
+function recorder(): { readonly seen: DbStatementEvent[]; readonly off: () => void } {
+  const seen: DbStatementEvent[] = [];
+  const off = subscribe('db.statement', (event) => void seen.push(event.payload));
+  return { seen, off };
 }
 
 /** Two loops interleave deterministically only if each can hand the turn over on demand. */
@@ -59,7 +56,7 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
 afterEach(() => {
   host.Bun.SQL = realBunSql;
   // All three are process-wide: one left installed makes every later test run against this one's.
-  setStatementObserver(undefined);
+  resetInstrumentation();
   setDbClient(undefined);
 });
 
@@ -159,7 +156,6 @@ describe('unit · the expected-loop scope', () => {
 describe('unit · both funnels stamp the reason on what the loop issued', () => {
   test('the pooled client marks a statement issued inside the scope', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     installFakeSql();
     const client = postgresClient({ url: TEST_URL });
 
@@ -171,7 +167,6 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
 
   test('the embedded client marks a statement issued inside the scope', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     const client = pgliteClient({ driver: fakeDriver() });
 
     await expectedQueryLoop(REASON, () => client.query(sql`select id from members`));
@@ -187,7 +182,6 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
   // per-migration transaction as an N+1 nobody argued for.
   test('the embedded client keeps the reason across the turn queue and a transaction', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     const client = pgliteClient({ driver: fakeDriver() });
     setDbClient(client);
 
@@ -220,7 +214,6 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
   // the reason too, or a detector counting failures reports the one loop that argued for itself.
   test('a failed statement inside the scope still carries the reason, on both funnels', async () => {
     const observer = recorder();
-    setStatementObserver(observer);
     installFakeSql(new Error('connection reset'));
 
     await expect(

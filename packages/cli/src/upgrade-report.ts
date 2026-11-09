@@ -88,7 +88,12 @@ export const humanLines = (input: {
     ...(gate?.guards.differs ?? []).map((guard) =>
       msg('cli.upgrade.guard', { fix: guard.refresh }),
     ),
-    ...findingLines([...(gate?.manifest.findings ?? []), ...(gate?.verify.findings ?? [])]),
+    // The exercise's own list first: every fix it has, before the gate's verdict on the same tree.
+    ...findingLines([
+      ...(gate?.exercise.findings ?? []),
+      ...(gate?.manifest.findings ?? []),
+      ...(gate?.verify.findings ?? []),
+    ]),
     ...scripts
       .filter((script) => script.ok === false)
       .map((script) => msg('cli.upgrade.scriptRed', { name: script.name })),
@@ -133,6 +138,7 @@ export const report = (input: {
     agentsMd: input.agentsMd ?? null,
     guards: gate?.guards ?? null,
     manifest: gate?.manifest ?? null,
+    exercise: gate?.exercise ?? null,
     verify: gate?.verify ?? null,
     scripts,
     then,

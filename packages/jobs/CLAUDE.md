@@ -5,10 +5,10 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 ## Boundary
 
 - May import: `core`, `schema`, `entity`, `policy`, `cache`, `time` — and `db`, for
-  `expectedQueryLoop` (`steps.ts` declares the per-step write one-per-step to the N+1 detector),
-  `outsideTransaction` (`execute.ts`), `currentTx` (`events-pg.ts`), `refuseAbandoned` (`outbox.ts`) and `withTransaction`
-  (`consumer-loop.ts`: a batch and its cursor commit together) — the ONE place a client is taken
-  from it, the ambient `db()`. Never `render`, `ui`. `http` only from `webhook-receiver*.ts`, for the route
+  `expectedQueryLoop` (`steps.ts`, the per-step write to the N+1 detector), `outsideTransaction`
+  (`execute.ts`), `currentTx` (`events-pg.ts`), `refuseAbandoned` (`outbox.ts`) and
+  `withTransaction` (`consumer-loop.ts`: a batch and its cursor commit together) — a client is
+  taken from it in ONE place, the ambient `db()`. Never `render`, `ui`. `http` only from `webhook-receiver*.ts`, for the route
   (`Route`/`Bucket` types, `DEFAULT_WEBHOOK_BODY_LIMIT`, `HttpError`, `jsonResponse`).
 - Consumers: `action` (`<job>.enqueue`, via the ambient jobs facade), `cli`, `mcp`, `admin`.
 - External deps: none. Postgres access goes through the injected `PgExecutor` (`@ultimat3/core`'s,
@@ -94,14 +94,14 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 
 ## Rules — the worker and the scheduler
 
-- **One enqueue implementation**: `jobsFacade()` owns `enqueue` AND `enqueueMany`, over the row
-  builders in `enqueue-record.ts`, which the relay shares; the only other `driver.enqueue` sites are
-  the outbox relay and the scheduler. `handle.as(actor, input)` QUEUES; `executeJob` is the one execution path.
+- **One enqueue implementation**: `jobsFacade()` owns `enqueue` AND `enqueueMany`, over
+  `enqueue-record.ts`'s row builders; the only other `driver.enqueue` sites are the outbox relay and
+  the scheduler. `handle.as(actor, input)` QUEUES; `executeJob` is the one execution path.
 - The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`); `task.enqueue()` uses the
   job's plain key.
 - **TWO shutdown hooks per worker, one per PHASE**: `accept` is `stopAccepting()` (flip state, clear
-  the poll timer, arm the drain cut-off — it aborts nothing); `close` is the teardown. `stop()` hands both back in a `finally`;
-  `start()` refuses while draining.
+  the poll timer, arm the cut-off; aborts nothing); `close` is the teardown. `stop()` releases both
+  in a `finally`; `start()` refuses while draining.
 - **A claimed job is counted with core's `beginWork()`**: the drain's in-flight phase waits. The
   teardown's wait is bounded on SIGTERM (`drain-wait.ts`), unbounded on `stop()`; one teardown, joined.
 - **A deploy lets a running job FINISH**: SIGTERM only stops claiming. `drainSignal` aborts
@@ -124,10 +124,13 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **A deadline CANCELS, then fails the attempt**, never the reverse (`raceTimeout`, `withStepTimeout`);
   `ctx.signal` aborts unless the body completed AND its ack landed; steps fence on `ended`.
 - **A cancelled runner writes NOTHING** — `put()` in `steps.ts` (`X_ABORTED`) — save a fenced
-  `X_DRAINING` on a live attempt: a step done in the drain is recorded once. The STORE fences
-  the claim (`StepFence`, `SQL_STEP_PUT` as `SQL_ACK`: `X_JOB_LEASE_LOST`). `executeJob` passes it.
-- **A cancelled body's writes refuse too**, `enqueue` included (`outbox-abandon.test.ts`); a store is on the pool: a fenced `put` past `X_DRAINING` lands.
-- **`traceparent` is stamped at ENQUEUE time, in `outbox.ts`**, and an empty `spanId` sends none.
+  `X_DRAINING` on a live attempt (recorded once). The STORE fences the claim (`StepFence`,
+  `SQL_STEP_PUT` as `SQL_ACK`: `X_JOB_LEASE_LOST`); `executeJob` passes it.
+- **A cancelled body's writes refuse too**, `enqueue` included (`outbox-abandon.test.ts`); a store
+  on the pool: a fenced `put` past `X_DRAINING` lands.
+- **`traceparent` is stamped at ENQUEUE time, in `outbox.ts`**, under `job-instrument.ts`'s
+  producer span (the run's consumer span is its child); an empty `spanId` sends none.
+  `job.enqueue` is emitted there, `job.perform` in `worker-run.ts`, once per attempt.
 - **The scheduler runs one dispatch round at a time**; `stop()` waits it out before `leader.release()`. Full rule: `docs/history/jobs.md`.
 - **`run-once` fires ONE catch-up**: the watermark rides the fire (`ScheduledFire.watermarkMs`),
   never a `markFired` behind it; `skip` fires the latest missed occurrence (`latestOccurrenceBy`).
@@ -161,12 +164,12 @@ Long form: `docs/history/jobs.md`, "Moved 2026-10-01 — the outbox".
 - **The claim is a LEASE in one statement**, fenced on every mutation (`and claimed_by = $n`);
   `claimLeaseMs` is normalised in `outbox-lease.ts`. `outbox-claim.test.ts` pins both stores.
 - **The memory outbox store DELETES a published row** (`retained()` is the seam).
-- **A staged row's id IS its job's id, and its `runId` is allocated at stage** (`x_outbox.run_id`),
-  so a staged enqueue answers real ids. `SQL_ENQUEUE` inserts nothing under an id that names a
-  row — a repeated publish is `deduped`, live or finished (`outbox-run-id.test.ts`).
+- **A staged row's id IS its job's id, and its `runId` is allocated at stage** (`x_outbox.run_id`):
+  a staged enqueue answers real ids. `SQL_ENQUEUE` inserts nothing under an id that names a row —
+  a repeated publish is `deduped`, live or finished (`outbox-run-id.test.ts`).
 - **The relay publishes a batch in two statements** (`publishBatch`): `driver.enqueueMany`, then
-  `markPublishedMany` when the store has it; any failure drops that batch to the row loop, which
-  keeps the order. `RELAY_BATCH_SIZE` (500) is measured in its doc comment.
+  `markPublishedMany` if the store has it; any failure drops that batch to the order-keeping row loop.
+  `RELAY_BATCH_SIZE` (500) is measured in its doc comment.
 
 ## Rules — factories over `job()`
 
@@ -208,21 +211,21 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `backfill-rate.ts` | the `rate` throttle: batches/sec as an interval, and the cancellable wait |
 | `backfill-inspect.ts` | the ledger projected for `x db backfill`, `x jobs`, `/_x` and MCP |
 | `backfill-errors.ts` | the eight `X_BACKFILL_*` classes; the codes stay declared in `error-codes.ts` |
-| `backfill-definition.ts` / `backfill-source.ts` / `backfill-reader.ts` | the declaration types; exactly one of `source`/`pages`, the `<name>:<scope>` ledger key; reading either |
+| `backfill-definition.ts` / `-source.ts` / `-reader.ts` | the declaration types; exactly one of `source`/`pages`, the `<name>:<scope>` ledger key; reading either |
 | `consumer.ts` / `consumer-loop.ts` / `consumer-types.ts` | `consumer()` — a job + `.supervisor` task; one run's turns; the shapes |
-| `consumer-registry.ts` / `consumer-guard.ts` / `consumer-errors.ts` | the `origin` stamp + `registeredConsumers`; the self-enqueue refusal; `X_CONSUMER_*` |
+| `consumer-registry.ts` / `-guard.ts` / `-errors.ts` | the `origin` stamp + `registeredConsumers`; the self-enqueue refusal; `X_CONSUMER_*` |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements; an `action-job` projection is `X_ACTION_JOB_UNBRIDGED` |
 | `describe.ts` | one handle's JSON projection; `describeJobs()` maps it |
 | `steps.ts` / `-core.ts` / `-wait.ts` / `-unwind.ts` / `step-scope.ts` | replay runner; core; `waitForEvent`; compensation; `currentStep()` |
-| `steps-timeout.ts` / `steps-suspension.ts` | a step's ceiling; `StepSuspension`, `UnwindReached`, timeout marker |
-| `steps-api.ts` / `steps-store.ts` / `steps-output.ts` | `StepApi`, `EventLookup`; `StepRecord`, `StepFence`, `StepStore`; what a step answers, `StepOutput` and `jsonForm` |
+| `steps-timeout.ts` / `-suspension.ts` | a step's ceiling; `StepSuspension`, `UnwindReached`, timeout marker |
+| `steps-api.ts` / `-store.ts` / `-output.ts` | `StepApi`, `EventLookup`; `StepRecord`, `StepFence`, `StepStore`; what a step answers, `StepOutput` and `jsonForm` |
 | `type-pins.ts` | compile-time pins for `StepOutput` and `waitForEvent` |
 | `outbox.ts` | staging in a `Tx`, the store seam, the ambient `JobsFacade` slot |
 | `outbox-relay.ts` | the relay: the poll timer, one pass, and its TWO shutdown hooks |
 | `outbox-pg.ts` | `postgresOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
 | `outbox-lease.ts` | the claim lease's one definition and its one normalisation, for both stores |
 | `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |
-| `concurrency.ts` | `job.concurrency` as declared, resolved once: `KeyedConcurrency`, `WhenBusy`, the declaration and key refusals |
+| `concurrency.ts` | `job.concurrency` resolved once: `KeyedConcurrency`, `WhenBusy`, the declaration and key refusals |
 | `errors-concurrency.ts` | every concurrency refusal's class; codes stay in `error-codes.ts` |
 | `worker-key-busy.ts` | one run refused by its key: settled `failed`, body never run |
 | `metrics.ts` | `queue_oldest_ready_seconds` and `queue_dead_jobs`, the two alertable gauges |
@@ -231,24 +234,25 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, and `postgresLeader` |
 | `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point. Its comments carry no `;` and no `'` |
-| `driver-pg-jobs-sql.ts` | every statement returning a whole `x_jobs` row, and `JOB_ROW_COLUMNS`; re-exported from `driver-pg-sql.ts` |
+| `driver-pg-jobs-sql.ts` | every statement returning a whole `x_jobs` row, `JOB_ROW_COLUMNS`; via `driver-pg-sql.ts` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled` |
-| `retry.ts` | the dead-letter decision, and this package's option names over core's `backoffDelay` — no curve of its own |
+| `retry.ts` | the dead-letter decision; this package's option names over core's `backoffDelay`, no curve |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
 | `execute.ts` (+`-result.ts`) / `run-deadline.ts` | `executeJob`: one claimed job run and settled; its deadline: cancel, then fail |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `renewal-timer.ts` | the renewal interval and its `stopped()` latch |
 | `worker.ts` | `worker` role, claim round, drain |
-| `worker-drain-cutoff.ts` / `worker-held.ts` / `worker-tally.ts` | drain cut-off · held claims · counters |
+| `worker-drain-cutoff.ts` / `-held.ts` / `-tally.ts` | drain cut-off · held claims · counters |
 | `worker-admit.ts` | may this claimed job start: the limiter, the fleet slot, and the shed / refusal |
 | `worker-registry.ts` | one worker's registry row: announce, heartbeat, forget |
-| `worker-types.ts` | the worker's public contract: `WorkerOptions`, `WorkerStats`, `Worker` |
+| `worker-types.ts` | the worker's contract: `WorkerOptions`, `WorkerStats`, `Worker` |
 | `drain-wait.ts` | the drain's wait, shared by both roles |
-| `worker-run.ts` | one claimed job, wired: heartbeat, slot renewal, run signal, span |
+| `worker-run.ts` | one claimed job: heartbeat, slot renewal, run signal, consumer span, `job.perform` |
+| `job-instrument.ts` | the producer span + `job.enqueue` per handle enqueue; both spans' attributes |
 | `run-signal.ts` | the signal ONE run is cancelled by |
-| `worker-fleet-slots.ts` | the fleet slot an in-flight job holds — take, renew, hand back — and the boot refusal |
+| `worker-fleet-slots.ts` | an in-flight job's fleet slot: take, renew, hand back; the boot refusal |
 | `worker-process-cap.ts` / `worker-claim-sweep.ts` | `maxInFlight`'s count; the pass's asks, rotated |
 | `purge.ts` | `purge()` — a factory over `job()`: the retention sweep and its target seam |
 | `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
@@ -271,13 +275,13 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |
 | `errors-tenant.ts` | `JobTenantMismatchError` |
 | `errors-steps.ts` / `errors-saga.ts` / `step-resolve.ts` | step, saga + `once` refusals; `resolveStep` |
-| `worker-queue-demand.ts` | the `queue_demand` gauge: `driver.demand()`, skipped when `stats()` shows no work, retracted to 0 at the drain |
+| `worker-queue-demand.ts` | the `queue_demand` gauge: `driver.demand()`, skipped on no work, 0 at the drain |
 | `driver-pg-demand-sql.ts` | `QUEUE_DEMAND_ROWS` and `SQL_QUEUE_DEMAND`; the scaler fixture's `SQL_SCALER_DEMAND` reads the same predicate |
 | `driver-pg-claim-sql.ts` | `SQL_CLAIM` and why it seeks; re-exported from `driver-pg-sql.ts` |
 | `error-codes.ts` / `errors.ts` | codes, titles, their registration (`new-error-code` writes here) / the classes |
 | `job-enqueue-many.ts` / `enqueue-record.ts` / `driver-pg-enqueue-many.ts` | `enqueueMany`, `MAX_ENQUEUE_BATCH`, `ENQUEUE_CHUNK`; one enqueue's row, every path; `SQL_ENQUEUE_MANY` + resolve |
 | `import.ts` / `import-pass.ts` | `importRows()`: the declaration; one pass, its byte-offset checkpoints, the error report |
-| `import-format.ts` / `import-source.ts` / `import-errors.ts` | record boundaries on bytes; the `ImportSource` seam; the `X_IMPORT_*` classes |
+| `import-format.ts` / `-source.ts` / `-errors.ts` | record boundaries on bytes; the `ImportSource` seam; the `X_IMPORT_*` classes |
 | `driver-redis-refusal.ts` | `typedRefusals`: a send refused for want of a connection → `X_DRIVER_UNAVAILABLE` |
 | `subject*.ts` | `subjectExport`/`subjectErase`; reach only via DELETED tables (README) |
 | `webhook-receiver.ts` / `-route.ts` / `-types.ts` / `-errors.ts` | `webhookReceiver()` and `webhookReceiverRoutes`; the route; `ReceivedEvent`, `WebhookInbound`; its three refusals |

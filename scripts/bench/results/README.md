@@ -90,3 +90,14 @@ skip their copy when there is nothing to escape or strip; the baseline shares th
 does not show it. The walker it replaced (one `async` frame and one `Promise.all` per node) measured ~26× and ~198 MiB
 on the same page. The regression test holds the ratio (< 12×) and the heap (< 100 MiB), never a
 wall-clock figure: [`render-html.bench.test.ts`](../render-html.bench.test.ts).
+
+## One span, the cost every statement pays — `As of 2026-11-09`
+
+One local run (12-core Haswell VM, Bun 1.4.4, `box.runner: local`, other agents' work on the same
+box), [`span-overhead.bench.ts`](../span-overhead.bench.ts) → [`span-overhead.json`](span-overhead.json),
+median of five 200,000-span loops: an unsampled child span costs **498 ns**, an unsampled root **705 ns**
+(target 1,000 ns), and a sampled span with no `span.end` subscriber **1028 ns**. An unsampled span
+reads no clock and mints its span id only if something reads it; a root's trace id comes from a 4 KiB
+pool filled by one `crypto.getRandomValues` call, each byte handed out once. Before: 1,976 ns, 3,336 ns
+and 3,712 ns. The regression test holds the COUNTS (clock reads, random draws, dispatches), never a
+wall-clock figure: [`span-overhead.bench.test.ts`](../span-overhead.bench.test.ts).

@@ -1,16 +1,22 @@
 /**
  * A catalogue the app registers when its GATEWAY is first used. The failure first: 27.10 read the
- * model's row at the top of `agent()` and `llm()` — to report `llm.sampling.ignored` on the span —
+ * model's row at the top of `agent()` and `llm()` — to report `ultimate.llm.sampling.ignored` on the span —
  * before the gateway was asked anything, so an app whose gateway is built (and registers its
  * models) on first use had every first call refused `X_AI_MODEL_UNKNOWN`, sampling asked or not.
  * Until 27.9 the first read of the catalogue was the gateway's own. A span attribute is a report:
  * it is read once the gateway has been consulted, and never fails the call it describes.
  */
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx } from '@ultimat3/action';
 import type { ReadableSpan } from '@ultimat3/core';
-import { configureTelemetry, memoryExporter, resetTelemetry, UltimateError } from '@ultimat3/core';
+import {
+  memoryExporter,
+  resetInstrumentation,
+  resetTelemetry,
+  subscribe,
+  UltimateError,
+} from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
@@ -29,8 +35,10 @@ beforeEach(() => {
   resetModels();
   resetTelemetry();
   spans.reset();
-  configureTelemetry({ exporter: spans });
+  subscribe('span.end', (event) => spans.export(event.payload));
 });
+
+afterEach(resetInstrumentation);
 
 /** The app's shape: every method builds the real gateway on first use, and the build registers. */
 function lazyGateway(provider: Provider): Gateway {
@@ -53,7 +61,9 @@ function lazyGateway(provider: Provider): Gateway {
 }
 
 const attribute = (name: string): unknown =>
-  spans.spans.find((span: ReadableSpan) => span.name === name)?.attributes['llm.sampling.ignored'];
+  spans.spans.find((span: ReadableSpan) => span.name === name)?.attributes[
+    'ultimate.llm.sampling.ignored'
+  ];
 
 function lazyAgent(sampling: { temperature?: number; seed?: number } = {}) {
   return agent({

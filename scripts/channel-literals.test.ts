@@ -84,6 +84,42 @@ describe('what passing a channel looks like, and is never reported', () => {
   });
 });
 
+describe('the instrumentation bus is not a channel', () => {
+  // `subscribe` from `@ultimat3/core` takes an event NAME the compiler checks against
+  // `InstrumentEventMap` — a misspelling is a type error, never a silent drift.
+  const EVENTS = 'packages/core/src/instrument-events.ts';
+  const events = [
+    'export const INSTRUMENT_EVENTS = Object.freeze({',
+    "  'cache.invalidate': { span: 'event', owner: '@ultimat3/cache' },",
+    "  'render.isr.regenerate': { span: 'internal', owner: '@ultimat3/render' },",
+    '});',
+  ].join('\n');
+  const seam = { path: CHANNEL_SEAM, source: 'const x = 1;' };
+  const codes = (source: string): readonly string[] =>
+    (
+      channelResult([seam, { path: EVENTS, source: events }, { path: AT, source }]).findings ?? []
+    ).map((finding) => finding.code);
+
+  test('a declared event, one of its prefixes or every event is a name, not a topic', () => {
+    expect(codes("subscribe('cache.invalidate', (event) => log(event));")).toEqual([]);
+    expect(codes("subscribe('render.isr', onIsr);")).toEqual([]);
+    expect(codes("subscribe('render', onRender);")).toEqual([]);
+    expect(codes("subscribe('*', onAny);")).toEqual([]);
+  });
+
+  test('a name the event table does not declare is still a topic, and so is any other call', () => {
+    expect(codes("subscribe('posts', handler);")).toEqual(['X_CHANNEL_LITERAL']);
+    expect(codes("subscribe('cache.invalidated', handler);")).toEqual(['X_CHANNEL_LITERAL']);
+    expect(codes("publish('cache.invalidate', frame);")).toEqual(['X_CHANNEL_LITERAL']);
+    expect(codes('subscribe(`cache.${kind}`, handler);')).toEqual(['X_CHANNEL_LITERAL']);
+  });
+
+  test('with the event table absent from the set, nothing is exempt', () => {
+    const result = channelResult([seam, { path: AT, source: "subscribe('cache.invalidate', f);" }]);
+    expect(result.findings?.map((finding) => finding.code)).toEqual(['X_CHANNEL_LITERAL']);
+  });
+});
+
 describe('the rule over a file set', () => {
   test('a set that never contained the seam is refused, never read as clean', () => {
     const result = channelResult([{ path: AT, source: 'const x = 1;' }]);

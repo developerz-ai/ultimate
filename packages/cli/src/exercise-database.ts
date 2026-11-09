@@ -6,14 +6,16 @@
 import type { Environment } from '@ultimat3/core';
 import { ENVIRONMENT_KEY, resolveEnvironment, UltimateError } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
-import { migrate, raw, setDbClient } from '@ultimat3/db';
+import { dbExecutor, migrate, raw, setDbClient } from '@ultimat3/db';
 import {
   captureDeterminism,
   installDeterminism,
   restoreCapturedDeterminism,
   testSealKeyEnv,
 } from '@ultimat3/testing';
+import { loadAppConfig } from './app-config-load';
 import { chooseReplayEngine, withScratchDatabase } from './db-replay-engine';
+import { installExerciseServices } from './exercise-services';
 import { applyFrameworkSchema } from './framework-schema';
 import { readMigrations } from './migrations';
 import { resolveServices } from './runtime-bindings';
@@ -104,9 +106,19 @@ export async function withExerciseDatabase<T>(
     await applyFrameworkSchema((statement) => client.execute(raw(statement)));
     await migrate({ migrations, client });
     setDbClient(client);
+    // What a server's boot installs beside its database, over this one: a primitive that reads a
+    // disk, a shared rate limit or the push runtime runs, rather than needing `{ off }`.
+    // Inside the `try`: a config or a key pair refused here still hands the client back.
+    let release: () => void = () => undefined;
     try {
+      release = await installExerciseServices({
+        config: await loadAppConfig(root),
+        env,
+        executor: dbExecutor(() => client),
+      });
       return await work(client);
     } finally {
+      release();
       setDbClient(undefined);
     }
   });

@@ -1,12 +1,6 @@
 // The public surface of @ultimat3/policy. Explicit, never `export *`.
-export type { DecisionSink, MemoryDecisionSink, PolicyDecisionEvent } from './decisions';
-export {
-  decisionSinkInstalled,
-  memoryDecisionSink,
-  noopDecisionSink,
-  resetDecisionSink,
-  setDecisionSink,
-} from './decisions';
+// The `policy.decision` payload is core's (the bus is tier 0); re-exported, never a second shape.
+export type { PolicyDecisionEvent } from '@ultimat3/core';
 export type { DefinePolicyInput } from './define';
 export { definePolicy } from './define';
 export { denialCode, denialReason } from './denial-parts';

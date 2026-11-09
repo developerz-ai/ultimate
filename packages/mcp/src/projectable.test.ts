@@ -10,16 +10,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { action, registerAction, resetActions } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
-import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
+import { agentActor, ctxOf, runWithContext, subscribe } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
   clearRoles,
   definePermissions,
   defineRoles,
-  memoryDecisionSink,
-  resetDecisionSink,
-  setDecisionSink,
 } from '@ultimat3/policy';
 import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
@@ -276,8 +273,8 @@ describe('the listed primitive runs through the ONE authz path', () => {
   // surfaces for one agent call, so the before-args refusal and the run's refusal could disagree
   // the day either surface's mapping moved. Both are the MCP surface now, and both events say so.
   test("a query tool's admit and run are judged on ONE surface", async () => {
-    const sink = memoryDecisionSink();
-    setDecisionSink(sink);
+    const surfaces: (string | null)[] = [];
+    const off = subscribe('policy.decision', (event) => void surfaces.push(event.payload.surface));
     try {
       const read = asProjectable(undeclaredQuery());
       const admitted = codeAndCause(() => read.admit?.(guest));
@@ -287,9 +284,9 @@ describe('the listed primitive runs through the ONE authz path', () => {
       );
       expect([admitted?.code, ran?.code]).toEqual(['X_FORBIDDEN', 'X_FORBIDDEN']);
       // Both on policy's `mcp` surface — the one an MCP ACTION is judged on, too.
-      expect(sink.events.map((event) => event.surface)).toEqual(['mcp', 'mcp']);
+      expect(surfaces).toEqual(['mcp', 'mcp']);
     } finally {
-      resetDecisionSink();
+      off();
     }
   });
 });

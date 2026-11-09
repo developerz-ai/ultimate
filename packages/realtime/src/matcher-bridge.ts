@@ -122,12 +122,12 @@ export const projectionOf = (rows: readonly Row[]): Projection =>
 /**
  * One row, restricted to the columns the result set carries.
  *
- * A `ChangeEvent` carries the whole TABLE row — that is what logical replication emits and what
- * `setRowObserver` emits — while a live query's result set is whatever its `sql` returned. Sending
- * the change row through unnarrowed put every column of the table on the socket, including the ones
- * a projection exists to withhold: `examples/dummy`'s feed projects ten columns and a single publish
- * delivered `body` to every subscriber. The per-subscriber gate cannot help — it decides whether a
- * ROW is delivered, never which of its columns.
+ * A `ChangeEvent` carries the whole TABLE row — that is what logical replication emits and what an
+ * `entity.row` event carries — while a live query's result set is whatever its `sql` returned.
+ * Sending the change row through unnarrowed put every column of the table on the socket, including
+ * the ones a projection exists to withhold: `examples/dummy`'s feed projects ten columns and a
+ * single publish delivered `body` to every subscriber. The per-subscriber gate cannot help — it
+ * decides whether a ROW is delivered, never which of its columns.
  *
  * `id` always survives: it is the row's identity on the wire, and `applyToWindow` and every client
  * store key by it.

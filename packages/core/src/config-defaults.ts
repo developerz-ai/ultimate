@@ -28,7 +28,7 @@ type Sectioned =
   | 'time'
   | 'assets';
 
-export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
+export function configDefaults(): Omit<AppConfig, Sectioned> {
   return {
     theme: { defaultMode: 'system' },
     auth: { signInPath: null },
@@ -44,7 +44,7 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
     database: { driver: 'postgres', ssl: false, rowSecurity: false },
     cache: { defaultTtlMs: 60_000, tiers: ['request-memo', 'lru'] },
     jobs: {
-      queues: [`${name}-default`],
+      queues: ['default'],
       concurrency: JOBS_CONCURRENCY_DEFAULT,
       maxAttempts: 5,
       backoff: 'exponential',

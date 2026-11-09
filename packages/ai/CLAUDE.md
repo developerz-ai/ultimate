@@ -58,6 +58,7 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `billed.ts` / `run-meter.ts` | `meta.billed` + `billedOf`; the meter every `llm()`/`agent()` provider call goes through, and `meteredRun`, its one public total (`RunMeter` stays internal) |
 | `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged, never its message or cause |
 | `llm.ts` / `llm-answer.ts` | `llm()` — the model call, declared as an `action`; one answered turn's span, `onCall`, fit, and what a streamed answer must satisfy |
+| `llm-instrument.ts` | what one `llm()` call reports when it settles: gen_ai usage on the span, `ai.llm` on the bus |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
 | `agent.ts` / `agent-tools.ts` | `agent()` — the tool loop, declared as an `action`; one turn's bounded tool fan-out |
@@ -110,6 +111,12 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bou
 - **`Gateway.stream` routes BEFORE it reserves**; `settled = true` comes after `ledger.record`.
 
 ## Invariants — `llm()`
+
+- **Telemetry is semconv's `gen_ai.*`, the rest `ultimate.llm.*`** — never a bare `llm.*` key.
+  `llm-instrument.ts` wraps the run meter (every provider call passes it) and settles ONCE per
+  `llm()` call — answered, cache hit or failed: the run's summed usage onto the `client` span and
+  `ai.llm` onto core's bus (`llm-instrument.test.ts`). `agent()` emits one `ai.llm` per MODEL CALL —
+  each turn and each compaction summary, through `reportedCall` — so the token metric counts agents.
 
 Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm-invariants).
 

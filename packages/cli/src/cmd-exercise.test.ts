@@ -18,6 +18,7 @@ import {
   defineRoles,
 } from '@ultimat3/policy';
 import { resetQueries } from '@ultimat3/query';
+import { disk } from '@ultimat3/storage';
 import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import { REQUIRED_BUN } from './app-root';
 import { exerciseCommand, exerciseRoles } from './cmd-exercise';
@@ -131,6 +132,26 @@ describe('unit · x exercise', () => {
     expect(finding?.code).toBe('X_CONTRACT_EXERCISE_UNREACHED');
     expect(finding?.fix).toContain('cxToggle:');
     expect(finding?.fix).toContain('x exercise cxToggle --json');
+    // The fixture has no apps/web/exercise.ts: the fix is the file to create, entry inside.
+    expect(finding?.fix).toStartWith("import { defineExercise } from '@ultimat3/testing';");
+  }, 60_000);
+
+  // A boot installs a storage disk; the pass stands one in, so a handler writing to it is reached
+  // with nothing declared — it was `storage() was called before defineStorage()`, and an `{ off }`.
+  test('a handler that writes to the storage disk is reached with no entry', async () => {
+    registerActions({
+      cxStore: action({
+        input: t.object({}),
+        output: t.object({ ok: t.boolean }),
+        policy: can('cx:write'),
+        handle: async () => {
+          await disk().put(`cx/${crypto.randomUUID()}`, new TextEncoder().encode('held'));
+          return { ok: true };
+        },
+      }),
+    });
+    const result = await exerciseCommand.run(contextFor(['cxStore']));
+    expect(outcomes(result.data)).toEqual({ cxStore: 'reached' });
   }, 60_000);
 
   test('<name> runs that one primitive and nothing else', async () => {
