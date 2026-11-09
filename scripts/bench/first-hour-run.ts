@@ -17,7 +17,10 @@ export interface StepRecord {
   /** `null` when an earlier step failed and this one never ran — never a zero time. */
   readonly ms: number | null;
   readonly status: 'ok' | 'failed' | 'skipped';
-  /** The last lines a failed step printed, so the JSON says why. */
+  /**
+   * Why it failed: every heartbeat line that says `"ok":false`, wherever it sits, then the last
+   * lines of output — see `tailOf`.
+   */
   readonly tail?: string;
 }
 
@@ -69,12 +72,40 @@ export function firstHourSteps(input: FirstHourInput): readonly FirstHourStep[] 
   ];
 }
 
-const tailOf = (text: string): string =>
-  text
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .slice(-5)
-    .join(' | ');
+/** How many lines of output the tail keeps as the general fallback. */
+const TAIL_LINES = 5;
+
+/**
+ * A gate heartbeat that says this step went red. Parsed, not substringed: `@ultimat3/cli`'s
+ * `verify-progress.ts` writes exactly `{"step":"manifest","ok":false,"ms":1234}` per finished step,
+ * and a step name, a finding or a fixture carrying those bytes in its text is output, never a
+ * verdict.
+ */
+const failedStepLine = (line: string): boolean => {
+  if (!line.startsWith('{"step":"')) return false;
+  let heartbeat: unknown;
+  try {
+    heartbeat = JSON.parse(line);
+  } catch {
+    return false;
+  }
+  const step = heartbeat as { step?: unknown; ok?: unknown };
+  return typeof step.step === 'string' && step.ok === false;
+};
+
+/**
+ * The lines a failed step is remembered by. `x verify --json` puts its verdict on stdout while the
+ * gate streams one heartbeat line per step to stderr, so the LAST lines of the merged output are
+ * whichever steps finished last — never, on a red gate, the one that failed. Every red heartbeat is
+ * therefore kept wherever it sits; the last `TAIL_LINES` lines stay as the fallback for a command
+ * that prints no heartbeat at all.
+ */
+const tailOf = (text: string): string => {
+  const lines = text.split('\n').filter((line) => line.trim() !== '');
+  const failed = lines.filter(failedStepLine).slice(0, TAIL_LINES);
+  const red = new Set(failed);
+  return [...failed, ...lines.slice(-TAIL_LINES).filter((line) => !red.has(line))].join(' | ');
+};
 
 /**
  * Every step in order. The first failure is recorded with the time it actually took, and every
