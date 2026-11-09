@@ -34,11 +34,14 @@ export type Admission =
   | { readonly kind: 'waiting' }
   | { readonly kind: 'refused'; readonly execution: JobExecution };
 
-/** `behind` is the rest of the claimed batch: handed back before a store failure is rethrown. */
+/**
+ * `behind` is the rest of the claimed batch: handed back before a store failure is rethrown. A
+ * thunk, read only on that failure: a slice per admitted job made a batch O(batch²) to admit.
+ */
 export type Admit = (
   job: ClaimedJob,
   queue: string,
-  behind: readonly ClaimedJob[],
+  behind: () => readonly ClaimedJob[],
 ) => Promise<Admission>;
 
 export function createAdmission(options: AdmissionOptions): Admit {
@@ -79,7 +82,7 @@ export function createAdmission(options: AdmissionOptions): Admit {
         // The nack itself failed, so THIS job went nowhere either: it goes back with the jobs
         // behind it, one more best-effort try, before the round reports. Left out, it sat
         // `running` until its lease lapsed — an attempt spent on a body that never started.
-        await handBack(driver, [job, ...behind], back);
+        await handBack(driver, [job, ...behind()], back);
         throw error;
       }
       return { kind: 'waiting' };
@@ -101,7 +104,7 @@ export function createAdmission(options: AdmissionOptions): Admit {
       lease.abandon();
       // This job and every one behind it go BACK, unburned — rethrowing alone stranded them in
       // `running` with an attempt spent on work that never started.
-      await handBack(driver, [job, ...behind], back);
+      await handBack(driver, [job, ...behind()], back);
       throw error;
     }
     if (grant.outcome === 'granted') return { kind: 'run', lease };
@@ -132,7 +135,7 @@ export function createAdmission(options: AdmissionOptions): Admit {
     } catch (error) {
       // This job too, for the reason above. A refusal that DID settle before throwing is safe to
       // repeat: every nack is fenced on `running` and the claim, so a settled row ignores it.
-      await handBack(driver, [job, ...behind], back);
+      await handBack(driver, [job, ...behind()], back);
       throw error;
     }
     return { kind: 'waiting' };

@@ -25,6 +25,7 @@
       "@ultimat3/core/render-nodes": ["./packages/core/src/render-nodes.ts"],
       "@ultimat3/db/diagnostics": ["./packages/db/src/diagnostics-entry.ts"],
       "@ultimat3/db/schema-dump": ["./packages/db/src/schema-dump-entry.ts"],
+      "@ultimat3/entity/adapter": ["./packages/entity/src/adapter.ts"],
       "@ultimat3/entity/record": ["./packages/entity/src/record.ts"],
       "@ultimat3/query/client": ["./packages/query/src/client.ts"],
       "@ultimat3/realtime/server": ["./packages/realtime/src/server.ts"],

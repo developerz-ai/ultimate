@@ -16,6 +16,11 @@ import { fakeBrowser } from './driver-fake';
 import type { ScrapeDefinition } from './scrape';
 import { runScrape } from './scrape-run';
 
+// Chrome ≥ 72 bypasses `--proxy-server` for localhost, `*.localhost` and loopback literals unless
+// told otherwise: without this switch a page reached the worker's loopback services DIRECT while
+// the session reported an exit. Asserted literally — the switch Chrome reads, not a constant.
+const LOOPBACK_THROUGH_PROXY = '--proxy-bypass-list=<-loopback>';
+
 const URL_A = 'https://shop.test/orders';
 const HTML = '<html><body><p class="row" data-id="1">One</p></body></html>';
 const EXIT = 'http://exit-7.test:8080';
@@ -212,7 +217,7 @@ describe('unit · the launched browser dials the run exit, not the driver consta
     const session = await localBrowser({ launcher, proxy: 'http://constant.test:1' }).open(
       sessionInit({ proxy: EXIT }),
     );
-    expect(launched[0]?.['args']).toEqual([`--proxy-server=${EXIT}`]);
+    expect(launched[0]?.['args']).toEqual([`--proxy-server=${EXIT}`, LOOPBACK_THROUGH_PROXY]);
     expect(session.proxy).toBe(EXIT);
     await session.close();
   });
@@ -235,7 +240,10 @@ describe('unit · the launched browser dials the run exit, not the driver consta
     const session = await localBrowser({ launcher, proxy: 'http://constant.test:1' }).open(
       sessionInit(),
     );
-    expect(launched[0]?.['args']).toEqual(['--proxy-server=http://constant.test:1']);
+    expect(launched[0]?.['args']).toEqual([
+      '--proxy-server=http://constant.test:1',
+      LOOPBACK_THROUGH_PROXY,
+    ]);
     expect(session.proxy).toBe('http://constant.test:1');
     await session.close();
   });
@@ -243,7 +251,7 @@ describe('unit · the launched browser dials the run exit, not the driver consta
   test('credentials never reach the process arguments: the page authenticates instead', async () => {
     const { launcher, launched, authenticated } = recordingLauncher();
     const session = await localBrowser({ launcher }).open(sessionInit({ proxy: SECRET_EXIT }));
-    expect(launched[0]?.['args']).toEqual([`--proxy-server=${EXIT}`]);
+    expect(launched[0]?.['args']).toEqual([`--proxy-server=${EXIT}`, LOOPBACK_THROUGH_PROXY]);
     expect(JSON.stringify(launched)).not.toContain('hunter2hunter2');
     expect(authenticated).toEqual([{ username: 'session-41', password: 'hunter2hunter2' }]);
     // The HTTP leg carries the credentials itself: `fetch`'s own `proxy` reads them off the URL.
@@ -274,7 +282,11 @@ describe('unit · caller launch args never displace the exit', () => {
       proxy: EXIT,
       options: { args: CONTAINER_ARGS, protocolTimeout: 5_000 },
     }).open(sessionInit());
-    expect(launched[0]?.['args']).toEqual([...CONTAINER_ARGS, `--proxy-server=${EXIT}`]);
+    expect(launched[0]?.['args']).toEqual([
+      ...CONTAINER_ARGS,
+      `--proxy-server=${EXIT}`,
+      LOOPBACK_THROUGH_PROXY,
+    ]);
     expect(launched[0]?.['protocolTimeout']).toBe(5_000);
     expect(session.proxy).toBe(EXIT);
     await session.close();
@@ -285,7 +297,11 @@ describe('unit · caller launch args never displace the exit', () => {
     const session = await localBrowser({ launcher, options: { args: CONTAINER_ARGS } }).open(
       sessionInit({ proxy: SECRET_EXIT }),
     );
-    expect(launched[0]?.['args']).toEqual([...CONTAINER_ARGS, `--proxy-server=${EXIT}`]);
+    expect(launched[0]?.['args']).toEqual([
+      ...CONTAINER_ARGS,
+      `--proxy-server=${EXIT}`,
+      LOOPBACK_THROUGH_PROXY,
+    ]);
     await session.close();
   });
 

@@ -35,6 +35,7 @@ globalThis.probe = [
   client.NAVIGATE_EVENT,
   client.NAVIGATED_EVENT,
   client.NAVIGATION_ERROR_EVENT,
+  client.NAVIGATION_MODAL_ATTRIBUTE,
   client.disposeIslands,
   client.scheduleRefresh,
 ];
@@ -98,6 +99,28 @@ test('an island that only refreshes carries navigation-api.ts and nothing else',
   // 216 B when measured; through the `.` barrel the same island was 9,323 B.
   const minified = await bundle('refresh-only-min', REFRESH_ONLY, true);
   expect(new TextEncoder().encode(minified.code).byteLength).toBeLessThan(1024);
+});
+
+// Plan 101 slice 14 P4: an adopter measured `navigate()` pulling core's error registry (8,959 B)
+// into islands that import nothing else of core. The pin is on the TITLES: no code table at all.
+test('an island that only navigates carries no error-code table and no core titles', async () => {
+  const source =
+    "import { navigate } from '@ultimat3/render/client';\nglobalThis.probe = navigate;\n";
+  const { code, modules } = await bundle('navigate-only', source);
+  expect(modules).not.toContain('render/src/errors.ts');
+  expect(modules).not.toContain('core/src/core-error-codes.ts');
+  expect(modules).not.toContain('core/src/schema-error-codes.ts');
+  expect(modules).not.toContain('schema/src/error-codes.ts');
+  // A title core registers for one of its own codes: present only if a table came along.
+  expect(code).not.toContain('error code registered twice');
+});
+
+// An adopter restated `dialog[data-x-modal]` because the attribute was not on the browser entry.
+test('the browser entry names the modal attribute, as the same constant the router writes', async () => {
+  const client = await import('@ultimat3/render/client');
+  const rules = await import('./navigation-modal-rules');
+  expect(client.NAVIGATION_MODAL_ATTRIBUTE).toBe(rules.NAVIGATION_MODAL_ATTRIBUTE);
+  expect(client.NAVIGATION_MODAL_ATTRIBUTE).toBe('data-x-modal');
 });
 
 test('an island that only releases nested islands carries island-dispose.ts and nothing else', async () => {

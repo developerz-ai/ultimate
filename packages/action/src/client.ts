@@ -21,7 +21,7 @@ import type {
   ClientRetry,
   FetchLike,
   UltimateError,
-} from '@ultimat3/core';
+} from '@ultimat3/core/page';
 import {
   actionPath,
   BUILD_ID_HEADER,
@@ -33,7 +33,7 @@ import {
   problemOf,
   remoteTitleOf,
   renderedActionPin,
-} from '@ultimat3/core';
+} from '@ultimat3/core/page';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, StreamAction } from './action';
 import { ContractDriftError, RemoteActionError } from './errors';
@@ -101,7 +101,7 @@ export type StreamClientMethod<
 };
 
 /** Core's one declaration, re-exported by name so `import type { FetchLike }` keeps resolving. */
-export type { FetchLike } from '@ultimat3/core';
+export type { FetchLike } from '@ultimat3/core/page';
 
 export interface ClientOptions {
   readonly baseUrl: string;
@@ -311,6 +311,7 @@ function toUltimateError(
     // Parsed, never taken: `body` is whatever answered the request. A list this build cannot read
     // is dropped rather than repaired, and `cause` below still carries every rejection in it.
     issues: issuesFromWire(body['issues']),
+    issuesTruncated: body['issuesTruncated'] === true ? true : undefined,
     meta: metaFromWire(body['meta']),
     requestId: body['requestId'],
     cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${status}`),
@@ -325,8 +326,8 @@ function toUltimateError(
 
 /**
  * The document's `meta` member, or nothing. Parsed JSON is JSON-safe by construction, so the only
- * work is shape: an object, copied own key by own key onto a fresh record. `issues` is skipped
- * because it has its own reader and its own bound one line up, and `__proto__` because
+ * work is shape: an object, copied own key by own key onto a fresh record. `issues` and its flag
+ * `issuesTruncated` are skipped because they have their own reader up top, and `__proto__` because
  * `JSON.parse` mints it as a real own key — copied by assignment it would replace the prototype
  * of the error's `meta`, which the reporter and the overlay walk. EMPTY is `undefined`: an
  * `{}` under `meta` would say the server declared keys and sent none.
@@ -336,7 +337,7 @@ function metaFromWire(value: unknown): Readonly<Record<string, unknown>> | undef
   const out: Record<string, unknown> = {};
   let carried = 0;
   for (const [key, member] of Object.entries(value)) {
-    if (key === 'issues' || key === '__proto__') continue;
+    if (key === 'issues' || key === 'issuesTruncated' || key === '__proto__') continue;
     Object.defineProperty(out, key, {
       value: member,
       writable: true,

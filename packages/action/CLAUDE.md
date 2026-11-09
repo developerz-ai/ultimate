@@ -190,10 +190,13 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `bun build --target=browser --minify`, one entry importing from `@ultimat3/action` — **the ONE
   table for these figures** (`packages/core/CLAUDE.md` points here):
 
-  | Entry | `As of 2026-11-06`, Bun 1.4.4, one entry over the working tree |
+  | Entry | `As of 2026-11-09`, Bun 1.4.4, one entry over the working tree |
   |---|---|
-  | `rpc` | 29,291 B: `.stream` (core's `clientStream`, through `dispatchStream`) +1,746 B over the 27,545 B before it; pinned paths (wave 5b) `fillWire` +758 B, `renderedActionPin` +619 B (each stubbed out) |
-  | `rpc` + core's `clientFlight` | 38,054 B |
+  | `rpc` | 24,473 B, pinned ≤ 25,000 (`client-bundle.test.ts`); 29,972 B while it read core's barrel |
+  | `rpc` + `clientFlight` from `@ultimat3/core/page` | 32,929 B (38,416 B from the barrel) |
+
+- **The client graph imports `@ultimat3/core/page`, never the barrel** (`client.ts`, `errors*.ts`,
+  `error-titles.ts`, `wire-issues.ts`); `client-bundle.test.ts` fails on a titles table or a warning.
 
 - **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
   titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do
@@ -215,7 +218,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   never a gate.
 - **Both stores FENCE a settlement on the reservation `id` AND `in-flight`**:
   `settle(key, value, reservationId, redacted)` / `fail(key, failure, reservationId)` /
-  `release(key, reservationId)`. A fenced no-op is never thrown.
+  `release(key, reservationId)`. A fenced no-op is never thrown; an autocommit `settle`/`fail` logs `action.idempotency.settlement-fenced` on BOTH stores (`idempotency-memory-fenced.test.ts`).
 - **An answer rests REDACTED** (#591): `withIdempotency` passes the store `restingAnswer(value)`
   (core's `isRedactedKey` + `isSecret`) and `redacted` as `settle`'s REQUIRED 4th argument. A
   flagged replay is `X_IDEMPOTENT_REPLAY_REDACTED`, by the FLAG, never by scanning. Full rule: `docs/history/action.md`.

@@ -6,8 +6,6 @@ CREATE UNIQUE INDEX members_member_unique_per_org_key ON public.members USING bt
 
 CREATE UNIQUE INDEX members_org_id_id_tenant_key ON public.members USING btree (org_id, id);
 
-CREATE INDEX members_org_id_idx ON public.members USING btree (org_id);
-
 CREATE INDEX members_org_id_role_idx ON public.members USING btree (org_id, role);
 
 CREATE INDEX members_tz_8dcfa966_idx ON public.members USING btree (tz) WHERE digest_opt_in;

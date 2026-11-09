@@ -47,8 +47,16 @@ manifest row. Its row is in `PRIMITIVE_FACTORIES` (`packages/core/src/registrar.
 
 A job body runs **before** its checkpoint lands, so both layers are load-bearing:
 
-1. `step.run('deliver:<channel>:<recipient>')` — an ordinary retry replays a completed send from the
-   step store and does not call the channel.
+1. `step.run('deliver:<channel>:chunk-<n>')` — one step per `NOTIFY_CHUNK_SIZE` (500) recipients,
+   `n` the chunk's place in the audience `open` froze (never in the ALLOWED list, which a retry
+   re-reads). A retry replays a completed chunk from the step store; a chunk that failed part-way
+   re-runs whole, and layer 2 answers `sent` for whoever it already reached. Preferences are read
+   once per chunk (`PreferenceStore.allowsMany`, required since 31.0.0): 10k recipients is 20 reads
+   and 20 step rows a channel, not 20k (`fanout-chunks.test.ts`). A digest reads preferences per
+   chunk and sends per chunk (`digest-send:<channel>:chunk-<n>`, ledger-fenced the same way), but
+   its `digest:` append and `digest-drain:` steps stay ONE PER RECIPIENT: a chunked append re-runs
+   appends whose joined window may be drained by then (below), and a chunked drain widens the
+   drain seam's loss from one batch to 500.
 2. `DeliveryLedger.claim` — an atomic claim keyed `(notifier, key, channel, coalesce(recipient, ''))`,
    taken before the send and settled after it. A claim that already reads `sent` answers `false`, so
    an attempt that lost its step history entirely still does not send twice. **The `coalesce` is

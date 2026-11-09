@@ -25,6 +25,7 @@ import { toolsFrom, toolsListed } from './from-action';
 import { noteIncluded } from './include-early';
 import { jobStatusPrimitive } from './job-status-tool';
 import { jobToolBrand } from './job-tool';
+import type { McpCatalogDetail } from './meta-catalog-render';
 import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
 import type { McpOAuth } from './oauth-metadata';
 import type { ListedPrimitive } from './projectable';
@@ -147,6 +148,12 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * answers to is `X_MCP_GROUP_UNKNOWN`, a tool in two groups `X_MCP_GROUP_CONFLICT`.
    */
   readonly groups?: McpResourceGroups;
+  /**
+   * How much of each action `list_resources` says — chosen once, here. `'full'` (the default):
+   * description and parameter hint per action. `'compact'`: names and tags only, the rest in
+   * `describe_resource` — for a catalog whose full listing outgrows a model's turn.
+   */
+  readonly catalogDetail?: McpCatalogDetail;
   /**
    * `initialize`'s `instructions` — the advice a client that honours it puts in the model's context:
    * the entry-point call, the three or four goals most sessions are, the traps. A string, or a
@@ -310,6 +317,7 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     serverInfo: { name: input.name ?? 'ultimate-app', version: input.version ?? '0.0.0' },
     ...(input.surface === undefined ? {} : { surface: input.surface }),
     ...(input.groups === undefined ? {} : { groups: input.groups }),
+    ...(input.catalogDetail === undefined ? {} : { catalogDetail: input.catalogDetail }),
     ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
     errorAudience: input.errorAudience ?? 'caller',
     ...(input.onAudit === undefined ? {} : { onAudit: input.onAudit }),

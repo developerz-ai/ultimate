@@ -81,7 +81,8 @@ export function devRebuilder(
       state.appFindings = findings;
       state.islands = islands;
       const unserved = await refreshDevices();
-      for (const path of isr.store().paths()) isr.store().delete(path);
+      // Awaited one by one: a shared store answers over the network, and a dev save is rare.
+      for (const path of await isr.store().paths()) await isr.store().delete(path);
       state.reloads += 1;
       // Read on EVERY rebuild, so a pin one save reached is never reported against the next save.
       const pins = takeStalePins();

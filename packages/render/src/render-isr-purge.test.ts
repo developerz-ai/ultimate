@@ -42,7 +42,7 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
     const controller = isrController({ routes: describePages });
     const key = isrKeyIn('/blog/a');
     await controller.serve(key, () => '<p>published</p>');
-    controller.revalidateByTags([postTag]);
+    await controller.revalidateByTags([postTag]);
     const next = await controller.serve(key, () => ({ html: '<p>gone</p>', status: 404 }));
     expect(next.state).toBe('stale');
     expect(next.result.body).toBe('<p>published</p>');
@@ -54,8 +54,8 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
     const key = isrKeyIn('/blog/a');
     await controller.serve(key, () => '<p>published</p>');
 
-    expect(controller.revalidateByTags([postTag])).toEqual([key]);
-    expect(controller.store().get(key)).toBeUndefined();
+    expect(await controller.revalidateByTags([postTag])).toEqual([key]);
+    expect(await controller.store().get(key)).toBeUndefined();
 
     const next = await controller.serve(key, () => ({ html: '<p>gone</p>', status: 404 }));
     expect(next.state).toBe('miss');
@@ -75,8 +75,8 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
     for (const key of keys) await controller.serve(key, () => '<p>post</p>');
     await controller.serve(isrKeyIn('/team'), () => '<p>team</p>');
 
-    controller.revalidateByTags([postTag]);
-    expect(controller.store().paths()).toEqual([isrKeyIn('/team')]);
+    await controller.revalidateByTags([postTag]);
+    expect(await controller.store().paths()).toEqual([isrKeyIn('/team')]);
   });
 
   test('a stored 404 is purged like any page, so a published post is not a 404 for one more visitor', async () => {
@@ -84,7 +84,7 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
     const controller = isrController({ routes: describePages });
     const key = isrKeyIn('/blog/soon');
     await controller.serve(key, () => ({ html: '<p>nope</p>', status: 404 }));
-    controller.revalidateByTags([postTag]);
+    await controller.revalidateByTags([postTag]);
     const next = await controller.serve(key, () => '<p>here now</p>');
     expect({ state: next.state, status: next.result.status }).toEqual({
       state: 'miss',
@@ -102,10 +102,10 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
       return '<p>read before the withdrawal</p>';
     });
     await Bun.sleep(0);
-    controller.revalidateByTags([postTag]);
+    await controller.revalidateByTags([postTag]);
     gate.resolve(undefined);
     const answered = await first;
-    expect(controller.store().get(key)).toBeUndefined();
+    expect(await controller.store().get(key)).toBeUndefined();
     // Nor offered to the edge: the CDN's purge has already run, and this is the pre-purge page.
     expect(answered.result.headers['cache-control']).toBe('private, no-store');
     expect(answered.result.headers['surrogate-key']).toBeUndefined();
@@ -120,7 +120,7 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
     const report = await invalidateTags([postTag]);
     detach();
     expect(report.isr).toEqual([key]);
-    expect(controller.store().get(key)).toBeUndefined();
+    expect(await controller.store().get(key)).toBeUndefined();
   });
 
   test('a purge route tells a shared cache nothing may be served stale; the default still says a day', async () => {
@@ -182,7 +182,7 @@ describe('unit · a store two controllers share', () => {
     await rendered.serve(key, () => '<p>published</p>');
     expect((await other.serve(key, () => '<p>never called</p>')).state).toBe('hit');
 
-    expect(other.revalidateByTags([postTag])).toEqual([key]);
+    expect(await other.revalidateByTags([postTag])).toEqual([key]);
     expect(store.get(key)).toBeUndefined();
     expect((await rendered.serve(key, () => '<p>gone</p>')).state).toBe('miss');
   });
@@ -195,7 +195,7 @@ describe('unit · a store two controllers share', () => {
     const other = isrController({ store, routes: describePages, isrDependents: none });
     const key = isrKeyIn('/blog/a');
     await rendered.serve(key, () => '<p>v1</p>');
-    other.revalidateByTags([postTag]);
+    await other.revalidateByTags([postTag]);
     expect(store.get(key)?.stale).toBe(true);
   });
 
@@ -233,7 +233,7 @@ describe('unit · a store two controllers share', () => {
     const controller = isrController({ store, routes: describePages });
     await controller.serve(isrKeyIn('/blog/a'), () => '<p>a</p>');
     listed = 0;
-    expect(controller.revalidateByTags([teamTag])).toEqual([]);
+    expect(await controller.revalidateByTags([teamTag])).toEqual([]);
     expect(listed).toBe(0);
   });
 });

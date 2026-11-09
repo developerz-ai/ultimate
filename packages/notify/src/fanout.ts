@@ -13,7 +13,7 @@ import { isBulkChannel } from './channel';
 import { NotifyFanoutTooWideError } from './errors';
 import { flushDigest } from './fanout-digest';
 import type { Tally, Walk } from './fanout-walk';
-import { countSend } from './fanout-walk';
+import { chunksOf, countSend } from './fanout-walk';
 import type { NotifyEvent, Recipient } from './notification';
 import type { NotifyPayload, NotifyPlan, NotifyReport, ResolvedDelivery } from './plan';
 import { notifyStores } from './stores';
@@ -96,18 +96,20 @@ async function deliverOne<Params>(
     return;
   }
 
-  const allowed = await allowedBy(walk, delivery.channel.name);
-  if (allowed.length === 0) return;
-
   const channel = delivery.channel;
-  if (delivery.digestMs !== undefined) {
-    // `notifier()` refused a digest on a bulk channel at declaration, so this narrowing cannot
-    // fail at run time — it is here because the type system cannot read that refusal.
-    if (isBulkChannel(channel)) return;
-    await flushDigest({ walk, channel: channel as NotifyChannel<Params>, delivery, allowed });
-    return;
-  }
-  if (isBulkChannel(channel)) {
+  if (delivery.digestMs !== undefined || isBulkChannel(channel)) {
+    const allowed: Recipient[] = [];
+    for (const chunk of chunksOf(walk.audience))
+      allowed.push(...(await allowedBy(walk, channel.name, chunk)));
+    if (allowed.length === 0) return;
+    if (delivery.digestMs !== undefined) {
+      // `notifier()` refused a digest on a bulk channel at declaration, so this narrowing cannot
+      // fail at run time — it is here because the type system cannot read that refusal.
+      if (isBulkChannel(channel)) return;
+      await flushDigest({ walk, channel: channel as NotifyChannel<Params>, delivery, allowed });
+      return;
+    }
+    if (!isBulkChannel(channel)) return;
     const claim = {
       notifier: walk.plan.name,
       key: event.key,
@@ -135,56 +137,70 @@ async function deliverOne<Params>(
     return;
   }
 
-  for (const recipient of allowed) {
-    const claim = {
-      notifier: walk.plan.name,
-      key: event.key,
-      recipient: recipient.id,
-      channel: channel.name,
-    };
-    // The recipient's id names the step because the id survives a replay and a loop index does
-    // not — a step name is the replay key (X_STEP_DUPLICATE).
-    const sent = await walk.step.run(`deliver:${channel.name}:${recipient.id}`, (signal) =>
-      attemptDelivery(
-        {
-          ledger: notifyStores().ledger,
-          claim,
-          notifier: walk.plan.name,
-          channel: channel.name,
-          recipients: 1,
-          ctx,
-          send: (abort) =>
-            channel.deliver({ ctx, recipient, event, batch: [event], signal: abort }),
-        },
-        signal,
-      ),
-    );
-    countSend(tally, sent);
+  const one = channel as NotifyChannel<Params>;
+  let index = 0;
+  for (const chunk of chunksOf(walk.audience)) {
+    // Named by the chunk's place in the audience the `open` step froze — never by who in it was
+    // ALLOWED, which is re-read on a retry: a name over the allowed list would replay a stored
+    // chunk for a different set of people. Each chunk is ONE step: a retry re-runs the chunk, and
+    // the ledger answers `sent` for every recipient it already reached (counted `replayed`).
+    const name = `deliver:${channel.name}:chunk-${String(index)}`;
+    index += 1;
+    const allowed = await allowedBy(walk, channel.name, chunk);
+    if (allowed.length === 0) continue;
+    const counts = await walk.step.run(name, async (signal) => {
+      const answer = { delivered: 0, replayed: 0 };
+      for (const recipient of allowed) {
+        const sent = await attemptDelivery(
+          {
+            ledger: notifyStores().ledger,
+            claim: {
+              notifier: walk.plan.name,
+              key: event.key,
+              recipient: recipient.id,
+              channel: channel.name,
+            },
+            notifier: walk.plan.name,
+            channel: channel.name,
+            recipients: 1,
+            ctx,
+            send: (abort) => one.deliver({ ctx, recipient, event, batch: [event], signal: abort }),
+          },
+          signal,
+        );
+        if (sent) answer.delivered += 1;
+        else answer.replayed += 1;
+      }
+      return answer;
+    });
+    tally.delivered += counts.delivered;
+    tally.replayed += counts.replayed;
   }
 }
 
 /**
- * The preference gate, per recipient and per channel — deliberately NOT inside a durable step. It
+ * The preference gate, ONE read per chunk and channel — deliberately NOT inside a durable step. It
  * is a read, so replaying it costs a query rather than a row, and re-asking on a retry is the more
  * correct answer anyway: somebody who opted out during a five-minute `wait` should not receive the
- * mail the first attempt had already decided to send.
+ * mail the first attempt had already decided to send. The answer is intersected with the chunk:
+ * an id the store invents reaches nobody.
  */
 async function allowedBy<Params>(
   walk: Walk<Params>,
   channel: string,
+  chunk: readonly Recipient[],
 ): Promise<readonly Recipient[]> {
   const { preferences } = notifyStores();
-  const allowed: Recipient[] = [];
-  for (const recipient of walk.audience) {
-    const ok = await preferences.allows({
-      recipient,
+  const ids = new Set(
+    await preferences.allowsMany({
+      recipients: chunk,
       notifier: walk.plan.name,
       channel,
       event: walk.event,
       ctx: walk.ctx,
-    });
-    if (ok) allowed.push(recipient);
-    else walk.tally.suppressed += 1;
-  }
+    }),
+  );
+  const allowed = chunk.filter((recipient) => ids.has(recipient.id));
+  walk.tally.suppressed += chunk.length - allowed.length;
   return allowed;
 }

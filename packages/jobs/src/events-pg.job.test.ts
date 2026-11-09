@@ -65,6 +65,7 @@ describe('the stored event bus keeps one clock', () => {
       id: expect.any(String),
       payload: { code: 1 },
       publishedAt: at,
+      horizon: expect.any(String),
     });
   });
 

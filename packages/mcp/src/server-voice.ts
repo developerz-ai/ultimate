@@ -4,7 +4,11 @@
 
 import { InputInvalidError } from '@ultimat3/action';
 import type { ErrorAudience } from '@ultimat3/core';
+import { renderCauseValue } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
+import type { McpCatalogDetail } from './meta-catalog-render';
+import { McpSurfaceInvalidError } from './meta-errors';
+import type { McpSurfaceOption } from './meta-surface';
 import type { McpCaller, McpToolResult } from './registry';
 import type { ArgIssue } from './validate-args';
 
@@ -15,6 +19,8 @@ export type McpInstructions = string | ((caller: McpCaller) => string | undefine
 export interface McpServerVoice {
   readonly instructions?: McpInstructions | undefined;
   readonly errorAudience: ErrorAudience;
+  /** How much of each action `list_resources` says — `McpServerInput.catalogDetail`. */
+  readonly catalogDetail?: McpCatalogDetail | undefined;
 }
 
 /** The instructions THIS caller is handed, or `undefined`. Fail-closed to none, never a throw. */
@@ -66,4 +72,27 @@ export function invalidArgsError(name: string, issues: readonly ArgIssue[]): Inp
     })),
     'tool',
   );
+}
+
+/**
+ * `catalogDetail`, screened at boot: one of the two values, and only on a server some caller reads
+ * `list_resources` from — on a flat-only one it would shape a catalog nobody is served.
+ */
+export function screenCatalogDetail(
+  detail: McpCatalogDetail | undefined,
+  surface: McpSurfaceOption | undefined,
+): McpCatalogDetail {
+  if (detail === undefined || detail === 'full') return 'full';
+  if (detail !== 'compact') {
+    throw new McpSurfaceInvalidError({
+      cause: `catalogDetail is ${renderCauseValue(detail)}; it is 'full' or 'compact'`,
+    });
+  }
+  if (surface === undefined || surface === 'flat') {
+    throw new McpSurfaceInvalidError({
+      cause:
+        "catalogDetail: 'compact' shapes list_resources, and surface is 'flat' for every caller, so no caller would ever read it",
+    });
+  }
+  return detail;
 }

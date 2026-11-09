@@ -216,9 +216,21 @@ input. The tenant is a fact about the work, so the job declares it.
 | a stored event the wait's `schema` refuses | `X_JOB_EVENT_INVALID`, terminal, on a hit or a replay. The error carries the issues, never the payload |
 
 A boot's bus runs on the open transaction's connection (`currentTx() ?? client`, as the outbox):
-`publishEvent` inside a transaction commits and rolls back with it. `published_at` is the
-statement's time, so a wait that begins between that publish and its commit compares later than the
-stamp and never matches; the window is the length of the publishing transaction.
+`publishEvent` inside a transaction commits and rolls back with it. **An event committed after a
+wait began is that wait's, whatever its stamp.** `published_at` is the INSERT's time and the row is
+visible at COMMIT, so a new wait records the snapshot it began under (`EventLookup.mark()`,
+`SQL_EVENT_MARK`, persisted on the waiting step) and also matches every event whose transaction
+(`x_job_events.xact`) that snapshot could not see. A rolled-back publish matches nothing. A
+waking bus published inside `withTransaction` wakes again once it COMMITS (`SQL_EVENT_COMMIT_WAKE`,
+run from `Tx.onCommit` on the pool): a run that parked while the transaction was open is resumed
+at the commit, not at the 15 min backstop.
+
+Events are consumed in `(published_at, id)` order, stamps truncated to the millisecond; the cursor a
+refused event leaves is that pair, compared and never looked up (`events-cursor.ts`, both buses),
+so a purged cursor still excludes what it excluded. A refusal only moves it FORWARD, under the
+horizon of the search that found the event; an event refused behind it (owed through the horizon)
+is excluded by id. The wait's own line — `startedAt` and the mark's horizon (`EventSince`) — rides
+every search and is never moved by a refusal, so no event committed before the wait is handed out.
 
 `resetEventBus()` is the test seam beside `resetJobDriver()`: an event is matchable until it
 expires, so on a bus shared by one `bun test` process an answer one test published resumes the
@@ -228,10 +240,7 @@ The event bus has ONE clock. `postgresEventBus({ executor })` stamps `publishedA
 with the database's `now()` — it takes no `clock` — and `bus.now()` answers that same clock. A
 consumer that wants "published after I asked" (`@ultimat3/scraping`'s `eventPrompt`) reads its
 "asked at" from `bus.now()`, never from its own process: a skew between two pods must not decide
-which answers count. `step.waitForEvent` stamps a new wait from the same clock
-(`EventLookup.now()`), so a worker running ahead of the database still matches an event published
-after it asked.
-`step.waitForEvent` stamps a new wait from that clock (`EventLookup.now()`, required) and asks it
+which answers count. `step.waitForEvent` stamps a new wait from that clock (`EventLookup.now()`, required) and asks it
 again before declaring a timeout, so a worker running ahead of the database still matches an event
 published after it asked and does not give up early. `eventsPurgeTarget(bus)` is the bus as a
 `purge()` target: `purgeExpired()` is awaited and answers the rows it removed.

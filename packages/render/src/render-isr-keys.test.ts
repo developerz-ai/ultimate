@@ -89,7 +89,7 @@ describe('a tag-revalidated ISR document carries its purge keys', () => {
 
     const miss = await controller.serve('/blog', render);
     const hit = await controller.serve('/blog', render);
-    controller.markStale('/blog');
+    await controller.markStale('/blog');
     const stale = await controller.serve('/blog', render);
 
     expect([miss.state, hit.state, stale.state]).toEqual(['miss', 'hit', 'stale']);

@@ -368,7 +368,7 @@ describe('the chain', () => {
     expect(boolean().default(true).$meta.default).toEqual({ kind: 'value', value: true });
   });
 
-  test('.references() and .tenant() index the column and record the target', () => {
+  test('.references() and .tenant() index the column, as (tenant, pk), and record the target', () => {
     const orgs = entity('columns_test_orgs', { columns: { id: uuid().primaryKey() } });
     const posts = entity('columns_test_posts', {
       columns: {
@@ -386,7 +386,10 @@ describe('the chain', () => {
     expect(org?.column).toBe('org_id');
     expect(org?.references).toBe('columns_test_orgs.id');
     expect(described.orgScoped).toBe(true);
-    expect(described.indexes.map((index) => index.name)).toContain('columns_test_posts_org_id_idx');
+    // The `(org_id, id)` index serves the foreign key through its prefix: one index, not two.
+    expect(described.indexes.map((index) => index.name)).toEqual([
+      'columns_test_posts_org_id_id_idx',
+    ]);
   });
 
   test('.references({ onDelete }) records the rule on the column and on the reference', () => {

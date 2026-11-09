@@ -66,6 +66,8 @@ describe('a regeneration that never settles', () => {
 
     void controller.serve('/pricing', hung);
     void controller.serve('/pricing', hung);
+    // The store is asked first (a shared one is a round trip): the render starts a tick later.
+    await tick();
     expect([calls, controller.inflight()]).toEqual([1, 1]);
     expect(clock.armed.map((task) => task.ms)).toEqual([DEFAULT_ISR_REGENERATE_DEADLINE_MS]);
 
@@ -85,7 +87,7 @@ describe('a regeneration that never settles', () => {
     const controller = isrController({ routes: describePages, schedule: clock.schedule });
     await controller.serve('/pricing', () => '<p>v1</p>');
     clock.fire();
-    controller.markStale('/pricing');
+    await controller.markStale('/pricing');
 
     const first = await controller.serve('/pricing', never);
     expect([first.state, first.regenerating]).toEqual(['stale', true]);
@@ -111,11 +113,12 @@ describe('a regeneration that never settles', () => {
           release = resolve;
         }),
     );
+    await tick();
     clock.fire();
     await controller.serve('/pricing', () => '<p>new</p>');
     release('<p>old</p>');
     await late;
-    expect(controller.store().get('/pricing')?.html).toBe('<p>new</p>');
+    expect((await controller.store().get('/pricing'))?.html).toBe('<p>new</p>');
   });
 
   test('an evicted render that settles with no successor still publishes its page', async () => {
@@ -130,10 +133,11 @@ describe('a regeneration that never settles', () => {
           release = resolve;
         }),
     );
+    await tick();
     clock.fire();
     release('<p>slow</p>');
     await late;
-    expect(controller.store().get('/pricing')?.html).toBe('<p>slow</p>');
+    expect((await controller.store().get('/pricing'))?.html).toBe('<p>slow</p>');
   });
 
   test('a settled render cancels its deadline', async () => {

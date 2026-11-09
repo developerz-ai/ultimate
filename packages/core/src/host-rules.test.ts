@@ -98,7 +98,30 @@ describe('unit · a wildcard never admits an address inside the network', () => 
   test('a public address literal and every hostname still pass the wildcard', () => {
     expect(hostDecision('http://93.184.216.34/', [ANY_HOST]).allowed).toBe(true);
     expect(hostDecision('https://shop.example/', [ANY_HOST]).allowed).toBe(true);
-    expect(hostDecision('http://localhost:3000/', [ANY_HOST]).allowed).toBe(true);
+    expect(hostDecision('https://notlocalhost.example/', [ANY_HOST]).allowed).toBe(true);
+    expect(hostDecision('https://localhost.example/', ['*.example']).allowed).toBe(true);
+  });
+
+  // `localhost` is a NAME that is loopback by definition (RFC 6761 §6.3), and Chrome ≥ 72 sends
+  // it, `*.localhost` and loopback literals straight past `--proxy-server` — so under `['*']` a
+  // page reached the worker's own loopback services even with an egress proxy, where the DNS screen
+  // stands down. A wildcard never admits one; naming it exactly is the opt-out.
+  test.each([
+    ['http://localhost:9229/json', ANY_HOST],
+    ['http://LOCALHOST:5432/', ANY_HOST],
+    ['http://localhost.:6379/', ANY_HOST],
+    ['http://admin.localhost/', ANY_HOST],
+    ['http://a.b.localhost./', ANY_HOST],
+    ['http://admin.localhost/', '*.localhost'],
+  ])('%s is refused under %s', (url, rule) => {
+    expect(hostDecision(url, [rule]).allowed).toBe(false);
+  });
+
+  test('an exact localhost rule still admits it', () => {
+    expect(hostDecision('http://localhost:3000/', ['localhost']).allowed).toBe(true);
+    expect(hostDecision('http://app.localhost:3000/', [ANY_HOST, 'app.localhost']).allowed).toBe(
+      true,
+    );
   });
 
   test('the opt-out is NAMING the address — an exact rule, visible in review', () => {

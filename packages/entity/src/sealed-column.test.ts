@@ -53,7 +53,11 @@ beforeAll(async () => {
   for (const statement of statementsOf(migration.up)) await client.execute(raw(statement));
 }, PGLITE_BOOT_MS);
 
-afterAll(() => {
+// The client is uninstalled here: left in place, every later file in the same `bun test` process
+// that reads `dbClientInstalled()` (`testDriver()`) sent its statements to this PGlite.
+afterAll(async () => {
+  setDbClient(undefined);
+  await client.close();
   if (previousKey === undefined) delete process.env[KEY_ENV];
   else process.env[KEY_ENV] = previousKey;
   if (previousRing === undefined) delete process.env[RING_ENV];

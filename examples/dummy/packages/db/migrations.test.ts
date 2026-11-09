@@ -194,6 +194,13 @@ function walk(statements: readonly string[]): ChainState {
       tables.delete(dropped[1] ?? '');
       continue;
     }
+    // Dropping a materialized view drops every index on it: `x db gen` recreates a changed view
+    // whole, so an index on the old one is gone even though no `drop index` names it.
+    const unviewed = statement.match(/^drop (?:materialized )?view (?:if exists )?"?(\w+)"?/i);
+    if (unviewed !== null) {
+      for (const [name, live] of indexes) if (live.table === unviewed[1]) indexes.delete(name);
+      continue;
+    }
     const index = statement.match(
       /^create (unique )?index (?:concurrently )?(?:if not exists )?"?(\w+)"? on "?(\w+)"? ?\(([^)]*)\)/i,
     );

@@ -1,28 +1,20 @@
 /**
- * The tree walker: a JSX node in, an HTML string out. It is the one place that knows what a
- * component call means on the server, so every render mode gets the same markup from the same
- * component — `static` at build time, `ssr`/`stream` per request, all through `renderToHtml`.
+ * Rendering a component tree: the options one render carries, its hole sink, and the two entry
+ * points. Every render mode gets the same markup from the same component — `static` at build
+ * time, `ssr`/`stream` per request — because all of them come through `renderToHtml`.
  */
 
-import { escapeHtml, renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import { renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import {
   IslandInvalidError,
   IslandNotHydratedError,
   IslandPropsInvalidError,
   PrerenderFailedError,
 } from './errors';
-import type { HoleNode } from './hole';
-import { isHoleNode } from './hole';
-import { renderAttributes, VOID_ELEMENTS } from './html';
-import { emitIslandAttributes, emitIslandProps } from './hydrate';
-import type { IslandNode } from './island';
-import { isIslandNode } from './island';
 import type { IslandCollector } from './island-collector';
-import { islandWithoutCollector } from './island-collector';
 import type { JsxComponent, JsxProps } from './jsx';
-import { isJsxNode } from './jsx';
 import type { StreamHole } from './render-stream';
-import { holeMarker } from './render-stream';
+import { renderAlone } from './render-walk';
 
 /**
  * The id of the element every document wraps its route component in — one name, because a service
@@ -30,23 +22,6 @@ import { holeMarker } from './render-stream';
  * `render-spa.ts` and named a mode that no longer exists, while every mode has always used it.
  */
 export const ROOT_ELEMENT_ID = 'x-root';
-
-/** Depth is bounded so a component that renders itself fails with a cause instead of a stack trace. */
-const MAX_DEPTH = 500;
-
-/**
- * Asserted at the top of `unwrap`, not only in `renderNode`. The element path was the only one
- * bounded, and it is not the only one that recurses: `unwrap` walks arrays and calls thunks, both
- * of which a component's `children` routinely are, so a self-referencing array or a self-returning
- * accessor escaped `renderToHtml` as a bare `RangeError` — no code, no `fix:`, nothing to catch by.
- */
-function assertDepth(depth: number): void {
-  if (depth <= MAX_DEPTH) return;
-  throw new PrerenderFailedError(
-    `component tree exceeded ${MAX_DEPTH} levels, so it renders itself`,
-    'remove the self-reference from the component that renders its own tag',
-  );
-}
 
 /**
  * What the walk carries besides depth. One object per render, never module-global: two concurrent
@@ -99,140 +74,15 @@ export function holeSink(options: HoleSinkOptions = {}): HoleSink {
 }
 
 /**
- * A thunk is called, not stringified. Solid's reactive reads are accessors (`count()`), and a
- * `children` prop is routinely a function — evaluating it once is exactly the server's job.
- *
- * Which is also why the depth bound belongs HERE and not only on the element path: the array and
- * thunk branches below recurse, and both are ordinary shapes for a component's children.
- */
-async function unwrap(value: unknown, depth: number, walk: RenderHtmlOptions): Promise<string> {
-  assertDepth(depth);
-  if (value === null || value === undefined || value === false || value === true) return '';
-  if (typeof value === 'string') return escapeHtml(value);
-  if (typeof value === 'number' || typeof value === 'bigint') return escapeHtml(String(value));
-  if (value instanceof Promise) return unwrap(await value, depth, walk);
-  // Before the array branch, never after: an island node IS an array — the only object shape the
-  // configured `JSX.Element` admits — so the generic branch would render its empty contents and
-  // drop the island, its props script and its budget line without a word.
-  if (isIslandNode(value)) return renderIsland(value, depth, walk);
-  if (isHoleNode(value)) return renderHole(value, depth, walk);
-  if (Array.isArray(value)) {
-    const parts = await Promise.all(value.map((item) => unwrap(item, depth + 1, walk)));
-    return parts.join('');
-  }
-  if (isJsxNode(value)) return renderNode(value.type, value.props, depth, walk);
-  if (typeof value === 'function') return unwrap((value as () => unknown)(), depth + 1, walk);
-  return escapeHtml(String(value));
-}
-
-/**
- * `innerHTML` is the one escape hatch that emits unescaped markup, and it is deliberate: the
- * `<head>` renderers and the streaming reveal chunks are already-serialized HTML, and re-escaping
- * them would print the tags. Nothing else in this file trusts a string.
- */
-async function renderElement(
-  tag: string,
-  props: JsxProps,
-  depth: number,
-  walk: RenderHtmlOptions,
-): Promise<string> {
-  const open = `<${tag}${renderAttributes(props)}>`;
-  if (VOID_ELEMENTS.has(tag)) return open;
-  const raw = (props as { innerHTML?: unknown }).innerHTML;
-  const inner =
-    raw === undefined || raw === null
-      ? await unwrap((props as { children?: unknown }).children, depth + 1, walk)
-      : String(raw);
-  return `${open}${inner}</${tag}>`;
-}
-
-/**
- * An island renders its SHELL on the server — the children the page wrote — and nothing of the
- * client module: the specifier is data, so there is no import to follow and the static page's
- * bundle graph never grows. The props script travels inside the wrapper so a document assembler
- * has exactly one thing left to remember, the runtime.
- */
-async function renderIsland(
-  node: IslandNode,
-  depth: number,
-  walk: RenderHtmlOptions,
-): Promise<string> {
-  const collector = walk.islands;
-  if (collector === undefined) throw islandWithoutCollector(node.spec);
-  const directive = collector.record(node.spec, node.props);
-  const shell = await unwrap((node.props as { children?: unknown }).children, depth + 1, walk);
-  const tag = node.spec.tag;
-  return `<${tag} ${emitIslandAttributes(directive)}>${shell}${emitIslandProps(directive)}</${tag}>`;
-}
-
-/**
- * A promise already running when the tree was built is awaited only once the stream starts, after
- * the fallback rendered; a rejection before then is unhandled. Marked through arrays and JSX
- * children — never by calling a thunk or a component, which have not run — and the hole still
- * awaits and sees it. `seen` stops a self-referencing array.
- */
-function observeEagerPromises(value: unknown, seen: Set<object>): void {
-  if (value instanceof Promise) {
-    value.catch(() => undefined);
-    return;
-  }
-  if (typeof value !== 'object' || value === null || seen.has(value)) return;
-  seen.add(value);
-  if (Array.isArray(value)) for (const item of value) observeEagerPromises(item, seen);
-  // An island or hole node is an array whose own items are empty: its tree is in `props`.
-  if (isJsxNode(value) || isIslandNode(value) || isHoleNode(value)) {
-    const props = value.props as { children?: unknown; fallback?: unknown; error?: unknown };
-    observeEagerPromises(props.children, seen);
-    observeEagerPromises(props.fallback, seen);
-    observeEagerPromises(props.error, seen);
-  }
-}
-
-/**
- * Everything under a hole walks with no sink: a nested hole is inline inside the outer one, since
- * the set of pending holes is fixed at the first flush (`renderStreamHtml`). `resolve` is a thunk,
- * so `children` start inside `start()`, in the request's async context, after the shell is out.
- */
-async function renderHole(node: HoleNode, depth: number, walk: RenderHtmlOptions): Promise<string> {
-  const sink = walk.holes;
-  const inner: RenderHtmlOptions = walk.islands === undefined ? {} : { islands: walk.islands };
-  const { children, error, fallback } = node.props;
-  if (sink === undefined) return unwrap(children, depth + 1, inner);
-  const id = sink.nextId();
-  observeEagerPromises(children, new Set());
-  const [shown, failed] = await Promise.all([
-    unwrap(fallback, depth + 1, inner),
-    error === undefined ? undefined : unwrap(error, depth + 1, inner),
-  ]);
-  sink.add({
-    id,
-    fallback: shown,
-    ...(failed === undefined ? {} : { error: failed }),
-    resolve: (signal) => sink.enter(signal, () => unwrap(children, depth + 1, inner)),
-  });
-  return holeMarker(id, shown);
-}
-
-async function renderNode(
-  type: string | JsxComponent,
-  props: JsxProps,
-  depth: number,
-  walk: RenderHtmlOptions,
-): Promise<string> {
-  assertDepth(depth);
-  if (typeof type === 'string') return renderElement(type, props, depth, walk);
-  return unwrap(type(props), depth + 1, walk);
-}
-
-/**
- * Render a component tree to HTML. Async throughout so a component may await its own data — the
- * `ssr` mode's whole point — without a second sync renderer existing beside this one.
+ * Render a component tree to HTML. Always a promise so a component may await its own data — the
+ * `ssr` mode's whole point — while the walk itself (`render-walk.ts`) stays synchronous until the
+ * tree holds something to await: one walker, never a second sync renderer beside it.
  */
 export async function renderToHtml(
   node: unknown,
   options: RenderHtmlOptions = {},
 ): Promise<string> {
-  return unwrap(node, 0, options);
+  return renderAlone(node, 0, options);
 }
 
 /**

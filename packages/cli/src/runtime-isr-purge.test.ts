@@ -117,9 +117,9 @@ describe('unit · a purge route, as the edge sees it', () => {
     const heldAtPurge: (readonly string[])[] = [];
     const edge: PurgeDriver = {
       name: 'spy',
-      purge: (keys) => {
-        heldAtPurge.push(isr.store().paths());
-        return Promise.resolve(keys);
+      purge: async (keys) => {
+        heldAtPurge.push(await isr.store().paths());
+        return keys;
       },
       purgeAll: () => Promise.resolve(),
     };

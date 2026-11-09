@@ -434,6 +434,7 @@ export { currentStep } from './step-scope';
 export type {
   CompensateContext,
   EventLookup,
+  EventSince,
   StepApi,
   StepFence,
   StepRecord,

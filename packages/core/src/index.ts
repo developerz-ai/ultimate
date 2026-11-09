@@ -847,6 +847,7 @@ export { addLogSink } from './log-tee';
 export type { LogSink } from './logger';
 export { setLogSink } from './logger';
 export {
+  isAgentOffered,
   isMcpExposed,
   type McpAnnotationHints,
   type McpEffect,

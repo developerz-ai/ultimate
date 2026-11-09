@@ -67,7 +67,12 @@ interface Entry {
   readonly name: string;
   readonly catchUp: string;
   readonly params: Readonly<Record<string, string>>;
-  readonly holders: Set<ChannelHandlers>;
+  /**
+   * Keyed by a token minted per `hold`, never by the handlers object: two holders passing ONE
+   * object (a module-level const) are two holds, and keyed by it the first release dropped the
+   * topic under the second.
+   */
+  readonly holders: Map<object, ChannelHandlers>;
   readonly listeners: Set<() => void>;
   state: ChannelState;
   error: unknown;
@@ -124,7 +129,7 @@ export class ChannelBook {
         name: ref.name,
         catchUp: ref.catchUp,
         params,
-        holders: new Set(),
+        holders: new Map(),
         listeners: new Set(),
         state: this.#deps.connected() ? 'joining' : 'offline',
         error: undefined,
@@ -142,12 +147,13 @@ export class ChannelBook {
       if (this.#deps.connected()) this.#deps.send(this.#frame(entry, 'add', true));
     }
     const held = entry;
-    held.holders.add(handlers);
+    const token = {};
+    held.holders.set(token, handlers);
     let open = true;
     const release = (): void => {
       if (!open) return;
       open = false;
-      held.holders.delete(handlers);
+      held.holders.delete(token);
       if (held.holders.size > 0) return;
       this.#byTopic.delete(topic);
       held.disarm?.();
@@ -247,7 +253,7 @@ export class ChannelBook {
     // (no rows, so no `records` and no `replay-gap`) the roster is the one answer a subscribe
     // gets. Only from `joining`: a read in flight, a refusal and a dead socket are not undone.
     if (entry?.state === 'joining') this.#set(entry, 'live');
-    for (const holder of entry?.holders ?? []) {
+    for (const holder of entry?.holders.values() ?? []) {
       if (presence !== null) holder.onPresence?.(presence);
       else holder.onEvent?.(frame.event);
     }

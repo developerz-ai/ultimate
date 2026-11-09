@@ -187,16 +187,16 @@ export class AgentMaxTurnsError extends UltimateError {
  * than filtered at the call, because a silently dropped tool is the worst of both: the
  * declaration reads as if the model can call it, and the model is never offered it.
  *
- * `isMcpExposed` is the one predicate — an in-app agent and an external MCP client see exactly
- * the same catalogue, which is what keeps "there is no second authz system" true of the catalogue
- * too.
+ * `isAgentOffered` is the one predicate — an in-app agent sees every action an external MCP client
+ * sees, plus the ones declared `agents: true` — so the catalogue is still declared at the action,
+ * never filtered here.
  */
 export class AgentToolUnexposedError extends UltimateError {
   constructor(input: { agent: string; tools: readonly string[] }) {
     super({
       code: 'X_AGENT_TOOL_UNEXPOSED',
       cause: `agent "${input.agent}" lists tools no MCP surface exposes: ${input.tools.join(', ')}`,
-      fix: "inProcessTool({ name, description, input, execute })   # for a tool only this agent may call — or add mcp: { expose: true } to the action named in cause to offer it to MCP clients too, or drop it from the agent's tools",
+      fix: "inProcessTool({ name, description, input, execute })   # for a tool only this agent may call — or add mcp: { expose: false, agents: true } to the action named in cause for this app's agents alone, mcp: { expose: true } to offer it to MCP clients too, or drop it from the agent's tools",
     });
   }
 }

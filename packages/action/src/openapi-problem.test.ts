@@ -38,6 +38,24 @@ describe('the published Problem schema against the document @ultimat3/http serve
     for (const member of Object.keys(served)) expect(declared).toContain(member);
   });
 
+  test('a capped X_INPUT_INVALID serves issuesTruncated, published as the literal true', () => {
+    const capped = new InputInvalidError(
+      'publishPost',
+      'input.postId: not a uuid',
+      [ISSUE],
+      'action',
+      true,
+    );
+    const served = wire(capped);
+    expect(served['issuesTruncated']).toBe(true);
+    const declared = Object.keys(problemSchema().properties);
+    for (const member of Object.keys(served)) expect(declared).toContain(member);
+    expect(problemSchema().properties['issuesTruncated']).toEqual({
+      type: 'boolean',
+      enum: [true],
+    });
+  });
+
   test('an app code that declared wire meta is served a member the schema lists', () => {
     registerErrorStatus({ X_APP_OPENAPI_PROBLEM_BUSY: 409 });
     registerProblemMeta({ X_APP_OPENAPI_PROBLEM_BUSY: ['sessionId'] });
@@ -100,7 +118,9 @@ describe('the published Problem schema against the document @ultimat3/http serve
       ...wire({ code: 'X_APP_OPENAPI_PROBLEM_FULL', meta: { sessionId: 's_1' } }),
     };
     expect(Object.keys(problemSchema().properties).sort()).toEqual(
-      [...Object.keys(served), 'issues'].filter((m, i, all) => all.indexOf(m) === i).sort(),
+      [...Object.keys(served), 'issues', 'issuesTruncated']
+        .filter((m, i, all) => all.indexOf(m) === i)
+        .sort(),
     );
   });
 

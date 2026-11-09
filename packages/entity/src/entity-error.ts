@@ -49,6 +49,9 @@ export const ENTITY_ERROR_CODES = [
   'X_ENTITY_RETAIN_UNINDEXED',
   'X_ENTITY_COUNTS_INVALID',
   'X_ENTITY_READ_ONLY',
+  'X_DRIVER_UNSUPPORTED',
+  'X_DRIVER_CAPABILITY_MISSING',
+  'X_DRIVER_ROW_OUT_OF_SCOPE',
 ] as const;
 
 export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
@@ -93,6 +96,10 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_ENTITY_COUNTS_INVALID:
     'references(…, { countedIn }) names no integer of its parent, or is no key to its primary key',
   X_ENTITY_READ_ONLY: 'a read-only entity was asked to write a row',
+  X_DRIVER_UNSUPPORTED: 'a custom driver was asked for a capability it does not declare',
+  X_DRIVER_CAPABILITY_MISSING:
+    'a custom driver declares a capability its raw repo does not implement',
+  X_DRIVER_ROW_OUT_OF_SCOPE: 'a custom driver returned a row outside the plan it was given',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the

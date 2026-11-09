@@ -60,8 +60,19 @@ const isWildcard = (rule: HostRule): boolean => {
 };
 
 /**
+ * `localhost` and every `*.localhost` (RFC 6761 §6.3), trailing dot or not: loopback by NAME, so no
+ * resolver is needed to know it — and Chrome ≥ 72 sends these straight past `--proxy-server`
+ * (its implicit bypass rules), the one case where a session's egress proxy screened nothing. Part
+ * of the floor below for that reason: a wildcard never admits one, an exact rule still does.
+ */
+const isLocalhostName = (host: string): boolean => {
+  const name = host.toLowerCase().replace(/\.$/, '');
+  return name === 'localhost' || name.endsWith('.localhost');
+};
+
+/**
  * The address-class FLOOR. A wildcard means "any site", and an address literal inside the network
- * — loopback, RFC 1918, link-local, the metadata endpoint — is not a site: it is the request this
+ * — loopback, RFC 1918, link-local, the metadata endpoint — or a `localhost` name is not a site: it is the request this
  * module's header names. So a wildcard never admits one, and the opt-out is NAMING it: an exact
  * rule (`'127.0.0.1'`, `'[::1]'`) is a line a reviewer can see, which `'*'` is not.
  *
@@ -74,6 +85,7 @@ const isWildcard = (rule: HostRule): boolean => {
 function admits(host: string, rule: HostRule): boolean {
   if (!hostMatches(host, rule)) return false;
   if (!isWildcard(rule)) return true;
+  if (isLocalhostName(host)) return false;
   const kind = classifyAddress(host);
   return kind === undefined || kind === 'public';
 }

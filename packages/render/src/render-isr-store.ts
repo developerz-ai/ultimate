@@ -7,6 +7,13 @@ import { finiteCount } from '@ultimat3/core';
 
 export type IsrState = 'miss' | 'hit' | 'stale';
 
+/**
+ * What a store method answers: the value, or a promise of it. A store over a disk, a bucket or a
+ * database cannot answer synchronously, and one shared store is what makes three replicas one
+ * ISR cache instead of three (`storageIsrStore`). The controller awaits every call.
+ */
+export type IsrAnswer<T> = T | Promise<T>;
+
 export interface IsrEntry {
   /**
    * The store key: the request's pathname AND its query, params sorted. Not the route's pattern
@@ -44,11 +51,11 @@ export interface IsrEntry {
  */
 export interface IsrTagFence {
   /** An opaque reading of these entities' generations, taken before a render reads its rows. */
-  sample(entities: readonly string[]): string;
+  sample(entities: readonly string[]): IsrAnswer<string>;
   /** A bust of these entities happened: every reading taken before this call is void. */
-  bump(entities: readonly string[]): void;
+  bump(entities: readonly string[]): IsrAnswer<void>;
   /** `set(entry)` only while `sampled` is still the reading. `false`: refused, nothing written. */
-  setIfCurrent(entry: IsrEntry, entities: readonly string[], sampled: string): boolean;
+  setIfCurrent(entry: IsrEntry, entities: readonly string[], sampled: string): IsrAnswer<boolean>;
 }
 
 export interface IsrStore {
@@ -58,14 +65,28 @@ export interface IsrStore {
    * route purges (`X_ROUTE_MODE_INVALID`), rather than left to re-fill a purged page in silence.
    */
   readonly tagFence?: IsrTagFence;
-  get(path: string): IsrEntry | undefined;
-  set(entry: IsrEntry): void;
+  get(path: string): IsrAnswer<IsrEntry | undefined>;
+  set(entry: IsrEntry): IsrAnswer<void>;
   /**
    * Mark a held page stale IN PLACE — `false` when the store does not hold it. Its own method and
    * not `set({ ...entry, stale: true })`, because `set` means "this page was just generated" and a
    * store is entitled to order its eviction by that: the read-modify-write made the STALEST page
    * the newest, so a tag bust protected exactly the pages that most needed regenerating.
    */
+  markStale(path: string): IsrAnswer<boolean>;
+  delete(path: string): IsrAnswer<void>;
+  paths(): IsrAnswer<readonly string[]>;
+}
+
+/** `memoryIsrStore`'s own shape: every answer synchronous, so a test reads it without `await`. */
+export interface MemoryIsrStore extends IsrStore {
+  readonly tagFence: {
+    sample(entities: readonly string[]): string;
+    bump(entities: readonly string[]): void;
+    setIfCurrent(entry: IsrEntry, entities: readonly string[], sampled: string): boolean;
+  };
+  get(path: string): IsrEntry | undefined;
+  set(entry: IsrEntry): void;
   markStale(path: string): boolean;
   delete(path: string): void;
   paths(): readonly string[];
@@ -73,18 +94,27 @@ export interface IsrStore {
 
 /**
  * How many rendered pages the default store holds. A route table supports `:params` and `*`, so
- `/blog/:slug` has as many ISR paths as the blog has slugs — 404-shaped ones that still render
+ * `/blog/:slug` has as many ISR paths as the blog has slugs — 404-shaped ones that still render
  * included. Unbounded, a crawler over 100k slugs is 100k HTML strings resident for the life of
  * the process.
  */
 export const DEFAULT_ISR_MAX_ENTRIES = 1_000;
 
+/**
+ * How much html the default store holds, counted as `html.length` — one byte per code unit, which
+ * is what JSC stores a Latin-1 page in (twice that for a page with any other character). The count
+ * cap alone bounds nothing in bytes: 1,000 entries of a 7 MiB page is 7 GiB resident.
+ */
+export const DEFAULT_ISR_MAX_BYTES = 256 * 1024 * 1024;
+
 export interface MemoryIsrStoreOptions {
-  /** Pages retained. The least recently generated goes first. */
+  /** Pages retained. The least recently used goes first. */
   readonly maxEntries?: number;
+  /** Total `html.length` retained. A page larger than this alone is not kept at all. */
+  readonly maxBytes?: number;
 }
 
-export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
+export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): MemoryIsrStore {
   // `map.size > NaN` is false for every size, so a cap that arrived non-finite is not a bigger
   // cap — it is no cap, and this store is the one thing bounding a crawler over 100k slugs.
   const maxEntries = finiteCount(
@@ -92,20 +122,35 @@ export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
     'maxEntries',
     options.maxEntries ?? DEFAULT_ISR_MAX_ENTRIES,
   );
+  const maxBytes = finiteCount(
+    'memoryIsrStore',
+    'maxBytes',
+    options.maxBytes ?? DEFAULT_ISR_MAX_BYTES,
+  );
+  // The Map's iteration order IS recency: a `set` and a hit `get` re-insert, so the first key is
+  // the least recently used page.
   const map = new Map<string, IsrEntry>();
+  let bytes = 0;
   // One counter per tag entity ever busted — bounded by the entities an app declares.
   const generations = new Map<string, number>();
   const reading = (entities: readonly string[]): string =>
     entities.map((entity) => String(generations.get(entity) ?? 0)).join(',');
+  const remove = (path: string): void => {
+    const held = map.get(path);
+    if (held === undefined) return;
+    bytes -= held.html.length;
+    map.delete(path);
+  };
   const set = (entry: IsrEntry): void => {
-    // Re-inserted rather than overwritten, so the Map's iteration order IS generation order and
-    // the first key is the least recently generated page.
-    map.delete(entry.path);
+    remove(entry.path);
+    // Kept, it would evict every other page and then itself be the only one over the cap.
+    if (entry.html.length > maxBytes) return;
     map.set(entry.path, entry);
-    while (map.size > maxEntries) {
+    bytes += entry.html.length;
+    while (map.size > maxEntries || bytes > maxBytes) {
       const oldest = map.keys().next();
       if (oldest.done === true) break;
-      map.delete(oldest.value);
+      remove(oldest.value);
     }
   };
   return {
@@ -121,19 +166,24 @@ export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
         return true;
       },
     },
-    get: (path) => map.get(path),
+    get: (path) => {
+      const entry = map.get(path);
+      if (entry === undefined) return undefined;
+      map.delete(path);
+      map.set(path, entry);
+      return entry;
+    },
     set,
     // In place: `map.set` on a key the Map already holds keeps its position, and that position is
-    // the eviction order. Never `delete` + `set` here — that is the bug this method exists to fix.
+    // the eviction order. Never `delete` + `set` here — a bust would make the stalest page the
+    // most recently used. Same html, so the byte count does not move.
     markStale: (path) => {
       const entry = map.get(path);
       if (entry === undefined) return false;
       map.set(path, { ...entry, stale: true });
       return true;
     },
-    delete: (path) => {
-      map.delete(path);
-    },
+    delete: remove,
     paths: () => [...map.keys()].sort(),
   };
 }

@@ -16,7 +16,10 @@ import type { AdvisoryLock } from './advisory-lock';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { ReplicationFailedError } from './errors';
 import type { Transport } from './fanout';
+import { encodeResync, RESYNC_SUBJECT } from './replication-resync';
 import { encodeEnvelope } from './replicator-envelope';
+import { ResyncDebt } from './replicator-resync';
+import { changeSubject, normalize } from './replicator-subject';
 import {
   type BackoffPolicy,
   defaultBackoff,
@@ -25,15 +28,13 @@ import {
   type Scheduler,
 } from './thundering-herd';
 
-export const CHANGE_SUBJECT_PREFIX = 'x.change';
-
-/** Every change subject: what a `sync` node subscribes to. A changefeed subject, never a channel. */
-export const CHANGE_SUBJECT_ALL = `${CHANGE_SUBJECT_PREFIX}.>`;
-
-/** `x.change.<table>.<orgId>` — tenant in the subject, so fanout filters without parsing a row. */
-export function changeSubject(change: ChangeEvent): string {
-  return `${CHANGE_SUBJECT_PREFIX}.${change.table}.${change.orgId ?? '_'}`;
-}
+// The subjects and the normalize step live next door; their importers keep this path.
+export {
+  CHANGE_SUBJECT_ALL,
+  CHANGE_SUBJECT_PREFIX,
+  changeSubject,
+  normalize,
+} from './replicator-subject';
 
 export interface ReplicatorOptions {
   readonly feed: ChangeFeed;
@@ -125,6 +126,8 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
   /** A stream is pumping under a lock this process holds. Internal: `running` is stricter. */
   let pumping = false;
   let lastLsn: string | null = null;
+  /** Where a run with no `lastLsn` resumes: `options.from`, until a resync names a new timeline. */
+  let resumeFrom = options.from;
   let published = 0;
   let skipped = 0;
   let outOfOrder = 0;
@@ -159,6 +162,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
    */
   let attempt = 0;
   let refusal: Refusal | null = null;
+  const resync = new ResyncDebt<Run>();
 
   /** One goodbye against the deadline, on the `schedule` seam. Never rejects. */
   const bounded = async (
@@ -227,6 +231,11 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     }
   };
 
+  const sayResync = (run: Run): Promise<void> =>
+    resync.pay(run, (reason) =>
+      publishThroughBlip(run, RESYNC_SUBJECT, encodeResync({ producer, reason })),
+    );
+
   const changeHandler =
     (run: Run) =>
     async (raw: ChangeEvent): Promise<void> => {
@@ -234,6 +243,8 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       // changes, and publishing them is one of two replicators speaking. A handler that merely
       // returned would let the stream count the change delivered and confirm it.
       if (current !== run || run.over !== null) throw fencedOut(run.over ?? 'a newer run started');
+      // Before any change of a stream with a hole, or the run ends as for a refused change.
+      await sayResync(run);
       const change = normalize(raw);
       if (!change) {
         skipped += 1;
@@ -301,13 +312,18 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     unwatchLock = options.lock.onLost((reason) => end(`the advisory lock was lost: ${reason}`));
     // A restart resumes where THIS process got to. `options.from` is where the first run began;
     // handing it to the second would have the feed re-deliver everything published since.
-    const from = lastLsn ?? options.from;
+    const from = lastLsn ?? resumeFrom;
     const onChange = changeHandler(run);
+    // A recreated slot is a NEW timeline: no old position may drop its changes or resume it.
+    const onResync = (reason: string): void => {
+      resync.owe(reason);
+      lastLsn = null;
+      resumeFrom = undefined;
+    };
     let fed = false;
     try {
-      await options.feed.start(
-        from === undefined ? { onChange, onEnd: end } : { from, onChange, onEnd: end },
-      );
+      const handlers = { onChange, onEnd: end, onResync };
+      await options.feed.start(from === undefined ? handlers : { from, ...handlers });
       fed = true;
       if (run.over !== null) {
         throw new ReplicationFailedError({
@@ -332,6 +348,13 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     // what `stop()` reads to decide there is anything to tear down.
     pumping = true;
     if (refusal === null) failure = null;
+    // Now, not on the next change: a quiet table would stay stale until its next write.
+    void sayResync(run).catch((thrown: unknown) => {
+      logger.warn('replicator.resync_unpublished', {
+        key: options.lock.key,
+        error: renderThrowable(thrown),
+      });
+    });
     logger.info('replicator started', { source: options.feed.source, key: options.lock.key });
     return true;
   };
@@ -474,16 +497,3 @@ const unrefScheduler: Scheduler = (fn, ms) => {
     clearTimeout(handle);
   };
 };
-
-/** Drops events the pipeline cannot use and hoists the tenant id out of the row. */
-export function normalize(change: ChangeEvent): ChangeEvent | null {
-  // The one change that carries no row by design; nothing to hoist a tenant out of.
-  if (change.op === 'truncate') return change;
-  const row = change.after ?? change.before;
-  if (!row) return null;
-  if (change.op === 'insert' && change.after === null) return null;
-  if (change.op === 'delete' && change.before === null) return null;
-  if (change.orgId !== null) return change;
-  const orgId = row['orgId'];
-  return typeof orgId === 'string' ? { ...change, orgId } : change;
-}

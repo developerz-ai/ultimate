@@ -85,7 +85,7 @@ describe('single-flight regeneration', () => {
     expect(first.state).toBe('miss');
     expect(first.result.body).toBe('<p>v1</p>');
 
-    controller.markStale('/blog/a');
+    await controller.markStale('/blog/a');
     version = 2;
 
     const stale = await controller.serve('/blog/a', render);
@@ -118,7 +118,7 @@ describe('single-flight regeneration', () => {
     };
 
     await controller.serve('/blog/a', render);
-    controller.markStale('/blog/a');
+    await controller.markStale('/blog/a');
     fail = true;
 
     const stale = await controller.serve('/blog/a', render);
@@ -162,7 +162,7 @@ describe('the CDN is told the TTL the route declared', () => {
     const controller = isrController({ routes: describePages });
 
     await controller.serve('/pricing', () => '<p>v1</p>');
-    controller.markStale('/pricing');
+    await controller.markStale('/pricing');
 
     const stale = await controller.serve('/pricing', () => '<p>v2</p>');
     expect(stale.state).toBe('stale');
@@ -183,11 +183,11 @@ describe('tag-driven revalidation', () => {
     await controller.serve('/team', render);
 
     // invalidates: [tag.post] regenerates exactly the dependent routes, nothing else
-    expect(controller.revalidateByTags([postTag])).toEqual(['/blog/a', '/blog/b']);
-    expect(controller.store().get('/blog/a')?.stale).toBe(true);
-    expect(controller.store().get('/team')?.stale).toBe(false);
+    expect(await controller.revalidateByTags([postTag])).toEqual(['/blog/a', '/blog/b']);
+    expect((await controller.store().get('/blog/a'))?.stale).toBe(true);
+    expect((await controller.store().get('/team'))?.stale).toBe(false);
 
-    expect(controller.revalidateByTags([orgTag])).toEqual(['/team']);
+    expect(await controller.revalidateByTags([orgTag])).toEqual(['/team']);
   });
 
   test('a row tag busts the pages registered under its collection tag', async () => {
@@ -195,7 +195,7 @@ describe('tag-driven revalidation', () => {
     const controller = isrController({ routes: describePages });
     await controller.serve('/blog/a', (path) => `<p>${path}</p>`);
 
-    expect(controller.revalidateByTags([tag('post', '1')])).toEqual(['/blog/a']);
+    expect(await controller.revalidateByTags([tag('post', '1')])).toEqual(['/blog/a']);
   });
 
   test('attach registers the controller as the framework revalidator', async () => {
@@ -204,7 +204,7 @@ describe('tag-driven revalidation', () => {
     const detach = controller.attach();
     await controller.serve('/team', () => '<p>team</p>');
 
-    expect(controller.store().get('/team')?.stale).toBe(false);
+    expect((await controller.store().get('/team'))?.stale).toBe(false);
     detach();
     // The GRAPH edge is what detach drops; the controller's own store is still its to ask.
     expect(dependentsOfKind([orgTag], 'isr-route')).toEqual([]);
@@ -229,8 +229,8 @@ describe('detach releases the revalidator, not only the dependents', () => {
 
     await invalidateTags([orgTag]);
 
-    expect(a.store().get('/team')?.stale).toBe(false);
-    expect(b.store().get('/team')?.stale).toBe(false);
+    expect((await a.store().get('/team'))?.stale).toBe(false);
+    expect((await b.store().get('/team'))?.stale).toBe(false);
   });
 
   // Detaching in the wrong order must not silence the controller that owns the slot now.
@@ -245,7 +245,7 @@ describe('detach releases the revalidator, not only the dependents', () => {
     detachA();
     await invalidateTags([orgTag]);
 
-    expect(b.store().get('/team')?.stale).toBe(true);
+    expect((await b.store().get('/team'))?.stale).toBe(true);
   });
 });
 
@@ -302,8 +302,8 @@ describe('the default ISR store is bounded', () => {
     await controller.serve('/blog/b', render);
     await controller.serve('/blog/c', render);
 
-    expect(controller.store().paths()).toEqual(['/blog/b', '/blog/c']);
-    expect(controller.revalidateByTags([postTag])).toEqual(['/blog/b', '/blog/c']);
+    expect(await controller.store().paths()).toEqual(['/blog/b', '/blog/c']);
+    expect(await controller.revalidateByTags([postTag])).toEqual(['/blog/b', '/blog/c']);
   });
 
   test('a page rendered again after its eviction rejoins the graph', async () => {
@@ -319,7 +319,7 @@ describe('the default ISR store is bounded', () => {
     await controller.serve('/blog/c', render); // evicts /blog/a
     await controller.serve('/blog/a', render); // evicts /blog/b
 
-    expect(controller.revalidateByTags([postTag])).toEqual(['/blog/a', '/blog/c']);
+    expect(await controller.revalidateByTags([postTag])).toEqual(['/blog/a', '/blog/c']);
   });
 });
 
@@ -339,7 +339,7 @@ describe('the store key carries the query, and the route lookup does not', () =>
     // was `hit` — a second visitor served the first visitor's document.
     expect(second.result.body).toBe('<p>page 3</p>');
     expect(second.state).toBe('miss');
-    expect(isr.store().paths()).toEqual(['/blog?page=2', '/blog?page=3']);
+    expect(await isr.store().paths()).toEqual(['/blog?page=2', '/blog?page=3']);
   });
 
   test('a query-keyed entry still resolves ITS ROUTE for the declared TTL', async () => {
@@ -371,7 +371,7 @@ describe('the store key carries the query, and the route lookup does not', () =>
     await isr.serve('/blog?page=2', () => '<p>a</p>');
     await isr.serve('/blog?page=3', () => '<p>b</p>');
 
-    expect(isr.revalidateByTags([postTag])).toEqual(['/blog?page=2', '/blog?page=3']);
+    expect(await isr.revalidateByTags([postTag])).toEqual(['/blog?page=2', '/blog?page=3']);
   });
 });
 
@@ -399,7 +399,7 @@ describe('a bust that lands mid-render', () => {
     await served;
 
     // Present or forgotten, but never a FRESH entry holding pre-write HTML.
-    const stored = controller.store().get(key);
+    const stored = await controller.store().get(key);
     expect(stored?.html).not.toBe('<p>PRE-WRITE</p>');
   });
 
@@ -417,7 +417,7 @@ describe('a bust that lands mid-render', () => {
       });
     });
     await Promise.resolve();
-    expect(controller.revalidateByTags([postTag])).toEqual([key]);
+    expect(await controller.revalidateByTags([postTag])).toEqual([key]);
 
     release('<p>b</p>');
     await served;

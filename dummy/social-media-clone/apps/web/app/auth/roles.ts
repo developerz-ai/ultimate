@@ -11,6 +11,7 @@ import { dashboardPermissions } from '../dashboard/policy';
 import { friendPermissions } from '../friends/policy';
 import { messagePermissions } from '../messages/policy';
 import { notificationPermissions } from '../notifications/policy';
+import { oauthPermissions } from '../oauth/policy';
 import { postPermissions } from '../posts/policy';
 
 /**
@@ -25,6 +26,7 @@ export const MEMBER_GRANTS: readonly string[] = [
   ...friendPermissions.all,
   ...messagePermissions.all,
   ...notificationPermissions.all,
+  ...oauthPermissions.all,
 ];
 
 /**

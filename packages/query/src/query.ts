@@ -23,6 +23,7 @@ import { facadeFor } from './facade';
 import { assertQueryHttp, type QueryHttp } from './http-pin';
 import { assertEncodableInput } from './input-shape';
 import type { LiveQuery, ToLiveOptions } from './live';
+import { assertMaxPage } from './page-controls';
 import type { Page, PaginateArgs } from './pagination';
 import type { QueryPolicy, QuerySurface } from './policy-gate';
 import { hasDef, queryName, runQuery, stashDef } from './read';
@@ -111,6 +112,12 @@ export interface QueryDef<
   readonly rows?: StandardSchemaV1<unknown, TRow>;
   sql(input: InferOutput<TInput>, ctx: Ctx): SqlSource<TRow>;
   readonly cache?: QueryCache;
+  /**
+   * The largest `_first` the route serves this read, raising the wire's `MAX_WIRE_PAGE_SIZE` (500)
+   * up to `MAX_PAGE_SIZE` (10,000). A server `read.page()` is bounded by `MAX_PAGE_SIZE` either
+   * way. Not a whole number in that range: `X_QUERY_MAX_PAGE_INVALID` at `query()`.
+   */
+  readonly maxPage?: number;
   /**
    * Answer `GET` with an `ETag` and `private, no-cache`, and a matching `If-None-Match` with a
    * bodiless 304 — after the policy and the rate limit, since a 304 is still a read of the caller's
@@ -243,6 +250,7 @@ export interface AnyQueryDef {
   readonly rows?: StandardSchemaV1;
   sql(input: unknown, ctx: Ctx): SqlSource<object>;
   readonly cache?: QueryCache;
+  readonly maxPage?: number;
   readonly etag?: true;
   readonly timeoutMs?: number;
   readonly mcp?: McpExposureDeclaration;
@@ -269,6 +277,8 @@ export interface AnyQuery {
   /** Lifted for the route: whether an answer is a record envelope is decided at projection. */
   readonly rows?: StandardSchemaV1;
   readonly cache?: QueryCache;
+  /** Declared `maxPage` — the route's `_first` bound. Absent is `MAX_WIRE_PAGE_SIZE`. */
+  readonly maxPage?: number;
   readonly mcp?: McpExposureDeclaration;
   /** Lifted so `toQueryRoute` reads the declaration without reaching through `defOf`. */
   readonly rateLimit?: QueryRateLimit;
@@ -326,6 +336,7 @@ export type QueryFacade<
   | 'subscribes'
   | 'rows'
   | 'cache'
+  | 'maxPage'
   | 'mcp'
   | 'rateLimit'
   | 'deprecated'
@@ -368,6 +379,7 @@ export function query<
   }
   assertFreshness(def);
   assertSubscribes(def.subscribes, def.live);
+  assertMaxPage(def.maxPage);
   // A JS caller or generated code can write `single: 'yes'`; truthiness would read it as `true`
   // on the route and `false` in the type, so anything but a boolean is refused where it is written.
   if (def.single !== undefined && typeof def.single !== 'boolean') {

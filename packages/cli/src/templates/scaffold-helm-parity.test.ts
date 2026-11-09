@@ -104,3 +104,20 @@ test('both charts default the monitoring switches the same way', async () => {
   expect(chart).toEqual(keys(String(scaffold?.contents ?? '')));
   expect(chart).toMatchObject({ serviceMonitor: { enabled: 'auto' }, alerts: { enabled: 'auto' } });
 });
+
+// Egress is closed by default in both: a scaffolded app's scraping worker must not reach the cloud
+// metadata endpoint just because it shipped on the scaffold's chart rather than the framework's.
+test('both charts default networkPolicy the same way, egress closed', async () => {
+  const policy = (text: string): unknown => {
+    const parsed: unknown = Bun.YAML.parse(text);
+    return new Map(Object.entries(typeof parsed === 'object' && parsed ? parsed : {})).get(
+      'networkPolicy',
+    );
+  };
+  const scaffold = helmFiles(names('ultimate')).find(
+    (entry) => entry.path === 'docker/helm/values.yaml',
+  );
+  const chart = policy(await Bun.file(join(CHART, '..', 'values.yaml')).text());
+  expect(policy(String(scaffold?.contents ?? ''))).toEqual(chart);
+  expect(JSON.stringify(chart)).toContain('169.254.0.0/16');
+});

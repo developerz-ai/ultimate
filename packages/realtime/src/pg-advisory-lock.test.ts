@@ -76,8 +76,11 @@ describe('tryAcquire', () => {
       database: 'app',
       application_name: `ultimate-replicator-lock:${KEY}`,
       // Every session `PgConnection` opens pins its output formats, replication or not: one
-      // session shape, not two. `pg-connection.test.ts` is where that string is asserted.
-      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC',
+      // session shape, not two. `pg-connection.test.ts` is where that string is asserted. The
+      // keepalives are what free THIS lock when its holder vanishes without a FIN (plan 101 R4).
+      options:
+        '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC ' +
+        '-c tcp_keepalives_idle=10 -c tcp_keepalives_interval=5 -c tcp_keepalives_count=3',
     });
   });
 

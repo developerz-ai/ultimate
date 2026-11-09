@@ -69,6 +69,9 @@ export const failedRun = (result: LoadResult, url: string): Finding | undefined 
       };
 };
 
+/** The longest a booted app may live: far past a whole run, short of forever. */
+const SERVER_DEADLINE_MS = 30 * 60_000;
+
 const answerFetch = async (url: string) => {
   const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   return { status: response.status, bytes: (await response.arrayBuffer()).byteLength };
@@ -82,6 +85,9 @@ async function coldStart(command: string, url: string, cwd: string) {
   const started = performance.now();
   const child = Bun.spawn(['sh', '-c', command], {
     cwd,
+    // `stop` ends it; this is for the run that never reaches `stop`. Three 30 s runs and a cold
+    // start fit many times over, so a server alive past it is a bench that hung.
+    timeout: SERVER_DEADLINE_MS,
     detached: true,
     stdio: ['ignore', 'ignore', 'ignore'],
   });

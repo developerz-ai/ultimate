@@ -78,4 +78,30 @@ describe('unit · every new target is screened at the browser, on both drivers',
     expect(thrown).toBe('X_SCRAPE_BROWSER_UNREACHABLE');
     expect(closed).toBe(true);
   });
+
+  // A wildcard admits the NAME; the browser leg resolves it before release (`browser-dial.ts`).
+  // `.test` never resolves (RFC 2606) and the test network is sealed, so an unproxied session
+  // refuses it and a proxied one — whose exit resolves names — lets it through.
+  test('a wildcard-admitted name is screened unless the session dials through an exit', async () => {
+    const outcomes: Record<string, readonly string[]> = {};
+    for (const proxy of [undefined, 'http://exit.test:3128']) {
+      const launcher = fakeCdpLauncher({ url: 'https://shop.test/', html: '<p>hi</p>' });
+      const session = await localBrowser({ launcher }).open({
+        ...init,
+        rules: { allowHosts: ['*'] },
+        ...(proxy === undefined ? {} : { proxy }),
+      });
+      const { browserFetch } = launcher.browser;
+      launcher.browser.emitTargetRequest('https://nowhere.test/popup', 'Document');
+      // Awaits the DECISION, not a delay: the default resolver (`Bun.dns`) answers on its own time,
+      // and a proxied session decides on the event's own tick. Turns, never the wall clock.
+      for (let turn = 0; turn < 10_000; turn += 1) {
+        if (browserFetch.failed.length + browserFetch.continued.length > 0) break;
+        await Bun.sleep(0);
+      }
+      outcomes[proxy === undefined ? 'direct' : 'proxied'] = browserFetch.failed;
+      await session.close();
+    }
+    expect(outcomes).toEqual({ direct: ['https://nowhere.test/popup'], proxied: [] });
+  });
 });

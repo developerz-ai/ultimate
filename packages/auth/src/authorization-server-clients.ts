@@ -18,6 +18,11 @@ import { randomToken, sha256Hex } from './tokens';
 export const CLIENT_METADATA_MAX_BYTES = 5 * 1024;
 const CLIENT_METADATA_TTL_MS = 5 * 60 * 1000;
 const CLIENT_METADATA_CACHE_MAX = 1_000;
+/**
+ * One attempt: a document that failed is an unknown client NOW, and the person on the consent page
+ * is waiting. A retry would also multiply every metered fetch by the vendor's attempt count.
+ */
+const ONE_ATTEMPT = Object.freeze({ attempts: 1, base: 0, max: 0, jitter: 'none' as const });
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** https anywhere, http only on loopback (RFC 8252 §7.3), never a fragment (RFC 6749 §3.1.2). */
@@ -67,6 +72,18 @@ export interface ClientDirectory {
 
 export function clientDirectory(config: ResolvedAuthServerConfig): ClientDirectory {
   const cache = new Map<string, { client: AuthServerClient | null; untilMs: number }>();
+  /** Misses in flight, by client id: concurrent reads of one uncached document share one GET. */
+  const inflight = new Map<string, Promise<AuthServerClient | null>>();
+  function fetchShared(clientId: string, callerKey: string | undefined) {
+    const nowMs = config.clock.now().getTime();
+    const hit = cache.get(clientId);
+    if (hit !== undefined && hit.untilMs > nowMs) return Promise.resolve(hit.client);
+    const joined = inflight.get(clientId);
+    if (joined !== undefined) return joined;
+    const started = fetchDocument(clientId, callerKey).finally(() => inflight.delete(clientId));
+    inflight.set(clientId, started);
+    return started;
+  }
   async function fetchDocument(
     clientId: string,
     callerKey: string | undefined,
@@ -86,6 +103,7 @@ export function clientDirectory(config: ResolvedAuthServerConfig): ClientDirecto
           maxBytes: CLIENT_METADATA_MAX_BYTES,
           redirect: 'error',
           headers: { accept: 'application/json' },
+          retry: ONE_ATTEMPT,
         },
         { fetch: config.fetch, resolve: config.resolveHost },
       );
@@ -109,7 +127,7 @@ export function clientDirectory(config: ResolvedAuthServerConfig): ClientDirecto
   return {
     find: (clientId, callerKey) =>
       isMetadataClientId(clientId)
-        ? fetchDocument(clientId, callerKey)
+        ? fetchShared(clientId, callerKey)
         : config.store.getClient(clientId),
   };
 }

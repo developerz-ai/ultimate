@@ -18,7 +18,7 @@ import {
 import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
-import { renderCatalog } from './meta-surface';
+import { renderCatalog } from './meta-catalog-render';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { jsonResult } from './registry';
 import { type McpServer, mcpServer } from './server';

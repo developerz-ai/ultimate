@@ -6,6 +6,7 @@ import type { Clock } from '@ultimat3/core';
 import { finiteOption, logger, systemClock, uuidV7 } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
+import { eventBefore, pastCursor } from './events-cursor';
 import type { PurgeTarget } from './purge';
 import type { EventLookup } from './steps';
 
@@ -36,7 +37,8 @@ export interface EventBus extends EventLookup {
   list(name?: string): Promise<readonly JobEvent[]>;
   /**
    * Delete every event past its expiry and answer how many went. Measured on the bus's own clock,
-   * like every other instant it holds. The memory bus also sweeps on each publish; the stored one
+   * like every other instant it holds. The memory bus also sweeps on a publish, at most once a
+   * second and only once something has expired; the stored one
    * has no caller but the retention sweep (`eventsPurgeTarget`).
    */
   purgeExpired(): Promise<number>;
@@ -48,6 +50,9 @@ export interface MemoryEventBusOptions {
   readonly defaultTtl?: DurationInput;
   readonly maxEvents?: number;
 }
+
+/** The least gap between two publish-time sweeps, on the bus's clock. */
+const SWEEP_EVERY_MS = 1_000;
 
 export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
   const clock = options.clock ?? systemClock;
@@ -63,16 +68,31 @@ export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
   );
   const maxEvents = finiteOption('the memory event bus', 'maxEvents', options.maxEvents ?? 10_000);
   const events = new Map<string, JobEvent>();
+  // Per name, so `find` reads one event's rows and never the whole bus (10k events made every
+  // find a 10k scan). Sets keep insertion order and delete in O(1), which the eviction needs.
+  const byName = new Map<string, Set<JobEvent>>();
+  /** No stored event expires before this, so a publish before it has nothing to sweep. */
+  let nextExpiry = Number.POSITIVE_INFINITY;
+  let lastSweptAt = Number.NEGATIVE_INFINITY;
+
+  const forget = (event: JobEvent): void => {
+    events.delete(event.id);
+    const named = byName.get(event.name);
+    named?.delete(event);
+    if (named?.size === 0) byName.delete(event.name);
+  };
 
   const purgeExpired = (): number => {
     const at = nowMs(clock);
     let removed = 0;
-    for (const [id, event] of events) {
+    nextExpiry = Number.POSITIVE_INFINITY;
+    for (const event of events.values()) {
       if (event.expiresAt <= at) {
-        events.delete(id);
+        forget(event);
         removed += 1;
-      }
+      } else if (event.expiresAt < nextExpiry) nextExpiry = event.expiresAt;
     }
+    lastSweptAt = at;
     return removed;
   };
 
@@ -80,8 +100,11 @@ export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
     stored: false,
     now: () => Promise.resolve(nowMs(clock)),
     publish(name, payload, publishOptions = {}) {
-      purgeExpired();
       const at = nowMs(clock);
+      // A sweep is a pass over every event, so a publish pays for one only when something has
+      // expired AND the last one is a second old: a sweep per publish made a 10k fill 916 ms.
+      // `find` filters the expired either way; this only bounds the heap.
+      if (at >= nextExpiry && at - lastSweptAt >= SWEEP_EVERY_MS) purgeExpired();
       const event: JobEvent = {
         id: uuidV7(),
         name,
@@ -97,10 +120,14 @@ export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
           : { correlationKey: publishOptions.correlationKey }),
       };
       events.set(event.id, event);
+      const named = byName.get(name);
+      if (named === undefined) byName.set(name, new Set([event]));
+      else named.add(event);
+      if (event.expiresAt < nextExpiry) nextExpiry = event.expiresAt;
       while (events.size > maxEvents) {
-        const oldest = events.keys().next();
+        const oldest = events.values().next();
         if (oldest.done === true) break;
-        events.delete(oldest.value);
+        forget(oldest.value);
       }
       logger.debug('jobs.event.published', {
         event: name,
@@ -110,27 +137,23 @@ export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
     },
 
     /**
-     * Earliest matching event at or after `afterMs`, so a resumed step consumes events in
-     * publication order rather than jumping to the newest one. Ties in one ms go to the earlier
-     * publish (the Map's insertion order), and `afterId` seeks past that event in the same order.
+     * Earliest matching event past the cursor, in `(publishedAt, id)` order (`events-cursor.ts`),
+     * so a resumed step consumes events in publication order rather than jumping to the newest
+     * one — the rule `SQL_EVENT_FIND` states. The cursor is compared, never looked up: a refused
+     * event that has since been purged still excludes everything at or before it.
      */
-    find(name, correlationKey, afterMs, afterId) {
+    find(name, correlationKey, afterMs, afterId, _horizon, since) {
       const at = nowMs(clock);
-      const cursor = afterId === undefined ? undefined : events.get(afterId);
-      // Until the cursor's own event is passed, an event in its millisecond came before it.
-      let passed = cursor === undefined;
+      // The wait's own line; no horizon here — a memory publish is visible as it is stamped.
+      const from = since?.at ?? afterMs;
+      const cursor = afterId === undefined ? { afterMs } : { afterMs, afterId };
       let best: JobEvent | undefined;
-      for (const event of events.values()) {
-        if (event === cursor) {
-          passed = true;
-          continue;
-        }
-        if (!passed && event.publishedAt <= (cursor?.publishedAt ?? 0)) continue;
-        if (event.name !== name) continue;
+      for (const event of byName.get(name) ?? []) {
         if (event.expiresAt <= at) continue;
-        if (event.publishedAt < afterMs) continue;
+        if (event.publishedAt < from || !pastCursor(event, cursor)) continue;
+        if (since?.refused?.includes(event.id) === true) continue;
         if (correlationKey !== undefined && event.correlationKey !== correlationKey) continue;
-        if (best === undefined || event.publishedAt < best.publishedAt) best = event;
+        if (best === undefined || eventBefore(event, best)) best = event;
       }
       return Promise.resolve(
         best === undefined

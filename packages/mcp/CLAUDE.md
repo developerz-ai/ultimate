@@ -40,7 +40,7 @@ import. The CLI wires it.
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface and its three boot refusals |
 | `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
-| `meta-surface.ts` | `surface: 'meta'` catalog: `list_resources` / `describe_resource`, `groups:` boot checks; dispatch stays in `server.ts` |
+| `meta-surface.ts` · `meta-catalog-render.ts` | `surface: 'meta'` catalog, `groups:` boot checks (dispatch: `server.ts`) · its text, `catalogDetail` |
 | `meta-split.ts` · `meta-split-call.ts` · `meta-host.ts` | `surface: 'meta-split'`: the three dispatchers, the effect boot check · their dispatch (wrong tool, preview, `confirmed_by_user`) · the server half both meta doors call |
 | `list-params.ts` | `listParams` whitelist → the schema `manage_resource` enforces (flat keys: `status_eq`) |
 | `meta-errors.ts` · `framework-error.ts` | meta boot refusals · a thrown value read and rendered (split from `server.ts`) |

@@ -58,12 +58,14 @@ describe('unit · an index declared `concurrently: true`', () => {
   });
 
   test('a foreign key index asked for again concurrently is one index, built concurrently', () => {
-    const orgs = entity('entity_test_concurrent_orgs', { columns: { id: uuid().primaryKey() } });
+    // `teamId`, not `orgId`: an inferred tenant column is covered by the `(tenant, pk)` index and
+    // gets no foreign-key index of its own (`tenant-index.ts`).
+    const teams = entity('entity_test_concurrent_teams', { columns: { id: uuid().primaryKey() } });
     const members = entity('entity_test_concurrent_members', {
-      columns: { id: uuid().primaryKey(), orgId: uuid().references(() => orgs.id) },
-      indexes: [{ on: ['orgId'], concurrently: true }],
+      columns: { id: uuid().primaryKey(), teamId: uuid().references(() => teams.id) },
+      indexes: [{ on: ['teamId'], concurrently: true }],
     });
-    const indexes = members.$describe().indexes.filter((each) => each.columns[0] === 'org_id');
+    const indexes = members.$describe().indexes.filter((each) => each.columns[0] === 'team_id');
     expect(indexes).toHaveLength(1);
     expect(indexes[0]?.concurrently).toBe(true);
   });

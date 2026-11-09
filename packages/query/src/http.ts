@@ -100,6 +100,7 @@ export function toQueryRoute(target: AnyQuery): Route {
             raw: search,
           }) as typeof search)
         : search,
+      target.maxPage,
     );
     const input = absentArraysOf(target.input, coerceQuery(target.input, values));
     if (target.single === true) {

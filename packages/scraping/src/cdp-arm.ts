@@ -1,13 +1,16 @@
 // Everything `cdpTarget()` arms on the page BEFORE its first navigation, plus the readers that
 // turn the library's `unknown` event payloads into ring entries. Split out of `cdp-target.ts` on
 // 2026-09-19 for one reason: that file stood at 478 lines against the 500-line ceiling, and the
-// three verbs `press`/`focus`/`accessibility` did not fit under it. The extraction is VERBATIM —
-// the request, console, `pageerror` and `error` handlers are the same code, one file over.
+// three verbs `press`/`focus`/`accessibility` did not fit under it. Since 31.0.0 an allowed request
+// is released only after `browser-dial.ts` screens a wildcard-admitted name's addresses.
 
+import { resolveDialHost } from '@ultimat3/core/outbound';
+import { type BrowserDialScreen, browserDialRefusal } from './browser-dial';
 import type { CdpBrowserLike, CdpPageLike, CdpRequestLike } from './cdp-port';
 import type { ScrapeClock } from './clock';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
+import type { HostResolve } from './pinned-host';
 import type {
   ConsoleLine,
   ConsoleRing,
@@ -18,12 +21,46 @@ import type {
 } from './rings';
 import { clamped, pageErrorEntry, RESOURCE_TYPES } from './rings';
 
+/**
+ * What the DNS screen reads (`browser-dial.ts`). `resolve` defaults to `Bun.dns`, the one the HTTP
+ * leg uses; `proxied` is true when the session dials through an exit, which resolves names itself.
+ */
+export interface CdpDialInit {
+  readonly resolve?: HostResolve | undefined;
+  readonly proxied?: boolean | undefined;
+}
+
 /** What `arm()` reads: the page it subscribes to, the rules it judges by, the clock it stamps with. */
-export interface CdpArmInit {
+export interface CdpArmInit extends CdpDialInit {
   readonly page: CdpPageLike;
   readonly rules: InterceptRules;
   readonly clock: ScrapeClock;
 }
+
+const dialScreen = (init: CdpDialInit & { readonly rules: InterceptRules }): BrowserDialScreen => ({
+  allowHosts: init.rules.allowHosts,
+  resolve: init.resolve ?? resolveDialHost,
+  proxied: init.proxied === true,
+});
+
+/**
+ * Release or refuse, after the DNS screen when there is one. Synchronous when nothing needs
+ * resolving — an exact rule's request leaves on the event's own tick, as before this screen.
+ * A refusal is a `host` refusal: the name was admitted, the address it answers is not.
+ */
+const screened = (
+  url: string,
+  screen: BrowserDialScreen,
+  release: () => void,
+  refuse: () => void,
+): void => {
+  const pending = browserDialRefusal(url, screen);
+  if (pending === undefined) {
+    release();
+    return;
+  }
+  pending.then((refused) => (refused ? refuse() : release()), refuse);
+};
 
 const asResourceType = (raw: string): ResourceType =>
   (RESOURCE_TYPES as readonly string[]).includes(raw) ? (raw as ResourceType) : 'other';
@@ -121,6 +158,7 @@ export interface CdpSinks {
  */
 export async function arm(init: CdpArmInit, sinks: CdpSinks): Promise<void> {
   const { network, console: console_, pageErrors, crashed } = sinks;
+  const screen = dialScreen(init);
   await init.page.setRequestInterception(true);
   init.page.on('request', (payload) => {
     const request = asRequest(payload);
@@ -133,16 +171,26 @@ export async function arm(init: CdpArmInit, sinks: CdpSinks): Promise<void> {
     const method = readStringFrom(request, 'method') ?? 'GET';
     const verdict = interceptVerdict(url, type, init.rules);
     const at = init.clock.now().getTime();
-    if (verdict === 'allow') {
-      network.push({ method, url: clamped(url), resourceType: type, at });
-      // Caught, never floated: both reject when the target closed mid-request (and on any other
-      // protocol error), and a floated rejection is one Bun ends the process on. The request is
-      // already recorded; there is nothing left to do for a target that is gone.
-      request.continue().catch(() => undefined);
+    // Caught, never floated: both reject when the target closed mid-request (and on any other
+    // protocol error), and a floated rejection is one Bun ends the process on. The request is
+    // already recorded; there is nothing left to do for a target that is gone.
+    const refuse = (reason: 'host' | 'blocked'): void => {
+      network.push(refusalEntry(url, type, reason, at, method));
+      request.abort().catch(() => undefined);
+    };
+    if (verdict !== 'allow') {
+      refuse(verdict);
       return;
     }
-    network.push(refusalEntry(url, type, verdict, at, method));
-    request.abort().catch(() => undefined);
+    screened(
+      url,
+      screen,
+      () => {
+        network.push({ method, url: clamped(url), resourceType: type, at });
+        request.continue().catch(() => undefined);
+      },
+      () => refuse('host'),
+    );
   });
   init.page.on('console', (payload) => {
     console_.push({
@@ -212,13 +260,14 @@ const asPaused = (payload: unknown): PausedRequest | undefined => {
  * `driver-cdp.ts`'s `opened()` closes it — a session whose rule would hold on one tab is refused.
  */
 export async function armBrowser(
-  init: {
+  init: CdpDialInit & {
     readonly browser: CdpBrowserLike;
     readonly rules: InterceptRules;
     readonly clock: ScrapeClock;
   },
   network: NetworkRing,
 ): Promise<void> {
+  const screen = dialScreen(init);
   const session = await init.browser.target().createCDPSession();
   session.on('Fetch.requestPaused', (payload) => {
     const paused = asPaused(payload);
@@ -226,16 +275,26 @@ export async function armBrowser(
     const type = asResourceType(paused.resourceType.toLowerCase());
     const verdict = interceptVerdict(paused.url, type, init.rules);
     const requestId = { requestId: paused.requestId };
+    const at = init.clock.now().getTime();
     // Caught, never floated, for `arm`'s reason: the target may be gone by the time this answers.
-    if (verdict === 'allow') {
-      session.send('Fetch.continueRequest', requestId).catch(() => undefined);
+    const refuse = (reason: 'host' | 'blocked'): void => {
+      network.push(refusalEntry(paused.url, type, reason, at, paused.method));
+      session
+        .send('Fetch.failRequest', { ...requestId, errorReason: 'BlockedByClient' })
+        .catch(() => undefined);
+    };
+    if (verdict !== 'allow') {
+      refuse(verdict);
       return;
     }
-    const at = init.clock.now().getTime();
-    network.push(refusalEntry(paused.url, type, verdict, at, paused.method));
-    session
-      .send('Fetch.failRequest', { ...requestId, errorReason: 'BlockedByClient' })
-      .catch(() => undefined);
+    screened(
+      paused.url,
+      screen,
+      () => {
+        session.send('Fetch.continueRequest', requestId).catch(() => undefined);
+      },
+      () => refuse('host'),
+    );
   });
   await session.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
 }

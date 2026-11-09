@@ -73,6 +73,13 @@ const ADDED_SINCE = [
   'X_DEVICE_OFFLINE',
   'X_DEVICE_REQUEST_TIMEOUT',
   'X_DEVICE_FRAME_TOO_LARGE',
+  // Plan 101 R9: a channel's catch-up read must decide with the channel's own policy object.
+  'X_CHANNEL_CATCHUP_POLICY_MISMATCH',
+  // Plan 101 R3: a slot postgres invalidated, refused; a slot recreated under a resume, resynced.
+  'X_REPLICATION_SLOT_INVALIDATED',
+  'X_REPLICATION_SLOT_RECREATED',
+  // Plan 101 R7: an offline queue at its optional ceiling refuses a new write, never drops one.
+  'X_OFFLINE_QUEUE_FULL',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

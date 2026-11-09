@@ -147,3 +147,25 @@ describe('a text column refuses a NUL character, as Postgres does', () => {
     expect(text().$parse('a\tb\nc\r\u0001')).toBe('a\tb\nc\r\u0001');
   });
 });
+
+// An empty closed set rendered `x in ()`: a CHECK Postgres refuses with 42601 at `x db migrate`,
+// long after the declaration that caused it. Refused where it is written, for all three builders.
+describe('a closed set refuses to be empty', () => {
+  const declare = (build: () => unknown): string => {
+    try {
+      build();
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    return 'accepted';
+  };
+
+  test.each([
+    ['enumerated', 'column.enum', () => enumerated([])],
+    ['tz', 'column.iana-tz', () => tz([])],
+    ['locale', 'column.bcp-47', () => locale([])],
+  ] as const)('%s([]) is refused at declaration', (_name, rule, build) => {
+    const message = declare(build);
+    expect(message).toContain(`${rule}: the set of allowed values is empty`);
+  });
+});

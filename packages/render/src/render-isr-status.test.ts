@@ -83,7 +83,7 @@ describe('a render that answers a status', () => {
     const controller = isrController({ routes: describePages });
     const key = isrKeyOf('/blog/late');
     await controller.serve(key, () => ({ html: '<p>gone</p>', status: 410 }));
-    controller.markStale(key);
+    await controller.markStale(key);
     const stale = await controller.serve(key, () => '<p>back</p>');
     expect(stale.state).toBe('stale');
     expect(stale.result.status).toBe(410);

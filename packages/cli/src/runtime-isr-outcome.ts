@@ -119,9 +119,10 @@ const isRedirectMarker = (entry: IsrEntry): boolean => {
  * fence was sampled, and the controller refuses to store a render its fence no longer covers — so
  * the marker this producer returns is never published, and never served from the store.
  */
-function dropPage(isr: IsrController, key: string): void {
-  isr.store().delete(key);
-  isr.markStale(key);
+async function dropPage(isr: IsrController, key: string): Promise<void> {
+  // Awaited, so the producer returns only once a shared store has dropped it too.
+  await isr.store().delete(key);
+  await isr.markStale(key);
 }
 
 /**
@@ -181,7 +182,7 @@ export async function isrOutcome(arrived: IsrRequest): Promise<IsrOutcome> {
       // Set by THIS request's producer only. On a stale page it runs behind the answer, and when it
       // has already decided by the time `serve` returns, the redirect is still this request's own.
       decided = to;
-      dropPage(isr, key);
+      await dropPage(isr, key);
       return { html: '', status: to.status };
     }),
   );

@@ -1,0 +1,28 @@
+{
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel Core Processor (Haswell, no TSX)",
+    "cores": 12,
+    "memoryGb": 46,
+    "bun": "1.4.4",
+    "runner": "local"
+  },
+  "results": [
+    {
+      "rows": 10000,
+      "bytes": 1986254,
+      "ms": 50.92,
+      "baselineMs": 10.02,
+      "ratio": 5.1,
+      "heapMiB": 15.3
+    },
+    {
+      "rows": 50000,
+      "bytes": 10195302,
+      "ms": 240.82,
+      "baselineMs": 51.61,
+      "ratio": 4.7,
+      "heapMiB": 49.9
+    }
+  ]
+}

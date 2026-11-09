@@ -66,7 +66,7 @@ describe('unit · a request after the purge never joins a render from before it'
     before.release();
     expect((await first).result.headers['cache-control']).toBe('private, no-store');
     // The late pre-purge render did not replace the page rendered after it.
-    expect(controller.store().get(key)?.html).toBe('<p>gone</p>');
+    expect((await controller.store().get(key))?.html).toBe('<p>gone</p>');
     detach();
   });
 
@@ -91,7 +91,7 @@ describe('unit · a request after the purge never joins a render from before it'
     });
     before.release();
     await Bun.sleep(0);
-    expect(controller.store().get(key)?.html).toBe('<p>gone</p>');
+    expect((await controller.store().get(key))?.html).toBe('<p>gone</p>');
     detach();
   });
 
@@ -103,7 +103,7 @@ describe('unit · a request after the purge never joins a render from before it'
     const leader = controller.serve(key, before.render);
     await Bun.sleep(0);
     const joiner = controller.serve(key, gone);
-    controller.revalidateByTags([postTag]);
+    await controller.revalidateByTags([postTag]);
     before.release();
     await leader;
     expect((await joiner).result.body).toBe('<p>gone</p>');
@@ -119,13 +119,13 @@ describe('unit · a request after the purge never joins a render from before it'
     // Another page of the route finishes: its reconciliation must not forget the page in flight.
     await controller.serve(isrKeyIn('/blog/b'), () => '<p>b</p>');
 
-    expect(controller.revalidateByTags([postTag])).toContain(isrKeyIn('/blog/b'));
+    expect(await controller.revalidateByTags([postTag])).toContain(isrKeyIn('/blog/b'));
     const after = await controller.serve(key, gone);
     expect(after.result.body).toBe('<p>gone</p>');
     before.release();
     const answered = await first;
     expect(answered.result.headers['cache-control']).toBe('private, no-store');
-    expect(controller.store().get(key)?.html).toBe('<p>gone</p>');
+    expect((await controller.store().get(key))?.html).toBe('<p>gone</p>');
   });
 });
 
@@ -150,7 +150,7 @@ describe('unit · two replicas, two fences, one store', () => {
     const racing = other.regenerate(key, before.render);
     await Bun.sleep(0);
 
-    purging.revalidateByTags([postTag]);
+    await purging.revalidateByTags([postTag]);
     expect(store.get(key)).toBeUndefined();
     before.release();
     await racing;
@@ -176,7 +176,7 @@ describe('unit · two replicas, two fences, one store', () => {
     const before = heldRender(WITHDRAWN);
     const racing = other.regenerate(key, before.render);
     await Bun.sleep(0);
-    purging.revalidateByTags([postTag]);
+    await purging.revalidateByTags([postTag]);
     before.release();
     await racing;
     expect(unfenced.get(key)?.html).toBe(WITHDRAWN);
@@ -192,7 +192,7 @@ describe('unit · two replicas, two fences, one store', () => {
     const before = heldRender('<p>v1 again</p>');
     const racing = other.regenerate(key, before.render);
     await Bun.sleep(0);
-    busting.revalidateByTags([postTag]);
+    await busting.revalidateByTags([postTag]);
     before.release();
     await racing;
     expect(store.get(key)).toMatchObject({ html: '<p>v1</p>', stale: true });

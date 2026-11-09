@@ -4,7 +4,11 @@
 // stop every app on the default replica identity from starting.
 
 import { logger } from '@ultimat3/core';
-import { ReplicaIdentityError, ReplicationFailedError } from './errors';
+import {
+  ReplicaIdentityError,
+  ReplicationFailedError,
+  ReplicationSlotInvalidatedError,
+} from './errors';
 import type { PgConnection } from './pg-connection';
 import { assertIdentifier } from './pg-identifier';
 import { ensurePublication } from './pg-publication';
@@ -17,13 +21,16 @@ import { ensurePublication } from './pg-publication';
  * simple queries, so the identifier charset is the injection boundary; re-asserted here rather than trusted, so the guarantee
  * travels with the function instead of living only in `start()`.
  */
+/** What preflight found the slot as: there already, or created just now by this call. */
+export type SlotState = 'existing' | 'created';
+
 export async function preflight(
   connection: PgConnection,
   slot: string,
   publication: string,
   entities: ReadonlySet<string>,
   fullIdentity: ReadonlySet<string> = new Set(),
-): Promise<void> {
+): Promise<SlotState> {
   assertIdentifier('slot', slot);
   assertIdentifier('publication', publication);
   const [walLevel] = await connection.query('SHOW wal_level');
@@ -39,14 +46,17 @@ export async function preflight(
   await ensurePublication(connection, publication, entities);
   await warnPartialIdentity(connection, entities);
   await warnChannelIdentity(connection, entities, fullIdentity);
+  // `wal_status` in the same statement: `lost` is a slot postgres invalidated, which no restart
+  // can stream from — said with its own code, never as the generic failure START_REPLICATION gives.
   const [existing] = await connection.query(
-    `SELECT plugin FROM pg_replication_slots WHERE slot_name = '${slot}'`,
+    `SELECT plugin, wal_status FROM pg_replication_slots WHERE slot_name = '${slot}'`,
   );
   if (existing === undefined) {
     // Plain SQL rather than CREATE_REPLICATION_SLOT: the replication command exports a snapshot
-    // that pins xmin for the session, and its option syntax changed in postgres 15.
+    // that pins xmin for the session, and its option syntax changed in postgres 15. The caller
+    // decides what a NEW slot means — a resume position it had is now a gap (`pg-replication-dial.ts`).
     await connection.query(`SELECT pg_create_logical_replication_slot('${slot}', 'pgoutput')`);
-    return;
+    return 'created';
   }
   if (existing[0] !== 'pgoutput') {
     throw new ReplicationFailedError({
@@ -55,6 +65,8 @@ export async function preflight(
       fix: `SELECT pg_drop_replication_slot('${slot}'); -- then start the replicator again`,
     });
   }
+  if (existing[1] === 'lost') throw new ReplicationSlotInvalidatedError({ slot });
+  return 'existing';
 }
 
 /**

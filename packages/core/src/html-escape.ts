@@ -20,5 +20,11 @@ const HTML_SPECIAL = /[&<>"']/g;
  * the same thing in HTML 4, HTML 5 and XML. One pass, so `&` is never escaped twice.
  */
 export function escapeHtml(value: string): string {
-  return value.replace(HTML_SPECIAL, (char) => HTML_ESCAPES.get(char) ?? char);
+  // Most text has nothing to escape, and a big page asks this ~10 times a row: a scan is a
+  // fraction of a replace with a callback (plan 101 slice 14). ONE global regex for both, which
+  // ships in every island: a failed `test` resets `lastIndex` to 0, and `replace` on a global
+  // regex starts at 0 and leaves it there — so no call ever sees another's position.
+  return HTML_SPECIAL.test(value)
+    ? value.replace(HTML_SPECIAL, (char) => HTML_ESCAPES.get(char) ?? char)
+    : value;
 }

@@ -21,8 +21,9 @@ import { writeChunks } from './bulk-write-send';
 import { entityNow } from './clock';
 import { coalesceFindById } from './coalesce';
 import { narrowRow } from './columns';
-import { cursorFor, seekFrom, valueAt } from './cursor';
+import { cursorFor, seekFrom } from './cursor';
 import type { Driver } from './database';
+import { noteDriverStore } from './driver-registry';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound, repoClientPinned } from './errors';
 import { stampHistoryActor } from './history-actor';
@@ -37,6 +38,7 @@ import { postgresTransactor } from './pg-transactor';
 import { type ConflictTarget, deleteStatement, updateStatement } from './pg-write-sql';
 import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
 import type { FindManyArgs, Repo, UpsertArgs } from './repo';
+import { rowKey } from './row-key';
 import { sealedRepo } from './sealed-repo';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
@@ -104,8 +106,8 @@ export const postgresRepo = <Row>(
   const attributed = <T>(op: string, send: () => Promise<T>): Promise<T> =>
     withStatementAttribution(entity.$name, op, send);
 
-  const idOf = (row: Row): string =>
-    entity.$primaryKey.map((property) => String(valueAt(row, property))).join('');
+  /** The cursor's id — `row-key.ts`, the spelling the memory driver stores a row under. */
+  const idOf = (row: Row): string => rowKey(entity, row);
 
   /** Where a batch stops being wide — before `writeRows` or `upsertPlan` read a row. `narrowRow`
    *  says why the position matters, and `memoryRepo` narrows at the same one. */
@@ -399,8 +401,13 @@ export const postgresRepo = <Row>(
  * `database(entities, { driver: postgresDriver() })` — the one line that moves an app off the
  * in-memory default. Repos are stateless, so there is nothing to memoise.
  */
-export const postgresDriver = (config: PostgresDriverOptions = {}): Driver => ({
-  repo: <Row>(entity: EntityCore<Row>) => postgresRepo(entity, config),
-  transactor: () =>
-    postgresTransactor(config.client === undefined ? {} : { client: config.client }),
-});
+export const postgresDriver = (config: PostgresDriverOptions = {}): Driver => {
+  // Noted as it is built, so `x verify`'s drift step can tell a Postgres app from one whose store
+  // owns its own schema (`driver-registry.ts`). `testDriver()` builds one, so it is noted too.
+  noteDriverStore('sql', 'postgres');
+  return {
+    repo: <Row>(entity: EntityCore<Row>) => postgresRepo(entity, config),
+    transactor: () =>
+      postgresTransactor(config.client === undefined ? {} : { client: config.client }),
+  };
+};

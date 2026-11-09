@@ -116,7 +116,7 @@ describe('a locale-prefixed isr page is revalidated as its route declares', () =
     detach();
     expect(fresh.state).toBe('hit');
     expect(fresh.result.body).toBe(`<p>${EN} v2</p>`);
-    expect(controller.store().get(ES)?.html).toBe(`<p>${ES} v2</p>`);
+    expect((await controller.store().get(ES))?.html).toBe(`<p>${ES} v2</p>`);
   });
 
   test('the ttl alone expires the prefixed entry: an embargo that lifts with the clock', async () => {
@@ -160,7 +160,7 @@ describe('a locale-prefixed isr page is revalidated as its route declares', () =
     expect((await controller.serve(EN, render)).result.status).toBe(404);
 
     exists = true;
-    expect(controller.revalidateByTags([blogTag])).toEqual([EN]);
+    expect(await controller.revalidateByTags([blogTag])).toEqual([EN]);
     await controller.serve(EN, render);
     await settle();
     expect((await controller.serve(EN, render)).result.status).toBe(200);
@@ -168,7 +168,7 @@ describe('a locale-prefixed isr page is revalidated as its route declares', () =
     // The registration follows the store: an evicted prefixed page leaves the graph with it.
     controller.store().delete(EN);
     await controller.serve(ES, render);
-    expect(controller.revalidateByTags([blogTag])).toEqual([ES]);
+    expect(await controller.revalidateByTags([blogTag])).toEqual([ES]);
     detach();
   });
 
@@ -179,6 +179,6 @@ describe('a locale-prefixed isr page is revalidated as its route declares', () =
     detach();
     expect(served.entry.ttlMs).toBe(null);
     expect(served.result.headers['cache-control']).toBe('private, no-store');
-    expect(controller.store().paths()).toEqual([]);
+    expect(await controller.store().paths()).toEqual([]);
   });
 });

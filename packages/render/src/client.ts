@@ -13,6 +13,8 @@ export { disposeIslands } from './island-dispose';
 export type { NavigateToOptions } from './navigation-api';
 export { closeModal, navigate, openModal, refresh } from './navigation-api';
 export { NavigationModalPathInvalidError } from './navigation-errors';
+// What the router marks its modal `<dialog>` with: `dialog[${NAVIGATION_MODAL_ATTRIBUTE}]` in a style.
+export { NAVIGATION_MODAL_ATTRIBUTE } from './navigation-modal-rules';
 export { NAVIGATE_EVENT, NAVIGATED_EVENT, NAVIGATION_ERROR_EVENT } from './navigation-rules';
 // A channel said the page changed: re-read it once the visitor is idle (`refresh-idle.ts`).
 export { scheduleRefresh } from './refresh-idle';

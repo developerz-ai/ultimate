@@ -120,7 +120,9 @@ The server half, in its own file, names the entity and the policy on the same re
 `ref.topic(params)` is the one spelling of the topic both halves use (`org-posts.<orgId>`), and
 `bun run channel-literals` refuses a hand-built topic anywhere else. A bad name or a repeated param
 is `X_CHANNEL_DECLARATION_INVALID` at declaration. `catchUp` is read on every access, so a query
-whose name `registerQueries()` stamps at boot is picked up. The reference app's
+whose name `registerQueries()` stamps at boot is picked up. A `catchUp` given as the query itself
+must carry the channel's own `policy` object — it is served with the channel params as input — or
+`channel()` refuses it (`X_CHANNEL_CATCHUP_POLICY_MISMATCH`); a name-only ref is not checked. The reference app's
 [`app/posts/channel-ref.ts`](../../examples/dummy/apps/web/app/posts/channel-ref.ts) is the idiom.
 
 ### What `useChannel()` reports
@@ -403,6 +405,7 @@ wire.
 | sockets per actor; an anonymous network (IPv4 exact, IPv6 /64) gets 8 × (`ANONYMOUS_SOCKET_MULTIPLIER`) — one NAT is many people | 16 (`DEFAULT_MAX_SOCKETS_PER_ACTOR`); 128 per anonymous network | `syncNode({ maxSocketsPerActor })`; the boot passes `realtime.maxSocketsPerActor` | `429 X_SOCKET_LIMIT` |
 | live subscriptions per tenant | unset | `new LiveQueryRegistry({ maxPerTenant, tenantOf })` — **both**, or it arms nothing | `X_SUBSCRIPTION_LIMIT` |
 | distinct `(query, input)` pairs per node | 10,000 | `new LiveQueryRegistry({ maxEntries })` | `X_SUBSCRIPTION_LIMIT` |
+| changes queued in one live window's lane | 1,024 (`DEFAULT_MAX_LANE_DEPTH`) | `new LiveQueryRegistry({ maxLaneDepth })` | nothing refused: the change is shed for that window, which is staled and re-read by the next queued change; counted as `registry.changesShed` |
 | how long one entry's SHARED snapshot read may hold its slot | 30s | `new LiveQueryRegistry({ readDeadlineMs })` | `X_TIMEOUT`, to that read's caller AND every subscriber joined to it |
 | channel topics per socket | 64 | `new ChannelHub({ maxTopicsPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
 | distinct channel topics per node | 10,000 | `new ChannelHub({ maxTopicsPerNode })` | `X_SUBSCRIPTION_LIMIT` |
@@ -578,6 +581,14 @@ wire twice by a reconnect that raced an ack.
 `localOutbox({ warn })` — where a disk that refused the queue is said
 (`X_LOCAL_STORE_UNAVAILABLE`, default `console.warn`); the outbox then queues in memory for that
 principal.
+
+`maxQueued` — the outbox's ceiling, on `pageOutbox({ maxQueued })` (the page's outbox: the first
+call in a tab builds it) or `localOutbox({ maxQueued })`, and carried to every queue the outbox
+opens, the memory fallback included. A whole number ≥ 1 (`X_INVARIANT` where the outbox is built);
+absent, no ceiling. It counts writes still to send (a refused one kept for the UI is not); past it
+a NEW write is refused, `X_OFFLINE_QUEUE_FULL`, to the mutation that
+made it — a key already queued collapses as always, and nothing queued is ever dropped to make room.
+`OfflineQueue.open(store, { maxQueued })` is the same rule one level down.
 
 ### Limits, stated plainly
 

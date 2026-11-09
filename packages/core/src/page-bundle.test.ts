@@ -232,17 +232,26 @@ describe('the browser path to the page seam', () => {
   // measured: 22,728 B (2026-11-09, Bun 1.4.4), 22,514 without this change. why: +214 B,
   // `boundedCause` in `UltimateError`'s constructor — every cause, the browser's included, is cut
   // at 4 KiB (plan 101 slice 02, K2). The next whole kilobyte above the measurement.
-  test('the whole entry reaches no titles table and stays under 23 kB (22,728 B as of 2026-11-09)', async () => {
+  //
+  // measured: 32,269 B (2026-11-09, Bun 1.4.4), 22,728 without this change. why: +9,541 B, plan
+  // 101 K6 — `@ultimat3/action`'s `rpc` reads this entry, never the barrel: +2,682 B, `clientStream`
+  // and the decode helpers a typed client's refusal needs (`problemOf`, `FRAMEWORK_CODE`,
+  // `remoteTitleOf`, `retryForStatus`, `withRequestId`, `withStatedDelay`, `registerErrorRetry`,
+  // `deniedCallerFix`, `hasErrorCode`, `renderCauseValue`); +6,859 B, `clientFlight`, so an island
+  // that opts into flight control stops pulling the barrel (`rpc` + it: 38,416 → 32,929 B). An
+  // island pays only what it imports; this is the whole entry. The next whole kilobyte above it.
+  test('the whole entry reaches no titles table and stays under 32 kB (32,269 B as of 2026-11-09)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(23_552);
+    expect(bytes).toBeLessThan(32_768);
   }, 60_000);
 
-  // The barrel PARSES every module it names before shaking, so a browser build of it warns about
-  // `node:zlib` (`image/png-pixels.ts`) whatever the island used. The page entry must never reach a
-  // server module at all: no warning, no `image/` module retained.
+  // The barrel PARSES every module it names before shaking; a static `node:zlib` import in
+  // `image/png-pixels.ts` made every browser build of it warn, whatever the island used (resolved
+  // at the call since 2026-11-09). The page entry must never reach a server module at all: no
+  // warning, no `image/` module retained.
   test('the whole entry reaches no server module and builds without a warning', async () => {
     const source = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const entry = join(FIXTURE_DIR, 'whole-quiet.ts');
@@ -251,6 +260,15 @@ describe('the browser path to the page seam', () => {
     expect(built.logs.map(String)).toEqual([]);
     const { modules } = await build('whole-modules', '', false, source);
     expect(modules.filter((module) => module.includes('/image/'))).toEqual([]);
+  }, 60_000);
+
+  // The barrel's half of the same claim: parsing every module it names, it still reaches no
+  // `node:` import a browser polyfill cannot satisfy. `png-pixels.ts` resolves `node:zlib` at the call.
+  test('the barrel builds for a browser without a warning', async () => {
+    const entry = join(FIXTURE_DIR, 'barrel-quiet.ts');
+    await Bun.write(entry, ENTRY('@ultimat3/core'));
+    const built = await Bun.build({ entrypoints: [entry], target: 'browser', format: 'esm' });
+    expect(built.logs.map(String)).toEqual([]);
   }, 60_000);
 
   test('the barrel still drags both titles tables — the reason the subpath exists', async () => {

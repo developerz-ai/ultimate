@@ -37,7 +37,7 @@ export const SPAWN_TIMEOUT_PINS: Readonly<Record<string, SpawnTimeoutPin>> = {
   // Raised 4→5 by `bench/http-hello.ts`'s `coldStart`: a server the bench measures, which must
   // outlive any fixed timeout, ended by the `stop()` that signals its process group.
   scripts: {
-    count: 5,
+    count: 3,
     reason:
       "why: `coverage-gate.ts` runs one `bun test --coverage` per unit, bounded by each test's own timeout and the CI job's; SUSPECT, the one row a hang could still outlast locally. `scaffold-admin.ts` boots `x dev` and kills it in its `finally`; `bench/restart-bench.ts` starts a server and its client shards and kills both when the run ends; `bench/http-hello.ts`'s `coldStart` boots the server under measurement and `stop()` SIGTERMs its process group, on a failed start too.",
   },

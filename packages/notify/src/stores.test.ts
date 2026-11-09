@@ -28,15 +28,14 @@ describe('unit · notify stores', () => {
   });
 
   test('the default preference store allows, because denying by default hides a missing email', () => {
-    expect(
-      notifyStores().preferences.allows({
-        recipient: { id: 'ana' },
-        notifier: 'post.liked',
-        channel: 'email',
-        event: { notifier: 'post.liked', key: 'k', params: {}, at: new Date(0) },
-        ctx: { now: () => new Date(0) } as never,
-      }),
-    ).toBe(true);
+    const allowed = notifyStores().preferences.allowsMany({
+      recipients: [{ id: 'ana' }, { id: 'ben' }],
+      notifier: 'post.liked',
+      channel: 'email',
+      event: { notifier: 'post.liked', key: 'k', params: {}, at: new Date(0) },
+      ctx: { now: () => new Date(0) } as never,
+    });
+    expect([...(allowed as Iterable<string>)]).toEqual(['ana', 'ben']);
   });
 
   test('install is a whole-object replacement, never a merge', () => {
@@ -61,12 +60,12 @@ describe('unit · notify stores', () => {
     const preferences = memoryPreferenceStore();
     preferences.deny({ recipient: 'ana', notifier: '*', channel: 'email' });
     const query = {
-      recipient: { id: 'ana' },
+      recipients: [{ id: 'ana' }, { id: 'ben' }],
       notifier: 'post.liked',
       event: { notifier: 'post.liked', key: 'k', params: {}, at: new Date(0) },
       ctx: { now: () => new Date(0) } as never,
     };
-    expect(preferences.allows({ ...query, channel: 'email' })).toBe(false);
-    expect(preferences.allows({ ...query, channel: 'push' })).toBe(true);
+    expect(preferences.allowsMany({ ...query, channel: 'email' })).toEqual(['ben']);
+    expect(preferences.allowsMany({ ...query, channel: 'push' })).toEqual(['ana', 'ben']);
   });
 });

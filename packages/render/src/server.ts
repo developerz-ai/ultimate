@@ -49,13 +49,21 @@ export { DEFAULT_ISR_FAILURE_COOLDOWN_MS } from './render-isr-cooldown';
 export { ISR_LOCALE_PARAM, isrKey, isrRequestUrl, undeclaredQuery } from './render-isr-key';
 export { isrRouteFor } from './render-isr-routes';
 export type {
+  IsrAnswer,
   IsrEntry,
   IsrState,
   IsrStore,
   IsrTagFence,
+  MemoryIsrStore,
   MemoryIsrStoreOptions,
 } from './render-isr-store';
-export { DEFAULT_ISR_MAX_ENTRIES, memoryIsrStore } from './render-isr-store';
+export { DEFAULT_ISR_MAX_BYTES, DEFAULT_ISR_MAX_ENTRIES, memoryIsrStore } from './render-isr-store';
+export type {
+  IsrDisk,
+  IsrDiskEntry,
+  StorageIsrStoreOptions,
+} from './render-isr-store-storage';
+export { storageIsrStore } from './render-isr-store-storage';
 export type {
   IsrController,
   IsrControllerOptions,

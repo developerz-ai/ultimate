@@ -958,6 +958,71 @@ unpinned repository is the shape that joins the ambient one.
 Every value is bound to `$n` and every identifier is resolved through the entity, so a column
 name can only be one the entity declared and a row value can never become SQL.
 
+## Custom drivers — `@ultimat3/entity/adapter`
+
+A store that is not Postgres (Mongo, Cassandra, a key-value store) is a `Driver` built with
+`defineDriver`, imported from the `./adapter` subpath — never a hand-written `Repo`.
+
+```ts
+import type { EntityCore } from '@ultimat3/entity';
+import type { DriverFilter, DriverRepo } from '@ultimat3/entity/adapter';
+import { defineDriver, entityUniqueViolation, rowKey, selectRows } from '@ultimat3/entity/adapter';
+
+// A whole key-value store: it knows nothing about tenants, cursors or soft delete — the kit does.
+const tables = new Map<string, Map<string, unknown>>();
+
+export const kvDriver = defineDriver({
+  name: 'kv',
+  capabilities: [], // declare only what the store implements
+  repo: <Row>(entity: EntityCore<Row>): DriverRepo<Row> => {
+    const rows = (tables.get(entity.$name) ?? new Map()) as Map<string, Row>;
+    tables.set(entity.$name, rows);
+    const key = (row: Row): string => rowKey(entity, row);
+    const matched = ({ plan }: DriverFilter): Row[] =>
+      selectRows(entity, rows.values(), { plan, after: undefined, limit: rows.size });
+    return {
+      select: async (read) => selectRows(entity, rows.values(), read),
+      count: async (filter) => matched(filter).length,
+      insert: async (batch) => {
+        for (const row of batch) {
+          if (rows.has(key(row))) throw entityUniqueViolation(entity, `${entity.$table}_pkey`);
+        }
+        for (const row of batch) rows.set(key(row), row);
+        return batch;
+      },
+      update: async (filter, patch) => {
+        const hit = matched(filter);
+        for (const row of hit) rows.set(key(row), { ...row, ...patch });
+        return hit.length;
+      },
+      delete: async (filter) => {
+        const hit = matched(filter);
+        for (const row of hit) rows.delete(key(row));
+        return hit.length;
+      },
+    };
+  },
+});
+```
+
+| `defineDriver` guarantees | How |
+|---|---|
+| tenant scoping, the soft-delete filter, the page bound, the PK tiebreak | the plan is built with `plan.ts` BEFORE the store sees it — the store answers a scoped plan |
+| no cross-tenant row escapes | every returned row is re-checked against the tenant, soft-delete and PK predicates (`X_DRIVER_ROW_OUT_OF_SCOPE`) |
+| a written row names this actor's tenant and passes its invariants | `assertRowTenant` + `$assert` before the store's `insert`/`update` |
+| sealed columns, append-only, the abort guard | the same `sealedRepo` / `appendOnlyRepo` / `refuseAbandoned` seams both shipped drivers return through |
+| a call the store cannot answer is a refusal, not a wrong answer | `X_DRIVER_UNSUPPORTED`, the capability in `meta.capability`; a declared capability with no method is `X_DRIVER_CAPABILITY_MISSING` at definition |
+
+Capabilities (`DRIVER_CAPABILITIES`): `transactions`, `lock`, `series`, `upsert`, `matches`,
+`aggregate:countBy`, `aggregate:sum`, `aggregate:avg`, `aggregate:min`, `aggregate:max`,
+`aggregate:approximateCount`. A duplicate key is `entityUniqueViolation(entity, constraint)` —
+`X_DB_UNIQUE_VIOLATION`, the code Postgres' `23505` becomes, with no faked SQLSTATE.
+
+**A custom store owns its own schema, uniqueness and foreign keys.** Migrations, drift and every
+`x db` command describe Postgres only; `x verify`'s drift step skips (and says why) when no SQL
+store was constructed (`driverStores()`). The meanings a custom store borrows — `matchesPredicate`,
+`compareByKind`, the cursor codec — are the memory driver's, which is Postgres' by parity.
+
 ## Point lookups batch themselves
 
 `As of 2026-08`:

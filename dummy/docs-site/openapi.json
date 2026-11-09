@@ -79,6 +79,12 @@
             },
             "type": "array"
           },
+          "issuesTruncated": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
           "meta": {
             "type": "object"
           },

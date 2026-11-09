@@ -12,6 +12,7 @@ import { llmsDescriptionIssues, validateMeta } from '@ultimat3/seo';
 import { checkAgentsMd } from './app-agents-md';
 import { readAppSources } from './app-boundaries';
 import { envExampleFindings } from './app-env';
+import { loadApp } from './app-load';
 import { appManifest, readAppManifest } from './app-manifest';
 import { policyFindings } from './app-permissions';
 import { asyncPageFindings } from './async-pages';
@@ -22,6 +23,7 @@ import { checkDestructiveMigrations } from './db-destructive';
 import { checkRollingMigrations } from './db-rolling';
 import { checkUngeneratableMigrations } from './db-ungeneratable';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
+import { driftOutcome } from './drift-store';
 import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract';
 import { guardFindings } from './guards';
 import { catalogFindings } from './i18n-registration';
@@ -201,26 +203,32 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // step's own question — do the committed migrations still describe what the app is doing to its
     // schema? — off the same directory, in the same pass, with no database either.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
-    run: async (ctx) =>
-      fromFindings([
-        ...(await checkMigrationDrift(ctx.root)),
-        ...(await checkDestructiveMigrations(ctx.root)),
-        // The third rail, and the one the other two cannot see: a hand-written statement is
-        // recorded by no snapshot and hashed by no source, so both halves above are green over SQL
-        // a squash silently drops. Same directory, same reader, no database — this step's own
-        // question, which is why it is not a step of its own.
-        ...(await checkUngeneratableMigrations(ctx.root)),
-        // The fourth, and the only one that opens a database — a scratch embedded one it boots
-        // itself, so CI still needs nothing listening: the committed `packages/db/schema/` against
-        // what replaying the migrations produces, and that dump loaded back (`X_SCHEMA_DUMP_DRIFT`).
-        ...(await checkSchemaDump(ctx.root, ctx.env ?? Bun.env)),
-        // The fifth: what the previous release would trip over during a roll. Off until the app
-        // sets `rollingSince` in `x.verify.json`, since an applied migration cannot gain a marker.
-        ...(await checkRollingMigrations(ctx.root)),
+    run: async (ctx) => {
+      // Loaded first: the drivers the app's modules construct are what decide (`drift-store.ts`).
+      await loadApp(ctx.root);
+      // A store owning its own schema skips the five migration rails, never the client one.
+      return driftOutcome(ctx.root, {
+        schema: async () => [
+          ...(await checkMigrationDrift(ctx.root)),
+          ...(await checkDestructiveMigrations(ctx.root)),
+          // The third rail, and the one the other two cannot see: a hand-written statement is
+          // recorded by no snapshot and hashed by no source, so both halves above are green over SQL
+          // a squash silently drops. Same directory, same reader, no database — this step's own
+          // question, which is why it is not a step of its own.
+          ...(await checkUngeneratableMigrations(ctx.root)),
+          // The fourth, and the only one that opens a database — a scratch embedded one it boots
+          // itself, so CI still needs nothing listening: the committed `packages/db/schema/` against
+          // what replaying the migrations produces, and that dump loaded back (`X_SCHEMA_DUMP_DRIFT`).
+          ...(await checkSchemaDump(ctx.root, ctx.env ?? Bun.env)),
+          // The fifth: what the previous release would trip over during a roll. Off until the app
+          // sets `rollingSince` in `x.verify.json`, since an applied migration cannot gain a marker.
+          ...(await checkRollingMigrations(ctx.root)),
+        ],
         // The sixth: a generated client (`x client`) against its own stamp — a source document that
         // moved (`X_CLIENT_STALE`) or a body edited by hand (`X_CLIENT_EDITED`). No database.
-        ...(await checkClientDrift(ctx.root)),
-      ]),
+        client: () => checkClientDrift(ctx.root),
+      });
+    },
   },
   {
     name: 'contract-diff',

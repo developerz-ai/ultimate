@@ -5,7 +5,7 @@
  * structure another layer will render.
  */
 
-import { stringField } from '@ultimat3/core';
+import { stringField } from '@ultimat3/core/page';
 import type { ValidationIssue } from '@ultimat3/schema';
 import { issueRuleFacts, MAX_ISSUES } from '@ultimat3/schema';
 

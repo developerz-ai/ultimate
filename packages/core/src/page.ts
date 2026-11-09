@@ -15,13 +15,23 @@ export type { AsyncState } from './async-state';
 export type { JitterMode, Random } from './backoff';
 export { backoffDelay } from './backoff';
 export type { FetchLike, TransportRequest } from './client-dispatch';
-export { IDEMPOTENCY_HEADER } from './client-dispatch';
+export { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './client-dispatch';
+// Opt-in flight control: a typed client names `ClientFlight` as a TYPE and pays nothing; an island
+// that wants the fence, dedup and retry calls `clientFlight` from here, never through the barrel.
+export type { ClientFlight, ClientFlightOptions, ClientRetry } from './client-flight';
+export { clientFlight } from './client-flight';
+export type { ActionPathStyle } from './client-paths';
 export { actionPath, queryPath, splitWords } from './client-paths';
 export type { ActionPin, PinnedActionMethod } from './client-paths-pins';
 export { renderedActionPin, renderedQueryPin } from './client-paths-pins';
+// A typed client's own decode of a refusal: the body read, its title and request id carried, the
+// retry class its status implies — all off the wire, so an island needs no titles table.
+export { remoteTitleOf, withRequestId, withStatedDelay } from './client-problem';
 export type { ClientScope } from './client-scope';
 export { onRescope, rescope } from './client-scope';
+export { clientStream } from './client-stream';
 export { clientTransport } from './client-transport';
+export { FRAMEWORK_CODE, problemOf, retryForStatus } from './client-wire';
 export { notifyClientWrite, onClientWrite } from './client-writes';
 export { type Clock, systemClock } from './clock';
 export type { ConflictPolicy, Row } from './conflict-policy';
@@ -31,11 +41,18 @@ export { resolveConflict } from './conflict-policy';
 // The registry's one writer, for a package that titles its OWN codes in a browser chunk
 // (`@ultimat3/realtime`'s `error-titles.ts`). A function, not a table: `errors.ts` already retains
 // `error-codes.ts`, so this adds no module — and through the barrel it cost both anchored tables.
-export { registerErrorCodes } from './error-codes';
-export { renderFixShellArg, renderThrowable, stringField } from './error-render';
-export { classifyThrown } from './error-retry';
+// `hasErrorCode` and `ERROR_DOCS_URL` read the registry `errors.ts` already retains; a package's
+// browser-reachable error classes need them, `registerErrorRetry` beside `registerErrorCodes`.
+export { ERROR_DOCS_URL, hasErrorCode, registerErrorCodes } from './error-codes';
+export {
+  renderCauseValue,
+  renderFixShellArg,
+  renderThrowable,
+  stringField,
+} from './error-render';
+export { classifyThrown, registerErrorRetry } from './error-retry';
 export type { UltimateErrorInit } from './errors';
-export { isUltimateError, UltimateError } from './errors';
+export { deniedCallerFix, isUltimateError, UltimateError } from './errors';
 export { fillWire } from './fill-wire';
 export { finiteCount, finiteOption } from './finite-option';
 export { isSuperseded } from './generation-fence';

@@ -77,7 +77,12 @@ export function problemError(
     // The server's declared keys FIRST, so the ones this decoder owns win a collision.
     meta: withStatedDelay(
       withRequestId(
-        { ...serverMeta(body['meta'], body['issues']), origin: 'remote', status, url },
+        {
+          ...serverMeta(body['meta'], body['issues'], body['issuesTruncated']),
+          origin: 'remote',
+          status,
+          url,
+        },
         body['requestId'],
       ),
       retryAfterSeconds,
@@ -155,9 +160,10 @@ export function transportFailed(
 /**
  * The document's `meta`, copied own key by own key: `JSON.parse` mints `__proto__` as a real own
  * key, and assigned onto a plain object it would replace the prototype. `issues` rides along
- * unparsed for the caller whose schema can read it.
+ * unparsed for the caller whose schema can read it, and `issuesTruncated` — only ever the literal
+ * `true` — says that list is a prefix the server cut at its cap.
  */
-function serverMeta(meta: unknown, issues: unknown): Record<string, unknown> {
+function serverMeta(meta: unknown, issues: unknown, truncated: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (isJsonObject(meta)) {
     for (const [key, member] of Object.entries(meta)) {
@@ -166,6 +172,7 @@ function serverMeta(meta: unknown, issues: unknown): Record<string, unknown> {
     }
   }
   if (Array.isArray(issues)) out['issues'] = issues;
+  if (truncated === true) out['issuesTruncated'] = true;
   return out;
 }
 

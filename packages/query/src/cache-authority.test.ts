@@ -160,6 +160,42 @@ describe('the authority a cached read was answered under', () => {
     expect(readAuthority(nullOrg, 'tenant')).toBe(readAuthority(nullOrg, 'actor'));
   });
 
+  // One id is not one grant set: a role revoked mid-TTL, or a shared dev identity holding two role
+  // sets, asks the same name and input under a different authority. A read whose rows depend on
+  // `ctx.actor.roles` must not hand the member the admin's entry.
+  test('one actor id under two grant sets gets two entries, never the wider one', async () => {
+    const counts = { executed: 0 };
+    const target = query({
+      input: t.object({ q: t.string }),
+      policy: allow(),
+      cache: { tags: [tag('post')], ttlMs: 60_000 },
+      sql: (_input: { q: string }, ctx) =>
+        from<SecretRow>('rows', async () => {
+          counts.executed += 1;
+          return ctx.actor.roles.includes('admin') ? ROWS : ROWS.slice(0, 1);
+        }),
+    }).named('roleFeed');
+    const as = (roles: readonly string[]) => ({
+      ctx: ctxOf({ actor: userActor({ id: 'dev-agent', orgId: 'org-a', roles }) }),
+    });
+
+    const admin = await runQuery(target, { q: 'all' }, as(['admin']));
+    const member = await runQuery(target, { q: 'all' }, as(['member']));
+
+    expect(admin).toHaveLength(2);
+    expect(member).toEqual([{ id: 'a1', orgId: 'org-a', secret: 'ALPHA' }]);
+    expect(counts.executed).toBe(2);
+  });
+
+  test('a grant set is keyed as a set: order does not split one actor into two entries', () => {
+    const one = userActor({ id: 'u-a', roles: ['a', 'b'], permissions: ['p:r', 'q:r'] });
+    const two = userActor({ id: 'u-a', roles: ['b', 'a'], permissions: ['q:r', 'p:r'] });
+    const scoped = userActor({ id: 'u-a', roles: ['a', 'b'], scopes: ['read'] });
+
+    expect(readAuthority(one, 'actor')).toBe(readAuthority(two, 'actor'));
+    expect(readAuthority(one, 'actor')).not.toBe(readAuthority(scoped, 'actor'));
+  });
+
   test('two distinct actors never share an authority, however their ids are spelled', () => {
     // JSON, never a joined string — the rule `@ultimat3/entity`'s `scopeKey` states: an actor id
     // is app data, and a value that can spell the separator can spell a boundary it does not own.

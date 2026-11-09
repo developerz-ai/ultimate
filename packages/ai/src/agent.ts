@@ -1,13 +1,10 @@
 /**
  * `agent()` — a multi-turn tool-using model call, declared as an `action`.
  *
- * One more instance of the framework's rule — the whole list is `PRIMITIVE_FACTORIES` in
- * `@ultimat3/core`: a new capability arrives as a FACTORY over an existing primitive, never as a
- * ninth kind, and the list is what a reader counts instead of a sentence in one of them that
- * cannot see the rest. A tool-using run is
- * still one server-authoritative operation with an input schema, an output schema and a policy —
- * so this returns an `action`, and inherits `.openapi()`, `.client()`, `.job()`, `.contract()`,
- * its MCP tool (`@ultimat3/mcp`'s `toolFrom`) and its manifest row without a line here.
+ * A FACTORY over an existing primitive (`PRIMITIVE_FACTORIES` in `@ultimat3/core`), never a ninth
+ * kind: a tool-using run is still one server-authoritative operation with an input schema, an
+ * output schema and a policy — so this returns an `action`, and inherits `.openapi()`, `.client()`,
+ * `.job()`, `.contract()`, its MCP tool (`toolFrom`) and its manifest row without a line here.
  *
  * It exists because the alternative is a hand-rolled loop outside the framework, and a hand-rolled
  * loop is where the dangerous mistake lives: taking the ACTOR from the model's output. Here the
@@ -23,7 +20,7 @@
 import type { Action } from '@ultimat3/action';
 import { action, noteToolNames } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
-import { throwIfAborted, withSpan } from '@ultimat3/core';
+import { finiteCount, throwIfAborted, withSpan } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
 import { checkpointer } from './agent-checkpoint';
@@ -32,14 +29,7 @@ import { compactor } from './agent-compact';
 import type { CompactPlan } from './agent-compact-def';
 import { screenCompact } from './agent-compact-def';
 import type { AgentAction, TranscriptBinding } from './agent-continue';
-import {
-  claimAgentSession,
-  continued,
-  screenTranscript,
-  sealTranscript,
-  sessionCalls,
-  withTranscript,
-} from './agent-continue';
+import { continued, screenTranscript, sealTranscript, withTranscript } from './agent-continue';
 import { factsOf, limitsOf, SUBJECT, screenBounds } from './agent-declared';
 import type { AgentDef } from './agent-def';
 import { AgentTranscriptInvalidError } from './agent-errors';
@@ -50,20 +40,22 @@ import { project, resolvePerRun } from './agent-per-run';
 import { assertRunCost } from './agent-run-limits';
 import type { TurnSend } from './agent-send';
 import { sendTurn } from './agent-send';
+import { claimAgentSession, sessionCalls } from './agent-session';
 import type { EmitChunk } from './agent-stream';
 import { AgentChunk, streamOf } from './agent-stream';
 import { sameSystem, systemOf } from './agent-system';
-import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
+import type { ToolRun } from './agent-tools';
+import { DEFAULT_TOOL_CONCURRENCY, toolTurn } from './agent-tools';
+import { assistantTurn, repairTurn } from './agent-transcript';
 import { assertAnswerable, observeTurn } from './agent-turn';
 import { runTotal } from './agent-usage';
-import { LlmTruncatedError } from './answer-errors';
 import { budgetKeysFor, currentBudget, withBudget } from './budget';
 import { AgentMaxTurnsError, AgentToolUnexposedError, LlmOutputInvalidError } from './errors';
-import { answerAttributes } from './llm';
+import { answerAttributes } from './llm-answer';
 import type { PromptVars } from './prompt';
 import { promptCacheHint } from './prompt-cache';
 import type { AiMessage, GenerateRequest } from './provider';
-import { estimateCost, isTruncated } from './provider';
+import { estimateCost } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
@@ -71,8 +63,7 @@ import { runMeter } from './run-meter';
 import { aiGateway, aiRedactor, installedGateway } from './runtime';
 import type { Sampling } from './sampling';
 import { ignoredSamplingAttribute, screenSampling } from './sampling';
-import type { LlmToolResult } from './tools';
-import { isOfferedTool, runLlmToolCall, toolLabel } from './tools';
+import { isOfferedTool, toolLabel } from './tools';
 
 export type { AgentCompaction, AgentCompactOption, AgentCompactRule } from './agent-compact-def';
 export type {
@@ -111,6 +102,12 @@ export function agent<
   const owner = {};
   const sampling = screenSampling(SUBJECT, def);
   const compact = screenCompact(def.compact, bounds.maxTokens);
+  const toolConcurrency = finiteCount(
+    SUBJECT,
+    'maxToolConcurrency',
+    def.maxToolConcurrency ?? DEFAULT_TOOL_CONCURRENCY,
+    1,
+  );
   // Projected on FIRST RUN, memoised, for the reason above: `agent()` is evaluated at module
   // scope and a tool's name is stamped by `registerAction` at boot, so naming it here would make
   // the ordinary `export const publishPost = action(...)` beside it `X_ACTION_UNREGISTERED`.
@@ -132,7 +129,7 @@ export function agent<
           def,
           respond,
           await resolvePerRun(def, { ...declared, adapted: adapt() }, args),
-          { sampling, owner, compact, emit },
+          { sampling, owner, compact, emit, toolConcurrency },
           args,
         ),
       ),
@@ -143,10 +140,7 @@ export function agent<
   return continuable(built, owner);
 }
 
-/**
- * Attach `.run()` and `.continue()` IN PLACE, for the reason `llm()`'s `streamable` gives: the
- * object an app exported is the one the registry names, and `named()`'s twin gets them too.
- */
+/** `.run()` / `.continue()` IN PLACE (as `llm()`'s `streamable`): the export IS the registry's. */
 function continuable<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
   target: Action<TInput, TOutput>,
   owner: object,
@@ -172,6 +166,7 @@ async function run<
     readonly owner: object;
     readonly compact: CompactPlan | undefined;
     readonly emit: EmitChunk;
+    readonly toolConcurrency: number;
   },
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
@@ -259,7 +254,6 @@ async function run<
     // Every provider call below goes through the meter, so whatever ends the run — a ceiling, a
     // deadline, a truncated turn, the caller leaving — is thrown carrying what the run was billed.
     const meter = runMeter();
-    const disclosure = { discloseErrors: def.discloseToolErrors !== false };
     // Worst case: the run so far (continuations and nested calls included) plus this request,
     // estimated as the gateway's own reservation will be — at the write rate only where a provider
     // serving the model would mark it. Before every turn, and before a compaction's summary call.
@@ -321,6 +315,19 @@ async function run<
       // identity any tool runs as. Nothing below reads an actor out of `result` — a model cannot
       // name the identity it acts as, and a loop that let it would be an escalation primitive.
       const { actor } = args.ctx;
+      const tools: ToolRun = {
+        tools: adapted.tools,
+        ctx: args.ctx,
+        actor,
+        deadline,
+        emit,
+        concurrency: fixed.toolConcurrency,
+        discloseErrors: def.discloseToolErrors !== false,
+        maxTurns,
+        chars,
+        redact,
+        repeated,
+      };
       let messages: readonly AiMessage[] =
         prior === undefined ? [{ role: 'user', content: rendered }] : continued(prior, rendered);
       let calls = 0;
@@ -369,68 +376,13 @@ async function run<
           run: runTotal(result.model, prior?.usage, meter.total(), meter.below()),
         });
         if (result.text !== '') emit({ type: 'text', turn, text: result.text });
+        // Before a tool runs and before the answer is read (`X_LLM_REFUSED`, `X_LLM_TRUNCATED`).
         assertAnswerable(result, name, base);
-        // Before a tool runs and before the answer is read: a turn cut off at the ceiling carries
-        // arguments that stop wherever the ceiling fell — `{}` on both wires for a call that never
-        // reached its first byte — so running a tool on them is a side effect the model did not
-        // ask for, and validating them accepts an empty answer for any `output` of optional keys.
-        if (isTruncated(result.stopReason)) {
-          throw new LlmTruncatedError({
-            prompt: name,
-            maxTokens: base.maxTokens,
-            subject: SUBJECT,
-          });
-        }
 
         if (requested.length > 0) {
-          // Concurrent, and deliberately unbounded WITHIN one turn: the batch is what a single
-          // model turn asked for, each entry is an ordinary `action` carrying its own policy and
-          // its own `rateLimit`, and a second ceiling here would be a throttle competing with
-          // those. A tool that calls a model still reserves on the same ledger chain, which
-          // debits before it checks, so the budget holds. Serial cost 5x wall clock for a turn that asked for 5 tools, and nothing
-          // in the types or the docs ever said so.
-          //
-          // Order is by INDEX, not by completion: `Promise.all` resolves positionally and each
-          // result carries the `tool_use` id `runLlmToolCall` was handed, so a fast tool answering
-          // first cannot be paired with a slow tool's call.
-          throwIfAborted(args.ctx);
-          deadline.check();
-          for (const call of requested)
-            emit({ type: 'tool_call', turn, id: call.id, name: call.name });
-          const results: readonly LlmToolResult[] = await deadline.guard(
-            // Inside the deadline's scope, so each tool's own `ctx.signal` carries it.
-            deadline.scope(() =>
-              Promise.all(
-                requested.map((call) => runLlmToolCall(adapted.tools, call, actor, disclosure)),
-              ),
-            ),
-          );
+          messages = await toolTurn(tools, turn, result, requested, answers, messages);
           calls += requested.length;
-          results.forEach((done, index) => {
-            const name = requested[index]?.name ?? '';
-            emit({
-              type: 'tool_result',
-              turn,
-              id: done.toolUseId,
-              name,
-              isError: done.isError === true,
-            });
-          });
-          emit({ type: 'turn', turn, maxTurns });
           rejected = undefined;
-          // Before the next turn is bought: the same calls with the same results cannot lead
-          // anywhere a further turn would not also lead.
-          repeated(requested, results);
-          messages = [
-            ...messages,
-            assistantTurn(result),
-            // Parallel tool use — one turn asking for a tool AND answering — is normal, and the
-            // answer is speculative: it was written before the result it asked for existed. So
-            // the loop continues, and the answer is REJECTED on the wire rather than dropped,
-            // because a replayed `respond` block with no `tool_result` is a 400 and the whole run
-            // becomes an `X_AI_PROVIDER_UNAVAILABLE`.
-            toolResultTurn(results, chars, answers, redact),
-          ];
           await landed(turn, messages, result.model);
           continue;
         }

@@ -62,7 +62,7 @@ async function admitRejects(
   if (job === undefined) return expect.unreachable('nothing was claimed');
   let thrown: unknown;
   try {
-    await admit(job, 'default', behind);
+    await admit(job, 'default', () => behind);
   } catch (error) {
     thrown = error;
   }

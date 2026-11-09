@@ -96,6 +96,8 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
    */
   const latest = new Map<string, object>();
   const registered = new Set<string>();
+  /** How many pages the store held at the last listing — what `forgetEvictedPaths` compares. */
+  let heldAtLastListing = 0;
   const fences = options.fence ?? PROCESS_FENCE;
   const failed = failureCooldown<Generation>(
     finiteCount(
@@ -149,11 +151,24 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
    * the cache graph behind it only ever grew: `/blog/:slug` retains one edge per slug ever
    * requested, 404-shaped ones included, for the life of the process.
    */
-  function forgetEvictedPaths(): void {
-    if (registered.size === 0) return;
+  async function forgetEvictedPaths(): Promise<void> {
+    // Only once registrations outgrew what the store last held: a page only leaves the store when
+    // a newer one pushes it out, and over a shared disk every listing is a round trip per page of
+    // keys — once per generation was a full listing per render.
+    if (registered.size <= heldAtLastListing) return;
+    let held: readonly string[];
+    try {
+      held = await store.paths();
+    } catch (error) {
+      // After the page was kept and the result decided: a listing that failed leaves edges for a
+      // later generation to reconcile, never a render that succeeded turned into a rejection.
+      logger.warn('isr.store.paths_failed', { error: renderThrowable(error) });
+      return;
+    }
+    heldAtLastListing = held.length;
     // A page whose FIRST render is still running is in no store yet and is not evicted: forgotten
     // here, a bust arriving before it settled found it in neither the graph nor the store.
-    const live = new Set([...store.paths(), ...flight.keys()]);
+    const live = new Set([...held, ...flight.keys()]);
     for (const path of registered) if (!live.has(path)) forgetPath(path);
   }
 
@@ -196,7 +211,7 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
         const fence = fences.sample({ key: path, tags: policy.tags });
         // And the STORE's own fence, for a store another process writes: read before the rows are.
         const entities = entitiesOf(policy.tags);
-        const reading = store.tagFence?.sample(entities);
+        const reading = await store.tagFence?.sample(entities);
         const rendered = renderedOf(await render(path));
         const entry: IsrEntry = {
           path,
@@ -215,7 +230,16 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
         // Kept only when nothing invalidated the page while it rendered — in this process (the
         // fence) or in any other (the store's) — and no newer run started. Refused, never
         // published stale-flagged: the next request re-renders from rows that include the write.
-        const kept = !unstorable && fence.isValid() && current && write(entry, entities, reading);
+        let kept =
+          !unstorable && fence.isValid() && current && (await write(entry, entities, reading));
+        // Asked AGAIN once the write settled: over a shared store the write is a round trip, and an
+        // invalidation landing inside it found no page to mark or delete — then the put landed
+        // fresh, and a tag-only page answered as a fresh hit for good. Undone the route's way.
+        if (kept && !fence.isValid()) {
+          kept = false;
+          if (policy.onInvalidate === 'purge') await store.delete(path);
+          else await store.markStale(path);
+        }
         if (isServerError(rendered.status)) {
           // Never stored, and never over a good copy: one upstream blip stored for the TTL plus a
           // stale serve was minutes of 503 for a read that recovered in a second. The copy the
@@ -226,9 +250,9 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
           tellUnowned(path);
         } else if (rendered.noStore === true) {
           // The loader's answer is not a failure, so the copy held is no longer the page.
-          if (current) store.delete(path);
+          if (current) await store.delete(path);
         }
-        forgetEvictedPaths();
+        await forgetEvictedPaths();
         // What the store did not keep, the edge may not keep either: a page rendered from rows
         // read BEFORE a purge would otherwise reach the CDN after the purge had already run there.
         return { entry, cacheable: kept, fenced: !unstorable && !kept };
@@ -239,13 +263,13 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
   }
 
   /** The one write: through the store's own fence when it has one, so a stale reading is refused. */
-  function write(
+  async function write(
     entry: IsrEntry,
     entities: readonly string[],
     reading: string | undefined,
-  ): boolean {
+  ): Promise<boolean> {
     if (store.tagFence === undefined || reading === undefined) {
-      store.set(entry);
+      await store.set(entry);
       return true;
     }
     return store.tagFence.setIfCurrent(entry, entities, reading);
@@ -272,10 +296,11 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
     return (await generate(path, render)).entry;
   }
 
-  function markStale(path: string): boolean {
+  async function markStale(path: string): Promise<boolean> {
     // The mark is recorded whether or not the store holds the page: a regeneration already in
     // flight for a path this store has never held is exactly the case the fence above exists for,
-    // and `invalidateTags`' own fanout only marks the TAGS.
+    // and `invalidateTags`' own fanout only marks the TAGS. Before the first await, so a render
+    // that settles while the store answers is fenced already.
     fences.mark({ key: path });
     return store.markStale(path);
   }
@@ -288,16 +313,18 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
    * and its FLIGHT is evicted, so a request arriving after this call leads a render of its own
    * instead of joining one that read its rows before the write (up to the 30 s deadline of them).
    */
-  function invalidate(path: string): void {
+  async function invalidate(path: string): Promise<void> {
+    // Everything this process knows changes before the first await: a request arriving while the
+    // store answers already finds the flight gone and the fence marked.
     failed.clear(path);
     flight.evict(path);
     if (isrPolicyOf(descriptorFor(path)).onInvalidate !== 'purge') {
-      markStale(path);
+      await markStale(path);
       return;
     }
     fences.mark({ key: path });
-    store.delete(path);
     forgetPath(path);
+    await store.delete(path);
   }
 
   /**
@@ -310,7 +337,10 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
    * By ROUTE tags: a row bust (`post:1`) reaches every stored page of a route tagged `post`. An
    * entry records no tags of its own, so this errs toward one render too many, never one too few.
    */
-  function revalidateHeld(tags: readonly CacheTag[] | typeof EVERY_TAG): readonly string[] {
+  async function revalidateHeld(
+    tags: readonly CacheTag[] | typeof EVERY_TAG,
+    invalidated: ReadonlySet<string> = new Set(),
+  ): Promise<readonly string[]> {
     const table = routes();
     // A flush (`EVERY_TAG`) is a bust of every tag at once: every route that carries one owns.
     const owns = (route: RouteDescriptor): boolean =>
@@ -326,11 +356,16 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
     // The store's fence FIRST: a write racing this call from another process is refused from here.
     const busted =
       tags === EVERY_TAG ? [...owners].flatMap((r) => r.revalidateTags.map(parseTag)) : tags;
-    store.tagFence?.bump(entitiesOf(busted));
-    for (const key of flight.keys()) if (owned(key)) invalidate(key);
-    const held = store.paths().filter(owned);
-    // A page the graph already named was marked a moment ago; it is reported, not marked twice.
-    for (const path of held) if (store.get(path)?.stale !== true) invalidate(path);
+    // Awaited before the store is listed: a write that passed its check before this bump landed is
+    // in the listing below and is taken down; one that checks after it is refused there.
+    await store.tagFence?.bump(entitiesOf(busted));
+    const pending = [...flight.keys()].filter(owned).map(invalidate);
+    const held = (await store.paths()).filter(owned);
+    // A page `revalidateByTags` already invalidated through the graph is reported, not done twice.
+    // Nothing is read back to decide it: a `get` per page was a round trip each over a shared
+    // store, and in `memoryIsrStore` it made every busted page the most recently used.
+    for (const path of held) if (!invalidated.has(path)) pending.push(invalidate(path));
+    await Promise.all(pending);
     return held;
   }
 
@@ -351,11 +386,11 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
           cacheable,
           ageMs: Math.max(0, now() - entry.generatedAt),
         });
-      let cached = store.get(path);
+      let cached = await store.get(path);
       // A copy under a key no route owns (a shared store an earlier release wrote) is not served:
       // nothing could have invalidated it since.
       if (cached !== undefined && (descriptor === undefined || pastMaxStale(cached, policy))) {
-        store.delete(path);
+        await store.delete(path);
         cached = undefined;
       }
 
@@ -393,21 +428,20 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
       return { state: 'stale', entry: cached, result: answer(cached, true), regenerating: started };
     },
 
-    revalidateByTags(tags) {
+    async revalidateByTags(tags) {
       // By TAG first, as `invalidateTags` does before it calls in here: a cold page whose first
       // render is running may be in neither the graph nor the store, and only its fence finds it.
       fences.mark({ tags });
       const affected = new Set<string>(isrDependents(tags));
-      for (const path of affected) invalidate(path);
-      for (const path of revalidateHeld(tags)) affected.add(path);
+      const marking = [...affected].map(invalidate);
+      for (const path of await revalidateHeld(tags, affected)) affected.add(path);
+      await Promise.all(marking);
       return [...affected].sort();
     },
 
     attach() {
       // The cache fanout owns the trigger; render owns only "what does an invalidation mean here".
-      const revalidate: Revalidator = (path) => {
-        invalidate(path);
-      };
+      const revalidate: Revalidator = (path) => invalidate(path);
       const revalidateTags: TagRevalidator = (tags) => revalidateHeld(tags);
       registerRevalidator(revalidate, revalidateTags);
       installedRevalidator = revalidate;

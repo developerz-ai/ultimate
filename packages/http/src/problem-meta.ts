@@ -41,13 +41,14 @@ export type ProblemMeta = Readonly<Record<string, ProblemMetaValue>>;
 export const MAX_PROBLEM_META_BYTES = 4096;
 
 /**
- * A key is spelled the way a code's `meta` key is spelled in source. `issues` is refused by name
- * because it already has a top-level home (`ProblemDocument.issues`, parsed and bounded on its
- * own terms), and a second copy under `meta.issues` is two places for a client to read one fact.
+ * A key is spelled the way a code's `meta` key is spelled in source. `issues` and `issuesTruncated`
+ * are refused by name because each already has a top-level home (`ProblemDocument.issues`, parsed
+ * and bounded on its own terms, and the mark that qualifies it), and a second copy under `meta` is
+ * two places for a client to read one fact.
  * `__proto__` is refused because `JSON.parse` on the receiving side mints it as a real own key.
  */
 const KEY = /^[A-Za-z_$][\w$]*$/;
-const RESERVED_KEYS: ReadonlySet<string> = new Set(['issues', '__proto__']);
+const RESERVED_KEYS: ReadonlySet<string> = new Set(['issues', 'issuesTruncated', '__proto__']);
 
 /**
  * Why `key` may not ride a document, or `undefined` when it may. The one rule for both halves: an
@@ -56,7 +57,9 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set(['issues', '__proto__']);
 export function metaKeyRefusal(key: unknown): string | undefined {
   if (typeof key !== 'string' || !KEY.test(key))
     return `${renderCauseValue(key)} is not a meta key`;
-  if (key === 'issues') return '`issues` already rides at the top level of the document';
+  if (key === 'issues' || key === 'issuesTruncated') {
+    return `\`${key}\` already rides at the top level of the document`;
+  }
   if (RESERVED_KEYS.has(key)) return `\`${key}\` is not a key a document may carry`;
   return undefined;
 }

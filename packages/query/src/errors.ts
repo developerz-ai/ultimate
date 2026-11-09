@@ -1,6 +1,7 @@
 /** Every failure @ultimat3/query can produce, one subclass per stable code. */
 import { deniedCallerFix, registerErrorCodes, UltimateError } from '@ultimat3/core';
 import type { PrimitiveDenial, SurfaceDenial } from '@ultimat3/policy';
+import type { ValidationIssue } from '@ultimat3/schema';
 
 // No `docs:` on the classes below.
 // `UltimateError` fills it from `describeErrorCode(code).docs`, which is `@ultimat3/core`'s
@@ -38,6 +39,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_QUERY_HTTP_PATH_INVALID: "a query's pinned http.path is not a valid path template",
   X_QUERY_ETAG_INVALID: 'etag: true on a read that has its own validator',
   X_QUERY_TIMEOUT_INVALID: 'a read declares a timeoutMs that is not a whole positive number of ms',
+  X_QUERY_MAX_PAGE_INVALID: 'a query declares a maxPage no page bound can hold',
 };
 
 /**
@@ -312,12 +314,29 @@ export class QuerySubscribesDriftError extends UltimateError {
 }
 
 export class QueryInputInvalidError extends UltimateError {
-  constructor(name: string, detail: string) {
+  /** The rejections, addressed by path — `undefined` for a refusal judged before the schema ran. */
+  readonly issues: readonly ValidationIssue[] | undefined;
+  /** `true` when validation stopped at `MAX_ISSUES`: `issues` is a prefix. Also on `meta`. */
+  readonly issuesTruncated: boolean;
+
+  /** `detail` is `formatIssues(issues).join('; ')` when both are passed (`validate.ts`). */
+  constructor(
+    name: string,
+    detail: string,
+    issues?: readonly ValidationIssue[],
+    issuesTruncated = false,
+  ) {
     super({
       code: 'X_INPUT_INVALID',
       cause: `input for query "${name}" failed validation: ${detail}`,
       fix: `x queries show ${name} --json  # prints the expected input schema`,
+      // Action's shape (`InputInvalidError`): http lifts `meta.issues` to the problem's `issues`.
+      ...(issues === undefined
+        ? {}
+        : { meta: issuesTruncated ? { issues, issuesTruncated: true } : { issues } }),
     });
+    this.issues = issues;
+    this.issuesTruncated = issuesTruncated;
   }
 }
 

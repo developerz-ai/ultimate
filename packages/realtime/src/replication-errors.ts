@@ -1,5 +1,5 @@
-// The five refusals the Postgres replication half raises: the wire, the connection, its TLS, the
-// slot, and the replica identity it warns about.
+// The refusals the Postgres replication half raises: the wire, the connection, its TLS, the lock,
+// the slot (invalidated, or recreated under a resume), and the replica identity it warns about.
 //
 // Split out of `errors.ts` on the one seam this package already draws — these are the only codes
 // no browser can reach, thrown by `pg-*.ts` and the replicator and by nothing on the client half.
@@ -99,6 +99,44 @@ export class ReplicaIdentityError extends RealtimeError {
       fix:
         `${args.tables.map((table) => `ALTER TABLE ${table} REPLICA IDENTITY FULL;`).join(' ')}` +
         ' -- or give each a primary key; rows already in the WAL keep the identity they were written with',
+    });
+  }
+}
+
+/**
+ * Postgres INVALIDATED the slot (`wal_status = 'lost'`): it fell further behind than
+ * `max_slot_wal_keep_size` allows and the WAL it needed was removed. It can never stream again,
+ * and every restart failed on a generic `X_REPLICATION_FAILED`. The slot name has passed
+ * `assertIdentifier`, so the `fix:` is SQL that can be pasted.
+ */
+export class ReplicationSlotInvalidatedError extends RealtimeError {
+  constructor(args: { slot: string }) {
+    super({
+      code: 'X_REPLICATION_SLOT_INVALIDATED',
+      cause:
+        `postgres invalidated replication slot "${args.slot}" (wal_status = lost): it fell ` +
+        'further behind than max_slot_wal_keep_size allows, the WAL it needed is gone, and it ' +
+        'can never stream again',
+      fix: `SELECT pg_drop_replication_slot('${args.slot}');   # then restart the replicator: it recreates the slot and every live window resyncs`,
+    });
+  }
+}
+
+/**
+ * The replicator resumed from a position, and its slot was not there — dropped by hand, or a
+ * failover to a server that never had it. A new slot starts at the server's current WAL, so the
+ * changes committed in between were never streamed. **LOGGED, never thrown**: the stream goes on
+ * from the new slot, and every live window and channel is resynced from the database at once.
+ */
+export class ReplicationSlotRecreatedError extends RealtimeError {
+  constructor(args: { slot: string; from: string }) {
+    super({
+      code: 'X_REPLICATION_SLOT_RECREATED',
+      cause:
+        `replication slot "${args.slot}" was gone when the replicator resumed from ${args.from}, ` +
+        'so a new one was created and the changes committed in between were never streamed — ' +
+        'every live window and channel is resynced from the database',
+      fix: 'x doctor --json   # find what drops the slot: a failover without slot sync (postgres 17 sync_replication_slots), or a manual pg_drop_replication_slot',
     });
   }
 }

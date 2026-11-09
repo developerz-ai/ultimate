@@ -6,7 +6,12 @@
  */
 
 import type { ClientScope, RecordRows, Row } from '@ultimat3/core/page';
-import { isJsonObject, renderThrowable, type UltimateError } from '@ultimat3/core/page';
+import {
+  finiteOption,
+  isJsonObject,
+  renderThrowable,
+  type UltimateError,
+} from '@ultimat3/core/page';
 import type { IdbDatabaseLike, IdbFactoryLike, IdbRequestLike } from './idb-types';
 import type { QueueChange, QueuedMutation, QueueState } from './offline-queue';
 import { LocalStoreUnavailableError } from './page-errors';
@@ -239,7 +244,18 @@ export interface OpenLocalStoreOptions {
   /** Where the one fallback warning goes. Default `console.warn`. */
   readonly warn?: ((error: UltimateError) => void) | undefined;
   readonly name?: string | undefined;
+  /**
+   * How long an open `blocked` by another tab's connection waits for that tab to close it before
+   * falling back to memory. Default `DEFAULT_BLOCKED_TIMEOUT_MS`.
+   */
+  readonly blockedTimeoutMs?: number | undefined;
 }
+
+/**
+ * Every tab running this module closes its connection on `versionchange` at once, so a block that
+ * outlives this is a tab on code that does not — one the user has to close.
+ */
+const DEFAULT_BLOCKED_TIMEOUT_MS = 5_000;
 
 /** IndexedDB when the page has it and it opens; memory, warned once, when it does not. */
 export async function openLocalStore(options: OpenLocalStoreOptions = {}): Promise<LocalStore> {
@@ -248,12 +264,18 @@ export async function openLocalStore(options: OpenLocalStoreOptions = {}): Promi
   const ambient: unknown = Reflect.get(globalThis, 'indexedDB');
   const factory = options.indexedDB ?? (ambient as IdbFactoryLike | undefined);
   const warn = options.warn ?? ((error: UltimateError) => console.warn(error));
+  const blockedMs = finiteOption(
+    'openLocalStore',
+    'blockedTimeoutMs',
+    options.blockedTimeoutMs ?? DEFAULT_BLOCKED_TIMEOUT_MS,
+  );
   if (factory === undefined) {
     warn(new LocalStoreUnavailableError({ reason: 'this runtime has no indexedDB' }));
     return new MemoryLocalStore();
   }
   try {
-    return new IdbLocalStore(await openDatabase(factory, options.name ?? 'ultimate-client'));
+    const name = options.name ?? 'ultimate-client';
+    return new IdbLocalStore(await openDatabase(factory, name, blockedMs));
   } catch (error) {
     warn(
       new LocalStoreUnavailableError({
@@ -264,17 +286,55 @@ export async function openLocalStore(options: OpenLocalStoreOptions = {}): Promi
   }
 }
 
-function openDatabase(factory: IdbFactoryLike, name: string): Promise<IdbDatabaseLike> {
+/**
+ * `blocked` is not a failure: it means another tab still holds an older connection, and the open
+ * goes on to `upgradeneeded` and `success` the moment that tab closes it. Refusing there sent every
+ * new tab to memory on any schema bump, and its offline writes died with it. So the open WAITS,
+ * bounded; and the connection it yields closes itself when a later tab asks for a newer version.
+ */
+function openDatabase(
+  factory: IdbFactoryLike,
+  name: string,
+  blockedMs: number,
+): Promise<IdbDatabaseLike> {
   return new Promise((resolve, reject) => {
     const request = factory.open(name, 1);
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = (): boolean => {
+      if (settled) return false;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      return true;
+    };
     request.onupgradeneeded = (): void => {
       const db = request.result;
       if (!db.objectStoreNames.contains(RECORDS)) db.createObjectStore(RECORDS);
       if (!db.objectStoreNames.contains(OUTBOX)) db.createObjectStore(OUTBOX);
     };
-    request.onsuccess = (): void => resolve(request.result);
-    request.onerror = (): void => reject(request.error);
-    request.onblocked = (): void => reject(request.error ?? 'blocked by another open tab');
+    request.onsuccess = (): void => {
+      const db = request.result;
+      // Past the bound this page already runs on memory: a connection nobody uses, held open,
+      // would block the next tab's upgrade exactly as this one was blocked.
+      if (!settle()) {
+        db.close();
+        return;
+      }
+      // Holding on would block that tab; this tab's later writes fail and reject instead.
+      db.onversionchange = (): void => db.close();
+      resolve(db);
+    };
+    request.onerror = (): void => {
+      if (settle()) reject(request.error);
+    };
+    request.onblocked = (): void => {
+      if (settled || timer !== undefined) return;
+      timer = setTimeout(() => {
+        if (!settle()) return;
+        const reason = `blocked by another open tab for ${blockedMs} ms — close the other tabs of this site`;
+        reject(new DOMException(reason, 'TimeoutError'));
+      }, blockedMs);
+    };
   });
 }
 

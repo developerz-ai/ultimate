@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "ApproveConnectionInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "type": "object"
+      },
+      "ApproveConnectionOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "next": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "next"
+        ],
+        "type": "object"
+      },
       "BlockUserInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -158,6 +187,35 @@
         ],
         "type": "object"
       },
+      "DenyConnectionInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "type": "object"
+      },
+      "DenyConnectionOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "next": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "next"
+        ],
+        "type": "object"
+      },
       "DestroySessionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -300,6 +358,12 @@
               "type": "object"
             },
             "type": "array"
+          },
+          "issuesTruncated": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
           },
           "meta": {
             "type": "object"
@@ -568,12 +632,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -698,12 +762,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -876,6 +940,144 @@
         ],
         "x-ultimate": {
           "capability": "public",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/connections/approve": {
+      "post": {
+        "operationId": "approveConnection",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveConnectionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApproveConnectionOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "approveConnection",
+        "tags": [
+          "connections"
+        ],
+        "x-ultimate": {
+          "capability": "oauth:consent",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/connections/deny": {
+      "post": {
+        "operationId": "denyConnection",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenyConnectionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DenyConnectionOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "denyConnection",
+        "tags": [
+          "connections"
+        ],
+        "x-ultimate": {
+          "capability": "oauth:consent",
           "idempotent": false,
           "invalidates": [],
           "mcpTool": null,
@@ -1592,6 +1794,9 @@
   "tags": [
     {
       "name": "accounts"
+    },
+    {
+      "name": "connections"
     },
     {
       "name": "friends"

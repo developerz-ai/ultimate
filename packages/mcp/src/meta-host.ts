@@ -2,6 +2,7 @@
 // can grow a second path: its `dispatch` IS the flat `tools/call`'s resolve → run → audit.
 
 import type { McpAuditor } from './audit-hook';
+import type { McpCatalogDetail } from './meta-catalog-render';
 import { schemaOf } from './meta-surface';
 import type { AnyMcpTool, McpCaller, ToolRegistry, ToolResolution } from './registry';
 import { validateArgs } from './validate-args';
@@ -11,6 +12,8 @@ import type { JsonRpcId, JsonRpcResponse } from './wire';
 export interface MetaHost {
   readonly tools: ToolRegistry;
   readonly audit: McpAuditor;
+  /** The app's one choice of `list_resources` density. */
+  readonly catalogDetail: McpCatalogDetail;
   dispatch(
     id: JsonRpcId,
     name: string,

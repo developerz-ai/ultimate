@@ -5,7 +5,7 @@
  * these registers its title first.
  */
 
-import { renderCauseValue, UltimateError } from '@ultimat3/core';
+import { renderCauseValue, UltimateError } from '@ultimat3/core/page';
 import './error-titles';
 
 export class ActionHttpPathInvalidError extends UltimateError {
