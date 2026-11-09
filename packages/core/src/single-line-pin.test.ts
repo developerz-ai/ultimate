@@ -117,3 +117,21 @@ describe('schema and core escape a hostile cause identically', () => {
     expect(schema.format()).toInclude(prose);
   });
 });
+
+/**
+ * The cap is the other half of the constructor's rendering, and schema's copy must cut where
+ * core's does: a schema cause is the one built from a request body (`X_VALIDATION_FAILED`).
+ */
+describe('schema and core bound a huge cause identically', () => {
+  test('a 100k-character cause is cut to the same text by both', () => {
+    const cause = 'v'.repeat(100_000);
+    const core = new UltimateError({ code: 'X_INVARIANT', cause, fix: 'x doctor --json' });
+    const schema = new SchemaError({ code: 'X_SCHEMA_UNSUPPORTED', cause, fix: 'x doctor --json' });
+    expect(core.cause.length).toBeLessThanOrEqual(4096);
+    expect(schema.cause).toBe(core.cause);
+    // `message` and `toJSON().cause` carry the same capped text, never the whole one.
+    expect(core.message.length).toBeLessThan(4096 + 200);
+    expect(schema.message.length).toBeLessThan(4096 + 200);
+    expect(schema.toJSON().cause).toBe(core.toJSON().cause);
+  });
+});

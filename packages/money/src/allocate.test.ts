@@ -215,3 +215,23 @@ function codeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+// `Money` is a type, and a value off JSON or a hand-built literal is not checked by one: a
+// fractional `minor` reached `BigInt()` and left as a bare `RangeError`, a 500 with no code.
+describe('an amount or ratio list that is not one is refused by code', () => {
+  test('a fractional minor', () => {
+    const notMoney = { minor: 12.5, currency: 'USD' };
+    expect(codeOf(() => allocate(notMoney, 2))).toBe('X_MONEY_NOT_INTEGER');
+    expect(codeOf(() => allocateByRatios(notMoney, [1, 1]))).toBe('X_MONEY_NOT_INTEGER');
+  });
+
+  test('ratios that are not a list', () => {
+    const amount = fromMinor(100, 'USD');
+    expect(codeOf(() => allocateByRatios(amount, null as unknown as number[]))).toBe(
+      'X_ALLOCATION_INVALID',
+    );
+    expect(codeOf(() => allocateByPercentages(amount, 'x' as unknown as number[]))).toBe(
+      'X_ALLOCATION_INVALID',
+    );
+  });
+});

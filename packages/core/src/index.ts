@@ -421,6 +421,7 @@ export type {
   UltimateErrorJSON,
 } from './exports/error-contract';
 export {
+  boundedCause,
   CORE_ERROR_CODES,
   ConfigInvalidError,
   classifyThrown,
@@ -445,6 +446,7 @@ export {
   isThrownError,
   isUltimateError,
   listErrorCodes,
+  MAX_CAUSE_LENGTH,
   MAX_RENDERED_LENGTH,
   NotImplementedError,
   notImplemented,
@@ -518,6 +520,8 @@ export type {
   Sampler,
   SentryDsn,
   SentryEnvelopeOptions,
+  SentryEvent,
+  SentryReporterHooks,
   SentryReporterOptions,
   Span,
   SpanAttributes,
@@ -613,6 +617,7 @@ export {
   samplerFromEnv,
   sentryEnvelope,
   sentryErrorReporter,
+  sentryEvent,
   serviceResource,
   setFailureStore,
   setLoggerContextFields,
@@ -691,6 +696,17 @@ export type {
 export { flightGate, gateOverloaded } from './flight-gate';
 export { fnv1a } from './fnv1a';
 export { formatBytes } from './format-bytes';
+export type { GateRateLimit, RateLimitSubject } from './gate-shapes';
+export {
+  AUDIT_SINK_FAILED_EVENT,
+  auditFailureOf,
+  auditOutcomeOf,
+  fixedRateLimitOf,
+  rateLimitScopeOf,
+  rateLimitSpendsOn,
+  rateLimitSubjectOf,
+  resolvedRateLimitOf,
+} from './gate-shapes';
 export type { GenerationFence } from './generation-fence';
 export { generationFence, isSuperseded } from './generation-fence';
 export type { PublicHealthBody } from './health-disclosure';
@@ -785,8 +801,10 @@ export type {
 export {
   beginWork,
   configureLifecycle,
+  DRAIN_TIMEOUT_EXIT_CODE,
   drain,
   drainDeadlineMs,
+  drainExitCode,
   healthReport,
   healthzPayload,
   idleWaiterCount,

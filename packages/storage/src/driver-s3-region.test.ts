@@ -11,7 +11,8 @@ import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { s3Driver } from './driver-s3';
 import type { S3ClientLike, S3FileLike } from './driver-s3-client';
-import { bytesOf, catchError } from './driver-s3-fixture';
+import { bytesOf, catchError, FAKE_ENV } from './driver-s3-fixture';
+import type { S3FetchLike } from './driver-s3-signed';
 
 const wrongRegion = (sent: string, expected: string, quote = '"'): Error =>
   Object.assign(
@@ -46,7 +47,14 @@ const shapeOf = (caught: unknown): { code: string; cause: string; fix: string } 
     : { code: `not coded: ${String(caught)}`, cause: '', fix: '' };
 
 describe('unit · s3 driver · a region mismatch names the region to set', () => {
-  const disk = s3Driver({ bucket: 'b', client: refusing(wrongRegion('auto', 'us-east-1')) });
+  const error = wrongRegion('auto', 'us-east-1');
+  // `copy()` is a signed CopyObject: the same refusal, as the provider's XML says it.
+  const fetch: S3FetchLike = async () =>
+    new Response(
+      `<Error><Code>AuthorizationHeaderMalformed</Code><Message>${error.message}</Message></Error>`,
+      { status: 400 },
+    );
+  const disk = s3Driver({ bucket: 'b', client: refusing(error), env: FAKE_ENV, fetch });
 
   test('put is X_CONFIG_INVALID, with both regions in the cause and S3_REGION in the fix', async () => {
     const refused = shapeOf(await catchError(() => disk.put('a.txt', bytesOf('x'))));

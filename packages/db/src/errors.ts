@@ -422,10 +422,10 @@ export const sqlUnsafe = (received: string, position: number): DbError =>
     meta: { position, received },
   });
 
-export const identifierUnsafe = (name: string): DbError =>
+export const identifierUnsafe = (name: string, why?: string): DbError =>
   new DbError({
     code: 'X_SQL_UNSAFE',
-    cause: `${JSON.stringify(name)} is not usable as a Postgres identifier`,
+    cause: `${JSON.stringify(name)} is not usable as a Postgres identifier${why === undefined ? '' : `: ${why}`}`,
     fix: 'pass a plain table/column name — identifiers cannot be bound as parameters',
     meta: { name },
   });

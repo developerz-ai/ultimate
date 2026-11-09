@@ -1,6 +1,6 @@
 // The deprecation window, two ways: the export reader over barrel text, and the whole rule
 // against real git repositories with real release tags — a removal with and without the
-// `@deprecated` its tag should have carried, inert below v30, and the advisory that excuses one.
+// `@deprecated` its tag should have carried, inert below v31, and the advisory that excuses one.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
@@ -109,18 +109,18 @@ const options = {
 
 describe('unit · deprecation-window · against a release tag', () => {
   test('a name removed with no @deprecated in the tag is refused', async () => {
-    const { dir, write } = await released('30.0.0', 'export const a = 1;\nexport const b = 2;\n');
+    const { dir, write } = await released('31.0.0', 'export const a = 1;\nexport const b = 2;\n');
     await write({ 'packages/core/src/index.ts': 'export const b = 2;\n' });
     const findings = await deprecationWindowFindings(dir, options);
     expect(findings.map((one) => [one.code, one.at])).toEqual([
       ['X_RELEASE_UNDEPRECATED_REMOVAL', 'packages/core/src/index.ts'],
     ]);
     expect(findings[0]?.cause).toContain('`a`');
-    expect(findings[0]?.fix).toStartWith('git show v30.0.0:packages/core/src/index.ts');
+    expect(findings[0]?.fix).toStartWith('git show v31.0.0:packages/core/src/index.ts');
   });
 
   test('a name the tag marked @deprecated, in its own module, may go', async () => {
-    const { dir, write } = await released('30.1.0', "export { a, b } from './things';\n", {
+    const { dir, write } = await released('31.1.0', "export { a, b } from './things';\n", {
       'packages/core/src/things.ts':
         '/** @deprecated use b */\nexport const a = 1;\nexport const b = 2;\n',
     });
@@ -128,25 +128,25 @@ describe('unit · deprecation-window · against a release tag', () => {
     expect(await deprecationWindowFindings(dir, options)).toEqual([]);
   });
 
-  test('below v30 the rule is inert: v30 takes the plan removals as scheduled', async () => {
-    const { dir, write } = await released('29.4.0', 'export const a = 1;\n');
+  test('below v31 the rule is inert: v31 takes the plan removals as scheduled', async () => {
+    const { dir, write } = await released('30.4.0', 'export const a = 1;\n');
     await write({ 'packages/core/src/index.ts': 'export const b = 2;\n' });
     expect(await deprecationWindowFindings(dir, options)).toEqual([]);
   });
 
   test('an advisory recorded under [Unreleased] excuses a removal', async () => {
-    const { dir, write } = await released('30.0.0', 'export const a = 1;\n');
+    const { dir, write } = await released('31.0.0', 'export const a = 1;\n');
     await write({
       'packages/core/src/index.ts': 'export const b = 2;\n',
       'CHANGELOG.md':
-        '# Changelog\n\n## [Unreleased]\n\n> **Security exception:** `CVE-2026-1234` — why\n\n## 30.0.0 - 2026-11-10\n\n- x\n',
+        '# Changelog\n\n## [Unreleased]\n\n> **Security exception:** `CVE-2026-1234` — why\n\n## 31.0.0 - 2026-11-10\n\n- x\n',
     });
     expect(await deprecationWindowFindings(dir, options)).toEqual([]);
   });
 
   test('a base tag nobody can answer for is a refusal, never a pass', async () => {
-    const { dir, write } = await released('30.0.0', 'export const a = 1;\n');
-    await git(['tag', '-d', 'v30.0.0'], dir);
+    const { dir, write } = await released('31.0.0', 'export const a = 1;\n');
+    await git(['tag', '-d', 'v31.0.0'], dir);
     await write({ 'packages/core/src/index.ts': 'export const b = 2;\n' });
     const findings = await deprecationWindowFindings(dir, {
       ...options,
@@ -156,8 +156,8 @@ describe('unit · deprecation-window · against a release tag', () => {
   });
 
   test('a base tag origin holds but this clone cannot fetch is a refusal naming the fetch', async () => {
-    const { dir, write } = await released('30.0.0', 'export const a = 1;\n');
-    await git(['tag', '-d', 'v30.0.0'], dir);
+    const { dir, write } = await released('31.0.0', 'export const a = 1;\n');
+    await git(['tag', '-d', 'v31.0.0'], dir);
     await write({ 'packages/core/src/index.ts': 'export const b = 2;\n' });
     const findings = await deprecationWindowFindings(dir, { ...options, probe: async () => true });
     expect(findings.map((one) => one.code)).toEqual(['X_RELEASE_TAG_UNREACHABLE']);
@@ -165,14 +165,14 @@ describe('unit · deprecation-window · against a release tag', () => {
   });
 
   test('a base tag origin does not hold falls back to the release below it', async () => {
-    const { dir, write } = await released('30.0.0', 'export const a = 1;\n');
+    const { dir, write } = await released('31.0.0', 'export const a = 1;\n');
     await write({
       'packages/core/src/index.ts': 'export const b = 2;\n',
       'CHANGELOG.md':
-        '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n\n## 30.1.0 - 2026-11-17\n\n- y\n\n## 30.0.0 - 2026-11-10\n\n- x\n',
+        '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n\n## 31.1.0 - 2026-11-17\n\n- y\n\n## 31.0.0 - 2026-11-10\n\n- x\n',
     });
     const findings = await deprecationWindowFindings(dir, options);
     expect(findings.map((one) => one.code)).toEqual(['X_RELEASE_UNDEPRECATED_REMOVAL']);
-    expect(findings[0]?.cause).toContain('v30.0.0');
+    expect(findings[0]?.cause).toContain('v31.0.0');
   });
 });

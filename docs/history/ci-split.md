@@ -64,8 +64,8 @@ servers a `services:` block cannot start.
 
 | Job | Runners | What one runner does |
 |---|---|---|
-| `gate` | 5 | one part of the framework gate: `unit`, `contract` and `job` in three shards against one Postgres, `live` (every suite that needs more than one server, with the six static steps beside it), `e2e` (the compiler, then a browser) — as of 2026-11-05, below |
-| `verify` | 1 | `x verify merge` over the five parts — the framework gate's verdict. `release.yml` reads the whole run's conclusion, which includes it (2026-10-03) |
+| `gate` | 6 | one part of the framework gate: `unit`, `contract` and `job` in three shards against one Postgres, `live` in two shards against every server, `static` (the six static steps beside `eval`), `e2e` (the compiler, then a browser) — as of 2026-11-09, below |
+| `verify` | 1 | `x verify merge` over the six parts — the framework gate's verdict. `release.yml` reads the whole run's conclusion, which includes it (2026-10-03) |
 | `reference-app-verify` | 3 | one tracked app: build, gate, ratchet — the docs site the third since 2026-11-06 (plan 101, 42-adopt-docs-site) |
 | `scaffold-smoke` | 5 | one scaffold per runner: default, `--no-example`, and one per `x new --shape` (`api`, `blog`, `dashboard` since 2026-11-06), held to `NEW_SHAPES` by `scripts/ci-workflow-shape.test.ts` |
 | `packages` | 2 | each unit tested and covered alone; `cli` in one shard, every other unit in the other (2026-11-05, below) |
@@ -78,7 +78,8 @@ servers a `services:` block cannot start.
 The pattern is the one `wiki/CI-Parallel-Gate.md` documents for an app: a matrix of parts, every
 part uploading its `--json` document, one job merging them.
 
-No static part. The first cut had two (`typecheck`, `errors`, `manifest` and `lint`, `boundaries`,
+No static part until 2026-11-09 (below), when `live` was split and a shard may name no other step.
+The first cut had two (`typecheck`, `errors`, `manifest` and `lint`, `boundaries`,
 `filesize`, `package-shape`), and they bought nothing: the runner already puts those steps BESIDE
 the serial suites whenever `live` is in the list, where the slowest (37 s) fits inside `live`'s
 64 s. Folding them into the `live` part removed two runners and four billed minutes without moving
@@ -194,7 +195,45 @@ Not done here, each with the measurement that decides it:
 | What | Where | Expected |
 |---|---|---|
 | split `cli`'s files across two `packages` runners and fold their lcov | `scripts/coverage-gate.ts` | **blocked on Bun's lcov, measured 2026-11-07**: it carries `FNF`/`FNH` counts and no `FN:` records, so lines union exactly across runners and functions only as a per-file max, a lower bound. `db` whole against two halves folded: lines 8180/8428 both ways; functions 1197 → 1182 (−1.19 points) split by name, 1189 (−0.63) with each subject's tests kept together. `cli` clears the 95% bar on functions by 0.43, so a split reads red over unchanged coverage, or needs a lower bar. Reopens when Bun writes `FN:`/`FNDA:` |
-| `live` and `e2e` shardable across runners (`SHARDABLE_STEPS`), and a merge that can read a step skipped by path | `packages/cli/src/verify-shard.ts`, `verify-tests.ts`, `verify-merge.ts` | `gate (live)` 334 s → ~170 s on two; a prose-only PR could then skip `live` and `e2e` too |
+| `live` and `e2e` shardable across runners (`SHARDABLE_STEPS`), and a merge that can read a step skipped by path | `packages/cli/src/verify-shard.ts`, `verify-tests.ts`, `verify-merge.ts` | `gate (live)` 334 s → ~170 s on two; a prose-only PR could then skip `live` and `e2e` too. `live` split 2026-11-09, below |
+
+## `live` in two shards, a static part, 2026-11-09
+
+Measured on main (runs 42447766689, 42480668181, 42540901591), seconds per job: `packages (1/2)`
+363–408 (`cli` alone, 392 s on four workers), `gate (live)` 333–347 (`live` 280–302, serial),
+`packages (2/2)` 216–339, `gate (e2e)` 220–248, a `unit` shard 218–264. Wall 6 m 21 s – 7 m 10 s.
+
+| Change | Why |
+|---|---|
+| `live` → `live-1`, `live-2`: `--only live --shard i/2`, every service in both | `live` was one serial `bun test` and `SHARDABLE_STEPS` already lists it; ~300 s → ~150 s a shard |
+| every part running a step must supply its services (`scripts/lib/test-service-coverage.ts`) | a suite lands on the shard the sorted file list deals it, so "some part exports Redis" let a shard without Redis skip whatever Redis suite it got |
+| a `static` part: the six static steps, `eval` and the steps that apply only to an app | a shard refuses a non-shardable step (`X_VERIFY_SHARD_INVALID`), so they left `live` |
+| the static steps run BESIDE the first serial suite listed, not only `live` (`packages/cli/src/verify-run.ts`); `eval` is that suite in `static` | alone they were serial: the sum of six whole-tree scans, ~400 s. Beside `eval`, the slowest: `manifest` 99 s. Pinned by `verify-run-overlap.test.ts` |
+| `packages` NOT re-sharded | `cli` is one unit and the critical path by itself; a third shard moves the other 31 units, not `cli`. The split is the row above (blocked on Bun's lcov) |
+
+Expected: the gate's slowest part ~200 s; the run's end is still `packages (1/2)` at 363–408 s —
+over five minutes until `cli` can be split across runners.
+
+Re-measured 2026-11-09, Bun 1.4.4: is the `cli` split still blocked? Yes. A two-file probe still
+writes `FNF`/`FNH` and no `FN:`/`FNDA:` records. Then all 778 of `cli`'s test files ran whole and in
+two halves, each run `bun test --coverage --parallel=4` with no `TEST_*` URLs. The halves were folded
+by `mergeFileCoverage` (`packages/cli/src/coverage-lcov.ts`), the fold `x verify merge` uses.
+`cli`'s own sources:
+
+| Run | Lines | Functions (hit / found) |
+|---|---|---|
+| whole, one `bun test` | 94.95 | 94.79 (5658 / 5969) |
+| two halves, contiguous in sorted order, folded | 94.94 | 94.25 (5623 / 5966) |
+| two halves, round-robin, folded | 94.94 | 93.57 (5576 / 5959) |
+
+The tree was mid-edit and some suites were red in all three runs, so the whole run reads under CI's
+96.07 / 95.48. The three runs share that tree, so the gaps between them are what matters.
+Lines fold to within 0.01, as `mergeFileCoverage`'s comment says. Functions lose 0.54–1.22 points
+(35–82 functions), because a file whose functions are split between the halves keeps only the
+better half. CI reads `cli` at 95.48% functions, 0.48 points over the 95% bar: either split reads
+red over unchanged code. The halves were also uneven (229–255 s against 407–449 s on a shared
+12-core box), so a split by file count would not halve the wall time anyway. Reopens when Bun's
+lcov carries function identity; until then `packages (1/2)` holds the run over five minutes.
 
 ## Fault drills, 2026-11-06
 
@@ -240,3 +279,4 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `wiki.yml` | push to `main` → the wiki |
 | `tutorial-run.yml` | push to `main` touching a tutorial or a generator → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never on a PR, never in `ci` |
 | `bench.yml` | weekly + release → re-measured first-hour/http-hello JSON as a PR; never in `ci` |
+| `workflow-lint.yml` | push or PR touching `.github/**` → zizmor 1.32.0 at `medium` and above, online audits (impostor commits, advisories) included; a deliberate finding is suppressed in place with its reason. Its own workflow so a path filter can gate it; not a required check, so the filter never leaves one pending (added 2026-11-09) |

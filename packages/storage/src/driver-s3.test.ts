@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { ConfigInvalidError, EnvMissingError } from '@ultimat3/core';
 import { s3Driver } from './driver-s3';
 import type { S3ClientLike, S3ListEntryLike } from './driver-s3-client';
-import { bytesOf, catchError, codeOf, FakeS3Client, textOf } from './driver-s3-fixture';
+import { bytesOf, catchError, codeOf, FAKE_ENV, FakeS3Client, textOf } from './driver-s3-fixture';
 import type { StorageError } from './errors';
 import { META_DIR, scopedKey } from './path';
 
@@ -104,7 +104,7 @@ describe('s3Driver', () => {
   describe('copy', () => {
     test('moves bytes without reading them into this process, and keeps the content type', async () => {
       const fake = new FakeS3Client();
-      const driver = s3Driver({ bucket: 'b', client: fake });
+      const driver = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV });
       await driver.put('org/org-1/from.png', bytesOf('pixels'), { contentType: 'image/png' });
 
       const copied = await driver.copy('org/org-1/from.png', 'org/org-1/to.png');

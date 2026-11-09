@@ -458,4 +458,30 @@ describe('introspect', () => {
     expect(client.statements).toHaveLength(8);
     expect(schema.tables.map((t) => t.name)).toEqual(['posts']);
   });
+
+  // Eight catalog reads, none depending on another's answer: serial, a remote database paid eight
+  // round trips at every CLI command and every boot drift check. Every read is held unanswered, so
+  // a serial loop has exactly one in flight however many turns pass; all eight means sent together.
+  test('the eight catalog reads are in flight together', async () => {
+    const client = recordingClient();
+    let inFlight = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holding: typeof client = {
+      ...client,
+      query: async <T>(fragment: Parameters<typeof client.query>[0]) => {
+        inFlight += 1;
+        await held;
+        return client.query<T>(fragment);
+      },
+    };
+    const reading = introspectSchema({ client: holding });
+    for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+    expect(inFlight).toBe(8);
+    release();
+    await reading;
+    expect(client.statements).toHaveLength(8);
+  });
 });

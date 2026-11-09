@@ -238,8 +238,8 @@ describe('rate limiting across replicas', () => {
           enabled: true,
           scope: 'shared',
           defaultBucket: 'default',
-          // No refill: the burst is the whole allowance, so a second one is unmistakable.
-          buckets: { default: { capacity: 3, refillPerSecond: 0 } },
+          // Next to no refill: the burst is the whole allowance, so a second one is unmistakable.
+          buckets: { default: { capacity: 3, refillPerSecond: 0.0001 } },
         },
       }),
       rateLimitStore: store,

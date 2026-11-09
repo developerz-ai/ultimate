@@ -3,7 +3,8 @@
 // and an S3 disk into a cross-tenant read. Rejection is total: no sanitising, no rewriting —
 // a key that needed fixing was built wrong, and silently fixing it hides the bug.
 
-import { pathUnsafe } from './errors';
+import { renderFixLiteral } from '@ultimat3/core';
+import { pathUnsafe, StorageError } from './errors';
 
 /**
  * S3's own limit; keeping local and remote disks interchangeable requires the same ceiling.
@@ -31,6 +32,12 @@ export const META_DIR = '.meta';
 
 // `%2e%2e%2f` decodes to `../` in any layer that decodes twice (proxy, then framework).
 const ENCODED_SEPARATOR = /%(?:2e|2f|5c|00)/i;
+
+/**
+ * A Win32 device name, with or without an extension and in any case: `nul.txt` opens the device,
+ * never a file, on a local disk under Windows. Refused on every driver, so a key is one rule.
+ */
+const DEVICE_NAME = /^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])\s*(?:\..*)?$/i;
 
 /** NUL and friends: a C-string API downstream truncates at the NUL and opens a different file. */
 function hasControlByte(key: string): boolean {
@@ -67,12 +74,31 @@ function unsafeReason(key: string): string | undefined {
     if (segment.length === 0) return 'contains an empty segment ("//" or a trailing "/")';
     if (segment === '.' || segment === '..') return `contains a "${segment}" segment`;
     if (segment !== segment.trim()) return `has a padded segment ${JSON.stringify(segment)}`;
+    // Win32 drops a trailing dot: `.meta.` IS the reserved sidecar dir, `a.` IS `a`.
+    if (segment.endsWith('.')) return `has a segment ending in "." ${JSON.stringify(segment)}`;
+    if (DEVICE_NAME.test(segment))
+      return `has a Windows device-name segment ${JSON.stringify(segment)}`;
   }
   return undefined;
 }
 
 export function isSafeKey(key: string): boolean {
   return unsafeReason(key) === undefined;
+}
+
+/**
+ * The local disk's one extra rule, on Windows only: `a:b` is the NTFS stream `b` of the file `a`, so
+ * two keys would share one file's bytes. Everywhere else — s3, Linux, macOS — a `:` is an ordinary
+ * key byte, and ISO timestamps carry three, so the shared rule above admits it.
+ */
+export function assertLocalKey(key: string, platform: string = process.platform): string {
+  if (platform !== 'win32' || !key.includes(':')) return key;
+  throw new StorageError({
+    code: 'X_STORAGE_PATH_UNSAFE',
+    cause: `key ${JSON.stringify(key)} contains a ":", which a local disk on Windows stores as an NTFS alternate data stream of another file`,
+    fix: `await disk.put(${renderFixLiteral(key.replaceAll(':', '-'), "'<key>'")}, body)   # the same key with each ":" as "-" (2026-11-09T12-00-00Z for a timestamp)`,
+    meta: { key, reason: 'contains a ":" on win32' },
+  });
 }
 
 /** Returns the key unchanged, so it composes: `Bun.file(join(root, assertSafeKey(key)))`. */

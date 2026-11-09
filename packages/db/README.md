@@ -97,6 +97,8 @@ trusted to remember the difference between a value and a fragment. So:
   `sql`/`raw` did not produce;
 - `raw(trusted)` is the one audited escape hatch, `identifier(name)` the safe way to interpolate
   a table or column, `literal(text)` for utility statements that reject bound parameters.
+  `As of 2026-11-09` `identifier()` also refuses a NUL and a name over 63 **bytes**
+  (`sql.ts`'s `MAX_IDENTIFIER_BYTES`), which Postgres would truncate without an error (`X_SQL_UNSAFE`).
 
 ## Failure bundles: `x_failures`
 
@@ -120,6 +122,7 @@ fragments to splice and `page(rows)`, which answers core's `Page`.
 | A null key | `X_KEYSET_NULL_KEY`, on any row of a page, whatever its size |
 | The cursor | core's signed codec; scoped to `scope` plus every key's column, kind and direction. Another read's is `X_CURSOR_INVALID` |
 | `limit` | a whole number ≥ 1 (`finiteCount`), read as `limit + 1` |
+| `direction`, `kind` | `As of 2026-11-09`: `'asc'`/`'desc'` and the five kinds, exactly — anything else is `X_INVARIANT` at `keyset()`. The `order by` splice is re-derived from the closed set, never the caller's text. Map a request's sort onto the two literals yourself |
 
 Proven on both engines: `keyset.live.test.ts` (Postgres) and `keyset-embedded.test.ts` (PGlite)
 walk four rows inside one millisecond across page boundaries, and assert the plan holds no sort.
@@ -184,12 +187,13 @@ layer 1 covers only what existed at grant time.
 
 ## Diagnostics
 
-`As of 2026-11`. `dbDiagnostics({ client?, limit? })` answers facts, never a verdict: how bloated is
+`As of 2026-11`. `dbDiagnostics({ client?, limit?, deadlineMs? })` answers facts, never a verdict: how bloated is
 too bloated differs per app. `checkDb()` stays the readiness probe `/readyz` reads.
 
 | Rule | |
 |---|---|
 | Read-only, bounded | every section is one catalog statement through `readOnlyQuery()`: `BEGIN READ ONLY`, `DIAGNOSTICS_TIMEOUT_MS` (2 s), a cursor capped at `limit` (default 20). Sequential, so one connection |
+| `deadlineMs` | `As of 2026-11-09`: the whole command's budget, the `select 1` probe included. Default: the probe waits 3 s, the command 15 s. On a cold embedded database the probe IS the boot, so `x db diagnostics` passes 30 s there |
 | One failure stays one | a section that throws is `{ available: false, code, reason, fix }`; the other six answer. The single throw is a probe (`select 1`) that cannot connect |
 | No row values | no statement reads a user table. Session SQL (`activity`, `blockers`, `slowQueries`) has every literal replaced by `?` before it leaves (`db-diagnostics-redact.ts`, over the package's one lexer); a `scheme://user:pass@` in a reason is masked |
 | `slowQueries` | reads `pg_stat_statements`; absent (always on PGlite) is `available: false` with the operator's `create extension` + `shared_preload_libraries` fix. The framework never creates an extension |
@@ -500,6 +504,21 @@ transaction left to undo.
 The last row is the one divergence a second connection would remove and PGlite cannot: a statement
 issued *inside* an open transaction's scope runs immediately rather than waiting for a turn that
 scope is already holding, because waiting would be a deadlock with no error to explain it.
+
+## A pooled read stops when its caller does
+
+`As of 2026-11-09`. A `select` sent on the pool, in flight when the ambient `ctx.signal` aborts, is
+cancelled on the SERVER (`Bun.SQL`'s `cancel()`, `57014`) and its connection goes back at once —
+before, a hung-up caller held it until `statement_timeout`, so firing requests and disconnecting
+emptied the pool past any rate limit. `statement-cancel.ts`; `statement-cancel.live.test.ts`.
+
+| Case | |
+|---|---|
+| a pooled `select`, abort while it runs | cancelled. A client hang-up throws `X_ABORTED`; a coded reason (`X_TIMEOUT`, a job's) is thrown as itself |
+| a write (`insert`/`update`/…, or a `with` that may hide one) | never cancelled: a click followed by a navigation must keep landing |
+| any statement on a pin (`withTransaction`, `readOnlyQuery`) | never cancelled here: aborting the statement aborts the transaction, which `transaction-guard.ts` decides |
+| a statement sent after the abort | sent as before: a job's settle and a fenced write go out past it on purpose |
+| no context, or PGlite | nothing to cancel: in-process, one session |
 
 ## Pool sizing by role
 

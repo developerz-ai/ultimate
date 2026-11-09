@@ -3,8 +3,9 @@
 // `src/index.ts` exported at the previous release tag and exports no longer must have carried
 // `@deprecated` in that tag. Removals land in a major only after an alias said so for a minor.
 //
-// Inert while the previous release is below v30: the clock starts there, and v30 takes this plan's
-// removals as scheduled. So today's state is pinned at zero, and the rule bites from the first v30.x.
+// Inert while the previous release is below v31 (`WINDOW_OPENS_AT_MAJOR`, the 2026-11-09 ruling):
+// the clock starts there, and v31 takes this plan's removals as scheduled. The rule bites from the
+// first v31.x.
 //
 //   bun run scripts/deprecation-window.ts [--json]
 
@@ -49,7 +50,7 @@ const unreachable = (tag: string): Finding => ({
 /**
  * The tag to compare against: the newest released CHANGELOG.md section that origin holds a tag
  * for. On a bump PR the newest section is the version being cut, untagged, so the one below it is
- * the base. `inert` when that base is below v30.
+ * the base. `inert` when that base is below `WINDOW_OPENS_AT_MAJOR`.
  */
 async function baseTag(
   root: string,

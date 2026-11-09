@@ -109,8 +109,9 @@ compiling, or stops meaning what it meant.
 
 ## When a major may ship
 
-From v30, at most one major per 90 days, counted between the dated `## X.0.0 - YYYY-MM-DD`
-headings in `CHANGELOG.md` (`scripts/lib/major-window.ts`). Until the window opens a break lands on
+From v31, at most one major per 90 days, counted between the dated `## X.0.0 - YYYY-MM-DD`
+headings in `CHANGELOG.md` (`scripts/lib/major-window.ts`, `WINDOW_OPENS_AT_MAJOR`; moved from v30
+by the 2026-11-09 ruling, so v31 itself is never refused). Until the window opens a break lands on
 `next`, never `main` (`X_BREAKING_ON_MAIN`); when it opens, `next` merges into `main` and the bump
 is the major. A removal ships its `@deprecated` alias on `main` for at least one minor first
 (`scripts/deprecation-window.ts`, `X_RELEASE_UNDEPRECATED_REMOVAL`). The only exception is a
@@ -139,7 +140,7 @@ releasing it is then a two-word deletion rather than a page to write under time 
 | every `wiki/` table renders as a table | `scripts/wiki-tables.ts` | `manifest` |
 | exactly one page stamps a version, and it is the shipped one | `scripts/version-stamps.ts` | `manifest` |
 | all 31 workspaces at the tag's version before the first publish | `scripts/release.ts --check <version>` | the release workflow, not the gate |
-| one major per 90 days from v30 | `scripts/release.ts`, and `scripts/lib/stability-findings.ts` on the dated headings | `boundaries` |
+| one major per 90 days from v31 | `scripts/release.ts`, and `scripts/lib/stability-findings.ts` on the dated headings | `boundaries` |
 | no `BREAKING —` on `main` while the window is closed | `scripts/lib/changelog-highlights.ts` | `boundaries` |
 | a removed export was `@deprecated` at the previous tag | `scripts/deprecation-window.ts` | `boundaries` |
 | every release from 30.0.0 opens with Highlights | `scripts/lib/changelog-highlights.ts` | `boundaries` |

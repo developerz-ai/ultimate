@@ -13,7 +13,6 @@ describe('parseByteRange', () => {
 
   test('unsatisfiable and ignorable are different answers', () => {
     expect(parseByteRange('bytes=10-', 10)).toBe('unsatisfiable');
-    expect(parseByteRange('bytes=4-2', 10)).toBe('unsatisfiable');
     expect(parseByteRange('bytes=0-', 0)).toBe('unsatisfiable');
     // A SUFFIX against a zero-byte object. The non-suffix branch already answered this through
     // `start >= size`; the suffix branch had no such test, so `bytes=-5` on an empty object
@@ -26,6 +25,11 @@ describe('parseByteRange', () => {
     // valid answer. The site-asset route used to answer 416 to `bytes=-` and `/_storage` 200.
     expect(parseByteRange('bytes=0-1,4-5', 10)).toBeUndefined();
     expect(parseByteRange('bytes=-', 10)).toBeUndefined();
+    // RFC 9110 §14.1.1: a last-pos below its first-pos makes the range-spec INVALID, and an
+    // invalid Range is ignored (200, whole body) — 416 is for a valid range the size cannot meet.
+    expect(parseByteRange('bytes=4-2', 10)).toBeUndefined();
+    expect(parseByteRange('bytes=5-3', 10)).toBeUndefined();
+    expect(parseByteRange('bytes=15-12', 10)).toBeUndefined();
     expect(parseByteRange('items=0-1', 10)).toBeUndefined();
     expect(parseByteRange(null, 10)).toBeUndefined();
     expect(parseByteRange(undefined, 10)).toBeUndefined();

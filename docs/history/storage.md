@@ -220,3 +220,34 @@ Verbatim from [`packages/storage/CLAUDE.md`](../../packages/storage/CLAUDE.md), 
   may be `NODE_ENV`'s, never a variable the process did not set. `usesDevStorageSecret()` is the
   `x doctor` predicate, mirroring core's `usesDevCursorSecret()`; it reads the env var, so a disk
   handed an explicit `signingSecret` is outside its question.
+
+## Plan 101 slice 04 (`As of 2026-11-09`): signing, copy parity, streamed uploads
+
+- **`delete()` is idempotent for an ABSENT key and for nothing else** (moved from the package notes).
+  Both drivers used to end in `.catch(() => undefined)`, so a denied `s3:DeleteObject`, a
+  `SlowDown`, an expired credential and a read-only mount all resolved as success — and
+  `sweepOrphans` returned them as deleted: a GDPR erasure report certifying data still in the
+  bucket. An `S3Error` is a plain `Error` with `code`/`statusCode`, and every read of one can throw,
+  hence the structural classification.
+- **A `+` in a signed query is a space.** `url.searchParams.set('prefix', 'my file/')` writes
+  `my+file%2F`; the signer re-encoded the `+` as `%2B`, a different key to S3, so
+  `listS3Uploads` paged past every upload whose key held a space and its parts billed forever.
+- **s3 `copy()` was Bun's `write(S3File)`**, which carries the type and nothing else: a copy lost
+  `Cache-Control` and `x-amz-meta-*` that local and memory kept. Now one CopyObject (directive
+  COPY); past CopyObject's 5 GiB ceiling, `UploadPartCopy` with the source's headers restated on
+  the Create, every part `x-amz-copy-source-if-match` the HEAD's etag.
+- **The signed upload route buffered the whole body** (`readWithinLimit`) before the disk saw a
+  byte: memory per upload was its size. Measured: 200 MiB through the route grew RSS 414 MiB; now
+  under 64 MiB. XML is still read whole — a script can sit anywhere in it, and the head-only rule
+  would refuse every SVG past 64 KiB.
+- **A pinned read on the local disk does not hold a descriptor between the check and the first
+  pull.** The first version did; a `Response` nobody read (a 304, a test) left a `FileHandle` to
+  the garbage collector, which Bun 1.4.4 raises as an error. The check closes the file and the
+  first pull reopens it and checks the etag again. It compared the inode at first: ext4 hands a
+  freed inode straight back, so two puts left v3 at v1's inode number, served under v1's etag.
+- **`:` is refused on the local disk on Windows only** (`assertLocalKey`). The shared rule
+  refusing it everywhere was reverted before release: ISO timestamps carry three, and s3 and POSIX
+  hold them as ordinary bytes. Device names and a trailing dot stay refused on every disk.
+- **s3 `putStream` parts came from the declared ceiling** (`maxBytes / 10000`): a 1 TB ceiling cut
+  100 MB parts for a 1 KB body, sent one at a time, each held twice. Now 8 MiB doubling per 1,000
+  parts, at most four held.

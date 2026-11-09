@@ -216,3 +216,31 @@ async function codeOfAsync(run: () => Promise<unknown>): Promise<string> {
   }
   return 'no-throw';
 }
+
+// Every field of a rate a provider returns is the provider's, and a provider is app code: an
+// unusable `at`, a `ratio` of plain numbers or a fractional amount was a bare TypeError/RangeError.
+describe('an unusable rate or amount is refused by code', () => {
+  test('a rate with no valid observation time', () => {
+    const invalid = { ...usdToEur, at: new Date('not a date') };
+    expect(codeOf(() => convert(fromMinor(1000, 'USD'), 'EUR', invalid))).toBe('X_RATE_MISSING');
+    const missing = { ...usdToEur, at: undefined } as unknown as ExchangeRate;
+    expect(codeOf(() => convert(fromMinor(1000, 'USD'), 'EUR', missing))).toBe('X_RATE_MISSING');
+  });
+
+  test('a ratio whose terms are not bigints', () => {
+    const numbers = { ...usdToEur, ratio: { numerator: 23, denominator: 25 } };
+    const rate = numbers as unknown as ExchangeRate;
+    expect(codeOf(() => convert(fromMinor(1000, 'USD'), 'EUR', rate))).toBe('X_RATE_MISSING');
+  });
+
+  test('a fractional minor', () => {
+    expect(codeOf(() => convert({ minor: 1.5, currency: 'USD' }, 'EUR', usdToEur))).toBe(
+      'X_MONEY_NOT_INTEGER',
+    );
+  });
+
+  test('convertWith is public: the README names it and RateProvider is useless without it', async () => {
+    const { convertWith: exported } = await import('./index');
+    expect(typeof exported).toBe('function');
+  });
+});

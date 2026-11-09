@@ -156,6 +156,11 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   matched, never before) and refuses a missing or disabled one as the same `X_API_KEY_INVALID`; a
   key with `userId === null` has no owner and is unchanged. `disableUser` revokes the user's live
   keys beside their sessions, and logs before its first write.
+- **`verifyApiKey` refuses an `env` segment that is not the stored prefix's, and touches
+  `lastUsedAt` at most once per `API_KEY_TOUCH_MS`** — above the seam, so both adapters agree.
+- **An authorization code is checked on `getCode`, spent by `takeCode` only after client, PKCE,
+  redirect and resource held**; replay revocation needs the verifier. `pollDevice` takes the
+  `clientId` and stamps nothing for another client's poll.
 - **A key's scopes only ever shrink** (`apiKeyScopes`, `policy-bridge.ts`): `*` and `<res>:*` are
   refused at `issueApiKey` (`X_CONFIG_INVALID`) and dropped from a stored row; an OWNED key keeps
   only what its owner's grants cover (core's `grantCovers`, never a local copy). Roles are policy's to expand, so the default grants are the

@@ -4,7 +4,9 @@
 // in-flight, close) instead of killing a query mid-round-trip.
 
 import {
+  DRAIN_TIMEOUT_EXIT_CODE,
   drain,
+  drainExitCode,
   installSignalHandlers,
   isDraining,
   isUltimateError,
@@ -15,7 +17,8 @@ import {
 
 export interface HoldOptions {
   /**
-   * What to call once the release is done, with `0`. Omit and nothing is called.
+   * What to call once the release is done, with the exit code: `0`, or `DRAIN_TIMEOUT_EXIT_CODE`
+   * (70) when the drain or the release abandoned work. Omit and nothing is called.
    *
    * There is exactly one caller: `runRole` in `serve.ts`, which is what `apps/web/server.ts`
    * awaits — the one entry point with nothing above it to end the process. `bin.ts` ends in
@@ -94,8 +97,14 @@ function armHold(name: string, release: () => Promise<void>, options: HoldOption
       await drain();
       unregister();
       uninstall();
-      await releaseWithin(name, release, releaseBudgetMs(deadlineAt - systemClock.monotonic()));
-      options.exit?.(0);
+      const released = await releaseWithin(
+        name,
+        release,
+        releaseBudgetMs(deadlineAt - systemClock.monotonic()),
+      );
+      // 70, never 0, when the drain or this release abandoned work: the exit code is the
+      // platform's only record that a write may be half done (core's `drainExitCode`).
+      options.exit?.(released ? drainExitCode() : DRAIN_TIMEOUT_EXIT_CODE);
     })();
     return held;
   };
@@ -139,7 +148,7 @@ export async function holdWhileBooting<T extends { stop(): Promise<void> }>(
   } catch (error) {
     // A boot that failed BECAUSE a drain began under it — a rollout superseding a pod still
     // booting, whose server then met `markReady()`'s `X_LIFECYCLE_DRAINED` — is a pod doing what
-    // it was told: finish the drain, say so once at info, exit 0. It printed a stack trace and
+    // it was told: finish the drain, say so once at info, exit `drainExitCode()`. It printed a stack trace and
     // exited non-zero, twice a week in production, paging on a normal rollout. A failure with no
     // drain under way is still the boot's own refusal, rethrown untouched.
     if (isDraining() && options.exit !== undefined) {
@@ -149,7 +158,8 @@ export async function holdWhileBooting<T extends { stop(): Promise<void> }>(
         name,
         code: isUltimateError(error) ? error.code : 'uncoded',
       });
-      options.exit(0);
+      // The drain's own answer, never a literal 0: 70 when it abandoned work at its deadline.
+      options.exit(drainExitCode());
     } else {
       armed.disarm();
     }
@@ -193,7 +203,7 @@ export const releaseBudgetMs = (remainingMs: number): number =>
   Number.isFinite(remainingMs) ? Math.max(MIN_RELEASE_MS, remainingMs) : MIN_RELEASE_MS;
 
 /**
- * `release()` raced against its own budget.
+ * `release()` raced against its own budget: `true` when it finished, `false` when abandoned.
  *
  * A local race and not core's `settleWithin`, which is internal to `lifecycle-deadline.ts` and not
  * on core's barrel. The semantics are deliberately the same, including the one that matters: a
@@ -204,7 +214,7 @@ async function releaseWithin(
   name: string,
   release: () => Promise<void>,
   budgetMs: number,
-): Promise<void> {
+): Promise<boolean> {
   // Screened by `releaseBudgetMs`, which is the one answer to "how long does a teardown get" —
   // a second `Math.max` here would be a second, quieter one.
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -213,7 +223,7 @@ async function releaseWithin(
   });
   try {
     const outcome = await Promise.race([release().then(() => 'released' as const), abandoned]);
-    if (outcome === 'released') return;
+    if (outcome === 'released') return true;
     logger.warn('X_SHUTDOWN_TIMEOUT', {
       code: 'X_SHUTDOWN_TIMEOUT',
       // Rounded: `deadlineAt - monotonic()` is a float, and `4923.185900000001ms` in a shutdown
@@ -221,6 +231,7 @@ async function releaseWithin(
       cause: `the "${name}" release was still running ${Math.round(budgetMs)}ms after the drain finished and has been ABANDONED — the process exits without it, so anything it held may not be closed`,
       fix: 'raise the budget past the slowest teardown — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds',
     });
+    return false;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }

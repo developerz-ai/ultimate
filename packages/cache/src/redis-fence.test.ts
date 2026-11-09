@@ -7,7 +7,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import { lruTier } from './lru';
-import { REDIS_INVALIDATE_SCRIPT } from './redis';
 import type { FakeRedis } from './redis-fake-fixture';
 import { fakeRedis, tierFor } from './redis-fake-fixture';
 import type { CacheTag } from './tags';
@@ -28,7 +27,6 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
  * B's tier directly is that, exactly; a second copy of the module graph would add nothing to it.
  */
 const bustFromAnotherReplica = async (client: FakeRedis, tags: readonly CacheTag[]) => {
-  client.answerEval(REDIS_INVALIDATE_SCRIPT, []);
   await tierFor(client).invalidateTags(tags);
 };
 
@@ -192,7 +190,7 @@ describe('what the fence costs on the wire', () => {
     await bustFromAnotherReplica(client, [tag('post', '1')]);
 
     const wire = client.sent.map((entry) =>
-      entry[0] === 'EVAL' ? 'READ' : `${String(entry[0])} ${String(entry[1])}`,
+      entry[0] === 'ZSCAN' ? 'READ' : `${String(entry[0])} ${String(entry[1])}`,
     );
     expect(wire.slice(0, 3)).toEqual(['SET x:g:{post}:r:1', 'SET x:g:{post}:a', 'READ']);
   });

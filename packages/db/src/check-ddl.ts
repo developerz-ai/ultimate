@@ -14,9 +14,9 @@ import { assert } from '@ultimat3/core';
 import { type ConcurrentPlan, deferValidate } from './concurrent-plan';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import type { CheckDescription, TableDescription } from './introspect';
-import { invariantChecks, isIdentifier, MAX_IDENTIFIER_BYTES } from './invariant-ddl';
+import { invariantChecks, isIdentifier } from './invariant-ddl';
 import { constraintExpressionUnsafe, constraintNameUnsafe } from './invariant-errors';
-import { identifier } from './sql';
+import { identifier, MAX_IDENTIFIER_BYTES } from './sql';
 import { statementsOf } from './statement-split';
 
 /**

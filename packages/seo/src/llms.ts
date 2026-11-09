@@ -33,6 +33,12 @@ const listed = (route: RouteRecord): boolean =>
 /** One line, so a newline in a title cannot open a second Markdown entry. */
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 const linkText = (text: string): string => oneLine(text).replace(/[[\]]/g, '\\$&');
+/** A Markdown destination ends at a space or an unbalanced `)`; these three never arrive encoded. */
+const linkTarget = (url: string): string =>
+  url.replace(
+    /[ ()]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`,
+  );
 
 /**
  * `# <home title>`, `> <home description>`, then `- [title](url): description` per listed page,
@@ -50,7 +56,7 @@ export function buildLlmsTxt(routes: readonly RouteRecord[], site: LlmsSite): st
   if (summary !== undefined) lines.push(`> ${oneLine(summary)}`, '');
   for (const route of pages) {
     const description = route.meta?.description;
-    const link = `- [${linkText(route.meta?.title ?? route.path)}](${absoluteUrl(site.baseUrl, route.path)})`;
+    const link = `- [${linkText(route.meta?.title ?? route.path)}](${linkTarget(absoluteUrl(site.baseUrl, route.path))})`;
     lines.push(description === undefined ? link : `${link}: ${oneLine(description)}`);
   }
   return `${lines.join('\n')}\n`;

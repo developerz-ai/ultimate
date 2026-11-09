@@ -70,7 +70,8 @@ export class CacheTooLargeError extends UltimateError {
     super({
       code: 'X_CACHE_TOO_LARGE',
       cause: `entry "${input.key}" is ${input.bytes}B, over the ${input.tier} budget of ${input.maxBytes}B`,
-      fix: `raise cache.${input.tier}.maxBytes in app.config.ts, or cache a projection instead of the row`,
+      // The cap is a constructor option on every tier, never an `app.config.ts` key.
+      fix: `${input.tier}Tier({ ${input.tier === 'redis' ? 'maxValueBytes' : 'maxBytes'}: ${String(input.bytes)} }) where the tier is built, or cache a projection instead of the row`,
     });
   }
 }

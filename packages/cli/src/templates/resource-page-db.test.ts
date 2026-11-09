@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: the fixtures below are SOURCE TEXT — a
+// `${…}` in one is the code under test, never an interpolation that went missing.
 // The Postgres half of the resource page's test, as text: it installs the migrated database under
 // the handle and asks the same sorted, paged list of it. Whether it PASSES is a scaffold's run.
 

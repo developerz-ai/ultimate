@@ -61,10 +61,14 @@ describe('the ceiling', () => {
     expect(COMPRESS_MAX_BYTES).toBe(262_144);
   });
 
-  test('a body one byte over is identity', async () => {
+  // v31: over the ceiling is no longer identity — it is coded as a stream, which holds the loop
+  // for no single request, so the bound on `gzipSync` stays and large bodies are still coded.
+  test('a body one byte over is coded as a stream, with no length claimed', async () => {
     const big = 'x'.repeat(COMPRESS_MAX_BYTES + 1);
     const source = answer('public, max-age=60', big, String(big.length));
-    expect(await compressResponse(asking(), source, { anonymous: true })).toBe(source);
+    const out = await compressResponse(asking(), source, { anonymous: true });
+    expect(out.headers.get('content-encoding')).toBe('gzip');
+    expect(out.headers.has('content-length')).toBe(false);
   });
 });
 

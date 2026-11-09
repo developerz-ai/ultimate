@@ -5,6 +5,8 @@ export type { AcceptSignedUploadInput, SignedRequestInput } from './accept';
 export { acceptSignedUpload, readSignedObject, signedUploadConstraints } from './accept';
 export type { AcceptSignedPartInput } from './accept-part';
 export { acceptSignedPart } from './accept-part';
+export type { AcceptSignedUploadStreamInput } from './accept-stream';
+export { acceptSignedUploadStream } from './accept-stream';
 export type {
   AttachmentTarget,
   DeleteVariantsInput,
@@ -47,6 +49,7 @@ export type {
   StorageListEntry,
   StorageObject,
   StorageRead,
+  StreamOptions,
 } from './driver';
 export {
   // Exported for the same reason `toBytes` is: a driver written outside this package has to
@@ -196,6 +199,7 @@ export { assertPutStream, streamLimit } from './put-stream';
  */
 export type { ByteRange, GetOptions } from './range';
 export { assertGetOptions, assertStreamRange, servedRange, streamedRange } from './range';
+export type { RequestCeiling } from './request-ceiling';
 export type {
   SignedPart,
   SignedUrlConstraints,

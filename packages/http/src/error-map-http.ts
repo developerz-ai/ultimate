@@ -96,4 +96,6 @@ export const HTTP_ERROR_STATUS = {
   X_ROUTE_NAVIGATION_INVALID: 500,
   // @ultimat3/http — an exercise entry's request is not one a browser could send
   X_EXERCISE_REQUEST_INVALID: 500,
+  // @ultimat3/http — request body over the transport ceiling
+  X_BODY_TOO_LARGE: 413,
 } satisfies Readonly<Record<string, number>>;

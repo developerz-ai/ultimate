@@ -86,6 +86,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | where a visitor's light/dark choice is stored | `theme-storage.ts` (`THEME_STORAGE_KEY`, also on `./page`) | render's boot script reads it, ui's toggle writes it — both tier 4, so the one literal lives here. Persisted in browsers: never respelled |
 | the four shapes of an async region | `async-state.ts` (`AsyncState`) | `realtime` returns it, `ui` renders it. `bun run render-modes` refuses a second status union sharing three members |
 | the audit record + one sink | `audit.ts` | `action` + `query`; `AUDIT_RECORD_FIELDS` pins both |
+| gate shapes | `gate-shapes.ts` | shared by `action` and `query`: the audit outcome, the rate-limit subject/scope/limit. One copy, never one per primitive |
 | is this `unknown` a keyed record? | `json-object.ts` (`isJsonObject`) | narrows a shape; does not certify provenance |
 | may a caller read this 5xx `cause`? | `public-cause.ts` (`hasPublicCause`) | one table for http, mcp, ai. `registerPublicCause` is `@ultimat3/http`'s `registerProblemMeta` writing it — never an app's door |
 | is this field a credential? | `logger.ts` (`isRedactedKey`) | exact keys + `CREDENTIAL_NAME`; a bare `token` suffix is NOT one (`idempotencyToken`, `maxTokens`). Log line, monitor envelope and `action`'s audit ask it |
@@ -168,6 +169,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
   `maxBytes` 64 KiB — past one, stored `truncated`. A refused save is a log line, never awaited.
 - **Three OTLP variables, three codes** — `X_OTLP_ENDPOINT_INVALID`, `X_OTLP_HEADERS_INVALID`,
   `X_OTLP_PROTOCOL_UNSUPPORTED`. A header KEY is in the cause/fix/meta; its VALUE never is.
+- **A cause is cut at 4 KiB in the constructor** (`boundedCause`); schema's copy is pinned by `single-line-pin.test.ts`.
 - `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`. `'browser'`: only cli's `client-errors-routes.ts`, one `X_CLIENT_ERROR` per report.
 - `METRICS_PATH` is served by `@ultimat3/cli`'s `metrics-endpoint.ts` on `METRICS_PORT` (9090), never
   the role's HTTP port; every role opens it.
@@ -178,6 +180,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - **`drain()`'s memo is published BEFORE the first hook runs** — a hook may re-enter `drain()`
   (`@ultimat3/http`'s `handle.stop()`), and `settleWithin` invokes hooks synchronously.
 - **The drain deadline is enforced** (`lifecycle-deadline.ts`): a hook overrunning the whole drain's budget is abandoned and logged (`X_SHUTDOWN_TIMEOUT`); real monotonic time, never the injected `clock`. Full rule: `docs/history/core.md`.
+- **An exit after a drain is `drainExitCode()`** — 70 when work was abandoned (`X_SHUTDOWN_TIMEOUT`), else 0. Never a literal `process.exit(0)`.
 - **`close` hooks run last-registered first; the other phases as registered** (`runPhase`). No fourth phase.
 - **Who a health endpoint tells what is ONE rule, here** (`health-disclosure.ts`): `healthBody` +
   `healthPeerListed`, called by http and by realtime's sync listener. Never a second copy.

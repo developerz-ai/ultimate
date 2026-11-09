@@ -35,7 +35,9 @@ export {
   parseSentryDsn,
   sentryEnvelope,
   sentryErrorReporter,
+  sentryEvent,
 } from '../error-reporter-sentry';
+export type { SentryEvent, SentryReporterHooks } from '../error-reporter-sentry-hooks';
 export type {
   FailureActor,
   FailureBundle,

@@ -11,9 +11,11 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
+import { configureHttp, resetHttpConfig } from '@ultimat3/http';
+import { grantUpload, uploadPolicy } from '@ultimat3/storage';
 import type { DevServices } from './runtime-bindings';
 import { s3PathStyleOf } from './runtime-s3-path-style';
-import { startStorage } from './runtime-services';
+import { startStorage } from './runtime-storage-boot';
 
 /** Module scope, not per-describe: two suites in this file ask about the same boot's disk. */
 const servicesAt = (stateDir: string, storageUrl: string, mode: 'embedded' | 'external') =>
@@ -208,5 +210,34 @@ describe('unit · the local-disk safety guard reads one environment', () => {
     expect(failure).toBeInstanceOf(UltimateError);
     expect((failure as UltimateError).cause).toContain('production');
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe('unit · the embedded disk refuses a grant this server could not accept', () => {
+  test('a single-PUT grant past http.maxRequestBodyBytes is refused at signing, naming multipart', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'x-storage-ceiling-'));
+    try {
+      const services = servicesAt(parent, `file://${join(parent, 'storage')}`, 'embedded');
+      const disk = startStorage(services, { ULTIMATE_ENV: 'development' }).disk();
+      // Declared AFTER the disk was built, as an app's module-scope `configureHttp` is.
+      configureHttp({ bodyLimitBytes: 1024, maxRequestBodyBytes: 4096 });
+      const policy = uploadPolicy({ maxBytes: 1 << 20, allowedContentTypes: ['application/pdf'] });
+      const request = (size: number) => ({
+        filename: 'a.pdf',
+        contentType: 'application/pdf',
+        size,
+      });
+      await grantUpload({ disk, orgId: 'o1', policy, request: request(4096) });
+      const refused = await grantUpload({
+        disk,
+        orgId: 'o1',
+        policy,
+        request: request(4097),
+      }).catch((error: unknown) => error);
+      expect(refused).toBeUltimateError('X_STORAGE_TOO_LARGE');
+    } finally {
+      resetHttpConfig();
+      rmSync(parent, { recursive: true, force: true });
+    }
   });
 });

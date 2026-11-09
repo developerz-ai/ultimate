@@ -7,7 +7,8 @@ import { isUltimateError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { s3Driver } from './driver-s3';
 import { bytesOf, catchError, FAKE_ENV, FakeS3Client, s3Error, textOf } from './driver-s3-fixture';
-import { partBytesFor } from './multipart';
+import { STREAM_PART_BUFFERS, STREAM_PART_BYTES, streamPartBytes } from './driver-s3-put-stream';
+import { MAX_PART_BYTES, partBytesFor } from './multipart';
 
 const KEY = 'org/org-1/film.mp4';
 const MIB = 1024 * 1024;
@@ -60,7 +61,6 @@ describe('putStream on the s3 wire', () => {
       'POST uploads',
       'PUT partNumber,uploadId',
       'PUT partNumber,uploadId',
-      'PUT partNumber,uploadId',
       'POST uploadId',
     ]);
     // Every byte, in order: each part filled with its own chunk number.
@@ -76,15 +76,22 @@ describe('putStream on the s3 wire', () => {
     expect(create['x-amz-meta-run']).toBe('r-1');
     expect(object.cacheControl).toBe('public, max-age=60');
     expect(object.metadata).toEqual({ run: 'r-1' });
-    // Parts are cut at the first chunk boundary at the floor: at most one part + one chunk resident.
+    // Parts are cut at STREAM_PART_BYTES exactly, whatever the declared ceiling.
     const parts = fake.signedCalls.filter((call) => call.url.searchParams.has('partNumber'));
-    expect(parts.map((call) => call.body?.byteLength)).toEqual([5 * MIB, 5 * MIB, 2 * MIB]);
+    const sizes = parts.map((call) => [
+      call.url.searchParams.get('partNumber'),
+      call.body?.byteLength,
+    ]);
+    expect(sizes.sort()).toEqual([
+      ['1', 8 * MIB],
+      ['2', 4 * MIB],
+    ]);
   });
 
   test('a body ending exactly on a part sends no empty last part', async () => {
-    await disk.putStream(KEY, chunksOf(5, MIB), { maxBytes: 64 * MIB });
+    await disk.putStream(KEY, chunksOf(8, MIB), { maxBytes: 64 * MIB });
     expect(callsOf()).toEqual(['POST uploads', 'PUT partNumber,uploadId', 'POST uploadId']);
-    expect(fake.store.get(KEY)?.bytes.byteLength).toBe(5 * MIB);
+    expect(fake.store.get(KEY)?.bytes.byteLength).toBe(8 * MIB);
   });
 
   test('an overrun aborts the open upload: no object, no parts left billing', async () => {
@@ -117,7 +124,7 @@ describe('putStream on the s3 wire', () => {
   test('a complete answered 200 with an <Error> body is the refusal it says it is', async () => {
     fake.failCompleteWith = s3Error('InternalError', 200, KEY);
     const refused = await catchError(() =>
-      disk.putStream(KEY, chunksOf(6, MIB), { maxBytes: 64 * MIB }),
+      disk.putStream(KEY, chunksOf(10, MIB), { maxBytes: 64 * MIB }),
     );
     expect(anyCode(refused)).toBe('X_STORAGE_PUT_FAILED');
     expect((refused as { cause: string }).cause).toContain('InternalError');
@@ -128,7 +135,7 @@ describe('putStream on the s3 wire', () => {
   test('a refused create opens nothing to abort', async () => {
     fake.failCreateWith = s3Error('AccessDenied', 403, KEY);
     const refused = await catchError(() =>
-      disk.putStream(KEY, chunksOf(6, MIB), { maxBytes: 64 * MIB }),
+      disk.putStream(KEY, chunksOf(10, MIB), { maxBytes: 64 * MIB }),
     );
     expect(anyCode(refused)).toBe('X_STORAGE_PUT_FAILED');
     expect(callsOf()).toEqual(['POST uploads']);
@@ -149,7 +156,7 @@ describe('answers with nothing to go on', () => {
   test('a Create with no UploadId and a part with no ETag are refused writes, and open nothing', async () => {
     fake.createAnswersNoId = true;
     const noId = await catchError(() =>
-      disk.putStream(KEY, chunksOf(6, MIB), { maxBytes: 64 * MIB }),
+      disk.putStream(KEY, chunksOf(10, MIB), { maxBytes: 64 * MIB }),
     );
     expect(anyCode(noId)).toBe('X_STORAGE_PUT_FAILED');
     expect((noId as { cause: string }).cause).toContain('CreateMultipartUpload');
@@ -157,7 +164,7 @@ describe('answers with nothing to go on', () => {
     fake.createAnswersNoId = false;
     fake.partAnswersNoEtag = true;
     const noEtag = await catchError(() =>
-      disk.putStream(KEY, chunksOf(6, MIB), { maxBytes: 64 * MIB }),
+      disk.putStream(KEY, chunksOf(10, MIB), { maxBytes: 64 * MIB }),
     );
     expect(anyCode(noEtag)).toBe('X_STORAGE_PUT_FAILED');
     expect((noEtag as { cause: string }).cause).toContain('UploadPart');
@@ -172,6 +179,56 @@ describe('answers with nothing to go on', () => {
     );
     expect(anyCode(refused)).toBe('X_ENV_MISSING');
     expect(fake.signedCalls).toEqual([]);
+  });
+});
+
+describe('an abort whose own answer is lost', () => {
+  test('the refused part is what the caller reads, never the abort’s transport error', async () => {
+    fake.failPartWith = s3Error('SlowDown', 503, KEY);
+    fake.loseAnswerOf = 'abort-before';
+    const refused = await catchError(() =>
+      disk.putStream(KEY, chunksOf(10, MIB), { maxBytes: 64 * MIB }),
+    );
+    expect(anyCode(refused)).toBe('X_STORAGE_PUT_FAILED');
+    expect(isUltimateError(refused) ? refused.cause : '').toContain('SlowDown');
+  });
+});
+
+describe('parts in flight', () => {
+  test('a slow provider is sent several parts at once, never more buffers than the bound', async () => {
+    let sending = 0;
+    let most = 0;
+    /** One event-loop turn: the pump's chance to fill and send the next part, if it would. */
+    const turn = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const slow: typeof fake.fetch = async (url, init) => {
+      const part = new URL(url).searchParams.has('partNumber') && init.method === 'PUT';
+      if (!part) return fake.fetch(url, init);
+      sending += 1;
+      most = Math.max(most, sending);
+      // A provider slower than the pump, in turns not milliseconds: a part waits while the next
+      // could be filled — a serial pump sends none meanwhile, and `most` stays 1.
+      for (let waited = 0; waited < 200 && sending < STREAM_PART_BUFFERS; waited += 1) await turn();
+      sending -= 1;
+      return fake.fetch(url, init);
+    };
+    const slowDisk = s3Driver({ bucket: 'b', client: fake, fetch: slow, env: FAKE_ENV });
+    await slowDisk.putStream(KEY, chunksOf(64, MIB), { maxBytes: 128 * MIB });
+    expect(most).toBeGreaterThan(1);
+    // In flight plus the one filling: never more than STREAM_PART_BUFFERS parts held, so at most
+    // that many sending (the last, with nothing left to fill).
+    expect(most).toBeLessThanOrEqual(STREAM_PART_BUFFERS);
+    expect(fake.store.get(KEY)?.bytes.byteLength).toBe(64 * MIB);
+    expect(fake.store.get(KEY)?.bytes[64 * MIB - 1]).toBe(64);
+  });
+
+  test('a part is 8 MiB until 1,000 of them, then doubles, so 10,000 parts reach past 5 TiB', () => {
+    expect(streamPartBytes(1)).toBe(STREAM_PART_BYTES);
+    expect(streamPartBytes(1000)).toBe(STREAM_PART_BYTES);
+    expect(streamPartBytes(1001)).toBe(2 * STREAM_PART_BYTES);
+    let capacity = 0;
+    for (let part = 1; part <= 10_000; part += 1) capacity += streamPartBytes(part);
+    expect(capacity).toBeGreaterThan(5 * 1024 * 1024 * MIB);
+    expect(streamPartBytes(10_000)).toBeLessThanOrEqual(MAX_PART_BYTES);
   });
 });
 

@@ -7,22 +7,20 @@
 
 import { stringField } from '@ultimat3/core';
 import type { ValidationIssue } from '@ultimat3/schema';
-import { issueRuleFacts } from '@ultimat3/schema';
+import { issueRuleFacts, MAX_ISSUES } from '@ultimat3/schema';
 
 /**
- * A list this long is not a form's worth of rejections; it is a body meant to be expensive. The
- * entries are rendered into a DOM by whoever displays them, so the bound is here rather than there.
- */
-export const MAX_WIRE_ISSUES = 100;
-
-/**
+ * Bounded by `@ultimat3/schema`'s `MAX_ISSUES`, imported and never restated or re-exported: a list
+ * longer is not a form's worth of rejections but a body meant to be expensive, and the server stops
+ * validating at exactly that length, so a capped list arrives whole.
+ *
  * All-or-nothing on purpose. A partly-parsed list would DROP the entries it could not read, and
  * nothing downstream would know: a caller that finds `meta.issues` uses it INSTEAD of the
  * flattened `cause`, so a dropped entry is a rejection the user never hears about. Refusing the
  * whole list leaves the `cause` — which still holds every issue — as the answer.
  */
 export function issuesFromWire(value: unknown): readonly ValidationIssue[] | undefined {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_WIRE_ISSUES) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_ISSUES) {
     return undefined;
   }
   const issues: ValidationIssue[] = [];

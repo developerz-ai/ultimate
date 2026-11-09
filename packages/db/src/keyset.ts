@@ -10,6 +10,7 @@ import {
   encodeCursor,
   finiteCount,
   pageOf,
+  renderCauseValue,
 } from '@ultimat3/core';
 import { DbError } from './errors';
 import { join, raw, type SqlFragment, sql } from './sql';
@@ -59,6 +60,26 @@ const CASTS: ReadonlyMap<KeysetKind, string> = new Map<KeysetKind, string>([
 const NULL_KEY_FIX =
   "keyset({ keys: [{ column: sql`coalesce(p.published_at, p.created_at)`, kind: 'timestamptz', direction: 'desc' }, …] })  # or order by a not-null column";
 
+const DIRECTIONS: ReadonlySet<string> = new Set(['asc', 'desc']);
+
+/**
+ * A direction and a kind are spliced as SQL text, and a sort read off a query string arrives typed
+ * as a `string` the moment it is cast: refused here, before a fragment exists. Lower case only —
+ * `'DESC'` would order one way while every `=== 'desc'` below seeks the other.
+ */
+const assertKey = (key: KeysetKey, at: number): void => {
+  assert(
+    DIRECTIONS.has(key.direction),
+    `keyset() key ${String(at)} has direction ${renderCauseValue(key.direction)}; only 'asc' and 'desc' are spliced into SQL`,
+    "keyset({ keys: [{ column: raw('p.created_at'), kind: 'timestamptz', direction: input.dir === 'asc' ? 'asc' : 'desc' }], … })   # map a request's sort onto the two literals",
+  );
+  assert(
+    CASTS.has(key.kind),
+    `keyset() key ${String(at)} has kind ${renderCauseValue(key.kind)}, which has no cast to bind a position back with`,
+    "keyset({ keys: [{ column: raw('p.created_at'), kind: 'timestamptz', … }] })   # one of: timestamptz, uuid, text, integer, bigint",
+  );
+};
+
 const aliasOf = (index: number): string => `_keyset_${String(index)}`;
 
 /**
@@ -79,6 +100,9 @@ const scopeOf = (scope: string, keys: readonly KeysetKey[]): string => {
 
 const bind = (key: KeysetKey, text: string): SqlFragment =>
   sql`${text}::${raw(CASTS.get(key.kind) ?? 'text')}`;
+
+/** The splice re-derived from the closed set, as `entity/src/pg-sql.ts` does: never the caller's text. */
+const orderOf = (key: KeysetKey): SqlFragment => raw(key.direction === 'desc' ? 'desc' : 'asc');
 
 const past = (key: KeysetKey, value: SqlFragment): SqlFragment =>
   sql`${key.column} ${raw(key.direction === 'desc' ? '<' : '>')} ${value}`;
@@ -158,6 +182,7 @@ export function keyset(options: KeysetOptions): Keyset {
     'keyset() was given an empty scope, so a cursor from any other raw read would page this one',
     "keyset({ scope: 'posts.feed', … })   # one name per read, plus its filter arguments",
   );
+  keys.forEach(assertKey);
   const limit = finiteCount('keyset', 'limit', options.limit, 1);
   const scope = scopeOf(options.scope, keys);
   const where =
@@ -165,7 +190,7 @@ export function keyset(options: KeysetOptions): Keyset {
   return {
     select: join(keys.map((key, at) => sql`${key.column}::text as ${raw(`"${aliasOf(at)}"`)}`)),
     where,
-    orderBy: join(keys.map((key) => sql`${key.column} ${raw(key.direction)}`)),
+    orderBy: join(keys.map((key) => sql`${key.column} ${orderOf(key)}`)),
     limit: sql`${limit + 1}`,
     page<Row extends object>(rows: readonly Row[]): Page<KeysetRow<Row>> {
       const positions = rows.map((row, index) => keyText(row, keys, index));

@@ -33,6 +33,19 @@ const WINDOWS = process.platform === 'win32';
 
 const NOWHERE = '/nonexistent/definitely-not-a-browser';
 
+/**
+ * A file that a launcher can START and that banners as a browser — what `findChrome` now asks of a
+ * candidate, beside mere existence. A `#!` script, so it is skipped on Windows like every other fake
+ * here (`cdp-launch-wire.ts`). An EMPTY file no longer stands in for a browser: that is the defect
+ * the tests below pin.
+ */
+const startableFake = async (path: string): Promise<string> => {
+  // `Bun.write` makes the parents (`…/Google Chrome.app/Contents/MacOS`); `writeFile` does not.
+  await Bun.write(path, '#!/bin/sh\necho "Google Chrome 120.0.6099.109"\n');
+  await chmod(path, 0o755);
+  return path;
+};
+
 describe('findChrome', () => {
   test('CHROME_PATH wins outright, and nothing else is tried', async () => {
     // `bun` is a file that exists and is not a browser — this asks WHICH path is answered, which
@@ -107,14 +120,78 @@ describe('chromeCandidates', () => {
     expect(CHROME_CANDIDATES).toEqual(chromeCandidates(process.platform, process.env));
   });
 
-  test('findChrome searches the list of the platform it is told, not only this one', async () => {
+  test.skipIf(WINDOWS)('findChrome searches the list of the platform it is told', async () => {
     // A per-user macOS install, made real under a scratch HOME: found only by the darwin list.
     const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-'));
     try {
       const chrome = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
-      await Bun.write(chrome, '');
+      await startableFake(chrome);
       expect(await findChrome({ HOME: home }, 'darwin')).toBe(chrome);
       expect(await findChrome({ HOME: home }, 'linux')).not.toBe(chrome);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  // A file that EXISTS is not a browser that STARTS, and reading the first as the second is a red
+  // gate rather than a skip. Ubuntu 24.04 ships `/usr/bin/chromium-browser` as a wrapper around
+  // `snap`: present and executable everywhere, and here it exits 1 having started nothing, so every
+  // browser-backed suite in the run reported `X_CDP_LAUNCH_FAILED` where its own header promises a
+  // SKIP. The candidate below is that wrapper, and the one after it is a browser.
+  test('a candidate that exists but cannot start is passed over, never launched', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-dead-'));
+    try {
+      const dead = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
+      await Bun.write(dead, '#!/bin/sh\nexit 1\n');
+      await chmod(dead, 0o755);
+      // No CHROME_PATH: the list is searched, finds the dead wrapper, and answers NOTHING — which
+      // the caller reads as "no browser", the skip. A launcher that answered it failed on both
+      // starts instead.
+      expect(await findChrome({ HOME: home }, 'darwin')).toBeUndefined();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(WINDOWS)('a --version that names no browser is not a browser', async () => {
+    // `bun --version` exits 0 and prints `1.4.4`: "exited 0 and printed a number" accepts a runtime
+    // that cannot render a page. The banner must name the product.
+    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-not-'));
+    try {
+      const notBrowser = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
+      await Bun.write(notBrowser, '#!/bin/sh\necho "1.4.4"\n');
+      await chmod(notBrowser, 0o755);
+      expect(await findChrome({ HOME: home }, 'darwin')).toBeUndefined();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(WINDOWS)('a candidate that starts and stops cleanly in silence', async () => {
+    // Windows' `chrome.exe` prints no console banner even when it starts perfectly. Reading silence
+    // as "not a browser" answers undefined and silently skips every browser-backed test on that
+    // runner; the probe must judge only what it was told.
+    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-quiet-'));
+    try {
+      const quiet = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
+      await Bun.write(quiet, '#!/bin/sh\nexit 0\n');
+      await chmod(quiet, 0o755);
+      expect(await findChrome({ HOME: home }, 'darwin')).toBe(quiet);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(WINDOWS)('a bannering browser is answered; CHROME_PATH is not probed', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-live-'));
+    try {
+      const chrome = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
+      await startableFake(chrome);
+      expect(await findChrome({ HOME: home }, 'darwin')).toBe(chrome);
+      // The operator's answer, taken as given: a wrapper or a non-standard build cannot be described
+      // by any list, and probing it would overrule the one caller who knows better.
+      const bun = process.execPath;
+      expect(await findChrome({ [CHROME_PATH_ENV]: bun })).toBe(bun);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -294,6 +371,18 @@ describe.skipIf(WINDOWS)('launchChrome', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  // A NaN deadline would be `setTimeout(fn, 0)`: every start cancelled 1 ms in and a healthy
+  // browser reported silent. Screened before a process is spawned, so a bad option fails by name.
+  test('a NaN launch deadline is X_INVARIANT, never a 1 ms timer', async () => {
+    const error = await launchChrome({
+      executable: 'unused',
+      timeoutMs: 5_000,
+      launchTimeoutMs: Number.NaN,
+    }).catch((e: unknown) => e);
+    expect(error).toBeUltimateError('X_INVARIANT');
+    expect((error as { cause: string }).cause).toContain('launchTimeoutMs');
   });
 });
 

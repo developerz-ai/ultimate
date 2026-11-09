@@ -29,12 +29,6 @@ export interface SourceBareErrorExemption {
 
 export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] = [
   {
-    path: 'packages/cache/src/redis-fake-fixture.ts',
-    line: 81,
-    reason:
-      'the fake redis cannot run Lua: an unprogrammed EVAL refuses loudly, so a gutted script is never read as the empty member list it answered',
-  },
-  {
     path: 'packages/cli/e2e/client-navigation-fixture.ts',
     line: 359,
     reason:
@@ -71,19 +65,19 @@ export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] =
   },
   {
     path: 'packages/storage/src/driver-s3-fixture.ts',
-    line: 183,
+    line: 177,
     reason:
       'the fake S3 losing a signed answer: Bun fetch rejects a dropped socket with exactly this TypeError, and the driver under test must read that foreign error, not a coded one',
   },
   {
     path: 'packages/storage/src/driver-s3-fixture.ts',
-    line: 393,
+    line: 390,
     reason:
       'the same fake dropping a write before it lands: the TypeError Bun fetch rejects with, handed to the driver under test',
   },
   {
     path: 'packages/storage/src/driver-s3-fixture.ts',
-    line: 405,
+    line: 402,
     reason:
       'the same fake dropping the answer after the write landed: the TypeError Bun fetch rejects with, handed to the driver under test',
   },

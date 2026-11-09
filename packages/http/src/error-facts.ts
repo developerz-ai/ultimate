@@ -15,7 +15,7 @@ import {
   stringField,
 } from '@ultimat3/core';
 import type { ValidationIssue } from '@ultimat3/schema';
-import { issueRuleFacts } from '@ultimat3/schema';
+import { issueRuleFacts, MAX_ISSUES } from '@ultimat3/schema';
 import { declaredStatusFor, statusFor } from './error-status';
 import { HTTP_ERROR_TITLES } from './errors';
 import { type ProblemMeta, problemMetaKeysFor, wireMeta } from './problem-meta';
@@ -140,11 +140,10 @@ export function retryAfterOf(error: unknown): number | undefined {
 }
 
 /**
- * A list this long is not a form's worth of rejections; it is a body meant to be expensive. The
- * same bound `@ultimat3/action`'s `issuesFromWire` applies on arrival, restated because that
- * package is tier 3 and this one is tier 2 — `error-facts.test.ts` pins the number on this side.
+ * A list this long is not a form's worth of rejections; it is a body meant to be expensive. Schema's
+ * own `MAX_ISSUES` — where validation stops collecting — imported, never restated (tier 0).
  */
-const MAX_PROBLEM_ISSUES = 100;
+const MAX_PROBLEM_ISSUES = MAX_ISSUES;
 
 /**
  * The rejections a validation failure carried, addressed by path — or `undefined`.
@@ -184,9 +183,8 @@ function issuesOf(error: unknown): readonly ValidationIssue[] | undefined {
     //
     // TOO LONG is `undefined` too, and dropped WHOLE rather than truncated: a subset is the
     // silent-drop this reader refuses everywhere else. The typed client bounds the same list at
-    // `MAX_WIRE_ISSUES` and would refuse it on arrival anyway (`packages/action/src/wire-issues.ts`),
-    // so sending it is a body that costs the wire and answers nothing — and that package is tier 3,
-    // so the number is restated here rather than imported.
+    // schema's `MAX_ISSUES` and would refuse it on arrival anyway (`packages/action/src/wire-issues.ts`),
+    // so sending it is a body that costs the wire and answers nothing.
     if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_PROBLEM_ISSUES) {
       return undefined;
     }

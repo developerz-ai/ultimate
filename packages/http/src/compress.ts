@@ -32,6 +32,9 @@ const COMPRESSIBLE_TYPES: ReadonlySet<string> = new Set([
   'application/rss+xml',
   'application/atom+xml',
   'text/vtt',
+  // Exports and feeds: usually streamed with no declared length, so coded by `codedStream`.
+  'application/x-ndjson',
+  'text/csv',
 ]);
 
 /**
@@ -68,7 +71,10 @@ const compressibleKind = (headers: Headers, anonymous: boolean): boolean => {
   );
 };
 
-/** HEAD is GET's headers with no body (RFC 9110 §9.3.2), so it is coded exactly as GET is. */
+/**
+ * HEAD is GET's headers with no body (RFC 9110 §9.3.2): coded as GET is when the handler hands it
+ * GET's body to measure. A HEAD answered with no body has nothing to measure and stays identity.
+ */
 const CODED_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD']);
 
 /** RFC 9110 §12.5.3, `gzip` by name. A `*` is not read as consent to a coding it never named. */
@@ -91,18 +97,57 @@ const inBounds = (length: string | null): length is string =>
 const rebuilt = (response: Response, body: BodyInit | null, headers: Headers): Response =>
   new Response(body, { status: response.status, statusText: response.statusText, headers });
 
-const coded = (response: Response, bytes: Uint8Array<ArrayBuffer>, head: boolean): Response => {
-  const gzipped = Bun.gzipSync(bytes, { level: GZIP_LEVEL });
+/**
+ * A feed delivers each line as it is written, and `CompressionStream` emits only its header until
+ * the source closes — so an undeclared feed is never coded. Declared, it is a document.
+ */
+const FEED_TYPES: ReadonlySet<string> = new Set(['application/x-ndjson']);
+
+const isFeed = (contentType: string | null): boolean =>
+  FEED_TYPES.has(contentType?.split(';')[0]?.trim().toLowerCase() ?? '');
+
+/** Past the ceiling: coded as the client pulls (`CompressionStream`), never on the event loop. */
+const pastCeiling = (length: string): boolean =>
+  DECLARED_LENGTH.test(length) && Number(length) > COMPRESS_MAX_BYTES;
+
+/** The headers of a gzip answer: everything that described the identity bytes, corrected. */
+const codedHeaders = (response: Response, length: number | null): Headers => {
   const headers = new Headers(response.headers);
   headers.set('content-encoding', 'gzip');
-  headers.set('content-length', String(gzipped.byteLength));
+  if (length === null) headers.delete('content-length');
+  else headers.set('content-length', String(length));
   // A byte offset into the identity bytes means nothing in these.
   headers.delete('accept-ranges');
   headers.delete('transfer-encoding');
   const etag = headers.get('etag');
   // A strong validator promises these exact bytes, and the identity answer has other ones.
   if (etag !== null && !etag.startsWith('W/')) headers.set('etag', `W/${etag}`);
-  return rebuilt(response, head ? null : gzipped, headers);
+  return headers;
+};
+
+const coded = (response: Response, bytes: Uint8Array<ArrayBuffer>, head: boolean): Response => {
+  const gzipped = Bun.gzipSync(bytes, { level: GZIP_LEVEL });
+  return rebuilt(response, head ? null : gzipped, codedHeaders(response, gzipped.byteLength));
+};
+
+/** Bytes over a plain `ArrayBuffer`, the only kind the coder's `BufferSource` side accepts. */
+const ownsPlainBuffer = (chunk: Uint8Array): chunk is Uint8Array<ArrayBuffer> =>
+  chunk.buffer instanceof ArrayBuffer;
+
+const codedStream = (response: Response, body: ReadableStream<Uint8Array>): Response => {
+  // A chunk over shared memory is copied; every other one passes through untouched.
+  const plain = body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array<ArrayBuffer>>({
+      transform(chunk, controller) {
+        controller.enqueue(ownsPlainBuffer(chunk) ? chunk : new Uint8Array(chunk));
+      },
+    }),
+  );
+  return rebuilt(
+    response,
+    plain.pipeThrough(new CompressionStream('gzip')),
+    codedHeaders(response, null),
+  );
 };
 
 /** Identity after a read began. Never the declared length: the failed read just disproved it. */
@@ -114,6 +159,30 @@ const identity = (
   if (body instanceof Uint8Array) headers.set('content-length', String(body.byteLength));
   else headers.delete('content-length');
   return rebuilt(response, body, headers);
+};
+
+/**
+ * No declared length (`new Response(string)` declares none in Bun): read up to the floor first. A
+ * body that ends under it leaves identity, whole, with its length; one that reaches it is coded as
+ * a stream, the bytes already read first. A feed is never read. Bounded by the request's deadline.
+ */
+const codeUndeclared = async (
+  response: Response,
+  body: ReadableStream<Uint8Array>,
+  signal: AbortSignal | undefined,
+): Promise<Response> => {
+  if (isFeed(response.headers.get('content-type'))) return response;
+  const reader = body.getReader();
+  const drained = await drainCounted(reader, COMPRESS_MIN_BYTES - 1, signal);
+  if (drained.complete) return identity(response, concatChunks(drained.chunks));
+  const rest = replayDrained(drained.chunks, reader, drained.pending);
+  if (drained.reason === 'longer-than-declared') return codedStream(response, rest);
+  logger.warn('http.compress_failed', {
+    reason: drained.reason,
+    declaredBytes: null,
+    ...(drained.failure === undefined ? {} : { error: drained.failure }),
+  });
+  return identity(response, rest);
 };
 
 export interface CompressContext {
@@ -143,12 +212,14 @@ export const compressResponse = async (
     !acceptsGzip(request.headers.get('accept-encoding')) ||
     response.headers.has('content-encoding') ||
     response.headers.has('content-range') ||
-    !inBounds(length) ||
     response.body === null ||
     response.bodyUsed
   ) {
     return response;
   }
+  if (length === null) return codeUndeclared(response, response.body, signal);
+  if (pastCeiling(length)) return codedStream(response, response.body);
+  if (!inBounds(length)) return response;
   const reader = response.body.getReader();
   const drained = await drainCounted(reader, Number(length), signal);
   if (!drained.complete) {

@@ -52,6 +52,18 @@ describe('parseAmount', () => {
     expect(String((caught as { cause?: unknown }).cause)).toContain(reason);
   });
 
+  test.each([12.5, undefined, null])('%p, not a string, is refused by code', (text) => {
+    // A form posted as JSON hands over a number; `.trim()` on it was a bare TypeError, a 500.
+    let caught: unknown;
+    try {
+      read(text as unknown as string, 'en-US', 'USD');
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeUltimateError('X_MONEY_INPUT_INVALID');
+    expect(String((caught as { cause?: unknown }).cause)).toContain('not text');
+  });
+
   test('a locale or currency that is not one is refused by its own code', () => {
     expect(() => read('1', 'en_US', 'USD')).toThrow();
     expect(() => read('1', 'en-US', 'usd')).toThrow();

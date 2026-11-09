@@ -5,19 +5,18 @@
  */
 
 import type { Actor } from '@ultimat3/core';
-import { isAnonymous, systemClock } from '@ultimat3/core';
+import {
+  rateLimitScopeOf,
+  rateLimitSpendsOn,
+  rateLimitSubjectOf,
+  systemClock,
+} from '@ultimat3/core';
 import type { RateLimitDecision } from '@ultimat3/http';
 // The bucket maths, the subject precedence and the refusal are `@ultimat3/http`'s (tier 2): a copy
 // here would be a second answer to "what does this limit mean" and "whose bucket is it".
 import { installedRateLimitStore, rateLimited, rateLimitSpends, toBucket } from '@ultimat3/http';
 import type { QuerySurface } from './policy-gate';
 import type { QueryRateLimit } from './query';
-
-/**
- * Namespaced, never the bare query name: the HTTP stage still spends its own buckets under
- * `<route name>|<subject>`, and one key taken against two bucket shapes corrupts both counters.
- */
-const QUERY_SCOPE = 'query';
 
 export interface QueryLimitCaller {
   /** Who is reading — `ctx.actor` on a read, the socket's actor on a live subscribe. */
@@ -45,14 +44,13 @@ export async function spendReadLimit(
   limit: QueryRateLimit | undefined,
   caller: QueryLimitCaller,
 ): Promise<void> {
-  if (limit === undefined || caller.surface === 'server') return;
-  const actor = isAnonymous(caller.actor) ? null : caller.actor;
+  if (limit === undefined || !rateLimitSpendsOn(caller.surface)) return;
   const spends = rateLimitSpends(
     {
-      actorId: actor?.id ?? null,
-      orgId: actor?.orgId ?? null,
-      ip: caller.clientAddress ?? null,
-      routeName: `${QUERY_SCOPE}:${name}`,
+      // Core's one subject rule, `@ultimat3/action`'s too: an anonymous actor's org is still read.
+      ...rateLimitSubjectOf(caller.actor, caller.clientAddress ?? null),
+      // Namespaced, never the bare name: the HTTP stage spends `<route name>|<subject>`.
+      routeName: rateLimitScopeOf('query', name),
     },
     // The tenant allowance is the HTTP pipeline's; counting it here too would charge twice.
     { route: name, tenant: null },

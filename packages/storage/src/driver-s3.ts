@@ -27,12 +27,13 @@ import {
   type StorageListEntry,
   type StorageObject,
   type StorageRead,
+  type StreamOptions,
   sha256Base64,
   toBytes,
 } from './driver';
 import { isAbsentObject } from './driver-s3-absent';
 import { buildClient, dated, type S3ClientLike, type S3ListResultLike } from './driver-s3-client';
-import { signedCopy } from './driver-s3-copy';
+import { copyS3 } from './driver-s3-copy-parts';
 import { needsSignedPut, readObjectLock, signedPut } from './driver-s3-lock';
 import { s3Multipart } from './driver-s3-multipart-session';
 import { s3SignedUrl } from './driver-s3-presign';
@@ -40,8 +41,9 @@ import { putS3Stream } from './driver-s3-put-stream';
 import { readS3Range } from './driver-s3-range';
 import { regionMismatch } from './driver-s3-region';
 import { settleLostPut } from './driver-s3-settle';
-import type { S3FetchLike } from './driver-s3-signed';
+import type { S3FetchLike, S3Refusal } from './driver-s3-signed';
 import { refuseUnsupportedPut } from './driver-s3-sse';
+import { streamS3Pinned } from './driver-s3-stream';
 import {
   checksumMismatch,
   deleteFailed,
@@ -53,6 +55,7 @@ import {
   readFailed,
 } from './errors';
 import { objectChanged } from './errors-promote';
+import { revisionChanged } from './errors-stream';
 import { assertObjectLockOptions, type ObjectLock } from './object-lock';
 import { assertSafeKey } from './path';
 import { assertPutStream, type PutStreamOptions } from './put-stream';
@@ -197,6 +200,14 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     };
   };
 
+  /** A pinned read's two refusals: the provider's, coded as a read, and another revision's. */
+  const pinned = (key: string, etag: string) => ({
+    refused: (refusal: S3Refusal): never => refusedRead(key)(refusal),
+    changed: (): never => {
+      throw revisionChanged(diskName, key, etag);
+    },
+  });
+
   /** The HEAD a lost write's answer is settled against, and the `.catch` of a single PUT. */
   const statOf = async (key: string) => ((await present(key)) ? statObject(key) : undefined);
   const lostPut = (key: string, bytes: Uint8Array, attributes: PutOptions | undefined) =>
@@ -313,14 +324,21 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       return { object, bytes };
     },
 
-    async stream(key: string): Promise<ReadableStream<Uint8Array>> {
+    async stream(key: string, streamOptions?: StreamOptions): Promise<ReadableStream<Uint8Array>> {
       const safe = assertSafeKey(key);
+      const etag = streamOptions?.etag;
+      if (etag !== undefined)
+        return streamS3Pinned(options, safe, etag, undefined, pinned(safe, etag));
       const file = conn().file(safe);
       if (!(await present(safe))) throw objectNotFound(diskName, safe);
       return file.stream();
     },
 
-    async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
+    async streamRange(
+      key: string,
+      range: ByteRange,
+      streamOptions?: StreamOptions,
+    ): Promise<ReadableStream<Uint8Array>> {
       const safe = assertSafeKey(key);
       assertStreamRange(DRIVER_NAME, range);
       if (!(await present(safe))) throw objectNotFound(diskName, safe);
@@ -328,6 +346,10 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       // already answered 206. Refused here it is still a status.
       const { size } = await statObject(safe);
       const [first, last] = streamedRange(DRIVER_NAME, safe, range, size);
+      const etag = streamOptions?.etag;
+      if (etag !== undefined) {
+        return streamS3Pinned(options, safe, etag, [first, last], pinned(safe, etag));
+      }
       return conn()
         .file(safe)
         .slice(first, last + 1)
@@ -335,33 +357,28 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     },
 
     /**
-     * Bytes from one key to another without a round trip through this process. Bun exposes no
-     * `CopyObject`, so the source `S3File` is handed to `write()` — Bun's own union accepts one —
-     * and the bytes move inside Bun rather than through the app's heap. That is the half of the
-     * win available today: promoting a 500MB attachment used to be `get()` + `put()`, a full GB
-     * resident in the pod. A true server-side copy needs a Bun API that does not exist in 1.3.
+     * Bytes from one key to another, server-side: ONE signed CopyObject (directive COPY), so the
+     * source's type, `Cache-Control` and `x-amz-meta-*` travel as on the local and memory disks.
+     * Past CopyObject's 5 GiB ceiling, a multipart UploadPartCopy carrying the same headers.
      */
     async copy(from: string, to: string, copyOptions?: CopyOptions): Promise<StorageObject> {
       const source = assertSafeKey(from);
       const destination = assertSafeKey(to);
-      // Bun's `write` takes no condition, so a revision-bound copy is the signed CopyObject.
-      if (copyOptions?.ifMatch !== undefined) {
-        const refusal = await signedCopy(options, source, destination, copyOptions.ifMatch).catch(
-          refusedWrite(destination),
-        );
-        if (refusal?.statusCode === 404) throw objectNotFound(diskName, source);
-        if (refusal?.statusCode === 412)
-          throw objectChanged(source, copyOptions.ifMatch, 'another');
-        if (refusal !== undefined) refusedWrite(destination)(refusal);
-        return statObject(destination);
-      }
-      const file = conn().file(source);
-      if (!(await present(source))) throw objectNotFound(diskName, source);
-      const stat = await file.stat().catch(refusedRead(source));
-      await conn()
-        .file(destination)
-        .write(file, { type: stat.type ?? DEFAULT_CONTENT_TYPE })
-        .catch(refusedWrite(destination));
+      const ifMatch = copyOptions?.ifMatch;
+      const found = await statOf(source);
+      if (found === undefined) throw objectNotFound(diskName, source);
+      const expected = ifMatch ?? found.etag;
+      await copyS3(
+        options,
+        { source, destination, ifMatch, size: found.size, stat: statOf },
+        (refusal) => {
+          if (refusal.statusCode === 404 && refusal.code !== 'NoSuchUpload') {
+            throw objectNotFound(diskName, source);
+          }
+          if (refusal.statusCode === 412) throw objectChanged(source, expected, 'another');
+          return refusedWrite(destination)(refusal);
+        },
+      ).catch(refusedWrite(destination));
       return statObject(destination);
     },
 

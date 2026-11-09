@@ -44,6 +44,12 @@ the wide shape and answer with the row type.
 ## Rules
 
 - Never a float in a stored or returned amount. `fromDecimal` takes a **string**.
+  Anything else — a JSON body's `12.99`, `null`, `undefined` — is `X_MONEY_NOT_DECIMAL`, as is a
+  string that is not a plain decimal (`'1,299.00'`, `'1e3'`); `parseAmount` refuses a non-string as
+  `X_MONEY_INPUT_INVALID`. Never a bare `TypeError` from `.trim()`, which a route answered as a 500.
+  The refused input reaches the `cause:` through `renderCauseValue` only: bounded, one line.
+  `X_MONEY_NOT_INTEGER` stays for what it names — a fractional minor, excess precision, an inexact
+  narrowing — and stopped answering parse failures in 31.0.
 - Never `/ 100`, and never `exponentOf(amount.currency)` for a value's own precision — that is
   `moneyScale(amount)`, which falls back to the currency and is right for both. `exponentOf` and
   `scaleOf` still answer for a *currency*, which is a different question.

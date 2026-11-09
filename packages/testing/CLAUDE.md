@@ -138,6 +138,7 @@ Raw CDP: `@ultimat3/core` and Bun, nothing else; `cli` imports it over `cli -> t
 | `e2e-dom-fixture.ts` | a document small enough to hold in a test and real enough to RUN the expressions above |
 | `cdp-browser.ts` | the two doors: `openE2eBrowserIfAvailable()` (undefined when there is no browser) and `openE2eBrowser()` (refuses by name), and the close that undoes both halves |
 | `cdp-launch.ts` | which Chrome, its flags, the launch deadline (`LAUNCH_TIMEOUT_MS`, 60 s — a cold start is not a call) and the ONE relaunch (`LAUNCH_ATTEMPTS`) |
+| `cdp-launch-probe.ts` | `startsChrome`: `--version` under a deadline; skipped on `win32` (never exits) |
 | `cdp-launch-attempt.ts` | one start in its own group; on no answer a full reap (group, then profile + singleton dir: `cdp-launch-profile.ts`). ONE awaited `close()` |
 | `cdp-connection.ts` | CDP over a transport — the launched Chrome's pipe (`cdp-pipe.ts`), a remote one's `WebSocket` (`cdpConnect`): reply correlation by `id`, event waiters, the per-call deadline; why one went unanswered is `cdp-wire-watch.ts` |
 | `cdp-e2e-session.ts` | the BROWSER half, `E2eSession`: every target PAUSED until its Network domain is on |

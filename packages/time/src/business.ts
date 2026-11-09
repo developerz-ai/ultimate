@@ -3,10 +3,20 @@
  * much of the Gulf, Sunday-only in parts of Asia, Saturday/Sunday in the West.
  */
 
+import {
+  countIn,
+  dayOfEpoch,
+  holidayDays,
+  nthWorkday,
+  weekdayOfDay,
+  workdaysIn,
+  workdayTable,
+} from './business-span';
 import { scheduleInvalid, type TimeError } from './errors';
 import { holidaySet } from './holidays';
 import type { Instant } from './instant';
-import { daysBetween, fromZoned, isoDateInZone, toZoned, type ZonedDateTime } from './zoned';
+import { localDayAt, skippedDays } from './zone-skipped-days';
+import { daysBetween, isoDateInZone, toZoned, type ZonedDateTime } from './zoned';
 import { type TimeZone, utcEpoch } from './zones';
 
 /** ISO weekday numbers: 1 = Monday … 7 = Sunday. */
@@ -64,26 +74,53 @@ export function addBusinessDays(at: Instant, days: number, calendar: BusinessCal
     throw noBusinessDay(calendar);
   }
   const step = days > 0 ? 1 : -1;
-  const origin = toZoned(at, calendar.zone);
-  let remaining = Math.abs(days);
-  let offset = 0;
-  let guard = 0;
-  let landed = at;
-
-  while (remaining > 0) {
-    offset += step;
-    const candidate = localDay(origin, offset, calendar.zone);
-    if (candidate !== null && isBusinessDay(candidate, calendar)) {
-      remaining -= 1;
-      landed = candidate;
+  const wanted = Math.abs(days);
+  const zoned = toZoned(at, calendar.zone);
+  const origin = epochDayOf(zoned);
+  const isWorkday = workdayTable(weekend);
+  const holidays = holidayDays(calendar.holidays).filter((day) => isWorkday[weekdayOfDay(day)]);
+  // Ten years past the last day a full week could need without one business day: the calendar has
+  // none to give. The guard used to RETURN the day it stopped on, a weekend or a holiday — which a
+  // caller schedules against as if it were the business day it asked for.
+  const guard = wanted * 7 + 3650;
+  // Workdays the zone never had at this wall time, gathered as the span grows: `[1, scanned]` days out.
+  const skipped: number[] = [];
+  let scanned = 0;
+  // The smallest distance with `wanted` business days in `(origin, origin + distance]`: start at
+  // the `wanted`th workday and move to the `(wanted + excluded)`th until the excluded count stops
+  // growing — each step stays at or below the answer, so the fixed point IS the answer.
+  let distance = nthWorkday(origin, wanted, step, isWorkday);
+  for (;;) {
+    if (distance > guard) throw noBusinessDay(calendar);
+    if (distance > scanned) {
+      const [low, high] = span(origin, scanned + 1, distance + 1, step);
+      for (const day of skippedDays(calendar.zone, zoned, low, high)) {
+        if (isWorkday[weekdayOfDay(day)] && countIn(holidays, day, day + 1) === 0)
+          skipped.push(day);
+      }
+      skipped.sort((left, right) => left - right);
+      scanned = distance;
     }
-    guard += 1;
-    // Ten years past the last day a full week could need without one business day: the calendar has
-    // none to give. It used to RETURN here — the day the guard stopped on, a weekend or a holiday —
-    // which a caller schedules against as if it were the business day it asked for.
-    if (guard > Math.abs(days) * 7 + 3650) throw noBusinessDay(calendar);
+    const [low, high] = span(origin, 1, distance + 1, step);
+    const excluded = countIn(holidays, low, high) + countIn(skipped, low, high);
+    const next = nthWorkday(origin, wanted + excluded, step, isWorkday);
+    if (next === distance) break;
+    distance = next;
   }
+  const landed = localDayAt(origin + step * distance, zoned, calendar.zone);
+  // `skippedDays` found every date this zone lacks; a `null` here is a tzdata it was not measured on.
+  if (landed === null) throw noBusinessDay(calendar);
   return landed;
+}
+
+/** The epoch days `[low, high)` that distances `[near, far)` from `origin` cover, in `step`'s direction. */
+function span(origin: number, near: number, far: number, step: 1 | -1): [number, number] {
+  return step === 1 ? [origin + near, origin + far] : [origin - far + 1, origin - near + 1];
+}
+
+/** The local calendar date of a zoned value, as an epoch day. */
+function epochDayOf(zoned: ZonedDateTime): number {
+  return dayOfEpoch(utcEpoch(zoned.year, zoned.month, zoned.day));
 }
 
 /**
@@ -104,38 +141,6 @@ function noBusinessDay(calendar: BusinessCalendar): TimeError {
     (calendar.holidays ?? []).length,
     'dates that leave at least one business day in any ten-year window (remove some of them)',
   );
-}
-
-/**
- * The calendar date `offset` days from `origin`'s, at `origin`'s wall time — or `null` when the
- * zone never had that date (Samoa's 2011-12-30).
- *
- * Built from the calendar date and the ORIGINAL wall time, never from the day before it. Chaining
- * `addDaysInZone` a day at a time carried a DST repair forward: 02:30 through a spring-forward
- * Sunday became 03:30 there and stayed 03:30 on Monday, where 02:30 exists. `fromZoned` normalizes
- * the day overflow, so `day + offset` is the whole walk.
- */
-function localDay(origin: ZonedDateTime, offset: number, zone: TimeZone): Instant | null {
-  const candidate = fromZoned(
-    {
-      year: origin.year,
-      month: origin.month,
-      day: origin.day + offset,
-      hour: origin.hour,
-      minute: origin.minute,
-      second: origin.second,
-      millisecond: origin.millisecond,
-    },
-    zone,
-    { gap: 'next' },
-  );
-  const wanted = new Date(utcEpoch(origin.year, origin.month, origin.day + offset));
-  const got = toZoned(candidate, zone);
-  const exists =
-    got.year === wanted.getUTCFullYear() &&
-    got.month === wanted.getUTCMonth() + 1 &&
-    got.day === wanted.getUTCDate();
-  return exists ? candidate : null;
 }
 
 /** The next business day at the same local time; today if it already qualifies. */
@@ -167,11 +172,17 @@ export function businessDaysBetween(
   // of iterations. Each one is a calendar DATE counted from `start`'s — not the instant a day after
   // the previous one, which steps over a date the zone skipped and so reaches past `to`.
   const days = daysBetween(start, end, calendar.zone);
-  const origin = toZoned(start, calendar.zone);
-  let count = 0;
-  for (let index = 0; index < days; index += 1) {
-    const day = localDay(origin, index, calendar.zone);
-    if (day !== null && isBusinessDay(day, calendar)) count += 1;
+  const zoned = toZoned(start, calendar.zone);
+  const first = epochDayOf(zoned);
+  const last = first + days;
+  const weekend = calendar.weekendDays ?? WEEKEND_SAT_SUN;
+  const isWorkday = workdayTable(weekend);
+  // Whole weeks multiplied, holidays subtracted by binary search, and only the dates the zone
+  // never had at this wall time asked of `Intl` — it was every date, two to three calls each.
+  const holidays = holidayDays(calendar.holidays).filter((day) => isWorkday[weekdayOfDay(day)]);
+  let count = workdaysIn(first, last, isWorkday) - countIn(holidays, first, last);
+  for (const day of skippedDays(calendar.zone, zoned, first, last)) {
+    if (isWorkday[weekdayOfDay(day)] && countIn(holidays, day, day + 1) === 0) count -= 1;
   }
   // Guarded rather than `sign * count`: an empty interval read backwards would otherwise answer
   // `-0`, which `Object.is`, a `Map` key and every `toBe` treat as a value distinct from `0`.

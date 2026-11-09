@@ -21,6 +21,19 @@ export const streamTooLarge = (
     meta: { disk, key, bytes, maxBytes },
   });
 
+/**
+ * A streamed read pinned to a revision the key no longer holds: written between the `stat()` whose
+ * etag, size and type a response was built on and the read of its bytes. Same code as a promotion
+ * that met another revision, for the same reason.
+ */
+export const revisionChanged = (disk: string, key: string, expected: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_OBJECT_CHANGED',
+    cause: `"${key}" on the ${disk} disk was overwritten after it was described as ${expected}, so its bytes are another revision's and were not served`,
+    fix: `const object = await disk.stat(${keyArg(key)}); await disk.stream(${keyArg(key)}, { etag: object.etag })   # describe it again, then read that revision`,
+    meta: { disk, key, expected },
+  });
+
 /** `rangeUnsatisfiable` for a call that holds no size: the next step is learning it. */
 export const streamRangeUnsatisfiable = (
   disk: string,

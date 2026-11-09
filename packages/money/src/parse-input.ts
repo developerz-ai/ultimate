@@ -59,12 +59,12 @@ function numeralsOf(tag: string): LocaleNumerals {
   };
 }
 
-const refused = (text: string, locale: string, currency: string, reason: string): MoneyError =>
+const refused = (text: unknown, locale: string, currency: string, reason: string): MoneyError =>
   new MoneyError({
     code: 'X_MONEY_INPUT_INVALID',
     cause: `the amount typed could not be read as ${currency} in ${locale}: ${reason}`,
     fix: `parseAmount(text, { currency: '${currency}', locale: '${locale}' })   # re-prompt the person for the amount; nothing was rounded or guessed`,
-    meta: { locale, currency, length: text.length },
+    meta: { locale, currency, length: typeof text === 'string' ? text.length : 0 },
   });
 
 /**
@@ -78,6 +78,9 @@ export function parseAmount(text: string, options: ParseAmountOptions): Money {
   const tag = assertLocale(options.locale);
   const code = assertCurrency(options.currency);
   const fail = (reason: string): MoneyError => refused(text, tag, code, reason);
+  // The signature says `string`; a JSON body does not read it, and `.trim()` on a number was a
+  // bare TypeError — a 500 for an amount the person can simply be asked for again.
+  if (typeof text !== 'string') throw fail(`${renderCauseValue(text)} is not text`);
   const numerals = numeralsOf(tag);
   const symbols = formatterOf(tag, code)
     .formatToParts(1)

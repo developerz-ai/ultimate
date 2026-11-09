@@ -659,7 +659,10 @@ OAuth 2.1 server: authorization code + PKCE (S256 only), refresh rotation with r
 `runtime.routes`; the consent and device pages are the app's (`readRequest`/`approve`/`deny`,
 `readDevice`/`approveDevice`/`denyDevice`). `oauthBearerResolver(server, { actor, resource? })` is
 the `resolveToken`. Stores: `memoryAuthServerStore()`, `postgresAuthServerStore({ executor })`
-over `SQL_AUTH_SERVER_TABLES`, which the boot applies. Full table and the rule each test holds:
+over `SQL_AUTH_SERVER_TABLES`, which the boot applies. A code is spent only by a request that could
+redeem it: client, PKCE verifier, `redirect_uri` and `resource` are checked on `getCode` before
+`takeCode` marks it used, so a request without the verifier neither burns a login nor trips the
+replay revocation. `pollDevice(hash, clientId, at)` stamps only the issuing client's poll. Full table and the rule each test holds:
 [wiki Auth](https://github.com/developerz-ai/ultimate/wiki/Auth#authorization-server).
 
 | File | Job |
@@ -966,6 +969,12 @@ export const actor = apiKeyActor(await verifyApiKey(auth.adapter, plaintext));  
 | names no `userId` | nothing more — a key no user owns is cut by its scopes and its org alone |
 | names a `userId` | re-reads that user from the store. Missing or disabled is the same `X_API_KEY_INVALID` every other rejection is, on the very next use; `disableUser` also revokes the key outright |
 
+The `env` segment is part of the credential: a key issued `dev` and presented as `ult_prod_…` is
+the same `X_API_KEY_INVALID`, so the triage label cannot be forged. `lastUsedAt` is written at most
+once per `API_KEY_TOUCH_MS` (60 s), `As of 2026-11`: a dashboard's "last used", never an audit
+trail — N requests a second on one key are N reads, not N row-locked `UPDATE`s, the trade a
+session's `idleSlideMs` makes.
+
 A key's scopes only ever shrink on the way to the actor — never the owning user's roles, never a
 default set:
 
@@ -1045,7 +1054,7 @@ user in several orgs is erased from all of them: list it `{ target, retain }` wh
 | `X_OAUTH_PROVIDER_DUPLICATE` | two `registerOAuthProvider` calls claimed one id — at boot, never at a login |
 | `X_OAUTH_DENIED` | the user pressed Cancel, or the provider declined — `403`, never a `502` |
 | `X_PASSWORD_WEAK` | strength check rejected the password |
-| `X_ACCOUNT_LOCKED` | the per-ip, per-account or per-org bucket is inside its lockout. The cause names the caller's own address or email, never an org |
+| `X_ACCOUNT_LOCKED` | the per-ip, per-account or per-org bucket is inside its lockout. The per-ip bucket counts a network (`ipKey` over core's `addressNetwork`: IPv4 whole, IPv6 by its /64). The cause names the caller's own network or email, never an org |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired, wrong, or owned by a user who is gone or disabled |
 | `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
 | `X_AUTH_WRITE_FAILED` | an `AuthAdapter` lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |

@@ -296,8 +296,19 @@ function hasSignature(declared: string): boolean {
   );
 }
 
+/**
+ * Whether a head opens with markup (after whitespace): then `sniffText` asks `activeMarkupType` of
+ * the WHOLE body, so a streamed accept must read it whole too — or text with XHTML past the head
+ * passes as plain text. A binary body never opens with `<`, so it keeps streaming.
+ */
+export const opensWithMarkup = (head: Uint8Array): boolean =>
+  new TextDecoder('utf-8')
+    .decode(head.subarray(0, MAX_LEADING_WHITESPACE + 1))
+    .trimStart()
+    .startsWith('<');
+
 /** `application/xml`, `text/xml` and every `+xml` suffix type (RFC 6839): what a browser parses as XML. */
-const isXmlType = (type: string): boolean =>
+export const isXmlType = (type: string): boolean =>
   type === 'application/xml' || type === 'text/xml' || type.endsWith('+xml');
 
 /**

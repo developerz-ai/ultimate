@@ -17,6 +17,9 @@ import {
   clearRoles,
   definePermissions,
   defineRoles,
+  memoryDecisionSink,
+  resetDecisionSink,
+  setDecisionSink,
 } from '@ultimat3/policy';
 import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
@@ -267,6 +270,27 @@ describe('the listed primitive runs through the ONE authz path', () => {
     expect(denied?.error).toBeUndefined();
     expect(toolResult(denied).isError).toBe(true);
     expect(toolResult(denied).content?.[0]?.text ?? '').toContain('X_FORBIDDEN');
+  });
+
+  // A projected read's `admit` was asked on `'server'` while its `run` went through `'mcp'`: two
+  // surfaces for one agent call, so the before-args refusal and the run's refusal could disagree
+  // the day either surface's mapping moved. Both are the MCP surface now, and both events say so.
+  test("a query tool's admit and run are judged on ONE surface", async () => {
+    const sink = memoryDecisionSink();
+    setDecisionSink(sink);
+    try {
+      const read = asProjectable(undeclaredQuery());
+      const admitted = codeAndCause(() => read.admit?.(guest));
+      const ran = await inRequest(() => read.run({ input: {}, actor: guest })).then(
+        () => null,
+        (thrown: unknown) => thrown as ThrownContract,
+      );
+      expect([admitted?.code, ran?.code]).toEqual(['X_FORBIDDEN', 'X_FORBIDDEN']);
+      // Both on policy's `mcp` surface — the one an MCP ACTION is judged on, too.
+      expect(sink.events.map((event) => event.surface)).toEqual(['mcp', 'mcp']);
+    } finally {
+      resetDecisionSink();
+    }
   });
 });
 

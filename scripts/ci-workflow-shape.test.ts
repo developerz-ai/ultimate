@@ -47,14 +47,26 @@ describe('unit · ci.yml · the gate in parts is still the gate', () => {
     expect(partGaps(parts, VERIFY_STEP_NAMES, SHARDABLE_STEPS)).toEqual([]);
   });
 
-  test('the static steps ride the part that runs live, where they cost no wall time', () => {
-    // The runner puts them BESIDE the serial suites only when `live` is in the same list. In any
-    // other part they run one after another, alone — a runner and two minutes for nothing.
-    const live = parts.find((part) => part.only.includes('live'));
+  test('the static steps ride one unsharded part beside a serial suite, never alone', () => {
+    // The runner puts them BESIDE the first serial suite listed (`verify-run.ts`); with none in the
+    // list they run one after another — six whole-tree scans, ~400 s on a runner. `live` is split
+    // across runners and a shard may name no other step, so their part is `eval`'s.
+    const beside = parts.find((part) => part.only.includes('lint'));
 
-    expect(live).toBeDefined();
-    expect([...BESIDE_SERIAL_SUITES].filter((step) => !live?.only.includes(step))).toEqual([]);
-    expect(live?.shard).toBeUndefined();
+    expect(beside).toBeDefined();
+    expect([...BESIDE_SERIAL_SUITES].filter((step) => !beside?.only.includes(step))).toEqual([]);
+    expect(beside?.only).toContain('eval');
+    expect(beside?.shard).toBeUndefined();
+  });
+
+  test('live is split across runners, every shard a part of its own', () => {
+    const live = parts.filter((part) => part.only.includes('live'));
+
+    expect(live.length).toBeGreaterThan(1);
+    for (const part of live) {
+      expect(part.shard).toBeDefined();
+      expect(part.only).toEqual(['live']);
+    }
   });
 
   test('each part runs its own slice and nothing else: one --only, read from the matrix', () => {
@@ -168,76 +180,6 @@ describe('unit · ci.yml · every reader of a job name still finds it', () => {
     expect(packages.strategy?.['fail-fast']).toBe(false);
     expect(runsOf(packages)).toContain('scripts/coverage-gate.ts --all --shard "$SHARD"');
   });
-});
-
-const deployDocument: unknown = Bun.YAML.parse(
-  await Bun.file(`${repoRoot()}/.github/workflows/deploy-social-demo.yml`).text(),
-);
-
-describe('unit · deploy-social-demo.yml · only completed ci runs on main or dispatch start it', () => {
-  const triggers = record(record(deployDocument)['on']);
-  const workflowRun = record(triggers['workflow_run']);
-  // Exact mappings keep added events and scope-changing filters from silently widening publish.
-  const assertTriggers = (value: unknown): void => {
-    const events = record(value);
-    expect(Object.keys(events).sort()).toEqual(['workflow_dispatch', 'workflow_run']);
-    expect(events['workflow_run']).toEqual({
-      workflows: ['ci'],
-      types: ['completed'],
-      branches: ['main'],
-    });
-  };
-
-  test('the real workflow has exactly the permitted events and workflow_run filters', () => {
-    assertTriggers(triggers);
-  });
-
-  test('mapping key order does not change the trigger contract', () => {
-    assertTriggers({
-      workflow_dispatch: triggers['workflow_dispatch'],
-      workflow_run: {
-        branches: workflowRun['branches'],
-        types: workflowRun['types'],
-        workflows: workflowRun['workflows'],
-      },
-    });
-  });
-
-  test.each(['push', 'pull_request', 'schedule', 'workflow_call'])(
-    'rejects an added %s event',
-    (event) => {
-      expect(() => assertTriggers({ ...triggers, [event]: {} })).toThrow();
-    },
-  );
-
-  const withoutBranches = Object.fromEntries(
-    Object.entries(workflowRun).filter(([key]) => key !== 'branches'),
-  );
-  test.each([
-    ['missing branches', withoutBranches],
-    ['extra branch', { ...workflowRun, branches: ['main', 'develop'] }],
-    ['wildcard branch', { ...workflowRun, branches: ['*'] }],
-    ['extra workflow', { ...workflowRun, workflows: ['ci', 'other'] }],
-    ['wildcard workflow', { ...workflowRun, workflows: ['*'] }],
-    ['extra type', { ...workflowRun, types: ['completed', 'requested'] }],
-    ['extra filter', { ...workflowRun, 'branches-ignore': ['develop'] }],
-  ] as const)('rejects workflow_run with %s', (_label, mutatedRun) => {
-    expect(() => assertTriggers({ ...triggers, workflow_run: mutatedRun })).toThrow();
-  });
-});
-
-// A frozen image updater reported nothing (plan 101, 33-ops-deploy-proof): `served` reds the run.
-test('deploy-social-demo.yml: served needs build and verifies the sha-<7> it published', () => {
-  const served = record(record(record(deployDocument)['jobs'])['served']);
-  expect(served['needs']).toBe('build');
-  const runs = listOf(served['steps'])
-    .map((step) => text(record(step)['run']))
-    .join('\n');
-  expect(runs).toContain(
-    'bunx x deploy verify --url https://social-media.ultimate.demo.developerz.ai --build "$BUILD" --timeout 10m --json',
-  );
-  const env = listOf(served['steps']).map((step) => record(record(step)['env'])['BUILD']);
-  expect(env).toContain(expr('needs.build.outputs.short'));
 });
 
 describe('unit · ci.yml · the embedded Postgres boots from a cached snapshot', () => {
@@ -452,16 +394,20 @@ describe('unit · ci.yml · deploy-proof inherits a verdict only from a proof th
 
 describe('unit · ci.yml · the TLS replication suite runs in CI', () => {
   // #519: `pg-tls.live.test.ts` skipped in every run because nothing started a TLS server or
-  // exported its CA — a live step green over a suite that never ran.
-  const live = record(
-    listOf(job('gate').strategy?.matrix?.['include']).find((row) => record(row)['part'] === 'live'),
-  );
+  // exported its CA — a live step green over a suite that never ran. `live` is sharded, and the
+  // shard the suite lands on is the sorted file list's: every live part must start it.
+  const live = listOf(job('gate').strategy?.matrix?.['include'])
+    .map(record)
+    .filter((row) => text(row['only']).split(',').includes('live'));
 
-  test('the live part starts postgres-tls and exports its URL and its CA', () => {
-    expect(text(live['services']).split(' ')).toContain('postgres-tls');
-    const urls = text(live['urls']).split('|');
-    expect(urls).toContain('TEST_TLS_REPLICATION_URL');
-    expect(urls).toContain('TEST_TLS_ROOT_CERT');
+  test('every live part starts postgres-tls and exports its URL and its CA', () => {
+    expect(live.length).toBeGreaterThan(0);
+    for (const row of live) {
+      expect(text(row['services']).split(' ')).toContain('postgres-tls');
+      const urls = text(row['urls']).split('|');
+      expect(urls).toContain('TEST_TLS_REPLICATION_URL');
+      expect(urls).toContain('TEST_TLS_ROOT_CERT');
+    }
   });
 
   test('the suite dials 5440, the port compose publishes, and trusts the CA compose writes', async () => {

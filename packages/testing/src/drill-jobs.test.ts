@@ -99,7 +99,9 @@ describe('probeStatus', () => {
     } finally {
       server.stop(true);
     }
-    expect(await probeStatus(`http://127.0.0.1:${String(server.port)}/readyz`, 1_000)).toBeNull();
+    // Port 1 (tcpmux), privileged and never served — not the port just freed, which a busy
+    // machine hands straight to another process (one answered 308 here).
+    expect(await probeStatus('http://127.0.0.1:1/readyz', 1_000)).toBeNull();
   });
 
   test('sampleStatus records each answer against the fault start', async () => {

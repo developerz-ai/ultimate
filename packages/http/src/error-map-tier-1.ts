@@ -106,4 +106,6 @@ export const TIER_1_ERROR_STATUS = {
   X_MONEY_INPUT_INVALID: 422,
   // @ultimat3/seo — a route meta og declares both image and capture
   X_SEO_OG_IMAGE_CONFLICT: 500,
+  // @ultimat3/money — a fromDecimal input that is not a plain decimal string
+  X_MONEY_NOT_DECIMAL: 422,
 } satisfies Readonly<Record<string, number>>;

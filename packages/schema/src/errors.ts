@@ -38,6 +38,22 @@ const singleLine = (text: string): string =>
   );
 
 /**
+ * The same cap `@ultimat3/core`'s `boundedCause` applies. **Keep in sync** — read the reason there;
+ * briefly: a cause describes a refusal and is copied into `message`, the log line and the problem
+ * `detail`, so a 10k-issue validation cause (3.6 MiB) became four copies of a request body.
+ * Copied for `singleLine`'s reason; `single-line-pin.test.ts` in core pins the two cut identically.
+ */
+const MAX_CAUSE_LENGTH = 4096;
+function boundedCause(text: string): string {
+  if (text.length <= MAX_CAUSE_LENGTH) return text;
+  const reserve = `... (${text.length} more characters)`.length;
+  let keep = MAX_CAUSE_LENGTH - reserve;
+  const last = text.charCodeAt(keep - 1);
+  if (last >= 0xd800 && last <= 0xdbff) keep -= 1;
+  return `${text.slice(0, keep)}... (${text.length - keep} more characters)`;
+}
+
+/**
  * The same one URL `@ultimat3/core`'s `ERROR_DOCS_URL` holds. **Keep in sync**, and read the
  * reason there — briefly: `wiki/` is the only public documentation surface, codes live on that
  * page in table ROWS, and a table row has no anchor, so there is no per-code URL to build.
@@ -116,7 +132,7 @@ export class SchemaError extends Error {
     // `@ultimat3/action`'s `IRREGULAR[word]`.
     const declared = Object.hasOwn(TITLES, init.code) ? TITLES[init.code] : undefined;
     const title = singleLine(declared ?? humanize(init.code));
-    const cause = singleLine(init.cause);
+    const cause = boundedCause(singleLine(init.cause));
     // The cause is in `message` for the reason `UltimateError`'s constructor gives: `message` is
     // the ONLY field a runtime prints when an error escapes uncaught — a worker log, a CI
     // transcript, a stack trace — and `code: title` alone names which rule fired but not which
@@ -169,17 +185,25 @@ export class ValidationFailedError extends SchemaError {
   override readonly name = 'ValidationFailedError';
   readonly issues: readonly ValidationIssue[];
 
-  constructor(issues: readonly ValidationIssue[], root = 'value') {
-    const cause = issues
+  /**
+   * `true` when validation stopped at its issue cap (`MAX_ISSUES`): `issues` is a prefix, and
+   * correcting every one of them may surface more.
+   */
+  readonly issuesTruncated: boolean;
+
+  constructor(issues: readonly ValidationIssue[], root = 'value', issuesTruncated = false) {
+    const listed = issues
       .map((issue) => `${issue.path === '' ? root : issue.path}: ${issue.message}`)
       .join('; ');
+    const cause = issuesTruncated ? `${listed}; (stopped after ${issues.length} issues)` : listed;
     super({
       code: ValidationFailedError.code,
       cause,
       fix: `send ${root} with the field(s) named in cause corrected to the expected type`,
-      meta: { issues },
+      meta: issuesTruncated ? { issues, issuesTruncated: true } : { issues },
     });
     this.issues = issues;
+    this.issuesTruncated = issuesTruncated;
   }
 
   /** One line per issue — what the dev overlay and `x test --json` render. */
@@ -237,6 +261,16 @@ export class SensitiveOutputError extends SchemaError {
 
   constructor(init: Omit<SchemaErrorInit, 'code'>) {
     super({ ...init, code: SensitiveOutputError.code });
+  }
+}
+
+/** Thrown where `validate(…, { maxIssues })` is CALLED: a cap no list can meet bounds nothing. */
+export class IssueCapInvalidError extends SchemaError {
+  static readonly code = 'X_SCHEMA_ISSUE_CAP_INVALID';
+  override readonly name = 'IssueCapInvalidError';
+
+  constructor(init: Omit<SchemaErrorInit, 'code'>) {
+    super({ ...init, code: IssueCapInvalidError.code });
   }
 }
 

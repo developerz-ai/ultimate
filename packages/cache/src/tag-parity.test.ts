@@ -9,8 +9,7 @@ import type { PurgeDriver } from './cdn';
 import { cacheHeaders, cdnTier } from './cdn';
 import { lruTier } from './lru';
 import { memoTier } from './memo';
-import { REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT } from './redis';
-import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
+import { fakeRedis, tierFor } from './redis-fake-fixture';
 import type { CacheTag } from './tags';
 import { tag, tagsIntersect } from './tags';
 import type { CacheTier } from './tiers';
@@ -63,31 +62,6 @@ const clearedFrom = async (tier: CacheTier, bust: readonly CacheTag[]): Promise<
 const overlaps = (left: readonly string[], right: readonly string[]): boolean =>
   left.some((value) => right.includes(value));
 
-/**
- * The fake cannot run Lua, so the shared tier is judged on what a recorder CAN prove: a key is
- * reachable by a bust exactly when a bucket its write joined is a bucket the bust reads.
- */
-const reachedOnTheWire = async (bust: readonly CacheTag[]): Promise<string[]> => {
-  const client = fakeRedis();
-  const tier = tierFor(client);
-  await seed(tier);
-  const joined = new Map<string, string[]>();
-  for (const entry of client.sent) {
-    if (entry[0] !== 'EVAL' || entry[1] !== REDIS_TAG_MEMBER_SCRIPT) continue;
-    const key = String(entry[4]).slice('x:c:'.length);
-    joined.set(key, [...(joined.get(key) ?? []), String(entry[3])]);
-  }
-  client.answerEval(REDIS_INVALIDATE_SCRIPT, []);
-  client.sent.length = 0;
-  await tier.invalidateTags(bust);
-  const read = client.sent
-    .filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT)
-    .flatMap((entry) => keysOf(entry));
-  return Object.keys(OWNED)
-    .filter((key) => overlaps(joined.get(key) ?? [], read))
-    .sort();
-};
-
 /** The edge purges by exact key: a response is cleared when a key it CARRIES is a key PURGED. */
 const purgedAtTheEdge = async (
   bust: readonly CacheTag[],
@@ -135,7 +109,8 @@ describe('one bust, one answer, on every tier', () => {
     });
 
     test(`redis: busting ${name}`, async () => {
-      expect(await reachedOnTheWire(bust)).toEqual([...reaches]);
+      // The fake holds the sorted sets as state, so the shared tier answers with real survivors.
+      expect(await clearedFrom(tierFor(fakeRedis()), bust)).toEqual([...reaches]);
     });
 
     test(`cdn: busting ${name}`, async () => {

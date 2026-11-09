@@ -100,15 +100,35 @@ export function buildRobots(config: RobotsConfig): string {
 /**
  * `rule` as a crawler reads it: a PREFIX of the path, `*` standing for any run of characters and a
  * trailing `$` anchoring the end. An empty rule disallows nothing.
+ *
+ * Matched literal by literal, never through a `RegExp`: one `.*` per `*` backtracks, and eleven
+ * wildcards against a 41-character slug took 14 s — per URL, inside the sitemap build. With `*`
+ * the only operator, the leftmost occurrence of each literal is always a safe choice, so one
+ * forward pass of `indexOf` decides it: O(path × rule), whatever the path holds.
  */
-function disallowPattern(rule: string): RegExp | undefined {
+function disallowPattern(rule: string): ((path: string) => boolean) | undefined {
   if (rule === '') return undefined;
   const anchored = rule.endsWith('$');
-  const body = (anchored ? rule.slice(0, -1) : rule)
-    .split('*')
-    .map((literal) => literal.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-    .join('.*');
-  return new RegExp(`^${body}${anchored ? '$' : ''}`);
+  const literals = (anchored ? rule.slice(0, -1) : rule).split('*');
+  const first = literals[0] ?? '';
+  const last = literals[literals.length - 1] ?? '';
+  if (literals.length === 1) {
+    return anchored ? (path) => path === first : (path) => path.startsWith(first);
+  }
+  const middle = literals.slice(1, -1);
+  return (path) => {
+    if (!path.startsWith(first)) return false;
+    let at = first.length;
+    for (const literal of middle) {
+      const found = path.indexOf(literal, at);
+      if (found === -1) return false;
+      at = found + literal.length;
+    }
+    // Anchored, the last literal is the path's END — and must not overlap what was already used.
+    return anchored
+      ? path.length - last.length >= at && path.endsWith(last)
+      : path.indexOf(last, at) !== -1;
+  };
 }
 
 /**
@@ -118,5 +138,5 @@ function disallowPattern(rule: string): RegExp | undefined {
  */
 export function disallowMatcher(rules: readonly string[]): (path: string) => boolean {
   const patterns = rules.flatMap((rule) => disallowPattern(rule) ?? []);
-  return (path) => patterns.some((pattern) => pattern.test(path));
+  return (path) => patterns.some((matches) => matches(path));
 }

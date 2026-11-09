@@ -74,6 +74,26 @@ export const assertCorsConfig = (config: CorsConfig): void => {
       "list the scheme too: configureHttp({ cors: { origins: ['http://localhost:3000'] } })",
     );
   }
+  for (const origin of config.origins) {
+    if (origin === '*') continue;
+    const canonical = canonicalOrigin(origin);
+    if (canonical === origin) continue;
+    throw corsConfigInvalid(
+      `origins includes ${JSON.stringify(origin)}, which no browser sends as an Origin — it is compared byte for byte, so it matches nothing`,
+      `configureHttp({ cors: { origins: ['${canonical}'] } })   # scheme, lower-case host, a port only when not the scheme's default — no path, no trailing slash`,
+    );
+  }
+};
+
+/**
+ * What a browser would send for this entry: `URL.origin`. A bare host gets `https://` prefixed so
+ * the fix names a value rather than a rule; an entry that does not parse at all keeps the shape.
+ */
+const canonicalOrigin = (origin: string): string => {
+  const parsed = URL.parse(origin);
+  if (parsed !== null && parsed.origin !== OPAQUE_ORIGIN) return parsed.origin;
+  const withScheme = URL.parse(`https://${origin}`);
+  return withScheme === null ? 'https://<host>[:port]' : withScheme.origin;
 };
 
 /**

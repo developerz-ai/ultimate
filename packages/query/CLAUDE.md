@@ -91,7 +91,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A `single: true` read answers the row or `X_NOT_FOUND` by ONE rule** (`single-answer.ts`:
   `oneRowOf`, `readAnswer`) — the route and `@ultimat3/mcp`'s served tool both call it.
 - **`rateLimit:` is spent ONCE, in `buildSource`** (`rate-limit-gate.ts`'s `spendReadLimit`), for
-  every enforced build — route, `page()`, the MCP tool (`surface: 'mcp'`, judged as `'server'`).
+  every enforced build — route, `page()`, the MCP tool (`surface: 'mcp'`, judged as `'mcp'`, as an MCP action is).
   `'server'` and an `unenforced` build spend nothing. A live subscribe spends via `live.ts`'s
   `spendQueryLimit`, called by realtime per subscriber. `toQueryRoute` sets `rateLimitedBy:
   'handler'` and no stage bucket. Counted in `@ultimat3/http`'s installed store; key

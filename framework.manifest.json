@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "db93f5d02fe5dd51b6b824ccd4f4793b9ad1b95b6eb06b895e071897b03eada1",
+  "buildId": "03278ca766d450ea2613f25118aacf79d2997dbe3e58c43c3269220348a87ca8",
   "tiers": {
     "0": [
       "core",
@@ -711,6 +711,11 @@
     },
     {
       "code": "X_BODY_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BODY_TOO_LARGE",
       "owner": "http",
       "at": "packages/http/src/error-titles.ts"
     },
@@ -3360,6 +3365,11 @@
       "at": "packages/money/src/errors.ts"
     },
     {
+      "code": "X_MONEY_NOT_DECIMAL",
+      "owner": "money",
+      "at": "packages/money/src/errors.ts"
+    },
+    {
       "code": "X_MONEY_NOT_INTEGER",
       "owner": "money",
       "at": "packages/money/src/errors.ts"
@@ -4498,6 +4508,11 @@
       "code": "X_SCHEMA_DUMP_DRIFT",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_SCHEMA_ISSUE_CAP_INVALID",
+      "owner": "schema",
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCHEMA_SENSITIVE_OUTPUT",

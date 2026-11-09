@@ -21,6 +21,7 @@ export type {
   BearerResolver,
 } from './bearer-mount';
 export { bearerMount, bearerTokenOf, mountedPath } from './bearer-mount';
+export { DEFAULT_MAX_REQUEST_BODY_BYTES, requestBodyTooLarge } from './body-ceiling';
 /** One `Range:` reader for every route that answers bytes — `/_storage`, site assets, a download. */
 export type { RequestedRange } from './byte-range';
 export { byteWindow, contentRangeOf, parseByteRange, RANGE_UNSATISFIABLE } from './byte-range';
@@ -151,7 +152,6 @@ export type {
   MemoryRateLimitStore,
   RateLimitConfig,
   RateLimitDecision,
-  RateLimitDeclaration,
   RateLimiter,
   RateLimitKeyParts,
   RateLimitScope,
@@ -161,15 +161,14 @@ export type {
 export {
   assertRateLimitScope,
   DEFAULT_MAX_RATE_LIMIT_KEYS,
-  DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
   rateLimitDecision,
   rateLimiter,
   rateLimitSpends,
-  resolveRateLimitConfig,
-  toBucket,
 } from './rate-limit';
 export { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
+export type { RateLimitDeclaration } from './rate-limit-config';
+export { DEFAULT_RATE_LIMIT, resolveRateLimitConfig, toBucket } from './rate-limit-config';
 export {
   rateLimitBucketConflict,
   rateLimitBucketUnbound,
@@ -197,6 +196,12 @@ export {
   postgresRateLimitStore,
   SQL_RATE_LIMIT_TABLE,
 } from './rate-limit-postgres';
+export type {
+  RedisRateLimitClient,
+  RedisRateLimitStore,
+  RedisRateLimitStoreOptions,
+} from './rate-limit-redis';
+export { REDIS_RATE_LIMIT_TAKE, redisRateLimitStore } from './rate-limit-redis';
 export { RATE_LIMIT_STORE_DEADLINE_MS } from './rate-limit-store-deadline';
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';

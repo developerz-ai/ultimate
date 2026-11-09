@@ -49,6 +49,12 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   hoisted here. `admitsAnonymous` in particular is EXACT for `actor === null` rather than a
   heuristic, because `can()` short-circuits on the actor check before its predicate and
   `allow()`/`deny()` ignore their arguments — no predicate is consulted, so the tree alone decides.
+- **`action` and `query` reach authz through `guardPrimitive()`, one function** (`As of 2026-11`, v31).
+  The two tier-3 `policy-gate.ts` files were the same pipeline twice and drifted: a query's MCP
+  call was judged as `'job'`, an action's as `'mcp'`. The surface rule is
+  `PRIMITIVE_POLICY_SURFACES`, data, read with `Object.hasOwn` at both levels; it RETURNS the
+  denial (code, reason, shape) because the error class is the primitive's and this tier cannot
+  name it. A new primitive surface is a row there, never a branch in a caller.
 - **One predicate shape.** A row-level rule reads `args.row`. Never pass a row through
   `input`, and never add a per-surface args type.
 - A policy is pure and synchronous. No I/O, no `await`. Load the row first, then decide.
@@ -178,6 +184,8 @@ reappearing there is a failing test.
 | `evaluate.ts` | the single entry point; builds the trace, emits the one decision event |
 | `decisions.ts` | the `DecisionSink` seam — no-op default, one call site, never PII |
 | `surfaces.ts` | http/live/job/mcp adapters — the "one system" proof |
+| `guard-primitive.ts` | `guardPrimitive` — the one gate `action` and `query` run, and the per-primitive surface table |
+| `denial-parts.ts` | `denialCode` / `denialReason` — any `SurfaceDenial` read back as one code and one reason |
 | `roles.ts` | the role map: merge, conflict, inheritance, wildcards |
 | `declaration-site.ts` | the caller's stack frame a role or permission declaration records |
 | `grant-index.ts` | the per-actor flattened grant set, memoised against the role generation |

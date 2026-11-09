@@ -307,4 +307,4 @@ export { parseActionInput } from './validate';
  * `x g resource` emits, to keep this package out of its chunk — holds the parsed body itself and
  * would otherwise write a second, unvalidated reader.
  */
-export { issuesFromWire, MAX_WIRE_ISSUES } from './wire-issues';
+export { issuesFromWire } from './wire-issues';

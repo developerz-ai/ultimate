@@ -19,15 +19,15 @@ const log = (...sections: readonly string[]): string =>
 const section = (heading: string): string => `## ${heading}\n\n### Highlights\n\n- one\n`;
 
 describe('unit · stability-findings · the changelog rules, together', () => {
-  test('a 31.0.0 section ten days after 30.0.0 is refused by the gate, not only by the bump', () => {
-    const changelog = log(section('31.0.0 - 2026-11-20'), section('30.0.0 - 2026-11-10'));
+  test('a 32.0.0 section ten days after 31.0.0 is refused by the gate, not only by the bump', () => {
+    const changelog = log(section('32.0.0 - 2026-11-20'), section('31.0.0 - 2026-11-10'));
     expect(stabilityChangelogFindings(changelog, {}, '2027-06-01').map((one) => one.code)).toEqual([
       'X_RELEASE_MAJOR_WINDOW',
     ]);
   });
 
-  test('a released `## 31.1.0` opening the 31 line inside the window reds the gate too', () => {
-    const changelog = log(section('31.1.0 - 2026-11-10'), section('30.0.0 - 2026-11-05'));
+  test('a released `## 32.1.0` opening the 32 line inside the window reds the gate too', () => {
+    const changelog = log(section('32.1.0 - 2026-11-10'), section('31.0.0 - 2026-11-05'));
     expect(stabilityChangelogFindings(changelog, {}, '2027-06-01').map((one) => one.code)).toEqual([
       'X_RELEASE_MAJOR_WINDOW',
     ]);
@@ -41,8 +41,8 @@ describe('unit · stability-findings · the changelog rules, together', () => {
       '',
       '- **BREAKING — (#1) a thing goes.**',
       '',
-      '## 30.1.0 - 2026-11-12\n\n- no highlights\n',
-      section('30.0.0 - 2026-11-10'),
+      '## 31.1.0 - 2026-11-12\n\n- no highlights\n',
+      section('31.0.0 - 2026-11-10'),
     ].join('\n');
     expect(
       stabilityChangelogFindings(changelog, { GITHUB_BASE_REF: 'main' }, '2026-11-20').map(
@@ -54,37 +54,38 @@ describe('unit · stability-findings · the changelog rules, together', () => {
 
 describe('unit · stability-findings · wiki/Stability.md states the next window', () => {
   const page = (line: string) => `# Stability\n\n**Next major window:** ${line}\n`;
-  const after30 = log(section('30.0.0 - 2026-11-10'));
-  const before30 = log('## 29.4.0 - 2026-10-31\n\n- z\n');
+  const after31 = log(section('31.0.0 - 2026-11-10'));
+  // v30 opens no window (the 2026-11-09 ruling): the page names no date until v31 ships.
+  const before31 = log(section('30.0.0 - 2026-11-07'));
 
-  test('after v30 the line names the date, derived from the 30.0.0 heading', () => {
-    expect(stabilityPageFindings(page('opens on `2027-02-08`.'), after30)).toEqual([]);
-    const [stale] = stabilityPageFindings(page('90 days after v30.'), after30);
+  test('after v31 the line names the date, derived from the 31.0.0 heading', () => {
+    expect(stabilityPageFindings(page('opens on `2027-02-08`.'), after31)).toEqual([]);
+    const [stale] = stabilityPageFindings(page('90 days after v31.'), after31);
     expect(stale?.code).toBe('X_DOC_RELEASE_FACT_STALE');
     expect(stale?.fix).toContain('`2027-02-08`');
   });
 
-  test('before v30 the line names no date at all', () => {
-    expect(stabilityPageFindings(page('90 days after v30.'), before30)).toEqual([]);
-    expect(stabilityPageFindings(page('opens on `2027-02-08`.'), before30)).toHaveLength(1);
+  test('before v31 the line names no date at all', () => {
+    expect(stabilityPageFindings(page('90 days after v31.'), before31)).toEqual([]);
+    expect(stabilityPageFindings(page('opens on `2027-02-08`.'), before31)).toHaveLength(1);
   });
 
   test('the bump writes the line the rule derives, so its own release PR is green', () => {
-    const written = withNextWindowLine(page('90 days after v30.'), after30);
+    const written = withNextWindowLine(page('90 days after v31.'), after31);
     expect(written).toContain('**Next major window:** opens on `2027-02-08`');
-    expect(stabilityPageFindings(written, after30)).toEqual([]);
-    expect(withNextWindowLine(written, after30)).toBe(written);
-    expect(stabilityPageFindings(withNextWindowLine(page('x'), before30), before30)).toEqual([]);
+    expect(stabilityPageFindings(written, after31)).toEqual([]);
+    expect(withNextWindowLine(written, after31)).toBe(written);
+    expect(stabilityPageFindings(withNextWindowLine(page('x'), before31), before31)).toEqual([]);
   });
 
   test('a page with no such line is refused, never read as current', () => {
-    expect(stabilityPageFindings('# Stability\n', after30).map((one) => one.code)).toEqual([
+    expect(stabilityPageFindings('# Stability\n', after31).map((one) => one.code)).toEqual([
       'X_DOC_RELEASE_FACT_STALE',
     ]);
   });
 });
 
-// The changelog rules only: the deprecation rule reads a release tag, which after v30 can mean
+// The changelog rules only: the deprecation rule reads a release tag, which after v31 can mean
 // asking origin, and a unit suite never reaches the network. `deprecation-window.test.ts` owns it.
 describe('the committed CHANGELOG.md and wiki/Stability.md', () => {
   test('hold every stability rule, wherever this branch is headed', async () => {

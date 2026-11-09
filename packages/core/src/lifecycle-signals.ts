@@ -1,11 +1,11 @@
 // Single responsibility: wiring process signals to the one drain. Split from `lifecycle.ts`, which
 // owns the state machine and the phases, when the readiness grace took it past its line ceiling.
 
-import { drain, type ProcessSignal } from './lifecycle';
+import { drain, drainExitCode, type ProcessSignal } from './lifecycle';
 
 export interface SignalHandlerOptions {
   readonly signals?: readonly ProcessSignal[] | undefined;
-  /** Call `process.exit()` once drained. Off in tests. */
+  /** Call `process.exit(drainExitCode())` once drained: 0, or 70 when work was abandoned. Off in tests. */
   readonly exit?: boolean | undefined;
   /** Whose default signal set to install — `process.platform` unless a test names one. */
   readonly platform?: string | undefined;
@@ -46,7 +46,9 @@ export function installSignalHandlers(options?: SignalHandlerOptions): () => voi
       // `drain()` cannot reject today — that is `runDrain`'s `try/finally` in `lifecycle.ts`, not luck — and this is
       // the one line that keeps it true when someone changes the body.
       const done = (): void => {
-        if (options?.exit === true) process.exit(0);
+        // 70, not 0, when the drain abandoned work at its deadline: the exit code is the
+        // platform's only record of whether a write may be half done (`drainExitCode`).
+        if (options?.exit === true) process.exit(drainExitCode());
       };
       void drain(signal).then(done, done);
     };

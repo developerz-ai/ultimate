@@ -3,7 +3,7 @@ import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db
 import { asyncRefusal } from './bounds-fixture';
 import { normalizeVector } from './embeddings';
 import { type PostgresVectorStore, postgresVectorStore } from './pg-vector';
-import { conditionsSql, deleteSql, vectorLiteral } from './pg-vector-sql';
+import { conditionsSql, ddlSql, deleteSql, vectorLiteral } from './pg-vector-sql';
 import { memoryVectorStore } from './vector';
 
 const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
@@ -363,5 +363,35 @@ describe('PostgresVectorStore.upsert with a repeated id', () => {
     ]);
     expect((await memory.searchText('last', 5)).map((hit) => hit.text)).toEqual(['last']);
     expect(await memory.searchText('first', 5)).toEqual([]);
+  });
+});
+
+// Postgres truncates an identifier at 63 bytes without an error, so a long table's three index
+// names (`…_embedding_idx`, `…_tsv_idx`, `…_metadata_idx`) collapsed into ONE, and every
+// `create index if not exists` after the first skipped silently. `identifier()` now refuses them.
+describe('ddlSql index names', () => {
+  const namesOf = (table: string): string[] =>
+    [
+      ...ddlSql({ table, dimension: 3, language: 'english' }).matchAll(
+        /create index if not exists ("[^"]+")/g,
+      ),
+    ].map((match) => match[1] ?? '');
+
+  test('a short table keeps the names it always had', () => {
+    expect(namesOf('docs')).toEqual([
+      '"docs_embedding_idx"',
+      '"docs_tsv_idx"',
+      '"docs_metadata_idx"',
+    ]);
+  });
+
+  test('a long table: three distinct names, each within 63 bytes, the same on every call', () => {
+    const table = `knowledge_${'é'.repeat(20)}_chunks`; // 57 bytes: legal, its index names are not
+    const names = namesOf(table);
+    expect(new Set(names).size).toBe(3);
+    for (const name of names) {
+      expect(new TextEncoder().encode(name.slice(1, -1)).length).toBeLessThanOrEqual(63);
+    }
+    expect(namesOf(table)).toEqual(names);
   });
 });

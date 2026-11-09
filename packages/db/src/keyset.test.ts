@@ -198,4 +198,21 @@ describe('keyset() arguments', () => {
       'X_INVARIANT',
     );
   });
+
+  // A direction is spliced as SQL text, so anything but the two words is an injection — a sort
+  // read off a query string reached `order by` verbatim — and `'DESC'` ordered one way while the
+  // seek compared the other, repeating or skipping rows from page two on.
+  test.each(['asc; drop table users; --', 'DESC', 'ASC', ''])('direction %p is refused', (bad) => {
+    const key = { ...at('desc'), direction: bad } as unknown as KeysetKey;
+    expect(codeOf(() => keyset({ scope: 'feed', keys: [key], after: null, limit: 1 }))).toBe(
+      'X_INVARIANT',
+    );
+  });
+
+  test('a kind outside the closed list is refused, never bound back as text', () => {
+    const key = { ...at('desc'), kind: 'date' } as unknown as KeysetKey;
+    expect(codeOf(() => keyset({ scope: 'feed', keys: [key], after: null, limit: 1 }))).toBe(
+      'X_INVARIANT',
+    );
+  });
 });

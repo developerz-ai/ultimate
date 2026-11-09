@@ -4,14 +4,12 @@
 // vocabulary. A plain `put()` never comes here: it stays on the Bun client.
 
 import { assert, describeValue } from '@ultimat3/core';
-import { DEFAULT_CONTENT_TYPE, type PutOptions } from './driver';
+import { DEFAULT_CONTENT_TYPE, HEADER_VALUE, type PutOptions } from './driver';
 import { type S3Refusal, type S3WireOptions, sendSigned, xmlField } from './driver-s3-signed';
 import { isRetentionMode, type ObjectLock } from './object-lock';
 
 /** RFC 9110 `token` — the only bytes an `x-amz-meta-<name>` header name may carry. */
 const HEADER_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-/** Printable ASCII: S3 stores a metadata value as a header, and a CR or a non-ASCII byte is not one. */
-const HEADER_VALUE = /^[\x20-\x7e]*$/;
 
 /** The options only the signed PUT can carry. Any one of them routes the put off the Bun client. */
 export function needsSignedPut(options: PutOptions | undefined): boolean {

@@ -8,6 +8,7 @@ import { CdpBrowserMissingError, CdpLaunchFailedError } from './cdp-errors';
 import type { LaunchedBrowser } from './cdp-launch-attempt';
 import { LAUNCH_REAP_MS, launchAttempt } from './cdp-launch-attempt';
 import { chromeCandidates } from './cdp-launch-candidates';
+import { startsChrome } from './cdp-launch-probe';
 import type { CdpWire } from './cdp-launch-wire';
 import { defaultWire, wireFlag } from './cdp-launch-wire';
 
@@ -28,18 +29,26 @@ export const CHROME_PATH_ENV = 'CHROME_PATH';
 export const CHROME_CANDIDATES: readonly string[] = chromeCandidates(process.platform, process.env);
 
 /**
- * The first candidate that exists, or `undefined`. An absent browser is a SKIP, never a failure.
+ * The first candidate that is a browser this machine can start, or `undefined`. An absent browser is
+ * a SKIP, never a failure — and so is one that is installed but cannot start (`startsChrome`,
+ * `cdp-launch-probe.ts`; on `win32` existence alone, since `chrome.exe --version` never exits).
  * `platform` is a parameter so the Windows and macOS lists are asserted on a Linux runner too.
+ *
+ * `CHROME_PATH` is answered as given, and never probed: it is the operator's answer, the only one
+ * that can be right on a machine none of the candidates describes, and it is how a wrapper or a
+ * non-standard build is named at all.
  */
 export async function findChrome(
   env: Readonly<Record<string, string | undefined>>,
   platform: string = process.platform,
 ): Promise<string | undefined> {
   const declared = env[CHROME_PATH_ENV];
-  const candidates =
-    declared === undefined || declared === '' ? chromeCandidates(platform, env) : [declared];
-  for (const candidate of candidates) {
-    if (await Bun.file(candidate).exists()) return candidate;
+  if (declared !== undefined && declared !== '') {
+    return (await Bun.file(declared).exists()) ? declared : undefined;
+  }
+  for (const candidate of chromeCandidates(platform, env)) {
+    if (!(await Bun.file(candidate).exists())) continue;
+    if (await startsChrome(candidate, platform)) return candidate;
   }
   return undefined;
 }

@@ -101,7 +101,11 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | a repeated form field | a LIST, exactly as a repeated query parameter is. One collector for query, urlencoded and multipart; `Object.fromEntries` kept the last value, so a checkbox group reached the schema as one string |
 | a cross-origin request from an origin the allow-list refuses | no `access-control-allow-origin`, but always `vary: origin`, so a shared cache never answers an allowed origin out of the refusal's slot |
 | `cors.origins: ['*']` with `credentials: true` | `X_CORS_CONFIG_INVALID` at `defineHttpConfig`, because a browser accepts that pair from nobody |
+| a `cors.origins` entry no browser sends — `'https://app.com/'`, `'https://App.com'`, `'https://app.com:443'`, `'app.com'` | `X_CORS_CONFIG_INVALID` at `defineHttpConfig`, its `fix` naming the canonical form (`URL.origin`). `As of 2026-11` (v31): the match is byte for byte, so each spelling matched nothing and refused every cross-origin write |
+| a body past `maxRequestBodyBytes` (default 128 MiB, never below `bodyLimitBytes`) — declared or streamed | `X_BODY_TOO_LARGE` (413). `As of 2026-11`: Bun's own `maxRequestBodySize` is off — it answered an empty, uncoded 413 before any framework code, and its 128 MiB default refused every larger signed upload. `configureHttp({ maxRequestBodyBytes })` raises the ceiling; `DEFAULT_MAX_REQUEST_BODY_BYTES` is exported |
 | `?next=` carrying anything but a same-origin path | the fallback — including a value whose TAB/CR/LF a browser strips back into `//evil.test`, and any other control character. `nextAfterSignIn` takes the value its caller's parser already decoded and never decodes it again, `As of 2026-10`: `?q=a%26b` lands as `?q=a%26b`, not `?q=a&b`. A code point above U+007F is percent-encoded so a `Location` header can carry it. The answer is the normalised path (`/a/../b` → `/b`), and one whose pathname starts `//` (`/.//evil.test`) is refused; `x-ultimate-location` never carries a same-origin pathname starting `//` either |
+| a browser with no session on a localized URL (`/es/account`) | `303` to the sign-in page in that locale (`/es/login?next=%2Fes%2Faccount`), `As of 2026-11` — it went to the default-locale `signInPath` and switched the visitor's language at the door |
+| `Range: bytes=5-3` (last byte before the first) | ignored, `200` with the whole body (RFC 9110: an invalid range-spec is ignored), `As of 2026-11`; `416` stays for a valid range past the size |
 | HSTS | emitted only when the connection is affirmatively https (`ctx.https`); never by the zero-argument default |
 | `rateLimit.scope: 'shared'` on a per-process store | `X_RATE_LIMIT_NOT_SHARED` at `httpServer`, because N replicas each holding their own counters enforce N × every configured number |
 | a route's own bucket and a configured bucket of that name disagreeing | `X_RATE_LIMIT_BUCKET_CONFLICT` at `httpServer`, because the loser would be a number someone read and nothing applied |
@@ -129,7 +133,7 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | `buildId: null` | skew detection off, whatever `BUILD_ID` says; `hostname` never defaults from `HOSTNAME` (the container id under Docker) |
 | an `x-forwarded-client-cert` value in quotes | unescaped ONCE, after the pairs are split — `Subject="O=Acme; Inc,CN=svc-one"` is that whole subject, not `O=Acme` |
 | a request past `maxInflight` (1000) | `X_OVERLOADED` (503) + `retry-after`, shed in the `admit` stage before any work |
-| a public text answer, 1 KiB to 256 KiB, with a declared length | gzip on the wire, from the last stage (`compress`), `vary: accept-encoding` and a weak `etag`. A private answer, a signed-in one that is not `immutable`, `no-transform`, a range or an undeclared length stays identity and unread. HEAD carries GET's coded headers. `html`, `textResponse`, `jsonResponse` declare their bytes; `stream` never does. Exported: `isCompressibleType(contentType)`, `COMPRESS_MIN_BYTES`, `COMPRESS_MAX_BYTES` |
+| a public text answer of at least 1 KiB, or with no declared length | gzip on the wire, from the last stage (`compress`), `vary: accept-encoding` and a weak `etag`. Up to 256 KiB with a declared length it is coded whole (`gzipSync`, with its `content-length`); past that, or a stream with no declared length once its first 1 KiB has arrived — CSV, a large JSON export — it is coded as the client pulls (`CompressionStream`, no `content-length`), `As of 2026-11`; an undeclared body that ends under 1 KiB leaves identity with its length, and an undeclared NDJSON feed is never coded (the coder emits nothing until its source closes). A HEAD answered with no body has nothing to measure and stays identity. A private answer, a signed-in one that is not `immutable`, `no-store`, `no-transform` or a range stays identity and unread. HEAD carries GET's coded headers. Exported: `isCompressibleType(contentType)`, `COMPRESS_MIN_BYTES`, `COMPRESS_MAX_BYTES` |
 
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
 rendering another stage's throw, degrades to `X_PIPELINE_FINALIZE_FAILED` (500, the stage named in
@@ -222,6 +226,26 @@ httpServer({
   rateLimitStore: postgresRateLimitStore({ executor }),
 });
 ```
+
+**A Redis store ships too, `As of 2026-11`** — `redisRateLimitStore({ client })`, one Lua token
+bucket per take (`EVALSHA`, falling back to `EVAL` on `NOSCRIPT`), a peek one `HMGET`. A hot key —
+one NAT, a tenant bucket — no longer serialises every request on one Postgres row lock. Each key
+expires once it would be full again, so it needs no purge. Same `scope: 'shared'`, same deadline
+(`deadlineMs`, 250 ms) and the same degrade-to-this-pod's-memory on an outage, `ERR_REDIS_CONNECTION_CLOSED`
+included. Connect the client before the first request, or the first takes are decided in memory.
+
+```ts
+import { redisClient } from '@ultimat3/core/redis';
+import { httpServer, redisRateLimitStore, type Route } from '@ultimat3/http';
+
+declare const routes: readonly Route[];
+httpServer({ routes, rateLimitStore: redisRateLimitStore({ client: redisClient(), prefix: 'app' }) });
+```
+
+**An IPv6 caller is its `/64`, `As of 2026-11` (v31)** — `@ultimat3/core`'s `addressNetwork(ip)` is the address
+every anonymous key and the failed-credential key count by: IPv4 whole (an IPv4-mapped IPv6 is its
+IPv4), any other IPv6 `<first four hextets>::/64`. One subscriber holds a /64, so the full address
+handed each holder a fresh bucket per request.
 
 The table bounds itself only when something asks it to: `store.purgeExpired(ctx.now().getTime())`
 from a `task` drops every bucket that has refilled to capacity, which is the memory store's forget

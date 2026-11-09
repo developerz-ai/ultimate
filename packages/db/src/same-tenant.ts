@@ -9,7 +9,7 @@ import type {
 } from './entity-shape';
 import { referenceParts } from './foreign-key';
 import { findTable, type IndexDescription, type SchemaDescription } from './introspect';
-import { MAX_IDENTIFIER_BYTES } from './invariant-ddl';
+import { MAX_IDENTIFIER_BYTES } from './sql';
 
 /** How much of a name survives beside its hash: `_` and eight hex characters. */
 const KEPT_BYTES = MAX_IDENTIFIER_BYTES - 9;

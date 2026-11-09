@@ -41,7 +41,9 @@ export interface McpCaller {
   readonly role?: McpRole;
   /**
    * The tenant THIS call acts in, on a `defineAppMcp({ tenant })` server — set by `tenant.ts` for
-   * one call, with `actor` the tenant's. Absent for the connection's own caller. Audited.
+   * one call, with `actor` the tenant's. Absent for the connection's own caller. Audited. The
+   * caller's tenant VALUE (`'acme'`), never the arg NAME it was sent under (`'project'`): the name
+   * belongs to the server, and `ToolRegistry` is where it lives.
    */
   readonly tenant?: string;
 }
@@ -251,6 +253,15 @@ export type ToolResolution =
 
 export class ToolRegistry {
   readonly #tools = new Map<string, AnyMcpTool>();
+  /**
+   * The argument a `defineAppMcp({ tenant })` server reserves on every call — `tenant.arg`, the
+   * NAME, given at construction because no caller carries it. Absent: this registry strips nothing.
+   */
+  readonly #tenantArg: string | undefined;
+
+  constructor(tenantArg?: string) {
+    this.#tenantArg = tenantArg;
+  }
 
   register(tool: AnyMcpTool): this {
     if (this.#tools.has(tool.name)) {
@@ -268,7 +279,9 @@ export class ToolRegistry {
     return this;
   }
 
-  /** Raw lookup with NO gate applied — the resolver owns the gates. */
+  /**
+   * Raw lookup with NO gate applied — the resolver owns the gates.
+   */
   get(name: string): AnyMcpTool | undefined {
     return this.#tools.get(name);
   }
@@ -299,16 +312,37 @@ export class ToolRegistry {
    * Validating before the gates would leak a schema to a caller that may not see the tool;
    * running the policy before the scope gate would decide a refusal from attacker-supplied
    * input. Absent and hidden collapse into ONE branch so the two cannot drift apart.
+   *
+   * Tenancy is decided BEFORE this gate: the server asks `tenantStep` for the call's tenant, which
+   * strips `tenant.arg` and rebuilds the caller, so nothing here ever models it. A call on a
+   * tenant-scoped server that names no tenant is refused there (`McpTenantRequiredError`), ahead
+   * of any tool-specific answer. Built with the reserved name — `new ToolRegistry(tenant.arg)` —
+   * this method strips it too, so a direct caller of `resolve` (the meta surface, an embedder, a
+   * test) cannot smuggle it through. Built with none, nothing is reserved and nothing stripped.
+   *
+   * The key is the NAME this registry was constructed with, never `caller.tenant`: that field is
+   * the VALUE the call chose, so keying the strip on it stripped nothing a real tenant server sends
+   * (`project` arrived, `acme` was stripped) and deleted a legitimate argument whenever one
+   * happened to be named after the renter.
    */
   resolve(name: string, rawArgs: unknown, caller: McpCaller): ToolResolution {
-    const tool = this.#tools.get(name);
-    if (tool === undefined || !visibleToCaller(tool, caller)) {
+    const arg = this.#tenantArg;
+    const isRecord = typeof rawArgs === 'object' && rawArgs !== null && !Array.isArray(rawArgs);
+    // A non-record stays as it is rather than becoming `{}`: validation refuses it as a whole, and
+    // an empty object here would answer a malformed call as an argument-less one.
+    const args =
+      arg === undefined || !isRecord
+        ? rawArgs
+        : withoutKey(rawArgs as Readonly<Record<string, unknown>>, arg);
+    const found = this.#tools.get(name);
+    const tool = found === undefined || !visibleToCaller(found, caller) ? undefined : found;
+    if (tool === undefined) {
       return { kind: 'not-found', name };
     }
     if (tool.scope !== undefined && !caller.scopes.has(tool.scope)) {
       return { kind: 'scope-denied', name, scope: tool.scope };
     }
-    const validation = validateArgs(tool.inputSchema, rawArgs ?? {});
+    const validation = validateArgs(tool.inputSchema, args ?? {});
     if (!validation.ok) return { kind: 'invalid-args', name, issues: validation.issues, tool };
     return { kind: 'ok', tool, args: validation.value };
   }
@@ -322,6 +356,29 @@ export class ToolRegistry {
     if (tool === undefined) return 'write';
     return tool.destructive === false ? 'read' : 'write';
   }
+}
+
+/**
+ * A copy of `args` without `key` — the ONE tenant-arg strip, shared by `tenantStep` (the server
+ * path) and `ToolRegistry.resolve` (a direct caller). Each remaining key lands through
+ * `defineProperty`, so `__proto__` and `constructor` are copied as data and never set the
+ * prototype of the object the schema then validates.
+ */
+export function withoutKey(
+  args: Readonly<Record<string, unknown>>,
+  key: string,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(args)) {
+    if (name === key) continue;
+    Object.defineProperty(out, name, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return out;
 }
 
 /** Convenience constructor for a one-block text result. */

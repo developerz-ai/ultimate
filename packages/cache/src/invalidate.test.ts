@@ -16,63 +16,11 @@ import {
   resetTiers,
 } from './invalidate';
 import { lruTier } from './lru';
-import type { RedisLike } from './redis';
-import { REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT, redisTier } from './redis';
+import { redisTier } from './redis';
+import { fakeRedis } from './redis-fake-fixture';
 import { declareTags, isolateDeclaredTags, knownTags, resetDeclaredTags, tag } from './tags';
 import { bestEffort, recentTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
-
-/**
- * A recorder, never a Lua interpreter. It used to mirror both script bodies in TypeScript, which
- * is why gutting either one left every test here green — the fan-out was asserting against the
- * mirror. `answerEval` is how a test states what the server's script returned; an unprogrammed
- * `EVAL` throws, which `bestEffort` turns into a `report.errors` entry rather than a silent
- * empty bust. `redis.live.test.ts` owns the scripts' own semantics.
- */
-function fakeRedis(): RedisLike & {
-  readonly sent: string[][];
-  answerEval(script: string, reply: unknown): void;
-} {
-  const values = new Map<string, string>();
-  const sent: string[][] = [];
-  // Nothing reads the tag-join's reply, so a constant asserts nothing about that script.
-  const evalReplies = new Map<string, unknown>([[REDIS_TAG_MEMBER_SCRIPT, 1]]);
-  return {
-    sent,
-    answerEval(script, reply) {
-      evalReplies.set(script, reply);
-    },
-    get(key) {
-      return Promise.resolve(values.get(key) ?? null);
-    },
-    set(key, value) {
-      values.set(key, value);
-      return Promise.resolve('OK');
-    },
-    send(command, args) {
-      sent.push([command, ...args]);
-      if (command === 'SET') {
-        values.set(String(args[0]), String(args[1]));
-        return Promise.resolve('OK');
-      }
-      if (command === 'DEL') {
-        values.delete(String(args[0]));
-        return Promise.resolve(1);
-      }
-      if (command === 'EVAL') {
-        const script = String(args[0]);
-        if (!evalReplies.has(script)) {
-          throw new Error(
-            'fake redis cannot execute EVAL — call answerEval(script, reply) to state what the ' +
-              'server returned, or move the claim to redis.live.test.ts, which runs the script',
-          );
-        }
-        return Promise.resolve(evalReplies.get(script));
-      }
-      return Promise.resolve(null);
-    },
-  };
-}
 
 const cdnSpy = (): CacheTier & { readonly purged: string[] } => {
   const purged: string[] = [];
@@ -168,7 +116,6 @@ describe('invalidateTags fan-out', () => {
     await lru.set('feed', ['a'], { tags: [tag('post')] });
     await redis.set('feed', ['a'], { tags: [tag('post')] });
     await lru.set('users', ['u'], { tags: [tag('user')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['x:c:feed']);
 
     const report = await invalidateTags([tag('post')]);
 

@@ -18,6 +18,11 @@ Module order (no cycles):
 `char-count → describe-value → node → builder → money-value → json-value → array-schema →
 validators → record-schema → discriminated-union → provider → t` (`node-fits` and `json-schema` read
 `json-value` too). `record-schema.ts` (`t.record`) split from `validators.ts` at the ceiling.
+`issue-cap.ts` is a leaf (type-only `standard`) read by `builder`, `standard` and every collecting
+loop: **a loop that collects issues asks `stopCollecting(count, hasMore)` after each member**, and a
+union that discards member issues restores `issuesStopped()`. `standard.large.test.ts` pins 10k bad
+items → 100 issues, `issuesTruncated`, ≤ 100 item checks (a work count, never wall time). The cap is ambient module state because builtin
+validation is synchronous; `withIssueCap` is re-entrant and only the outermost run reports.
 `schema-rules.ts` is a leaf (`SCHEMA_RULES`, `issueRuleFacts`), imported by `standard.ts`,
 `errors.ts` (type only) and `builder.ts`. `sensitive.ts` reads `provider.ts` and is not in `t`'s graph.
 

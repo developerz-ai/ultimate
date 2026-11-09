@@ -122,14 +122,32 @@ export function raw(trusted: string): SqlFragment {
 const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]*$/;
 
 /**
+ * NAMEDATALEN - 1: past it Postgres TRUNCATES with a NOTICE and nothing else, so two names sharing
+ * their first 63 bytes address one object. Bytes, not characters. The package's one copy.
+ */
+export const MAX_IDENTIFIER_BYTES = 63;
+
+/**
  * A quoted identifier — the safe answer to the `raw()` temptation. Table and column names
- * cannot be bound as parameters, so they are validated and double-quoted instead.
+ * cannot be bound as parameters, so they are validated and double-quoted instead. Refused: empty,
+ * whitespace, `"`, `\\`, a NUL (the wire protocol cannot carry one), and over 63 bytes.
  */
 export function identifier(name: string): SqlFragment {
-  if (SAFE_IDENTIFIER.test(name)) return raw(`"${name}"`);
-  if (name.length === 0 || /[\s"\\]/.test(name)) throw identifierUnsafe(name);
+  if (SAFE_IDENTIFIER.test(name)) {
+    if (name.length > MAX_IDENTIFIER_BYTES) throw identifierUnsafe(name, tooLong(name));
+    return raw(`"${name}"`);
+  }
+  if (name.length === 0 || /[\s"\\]/.test(name) || name.includes('\u0000')) {
+    throw identifierUnsafe(name);
+  }
+  if (new TextEncoder().encode(name).length > MAX_IDENTIFIER_BYTES) {
+    throw identifierUnsafe(name, tooLong(name));
+  }
   return raw(`"${name}"`);
 }
+
+const tooLong = (name: string): string =>
+  `it is ${String(new TextEncoder().encode(name).length)} bytes, and Postgres truncates an identifier at ${String(MAX_IDENTIFIER_BYTES)} without an error`;
 
 /**
  * The two characters a shell substitutes INSIDE double quotes. Rejected before `identifier` is

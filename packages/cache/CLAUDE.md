@@ -103,29 +103,38 @@ Tier 1. Tagged caching + THE invalidation graph.
 - **A promotion carries the entry's remaining life**, `hit.expiresAt - now`, and drops a hit that
   fails `isExpired`. So every tier's `get` reports `expiresAt`: `redis.ts` reads `PTTL` pipelined
   with the `GET` (server clock). `-1`/`-2` are sentinels, and `PTTL: -2` beside a returned value is a MISS.
-- **`t:` is the TAG's bucket and `e:` is the ENTITY index; one key is never both.**
-  `writeBucketsFor` joins the declared tag plus `e:{entity}`; `bustBucketsFor` reads the index for a
-  collection bust and `t:{entity}:<id>` + `t:{entity}` for a row one. A row bust still `SREM`s what
-  it deleted from the index (`sweepBucketsFor`). Pinned by `tier-parity.test.ts` and
-  `redis.live.test.ts`.
+- **`t2:` is the TAG's bucket and `e2:` is the ENTITY index; one key is never both**
+  (`redis-buckets.ts`). `writeBucketsFor` joins the declared tag plus `e2:{entity}`;
+  `bustBucketsFor` reads the index for a collection bust and `t2:{entity}:<id>` + `t2:{entity}` for
+  a row one. `sweepBucketsFor` (what a bust `ZREM`s from) is a superset: a row bust cleans the index
+  it never reads. Pinned by `tag-parity.test.ts`, `tier-parity.test.ts` and `redis.live.test.ts`.
+- **A bucket is a sorted set scored `expiry + TAG_GRACE_MS` (writer's clock), and every join prunes
+  `-inf (now`** — so it holds live keys only (`redis-tag-bound.test.ts`). The grace absorbs clock
+  skew between pods; never score by the bare expiry. Changing the layout bumps the segment (`t2`)
+  rather than migrating.
 - **Every tier stores codec TEXT, never the caller's object** (`value-codec.ts`: JSON + tagged
   `Date`/`bigint`/`Map`/`Set`, app `$x` keys escaped). One shape whichever tier hit, no shared
   mutable reference; a cycle, depth > 512 or a bigint > 4096 chars is `X_CACHE_VALUE_UNENCODABLE`
   at the write. Only `x1:`-marked text is revived; unmarked (pre-codec) is plain `JSON.parse`.
 - **`CacheTier.set` REJECTS, never throws synchronously** — `lruTier`/`memoTier` are
   `async` for that alone.
-- **`redis.ts`'s script deletes NOTHING — it reads.** It returns the members; the tier `DEL`s them
-  client-side one key at a time (slot-local on Cluster/Dragonfly) and `SREM`s only what
-  `Promise.allSettled` says died, so a refused `DEL` stays findable for the retry.
+- **A bust has no script.** `readBucket` pages `ZSCAN … COUNT 1000` — never a score/offset
+  cursor: a concurrent prune of a read tie group, or a re-write re-scoring a read tie member, shifts
+  an offset past live keys. `ZSCAN` returns every member present for the whole scan (the fake's
+  `ZSCAN` keeps exactly that guarantee and nothing stronger); `unlinkAll` `UNLINK`s one key per command; `sweepBuckets` `ZREM`s only what
+  `Promise.allSettled` says died, 8 commands in flight, so a refused `UNLINK` stays findable for the
+  retry. 10k members ≤ 100 sequential round trips (`roundTrips` in the fixture counts them).
 - **A `set` joins its buckets BEFORE it writes the value, and re-checks membership after**; only a
-  literal `0` from `SISMEMBER` counts as busted-in-the-air (`saysAbsent`).
-- **Tag keys carry a `{entity}` hash tag and `invalidateTags` issues one script call per tag**, so
-  no command's `KEYS` ever spans two hash tags.
-- **Every tag set carries a lease that only grows** — `TAG_MEMBER_SCRIPT` does `SADD` + `EXPIRE` in
-  one call (`GT` alone leaves a fresh bucket immortal).
-- **A fake cannot run Lua, so it must never pretend to.** The fakes are recorders; a test reading a
-  script's reply states it with `answerEval(script, reply)`, and an unprogrammed `EVAL` throws.
-  Every claim about what a script DOES belongs in `redis.live.test.ts`.
+  literal `null` from `ZSCORE` counts as busted-in-the-air (`lostMembership`).
+- **Every command the tier sends names ONE key** (the lease `EVAL` included), and bucket keys carry
+  a `{entity}` hash tag — slot-local on Redis Cluster and Dragonfly by construction.
+- **Every tag set carries a lease that only grows** — `REDIS_TAG_LEASE_SCRIPT`, the tier's one
+  script (`GT` alone leaves a fresh bucket immortal).
+- **`redisTier({ maxValueBytes })`, default 1 MiB of encoded UTF-8, is `X_CACHE_TOO_LARGE`** —
+  checked after encoding, before any bucket is joined; the LRU's `maxBytes`, on the shared rung.
+- **The fake holds plain commands as state and never runs Lua** (`redis-fake-fixture.ts`): values,
+  sorted sets, `UNLINK`. An `EVAL` other than the lease script throws. Every claim about what a
+  script DOES belongs in `redis.live.test.ts`.
 - **The Redis namespace carries the build id by default** (`namespaceFor`, `appVersion()`);
   `buildId: null` opts out. Changing the layout is a cold cache.
 - **Redis down is a slow miss, never a hang** (`redis-deadline.ts`). Every value-path command gets
@@ -177,12 +186,13 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `tier-leading.ts` | which fence each in-flight load holds, and whether a reader may join it |
 | `tier-fence.ts` | `TierFence`/`FenceVerdict`, and how a fill samples and asks a shared tier's fence |
 | `redis-fence.ts` | the leased generation keys a bust writes and a fill watches |
+| `redis-buckets.ts` | the tag → keys sorted-set layout: join + prune + lease, paged read, `UNLINK`, sweep |
 | `set-options.ts` | how two callers' `CacheSetOptions` combine, and the `null`-load TTL |
 | `tier-failures.ts` | `bestEffort()`, and the bounded log of refusals it absorbs |
 | `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `value-codec.ts` | the one value encoding every tier stores and decodes |
-| `redis.ts` | the shared tier over core's `redisClient()` (`@ultimat3/core/redis`, never `Bun.redis`), build-namespaced keys, hash-tagged buckets, one script call per tag |
+| `redis.ts` | the shared tier over core's `redisClient()` (`@ultimat3/core/redis`, never `Bun.redis`), build-namespaced keys, the value budget, the write/bust order |
 | `redis-deadline.ts` | `withinDeadline`: a per-command deadline (150 ms, `commandTimeoutMs`), a 5 s park of the value path after one is missed, and the bust view that skips the park on its own 1,000 ms |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, `surrogateKeys`, the purge key list, the `PurgeDriver` seam |
 | `purge-http.ts` | the HTTP half both remote drivers share: one POST, batching, key guard, and core's retryable table re-exported |

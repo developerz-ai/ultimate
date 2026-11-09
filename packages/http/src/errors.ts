@@ -6,6 +6,7 @@ import { deniedCallerFix, renderFixShellArg, renderThrowable, UltimateError } fr
 // `sideEffects` lists, imported bare here and from the barrel — so this module is side-effect-free
 // and a chunk keeps only the classes it constructs. Re-exported: every name still reads from here.
 import './error-titles';
+import { routineRefusal } from './error-log-level';
 import { HTTP_OWNED_ERROR_CODES } from './error-titles';
 
 export {
@@ -143,12 +144,15 @@ export const bearerMountInvalid = (prefix: string, reason: string): HttpError =>
     fix: "declare mounts: [{ prefix: '/v1', scopes: { 'cases:read': ['caseList'] }, resolveToken }] in defineApi({ http }) — a prefix of lowercase segments that is not /api or /_x, naming only registered actions and queries (x routes --json lists them)",
   });
 
+/** No actor on a required route: the routine login wall, logged at `info` (`routineRefusal`). */
 export const unauthenticated = (pathname: string): HttpError =>
-  new HttpError({
-    code: 'X_UNAUTHENTICATED',
-    cause: `${pathname} declares auth: 'required' and no actor was resolved`,
-    fix: "send a session cookie or Authorization header, or set meta.auth to 'public'",
-  });
+  routineRefusal(
+    new HttpError({
+      code: 'X_UNAUTHENTICATED',
+      cause: `${pathname} declares auth: 'required' and no actor was resolved`,
+      fix: "send a session cookie or Authorization header, or set meta.auth to 'public'",
+    }),
+  );
 
 /**
  * `x policy explain` resolves a policy SUBJECT — a permission, an action name or a query name.

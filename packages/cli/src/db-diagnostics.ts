@@ -59,6 +59,9 @@ export function renderDiagnostics(report: DbDiagnostics): readonly string[] {
   });
 }
 
+/** The whole `x db diagnostics` budget on an embedded database, its cold boot included. */
+export const EMBEDDED_DIAGNOSTICS_DEADLINE_MS = 30_000;
+
 /**
  * `startDb`, not `startQueue`: the queue's boot applies the framework tables, and a diagnostic
  * must write nothing. An embedded database `x dev` holds is refused rather than opened twice:
@@ -87,7 +90,11 @@ export async function runDiagnostics(ctx: CommandContext, root: string): Promise
   }
   const started = startDb(services, ctx.env);
   try {
-    const report = await dbDiagnostics({ client: started.client, limit });
+    // Embedded, the probe IS the boot — a WASM compile and an initdb, 12.6 s cold under coverage —
+    // so the 3 s probe wait answered a healthy database X_DB_UNAVAILABLE. A server keeps the default.
+    const deadlineMs =
+      services.db.mode === 'embedded' ? EMBEDDED_DIAGNOSTICS_DEADLINE_MS : undefined;
+    const report = await dbDiagnostics({ client: started.client, limit, deadlineMs });
     const sections = Object.values(report);
     return {
       ok: true,

@@ -14,7 +14,9 @@ name: deploy-docs-site
 # Triggered as deploy-social-demo.yml is: by ci.yml FINISHING green on main, for exactly the
 # commit it judged, or by hand. Never by a push or a pull request of its own.
 on:
-  workflow_run:
+  # Not the insecure shape: every job is gated on `workflow_run.event == 'push'`
+  # from this repository, so no fork's pull request reaches it.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [ci]
     types: [completed]
     branches: [main]
@@ -51,7 +53,10 @@ jobs:
 
       # Only a commit ON main publishes: a dispatch from a branch builds that branch, and its
       # pages would replace the manual every visitor reads. Fails closed on an API error.
+      # The commit is handed on as a step OUTPUT, never through $GITHUB_ENV: an env-file write in a
+      # workflow_run job is code a later step's shell runs (zizmor's github-env).
       - name: on main
+        id: on-main
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -62,7 +67,7 @@ jobs:
             echo "::error::${sha} is not on main (${ahead} commit(s) main does not have) — not publishing. Dispatch this workflow from main."
             exit 1
           fi
-          echo "SHA=${sha}" >> "$GITHUB_ENV"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
       # The docs site's own gate on THIS commit — deploy-social-demo.yml's read, for this app's
       # check: success, or every check under the job name skipped beside a green `tested` (a tree
@@ -70,6 +75,7 @@ jobs:
       - name: require the app gate's verdict for this commit
         env:
           GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.on-main.outputs.sha }}
           CHECK: reference-app-verify (dummy/docs-site)
           REUSED_BY: tested
         run: |

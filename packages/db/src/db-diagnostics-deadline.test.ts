@@ -89,4 +89,45 @@ describe('dbDiagnostics deadlines', () => {
       code: 'X_DB_UNAVAILABLE',
     });
   });
+
+  // A cold embedded database boots inside the probe — a WASM compile and an initdb, 12.6 s under
+  // coverage in CI — so a caller that knows it is cold widens the probe's wait, not a section's.
+  test('deadlineMs widens the probe: the section deadline no longer ends it, deadlineMs does', async () => {
+    const client = hanging('select 1');
+    const clock = manualSchedule();
+    let settled = false;
+    const pending = dbDiagnostics({ client, schedule: clock.schedule, deadlineMs: 30_000 }).finally(
+      () => {
+        settled = true;
+      },
+    );
+    pending.catch(() => undefined);
+    await settle();
+    clock.fire(DIAGNOSTICS_SECTION_DEADLINE_MS);
+    await settle();
+    expect(settled).toBe(false);
+    clock.fire(30_000);
+    expect(await pending.catch((error: unknown) => error)).toMatchObject({
+      code: 'X_DB_UNAVAILABLE',
+    });
+  });
+
+  test('deadlineMs is the whole command: sections past it are not sent', async () => {
+    const client = hanging('pg_blocking_pids');
+    const clock = manualSchedule();
+    const pending = dbDiagnostics({ client, schedule: clock.schedule, deadlineMs: 30_000 });
+    await settle();
+    clock.fire(30_000);
+    clock.fire(DIAGNOSTICS_SECTION_DEADLINE_MS);
+    const report = await pending;
+    if (report.activity.available) return expect.unreachable('not sent past the deadline');
+    expect(report.activity.reason).toContain('30000ms deadline');
+  });
+
+  test.each([0, -1, 1.5, Number.NaN])('deadlineMs %p is refused unsent', async (deadlineMs) => {
+    const client = hanging('never');
+    const error = await dbDiagnostics({ client, deadlineMs }).catch((thrown: unknown) => thrown);
+    expect(error).toMatchObject({ code: 'X_INVARIANT' });
+    expect(client.texts).toEqual([]);
+  });
 });

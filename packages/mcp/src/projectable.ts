@@ -94,11 +94,11 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
       ? {}
       : { outputJsonSchema: output, ...(single ? {} : { outputWrap: 'rows' }) }),
     mutates: false,
-    // `sourceFor`'s opening gate, on the surface it runs on ('server'), asked before `invalid-args`.
+    // `sourceFor`'s opening gate, on the surface `run` passes it ('mcp'), asked before `invalid-args`.
     admit: (actor: Actor) =>
       asCallerContext(actor, () => {
         const ctx = useContext();
-        guardQueryBeforeInput(target.policy, { actor: actorOf(ctx), ctx, query: name }, 'server');
+        guardQueryBeforeInput(target.policy, { actor: actorOf(ctx), ctx, query: name }, 'mcp');
       }),
     run: ({ input, actor }) =>
       asCallerContext(actor, async () => {

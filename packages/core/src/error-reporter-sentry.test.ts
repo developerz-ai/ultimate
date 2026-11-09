@@ -254,3 +254,140 @@ describe('sentryErrorReporter', () => {
     }).not.toThrow();
   });
 });
+
+/**
+ * The hooks an adopter wrote 881 lines around: scrub by value, drop by code, group their own way,
+ * sample. Each is a function of the report or the event — no vendor SDK, no global.
+ */
+describe('sentryErrorReporter hooks', () => {
+  const capture = () => {
+    const bodies: string[] = [];
+    const fetch = (async (_url: string, init: RequestInit) => {
+      bodies.push(String(init.body));
+      return new Response('', { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    return { bodies, fetch };
+  };
+  const dsn = 'https://abc123@errors.example.com/42';
+  const eventOf = (body: string | undefined): Record<string, unknown> =>
+    JSON.parse(body?.split('\n')[2] ?? 'null') as Record<string, unknown>;
+
+  test('beforeSend returning null sends nothing', async () => {
+    const { bodies, fetch } = capture();
+    const reporter = sentryErrorReporter({ dsn, fetch, beforeSend: () => null });
+    reporter.report(report());
+    await Promise.resolve();
+    expect(bodies).toHaveLength(0);
+  });
+
+  test('beforeSend may rewrite the event, and the envelope carries the rewrite', async () => {
+    const { bodies, fetch } = capture();
+    const reporter = sentryErrorReporter({
+      dsn,
+      fetch,
+      beforeSend: (event) => ({ ...event, extra: { scrubbed: true } }),
+    });
+    reporter.report(report());
+    await Promise.resolve();
+    expect(eventOf(bodies[0])['extra']).toEqual({ scrubbed: true });
+    // The item header's `length` is the REWRITTEN payload's, or the monitor rejects the envelope.
+    const [, item, payload] = (bodies[0] ?? '').split('\n');
+    const declared = (JSON.parse(item ?? '{}') as { length?: number }).length;
+    expect(declared).toBe(new TextEncoder().encode(payload).length);
+  });
+
+  test('a beforeSend that throws drops the event rather than sending it unscrubbed', async () => {
+    const { bodies, fetch } = capture();
+    const reporter = sentryErrorReporter({
+      dsn,
+      fetch,
+      beforeSend: () => {
+        throw new UltimateError({ code: 'X_ENVELOPE_FIXTURE', cause: 'scrubber bug', fix: 'none' });
+      },
+    });
+    expect(() => reporter.report(report())).not.toThrow();
+    await Promise.resolve();
+    expect(bodies).toHaveLength(0);
+  });
+
+  // A hook's output is the adopter's value, so serialising it can throw — a `bigint`, a cycle. That
+  // threw out of `report()`, which runs inside every failure path's catch.
+  test('an event beforeSend made unserialisable is dropped, never thrown', async () => {
+    const { bodies, fetch } = capture();
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    for (const extra of [{ big: 1n }, cyclic]) {
+      const reporter = sentryErrorReporter({
+        dsn,
+        fetch,
+        beforeSend: (event) => ({ ...event, extra }),
+      });
+      expect(() => reporter.report(report())).not.toThrow();
+    }
+    const grouped = sentryErrorReporter({
+      dsn,
+      fetch,
+      fingerprint: () => [1n as unknown as string],
+    });
+    expect(() => grouped.report(report())).not.toThrow();
+    await Promise.resolve();
+    expect(bodies).toHaveLength(0);
+  });
+
+  test('ignore(code) drops that code and only that code', async () => {
+    const { bodies, fetch } = capture();
+    const seen: string[] = [];
+    const reporter = sentryErrorReporter({
+      dsn,
+      fetch,
+      ignore: (code) => {
+        seen.push(code);
+        return code === 'X_ENVELOPE_FIXTURE';
+      },
+    });
+    reporter.report(report());
+    await Promise.resolve();
+    expect(seen).toEqual(['X_ENVELOPE_FIXTURE']);
+    expect(bodies).toHaveLength(0);
+    const keep = sentryErrorReporter({ dsn, fetch, ignore: (code) => code === 'X_OTHER' });
+    keep.report(report());
+    await Promise.resolve();
+    expect(bodies).toHaveLength(1);
+  });
+
+  test('fingerprint lands in the envelope in place of the default', async () => {
+    const { bodies, fetch } = capture();
+    const reporter = sentryErrorReporter({
+      dsn,
+      fetch,
+      fingerprint: (event) => ['tenant-a', event.code],
+    });
+    reporter.report(report());
+    await Promise.resolve();
+    expect(eventOf(bodies[0])['fingerprint']).toEqual(['tenant-a', 'X_ENVELOPE_FIXTURE']);
+  });
+
+  test('sampleRate 0 sends nothing; 1 sends everything; between, the roll decides', async () => {
+    const { bodies, fetch } = capture();
+    sentryErrorReporter({ dsn, fetch, sampleRate: 0 }).report(report());
+    await Promise.resolve();
+    expect(bodies).toHaveLength(0);
+    sentryErrorReporter({ dsn, fetch, sampleRate: 1 }).report(report());
+    await Promise.resolve();
+    expect(bodies).toHaveLength(1);
+    const half = (roll: number) =>
+      sentryErrorReporter({ dsn, fetch, sampleRate: 0.5, random: () => roll });
+    half(0.49).report(report());
+    half(0.5).report(report());
+    await Promise.resolve();
+    expect(bodies).toHaveLength(2);
+  });
+
+  test('a sampleRate outside 0..1 is refused at wiring time', () => {
+    for (const sampleRate of [-0.1, 1.5, Number.NaN]) {
+      expect(() => sentryErrorReporter({ dsn, sampleRate })).toThrow(
+        expect.objectContaining({ code: 'X_CONFIG_INVALID' }),
+      );
+    }
+  });
+});

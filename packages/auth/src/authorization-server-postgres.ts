@@ -137,6 +137,7 @@ export function postgresAuthServerStore(options: PostgresAuthServerStoreOptions)
         c.expiresAt,
       ]);
     },
+    getCode: (hash) => first(SQL.SQL_OAUTH_CODE_GET, [hash], toCode),
     async takeCode(hash, at) {
       const taken = await first(SQL.SQL_OAUTH_CODE_TAKE, [hash, at], toCode);
       if (taken !== null) return { code: { ...taken, usedAt: null }, fresh: true };
@@ -208,10 +209,11 @@ export function postgresAuthServerStore(options: PostgresAuthServerStoreOptions)
           : [hash, 'denied', null, null, at],
         toDevice,
       ),
-    async pollDevice(hash, at) {
+    async pollDevice(hash, clientId, at) {
       // Two polls racing may both read the old stamp: harmless, `consumeDevice` is the single use.
       const device = await first(SQL.SQL_OAUTH_DEVICE_GET, [hash], toDevice);
-      if (device !== null) await rows(SQL.SQL_OAUTH_DEVICE_POLLED, [hash, at]);
+      if (device === null || device.clientId !== clientId) return null;
+      await rows(SQL.SQL_OAUTH_DEVICE_POLLED, [hash, at]);
       return device;
     },
     async consumeDevice(hash) {

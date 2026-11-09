@@ -1,7 +1,7 @@
 // Single responsibility: the two person-grant legs of `POST /oauth/token` — a code for tokens
-// (RFC 6749 §4.1.3 + PKCE) and a refresh token for new ones (§6, OAuth 2.1 rotation). The rules:
-// a code is single use and its replay revokes what it minted; a retired refresh token's replay
-// revokes the whole grant; the redirect and the resource must be the ones the code was bound to.
+// (RFC 6749 §4.1.3 + PKCE) and a refresh token for new ones (§6, OAuth 2.1 rotation). A code is
+// spent only by a request that could redeem it, and its replay revokes what it minted; a retired
+// refresh token's replay revokes the whole grant.
 
 import type { ResolvedAuthServerConfig } from './authorization-server-config';
 import {
@@ -30,28 +30,33 @@ export async function exchangeCode(
     return refused('invalid_request', 'code and code_verifier are required');
   }
   const now = config.clock.now();
-  const taken = await config.store.takeCode(sha256Hex(code), now);
-  if (taken === null) return invalidGrant('the code is unknown');
-  const record = taken.code;
-  if (!taken.fresh) {
-    // Somebody holds a copy of a code that was already redeemed: whatever it minted is suspect.
-    await config.store.revokeGrant(record.grantId, now);
-    config.emit({ kind: 'code-replayed', clientId: record.clientId });
-    return invalidGrant('the code was already used; the grant it minted is revoked');
-  }
-  if (record.clientId !== client.clientId)
+  const hash = sha256Hex(code);
+  // Read, check, THEN spend: a request that could not have redeemed the code — another client, no
+  // verifier, another redirect — must neither burn it nor trip the replay revocation below.
+  const record = await config.store.getCode(hash);
+  if (record === null) return invalidGrant('the code is unknown');
+  if (record.clientId !== client.clientId) {
     return invalidGrant('the code was issued to another client');
-  if (record.expiresAt.getTime() <= now.getTime()) return invalidGrant('the code expired');
-  if (form.get('redirect_uri') !== record.redirectUri) {
-    return invalidGrant('redirect_uri is not the one the code was issued for');
   }
   if (!pkceMatches(verifier, record.codeChallenge)) {
     return invalidGrant('the code_verifier does not match the code_challenge');
+  }
+  if (form.get('redirect_uri') !== record.redirectUri) {
+    return invalidGrant('redirect_uri is not the one the code was issued for');
   }
   const resource = form.get('resource');
   if (resource !== undefined && resource !== record.resource) {
     return refused('invalid_target', 'the resource is not the one the grant is bound to');
   }
+  const taken = await config.store.takeCode(hash, now);
+  if (taken === null) return invalidGrant('the code is unknown');
+  if (!taken.fresh) {
+    // A second holder of the code AND its verifier: whatever it minted is suspect.
+    await config.store.revokeGrant(record.grantId, now);
+    config.emit({ kind: 'code-replayed', clientId: record.clientId });
+    return invalidGrant('the code was already used; the grant it minted is revoked');
+  }
+  if (record.expiresAt.getTime() <= now.getTime()) return invalidGrant('the code expired');
   const grant = await config.store.getGrant(record.grantId);
   if (grant === null || grant.revokedAt !== null) return invalidGrant('the grant is revoked');
   const refresh = await firstRefresh(config, grant.id);

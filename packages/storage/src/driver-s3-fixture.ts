@@ -4,6 +4,7 @@
 // fake — two fakes drifting apart would be two providers, agreeing only by construction.
 
 import type { S3ClientLike, S3FileLike, S3ListResultLike, S3StatLike } from './driver-s3-client';
+import { copyObjectAnswer, headAnswer, partCopyBytes, xmlError } from './driver-s3-copy-fixture';
 import type { S3FetchLike } from './driver-s3-signed';
 import { isStorageError, objectNotFound } from './errors';
 
@@ -41,15 +42,6 @@ const md5Of = (bytes: Uint8Array): string =>
   new Bun.CryptoHasher('md5').update(bytes).digest('hex');
 
 export const FAKE_ENV = { S3_ACCESS_KEY_ID: 'fake-id', S3_SECRET_ACCESS_KEY: 'fake-secret' };
-
-const xmlError = (code: string, message: string, status: number): Response =>
-  new Response(
-    `<?xml version="1.0"?><Error><Code>${code}</Code><Message>${message}</Message></Error>`,
-    {
-      status,
-      headers: { 'content-type': 'application/xml' },
-    },
-  );
 
 export interface PresignCall {
   key: string;
@@ -152,6 +144,8 @@ export class FakeS3Client implements S3ClientLike {
   readonly locks = new Map<string, FakeLock>();
   /** Per-key user metadata and cache-control, as recorded from the signed PUT's headers. */
   readonly headersOf = new Map<string, Readonly<Record<string, string>>>();
+  /** The etag rule the copy answers compare an `if-match` against. */
+  readonly etagOf = fakeEtagOf;
   /** A bucket created WITHOUT Object Lock: every `?retention` read is `InvalidRequest`. */
   lockDisabled = false;
   /** A refused lock READ — a denied `s3:GetObjectRetention`. */
@@ -198,25 +192,12 @@ export class FakeS3Client implements S3ClientLike {
     };
     const multipart = this.multipartAnswer(parsed, key, init);
     if (multipart !== undefined) return multipart;
-    if (init.method === 'GET' && parsed.search === '' && init.headers['range'] !== undefined) {
-      return this.rangedGet(key, init.headers['range']);
-    }
+    if (init.method === 'HEAD') return headAnswer(this, key, init.headers);
+    if (init.method === 'GET' && parsed.search === '') return this.objectGet(key, init.headers);
     if (init.method === 'PUT') {
       if (this.failWriteWith !== undefined) return asXml(this.failWriteWith);
       const headers = init.headers;
-      const copied = headers['x-amz-copy-source'];
-      if (copied !== undefined) {
-        const from = decodeURIComponent(copied).split('/').slice(2).join('/');
-        const source = this.store.get(from);
-        if (source === undefined) {
-          return xmlError('NoSuchKey', 'The specified key does not exist.', 404);
-        }
-        if (fakeEtagOf(source) !== headers['x-amz-copy-source-if-match']) {
-          return xmlError('PreconditionFailed', 'At least one precondition failed', 412);
-        }
-        this.store.set(key, { ...source, bytes: source.bytes.slice() });
-        return new Response('<CopyObjectResult></CopyObjectResult>');
-      }
+      if (headers['x-amz-copy-source'] !== undefined) return copyObjectAnswer(this, key, headers);
       const stored = init.body ?? new Uint8Array();
       this.store.set(key, {
         bytes: stored,
@@ -301,11 +282,14 @@ export class FakeS3Client implements S3ClientLike {
       if (this.failPartWith !== undefined) return refusal(this.failPartWith);
       if (this.partAnswersNoEtag) return new Response(null, { status: 200 });
       const number = Number(url.searchParams.get('partNumber'));
-      upload.parts.set(number, init.body ?? new Uint8Array());
-      return new Response(null, {
-        status: 200,
-        headers: { etag: `"${md5Of(init.body ?? new Uint8Array())}"` },
-      });
+      const plain = init.headers['x-amz-copy-source'] === undefined;
+      const bytes = plain ? (init.body ?? new Uint8Array()) : partCopyBytes(this, init.headers);
+      if (bytes instanceof Response) return bytes;
+      upload.parts.set(number, bytes);
+      // UploadPartCopy answers its etag in the body, UploadPart in a header.
+      return plain
+        ? new Response(null, { status: 200, headers: { etag: `"${md5Of(bytes)}"` } })
+        : new Response(`<CopyPartResult><ETag>&quot;${md5Of(bytes)}&quot;</ETag></CopyPartResult>`);
     }
     if (this.failCompleteWith !== undefined) {
       // What S3 really does: the 200 is already sent when the Complete fails.
@@ -329,6 +313,19 @@ export class FakeS3Client implements S3ClientLike {
     this.store.set(key, { bytes, type: upload.type, etag });
     this.uploads.delete(uploadId);
     return new Response('<CompleteMultipartUploadResult></CompleteMultipartUploadResult>');
+  }
+
+  /** A signed GET: `If-Match` first (412 for another revision), then ranged or whole. */
+  private objectGet(key: string, headers: Readonly<Record<string, string>>): Response {
+    const entry = this.store.get(key);
+    const ifMatch = headers['if-match'];
+    if (entry !== undefined && ifMatch !== undefined && fakeEtagOf(entry) !== ifMatch) {
+      return xmlError('PreconditionFailed', 'At least one precondition failed', 412);
+    }
+    const range = headers['range'];
+    if (range !== undefined) return this.rangedGet(key, range);
+    if (entry === undefined) return xmlError('NoSuchKey', 'The specified key does not exist.', 404);
+    return new Response(entry.bytes.slice(), { headers: { etag: fakeEtagOf(entry) } });
   }
 
   /**

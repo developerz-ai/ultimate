@@ -3,7 +3,12 @@
  * A money bug that throws is a bug you can fix; one that rounds is a bug you ship.
  */
 
-import { registerErrorCodes, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import {
+  registerErrorCodes,
+  renderCauseValue,
+  renderFixLiteral,
+  UltimateError,
+} from '@ultimat3/core';
 import { isCurrencyCode, MAX_MONEY_SCALE } from '@ultimat3/schema';
 
 export const MONEY_ERROR_CODES = [
@@ -16,6 +21,7 @@ export const MONEY_ERROR_CODES = [
   'X_RATE_MISSING',
   'X_MONEY_SCALE_INVALID',
   'X_MONEY_INPUT_INVALID',
+  'X_MONEY_NOT_DECIMAL',
 ] as const;
 
 export type MoneyErrorCode = (typeof MONEY_ERROR_CODES)[number];
@@ -30,6 +36,7 @@ export const MONEY_ERROR_TITLES: Readonly<Record<MoneyErrorCode, string>> = {
   X_RATE_MISSING: 'no FX rate for the pair',
   X_MONEY_SCALE_INVALID: 'a Money.scale that is not a usable decimal exponent',
   X_MONEY_INPUT_INVALID: 'a typed amount could not be read in this locale',
+  X_MONEY_NOT_DECIMAL: 'a fromDecimal input that is not a plain decimal string',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -242,10 +249,20 @@ export function rescaleNotExact(
   });
 }
 
-export function decimalNotNumeric(value: string, currency: string): MoneyError {
+/**
+ * A `fromDecimal` input that is not a plain decimal string: a parse failure, so its own code — the
+ * value never reached the point where "a fractional minor" could describe it. `unknown` because a
+ * JSON body hands over a number as readily as a string, and the input is rendered bounded and on
+ * one line: it is caller text of any length.
+ */
+export function decimalNotNumeric(value: unknown, currency: string): MoneyError {
+  const shown = renderCauseValue(value);
   return new MoneyError({
-    code: 'X_MONEY_NOT_INTEGER',
-    cause: `"${value}" is not a decimal amount — no grouping separators, no exponent notation`,
+    code: 'X_MONEY_NOT_DECIMAL',
+    cause:
+      typeof value === 'string'
+        ? `${shown} is not a decimal amount — no grouping separators, no exponent notation`
+        : `${shown} is not a string — fromDecimal reads a decimal string, never a ${value === null ? 'null' : typeof value}`,
     fix: `pass a plain decimal string: fromDecimal('12.99', ${codeLiteral(currency)})`,
   });
 }
@@ -318,6 +335,19 @@ export function allocationInvalid(cause: string): MoneyError {
     code: 'X_ALLOCATION_INVALID',
     cause,
     fix: 'pass a positive integer part count, or ratios that are finite, non-negative and not all zero',
+  });
+}
+
+/**
+ * A rate for the pair that cannot be used: a non-positive or non-finite `rate`, an `at` that is not
+ * a valid `Date`, a `ratio` whose terms are not positive bigints. No usable rate is a missing rate —
+ * the same code — but the cause names the field, so the provider's bug is findable.
+ */
+export function rateUnusable(from: string, to: string, field: string): MoneyError {
+  return new MoneyError({
+    code: 'X_RATE_MISSING',
+    cause: `the ${from}→${to} rate cannot be used: its \`${field}\` is not valid`,
+    fix: `convert(amount, ${codeLiteral(to)}, { from: ${codeLiteral(from)}, to: ${codeLiteral(to)}, rate: 0.92, at: new Date('2026-03-14T00:00:00Z') })   # a finite positive rate, a valid Date, and a ratio of positive bigints if any`,
   });
 }
 

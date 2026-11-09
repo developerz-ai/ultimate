@@ -53,7 +53,7 @@ export interface S3Refusal {
 }
 
 export interface S3SignedRequest {
-  readonly method: 'GET' | 'PUT' | 'POST' | 'DELETE';
+  readonly method: 'GET' | 'HEAD' | 'PUT' | 'POST' | 'DELETE';
   readonly key: string;
   /** A sub-resource such as `retention` — sent and signed as `?retention=`. */
   readonly subresource?: string | undefined;

@@ -19,38 +19,23 @@ Tier 2 is optional per entry (`local: false` for large or per-tenant-unbounded v
 
 ### Tier 3's key layout is the portability
 
-The shared tier speaks five commands — `GET`, `SET … EX`, `SADD`, `DEL`, `SMEMBERS` — plus two scripts ([`packages/cache/src/redis.ts`](../../packages/cache/src/redis.ts)). Every constraint the tier used to fail is answered by the key shape rather than by a server setting, `As of 2026-08`:
+The shared tier speaks plain single-key commands — `GET`, `SET … PX`, `PTTL`, `ZADD`, `ZREMRANGEBYSCORE`, `ZSCAN`, `ZSCORE`, `ZREM`, `UNLINK` — plus one lease script ([`packages/cache/src/redis-buckets.ts`](../../packages/cache/src/redis-buckets.ts)). Every constraint the tier used to fail is answered by the key shape rather than by a server setting, `As of 2026-11`:
 
 | Key | Shape | Why that shape |
 |---|---|---|
 | namespace | `<prefix>:<buildId>` — `x:dev` locally, `x:<APP_VERSION>` deployed | two builds sharing one Redis never read each other's payloads. `JSON.parse` does not validate, so an old pod reading a renamed field back gets `undefined` on half the fleet for the length of a rolling deploy. `buildId: null` opts out, for a team that versions its own payloads |
-| value | `<ns>:c:<key>` | |
-| collection tag bucket | `<ns>:t:{<entity>}` | `{entity}` is a Redis Cluster **hash tag** |
-| row tag bucket | `<ns>:t:{<entity>}:<id>` | the same hash tag, so a row's bucket and its collection's bucket land in one slot and one script may take both |
+| value | `<ns>:c:<key>` | capped at `maxValueBytes` (1 MiB) |
+| collection tag bucket | `<ns>:t2:{<entity>}` | `{entity}` is a Redis Cluster **hash tag** |
+| row tag bucket | `<ns>:t2:{<entity>}:<id>` | the same hash tag, so a row's bucket and its collection's land in one slot |
+| entity index | `<ns>:e2:{<entity>}` | every key of the entity — what a collection bust reads; a row bust never does |
 
-The invalidation script touches only the buckets it was handed, and returns the value keys instead of deleting them:
-
-```lua
-local removed = {}
-for i, tagKey in ipairs(KEYS) do            -- the tag SETS are declared
-  local members = redis.call('SMEMBERS', tagKey)
-  for _, key in ipairs(members) do
-    table.insert(removed, key)              -- the VALUE keys go back to the caller
-  end
-  redis.call('DEL', tagKey)
-end
-return removed
-```
-
-`invalidateTags` issues **one call per tag**, never one for the batch, so every key of a call shares one `{entity}`; the tier then drops each value key client-side, one key per `DEL`, which is slot-local whatever the topology. Round trips equal distinct tags, all under one `Promise.all`.
+A bucket is a **sorted set scored by its member's expiry plus a 60 s skew grace**. Every write joins it, prunes everything already past its score, and grows its lease — so a bucket holds live keys only, whether or not anything ever busts it. A bust reads its buckets with `ZSCAN`, ~1,000 members a page — every member present for the whole scan comes back, whatever a concurrent write prunes or re-scores — `UNLINK`s each value key on its own, and `ZREM`s exactly what died. No command names two keys, so no command can be `CROSSSLOT`; 10k members clear in 25 sequential round trips.
 
 | Engine | Result |
 |---|---|
-| Redis / Valkey, single node | works — this is the tested path |
-| **Dragonfly** | works — every key a script touches is declared, so `CheckKeysDeclared()` is satisfied and `allow-undeclared-keys`, whose price is a global lock per invalidation, is not needed |
-| **Cluster mode** — Redis Cluster, Dragonfly `--cluster_mode=yes` | **satisfied by construction** `As of 2026-08`: every key of every call hashes on one `{entity}`. Asserted by [`redis.test.ts`](../../packages/cache/src/redis.test.ts) against the emitted keys — no test runs against a real cluster node, so treat it as unmeasured, not unsupported |
-
-The rule did not relax. Every key of a script must still hash to one slot; the layout is what now satisfies it.
+| Redis / Valkey, single node | works — this is the tested path (`redis.live.test.ts`, Redis 8) |
+| **Dragonfly** | works — the one script declares the one key it touches, so `CheckKeysDeclared()` is satisfied and `allow-undeclared-keys`, whose price is a global lock per invalidation, is not needed |
+| **Cluster mode** — Redis Cluster, Dragonfly `--cluster_mode=yes` | **satisfied by construction** `As of 2026-11`: every command names one key. Asserted by [`redis-ordering.test.ts`](../../packages/cache/src/redis-ordering.test.ts) against the emitted keys — no test runs against a real cluster node, so treat it as unmeasured, not unsupported |
 
 ### Three behaviours a shared tier needs and most do not ship
 
@@ -58,7 +43,7 @@ The rule did not relax. Every key of a script must still hash to one slot; the l
 |---|---|---|
 | **Single-flight** | N concurrent misses on one key are one `load()`. Joiners share the leader's write-back too, so 200 readers produce one `set` per tier. A rejection clears the entry, so one failure is never cached as a permanent rejection ([`single-flight.ts`](../../packages/core/src/single-flight.ts)) | none — always on |
 | **TTL jitter** | A rolling restart warms 40,000 keys in 30 seconds on identical leases, and they all expire in the same 30-second window five minutes later; single-flight only merges the loads that overlap. Shaving a random slice off each lease turns the cliff into a ramp. Folded into `assertTtl`, the one choke point no tier can bypass | `jitterFraction`, default `0.05`; `0` disables |
-| **Tag-bucket lease** | A tag set with no expiry is unbounded: value keys die on their TTL, membership did not, so `SMEMBERS` on a month-old bucket returned millions of dead keys and one publish became an outage. `SADD` + a conditional `EXPIRE` in one script gives each bucket its newest member's TTL plus 60s grace, **raised only when longer** — a short-lived member must never shorten a bucket a long-lived one is in | grace is fixed at 60s |
+| **Bounded tag buckets** | Value keys die on their TTL; membership used to outlive them, so a month-old bucket held millions of dead keys and one publish became an outage. Each write prunes members past their score, and a script gives the bucket its newest member's TTL plus 60s grace, **raised only when longer** — a short-lived member must never shorten a bucket a long-lived one is in | grace is fixed at 60s |
 
 Full option list: [`packages/cache/README.md`](../../packages/cache/README.md). [`17-scale-ladder.md`](./17-scale-ladder.md#dragonfly-honestly) has the operational detail on Dragonfly itself.
 

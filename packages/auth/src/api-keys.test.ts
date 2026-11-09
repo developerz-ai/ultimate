@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import {
+  API_KEY_TOUCH_MS,
   apiKeyActor,
   describeApiKey,
   issueApiKey,
@@ -238,5 +239,39 @@ describe('an env the parser cannot read back is refused at issue', () => {
       expect(String((error as AuthError).cause)).toContain('"_"');
       expect(String((error as AuthError).fix)).toContain('live-eu');
     }
+  });
+});
+
+describe('a verify writes at most once per API_KEY_TOUCH_MS', () => {
+  test('two verifies inside the window touch once; past it, once more', async () => {
+    const { store, clock, issued } = await owned();
+    const touches: Date[] = [];
+    const touch = store.touchApiKey.bind(store);
+    store.touchApiKey = async (id, at) => {
+      touches.push(at);
+      await touch(id, at);
+    };
+    await verifyApiKey(store, issued.plaintext, clock);
+    clock.advance(API_KEY_TOUCH_MS - 1);
+    await verifyApiKey(store, issued.plaintext, clock);
+    expect(touches).toHaveLength(1);
+    clock.advance(1);
+    await verifyApiKey(store, issued.plaintext, clock);
+    expect(touches.map((at) => at.getTime())).toEqual([START, START + API_KEY_TOUCH_MS]);
+    expect((await store.findApiKeyById(issued.record.id))?.lastUsedAt?.getTime()).toBe(
+      START + API_KEY_TOUCH_MS,
+    );
+  });
+});
+
+describe('the env segment is part of the credential', () => {
+  test('a key presented under another env is the same refusal as a bad key', async () => {
+    const { store, clock, issued } = await owned();
+    const relabelled = issued.plaintext.replace(/^ult_prod_/, 'ult_dev_');
+    expect(relabelled).not.toBe(issued.plaintext);
+    expect((await caught(() => verifyApiKey(store, relabelled, clock))).code).toBe(
+      'X_API_KEY_INVALID',
+    );
+    expect((await store.findApiKeyById(issued.record.id))?.lastUsedAt).toBeNull();
   });
 });

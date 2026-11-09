@@ -6,6 +6,14 @@
 import { errorFingerprint } from './error-fingerprint';
 import { renderThrowable } from './error-render';
 import type { ErrorReport, ErrorReporter, ErrorSeverity } from './error-reporter';
+import {
+  admitted,
+  customFingerprint,
+  finalEvent,
+  type SentryEvent,
+  type SentryReporterHooks,
+  screenSampleRate,
+} from './error-reporter-sentry-hooks';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { traceId } from './ids';
 import { logger, redactFields } from './logger';
@@ -75,9 +83,20 @@ export interface SentryEnvelopeOptions {
   readonly dsn: string;
   /** 32 lowercase hex, no dashes. `traceId()` already produces exactly that shape. */
   readonly eventId: string;
+  /** The monitor's grouping. Default: `[errorFingerprint(report)]`. */
+  readonly fingerprint?: readonly string[] | undefined;
 }
 
-function payloadOf(report: ErrorReport, eventId: string): Record<string, unknown> {
+/** The event an envelope carries, before `beforeSend` and serialisation. Pure. */
+export function sentryEvent(report: ErrorReport, options: SentryEnvelopeOptions): SentryEvent {
+  return payloadOf(report, options.eventId, options.fingerprint);
+}
+
+function payloadOf(
+  report: ErrorReport,
+  eventId: string,
+  fingerprint: readonly string[] | undefined,
+): Record<string, unknown> {
   return {
     event_id: eventId,
     // Seconds, as the protocol spells a timestamp. `new Date` here converts a number the caller
@@ -92,7 +111,7 @@ function payloadOf(report: ErrorReport, eventId: string): Record<string, unknown
     ...(report.scope.operation === undefined ? {} : { transaction: report.scope.operation }),
     // The group. Without it the monitor groups on its own reading of the exception, which is the
     // code, so every unclassified throw in the app was one issue (`errorFingerprint`).
-    fingerprint: [errorFingerprint(report)],
+    fingerprint: fingerprint ?? [errorFingerprint(report)],
     // Tags are the monitor's facets, so only bounded values go here — the same rule metric labels
     // follow. `requestId` and `actorId` are unbounded and live in `extra`.
     tags: {
@@ -132,10 +151,15 @@ function payloadOf(report: ErrorReport, eventId: string): Record<string, unknown
 
 /** Pure, so the wire format is a unit test rather than a thing discovered in production. */
 export function sentryEnvelope(report: ErrorReport, options: SentryEnvelopeOptions): string {
-  const payload = JSON.stringify(payloadOf(report, options.eventId));
+  return envelopeOf(sentryEvent(report, options), options, report.at);
+}
+
+/** The three lines around one event. The item `length` is measured off THIS payload. */
+function envelopeOf(event: SentryEvent, options: SentryEnvelopeOptions, at: number): string {
+  const payload = JSON.stringify(event);
   const header = JSON.stringify({
     event_id: options.eventId,
-    sent_at: new Date(report.at).toISOString(),
+    sent_at: new Date(at).toISOString(),
     dsn: options.dsn,
   });
   const item = JSON.stringify({
@@ -146,7 +170,7 @@ export function sentryEnvelope(report: ErrorReport, options: SentryEnvelopeOptio
   return `${header}\n${item}\n${payload}\n`;
 }
 
-export interface SentryReporterOptions {
+export interface SentryReporterOptions extends SentryReporterHooks {
   /** From the app's typed env. The framework declares no default and ships no constant. */
   readonly dsn: string;
   /** Injected by tests; the preload seals the real one. */
@@ -160,12 +184,33 @@ export interface SentryReporterOptions {
  */
 export function sentryErrorReporter(options: SentryReporterOptions): ErrorReporter {
   const dsn = parseSentryDsn(options.dsn);
+  const rate = screenSampleRate(options.sampleRate);
   const send = options.fetch ?? globalThis.fetch;
   const client = options.clientName ?? 'ultimate';
   const auth = `Sentry sentry_version=7, sentry_client=${client}, sentry_key=${dsn.publicKey}`;
   return {
     report(report: ErrorReport): void {
-      const body = sentryEnvelope(report, { dsn: options.dsn, eventId: traceId() });
+      if (!admitted(report, options, rate)) return;
+      const envelope = {
+        dsn: options.dsn,
+        eventId: traceId(),
+        fingerprint: customFingerprint(report, options),
+      };
+      const event = finalEvent(sentryEvent(report, envelope), options);
+      if (event === null) return;
+      // The event may now hold a hook's value — `beforeSend`'s rewrite, `fingerprint`'s list — and
+      // a `bigint` or a cycle there throws in `JSON.stringify`. `report()` runs inside every failure
+      // path's catch, so that is a dropped event and a warn line, never a second throw.
+      let body: string;
+      try {
+        body = envelopeOf(event, envelope, report.at);
+      } catch (thrown) {
+        logger.warn('error reporter event could not be serialised; the event was dropped', {
+          code: report.code,
+          error: renderThrowable(thrown),
+        });
+        return;
+      }
       void send(dsn.envelopeUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/x-sentry-envelope', 'x-sentry-auth': auth },

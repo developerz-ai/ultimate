@@ -1,6 +1,6 @@
 /** Every failure @ultimat3/query can produce, one subclass per stable code. */
-import { assertNever, deniedCallerFix, registerErrorCodes, UltimateError } from '@ultimat3/core';
-import type { SurfaceDenial } from '@ultimat3/policy';
+import { deniedCallerFix, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import type { PrimitiveDenial, SurfaceDenial } from '@ultimat3/policy';
 
 // No `docs:` on the classes below.
 // `UltimateError` fills it from `describeErrorCode(code).docs`, which is `@ultimat3/core`'s
@@ -63,34 +63,6 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(OWNED_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-function denialCode(denial: SurfaceDenial): string {
-  switch (denial.surface) {
-    case 'http':
-      return denial.problem.code;
-    case 'live':
-    case 'job':
-      return denial.code;
-    case 'mcp':
-      return denial.content[0]?.text.split(':')[0] ?? 'X_FORBIDDEN';
-    default:
-      return assertNever(denial);
-  }
-}
-
-function denialReason(denial: SurfaceDenial): string {
-  switch (denial.surface) {
-    case 'http':
-      return denial.problem.detail;
-    case 'live':
-    case 'job':
-      return denial.reason;
-    case 'mcp':
-      return denial.content[0]?.text ?? 'denied';
-    default:
-      return assertNever(denial);
-  }
-}
-
 /**
  * An authz denial from `guardQuery()`. The code and reason come from the policy
  * decision — this package never invents an authz code — and the surface-shaped
@@ -99,15 +71,18 @@ function denialReason(denial: SurfaceDenial): string {
 export class QueryDeniedError extends UltimateError {
   readonly denial: SurfaceDenial;
 
-  constructor(query: string, denial: SurfaceDenial) {
-    const code = denialCode(denial);
+  /**
+   * Built from `guardPrimitive`'s answer, which already read the code and the reason out of the
+   * surface shape — a type-only import, so the browser-reachable error module pulls in no policy.
+   */
+  constructor(refused: PrimitiveDenial<'query'>) {
     super({
-      code,
-      cause: `${query} denied: ${denialReason(denial)}`,
-      fix: `x policy explain ${query} --json   # shows which clause decided and why`,
+      code: refused.code,
+      cause: `${refused.name} denied: ${refused.reason}`,
+      fix: `x policy explain ${refused.name} --json   # shows which clause decided and why`,
       callerFix: deniedCallerFix(),
     });
-    this.denial = denial;
+    this.denial = refused.denial;
   }
 }
 

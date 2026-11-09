@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { nextAfterSignIn, signInRedirect } from './auth-redirect';
 
 const browser = new Request('https://app.test/dashboard', {
@@ -75,6 +76,49 @@ describe('unit · what an unauthenticated browser gets', () => {
         signInPath: '/signin',
         request: browser,
         ctx: at('/signin'),
+      }),
+    ).toBeUndefined();
+  });
+});
+
+// The login wall speaks the language the URL asked for. `/es/account` used to land on the
+// default-locale `/login`, so a visitor reading Spanish was switched to English at the door and an
+// adopter shipped a 302 shim to put the prefix back.
+describe('unit · the sign-in redirect keeps the routed locale', () => {
+  beforeAll(() => configureLocales({ supported: ['en', 'es'], fallback: 'en' }));
+  afterAll(() => resetLocaleConfig());
+
+  const routed = (path: string, pathLocale: string | undefined) => ({ ...at(path), pathLocale });
+
+  test('/es/account → /es/login, carrying the localized path back', () => {
+    expect(
+      signInRedirect({
+        code: 'X_UNAUTHENTICATED',
+        signInPath: '/login',
+        request: browser,
+        ctx: routed('/es/account', 'es'),
+      })?.location,
+    ).toBe('/es/login?next=%2Fes%2Faccount');
+  });
+
+  test('the default locale is unprefixed, as the router spells it', () => {
+    expect(
+      signInRedirect({
+        code: 'X_UNAUTHENTICATED',
+        signInPath: '/login',
+        request: browser,
+        ctx: routed('/account', undefined),
+      })?.location,
+    ).toBe('/login?next=%2Faccount');
+  });
+
+  test('the localized sign-in page never redirects to itself either', () => {
+    expect(
+      signInRedirect({
+        code: 'X_UNAUTHENTICATED',
+        signInPath: '/login',
+        request: browser,
+        ctx: routed('/es/login', 'es'),
       }),
     ).toBeUndefined();
   });

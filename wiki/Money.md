@@ -20,6 +20,7 @@ Integer minor units + a three-letter uppercase code — the ISO-4217 rows the fr
 | Where the refusal fires | Code |
 |---|---|
 | a value built in code — `fromMinor()`, arithmetic, `fromDecimal` | `X_MONEY_NOT_INTEGER` |
+| a `fromDecimal` input that is no plain decimal string — `12.99` as a number, `null`, `'1,299.00'`, `'1e3'` | `X_MONEY_NOT_DECIMAL` (422) |
 | a value off the wire — `t.money`, and therefore the OpenAPI contract | the boundary's own issue, with the field path |
 | a value read back off a `bigint` column past ±2^53 | `X_INVARIANT_VIOLATED`, naming the value |
 
@@ -316,6 +317,7 @@ See [MCP and AI](MCP-And-AI).
 | Code | Cause | Fix |
 |---|---|---|
 | `X_MONEY_NOT_INTEGER` | `minor` is not a safe integer, or a decimal string is more precise than the currency | `fromDecimal(...)`, or pass an explicit rounding mode |
+| `X_MONEY_NOT_DECIMAL` | `fromDecimal` was handed a non-string (a JSON number, `null`, `undefined`) or a string with grouping, a symbol or an exponent | send the amount as a decimal string: `fromDecimal('12.99', 'USD')`; text a person typed goes through `parseAmount(text, { currency, locale })` |
 | `X_CURRENCY_UNKNOWN` | the code is neither a shipped ISO row nor registered by this process | pick one `currencyCodes()` lists, or declare it at boot with `registerCurrency({ code, exponent, name })` |
 | `X_CURRENCY_MISMATCH` | combining two currencies — an `X_INVARIANT`-class violation | `convert(...)` first, then combine |
 | `X_CURRENCY_INVALID` | a `registerCurrency` declaration that cannot become a currency — bad code shape, an exponent outside `0…15`, or an empty name | fix the declaration: three A–Z letters, a whole exponent, a non-empty name |

@@ -21,6 +21,7 @@
 import { isUltimateError, logger } from '@ultimat3/core';
 import type { RateLimitStore } from './rate-limit';
 import { memoryRateLimitStore } from './rate-limit';
+import type { SharedStoreOwner } from './rate-limit-store-deadline';
 
 /**
  * Codes `@ultimat3/db` raises when no connection could run the statement at all, and the store's
@@ -64,7 +65,23 @@ export interface DegradedFallback {
  * decision. The warn is throttled on the CALLER's clock — the one every take is measured against —
  * so a frozen test clock and a real one both get one line per window, never one per request.
  */
-export function degradedFallback(): DegradedFallback {
+/** What each shared store's degraded line says is down, and the command that checks it. */
+const degradedLine = (owner: SharedStoreOwner): { readonly cause: string; readonly fix: string } =>
+  owner === 'redisRateLimitStore'
+    ? {
+        cause:
+          'the shared rate-limit store could not reach Redis, so this pod is counting limits in its own memory until it can — each limit is per pod, not per fleet, meanwhile',
+        fix: 'redis-cli -u "$REDIS_URL" PING   # the client reconnects on its own once it answers PONG',
+      }
+    : {
+        cause:
+          'the shared rate-limit store could not reach the database, so this pod is counting limits in its own memory until it can — each limit is per pod, not per fleet, meanwhile',
+        fix: 'x doctor --json   # names the database binding this pod cannot reach',
+      };
+
+export function degradedFallback(
+  owner: SharedStoreOwner = 'postgresRateLimitStore',
+): DegradedFallback {
   const store = memoryRateLimitStore();
   let lastWarnMs: number | undefined;
   return {
@@ -74,9 +91,7 @@ export function degradedFallback(): DegradedFallback {
       lastWarnMs = nowMs;
       logger.warn('http.rate_limit.degraded', {
         code: isUltimateError(error) ? error.code : 'unknown',
-        cause:
-          'the shared rate-limit store could not reach the database, so this pod is counting limits in its own memory until it can — each limit is per pod, not per fleet, meanwhile',
-        fix: 'x doctor --json   # names the database binding this pod cannot reach',
+        ...degradedLine(owner),
       });
     },
   };

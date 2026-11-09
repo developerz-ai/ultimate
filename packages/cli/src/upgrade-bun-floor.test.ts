@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: the fixtures below are SOURCE TEXT — a
+// `${…}` in one is the code under test, never an interpolation that went missing.
 // Every pin site, on the shapes the six surveyed adopters really carry: raised to the floor, never
 // lowered, a second run changing nothing, and a digest kept and listed rather than edited.
 

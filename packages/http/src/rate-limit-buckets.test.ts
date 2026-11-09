@@ -315,3 +315,60 @@ describe('a bucket named after an action or query is refused, never ignored (25.
     ).not.toThrow();
   });
 });
+
+describe('a bucket named after an Object.prototype member is a bucket like any other', () => {
+  // The table is a plain object literal: read by `[name]` it answers `Object` for 'constructor'
+  // and the prototype for '__proto__'; written by `[name] =` a '__proto__' bucket replaces the
+  // prototype and is no entry at all. Both names are author-controlled route metadata.
+  test("'constructor' registers, and the limiter enforces it", async () => {
+    const server = httpServer({
+      routes: [route('constructor', TIGHT)],
+      config: PROCESS_SCOPED,
+      rateLimitStore: memoryRateLimitStore(),
+    });
+    expect(Object.hasOwn(server.config.rateLimit.buckets, 'constructor')).toBe(true);
+    const call = (): Promise<Response> =>
+      server.fetch(new Request('http://dev.test/api/constructor', { method: 'POST' }));
+    expect((await call()).headers.get('ratelimit-limit')).toBe('5');
+  });
+
+  test("'__proto__' lands as an own entry, never as the table's prototype", async () => {
+    const server = httpServer({
+      routes: [route('__proto__', TIGHT)],
+      config: PROCESS_SCOPED,
+      rateLimitStore: memoryRateLimitStore(),
+    });
+    const buckets = server.config.rateLimit.buckets;
+    expect(Object.hasOwn(buckets, '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(buckets)).toBe(Object.prototype);
+    const call = (): Promise<Response> =>
+      server.fetch(new Request('http://dev.test/api/__proto__', { method: 'POST' }));
+    expect((await call()).headers.get('ratelimit-limit')).toBe('5');
+  });
+
+  test('a configured prototype name is a real conflict, named with its numbers', () => {
+    const config = defineHttpConfig({
+      rateLimit: {
+        scope: 'process',
+        buckets: { constructor: { capacity: 50, refillPerSecond: 1 } },
+      },
+    });
+    expect(() => withRouteBuckets(config, [route('constructor', TIGHT)])).toThrow(/50 \/ 1/);
+  });
+
+  test("a foreign limiter is asked for its OWN 'constructor', never Object's", () => {
+    const foreign = rateLimiter({ config: PROCESS_LIMITS });
+    let thrown: unknown;
+    try {
+      httpPipeline({
+        table: httpRouter([route('constructor', TIGHT)]),
+        config: PROCESS_SCOPED,
+        limiter: foreign,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as HttpError).code).toBe('X_RATE_LIMIT_BUCKET_UNBOUND');
+    expect((thrown as HttpError).cause).toContain('would run on the default one');
+  });
+});

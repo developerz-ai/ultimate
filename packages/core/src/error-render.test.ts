@@ -4,9 +4,11 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  boundedCause,
   describeValue,
   isFixShellSafe,
   isThrownError,
+  MAX_CAUSE_LENGTH,
   MAX_RENDERED_LENGTH,
   renderCauseValue,
   renderFixLiteral,
@@ -461,5 +463,34 @@ describe('singleLine', () => {
     const prose = 'table "posts" has column \'publish_at\' not in any migration (a\\b, 100% of 3)';
     expect(singleLine(prose)).toBe(prose);
     expect(singleLine('')).toBe('');
+  });
+});
+
+/**
+ * A cause DESCRIBES a refusal; it is not the refused body. A 10k-issue validation joined into one
+ * cause was 3.6 MiB, written into the error's `message`, its log line, the span's `error.message`
+ * and the problem document's `detail` — each a copy of the one unbounded string.
+ */
+describe('boundedCause', () => {
+  test('a 100k-character cause renders within 4 KiB, saying it was cut', () => {
+    const out = boundedCause('x'.repeat(100_000));
+    expect(MAX_CAUSE_LENGTH).toBe(4096);
+    expect(out.length).toBeLessThanOrEqual(MAX_CAUSE_LENGTH);
+    expect(new TextEncoder().encode(out).length).toBeLessThanOrEqual(4096);
+    expect(out).toMatch(/\.\.\. \(\d+ more characters\)$/);
+  });
+
+  test('a cause within the cap is returned unchanged', () => {
+    const text = 'y'.repeat(MAX_CAUSE_LENGTH);
+    expect(boundedCause(text)).toBe(text);
+  });
+
+  test('the cut never splits a surrogate pair', () => {
+    const out = boundedCause('😀'.repeat(10_000));
+    // No lone surrogate: a high one not followed by a low one, or a low one not preceded by a high.
+    expect(out).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/,
+    );
+    expect(out.length).toBeLessThanOrEqual(MAX_CAUSE_LENGTH);
   });
 });

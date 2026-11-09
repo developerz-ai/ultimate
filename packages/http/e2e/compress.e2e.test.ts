@@ -85,9 +85,12 @@ describe('what leaves the socket', () => {
     expect((await head.arrayBuffer()).byteLength).toBe(0);
   });
 
-  test('a public stream with no declared length stays identity', async () => {
+  // v31: coded as a stream, no length claimed — the bytes on the wire decode to the source.
+  test('a public stream with no declared length leaves gzip, whole', async () => {
     const answer = await raw('/public-stream', 'gzip');
-    expect(answer.headers.get('content-encoding')).toBeNull();
-    expect(await answer.text()).toBe(STYLESHEET);
+    expect(answer.headers.get('content-encoding')).toBe('gzip');
+    expect(answer.headers.get('content-length')).toBeNull();
+    const bytes = new Uint8Array(await answer.arrayBuffer());
+    expect(new TextDecoder().decode(Bun.gunzipSync(bytes))).toBe(STYLESHEET);
   });
 });

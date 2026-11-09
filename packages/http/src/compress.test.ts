@@ -5,58 +5,16 @@ import { rm } from 'node:fs/promises'; // why: Bun has no native unlink for a te
 import { tmpdir } from 'node:os'; // why: Bun has no native reader for the temp directory.
 import { join } from 'node:path'; // why: Bun has no native path join.
 import { logger, UltimateError } from '@ultimat3/core';
-import { COMPRESS_MAX_BYTES, COMPRESS_MIN_BYTES, compressResponse } from './compress';
 
-/** An anonymous caller's answer: `compress-exposure.test.ts` holds the signed-in half. */
-const compressAnonymous = (request: Request, response: Response, signal?: AbortSignal) =>
-  compressResponse(request, response, {
-    anonymous: true,
-    ...(signal === undefined ? {} : { signal }),
-  });
-
-const SOURCE = 'a { color: var(--text); }\n'.repeat(200);
-const bytesOf = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text);
-
-const answer = (
-  body: BodyInit | null = SOURCE,
-  headers: Record<string, string> = {},
-  init: ResponseInit = {},
-): Response =>
-  new Response(body, {
-    ...init,
-    headers: {
-      'content-type': 'text/css; charset=utf-8',
-      'cache-control': 'public, max-age=31536000, immutable',
-      'content-length': String(bytesOf(SOURCE).byteLength),
-      ...headers,
-    },
-  });
-
-const asking = (accept: string | null = 'gzip', method = 'GET'): Request =>
-  new Request('http://app.test/x', {
-    method,
-    headers: accept === null ? {} : { 'accept-encoding': accept },
-  });
-
-const decoded = async (response: Response): Promise<string> =>
-  new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await response.arrayBuffer())));
-
-/** The body a passed-through answer must never touch: pulling it is the test's failure. */
-const untouchable = (): { readonly body: ReadableStream<Uint8Array>; pulled: () => boolean } => {
-  let pulled = false;
-  return {
-    // A high-water mark of 0: the default of 1 pulls at construction, before anyone has read.
-    body: new ReadableStream<Uint8Array>(
-      {
-        pull() {
-          pulled = true;
-        },
-      },
-      { highWaterMark: 0 },
-    ),
-    pulled: () => pulled,
-  };
-};
+import {
+  answer,
+  asking,
+  bytesOf,
+  compressAnonymous,
+  decoded,
+  SOURCE,
+  untouchable,
+} from './compress-fixture';
 
 describe('a response that qualifies', () => {
   test('is gzip, decodes to its source, and carries its own length', async () => {
@@ -109,7 +67,9 @@ describe('a response that qualifies', () => {
 });
 
 describe('method and status', () => {
-  test.each(['HEAD', 'POST'])('%s stays identity', async (method) => {
+  // A HEAD the handler answered with no body cannot be measured, so it is not coded; a HEAD
+  // carrying GET's body is (`compress-exposure.test.ts`).
+  test.each(['HEAD', 'POST'])('%s with no body to measure stays identity', async (method) => {
     const source = answer(method === 'HEAD' ? null : SOURCE);
     const out = await compressAnonymous(asking('gzip', method), source);
     expect(out).toBe(source);
@@ -211,6 +171,8 @@ describe('content-type', () => {
     'application/rss+xml',
     'application/atom+xml',
     'text/vtt',
+    'application/x-ndjson',
+    'text/csv',
     'TEXT/HTML; charset=UTF-8',
   ])('%s is coded', async (type) => {
     const out = await compressAnonymous(asking(), answer(SOURCE, { 'content-type': type }));
@@ -237,60 +199,6 @@ describe('content-type', () => {
       },
     });
     source.headers.delete('content-type');
-    expect(await compressAnonymous(asking(), source)).toBe(source);
-  });
-});
-
-describe('the declared length', () => {
-  test('undeclared is unknown: never read, never coded, keyed all the same', async () => {
-    const quiet = untouchable();
-    const source = new Response(quiet.body, {
-      headers: { 'content-type': 'text/css', 'cache-control': 'public' },
-    });
-    const out = await compressAnonymous(asking(), source);
-    expect(out).toBe(source);
-    expect(quiet.pulled()).toBe(false);
-    expect(out.headers.get('vary')).toBe('accept-encoding');
-  });
-
-  test.each(['abc', '-1', '1e3', ''])('a length of %p is not a length', async (length) => {
-    const quiet = untouchable();
-    const source = answer(quiet.body, { 'content-length': length });
-    expect(await compressAnonymous(asking(), source)).toBe(source);
-    expect(quiet.pulled()).toBe(false);
-  });
-
-  test('one byte under the floor stays identity, at the floor is coded', async () => {
-    const under = answer('x'.repeat(COMPRESS_MIN_BYTES - 1), {
-      'content-length': String(COMPRESS_MIN_BYTES - 1),
-    });
-    expect(await compressAnonymous(asking(), under)).toBe(under);
-    const floor = await compressAnonymous(
-      asking(),
-      answer('x'.repeat(COMPRESS_MIN_BYTES), { 'content-length': String(COMPRESS_MIN_BYTES) }),
-    );
-    expect(floor.headers.get('content-encoding')).toBe('gzip');
-  });
-
-  test('at the ceiling is coded, one byte over stays identity and unread', async () => {
-    const ceiling = await compressAnonymous(
-      asking(),
-      answer('x'.repeat(COMPRESS_MAX_BYTES), { 'content-length': String(COMPRESS_MAX_BYTES) }),
-    );
-    expect(ceiling.headers.get('content-encoding')).toBe('gzip');
-    const quiet = untouchable();
-    const over = answer(quiet.body, { 'content-length': String(COMPRESS_MAX_BYTES + 1) });
-    expect(await compressAnonymous(asking(), over)).toBe(over);
-    expect(quiet.pulled()).toBe(false);
-  });
-
-  test('the bounds are the documented figures', () => {
-    expect(COMPRESS_MIN_BYTES).toBe(1_024);
-    expect(COMPRESS_MAX_BYTES).toBe(262_144);
-  });
-
-  test('a null body stays what it is', async () => {
-    const source = answer(null);
     expect(await compressAnonymous(asking(), source)).toBe(source);
   });
 });

@@ -115,7 +115,8 @@ describe('holdUntilShutdown', () => {
     // never finish cannot outlive it. `apps/web/server.ts` is the one entry point with nothing
     // above it to exit — `bin.ts` ends in `process.exit(code)` and a container's `runRole` does
     // not — so a hold that ends without calling `exit` leaves an event loop nothing will close.
-    expect(codes).toEqual([0]);
+    // 70, not 0: the release was ABANDONED, so the platform must not record a clean stop.
+    expect(codes).toEqual([70]);
     expect(elapsed).toBeLessThan(MIN_RELEASE_MS * 2);
   }, 30_000);
 
@@ -173,4 +174,31 @@ describe('holdUntilShutdown', () => {
     // Awaited: an unawaited `.rejects` is an assertion the runner never sees fail.
     await expect(held).rejects.toBeUltimateError('X_DB_UNAVAILABLE');
   });
+});
+
+/**
+ * The exit code is the platform's only record of how a drain went. The hold's `exit(0)` told the
+ * kubelet a process stopped cleanly after a shutdown hook had been abandoned mid-write.
+ */
+describe('the exit code a hold hands back', () => {
+  test('a shutdown hook abandoned at the deadline exits 70', async () => {
+    configureLifecycle({ deadlineMs: 20, readinessGraceMs: 0 });
+    onShutdown('slow-flush', () => new Promise<void>(() => {}), { phase: 'close' });
+    const codes: number[] = [];
+    const hold = holdUntilShutdown('probe', async () => {}, { exit: (code) => codes.push(code) });
+    const held = hold();
+    void drain('SIGTERM');
+    await held;
+    expect(codes).toEqual([70]);
+  }, 30_000);
+
+  test('a clean drain and a finished release exit 0', async () => {
+    configureLifecycle({ deadlineMs: 1_000, readinessGraceMs: 0 });
+    const codes: number[] = [];
+    const hold = holdUntilShutdown('probe', async () => {}, { exit: (code) => codes.push(code) });
+    const held = hold();
+    void drain('SIGTERM');
+    await held;
+    expect(codes).toEqual([0]);
+  }, 30_000);
 });

@@ -5,6 +5,8 @@
 // the app's `resolve`, and the actor it answers IS the caller from there on — visibility, scope,
 // args, admit, confirmation, policy, `ctx.actor.orgId` — so the tenancy guards see one org per call.
 // A tenant the person is not in answers exactly as a hidden tool; a lookup that throws never does.
+// The token's scopes and MCP role carry unchanged; the actor is `resolve`'s alone, so it may narrow.
+// Only `tools/call` comes through here: every other method runs as the person, in no tenant.
 
 import type { Actor } from '@ultimat3/core';
 import { logger, renderCauseValue, renderThrowable } from '@ultimat3/core';
@@ -15,7 +17,7 @@ import {
 } from './catalog-errors';
 import { McpToolDuplicateError } from './errors';
 import type { AnyMcpTool, McpCaller, ToolListEntry } from './registry';
-import { jsonResult } from './registry';
+import { jsonResult, withoutKey } from './registry';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
@@ -33,7 +35,8 @@ export interface McpTenant {
   /**
    * The actor this person acts as in tenant `value`, or `null` when they are not a member — `null`
    * answers as a hidden tool. Must answer a `kind: 'agent'` actor; a throw is
-   * `X_MCP_TENANT_UNRESOLVED`, never read as "not a member".
+   * `X_MCP_TENANT_UNRESOLVED`, never read as "not a member". The answer REPLACES the person's actor
+   * — no role of theirs is merged in — so this is where a tenant's authority is narrowed.
    */
   resolve(input: {
     readonly person: Actor;
@@ -151,13 +154,17 @@ export async function tenantStep(
     return unresolved(`tenant.resolve threw: ${renderThrowable(thrown)}`, thrown);
   }
   if (actor === null) return { kind: 'not-member' };
-  if ((actor as { kind?: unknown }).kind !== 'agent') {
-    return unresolved('tenant.resolve answered an actor that is not kind "agent"');
+  // `undefined` (a `Map.get` miss) is neither the member `null` nor an actor: reading `.kind` off
+  // it threw a TypeError out of the step.
+  if (typeof actor !== 'object' || (actor as { kind?: unknown }).kind !== 'agent') {
+    return unresolved(
+      'tenant.resolve answered something that is not an actor of kind "agent", nor null',
+    );
   }
   return {
     kind: 'ok',
     caller: { ...caller, actor, tenant: value },
-    args: without(args, tenant.arg),
+    args: withoutKey(args, tenant.arg),
   };
 }
 
@@ -168,21 +175,6 @@ function unresolved(cause: string, thrown?: unknown): TenantStep {
   });
   logger.error('mcp.tenant.unresolved', { surface: 'mcp', code: error.code, cause: error.cause });
   return { kind: 'refused', error };
-}
-
-/** A copy without `key`, every other key landed through `defineProperty` (`__proto__` included). */
-function without(args: Readonly<Record<string, unknown>>, key: string): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [name, value] of Object.entries(args)) {
-    if (name === key) continue;
-    Object.defineProperty(out, name, {
-      value,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
-  }
-  return out;
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>

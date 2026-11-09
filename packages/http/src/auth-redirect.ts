@@ -2,6 +2,7 @@
 // client want `X_UNAUTHENTICATED` as JSON with a fix line; a person following a link wants the
 // sign-in page. One condition, two audiences, decided here so the error stage stays one branch.
 
+import { localizedPath } from '@ultimat3/i18n';
 import type { RequestContext } from './context';
 import { acceptsHtml } from './html-render';
 import type { RedirectIntent } from './response';
@@ -19,12 +20,17 @@ export const NEXT_PARAM = 'next';
  *
  * 303, not 302: the request that failed authz may have been a form POST, and 303 turns the
  * follow-up into the GET the sign-in page actually is. Same reasoning as `setRedirect`.
+ *
+ * The sign-in page is spelled in the locale the URL routed (`ctx.pathLocale`): `/es/account` goes
+ * to `/es/login`, never the default-locale `/login`, which switched a visitor's language at the door.
  */
 export function signInRedirect(input: {
   readonly code: string;
   readonly signInPath: string | null;
   readonly request: Request;
-  readonly ctx: Pick<RequestContext, 'url' | 'method'>;
+  readonly ctx: Pick<RequestContext, 'url' | 'method'> & {
+    readonly pathLocale?: RequestContext['pathLocale'];
+  };
 }): RedirectIntent | undefined {
   const { code, signInPath, request, ctx } = input;
   if (code !== 'X_UNAUTHENTICATED' || signInPath === null) return undefined;
@@ -33,9 +39,11 @@ export function signInRedirect(input: {
   if (!acceptsHtml(request)) return undefined;
   // A sign-in page that declares `auth: 'required'` by mistake would otherwise redirect to
   // itself forever, and a browser reports that as a bare "too many redirects" with no code.
-  if (ctx.url.pathname === signInPath) return undefined;
+  const signIn =
+    ctx.pathLocale === undefined ? signInPath : localizedPath(signInPath, ctx.pathLocale);
+  if (ctx.url.pathname === signInPath || ctx.url.pathname === signIn) return undefined;
   const next = `${ctx.url.pathname}${ctx.url.search}`;
-  return { location: `${signInPath}?${NEXT_PARAM}=${encodeURIComponent(next)}`, status: 303 };
+  return { location: `${signIn}?${NEXT_PARAM}=${encodeURIComponent(next)}`, status: 303 };
 }
 
 /**

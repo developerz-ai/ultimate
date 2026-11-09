@@ -74,12 +74,7 @@ export { FASTLY_API_URL, FASTLY_MAX_KEYS_PER_REQUEST, fastlyPurgeDriver } from '
 export type { PurgeFetch } from './purge-http';
 export { DEFAULT_PURGE_TIMEOUT_MS } from './purge-http';
 export type { RedisLike, RedisTierOptions } from './redis';
-export {
-  namespaceFor,
-  REDIS_INVALIDATE_SCRIPT,
-  REDIS_TAG_MEMBER_SCRIPT,
-  redisTier,
-} from './redis';
+export { DEFAULT_REDIS_MAX_VALUE_BYTES, namespaceFor, redisTier } from './redis';
 export type {
   Embedding,
   SemanticCache,

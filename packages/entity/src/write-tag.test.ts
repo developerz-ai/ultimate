@@ -5,17 +5,24 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   ctxOf,
   runWithContext,
+  tryUseContext,
   userActor,
   WRITE_ORIGIN_WAL_PREFIX,
   withWriteOrigin,
 } from '@ultimat3/core';
-import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
+import {
+  type DbClient,
+  dbUnavailable,
+  type RecordingClient,
+  recordingClient,
+  setDbClient,
+} from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { entity } from './entity';
 import { postgresRepo } from './pg-driver';
 import { postgresTransactor } from './pg-transactor';
 import { clearRegistry } from './registry';
-import { resetWriteTag } from './write-tag';
+import { resetWriteTag, taggedWrite } from './write-tag';
 
 const notes = entity('write_tag_notes', {
   columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), title: text({ max: 40 }) },
@@ -115,4 +122,46 @@ describe('a keyed write, named in the WAL', () => {
 
 afterAll(() => {
   clearRegistry();
+});
+
+// `@ultimat3/db` cancels a pooled `select` in flight when the scope that sent it aborts. The probe
+// is ONE answer shared by every concurrent keyed write, so the request that happened to ask first
+// hanging up must not answer `false` to all the others — their writes would go out untagged.
+describe('the shared capability probe', () => {
+  test('one caller hanging up does not cancel the probe every other caller awaits', async () => {
+    resetWriteTag();
+    const base = recordingClient();
+    base.on('has_function_privilege', { rows: [{ ok: true }] });
+    let answer: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    // The pool's half, by hand: a probe whose sending scope aborts before the answer is cancelled.
+    const cancelling: DbClient = {
+      ...base,
+      one: async <T>(fragment: Parameters<DbClient['one']>[0]) => {
+        const signal = tryUseContext()?.signal;
+        if (fragment.text.includes('has_function_privilege')) {
+          await held;
+          if (signal?.aborted === true) throw dbUnavailable('cancelled with its caller');
+        }
+        return base.one<T>(fragment);
+      },
+    };
+    setDbClient(cancelling);
+    const leaving = new AbortController();
+    const write = async (): Promise<string> => 'written';
+    const first = runWithContext(ctxOf({ signal: leaving.signal }), () =>
+      withWriteOrigin(WRITE, () => taggedWrite(false, write)),
+    );
+    const second = runWithContext(ctxOf({}), () =>
+      withWriteOrigin(WRITE, () => taggedWrite(false, write)),
+    );
+    leaving.abort();
+    answer();
+    await Promise.allSettled([first]);
+    expect(await second).toBe('written');
+    expect(base.texts.filter((text) => text.startsWith('select pg_logical_emit')).length).toBe(2);
+    setDbClient(client);
+  });
 });

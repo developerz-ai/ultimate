@@ -5,7 +5,6 @@
  * and are re-exported here, so `./errors` stays the one import path for all of them.
  */
 import {
-  assertNever,
   deniedCallerFix,
   ERROR_DOCS_URL,
   hasErrorCode,
@@ -15,7 +14,7 @@ import {
   withRequestId,
   withStatedDelay,
 } from '@ultimat3/core';
-import type { SurfaceDenial } from '@ultimat3/policy';
+import type { PrimitiveDenial, SurfaceDenial } from '@ultimat3/policy';
 import type { ValidationIssue } from '@ultimat3/schema';
 // The titles are `error-titles.ts`, imported bare: this module is then side-effect-free and the
 // array does not list it, so a chunk keeps only the classes it constructs, and a chunk that
@@ -66,34 +65,6 @@ export class ActionForeignError extends UltimateError {
   }
 }
 
-export function denialCode(denial: SurfaceDenial): string {
-  switch (denial.surface) {
-    case 'http':
-      return denial.problem.code;
-    case 'live':
-    case 'job':
-      return denial.code;
-    case 'mcp':
-      return denial.content[0]?.text.split(':')[0] ?? 'X_FORBIDDEN';
-    default:
-      return assertNever(denial);
-  }
-}
-
-export function denialReason(denial: SurfaceDenial): string {
-  switch (denial.surface) {
-    case 'http':
-      return denial.problem.detail;
-    case 'live':
-    case 'job':
-      return denial.reason;
-    case 'mcp':
-      return denial.content[0]?.text ?? 'denied';
-    default:
-      return assertNever(denial);
-  }
-}
-
 /**
  * An authz denial, thrown by `guardAction()`. The code and reason come from the policy
  * decision — this package never invents an authz code — and the surface-shaped
@@ -102,15 +73,18 @@ export function denialReason(denial: SurfaceDenial): string {
 export class ActionDeniedError extends UltimateError {
   readonly denial: SurfaceDenial;
 
-  constructor(action: string, denial: SurfaceDenial) {
-    const code = denialCode(denial);
+  /**
+   * Built from `guardPrimitive`'s answer, which already read the code and the reason out of the
+   * surface shape — a type-only import, so the browser-reachable error module pulls in no policy.
+   */
+  constructor(refused: PrimitiveDenial<'action'>) {
     super({
-      code,
-      cause: `${action} denied: ${denialReason(denial)}`,
-      fix: `x policy explain ${action} --json   # shows which clause decided and why`,
+      code: refused.code,
+      cause: `${refused.name} denied: ${refused.reason}`,
+      fix: `x policy explain ${refused.name} --json   # shows which clause decided and why`,
       callerFix: deniedCallerFix(),
     });
-    this.denial = denial;
+    this.denial = refused.denial;
   }
 }
 
@@ -167,6 +141,11 @@ export class InputInvalidError extends UltimateError {
    * structured channel beside it.
    */
   readonly issues: readonly ValidationIssue[] | undefined;
+  /**
+   * `true` when validation stopped at its issue cap (`MAX_ISSUES`, `@ultimat3/schema`): `issues`
+   * is a prefix, and correcting all of it may surface more. Also on `meta` for an HTTP surface.
+   */
+  readonly issuesTruncated: boolean;
 
   /**
    * `detail` is the rendered form of `issues` and must stay so — `formatIssues(issues).join('; ')`,
@@ -186,6 +165,7 @@ export class InputInvalidError extends UltimateError {
      * action's.
      */
     subject: 'action' | 'tool' = 'action',
+    issuesTruncated = false,
   ) {
     super({
       code: 'X_INPUT_INVALID',
@@ -195,9 +175,12 @@ export class InputInvalidError extends UltimateError {
       // body — and cannot run `x actions show`.
       callerFix:
         'correct the fields named in cause to match the published input schema (the tool inputSchema, or the OpenAPI request body) and send again — the same input is refused the same way',
-      ...(issues === undefined ? {} : { meta: { issues } }),
+      ...(issues === undefined
+        ? {}
+        : { meta: issuesTruncated ? { issues, issuesTruncated: true } : { issues } }),
     });
     this.issues = issues;
+    this.issuesTruncated = issuesTruncated;
   }
 }
 

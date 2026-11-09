@@ -28,6 +28,7 @@ import { closeRetiredPool } from './pool-retire';
 import { poolSweep, UNANSWERED_GRACE_MS } from './pool-sweep';
 import { type PoolerMode, poolerFromEnv, poolerSessionRequired, poolerWaitFor } from './pooler';
 import { type SqlFragment, sql } from './sql';
+import { watchAbort } from './statement-cancel';
 import { affectedBy, rowsOf, runOn } from './statement-funnel';
 import { currentTx } from './transaction';
 
@@ -154,10 +155,15 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
   async function run(fragment: SqlFragment): Promise<unknown> {
     const slot = takeSlot(connect, profile.acquireTimeoutMs);
     const live = slot instanceof Promise ? await slot : slot;
+    // Pooled only: a pin's statement belongs to a transaction, and cancelling it is not ours to do.
+    const watch = watchAbort(fragment.text);
     try {
-      const sending = runOn(live.pool, fragment);
+      const sending = runOn(watch === undefined ? live.pool : watch.on(live.pool), fragment);
       return await (sweep === undefined ? sending : sweep.track(live, fragment.text, sending));
+    } catch (error) {
+      throw watch === undefined ? error : watch.failure(error);
     } finally {
+      watch?.end();
       freeSlot(live);
     }
   }

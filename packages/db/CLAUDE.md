@@ -60,6 +60,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `pool-profile.ts`, `connection-url.ts`, `bun-sql.ts`, `pool-reserve.ts`, `db-health.ts` (`checkDb`),
   `statement-funnel.ts` (`sendOn`/`runOn`), `pool-gate.ts`, `pool-sweep.ts`, `pool-retire.ts`,
   `pool-listeners.ts` and `pool-timer.ts` hold the rest.
+- **`statement-cancel.ts` cancels a POOLED `select` in flight when the ambient `ctx.signal` aborts** (`57014` on the server; `X_ABORTED`, or the coded reason itself). Never a write, never a pin, never a statement sent after the abort. README.
 - **`pool-gate.ts` is the one count of `max`** (`takeSlot`/`freeSlot`), per pool; a wait past `acquireTimeoutMs` is `X_DB_POOL_EXHAUSTED`. Full rule: `docs/history/db.md`.
 - **`pool-sweep.ts`: an unanswered statement retires the pool** (`statementTimeoutMs + UNANSWERED_GRACE_MS`), pooled or pinned; age is ticks that fired, never a clock. Full rule: `docs/history/db.md`.
 - **`pool-pins.ts`: a pin is swept against ITS bound** (a `statement_timeout` it set; the role's after `COMMIT`/`ROLLBACK`); after a miss it sends nothing. `reserve()` passes `reserveWithin` what the gate left of one budget. **`pool-listeners.ts` holds `client.listen`** and re-dials every session on a retirement, with backoff.

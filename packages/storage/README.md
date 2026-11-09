@@ -64,9 +64,12 @@ region refuses the first write, list or delete with `X_CONFIG_INVALID`, and the 
 
 `copy(from, to)` is on the contract so a promotion is not a download-and-reupload:
 `promoteAttachment` used to `get()` the whole object into the app and `put()` it back, a gigabyte
-through the pod to rename a 500MB attachment. `localDriver` does a real file copy; `s3Driver`
-hands the source `S3File` to `write()` — Bun exposes no `CopyObject`, so the bytes still cross the
-network, but never this process's heap. Both arguments go through `assertSafeKey`.
+through the pod to rename a 500MB attachment. `localDriver` does a real file copy; `s3Driver` sends
+one signed `CopyObject` (directive COPY), so the bytes never leave the provider and the source's
+type, `cacheControl` and `metadata` travel, as on local and memory. Past CopyObject's 5 GiB ceiling
+it is a multipart `UploadPartCopy` (512 MiB parts, grown past 10,000), every part pinned to the
+revision a HEAD read, carrying the same headers, aborted on any failure. Both arguments go through
+`assertSafeKey`.
 
 One S3 driver covers all three backends — the difference is `endpoint` + `forcePathStyle`.
 Credentials are **env var NAMES** (`accessKeyIdEnv`, default `S3_ACCESS_KEY_ID`), never
@@ -200,12 +203,17 @@ in a bucket unmeasured, so a later `get()` of it was heap growth the uploader pi
 
 `streamRange` reads no byte before `first`: s3 and local through `slice(...).stream()`, memory from
 its copy. Inclusive and clamped like `get`'s range, with no ceiling because nothing is buffered;
-past the end is `X_STORAGE_RANGE_UNSATISFIABLE`. `putStream` takes `contentType`, `cacheControl`,
+past the end is `X_STORAGE_RANGE_UNSATISFIABLE`. `stream(key, { etag })` and
+`streamRange(key, range, { etag })` serve that revision only — another is `X_STORAGE_OBJECT_CHANGED`
+(409): s3 sends `If-Match`, local checks the etag at the call and again at the first read, memory compares. `/_storage`
+pins every read to the etag its headers came from. `putStream` takes `contentType`, `cacheControl`,
 `metadata` and a REQUIRED `maxBytes` (`PutStreamOptions`). Past it the source is cancelled, nothing
 is stored and the key stays as it was (`X_STORAGE_TOO_LARGE`). `checksum`, `retention`, `legalHold`
 and `serverSideEncryption` need the bytes up front: the type omits them and an untyped caller gets
 `X_INVARIANT`. On s3 a body under one part is one signed PUT and past it a signed multipart upload,
-one part at a time (5 MiB or `maxBytes / 10000`), aborted on every exit but the Complete: Bun's
+8 MiB parts (doubled every 1,000 parts, so 10,000 reach past S3's 5 TiB; never derived from
+`maxBytes`), up to `STREAM_PART_BUFFERS` (4) parts held at once — in flight plus the one filling,
+so memory is at most 32 MiB per stream — aborted on every exit but the Complete: Bun's
 `S3File.writer()` completes on `end(error)` and sends no `x-amz-meta-*`. Local stages under
 `.meta/.tmp/`, then runs `put()`'s commit steps. A driver outside this package reuses
 `assertPutStream`, `pumpBounded`, `streamLimit`, `assertStreamRange`, `streamedRange` and `signedByteBound`.
@@ -418,8 +426,13 @@ Neither owns a `Request`, a `Response` or a status number — mounting is the ho
 **Step 3 ships.** `As of 2026-09-24` `@ultimat3/cli` mounts `PUT /_storage/:disk/*key` beside the
 `GET` in `x dev` and `runRole` (#523), so an app writes steps 1 and 2 only. The route calls
 `signedUploadConstraints({ url, disk, orgId })` first. That is the verified PUT constraints with
-no bytes, and the signed `maxBytes` caps the body read. Then it calls `acceptSignedUpload` with a
-policy built from the grant's own signed type and ceiling. The routes serve `definedStorage()`,
+no bytes, and the signed `maxBytes` caps the body read. Then it calls `acceptSignedUploadStream`
+with a policy built from the grant's own signed type and ceiling: the first 64 KiB are sniffed, the
+rest piped into `disk.putStream`, so memory per upload is the window, not the body. A body that
+ends inside the window, an XML type, and a required checksum nobody declared are read whole and
+judged by `acceptSignedUpload`. A local or memory disk given `maxRequestBytes` (the app's
+`http.maxRequestBodyBytes`) refuses at signing a single-request grant past it (`X_STORAGE_TOO_LARGE`,
+the fix naming `grantMultipart`). The routes serve `definedStorage()`,
 the process's one registry, which is the app's `defineStorage` when it declared one (#524).
 
 ## Uploads in parts — `grantMultipart`, `signPart`, `listParts`, `completeUpload`, `abortUpload`

@@ -3,7 +3,8 @@
 // failure path, and none may bind an issue to the wrong place.
 
 import { describe, expect, test } from 'bun:test';
-import { issuesFromWire, MAX_WIRE_ISSUES } from './wire-issues';
+import { MAX_ISSUES } from '@ultimat3/schema';
+import { issuesFromWire } from './wire-issues';
 
 const issue = (path: string, message: string): Record<string, unknown> => ({
   path,
@@ -65,8 +66,8 @@ describe('issuesFromWire', () => {
   test('refuses a list longer than a form has fields — the entries are rendered into a DOM', () => {
     const many = (count: number): unknown[] =>
       Array.from({ length: count }, (_, index) => issue(`f${index}`, 'bad'));
-    expect(issuesFromWire(many(MAX_WIRE_ISSUES))).toHaveLength(MAX_WIRE_ISSUES);
-    expect(issuesFromWire(many(MAX_WIRE_ISSUES + 1))).toBeUndefined();
+    expect(issuesFromWire(many(MAX_ISSUES))).toHaveLength(MAX_ISSUES);
+    expect(issuesFromWire(many(MAX_ISSUES + 1))).toBeUndefined();
   });
 
   test('a member that fights being read is refused, never thrown out of', () => {

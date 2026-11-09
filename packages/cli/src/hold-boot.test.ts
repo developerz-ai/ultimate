@@ -10,6 +10,7 @@ import {
   ctxOf,
   lifecycleState,
   markReady,
+  onShutdown,
   resetLifecycle,
   setLogSink,
 } from '@ultimat3/core';
@@ -190,4 +191,30 @@ describe('holdWhileBooting', () => {
     await held;
     expect(stopped).toBe(1);
   });
+});
+
+// The interrupted boot's exit was a literal 0 even when the drain it waited on had ABANDONED a hook
+// at the deadline — the platform recorded a clean stop over a half-done write. It is the drain's
+// own answer (`drainExitCode`), exactly as the hold's ordinary exit is.
+describe('an interrupted boot exits what the drain says', () => {
+  test('a hook overrunning the deadline during boot exits 70, never 0', async () => {
+    configureLifecycle({ deadlineMs: 20, readinessGraceMs: 0 });
+    onShutdown('slow-flush', () => new Promise<void>(() => {}), { phase: 'close' });
+    const codes: number[] = [];
+    const previous = setLogSink(() => {});
+    try {
+      await holdWhileBooting(
+        'probe',
+        async () => {
+          process.emit('SIGTERM', 'SIGTERM');
+          markReady();
+          return { stop: async () => undefined };
+        },
+        { exit: (code) => codes.push(code) },
+      ).catch(() => undefined);
+    } finally {
+      setLogSink(previous);
+    }
+    expect(codes).toEqual([70]);
+  }, 30_000);
 });

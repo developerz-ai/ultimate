@@ -13,6 +13,13 @@ import { randomToken, sha256Hex } from './tokens';
 
 export const API_KEY_NAMESPACE = 'ult';
 
+/**
+ * `lastUsedAt` is a dashboard's "last used", not an audit trail: a verify writes it at most once
+ * per minute, so N requests a second on one key are N reads, not N row-locked UPDATEs. The same
+ * trade sessions make with `idleSlideMs`.
+ */
+export const API_KEY_TOUCH_MS = 60_000;
+
 /** `ult_<env>_<id>_<secret>` — the first three segments are the displayable prefix. */
 export const API_KEY_PREFIX_SEGMENTS = 3;
 
@@ -115,6 +122,9 @@ export async function verifyApiKey(
   if (parsed === null) throw apiKeyInvalid();
   const record = await store.findApiKeyById(parsed.id);
   if (record === null) throw apiKeyInvalid();
+  // The env label is part of what was issued: a `dev` key relabelled `ult_prod_…` is a forgery of
+  // the triage signal, refused like any other bad key.
+  if (parsed.prefix !== record.prefix) throw apiKeyInvalid();
   if (record.revokedAt !== null) throw apiKeyInvalid();
   const now = clock.now();
   if (record.expiresAt !== null && now.getTime() >= record.expiresAt.getTime()) {
@@ -125,7 +135,10 @@ export async function verifyApiKey(
   if (record.userId !== null && (owner === null || owner.disabledAt !== null)) {
     throw apiKeyInvalid();
   }
-  await store.touchApiKey(record.id, now);
+  const last = record.lastUsedAt;
+  if (last === null || now.getTime() - last.getTime() >= API_KEY_TOUCH_MS) {
+    await store.touchApiKey(record.id, now);
+  }
   return { record, owner };
 }
 

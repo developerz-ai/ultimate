@@ -28,7 +28,9 @@ name: release-tag
 # installs and runs this repo's scripts; `cut` (contents + actions: write) has no checkout and no
 # install — `gh` and the values `prepare` handed it, nothing else.
 on:
-  workflow_run:
+  # Not the insecure shape: every job is gated on `workflow_run.event == 'push'`
+  # from this repository, so no fork's pull request reaches it.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [ci]
     types: [completed]
     branches: [main, 'release/*']

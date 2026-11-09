@@ -15,7 +15,8 @@ export const RANGE_UNSATISFIABLE = 'unsatisfiable';
 /**
  * One range or none. A multi-range or malformed header is ignored rather than refused — RFC 9110
  * lets a server answer the whole representation, and `multipart/byteranges` is a body format no
- * caller of these routes asks for. `bytes=-` names no byte and is ignored the same way.
+ * caller of these routes asks for. `bytes=-` names no byte and is ignored the same way, and so is
+ * `bytes=5-3`, whose last byte comes before its first.
  */
 export function parseByteRange(
   header: string | null | undefined,
@@ -37,8 +38,11 @@ export function parseByteRange(
       : { start: Math.max(size - wanted, 0), end: size - 1 };
   }
   const start = Number(from);
+  // RFC 9110 §14.1.1: a last-pos below its first-pos is an INVALID range-spec, ignored like any
+  // other malformed header — 416 is for a valid range this size cannot meet.
+  if (to !== '' && Number(to) < start) return undefined;
   const end = to === '' ? size - 1 : Math.min(Number(to), size - 1);
-  return start >= size || end < start ? RANGE_UNSATISFIABLE : { start, end };
+  return start >= size ? RANGE_UNSATISFIABLE : { start, end };
 }
 
 /**

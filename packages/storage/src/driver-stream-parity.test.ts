@@ -141,6 +141,29 @@ describe('putStream(key, stream, { maxBytes })', () => {
     }
   });
 
+  test('a body across several write batches lands every chunk, in order', async () => {
+    // The local disk flushes per MiB, not per chunk: 3 MiB in 256 KiB chunks crosses the line
+    // twice and ends mid-batch, so a lost or reordered batch shows as a wrong first byte.
+    const size = 256 * 1024;
+    const count = 12;
+    for (const disk of disks) {
+      let sent = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent === count) return controller.close();
+          sent += 1;
+          controller.enqueue(new Uint8Array(size).fill(sent));
+        },
+      });
+      await disk.putStream(KEY, body, { maxBytes: size * count });
+      const stored = await drain(await disk.stream(KEY));
+      expect(`${disk.name}:${stored.byteLength}`).toBe(`${disk.name}:${size * count}`);
+      for (let index = 0; index < count; index += 1) {
+        expect(`${disk.name}:${stored[index * size + size - 1]}`).toBe(`${disk.name}:${index + 1}`);
+      }
+    }
+  });
+
   test('the etag is the one put() would have recorded for those bytes', async () => {
     const roomy = localDriver({ root: `${root}/etag`, signingSecret: 's', clock });
     const put = await roomy.put('via-put', bytesOf('same bytes'));

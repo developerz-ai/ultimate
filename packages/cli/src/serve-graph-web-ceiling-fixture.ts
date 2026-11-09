@@ -168,5 +168,6 @@
  * raised 1436 → 1441, measured 1441 (2026-11-07, sweep 3): the four above, `mcp/src/include-early.ts`.
  * raised 1441 → 1442, measured 1442 (2026-11-07, fix/exercise-fidelity): `MIGRATE_CEILING`'s 1.
  * raised 1442 → 1443, measured 1443 (2026-11-08, fix/followups): `MIGRATE_CEILING`'s 1.
+ * raised 1443 → 1458, measured 1458 (2026-11-09, plan 101 v31 wave A): `SERVING_ROLE_CEILING`'s 15.
  */
-export const WEB_ROLE_CEILING = 1443;
+export const WEB_ROLE_CEILING = 1458;

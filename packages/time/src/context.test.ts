@@ -6,6 +6,7 @@ import {
   configureTime,
   currentTimeZone,
   resolveTimeZone,
+  TIMEZONE_COOKIE,
   TIMEZONE_DETECTED_COOKIE,
   timeConfig,
 } from './context';
@@ -83,6 +84,13 @@ describe('the detected zone', () => {
   test('is the last source in the default order', () => {
     expect(timeConfig().order).toEqual(['user', 'cookie', 'query', 'header', 'detected']);
     expect(TIMEZONE_DETECTED_COOKIE).toBe('x_timezone_detected');
+  });
+
+  test('the chosen cookie is a published name, distinct from the guess', () => {
+    // A zone picker writes this; `@ultimat3/http`'s default reads it. One constant, so the two
+    // cannot drift the way a literal in each did.
+    expect(TIMEZONE_COOKIE).toBe('x_timezone');
+    expect(TIMEZONE_COOKIE).not.toBe(TIMEZONE_DETECTED_COOKIE);
   });
 
   test('answers a visitor nothing else resolves for', () => {

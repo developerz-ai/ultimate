@@ -9,6 +9,7 @@ export {
 } from './decisions';
 export type { DefinePolicyInput } from './define';
 export { definePolicy } from './define';
+export { denialCode, denialReason } from './denial-parts';
 export type { PolicyErrorCode } from './errors';
 export {
   denialError,
@@ -33,6 +34,16 @@ export {
   resetPolicyTracing,
 } from './evaluate';
 export { actorHas, actorPermissions } from './grant-index';
+export type {
+  ActorStageSubject,
+  GuardedPrimitive,
+  GuardSubject,
+  InputStageSubject,
+  PrimitiveDenial,
+  PrimitiveSurface,
+  PrimitiveSurfaces,
+} from './guard-primitive';
+export { guardPrimitive, PRIMITIVE_POLICY_SURFACES } from './guard-primitive';
 export type {
   KnownPermission,
   Permission,

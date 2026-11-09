@@ -75,6 +75,9 @@ describe('what reaching the barrel costs an island that only follows a channel',
   test('the measured size holds', async () => {
     const bytes = new TextEncoder().encode(await chunk('useChannel', true)).byteLength;
     // 8,121 B when measured; the ceiling is the measurement plus headroom for a reworded title.
-    expect(bytes).toBeLessThan(8_600);
+    // measured: 8,726 B (2026-11-09, Bun 1.4.4), 8,513 without this change. why: +213 B, core's
+    // `boundedCause` in `UltimateError`'s constructor — a cause is cut at 4 KiB in the browser too,
+    // so a decoded problem `detail` is bounded (plan 101 slice 02, K2). The ceiling moves by it.
+    expect(bytes).toBeLessThan(8_813);
   }, 60_000);
 });

@@ -22,7 +22,7 @@ import {
   settleLostPut,
 } from './driver-s3-settle';
 import type { S3WireOptions } from './driver-s3-signed';
-import { partBytesFor } from './multipart';
+import { MAX_PART_BYTES } from './multipart';
 import type { PutStreamOptions } from './put-stream';
 import { streamLimit } from './put-stream';
 
@@ -35,6 +35,29 @@ export interface S3PutStreamInput extends Pick<S3UploadTarget, 'key' | 'refused'
   readonly stat: S3Stat;
 }
 
+/** A part's size before growth: big enough to amortise a request, small enough to hold four. */
+export const STREAM_PART_BYTES = 8 * 1024 * 1024;
+/** Parts in flight AND being filled, together: what one `putStream` holds is at most this many parts. */
+export const STREAM_PART_BUFFERS = 4;
+/** Parts per size step: the size doubles every 1,000, so 10,000 parts reach 8 TiB, past S3's 5 TiB. */
+const PARTS_PER_STEP = 1000;
+/** The first buffer for a body that may yet fit one PUT: grown by doubling, never preallocated. */
+const FIRST_BUFFER_BYTES = 64 * 1024;
+
+/**
+ * Part `n`'s size: `STREAM_PART_BYTES`, doubled every 1,000 parts, capped at S3's 5 GiB part. Never
+ * derived from the declared ceiling, which made a 1 TB `maxBytes` cut 100 MB parts for every body.
+ */
+export function streamPartBytes(partNumber: number): number {
+  // A size schedule, not a retry curve: doubled once per 1,000 parts while it stays a legal part.
+  let size = STREAM_PART_BYTES;
+  for (let past = PARTS_PER_STEP; past < partNumber; past += PARTS_PER_STEP) {
+    if (size + size > MAX_PART_BYTES) break;
+    size += size;
+  }
+  return size;
+}
+
 /** The whole body, stored — or nothing stored and the key as it was. */
 export async function putS3Stream(wire: S3WireOptions, input: S3PutStreamInput): Promise<void> {
   const { key, body, options, maxBytes, driver, refused, stat } = input;
@@ -42,30 +65,66 @@ export async function putS3Stream(wire: S3WireOptions, input: S3PutStreamInput):
   const putOptions: PutOptions = options;
   // Screened before a byte is read: a header that cannot travel fails here, not on the Create.
   const headers = objectHeaders(putOptions);
-  const partBytes = partBytesFor(maxBytes);
-  let chunks: Uint8Array[] = [];
-  let held = 0;
+  // ONE buffer per part, chunks copied in: a chunk is never held beside the part it went into.
+  let buffer = new Uint8Array(FIRST_BUFFER_BYTES);
+  let filled = 0;
   let total = 0;
   let uploadId: string | undefined;
   const etags: string[] = [];
+  const inFlight = new Set<Promise<void>>();
+  /** The first refused part, if any; later ones add nothing the caller can act on. */
+  const failures: unknown[] = [];
 
-  const sendPart = async (): Promise<void> => {
+  const dispatch = async (part: Uint8Array): Promise<void> => {
     uploadId ??= await createS3Upload(target, headers);
-    const part = new Uint8Array(Bun.concatArrayBuffers(chunks));
-    chunks = [];
-    held = 0;
-    etags.push(await uploadS3Part(target, uploadId, etags.length + 1, part));
+    const open = uploadId;
+    const partNumber = etags.length + 1;
+    etags.push('');
+    const sending = uploadS3Part(target, open, partNumber, part).then(
+      (etag) => {
+        etags[partNumber - 1] = etag;
+      },
+      (error: unknown) => {
+        failures.push(error);
+      },
+    );
+    const tracked = sending.finally(() => inFlight.delete(tracked));
+    inFlight.add(tracked);
+    // A new buffer only once one is free: in flight plus filling stays at `STREAM_PART_BUFFERS`.
+    while (inFlight.size >= STREAM_PART_BUFFERS) await Promise.race(inFlight);
+    if (failures.length > 0) throw failures[0];
+  };
+
+  const append = async (chunk: Uint8Array): Promise<void> => {
+    let at = 0;
+    while (at < chunk.byteLength) {
+      const partBytes = streamPartBytes(etags.length + 1);
+      if (filled === buffer.byteLength && buffer.byteLength < partBytes) {
+        // Still the first part: grown by doubling, so a small body never costs a whole part.
+        const grown = new Uint8Array(Math.min(partBytes, buffer.byteLength * 2));
+        grown.set(buffer.subarray(0, filled));
+        buffer = grown;
+      }
+      const taken = Math.min(chunk.byteLength - at, buffer.byteLength - filled);
+      buffer.set(chunk.subarray(at, at + taken), filled);
+      filled += taken;
+      at += taken;
+      if (filled === partBytes) {
+        filled = 0;
+        await dispatch(buffer);
+        // Allocated once a slot is free, never before: the bound is on buffers, not requests.
+        buffer = new Uint8Array(streamPartBytes(etags.length + 1));
+      }
+    }
   };
 
   try {
     await pumpBounded(body, streamLimit(driver, key, maxBytes), async (chunk) => {
-      chunks.push(chunk);
-      held += chunk.byteLength;
       total += chunk.byteLength;
-      if (held >= partBytes) await sendPart();
+      await append(chunk);
     });
-    if (uploadId === undefined) {
-      const whole = new Uint8Array(Bun.concatArrayBuffers(chunks));
+    if (uploadId === undefined && inFlight.size === 0) {
+      const whole = buffer.subarray(0, filled);
       const rethrow = (error: unknown): never => {
         throw error;
       };
@@ -75,8 +134,11 @@ export async function putS3Stream(wire: S3WireOptions, input: S3PutStreamInput):
       if (refusal !== undefined) refused(refusal);
       return;
     }
-    if (held > 0) await sendPart();
+    if (filled > 0) await dispatch(buffer.subarray(0, filled));
+    await Promise.all(inFlight);
+    if (failures.length > 0) throw failures[0];
     const open = uploadId;
+    if (open === undefined) return;
     await completeS3Upload(
       target,
       open,
@@ -89,8 +151,10 @@ export async function putS3Stream(wire: S3WireOptions, input: S3PutStreamInput):
       await settleComplete(stat, { ...target, driver }, open, sent, lost);
     });
   } catch (error) {
-    // Parts bill until they are aborted. The refusal the caller reads is the first one, so an abort
-    // that fails too is left to the bucket's lifecycle rule rather than replacing it.
+    // A part still sending would land after the abort and bill: every one settles first. The
+    // refusal the caller reads is the first one, so an abort that fails too is left to the
+    // bucket's lifecycle rule rather than replacing it.
+    await Promise.allSettled(inFlight);
     if (uploadId !== undefined) await abortS3Upload(target, uploadId).catch(() => undefined);
     throw error;
   }

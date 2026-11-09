@@ -113,6 +113,7 @@ export function memoryErrorGroupsStore(): ErrorGroupsStore {
         ...seen,
         message: occurrence.message,
         status: statusAfterOccurrence(seen.status),
+        // biome-ignore lint/complexity/useMathMinMax: ISO-8601 STRINGS, compared as text — Math.max would return NaN.
         lastSeen: at > seen.lastSeen ? at : seen.lastSeen,
         count: seen.count + occurrence.count,
         sample: occurrence.sample,

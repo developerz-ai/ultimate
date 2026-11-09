@@ -24,7 +24,7 @@ export function stabilityChangelogFindings(
 ): readonly Finding[] {
   // Each released major judged by its own heading date: the bump PR that dated it reds here.
   const windows = parseChangelog(changelog)
-    // Only lines above v30 are windowed: the cheap filter keeps 300 sections from each re-parsing.
+    // Only lines above the opener are windowed: the cheap filter keeps 300 sections from each re-parsing.
     .filter(
       (section) => section.released && Number.parseInt(section.version, 10) > WINDOW_OPENS_AT_MAJOR,
     )
@@ -40,7 +40,7 @@ export function stabilityChangelogFindings(
 export function nextWindowLine(changelog: string): string {
   const window = nextMajorWindow(changelog);
   return window === undefined
-    ? `${NEXT_WINDOW_LEAD} 90 days after the date on the \`## 30.0.0\` heading`
+    ? `${NEXT_WINDOW_LEAD} 90 days after the date on the \`## ${WINDOW_OPENS_AT_MAJOR}.0.0\` heading`
     : `${NEXT_WINDOW_LEAD} opens on \`${window.opensOn}\`, 90 days after ${window.after} (${window.on})`;
 }
 
@@ -59,7 +59,7 @@ export function withNextWindowLine(page: string, changelog: string): string {
 }
 
 /**
- * The page's next-window line, held to the changelog: once v30 has shipped it names the date
+ * The page's next-window line, held to the changelog: once the opener has shipped it names the date
  * `nextMajorWindow` derives, in backticks; before then it names no date. A hand-kept date is the
  * fact that goes stale the day a major ships, so it is checked rather than trusted.
  */
@@ -78,7 +78,7 @@ export function stabilityPageFindings(page: string, changelog: string): readonly
       cause:
         line === undefined
           ? `${STABILITY_PATH} has no line starting ${NEXT_WINDOW_LEAD}, so the page states no next major date`
-          : `${STABILITY_PATH}'s next-window line does not say what CHANGELOG.md derives: ${window === undefined ? 'no major from 30.0.0 has shipped, so it names no date' : `${window.opensOn}, 90 days after ${window.after}`}`,
+          : `${STABILITY_PATH}'s next-window line does not say what CHANGELOG.md derives: ${window === undefined ? `no major from ${WINDOW_OPENS_AT_MAJOR}.0.0 has shipped, so it names no date` : `${window.opensOn}, 90 days after ${window.after}`}`,
       fix: `grep -n 'Next major window' wiki/Stability.md   # make that line read "${want}.", then rerun: bun test scripts/lib/stability-findings.test.ts`,
       at: STABILITY_PATH,
     },

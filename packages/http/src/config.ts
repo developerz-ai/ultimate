@@ -9,6 +9,7 @@ import {
   MAX_TIMER_MS,
   tryResolveEnvironment,
 } from '@ultimat3/core';
+import { DEFAULT_MAX_REQUEST_BODY_BYTES } from './body-ceiling';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import { type CsrfConfig, DEFAULT_CSRF } from './csrf';
 import {
@@ -24,7 +25,8 @@ import {
   type LocaleConfig,
   type TimeZoneConfig,
 } from './locale';
-import { type RateLimitConfig, resolveRateLimitConfig } from './rate-limit';
+import type { RateLimitConfig } from './rate-limit';
+import { resolveRateLimitConfig } from './rate-limit-config';
 import { assertCspExtend, DEFAULT_SECURITY, type SecurityConfig } from './security-headers';
 
 export interface HttpConfig {
@@ -71,6 +73,13 @@ export interface HttpConfig {
   readonly healthDetailPeers: readonly string[];
   readonly bodyLimitBytes: number;
   /**
+   * The most this process reads in ONE request, for any route — `bodyLimitBytes` is the parsed
+   * RPC body's cap, this is the transport's (a signed upload reads past the first, never past
+   * this). Over it is `X_BODY_TOO_LARGE` (413), declared or streamed. Never below
+   * `bodyLimitBytes`; defaults to 128 MiB, Bun's own former default.
+   */
+  readonly maxRequestBodyBytes: number;
+  /**
    * How long one request may run before it is aborted and answered `X_TIMEOUT` (504). `0`
    * disables it, which is a deployment saying it would rather hold a connection forever than
    * cut one short. A caller may ask for LESS with `x-request-timeout-ms`, never for more.
@@ -103,6 +112,7 @@ export interface HttpConfigInput {
   readonly trustClientCertHeader?: boolean;
   readonly healthDetailPeers?: readonly string[];
   readonly bodyLimitBytes?: number;
+  readonly maxRequestBodyBytes?: number;
   readonly requestTimeoutMs?: number;
   readonly maxInflight?: number;
   readonly locale?: Partial<LocaleConfig>;
@@ -258,6 +268,13 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
   // judged, and a directive name that is not a token would otherwise be a bare `TypeError` out of
   // the first response's header build — or worse, a second directive nobody declared.
   assertCspExtend(csp.extend);
+  const bodyLimitBytes = assertFiniteCount(
+    'bodyLimitBytes',
+    input.bodyLimitBytes ?? 1_048_576,
+    Number.MAX_SAFE_INTEGER,
+    'a whole number of bytes',
+    'bodyLimitBytes: 1_048_576',
+  );
   return {
     // `Number.parseInt(env('PORT'), 10)` is `NaN` for `PORT=web`, and a config that carries NaN
     // into `Bun.serve` binds a port nobody asked for.
@@ -283,12 +300,17 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     healthDetailPeers: assertHealthDetailPeers(
       input.healthDetailPeers === undefined ? DEFAULT_HEALTH_DETAIL_PEERS : input.healthDetailPeers,
     ),
-    bodyLimitBytes: assertFiniteCount(
-      'bodyLimitBytes',
-      input.bodyLimitBytes ?? 1_048_576,
-      Number.MAX_SAFE_INTEGER,
-      'a whole number of bytes',
-      'bodyLimitBytes: 1_048_576',
+    bodyLimitBytes,
+    // Never below the parsed-body cap: a body `bodyLimitBytes` allows is never refused under it.
+    maxRequestBodyBytes: Math.max(
+      bodyLimitBytes,
+      assertFiniteCount(
+        'maxRequestBodyBytes',
+        input.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES,
+        Number.MAX_SAFE_INTEGER,
+        'a whole number of bytes',
+        `maxRequestBodyBytes: ${DEFAULT_MAX_REQUEST_BODY_BYTES}`,
+      ),
     ),
     // 30s: longer than any request a browser waits out, shorter than the 15s drain budget times
     // two, so a rolling restart cannot be held open by work started just before SIGTERM.

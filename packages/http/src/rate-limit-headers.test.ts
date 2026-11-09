@@ -5,7 +5,8 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { requestContext } from './context';
-import { DEFAULT_RATE_LIMIT, type RateLimitDecision, rateLimiter } from './rate-limit';
+import { type RateLimitDecision, rateLimiter } from './rate-limit';
+import { DEFAULT_RATE_LIMIT } from './rate-limit-config';
 import { publishRateLimit, rateLimitHeaders } from './rate-limit-headers';
 
 const decision: RateLimitDecision = {

@@ -215,6 +215,13 @@ bound where it is narrower.
 `formatIssues()` renders one line per issue for the dev overlay. `validate()` never throws and
 returns the Standard Schema result. Async libraries: `parseAsync()` / `validateAsync()`.
 
+**A refusal is bounded.** Every door — `validate()`, `parse()`, `safeParse()`, `~standard.validate`
+— stops collecting at `MAX_ISSUES` (100): a builtin array, object, record or `t.json()` leaves the
+rest unchecked, and the result carries `issuesTruncated: true` (`ValidationFailedError.issuesTruncated`,
+and `meta.issuesTruncated`). A foreign library's list is cut to the cap. `validate(schema, value,
+{ maxIssues })` / `validateAsync(…, { maxIssues })` narrow or widen it; below 1 is
+`X_SCHEMA_ISSUE_CAP_INVALID`. A `SchemaError` cause is cut at 4 KiB, as core's is.
+
 This package is tier 0 and cannot import `@ultimat3/core`, so `SchemaError` reproduces
 `UltimateError` structurally and carries the same `Symbol.for('ultimate.error')` brand —
 `isUltimateError()` from core matches it. Register the codes once from any package that imports

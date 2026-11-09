@@ -26,6 +26,11 @@ export interface AuthServerStore {
   putClient(client: AuthServerClient): Promise<void>;
   getClient(clientId: string): Promise<AuthServerClient | null>;
   putCode(code: AuthCodeRecord): Promise<void>;
+  /**
+   * The code as stored, used or not, WITHOUT spending it: the grant checks client, PKCE and
+   * redirect on this read so a request that could not redeem the code never burns it.
+   */
+  getCode(codeHash: string): Promise<AuthCodeRecord | null>;
   /** Marks the code used at `at` in the step that reads it. `fresh: false` is a replay. */
   takeCode(
     codeHash: string,
@@ -53,8 +58,12 @@ export interface AuthServerStore {
     decision: DeviceDecision,
     at: Date,
   ): Promise<DeviceCodeRecord | null>;
-  /** Stamps `lastPolledAt = at` and answers the row as it was BEFORE the stamp. */
-  pollDevice(deviceCodeHash: string, at: Date): Promise<DeviceCodeRecord | null>;
+  /**
+   * The device code of `clientId`: stamps `lastPolledAt = at` and answers the row as it was BEFORE
+   * the stamp. Another client's poll is `null` and stamps nothing, so it cannot `slow_down` the
+   * device the code was issued to.
+   */
+  pollDevice(deviceCodeHash: string, clientId: string, at: Date): Promise<DeviceCodeRecord | null>;
   /** Approved → consumed. `false` when another poll took it first. */
   consumeDevice(deviceCodeHash: string, at: Date): Promise<boolean>;
   /**
@@ -90,6 +99,7 @@ export function memoryAuthServerStore(): AuthServerStore {
     async putCode(code) {
       codes.set(code.codeHash, code);
     },
+    getCode: async (hash) => codes.get(hash) ?? null,
     async takeCode(hash, at) {
       const code = codes.get(hash);
       if (code === undefined) return null;
@@ -153,9 +163,9 @@ export function memoryAuthServerStore(): AuthServerStore {
       devices.set(device.deviceCodeHash, decided);
       return decided;
     },
-    async pollDevice(hash, at) {
+    async pollDevice(hash, clientId, at) {
       const device = devices.get(hash);
-      if (device === undefined) return null;
+      if (device === undefined || device.clientId !== clientId) return null;
       devices.set(hash, { ...device, lastPolledAt: at });
       return device;
     },

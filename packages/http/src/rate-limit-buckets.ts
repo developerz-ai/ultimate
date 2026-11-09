@@ -16,6 +16,17 @@ const same = (a: Bucket, b: Bucket): boolean =>
   a.capacity === b.capacity && a.refillPerSecond === b.refillPerSecond;
 
 /**
+ * A bucket table is indexed by an author-written name, so it is read through `Object.hasOwn` and
+ * written through `defineProperty` — the same rule `rateLimiter`'s `declared` reads by. Plain
+ * `[name]` answers `Object` for 'constructor', and `[name] =` makes '__proto__' the prototype.
+ */
+const own = (
+  table: Readonly<Record<string, Bucket>> | undefined,
+  name: string,
+): Bucket | undefined =>
+  table !== undefined && Object.hasOwn(table, name) ? table[name] : undefined;
+
+/**
  * The config with every route-declared bucket registered under the name that route selects.
  *
  * Precedence is refusal, never a winner: an equal restatement passes, and any disagreement — with
@@ -55,7 +66,7 @@ export const withRouteBuckets = (config: HttpConfig, routes: readonly Route[]): 
     // Numbers with no name to file them under enforce nothing; `toRoute` always sets both.
     if (bucket === undefined || name === undefined) continue;
     const prior = declared.get(name);
-    const configured = config.rateLimit.buckets[name];
+    const configured = own(config.rateLimit.buckets, name);
     if (prior !== undefined && !same(prior.bucket, bucket)) {
       throw rateLimitBucketConflict({
         bucket: name,
@@ -78,7 +89,14 @@ export const withRouteBuckets = (config: HttpConfig, routes: readonly Route[]): 
   }
   if (declared.size === 0) return config;
   const buckets: Record<string, Bucket> = { ...config.rateLimit.buckets };
-  for (const [name, entry] of declared) buckets[name] = entry.bucket;
+  for (const [name, entry] of declared) {
+    Object.defineProperty(buckets, name, {
+      value: entry.bucket,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
   return { ...config, rateLimit: { ...config.rateLimit, buckets } };
 };
 
@@ -98,7 +116,7 @@ export const assertRouteBuckets = (limiter: RateLimiter, routes: readonly Route[
     const bucket = route.meta.rateLimitBucket;
     const name = route.meta.rateLimit;
     if (bucket === undefined || name === undefined) continue;
-    const found = limiter.buckets?.[name];
+    const found = own(limiter.buckets, name);
     if (found !== undefined && same(found, bucket)) continue;
     throw rateLimitBucketUnbound({
       bucket: name,

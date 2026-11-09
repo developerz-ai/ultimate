@@ -165,7 +165,12 @@ function canonicalPath(pathname: string, doubleEncode: boolean): string {
     .join('/');
 }
 
-/** Pairs decoded then strictly re-encoded, sorted by key then value; a bare `key` is `key=`. */
+/**
+ * Pairs decoded then strictly re-encoded, sorted by key then value; a bare `key` is `key=`. A `+`
+ * is a space — the form encoding `URLSearchParams` writes — so `url.searchParams.set('prefix',
+ * 'a b')` is signed and sent as `a%20b`, never `a%2Bb` (a different key to S3). A literal plus is
+ * `%2B`, which `URLSearchParams` already writes.
+ */
 function canonicalQuery(search: string): string {
   const pairs: [string, string][] = [];
   for (const part of search.replace(/^\?/, '').split('&')) {
@@ -173,7 +178,8 @@ function canonicalQuery(search: string): string {
     const at = part.indexOf('=');
     const key = at === -1 ? part : part.slice(0, at);
     const value = at === -1 ? '' : part.slice(at + 1);
-    pairs.push([uriEncode(uriDecode(key, 'query')), uriEncode(uriDecode(value, 'query'))]);
+    const decode = (raw: string): string => uriDecode(raw.replaceAll('+', ' '), 'query');
+    pairs.push([uriEncode(decode(key)), uriEncode(decode(value))]);
   }
   pairs.sort(([ak, av], [bk, bv]) => (ak === bk ? (av < bv ? -1 : 1) : ak < bk ? -1 : 1));
   return pairs.map(([key, value]) => `${key}=${value}`).join('&');
@@ -350,7 +356,7 @@ export async function presignAwsUrl(input: PresignAwsUrlInput): Promise<Presigne
   params.set('X-Amz-Expires', String(expires));
   params.set('X-Amz-SignedHeaders', signedHeaders);
   if (token !== undefined && token !== '') params.set('X-Amz-Security-Token', token);
-  const query = canonicalQuery(params.toString().replaceAll('+', '%20'));
+  const query = canonicalQuery(params.toString());
   const doubleEncode = input.doubleEncodePath ?? input.service !== 's3';
   const canonicalRequest = [
     input.method,
