@@ -24,7 +24,7 @@ import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
 /** Characters a token on the "wire" below: dense JSON. The estimate assumes four. */
@@ -112,9 +112,9 @@ export function dense(script: DenseScript): Dense {
   resetAiRuntime();
   registerCompactModels();
   rows = 0;
-  configureAi({
-    gateway: providerGateway({ defaultModel: SMALL, providers: [provider], sleep: async () => {} }),
-  });
+  installAiGateway(
+    providerGateway({ defaultModel: SMALL, providers: [provider], sleep: async () => {} }),
+  );
   return out;
 }
 

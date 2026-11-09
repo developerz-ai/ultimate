@@ -14,7 +14,7 @@ import {
   withSpan,
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { resetJobDriver, setJobDriver } from './driver';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -68,7 +68,7 @@ const runOnce = async (driver: ReturnType<typeof memoryJobDriver>) => {
 
 describe('job.enqueue', () => {
   test('emits one event per job with its name, queue and id', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const seen: JobEnqueueEvent[] = [];
     subscribe('job.enqueue', (event) => seen.push(event.payload));
     const chargeCard = declare();
@@ -81,7 +81,7 @@ describe('job.enqueue', () => {
   });
 
   test('opens a producer span with the stable messaging attributes', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const spans = spansOf();
     const result = await declare().enqueue({ orderId: 'o-1' });
 
@@ -100,7 +100,7 @@ describe('job.enqueue', () => {
 describe('job.perform', () => {
   test('emits once per attempt with the attempt number and a duration', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const seen: JobPerformEvent[] = [];
     subscribe('job.perform', (event) => seen.push(event.payload));
     const { id } = await declare().enqueue({ orderId: 'o-1' });
@@ -118,7 +118,7 @@ describe('job.perform', () => {
 
   test('a failed attempt is still an attempt, and carries its error', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const seen: JobPerformEvent[] = [];
     subscribe('job.perform', (event) => seen.push(event.payload));
     await declare(() => Promise.reject(new TypeError('card declined'))).enqueue({ orderId: 'o-1' });
@@ -131,7 +131,7 @@ describe('job.perform', () => {
 
   test('the consumer span is a child of the producer span, with the messaging attributes', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const spans = spansOf();
     let requestTraceId = '';
     await withSpan('action.checkout', async (span) => {

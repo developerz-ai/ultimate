@@ -6,8 +6,7 @@ import type { JobDriver } from '@ultimat3/jobs';
 import { jobDriver } from '@ultimat3/jobs';
 import type { CommandContext } from './command';
 import type { CommandResult } from './output';
-import { resolveServices } from './runtime-bindings';
-import { startQueue } from './runtime-queue';
+import { openAppQueue } from './runtime-boot-ports';
 
 /**
  * `x jobs` needs the app's real driver. Reuse an already-running one first — inside `x dev` or
@@ -23,11 +22,11 @@ export async function withJobDriver(
 ): Promise<CommandResult> {
   const ambient = jobDriver();
   if (ambient !== undefined) return fn(ambient);
-  const services = resolveServices(root, ctx.env);
   // The command's own environment on both halves: `resolveServices` reads DATABASE_URL off it, so
   // a queue that resolved its standby from `process.env` would talk to a pair the same call had
-  // just decided against.
-  const queue = await startQueue(services, undefined, ctx.env);
+  // just decided against. And the app's `runtime.ts`: its `jobs` port is the queue to inspect, its
+  // clock and secret source the ones the app runs on.
+  const queue = await openAppQueue(root, ctx.env);
   try {
     return await fn(queue.jobs);
   } finally {

@@ -3,7 +3,8 @@
 // is what a full bus drops, and the earliest match wins so a resumed step consumes in order.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { eventBus, memoryEventBus, publishEvent, resetEventBus, setEventBus } from './events';
+import { installEventBus, resetEventBus } from './adapter';
+import { eventBus, memoryEventBus, publishEvent } from './events';
 
 const clockAt = (start: number) => {
   let at = start;
@@ -102,16 +103,16 @@ describe('the memory event bus', () => {
 });
 
 describe('the ambient bus', () => {
-  const original = eventBus();
+  const releases: (() => void)[] = [];
   afterEach(() => {
-    // Restore exactly what was installed, never a fresh default: this is process-global state and
-    // a test file that leaves its own bus behind strands every later file's waiting step.
-    setEventBus(original);
+    // Release exactly what this file installed, never a fresh default and never a re-install: the
+    // slot is a stack, and a frame left behind strands every later file's waiting step.
+    for (const release of releases.splice(0)) release();
   });
 
   test('publishEvent goes to whichever bus is installed', async () => {
     const installed = memoryEventBus({ clock: clockAt(1_000) });
-    setEventBus(installed);
+    releases.push(installEventBus(installed));
     expect(eventBus()).toBe(installed);
 
     const event = await publishEvent('invoice.paid', { id: 'in_1' }, { correlationKey: 'org-1' });

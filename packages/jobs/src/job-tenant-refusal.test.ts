@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
-import { resetJobDriver, setJobDriver } from './driver';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { declare, runOfForeignRow } from './job-tenant-fixture';
@@ -31,7 +31,7 @@ const asActorOf = (orgId: string | undefined): Ctx =>
 
 describe('the enqueue refuses a payload for another org', () => {
   test('an explicit tenantId, and handle.as with an actor of another org', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const invite = declare();
     expect(await codeOf(invite.enqueue({ orgId: 'org-a' }, { tenantId: 'org-b' }))).toBe(
       'X_JOB_TENANT_MISMATCH',
@@ -45,7 +45,7 @@ describe('the enqueue refuses a payload for another org', () => {
   });
 
   test('an ambient actor of another org, on enqueue and enqueueMany alike', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const invite = declare();
     await runWithContext(asActorOf('org-b'), async () => {
       expect(await codeOf(invite.enqueue({ orgId: 'org-a' }))).toBe('X_JOB_TENANT_MISMATCH');
@@ -59,7 +59,7 @@ describe('the enqueue refuses a payload for another org', () => {
   });
 
   test("tenant: 'none' is never compared", async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const sweep = job<{ n: number }>({
       name: 'sweep',
       tenant: 'none',

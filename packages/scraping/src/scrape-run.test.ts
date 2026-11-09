@@ -6,10 +6,9 @@
 // to `sessionKeyFor`'s unit test, which cannot see who calls it with what.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, structuredLogger, userActor } from '@ultimat3/core';
+import { ctxOf, frozenClock, structuredLogger, userActor } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import { testScrapeClock } from './clock';
 import type { ScrapeDriver } from './driver';
 import { resetScrapeDriver } from './driver';
 import { fakeBrowser } from './driver-fake';
@@ -68,7 +67,7 @@ const define = (
   idempotencyKey: (input) => `orders:${String(input.page)}`,
   tenant: 'none',
   allowHosts: ['shop.test'],
-  clock: testScrapeClock(),
+  clock: frozenClock(),
   // An offline driver has no origin to ask: under the sealed network the read is unreachable,
   // which is complete disallow. The robots tests below opt back in with `robots: 'obey'`.
   robots: { ignore: 'offline fixture, no origin to ask' },

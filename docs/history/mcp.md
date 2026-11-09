@@ -290,3 +290,14 @@ Compared before the design was fixed, read only (never run): sst/opencode at
   at the top level of a module under `apps/<app>/app/` is built before the scan reaches another app
   directory's actions; the mount refuses it with `X_MCP_INCLUDE_EARLY`, naming the primitives the
   too-early catalog lacks and the `apps/<app>/mcp.ts` to build it in, instead of serving it short.
+
+## Exposure is declared at the primitive (moved from CLAUDE.md, `As of 2026-11-09`)
+
+- Exposure is declared at the primitive, never in `defineAppMcp`. A primitive NAMED in
+  `actions:`/`queries:` without `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot —
+  a written-out list is a request, so filtering it would ship a catalog missing a tool its
+  author believes is there. `include: 'exposed'` sweeps the registries and therefore skips,
+  because that list is every primitive the app registered, not one anyone wrote out.
+  `actions:` and `queries:` go through **one** `toolsListed` call over the concatenation: it
+  collects every offender before throwing, so one boot names all of them and one edit closes
+  all of them. Two calls would throw on the first array and never examine the second.

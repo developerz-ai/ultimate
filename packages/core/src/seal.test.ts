@@ -7,8 +7,8 @@ import { classifyThrown, declaredErrorRetry } from './error-retry';
 import { isUltimateError } from './errors';
 import { isSealed, open, openText, seal, sealAll, sealedKeyId } from './seal';
 import { resolveSealKeys, SECRETS_RETIRED_KEYS_ENV, sealKeyIds } from './seal-keys';
+import { SECRETS_KEY_ENV } from './secret-source';
 import { generateMasterKey, masterKeyId, parseMasterKey } from './secrets';
-import { SECRETS_KEY_ENV } from './secrets-store';
 
 /** A root with no `.secrets.key`, so the injected `env` is the only place a key can come from. */
 const ROOT = '/nonexistent/ultimate-seal-test';

@@ -4,8 +4,8 @@
 // `waitForSelector('#aceptar:not([disabled])')`, which is this rule, spelled once, by hand, at
 // one call site out of forty.
 
+import type { SleepClock } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';
-import type { ScrapeClock } from './clock';
 import { deadline } from './clock';
 import { notActionable, selectorMissing } from './error-throws';
 import type { ElementSnapshot } from './target';
@@ -71,7 +71,7 @@ export interface ActionabilityWait {
   readonly url: string;
   readonly state: ActionabilityState;
   readonly timeoutMs: number;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   readonly pollMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
   /** Re-read from the live page on EVERY poll. Never a handle captured before the loop. */

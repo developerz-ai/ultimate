@@ -7,15 +7,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; import() takes one already joined.
 import { join } from 'node:path';
-import {
-  JobKeyBusyError,
-  job,
-  memoryJobDriver,
-  resetJobDriver,
-  resetJobs,
-  setJobDriver,
-  t,
-} from '@ultimat3/jobs';
+import { JobKeyBusyError, job, memoryJobDriver, resetJobs, t } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { jobsCommand } from './cmd-jobs';
 import { appRoot, contextFor, enqueue, runJobs } from './cmd-jobs-fixture';
 import { MissingPositionalError } from './errors';
@@ -92,7 +85,7 @@ describe('unit · x jobs show, for an operator', () => {
       idempotencyKey: 'sync:acct-42',
       maxAttempts: 3,
     });
-    setJobDriver(driver);
+    installJobDriver(driver);
 
     const shown = await jobsCommand.run(
       contextFor(root, { subcommand: 'show', positionals: [id] }),

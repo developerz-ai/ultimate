@@ -11,8 +11,6 @@ import {
   systemClock,
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { memoryRateLimitStore } from './rate-limit';
-import { installedRateLimitStore, resetRateLimitStore } from './rate-limit-installed';
 import type { Route } from './router';
 import { httpServer, type UpgradeTarget } from './server';
 
@@ -67,36 +65,6 @@ test('an open websocket does not hold a later accept hook until the drain deadli
   // And the whole drain: the body wait in the `inflight` phase counts unfinished RESPONSES, and an
   // upgraded socket is not one — counted, the open tab would stall the drain one phase later.
   expect(systemClock.monotonic() - startedAt).toBeLessThan(500);
-});
-
-test('the rate-limit store adopted at boot is still given back by a stop over an open socket', async () => {
-  // 1b's release must survive the accept hook no longer awaiting the listener: `stop()` is what
-  // gives it back, and it has to keep doing so when a socket is still open at drain time.
-  resetRateLimitStore();
-  configureLifecycle({ deadlineMs: 3000, readinessGraceMs: 0 });
-  const store = memoryRateLimitStore();
-  const handle = httpServer({
-    routes: [],
-    role: 'web',
-    rateLimitStore: store,
-    config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
-    websocket: {
-      path: SYNC_PATH,
-      fetch: (request: Request, server: UpgradeTarget) =>
-        server.upgrade(request, { data: {} }) ? undefined : new Response(null, { status: 426 }),
-      websocket: { open: () => undefined, message: () => undefined, close: () => undefined },
-    },
-  }).start();
-  expect(installedRateLimitStore()).toBe(store);
-  const socket = await openSocket(`${handle.url().replace(/^http/, 'ws')}${SYNC_PATH}`);
-  try {
-    await handle.stop();
-  } finally {
-    socket.close();
-  }
-  const after = installedRateLimitStore();
-  resetRateLimitStore();
-  expect(after).not.toBe(store);
 });
 
 test('the control: a drain with nothing listening returns inside the same bound', async () => {

@@ -273,7 +273,7 @@ rather than rendering an empty one as an answer.
 | Env | Unset means | Set means |
 |---|---|---|
 | `DATABASE_URL` | PGlite in this process | that Postgres |
-| the variable `realtime.urlEnv` names | in-process fanout | that NATS server — read only under `realtime: { transport: 'nats' }`, which refuses to boot with it unset. `transport: 'memory'` (the default) refuses to boot while `NATS_URL` is set, so a bus meant for another node is never silently ignored |
+| `NATS_URL` | in-process fanout | that NATS server — set, it is the bus for every role; a bus of the app's own is `transport` in `export const runtime = { … }` in `apps/<app>/runtime.ts` instead |
 | `NATS_KV_BUCKET` | the KV bucket `x_presence` | that bucket — one per app on a shared cluster |
 | `S3_ENDPOINT` | `.x/storage` on disk | that S3 |
 

@@ -3,6 +3,7 @@
 // every restart, and a row's history that ends at the last deploy is not a history.
 
 import { isUltimateError, uuidV7 } from '@ultimat3/core';
+import type { AuditSink } from '@ultimat3/core/adapter';
 import { type DbClient, db, withTransaction } from '@ultimat3/db';
 import {
   AUDIT_READ_OPERATIONS,
@@ -12,7 +13,6 @@ import {
   type AuditLog,
   type AuditOutcome,
   type AuditQuery,
-  type AuditSink,
   auditEntry,
   auditLimit,
   auditWindow,
@@ -138,7 +138,7 @@ export interface PostgresAuditLogOptions {
    * read is an event and is always written.
    */
   readonly reads?: boolean;
-  readonly sinks?: readonly AuditSink[];
+  readonly sinks?: readonly AuditSink<AuditEntry>[];
   readonly now?: () => Date;
   /** Must answer a uuid: the column is one. Omitted, a time-ordered v7. */
   readonly nextId?: () => string;

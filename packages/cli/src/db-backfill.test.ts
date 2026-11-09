@@ -8,14 +8,8 @@ import { setDbClient } from '@ultimat3/db';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
-import {
-  backfill,
-  memoryJobDriver,
-  resetJobDriver,
-  resetJobs,
-  setJobDriver,
-  t,
-} from '@ultimat3/jobs';
+import { backfill, memoryJobDriver, resetJobs, t } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import {
   pendingReport,
   readAppliedMigrations,
@@ -128,7 +122,7 @@ describe('unit · declared minus completed, joined to the ledger', () => {
 describe('unit · runBackfills', () => {
   test('a dry run writes NOTHING — --write is never implied', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('normalize-titles');
 
     const rows = await runBackfills({
@@ -156,7 +150,7 @@ describe('unit · runBackfills', () => {
 
   test('--write enqueues, and a second --write dedupes onto the live pass', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('normalize-titles');
     const args = {
       driver,
@@ -184,7 +178,7 @@ describe('unit · runBackfills', () => {
     // The reason `--all` isolates per name: a wedged cleanup that threw out of the loop would
     // block every later one forever.
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('a-blocked', { requires: '20260101000000_init' });
     declareSweep('b-runs');
 
@@ -208,7 +202,7 @@ describe('unit · runBackfills', () => {
     // test that held only because the diff filters the array it returns. One `map` inside
     // `pendingBackfills` and `--all` would have found nothing, exited 0, and said so.
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('failed-once');
     declareSweep('still-running');
     await seed(driver, { runId: 'run_f', name: 'failed-once', rows: 3, finish: 'failed' });
@@ -230,7 +224,7 @@ describe('unit · runBackfills', () => {
 
   test('a completed name is refused without --force and runs again with it', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('normalize-titles');
     await seed(driver, { runId: 'run_1', name: 'normalize-titles', rows: 4, finish: 'completed' });
     const args = {
@@ -255,7 +249,7 @@ describe('unit · runBackfills', () => {
     // X_BACKFILL_UNKNOWN for a sweep that exists; its scope's input lives on that run's queue row,
     // so the retry is `x jobs retry`, never an enqueue this command could make up.
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     backfill<{ readonly id: string }, { readonly account: string }>({
       name: 'sync-invoices',
       tenant: 'none',
@@ -287,7 +281,7 @@ describe('unit · runBackfills', () => {
 
   test('a sweep this environment may not run is excluded from --all, never enqueued', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('prod-only', { environments: ['production'] });
 
     const swept = await runBackfills({
@@ -327,7 +321,7 @@ describe('unit · remaining — the one number a dry run reports', () => {
 
   test('a declared count() is what the dry run reports', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('counted', { count: () => 42 });
 
     const rows = await plan(driver, ['counted']);
@@ -340,7 +334,7 @@ describe('unit · remaining — the one number a dry run reports', () => {
     // is expected. Reporting `0` there would be the dry run lying, which is the failure `count()`
     // exists to close.
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('uncountable', {
       count: () => {
         throw new RangeError('this sweep is tenanted and the CLI context carries no org');
@@ -355,7 +349,7 @@ describe('unit · remaining — the one number a dry run reports', () => {
 
   test('a declaration with no count() reports null, and the table renders it as a value', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('uncounted');
 
     const rows = await plan(driver, ['uncounted']);
@@ -365,7 +359,7 @@ describe('unit · remaining — the one number a dry run reports', () => {
 
   test('remaining survives the enqueue, so --write reports what the dry run reported', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     declareSweep('counted-write', { count: () => 7 });
 
     const rows = await runBackfills({

@@ -4,7 +4,7 @@
 //
 // Skips unless a JetStream-enabled server is configured:
 //
-//   TEST_NATS_URL=nats://localhost:4222 bun test packages/realtime/src/channel-publish.live.test.ts
+//   TEST_NATS_URL=nats://localhost:4222 bun test ./packages/realtime/src/channel-publish.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { ChannelHub } from './channel';

@@ -12,7 +12,7 @@ import {
   withChildContext,
 } from '@ultimat3/core';
 import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
-import { resetJobDriver, setJobDriver } from './driver';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import { resetJobs } from './job';
 import { declare, runOfForeignRow } from './job-tenant-fixture';
@@ -40,7 +40,7 @@ const REASON = 'a member of org-a just created org-b and onboards it';
 
 describe('the enqueue admits another org only inside a proven crossTenant()', () => {
   test('refused outside the scope, even for an actor that holds tenancy:cross', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const invite = declare();
     await runWithContext(actorOfA([CROSS_TENANT_SCOPE]), async () => {
       expect(await codeOf(invite.enqueue({ orgId: 'org-b' }))).toBe('X_JOB_TENANT_MISMATCH');
@@ -50,7 +50,7 @@ describe('the enqueue admits another org only inside a proven crossTenant()', ()
 
   test('admitted inside it, and the run then acts for the org the payload names', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const ran: string[] = [];
     const invite = declare(ran);
     await runWithContext(actorOfA([CROSS_TENANT_SCOPE]), () =>
@@ -75,7 +75,7 @@ describe('the enqueue admits another org only inside a proven crossTenant()', ()
   });
 
   test('an explicit tenantId that contradicts the payload is refused even inside it', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const invite = declare();
     await runWithContext(actorOfA([CROSS_TENANT_SCOPE]), () =>
       crossTenant(REASON, async () => {
@@ -88,7 +88,7 @@ describe('the enqueue admits another org only inside a proven crossTenant()', ()
   });
 
   test('re-proved at the enqueue: an actor swapped in without the scope is denied', async () => {
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const invite = declare();
     await runWithContext(actorOfA([CROSS_TENANT_SCOPE]), () =>
       crossTenant(REASON, () =>

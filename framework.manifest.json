@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5db6cbb3903cbcbcf528fa0a98b68d04f2e4ea8e255288c34b2b37c580a319fe",
+  "buildId": "d604c86396e1d886e59404d45c1c05276bc9dddc8ee275f864e1126371483fe9",
   "tiers": {
     "0": [
       "core",
@@ -720,39 +720,44 @@
       "at": "packages/http/src/error-titles.ts"
     },
     {
+      "code": "X_BOUNDARY_ADAPTER_IMPORT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-boundary.ts"
+    },
+    {
       "code": "X_BOUNDARY_APP_TO_API",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-boundary.ts"
     },
     {
       "code": "X_BOUNDARY_PACKAGE_TO_APP",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-boundary.ts"
     },
     {
       "code": "X_BOUNDARY_ROUTE_TO_DB",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-boundary.ts"
     },
     {
       "code": "X_BOUNDARY_SERVICE_TO_HTTP",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-boundary.ts"
     },
     {
       "code": "X_BOUNDARY_SHARED_LEAF",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-boundary.ts"
     },
     {
       "code": "X_BOUNDARY_SITE_TO_APP",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-boundary.ts"
     },
     {
       "code": "X_BOUNDARY_SURFACE_IMPORT",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-boundary.ts"
     },
     {
       "code": "X_BOUNDARY_VIOLATION",
@@ -1728,6 +1733,16 @@
       "code": "X_DOC_SETUP_COMMANDS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/setup-commands.ts"
+    },
+    {
+      "code": "X_DOC_TEST_PATH_BARE",
+      "owner": "scripts",
+      "at": "scripts/doc-test-paths.ts"
+    },
+    {
+      "code": "X_DOC_TEST_PATH_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/doc-test-paths.ts"
     },
     {
       "code": "X_DOC_TUTORIAL_DIVERGED",
@@ -5465,6 +5480,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_ADAPTER_PORT_UNSWAPPABLE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_APP_NOT_BOOTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -5511,6 +5531,16 @@
     },
     {
       "code": "X_TEST_EVAL_THRESHOLD",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_EXPECTED_INPUT_INVALID",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_FACTORY_INVALID",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },
@@ -5645,6 +5675,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_MAIL_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_MODULE_MOCK_UNRESTORABLE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -5715,7 +5750,17 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_RUN_JOBS_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_SCHEMA_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_SCOPE_UNINSTALLED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },
@@ -5723,6 +5768,16 @@
       "code": "X_TEST_SHARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_TEST_STUB_TARGET_UNSUPPORTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_STUB_UNANSWERED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_TEST_THROW_NOT_THROWN",
@@ -5823,6 +5878,21 @@
       "code": "X_TRUSTED_PROXY_HOPS_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_TSCONFIG_PATH_MISSING",
+      "owner": "scripts",
+      "at": "scripts/tsconfig-paths.ts"
+    },
+    {
+      "code": "X_TSCONFIG_PATH_STALE",
+      "owner": "scripts",
+      "at": "scripts/tsconfig-paths.ts"
+    },
+    {
+      "code": "X_TSCONFIG_PATHS_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/tsconfig-paths.ts"
     },
     {
       "code": "X_TYPECHECK_FAILED",

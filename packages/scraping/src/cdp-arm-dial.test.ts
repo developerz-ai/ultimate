@@ -4,10 +4,10 @@
 // `continue()` and browser-level `Fetch.continueRequest` alike.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { arm, armBrowser } from './cdp-arm';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
-import { testScrapeClock } from './clock';
 import type { HostResolve } from './pinned-host';
 import { boundedRing, type NetworkEntry } from './rings';
 
@@ -40,7 +40,7 @@ const armedBrowser = async (allowHosts: readonly string[], proxied = false) => {
   const network = boundedRing<NetworkEntry>();
   const { resolve, asked } = fakeResolver();
   await armBrowser(
-    { browser, rules: { allowHosts }, clock: testScrapeClock(), resolve, proxied },
+    { browser, rules: { allowHosts }, clock: frozenClock(), resolve, proxied },
     network,
   );
   return { fake, network, asked };
@@ -63,7 +63,7 @@ const armedPage = async (allowHosts: readonly string[], proxied = false) => {
   const network = boundedRing<NetworkEntry>();
   const { resolve, asked } = fakeResolver();
   await arm(
-    { page, rules: { allowHosts }, clock: testScrapeClock(), resolve, proxied },
+    { page, rules: { allowHosts }, clock: frozenClock(), resolve, proxied },
     { network, console: boundedRing(), pageErrors: boundedRing(), crashed: { value: undefined } },
   );
   const outcomes: string[] = [];
@@ -193,7 +193,7 @@ describe('known gap · the browser leg cannot pin the address it screened', () =
     } as unknown as CdpBrowserLike;
     const { resolve } = fakeResolver();
     await armBrowser(
-      { browser, rules: { allowHosts: ['*'] }, clock: testScrapeClock(), resolve },
+      { browser, rules: { allowHosts: ['*'] }, clock: frozenClock(), resolve },
       boundedRing<NetworkEntry>(),
     );
     paused?.({

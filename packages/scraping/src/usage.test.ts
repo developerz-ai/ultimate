@@ -7,14 +7,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
-import { ctxOf, seal, structuredLogger } from '@ultimat3/core';
+import type { FrozenClock } from '@ultimat3/core';
+import { ctxOf, frozenClock, seal, structuredLogger } from '@ultimat3/core';
 import type { EventBus, JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { memoryEventBus, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { memoryStorageDriver } from '@ultimat3/storage';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
-import type { TestScrapeClock } from './clock';
-import { testScrapeClock } from './clock';
 import { remoteBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
 import { fixtureBrowser, recordingFilename } from './driver-recorded';
@@ -90,7 +89,7 @@ const runArgs = (input: Input, lines: Record<string, unknown>[] = []): JobRunArg
 });
 
 /** A bus on which run-1's first prompt is answered at the second look — by "another process". */
-const answeringBus = async (clock: TestScrapeClock, answer: string): Promise<EventBus> => {
+const answeringBus = async (clock: FrozenClock, answer: string): Promise<EventBus> => {
   const memory = memoryEventBus({ clock });
   const sealed = await seal(answer, { purpose: promptEventName('run-1', 1), ...KEYS });
   let looks = 0;
@@ -106,7 +105,7 @@ const answeringBus = async (clock: TestScrapeClock, answer: string): Promise<Eve
 
 describe('unit · one declaration: exit, one run per connection, sealed session, bus prompt, usage', () => {
   test('it runs on the fixture driver and the report says what it used', async () => {
-    const clock = testScrapeClock(new Date('2026-10-01T00:00:00.000Z'));
+    const clock = frozenClock(new Date('2026-10-01T00:00:00.000Z'));
     const storage = memoryStorageDriver();
     const definition: ScrapeDefinition<Input, { id: string }> = {
       name: 'bank.accounts',
@@ -184,7 +183,7 @@ describe('unit · what each number counts', () => {
     tenant: 'none',
     allowHosts: ['bank.test'],
     robots: { ignore: 'a recorded site: there is no origin to ask' },
-    clock: testScrapeClock(),
+    clock: frozenClock(),
     driver: fakeBrowser(PAGES, { http: HTTP }),
     run: () => Promise.resolve([]),
     ...over,
@@ -243,11 +242,11 @@ describe('unit · what each number counts', () => {
 });
 
 describe('unit · the live HTTP leg counts what was on the wire', () => {
-  const transport = (responses: readonly Response[], maxMeter = usageMeter(testScrapeClock())) => {
+  const transport = (responses: readonly Response[], maxMeter = usageMeter(frozenClock())) => {
     let next = 0;
     const http = httpOverFetch({
       rules: { allowHosts: ['bank.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       network: boundedRing(10),
       session: () => Promise.resolve(EMPTY_SESSION),
@@ -306,7 +305,7 @@ describe('unit · browserCost is the resolver`s Money, never a float', () => {
     tenant: 'none',
     allowHosts: ['bank.test'],
     robots: { ignore: 'a fake browser: there is no origin to ask' },
-    clock: testScrapeClock(),
+    clock: frozenClock(),
     driver,
     run: () => Promise.resolve([]),
   });

@@ -9,7 +9,7 @@
 // the account. So this file is a FACTORY over `job()`, and a scrape inherits `.enqueue()`, the
 // worker's cancellation, the dead-letter path, `x jobs show` and its manifest row for free.
 
-import type { Ctx, HostRule } from '@ultimat3/core';
+import type { Ctx, HostRule, SleepClock } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import type {
   JobCompleted,
@@ -26,7 +26,6 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { StorageDriver } from '@ultimat3/storage';
 import type { ArtifactWriter } from './artifacts';
 import type { PromptHandler, ScrapeAuth } from './auth';
-import type { ScrapeClock } from './clock';
 import type { ScrapeDriver } from './driver';
 import { yieldHistoryMissing } from './error-throws';
 import type { YieldExpectation, YieldHistory } from './expect';
@@ -140,10 +139,11 @@ export interface ScrapeDefinition<I, Row> {
   readonly concurrency?: JobConcurrency<I> | undefined;
   readonly queue?: string | undefined;
   /**
-   * Pins this definition's clock. Omit it: a run waits on the process's (`scrapeClock()`), which
-   * is the system clock and what a test replaces with `setScrapeClock()`.
+   * Pins this definition's clock. Omit it: a run waits on the process's (`ambientClock()`), which
+   * is the system clock unless `clock` in `apps/<app>/runtime.ts` (or a test's
+   * `installClock`, `@ultimat3/core/adapter`) replaced it.
    */
-  readonly clock?: ScrapeClock | undefined;
+  readonly clock?: SleepClock | undefined;
   run(args: ScrapeRunArgs<I>): Promise<readonly unknown[]>;
   /**
    * The job's own `onSettled`, with what a scrape adds: a `completed` run hands over its

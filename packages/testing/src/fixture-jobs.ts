@@ -79,6 +79,11 @@ export interface RunJobs extends AsyncDisposable {
   /** Live jobs claimable right now. `clock.advance()` is what turns delayed into due. */
   due(): Promise<number>;
   inFlight(): Promise<number>;
+  /**
+   * Every row this fixture's queue holds for `handle`, in any state — run or not. What
+   * `await expect(runJobs).toHaveEnqueued(handle, input)` reads.
+   */
+  enqueued(handle: AnyJobHandle): Promise<readonly JobRecord[]>;
 }
 
 const WORKER_ID = 'test-worker';
@@ -103,6 +108,14 @@ const PRELOAD_CLOCK: FrozenClock = Object.freeze({
   monotonic: () => frozenNow().getTime(),
   advance: (ms: number): void => {
     advanceClock(ms);
+  },
+  // A wait on this clock IS the move: the instant jumps, one microtask yields, and an abort on
+  // either side of the jump is honoured — never a wall-clock sleep under a frozen test.
+  sleep: async (ms: number, signal?: AbortSignal): Promise<void> => {
+    signal?.throwIfAborted();
+    advanceClock(ms);
+    await Promise.resolve();
+    signal?.throwIfAborted();
   },
   set: (at: Date | number | string): void => {
     setFrozenClock(at instanceof Date ? at.getTime() : at);
@@ -132,16 +145,16 @@ const tallyOf = (executions: readonly JobExecution[]): Record<string, StepTally>
 
 export async function testJobs(): Promise<RunJobs> {
   const jobs = await import('@ultimat3/jobs');
+  // The installers are the `./adapter` subpath's, never the barrel's (slice 21).
+  const adapter = await import('@ultimat3/jobs/adapter');
   const driver: JobDriver = jobs.memoryJobDriver();
-  // Captured before the overwrite: the ambient driver is process-global, so without this the
-  // next file to call `send()` enqueues into this test's dead queue instead of sending inline.
-  const previous = jobs.jobDriver();
-  jobs.setJobDriver(driver);
+  // Released at disposal: the ambient driver is process-global, so without it the next file to
+  // call `send()` enqueues into this test's dead queue instead of sending inline.
+  const releaseDriver = adapter.installJobDriver(driver);
   // The same for the event bus `step.waitForEvent` reads: it is ambient and it STORES, so an
   // answer one test published resumed the next test's waiting run. A fresh bus per fixture, and
   // the process's own handed back with the driver.
-  const previousBus = jobs.eventBus();
-  jobs.setEventBus(jobs.memoryEventBus());
+  const releaseBus = adapter.installEventBus(jobs.memoryEventBus());
   const anonymousWorker = ctxOf({ role: 'worker', clock: PRELOAD_CLOCK });
   const renewals = frozenScheduler();
 
@@ -157,7 +170,7 @@ export async function testJobs(): Promise<RunJobs> {
 
   // Walked by cursor: one `list()` answers a PAGE (`MAX_JOB_PAGE`), and a test that queued more
   // than a page of jobs must still see every one of them.
-  const live = async (name?: string): Promise<readonly JobRecord[]> => {
+  const rowsOf = async (name?: string): Promise<readonly JobRecord[]> => {
     const rows: JobRecord[] = [];
     let after: string | undefined;
     for (;;) {
@@ -171,8 +184,10 @@ export async function testJobs(): Promise<RunJobs> {
       if (last === undefined || page.length < jobs.MAX_JOB_PAGE) break;
       after = jobs.jobCursor(last);
     }
-    return rows.filter((record) => LIVE_STATES.has(record.state));
+    return rows;
   };
+  const live = async (name?: string): Promise<readonly JobRecord[]> =>
+    (await rowsOf(name)).filter((record) => LIVE_STATES.has(record.state));
 
   const queues = (): readonly string[] => [
     ...new Set([jobs.DEFAULT_QUEUE, ...jobs.registeredJobs().map((handle) => handle.queue)]),
@@ -276,15 +291,16 @@ export async function testJobs(): Promise<RunJobs> {
         (record) => record.state !== 'running' && record.runAt <= frozenNow().getTime(),
       ).length,
     inFlight: async () => (await live()).filter((record) => record.state === 'running').length,
+    enqueued: (handle: AnyJobHandle) => rowsOf(handle.name),
     [Symbol.asyncDispose]: async (): Promise<void> => {
       // A `finally`: a close that throws must still hand every later file its bus and its driver.
       try {
         await driver.close?.();
       } finally {
         renewals[Symbol.dispose]();
-        jobs.setEventBus(previousBus);
-        if (previous === undefined) jobs.resetJobDriver();
-        else jobs.setJobDriver(previous);
+        // Each release removes THIS install only, so a swap made over the fixture survives it.
+        releaseBus();
+        releaseDriver();
       }
     },
   });

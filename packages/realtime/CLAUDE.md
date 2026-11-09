@@ -20,7 +20,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   the hub, the registry or the fanout (`nats` requires `stream/web`, which a browser build cannot
   link). `packages/cli/src/realtime-browser-barrel.test.ts` bundles a `useLive`-only entry;
   `barrel-split.test.ts` refuses a name exported from both. `./boot` and `./sync-worker` are the page
-  boot and the SharedWorker entry.
+  boot and the SharedWorker entry; `./adapter` the bus driver's port plus the boot's installer.
 - **`error-titles.ts` holds the codes, titles and `registerErrorCodes()`**; `errors.ts` the server
   refusals, `page-errors.ts` the browser ones, `realtime-error.ts` the base class (TDZ),
   `replication-errors.ts` Postgres. All re-exported from `./errors`. A hook's chunk never loads
@@ -121,9 +121,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 ## The node, the bus and presence
 
 - `sync` is stateless: no sticky sessions, nothing on a socket survives a restart.
-- **`selectTransport(env, realtime, { use })` is the one place config + env become a bus** (bucket
-  and presence TTL come back). `'nats'` refuses (`X_CONFIG_INVALID`) an unset `urlEnv` variable;
-  `'memory'` a set one. `use`: `'sockets'`/`'feed'` await a 15 s dial, then
+- **`selectTransport(env, { use })` is the one place env becomes the DEFAULT bus**: `NATS_URL` set
+  is NATS, unset in-process (bucket and presence TTL come back); any other bus is `runtime.ts`'s
+  `transport`, installed with `installChannelTransport` from `./adapter` — never a setter. `use`: `'sockets'`/`'feed'` await a 15 s dial, then
   `X_TRANSPORT_UNAVAILABLE`; `'publish'` dials in background. Never `waitOnFirstConnect`
   (retries forever). A publish with no live connection is refused.
 - **`nats` is imported only by `nats-lib-client.ts`**; its reconnect re-subscribes. GIVEN UP
@@ -135,11 +135,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   presence key or member id is base64url-encoded (`encodeToken`).
 - **A socket closed during its presence write takes the write back** (`joinPresence`, asked after the
   awaits; `sync-frames.test.ts`).
-- Presence lives in `transport.shared`. The sync node is `PresenceRegistry`'s only caller:
-  subscribing to a topic IS joining, repeating the frame is the heartbeat, dropping or closing is the
-  leave. Expiry is silent, so the node sweeps on an interval, and **one node per topic sweeps** (lowest
-  id in the lease's keyed set; the lease carries the roster followers record). `roster()` caps a frame at `maxMembers` (256) with `total`;
-  `list()` is never capped. `total` is set on `sync` frames only.
+- **An upgrade from another origin is `403 X_SOCKET_ORIGIN_REFUSED`** before `authenticate`
+  (`sync-origin.ts`); `allowedOrigins` is the WHOLE list. Detail: `docs/history/realtime-agent-notes.md`.
 - **A socket the node evicts ITSELF goes through `evict(socket, code, reason)`** (the full
   `teardown`), never `sockets.remove`. **`drain()` waits for the presence leaves it started** —
   `evictInChunks` (`drain-evictions.ts`, `DRAIN_EVICT_CHUNK`, `allSettled`).
@@ -152,12 +149,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A hub that closed opens nothing**: `close()` sets `#closed` before the walk; `#open` closes a
   late subscription and RAISES `X_TRANSPORT_UNAVAILABLE`. `#release` takes the reserved bridge, never
   a name.
-- **An upgrade from another origin is `403 X_SOCKET_ORIGIN_REFUSED`** before `authenticate`
-  (`sync-origin.ts`): `allowedOrigins`, when declared, is the WHOLE list (`sec-fetch-site` unread); undeclared, the
-  `Host`-derived origin (and its `https` spelling when reached over plain http). The refusal names
-  the asker and the list. `x dev` keeps the reached-on origin (`admitReachedOrigin`) and adds
-  its web role's beside a declared list; a container adds nothing. `AcceptBudget` is reserved before
-  `authenticate`, `refund()`ed on every exit that takes no socket.
+- Presence lives in `transport.shared`; the sync node is `PresenceRegistry`'s only caller, and
+  **one node per topic sweeps**. Detail: `docs/history/realtime-agent-notes.md`.
 - **A socket's actor comes from `syncNode({ authenticate })` only**, run before
   `server.upgrade`. `null` = 401 `X_SOCKET_UNAUTHENTICATED`; a throw = 503
   `X_SOCKET_AUTH_UNAVAILABLE`. Absent = anonymous, and `start()` warns. The actor lives only in the
@@ -202,6 +195,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A slot is asked its `wal_status`**: `lost` is `X_REPLICATION_SLOT_INVALIDATED`; one created under
   a resume is `X_REPLICATION_SLOT_RECREATED`, drops `from`, and owes `x.change.-resync` (a node
   answers it as a reconnect) till published.
+- **A slot still held is waited for before START_REPLICATION** (`pg-slot-release.ts`): a walsender
+  frees it AFTER the goodbye, so preflight reads `active_pid` and polls on the server's clock, ~5 s
+  bound, then lets 55006 refuse (`pg-slot-release.test.ts`, the held-slot live test).
 - **A row crosses the bus through its entity's columns** (`replicator-row.ts`): `parseEnvelope`
   revives by `entityForTable` + `$parse`, bytes as base64 — by declared kind, never by shape.
 - **Cleartext/md5 auth is answered only under `sslmode` `require`, `verify-*` or `disable`**.
@@ -265,10 +261,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 ## The client connection
 
-- **The client owns its reconnect**: a closed socket arms ONE timer through the injected `Scheduler`
-  that calls `connect()`. `onClose` nulls `#socket`, schedules only when nothing is armed (a
-  `reconnect` frame's slot wins), and speaks only for its own socket; `close()` cancels. A dial that
-  throws in the timer is reported through `onError` (default `console.error`) and arms the next.
+- **The client owns its reconnect**: ONE timer through the injected `Scheduler`; `close()`
+  cancels. Detail: `docs/history/realtime-agent-notes.md`.
 - **`connect()` closes the socket it replaces**; `onOpen`, `onMessage` and `onClose` all carry the
   identity guard.
 - **A refusal `ack` is revived as a branded `UltimateError`** (`refusalError`, `client-frames.ts`).
@@ -303,7 +297,7 @@ side: `client*.ts`, `socket-*.ts`, `sync-worker.ts`, `record-*.ts`, `page-*.ts`,
 ## Commands
 
 ```
-bun test packages/realtime/src   # from the REPO ROOT
+bun test ./packages/realtime/   # from the REPO ROOT; the ./ keeps examples/dummy out
 bun run typecheck
 ```
 

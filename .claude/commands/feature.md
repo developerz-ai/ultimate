@@ -55,7 +55,7 @@ An agent runs lint and tests **narrowed to its own files**. Whole-repo green is 
 | | Agent (per iteration) | Coordinator (once, at the end) |
 |---|---|---|
 | lint | `bunx biome check <the files it edited>` | `bun run lint` |
-| tests | `bun test ./packages/<pkg>/src/<file>.test.ts` (or `./packages/<pkg>/`), `-t '<name>'` with a path — its own tests, named explicitly. **Always `./`**: `bun test packages/mcp` is a substring filter that also runs `examples/dummy/packages/mcp` under the wrong config (measured: 86 files and 13 false fails vs 75 and 0) | part of `verify` |
+| tests | `bun test ./packages/<pkg>/src/<file>.test.ts` (or `./packages/<pkg>/`), `-t '<name>'` with a path — its own tests, named explicitly. **Always `./`**: a bare `packages/mcp` after `bun test` is a substring filter that also runs `examples/dummy/packages/mcp` under the wrong config (measured: 86 files and 13 false fails vs 75 and 0) | part of `verify` |
 | typecheck | **once when otherwise done**, serialised: `mkdir -p node_modules/.cache/<run> && flock node_modules/.cache/<run>/tsc.lock bun run typecheck` — `tsc -b` is project-wide by nature, so this is the floor | part of `verify` |
 | boundaries | only if it added an import: `bun run boundaries` | part of `verify` |
 | the gate | never | **`bun run verify`**, in the **background** |

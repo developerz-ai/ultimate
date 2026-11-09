@@ -8,17 +8,15 @@ import { chmod, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineEnv, type EnvSchema } from './env';
+import { masterKeyPath, SECRETS_KEY_ENV, SECRETS_KEY_FILE } from './secret-source';
 import { generateMasterKey, sealSecrets } from './secrets';
 import {
   findMasterKey,
   installSecrets,
-  masterKeyPath,
   promoteStagedMasterKey,
   readSecretsFile,
   requireMasterKey,
   SECRETS_FILE,
-  SECRETS_KEY_ENV,
-  SECRETS_KEY_FILE,
   SECRETS_KEY_MODE,
   secretsFileExists,
   secretsPath,

@@ -3,15 +3,14 @@
 // is advancing, so a five-minute wait is a few microtasks and nothing reads a wall clock.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, seal, structuredLogger } from '@ultimat3/core';
+import type { FrozenClock } from '@ultimat3/core';
+import { ctxOf, frozenClock, seal, structuredLogger } from '@ultimat3/core';
 import type { EventBus, JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { memoryEventBus } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { PromptRequest } from './auth';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpBrowserLike } from './cdp-port';
-import type { TestScrapeClock } from './clock';
-import { testScrapeClock } from './clock';
 import { localBrowser } from './driver-cdp';
 import {
   answerPrompt,
@@ -25,7 +24,7 @@ import { runScrape } from './scrape-run';
 const KEYS = { env: { ULTIMATE_SECRETS_KEY: 'c3'.repeat(32) }, root: '/nonexistent-app-root' };
 
 interface Harness {
-  readonly clock: TestScrapeClock;
+  readonly clock: FrozenClock;
   readonly bus: EventBus;
   readonly keepAlives: () => number;
   /** A request whose `keepAlive` runs `between` on its nth call — "meanwhile, in another process". */
@@ -33,7 +32,7 @@ interface Harness {
 }
 
 const harness = (): Harness => {
-  const clock = testScrapeClock(new Date('2026-10-01T00:00:00.000Z'));
+  const clock = frozenClock(new Date('2026-10-01T00:00:00.000Z'));
   const bus = memoryEventBus({ clock });
   let calls = 0;
   return {
@@ -124,7 +123,7 @@ describe('unit · eventPrompt answers from the bus', () => {
   // while the human who did answer watched the run fail.
   test('"asked at" is read from the BUS: a worker clock 30 s ahead still takes the answer', async () => {
     const h = harness();
-    const ahead = testScrapeClock(new Date(h.clock.now().getTime() + 30_000));
+    const ahead = frozenClock(new Date(h.clock.now().getTime() + 30_000));
     const handler = eventPrompt({ timeout: 300_000, bus: h.bus, keySource: KEYS });
     const answer = await handler(
       h.request({ clock: ahead }, async (call) => {
@@ -148,7 +147,7 @@ describe('unit · eventPrompt answers from the bus', () => {
     const h = harness();
     await answerPrompt({ runId: 'run-1', index: 1, answer: 'stale', bus: h.bus, keySource: KEYS });
     h.clock.advance(1);
-    const behind = testScrapeClock(new Date(h.clock.now().getTime() - 30_000));
+    const behind = frozenClock(new Date(h.clock.now().getTime() - 30_000));
     const handler = eventPrompt({ timeout: 5_000, bus: h.bus, keySource: KEYS });
     const thrown = await failure(handler(h.request({ clock: behind })));
     // On the worker's clock the stale answer is "after" the ask. On the bus's it is not.
@@ -345,7 +344,7 @@ describe('unit · the session stays open across the wait', () => {
   // a text message, and `watchdog.idleMs` of silence is what `X_SCRAPE_WEDGED` means.
   test('a wait far longer than the wedge budget is answered, with the browser never killed', async () => {
     const WEDGE_MS = 30_000;
-    const clock = testScrapeClock(new Date('2026-10-01T00:00:00.000Z'));
+    const clock = frozenClock(new Date('2026-10-01T00:00:00.000Z'));
     const memory = memoryEventBus({ clock });
     const startedAt = clock.monotonic();
     let looks = 0;
@@ -438,7 +437,8 @@ describe('unit · eventPrompt needs a STORED bus outside development and test', 
     const refused = await asked({ NODE_ENV: 'production' }, false);
     expect(refused['code']).toBe('X_DRIVER_UNAVAILABLE');
     expect(String(refused['cause'])).toContain('in-memory');
-    expect(String(refused['fix'])).toContain('setEventBus(postgresEventBus({ executor }))');
+    expect(String(refused['fix'])).toContain('eventBus: postgresEventBus({ executor })');
+    expect(String(refused['fix'])).toContain('runtime.ts');
   });
 
   test('staging fails the way production fails', async () => {

@@ -1120,7 +1120,7 @@ and are unchanged.
 **The root is not a preference.** `bunfig.toml`'s preload installs `@ultimat3/testing`'s matchers
 and Bun reads `bunfig.toml` from the cwd, so `bun test` inside this directory loads none and six
 tests fail on a missing matcher — this package's suite reading red for the shell it was run in.
-CI's `package` job spawns `bun test packages/<pkg>` with `cwd` at the root for the same reason.
+CI's `package` job spawns `bun test ./packages/<pkg>` with `cwd` at the root for the same reason.
 
 Changing a frame shape means adding a fixture to `sync-protocol.test.ts` — the round-trip test
 fails if a kind has no fixture — and bumping `PROTOCOL_VERSION` **when the change makes an old

@@ -1706,7 +1706,7 @@ Verbatim from [`packages/cli/CLAUDE.md`](../../packages/cli/CLAUDE.md), which ke
 
 | | |
 |---|---|
-| `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one file per generator otherwise. `templates/emitted-contract.test.ts` holds every emitted string to the scaffold's own Biome format and lint, its imports to what the scaffold installs, and its `fix:` lines to the error contract — run it after touching a template: `bun test packages/cli/src/templates/emitted-contract.test.ts` |
+| `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one file per generator otherwise. `templates/emitted-contract.test.ts` holds every emitted string to the scaffold's own Biome format and lint, its imports to what the scaffold installs, and its `fix:` lines to the error contract — run it after touching a template: `bun test ./packages/cli/src/templates/emitted-contract.test.ts` |
 
 ### Boot (`x dev`, the container)
 

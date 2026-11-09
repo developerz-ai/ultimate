@@ -46,7 +46,7 @@ export const config = {
   },
   cache: { tiers: ['request-memo'] },
   jobs: { queues: ['mail'], concurrency: 3, visibilityTimeoutMs: 45000 },
-  realtime: { enabled: false, transport: 'nats', urlEnv: 'BUS_URL' },
+  realtime: { enabled: false, maxSocketsPerActor: 4 },
   notify: { inboxReadRetentionMs: 1000, inboxUnreadRetentionMs: 2000 },
   ai: { mcp: { expose: false } },
   drain: { readinessGraceMs: 7000 },
@@ -87,7 +87,7 @@ describe('loadAppConfig', () => {
     expect(config?.jobs.queues).toEqual(['mail']);
     expect(config?.jobs.concurrency).toBe(3);
     expect(config?.jobs.visibilityTimeoutMs).toBe(45000);
-    expect(config?.realtime).toEqual({ enabled: false, transport: 'nats', urlEnv: 'BUS_URL' });
+    expect(config?.realtime).toMatchObject({ enabled: false, maxSocketsPerActor: 4 });
     expect(config?.notify.inboxReadRetentionMs).toBe(1000);
     expect(config?.notify.inboxUnreadRetentionMs).toBe(2000);
     expect(config?.ai.mcp).toEqual({ expose: false });
@@ -125,7 +125,7 @@ describe('loadAppConfig', () => {
     expect(config?.jobs.queues).toEqual(['default']);
     expect(config?.jobs.concurrency).toBe(8);
     expect(config?.jobs.visibilityTimeoutMs).toBe(30000);
-    expect(config?.realtime).toEqual({ enabled: true, transport: 'memory', urlEnv: undefined });
+    expect(config?.realtime.enabled).toBe(true);
     expect(config?.notify.inboxReadRetentionMs).toBeUndefined();
     expect(config?.notify.inboxUnreadRetentionMs).toBeUndefined();
     expect(config?.ai.mcp).toEqual({ expose: true });

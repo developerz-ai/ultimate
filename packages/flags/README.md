@@ -174,7 +174,9 @@ configureErrorReporting({ reporter: sentryErrorReporter({ dsn }) });
 What this package adds is the rate limit core has no opinion about: one report per flag per
 `DEFAULT_REPORT_INTERVAL_MS` (1 hour), on the **monotonic** clock, so a flag read on every request
 does not become the loudest thing in the monitor — which is how a report that fires per call ends
-up muted and the debt invisible again. `configureFlags({ clock, reportEveryMs })` tunes it;
+up muted and the debt invisible again. `configureFlags({ reportEveryMs })` tunes it — the clock is
+`@ultimat3/core`'s process clock (`ambientClock()`), set by `clock` in `apps/<app>/runtime.ts`, so
+`configureFlags` takes none since 31.0.0;
 `reportEveryMs` is a whole number of milliseconds, 0 or more — `NaN`, `Infinity`, a fraction or a
 negative is refused (`X_INVARIANT`) and changes nothing.
 

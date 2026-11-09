@@ -83,24 +83,20 @@ describe('the rendered label and the machine status', () => {
 });
 
 /**
- * Two readers of one `realtime` section: `eventsBinding` for the boot line an operator reads, and
+ * Two readers of one environment: `eventsBinding` for the boot line an operator reads, and
  * `selectTransport` for the object the process actually fans out on. A boot that printed
  * `events=external` while running the in-process transport would be the worst of both, so the two
  * answers are pinned against each other rather than trusted to stay in step.
  */
 describe('the reported binding and the selected transport', () => {
-  // One config handed to both readers, as `startServices` hands its loaded section to both.
-  const memory = { enabled: true, transport: 'memory', urlEnv: undefined } as const;
-  const nats = { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } as const;
-
   test('agree that no url is embedded', () => {
-    expect(eventsBinding({}, memory).mode).toBe(selectTransport({}, memory).mode);
+    expect(eventsBinding({}).mode).toBe(selectTransport({}).mode);
   });
 
   test('agree that a url — even a padded one — is external', () => {
     const env = { NATS_URL: '  nats://bus.test:4222  ' };
-    expect(eventsBinding(env, nats).mode).toBe(selectTransport(env, nats).mode);
-    expect(selectTransport(env, nats).mode).toBe('external');
+    expect(eventsBinding(env).mode).toBe(selectTransport(env).mode);
+    expect(selectTransport(env).mode).toBe('external');
   });
 });
 

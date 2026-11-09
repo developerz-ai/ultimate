@@ -6,14 +6,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { AnyAction } from '@ultimat3/action';
-import {
-  action,
-  memoryIdempotencyStore,
-  registerAction,
-  resetActions,
-  resetIdempotency,
-  setIdempotencyStore,
-} from '@ultimat3/action';
+import { action, memoryIdempotencyStore, registerAction, resetActions } from '@ultimat3/action';
+import { installIdempotencyStore, resetIdempotency } from '@ultimat3/action/adapter';
 import { asProjectableAction } from '@ultimat3/ai';
 import type { Actor } from '@ultimat3/core';
 import {
@@ -82,7 +76,7 @@ function both(target: AnyAction) {
 
 beforeEach(() => {
   runs = 0;
-  setIdempotencyStore(memoryIdempotencyStore());
+  installIdempotencyStore(memoryIdempotencyStore());
   definePermissions(['card:charge']);
   defineRoles({ owner: { grants: ['card:charge'] } });
 });

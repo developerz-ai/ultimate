@@ -7,10 +7,11 @@
 import {
   type Clock,
   type Environment,
+  liveClock,
   nanoid,
   logger as rootLogger,
-  systemClock,
 } from '@ultimat3/core';
+import { adapterSlot } from '@ultimat3/core/adapter';
 import { driverUnavailable, mailCredentialMissing } from './errors';
 import { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
 import type { RetainedMime } from './retain-mime';
@@ -148,14 +149,13 @@ export interface MemoryMailDriverOptions {
  * clock — two sends inside one millisecond tie, and nothing could state the intended order.
  */
 export function memoryMailDriver(options: MemoryMailDriverOptions = {}): MemoryMailDriver {
-  const clock = options.clock ?? systemClock;
   const sent: SentMail[] = [];
   return {
     name: 'memory',
     sent,
     send(message: MailMessage): Promise<SendResult> {
       const result = resultFor('memory', message, `mem_${nanoid(12)}`);
-      sent.push({ at: clock.now(), message, result });
+      sent.push({ at: (options.clock ?? liveClock).now(), message, result });
       return Promise.resolve(result);
     },
     outbox: () => [...sent].reverse(),
@@ -236,23 +236,29 @@ export function logMailDriver(logger = rootLogger): MailDriver {
   };
 }
 
-let ambient: MailDriver | undefined;
+/** The installed driver: a stack, so boots and tests release in any order (`adapterSlot`). */
+const slot = adapterSlot<MailDriver | undefined>(() => undefined);
 
-/** Set once at boot from the environment (`selectMailDriver`). One per process, like the job driver. */
-export function setMailDriver(driver: MailDriver): void {
-  ambient = driver;
+/**
+ * The boot's installer (its release removes THIS install only, in any order — `adapterSlot`), on `@ultimat3/mail/adapter` and never the `.` barrel: the boot selects from
+ * the environment (`selectMailDriver`), and an app swaps it with `mail:` in `apps/<app>/runtime.ts`.
+ * One per process, like the job driver.
+ */
+export function installMailDriver(driver: MailDriver): () => void {
+  return slot.install(driver);
 }
 
 export function tryMailDriver(): MailDriver | undefined {
-  return ambient;
+  return slot.current();
 }
 
 /** Throws `X_MAIL_DRIVER_UNAVAILABLE` rather than silently dropping mail on the floor. */
 export function mailDriver(): MailDriver {
-  if (ambient === undefined) throw driverUnavailable('setMailDriver() was never called');
-  return ambient;
+  const driver = slot.current();
+  if (driver === undefined) throw driverUnavailable('no mail driver was installed');
+  return driver;
 }
 
 export function resetMailDriver(): void {
-  ambient = undefined;
+  slot.reset();
 }

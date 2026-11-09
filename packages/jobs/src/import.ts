@@ -9,7 +9,7 @@
 // what, and who may import, never do. The pass lives in `import-pass.ts`.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { assert, systemClock } from '@ultimat3/core';
+import { assert, liveClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Pacer } from './backfill-rate';
 import { backfillPacer } from './backfill-rate';
@@ -146,7 +146,7 @@ export function importRows<Rec, I>(definition: ImportDefinition<Rec, I>): JobHan
     `import "${name}" declares ${definition.columns.length} column(s) and ${new Set(definition.columns).size} distinct one(s)`,
     `declare at least one column on importRows("${name}") and no duplicates — the list is what a csv header must name`,
   );
-  const clock = definition.clock ?? systemClock;
+  const clock = definition.clock ?? liveClock;
   const pace =
     definition.rate === undefined
       ? undefined

@@ -359,7 +359,7 @@ plan-101 DX ledger #21.
 | records with no replicator | `recordPublisher({ transport, entities })` on `@ultimat3/realtime/server` puts an app's committed rows on the change bus, sequenced per producer; every node delivers them as `records`. Channels only — a publisher has no commit position to order a live window by. Under `x dev` a claimed entity is no longer also carried to channels by the in-process bridge, and a sync node carries each table from ONE producer kind — the first it saw — dropping the other's changes under `X_REALTIME_PRODUCER_CONFLICT` (25.0.0, #682). Rules: the package README, *Channel records with no replicator* |
 | `useChannel()` states | `joining` → `live` on the node's first answer to every channel that carries `records` or `events` (an `events` channel's is its roster, empty on a node without presence); `catching-up` while a `replay-gap` re-read runs; `offline`; `failed` with the coded refusal — a **decision** (a policy denial, an undeclared channel, a cap) and nothing else. A node whose bus is away refuses with `X_TRANSPORT_UNAVAILABLE`, which is its condition and not its verdict: the membership reads `joining` and is `live` again on the node's next answer ([a bus outage, seen from an open page](#a-bus-outage-seen-from-an-open-page)). The table is in the package README, *What `useChannel()` reports* |
 | events | on a channel declared with `events: true`; otherwise `X_CHANNEL_DECLARATION_INVALID`. **App code** — a job, an action — calls `publishChannelEvent(decl, params, event)` from `@ultimat3/realtime/server`: it publishes on the process's own bus, in every role, with no hub (27.5.0). The `sync` node's own code holds the hub and calls `hub.publishEvent(decl, params, event)`. Same frame, same subject. At-most-once, never stored, never replayed: an event says "re-read", never "here is the state". Call it **after COMMIT** — nothing here sees a transaction |
-| events with no replicator | a channel that lists no `records` reads no committed change, so it needs no replicator, no replication slot and no `REPLICATION` grant: `realtime: { enabled: true, transport: 'nats', urlEnv }`, a `sync` role, and the publishers. A node that serves no `live: true` query and no `records` channel boots on a real database with `live=none` and is never `X_REALTIME_TOPOLOGY` (27.5.0) |
+| events with no replicator | a channel that lists no `records` reads no committed change, so it needs no replicator, no replication slot and no `REPLICATION` grant: `NATS_URL` set for every role, a `sync` role, and the publishers. A node that serves no `live: true` query and no `records` channel boots on a real database with `live=none` and is never `X_REALTIME_TOPOLOGY` (27.5.0) |
 | presence | a roster arrives as an `events` frame `{ presence: op, members, total? }`. Read it with `readPresence(frame.event)` in the channel's events handler. There is no separate presence frame |
 | an events-only island | an island whose only realtime is `useChannel` / `usePresence` / `useConnection` is never hidden and never waits for the page's restore ([above](#which-islands-wait-for-the-pages-restore)) |
 | the browser | `useChannel(decl, params, handlers?)`; `topic()` is the one way to spell a topic, and `bun run channel-literals` refuses any other |
@@ -396,7 +396,7 @@ toggles, a flash on change and a "live" dot are the app's.
 
 ## What each role needs from the bus
 
-Under `realtime: { transport: 'nats' }` every role holds a connection, and only two cannot work without one (`As of 2026-10`). The role decides, not the transport: a role that only **publishes** sends channel events and cache invalidations, and both mean "re-read".
+With `NATS_URL` set every role holds a connection, and only two cannot work without one (`As of 2026-10`). The role decides, not the transport: a role that only **publishes** sends channel events and cache invalidations, and both mean "re-read".
 
 | Role | Uses the bus to | At boot | NATS down while running | JetStream / the presence bucket | `transport` check |
 |---|---|---|---|---|---|
@@ -679,8 +679,8 @@ Node → device: `{ type: 'hello', heartbeatMs, maxFrameBytes }`, `{ type: 'requ
 protocol's `reconnect`.
 
 **Where it runs.** Every role attaches every declaration to its bus (`hostDeviceSockets`), so a
-worker's job can `request()`; only `web` holds sockets. Across replicas `realtime.transport` must be
-`'nats'` — on the in-process bus a device is reachable from its own process only.
+worker's job can `request()`; only `web` holds sockets. Across replicas every role needs `NATS_URL`
+set, or one `transport` in `apps/<app>/runtime.ts` — on the in-process bus a device is reachable from its own process only.
 
 **Where it is served.** The `web` role's own listener, beside the sync node's `/_x/sync`: the boot
 hands `httpServer` one mount per declared path beside `syncMount`, every path is checked free of a

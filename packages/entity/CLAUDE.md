@@ -278,6 +278,6 @@ Each file's header states its one job; `ls packages/entity/src` is the map, kept
 
 ## Commands
 
-`bun test packages/entity` · `bun run --filter @ultimat3/entity typecheck`
+`bun test ./packages/entity/` · `bun run --filter @ultimat3/entity typecheck`
 
 Why each rule above is shaped the way it is: [`docs/history/entity.md`](../../docs/history/entity.md).

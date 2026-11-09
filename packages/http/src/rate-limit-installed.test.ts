@@ -6,8 +6,8 @@ import type { RateLimitConfig, RateLimitStore } from './rate-limit';
 import { memoryRateLimitStore } from './rate-limit';
 import { DEFAULT_RATE_LIMIT } from './rate-limit-config';
 import {
-  adoptRateLimitStore,
   assertInstalledRateLimitScope,
+  clearDefaultRateLimitBuckets,
   installedRateLimitStore,
   installRateLimitStore,
   resetRateLimitStore,
@@ -26,8 +26,11 @@ describe('the installed rate-limit store', () => {
   test('defaults to one process’ memory, and is the instance installed afterwards', () => {
     expect(installedRateLimitStore().scope).toBe('process');
     const store = shared();
-    installRateLimitStore(store);
+    const release = installRateLimitStore(store);
     expect(installedRateLimitStore()).toBe(store);
+    release();
+    expect(installedRateLimitStore().scope).toBe('process');
+    installRateLimitStore(store);
     resetRateLimitStore();
     expect(installedRateLimitStore()).not.toBe(store);
   });
@@ -45,12 +48,12 @@ describe('the installed rate-limit store', () => {
   });
 });
 
-describe('adopting a store', () => {
+describe('installing a store', () => {
   test('frames pop in ANY order, each taking only its own', () => {
     const a = shared();
     const b = shared();
-    const undoA = adoptRateLimitStore(a);
-    const undoB = adoptRateLimitStore(b);
+    const undoA = installRateLimitStore(a);
+    const undoB = installRateLimitStore(b);
     undoA();
     // A's stop must not revert the slot under B, which is still serving.
     expect(installedRateLimitStore()).toBe(b);
@@ -60,26 +63,17 @@ describe('adopting a store', () => {
 
   test('the same store adopted twice is two frames: one release leaves the other', () => {
     const a = shared();
-    const first = adoptRateLimitStore(a);
-    adoptRateLimitStore(a);
+    const first = installRateLimitStore(a);
+    installRateLimitStore(a);
     first();
     expect(installedRateLimitStore()).toBe(a);
-  });
-
-  test('keepChosen never covers a store something already chose', () => {
-    const booted = shared();
-    installRateLimitStore(booted);
-    const undo = adoptRateLimitStore(shared(), { keepChosen: true });
-    expect(installedRateLimitStore()).toBe(booted);
-    undo();
-    expect(installedRateLimitStore()).toBe(booted);
   });
 
   test('an undo run twice is still one release', () => {
     const a = shared();
     const b = shared();
-    adoptRateLimitStore(a);
-    const undoB = adoptRateLimitStore(b);
+    installRateLimitStore(a);
+    const undoB = installRateLimitStore(b);
     undoB();
     undoB();
     expect(installedRateLimitStore()).toBe(a);
@@ -108,5 +102,24 @@ describe('withScratchRateLimitStore', () => {
     const thrown = new TypeError('the exercise broke');
     await expect(withScratchRateLimitStore(() => Promise.reject(thrown))).rejects.toBe(thrown);
     expect(installedRateLimitStore()).toBe(store);
+  });
+});
+
+describe('clearDefaultRateLimitBuckets', () => {
+  const BUCKET = { capacity: 1, refillPerSecond: 0.0001 };
+  const AT = 1_700_000_000_000;
+
+  test('empties the default memory buckets, so the next test starts full', async () => {
+    expect((await installedRateLimitStore().take('k', BUCKET, 1, AT)).allowed).toBe(true);
+    expect((await installedRateLimitStore().take('k', BUCKET, 1, AT)).allowed).toBe(false);
+    clearDefaultRateLimitBuckets();
+    expect((await installedRateLimitStore().take('k', BUCKET, 1, AT)).allowed).toBe(true);
+  });
+
+  test('leaves a store a suite installed in place — a live Redis/Postgres suite stays on it', () => {
+    const installed = shared();
+    installRateLimitStore(installed);
+    clearDefaultRateLimitBuckets();
+    expect(installedRateLimitStore()).toBe(installed);
   });
 });

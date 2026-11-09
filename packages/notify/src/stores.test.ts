@@ -2,17 +2,12 @@
 // no ledger at all; an inbox with one would be a notification written to a heap nobody reads.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { installNotifyStores, resetNotifyStores } from './adapter';
 import { memoryDigestStore } from './digest';
 import { memoryInboxStore } from './inbox';
 import { memoryDeliveryLedger } from './ledger';
 import { memoryPreferenceStore } from './preferences';
-import {
-  notifyStores,
-  requireDigest,
-  requireInbox,
-  resetNotifyStores,
-  setNotifyStores,
-} from './stores';
+import { notifyStores, requireDigest, requireInbox } from './stores';
 
 afterEach(() => {
   resetNotifyStores();
@@ -39,11 +34,11 @@ describe('unit · notify stores', () => {
   });
 
   test('install is a whole-object replacement, never a merge', () => {
-    setNotifyStores({ inbox: memoryInboxStore(), digest: memoryDigestStore() });
+    installNotifyStores({ inbox: memoryInboxStore(), digest: memoryDigestStore() });
     expect(notifyStores().inbox).toBeDefined();
     // A merge would leave the first call's inbox live and the second call's omission silent —
     // exactly the split-brain a partial driver override produces.
-    setNotifyStores({ ledger: memoryDeliveryLedger() });
+    installNotifyStores({ ledger: memoryDeliveryLedger() });
     expect(notifyStores().inbox).toBeUndefined();
     expect(notifyStores().digest).toBeUndefined();
   });
@@ -51,7 +46,7 @@ describe('unit · notify stores', () => {
   test('a missing store refuses by name rather than skipping the write in silence', () => {
     expect(() => requireInbox('post.liked')).toThrow(/inbox store is installed/);
     expect(() => requireDigest('post.liked')).toThrow(/digest store is installed/);
-    setNotifyStores({ inbox: memoryInboxStore(), digest: memoryDigestStore() });
+    installNotifyStores({ inbox: memoryInboxStore(), digest: memoryDigestStore() });
     expect(requireInbox('post.liked')).toBeDefined();
     expect(requireDigest('post.liked')).toBeDefined();
   });

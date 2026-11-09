@@ -3,7 +3,7 @@
 // asked over is not one that verb can say.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { resetJobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { actionInputFields } from '../action-input';
 import { invokeRowAction } from '../action-row';
 import type { AdminApp } from '../admin';

@@ -3,13 +3,8 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isUltimateError, NotImplementedError } from '@ultimat3/core';
-import {
-  type JobDriver,
-  MAX_JOB_PAGE,
-  memoryJobDriver,
-  resetJobDriver,
-  setJobDriver,
-} from '@ultimat3/jobs';
+import { type JobDriver, MAX_JOB_PAGE, memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AdminRow } from '../registry';
 import { fleetRepo, queueRepo, taskRepo, workerRepo } from './fleet-repo';
 import { jobRepo } from './job-repo';
@@ -202,7 +197,7 @@ describe('a job page at the store’s own ceiling', () => {
     // A fresh queue of 205 runs: the admin asks one past a 200-row page, the store answers 200 at
     // most, and a full store page read as "no more" left five rows on no page.
     const many = memoryJobDriver();
-    setJobDriver(many);
+    installJobDriver(many);
     try {
       for (let at = 0; at < MAX_JOB_PAGE + 5; at += 1) {
         await many.enqueue({
@@ -243,7 +238,7 @@ describe('a job page at the store’s own ceiling', () => {
         ...rest.slice(0, 4).map((row) => row['id']),
       ]);
     } finally {
-      setJobDriver(seeded.driver);
+      installJobDriver(seeded.driver);
     }
   });
 });
@@ -263,10 +258,10 @@ describe('jobsOperator', () => {
     resetJobDriver();
     expect(codeOf()).toBe('X_DRIVER_UNAVAILABLE');
     const { introspect: _dropped, ...bare } = seeded.driver;
-    setJobDriver(bare as JobDriver);
+    installJobDriver(bare as JobDriver);
     expect(codeOf()).toBe('X_NOT_IMPLEMENTED');
     expect(caught).toBeInstanceOf(NotImplementedError);
-    setJobDriver(seeded.driver);
+    installJobDriver(seeded.driver);
     expect(jobsOperator().driver).toBe(seeded.driver);
   });
 });

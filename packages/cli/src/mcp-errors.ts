@@ -26,7 +26,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // repo, and the suite that applies it is what reproduces the finding. A placeholder command
   // would fail this table's own no-`<placeholder>` rule, and rightly — it would not run.
   X_CLI_FLAG_UNREAD:
-    'bun test packages/cli/src/flag-reads.test.ts   # the finding names the flag and the file to read it in',
+    'bun test ./packages/cli/src/flag-reads.test.ts   # the finding names the flag and the file to read it in',
   X_VERIFY_FAILED: 'x verify --json',
   // Outside an app `x` is on no PATH, and `bunx x` fetches an unrelated npm package named `x`.
   X_NOT_IN_APP: 'bunx create-ultimate myapp --json && cd myapp',
@@ -57,7 +57,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_TEST_SHARD_FAILED: 'x verify --only unit --shard 1/2 --json',
   X_SCAFFOLD_PATH_ESCAPE: 'x g route posts --json   # a path with no ".." segment',
   X_GENERATE_JSON_INVALID:
-    'bun test packages/cli/src/cmd-generate.test.ts   # the error names the template to fix',
+    'bun test ./packages/cli/src/cmd-generate.test.ts   # the error names the template to fix',
   X_APP_PACKAGE_INVALID: 'bun pm pkg set name=my-app version=0.1.0',
   X_ERROR_CODE_UNKNOWN: 'x errors list --json',
   X_DECLARATION_UNKNOWN: 'x actions list --json',
@@ -179,7 +179,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // which is not what is running when a `ROLE=wroker` pod refuses to boot.
   X_ROLE_UNKNOWN: 'docker run -e ROLE=web my-app:latest',
   X_PORT_INVALID: 'docker run -e PORT=3000 my-app:latest',
-  X_RUNTIME_DRIVER_SPLIT: 'x dev --json   # the boot names the driver the app installed twice',
+  X_RUNTIME_DRIVER_SPLIT:
+    'x dev --json   # the boot names the driver; move it to `export const runtime = { jobs }` in apps/web/runtime.ts',
   X_GENERATE_CONFLICT: 'x g route posts --force --json',
   X_APP_NAME_EMPTY:
     'x new my-app --json   # a name with letters or digits; it becomes the directory',
@@ -387,7 +388,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ASSET_VARIANT_UNDECLARED:
     "responsiveImage({ src: asset('assets/hero.png'), width, height, alt })   # no widths/formats override for a site asset; an upload under /media answers any width",
   X_NEW_SHAPE_GENERATE_FAILED:
-    'bunx x g sign-in --password --json   # in the app x new wrote, reproduces it; then bun test packages/cli/src/templates/shapes',
+    'bunx x g sign-in --password --json   # in the app x new wrote, reproduces it; then bun test ./packages/cli/src/templates/shapes',
   X_ISLAND_DISPOSER_MISSING:
     'x verify --only boundaries --json   # names the file; end its mount() with return render(() => <Island {...props} />, el)',
   X_SOCKET_HAND_ROLLED:
@@ -396,6 +397,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'edit apps/web/exercise.ts — paste the entry the finding names into export const exercise = defineExercise({ … })',
   X_ERROR_REPORTER_DSN_UNCLAIMED:
     'edit the file that calls configureErrorReporting: wrap your Sentry wrapper in sentryTransport(wrapper), or a reporter that keeps reports on the box in localErrorSink(sink)',
+  X_BOUNDARY_ADAPTER_IMPORT:
+    'export const runtime = { jobs: yourDriver } satisfies RuntimeOverrides;   # in apps/web/runtime.ts — name the port your import installed',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

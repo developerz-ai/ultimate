@@ -12,14 +12,8 @@ import { resetActions } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import { ctxOf, userActor } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver, JobExecution, JobHandle } from '@ultimat3/jobs';
-import {
-  executeJob,
-  memoryJobDriver,
-  resetJobDriver,
-  resetJobs,
-  resetJobsFacade,
-  setJobDriver,
-} from '@ultimat3/jobs';
+import { executeJob, memoryJobDriver, resetJobs, resetJobsFacade } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { can, definePermissions } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
@@ -30,7 +24,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 
 useFixtureModels();
 // In a hook, not at module scope: a test file's top level is its worker's ENVIRONMENT to the
@@ -123,10 +117,8 @@ beforeEach(() => {
   resetJobs();
   resetJobsFacade();
   driver = memoryJobDriver();
-  setJobDriver(driver);
-  configureAi({
-    gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [answering] }),
-  });
+  installJobDriver(driver);
+  installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [answering] }));
 });
 
 afterAll(() => {

@@ -5,9 +5,8 @@
 // It covers BOTH legs. `fakeBrowser({ pages, http })` replays the browser walk and the JSON
 // endpoints behind it from one declaration, so a hybrid scrape is tested the way it runs.
 
-import { finiteCount } from '@ultimat3/core';
-import type { ScrapeClock } from './clock';
-import { systemScrapeClock } from './clock';
+import type { SleepClock } from '@ultimat3/core';
+import { ambientClock, finiteCount } from '@ultimat3/core';
 import type { ScrapeDriver, ScrapeSession, SessionInit } from './driver';
 import { htmlTarget } from './html-target';
 import { httpRecordingsOf } from './http-recorded';
@@ -78,7 +77,7 @@ export function fakeBrowser(pages: FakePages, options: FakeBrowserOptions = {}):
 
 export interface FakePageOptions {
   readonly url?: string | undefined;
-  readonly clock?: ScrapeClock | undefined;
+  readonly clock?: SleepClock | undefined;
   readonly allowHosts?: readonly string[] | undefined;
   readonly timeoutMs?: number | undefined;
   readonly context?: Partial<PageContext> | undefined;
@@ -97,7 +96,7 @@ export const FAKE_PAGE_URL = 'https://fake.test/';
 export function fakePage(dom: string, options: FakePageOptions = {}): ScrapePage {
   const url = options.url ?? FAKE_PAGE_URL;
   const start: PageRecording = { url, html: dom };
-  const clock = options.clock ?? systemScrapeClock;
+  const clock = options.clock ?? ambientClock();
   const allowHosts = options.allowHosts ?? ['*'];
   const byUrl = new Map(
     [start, ...recordingsOf(options.pages ?? [])].map((page) => [normalise(page.url), page]),

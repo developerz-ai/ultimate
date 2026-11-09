@@ -24,7 +24,7 @@ Needs data? Take it as an argument. The caller's `repo.ts` does the loading.
 
 | Task | Command |
 |---|---|
-| test | `bun test packages/core` |
+| test | `bun test ./packages/core/` |
 | one file | `x test unit packages/core/src/digest-schedule.test.ts` |
 | typecheck | `bun run --filter @postly/core typecheck` |
 

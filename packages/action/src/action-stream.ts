@@ -9,6 +9,7 @@ import { asyncContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
 import { ActionStreamInvalidError } from './errors-stream';
+import { handlerOverrideOf } from './handler-override';
 
 /** Where a draining handler hands its chunks: `http-stream.ts` opens one per streamed request. */
 export interface ChunkSink {
@@ -39,6 +40,18 @@ export function withChunkSink<T>(sink: ChunkSink, fn: () => T): T {
   return sinks.run({ sink, claimed: false }, fn);
 }
 
+/**
+ * Each draining copy → the declaration it wraps. Built once per `.named()` twin, so an override is
+ * keyed by the declaration (`declarationOf`), never the copy, and reaches every twin at once.
+ */
+const DRAINED = new WeakMap<object, object>();
+
+/** Whether `def`'s `handle` is the drain: the drain, not `invoke`, resolves its override. */
+export const drainsItsHandler = (def: object): boolean => DRAINED.has(def);
+
+/** The declaration an override is keyed by: the wrapped one for a draining copy, else `def`. */
+export const declarationOf = (def: object): object => DRAINED.get(def) ?? def;
+
 interface StreamingDef {
   readonly stream?: StandardSchemaV1;
   handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
@@ -53,9 +66,12 @@ export function streamingDef<D extends StreamingDef>(def: D, name: () => string)
   if (stream === undefined) return def;
   const wrapped: D = {
     ...def,
+    // The override is resolved per call, never captured here: a test double installed after the
+    // declaration (`overrideHandler`) is drained exactly as the declared generator would be.
     handle: (args: { readonly input: unknown; readonly ctx: Ctx }) =>
-      drain(wrapped, stream, name(), def.handle(args)),
+      drain(wrapped, stream, name(), (handlerOverrideOf(def) ?? def.handle.bind(def))(args)),
   };
+  DRAINED.set(wrapped, def);
   return wrapped;
 }
 

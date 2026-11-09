@@ -4,7 +4,8 @@
 
 import { afterEach, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { inspectJob, job, jobDriver, resetJobDriver, t } from '@ultimat3/jobs';
+import { inspectJob, job, jobDriver, t } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { testJobs } from '@ultimat3/testing';
 import { jobFailureOf, jobFingerprint, jobTestSource } from './repro-job';
 

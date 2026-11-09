@@ -81,15 +81,9 @@ export const config = defineConfig({
   // `As of 2026-08`.
   cache: { tiers: ['request-memo', 'lru'] },
   jobs: { queues: ['default'], concurrency: 4 },
-  // The deployment decides the bus: a NATS_URL set means every realtime role shares it, none means
-  // one node's in-process bus. Declared from the same variable so config and env can never
-  // disagree — the framework refuses to boot when they do (X_CONFIG_INVALID). Read raw, not through
-  // `env`: `env.NATS_URL` is role-scoped, and a role outside that list (scheduler, migrate) with the
-  // variable set would then declare 'memory' against a set NATS_URL and refuse.
-  realtime: {
-    enabled: true,
-    ...(process.env.NATS_URL ? { transport: 'nats', urlEnv: 'NATS_URL' } : { transport: 'memory' }),
-  },
+  // The deployment decides the bus (31.0.0: no config key): a NATS_URL set means every realtime
+  // role shares it, none means one node's in-process bus.
+  realtime: { enabled: true },
   pwa: {
     enabled: true,
     // The document an offline navigation gets when the cache has no answer. Required once

@@ -4,7 +4,7 @@
 
 import { allow } from '@ultimat3/policy';
 import { channel } from './channel-decl';
-import { publishChannelEvent, setChannelTransport } from './channel-publish';
+import { installChannelTransport, publishChannelEvent } from './channel-publish';
 import { NatsTransport } from './nats-transport';
 
 /** The declaration both processes make — a channel is code, loaded by every role. */
@@ -24,7 +24,7 @@ if (import.meta.main) {
   const transport = new NatsTransport({ url, bucket: LIVE_FEED_BUCKET });
   await transport.connect();
   // What `startServices` does in every role.
-  setChannelTransport(transport);
+  installChannelTransport(transport);
   await publishChannelEvent(declareLiveFeed(), { orgId }, { kind: 'delivered', pid: process.pid });
   await transport.close();
 }

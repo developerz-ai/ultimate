@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type FrozenClock, frozenClock } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 import { HttpError } from './errors';
 import {
   assertRateLimitScope,
@@ -413,3 +414,20 @@ describe('the bucket table is indexed, never walked up the prototype chain', () 
 // A configured bucket gets the rule a declared one gets from `toBucket`: a refill of 0 is a bucket
 // that never forgets, which on a shared store is a key held forever per caller — and a caller
 // rotating its IPv6 /64s mints them without bound.
+
+describe('the clock port', () => {
+  test('a limiter built with no clock reads the installed clock at each call, not at build', async () => {
+    const config = { ...DEFAULT_RATE_LIMIT, scope: 'process' as const };
+    const limiter = rateLimiter({ config });
+    const atMs = Date.parse('2030-01-01T00:00:00.000Z');
+    // The answer a limiter PINNED to the frozen instant gives — the unpinned one must agree.
+    const pinned = await rateLimiter({ config, clock: frozenClock(atMs) }).check('k', 'default');
+    const release = installClock(frozenClock(atMs));
+    try {
+      const decision = await limiter.check('k', 'default');
+      expect(decision.resetAtMs).toBe(pinned.resetAtMs);
+    } finally {
+      release();
+    }
+  });
+});

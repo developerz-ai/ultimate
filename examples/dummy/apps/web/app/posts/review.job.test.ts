@@ -20,11 +20,24 @@ import {
   type ScriptedTurn,
   scriptedProvider,
 } from '@ultimat3/ai';
-import { beforeEach, expect, jobTest } from '@ultimat3/testing';
+import type { Gateway } from '@ultimat3/ai/adapter';
+import { installAiGateway } from '@ultimat3/ai/adapter';
+import { afterEach, beforeEach, expect, jobTest } from '@ultimat3/testing';
 import { CLAUDE_SONNET_5_5 } from '../models';
 import { keepDraftReview } from './actions/keep-draft-review';
 import { requestDraftReview } from './actions/request-draft-review';
 import { reviewDraftLater } from './jobs/review-draft-later';
+
+// The gateway is `aiGateway` in apps/web/runtime.ts at boot; a test installs its own through the
+// adapter installer, and `configureAi()` still clears the semantic cache. Undone after each test.
+const releases: (() => void)[] = [];
+const useGateway = (gateway: Gateway): void => {
+  configureAi();
+  releases.push(installAiGateway(gateway));
+};
+afterEach(() => {
+  for (const release of releases.splice(0).reverse()) release();
+});
 
 const USAGE = { inputTokens: 40, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
@@ -92,11 +105,11 @@ jobTest(
       other: 'post:tenancy', // Ada's, in the same org
       bruno: 'member:bruno',
     });
-    configureAi({
-      gateway: providerGateway({
+    useGateway(
+      providerGateway({
         providers: [steeredEditor({ postId: other.id, orgId: other.orgId })],
       }),
-    });
+    );
 
     await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
     expect(await runJobs.depth(reviewDraftLater)).toBe(1);
@@ -121,8 +134,8 @@ jobTest(
       draft: 'post:draft-money', // Bruno's own, so his policy would admit it: only the gate refuses.
       bruno: 'member:bruno',
     });
-    configureAi({
-      gateway: providerGateway({
+    useGateway(
+      providerGateway({
         providers: [
           steeredEditor({ postId: draft.id, orgId: draft.orgId }, (target) => ({
             name: 'publishPost',
@@ -130,7 +143,7 @@ jobTest(
           })),
         ],
       }),
-    });
+    );
 
     await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
     const trace = await runJobs.drain();
@@ -151,11 +164,11 @@ jobTest(
       draft: 'post:draft-money',
       bruno: 'member:bruno',
     });
-    configureAi({
-      gateway: providerGateway({
+    useGateway(
+      providerGateway({
         providers: [steeredEditor({ postId: draft.id, orgId: draft.orgId })],
       }),
-    });
+    );
     const input = { postId: draft.id, orgId: draft.orgId, memberId: bruno.id };
 
     // The whole run twice, from the top — what an attempt that lost its lease does.
@@ -199,11 +212,11 @@ jobTest(
       draft: 'post:draft-money',
       mara: 'member:mara',
     });
-    configureAi({
-      gateway: providerGateway({
+    useGateway(
+      providerGateway({
         providers: [steeredEditor({ postId: draft.id, orgId: draft.orgId })],
       }),
-    });
+    );
 
     const trace = await runJobs(reviewDraftLater, {
       postId: draft.id,
@@ -260,7 +273,7 @@ jobTest(
     // Exactly one whole run is scripted: a retry that started over would ask for a fourth turn and
     // be X_AI_SCRIPT_EXHAUSTED rather than a review.
     const script = scriptedProvider({ turns: wholeRun(draft) });
-    configureAi({ gateway: providerGateway({ providers: [workerLostAt(script, 3)] }) });
+    useGateway(providerGateway({ providers: [workerLostAt(script, 3)] }));
 
     await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
     const lost = await runJobs.drain();
@@ -300,7 +313,7 @@ jobTest(
     const script = scriptedProvider({
       turns: [...wholeRun(draft).slice(0, 2), ...wholeRun(draft)],
     });
-    configureAi({ gateway: providerGateway({ providers: [workerLostAt(script, 3)] }) });
+    useGateway(providerGateway({ providers: [workerLostAt(script, 3)] }));
 
     await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
     await runJobs.drain();
@@ -335,7 +348,7 @@ jobTest(
     const script = scriptedProvider({
       turns: [...wholeRun(draft).slice(0, 2), ...wholeRun(draft)],
     });
-    configureAi({ gateway: providerGateway({ providers: [workerLostAt(script, 3)] }) });
+    useGateway(providerGateway({ providers: [workerLostAt(script, 3)] }));
 
     await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
     await runJobs.drain();

@@ -87,6 +87,8 @@ describe('the two refusals only an operator verb meets', () => {
     const error = new CancelUnsupportedError({ driver: 'redis' });
     expect(error.code).toBe('X_JOB_NOT_CANCELLABLE');
     expect(error.cause).toContain('"redis"');
-    expect(error.fix).toContain('setJobDriver(postgresJobDriver())');
+    expect(error.fix).toContain(
+      'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts',
+    );
   });
 });

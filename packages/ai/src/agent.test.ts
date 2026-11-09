@@ -18,7 +18,7 @@ import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 import { asProjectableAction, toLlmTool } from './tools';
 
@@ -119,9 +119,7 @@ describe('the actor boundary', () => {
       { calls: [{ name: 'lookupOrder', input: { actor: 'admin', id: 'o-1' } }] },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const support = agent({
       input: Input,
@@ -139,9 +137,7 @@ describe('the actor boundary', () => {
 
   test("the agent's own policy still decides, before any turn", async () => {
     const { provider, seen } = scripted({ calls: [{ name: 'respond', input: { answer: 'x' } }] });
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     const support = agent({
       input: Input,
       output: Output,
@@ -160,9 +156,7 @@ describe('the actor boundary', () => {
 
 describe('agent() is an action factory, not a ninth primitive', () => {
   test('it returns a real action and declares itself as one of the eight', () => {
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
     const support = agent({
       input: Input,
       output: Output,
@@ -207,9 +201,7 @@ describe('agent() is an action factory, not a ninth primitive', () => {
 describe('the loop is bounded', () => {
   test('a model that never answers hits X_AGENT_MAX_TURNS, never a partial answer', async () => {
     const { provider, seen } = scripted({ calls: [{ name: 'lookupOrder', input: {} }] });
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     const support = agent({
       input: Input,
       output: Output,
@@ -231,9 +223,7 @@ describe('the loop is bounded', () => {
 
   test('a per-run token ceiling stops the loop mid-way instead of after it', async () => {
     const { provider, seen } = scripted({ calls: [{ name: 'lookupOrder', input: {} }] });
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     const support = agent({
       input: Input,
       output: Output,
@@ -259,9 +249,7 @@ describe('the loop is bounded', () => {
 
   test('a huge tool result is truncated, and says so', async () => {
     const { provider, seen } = scripted({ calls: [{ name: 'dumpRows', input: {} }] });
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     const support = agent({
       input: Input,
       output: Output,
@@ -290,9 +278,7 @@ describe('the loop is bounded', () => {
       { calls: [{ name: 'lookupOrder', input: { id: 'o-1' } }] },
       { calls: [{ name: 'respond', input: { answer: 'done' } }] },
     );
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     const support = agent({
       input: Input,
       output: Output,
@@ -341,9 +327,7 @@ describe('a real action() is a tool — issue #124', () => {
       { calls: [{ name: 'lookupOrder', input: { id: 'o-1' } }] },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const support = agent({
       input: Input,
@@ -390,9 +374,7 @@ describe('an agent can be a tool of another agent', () => {
           : inner.provider.generate(request),
       stream: (request) => echoProvider().stream(request),
     };
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
 
     const orderStatus = agent({
       input: t.object({ orderId: t.string }),
@@ -429,9 +411,7 @@ describe('an agent can be a tool of another agent', () => {
   });
 
   test('a sub-agent that never opted into MCP is refused at declaration, like any other tool', () => {
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }));
     const hidden = agent({
       input: Input,
       output: Output,

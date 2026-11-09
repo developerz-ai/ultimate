@@ -10,7 +10,7 @@ import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth, login, register } from './auth';
 import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
-import { configureTotpReplay, resetTotpReplay } from './limiter-install';
+import { installTotpReplay, resetTotpReplay } from './limiter-install';
 import { memoryAuthAdapter } from './memory-adapter';
 import { TOTP_STEP_SECONDS, totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
@@ -115,7 +115,7 @@ describeLive('live · postgres · the shared TOTP replay guard', () => {
 
   test('the sign-in itself: two replicas over one installed guard', async () => {
     // What a host boot does before any app module imports; neither `defineAuth` names a guard.
-    configureTotpReplay(() => postgresTotpReplayGuard({ executor: executorOn(sql) }));
+    installTotpReplay(() => postgresTotpReplayGuard({ executor: executorOn(sql) }));
     const clock = frozenClock(START_MS);
     const adapter = memoryAuthAdapter(clock);
     const pod = (): Auth =>

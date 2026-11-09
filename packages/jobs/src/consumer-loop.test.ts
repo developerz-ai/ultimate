@@ -5,9 +5,9 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, setLogSink } from '@ultimat3/core';
 import { type PgliteClient, pgliteClient, setDbClient } from '@ultimat3/db';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { consumer } from './consumer';
 import type { ConsumerDefinition } from './consumer-types';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { resetJobs } from './job';
 import { type KeyedHarness, workerOn } from './keyed-concurrency-fixture';
@@ -74,7 +74,7 @@ afterAll(async () => {
 async function runOnce(declared: ConsumerDefinition<number, number>) {
   const handle = consumer(declared);
   const driver = memoryJobDriver({ clock });
-  setJobDriver(driver);
+  installJobDriver(driver);
   const queued = await handle.enqueue({ key: 'acct-1' });
   // The enqueue stamps `runAt` off the facade's own clock; the queue's is moved up to it, or the
   // row would stay delayed and the tick come back empty.

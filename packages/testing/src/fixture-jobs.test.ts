@@ -13,10 +13,10 @@ import {
   jobDriver,
   MAX_JOB_PAGE,
   publishEvent,
-  resetJobDriver,
   t,
   UNWINDING_STEP,
 } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { advanceClock } from './determinism';
 import { type RunJobs, testJobs } from './fixture-jobs';
 import { testName } from './test-types';

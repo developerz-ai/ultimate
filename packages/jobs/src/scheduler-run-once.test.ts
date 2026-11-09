@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { resetJobDriver } from './driver';
+import { resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';

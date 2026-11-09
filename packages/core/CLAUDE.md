@@ -16,10 +16,10 @@ change to every package.
 | Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()` / `failureStack()`; never `error.message`, `instanceof Error` or `typeof error.code === 'string'` |
 | New code | add to `CORE_CODE_TITLES` in `core-error-codes.ts` — a side-effect anchor the barrel bare-imports, so `UltimateError` alone never carries the table |
 | Where an error points | `ERROR_DOCS_URL` — one constant, never a per-code URL. `docs:` is omitted at construction and resolved from the registry |
-| Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
+| Time | take a `Clock` (a `SleepClock` to wait); `Date.now()` / `new Date()` only in `clock.ts`; a waiting timer only in `sleep-clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from `async-context.ts`, in **every** package — never `new AsyncLocalStorage` |
-| Exports | explicit in `src/index.ts`; no `export *`. FIVE public subpaths (`./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one INTERNAL (`./internal/error-status`); nothing that constructs an error joins `./page` (`page-bundle.test.ts`, 1.5 kB). `./page` is what a browser client imports — `@ultimat3/action`'s `client.ts` and error modules read it, never the barrel; the barrel itself must build for a browser with no warning (no static `node:` import a polyfill lacks — `image/png-pixels.ts` resolves `node:zlib` at the call). Full rule: `docs/history/core.md` |
+| Exports | explicit in `src/index.ts`; no `export *`. SIX public subpaths (`./adapter`, `./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one INTERNAL (`./internal/error-status`); nothing that constructs an error joins `./page` (`page-bundle.test.ts`, 1.5 kB). `./page` is what a browser client imports — `@ultimat3/action`'s `client.ts` and error modules read it, never the barrel; the barrel itself must build for a browser with no warning (no static `node:` import a polyfill lacks — `image/png-pixels.ts` resolves `node:zlib` at the call). Full rule: `docs/history/core.md` |
 | Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
 | Type claims | `type-pins.ts`, never a `.test.ts` — `tsconfig.json` excludes tests |
 
@@ -80,7 +80,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | which HTTP statuses are worth repeating | `retryable-status.ts` | `>= 500` plus 408, 409, 425, 429 |
 | how long this request has left | `request-budget.ts` (`Ctx.deadlineAt`, `REQUEST_TIMEOUT_HEADER`) | `@ultimat3/http`'s `startDeadline` is the one writer of the instant; `traceHeaders()` the one writer of the header. A spent budget sends nothing, never `0` |
 | the above, composed into one typed-client call | `client-flight.ts` + `client-wire.ts` | shared by `@ultimat3/action` and `@ultimat3/query` (both tier 3), re-exported by both. Declares no code of its own. A gate slot per ATTEMPT; the wait holds none, ends on `bump()` or the caller's abort |
-| a stream-declaring action, read in the browser | `client-stream.ts` | `clientStream`: `POST` with `accept: text/event-stream` through `client-dispatch.ts`'s `dispatchStream` (the ONE browser `fetch`; body handed back unread), never `EventSource` (cannot POST, skips the credentials rule); `clientTransport`'s credentials, headers, caller's signal, session fence and problem decode; a `chunk` frame yields, `done` returns, `error` throws its problem at its own status. A JSON answer is `clientTransport`'s `settleAnswer` (envelope, records, dates), so `stream()` and `call()` agree. Never retried |
+| a stream-declaring action, read in the browser | `client-stream.ts` | `clientStream`: `POST` + `accept: text/event-stream`, never `EventSource`. Full rule: `docs/history/core-moved-2026-11-09.md` |
 | the browser's one HTTP function, records envelope, per-tab handle and principal fence | `client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `client-retry-after.ts`, `client-paths.ts`, `record-envelope.ts`, `record-sink.ts`, `client-scope.ts` | `pageClient()` is the ONE `globalThis` write (`Symbol.for('ultimate.client')`); `clientTransport` never value-imports `clientFlight` or `traceHeaders()` (the OUTBOUND SLOT, `outbound-headers.ts`). A write never dedupes. Full rule: `docs/history/core.md` |
 | a write's public name | `write-digest.ts` (`writeDigest`, `isWriteDigest`, also on `./page`) + `write-origin.ts` (`withWriteOrigin`, `currentWriteOrigin`, `WRITE_ORIGIN_WAL_PREFIX`, server-only) | SHA-256 of an idempotency key, 32 hex; carried action → entity → WAL → realtime `records` frame. A malformed value runs the work unnamed: a label, never a gate |
 | which row survives a conflict | `conflict-policy.ts` (`ConflictPolicy`, `resolveConflict`, `Row`) | read by `action`'s mutator and `realtime`'s rebase |
@@ -196,9 +196,12 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - Every `UltimateError` carries `retry` (`terminal | retryable | retry-after`), **defaulting to `terminal`**. Full rule: `docs/history/core.md`.
 - `PRIMITIVE_KINDS` is the executable eight-primitive rule; `PrimitiveKind` derives from it and
   `registrar.test.ts` fails on a ninth. `PRIMITIVE_FACTORIES` lists the factories.
+- **`ADAPTER_PORTS` (`registrar.ts`) is every swappable backend**; `registrar.test.ts` pins each row
+  and checks each interface is exported by its package. A port's installer lives on that package's
+  `./adapter` subpath (core's: `adapter.ts`), returns its release, and is never on the barrel.
 
 ```bash
-bun test packages/core/src    # from the REPO ROOT, never from packages/core
+bun test ./packages/core/src/    # from the REPO ROOT, never from packages/core; the ./ matters
 bun run typecheck
 ```
 

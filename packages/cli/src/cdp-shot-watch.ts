@@ -3,13 +3,14 @@
 // every request is paused (`Fetch.requestPaused`) and refused unless its host is allowed, so an
 // injected `<img src="http://169.254.169.254/…">` never leaves — it is recorded as `refused`.
 // Paused at the BROWSER too, so a popup the page opens is decided by the same `hostDecision`.
+
+import type { SleepClock } from '@ultimat3/core';
 import { hostDecision } from '@ultimat3/core';
 import type { CdpConnection } from '@ultimat3/testing';
 import type {
   ConsoleLine,
   NetworkEntry,
   PageError,
-  ShotClock,
   ShotResourceType,
 } from './browser-launcher-port';
 
@@ -136,7 +137,7 @@ export function watchPage(input: {
   readonly connection: CdpConnection;
   readonly sessionId: string;
   readonly browserSessionId?: string | undefined;
-  readonly clock: ShotClock;
+  readonly clock: SleepClock;
   readonly allowHosts: readonly string[];
 }): PageWatch {
   const { connection, sessionId, browserSessionId } = input;

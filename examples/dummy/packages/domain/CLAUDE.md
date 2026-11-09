@@ -28,7 +28,7 @@ An I/O import here is `X_BOUNDARY_VIOLATION` in `x verify`.
 | Task | Command |
 |---|---|
 | typecheck | `bun run --filter @postly/domain typecheck` |
-| test | `bun test packages/domain` |
+| test | `bun test ./packages/domain/` |
 
 ## Gotchas
 

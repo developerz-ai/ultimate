@@ -10,11 +10,11 @@
 // guarantee the page vocabulary makes — and a different exit IP mid-session is exactly what
 // anti-bot systems look for.
 
+import type { SleepClock } from '@ultimat3/core';
 import { finiteCount, readWithinLimit } from '@ultimat3/core';
 import { type DeadlineTimer, deadlineSignal, resolveDialHost } from '@ultimat3/core/outbound';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
-import type { ScrapeClock } from './clock';
 import { cookieHeaderFor } from './cookie-scope';
 import { bodyTooLarge, hostBlocked, httpFailed, redirectLoop, scrapeTimeout } from './error-throws';
 import type { RedirectHop } from './http-redirect';
@@ -96,7 +96,7 @@ export interface ScrapeHttp {
 
 export interface HttpTransportInit {
   readonly rules: InterceptRules;
-  readonly clock: ScrapeClock;
+  readonly clock: SleepClock;
   readonly timeoutMs: number;
   readonly network: NetworkRing;
   /**

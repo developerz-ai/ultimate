@@ -7,10 +7,10 @@ import {
   ConfigInvalidError,
   finiteCount,
   isUltimateError,
+  liveClock,
   nanoid,
   renderFixShellArg,
   renderThrowable,
-  systemClock,
 } from '@ultimat3/core';
 import type { SendResult } from './driver';
 import { envelopeRecipients, type MailDriver, type MailMessage, resultFor } from './driver';
@@ -160,7 +160,6 @@ export function smtpMailDriver(options: SmtpDriverOptions): MailDriver {
       fix: 'set mail.from in app.config.ts to an address the SMTP server will relay for',
     });
   }
-  const clock = options.clock ?? systemClock;
   const connect = options.connect ?? bunSmtpStream;
   // Refused where `poolSize` already is. The deadline reaches `setTimeout(fn, timeoutMs)` in the
   // conversation and in the socket, and `setTimeout(fn, NaN)` is `setTimeout(fn, 0)` — so a
@@ -206,7 +205,7 @@ export function smtpMailDriver(options: SmtpDriverOptions): MailDriver {
     const data = buildMimeMessage(message, {
       from: options.from,
       messageId,
-      date: clock.now(),
+      date: (options.clock ?? liveClock).now(),
       boundary: `x-ultimate-${nanoid(20)}`,
     });
 

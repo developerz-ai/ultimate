@@ -2,8 +2,11 @@
 // predicate `discoverTests` filters by and the `--path-ignore-patterns` the serial steps pass to
 // `bun test`. A leaf, so `test-select.ts` and `verify-tests.ts` (which import each other) share it.
 
-/** Build output and installed packages: never a test, at ANY depth — a workspace's `dist/` too. */
-const IGNORED_ANYWHERE = ['dist', 'node_modules'] as const;
+/**
+ * Build output, installed packages, git's own tree and an app's `.x/` state: never a test, at ANY
+ * depth. The last two because discovery scans dot-directories (`.claude/hooks/*.test.ts` is a test).
+ */
+const IGNORED_ANYWHERE = ['dist', 'node_modules', '.git', '.x'] as const;
 
 /**
  * Nested projects with their own gate (`examples/`, `dummy/`, run by

@@ -11,10 +11,10 @@
 import type { Actor, Clock } from '@ultimat3/core';
 import {
   ACTION_PATH_PREFIX,
+  liveClock,
   QUERY_PATH_PREFIX,
   successorLink,
   successorPathOf,
-  systemClock,
 } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bearerMountInvalid, routeNotFound } from './errors';
@@ -157,7 +157,8 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
   const bucket =
     input.rateLimit === undefined ? undefined : toBucket(`bearer mount ${prefix}`, input.rateLimit);
   const store = input.rateLimitStore ?? memoryRateLimitStore();
-  const clock = input.clock ?? systemClock;
+  // Read per request, never captured at mount: an unpinned mount follows the `clock` port.
+  const nowMs = (): number => (input.clock ?? liveClock).now().getTime();
   // The caller each request resolved to, keyed by ITS context — never a module-level slot two
   // concurrent requests could share.
   const callers = new WeakMap<RequestContext, { caller: BearerCaller }>();
@@ -202,9 +203,9 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       `${prefix}|token:${key}`,
       bucket,
       1,
-      clock.now().getTime(),
+      nowMs(),
     );
-    for (const [name, value] of Object.entries(rateLimitHeaders(decision, clock.now().getTime()))) {
+    for (const [name, value] of Object.entries(rateLimitHeaders(decision, nowMs()))) {
       ctx.headers.set(name, value);
     }
     // `rateLimited` carries the seconds in `meta`, which the error-map stage turns into

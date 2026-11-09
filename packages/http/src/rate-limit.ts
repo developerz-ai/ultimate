@@ -1,8 +1,8 @@
 // Token-bucket rate limiting. The store is an interface so the same limiter runs in-memory in
-// dev/tests and against a shared tier in a multi-replica deployment — installed through
-// `httpServer({ rateLimitStore })`, and refused at boot when its scope cannot keep the app's
-// declaration; the bucket maths lives here so every driver agrees on the numbers.
-import { addressNetwork, type Clock, systemClock } from '@ultimat3/core';
+// dev/tests and against a shared tier in a multi-replica deployment — named as `rateLimitStore` in
+// `apps/<app>/runtime.ts`, and refused at boot when its scope cannot keep the app's declaration;
+// the bucket maths lives here so every driver agrees on the numbers.
+import { addressNetwork, type Clock, liveClock } from '@ultimat3/core';
 import { httpCountInvalid } from './errors';
 import { DEFAULT_RATE_LIMIT } from './rate-limit-config';
 import { rateLimited, rateLimitNotShared } from './rate-limit-errors';
@@ -329,8 +329,9 @@ export const rateLimiter = (options: {
   clock?: Clock;
 }): RateLimiter => {
   const store = options.store ?? memoryRateLimitStore();
-  const clock = options.clock ?? systemClock;
-  const now = (): number => clock.now().getTime();
+  // Read at each call, never captured: with no clock passed, the limiter follows the `clock` port
+  // (`runtime.ts`, a test's `installClock`) even when that is installed after it was built.
+  const now = (): number => (options.clock ?? liveClock).now().getTime();
   // `Object.hasOwn`, never `buckets[name]` — the same read `error-map.ts`'s `statusFor` and
   // `naming.ts` already take for a table of this shape. `buckets` is a plain object literal, so it
   // holds every name on `Object.prototype`: `rateLimit: 'constructor'` read `Object` itself out of

@@ -2,10 +2,23 @@
 // an MCP tool and the manifest all read this one shape, so none of them recomputes "expired".
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { SleepClock } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 import { flagsReport } from './projection';
 import { defineFlag, resetFlags } from './registry';
-import { configureFlags, resetFlagReporting } from './runtime';
+import { resetFlagReporting } from './runtime';
+
+/** Installs `clock` as the process clock until the test ends — core's one ambient clock. */
+let releaseClock: (() => void) | undefined;
+const useClock = (clock: SleepClock): void => {
+  releaseClock?.();
+  releaseClock = installClock(clock);
+};
+afterEach(() => {
+  releaseClock?.();
+  releaseClock = undefined;
+});
 
 beforeEach(() => {
   resetFlags();
@@ -44,7 +57,7 @@ const declareThree = (): void => {
 
 describe('unit · flagsReport', () => {
   test('enumerates every flag with its kind, expiry and owner, sorted by key', () => {
-    configureFlags({ clock: frozenClock('2026-03-05T00:00:00.000Z') });
+    useClock(frozenClock('2026-03-05T00:00:00.000Z'));
     declareThree();
 
     const report = flagsReport();
@@ -60,7 +73,7 @@ describe('unit · flagsReport', () => {
   });
 
   test('names exactly the flags that are past their expiry as of now', () => {
-    configureFlags({ clock: frozenClock('2026-03-05T00:00:00.000Z') });
+    useClock(frozenClock('2026-03-05T00:00:00.000Z'));
     declareThree();
 
     expect(flagsReport().expired).toEqual(['checkout.new-tax-engine']);
@@ -68,7 +81,7 @@ describe('unit · flagsReport', () => {
 
   test('a permanent flag is never expired, however far the clock is moved', () => {
     const clock = frozenClock('2026-03-05T00:00:00.000Z');
-    configureFlags({ clock });
+    useClock(clock);
     declareThree();
     clock.set('2099-01-01T00:00:00.000Z');
 
@@ -79,7 +92,7 @@ describe('unit · flagsReport', () => {
   });
 
   test('is JSON-safe, because --json is the surface it exists for', () => {
-    configureFlags({ clock: frozenClock('2026-03-05T00:00:00.000Z') });
+    useClock(frozenClock('2026-03-05T00:00:00.000Z'));
     declareThree();
 
     expect(JSON.parse(JSON.stringify(flagsReport())).expired).toEqual(['checkout.new-tax-engine']);

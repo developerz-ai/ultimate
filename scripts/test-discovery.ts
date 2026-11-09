@@ -96,7 +96,9 @@ export interface DiscoveryScan {
 export function scanTree(root: string): DiscoveryScan {
   const hits: string[] = [];
   let files = 0;
-  for (const found of new Bun.Glob(ALL_FILES).scanSync({ cwd: root, onlyFiles: true })) {
+  // `dot: true`: `.claude/hooks/` holds a suite, and the gate's discovery reads dot-directories
+  // too; a walk blind to them reported nothing about files it never read.
+  for (const found of new Bun.Glob(ALL_FILES).scanSync({ cwd: root, onlyFiles: true, dot: true })) {
     // scanSync yields host-separator paths on Windows; every other script answers POSIX.
     const path = found.split('\\').join('/');
     if (SKIP.test(path)) continue;

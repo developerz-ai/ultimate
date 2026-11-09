@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { installNotifyStores, resetNotifyStores } from './adapter';
 import type { DigestAppend, DigestStore } from './digest';
 import { memoryDigestStore } from './digest';
 import { NotifyStoreMissingError } from './errors';
@@ -12,7 +13,6 @@ import { memoryDeliveryLedger } from './ledger';
 import { notifier } from './notifier';
 import type { Recorder, TestParams } from './notify-fixture';
 import { driver, recorder, START } from './notify-fixture';
-import { resetNotifyStores, setNotifyStores } from './stores';
 
 const params: TestParams = { postId: '00000000-0000-7000-8000-00000000d1d1' };
 
@@ -55,7 +55,7 @@ const digestNotifier = (name: string, log: Recorder) =>
 
 describe('unit · fan-out digest under retry', () => {
   test('a second append after a failed first one still drains both', async () => {
-    setNotifyStores({ digest: flaky((_, call) => call === 2) });
+    installNotifyStores({ digest: flaky((_, call) => call === 2) });
     const log = recorder();
     const handle = digestNotifier('post.retried-digest', log);
     const run = driver();
@@ -76,7 +76,7 @@ describe('unit · fan-out digest under retry', () => {
     // Run two joins ana's window (run one opened it), then fails on ben. Run one flushes the window
     // — ana gets both events — and the row is gone, so nothing the STORE holds remembers that run
     // two's event was in it. Only run two's own step history can.
-    setNotifyStores({
+    installNotifyStores({
       digest: flaky(
         (input) => input.appender.startsWith('run-2:') && input.slot.recipient === 'ben',
       ),
@@ -108,7 +108,7 @@ describe('unit · fan-out digest under retry', () => {
     // later. Two windows, two ends: keyed by the later one, ana's claim would collide with any other
     // run whose maximum lands on that instant and read `sent` for a window it never delivered.
     const ledger = memoryDeliveryLedger();
-    setNotifyStores({ digest: flaky((_, call) => call === 2), ledger });
+    installNotifyStores({ digest: flaky((_, call) => call === 2), ledger });
     const log = recorder();
     const handle = digestNotifier('post.own-window', log);
     const run = driver();

@@ -59,8 +59,6 @@ export function configDefaults(): Omit<AppConfig, Sectioned> {
     // (1,000) in `@ultimat3/realtime` — a tenth of its 10,000 windows, so no one actor fills it.
     realtime: {
       enabled: true,
-      transport: 'memory',
-      urlEnv: undefined,
       maxSubscriptionsPerActor: undefined,
       // Unset: the sync node's `DEFAULT_MAX_SOCKETS_PER_ACTOR` (16).
       maxSocketsPerActor: undefined,

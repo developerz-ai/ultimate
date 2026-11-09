@@ -14,7 +14,7 @@ import { llm } from './llm';
 import { FIXTURE_MODEL } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, Provider, TokenUsage } from './provider';
-import { configureAi } from './runtime';
+import { installAiGateway } from './runtime';
 import { scriptedProvider } from './scripted-provider';
 
 export const Input = t.object({ postId: t.uuid });
@@ -50,7 +50,7 @@ export function stub(...answers: readonly (string | Record<string, unknown>)[]):
 export const times = <T>(n: number, answer: T): T[] => Array.from({ length: n }, () => answer);
 
 export function install(provider: Provider): void {
-  configureAi({ gateway: providerGateway({ providers: [provider], defaultModel: FIXTURE_MODEL }) });
+  installAiGateway(providerGateway({ providers: [provider], defaultModel: FIXTURE_MODEL }));
 }
 
 let seq = 0;

@@ -50,3 +50,24 @@ test('discovery and the serial steps exclude exactly the same paths', async () =
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// A hook's own test lives under `.claude/hooks/`: a glob that skips dot-directories never ran it,
+// in `x verify unit` or a CI shard. Dot-directories are scanned — but never `.git`, nor an app's
+// `.x/` state (the embedded database, the static build the budgets step weighs).
+test('a test under a dot-directory is discovered; .git and .x never are', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'x-test-dot-'));
+  try {
+    const paths = [
+      '.claude/hooks/guard-git.test.ts',
+      '.git/hooks/h.test.ts',
+      '.x/verify-static/s.test.ts',
+      'node_modules/.cache/c.test.ts',
+    ];
+    for (const path of paths) await Bun.write(join(root, path), 'export {};\n');
+    const found = (await discoverTests(root, undefined, 'unit')).map((f) => f.path);
+    expect(found).toEqual(['.claude/hooks/guard-git.test.ts']);
+    expect(paths.slice(1).filter((path) => !serialIgnores(path))).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

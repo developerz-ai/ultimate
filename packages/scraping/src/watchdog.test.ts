@@ -3,8 +3,8 @@
 // redeploy. Both are one mechanism away, and this file is that mechanism failing on purpose.
 
 import { describe, expect, test } from 'bun:test';
-import type { ScrapeClock } from './clock';
-import { testScrapeClock } from './clock';
+import type { SleepClock } from '@ultimat3/core';
+import { frozenClock } from '@ultimat3/core';
 import { createWedgeGuard } from './watchdog';
 
 const settled = (): Promise<void> => new Promise((resolve) => queueMicrotask(() => resolve()));
@@ -15,11 +15,11 @@ const untilFired = async (guard: { readonly fired: boolean }): Promise<void> => 
 };
 
 /**
- * A clock whose first `failures` sleeps reject. `ScrapeClock` is a seam an app may implement, so
+ * A clock whose first `failures` sleeps reject. `SleepClock` is a seam an app may implement, so
  * this is INPUT to the code under test and not a verdict thrown by the test.
  */
-const brittleClock = (failures: number): ScrapeClock => {
-  const base = testScrapeClock();
+const brittleClock = (failures: number): SleepClock => {
+  const base = frozenClock();
   let calls = 0;
   return {
     now: () => base.now(),
@@ -36,7 +36,7 @@ const brittleClock = (failures: number): ScrapeClock => {
 
 describe('unit · the inactivity watchdog', () => {
   test('silence past idleMs KILLS the process and aborts with X_SCRAPE_WEDGED', async () => {
-    const clock = testScrapeClock();
+    const clock = frozenClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -56,7 +56,7 @@ describe('unit · the inactivity watchdog', () => {
 
   test('a kill that THROWS still aborts the run with X_SCRAPE_WEDGED', async () => {
     const guard = createWedgeGuard({
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       what: 'scrape "orders"',
       idleMs: 1_000,
       quit: () => Promise.resolve(),
@@ -69,7 +69,7 @@ describe('unit · the inactivity watchdog', () => {
   });
 
   test('a run that keeps touching is never killed', async () => {
-    const clock = testScrapeClock();
+    const clock = frozenClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -92,7 +92,7 @@ describe('unit · the inactivity watchdog', () => {
 
 describe('unit · the graceful-quit ceiling', () => {
   test('a quit that returns in time is not followed by a kill', async () => {
-    const clock = testScrapeClock();
+    const clock = frozenClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -109,7 +109,7 @@ describe('unit · the graceful-quit ceiling', () => {
   });
 
   test('a quit that never returns is killed at the ceiling — the zombie incident', async () => {
-    const clock = testScrapeClock();
+    const clock = frozenClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -127,7 +127,7 @@ describe('unit · the graceful-quit ceiling', () => {
   });
 
   test('a quit that THROWS is still killed — a failed close is not a closed browser', async () => {
-    const clock = testScrapeClock();
+    const clock = frozenClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -153,7 +153,7 @@ describe('unit · the graceful-quit ceiling', () => {
  */
 describe('unit · shutdown AFTER the watchdog fired', () => {
   test('the graceful quit still runs — the remote session is not left billing', async () => {
-    const clock = testScrapeClock();
+    const clock = frozenClock();
     let quits = 0;
     let killed = 0;
     const guard = createWedgeGuard({
@@ -176,7 +176,7 @@ describe('unit · shutdown AFTER the watchdog fired', () => {
   });
 
   test('a quit that never returns is killed at the ceiling after a fire too', async () => {
-    const clock = testScrapeClock();
+    const clock = frozenClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -194,7 +194,7 @@ describe('unit · shutdown AFTER the watchdog fired', () => {
   });
 
   test('shutdown stays idempotent — two calls are one quit', async () => {
-    const clock = testScrapeClock();
+    const clock = frozenClock();
     let quits = 0;
     const guard = createWedgeGuard({
       clock,
@@ -212,7 +212,7 @@ describe('unit · shutdown AFTER the watchdog fired', () => {
 });
 
 /**
- * `void watch()` was floating. A `ScrapeClock` is a seam an app implements, and one whose `sleep`
+ * `void watch()` was floating. A `SleepClock` is a seam an app implements, and one whose `sleep`
  * rejects turned the guard's own loop into an UNHANDLED REJECTION — a process-level event in a
  * worker, attributed to no run. Worse than the noise: the loop was dead, so nothing measured
  * inactivity, which is verbatim incident #1 in `watchdog.ts`.
@@ -280,7 +280,7 @@ describe('unit · the fire closes the browser, not the unwind', () => {
   test('a fire with a no-op kill runs the quit once, and a later shutdown adds none', async () => {
     let quits = 0;
     const guard = createWedgeGuard({
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       what: 'scrape "orders"',
       idleMs: 1_000,
       quit: async (): Promise<void> => {
@@ -298,7 +298,7 @@ describe('unit · the fire closes the browser, not the unwind', () => {
   test('a hung quit after a fire gets a second kill at graceMs, without any shutdown', async () => {
     let killed = 0;
     const guard = createWedgeGuard({
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       what: 'scrape "orders"',
       idleMs: 1_000,
       graceMs: 5_000,
@@ -319,7 +319,7 @@ describe('unit · the fire closes the browser, not the unwind', () => {
   test('the kill still precedes the abort, and the quit starts before the abort is seen', async () => {
     const order: string[] = [];
     const guard = createWedgeGuard({
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       what: 'scrape "orders"',
       idleMs: 1_000,
       quit: async (): Promise<void> => {

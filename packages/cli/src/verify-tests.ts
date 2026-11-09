@@ -27,6 +27,7 @@ import type { WorkerPlan } from './test-workers';
 import { availableCpus, SERIAL_TYPES, totalMemory, workerPlan } from './test-workers';
 import { runCovered } from './verify-coverage-run';
 import { withE2eApp } from './verify-e2e';
+import { factoryFindings } from './verify-factories';
 import { readVerifyFloor } from './verify-floor';
 import type { MachinePace } from './verify-pace';
 import { DECLARED_PACE, defaultTimeoutArgs, pacedMs, paceEnv } from './verify-pace';
@@ -409,12 +410,25 @@ const evalStep: VerifyStep = {
 const summaryOf = (type: TypedTest): string =>
   Object.hasOwn(SUMMARIES, type) ? SUMMARIES[type] : `${type} tests`;
 
+/**
+ * The unit suite, and an app's factory lint beside it (`verify-factories.ts`): a factory that
+ * builds a row its entity refuses is a failing test in every file that uses it, found here once.
+ * Under `--shard` only slice 1 lints, so `x verify merge` reports each finding once.
+ */
+const unitStep = async (ctx: VerifyContext): Promise<StepOutcome> => {
+  const suite = await runType(ctx, 'unit');
+  if (!isApp(ctx.root) || (ctx.shard !== undefined && ctx.shard.index !== 1)) return suite;
+  const factories = await factoryFindings(ctx.root, ctx.runner);
+  if (factories.length === 0) return suite;
+  return { ...suite, ok: false, findings: [...factories, ...suite.findings] };
+};
+
 const stepFor = (type: TestType): VerifyStep => {
   if (type === 'unit') {
     return {
       name: 'unit',
       summary: 'pure logic — no database, no network',
-      run: (ctx) => runType(ctx, 'unit'),
+      run: unitStep,
     };
   }
   if (type === 'eval') return evalStep;

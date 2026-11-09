@@ -9,14 +9,14 @@ import { ctxOf } from '@ultimat3/core';
 import {
   assertRateLimitScope,
   installedRateLimitStore,
-  installRateLimitStore,
   memoryRateLimitStore,
   rateLimiter,
-  resetRateLimitStore,
   resolveRateLimitConfig,
 } from '@ultimat3/http';
+import { installRateLimitStore, resetRateLimitStore } from '@ultimat3/http/adapter';
 import { t } from '@ultimat3/schema';
-import { job, jobWorker, memoryJobDriver, resetJobDriver, resetJobs, setJobDriver } from './index';
+import { installJobDriver, resetJobDriver } from './adapter';
+import { job, jobWorker, memoryJobDriver, resetJobs } from './index';
 
 afterEach(() => {
   resetJobs();
@@ -34,7 +34,7 @@ const VENDOR = resolveRateLimitConfig({
 describe('a job spends a declared vendor bucket', () => {
   test('the refused run is retried with its attempt unspent, and not dead-lettered', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     // The boot installs the fleet's Postgres store on every role; one store this process shares
     // stands in for it, so `'shared'` is honest here.
     installRateLimitStore({ ...memoryRateLimitStore(), scope: 'shared' });

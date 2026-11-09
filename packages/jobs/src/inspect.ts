@@ -117,7 +117,7 @@ function requireIntrospection(driver: JobDriver): NonNullable<JobDriver['introsp
   if (driver.introspect === undefined) {
     throw new NotImplementedError({
       cause: `introspection for the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
-      fix: 'call setJobDriver(postgresJobDriver()) at boot — only the pg driver implements introspect — then: x jobs list --json',
+      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — only the pg driver implements introspect — then: x jobs list --json',
     });
   }
   return driver.introspect;

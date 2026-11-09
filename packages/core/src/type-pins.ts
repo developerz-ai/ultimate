@@ -151,25 +151,16 @@ type _CacheInputCarriesNoDeadField = Assert<
 >;
 
 /**
- * The two `config.realtime` fields deleted for the same rule — `heartbeatMs` (2026-08-19) and
- * `tier` (2026-08-23). `tier` is the worse of the two and the reason this pin exists: it accepted
- * three values with three documented meanings, and `transport`/`urlEnv` are the only fields of
- * this section any code reads, so all three meanings were one behaviour. Re-adding it restores a
- * knob whose `'local-first'` setting promises a durable local store the framework does not build.
+ * The `config.realtime` fields deleted for the same rule — `heartbeatMs` (2026-08-19), `tier`
+ * (2026-08-23), and `transport`/`urlEnv` (31.0.0). `tier` accepted three values with three
+ * documented meanings that were one behaviour; `transport` was a closed two-bus union in front of an
+ * adapter port, and `@ultimat3/realtime` stopped reading both it and `urlEnv` when `NATS_URL` became
+ * the env default and `runtime.ts`'s `transport` the override. Re-adding either is a second selector.
  */
-type DeadRealtimeField = 'tier' | 'heartbeatMs';
+type DeadRealtimeField = 'tier' | 'heartbeatMs' | 'transport' | 'urlEnv';
 
 type _RealtimeConfigCarriesNoDeadField = Assert<
   Extract<keyof RealtimeConfig, DeadRealtimeField> extends never ? true : false
->;
-
-/**
- * `'redis'` accepted, built by nothing, and booted whichever bus `NATS_URL` chose — removed in
- * 22.0.0 when `selectTransport` began building what `transport` says. Re-adding it to the union is
- * a type that promises a bus the framework does not have.
- */
-type _RealtimeTransportHasNoRedis = Assert<
-  'redis' extends RealtimeConfig['transport'] ? false : true
 >;
 
 /** And the input side with it — `Input<RealtimeConfig>` is what an `app.config.ts` writes. */

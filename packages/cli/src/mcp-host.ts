@@ -39,6 +39,7 @@ import type {
 import { DEV_SCOPES, devHost, devMcpServer, frameworkIntrospection } from '@ultimat3/mcp';
 import { loadApp } from './app-load';
 import { appManifest, policyFacts } from './app-manifest';
+import { loadAppRuntime } from './app-runtime';
 import { loadAppGraph, resolveNode } from './cmd-graph-load';
 import { runVerify, VERIFY_STEPS } from './cmd-verify';
 import { declareDevEnvironment } from './dev-environment';
@@ -109,7 +110,10 @@ export function lazyServices(input: DevHostInput): LazyServices {
   // way out was restarting the host — `startServices` unwinds everything it started before it
   // rejects, so there is nothing left over for a second attempt to collide with.
   // `[]`: this host starts no role, so it only ever publishes to the bus and never waits for it.
-  const boot = retryMemo(() => startServices(services, input.env, undefined, 'apply', []));
+  // The app's `runtime.ts`, read per attempt as `x dev` reads it: its ports, its clock, its key.
+  const boot = retryMemo(async () =>
+    startServices(services, input.env, await loadAppRuntime(input.root), 'apply', []),
+  );
   let closed = false;
   return {
     services,

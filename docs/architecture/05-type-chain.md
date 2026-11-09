@@ -179,7 +179,8 @@ export const config = defineConfig({
   // environment (`DATABASE_URL`, `DATABASE_POOL_MAX`), because a `urlEnv`/`poolSize` key here was
   // read by nothing and was deleted; an excess key is a `TS2353` at the `typecheck` step.
   database: { driver: 'postgres', ssl: true },
-  realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' },
+  // The bus is not config since 31.0.0: `NATS_URL` set is NATS (or `transport` in runtime.ts).
+  realtime: { enabled: true },
 });
 ```
 

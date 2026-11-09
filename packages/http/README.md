@@ -52,7 +52,10 @@ configureHttp({
 ```
 
 One registration, read once by whatever process starts the web role — the same seam
-`configureAuthenticator()` is. **Breaking, `As of 2026-08-24`**: before it, the only `HttpConfig`
+`configureAuthenticator(authenticate, { credentialTtlMs? })` is. `credentialTtlMs` is what a
+resolved identity is worth on a connection that carries no further request (the `sync` node's
+websocket re-asks after it; omitted, five minutes) — the credential's lifetime is the
+authenticator's fact, so it is declared beside the function, never as a second authenticator. **Breaking, `As of 2026-08-24`**: before it, the only `HttpConfig`
 any shipped process built was a fixed literal inside `@ultimat3/cli`, so none of the four values
 above could be set from an app at all — `cors.origins` was `[]` in every deployment, which refuses
 every cross-origin browser call, permanently. `AppConfig` has never carried an `http` key and does
@@ -153,22 +156,19 @@ reads (refill applied, **no write and no row** — a key never taken is full; `r
 `refilledTokens` do the arithmetic) and `reset(key)`. `peek` is required, `As of 2026-10`: the
 `auth` stage asks it on every request to an `auth: 'required'` route.
 
+**One store, one place to choose it, `As of 31.0.0`.** Routes and primitives (an action's or a
+query's declared `rateLimit:`) count in ONE installed store. The boot installs
+`postgresRateLimitStore` over the pool it opened; an app that wants another names it in
+`apps/<app>/runtime.ts`, and nowhere else — `httpServer({ rateLimitStore })` and the barrel's
+`installRateLimitStore` / `adoptRateLimitStore` are gone (Upgrading, 30 → 31). The installer lives
+on `@ultimat3/http/adapter`, which the boot imports; an app never calls it.
+
 ```ts
-import {
-  httpServer,
-  defineHttpConfig,
-  type RateLimitStore,
-  type Route,
-} from '@ultimat3/http';
+// apps/web/runtime.ts
+import type { RateLimitStore } from '@ultimat3/http';
 
-declare const routes: readonly Route[];
-declare const myStore: RateLimitStore;   // postgresRateLimitStore({ executor }), say
-
-httpServer({
-  routes,
-  config: defineHttpConfig({ rateLimit: { scope: 'shared' } }), // this limit is the fleet's
-  rateLimitStore: myStore,                                      // whose own scope is 'shared'
-});
+declare const myStore: RateLimitStore;   // its own scope is 'shared'
+export const runtime = { rateLimitStore: myStore };
 ```
 
 | Declared | Store | Result |
@@ -184,8 +184,8 @@ said one replica" the same value while `docker/helm/values.yaml` runs three — 
 the one nobody declared. A limiter with `enabled: false` owes no declaration: nothing is enforced,
 so nothing can be wrong.
 
-`rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
-maths stays in `rateLimiter`, so every driver agrees on the numbers.
+The installed store feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the
+bucket maths stays in `rateLimiter`, so every driver agrees on the numbers.
 
 **One request spends a LIST of keys, `As of 2026-08-24`** — the caller's (`actor`, else `org`,
 else `ip`) and, when the app declared `rateLimit.tenantBucket`, that caller's tenant. The key
@@ -206,26 +206,15 @@ and one `insert … on conflict` per take (a peek is one `select`), so N replica
 line over the client the boot already opened; **never `Bun.sql`**, whose `.query` is `undefined`.
 
 ```ts
+// apps/web/runtime.ts — only when the boot's own default is not the one you want
 import { baseClient, dbExecutor } from '@ultimat3/db';
-import {
-  httpServer,
-  defineHttpConfig,
-  type PgExecutor,
-  postgresRateLimitStore,
-  type Route,
-} from '@ultimat3/http';
-
-declare const routes: readonly Route[];
+import { type PgExecutor, postgresRateLimitStore } from '@ultimat3/http';
 
 // The pool this process already opened, never a request's open transaction — the boot builds
 // the same executor when it installs the store for you.
 const executor: PgExecutor = dbExecutor(baseClient);
 
-httpServer({
-  routes,
-  config: defineHttpConfig({ rateLimit: { scope: 'shared' } }),
-  rateLimitStore: postgresRateLimitStore({ executor }),
-});
+export const runtime = { rateLimitStore: postgresRateLimitStore({ executor }) };
 ```
 
 **A Redis store ships too, `As of 2026-11`** — `redisRateLimitStore({ client })`, one Lua token
@@ -236,11 +225,11 @@ expires once it would be full again, so it needs no purge. Same `scope: 'shared'
 included. Connect the client before the first request, or the first takes are decided in memory.
 
 ```ts
+// apps/web/runtime.ts
 import { redisClient } from '@ultimat3/core/redis';
-import { httpServer, redisRateLimitStore, type Route } from '@ultimat3/http';
+import { redisRateLimitStore } from '@ultimat3/http';
 
-declare const routes: readonly Route[];
-httpServer({ routes, rateLimitStore: redisRateLimitStore({ client: redisClient(), prefix: 'app' }) });
+export const runtime = { rateLimitStore: redisRateLimitStore({ client: redisClient(), prefix: 'app' }) };
 ```
 
 **An IPv6 caller is its `/64`, `As of 2026-11` (v31)** — `@ultimat3/core`'s `addressNetwork(ip)` is the address
@@ -290,8 +279,7 @@ the same rule as `RateLimitStore.scope` — and `assertRouteBuckets` compares it
 at construction. A limiter passed to `PipelineDeps.limiter` that cannot enforce a declared bucket
 is refused rather than rebound: a `RateLimiter` is opaque, so rebinding would mean discarding the
 store it carries, and a caller who built their own limiter may have meant their own numbers. Pass
-the **store** — `httpServer({ routes, rateLimitStore })` — and the pipeline builds the limiter
-from the merged table for you.
+no limiter — `httpServer({ routes })` builds one over the installed store from the merged table.
 
 ## Routing
 

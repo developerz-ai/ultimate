@@ -4,7 +4,7 @@
 // double rather than that file's single-answer one.
 
 import { describe, expect, test } from 'bun:test';
-import { testScrapeClock } from './clock';
+import { frozenClock } from '@ultimat3/core';
 import { httpOverFetch } from './http';
 import { MAX_REDIRECT_HOPS } from './http-redirect';
 import type { NetworkEntry } from './rings';
@@ -54,7 +54,7 @@ describe('unit · every redirect hop is screened, and the FINAL url is what is r
     const network = boundedRing<NetworkEntry>();
     const http = httpOverFetch({
       rules: { allowHosts: options.allowHosts ?? ['api.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       network,
       robots: options.robots,

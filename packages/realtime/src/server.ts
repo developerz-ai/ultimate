@@ -45,11 +45,8 @@ export {
 } from './channel';
 export { type ChannelDescription, describeChannels } from './channel-describe';
 // What a job or an action publishes an event with: the process's own bus, no hub needed.
-export {
-  publishChannelEvent,
-  resetChannelTransport,
-  setChannelTransport,
-} from './channel-publish';
+// Its installer is the boot's, on `./adapter` (`adapter.ts`), never here.
+export { publishChannelEvent } from './channel-publish';
 export {
   type AgentDial,
   type AgentSocket,

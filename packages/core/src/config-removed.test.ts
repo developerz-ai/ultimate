@@ -44,6 +44,9 @@ const OLDER: readonly (readonly [string, string, Record<string, unknown>, string
   ['cache.driver', '9.0.0', { cache: { driver: 'redis' } }, 'cache.tiers'],
   ['cache.urlEnv', '9.0.0', { cache: { urlEnv: 'R' } }, 'REDIS_URL'],
   ['realtime.tier', '10.0.0', { realtime: { tier: 'local-first' } }, 'channel()'],
+  // 31.0.0: the bus is an adapter port — env default, or `transport` in runtime.ts.
+  ['realtime.transport', '31.0.0', { realtime: { transport: 'nats' } }, 'apps/<app>/runtime.ts'],
+  ['realtime.urlEnv', '31.0.0', { realtime: { urlEnv: 'BUS_URL' } }, 'to NATS_URL'],
 ];
 
 describe('a key an earlier major removed', () => {
@@ -112,5 +115,14 @@ describe('the config an app gets carries none of them', () => {
     }
     expect(Object.keys(config.theme)).toEqual(['defaultMode']);
     expect(Object.keys(config.ai.mcp)).toEqual(['expose']);
+    expect(Object.keys(config.realtime)).not.toContain('transport');
+    expect(Object.keys(config.realtime)).not.toContain('urlEnv');
+  });
+
+  // The fix of a deleted setter names the line that replaces it, never the setter.
+  test('no row tells an app to call a setter the boot no longer honours', () => {
+    for (const [key, row] of Object.entries(REMOVED_CONFIG_KEYS)) {
+      expect([key, /\bset[A-Z]\w*\(/.test(row.instead)]).toEqual([key, false]);
+    }
   });
 });

@@ -5,12 +5,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { installNotifyStores, resetNotifyStores } from './adapter';
 import { memoryDigestStore } from './digest';
 import type { NotifyEvent } from './notification';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { driver, recorder } from './notify-fixture';
-import { resetNotifyStores, setNotifyStores } from './stores';
 
 const FIRST = '00000000-0000-7000-8000-000000000001';
 const SECOND = '00000000-0000-7000-8000-000000000002';
@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe('unit · digest window', () => {
   test('two events inside one window become ONE delivery carrying both', async () => {
-    setNotifyStores({ digest: memoryDigestStore() });
+    installNotifyStores({ digest: memoryDigestStore() });
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.commented',
@@ -109,7 +109,7 @@ describe('unit · digest window', () => {
   });
 
   test('a digest window with no store installed refuses by name', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.liked',

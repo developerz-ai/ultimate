@@ -13,24 +13,14 @@ import { localDateIn } from '@postly/core';
 import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
 import { applyFlagSnapshot } from '@ultimat3/flags';
 import type { RateLimitStore } from '@ultimat3/http';
-import { installRateLimitStore, memoryRateLimitStore, resetRateLimitStore } from '@ultimat3/http';
+import { memoryRateLimitStore } from '@ultimat3/http';
+import { installRateLimitStore, resetRateLimitStore } from '@ultimat3/http/adapter';
 import type { JobDriver, StepRunner, StepStore } from '@ultimat3/jobs';
-import {
-  memoryJobDriver as createQueue,
-  jobDriver,
-  memoryStepStore,
-  resetJobDriver,
-  setJobDriver,
-  stepRunner,
-} from '@ultimat3/jobs';
+import { memoryJobDriver as createQueue, memoryStepStore, stepRunner } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 import type { MailDriver, MailMessage, SendResult, SentMail } from '@ultimat3/mail';
-import {
-  memoryMailDriver as createOutbox,
-  driverUnavailable,
-  resetMailDriver,
-  setMailDriver,
-  tryMailDriver,
-} from '@ultimat3/mail';
+import { memoryMailDriver as createOutbox, driverUnavailable } from '@ultimat3/mail';
+import { installMailDriver } from '@ultimat3/mail/adapter';
 import { deliverDigest } from './jobs/deliver-digest';
 import { digestEnabled, sendDigest } from './jobs/send-digest';
 
@@ -138,7 +128,6 @@ interface BlippingMail {
 
 const mailFailingOn = (nth: number): BlippingMail => {
   const memory = createOutbox();
-  const previous = tryMailDriver();
   let sends = 0;
   const driver: MailDriver = {
     name: 'test',
@@ -149,25 +138,19 @@ const mailFailingOn = (nth: number): BlippingMail => {
       return memory.send(message);
     },
   };
-  setMailDriver(driver);
-  return {
-    outbox: () => memory.outbox(),
-    restore: () => {
-      if (previous === undefined) resetMailDriver();
-      else setMailDriver(previous);
-    },
-  };
+  // The install answers its own undo, which puts back whatever was installed before it.
+  const release = installMailDriver(driver);
+  return { outbox: () => memory.outbox(), restore: release };
 };
 
 // `deliverDigest` spends a FLEET budget and refuses a per-process store under it. The boot installs
 // the shared Postgres one; a delivery test stands in one store this process shares, and puts the
 // default back after.
+let releaseRateLimit = (): void => {};
 beforeEach(() => {
-  installRateLimitStore({ ...memoryRateLimitStore(), scope: 'shared' });
+  releaseRateLimit = installRateLimitStore({ ...memoryRateLimitStore(), scope: 'shared' });
 });
-afterEach(() => {
-  resetRateLimitStore();
-});
+afterEach(() => releaseRateLimit());
 
 const runnerOn = (store: StepStore, jobName: string): StepRunner =>
   stepRunner({ runId: RUN, jobName, store });
@@ -286,12 +269,13 @@ test('the window opens at the PREVIOUS slot, which is 23 hours on a spring-forwa
 });
 
 test('the fan-out enqueues the same slots on a late attempt as on the first', async () => {
-  const previous = jobDriver();
+  // One install per fan-out, each undone newest first in the `finally`.
+  const releases: (() => void)[] = [];
 
   /** One fan-out for the same occurrence, on its own queue, at a chosen worker clock. */
   const slotsAt = async (now: string, jobId: string): Promise<readonly string[]> => {
     const queue: JobDriver = createQueue();
-    setJobDriver(queue);
+    releases.push(installJobDriver(queue));
     await sendDigest.run({
       input: { runDate: '2026-08-12' },
       step: runnerOn(memoryStepStore(), 'sendDigest').step,
@@ -319,8 +303,7 @@ test('the fan-out enqueues the same slots on a late attempt as on the first', as
     expect(first).toHaveLength(4);
     expect(late).toEqual([...first]);
   } finally {
-    if (previous === undefined) resetJobDriver();
-    else setJobDriver(previous);
+    for (const release of releases.reverse()) release();
   }
 });
 
@@ -346,8 +329,7 @@ test('an empty window costs one statement and mails nobody', async () => {
 
 test('the ops kill switch stops the fan-out from scheduling anything', async () => {
   const queue: JobDriver = createQueue();
-  const previous = jobDriver();
-  setJobDriver(queue);
+  const release = installJobDriver(queue);
   const runner = runnerOn(memoryStepStore(), 'sendDigest');
 
   applyFlagSnapshot({ [digestEnabled.key]: { default: false } });
@@ -370,8 +352,7 @@ test('the ops kill switch stops the fan-out from scheduling anything', async () 
     expect(await queue.introspect?.list({ name: deliverDigest.name, limit: 50 })).toHaveLength(0);
   } finally {
     applyFlagSnapshot({ [digestEnabled.key]: { default: true } });
-    if (previous === undefined) resetJobDriver();
-    else setJobDriver(previous);
+    release();
   }
 });
 
@@ -388,8 +369,7 @@ test('the idempotency key is the group, so two zones in one org are two digests'
 
 test('the fan-out enqueues one delivery per (org, zone), each in its own step', async () => {
   const queue: JobDriver = createQueue();
-  const previous = jobDriver();
-  setJobDriver(queue);
+  const release = installJobDriver(queue);
   const runner = runnerOn(memoryStepStore(), 'sendDigest');
 
   try {
@@ -425,8 +405,7 @@ test('the fan-out enqueues one delivery per (org, zone), each in its own step', 
       expect(input.localDate).toBe(localDateIn(new Date(input.slotAt), input.zone));
     }
   } finally {
-    if (previous === undefined) resetJobDriver();
-    else setJobDriver(previous);
+    release();
   }
 });
 
@@ -445,7 +424,7 @@ test('a delivery past the mail vendor budget is refused before its first step', 
     peek: () => Promise.resolve({ remaining: 0, retryAfterSeconds: 3_600 }),
     reset: () => Promise.resolve(),
   };
-  installRateLimitStore(spent);
+  const releaseSpent = installRateLimitStore(spent);
   const reads = noReads();
   const store = memoryStepStore();
   try {
@@ -453,7 +432,7 @@ test('a delivery past the mail vendor budget is refused before its first step', 
       deliver(runnerOn(store, 'deliverDigest'), reads, [summary('raii')]),
     ).rejects.toBeUltimateError('X_RATE_LIMITED');
   } finally {
-    resetRateLimitStore();
+    releaseSpent();
   }
   // Refused AHEAD of the steps: nothing read, nothing recorded, so the deferred run replays nothing.
   expect(reads.windows).toEqual([]);

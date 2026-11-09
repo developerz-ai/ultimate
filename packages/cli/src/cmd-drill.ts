@@ -40,12 +40,16 @@ const READY_TIMEOUT_MS = 90_000;
 /** `@ultimat3/http`'s own default — the app's `configureHttp` is runtime code, not config. */
 const HTTP_DEFAULT_DEADLINE_MS = 30_000;
 
-const declarationsOf = (config: AppConfig | undefined): DrillDeclarations => ({
+/**
+ * What the app runs on. NATS is the environment's (v31: `realtime.transport` is gone, and
+ * `NATS_URL` alone selects the bus), so an unset `NATS_URL` is an app with no bus to fault.
+ */
+const declarationsOf = (
+  config: AppConfig | undefined,
+  env: Readonly<Record<string, string | undefined>>,
+): DrillDeclarations => ({
   redis: config?.cache.tiers.includes('redis') ?? false,
-  nats:
-    config?.realtime.transport === 'nats'
-      ? { env: config.realtime.urlEnv ?? 'NATS_URL' }
-      : undefined,
+  nats: (env['NATS_URL']?.trim() ?? '') === '' ? undefined : { env: 'NATS_URL' },
 });
 
 /** The facts the thresholds derive from; `drillBudgets` screens every number it is handed. */
@@ -116,7 +120,7 @@ export const drillCommand: CliCommand = {
       });
     }
     const config = await loadAppConfig(root);
-    const declared = declarationsOf(config);
+    const declared = declarationsOf(config, ctx.env);
     // Every drill's services, decided before any process starts. A named drill's gap is thrown; in
     // a whole run an undeclared service is stated as not run — an unset URL still refuses it all.
     const planned: { drill: Drill; services: ReturnType<typeof drillServices> }[] = [];

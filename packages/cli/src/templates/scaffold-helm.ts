@@ -209,9 +209,7 @@ roles:
   sync:
     # OFF by default. A sync pod on a real database hears committed changes only from a replicator
     # it can reach, and a fresh deploy has none: booted anyway it is refused (X_REALTIME_TOPOLOGY).
-    # To turn live queries and channels on: declare realtime: { enabled: true, transport: 'nats',
-    # urlEnv: 'NATS_URL' } in app.config.ts (a NATS_URL under transport 'memory' is refused, and
-    # 'nats' without it is too); run NATS and set the SAME NATS_URL for web, sync and the
+    # To turn live queries and channels on: run NATS and set the SAME NATS_URL for web, sync and the
     # replicator; enable exactly one replicator (below) against a Postgres started with
     # wal_level=logical (the replicator creates its publication at boot) and a role with REPLICATION on a cluster dedicated to this app; then set this to true.
     enabled: false

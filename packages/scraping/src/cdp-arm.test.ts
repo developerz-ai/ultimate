@@ -3,9 +3,9 @@
 // error — and `void` left that as an unhandled rejection, which Bun ends the process on.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { arm } from './cdp-arm';
 import type { CdpPageLike } from './cdp-port';
-import { testScrapeClock } from './clock';
 import {
   boundedRing,
   type ConsoleLine,
@@ -49,7 +49,7 @@ describe('arm', () => {
   ])('%s leaves nothing unhandled', async (_label, url) => {
     const { page, fire } = fakePage();
     await arm(
-      { page, rules: { allowHosts: ['allowed.test'] }, clock: testScrapeClock() },
+      { page, rules: { allowHosts: ['allowed.test'] }, clock: frozenClock() },
       {
         network: boundedRing(),
         console: boundedRing(),
@@ -72,7 +72,7 @@ describe('arm', () => {
       pageErrors: boundedRing<PageError>(),
       crashed: { value: undefined },
     };
-    await arm({ page, rules: { allowHosts: ['allowed.test'] }, clock: testScrapeClock() }, sinks);
+    await arm({ page, rules: { allowHosts: ['allowed.test'] }, clock: frozenClock() }, sinks);
     const huge = 'x'.repeat(1_000_000);
     fire('console', { type: () => 'log', text: () => huge });
     const request = (url: string) => ({

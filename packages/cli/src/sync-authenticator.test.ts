@@ -5,10 +5,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, userActor } from '@ultimat3/core';
 import { dbUnavailable } from '@ultimat3/db';
-import { configureAuthenticator, resetAuthenticator } from '@ultimat3/http';
+import { configureAuthenticator, MAX_CREDENTIAL_TTL_MS, resetAuthenticator } from '@ultimat3/http';
 import type { SyncGrant } from '@ultimat3/realtime/server';
 import { GrantBook, sweepGrants } from '@ultimat3/realtime/server';
-import { SYNC_GRANT_TTL_MS, syncAuthenticator } from './sync-authenticator';
+import { syncAuthenticator } from './sync-authenticator';
 
 /** A fixed instant, so an expiry is a number this file can name rather than a range. */
 const NOW = 1_760_000_000_000;
@@ -49,6 +49,15 @@ describe('the sync node reads the app’s own authenticator', () => {
     expect(grant).toBeNull();
   });
 
+  test('a credential lifetime declared beside the resolver is the grant window (v31)', async () => {
+    // What `runtime.syncAuthenticate` was the second way to say: one declaration, the app's own.
+    configureAuthenticator(() => userActor({ id: 'u1', roles: ['member'] }), {
+      credentialTtlMs: 60_000,
+    });
+    const grant = await syncAuthenticator('test', { clock: frozenClock(NOW) })?.(upgrade());
+    expect(grant?.expiresAt).toBe(NOW + 60_000);
+  });
+
   test('the grant expires, so the sweep that closes a revoked socket has something to find', async () => {
     configureAuthenticator(() => userActor({ id: 'u1', roles: ['member'] }));
     const clock = frozenClock(NOW);
@@ -56,7 +65,7 @@ describe('the sync node reads the app’s own authenticator', () => {
     // A grant with no `expiresAt` never appears in `GrantBook.expired()`, so `sweepGrants` — the
     // ONLY path to `hub.onActorChange` and `registry.reauthorize` — never fires for it. `logout`
     // then closes the HTTP session and never the open socket.
-    expect(grant?.expiresAt).toBe(NOW + SYNC_GRANT_TTL_MS);
+    expect(grant?.expiresAt).toBe(NOW + MAX_CREDENTIAL_TTL_MS);
     expect(grant?.refresh).toBeDefined();
   });
 
@@ -75,7 +84,7 @@ describe('the sync node reads the app’s own authenticator', () => {
 
     const swept = await sweepGrants({
       grants: book,
-      clock: frozenClock(NOW + SYNC_GRANT_TTL_MS),
+      clock: frozenClock(NOW + MAX_CREDENTIAL_TTL_MS),
       onActor: async () => undefined,
       onRevoked: () => undefined,
     });
@@ -94,17 +103,17 @@ describe('the sync node reads the app’s own authenticator', () => {
     // The adapter's clock is at the sweep instant when the resolver answers — frozen at NOW for
     // the whole test, the refreshed grant reports `NOW + TTL`, which is what it already carried,
     // so an implementation returning `expiresAt` UNCHANGED passed the assertion below.
-    clock.advance(SYNC_GRANT_TTL_MS);
+    clock.advance(MAX_CREDENTIAL_TTL_MS);
     const swept = await sweepGrants({
       grants: book,
-      clock: frozenClock(NOW + SYNC_GRANT_TTL_MS),
+      clock: frozenClock(NOW + MAX_CREDENTIAL_TTL_MS),
       onActor: async () => undefined,
       onRevoked: () => expect.unreachable('a live session must not be revoked'),
     });
     expect(swept.refreshed).toBe(1);
     // The clock the ADAPTER holds, not the sweep's: the renewed grant is re-decided one TTL after
     // the resolver answered. A refresh that returned the same instant would expire on every pass.
-    expect(book.get('socket-1')?.expiresAt).toBe(NOW + 2 * SYNC_GRANT_TTL_MS);
+    expect(book.get('socket-1')?.expiresAt).toBe(NOW + 2 * MAX_CREDENTIAL_TTL_MS);
   });
 
   test('the refresh re-reads the upgrade’s own cookie, never a header it never saw', async () => {
@@ -135,7 +144,7 @@ describe('the sync node reads the app’s own authenticator', () => {
 
     const swept = await sweepGrants({
       grants: book,
-      clock: frozenClock(NOW + SYNC_GRANT_TTL_MS),
+      clock: frozenClock(NOW + MAX_CREDENTIAL_TTL_MS),
       onActor: async () => undefined,
       onRevoked: () => expect.unreachable('a backend timeout is not a revocation'),
     });

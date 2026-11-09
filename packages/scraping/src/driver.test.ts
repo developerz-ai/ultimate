@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ScrapeDriver, ScrapeSession } from './driver';
-import { resetScrapeDriver, scrapeDriver, setScrapeDriver } from './driver';
+import { installScrapeDriver, resetScrapeDriver, scrapeDriver } from './driver';
 
 const named = (name: string): ScrapeDriver => ({
   name,
@@ -23,15 +23,15 @@ describe('unit · the ambient driver is installed, read back and given back', ()
     expect(scrapeDriver()).toBeUndefined();
   });
 
-  test('the setter installs THAT object — the accessor is not a name lookup', () => {
+  test('the installer installs THAT object — the accessor is not a name lookup', () => {
     const local = named('puppeteer');
-    setScrapeDriver(local);
+    installScrapeDriver(local);
     expect(scrapeDriver()).toBe(local);
   });
 
   test('the last install wins, so a boot may replace a driver a test installed', () => {
-    setScrapeDriver(named('fixture'));
-    setScrapeDriver(named('fake'));
+    installScrapeDriver(named('fixture'));
+    installScrapeDriver(named('fake'));
     expect(scrapeDriver()?.name).toBe('fake');
   });
 
@@ -39,8 +39,29 @@ describe('unit · the ambient driver is installed, read back and given back', ()
     // `scrape-run.test.ts` asserts X_SCRAPE_DRIVER_UNKNOWN after calling this, and that assertion
     // is only reachable while the answer here is `undefined` — a reset that installed a fallback
     // would turn that whole failure mode into a test nobody can write.
-    setScrapeDriver(named('puppeteer'));
+    installScrapeDriver(named('puppeteer'));
     resetScrapeDriver();
+    expect(scrapeDriver()).toBeUndefined();
+  });
+
+  test('the installer answers its release, which puts back exactly what it replaced', () => {
+    const first = named('fixture');
+    installScrapeDriver(first);
+    const release = installScrapeDriver(named('fake'));
+    release();
+    expect(scrapeDriver()).toBe(first);
+    // Twice is still once: a second release does not reach further back, even past a later install.
+    installScrapeDriver(named('later'));
+    release();
+    expect(scrapeDriver()?.name).toBe('later');
+  });
+
+  test('releases out of order: the earlier release leaves the later install standing', () => {
+    const releaseA = installScrapeDriver(named('a'));
+    const releaseB = installScrapeDriver(named('b'));
+    releaseA();
+    expect(scrapeDriver()?.name).toBe('b');
+    releaseB();
     expect(scrapeDriver()).toBeUndefined();
   });
 

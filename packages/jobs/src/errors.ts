@@ -295,7 +295,7 @@ export class CancelUnsupportedError extends UltimateError {
     super({
       code: 'X_JOB_NOT_CANCELLABLE',
       cause: `the "${input.driver}" jobs driver cannot cancel a single job`,
-      fix: 'call setJobDriver(postgresJobDriver()) at boot — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
+      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
     });
   }
 }

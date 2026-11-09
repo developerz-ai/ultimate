@@ -163,6 +163,11 @@ export interface ServerScript {
   readonly slotPlugin?: string | null;
   /** The slot's `wal_status`; `'lost'` is a slot postgres invalidated. Default `'reserved'`. */
   readonly slotWalStatus?: string;
+  /**
+   * How many asks the slot stays held by another walsender (`active_pid` set) — a backend still on
+   * its way out. Absent is a slot nobody holds. `Infinity` is a genuine second replicator.
+   */
+  readonly slotHeldFor?: number;
   /** Table names `pg_class` reports with `relreplident <> 'f'`. Empty is the healthy answer. */
   readonly partialIdentity?: readonly string[];
   /** Table names `pg_class` reports as not FULL when asked on behalf of a params channel. */
@@ -183,6 +188,7 @@ export class FakeWalsender implements PgStream {
   readonly #chunks: (Uint8Array | undefined)[] = [];
   readonly #script: ServerScript;
   #waiting: ((chunk: Uint8Array | undefined) => void) | null = null;
+  #slotAsks = 0;
 
   constructor(script: ServerScript = {}) {
     this.#script = script;
@@ -274,14 +280,22 @@ export class FakeWalsender implements PgStream {
       this.push(joined(...rows, complete(), ready()));
       return;
     }
-    if (sql.includes('pg_replication_slots')) {
-      const plugin = this.#script.slotPlugin === undefined ? 'pgoutput' : this.#script.slotPlugin;
-      const status = this.#script.slotWalStatus ?? 'reserved';
-      const rows = plugin === null ? [] : [dataRow([plugin, status])];
-      this.push(joined(...rows, complete(), ready()));
+    if (sql.includes('pg_replication_slots')) this.#answerSlot(sql);
+    else this.push(joined(dataRow(['ok']), complete(), ready()));
+  }
+
+  /** The preflight's slot question and the release polls behind it (`pg-slot-release.ts`). */
+  #answerSlot(sql: string): void {
+    const held = this.#slotAsks < (this.#script.slotHeldFor ?? 0) ? '4242' : null;
+    this.#slotAsks += 1;
+    if (sql.includes('pg_sleep')) {
+      this.push(joined(dataRow([held, '']), complete(), ready()));
       return;
     }
-    this.push(joined(dataRow(['ok']), complete(), ready()));
+    const plugin = this.#script.slotPlugin === undefined ? 'pgoutput' : this.#script.slotPlugin;
+    const status = this.#script.slotWalStatus ?? 'reserved';
+    const rows = plugin === null ? [] : [dataRow([plugin, status, held])];
+    this.push(joined(...rows, complete(), ready()));
   }
 }
 

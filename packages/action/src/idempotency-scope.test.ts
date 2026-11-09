@@ -6,14 +6,9 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
+import { installIdempotencyStore, resetIdempotency } from './adapter';
 import type { IdempotencyStore } from './idempotency';
-import {
-  assertIdempotencyScope,
-  configureIdempotency,
-  getIdempotencyStore,
-  resetIdempotency,
-  setIdempotencyStore,
-} from './idempotency';
+import { assertIdempotencyScope, configureIdempotency, getIdempotencyStore } from './idempotency';
 import { memoryIdempotencyStore } from './idempotency-memory';
 import { registerAction, resetActions } from './registry';
 
@@ -45,7 +40,7 @@ describe("a 'shared' declaration over a process store is refused at boot", () =>
       release: () => Promise.resolve(),
       get: () => Promise.resolve(undefined),
     };
-    setIdempotencyStore(noScope);
+    installIdempotencyStore(noScope);
     configureIdempotency({ scope: 'shared' });
     expect(() => assertIdempotencyScope()).toThrow(/X_IDEMPOTENCY_NOT_SHARED/);
   });
@@ -62,7 +57,7 @@ describe("a 'shared' declaration over a process store is refused at boot", () =>
       release: (key, id) => inner.release(key, id),
       get: (key) => inner.get(key),
     };
-    setIdempotencyStore(shared);
+    installIdempotencyStore(shared);
     configureIdempotency({ scope: 'shared' });
     expect(() => registerAction('chargeCard', anAction())).not.toThrow();
   });

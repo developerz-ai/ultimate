@@ -16,7 +16,7 @@ import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
 import { costOf } from './provider';
 import { assertNoSecrets } from './redaction';
-import { aiRedactor, configureAi, resetAiRuntime } from './runtime';
+import { aiRedactor, configureAi, installAiGateway, resetAiRuntime } from './runtime';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
@@ -87,9 +87,7 @@ describe('a Secret never reaches a prompt', () => {
 
   test('an llm() whose vars() returns a Secret refuses before the provider is touched', async () => {
     const { provider, seen } = recorder();
-    configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
-    });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     const summarize = llm({
       input: Input,
       output: Output,
@@ -113,8 +111,8 @@ describe('the declared redactor is the last thing to touch a prompt', () => {
 
   test('it rewrites the rendered prompt AND the system prompt before either is sent', async () => {
     const { provider, seen } = recorder();
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       redact: (text) => text.replaceAll('clinical', '[removed]').replaceAll(PATIENT, '[removed]'),
     });
     const summarize = llm({

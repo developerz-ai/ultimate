@@ -22,7 +22,7 @@ import { providerGateway } from './gateway';
 import { registerModel, resetModels } from './models';
 import { definePrompt } from './prompt';
 import type { GenerateResult, Provider, TokenUsage } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
 const usd = (minor: number, scale?: number) => ({
@@ -159,7 +159,7 @@ describe('a run is rounded once, at the end', () => {
   }
 
   test('14 turns of 0.45 cents: the ledger and the run say 7 cents — it was 28', async () => {
-    configureAi({ gateway: providerGateway({ providers: [scripted()], defaultModel: SONNET }) });
+    installAiGateway(providerGateway({ providers: [scripted()], defaultModel: SONNET }));
     const readDoc: ProjectableAction = {
       name: 'readDoc',
       description: 'Read one document',

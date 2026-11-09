@@ -7,7 +7,8 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, markListening, runWithContext } from '@ultimat3/core';
-import { jobWorker, resetJobDriver, type Worker } from '@ultimat3/jobs';
+import { jobWorker, type Worker } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { clearRoutes } from '@ultimat3/render';
 import type { AdminApp } from '../src/admin';
 import { MANAGER, type Seeded, seedQueue } from '../src/jobs/jobs-fixture';

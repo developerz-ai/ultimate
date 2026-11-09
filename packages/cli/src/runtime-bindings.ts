@@ -4,10 +4,8 @@
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { RealtimeConfig } from '@ultimat3/core';
 import { renderThrowable } from '@ultimat3/core';
 import { StorageUnwritableError } from './errors';
-import { REALTIME_DEFAULTS } from './runtime-realtime';
 import { safeUrlLabel } from './safe-url-label';
 
 export type ServiceMode = 'embedded' | 'external';
@@ -79,11 +77,7 @@ function makeStateDir(stateDir: string): void {
  * Embedded Postgres is PGlite on disk under `.x/`, so a restart keeps the data and a `x db reset`
  * is a directory delete rather than a container dance.
  */
-export function resolveServices(
-  root: string,
-  env: Env,
-  realtime: RealtimeConfig = REALTIME_DEFAULTS,
-): DevServices {
+export function resolveServices(root: string, env: Env): DevServices {
   // `ULTIMATE_STATE_DIR` relocates the whole of `.x/` — the embedded database, the local disk and
   // the dev lock — for one process tree. It is how an e2e run boots the app on a THROWAWAY database
   // (`e2e-app.ts`) instead of resetting the developer's own, beside a running `x dev`.
@@ -107,7 +101,7 @@ export function resolveServices(
             detail: 'PGlite in this process — set DATABASE_URL to use a real Postgres',
           }
         : { name: 'db', mode: 'external', url: databaseUrl, detail: 'DATABASE_URL' },
-    events: eventsBinding(env, realtime),
+    events: eventsBinding(env),
     storage:
       s3Endpoint === undefined
         ? {
@@ -140,26 +134,38 @@ export const describeServices = (services: DevServices): string =>
     .join(' ');
 
 /**
- * The bus as `realtime.transport` chose it, and the variable `realtime.urlEnv` names — the pair
- * `@ultimat3/realtime`'s `selectTransport` obeys. It read `NATS_URL` literally, so an app naming
- * its own variable reported `events=embedded` over a boot that had dialled NATS.
+ * The bus the environment selects: `NATS_URL` set is NATS, unset is the in-process fanout — the
+ * one rule `@ultimat3/realtime`'s `selectTransport` obeys (v31: the `realtime.transport`/`urlEnv`
+ * config is gone; a bus of the app's own is `transport` in `apps/<app>/runtime.ts`).
  */
-export function eventsBinding(env: Env, realtime: RealtimeConfig): ServiceBinding {
-  const name = realtime.urlEnv;
-  const url = realtime.transport === 'nats' && name !== undefined ? nonEmpty(env[name]) : undefined;
+export function eventsBinding(env: Env): ServiceBinding {
+  const url = nonEmpty(env['NATS_URL']);
   return url === undefined
     ? {
         name: 'events',
         mode: 'embedded',
         url: 'inproc://events',
-        detail: "in-process fanout — set realtime: { transport: 'nats', urlEnv } to use NATS",
+        detail: 'in-process fanout — set NATS_URL to use NATS',
       }
-    : { name: 'events', mode: 'external', url, detail: name ?? 'NATS_URL' };
+    : { name: 'events', mode: 'external', url, detail: 'NATS_URL' };
 }
 
-/** `services` with the events binding the booted runtime actually chose (`RunningServices.realtime`). */
+/**
+ * `services` with the events binding the booted runtime actually chose: a `runtime.ts` transport
+ * is reported as the app's own, never as whatever `NATS_URL` happens to say.
+ */
 export const withRealtimeEvents = (
   services: DevServices,
   env: Env,
-  realtime: RealtimeConfig,
-): DevServices => ({ ...services, events: eventsBinding(env, realtime) });
+  supplied: boolean,
+): DevServices => ({
+  ...services,
+  events: supplied
+    ? {
+        name: 'events',
+        mode: 'external',
+        url: 'runtime://transport',
+        detail: 'runtime.ts transport',
+      }
+    : eventsBinding(env),
+});

@@ -202,10 +202,12 @@ describe('RegistryLeakError re-run command', () => {
 
   test('an ordinary path, and one with a quote JSON can escape, still travel', () => {
     expect(rerun('packages/cli/src/cmd-dev.test.ts')).toBe(
-      'bun test "packages/cli/src/cmd-dev.test.ts"',
+      'bun test "./packages/cli/src/cmd-dev.test.ts"',
     );
     expect(rerun('a file" with a quote.test.ts')).toBe(
-      String.raw`bun test "a file\" with a quote.test.ts"`,
+      String.raw`bun test "./a file\" with a quote.test.ts"`,
     );
+    // Already anchored, or absolute: left as written.
+    expect(rerun('/abs/x.test.ts')).toBe('bun test "/abs/x.test.ts"');
   });
 });

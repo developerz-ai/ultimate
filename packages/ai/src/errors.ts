@@ -72,7 +72,7 @@ export class AiGatewayMissingError extends UltimateError {
       // The provider is the app's choice, so no vendor is the default (M12): the fix is the shape
       // and the cause names what `provider` is — one of the peers, or the app's own.
       cause: `an llm action on prompt "${input.prompt}" ran before any gateway was configured (provider: anthropicProvider({ models }) for the Anthropic Messages format, openAiProvider({ baseUrl, models }) for the OpenAI chat-completions format on any compatible server, or your own Provider)`,
-      fix: 'configureAi({ gateway: providerGateway({ providers: [provider] }) }) at boot',
+      fix: 'export const runtime = { aiGateway: providerGateway({ providers: [provider] }) }   # apps/<app>/runtime.ts — in a test, installAiGateway(gateway) from @ultimat3/ai/adapter',
     });
   }
 }

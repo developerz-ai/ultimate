@@ -30,6 +30,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./adapter": "./src/adapter.ts",
     "./page": "./src/page.ts",
     "./internal/error-status": "./src/error-status-declared.ts",
     "./outbound": "./src/outbound-subpath.ts",

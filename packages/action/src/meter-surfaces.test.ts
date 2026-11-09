@@ -5,14 +5,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { ctxOf, frozenClock, runWithContext, userActor } from '@ultimat3/core';
-import { defineHttpConfig, httpServer, resetRateLimitStore } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
+import { resetIdempotency, resetMeterStore } from './adapter';
 import { toRoute } from './http';
-import { resetIdempotency } from './idempotency';
 import { invoke } from './invoke';
-import { resetMeterStore } from './meter-store';
 
 beforeEach(() => {
   resetMeterStore();

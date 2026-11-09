@@ -31,7 +31,7 @@ imports them.
 | Task | Command |
 |---|---|
 | list tools | `x mcp tools --json` |
-| test | `bun test packages/mcp` |
+| test | `bun test ./packages/mcp/` |
 
 ## Conventions
 

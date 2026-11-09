@@ -2,7 +2,7 @@
 // overview, drawn over this process's queue, with the same tiles and the same chart.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { resetJobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { ask, jobsAdmin, seedQueue } from './jobs-fixture';
 
 const { jobsTabHtml } = await import('./overview-tab');

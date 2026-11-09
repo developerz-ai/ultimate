@@ -6,11 +6,11 @@ import type { FailureBundle } from '@ultimat3/core';
 import {
   ctxOf,
   reportError,
-  setFailureStore,
   settleFailureCaptures,
   UltimateError,
   userActor,
 } from '@ultimat3/core';
+import { installFailureStore } from '@ultimat3/core/adapter';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { query } from './query';
@@ -28,13 +28,15 @@ const failingWith = (code: string) =>
   }).named(`feed${code}`);
 
 const saved: FailureBundle[] = [];
+let releaseStore: () => void = () => undefined;
 afterEach(() => {
-  setFailureStore(null);
+  releaseStore();
   saved.length = 0;
 });
 
 const read = async (code: string): Promise<void> => {
-  setFailureStore({ save: async (bundle) => void saved.push(bundle) });
+  releaseStore();
+  releaseStore = installFailureStore({ save: async (bundle) => void saved.push(bundle) });
   try {
     await runQuery(
       failingWith(code),

@@ -14,7 +14,7 @@ import { providerGateway } from './gateway';
 import { useFixtureModels } from './model-fixture';
 import { registerModel } from './models';
 import { openAiProvider } from './openai-provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 
 useFixtureModels();
 
@@ -81,7 +81,7 @@ function openRouter(reads: number): Sent[] {
     reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
   });
   const provider = openAiProvider({ apiKey: 'k', baseUrl: OPENROUTER, models: [DEEPSEEK], fetch });
-  configureAi({ gateway: providerGateway({ providers: [provider], defaultModel: DEEPSEEK }) });
+  installAiGateway(providerGateway({ providers: [provider], defaultModel: DEEPSEEK }));
   return sent;
 }
 

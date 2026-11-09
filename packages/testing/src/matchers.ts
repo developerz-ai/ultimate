@@ -6,6 +6,7 @@ import type { ExpectExtendMatchers } from 'bun:test';
 import { expect } from 'bun:test';
 import { describeValue, isUltimateError, renderCauseValue, stringField } from '@ultimat3/core';
 import { TestJobExpectedError, TestSchemaExpectedError } from './errors';
+import { toHaveEnqueued, toHaveSentMail } from './matcher-doubles';
 import {
   TestNumberExpectedError,
   TestOpenApiExpectedError,
@@ -13,9 +14,17 @@ import {
 } from './matcher-receiver-errors';
 import type { MatcherResult } from './matcher-result';
 import { rowEquality } from './matcher-row';
-import type { UltimateMatchers } from './matcher-surface';
+import type {
+  EnqueuedJobRef,
+  MatcherMailRef,
+  SentMailMatch,
+  UltimateMatchers,
+} from './matcher-surface';
 import type { VisibleOptions } from './matcher-visible';
 import { assertVisibilityProbe, visibilityResult } from './matcher-visible';
+// `toHaveBeenCalledWith` on a `stub()`: bun's own name, so it is installed beside bun's matcher
+// rather than declared on `UltimateMatchers` (two declarations of one member do not merge).
+import './matcher-stub';
 import type { OpenApiLike } from './test-types';
 
 export type { MatcherResult } from './matcher-result';
@@ -300,6 +309,15 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
   // Any receiver is comparable, so there is nothing to refuse: a non-row simply is not equal.
   toEqualRow(received: unknown, expected: unknown) {
     return rowEquality(received, expected);
+  },
+
+  // Not `async`: the receiver and input checks throw synchronously; the read is the promise.
+  toHaveEnqueued(received: unknown, job: EnqueuedJobRef<unknown>, ...input: unknown[]) {
+    return toHaveEnqueued(received, job, ...input);
+  },
+
+  toHaveSentMail(received: unknown, mail: MatcherMailRef, match?: SentMailMatch) {
+    return toHaveSentMail(received, mail, match);
   },
 
   toAcceptInput(received: unknown, input: unknown) {

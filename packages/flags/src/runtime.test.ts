@@ -3,7 +3,7 @@
 // rate-limited call off the hot path.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { MemoryErrorReporter, UltimateError } from '@ultimat3/core';
+import type { MemoryErrorReporter, SleepClock, UltimateError } from '@ultimat3/core';
 import {
   UltimateError as CoreError,
   configureErrorReporting,
@@ -11,6 +11,7 @@ import {
   memoryErrorReporter,
   resetErrorReporting,
 } from '@ultimat3/core';
+import { installClock } from '@ultimat3/core/adapter';
 import {
   configureFlags,
   DEFAULT_REPORT_INTERVAL_MS,
@@ -18,6 +19,17 @@ import {
   reportOnce,
   resetFlagReporting,
 } from './runtime';
+
+/** Installs `clock` as the process clock until the test ends — core's one ambient clock. */
+let releaseClock: (() => void) | undefined;
+const useClock = (clock: SleepClock): void => {
+  releaseClock?.();
+  releaseClock = installClock(clock);
+};
+afterEach(() => {
+  releaseClock?.();
+  releaseClock = undefined;
+});
 
 const build = (): UltimateError =>
   new CoreError({ code: 'X_FLAG_EXPIRED', cause: 'overdue', fix: 'x flags --json' });
@@ -57,7 +69,8 @@ describe('unit · the reporting seam', () => {
 
 describe('unit · reportOnce', () => {
   test('rate-limits per key, so two overdue flags are two reports', () => {
-    configureFlags({ clock: frozenClock(0), reportEveryMs: 1_000 });
+    useClock(frozenClock(0));
+    configureFlags({ reportEveryMs: 1_000 });
     expect(reportOnce('a.flag', build)).toBe(true);
     expect(reportOnce('a.flag', build)).toBe(false);
     expect(reportOnce('b.flag', build)).toBe(true);
@@ -65,7 +78,8 @@ describe('unit · reportOnce', () => {
   });
 
   test('does not even build the error while it is rate-limited', () => {
-    configureFlags({ clock: frozenClock(0), reportEveryMs: 1_000 });
+    useClock(frozenClock(0));
+    configureFlags({ reportEveryMs: 1_000 });
     let built = 0;
     const counting = (): UltimateError => {
       built += 1;
@@ -79,7 +93,8 @@ describe('unit · reportOnce', () => {
 
   test('a wall-clock jump does not reopen the window — the limit is monotonic', () => {
     const clock = frozenClock('2026-03-05T00:00:00.000Z');
-    configureFlags({ clock, reportEveryMs: 60_000 });
+    useClock(clock);
+    configureFlags({ reportEveryMs: 60_000 });
     reportOnce('a.flag', build);
     // `set` moves wall-clock time only; monotonic time is untouched, which is exactly an NTP
     // correction or a container resuming.
@@ -90,8 +105,9 @@ describe('unit · reportOnce', () => {
     expect(sink.events).toHaveLength(1);
   });
 
-  test('resetFlagReporting puts the system clock and the default interval back', () => {
-    configureFlags({ clock: frozenClock(0), reportEveryMs: 1 });
+  test('resetFlagReporting forgets the watermarks and puts the default interval back', () => {
+    useClock(frozenClock(0));
+    configureFlags({ reportEveryMs: 1 });
     reportOnce('a.flag', build);
     resetFlagReporting();
     expect(reportOnce('a.flag', build)).toBe(true);
@@ -100,27 +116,30 @@ describe('unit · reportOnce', () => {
   });
 });
 
-// F6. `resetFlagReporting` clears the map; `configureFlags` is what apps and test kits actually
-// call, and it swapped the clock underneath a watermark measured against the OLD one.
+// F6. A watermark is a reading of ONE clock. Since 31.0.0 the clock is core's ambient one, swapped
+// by the boot or a test through `installClock` — never by this package — so the swap is detected
+// where the clock is read, not where it was configured.
 describe('unit · swapping the clock', () => {
   test('a fresh clock does not inherit the previous clock monotonic watermark', () => {
-    // A long-lived process reports at monotonic 10_000_000. A test kit — or a second
-    // `configureFlags` at boot — then installs a clock that starts at 0. `now - previous` is
+    // A long-lived process reports at monotonic 10_000_000. A test kit — or a second boot in one
+    // process — then installs a clock that starts at 0. `now - previous` is
     // -10_000_000, which is below every interval, so this flag could never report again until the
     // new clock passed the old one's reading: on a frozen test clock, never.
     const running = frozenClock(0);
     running.advance(10_000_000);
-    configureFlags({ clock: running, reportEveryMs: 1_000 });
+    useClock(running);
+    configureFlags({ reportEveryMs: 1_000 });
     expect(reportOnce('a.flag', build)).toBe(true);
 
-    configureFlags({ clock: frozenClock(0) });
+    useClock(frozenClock(0));
     expect(reportOnce('a.flag', build)).toBe(true);
     expect(sink.events).toHaveLength(2);
   });
 
   test('the rate limit still holds within one clock', () => {
     const clock = frozenClock(0);
-    configureFlags({ clock, reportEveryMs: 1_000 });
+    useClock(clock);
+    configureFlags({ reportEveryMs: 1_000 });
     expect(reportOnce('a.flag', build)).toBe(true);
     expect(reportOnce('a.flag', build)).toBe(false);
     clock.advance(1_000);
@@ -131,7 +150,8 @@ describe('unit · swapping the clock', () => {
     // The watermark is only stale when the CLOCK changes. An interval change re-reads the same
     // clock, so clearing there would let a report through on every configure call.
     const clock = frozenClock(0);
-    configureFlags({ clock, reportEveryMs: 1_000 });
+    useClock(clock);
+    configureFlags({ reportEveryMs: 1_000 });
     expect(reportOnce('a.flag', build)).toBe(true);
     configureFlags({ reportEveryMs: 5_000 });
     expect(reportOnce('a.flag', build)).toBe(false);
@@ -158,22 +178,26 @@ describe('unit · configureFlags screens reportEveryMs', () => {
 
   test('a refused interval leaves the one in force alone — NaN used to report on every call', () => {
     const clock = frozenClock(0);
-    configureFlags({ clock, reportEveryMs: 1_000 });
+    useClock(clock);
+    configureFlags({ reportEveryMs: 1_000 });
     expect(reportOnce('k', build)).toBe(true);
     refusalOf(() => configureFlags({ reportEveryMs: Number.NaN }));
     // `now - previous < NaN` is false, so with NaN stored this second call reported too.
     expect(reportOnce('k', build)).toBe(false);
   });
 
-  test('a refused interval does not swap the clock either', () => {
-    const first = frozenClock(0);
-    configureFlags({ clock: first, reportEveryMs: 1_000 });
-    refusalOf(() => configureFlags({ clock: frozenClock(0), reportEveryMs: -1 }));
-    expect(flagsClock()).toBe(first);
+  test('the clock is the one core installed, and configureFlags takes none of its own', () => {
+    const installed = frozenClock(0);
+    useClock(installed);
+    expect(flagsClock()).toBe(installed);
+    // @ts-expect-error — `clock` left configureFlags in 31.0.0: `clock` in apps/<app>/runtime.ts.
+    configureFlags({ clock: frozenClock(5), reportEveryMs: 1_000 });
+    expect(flagsClock()).toBe(installed);
   });
 
   test('0 is every evaluation, and it is a decision the caller may make', () => {
-    configureFlags({ clock: frozenClock(0), reportEveryMs: 0 });
+    useClock(frozenClock(0));
+    configureFlags({ reportEveryMs: 0 });
     expect(reportOnce('k', build)).toBe(true);
     expect(reportOnce('k', build)).toBe(true);
   });

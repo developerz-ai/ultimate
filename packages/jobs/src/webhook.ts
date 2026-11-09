@@ -20,7 +20,7 @@ import {
   finiteOption,
   isCanonicalWebhookField,
   isUltimateError,
-  systemClock,
+  liveClock,
   throwIfAborted,
   WEBHOOK_FIELD_MAX,
 } from '@ultimat3/core';
@@ -189,7 +189,7 @@ export interface WebhookDefinition {
 }
 
 export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliveryInput> {
-  const clock = definition.clock ?? systemClock;
+  const clock = definition.clock ?? liveClock;
   const disableAfter = finiteOption(
     'webhook()',
     'disableAfter',

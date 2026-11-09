@@ -11,6 +11,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   taken from it in ONE place, the ambient `db()`. Never `render`, `ui`. `http` only from `webhook-receiver*.ts`, for the route
   (`Route`/`Bucket` types, `DEFAULT_WEBHOOK_BODY_LIMIT`, `HttpError`, `jsonResponse`).
 - Consumers: `action` (`<job>.enqueue`, via the ambient jobs facade), `cli`, `mcp`, `admin`.
+- **Installers are on `@ultimat3/jobs/adapter`, never the `.` barrel** (`adapter.test.ts`):
+  `installJobDriver`/`installEventBus` + resets, the port interfaces, the errors a driver throws.
+  An app swaps a port in `apps/<app>/runtime.ts`; a `fix:` names that line, never an installer.
 - External deps: none. Postgres access goes through the injected `PgExecutor` (`@ultimat3/core`'s,
   re-exported from `index.ts`).
 
@@ -121,16 +124,6 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **The retry decision reads the ERROR, on core's backoff curve** (`retry-classification.ts`,
   `backoffDelayMs`): `docs/history/jobs.md`, "Moved 2026-10-01 — retry and bounds".
 - **The claim loop re-arms on the PASS, never the jobs**; `tick()` resolves with that pass's executions.
-- **A deadline CANCELS, then fails the attempt**, never the reverse (`raceTimeout`, `withStepTimeout`);
-  `ctx.signal` aborts unless the body completed AND its ack landed; steps fence on `ended`.
-- **A cancelled runner writes NOTHING** — `put()` in `steps.ts` (`X_ABORTED`) — save a fenced
-  `X_DRAINING` on a live attempt (recorded once). The STORE fences the claim (`StepFence`,
-  `SQL_STEP_PUT` as `SQL_ACK`: `X_JOB_LEASE_LOST`); `executeJob` passes it.
-- **A cancelled body's writes refuse too**, `enqueue` included (`outbox-abandon.test.ts`); a store
-  on the pool: a fenced `put` past `X_DRAINING` lands.
-- **`traceparent` is stamped at ENQUEUE time, in `outbox.ts`**, under `job-instrument.ts`'s
-  producer span (the run's consumer span is its child); an empty `spanId` sends none.
-  `job.enqueue` is emitted there, `job.perform` in `worker-run.ts`, once per attempt.
 - **The scheduler runs one dispatch round at a time**; `stop()` waits it out before `leader.release()`. Full rule: `docs/history/jobs.md`.
 - **`run-once` fires ONE catch-up**: the watermark rides the fire (`ScheduledFire.watermarkMs`),
   never a `markFired` behind it; `skip` fires the latest missed occurrence (`latestOccurrenceBy`).
@@ -138,11 +131,8 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   goes with it (`worker-admit.ts`). **A failed pass re-arms at the floor** (`worker-loop.ts`
   catch); `timers` is the test seam.
 - **Every timer body catches before it finalises.**
-- **Suspension is control flow, and a SHED is not a suspension**: `StepSuspension` →
-  `nack({ countsAsAttempt: false, park: true })`; a shed is `countsAsAttempt: false` without `park`,
-  stays `ready`, logs `jobs.worker.shed` (no `last_error`). `driver-parity.test.ts`.
-- **A wiring throw hands back the run's holdings, and its ROW until `executeJob` starts**
-  (`worker-run.ts`), as a failed shed does its job (`worker-admit.ts`).
+- Cancellation, deadlines, `traceparent`, suspension vs shed, wiring throws:
+  `docs/history/jobs-worker-cancellation.md` (moved 2026-11-09).
 - **`step.run` hydrates the run's steps from ONE `store.list(runId)`**; `sleep` and `waitForEvent`
   record replays through `trace()`. **`claimName` reads a Set**; `usedNames()` keeps
   `MAX_TRACE_NAMES` (200).

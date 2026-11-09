@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { REDACTED } from '@ultimat3/core';
-import { diffRows, memoryAuditLog } from './audit';
+import type { AuditSink } from '@ultimat3/core/adapter';
+import { type AuditEntry, diffRows, memoryAuditLog } from './audit';
 import {
   AUDIT_QUERY_CASES,
   AUDIT_QUERY_REFUSALS,
@@ -119,6 +120,31 @@ describe('memoryAuditLog', () => {
       reason: 'ok',
     });
     expect(seen).toEqual(['create']);
+  });
+
+  // One audit-sink noun in the framework (31.0.0): core's, generic over the record. A sink typed
+  // against it drops into `sinks` unwrapped, and admin declares no second interface of its own.
+  test("a sink is core's AuditSink over admin's entry", async () => {
+    const seen: AuditEntry[] = [];
+    const sink: AuditSink<AuditEntry> = { write: (entry) => void seen.push(entry) };
+    const log = memoryAuditLog({ sinks: [sink] });
+    await log.append({
+      requestId: 'req_2',
+      actor: { id: 'u_1' },
+      operation: 'delete',
+      kind: 'operation',
+      entity: 'post',
+      permission: 'admin:write',
+      outcome: 'denied',
+      reason: 'nope',
+    });
+    expect(seen.map((entry) => entry.outcome)).toEqual(['denied']);
+    // A type leaves no runtime trace, so the sources are read: declared once, in core, and the
+    // barrel carries no second spelling of it.
+    for (const file of ['./audit.ts', './index.ts']) {
+      const source = await Bun.file(new URL(file, import.meta.url)).text();
+      expect(source).not.toMatch(/export interface AuditSink\b|type AuditSink,/);
+    }
   });
 });
 

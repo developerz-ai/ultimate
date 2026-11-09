@@ -181,7 +181,7 @@ export const SCRAPE_ERROR_RETRY = {
   // TERMINAL where its sibling `X_SCRAPE_WEDGED` is retryable, and the difference IS the reason
   // the two codes are separate. A wedge is the site or the browser being slow — the definition of
   // "run it again and it may go differently". This is the guard's own loop dying on code the
-  // DEFINITION supplied: a `ScrapeClock` an app wrote, reached identically on attempt 2. Retrying
+  // DEFINITION supplied: a `SleepClock` an app wrote, reached identically on attempt 2. Retrying
   // launches a real browser five times to die at the first poll, and on an authenticated target
   // that is five arrivals at a login for no chance of a different answer — the rule this whole
   // table is written to, stated at the top of it. The fix is an edit, so a human decides.

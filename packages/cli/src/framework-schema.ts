@@ -54,7 +54,7 @@ export interface FrameworkSchema {
  * `create table if not exists` on an unused table costs one round trip at boot. The alternative
  * costs a request: a store installed later must never be the thing that discovers the schema was
  * never applied, and several of these are installed AFTER this runs — `defineAuth` builds its
- * limiter when the app's modules import, and `setNotifyStores` is an app's boot line.
+ * limiter when the app's modules import, and a `runtime.ts` `notifyStores` may name Postgres stores.
  *
  * Ordered so a foreign key never precedes its target. Only `AUTH_TABLES` has any, and they are
  * internal to that entry, which is why it ships as an ordered list rather than one string.
@@ -144,8 +144,8 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
    * The delivery ledger is what stops a replayed notifier job sending twice, and it is the entry
    * whose absence is least visible: without the table the ledger's first `claim` raises `42P01`
    * from inside a worker, which reads as a dead-lettered notification rather than as a missing
-   * schema. Installed whether or not this boot calls `setNotifyStores`, for the same reason as
-   * every row above it — that call is an APP's boot line and runs after this one.
+   * schema. Installed whether or not `runtime.ts` supplies `notifyStores`, for the same reason as
+   * every row above it — the store is the app's choice and is first used after this runs.
    */
   Object.freeze({
     pkg: '@ultimat3/notify',
@@ -158,7 +158,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     ddl: Object.freeze([SQL_NOTIFY_INBOX_TABLE]),
   }),
   // `postgresDigestStore`'s windows. Installed whether or not the app picks that store, for the
-  // reason every notify row is: `setNotifyStores` is the app's boot line and runs after this one.
+  // reason every notify row is: `notifyStores` is `runtime.ts`'s choice, used after this runs.
   Object.freeze({
     pkg: '@ultimat3/notify',
     tables: Object.freeze(['x_notify_digests']),

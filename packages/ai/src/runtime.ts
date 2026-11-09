@@ -10,13 +10,18 @@
 import type { SemanticCache } from '@ultimat3/cache';
 import { memorySemanticCache } from '@ultimat3/cache';
 import { asyncContext, cachedFormatter } from '@ultimat3/core';
+import { adapterSlot } from '@ultimat3/core/adapter';
 import type { Embedder } from './embeddings';
 import { hashEmbedder } from './embeddings';
 import { AiGatewayMissingError } from './errors';
 import type { Gateway } from './gateway';
 
+/**
+ * Everything about the AI runtime EXCEPT the gateway, which is a port with one way in:
+ * `aiGateway` in `apps/<app>/runtime.ts`, installed by the boot through `installAiGateway`
+ * (`@ultimat3/ai/adapter`). `gateway` left this input in 31.0.0 — two ways to set one slot.
+ */
 export interface AiRuntimeInput {
-  readonly gateway: Gateway;
   /**
    * Keys the semantic cache. Defaults to `HashEmbedder`: deterministic, offline, and lexical
    * rather than semantic — at the thresholds an LLM cache runs at that is a near-exact-match
@@ -50,23 +55,38 @@ export type Redactor = (text: string) => string;
 const noRedaction: Redactor = (text) => text;
 
 interface AiRuntime {
-  readonly gateway: Gateway;
   readonly embedder: Embedder;
   readonly semanticCache: (scope: string) => SemanticCache;
   readonly redact: Redactor;
 }
 
 let runtime: AiRuntime | undefined;
+/** The `aiGateway` port's ONE slot, written only by `installAiGateway`. */
+const gatewaySlot = /* @__PURE__ */ adapterSlot<Gateway | undefined>(() => undefined);
 const caches = new Map<string, SemanticCache>();
 
-export function configureAi(input: AiRuntimeInput): void {
+/**
+ * The boot's install of the `aiGateway` port, from `@ultimat3/ai/adapter` only. Answers the release
+ * that removes THIS install and no other (core's `adapterSlot`), in any order, once.
+ */
+export function installAiGateway(gateway: Gateway): () => void {
+  const release = gatewaySlot.install(gateway);
+  // A cached answer is one gateway's: kept across a swap, a test's double would be served what
+  // the real gateway answered (and back). Cleared on install and on release alike.
+  caches.clear();
+  return () => {
+    release();
+    caches.clear();
+  };
+}
+
+export function configureAi(input: AiRuntimeInput = {}): void {
   runtime = {
-    gateway: input.gateway,
     embedder: input.embedder ?? hashEmbedder(),
     semanticCache: input.semanticCache ?? (() => memorySemanticCache()),
     redact: input.redact ?? noRedaction,
   };
-  // A new runtime means a new embedder and a new gateway; vectors from the old one are not
+  // A new runtime means a new embedder; vectors from the old one are not
   // comparable to vectors from the new one, and a stale hit would answer the wrong question.
   caches.clear();
 }
@@ -108,13 +128,14 @@ export function currentEvalScope(): EvalScope | undefined {
 export function aiGateway(prompt: string): Gateway {
   const scoped = evalScopes.get()?.gateway;
   if (scoped !== undefined) return scoped;
-  if (runtime === undefined) throw new AiGatewayMissingError({ prompt });
-  return runtime.gateway;
+  const installed = gatewaySlot.current();
+  if (installed === undefined) throw new AiGatewayMissingError({ prompt });
+  return installed;
 }
 
 /** The installed gateway, or `undefined` — for a caller that may run without one (`hive()`). */
 export function installedGateway(): Gateway | undefined {
-  return evalScopes.get()?.gateway ?? runtime?.gateway;
+  return evalScopes.get()?.gateway ?? gatewaySlot.current();
 }
 
 export function aiEmbedder(): Embedder {
@@ -149,5 +170,6 @@ export function semanticCacheFor(scope: string): SemanticCache {
 /** Test-only reset. Module-level state otherwise leaks between test files. */
 export function resetAiRuntime(): void {
   runtime = undefined;
+  gatewaySlot.reset();
   caches.clear();
 }

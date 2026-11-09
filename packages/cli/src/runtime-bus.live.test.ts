@@ -35,7 +35,6 @@ import type { RunningServices } from './runtime-services';
 import { startServices } from './runtime-services';
 
 const url = Bun.env['TEST_NATS_URL'];
-const NATS = { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } as const;
 
 /** A boot, a first dial's backoff and a reconnect's: seconds each, and the curve is jittered. */
 const TIMEOUT_MS = 120_000;
@@ -173,7 +172,7 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       root = mkdtempSync(join(tmpdir(), 'x-bus-down-'));
       writeFileSync(
         join(root, 'app.config.ts'),
-        "export const config = { name: 'bus-down', realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } };\n",
+        "export const config = { name: 'bus-down', realtime: { enabled: true } };\n",
       );
       const env = { ULTIMATE_ENV: 'development', NATS_URL: `nats://127.0.0.1:${relay.port}` };
       const feed = channel('bus-live-feed', {
@@ -228,7 +227,7 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       expect(performance.now() - refusedAt).toBeLessThan(1_000);
 
       // The subscriber a `sync` node is: on the real server, with the presence bucket it needs.
-      syncSide = selectTransport({ NATS_URL: url }, NATS, { use: 'sockets' });
+      syncSide = selectTransport({ NATS_URL: url }, { use: 'sockets' });
       await syncSide.connect();
       const heard: string[] = [];
       await syncSide.transport.subscribe('x.channel.bus-live-feed.>', (payload) => {
@@ -294,7 +293,7 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       root = mkdtempSync(join(tmpdir(), 'x-bus-down-'));
       writeFileSync(
         join(root, 'app.config.ts'),
-        "export const config = { name: 'bus-down', realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } };\n",
+        "export const config = { name: 'bus-down', realtime: { enabled: true } };\n",
       );
       const env = { ULTIMATE_ENV: 'development', NATS_URL: `nats://127.0.0.1:${relay.port}` };
 

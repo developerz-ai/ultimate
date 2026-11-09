@@ -230,6 +230,6 @@
 ## Commands
 
 ```
-bun test packages/time
+bun test ./packages/time/
 bun run --filter @ultimat3/time typecheck
 ```

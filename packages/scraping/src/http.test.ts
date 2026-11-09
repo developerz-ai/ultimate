@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
-import { testScrapeClock } from './clock';
 import { httpOverFetch } from './http';
 import type { NetworkEntry } from './rings';
 import { boundedRing } from './rings';
@@ -32,7 +32,7 @@ const transport = (
   const network = boundedRing<NetworkEntry>();
   const http = httpOverFetch({
     rules: { allowHosts },
-    clock: testScrapeClock(),
+    clock: frozenClock(),
     timeoutMs: 1_000,
     network,
     secrets,
@@ -198,7 +198,7 @@ describe('unit · the response body is bounded by BYTES, not only by time', () =
   const withBody = (body: string | ReadableStream<Uint8Array>, headers?: Headers) =>
     httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
@@ -237,7 +237,7 @@ describe('unit · the response body is bounded by BYTES, not only by time', () =
     });
     const http = httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
@@ -253,7 +253,7 @@ describe('unit · response headers are data, not a prototype the site can reach'
   const withHeaders = (headers: Headers) =>
     httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
@@ -335,7 +335,7 @@ describe("unit · a caller's header wins over the session's whatever its case", 
     const seen: Headers[] = [];
     const http = httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testScrapeClock(),
+      clock: frozenClock(),
       timeoutMs: 1_000,
       network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(session),

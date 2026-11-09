@@ -206,8 +206,8 @@ An action listed in `defineAppMcp` without `mcp.expose` is a build error, so exp
 
 ## The model call: gateway, ledger, provider seam
 
-Every model call in an Ultimate app goes through one `Gateway`, installed once at boot by
-`configureAi({ gateway })` and reached by `aiGateway(name)`. That is what makes budgets and cost
+Every model call in an Ultimate app goes through one `Gateway`, installed once at boot from
+`aiGateway` in `apps/<app>/runtime.ts` (`installAiGateway` on `@ultimat3/ai/adapter`; 31.0.0) and reached by `aiGateway(name)`. That is what makes budgets and cost
 accounting un-bypassable: a stray `fetch` is the only way around it, and there is no second path.
 
 `Gateway` is four members ([`packages/ai/src/gateway.ts`](../../packages/ai/src/gateway.ts)):

@@ -32,7 +32,6 @@ import {
   startCacheTiers,
 } from './runtime-cache';
 
-const NATS = { transport: 'nats', urlEnv: 'NATS_URL' } as const;
 const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
 
 let release: (() => Promise<void>) | undefined;
@@ -65,7 +64,7 @@ const until = async (done: () => boolean, polls = 500): Promise<void> => {
 
 /** This process as one replica: a web role's bus (background dial) with the cache hop on top. */
 async function replica(broker: FakeNatsBroker, retryMs: (attempt: number) => number = () => 1) {
-  const selection = selectTransport(ENV, NATS, {
+  const selection = selectTransport(ENV, {
     use: 'publish',
     connect: fakeNatsConnect(broker),
     backoff: { baseMs: 2, maxMs: 2, factor: 1, jitter: 'none' },

@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { installNotifyStores, resetNotifyStores } from './adapter';
 import { inAppChannel } from './channel-in-app';
 import type { NotifyMail } from './channel-mail';
 import { mailChannel } from './channel-mail';
@@ -12,7 +13,6 @@ import { memoryInboxStore } from './inbox';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { driver } from './notify-fixture';
-import { resetNotifyStores, setNotifyStores } from './stores';
 
 const POST = '00000000-0000-7000-8000-00000000beef';
 const params: TestParams = { postId: POST };
@@ -29,7 +29,7 @@ afterEach(() => {
 describe('unit · shipped channels', () => {
   test('the in-app channel writes one inbox row per recipient, and a replay writes none', async () => {
     const inbox = memoryInboxStore();
-    setNotifyStores({ inbox });
+    installNotifyStores({ inbox });
     const handle = notifier<TestParams>({
       name: 'post.liked',
       input: t.object({ postId: t.uuid }),
@@ -45,7 +45,7 @@ describe('unit · shipped channels', () => {
   });
 
   test('the in-app channel with no inbox installed refuses by name', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const handle = notifier<TestParams>({
       name: 'post.liked',
       input: t.object({ postId: t.uuid }),
@@ -60,7 +60,7 @@ describe('unit · shipped channels', () => {
   });
 
   test('the mailer takes the recipient locale and tz, and never invents either', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const posted: NotifyMail<TestParams>[] = [];
     const handle = notifier<TestParams>({
       name: 'post.liked',
@@ -98,7 +98,7 @@ describe('unit · shipped channels', () => {
   });
 
   test('a recipient with no address is skipped, not dead-lettered', async () => {
-    setNotifyStores({});
+    installNotifyStores({});
     const posted: NotifyMail<TestParams>[] = [];
     const handle = notifier<TestParams>({
       name: 'post.liked',

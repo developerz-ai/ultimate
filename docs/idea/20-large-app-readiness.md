@@ -60,7 +60,7 @@ agreeing with the wrong half.
 `ServeOptions.runtime` is the field ([`cli/src/serve.ts:146`](../../packages/cli/src/serve.ts)),
 typed `RuntimeOverrides` ([`cli/src/runtime-overrides.ts:26`](../../packages/cli/src/runtime-overrides.ts)):
 `jobs`, `storage`, `mail`, `transport`, `purge`, `rateLimitStore`, `isrStore`, `middleware`,
-`images`, `syncAuthenticate`. A driver handed in is installed as the ambient one too, and
+`images` (`syncAuthenticate` was deleted in 31.0.0: a `sync` socket uses the app's own `configureAuthenticator`). A driver handed in is installed as the ambient one too, and
 `startRoles` refuses a boot where the two disagree — the split is now a refusal, not a silence. What
 is still absent is the row below: an app cannot contribute a raw `Route`.
 

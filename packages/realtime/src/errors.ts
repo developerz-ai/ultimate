@@ -236,9 +236,9 @@ export class RealtimeTopologyError extends RealtimeError {
       code: 'X_REALTIME_TOPOLOGY',
       cause:
         'role sync runs on an external database over the in-process transport with no replicator in this process, so no committed change can reach it',
-      // Since 22.0.0 NATS_URL alone selects nothing: `realtime.transport` does, and a set NATS_URL
-      // under `'memory'` is refused, so the fix has to name both halves.
-      fix: "set realtime: { transport: 'nats', urlEnv: 'NATS_URL' } in app.config.ts and NATS_URL for every realtime role (web, sync, replicator), or run ROLE=sync with the replicator in one process: x dev --role sync,replicator",
+      // Since 31.0.0 the env is the bus (`selectTransport`): NATS_URL set is NATS. A bus of the
+      // app's own is `transport` in its runtime.ts — the line to paste, never a setter to call.
+      fix: 'set NATS_URL for every realtime role (web, sync, replicator) — or, for a bus of your own, add transport: myTransport to export const runtime = { … } in apps/<app>/runtime.ts — or run the replicator in this process: x dev --role sync,replicator',
     });
   }
 }

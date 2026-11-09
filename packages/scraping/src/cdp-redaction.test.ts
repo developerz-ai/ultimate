@@ -4,13 +4,12 @@
 // log line and no artifact — and the host still does, because a reader has to know which endpoint.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, structuredLogger } from '@ultimat3/core';
+import { ctxOf, frozenClock, structuredLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { StorageDriver, StorageObject } from '@ultimat3/storage';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpLauncherLike } from './cdp-port';
-import { testScrapeClock } from './clock';
 import { remoteBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
 import { cdpAttachFailed } from './error-throws';
@@ -107,7 +106,7 @@ const define = (
   tenant: 'none',
   allowHosts: ['shop.test'],
   robots: { ignore: 'a fake browser: there is no origin to ask' },
-  clock: testScrapeClock(),
+  clock: frozenClock(),
   run: () => Promise.resolve([]),
   ...over,
 });

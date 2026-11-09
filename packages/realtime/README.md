@@ -74,7 +74,8 @@ class — stay on `.`.
 
 | Concern | Entry | Export |
 |---|---|---|
-| tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry`; `publishChannelEvent` — a channel event from a job or an action — with the boot's `setChannelTransport` and the test seam `resetChannelTransport` |
+| tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry`; `publishChannelEvent` — a channel event from a job or an action, on the bus the boot installed |
+| a bus driver | `./adapter` | `Transport` and its parts (`TransportHandler`, `TransportSet`, `TransportSetEntry`, `TransportSubscription`), the errors a driver throws (`TransportUnavailableError`, `TransportProtocolError`), and `installChannelTransport` — the boot's installer and `@ultimat3/testing`'s seam, on no other entry. An app hands its bus to `transport` in `apps/<app>/runtime.ts`, never to the installer |
 | tier 2 | `./server` | `LiveQueryRegistry`, `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `changeFeedReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
 | replication | `./server` | `parsePgUrl`, `bunPgStream`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes (core's `entity.row` / `entity.bulk` bus events, subscribed) as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). `ChangeEvent.table` is the entity's TABLE on it as on the WAL decoder and `recordPublisher`, so an `entity(name, { table })` reaches channels and live windows (25.0.0). Moved from `@ultimat3/testing`, which no longer re-exports it |
@@ -145,7 +146,8 @@ join and it reads `joining` for as long as it is held.
 
 The `ChannelHub` lives in the `sync` role. Everything else publishes an event with
 `publishChannelEvent` (`./server`), on the bus the boot installed for the process — every role's
-`startServices` calls `setChannelTransport` with the transport `selectTransport` chose.
+`startServices` installs the process's transport (`installChannelTransport`, `./adapter`): `runtime.ts`'s `transport`, else
+the one `selectTransport` chose.
 
 ```ts
 import { allow } from '@ultimat3/policy';
@@ -167,10 +169,10 @@ export const announce = (orgId: string, id: string): Promise<void> =>
 
 | Fact | Rule |
 |---|---|
-| who delivers | every `sync` node bridged to that topic, to its members' `onEvent`. Under `x dev` the node is in this process and shares the bus; across processes the bus is NATS (`realtime.transport: 'nats'`) |
+| who delivers | every `sync` node bridged to that topic, to its members' `onEvent`. Under `x dev` the node is in this process and shares the bus; across processes the bus is NATS (`NATS_URL` set) or the app's own (`transport` in `apps/<app>/runtime.ts`) |
 | after COMMIT | nothing here can see a transaction: an event sent from inside one is on every page before a rollback |
 | at-most-once | never stored, never replayed — a member that was offline does not get it. Send "re-read", never state. A bus that refuses the send rejects (`X_TRANSPORT_UNAVAILABLE`); catch it where an event is not worth failing the write for |
-| nothing booted | a unit test or a bare script publishes onto a heap bus nobody hears, and does not throw. A test that wants delivery calls `setChannelTransport(bus)` with the bus its `ChannelHub` holds, and `resetChannelTransport()` after |
+| nothing booted | a unit test or a bare script publishes onto a heap bus nobody hears, and does not throw. A test that wants delivery swaps the bus through `@ultimat3/testing`'s override seam, which installs the bus its `ChannelHub` holds and releases it after |
 | `realtime.enabled: false` | still safe to call: the bus exists, no node subscribes |
 | refusals | `X_CHANNEL_DECLARATION_INVALID` on a channel declared without `events: true`; `X_TOPIC_FORBIDDEN` for a param that is no topic segment |
 | no replicator | a node that serves no `live: true` query and no `records` channel reads no change, boots `live=none` on a real database, and is never `X_REALTIME_TOPOLOGY` |
@@ -830,19 +832,17 @@ made it — a key already queued collapses as always, and nothing queued is ever
   pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` on its own session. Session-scoped, so a
   crashed replicator releases it automatically: no lease renewal, no fencing token, no split brain.
   `memoryAdvisoryLock()` remains the single-process default for `x dev` and tests.
-- **`selectTransport(env, realtime)` decides which transport a boot fans out on** — and since
-  22.0.0 the CONFIG decides it, not the environment: `realtime` is `app.config.ts`'s
-  `{ transport, urlEnv }`. It returns `{ transport, mode, detail, bucket, presenceTtlMs, connect }`:
-  `'memory'` → `InProcessTransport` and `mode: 'embedded'`; `'nats'` → a `NatsTransport` dialling
-  the variable `urlEnv` names, on the KV bucket `NATS_KV_BUCKET` names (default `x_presence`, so
-  two apps on one cluster do not share one presence namespace), validated here rather than on
-  first connect. Both mismatches refuse with `X_CONFIG_INVALID`: `'nats'` with that variable unset,
-  and `'memory'` with `NATS_URL` (or the named variable) set — an operator who set one expected
-  fanout across nodes. Until 22.0.0 `NATS_URL` alone decided and both keys were read by nothing.
+- **`selectTransport(env)` decides the default transport a boot fans out on** — since 31.0.0 the
+  ENVIRONMENT decides it: `NATS_URL` set (not blank) → a `NatsTransport` on the KV bucket
+  `NATS_KV_BUCKET` names (default `x_presence`, so two apps on one cluster do not share one
+  presence namespace), validated here rather than on first connect; unset → `InProcessTransport`,
+  `mode: 'embedded'`. Any other bus is `transport` in `apps/<app>/runtime.ts`, which the boot takes
+  instead. `app.config.ts`'s `realtime.transport`/`urlEnv` (22.0.0–30.x) are gone. It returns
+  `{ transport, mode, detail, bucket, presenceTtlMs, connect }`.
   `presenceTtlMs` comes back with it because the bucket's whole-stream age limit was derived from
   it — a `PresenceRegistry` given a different number would report members leaving that never left.
   Selection is pure; `connect()` is the dial. **What the process does with the bus decides whether
-  that dial is waited for** — `selectTransport(env, realtime, { use })`, `BusUse`:
+  that dial is waited for** — `selectTransport(env, { use })`, `BusUse`:
   `'sockets'` (a `sync` node; the default) awaits it and the presence bucket, retried on backoff for
   `connectWithinMs` (default `BUS_CONNECT_WAIT_MS`, 15 s) and then `X_TRANSPORT_UNAVAILABLE`;
   `'feed'` (the replicator) awaits it and asks JetStream for nothing; `'publish'` (`web`, `worker`,

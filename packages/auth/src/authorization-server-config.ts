@@ -3,7 +3,7 @@
 // naming it — at boot, never on the first token request a partner makes.
 
 import type { Clock } from '@ultimat3/core';
-import { renderCauseValue, systemClock } from '@ultimat3/core';
+import { liveClock, renderCauseValue } from '@ultimat3/core';
 import type { DialResolve, OutboundFetch } from '@ultimat3/core/outbound';
 import type { AuthServerStore } from './authorization-server-store';
 import type { AuthServerGrant } from './authorization-server-types';
@@ -203,7 +203,7 @@ export function resolveAuthServerConfig(
       "authorizationServer({ grants, devicePath: '/oauth/device' })   # the app's verification page",
     );
   }
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock ?? liveClock;
   return {
     issuer: options.issuer,
     basePath: url.pathname === '/' ? '' : url.pathname,

@@ -31,10 +31,22 @@ describe('rateLimited', () => {
 
 describe('the declaration refusals', () => {
   // Both of these used to end at `httpServer({ routes, rateLimitStore })` — a parameter name,
-  // not a value, so the reader still had to find something to pass. There is now a shipped store.
+  // not a value, so the reader still had to find something to pass. There is now a shipped store,
+  // and since 31.0.0 one place to name it: `runtime.ts`, the option on `httpServer` being gone.
   test("the fix names the store an app can actually pass, not a parameter's name", () => {
     expect(rateLimitNotShared('process').fix).toContain('postgresRateLimitStore(');
     expect(rateLimitScopeUnset().fix).toContain('postgresRateLimitStore(');
+  });
+
+  test('no fix names the httpServer option or the installer 31.0.0 took off the barrel', () => {
+    for (const error of [
+      rateLimitNotShared('process'),
+      rateLimitNotShared('installed'),
+      rateLimitScopeUnset(),
+    ]) {
+      expect(error.fix).not.toMatch(/httpServer\(\{ routes, rateLimitStore|installRateLimitStore/);
+      expect(error.fix).toContain('runtime.ts');
+    }
   });
 
   test('a store that answers nothing is a 500 with a statement to run, never a silent grant', () => {

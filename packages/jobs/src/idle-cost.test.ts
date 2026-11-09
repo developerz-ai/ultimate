@@ -6,8 +6,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ctxOf, frozenClock } from '@ultimat3/core';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { signalStaged } from './enqueue-signal';
 import { createIdleBackoff, IDLE_POLL_CEILING_MS } from './idle-backoff';
@@ -343,7 +343,7 @@ describe('an idle worker', () => {
 
   test('a job enqueued in this process starts at once, not at the end of the backed-off wait', async () => {
     const driver = memoryJobDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     let ran = (): void => undefined;
     const started = new Promise<void>((resolve) => {
       ran = resolve;

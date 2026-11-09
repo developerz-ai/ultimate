@@ -5,7 +5,7 @@
 // Skips unless a JetStream-enabled server is configured. Locally:
 //
 //   docker run -d --name x-nats -p 4222:4222 nats:2.11-alpine -js
-//   TEST_NATS_URL=nats://localhost:4222 bun test packages/realtime/src/nats-transport.live.test.ts
+//   TEST_NATS_URL=nats://localhost:4222 bun test ./packages/realtime/src/nats-transport.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { parseNatsUrl } from './nats-client';

@@ -10,16 +10,18 @@
 
 import type { Post } from '@postly/db';
 import { postId as toPostId } from '@postly/domain';
-import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver } from '@ultimat3/jobs';
+import { installJobDriver } from '@ultimat3/jobs/adapter';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { postExcerpts, withExcerpt } from './post-excerpts';
 
 // The job driver is process-global, so it is installed and released around this file rather than
 // left behind for whichever test file runs next.
+let release = (): void => {};
 beforeAll(() => {
-  setJobDriver(memoryJobDriver());
+  release = installJobDriver(memoryJobDriver());
 });
-afterAll(resetJobDriver);
+afterAll(() => release());
 
 /** The durable name this sweep runs under — the queue row, the step trace and `x_backfills`. */
 const expectedKey = 'post-excerpts';

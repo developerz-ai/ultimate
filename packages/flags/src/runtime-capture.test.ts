@@ -6,16 +6,19 @@ import type { FailureBundle } from '@ultimat3/core';
 import {
   anonymousActor,
   reportError,
-  setFailureStore,
   settleFailureCaptures,
   UltimateError,
   withFailureCapture,
 } from '@ultimat3/core';
+import { installFailureStore } from '@ultimat3/core/adapter';
 import { isEnabled } from './evaluate';
 import { defineFlag, resetFlags } from './registry';
 
+let releaseStore: (() => void) | undefined;
+
 afterEach(() => {
-  setFailureStore(null);
+  releaseStore?.();
+  releaseStore = undefined;
   resetFlags();
 });
 
@@ -27,7 +30,7 @@ test('the flags a failing call evaluated are in its bundle, with their answers',
     targeting: { default: true },
   });
   const saved: FailureBundle[] = [];
-  setFailureStore({ save: async (bundle) => void saved.push(bundle) });
+  releaseStore = installFailureStore({ save: async (bundle) => void saved.push(bundle) });
   try {
     await withFailureCapture(
       'query',

@@ -30,8 +30,8 @@ export const driverUnknown = (
     cause:
       scrape === undefined
         ? `no scrape driver named "${name ?? 'none'}" is installed; installed: ${installed.join(', ') || 'none'}`
-        : `scrape "${scrape}" has no browser driver: nothing called setScrapeDriver() and the definition declares no driver; installed: ${installed.join(', ') || 'none'}`,
-    fix: 'call setScrapeDriver(localBrowser()) at boot, or pass driver: fakeBrowser() on the scrape() definition',
+        : `scrape "${scrape}" has no browser driver: apps/<app>/runtime.ts names no scrapeDriver and the definition declares no driver; installed: ${installed.join(', ') || 'none'}`,
+    fix: 'export const runtime = { scrapeDriver: localBrowser() }   # apps/<app>/runtime.ts — or pass driver: fakeBrowser() on the scrape() definition',
     meta: { driver: name ?? 'none', ...(scrape === undefined ? {} : { scrape }) },
   });
 
@@ -217,7 +217,7 @@ export const wedged = (what: string, idleMs: number): ScrapeError =>
  * opposite fixes are two codes, and the classifications differ with them: a wedge is retryable,
  * this is terminal (`errors.ts`).
  *
- * Reachable through the `ScrapeClock` seam and the driver's `kill()`, both of which a third party
+ * Reachable through the `SleepClock` seam and the driver's `kill()`, both of which a third party
  * writes. Leaving the loop dead and quiet is the alternative, and that is incident #1 with no
  * guard armed at all.
  */
@@ -225,7 +225,7 @@ export const watchdogStopped = (what: string, thrown: unknown): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_WATCHDOG_STOPPED',
     cause: `the wedge watchdog for ${what} stopped measuring browser activity: ${renderThrowable(thrown)}`,
-    fix: 'drop the custom clock: from the scrape() definition — systemScrapeClock is the only ScrapeClock whose sleep() cannot reject — then re-run',
+    fix: "drop the custom clock: from the scrape() definition and any clock: line in apps/<app>/runtime.ts — @ultimat3/core's systemClock is the only SleepClock whose sleep() cannot reject — then re-run",
     meta: { what },
   });
 

@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError, REDACTED } from '@ultimat3/core';
-import { resetJobDriver, setJobDriver } from './driver';
+import { installJobDriver, resetJobDriver } from './adapter';
 import { memoryJobDriver } from './driver-memory';
 import { inspectJob } from './inspect';
 import { resetJobs } from './job';
@@ -22,7 +22,7 @@ beforeEach(() => {
   resetTasks();
   resetJobsFacade();
   driver = memoryJobDriver();
-  setJobDriver(driver);
+  installJobDriver(driver);
 });
 
 afterEach(() => {
@@ -89,7 +89,7 @@ describe('webhookReceiver: the door', () => {
 
   test('a failing enqueue answers 503 with retry-after, never 200', async () => {
     const h = receiverHarness();
-    setJobDriver({
+    installJobDriver({
       ...driver,
       enqueue: () => Promise.reject(new TypeError('connection refused')),
     });

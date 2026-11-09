@@ -4,10 +4,10 @@
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { frozenClock, isUltimateError, logger } from '@ultimat3/core';
+import { installJobDriver, resetJobDriver } from './adapter';
 import type { KeyedConcurrency } from './concurrency';
 import { MAX_CONCURRENCY_KEY_LENGTH } from './concurrency';
 import type { JobDriver } from './driver';
-import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { inspectJob, inspectManifest } from './inspect';
 import { job, resetJobs } from './job';
@@ -121,7 +121,7 @@ describe('a concurrency key at enqueue', () => {
     ['k'.repeat(MAX_CONCURRENCY_KEY_LENGTH + 1), 'longer than a lease row can be keyed by'],
   ])('refuses %p before anything is queued', async (key, why) => {
     const driver = memoryJobDriver({ clock });
-    setJobDriver(driver);
+    installJobDriver(driver);
     const probe = accountJob({ concurrency: { key: () => key, limit: 1 } });
 
     const refusal = await probe.handle.enqueue({ account: 'acct-1' }).then(
@@ -138,7 +138,7 @@ describe('a concurrency key at enqueue', () => {
 
   test('a good key enqueues, and a plain cap asks no key at all', async () => {
     const driver = memoryJobDriver({ clock });
-    setJobDriver(driver);
+    installJobDriver(driver);
     await accountJob({ concurrency: { key: ({ account }) => account, limit: 1 } }).handle.enqueue({
       account: 'acct-1',
     });

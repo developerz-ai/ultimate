@@ -5,12 +5,7 @@
  */
 
 import type { Actor } from '@ultimat3/core';
-import {
-  rateLimitScopeOf,
-  rateLimitSpendsOn,
-  rateLimitSubjectOf,
-  systemClock,
-} from '@ultimat3/core';
+import { liveClock, rateLimitScopeOf, rateLimitSpendsOn, rateLimitSubjectOf } from '@ultimat3/core';
 import type { RateLimitDecision } from '@ultimat3/http';
 // The bucket maths, the subject precedence and the refusal are `@ultimat3/http`'s (tier 2): a copy
 // here would be a second answer to "what does this limit mean" and "whose bucket is it".
@@ -55,7 +50,7 @@ export async function spendReadLimit(
     // The tenant allowance is the HTTP pipeline's; counting it here too would charge twice.
     { route: name, tenant: null },
   );
-  const nowMs = caller.nowMs ?? systemClock.now().getTime();
+  const nowMs = caller.nowMs ?? liveClock.now().getTime();
   for (const spend of spends) {
     const decision = await installedRateLimitStore().take(
       spend.key,

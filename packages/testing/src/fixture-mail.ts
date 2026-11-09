@@ -22,12 +22,11 @@ export interface TestMail extends Disposable {
 const idOf = (mail: MailRef): string => (typeof mail === 'string' ? mail : mail.id);
 
 export async function testMail(): Promise<TestMail> {
-  const { memoryMailDriver, driverUnavailable, resetMailDriver, setMailDriver, tryMailDriver } =
-    await import('@ultimat3/mail');
+  const { memoryMailDriver, driverUnavailable } = await import('@ultimat3/mail');
+  // The installer is the `./adapter` subpath's, never the barrel's (slice 21).
+  const { installMailDriver } = await import('@ultimat3/mail/adapter');
   const memory = memoryMailDriver();
   const failuresLeft = new Map<string, number>();
-  // The ambient driver is process-global; the fixture borrows it for one test and hands it back.
-  const previous = tryMailDriver();
 
   const driver: MailDriver = {
     name: 'test',
@@ -40,7 +39,9 @@ export async function testMail(): Promise<TestMail> {
       );
     },
   };
-  setMailDriver(driver);
+  // The ambient driver is process-global: the fixture borrows a FRAME of it for one test, and its
+  // release removes that frame and no other — whatever was installed over or under it meanwhile.
+  const release = installMailDriver(driver);
 
   return {
     outbox: () => memory.outbox(),
@@ -54,8 +55,7 @@ export async function testMail(): Promise<TestMail> {
       failuresLeft.clear();
     },
     [Symbol.dispose]: (): void => {
-      if (previous === undefined) resetMailDriver();
-      else setMailDriver(previous);
+      release();
     },
   };
 }

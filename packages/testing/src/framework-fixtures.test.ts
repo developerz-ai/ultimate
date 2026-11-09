@@ -1,8 +1,10 @@
 import { afterEach, test as bunTest, describe, expect } from 'bun:test';
 import { assert } from '@ultimat3/core';
 import type { JobDefinition, JobHandle } from '@ultimat3/jobs';
-import { job, jobDriver, resetJobDriver } from '@ultimat3/jobs';
-import { mailDriver, resetMailDriver, tryMailDriver } from '@ultimat3/mail';
+import { job, jobDriver } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
+import { mailDriver, tryMailDriver } from '@ultimat3/mail';
+import { resetMailDriver } from '@ultimat3/mail/adapter';
 import { frozenNow, setFrozenClock } from './determinism';
 import { testJobs } from './fixture-jobs';
 import { testMail } from './fixture-mail';

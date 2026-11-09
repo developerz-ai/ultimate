@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
-import { resetAuthLimiters } from '@ultimat3/auth';
+import { resetAuthLimiters } from '@ultimat3/auth/adapter';
 import { isUltimateError } from '@ultimat3/core';
 import { processRoot } from './process-root-fixture';
 import { resolveServices } from './runtime-bindings';

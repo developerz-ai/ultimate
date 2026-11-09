@@ -5,8 +5,9 @@
 // render, copied out, so the two halves are one component. Skips with no Chrome, unless
 // E2E_BROWSER_REQUIRED=1.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { SleepClock } from '@ultimat3/core';
 import { DEFAULT_CDP_TIMEOUT_MS, E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
-import type { ShotClock, ShotSession } from '../src/browser-launcher-port';
+import type { ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 import { buildIslands } from '../src/island-bundle';
 import type { FixtureApp } from '../src/templates/island-fixture';
@@ -91,7 +92,7 @@ const staticDocument = (markup: string): string => `<!doctype html><html lang="e
 <meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body>${markup}</body></html>`;
 
-const clock: ShotClock = {
+const clock: SleepClock = {
   now: () => new Date(),
   monotonic: () => performance.now(),
   // real-clock: the poll waits on Chrome, another process, which no fake timer moves.

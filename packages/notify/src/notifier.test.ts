@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { PRIMITIVE_FACTORIES } from '@ultimat3/core';
 import { DEFAULT_QUEUE, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { resetNotifyStores } from './adapter';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { recorder } from './notify-fixture';
-import { resetNotifyStores } from './stores';
 
 const input = t.object({ postId: t.uuid });
 

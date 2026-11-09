@@ -8,7 +8,7 @@
 
 import type { AppConfig, PgExecutor } from '@ultimat3/core';
 import { logger, PWA_PUSH_FIX, pushWired } from '@ultimat3/core';
-import type { ResolvedVapidKeys } from '@ultimat3/pwa';
+import type { PushSubscriptionStore, ResolvedVapidKeys } from '@ultimat3/pwa';
 import type { Env } from './runtime-bindings';
 
 /** `pwa.vapid.subject` when this app's boot owes a push runtime, else `undefined`. */
@@ -57,10 +57,14 @@ export async function selectWebPush(
   };
 }
 
-/** Install the runtime over the boot's executor; answers its release. */
+/**
+ * Install the runtime over the boot's executor; answers its release. `store` is `runtime.ts`'s
+ * `pushSubscriptionStore` port; omitted, the Postgres store over the boot's pool.
+ */
 export async function installAppWebPush(
   selection: PushSelection,
   executor: PgExecutor,
+  store?: PushSubscriptionStore,
 ): Promise<() => void> {
   const { installWebPush, postgresPushSubscriptionStore } = await import('@ultimat3/pwa');
   if (selection.resolved.source === 'development') {
@@ -72,7 +76,7 @@ export async function installAppWebPush(
     });
   }
   return installWebPush({
-    store: postgresPushSubscriptionStore({ executor }),
+    store: store ?? postgresPushSubscriptionStore({ executor }),
     keys: selection.resolved.keys,
     subject: selection.subject,
     pushHosts: selection.pushHosts,

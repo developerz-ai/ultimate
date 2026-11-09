@@ -5,7 +5,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { JobDriver } from '@ultimat3/jobs';
-import { claimOf, memoryJobDriver, resetJobDriver, resetJobs } from '@ultimat3/jobs';
+import { claimOf, memoryJobDriver, resetJobs } from '@ultimat3/jobs';
+import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { enqueue, runJobs } from './cmd-jobs-fixture';
 import { msg } from './messages';
 

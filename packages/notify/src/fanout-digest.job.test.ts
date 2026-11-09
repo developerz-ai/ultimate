@@ -5,20 +5,20 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { installNotifyStores, resetNotifyStores } from './adapter';
 import { deliveryChannel } from './channel';
 import { memoryDigestStore } from './digest';
 import { NotifyStoreMissingError } from './errors';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { driver, START } from './notify-fixture';
-import { resetNotifyStores, setNotifyStores } from './stores';
 
 const params: TestParams = { postId: '00000000-0000-7000-8000-00000000d1d1' };
 const payload = { params, recipients: [{ id: 'ana' }] };
 
 beforeEach(() => {
   resetJobs();
-  setNotifyStores({ digest: memoryDigestStore() });
+  installNotifyStores({ digest: memoryDigestStore() });
 });
 
 afterEach(() => {

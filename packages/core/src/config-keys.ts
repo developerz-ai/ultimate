@@ -106,7 +106,7 @@ const join = (path: string, key: string): string => (path === '' ? key : `${path
 
 /**
  * CLOSED BY DEFAULT: an object is walked wherever it is written, its known keys the reference's
- * plus `SECTION_KEYS`' — so an object at a key whose default is `undefined` (`realtime.urlEnv`)
+ * plus `SECTION_KEYS`' — so an object at a key whose default is `undefined` (`realtime.maxSocketsPerActor`)
  * knows no keys and every one is refused. Two exceptions: `OPEN_CONFIG_PATHS`, and a position the
  * defaults hold a VALUE at (`site.origin: null`), whose own rule names the wrong value in better
  * words than "unknown key".

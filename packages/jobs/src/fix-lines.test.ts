@@ -46,7 +46,7 @@ describe('fix lines', () => {
   test('the rule catches the string that actually shipped', () => {
     expect(DEAD_FIELD.test("set jobs: { driver: 'postgres' } in app.config.ts")).toBe(true);
     expect(DEAD_FIELD.test('or set jobs.driver in app.config.ts and run `x dev`')).toBe(true);
-    expect(DEAD_FIELD.test('call setJobDriver(postgresJobDriver()) at boot')).toBe(false);
+    expect(DEAD_FIELD.test('drop jobs: from apps/<app>/runtime.ts')).toBe(false);
   });
 
   test('every fix: in this package is non-empty', () => {

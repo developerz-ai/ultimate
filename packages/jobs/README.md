@@ -232,8 +232,8 @@ horizon of the search that found the event; an event refused behind it (owed thr
 is excluded by id. The wait's own line — `startedAt` and the mark's horizon (`EventSince`) — rides
 every search and is never moved by a refusal, so no event committed before the wait is handed out.
 
-`resetEventBus()` is the test seam beside `resetJobDriver()`: an event is matchable until it
-expires, so on a bus shared by one `bun test` process an answer one test published resumes the
+`resetEventBus()` is the test seam beside `resetJobDriver()`, both on `@ultimat3/jobs/adapter`: an
+event is matchable until it expires, so on a bus shared by one `bun test` process an answer one test published resumes the
 next test's wait — call it between tests.
 
 The event bus has ONE clock. `postgresEventBus({ executor })` stamps `publishedAt` and the expiry
@@ -1041,8 +1041,11 @@ One interface: `enqueue`, `claim` (visibility timeout), `ack(jobId, { workerId, 
 `nack(jobId, { workerId, claim, … })` (backoff), `heartbeat`, `stats`, plus optional `introspect`,
 `backfills` and `leases`. Both settles are fenced on the CLAIM — `claimOf(claimed)` is the
 `{ workerId, claim }` a `ClaimedJob` carries — and answer whether they landed. Zero job-code change
-between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driver` config line**:
-`JobsConfig.driver` has no reader and boot always builds `postgresJobDriver`.
+between them — swapping is `jobs: other` in `apps/<app>/runtime.ts`, and there is **no
+`jobs.driver` config line**: `JobsConfig.driver` has no reader and boot always builds
+`postgresJobDriver`. A driver's author imports the port (`JobDriver`, `EventBus` and their types),
+the errors a driver throws and the installers from **`@ultimat3/jobs/adapter`** — never the `.`
+barrel, which carries no installer (`adapter.test.ts`).
 
 | Driver | Status | Backing | Use |
 |---|---|---|---|
@@ -1053,7 +1056,7 @@ between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driv
 **`redisJobDriver({ client?, prefix?, clock?, doneTtlMs? })`** passes `@ultimat3/testing`'s
 `jobDriverConformance`, the suite the other two pass, and `driver-redis.live.test.ts` runs one
 script of operations on it and on the memory driver and compares every answer. Installed with
-`setJobDriver(redisJobDriver())` (or `ServeOptions.runtime.jobs`), imported from its own entry
+`jobs: redisJobDriver()` in `apps/<app>/runtime.ts`, imported from its own entry
 `@ultimat3/jobs/redis` so the barrel every role boots carries none of it; the client reads `REDIS_URL`.
 What it does not carry: `introspect` (so `x jobs show`/`retry`/`cancel` and queue pauses answer
 for Postgres only), `backfills`, and `leases` — a job declaring `concurrency` refuses

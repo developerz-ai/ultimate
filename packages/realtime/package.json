@@ -28,6 +28,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./adapter": "./src/adapter.ts",
     "./boot": "./src/boot.ts",
     "./page-runtime": "./src/page-runtime.ts",
     "./page-runtime-wait": "./src/page-runtime-wait.ts",

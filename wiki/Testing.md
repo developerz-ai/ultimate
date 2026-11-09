@@ -619,7 +619,8 @@ A `compensates: true` job is also forced to fail for good and killed while it un
 `echoProvider()` answers text; it cannot call a tool. A test that drives an `agent()` through its tools scripts the model with `scriptedProvider({ turns })`: each provider call answers the next turn, and `.seen` keeps every request in order.
 
 ```ts
-import { configureAi, meteredRun, providerGateway, scriptedProvider } from '@ultimat3/ai';
+import { meteredRun, providerGateway, scriptedProvider } from '@ultimat3/ai';
+import { installAiGateway } from '@ultimat3/ai/adapter';
 
 declare const draft: { id: string; orgId: string };
 declare function reviewDraft(input: { postId: string; orgId: string }): Promise<unknown>;
@@ -631,7 +632,7 @@ const model = scriptedProvider({
     { answer: { verdict: 'revise', notes: 'Say which rounding rule the body defends.' } },
   ],
 });
-configureAi({ gateway: providerGateway({ providers: [model] }) });
+const release = installAiGateway(providerGateway({ providers: [model] })); // release() in the afterEach
 
 // The agent's turns and its tool's model call, as one bill: three calls.
 const { billed } = await meteredRun(() => reviewDraft({ postId: draft.id, orgId: draft.orgId }));
@@ -789,64 +790,73 @@ await expectedQueryLoop('one indexed lookup per searchable field', () => searchE
 
 ## Factories
 
-One row shape per entity, deterministic, with named variations. `defineFactory` is the only entry point — there is no bare `factory()`.
+One row shape per entity, deterministic, with named variations, FactoryBot-grade (`As of 31.0.0`). `defineFactory` is the only entry point — there is no bare `factory()`.
 
 ```ts
-import { associate, defineFactory } from '@ultimat3/testing';
-import { boolean, entity, integer, text, uuid } from '@ultimat3/entity';
+import { belongsTo, defineFactory, hasMany } from '@ultimat3/testing';
+import { entity, text, timestamp, uuid } from '@ultimat3/entity';
 
-const org = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
-const post = entity('posts', {
+const orgs = entity('orgs', {
+  columns: { id: uuid().primaryKey(), slug: text(), name: text() },
+});
+const posts = entity('posts', {
   columns: {
     id: uuid().primaryKey(),
-    orgId: uuid().references(() => org.id).tenant(), // the column `associations` fills
+    orgId: uuid().references(() => orgs.id).tenant(),
+    slug: text(),
     title: text(),
-    published: boolean().default(false),
-    views: integer().default(0),
+    status: text().default('draft'),
+    publishedAt: timestamp().nullable(),
+  },
+});
+const comments = entity('comments', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().references(() => orgs.id).tenant(),
+    postId: uuid().references(() => posts.id),
+    body: text(),
   },
 });
 
-const orgFactory = defineFactory(org, {
-  defaults: (index, ids) => ({ id: ids.uuid(), name: `org-${index}` }),
+const orgFactory = defineFactory(orgs, {
+  defaults: (n, ids) => ({ id: ids.uuid(), slug: `org-${n}`, name: `Org ${n}` }),
 });
-
-const postFactory = defineFactory(post, {
-  // `defaults` names every column; `associations` replaces `orgId` with the parent's id.
-  defaults: (index, ids) => ({
-    id: ids.uuid(),
-    orgId: '',
-    title: `post-${index}`,
-    published: false,
-    views: 0,
-  }),
-  traits: {
-    published: { published: true },
-    popular: (index) => ({ views: index * 100 }),
+const postBase = defineFactory(posts, {
+  defaults: (n, ids) => ({ id: ids.uuid(), orgId: '', slug: `post-${n}`, title: `Post ${n}` }),
+  traits: { published: { status: 'published', publishedAt: new Date('2026-01-05T09:00:00Z') } },
+  transient: { shout: false },
+  belongsTo: { org: belongsTo(orgFactory, 'orgId') },
+  afterBuild: (post, { transient }) => {
+    if (transient.shout) post.title = post.title.toUpperCase();
   },
-  associations: { orgId: associate(orgFactory, (row) => row.id) },
 });
+const commentFactory = defineFactory(comments, {
+  defaults: (n, ids) => ({ id: ids.uuid(), orgId: '', postId: '', body: `Comment ${n}` }),
+  belongsTo: { post: belongsTo(postBase, 'postId') },
+});
+const postFactory = postBase.extend({ hasMany: { comments: hasMany(commentFactory, 'postId') } });
+
+postFactory.build(); // memory: org built alongside, nothing written
+const post = await postFactory.with('published').create({ comments: 2 }); // the STORED row
+const org = await orgFactory.create();
+await postFactory.createList(3, { org }); // reuses that org, makes none
+postFactory.attributesFor(); // an action input: no id, no orgId
 ```
 
-| Member | Does |
+| | |
 |---|---|
-| `build(over?)` | an in-memory row. Pure — no database, no persister |
-| `buildMany(count, over?)` | the same, `count` times |
-| `create(over?)` | builds, creates its association parents, then persists. Returns the row |
-| `createMany(count, over?)` | the same, `count` times |
-| `with(...traits)` | a view with those traits applied |
-| `traits` | the declared trait names, sorted |
-| `table` | the entity's table |
-| `reset()` | restarts the sequence and both generators, and **cascades to every association** |
-
-### Traits
-
-A trait is a `Partial<Row>` or a `(index, ids) => Partial<Row>`. Merge order is: defaults, then traits in the order applied, then the call's own `over` — last wins.
-
-A view from `with()` **shares the base sequence**, so ids never repeat across views of one factory. An unknown trait throws `X_TEST_FACTORY_TRAIT_UNKNOWN` **at the `with()` call**, not three calls later, and `cause` lists every declared trait — a typo and a trait nobody added have the same symptom, and the list is what separates them.
-
-### Associations
-
-A column whose value comes from another factory, built with the **same strategy**: `build()` builds the parent, `create()` creates it. Parents are created **sequentially, never `Promise.all`** — concurrent parents would interleave draws from the shared seeded generators and the ids would stop being reproducible. An association is skipped entirely when the caller supplies that column.
+| **strategies** | `build` (memory, never a database), `create` (writes, answers the row AS STORED: declared defaults, generated columns, timestamps), `attributesFor` (an input: no primary key, no `belongsTo` key, no transient), `buildList` / `createList` |
+| **sequence** | `index` (`n` above), per factory, shared by every `with()` view and `extend()` child — ids never repeat |
+| **trait** | a named partial (or `(n, ids, transient) => partial`). `with('a', 'b')` composes left to right; a call's override wins. An undeclared one fails at `with()` (`X_TEST_FACTORY_TRAIT_UNKNOWN`), and `cause` lists every declared trait |
+| **transient** | declared defaults a call may override; read by `defaults`, traits and callbacks; never written |
+| **callbacks** | `afterBuild(row, ctx)` on both strategies before any write; `afterCreate(storedRow, ctx)` after the row and its children are stored |
+| **inheritance** | `factory.extend({ defaults, traits, transient, hasMany, afterBuild, afterCreate })` — same table, same sequence, its defaults over the parent's, callbacks chained after |
+| **`belongsTo`** | the parent made with the child's strategy; `{ org: row }` reuses a row; `{ orgId }` makes none. The `defaults` must name the key, so a key that is not a column does not compile. Parents are made **sequentially, never `Promise.all`**: concurrent parents would interleave draws from the seeded generators |
+| **`hasMany`** | `{ comments: 2 }` or `{ comments: [{ body: 'a' }, {}] }`: made after the parent, key set from the stored parent; on the answer as a non-enumerable `post.comments`, so the row itself `toEqual`s a read of the table |
+| **tenant** | the tenant column follows the parent; the tenant's own association resolves first, so a comment, its post and its post's org share one org |
+| **seeded per table** | the default seed is derived from the table name, so two tables never draw the same uuid |
+| **lint** | `await assertFactoriesValid({ orgFactory, postFactory, … })` (or `lintFactories`, which answers the findings): every factory and each trait alone, built and created against its entity on a throwaway driver; one `X_TEST_FACTORY_INVALID` naming each `factory.with('trait').strategy()` and the entity's own code |
+| **seeds** | `factorySeed('demo', async ({ id }) => { await postFactory.create({ org: await orgFactory.create({ id: id('org:acme') }) }) })` is a `Seed` (`x db seed demo`, or `.run({ driver })`): every sequence restarts, every write is the seed's idempotent insert — a replay writes nothing |
 
 ### Determinism
 
@@ -858,14 +868,17 @@ A column whose value comes from another factory, built with the **same strategy*
 
 ### Persisting
 
-`create()` needs a persister; there is one seam and it is process-global.
+`create()` writes through the entity's own repository on `defaultDriver()` — no setup for an app on the default driver. An app that names its own driver installs it once, in its test preload:
 
 ```ts
 // scripts/test-setup.ts
-usePersister({ insert: (table, row) => repoFor(table).insert(row) });
+import { entityPersister, usePersister } from '@ultimat3/testing';
+import { driver } from '@app/db';
+
+usePersister(entityPersister({ driver })); // or { client }
 ```
 
-Without one, `create()` throws `X_TEST_FACTORY_NOT_PERSISTED` — which means **nothing was attempted**, distinct from an insert that failed. `build()` needs no persister. `clearPersister()` and `persisterInstalled()` round out the seam.
+`build()` needs no persister. `clearPersister()` and `persisterInstalled()` round out the seam.
 
 ### A whole graph: `seedGraph`
 

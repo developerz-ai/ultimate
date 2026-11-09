@@ -3,14 +3,8 @@
 // buying the side effect twice. Parity with `@ultimat3/mcp` is `scripts/ai-mcp-tool-parity.test.ts`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  action,
-  memoryIdempotencyStore,
-  registerAction,
-  resetActions,
-  resetIdempotency,
-  setIdempotencyStore,
-} from '@ultimat3/action';
+import { action, memoryIdempotencyStore, registerAction, resetActions } from '@ultimat3/action';
+import { installIdempotencyStore, resetIdempotency } from '@ultimat3/action/adapter';
 import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -41,7 +35,7 @@ const call = (input: Record<string, unknown>) => ({ id: 'tu_1', name: 'chargeCar
 
 beforeEach(() => {
   runs = 0;
-  setIdempotencyStore(memoryIdempotencyStore());
+  installIdempotencyStore(memoryIdempotencyStore());
 });
 
 afterEach(() => {

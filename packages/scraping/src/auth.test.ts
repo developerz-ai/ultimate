@@ -2,17 +2,16 @@
 // a refused credential is never presented twice.
 
 import { describe, expect, test } from 'bun:test';
-import { structuredLogger } from '@ultimat3/core';
+import { frozenClock, structuredLogger } from '@ultimat3/core';
 import type { AuthPlanInput, PromptHandler, ScrapeAuth } from './auth';
 import { ensureAuthenticated, markRefused, restorableSession, scrapePrompt } from './auth';
-import { testScrapeClock } from './clock';
 import { fakePage } from './driver-fake';
 import type { ScrapePage } from './page';
 import { redactSecrets, secretBag } from './secrets';
 import { memorySessionStore, type SessionState } from './session-state';
 
 const silent = structuredLogger({ writer: () => undefined });
-const clock = testScrapeClock(new Date('2026-08-18T00:00:00.000Z'));
+const clock = frozenClock(new Date('2026-08-18T00:00:00.000Z'));
 
 /** What a run was queued with: handed to the prompt handler verbatim. */
 const INPUT = { connectionId: 'conn-1' };

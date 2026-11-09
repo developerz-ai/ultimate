@@ -162,7 +162,7 @@ async function bootRoles(boot: {
   const appConfig = await loadAppConfig(options.root);
   acquired.push(await armRowSecurity(rowSecurityDeclared(appConfig), { embedded }));
   // `failureCapture.enabled`: a 5xx keeps a replayable bundle for `x repro` (off by default).
-  acquired.push(armFailureCapture(appConfig));
+  acquired.push(armFailureCapture(appConfig, { store: runtime.failureStore }));
   // After the app's modules: an app swaps the store at import time, after `startServices`.
   warnIfIdempotencyProcessScoped();
   const buildId = await buildIdFor(options, role);

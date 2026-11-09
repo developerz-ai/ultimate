@@ -174,6 +174,6 @@ the wide shape and answer with the row type.
 ## Commands
 
 ```
-bun test packages/money
+bun test ./packages/money/
 bun run --filter @ultimat3/money typecheck
 ```

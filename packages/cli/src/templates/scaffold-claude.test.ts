@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ValidationIssue } from '@ultimat3/schema';
 import { parse, t, ValidationFailedError } from '@ultimat3/schema';
+import { verifySpec } from '../cmd-verify-spec';
 import { SPECS } from '../registry';
 import { LINE_CEILING } from '../workspace-checks';
 import { names } from './naming';
@@ -165,8 +166,8 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
   test('exactly one PostToolUse hook, and it names a binary the scaffold installs', () => {
     const hooks = parseSettings().hooks.PostToolUse.flatMap((entry) => entry.hooks);
     expect(hooks).toHaveLength(1);
-    // biome is a devDependency `x new` writes into the root package.json; `x verify --only` is not
-    // a flag and never will be, so a per-step gate hook is not an option here.
+    // biome is a devDependency `x new` writes into the root package.json: a hook runs on every
+    // edit, and even `x verify --only lint` is a whole-tree pass, too slow to run per file.
     expect(hooks[0]?.command).toContain('biome');
   });
 
@@ -240,5 +241,24 @@ describe('unit · the generated AGENTS.md names every rule the gate actually ref
 
   test('the one exemption is named, so a re-export manifest is not filed as a bug', () => {
     expect(agentsMd()).toContain('re-exports');
+  });
+});
+
+describe("unit · what the bundle says about `x verify`'s flags is true", () => {
+  // It said "there is no `--only`" while `x verify --only <step>` shipped (D6): an agent told the
+  // flag does not exist never narrows its feedback, and one that finds it learns the file lies.
+  const shipped = new Set(verifySpec.flags?.map((flag) => flag.name) ?? []);
+  const denied = (text: string): readonly string[] =>
+    [...text.matchAll(/no `--([a-z-]+)`/g)].map((match) => match[1] ?? '');
+
+  test('the check reads a denial', () => {
+    expect(denied('there is no `--only` and no `--skip`')).toEqual(['only', 'skip']);
+  });
+
+  test('no flag `x verify` ships is said not to exist', () => {
+    const text = textOf(claudeFiles(app));
+    expect(denied(text).filter((flag) => shipped.has(flag))).toEqual([]);
+    // And the one narrowing is named for what it is: feedback, never the verdict.
+    expect(text).toContain('NOT A GATE RUN');
   });
 });

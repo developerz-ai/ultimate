@@ -9,7 +9,8 @@ import type { Actor } from '@ultimat3/core';
 import { frameworkVersion } from '@ultimat3/core';
 import { entity, text, uuid } from '@ultimat3/entity';
 import type { JobDriver, JobIntrospection } from '@ultimat3/jobs';
-import { job, jobDriver, resetJobDriver, resetJobs, setJobDriver } from '@ultimat3/jobs';
+import { job, jobDriver, resetJobs } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import {
   can,
   clearPermissions,
@@ -145,7 +146,7 @@ describe('frameworkIntrospection.jobInspect', () => {
 
   afterEach(() => {
     if (previous === undefined) resetJobDriver();
-    else setJobDriver(previous);
+    else installJobDriver(previous);
   });
 
   test('reports a missing driver as an answer, so x mcp stays usable without a queue', () => {
@@ -155,7 +156,7 @@ describe('frameworkIntrospection.jobInspect', () => {
 
   test('passes the requested name through to the ambient driver once one is configured', async () => {
     const { driver, asked } = recordingDriver();
-    setJobDriver(driver);
+    installJobDriver(driver);
     const answer = await intro().jobInspect('job-42');
     expect(asked).toEqual(['job-42']);
     expect(answer).toBeUndefined();

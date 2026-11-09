@@ -78,7 +78,7 @@ const keyPathsIn = (literal: string): readonly string[] => {
   return paths.map((path) => path.replace(/^\.+/, ''));
 };
 
-/** `built.cache.tiers` — `in`, never `!== undefined`: `realtime.urlEnv` is a declared `undefined`. */
+/** `built.cache.tiers` — `in`, never `!== undefined`: a declared key may hold `undefined`. */
 const declares = (built: Record<string, unknown>, path: string): boolean => {
   let node: unknown = built;
   for (const segment of path.split('.')) {
@@ -98,7 +98,7 @@ describe('unit · the app.config.ts x new writes', () => {
       name: 'ledger-demo',
       cache: { tiers: ['request-memo', 'lru'] },
       jobs: { queues: ['default'], concurrency: 4 },
-      realtime: { enabled: true, transport: 'memory' },
+      realtime: { enabled: true },
       pwa: {
         enabled: true,
         offline: { fallback: '/offline' },
@@ -112,10 +112,10 @@ describe('unit · the app.config.ts x new writes', () => {
     }) as unknown as Record<string, unknown>;
 
     const emitted = keyPathsIn(configLiteral(source()));
-    // The scan is worthless if it found nothing, and `realtime.transport` is the sibling of the
-    // key that got through — so the file names both facts rather than trusting the loop.
+    // The scan is worthless if it found nothing — so the file names one nested fact rather than
+    // trusting the loop. (`realtime.transport` was the one here until v31 removed it.)
     expect(emitted.length).toBeGreaterThan(8);
-    expect(emitted).toContain('realtime.transport');
+    expect(emitted).toContain('realtime.enabled');
 
     const dead = emitted.filter((path) => !declares(built, path));
     expect(`app.config.ts names dead keys: ${dead.join(', ')}`).toBe(

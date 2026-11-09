@@ -6,6 +6,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { isolateGraph } from '@ultimat3/cache';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
+import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { clearRoutes, defineRoute, h, noStore, registerRoute, withStatus } from '@ultimat3/render';
 import { isrController } from '@ultimat3/render/server';
 import { attachedIsr } from './runtime-isr';
@@ -47,6 +48,9 @@ function registerBlog(query?: readonly string[]): void {
 const restoreGraph = isolateGraph();
 
 afterEach(() => {
+  // Every `httpServer` limits through the ONE installed store since v31, so a test's requests
+  // would spend the next test's bucket; the preload resets it only per file.
+  resetRateLimitStore();
   clearRoutes();
   loads = 0;
   read = 'ok';

@@ -261,7 +261,7 @@ in the sense this page forbids: its question is the platform, which no Ubuntu ru
 |---|---|
 | `shell: pwsh` on every step; the setup composite installs in pwsh on Windows | Git Bash ships on the image and would run a bash dependency in silence |
 | checkout with the runner's default `core.autocrlf` | that is a contributor's clone; `.gitattributes` has to make it LF |
-| a path-heavy unit subset, `./`-prefixed, not the full suite | ~2× slower runner, 25-minute budget; bare, `bun test packages/core` also selects `examples/dummy/packages/core` |
+| a path-heavy unit subset, `./`-prefixed, not the full suite | ~2× slower runner, 25-minute budget; bare (no `./`), `packages/core` also selects `examples/dummy/packages/core` |
 | `continue-on-error: true`, outside `verify`'s `needs` | lands red first so the sweep's rows can watch it turn green; flipped to required in the diff that makes it green |
 
 ## The other workflows

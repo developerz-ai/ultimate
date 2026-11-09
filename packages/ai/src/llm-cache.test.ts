@@ -23,7 +23,7 @@ import {
 } from './llm-fixture';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
-import { configureAi, resetAiRuntime } from './runtime';
+import { configureAi, installAiGateway, resetAiRuntime } from './runtime';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
@@ -237,8 +237,8 @@ describe('the entry key', () => {
     const keys: string[] = [];
     const inner = memorySemanticCache();
     const { provider } = stub({ answer: 'ok' }, { answer: 'ok' });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       // Orthogonal per first letter, so the two prompts never answer each other's lookup and the
       // entry KEY is the only thing under test.
       embedder: {
@@ -290,8 +290,8 @@ describe('the entry key', () => {
 describe('a broken embedding never serves another prompt answer', () => {
   test('two unrelated prompts get two answers, even with a directionless embedding', async () => {
     const { provider, seen } = stub(ANSWER, { summary: 'the other post', tags: ['other'] });
+    installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
     configureAi({
-      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       embedder: {
         name: 'nan-component',
         dimension: 3,

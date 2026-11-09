@@ -17,7 +17,7 @@ import { ANSWER, ctxFor, declare, POST_ID, promptFor, stub, times } from './llm-
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { Provider } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
+import { installAiGateway, resetAiRuntime } from './runtime';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
@@ -50,14 +50,14 @@ function recording(): { store: BudgetStore; takes: number[]; inner: MemoryBudget
 }
 
 function install(provider: Provider, limits: BudgetLimits, store: BudgetStore): void {
-  configureAi({
-    gateway: providerGateway({
+  installAiGateway(
+    providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [provider],
       budget: limits,
       budgetStore: store,
     }),
-  });
+  );
 }
 
 /** One reservation's size for the shared `declare()` call, measured rather than restated. */
@@ -150,13 +150,13 @@ describe('a hive()’s members run under the gateway budget', () => {
 
   test('a gateway request ceiling refuses every member, as it refuses a direct call', async () => {
     const { provider, seen } = stub(ANSWER);
-    configureAi({
-      gateway: providerGateway({
+    installAiGateway(
+      providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [provider],
         budget: { request: 1 },
       }),
-    });
+    );
     const result = await fanOutOf('requestCappedHive')({}, { ctx: ctxFor('u-1', 'acme') });
     expect(result.failed).toBe(3);
     expect(seen.length).toBe(0);
@@ -290,13 +290,13 @@ describe('a scope with no ceiling never touches the store', () => {
       },
     };
     const { provider, seen } = stub(...times(20, ANSWER));
-    configureAi({
-      gateway: providerGateway({
+    installAiGateway(
+      providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [provider],
         budgetStore: store,
       }),
-    });
+    );
     const summarize = declare(promptFor());
     for (let index = 0; index < 20; index += 1) {
       await summarize({ postId: POST_ID }, { ctx: ctxFor(`u-${index}`, `org-${index}`) });

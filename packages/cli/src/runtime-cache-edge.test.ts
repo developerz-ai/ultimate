@@ -17,7 +17,6 @@ import type { Transport } from '@ultimat3/realtime/server';
 import { FakeNatsBroker, fakeNatsConnect, selectTransport } from '@ultimat3/realtime/server';
 import { CACHE_INVALIDATE_SUBJECT, DEFAULT_CACHE_TIERS, startCacheTiers } from './runtime-cache';
 
-const NATS = { transport: 'nats', urlEnv: 'NATS_URL' } as const;
 const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
 
 let release: (() => Promise<void>) | undefined;
@@ -57,7 +56,7 @@ describe('a bust made while the bus is away, with an edge in front', () => {
       },
       purgeAll: () => Promise.resolve(),
     };
-    const selection = selectTransport(ENV, NATS, {
+    const selection = selectTransport(ENV, {
       use: 'publish',
       connect: fakeNatsConnect(broker),
       backoff: { baseMs: 2, maxMs: 2, factor: 1, jitter: 'none' },

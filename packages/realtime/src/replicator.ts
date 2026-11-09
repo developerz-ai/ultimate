@@ -17,6 +17,7 @@ import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { ReplicationFailedError } from './errors';
 import type { Transport } from './fanout';
 import { encodeResync, RESYNC_SUBJECT } from './replication-resync';
+import { withinStopDeadline } from './replicator-deadline';
 import { encodeEnvelope } from './replicator-envelope';
 import { ResyncDebt } from './replicator-resync';
 import { changeSubject, normalize } from './replicator-subject';
@@ -94,12 +95,7 @@ interface Refusal {
   times: number;
 }
 
-/**
- * How long each polite goodbye of a `stop()` may take — the feed's, then the lock's — before the
- * thing is abandoned instead. Both are conversations with a socket; a black-holed one never
- * answers, and a SIGTERM that waited on it never finished.
- */
-export const STOP_DEADLINE_MS = 5_000;
+export { STOP_DEADLINE_MS } from './replicator-deadline';
 
 /**
  * How long a publish refused because the bus is AWAY is waited out, in the handler, before the run
@@ -161,27 +157,12 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
    * forever, with the WAL retained behind it.
    */
   let attempt = 0;
+  /** Counts the starts a `stop()` stopped waiting for — read by the `begin` it gave up on. */
+  let givenUp = 0;
   let refusal: Refusal | null = null;
   const resync = new ResyncDebt<Run>();
 
-  /** One goodbye against the deadline, on the `schedule` seam. Never rejects. */
-  const bounded = async (
-    goodbye: Promise<void>,
-  ): Promise<
-    { readonly how: 'done' | 'late' } | { readonly how: 'failed'; readonly error: unknown }
-  > => {
-    let cancel = (): void => undefined;
-    const deadline = new Promise<{ readonly how: 'late' }>((resolve) => {
-      cancel = schedule(() => resolve({ how: 'late' }), STOP_DEADLINE_MS);
-    });
-    const said = goodbye.then(
-      () => ({ how: 'done' as const }),
-      (error: unknown) => ({ how: 'failed' as const, error }),
-    );
-    const outcome = await Promise.race([said, deadline]);
-    cancel();
-    return outcome;
-  };
+  const bounded = (goodbye: Promise<void>) => withinStopDeadline(schedule, goodbye);
 
   /**
    * The orderly unlock, bounded. Past the deadline — or refused — the session is dropped instead:
@@ -289,8 +270,15 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
         `(${refusal.times} time(s) in a row): ${refusal.error}`;
 
   const begin = async (): Promise<boolean> => {
+    const givenUpAtEntry = givenUp;
     if (!(await options.lock.tryAcquire())) {
       logger.warn('replicator standby: advisory lock held elsewhere', { key: options.lock.key });
+      return false;
+    }
+    // A stop that gave up waiting for THIS start (`stop()`'s deadline) owns the replicator now; a
+    // stop inside the deadline still waits the start out and stops what it began.
+    if (stopped && givenUp !== givenUpAtEntry) {
+      await release();
       return false;
     }
     producer = uuidV7();
@@ -452,8 +440,20 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       stopped = true;
       cancelRetry?.();
       cancelRetry = undefined;
+      // Bounded like every other goodbye: a dial can sit in preflight (a slot its last walsender
+      // has not let go, a silent server) and a SIGTERM must not wait on it. Past the deadline its
+      // run is marked over — so the dial, landing later, stops what it started — and both
+      // sessions are dropped now.
       const inFlight = starting;
-      if (inFlight !== undefined) await inFlight.catch(() => false);
+      if (
+        inFlight !== undefined &&
+        (await bounded(inFlight.then(() => undefined))).how === 'late'
+      ) {
+        givenUp += 1;
+        if (current !== undefined) current.over ??= 'the replicator was stopped';
+        options.feed.abandon();
+        options.lock.abandon();
+      }
       // An orderly stop is not a failure, whatever the last stream died of.
       failure = null;
       refusal = null;

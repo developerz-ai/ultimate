@@ -3,13 +3,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { defineHttpConfig, httpPipeline, httpRouter } from '@ultimat3/http';
-import {
-  memoryJobDriver,
-  resetJobDriver,
-  resetJobs,
-  setJobDriver,
-  webhookReceiver,
-} from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobs, webhookReceiver } from '@ultimat3/jobs';
+import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { plainRoutes } from './plain-routes';
 import { plainAppRoutes } from './route-table';
 
@@ -30,7 +25,7 @@ const declare = () =>
 describe('plainRoutes', () => {
   test('a declared receiver answers with no runtime.ts entry', async () => {
     declare();
-    setJobDriver(memoryJobDriver());
+    installJobDriver(memoryJobDriver());
     const pipeline = httpPipeline({
       table: httpRouter(plainRoutes(undefined)),
       config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false }),
