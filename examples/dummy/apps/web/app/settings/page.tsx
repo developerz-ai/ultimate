@@ -12,7 +12,7 @@ import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
 import { useT } from '@postly/i18n';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute, island } from '@ultimat3/render';
-import { DateTime, Stack, Text } from '@ultimat3/ui';
+import { DateTime, DescriptionList, Stack, Text, uiCatalog } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { useActor } from '../../shared/actor';
 import { Layout, updateBannerIsland } from '../layout';
@@ -36,6 +36,7 @@ const Preferences = island({
     'timezones',
     'themes',
     'labels',
+    'ui',
   ],
 });
 
@@ -151,7 +152,20 @@ export const config = defineRoute({
   // measured: 83136 B (2026-11-06; `x verify --only budgets`, against 80,803) — why: the
   // settings island's `rpc` +2,065 B, every typed-client method carrying `.stream(input)` (core's
   // `clientStream`, plan 101 slice 41); the rest is the inline runtime — raised 79.5kb → 82kb.
-  budget: { js: '82kb' },
+  // measured: 106936 B (2026-11-06; `x verify --only budgets`, against 83,136) — why: the time
+  // zone is `@ultimat3/ui`'s SearchableSelect (plan 101, 23-ui-searchable-select): a searchable,
+  // grouped, keyboard-only listbox posting the zone id, never typed text, under `UiProvider` with
+  // the server-resolved `ui.*` strings — settings island 51,4xx → 73,489 B (+~22.0 kB); the client
+  // router 27,845 → 29,570 B (+1,725) is wave 10's navigation work, charged to every `app/`
+  // document — raised 82kb → 105kb.
+  // measured: 106833 B (2026-11-06; x build --target static, against 107,327) — why: the theme
+  // is a segmented `Radio` (three native radios in one strip, every choice visible, one tap
+  // each) where a `<select>` hid two of three, +1,584 B; ui's keys tree-shaken per key
+  // (`ui-keys.ts`), −2,078 B; the island 73,880 → 73,386 B — lowered 105kb → 104.5kb (plan 101
+  // wave 10, 38-ui-pickers).
+  // measured: 107593 B (2026-11-07, sweep 2; x build --target static) — why: the record envelope's `order` decode in the transport (sweep 2). Sweep 1, 107446 B: the island 73,386 → 73,816
+  // (core's `clientStream` sharing `call()`'s unwrap) and the router +122 B.
+  budget: { js: '106kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
@@ -162,6 +176,19 @@ export function Page(): JSX.Element {
 
   /** Identifiers, not prose: a zone and a BCP-47 tag are the same in every locale. */
   const identity = (value: string): { value: string; label: string } => ({ value, label: value });
+
+  /**
+   * A zone as the searchable list shows it: the city to read, its region to group by, the whole
+   * IANA id beside it — and posted. Still identifiers, so no `t()`: `Europe/Madrid` is `Madrid`
+   * under `Europe` in every locale.
+   */
+  const zoneOption = (zone: string) => {
+    const [region = '', ...rest] = zone.split('/');
+    const city = rest.join('/').replaceAll('_', ' ');
+    return city === ''
+      ? { value: zone, label: zone }
+      : { value: zone, label: city, group: region, description: zone, keywords: [zone] };
+  };
 
   /**
    * Every theme's label, resolved once. A record over `AppTheme` rather than a ternary at each of
@@ -177,7 +204,7 @@ export function Page(): JSX.Element {
   };
 
   return (
-    <Layout banner={Banner}>
+    <Layout banner={Banner} here="/settings">
       <Stack gap={6} class={styles.page}>
         <header>
           <h1>{t('app.settings.heading')}</h1>
@@ -194,7 +221,7 @@ export function Page(): JSX.Element {
             theme={member.theme}
             digestOptIn={member.digestOptIn}
             locales={SUPPORTED_LOCALES.map(identity)}
-            timezones={SUPPORTED_ZONES.map(identity)}
+            timezones={SUPPORTED_ZONES.map(zoneOption)}
             themes={THEMES.map((value) => ({ value, label: themeLabel[value] }))}
             labels={{
               locale: t('app.settings.localeLabel'),
@@ -212,6 +239,7 @@ export function Page(): JSX.Element {
               pushDenied: t('app.settings.pushDenied'),
               pushUnavailable: t('app.settings.pushUnavailable'),
             }}
+            ui={uiCatalog(t)}
           >
             {/*
               The island's shell: what the SERVER knows, which is the saved row. It is on screen
@@ -219,18 +247,20 @@ export function Page(): JSX.Element {
               the surface that assumes a browser (a 14 kB JS baseline), so the editing half is the
               island's and this half never pretends to be a form.
             */}
-            <dl class={styles.summary}>
-              <dt>{t('app.settings.localeLabel')}</dt>
-              <dd>{member.locale}</dd>
-
-              <dt>{t('app.settings.timezoneLabel')}</dt>
-              <dd>
-                {member.tz} — <DateTime value={actor.now} timeZone={member.tz} dateStyle="long" />
-              </dd>
-
-              <dt>{t('app.settings.themeLabel')}</dt>
-              <dd>{themeLabel[member.theme]}</dd>
-            </dl>
+            <DescriptionList
+              class={styles.summary}
+              items={[
+                { term: t('app.settings.localeLabel'), detail: member.locale },
+                {
+                  term: t('app.settings.timezoneLabel'),
+                  detail: [
+                    `${member.tz} — `,
+                    <DateTime value={actor.now} timeZone={member.tz} dateStyle="long" />,
+                  ],
+                },
+                { term: t('app.settings.themeLabel'), detail: themeLabel[member.theme] },
+              ]}
+            />
           </Preferences>
         </div>
       </Stack>

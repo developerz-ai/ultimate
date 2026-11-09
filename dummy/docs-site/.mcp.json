@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "docs-site": {
+      "command": "bunx",
+      "args": ["@ultimat3/cli", "mcp", "serve", "--transport", "stdio"]
+    }
+  }
+}

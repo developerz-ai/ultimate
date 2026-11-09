@@ -31,7 +31,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bunx biome check --no-errors-on-unmatched --write \"$CLAUDE_FILE_PATHS\" 2>/dev/null || true"
+            "command": "[ -n \"$CLAUDE_FILE_PATHS\" ] && bunx biome check --no-errors-on-unmatched --write \"$CLAUDE_FILE_PATHS\" 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/snapshot-tree.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-destructive-git.sh"
           }
         ]
       }

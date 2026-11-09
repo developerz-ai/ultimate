@@ -5,6 +5,7 @@ import { canonicalJson, isMcpExposed } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
 import { diffInput } from './diff-input';
+import { diffMeter } from './diff-meter';
 import { diffRateLimit } from './diff-rate-limit';
 import { diffDeclaredErrors } from './diff-registries';
 import { diffRows } from './diff-rows';
@@ -89,6 +90,7 @@ export function diffActions(
     changes.push(...diffHttpPin(path, action.http, next.http));
     changes.push(...diffDeclaredErrors(path, action.errors, next.errors));
     changes.push(...diffRateLimit(path, action, next));
+    changes.push(...diffMeter(path, action, next));
     if (canonicalJson(action.cacheInvalidates) !== canonicalJson(next.cacheInvalidates)) {
       changes.push({
         kind: 'internal',

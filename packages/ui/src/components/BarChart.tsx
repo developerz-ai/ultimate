@@ -1,39 +1,55 @@
-// A bar chart of one series — clicks per day, signups per week — or two stacked (done, and failed
-// on top): SVG bars, HTML axis labels. No charting library: the framework's own docs use a
-// sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified
-// bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. The
-// labels sit outside the svg because text inside a viewBox scales with it — a speck at phone width.
-// It stands in a `ChartFrame`: a legend for two series, and a hidden table of the same numbers.
+// A bar chart of one series — clicks per day, signups per week — two stacked (done, and failed on
+// top), or n side by side over shared keys: SVG bars, HTML axis labels. Signed: a loss hangs below
+// a drawn zero line, a gap is no bar. No charting library: `<rect>` bars cost nothing to hydrate,
+// so the server-rendered shell IS the chart. It stands in a `ChartFrame`: legend, hidden table.
 
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
+import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
 import styles from './BarChart.module.scss';
-import type { ChartPoint } from './bar-chart-view';
-import { BAR_CHART, barRects, GRID_STEPS, gridY, maxOf, secondaryRects } from './bar-chart-view';
+import type { BarExtent, BarRect, ChartPoint } from './bar-chart-view';
+import {
+  BAR_CHART,
+  barExtent,
+  barRects,
+  GRID_STEPS,
+  gridY,
+  groupedBarRects,
+  secondaryRects,
+  seriesExtent,
+  valueY,
+  zeroY,
+} from './bar-chart-view';
 import type { ChartHit, ChartLegendItem } from './ChartFrame';
-import { ChartFrame, chartHits } from './ChartFrame';
+import { ChartFrame, ChartHits, ReferenceLabels, ReferenceRules } from './ChartFrame';
+import { checkSeries } from './chart-checks';
 import type { ChartSeries } from './chart-frame-view';
-import { chartNumberFormat, chartTable, cssPercent, hitEdge, pointLabel } from './chart-frame-view';
+import {
+  chartNumberFormat,
+  chartTable,
+  cssPercent,
+  hitEdge,
+  hitIds,
+  pointLabel,
+  seriesStyle,
+} from './chart-frame-view';
+import type { ChartReference } from './chart-reference-view';
+import { referenceLines, referenceValues } from './chart-reference-view';
+import type { Tone } from './variants';
 
-export interface BarChartProps {
+interface BarChartBase {
   /** The accessible name for the whole chart, already translated. */
   label: string;
-  /** Oldest first. Every bar comes from exactly this array — the caller zero-fills gaps. */
-  points: readonly ChartPoint[];
   /** Draw the last bar at full strength — the eye lands where the live number is. Default on. */
   highlightLast?: boolean | undefined;
-  /**
-   * Names of the two series, already translated, read by each rect's `<title>`, the legend and
-   * the data table. Give them when a point carries `secondary`: a stacked bar with no name for its
-   * top is two numbers and no key.
-   */
-  seriesLabels?: { readonly primary: string; readonly secondary: string } | undefined;
   /** The key column's head in the data table, already translated — "Day". */
   keyLabel?: string | undefined;
   /** Formats every value. Default: `Intl.NumberFormat` in the page's locale. */
   format?: ((value: number) => string) | undefined;
-  /** Give every bar a tab stop and a hover/focus readout. Default off: no tab stops. */
+  /** Dashed rules at a value — a target, a limit. Each widens the range so it stays on the plot. */
+  references?: readonly ChartReference[] | undefined;
+  /** Give every bar a tab stop and a hover/focus/tap readout. Default off: no tab stops. */
   focusable?: boolean | undefined;
   /** Show the caption above the plot. Default off — it names the figure either way. */
   showCaption?: boolean | undefined;
@@ -41,57 +57,205 @@ export interface BarChartProps {
   class?: string | undefined;
 }
 
+/** One series, or two stacked: a point per bar. */
+export interface BarChartPointsProps extends BarChartBase {
+  /** Oldest first. `value: null` is unknown — no bar, and the table says so. Never zero-fill. */
+  points: readonly ChartPoint[];
+  /** Names of the two series, already translated, when a point carries `secondary`. */
+  seriesLabels?: { readonly primary: string; readonly secondary: string } | undefined;
+  /** The primary bars' colour role, in place of `accent` — a failure count in `danger`. */
+  tone?: Tone | undefined;
+  keys?: undefined;
+  series?: undefined;
+}
+
+/** n series side by side over shared keys; each series' `tone` overrides its slot colour. */
+export interface BarChartSeriesProps extends BarChartBase {
+  keys: readonly string[];
+  /** `values[i]` belongs to `keys[i]`, exactly one per key — `null` for a gap. */
+  series: readonly ChartSeries[];
+  points?: undefined;
+  seriesLabels?: undefined;
+  tone?: undefined;
+}
+
+export type BarChartProps = BarChartPointsProps | BarChartSeriesProps;
+
+interface BarMark {
+  readonly rect: BarRect;
+  readonly key: string;
+  readonly name: string | undefined;
+  readonly value: number;
+  readonly series: number;
+  readonly id: string;
+  readonly last: boolean;
+}
+
 export function BarChart(props: BarChartProps): JSX.Element {
   const ui = useUi();
   const format = (value: number): string => (props.format ?? chartNumberFormat(ui.locale))(value);
-  const rects = (): readonly ReturnType<typeof barRects>[number][] => barRects(props.points);
-  const tops = (): ReturnType<typeof secondaryRects> => secondaryRects(props.points);
-  const named = (label: string | undefined, value: number): string =>
-    label === undefined ? format(value) : `${label} ${format(value)}`;
-  const lastIndex = (): number => props.points.length - 1;
-  const highlight = (): boolean => props.highlightLast !== false;
-  const stacked = (): boolean => props.points.some((point) => (point.secondary ?? 0) > 0);
-
-  const series = (): readonly ChartSeries[] => [
-    { label: props.seriesLabels?.primary ?? props.label, values: props.points.map((p) => p.value) },
-    ...(props.seriesLabels !== undefined || stacked()
-      ? [
+  const keys = (): readonly string[] =>
+    props.series === undefined ? props.points.map((p) => p.key) : props.keys;
+  const series = (): readonly ChartSeries[] => {
+    if (props.series !== undefined) {
+      checkSeries('BarChart', props.keys, props.series);
+      return props.series;
+    }
+    const points = props.points;
+    const stacked = points.some((point) => (point.secondary ?? 0) > 0);
+    const primary = {
+      label: props.seriesLabels?.primary ?? props.label,
+      values: points.map((p) => p.value),
+    };
+    return props.seriesLabels === undefined && !stacked
+      ? [primary]
+      : [
+          primary,
           {
             label: props.seriesLabels?.secondary ?? '',
-            values: props.points.map((p) => p.secondary ?? 0),
+            values: points.map((p) => p.secondary ?? 0),
           },
-        ]
-      : []),
-  ];
+        ];
+  };
+  const extent = (): BarExtent => {
+    const also = referenceValues(props.references);
+    return props.series === undefined
+      ? barExtent(props.points, also)
+      : seriesExtent(props.series, also);
+  };
+  const highlight = (index: number): boolean =>
+    props.highlightLast !== false && index === keys().length - 1;
 
-  const legend = (): readonly ChartLegendItem[] | undefined =>
-    props.seriesLabels === undefined
+  /** Every drawn bar, in reading order: key by key, series by series. */
+  const marks = (): readonly BarMark[] => {
+    const scale = extent();
+    if (props.series !== undefined) {
+      const grid = groupedBarRects(props.keys.length, series(), scale);
+      return props.keys.flatMap((key, k) =>
+        series().flatMap((one, s): BarMark[] => {
+          const rect = grid[s]?.[k] ?? null;
+          const value = one.values[k] ?? null;
+          if (rect === null || value === null) return [];
+          const id = hitIds(s, props.keys)[k] ?? `${s}:${k}`;
+          return [{ rect, key, name: one.label, value, series: s, id, last: highlight(k) }];
+        }),
+      );
+    }
+    const points = props.points;
+    const ids = (s: number) =>
+      hitIds(
+        s,
+        points.map((p) => p.key),
+      );
+    const lower = barRects(points, scale);
+    const upper = secondaryRects(points, scale);
+    return points.flatMap((point, k): BarMark[] => {
+      const out: BarMark[] = [];
+      const base = lower[k] ?? null;
+      if (base !== null && point.value !== null) {
+        out.push({
+          rect: base,
+          key: point.key,
+          name: props.seriesLabels?.primary,
+          value: point.value,
+          series: 0,
+          id: ids(0)[k] ?? '',
+          last: highlight(k),
+        });
+      }
+      const top = upper[k] ?? null;
+      if (top !== null) {
+        out.push({
+          rect: top,
+          key: point.key,
+          name: props.seriesLabels?.secondary,
+          value: point.secondary ?? 0,
+          series: 1,
+          id: ids(1)[k] ?? '',
+          last: highlight(k),
+        });
+      }
+      return out;
+    });
+  };
+
+  const legend = (): readonly ChartLegendItem[] | undefined => {
+    if (props.series !== undefined) {
+      return props.series.length < 2
+        ? undefined
+        : props.series.map((one, s) => ({
+            label: one.label,
+            swatch: (
+              <span
+                class={styles['swatch']}
+                data-series={seriesStyle(s).slot}
+                data-tone={one.tone}
+              />
+            ),
+          }));
+    }
+    return props.seriesLabels === undefined
       ? undefined
       : [
-          { label: props.seriesLabels.primary, swatch: <span class={styles['swatch']} /> },
+          {
+            label: props.seriesLabels.primary,
+            swatch: <span class={styles['swatch']} data-tone={props.tone} />,
+          },
           {
             label: props.seriesLabels.secondary,
             swatch: <span class={cx(styles['swatch'], styles['swatchSecondary'])} />,
           },
         ];
+  };
 
   const hits = (): readonly ChartHit[] =>
-    props.points.flatMap((point, index) => {
-      const rect = rects()[index];
-      if (rect === undefined) return [];
-      const top = tops()[index] ?? null;
-      const x = rect.x + rect.width / 2;
-      const own = (y: number, label: string | undefined, value: number): ChartHit => ({
+    marks().map((mark) => {
+      const x = mark.rect.x + mark.rect.width / 2;
+      return {
+        id: mark.id,
         x: cssPercent(x, BAR_CHART.width),
-        y: cssPercent(y, BAR_CHART.height),
-        label: pointLabel(point.key, label, format(value)),
+        y: cssPercent(
+          mark.value < 0 ? mark.rect.y + mark.rect.height : mark.rect.y,
+          BAR_CHART.height,
+        ),
+        label: pointLabel(mark.key, mark.name, format(mark.value)),
         edge: hitEdge(x, BAR_CHART.width),
-      });
-      const first = own(rect.y, props.seriesLabels?.primary, point.value);
-      return top === null
-        ? [first]
-        : [first, own(top.y, props.seriesLabels?.secondary, point.secondary ?? 0)];
+      };
     });
+
+  const lines = () => referenceLines(props.references, (value) => valueY(value, extent()));
+
+  const rectOf = (mark: BarMark): JSX.Element => {
+    const secondary = props.series === undefined && mark.series === 1;
+    return (
+      <rect
+        class={cx(secondary ? styles['secondary'] : styles['bar'], mark.last && styles['last'])}
+        x={mark.rect.x}
+        y={mark.rect.y}
+        width={mark.rect.width}
+        height={mark.rect.height}
+        rx={2}
+        data-bar={secondary ? undefined : 'true'}
+        data-series={
+          secondary
+            ? 'secondary'
+            : props.series === undefined
+              ? undefined
+              : seriesStyle(mark.series).slot
+        }
+        data-tone={
+          props.series === undefined
+            ? secondary
+              ? undefined
+              : props.tone
+            : props.series[mark.series]?.tone
+        }
+        data-sign={mark.value < 0 ? 'negative' : undefined}
+      >
+        <title>{`${mark.key}: ${mark.name === undefined ? format(mark.value) : `${mark.name} ${format(mark.value)}`}`}</title>
+      </rect>
+    );
+  };
 
   return (
     <ChartFrame
@@ -102,15 +266,16 @@ export function BarChart(props: BarChartProps): JSX.Element {
       table={chartTable({
         caption: props.label,
         keyLabel: props.keyLabel,
-        keys: props.points.map((point) => point.key),
+        keys: keys(),
         series: series(),
         format,
+        none: ui.t(UI_KEYS.chartNone),
       })}
     >
       <div class={styles['chart']}>
         {/* aria-hidden: the svg is the image and names itself; a bare "9" read aloud is noise. */}
         <span class={cx(styles['axis'], styles['max'])} data-axis="max" aria-hidden="true">
-          {format(maxOf(props.points))}
+          {format(extent().max)}
         </span>
         <div class={styles['box']}>
           <svg
@@ -128,52 +293,36 @@ export function BarChart(props: BarChartProps): JSX.Element {
                 y2={gridY(step)}
               />
             ))}
-            {props.points.map((point, index) => {
-              const rect = rects()[index];
-              if (rect === undefined) return null;
-              const top = tops()[index] ?? null;
-              const last = highlight() && index === lastIndex();
-              return (
-                <g>
-                  <rect
-                    class={cx(styles['bar'], last && styles['last'])}
-                    x={rect.x}
-                    y={rect.y}
-                    width={rect.width}
-                    height={rect.height}
-                    rx={2}
-                    data-bar="true"
-                  >
-                    <title>{`${point.key}: ${named(props.seriesLabels?.primary, point.value)}`}</title>
-                  </rect>
-                  {top === null ? null : (
-                    <rect
-                      class={cx(styles['secondary'], last && styles['last'])}
-                      x={top.x}
-                      y={top.y}
-                      width={top.width}
-                      height={top.height}
-                      rx={2}
-                      data-series="secondary"
-                    >
-                      <title>{`${point.key}: ${named(props.seriesLabels?.secondary, point.secondary ?? 0)}`}</title>
-                    </rect>
-                  )}
-                </g>
-              );
-            })}
+            {extent().min < 0 ? (
+              <line
+                class={styles['zero']}
+                data-zero="true"
+                x1={0}
+                x2={BAR_CHART.width}
+                y1={zeroY(extent())}
+                y2={zeroY(extent())}
+              />
+            ) : null}
+            {marks().map(rectOf)}
+            <ReferenceRules lines={lines()} width={BAR_CHART.width} />
           </svg>
-          {props.focusable === true ? chartHits(hits()) : null}
+          <ReferenceLabels lines={lines()} height={BAR_CHART.height} format={format} />
+          {props.focusable === true ? <ChartHits hits={hits()} /> : null}
         </div>
-        {props.points.length === 0 ? null : (
+        {extent().min < 0 ? (
+          <span class={cx(styles['axis'], styles['max'])} data-axis="min" aria-hidden="true">
+            {format(extent().min)}
+          </span>
+        ) : null}
+        {keys().length === 0 ? null : (
           <div class={styles['keys']} aria-hidden="true">
             <span class={styles['axis']} data-axis="first">
-              {props.points[0]?.key}
+              {keys()[0]}
             </span>
             {/* One point: its bar is both first and last, so its key is named once. */}
-            {props.points.length === 1 ? null : (
+            {keys().length === 1 ? null : (
               <span class={styles['axis']} data-axis="last">
-                {props.points.at(-1)?.key}
+                {keys().at(-1)}
               </span>
             )}
           </div>

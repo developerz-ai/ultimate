@@ -55,7 +55,7 @@ describe.skipIf(target === undefined)('live · s3 · an upload in parts', () => 
 
   const client = (extra: Partial<MultipartUploadClient> = {}): MultipartUploadClient => ({
     grant: (request) => grantMultipart({ disk, orgId, request, policy, clock: wallClock }),
-    signPart: (input) => signPart({ disk, orgId, ...input }),
+    signPart: (input) => signPart({ disk, orgId, ...input, policy }),
     listParts: (input) => listParts({ disk, orgId, ...input }),
     complete: (input) => completeUpload({ disk, orgId, ...input, policy }),
     abort: (input) => abortUpload({ disk, orgId, ...input }),
@@ -117,7 +117,7 @@ describe.skipIf(target === undefined)('live · s3 · an upload in parts', () => 
       clock: wallClock,
     });
     const session = { disk, orgId, key: grant.key, uploadId: grant.uploadId };
-    const url = await signPart({ ...session, partNumber: 1, size: 10 });
+    const url = await signPart({ ...session, policy, partNumber: 1, size: 10 });
     const short = await fetch(url, { method: 'PUT', body: new Uint8Array(9) });
     expect(short.status).toBe(403);
     expect((await fetch(url, { method: 'PUT', body: new Uint8Array(10) })).status).toBe(200);

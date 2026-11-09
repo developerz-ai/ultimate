@@ -8,8 +8,10 @@ import {
   crashFindingLines,
   exerciseCounts,
   exerciseFindings,
+  exercisePhaseLine,
   exerciseReport,
   renderExerciseTable,
+  slowestProofLines,
 } from './exercise-findings';
 
 const record = (over: Partial<ExerciseRecord> & Pick<ExerciseRecord, 'name'>): ExerciseRecord =>
@@ -49,12 +51,22 @@ describe('unit · exercise findings', () => {
     expect(fix).toContain("publishPost: { input: { postId: '<a posts id>' } }");
     expect(fix).toContain('apps/web/exercise.ts');
     expect(fix).toContain('x exercise publishPost --json');
+    // The one home: a declaration left inline in a contract test is the usual reason for this row.
+    expect(fix).toContain('.contract({ exercise: {...} }) in a test is not read here');
   });
 
   test('a record with no override still gets a fix naming the name, never a blank', () => {
     const [finding] = exerciseFindings([record({ name: 'shipOrder', outcome: 'unreached' })]);
     expect(finding?.fix).toContain('shipOrder: { input:');
     expect(finding?.fix).toContain('x exercise shipOrder --json');
+  });
+
+  test('a record carrying its own fix (a job on one fixed org) gets that fix, not a paste', () => {
+    const fix = 'tenant: (input) => input.orgId   # in job({ name: "sweep" })\'s declaration';
+    const [finding] = exerciseFindings([
+      record({ name: 'sweep', outcome: 'unreached', code: 'X_JOB_TENANT_MISMATCH', fix }),
+    ]);
+    expect(finding).toMatchObject({ code: 'X_CONTRACT_EXERCISE_UNREACHED', fix });
   });
 
   test('a name a shell would split never reaches the rerun line', () => {
@@ -160,6 +172,54 @@ describe('unit · exercise findings', () => {
     expect(mail?.fix).toContain('before the first step');
   });
 
+  // A failing step's retry was reported "outside every step, before the first step": the effect
+  // ran INSIDE the step, so the finding names that step and the idempotency key, not a wrap.
+  test('a divergence made inside a step names the step, never "outside every step"', () => {
+    const inside = record({
+      name: 'syncFeed',
+      kind: 'job',
+      crash: {
+        verdict: 'diverged',
+        boundaries: 3,
+        reruns: 0,
+        findings: [
+          {
+            boundary: 'nack',
+            mode: 'clean',
+            effect: 'network:GET feeds.example/rss',
+            clean: 2,
+            killed: 3,
+            inside: 'fetch',
+          },
+        ],
+      },
+    });
+    const [finding] = exerciseFindings([inside]);
+    expect(finding?.cause).toContain('inside step "fetch"');
+    expect(finding?.cause).not.toContain('outside every step');
+    expect(finding?.fix).toContain('jobId}:fetch');
+  });
+
+  // A 5xx carried only its code: every one had to be reproduced by hand to read its cause.
+  test('an unreached 5xx carries its cause, statement and fields into the finding', () => {
+    const [finding] = exerciseFindings([
+      record({
+        name: 'recordLedger',
+        outcome: 'unreached',
+        code: 'X_DB_STATEMENT_FAILED',
+        reason: 'answered X_DB_STATEMENT_FAILED, a 500',
+        defect: {
+          cause:
+            '[SQLSTATE 23502] null value in column "payload" — statement: insert into "ledger"',
+          statement: 'insert into "ledger"',
+          fields: ['items.0.sku'],
+        },
+      }),
+    ]);
+    expect(finding?.cause).toContain('null value in column \\"payload\\"');
+    expect(finding?.cause).toContain('items.0.sku');
+  });
+
   test('a job name a shell would split is a placeholder in the rerun', () => {
     const [finding] = exerciseFindings([{ ...leaky, name: 'a; rm -rf b' }]);
     expect(finding?.fix).toStartWith('x exercise <job> --json');
@@ -172,6 +232,43 @@ describe('unit · exercise findings', () => {
       'job chargeOrder · killed at charge · X_JOB_CRASH_DIVERGED row:payments:insert 2× (clean 1×)',
       'job chargeOrder · killed at mail · X_JOB_CRASH_DIVERGED row:payments:insert 2× (clean 1×)',
       'job chargeOrder · killed at mail · X_JOB_CRASH_DIVERGED mail:receipt→a@x.example 2× (clean 1×)',
+    ]);
+  });
+});
+
+// A 504-primitive pass ran 172 minutes against a sum of `ms` of 1.6 s: the time was in the proofs,
+// and nothing in the report said which. Every record carries its proofs' time, the pass its phases.
+describe('unit · exercise timings', () => {
+  const slow = record({
+    name: 'sweepHooks',
+    kind: 'job',
+    ms: 4,
+    proofMs: { tenant: 12, crash: 9_000, scale: 30 },
+  });
+  const phases = { seed: 800, primitives: 9_100, scale: 400, plans: 250, subject: 60 };
+
+  test('the table shows each proof’s ms beside the call’s own', () => {
+    const [header, ...rows] = renderExerciseTable([slow, record({ name: 'off', outcome: 'off' })]);
+    const row = rows.find((one) => one.includes('sweepHooks'));
+    expect(header).toContain('tenant ms');
+    expect(header).toContain('crash ms');
+    expect(header).toContain('scale ms');
+    expect(row?.split(/\s+/)).toEqual(expect.arrayContaining(['4', '12', '9000', '30']));
+  });
+
+  test('the report carries the phases, and the phase line names the slowest', () => {
+    const report = exerciseReport([slow], 1, phases);
+    expect(report.phases).toEqual(phases);
+    const line = exercisePhaseLine(phases);
+    expect(line).toContain('10610');
+    expect(line).toContain('primitives 9100');
+    expect(line).toContain('slowest: primitives');
+  });
+
+  test('the slowest proof is named by record, so a slow pass points at one job', () => {
+    expect(slowestProofLines([slow, record({ name: 'fast', proofMs: { tenant: 1 } })])).toEqual([
+      'slowest: job sweepHooks · crash 9000 ms',
+      'slowest: action fast · tenant 1 ms',
     ]);
   });
 });

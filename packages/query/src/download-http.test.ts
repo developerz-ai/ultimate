@@ -155,6 +155,20 @@ describe('the file', () => {
     expect(beyond.headers.get('content-range')).toBe('bytes */10');
   });
 
+  test('a Blob body is range-served too, and whole without a Range', async () => {
+    const blobbed = recording((bytes) => ({
+      body: new Blob([bytes.slice()]),
+      contentType: 'video/mp4',
+      filename: 'a.mp4',
+    }));
+    const server = serve(blobbed, viewer);
+    const path = await mintedPath(server);
+    const window = await get(server, path, { range: 'bytes=2-5' });
+    expect([window.status, await window.text()]).toEqual([206, '2345']);
+    const whole = await get(server, path);
+    expect([whole.status, await whole.text()]).toEqual([200, '0123456789']);
+  });
+
   test('a stream with a size is range-served; without one it is whole, accept-ranges: none', async () => {
     const streamOf = (bytes: Uint8Array) => new Blob([bytes.slice()]).stream();
     const sized = recording((bytes) => ({

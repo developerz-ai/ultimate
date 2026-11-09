@@ -22,11 +22,8 @@ import { exec } from './exec';
 
 /** Never a production module: a harness, a generator's text, a browser driver. */
 /** A path, not the package name: a `bun -e` script resolves a bare specifier from no file. */
-import {
-  MIGRATE_CEILING,
-  SERVING_ROLE_CEILING,
-  WEB_ROLE_CEILING,
-} from './serve-graph-ceilings-fixture';
+import { MIGRATE_CEILING, SERVING_ROLE_CEILING } from './serve-graph-ceilings-fixture';
+import { WEB_ROLE_CEILING } from './serve-graph-web-ceiling-fixture';
 
 const RENDER_SERVER = Bun.fileURLToPath(import.meta.resolve('@ultimat3/render/server'));
 

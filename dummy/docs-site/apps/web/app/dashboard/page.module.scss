@@ -1,0 +1,32 @@
+@use '@ultimat3/ui/tokens' as tokens;
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: tokens.space(6);
+  // A measure, not the full monitor: past ~80rem a table row is too long to read across.
+  max-inline-size: 80rem;
+  margin-inline: auto;
+  color: tokens.role('fg');
+}
+
+// The trend beside the ring and the dial: side by side once the main column is wide enough for the
+// area chart to keep its 14 day labels legible, stacked before that.
+.charts {
+  display: grid;
+  gap: tokens.space(6);
+  min-inline-size: 0;
+
+  @include tokens.respond-to('lg') {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+// The ring and the dial share a column: two across on a tablet, where one alone would leave half
+// the row empty, one above the other on a phone and in the narrow side column of a monitor.
+.side {
+  display: grid;
+  gap: tokens.space(4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}

@@ -3,8 +3,14 @@
 // of the subject's value in a table with no key to them.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { ctxOf, isUltimateError, runWithContext, serviceActor } from '@ultimat3/core';
-import type { Driver, EntityCore } from '@ultimat3/entity';
+import {
+  ctxOf,
+  isUltimateError,
+  runWithContext,
+  serviceActor,
+  UltimateError,
+} from '@ultimat3/core';
+import type { AnyColumn, Driver, EntityCore } from '@ultimat3/entity';
 import {
   CROSS_TENANT_SCOPE,
   clearRegistry,
@@ -67,8 +73,10 @@ const prove = async (tables: Readonly<Record<string, SubjectTreatment>>, copy = 
   let copied = !copy;
   return subjectProof(subject, {
     entities: Object.values(ALL) as unknown as readonly SeedEntity[],
+    // Row by row, no `insertMany`: the planted copy follows the person's own insert.
     writer: {
-      ...writer,
+      update: (update) => writer.update(update),
+      snapshot: (rows) => writer.snapshot(rows),
       async insert(row) {
         await writer.insert(row);
         if (copied || row.entity !== 'spf_people') return;
@@ -107,6 +115,55 @@ describe('unit · subjectProof', () => {
     });
     expect(codes(result.problems)).toEqual(['X_SUBJECT_ERASE_INCOMPLETE spf_people']);
     expect(result.problems[0]?.cause).toContain('spf_people.name');
+  });
+
+  // The pass's own rule (`deferredMayStayNull`): a nullable cycle key the database refuses to
+  // set — a trigger no declaration carries — stays null, and the proof goes on over the rest.
+  test('a deferred cycle key the database refuses to set stays null: the proof still runs', async () => {
+    const teams = entity('spf_a_teams', {
+      columns: {
+        id: uuid().primaryKey(),
+        orgId: uuid().tenant(),
+        captainId: uuid()
+          .references((): AnyColumn => players.id)
+          .nullable(),
+      },
+    });
+    const players = entity('spf_b_players', {
+      columns: {
+        id: uuid().primaryKey(),
+        orgId: uuid().tenant(),
+        teamId: uuid().references((): AnyColumn => teams.id),
+      },
+    });
+    const driver = memoryDriver();
+    const subject = defineSubject(people, {
+      driver,
+      key: (i: { id: string }) => i.id,
+      tables: { spf_people: 'delete', spf_notes: 'delete' },
+    });
+    const writer = entitySeedWriter({ entities: { ...ALL, teams, players }, driver });
+    let refused = 0;
+    const result = await subjectProof(subject, {
+      entities: [...Object.values(ALL), teams, players] as unknown as readonly SeedEntity[],
+      writer: {
+        insert: (row) => writer.insert(row),
+        snapshot: (rows) => writer.snapshot(rows),
+        update: () => {
+          refused += 1;
+          return Promise.reject(
+            new UltimateError({
+              code: 'X_DB_STATEMENT_FAILED',
+              cause: 'spf_a_teams rows are never updated',
+              fix: 'see the trigger',
+            }),
+          );
+        },
+      },
+      read: (one) => reader(driver)(one),
+    });
+    expect(refused).toBeGreaterThan(0);
+    expect(result.problems).toEqual([]);
   });
 
   test('a raw copy of the email in a table with no key to the person is red', async () => {

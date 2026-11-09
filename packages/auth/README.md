@@ -602,6 +602,55 @@ One live token per `(purpose, identifier)`. A wrong guess destroys nothing: the 
 `takeVerification(purpose, identifier, tokenHash)` matches before it consumes, so an
 unauthenticated POST with any token cannot kill the victim's live link.
 
+## Passkeys — WebAuthn sign-in and digest-bound step-up
+
+`As of 2026-11`. Verified by hand on Bun's WebCrypto — CBOR, COSE (ES256, RS256) and DER parsed in
+this package, no WebAuthn dependency. Declared once: `defineAuth({ passkeys: { rpId, origins } })`
+(`X_CONFIG_INVALID` at definition for an rp id that is not a bare host, or an origin not on it).
+
+```ts
+import { defineAuth, memoryAuthAdapter, passkeyLogin, passkeyStepUp } from '@ultimat3/auth';
+import { newPasskey, getPasskey } from '@ultimat3/auth/client';
+
+const auth = defineAuth({
+  adapter: memoryAuthAdapter(),
+  passkeys: { rpId: 'localhost', origins: ['http://localhost:3000'] },
+});
+const passkeys = passkeyLogin(auth);
+declare const userId: string;
+
+// Each server call sits in one of the app's own actions; its options travel to the browser as
+// JSON, where the browser half (`@ultimat3/auth/client`, in an island) answers them.
+const created = await newPasskey(await passkeys.registerOptions({ userId }));
+if (created.status === 'ok') await passkeys.register({ userId, response: created.response });
+const asserted = await getPasskey(await passkeys.loginOptions());
+if (asserted.status === 'ok') {
+  const { actor, cookie } = await passkeys.login({ response: asserted.response });
+}
+
+// Step-up: the WebAuthn challenge is derived from a nonce, the user and a digest the SERVER
+// computes from the action's input — a caller can only present what was asked for.
+const erase = passkeyStepUp<{ readonly memberId: string }>(auth, {
+  ttlMs: 60_000,
+  digest: ({ input }) => `erase-member:v1:${input.memberId}`,
+});
+```
+
+| Export | What |
+|---|---|
+| `passkeyLogin(auth)` | `{ registerOptions({ userId }), register({ userId, response }), loginOptions(), login({ response, ip?, userAgent? }) }` — `login` answers `login()`'s `LoginResult`, MFA-satisfied |
+| `passkeyStepUp(auth, { digest, ttlMs? })` | `{ options({ userId, input }), verify({ userId, input, response }) }`; `verify` answers the stored `PasskeyEvidence` or throws `X_PASSKEY_STEP_UP_REQUIRED` (no proof, a proof for other bytes, no passkey registered) |
+| `verifyPasskeyEvidence(evidence, { rpId, origins })` | `true` only when the row is a user-verified signature, by its own key, over the challenge its nonce, digest and user derive — no adapter, no clock: a separate process re-checks it |
+| `@ultimat3/auth/client` | `newPasskey`, `getPasskey`, `passkeysSupported`: outcomes `ok` / `cancelled` / `unsupported` / `failed`, never a throw. Two modules, ~2.3 kB minified (`client-bundle.test.ts`) |
+| testing a ceremony | `softAuthenticator({ origin })` from `@ultimat3/auth/soft-authenticator`: real WebCrypto keys answering `create` / `get` — this package's own suites and an app's share the one implementation and the one path |
+| `PasskeyStore` | the nine `AuthAdapter` members over `x_passkeys`, `x_passkey_challenges` (sha256 of the challenge, TTL, taken by `DELETE … RETURNING`) and `x_passkey_evidence`; both adapters, one suite (`passkey-store.test.ts`, PGlite) |
+
+Every ceremony checks `clientDataJSON`'s type, the origin exactly, `rpIdHash`, UP **and** UV, the
+signature under the stored key's algorithm, and a counter that must move forward unless both are
+zero. Registration asks `attestation: 'none'` and trusts no statement. Which check failed is the
+`auth.passkey.refused` log line; the code is `X_PASSKEY_INVALID`, `X_PASSKEY_CHALLENGE_EXPIRED`
+(unknown, spent or late — one answer) or `X_PASSKEY_STEP_UP_REQUIRED`.
+
 ## Authorization server
 
 `authorizationServer({ issuer, store, consentPath, lifetimes, scopes, … })` (`As of 2026-11`) — an
@@ -967,8 +1016,9 @@ export const resolveKey = apiKeyResolver(() => {
 | a store that FAILS | the throw, untouched — a database that is down is not a wrong key |
 
 The store is a THUNK, read when a token is presented: a mount is declared when its module is
-evaluated, and `postgresAuthAdapter()` takes the process's database client, which boot installs
-later. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is an
+evaluated, and which store serves (memory or Postgres) is often decided at boot.
+`postgresAuthAdapter()` with no client reads the ambient `db()` on every call, so the instance can
+be built before boot installs the client, and joins an open `withTransaction`. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is an
 `ApiKeyVerifyStore` (an `ApiKeyStore` that can also `findUserById`).
 
 ## A person's identity, for a subject export or erase
@@ -999,6 +1049,9 @@ user in several orgs is erased from all of them: list it `{ target, retain }` wh
 | `X_API_KEY_INVALID` | key unknown, revoked, expired, wrong, or owned by a user who is gone or disabled |
 | `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
 | `X_AUTH_WRITE_FAILED` | an `AuthAdapter` lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
+| `X_PASSKEY_INVALID` | a passkey response failed its signature, origin, rp id, UP/UV flag, owner or counter check |
+| `X_PASSKEY_CHALLENGE_EXPIRED` | a passkey ceremony named a challenge that is unknown, already used or past its TTL |
+| `X_PASSKEY_STEP_UP_REQUIRED` | a step-up `verify` with no proof, a proof for other bytes, or a user with no passkey |
 | `X_AUTH_SIGN_IN_UNCONFIGURED` | `signInUnconfigured(role, missing)`, thrown by the boot guard `x g sign-in` writes into the app: a `web` or `sync` role outside development and test with sign-in keys unset. Off the socket — a boot refusal, never a response |
 
 ```bash
@@ -1028,3 +1081,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `PostgresTotpReplayGuard` | the `TotpReplayGuard` `postgresTotpReplayGuard` returns |
 | `PostgresTotpReplayGuardOptions` | what `postgresTotpReplayGuard` takes |
 | `TotpReplayFactory` | `() => TotpReplayGuard`: what `configureTotpReplay` takes |
+| `PasskeyPolicy` · `PasskeyPolicyInput` · `PasskeyRelyingParty` · `DEFAULT_PASSKEY_CHALLENGE_TTL_MS` | the `passkeys` block, resolved and as written; the `{ rpId, origins }` a verifier needs |
+| `PasskeyCredential` · `PasskeyChallengeRecord` · `PasskeyEvidence` · `PasskeyCeremony` · `PasskeyStore` | the passkey rows and the adapter slice that stores them |
+| `PasskeyCreationOptions` · `PasskeyRequestOptions` · `PasskeyRegistrationResponse` · `PasskeyAssertionResponse` · `PasskeyCredentialDescriptor` | the JSON wire of a ceremony (WebAuthn L3's `*JSON` dictionaries) |
+| `PasskeyLogin` · `PasskeyStepUp` · `PasskeyStepUpOptions` | what the two factories answer and take |

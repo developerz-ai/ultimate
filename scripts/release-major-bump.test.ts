@@ -21,10 +21,26 @@ import { listWorkspaces, publishOrder } from './lib/workspaces';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
+// Right after a release `[Unreleased]` holds nothing, and promoting nothing is refused. Seed one
+// breaking entry in the shape the next major will carry, so the rules below still run every day.
+const SEED = [
+  '### Highlights',
+  '',
+  '- The next major, seeded by this test.',
+  '',
+  '### Changed',
+  '',
+  '- **BREAKING — (#1) `@ultimat3/core`: a seeded entry.** Nothing ships it.',
+].join('\n');
+
+function seeded(changelog: string): string {
+  return changelog.replace(/^## \[Unreleased\]\n+Nothing yet\.\n/m, `## [Unreleased]\n\n${SEED}\n`);
+}
+
 describe('the next major bump of the committed tree', () => {
   test('passes every stability rule and the changelog shape rules once promoted', async () => {
     const root = repoRoot();
-    const changelog = await Bun.file(`${root}/CHANGELOG.md`).text();
+    const changelog = seeded(await Bun.file(`${root}/CHANGELOG.md`).text());
     const upgrading = await Bun.file(`${root}/wiki/Upgrading.md`).text();
     const page = await Bun.file(`${root}/${STABILITY_PATH}`).text();
     const current = publishOrder(await listWorkspaces(root))[0]?.version ?? '0.0.0';

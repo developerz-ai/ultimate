@@ -31,6 +31,7 @@ export type {
   ActionHandlerArgs,
   ActionMcp,
   ActionRateLimit,
+  ActionRateLimitFact,
   ActionRowArgs,
   AnyAction,
   InvokeOptions,
@@ -124,6 +125,8 @@ export {
   ActionPathStyleInvalidError,
   OpenApiConfigInvalidError,
 } from './errors-http';
+export type { MeterExceededInput, MeterField } from './errors-meter';
+export { MeterExceededError, MeterInvalidError } from './errors-meter';
 export { ActionStreamInvalidError } from './errors-stream';
 export type {
   ExerciseActorOptions,
@@ -132,6 +135,7 @@ export type {
   ExerciseReport,
 } from './exercise';
 export { exerciseAction } from './exercise';
+export type { ContractExercise, ExerciseDeclarations } from './exercise-declarations';
 export type { OpenApiOperation } from './http';
 export {
   operationTagOf,
@@ -199,6 +203,27 @@ export type { ActionJobHandle } from './job-handle';
 export { toJobHandle } from './job-handle';
 export type { JsonSchemaObject } from './json-schema';
 export { jsonSchemaOf } from './json-schema';
+/**
+ * The meter seam: `meter: { name, period, limit, warnAt, onWarn }` on an action, drawn inside
+ * `invoke` on every surface. The draw itself (`meter-gate.ts`) stays unexported — one caller.
+ * `MeterWarning` is the schema an app's warning `job()` declares as its input.
+ */
+export type {
+  ActionMeter,
+  ActionMeterFact,
+  MeterLimitArgs,
+  MeterPeriod,
+  MeterWarnEnqueueOptions,
+  MeterWarnTarget,
+  ResolvedLimit,
+} from './meter';
+export { METER_PERIODS, MeterWarning } from './meter';
+export type { MemoryMeterStoreOptions } from './meter-memory';
+export { DEFAULT_MAX_METER_KEYS, memoryMeterStore } from './meter-memory';
+export type { PostgresMeterStoreOptions } from './meter-postgres';
+export { postgresMeterStore, SQL_METER_TABLE } from './meter-postgres';
+export type { MeterDraw, MeterDrawResult, MeterKey, MeterStore } from './meter-store';
+export { getMeterStore, resetMeterStore, setMeterStore } from './meter-store';
 export type {
   LocalTable,
   LocalTableName,

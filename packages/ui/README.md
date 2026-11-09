@@ -198,6 +198,35 @@ is unsupported it stays a band above the content. A modal off-canvas panel is st
 Heading levels are props (`headingTag`, `nextHeadingLevel`), so a nested `Section`
 never skips a level.
 
+### Ways around an app
+
+| Component | Renders | Rule |
+|---|---|---|
+| `NavList` | `<ul>` of links, groups (a `collapsible` one is a `<details>`), icon and badge | goes places; `Menu` runs commands. Sits in `AppShell`'s `sidebar`, which is the landmark |
+| `BottomNav` | `<nav>` of up to five links, label under icon, safe-area padding | `AppShell bottomNav`: below `md` only, in flow and sticky, so no row hides under it. A sixth item is `X_UI_INVALID_VALUE` |
+| `Tabs` link mode | `<nav>` of `<a>`, `aria-current="page"` | `hrefFor` and no `onChange`: tabs that are URLs. Never `role="tab"` — ARIA tabs promise panels on this page |
+| `Stepper` | `<ol>`, `aria-current="step"` | exactly one `current` step (`stepperModel`, else `X_UI_INVALID_VALUE`); below `sm`, "Step {n} of {total}: Details" (`ui.step`) |
+| `Drawer side="block-end" grabber` | the bottom sheet | drag from the grabber only, snaps `half`/`full`, past half closes (`drawer-gesture-view.ts`); `dvh` caps, safe area. There is no `Sheet` |
+| `PullToRefresh` | wrapper, `overscroll-behavior-y: contain` | touch only, only at the top; `onRefresh` once per pull however many arrive; off for `(pointer: fine)` — a toolbar button is the way for every other pointer |
+
+`NavList` and `BottomNav` mark the current link by ONE rule, `currentOf(items, href)`: the
+longest href that is the page or a whole-segment ancestor of it wins, so `/runs/7` marks `/runs`,
+never `/`. The safe area is `t.safe-area-inset(block-end | block-start | inline)` and
+`@include t.safe-area-padding($edge, $base)` from `@ultimat3/ui/tokens`; the page opts in with
+`viewport-fit=cover`.
+
+### Confirmations, shortcuts, the palette
+
+| Piece | What it is | Rule |
+|---|---|---|
+| `ConfirmDialog` | a trigger (`commandfor` + `command="show-modal"`) and a modal `<dialog>` holding a real `<form method="post">` | Cancel holds `autofocus`, so Enter straight after open cancels; Esc closes; the backdrop never does. `action` posts natively with no script; `onConfirm` in an island resolves `undefined` (done) or a refusal, shown in the form summary, focused. `confirmLabel` is a verb with no default |
+| `useHotkeys(table)` | `{ keys, label, run }[]` over one `keydown` listener per page (`Symbol.for` slot) | a bare key never fires while typing or with a modifier; `mod+k` (⌘ / Ctrl) fires anywhere; a chord is two keys inside `CHORD_WINDOW_MS`. A binding twice, a chord over two keys or a prefix clash is `X_UI_INVALID_VALUE` |
+| `ShortcutSheet` | a `Dialog` listing every island's rows | opened by `?`, itself a row: the sheet shows exactly the bindings that work. Not offered on `(hover: none)` |
+| `useCommandPalette({ items, onRun, label })` | the open flag, query, active row, focus back to the opener, `mod+k` | spread `.props` into the presentational `CommandPalette`. Items carry `group` and `keywords`; `filterItems` ranks with `rankOptions`, so `cafe` finds `Café` |
+
+No binding ships: `/` or `g r` is an app's. A shipped guard, `guards/native-confirm.ts`, refuses
+`confirm(` in an island or under `apps/web/` (`x g guard native-confirm`).
+
 ### Data display
 
 Server-rendered, no island and no JS: a chart costs a route nothing until it asks to be focusable.
@@ -206,16 +235,61 @@ table — and every series has a dash and a marker as well as a colour (`chart-1
 
 | Component | Renders | Use for |
 |---|---|---|
-| `LineChart` / `AreaChart` | multi-series line on a 1-2-5 axis (filled for `AreaChart`); `null` is a gap | a trend over keys |
-| `BarChart` | bars, an optional stacked second series with a legend | a count per key |
+| `LineChart` / `AreaChart` | multi-series line on a 1-2-5 axis (filled for `AreaChart`, `stacked` bands); `null` is a gap; `at` puts irregular samples at their true x | a trend over keys |
+| `BarChart` | signed bars below a real zero line, an optional stacked second series, or n series side by side (`keys` + `series`) | a count per key |
 | `DonutChart` | ring segments, a centre figure, a legend with value and share | parts of a whole |
-| `Gauge` | a 270° `meter` dial with a tone and a visible label | one value against its max |
+| `Gauge` | a 270° `meter` dial; `thresholds` pick the tone, `target` is a tick, `null` reads "no data" | one value against its max |
+| `HeatStrip` | rows of status cells, each one element named by its whole reading, shaped by its tone, a link when it has a page | uptime, checks per bucket |
+| `LiveIndicator` | a static dot whose shape is the state, the word beside it: live, reconnecting, paused, offline; a change is announced once | a live view's connection |
 | `ChartFrame` | the figure, caption, legend and data table every chart stands in | a custom chart |
 | `niceTicks` · `chartTable` · `seriesStyle` | axis ticks, the fallback table, a series' dash and marker | building a custom chart |
 | `DataTable` | sort, cursor paging (link mode with `listUrl` needs no island), states; `narrow: 'cards'` (default) collapses rows to labelled cards below `sm`; `Column.priority` hides a column behind a per-row disclosure, never losing its value; `stickyFirstColumn` | any list of records |
 | `Table` | a captioned table with a sticky header; `stickyFirstColumn` | static tabular data |
 | `InlineBar` | a caller-formatted figure with a decorative proportional bar | a number in a table cell |
-| `StatTile` / `Meter` / `Sparkline` | a KPI with its delta; a bar against a max; an inline mini line, where a `null` value is a gap, never a zero | the KPI row |
+| `StatTile` / `Meter` / `Sparkline` | a KPI with its delta (`goodWhen` says which way is good), `trend`, `of`, `href`, `loading`; a bar against a max with a `target` tick; a signed mini line with `area`, where `null` is a gap | the KPI row |
+
+**Three facts, three marks.** A negative value hangs below a drawn zero line, `null` draws nothing
+and reads `ui.chart.none` in the table, and zero is a 2px stub. Never zero-fill a gap. A series
+whose `values` length differs from `keys`, an `at` that is not strictly ascending and unsorted
+`thresholds` are `X_UI_INVALID_VALUE`. A series' `tone` replaces its slot colour; its dash and
+marker stay. `deltaOf(current, baseline, { absoluteBelow })` is a signed difference from zero or
+under a small baseline. A live chart takes its data from `useQuery`; `liveWindow(points, next, { max })`
+is the pure trim, and focusable points are keyed (`ChartHit.id`), so a tick keeps focus. A stat
+grid is `Grid minColumn` — two up on a phone — never a second layout name.
+
+```tsx
+import type { SparklinePoint } from '@ultimat3/ui';
+import { deltaOf, Gauge, Grid, liveWindow, StatTile } from '@ultimat3/ui';
+
+const recent: readonly SparklinePoint[] = [
+  { key: '10:00', value: 2.1 },
+  { key: '10:01', value: null },
+];
+const window = liveWindow(recent, { key: '10:02', value: 2.4 }, { max: 60 });
+
+export const health = (
+  <Grid minColumn="10rem">
+    <StatTile
+      label="Error rate"
+      value="2.4%"
+      stat="error-rate"
+      delta={deltaOf(2.4, 2.1)}
+      goodWhen="down"
+      trend={window}
+    />
+    <Gauge
+      label="CPU"
+      value={93}
+      max={100}
+      target={80}
+      thresholds={[
+        { at: 70, tone: 'warning' },
+        { at: 90, tone: 'danger' },
+      ]}
+    />
+  </Grid>
+);
+```
 
 
 ```tsx
@@ -230,6 +304,180 @@ table — and every series has a dash and a marker as well as a colour (`chart-1
     <DataTable caption={t('orders.title')} columns={columns} rows={rows} rowKey={(row) => row.id} />
   </Section>
 </AppShell>
+```
+
+### Long lists, trees, timelines and facts
+
+`As of 2026-11`. Four shapes of list, none of them a table. Which one: **records with columns →
+`DataTable`; thousands of rows of one shape → `VirtualList`; things inside things → `Tree`; what
+happened, in order → `Timeline`; facts about one thing → `DescriptionList`.**
+
+| Component | Renders | No script |
+|---|---|---|
+| `VirtualList({ items, itemKey, renderItem, estimate?, overscan?, follow?, label })` | a real `<ul>` in a scroll box, padded for the rows not drawn; `aria-setsize`/`aria-posinset` hold the true count | every row, server-rendered: the document carries the whole list, so page it |
+| `Tree({ nodes, hrefFor \| onSelect, onExpand?, selected?, open?, label })` | link mode: nested `<ul>` + `<details>` + links, 0 B; select mode: APG `role="tree"`, one tab stop, arrows (left/right follow `dir`), Home/End, type-ahead, lazy children | link mode, fully |
+| `Timeline({ items, groupBy?, label })` | an `<ol>` per day header, a marker per item in its `tone`, a `when` slot for `DateTime`/`RelativeTime` | fully, 0 B |
+| `DescriptionList({ items, layout? })` | `<dl>` with a `<div>` per pair; `columns` stacks below `sm` by its own width | fully, 0 B |
+
+- **The box gives a `VirtualList` its height** (`class`): it scrolls inside the caller's box, and a
+  box with no height renders every row, never nothing. Rows are measured by one `ResizeObserver`;
+  `estimate` is the unseen row's size, so fixed-height mode is a right estimate, not a second API.
+- **A live prepend moves nothing being read**: the row at the box's top edge is held by its DOM
+  position, and a focused row keeps its node and its focus (`itemKey`, the `DataTable` rule). With
+  `follow`, a reader at the end stays there; one who scrolled up is left alone and offered one
+  `ui.list.toEnd` button, scrolled to with `behavior: 'auto'` under `prefers-reduced-motion`.
+- **Measured** (`packages/cli/e2e/ui-virtual-list.e2e.test.ts`, headless Chrome at 390 px): two
+  10,000-row lists mount 65–129 ms and +2.2 MB of heap, with fewer than 100 `<li>` each.
+- **Find in page** cannot find a row that is not drawn: the known cost. A log adds its own filter.
+- A repeated `itemKey`, a repeated tree id or a node inside its own subtree is `X_UI_INVALID_VALUE`
+  naming the id. A non-finite `estimate` or `overscan` is `finiteOption`'s refusal.
+
+**An activity feed is not a component**: `Timeline` + `InfiniteScroll` + `RelativeTime`.
+
+```tsx
+import { DescriptionList, InfiniteScroll, RelativeTime, Timeline } from '@ultimat3/ui';
+
+const events = [
+  { id: 'e2', what: 'Published', at: '2026-11-05T09:00:00Z', day: 'Thursday' },
+  { id: 'e1', what: 'Drafted', at: '2026-11-04T16:30:00Z', day: 'Wednesday' },
+];
+
+export const activity = (
+  <InfiniteScroll hasMore nextHref="/activity?after=e1">
+    <Timeline
+      label="Activity"
+      items={events.map((event) => ({
+        key: event.id,
+        title: event.what,
+        when: <RelativeTime value={event.at} timeZone="Europe/Berlin" />,
+        tone: event.what === 'Published' ? 'success' : 'neutral',
+      }))}
+      groupBy={(item) => events.find((event) => event.id === item.key)?.day ?? ''}
+    />
+  </InfiniteScroll>
+);
+
+export const facts = (
+  <DescriptionList
+    items={[
+      { term: 'Author', detail: 'Ada' },
+      { term: 'Status', detail: 'Published' },
+    ]}
+  />
+);
+```
+
+### Reordering, boards and panes
+
+`As of 2026-11`. One gesture (`drag/pointer-drag.ts`: Pointer Events with capture, never HTML5
+drag events, which fire on no touch screen and have no keyboard form) under three components.
+
+| Component | Renders | Keyboard | No script |
+|---|---|---|---|
+| `SortableList({ items, itemKey, renderItem, label, onMove, canDrop?, action?, fields? })` | a `<ul>`, a handle `<button>` per row | Space lifts, arrows move, Space drops, Esc restores; Alt+arrow moves at once | each row a `<form method="post" action>` with Move up and Move down |
+| `Board({ groups, itemKey, renderItem, label, onMove, canDrop?, action?, fields? })` | a `role="group"` column per group, columns snap-scroll sideways, one wide below `sm` | the same, plus the inline arrows across columns (mirrored under `dir="rtl"`) | each card a form with a target `select` |
+| `SplitPane({ start, end, defaultValue, value?, min?, max?, onResize?, label? })` | a grid with a `role="separator"` holding `aria-valuenow` in percent | arrows step 5, Home, End; Esc mid-drag restores | fixed at `defaultValue`; one column below `md` |
+
+- **A drop is a request.** `onMove({ id, fromGroup, toGroup, toIndex })` is called once; the
+  component holds the preview until it settles, and a rejection puts the row back and says so
+  (`ui.sort.cancelled`). The order the list shows is the caller's: optimistic or not, the
+  framework's existing write path decides.
+- **`canDrop(item, group)` is the one seam** for a business rule — a WIP limit, a status machine.
+  A refused column is skipped by the arrows, never landed in, and left out of the no-script `select`.
+- **Touch scrolls the page from a row's body**: only the handle has `touch-action: none`.
+- **Every step is said** through `announce()`: lift, each move, the drop, a cancel.
+- Two items under one key, in any group, `min` over `max`, or a `value` outside them, is
+  `X_UI_INVALID_VALUE` naming it. Storage of a split is the caller's (`onResize` + `value`).
+
+### Reading what agents and machines write
+
+`As of 2026-11`. Text → tree → elements, **never HTML**: no viewer, parser or renderer names
+`innerHTML` (`viewers-no-html.test.ts`), so a body from a model can only become text nodes.
+
+| Component | Renders | No script |
+|---|---|---|
+| `Markdown({ text, baseLevel?, resolveImage?, languages?, headingIds? })` | CommonMark's working set an agent writes, plus tables, task lists, strikethrough, autolinks, nested lists — not full conformance | fully, 0 B on a server page |
+| `CodeBlock({ code, language?, languages?, label?, wrap?, copy? })` | `<pre><code>` of classed runs, a named LTR scroll region; wrap toggle and `CopyButton` with script | selectable text |
+| `JsonView({ value, label, open? })` | nested native `<details>`, keys in the order given, depth and width capped, cycles named | fully |
+| `DiffView({ old, new } \| { patch }, maxLines?, label? })` | `<table>`, `+`/`-` gutters and a spoken word per changed row, word marks; unified below `md` of its own width, side by side from it | fully; Next change needs script |
+| `LogViewer({ lines, follow?, cap?, label? })` | rows on `VirtualList`, a `<time>` per line, level and text filters, follow toggle | every line given |
+| `TerminalView({ text, rows?, follow?, label? })` | SGR colours as roles on `VirtualList`; every other escape dropped | all text |
+
+- **Raw HTML prints as text; a link is followed only for `http`, `https`, `mailto` or a relative
+  URL**, anything else prints as its source. A remote image is a tracking pixel: it prints its alt
+  as a link unless `resolveImage(src)` answers `{ src, width, height }` (a malformed answer is
+  `X_UI_INVALID_VALUE`). `baseLevel` defaults to 2, so a body never adds a second `h1`.
+  `headingIds` gives each heading the GitHub wiki's anchor (`headingSlug`, `-1`, `-2` on repeats).
+- **Over a cap the rest is plain text, in linear time**: `MARKDOWN_MAX_CHARS`, nesting caps,
+  hostile `*`/`[` bodies (`markdown-parse.test.ts`). Malformed content is never an error.
+- **Languages are passed, never imported by a viewer**: `tsLanguage`, `jsonLanguage`,
+  `shellLanguage`, `sqlLanguage`, `htmlLanguage`, `yamlLanguage`, `diffLanguage`, or
+  `allLanguages` on a server page. A `Markdown` with none retains no language module in an island
+  (`ui-barrel-bytes.test.ts`). `defineLanguage(name, rules, aliases?)` adds one; a rule that can
+  match the empty string is `X_UI_INVALID_VALUE`. The joined runs always equal the input.
+- **Colours are roles**: code tokens are text roles measured AA on `bg-soft`; ANSI red, green,
+  yellow, blue map to the status roles, magenta and cyan to `chart-5` and `chart-1`, 256-colour
+  and truecolor to the default foreground (`contrast-pairs.ts`).
+- **Diff input is two texts or a unified patch**, one parser to rows; Myers, bounded by an edit cap
+  past which the middle is a replace; over `maxLines` it folds and says how many.
+
+```tsx
+import { allLanguages, DiffView, JsonView, Markdown } from '@ultimat3/ui';
+
+export const body = <Markdown text={'# Notes\n\n<script> is text.'} languages={allLanguages} />;
+export const usage = <JsonView value={{ tokens: 120, cached: true }} label="Usage" />;
+export const change = <DiffView old={'one\ntwo'} new={'one\nthree'} />;
+```
+
+### Dates, windows and bounded values
+
+`As of 2026-11`. The native control first, always: on the server, with scripting off and on a
+coarse pointer the platform's own `<input>` is all there is, and it is the value either way.
+
+| Component | Value | With script, on a fine pointer |
+|---|---|---|
+| `Calendar({ value?, range?, month?, min?, max?, isDisabled?, weekStart?, hrefFor \| onSelect })` | `PlainDate` (`YYYY-MM-DD`) | link mode is links (a booking page, 0 B); select mode is an APG grid, one tab stop, arrows follow `dir`, PageUp/PageDown a month, Shift a year, Home/End the week |
+| `DatePicker({ name, value?, min?, max? })` | one `<input type="date">` | a button (F4, Alt+↓) opens a `Calendar` popover; Esc hands focus back |
+| `DateRangePicker({ legend, fromName, toName, from?, to? })` | two `<input type="date">`, GET or POST | one calendar: the first pick starts, the second completes, `aria-selected` over the span |
+| `TimeRangePicker({ range, timeZone, label })` | preset links + a GET form of two `datetime-local` | the same: links and a form, 0 B |
+| `Slider({ name, label, min?, max?, step?, value?, format? })` | `<input type="range">` with a bound `<output>` | the output follows the thumb; paint is `accent-color` |
+| `Radio appearance="segmented"` | native radios as one joined strip | native arrows |
+
+- **A date has no zone; a window does.** `DatePicker`/`DateRangePicker` deal in `PlainDate`s.
+  `TimeRangePicker` and `timeRangeUrl` deal in instants and REQUIRE `timeZone` — omitting it is a
+  type error, and a zone that is not IANA is `X_TIMEZONE_INVALID`. Month and weekday names come from
+  `Intl.DateTimeFormat` with `timeZone: 'UTC'` on the plain date: no catalog, no ambient zone. The
+  week starts where the locale says (`Intl.Locale#getWeekInfo`: `en-US` Sunday, `de` Monday).
+- **Presets are the app's** (`{ id, label, seconds | from/to }`): none ships, and "this quarter" is
+  business. `timeRangeUrl(url, { presets, default, ns?, timeZone, now })` composes `listUrl`, so a
+  changed window keeps every other parameter and drops every cursor; a malformed or backwards custom
+  window shows the default with `invalid: true`, and the picker says `ui.range.invalid`.
+- Six weeks always, so the box never jumps; a disabled day never holds the tab stop; a cell is
+  `--touch-target`, 44 px, and a month fits a 320 px screen. A non-`PlainDate`, `min` after `max`, a
+  preset with neither `seconds` nor `from`/`to`, a `Slider` `step` of zero: `X_UI_INVALID_VALUE`.
+- No number stepper (`Input` refuses a number wrapper on purpose) and no segmented component
+  (`Radio appearance`); auto-refresh is a `Select` calling `visibleInterval`, a page control.
+
+```tsx
+import { DateRangePicker, TimeRangePicker, timeRangeUrl } from '@ultimat3/ui';
+
+const range = timeRangeUrl('/health?range=week', {
+  presets: [
+    { id: 'day', label: 'Last 24 hours', seconds: 86_400 },
+    { id: 'week', label: 'Last 7 days', seconds: 604_800 },
+  ],
+  default: 'day',
+  timeZone: 'Europe/Berlin',
+  now: new Date('2026-11-06T12:00:00Z'),
+});
+
+export const window = <TimeRangePicker range={range} timeZone="Europe/Berlin" label="Window" />;
+
+export const filter = (
+  <form method="get" action="/runs">
+    <DateRangePicker legend="Created" fromName="from" toName="to" from="2026-11-01" />
+  </form>
+);
 ```
 
 ## Icons
@@ -268,6 +516,7 @@ has the behaviour. Each is correct server-rendered, and the script layer only ad
 |---|---|---|
 | `Accordion` | `<details>` / `<summary>`; `exclusive` is the native `name` group | `onToggle` notification, after the browser has applied it |
 | `Combobox` | `<input list>` + `<datalist>` — typing, filtering, keyboard, mobile | `onFilter`, debounced, for a live/server-side query |
+| `SearchableSelect` | the real `<select>` (`multiple`, `<optgroup>`), posting the same `name` and values | a WAI-ARIA combobox over a listbox; hidden inputs post the value, never the typed text |
 | `InfiniteScroll` | a real `rel="next"` link to the next page | an `IntersectionObserver` sentinel that calls `onLoadMore` and intercepts the click |
 | `Pagination` with `hrefFor` | `<a rel="next">` / `<a rel="prev">`, one per cursor | none — link mode attaches no handler |
 | `Link appearance="button"` | an `<a href>` wearing Button's classes | none |
@@ -280,6 +529,28 @@ has the behaviour. Each is correct server-rendered, and the script layer only ad
 <InfiniteScroll hasMore={page.hasNext} nextHref={`?page=${page.next}`} onLoadMore={loadNext}>
   {rows}
 </InfiniteScroll>
+```
+
+**Three questions, three controls.** `Select`: a short closed list. `SearchableSelect`: a long
+closed list where the label is not the value — a customer, a country, a time zone. `Combobox`: free
+text with suggestions. Ranking is `rankOptions` (label prefix, word prefix, substring, over label,
+description and keywords, one `normalizeQuery`); past `limit` the list says "first N of M", and
+`onSearch` hands the query to the caller, who must keep the chosen options in what it returns.
+Two options under one value, a split group and a value naming no option are `X_UI_INVALID_VALUE`.
+Label it with `<label for>` (or `Field`), never a wrapping label.
+
+```tsx
+import type { SearchableOption } from '@ultimat3/ui';
+import { SearchableSelect } from '@ultimat3/ui';
+
+const zones: readonly SearchableOption[] = [
+  { value: 'Europe/Berlin', label: 'Berlin', group: 'Europe' },
+  { value: 'Asia/Tokyo', label: 'Tokyo', group: 'Asia', keywords: ['JST'] },
+];
+
+export const zonePicker = (
+  <SearchableSelect id="tz" name="tz" options={zones} value="Asia/Tokyo" required />
+);
 ```
 
 `InfiniteScroll` refuses `hasMore` without a `nextHref` (`X_UI_INVALID_VALUE`): with
@@ -471,7 +742,7 @@ interface Props {
   readonly tree: JSX.Element;
 }
 
-export function mount(el: HTMLElement, props: Props): void {
+export function mount(el: HTMLElement, props: Props): () => void {
   // NOT `await import('solid-js')`: the chunk already carries Solid statically, so the await buys
   // no bytes and makes `mount` async — and the hydration runtime calls it synchronously.
   // NOT `import * as solidRuntime` either: a namespace handed to a function cannot be shaken, and
@@ -487,7 +758,8 @@ export function mount(el: HTMLElement, props: Props): void {
     createRoot,
   });
   el.textContent = ''; // Solid's `render` APPENDS; the server's shell would stay above this one.
-  render(
+  // Returned: the router disposes the island with it on navigation (X_ISLAND_DISPOSER_MISSING).
+  return render(
     () => (
       <UiProvider
         locale={props.locale}
@@ -586,6 +858,7 @@ enforced by tests:
 |---|---|
 | a disabled item is in neither the navigable set nor the tab stop (`MENU_ITEM_SELECTOR`, `TAB_SELECTOR`, `tabStopIndex`) | `focus()` on a disabled control is a **no-op**, so a disabled item left in the list pins the reducer on its index and hides everything after it |
 | the tab stop is the selection, or the first **enabled** item (`tabStopIndex`) | a group whose only tab stop is disabled cannot be entered at all |
+| a tree item has no `disabled`: `TREE_ITEM_SELECTOR` excludes `aria-disabled="true"`, and a calendar's arrow steps over a disabled day (`stepDay`) | the same no-op `focus()`, on the two groups whose items are not form controls |
 | a control that answers arrows itself keeps them (`handlesOwnArrowKeys`) | `Toolbar` exists to hold a search field, and stealing ArrowRight from it eats the keystroke moving the caret |
 
 `Toolbar` is deliberately **not** a single Tab stop: it holds arbitrary children it cannot reach

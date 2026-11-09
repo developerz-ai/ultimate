@@ -46,13 +46,16 @@ The frame: skip link, landmarks, optional sidebar. Off-canvas navigation is `Dra
 | `header` | `JSX.Element` | omitted → no `<header>` |
 | `sidebar` | `JSX.Element` | omitted → no `<nav>`, and the grid collapses to one column |
 | `footer` | `JSX.Element` | omitted → no `<footer>` |
+| `bottomNav` | `JSX.Element` — a `<BottomNav>` | omitted → none; given, shown below `md` only, last, sticky to the bottom edge and in flow, so it reserves its own height |
 | `sidebarLabel` | `string` | `t('ui.navigation')` |
 | `skipLabel` | `string` | `t('ui.skip')` |
 | `sidebarWidth` | `string` | `'16rem'` |
 | `stickyHeader` | `boolean` | **sticky unless explicitly `false`** — `undefined` is sticky |
 | `class` | `string` | — |
 
-Landmark order in the DOM: `banner` → `navigation` → `main` → `contentinfo`. `<main>` is unconditional.
+Landmark order in the DOM: `banner` → `navigation` → `main` → `contentinfo` → the bottom bar's `navigation`. `<main>` is unconditional.
+
+The sidebar's content is `NavList` and the bottom bar's is `BottomNav` (five links at most); both mark the current page by one rule, `currentOf(items, href)` — the longest covering href wins, so `/runs/7` marks `/runs`. The bar's padding clears the home indicator through `t.safe-area-padding(block-end)` (`viewport-fit=cover` on the page).
 
 The skip link is real, not decorative: `<main>` carries `tabindex={-1}` so focus actually moves there, and the link's `href` and the target's `id` are derived from one `shellIds()` call, so they cannot drift apart. It sits off-screen at `translate: 0 -400%` and slides in on `:focus-visible`.
 
@@ -131,6 +134,15 @@ One mode per use, and the type holds it: `hrefFor` beside `onCursor`, `onPage`, 
 - **No prop spreading.** Components declare explicit props; there is no `{...rest}`.
 - **`solid-js` is a type-only import** inside the package — reactive access goes through one registered adapter, so the design system does not pin a renderer version.
 - Formatting logic lives in a pure `*-view.ts` beside the component (`money-view.ts`, `date-time-view.ts`), testable with no renderer.
+- **Choosing from a list is three controls, never one with modes.** `Select` (short, closed), `SearchableSelect` (long, closed, value ≠ label — no-script it is the native `<select>`), `Combobox` (free text). There is no `<Select searchable>`: every `Select` island would carry the listbox.
+- **A destructive question is `ConfirmDialog`, never `confirm(`.** Cancel is focused, the backdrop never dismisses, `action` posts with scripting off, `onConfirm` stays open on a refusal; the confirm label is a verb with no default. `guards/native-confirm.ts` refuses `confirm(` in app code.
+- **Shortcuts are one table per island, merged per page.** `useHotkeys([{ keys, label, run }])`; `ShortcutSheet` lists the merged table on `?` and `useCommandPalette` adds `mod+k` to it — so the legend cannot drift from the bindings. The framework reserves no key.
+- **The bottom sheet is `Drawer side="block-end" grabber`.** There is no `Sheet`. Link tabs are `Tabs` with `hrefFor` — a `<nav>`, never `role="tab"`.
+- **Charts: options on the shipped charts, not new charts.** Signed bars and sparklines, `null` gaps, `at` for true x, `references`, `stacked` areas, `tone` per series, `Gauge` `thresholds`/`target`, `Meter` `target`. The two new names are `HeatStrip` and `LiveIndicator`, which no chart's shape covers. A stat grid is `Grid minColumn`.
+- **Which list, when.** Records with columns: `DataTable`. Thousands of one-shape rows: `VirtualList` (no script, every row renders; with script, under 100 mounted). Things inside things: `Tree` — `hrefFor` is `<details>` and links at 0 B, `onSelect` is the island's `role="tree"`. What happened: `Timeline` (+ `InfiniteScroll` + `RelativeTime` is the activity feed; there is no feed component). Facts about one thing: `DescriptionList`, never a two-column `Table`.
+- **Dates are the native input first.** `DatePicker`/`DateRangePicker` are `<input type="date">` with a `Calendar` popover only on a fine pointer with script. A date is a `PlainDate`; a window (`TimeRangePicker`, `timeRangeUrl`) is instants and takes a REQUIRED `timeZone`. Presets are the app's. `Slider` is `<input type="range">`; a segmented control is `Radio appearance="segmented"`; there is no number stepper.
+- **Reordering is `SortableList` and `Board`, a split is `SplitPane`** — one Pointer Events gesture, never HTML5 drag. A drop calls `onMove` once and is a request: the row holds until it settles, a rejection restores it and says so. `canDrop(item, group)` is the one seam for a WIP limit or a status machine. With `action`, each row is a real `<form>` (Up/Down, or a target `select` per card). The handle alone has `touch-action: none`, so a phone still scrolls from a row's body. `SplitPane` is one column below `md`; `onResize` + `value` is how a split persists — storage is the app's.
+- **What a model wrote is `Markdown`; code is `CodeBlock`; never `innerHTML`.** Raw HTML prints as text, links only http/https/mailto/relative, a remote image prints its alt as a link unless `resolveImage` vouches for it, `baseLevel` defaults to 2. Fences go through `CodeBlock`, highlighted only by the `languages` the caller passes (`allLanguages` on a server page; one named language in an island). Structured payloads are `JsonView`, changes `DiffView` (two texts or a unified patch), structured logs `LogViewer`, terminal output `TerminalView` (SGR colours as roles). A rich-text editor is `Textarea` plus a `Markdown` preview.
 
 ## Error codes
 

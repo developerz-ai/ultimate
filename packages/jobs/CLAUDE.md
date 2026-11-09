@@ -122,7 +122,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `backoffDelayMs`): `docs/history/jobs.md`, "Moved 2026-10-01 — retry and bounds".
 - **The claim loop re-arms on the PASS, never the jobs**; `tick()` resolves with that pass's executions.
 - **A deadline CANCELS, then fails the attempt**, never the reverse (`raceTimeout`, `withStepTimeout`);
-  the attempt is cancelled in `executeJob`'s `finally`.
+  `ctx.signal` aborts unless the body completed AND its ack landed; steps fence on `ended`.
 - **A cancelled runner writes NOTHING** — `put()` in `steps.ts` (`X_ABORTED`) — save a fenced
   `X_DRAINING` on a live attempt: a step done in the drain is recorded once. The STORE fences
   the claim (`StepFence`, `SQL_STEP_PUT` as `SQL_ACK`: `X_JOB_LEASE_LOST`). `executeJob` passes it.
@@ -143,13 +143,12 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`step.run` hydrates the run's steps from ONE `store.list(runId)`**; `sleep` and `waitForEvent`
   record replays through `trace()`. **`claimName` reads a Set**; `usedNames()` keeps
   `MAX_TRACE_NAMES` (200).
-- **`x jobs cancel` binds to `cancelJob(driver, id, reason?)`, which refuses** a finished job or a
-  driver with no `cancel` (`X_JOB_NOT_CANCELLABLE`).
 
 ## Rules — long form in `docs/history/jobs.md`
 
 - "Moved out 2026-11-03": operator verbs on BOTH drivers; an idle round touches no store.
 - "Moved out 2026-11-06": `demand` with no worker registry; how the claim seeks.
+- "Moved out 2026-11-07": `cancelJob`'s refusals; why a completed attempt's signal stays live.
 - "Plan 101 wave 6c": compensate ONLY failed for good; `once` writes `started` BEFORE `fn`; a
   waking publish is ONE statement; payload org = enqueue org (`X_JOB_TENANT_MISMATCH`).
 
@@ -213,8 +212,8 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `consumer.ts` / `consumer-loop.ts` / `consumer-types.ts` | `consumer()` — a job + `.supervisor` task; one run's turns; the shapes |
 | `consumer-registry.ts` / `consumer-guard.ts` / `consumer-errors.ts` | the `origin` stamp + `registeredConsumers`; the self-enqueue refusal; `X_CONSUMER_*` |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements; an `action-job` projection is `X_ACTION_JOB_UNBRIDGED` |
-| `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
-| `steps.ts` / `-core.ts` / `-wait.ts` / `-unwind.ts` | replay runner; shared core; `waitForEvent`; compensation |
+| `describe.ts` | one handle's JSON projection; `describeJobs()` maps it |
+| `steps.ts` / `-core.ts` / `-wait.ts` / `-unwind.ts` / `step-scope.ts` | replay runner; core; `waitForEvent`; compensation; `currentStep()` |
 | `steps-timeout.ts` / `steps-suspension.ts` | a step's ceiling; `StepSuspension`, `UnwindReached`, timeout marker |
 | `steps-api.ts` / `steps-store.ts` / `steps-output.ts` | `StepApi`, `EventLookup`; `StepRecord`, `StepFence`, `StepStore`; what a step answers, `StepOutput` and `jsonForm` |
 | `type-pins.ts` | compile-time pins for `StepOutput` and `waitForEvent` |
@@ -238,7 +237,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `retry.ts` | the dead-letter decision, and this package's option names over core's `backoffDelay` — no curve of its own |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
-| `execute.ts` / `run-deadline.ts` | `executeJob` — one claimed job run and settled; the run's deadline: cancel, then fail |
+| `execute.ts` (+`-result.ts`) / `run-deadline.ts` | `executeJob`: one claimed job run and settled; its deadline: cancel, then fail |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `renewal-timer.ts` | the renewal interval and its `stopped()` latch |
 | `worker.ts` | `worker` role, claim round, drain |

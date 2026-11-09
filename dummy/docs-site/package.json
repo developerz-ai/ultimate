@@ -1,0 +1,54 @@
+{
+  "name": "docs-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup": "bun bin/setup.ts",
+    "dev": "x dev",
+    "verify": "x verify",
+    "typecheck": "tsc -p . --pretty",
+    "lint": "biome check .",
+    "test": "bun test --isolate",
+    "db:migrate": "x db migrate",
+    "db:seed": "x db seed"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@electric-sql/pglite": "^0.5.4",
+    "@types/bun": "^1.4.0",
+    "@ultimat3/testing": "30.9.0",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@ultimat3/action": "30.9.0",
+    "@ultimat3/admin": "30.9.0",
+    "@ultimat3/auth": "30.9.0",
+    "@ultimat3/cache": "30.9.0",
+    "@ultimat3/cli": "30.9.0",
+    "@ultimat3/core": "30.9.0",
+    "@ultimat3/db": "30.9.0",
+    "@ultimat3/entity": "30.9.0",
+    "@ultimat3/http": "30.9.0",
+    "@ultimat3/i18n": "30.9.0",
+    "@ultimat3/jobs": "30.9.0",
+    "@ultimat3/manifest": "30.9.0",
+    "@ultimat3/mcp": "30.9.0",
+    "@ultimat3/money": "30.9.0",
+    "@ultimat3/policy": "30.9.0",
+    "@ultimat3/pwa": "30.9.0",
+    "@ultimat3/query": "30.9.0",
+    "@ultimat3/render": "30.9.0",
+    "@ultimat3/schema": "30.9.0",
+    "@ultimat3/seo": "30.9.0",
+    "@ultimat3/ui": "30.9.0",
+    "solid-js": "1.9.17"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
+  }
+}

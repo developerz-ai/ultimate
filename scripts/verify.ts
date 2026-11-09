@@ -70,6 +70,7 @@ import { gateStepFindings } from './gate-steps';
 import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
 import { imageContractFindings } from './image-contract';
+import { keyedHasherFindings } from './keyed-hasher';
 import { knownGapLinkFindings } from './known-gaps-links';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { checkConfigImports, configImportFindingFor } from './lib/config-import';
@@ -149,6 +150,9 @@ export const tierBoundaries: HostCheck = async (root) => {
     // One cipher call: a package above tier 0 seals through `seal()` / `open()` in
     // `@ultimat3/core`, never its own `subtle.encrypt`. A text rule, so it rides here.
     ...(await sealCallFindings(root)),
+    // One keyed hash: every HMAC through `hmac()` in `@ultimat3/core`, never a keyed
+    // `Bun.CryptoHasher` (a Bun 1.4.4 bug throws a stale EC error through one). A text rule.
+    ...(await keyedHasherFindings(root)),
     // No telemetry: every host `packages/cli/src` spells is reserved or an allowlist row with a why.
     ...(await cliOutboundFindings(root)),
     // No private adopter name in a tracked file or path; the names are the CI secret, unset a skip.

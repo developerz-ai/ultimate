@@ -4,6 +4,7 @@
 // that gets decided.
 
 import { describe, expect, test } from 'bun:test';
+import { NEW_SHAPES } from './new-shapes';
 import { scaffoldVariants } from './scaffold-fixture';
 import {
   formatDiagnostics,
@@ -49,7 +50,11 @@ describe('contract · generated code compiles', () => {
   test('every documented scaffold is compiled, not just the one with an app in it', () => {
     // `--no-example` shipped a `packages/db/src/schema.ts` importing the slice it does not write.
     // Compiling only the example app is exactly why nothing caught it.
-    expect(reports.map(({ variant }) => variant.name)).toEqual(['x new', 'x new --no-example']);
+    expect(reports.map(({ variant }) => variant.name)).toEqual([
+      'x new',
+      'x new --no-example',
+      ...NEW_SHAPES.map((shape) => `x new --shape ${shape}`),
+    ]);
     for (const { report } of reports) expect(report.fileCount).toBeGreaterThan(50);
   });
 

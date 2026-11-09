@@ -12,12 +12,14 @@ import { refused, type TokenOutcome } from './authorization-server-tokens';
 import type { AuthServerClient, AuthServerGrant } from './authorization-server-types';
 import { DEVICE_GRANT } from './authorization-server-types';
 import {
+  type AuthServerHttpContext,
   type AuthServerHttpRequest,
   type AuthServerRoute,
   jsonAnswer,
   outcomeAnswer,
   readClientCredentials,
   readForm,
+  throttledAnswer,
 } from './authorization-server-wire';
 import { exchangeCode, exchangeRefresh } from './grant-authorization-code';
 import { exchangeClientCredentials } from './grant-client-credentials';
@@ -73,19 +75,29 @@ function clientRoute(
   pick: (form: ReadonlyMap<string, string>) => ClientStep | TokenOutcome,
   success = 200,
 ): AuthServerRoute['handler'] {
-  return async (request: AuthServerHttpRequest) => {
+  return async (request: AuthServerHttpRequest, ctx: AuthServerHttpContext) => {
     const form = await readForm(request);
-    const outcome = await (async (): Promise<TokenOutcome> => {
-      if (!(form instanceof Map)) return refused('invalid_request', form.refused);
-      const credentials = readClientCredentials(request, form);
-      if ('refused' in credentials) return refused('invalid_request', credentials.refused);
-      const client = await directory.find(credentials.clientId);
-      if (client === null || !clientAuthenticates(client, credentials)) {
-        return refused('invalid_client', 'client authentication failed', 401);
-      }
-      const step = pick(form);
-      return typeof step === 'function' ? step(config, form, client) : step;
-    })();
+    let outcome: TokenOutcome;
+    try {
+      outcome = await (async (): Promise<TokenOutcome> => {
+        if (!(form instanceof Map)) return refused('invalid_request', form.refused);
+        const credentials = readClientCredentials(request, form);
+        if ('refused' in credentials) return refused('invalid_request', credentials.refused);
+        // Before the client is authenticated, so the address is the only key there is.
+        const client = await directory.find(credentials.clientId, ctx.ip ?? 'unknown');
+        if (client === null || !clientAuthenticates(client, credentials)) {
+          return refused('invalid_client', 'client authentication failed', 401);
+        }
+        const step = pick(form);
+        return typeof step === 'function' ? step(config, form, client) : step;
+      })();
+    } catch (error) {
+      const answer = throttledAnswer(error, 'too many client metadata fetches');
+      if (answer === null) throw error;
+      logger.info('auth.server.refused', { endpoint: name, error: 'temporarily_unavailable' });
+      config.emit({ kind: 'refused', error: 'temporarily_unavailable', grantType: name });
+      return answer;
+    }
     if (outcome.ok) {
       config.emit({ kind: 'issued', grantType: name });
     } else {

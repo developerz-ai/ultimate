@@ -30,6 +30,11 @@ import { defineApi } from '@ultimat3/action';
 // a transition and an `llm()`/`agent()`/`hive()` call are actions; a backfill, a notifier, a
 // scrape, a webhook delivery, an export and an `agentJob()` are jobs.
 import * as endSession from '../app/auth/actions/end-session';
+import * as erasureApprovalOptions from '../app/auth/actions/erasure-approval-options';
+import * as passkeyRegisterOptions from '../app/auth/actions/passkey-register-options';
+import * as passkeySignIn from '../app/auth/actions/passkey-sign-in';
+import * as passkeySignInOptions from '../app/auth/actions/passkey-sign-in-options';
+import * as registerPasskey from '../app/auth/actions/register-passkey';
 import * as planCatalog from '../app/billing/backfills/plan-catalog';
 import * as planPrices from '../app/billing/jobs/plan-prices';
 import * as settleUpgrade from '../app/billing/jobs/settle-upgrade';
@@ -47,6 +52,7 @@ import * as memberAvatar from '../app/orgs/actions/member-avatar';
 import * as upgradePlan from '../app/orgs/actions/upgrade-plan';
 import * as onboardOrg from '../app/orgs/jobs/onboard-org';
 import * as sendInvite from '../app/orgs/jobs/send-invite';
+import * as warmAvatar from '../app/orgs/jobs/warm-avatar';
 import { PARTNER_SCOPES, resolvePartnerToken } from '../app/partners/oauth';
 import * as abortPostsImport from '../app/posts/actions/abort-posts-import';
 import * as completePostsImport from '../app/posts/actions/complete-posts-import';
@@ -72,6 +78,7 @@ import * as exportPosts from '../app/posts/jobs/export-posts';
 import * as importPosts from '../app/posts/jobs/import-posts';
 import * as likeTotalsRefresh from '../app/posts/jobs/like-totals';
 import * as notifySubscribers from '../app/posts/jobs/notify-subscribers';
+import * as postsQuotaWarning from '../app/posts/jobs/posts-quota-warning';
 import * as purgeImports from '../app/posts/jobs/purge-imports';
 import * as reviewDraftLater from '../app/posts/jobs/review-draft-later';
 import * as liveFeed from '../app/posts/live/live-feed';
@@ -92,18 +99,22 @@ import * as connectSite from '../app/runs/actions/connect-site';
 import * as issueRunKey from '../app/runs/actions/issue-run-key';
 import * as revokeRunKey from '../app/runs/actions/revoke-run-key';
 import * as startRun from '../app/runs/actions/start-run';
+import * as printStatement from '../app/runs/jobs/print-statement';
 import * as purgeRetained from '../app/runs/jobs/purge-retained';
 import * as syncConnection from '../app/runs/jobs/sync-connection';
 import { ORG_KEY_SCOPES, resolveOrgKey } from '../app/runs/keys';
 import * as liveRunEvents from '../app/runs/live/live-run-events';
 import * as runConnections from '../app/runs/queries/run-connections';
+import * as runHealth from '../app/runs/queries/run-health';
 import * as hourlyRetention from '../app/runs/tasks/hourly-retention';
+import * as registerDevice from '../app/settings/actions/register-device';
 import * as requestMemberErasure from '../app/settings/actions/request-member-erasure';
 import * as requestMemberExport from '../app/settings/actions/request-member-export';
 import * as savePreferences from '../app/settings/actions/save-preferences';
 import * as setTheme from '../app/settings/actions/set-theme';
 import * as subscribePush from '../app/settings/actions/subscribe-push';
 import * as toggleDigestOptIn from '../app/settings/actions/toggle-digest-opt-in';
+import * as unregisterDevice from '../app/settings/actions/unregister-device';
 import * as unsubscribePush from '../app/settings/actions/unsubscribe-push';
 import * as eraseMember from '../app/settings/jobs/erase-member';
 import * as exportMember from '../app/settings/jobs/export-member';
@@ -126,6 +137,11 @@ import '../app/webhooks/service';
 export const api = defineApi({
   actions: [
     endSession,
+    passkeySignInOptions,
+    passkeySignIn,
+    passkeyRegisterOptions,
+    registerPasskey,
+    erasureApprovalOptions,
     contactSales,
     inviteMember,
     upgradePlan,
@@ -158,6 +174,8 @@ export const api = defineApi({
     requestMemberErasure,
     subscribePush,
     unsubscribePush,
+    registerDevice,
+    unregisterDevice,
     addWebhookEndpoint,
     removeWebhookEndpoint,
     mcpConfirmationActions,
@@ -179,11 +197,13 @@ export const api = defineApi({
     postBySlug,
     liveRunEvents,
     runConnections,
+    runHealth,
   ],
   // Named jobs keep their own durable names (`runs.sync`, `posts.published.webhook`, a backfill's
   // ledger key); every other job's export name is its queue key.
   jobs: [
     notifySubscribers,
+    postsQuotaWarning,
     exportPosts,
     importPosts,
     commentPosted,
@@ -197,6 +217,8 @@ export const api = defineApi({
     deliverDigest,
     sendSalesReceipt,
     syncConnection,
+    printStatement,
+    warmAvatar,
     purgeMcpConfirmations,
     purgeRetained,
     purgeImports,

@@ -162,7 +162,7 @@ describe('unit · shipped guards · both tracked apps carry the set `x new` writ
 
 describe('unit · x g guard · a shipped name is the shipped guard', () => {
   test('every shipped name is reachable, and writes exactly what `x new` writes for it', () => {
-    expect(SHIPPED_GUARD_NAMES).toHaveLength(20);
+    expect(SHIPPED_GUARD_NAMES).toHaveLength(21);
     for (const name of SHIPPED_GUARD_NAMES) {
       const written = generate({ kind: 'guard', name });
       expect(written).toEqual(shippedGuardFiles(name) ?? []);

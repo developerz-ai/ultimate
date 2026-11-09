@@ -382,3 +382,64 @@ describe('every outcome is audited', () => {
     expect(lines[0]).toMatchObject({ level: 'info', msg: 'mcp.tool-call.ok', outcome: 'ok' });
   });
 });
+
+describe('the three outcomes over a per-caller catalog and a per-call tenant', () => {
+  const runtime = (name: string): AnyMcpTool => ({
+    name,
+    description: 'resolved per caller',
+    inputSchema: NO_ARGS_SCHEMA,
+    async handle() {
+      return textResult('ran');
+    },
+  });
+  // The catalog source is the server's seam: `defineAppMcp` checks entries, the server merges.
+  const perCaller = mcpServer({
+    tools: [runtime('static.tool')],
+    catalog: async (who) => ({ tools: who.role === 'owner' ? [runtime('owner.crm')] : [] }),
+  });
+
+  test("OUTCOME 1 — a runtime tool another caller's catalog holds answers as an absent one", async () => {
+    const member = caller('member', []);
+    const onForeign = await perCaller.handle(call('owner.crm'), member);
+    const onAbsent = await perCaller.handle(call('no.such.tool'), member);
+    expect(JSON.stringify(onForeign).replace('owner.crm', 'no.such.tool')).toBe(
+      JSON.stringify(onAbsent),
+    );
+    expect(listedNames(await perCaller.handle(list, member))).toEqual(['static.tool']);
+    expect(listedNames(await perCaller.handle(list, caller('owner', [])))).toEqual([
+      'owner.crm',
+      'static.tool',
+    ]);
+  });
+
+  test('OUTCOME 2 — a runtime tool carrying a scope is refused naming it, before it runs', async () => {
+    const scoped = mcpServer({
+      catalog: async () => ({ tools: [{ ...runtime('crm'), scope: 'crm:call' }] }),
+    });
+    const response = await scoped.handle(call('crm'), caller('owner', []));
+    expect(response?.error?.code).toBe(INVALID_REQUEST);
+    expect(errorData(response)['code']).toBe('X_MCP_SCOPE_DENIED');
+  });
+
+  test('OUTCOME 1 — a tenant the caller is not in answers as a hidden tool', async () => {
+    const hidden: AnyMcpTool = { ...runtime('org.destroy'), visibleTo: ['owner'] };
+    const tenanted = mcpServer({
+      tools: [runtime('org.read'), hidden],
+      tenant: {
+        arg: 'org',
+        resolve: ({ person, value }) => (value === 'o1' ? agentActor({ id: person.id }) : null),
+        list: () => [{ value: 'o1' }],
+      },
+    });
+    const member = caller('member', []);
+    const onForeign = await tenanted.handle(call('org.read', { org: 'o2' }), member);
+    const onHidden = await tenanted.handle(call('org.destroy', { org: 'o1' }), member);
+    expect(onForeign?.error?.code).toBe(METHOD_NOT_FOUND);
+    expect(JSON.stringify(onForeign).replace('org.read', 'org.destroy')).toBe(
+      JSON.stringify(onHidden),
+    );
+    expect(Object.keys(onForeign?.error ?? {}).sort()).toEqual(['code', 'message']);
+    const ran = toolResult(await tenanted.handle(call('org.read', { org: 'o1' }), member));
+    expect(ran.content?.[0]?.text).toBe('ran');
+  });
+});

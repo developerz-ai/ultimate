@@ -79,11 +79,24 @@ describe('unit · planHop', () => {
     }
   });
 
-  test('the mixed refusal closes: its own fix is accepted, even across majors', () => {
+  test('the mixed refusal closes: its own fix is accepted', () => {
     const near = planHop({ pins: pins('^19.4.0', '^19.0.0'), to: '19.4.0', versions: VERSIONS });
     expect(near).toMatchObject({ from: '19.0.0', to: '19.4.0', atTarget: false, section: null });
-    const far = planHop({ pins: pins('^6.0.0', '^19.0.0'), to: '19.0.0', versions: VERSIONS });
-    expect(far).toMatchObject({ from: '6.0.0', to: '19.0.0', atTarget: false, section: null });
+    const low = planHop({ pins: pins('^19.0.0', '^6.0.0'), to: '7.1.0', versions: VERSIONS });
+    expect(low).toMatchObject({ from: '6.0.0', to: '7.1.0', next: '19.4.0', atTarget: false });
+    expect(low.section?.title).toBe('6.x → 7.0.0, entry by entry');
+  });
+
+  // Jumping the stragglers to the highest major skips every walkthrough between: twelve majors'
+  // edits landing in one hop, and a red gate that attributes its finding to none of them.
+  test('the stragglers never jump to the highest major: one major per run, for them too', () => {
+    try {
+      planHop({ pins: pins('^19.0.0', '^6.0.0'), to: '19.0.0', versions: VERSIONS });
+      expect.unreachable('a straggler skipping majors must refuse');
+    } catch (error) {
+      expect((error as { code: string }).code).toBe('X_UPGRADE_HOP_TOO_WIDE');
+      expect((error as { fix: string }).fix).toBe('x upgrade --to 7.1.0 --json');
+    }
   });
 
   test('--to skipping a major refuses, naming the newest of the next one', () => {
@@ -158,18 +171,45 @@ describe('unit · a refusal on a mixed set always closes', () => {
   };
   const REAL = ['6.0.0', '7.0.0', '19.0.0', '19.4.0', '20.2.1', '21.0.0'];
 
-  test('--to too wide over a mixed set names the aligning version, and that is accepted', () => {
+  test("--to too wide over a mixed set names the lowest pins' next major, and that is accepted", () => {
     const fix = refusedFix({ pins: two('^6.0.0', '^19.0.0'), to: '21.0.0', versions: REAL });
-    expect(fix).toBe('x upgrade --to 19.4.0 --json');
-    expect(planHop({ pins: two('^6.0.0', '^19.0.0'), to: '19.4.0', versions: REAL }).to).toBe(
-      '19.4.0',
+    expect(fix).toBe('x upgrade --to 7.0.0 --json');
+    expect(planHop({ pins: two('^6.0.0', '^19.0.0'), to: '7.0.0', versions: REAL }).to).toBe(
+      '7.0.0',
     );
   });
 
-  test('--to below the high pin of a mixed set names the aligning version too', () => {
-    expect(refusedFix({ pins: two('^6.0.0', '^19.0.0'), to: '7.0.0', versions: REAL })).toBe(
-      'x upgrade --to 19.4.0 --json',
+  test('--to at or below the lowest pin of a mixed set moves nothing, and refuses', () => {
+    expect(refusedFix({ pins: two('^6.0.0', '^19.0.0'), to: '6.0.0', versions: REAL })).toBe(
+      'x upgrade --to 7.0.0 --json',
     );
+  });
+
+  // The adopter's shape: two workspaces a dozen majors apart. Every run is one major for the
+  // lowest pins, each with its walkthrough, until the last one levels the set.
+  test('19.x beside 22.x walks 19 → 20 → 21 → 22, one major and one section per run', () => {
+    const versions = ['19.4.0', '20.0.0', '20.1.3', '21.0.0', '22.0.0', '22.1.0'];
+    const walk: string[] = [];
+    let held = two('22.1.0', '^19.4.0');
+    for (let run = 0; run < 5; run += 1) {
+      let to: string;
+      try {
+        const bare = planHop({ pins: held, versions });
+        if (bare.atTarget) break;
+        to = bare.to;
+      } catch (error) {
+        expect((error as { code: string }).code).toBe('X_UPGRADE_MIXED_PINS');
+        to = (error as { fix: string }).fix.split(' ')[3] ?? '';
+      }
+      const hop = planHop({ pins: held, to, versions });
+      walk.push(`${hop.from}→${hop.to} ${hop.section?.title ?? '-'} next ${String(hop.next)}`);
+      held = two('22.1.0', hop.to);
+    }
+    expect(walk).toEqual([
+      '19.4.0→20.1.3 19.x → 20.0.0, entry by entry next 21.0.0',
+      '20.1.3→21.0.0 20.x → 21.0.0, entry by entry next 22.1.0',
+      '21.0.0→22.1.0 21.x → 22.0.0, entry by entry next null',
+    ]);
   });
 
   test('the mixed fix never names an unpublished version', () => {

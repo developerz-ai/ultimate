@@ -19,7 +19,7 @@ import {
 import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { roleDefinitions, rolesGranting } from '@ultimat3/policy';
 import { afterEach, describe, expect, type RunJobs, test } from '@ultimat3/testing';
-import { admin, adminAgents } from './admin';
+import { admin } from './admin';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
 const OPERATOR: AdminActor = {
@@ -261,24 +261,5 @@ describe('the run console’s operator view', () => {
     if (!answer.ok) return expect.unreachable('the owner may cancel runs');
     expect([answer.done, answer.refused, answer.failed]).toEqual([2, 1, 0]);
     for (const id of live) expect(await statusOf(id)).toBe('failed');
-  });
-});
-
-describe('the agent surface is the same dashboard, projected again', () => {
-  test('every resource gets its tools, and each action one more', () => {
-    const tools = adminAgents.tools.map((tool) => tool.name);
-    for (const entity of ['orgs', 'members', 'posts', 'comments', 'connections']) {
-      for (const op of ['list', 'read', 'create', 'update', 'delete']) {
-        expect(tools).toContain(`admin.${entity}.${op}`);
-      }
-    }
-    for (const entity of READ_ONLY_RESOURCES) {
-      expect(tools).toContain(`admin.${entity}.list`);
-      expect(tools).not.toContain(`admin.${entity}.create`);
-    }
-    for (const action of ['publishPost', 'inviteMember', 'upgradePlan', 'run.cancel']) {
-      expect(tools).toContain(`admin.action.${action}`);
-    }
-    expect(tools).toContain('admin.search');
   });
 });

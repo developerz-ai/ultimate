@@ -23,8 +23,18 @@ export class VerifyShardInvalidError extends UltimateError {
   }
 }
 
-/** The steps a shard may split: the parallel suites. `live` and `e2e` are serial by design. */
-export const SHARDABLE_STEPS: readonly VerifyStepName[] = ['unit', 'contract', 'job'];
+/**
+ * The steps a shard may split: every suite that runs test files. `live` and `e2e` stay ONE process
+ * inside a shard — serial is about one machine's replication slot and browser, and each CI runner
+ * starts its own — so their slices split across runners, never across workers.
+ */
+export const SHARDABLE_STEPS: readonly VerifyStepName[] = [
+  'unit',
+  'contract',
+  'live',
+  'job',
+  'e2e',
+];
 
 export interface ShardSpec {
   /** 1-based, as a CI matrix counts. */

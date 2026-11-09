@@ -70,8 +70,12 @@ const BASE = {
       requests: 'Requests',
       bytes: 'Data read',
       prompts: 'Codes answered',
+      raw: 'Usage record',
     },
     events: 'Run events',
+    output: 'Run output',
+    log: 'Run log',
+    resize: 'Resize the log',
     accounts: {
       locale: 'en',
       forms: { one: '{count} account read', other: '{count} accounts read' },
@@ -99,8 +103,11 @@ const BASE = {
       'ui.empty': 'Nothing here yet',
       'ui.error.title': 'Something went wrong',
       'ui.retry': 'Try again',
+      'ui.range.from': 'From',
+      'ui.range.to': 'To',
     },
   },
+  filter: { from: null, to: null, labels: { legend: 'Created between', submit: 'Filter' } },
 } satisfies RunConsoleProps;
 
 export const runConsoleStates = defineIslandStates({
@@ -117,6 +124,12 @@ export const runConsoleStates = defineIslandStates({
       id: 'idle',
       title: 'a connection picked and no run started',
       props: BASE,
+    },
+    {
+      id: 'filtered',
+      title: 'a "created between" range the URL held, in both inputs',
+      note: 'reached by posting the filter or opening a shared link; the calendar is closed',
+      props: { ...BASE, filter: { ...BASE.filter, from: '2026-03-02', to: '2026-03-09' } },
     },
     {
       id: 'pending',

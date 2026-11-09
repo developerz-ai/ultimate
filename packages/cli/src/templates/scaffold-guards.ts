@@ -22,6 +22,7 @@
 // NETWORK: a server `fetch(` carries a signal, or is `outbound()` from `@ultimat3/core/outbound`. `error-declared`
 // is `bare-error`'s second half: an app code is declared once, with core's `defineError`. One is
 // about the TAB: an island polls with `visibleInterval()`, which a hidden tab and a lost session stop.
+// One is about the QUESTION: a destructive act asks through `ConfirmDialog`, never `confirm(`.
 
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
 import { bareErrorGuardFiles } from './guard-bare-error';
@@ -29,6 +30,7 @@ import { errorDeclaredGuardFiles } from './guard-error-declared';
 import { focusVisibleGuardFiles } from './guard-focus-visible';
 import { imageDimensionsGuardFiles } from './guard-image-dimensions';
 import { islandWithoutStatesGuardFiles } from './guard-island-without-states';
+import { nativeConfirmGuardFiles } from './guard-native-confirm';
 import { rawBreakpointGuardFiles } from './guard-raw-breakpoint';
 import { rawColourGuardFiles } from './guard-raw-colour';
 import { rawFetchGuardFiles } from './guard-raw-fetch';
@@ -58,6 +60,7 @@ const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = 
   ['focus-visible', focusVisibleGuardFiles],
   ['image-dimensions', imageDimensionsGuardFiles],
   ['island-without-states', islandWithoutStatesGuardFiles],
+  ['native-confirm', nativeConfirmGuardFiles],
   ['raw-breakpoint', rawBreakpointGuardFiles],
   ['raw-colour', rawColourGuardFiles],
   ['raw-fetch', rawFetchGuardFiles],

@@ -1,0 +1,117 @@
+{
+  "admin": {
+    "home": {
+      "description": "Operations for DocsSite.",
+      "title": "Admin"
+    }
+  },
+  "app": {
+    "dashboard": {
+      "chartKey": "Day",
+      "chartLabel": "Posts created per day over the last 14 days",
+      "chartRange": "Last 14 days, UTC",
+      "chartSeries": "Posts",
+      "chartTitle": "Posts per day",
+      "columnCreated": "Created",
+      "columnPath": "Path",
+      "columnPrice": "Price",
+      "columnRender": "Render",
+      "columnSurface": "Surface",
+      "columnTitle": "Title",
+      "description": "Your workspace.",
+      "emptyTitle": "No posts yet",
+      "gaugeLabel": "Created this week, of all posts",
+      "hintLocales": "in the catalog",
+      "hintPaid": "priced above zero",
+      "hintRoles": "declared in shared/roles.ts",
+      "hintRoutes": "registered at boot",
+      "hintToday": "so far, UTC",
+      "hintTotal": "in the seeded org",
+      "hintVersion": "framework version",
+      "hintVsPriorWeek": "vs the week before",
+      "mixFree": "Free",
+      "mixKey": "Price",
+      "mixLabel": "Posts by price, free against paid",
+      "mixPaid": "Paid",
+      "mixTitle": "Free and paid",
+      "mixTotal": "posts",
+      "routesCaption": "Every route this app registers",
+      "routesTitle": "Route table",
+      "statLocales": "Locales",
+      "statPaid": "Paid posts",
+      "statRoles": "Roles",
+      "statRoutes": "Routes",
+      "statToday": "Created today",
+      "statTotal": "Posts",
+      "statVersion": "Ultimate",
+      "statWeek": "Created this week",
+      "subtitle": "What this app looks like from above.",
+      "tableCaption": "The ten newest posts",
+      "tableTitle": "Latest posts",
+      "title": "Dashboard"
+    },
+    "offline": {
+      "description": "This page will refresh itself when the connection returns.",
+      "title": "You are offline"
+    }
+  },
+  "shell": {
+    "brand": "Ultimate",
+    "footer": "Built with Ultimate",
+    "nav": {
+      "dashboard": "Dashboard",
+      "posts": "Posts"
+    }
+  },
+  "site": {
+    "home": {
+      "title": "Ultimate — the framework where an agent writes the app",
+      "description": "A full-stack, Bun-only web framework: Postgres, SolidJS and one gate, built so an AI agent ships a working product with fewer decisions to make.",
+      "eyebrow": "Bun · Postgres · SolidJS",
+      "headline": "Fewer problems for the author to worry about.",
+      "lede": "Ultimate is a full-stack web framework whose primary developer is an AI agent. Every decision it makes is one the agent does not have to.",
+      "runTitle": "Run it",
+      "runBody": "Two commands to a running app, and one to know it is shippable:",
+      "runVerify": "x verify is the contract: green means shippable.",
+      "demoTitle": "See it",
+      "demoBody": "A social network built on it runs in production, its image published on every push.",
+      "demoLink": "Open the live demo",
+      "whyTitle": "Why",
+      "whyEight": "Eight primitives, closed: entity, policy, action, mutator, query, job, route, task.",
+      "whyErrors": "Every error is a stable code, a cause and a command that fixes it.",
+      "whyBudget": "This site ships zero JavaScript on every page but search, and its own gate refuses the first byte over.",
+      "whenNotTitle": "When not to use it",
+      "whenNotBody": "Not on Node or Deno, not without Postgres, and not when you want to choose your own router, ORM or component library: the point is that those are decided.",
+      "startLink": "Getting started",
+      "manualLink": "Read the manual"
+    }
+  },
+  "docs": {
+    "nav": {
+      "label": "Documentation",
+      "manual": "Manual",
+      "errors": "Error codes",
+      "upgrading": "Upgrading",
+      "search": "Search"
+    },
+    "footer": "Ultimate {version}. MIT licensed. Generated from the repository wiki.",
+    "source": "Edit this page on GitHub",
+    "markdown": "This page as markdown",
+    "breadcrumbHome": "Home",
+    "code": {
+      "listed": "Listed under {section}",
+      "metaDescription": "{code}: {means}"
+    },
+    "search": {
+      "title": "Search the docs",
+      "description": "Search every page of the Ultimate manual, every error code and every upgrade note.",
+      "label": "Search",
+      "placeholder": "an error code, a command, a question",
+      "submit": "Search",
+      "loading": "Loading the index…",
+      "empty": "Nothing matched. Try fewer words, or an exact X_ code.",
+      "failed": "The search index could not be loaded. Reload the page to try again.",
+      "noScript": "Search needs JavaScript; every page is also listed in the sitemap."
+    }
+  }
+}

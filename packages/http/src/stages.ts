@@ -267,7 +267,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         selfOrigin: selfOrigin(ctx.url, ctx.https),
         origin: request.header('origin'),
         secFetchSite: request.header('sec-fetch-site'),
-        hasAuthorizationHeader: request.header('authorization') !== null,
+        authorization: request.header('authorization'),
         anonymous: isAnonymous(ctx.actor),
         cookieless: ctx.route?.meta.csrf === 'cookieless',
         cors: config.cors,

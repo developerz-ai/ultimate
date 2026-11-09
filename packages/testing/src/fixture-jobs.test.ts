@@ -90,6 +90,21 @@ describe(testName('unit', "runJobs: the body's return value is on the trace"), (
     const trace = await jobs(echo, { id: 'second', orgId: ORG });
     expect(trace.executions.map((run) => run.result)).toEqual(['first', 'second']);
   });
+
+  test('tick() is one pass: what a run queues waits, unrun, for the next', async () => {
+    const child = declare('none', (input) => `child:${input.id}`);
+    const parent = declare('none', async (input) => {
+      await child.enqueue({ id: input.id, orgId: ORG });
+      return 'parent';
+    });
+    const jobs = await worker();
+    await jobs.enqueue(parent, { id: 'a', orgId: ORG });
+    const once = await jobs.tick();
+    expect(once.executions.map((run) => run.result)).toEqual(['parent']);
+    expect(await jobs.depth(child)).toBe(1);
+    const drained = await jobs.drain();
+    expect(drained.executions.map((run) => run.result)).toEqual(['parent', 'child:a']);
+  });
 });
 
 describe(testName('unit', 'runJobs: the worker runs as the actor a test names'), () => {

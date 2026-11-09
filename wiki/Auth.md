@@ -22,8 +22,9 @@ const { actor, token, cookie } = await login(auth, { email, password, ip });
 const { start, callback } = oauthLogin(auth);   // /auth/oauth/:provider and its callback
 ```
 
-The tables (`x_users`, `x_sessions`, `x_accounts`, `x_verifications`, `x_api_keys`) are created by
-every boot; an app writes no migration for them.
+The tables (`x_users`, `x_sessions`, `x_accounts`, `x_verifications`, `x_api_keys`, and the
+passkeys' `x_passkeys`, `x_passkey_challenges`, `x_passkey_evidence`) are created by every boot; an
+app writes no migration for them.
 
 **Signing in by handle** (`As of 2026-10`): an app whose users are `@ada` names the lookup once —
 `defineAuth({ adapter, handles: async (handle) => (await db.users.where({ handle }).one())?.id ?? null })`
@@ -78,6 +79,57 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 | `discoverOAuthProvider` | refuses a document whose `issuer` is not the one asked for (a trailing slash aside) |
 | a public client (`As of 2026-10-18`) | `tokenEndpointAuth: 'none'` on the provider, `discoverOAuthProvider` or `credentials`: no `<PROVIDER>_CLIENT_SECRET` is read and no `client_secret` is sent; PKCE still is. `'client_secret_basic'` sends the pair in `Authorization: Basic`. Absent: `'client_secret_post'`, unchanged |
 | `apple` | not a built-in since 26.0.0 ([#709](https://github.com/developerz-ai/ultimate/issues/709)): Apple POSTs its callback and both callback routes are GET, so it could never complete a sign-in. An app that needs it registers its own with `registerOAuthProvider` |
+
+## Passkeys
+
+**WebAuthn, verified by hand on WebCrypto — no dependency** (`As of 2026-11`). Two uses, one
+declaration: `defineAuth({ passkeys: { rpId, origins } })`. ES256 and RS256; CBOR, COSE and DER are
+parsed in this package, every malformed byte a refusal.
+
+```ts
+import { canonicalJson } from '@ultimat3/core';
+import {
+  defineAuth,
+  memoryAuthAdapter,
+  passkeyLogin,
+  passkeyStepUp,
+  sha256Hex,
+  verifyPasskeyEvidence,
+} from '@ultimat3/auth';
+
+const auth = defineAuth({
+  adapter: memoryAuthAdapter(),
+  passkeys: { rpId: 'example.com', origins: ['https://example.com'] },
+});
+
+// Sign-in: register onto a signed-in account, then usernameless sign-in to the same session login() mints.
+const { registerOptions, register, loginOptions, login } = passkeyLogin(auth);
+
+// Step-up: the proof is bound to bytes the SERVER derives from the input, and stored as evidence.
+const stepUp = passkeyStepUp<{ readonly to: string; readonly minor: number }>(auth, {
+  ttlMs: 60_000,
+  digest: ({ input }) => sha256Hex(canonicalJson(input)),
+});
+
+declare const userId: string;
+declare const response: unknown;
+const evidence = await stepUp.verify({ userId, input: { to: 'acct-7', minor: 12_500 }, response });
+// Later, in another process, with the row alone:
+const approved = await verifyPasskeyEvidence(evidence, { rpId: 'example.com', origins: ['https://example.com'] });
+```
+
+| Rule | |
+|---|---|
+| tier | functions over `Auth`, wrapped by the app's own actions (tier 2 constructs no `action`) — like `login` and `completeMfa` |
+| browser | `@ultimat3/auth/client`: `newPasskey(options)` / `getPasskey(options)` answer `{ status: 'ok', response }`, `'cancelled'`, `'unsupported'` or `'failed'` — never a throw. Its graph is two files, ~2.3 kB minified (`client-bundle.test.ts`); an island never loads the server barrel |
+| checked, every ceremony | `clientDataJSON` type, the origin against the declared list exactly (no cross-origin iframe), `rpIdHash`, **UP and UV** (user verification is required, never preferred), the signature with the STORED key's algorithm |
+| challenge | 32 random bytes, stored as its sha256 in `x_passkey_challenges` with a TTL, consumed by one `DELETE … RETURNING` — single-use across the fleet, never a process map. Unknown, spent and late are one code: `X_PASSKEY_CHALLENGE_EXPIRED` |
+| counter | a signature counter that did not move forward is a cloned authenticator (`X_PASSKEY_INVALID`); both zero is an authenticator that keeps none, allowed. Advanced compare-and-set |
+| registration | `attestation: 'none'` — the statement is parsed, not trusted; a credential id already registered to anyone is `X_AUTH_WRITE_FAILED`; a challenge issued to one account never registers onto another |
+| sign-in | the session is `mfaSatisfied`: a user-verified passkey is possession plus the device's PIN or biometric |
+| step-up challenge | `SHA-256("ultimate.passkey.step-up.v1\0" ‖ nonce ‖ len ‖ digest ‖ userId)` — never supplied by a caller. A proof for other bytes, or none, is `X_PASSKEY_STEP_UP_REQUIRED` |
+| evidence | `x_passkey_evidence`: the signed bytes, the nonce, the digest and the key itself, so `verifyPasskeyEvidence` re-checks it with no adapter and no clock; any edit to digest, nonce, user, key or signed bytes is `false`. `auth.adapter.listPasskeyEvidence(digest)` finds the approvals of one digest |
+| refusals | `X_PASSKEY_INVALID` (which check failed is the `auth.passkey.refused` log line, never the cause), `X_PASSKEY_CHALLENGE_EXPIRED`, `X_PASSKEY_STEP_UP_REQUIRED`; a bad `passkeys` block is `X_CONFIG_INVALID` at `defineAuth` |
 
 ## MFA, verification, API keys, workloads
 

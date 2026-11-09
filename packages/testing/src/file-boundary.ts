@@ -130,6 +130,9 @@ export function runBoundaryHooks(): void {
   }
 }
 
+/** Whether a test file has loaded yet: before it, a call is a preload's, which every file inherits. */
+export const inTestFile = (): boolean => baseline !== undefined;
+
 /** Called by the leak guard as each test file loads. The first call only takes the baseline. */
 export function runFileBoundary(): void {
   if (baseline === undefined) {

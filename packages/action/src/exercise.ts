@@ -13,11 +13,14 @@ import {
   runExercise,
   tryUseContext,
 } from '@ultimat3/core';
-import { statusFor } from '@ultimat3/http';
+import type { ExerciseRequestOption } from '@ultimat3/http';
+import { statusFor, withRequestAs, withScratchRateLimitStore } from '@ultimat3/http';
 import { admitsAnonymous } from '@ultimat3/policy';
 import { arbitrary } from '@ultimat3/schema/sample';
 import type { AnyAction } from './action';
 import type { ContractTest } from './contract-test';
+import type { ContractExercise } from './exercise-declarations';
+import { isExerciseDeclarations, resolveExercise } from './exercise-declarations';
 import {
   ContractDefectError,
   ExerciseUndeclaredError,
@@ -32,12 +35,27 @@ export type { ExerciseReport };
 
 /** Who the handler runs as, and what binds the parts a generated value cannot (a real row's id). */
 export interface ExerciseActorOptions {
-  /** The caller each run is invoked as. `null` is the signed-out caller. */
-  readonly actor: Actor | null;
-  /** `(drawn) => ({ ...drawn, postId })`: the generated value, with what must resolve bound in. */
+  /**
+   * The caller each run is invoked as. `null` is the signed-out caller. Omitted, `x exercise`
+   * picks the first actor the policy allows (as it does with no entry); a contract test runs as
+   * the signed-out caller when the policy admits one, else `X_CONTRACT_EXERCISE_UNDECLARED`.
+   */
+  readonly actor?: Actor | null | undefined;
+  /**
+   * `(drawn) => ({ ...drawn, postId })`: the generated value, with what must resolve bound in.
+   * May be `async`: `x exercise` awaits it inside the call's own request, so `useContext().actor`
+   * is the actor the call runs as (a token issued to that actor, a passkey it registered).
+   */
   readonly input?: (drawn: DrawnInput) => unknown;
   /** 1 to `EXERCISE_RUNS_MAX`; `EXERCISE_RUNS` when omitted. */
   readonly runs?: number;
+  /**
+   * What the call's request carries in: the cookie a first step set (a pending sign-in, an OAuth
+   * state), a header. A function is awaited before EACH call, as that call's actor, so it can mint
+   * a session for whoever acts. Read by `x exercise` and the contract step alike: each run is then
+   * invoked inside that request (`@ultimat3/http`'s `withRequestAs`) instead of the bare context.
+   */
+  readonly request?: ExerciseRequestOption;
 }
 
 /** No exercise, said out loud: the reason is listed in the assertion's name. */
@@ -62,7 +80,8 @@ export const exerciseTestName = (name: string): string =>
  * transaction is open, the outbox stage. NOT rolled back: a write on a second client or
  * `outsideTransaction`, a job enqueued with `outbox: false`, every job enqueue when no SQL
  * transaction is open (the memory store: the jobs facade enqueues straight to the job driver),
- * storage puts, mail, outbound fetch (sealed under the test preload) and rate-limit counters.
+ * storage puts, mail and outbound fetch (sealed under the test preload). Rate-limit counters are
+ * spent in a scratch store of the exercise's own, so the installed one is left as it was.
  */
 export async function exerciseAction(
   target: AnyAction,
@@ -70,30 +89,39 @@ export async function exerciseAction(
   ctx?: Ctx,
 ): Promise<ExerciseReport> {
   const name = actionName(target);
+  const actor = exerciseActor(target, options, name);
   const base = ctx ?? tryUseContext() ?? ctxOf({});
-  const verdict = await runExercise({
-    name,
-    runs: options.runs,
-    stoppedLabel: 'stopped before the handler',
-    scoped: rollbackAvailable(),
-    draw: (seed, run) => arbitrary(target.input, { seed, run }),
-    bind: bindDrawn(options.input),
-    accepts: (input) => acceptedBy(target, input, name),
-    attempt: async (input): Promise<ExerciseAttempt> => {
-      const before = handlerReached(target);
-      const settled = await inRolledBackScope(() =>
-        invoke(target, input, { ctx: base, actor: options.actor, surface: 'http' }),
-      );
-      const reached = handlerReached(target) > before;
-      return settled.ok ? { ok: true, reached } : { ok: false, reached, error: settled.error };
-    },
-    statusOf: statusFor,
-  });
+  // Counted in a scratch store: a spent bucket would make the file's next real call a 429.
+  const verdict = await withScratchRateLimitStore(() =>
+    runExercise({
+      name,
+      runs: options.runs,
+      stoppedLabel: 'stopped before the handler',
+      scoped: rollbackAvailable(),
+      draw: (seed, run) => arbitrary(target.input, { seed, run }),
+      bind: bindDrawn(options.input),
+      accepts: (input) => acceptedBy(target, input, name),
+      attempt: async (input): Promise<ExerciseAttempt> => {
+        const before = handlerReached(target);
+        // The actor is ON the declared request, so `invoke` takes none: its impersonation path
+        // would rebuild a plain child context and drop the request's headers.
+        const { request } = options;
+        const settled = await inRolledBackScope(() =>
+          request === undefined
+            ? invoke(target, input, { ctx: base, actor, surface: 'http' })
+            : withRequestAs(name, actor, request, () => invoke(target, input, { surface: 'http' })),
+        );
+        const reached = handlerReached(target) > before;
+        return settled.ok ? { ok: true, reached } : { ok: false, reached, error: settled.error };
+      },
+      statusOf: statusFor,
+    }),
+  );
   switch (verdict.kind) {
     case 'pass':
       return verdict.report;
     case 'drift':
-      throw everyDrawRefused(name);
+      throw everyDrawRefused(name, target.input);
     case 'unreached':
       throw new ExerciseUnreachedError(name, verdict.outcomes);
     case 'defect':
@@ -106,6 +134,13 @@ export async function exerciseAction(
         error: verdict.error,
       });
   }
+}
+
+/** An entry's actor; none declared is the signed-out caller where the policy admits one. */
+function exerciseActor(target: AnyAction, options: ExerciseActorOptions, name: string) {
+  if (options.actor !== undefined) return options.actor;
+  if (admitsAnonymous(target.policy)) return null;
+  throw new ExerciseUndeclaredError(name, 'no-actor');
 }
 
 async function acceptedBy(target: AnyAction, input: unknown, name: string): Promise<boolean> {
@@ -125,16 +160,17 @@ async function acceptedBy(target: AnyAction, input: unknown, name: string): Prom
  */
 export function exerciseContract(
   target: AnyAction,
-  exercise: ExerciseOptions | undefined,
+  declared: ContractExercise | undefined,
   ctx: Ctx | undefined,
 ): ContractTest {
   const name = actionName(target);
+  const exercise = resolveExercise(name, declared);
   if (exercise !== undefined && 'off' in exercise) {
     const reason = exercise.off.trim();
     return reason.length === 0
       ? {
           name: exerciseTestName(name),
-          run: () => Promise.reject(new ExerciseUndeclaredError(name, true)),
+          run: () => Promise.reject(new ExerciseUndeclaredError(name, 'blank')),
         }
       : { name: `${name}: handler exercise off: ${reason}`, run: () => Promise.resolve() };
   }
@@ -142,7 +178,11 @@ export function exerciseContract(
   return {
     name: exerciseTestName(name),
     run: async () => {
-      if (options === undefined) throw new ExerciseUndeclaredError(name, false);
+      if (options === undefined) {
+        const why =
+          declared !== undefined && isExerciseDeclarations(declared) ? 'no-entry' : 'undeclared';
+        throw new ExerciseUndeclaredError(name, why);
+      }
       await exerciseAction(target, options, ctx);
     },
   };

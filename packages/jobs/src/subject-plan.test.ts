@@ -175,4 +175,16 @@ describe('unit · planSubject', () => {
     expect(codes(result)).toEqual(['X_SUBJECT_TREATMENT_INVALID']);
     expect(result.problems[0]?.cause).toContain('append-only');
   });
+
+  test("'delete' and anonymize on a readOnly entity are refused, its reason named", () => {
+    entity('sp_archive', {
+      readOnly: 'legacy history, closed by a trigger',
+      columns: { id: uuid().primaryKey(), personId: uuid().references(() => people.id) },
+    });
+    for (const treatment of ['delete', { anonymize: { personId: null } }] as const) {
+      const result = plan({ ...ALL, sp_archive: treatment }, [...BASE, 'sp_archive']);
+      expect(codes(result)).toEqual(['X_SUBJECT_TREATMENT_INVALID']);
+      expect(result.problems[0]?.cause).toContain('readOnly (legacy history, closed by a trigger)');
+    }
+  });
 });

@@ -2,8 +2,10 @@
 // for a global default: a route that does not declare a description does not get
 // one, it fails the build (see validate.ts).
 
+import { ogImageConflict } from './errors';
 import { type HeadLink, linkTags } from './links';
 import { hreflangTag, type MetaLocalization, ogLocaleTag } from './locale-tags';
+import { currentStaticExport } from './static-export';
 import { absoluteUrl } from './xml';
 
 /**
@@ -32,20 +34,33 @@ export interface OpenGraphImage {
   type?: string;
 }
 
-export interface OpenGraph {
+interface OpenGraphFields {
   type?: 'website' | 'article' | 'profile' | 'product' | 'video.other';
   title?: string;
   description?: string;
   url?: string;
   siteName?: string;
   locale?: string;
-  image?: string | OpenGraphImage;
   publishedTime?: string;
   modifiedTime?: string;
   author?: string;
   section?: string;
   tags?: readonly string[];
 }
+
+/**
+ * The card's picture: a URL you host (`image`), or a `site/` page the static build photographs at
+ * 1200 x 630 (`capture: '/og/post/hello'`, a concrete path) — one or the other, never both, which
+ * the type refuses. A captured card is written to `/_og/<path>.png` and stamped as `og:image` with
+ * its size by `x build --target static`; a served document carries no `og:image` for it, because
+ * the container holds neither the export's PNG nor a browser to take one, and an `og:image` naming
+ * a file nothing serves is a broken preview a crawler caches. Served, the card is `image`'s.
+ */
+export type OpenGraph = OpenGraphFields &
+  (
+    | { image?: string | OpenGraphImage; capture?: undefined }
+    | { capture: string; image?: undefined }
+  );
 
 export interface TwitterCard {
   card?: 'summary' | 'summary_large_image' | 'app' | 'player';
@@ -269,8 +284,12 @@ function socialTags(
       });
     }
   }
-  if (og.image !== undefined) {
-    const image = typeof og.image === 'string' ? { url: og.image } : og.image;
+  // A capture is the export's to publish (`static-export.ts`); served, it has no file to name.
+  if (og.image !== undefined && og.capture !== undefined) throw ogImageConflict();
+  const declared =
+    og.capture === undefined ? og.image : currentStaticExport()?.cardImage(og.capture);
+  if (declared !== undefined) {
+    const image = typeof declared === 'string' ? { url: declared } : declared;
     tags.push({ tag: 'meta', attrs: { property: 'og:image', content: abs(image.url) } });
     if (image.width !== undefined) {
       tags.push({
@@ -306,7 +325,7 @@ function socialTags(
   // --- Twitter ---------------------------------------------------------------
   const twitter = meta.twitter ?? {};
   const twitterEntries: Array<[string, string | undefined]> = [
-    ['twitter:card', twitter.card ?? (og.image === undefined ? 'summary' : 'summary_large_image')],
+    ['twitter:card', twitter.card ?? (declared === undefined ? 'summary' : 'summary_large_image')],
     ['twitter:site', twitter.site],
     ['twitter:creator', twitter.creator],
     ['twitter:title', og.title ?? meta.title],

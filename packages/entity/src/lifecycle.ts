@@ -49,6 +49,25 @@ export function lifecycleHistory(input: LifecycleInput): HistoryEntity | null {
   return historyEntity(input, input.history);
 }
 
+/**
+ * The physical columns whose jsonb spelling is not the row's: an `int8`/`numeric` becomes a JSON
+ * number a reader parses into a float, a `timestamptz` the session zone's offset. The trigger
+ * stores these as the strings the memory driver keeps. Absent when empty, so no other hash moves.
+ */
+function exactColumns(core: EntityCore): Pick<HistoryDescriptionLike, 'text' | 'instants'> {
+  const text: string[] = [];
+  const instants: string[] = [];
+  for (const [property, column] of Object.entries(core.$columns)) {
+    const kind = column.$meta.kind;
+    if (kind === 'bigint' || kind === 'numeric') text.push(columnName(property, column.$meta));
+    if (kind === 'timestamptz') instants.push(columnName(property, column.$meta));
+  }
+  return {
+    ...(text.length === 0 ? {} : { text }),
+    ...(instants.length === 0 ? {} : { instants }),
+  };
+}
+
 const physical = (core: EntityCore, property: string): string => {
   const column = core.$columns[property];
   return column === undefined ? property : columnName(property, column.$meta);
@@ -71,6 +90,7 @@ export function describeLifecycle(
             key: physical(core, core.$primaryKey[0] ?? ''),
             tenant: core.$tenantColumn === null ? null : physical(core, core.$tenantColumn),
             ignore: counters.map((counter) => physical(core, counter.column)),
+            ...exactColumns(core),
           },
         }),
     ...(counters.length === 0 ? {} : { counts: counters.map(describeCounter) }),

@@ -56,6 +56,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | File | Owns |
 |---|---|
 | `meta.ts` | the metadata model, `renderMeta()` → head tags: title template, canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per colour scheme. **`robots: { index: false }` withdraws every `og:*`, `article:*` and `twitter:*` tag** — declared or derived; the one opt-in is `socialCard: true` |
+| `static-export.ts` | `setStaticExport()` — the seam a static build installs while it renders: `responsiveImage()` names the export's `/_img/` files instead of `?w=&f=`, and `og: { capture: '/og/<page>' }` (exclusive with `og.image`, by type) becomes `og:image` at 1200 x 630. Unset in a served process, which therefore emits no `og:image` for a capture. `As of 2026-11` |
 | `validate.ts` | the build gate — `validateMeta()` (`--json`-shaped) and `assertMeta()` |
 | `ld.ts` | typed JSON-LD builders; required fields are required in the **input type** |
 | `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates. One urlset at `/sitemap.xml`; past a cap (`SITEMAP_MAX_URLS` 50,000, `SITEMAP_MAX_BYTES` 50 MB) the index stays `/sitemap.xml` and the parts are `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`). With `sections` it is always an index of `/sitemaps/<name>-<n>.xml` — see below |

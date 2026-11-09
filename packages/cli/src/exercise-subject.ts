@@ -9,6 +9,7 @@ import { identifier, sql } from '@ultimat3/db';
 import type { EntityCore, RegistryEntry } from '@ultimat3/entity';
 import type { Subject } from '@ultimat3/jobs';
 import { planSubject } from '@ultimat3/jobs';
+import type { SeedFactory, SeedGraph } from '@ultimat3/testing';
 import { entitySeedWriter, subjectProof } from '@ultimat3/testing';
 import type { Finding } from './output';
 
@@ -39,8 +40,12 @@ export async function subjectProofFindings(
   subjects: readonly Subject<never>[],
   cores: Readonly<Record<string, EntityCore>>,
   client: DbClient,
+  factories?: Readonly<Record<string, SeedFactory>>,
 ): Promise<readonly Finding[]> {
   const findings: Finding[] = [];
+  // Every subject's graph lands on this one database: each is seeded beside the last written, so a
+  // factory value built from the row index never repeats an earlier subject's on a unique column.
+  let beside: SeedGraph | undefined;
   for (const [index, subject] of subjects.entries()) {
     // A plan the static half refused is reported there, once; an erase that throws is a finding.
     const problems = await subjectProof(subject, {
@@ -49,8 +54,13 @@ export async function subjectProofFindings(
       read: (entity) =>
         client.query<Record<string, unknown>>(sql`select * from ${identifier(entity.$table)}`),
       seed: SUBJECT_PROOF_SEED + index,
+      factories,
+      beside,
     }).then(
-      (result) => result.problems.filter((p) => p.code === 'X_SUBJECT_ERASE_INCOMPLETE'),
+      (result) => {
+        beside = result.graph ?? beside;
+        return result.problems.filter((p) => p.code === 'X_SUBJECT_ERASE_INCOMPLETE');
+      },
       (error: unknown) => (isUltimateError(error) ? [error] : Promise.reject(error)),
     );
     for (const problem of problems) {

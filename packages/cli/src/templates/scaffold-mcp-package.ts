@@ -1,8 +1,10 @@
 // The generated app's `packages/mcp`: the app's own MCP surface, projected straight from the
 // action registry rather than re-listed, plus the test that pins every projected tool describing
-// itself — and the `apps/web/mcp.ts` endpoint that mounts it (`scaffold-mcp-endpoint.ts`).
+// itself — and the endpoints that mount it: `apps/web/mcp.ts` (`scaffold-mcp-endpoint.ts`) and the
+// admin surface's `apps/admin/mcp.ts` (`scaffold-mcp-admin.ts`).
 
 import type { GeneratedFile, NameSet } from './naming';
+import { mcpAdminFiles } from './scaffold-mcp-admin';
 import { mcpEndpointFiles } from './scaffold-mcp-endpoint';
 import { packageShapeFiles, workspacePackageJson } from './scaffold-package-shape';
 
@@ -77,7 +79,7 @@ contractTest('the app exposes its actions as MCP tools', () => {
 });
 `;
 
-/** Every file the `packages/mcp` workspace ships, then the endpoint that mounts it. */
+/** Every file the `packages/mcp` workspace ships, then the endpoints that mount it: web's, admin's. */
 export const mcpPackageFiles = (app: NameSet): readonly GeneratedFile[] => [
   { path: 'packages/mcp/package.json', contents: workspacePackageJson(app, 'mcp', DESCRIPTION) },
   ...packageShapeFiles(app, 'mcp', DESCRIPTION),
@@ -85,4 +87,5 @@ export const mcpPackageFiles = (app: NameSet): readonly GeneratedFile[] => [
   { path: 'packages/mcp/src/index.test.ts', contents: mcpUnitTest() },
   { path: 'packages/mcp/src/index.contract.test.ts', contents: mcpTest() },
   ...mcpEndpointFiles(app),
+  ...mcpAdminFiles(app),
 ];

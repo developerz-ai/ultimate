@@ -47,3 +47,28 @@ Per-node recovery in both: neither run crossed NATS and neither subscribes to a 
 cursor, snapshot or gap-repair path is under test. Not a multi-node result and not a throughput
 figure. [`scripts/bench/restart-bench.ts`](../restart-bench.ts), results committed under
 [`scripts/bench/results/`](./).
+
+## A stranger's first hour, and requests per second — `As of 2026-11-06`
+
+One local run on an 8-core laptop (Intel i7-10610U, Bun 1.4.4, `box.runner: local`), **not yet a CI
+figure**: `.github/workflows/bench.yml` re-measures five runs on `ubuntu-latest` weekly and opens a
+pull request. Other work was running on the same box, so read these as one machine's order of
+magnitude, never as a ceiling.
+
+**First hour** ([`first-hour.ts`](../first-hour.ts), [`first-hour.json`](first-hour.json)): the
+published `create-ultimate@latest` — `29.4.0` that day (`npm view create-ultimate version`) — under
+a clean `HOME` and `BUN_INSTALL`. Scaffold 4.7s, `bun run setup` 43.3s with a cold Bun cache, leaving
+165 MB of `node_modules` across 106 installed packages and 261 app files. **The first
+`bun run verify` was red** on 29.4.0: `budgets` reported `X_BUDGET_UNMEASURED` because nothing had
+built yet — the step builds first since plan 101's slice 21, which 29.4.0 predates — so the run
+records `verify` as failed and every later step as skipped, with no time.
+
+**Requests per second** ([`http-hello.ts`](../http-hello.ts)): that scaffold under `x dev` — every
+role in one process, embedded Postgres, a development server and not the production image —
+loaded by one client at concurrency 16, three 30 s runs back to back, every answer 2xx. The
+scaffold's read bucket was raised for the run in its own `apps/web/app/http.ts` (the shipped one
+answers a single client 429 past a 120-request burst, and a 429 is `X_BENCH_RUN_FAILED`). `/`
+([`http-hello.json`](http-hello.json)): median 267 req/s, p50 45.74 ms, p99 181.85 ms; cold start
+to the first 2xx 4.8s, 542 MiB resident across the process group. A typed read through the whole
+pipeline, `/_x/query/post-list?limit=10` ([`http-hello-query.json`](http-hello-query.json)): median
+183 req/s, p50 60.36 ms, p99 258.26 ms.

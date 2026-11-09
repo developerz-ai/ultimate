@@ -11,7 +11,7 @@ import {
   selectMessageKey,
   selectPluralKey,
 } from './interpolate';
-import { catalogTranslator } from './translator';
+import { catalogTranslator, isMiss } from './translator';
 
 describe('interpolate', () => {
   test('substitutes and escapes braces', () => {
@@ -263,6 +263,21 @@ describe('select and ordinal families — the one key selection', () => {
     expect(selectMessageKey('role', { select: '../admin' }, 'en', () => true)).toBe('role');
     expect(familyStems('role', { select: '' }, 'en')).toEqual([]);
     expect(familyStems('place', { ordinal: Number.NaN }, 'en')).toEqual([]);
+  });
+
+  test('a key has() answers for by its _other family alone renders it without the var', () => {
+    // `has('role')` is true on `role_select_other` alone; a guarded render must not be a miss.
+    for (const [key, vars] of [
+      ['role', undefined],
+      ['role', { select: '../admin' }],
+      ['place', undefined],
+      ['place', { ordinal: Number.NaN }],
+    ] as const) {
+      expect(catalog.has(key)).toBe(true);
+      expect(isMiss(catalog(key, vars))).toBe(false);
+    }
+    expect(catalog('role')).toBe('member');
+    expect(catalog('invite', { count: 3 })).toBe('they invited 3');
   });
 
   test('a family the catalog lacks falls through to the plain key and its plurals', () => {

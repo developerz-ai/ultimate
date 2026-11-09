@@ -383,6 +383,9 @@ export {
   tryResolveEnvironment,
 } from './environment';
 export { ExerciseEnvironmentError, ExerciseUnscopedError } from './exercise-errors';
+// The `input:` every exercise fix pastes, owed fields named: one renderer for action, query and testing.
+export type { DrawnBinding } from './exercise-hint';
+export { renderDrawnInput, renderExerciseKey, sampleGapBinding } from './exercise-hint';
 // A contract exercise's one loop: `@ultimat3/action`'s and `@ultimat3/query`'s, one tier apart from neither.
 export type {
   DrawnInput,
@@ -692,6 +695,9 @@ export type { GenerationFence } from './generation-fence';
 export { generationFence, isSuperseded } from './generation-fence';
 export type { PublicHealthBody } from './health-disclosure';
 export { DEFAULT_HEALTH_DETAIL_PEERS, healthBody, healthPeerListed } from './health-disclosure';
+// The ONE keyed hash: every HMAC in the framework (`bun run keyed-hasher`).
+export type { HmacAlgorithm, HmacEncoding, HmacInput } from './hmac';
+export { hmac } from './hmac';
 export type { HostDecision, HostRule } from './host-rules';
 export { ANY_HOST, hostDecision, hostMatches } from './host-rules';
 export { escapeHtml } from './html-escape';

@@ -257,16 +257,19 @@ developer's.
 `As of 2026-09-05`. `defineAppMcp({ …, resolveToken })` builds `mcp.route`, and `app.config.ts`
 declares `ai: { mcp: { expose: true } }` **by default** (the path is `defineAppMcp`'s own, `/mcp` by default) — and until this date nothing
 between the two served it: `POST /mcp` was `X_ROUTE_NOT_FOUND` under `x dev` and in every
-container. The contract is one file:
+container. The contract is one file per app directory:
 
 | Piece | Where | Rule |
 |---|---|---|
 | the declaration | `apps/<app>/mcp.ts` | `export const mcp = defineAppMcp({ include: 'exposed', resolveToken })` |
-| the switch and the path | `app.config.ts` → `ai.mcp` | `expose` (default `true`), `path` (default `/mcp`) |
+| the switch | `app.config.ts` → `ai.mcp` | `expose` (default `true`). The path is each endpoint's own `defineAppMcp({ path })` (default `/mcp`) |
+| several app directories | every `apps/<app>/mcp.ts` mounts (`As of 2026-11`) | `apps/web/mcp.ts` first — its first endpoint is the default — then the rest sorted. An admin surface's `apps/admin/mcp.ts` stands beside the web one; until 2026-11 the first sorted file mounted ALONE, so it silently took `/mcp` away. Two files claiming one route: `X_MCP_PATH_DUPLICATE` naming both |
+| when it is built | at the top level of `apps/<app>/mcp.ts` | the boot scan evaluates that file after every `apps/*/{site,app,api,shared}` module has registered, so `include: 'exposed'` sees every exposed primitive. An endpoint projected earlier — in a module under `apps/<app>/app/` that `mcp.ts` re-exports — is `X_MCP_INCLUDE_EARLY` at the mount, naming the tools it lacks, never a short catalog. Never import the API index to fill the registry (`X_BOUNDARY_APP_TO_API`) |
 | the mount | `x dev` **and** `runRole`, through one call | `POST <path>` → `mcp.route.handle(request)`; the boot log says `app mcp mounted`, `x dev`'s summary prints `mcp POST /mcp` |
 | auth | the route's own | `auth: 'public'`, `enforcedBy: 'handler'` on the http route — the bearer token is read by `resolveToken`, never pre-judged by the pipeline |
 | exposed and unmountable | `X_MCP_APP_UNMOUNTED`, logged once | no file exports `mcp`, or it was built without `resolveToken` (no `route`); the fix names the file to write |
 | a new app | `x new` writes it | `apps/web/mcp.ts` over the `@<app>/mcp` catalog, `resolveToken` from `apps/web/app/auth/agent-token.ts`: an API key (`issueApiKey`, `x_api_keys`) is an agent in every environment; `dev-agent.<role>` is one under `x dev` alone, and only from a loopback address with no `Origin` (a page rebound to 127.0.0.1 sends one). No token, or one it does not know: 401 |
+| the admin surface | `x new` writes it too | `apps/admin/mcp.ts`: `adminMcp({ app: admin, path: '/admin/mcp', include: 'exposed', actor })` — the admin's own tools and the app's exposed ones, the actor from the same `resolveAgentToken` (handed the request's `facts`). A key with scopes is held to its `admin:*` ones, a key with none is as strong as its actor → [Admin dashboard](Admin-Dashboard#an-admin-surface-serves-the-apps-tools) |
 
 **A token from an external issuer** (`As of 2026-11-05`): an app whose agents present an IdP's JWT
 rather than an API key hands `defineAppMcp` `jwtBearerResolver` from `@ultimat3/auth` — the twin of
@@ -397,6 +400,56 @@ export const mcp = defineAppMcp({ include: 'exposed', scopes: MCP_SCOPES, oauth:
 
 Without `oauth`, the 401 is `Bearer realm="ultimate-mcp"` as before. Bad block:
 `X_MCP_OAUTH_INVALID` at definition.
+
+### Per-caller tools and one token across tenants
+
+`As of 2026-11`. Two `defineAppMcp` options, both resolved per request and both behind the same
+gates as every other tool:
+
+| Option | What it does | Refusals |
+|---|---|---|
+| `catalog: (caller) => ({ tools, groups? })` | tools that exist per caller (a tenant's connectors), each a `runtimeTool({ name, description, inputSchema, permission, run })` borrowing a **declared** permission; asked on every `tools/list` and `tools/call`, never cached | `X_MCP_CATALOG_TOOL_DUPLICATE` (a name taken twice), `X_MCP_CATALOG_UNRESOLVED` (the resolver threw, or answered something unservable) — the request fails, never a smaller list |
+| `tenant: { arg, resolve, list }` | the token resolves to a person; every call names its tenant under `arg`, stripped before validation; `resolve` builds the call's actor, so policy and tenancy guards see one org per call; `list_tenants` lists them | `X_MCP_TENANT_REQUIRED` (no tenant named — fix `list_tenants({})`), `X_MCP_TENANT_UNRESOLVED` (the lookup threw), `X_MCP_TENANT_INVALID` (boot: a tool declares the arg) |
+
+A tenant the person is not in (`resolve` answers `null`) gets exactly the answer a hidden tool gets.
+Another caller's runtime tool is an absent tool. The audit line carries `tenant`.
+
+**`tools/list` is person-scoped, and not a promise.** MCP's `tools/list` names no tenant, so `visibleTo` (function form), `can()` and `catalog` run there as the person; `tools/call` runs them as the tenant actor and is authoritative. A tool visible to the person but not the tenant actor is listed and answers as a hidden tool; one visible only through a tenant role or a tenant's catalog row is unlisted and still runs when called by name.
+
+```ts
+import { agentActor } from '@ultimat3/core';
+import { defineAppMcp, runtimeTool } from '@ultimat3/mcp';
+
+declare function roleIn(personId: string, org: string): Promise<string | undefined>;
+
+defineAppMcp({
+  include: 'exposed',
+  tenant: {
+    arg: 'org',
+    resolve: async ({ person, value }) => {
+      const role = await roleIn(person.id, value);
+      return role === undefined ? null : agentActor({ id: person.id, orgId: value, roles: [role] });
+    },
+    list: () => [],
+  },
+  catalog: (caller) => ({
+    tools: caller.actor.orgId === undefined ? [] : [
+      runtimeTool({
+        name: 'org_ping',
+        description: 'Ping the acting org. Read-only.',
+        inputSchema: { type: 'object', properties: {} },
+        permission: 'org:read',
+        destructive: false,
+        run: ({ ctx }) => ({ org: ctx.actor.orgId }),
+      }),
+    ],
+  }),
+});
+```
+
+Worked example: Postly's `quote_<plan>` tools and its multi-org token —
+`examples/dummy/packages/mcp/src/{quotes,tenants}.ts`, proven over its own endpoint by
+`tenant.contract.test.ts`. Full rules: `packages/mcp/README.md`.
 
 ### Long tools: `jobTool()` and `job_status`
 
@@ -550,6 +603,12 @@ export const summarize = llm({
 
 **A stream is the same action over a different transport, with one difference that is forced rather than chosen: there is no repair turn.** The non-streaming call retries once on a parse failure; a stream cannot, because the tokens are already on the reader's screen and a second answer is two answers to one question. So a stream yields **unvalidated** text increments plus one final `done` carrying the value that did satisfy `output`, and a schema disagreement is `X_LLM_STREAM_INVALID` naming the non-streaming call as the fix. A structured schema wants the non-streaming call.
 
+**Showing what a model wrote is `Markdown` from `@ultimat3/ui`**, never `innerHTML`: the text is
+parsed to a tree and rendered as elements, so a `<script>` or a `javascript:` link in an answer is
+text, and a streaming answer re-parses per token while finished blocks keep their nodes. Tool calls
+and usage records are `JsonView`; a model's proposed edit against the original is `DiffView`
+→ [UI components](UI-Components).
+
 Long or multi-call chains are `job`s with steps, so a model call that fails on step 4 retries step 4 only. See [Jobs and workflows](Jobs-And-Workflows).
 
 ## Agents, hives and agent jobs → [Agents](Agents)
@@ -567,6 +626,15 @@ Long or multi-call chains are `job`s with steps, so a model call that fails on s
 A tool is one of two things. A real `action()` carrying `mcp: { expose: true }` — the **same** predicate an external MCP client is filtered by, so an in-app agent and an external one are offered exactly the same catalogue of actions and authorize identically. Or an `inProcessTool({ name, description, input, execute })`: a tool that is this process's alone, with no `mcp` flag, in no MCP catalogue, route or `openapi.json`, running as `ctx.actor` under the agent's own policy → [In-process tools](Agents#in-process-tools). An `agent()` returns an action, so an agent is a tool of another agent with no supervisor primitive anywhere.
 
 A tool in `mcpConfirmations({ tools })` waits for a person on **both** surfaces: `X_MCP_CONFIRMATION_PENDING` over `tools/call`, on a server handed `confirmations` or not, and as an agent's `tool_result`. A name no tool answers to is `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at the `manifest` step. One list, no second option → [A tool that waits for a person](Agents#a-tool-that-waits-for-a-person).
+
+**Quorum and signed decisions** (`As of 2026-11`) are two more options on the same factory, never a second gate:
+
+| Option | What it holds |
+|---|---|
+| `approvers: ({ args }) => ({ quorum, from })` | N of M distinct approvers matching `'role:<name>'` / `'actor:<id>'`, resolved per call from the validated arguments and stored on the row. The requesting actor never counts (nor an impersonated decider): `X_FORBIDDEN`. One approver counts once. Short of the quorum, the agent's repeat answers `X_MCP_CONFIRMATION_QUORUM_PENDING`; a bar nobody can meet is `X_MCP_CONFIRMATION_QUORUM_INVALID` before a row opens |
+| `evidence: { verify }` | every vote carries `signature` over the `signingPayload` the view returns (confirmation id, tool, keyed argument digest), checked by the app's `verify` against keys registered to the approver. A missing or failing one stores no vote; the stored row is re-verified before the call runs, so a row written around the decision runs nothing. Both are `X_MCP_CONFIRMATION_EVIDENCE_INVALID` |
+
+`verifyConfirmationEvidence(row, { evidence, quorum, from, arguments })` is exported so a separate process that executes the action re-checks the stored evidence with public keys alone. `ttlMs` expires a partly approved row like any other; one rejection rejects. The full table: [`@ultimat3/mcp` README](https://github.com/developerz-ai/ultimate/blob/main/packages/mcp/README.md#quorum-and-signed-decisions).
 
 Full reference, including the at-least-once trap that makes every mutating tool's idempotency your obligation: [Agents](Agents).
 

@@ -9,6 +9,7 @@ import {
   anonymousActor,
   hasRole,
   hasScope,
+  isActorKind,
   isAnonymous,
   serviceActor,
   userActor,
@@ -199,5 +200,18 @@ describe('the grant list is required on an actor and optional on its init', () =
   test('an init that omits it is accepted, and the builder supplies the empty list', () => {
     const init: ActorInit = { id: 'ada' };
     expect(userActor(init).permissions).toEqual([]);
+  });
+});
+
+describe('isActorKind guards a signed token field', () => {
+  test('the four kinds, and nothing else — not any string, not a non-string', () => {
+    // It screens `query/src/download-token.ts`'s decoded fields: a guard that admitted any string
+    // would hand a forged kind to everything downstream.
+    for (const kind of ['user', 'service', 'agent', 'anonymous'])
+      expect(isActorKind(kind)).toBe(true);
+    expect(isActorKind('admin')).toBe(false);
+    expect(isActorKind('')).toBe(false);
+    expect(isActorKind(['user'])).toBe(false);
+    expect(isActorKind(undefined)).toBe(false);
   });
 });

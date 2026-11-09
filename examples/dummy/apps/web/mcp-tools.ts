@@ -2,7 +2,7 @@
 // app's jobs, and `@postly/mcp` may not import a job (`X_BOUNDARY_PACKAGE_TO_APP`). So the app
 // builds them here and hands them to `postlyMcp({ tools })` — one catalog, one set of checks.
 
-import { jobTool, postlyMcp } from '@postly/mcp';
+import { jobTool, type PostlyMcpApp, postlyMcp } from '@postly/mcp';
 import { t } from '@ultimat3/schema';
 import { reviewDraftLater } from './app/posts/jobs/review-draft-later';
 import { postReview } from './app/posts/queries/post-review';
@@ -27,5 +27,9 @@ const draftReview = jobTool({
   inlineMs: 0,
 });
 
-/** Built on call, as `postlyMcp` is: after `apps/web/api` has registered what it projects. */
-export const webMcp = () => postlyMcp({ tools: { draftReview } });
+/**
+ * Built on call, as `postlyMcp` is: after `apps/web/api` has registered what it projects. The
+ * mount (`./mcp.ts`) hands in the token resolver; a test drives the server in-process without one.
+ */
+export const webMcp = (mount: Pick<PostlyMcpApp, 'resolveToken'> = {}) =>
+  postlyMcp({ tools: { draftReview }, ...mount });

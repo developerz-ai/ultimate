@@ -9,6 +9,7 @@ import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { action, registerActions, resetActions, t } from '@ultimat3/action';
+import { registeredJobs, resetJobs, restoreJobs } from '@ultimat3/jobs';
 import {
   can,
   clearPermissions,
@@ -84,17 +85,22 @@ const clearDeclarations = (): void => {
   clearRoles();
   clearPermissions();
 };
-// The pass seeds EVERY registered entity, and a neighbouring file in this process may have declared
-// one at module scope with no table in this fixture's migrations: emptied here, put back after.
+// The pass seeds EVERY registered entity and runs EVERY registered job, and a neighbouring file in
+// this process may have declared either at module scope (`exercise.test.ts`' jobs, over a table
+// this fixture's migrations never make): both emptied here, every handle put back after.
 let restoreEntities: () => void = () => undefined;
+let inheritedJobs: ReturnType<typeof registeredJobs> = [];
 beforeEach(() => {
   broken = false;
   restoreEntities = isolateEntityRegistry();
+  inheritedJobs = registeredJobs();
+  resetJobs();
   clearDeclarations();
   register();
 });
 afterEach(() => {
   clearDeclarations();
+  restoreJobs(inheritedJobs);
   restoreEntities();
 });
 
@@ -109,9 +115,7 @@ const outcomes = (data: unknown): Record<string, string> =>
 describe('unit · x exercise', () => {
   test('every primitive reached is green, and --json is what .x/exercise.json holds', async () => {
     const result = await exerciseCommand.run(contextFor());
-    // `toMatchObject`: the job registry is process-global, and a module another file imported may
-    // have registered one (`mail.send`) — the pass is right to run it too.
-    expect(outcomes(result.data)).toMatchObject({ cxToggle: 'reached', cxWorks: 'reached' });
+    expect(outcomes(result.data)).toEqual({ cxToggle: 'reached', cxWorks: 'reached' });
     expect(result.ok).toBe(true);
     const written: unknown = await Bun.file(join(ROOT, EXERCISE_REPORT_FILE)).json();
     expect(written).toEqual(JSON.parse(JSON.stringify(result.data)));

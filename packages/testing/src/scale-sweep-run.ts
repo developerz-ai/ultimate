@@ -9,8 +9,9 @@ import type { RunJobs } from './fixture-jobs';
 import { testJobs } from './fixture-jobs';
 import type { ScaleProof, StatementTally } from './scale-sweep';
 import { judgeScale, SCALE_SIZES } from './scale-sweep';
+import type { ScaleGraph } from './scale-sweep-graph';
 import { scaleGraph } from './scale-sweep-graph';
-import type { SeedGraph, SeedWriter } from './seed-graph-plan';
+import type { SeedFactory, SeedGraph, SeedWriter } from './seed-graph-plan';
 import { insertSeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 
@@ -35,7 +36,7 @@ export type ScaleSetup = (
   graph: SeedGraph,
   tenant: string,
   self: boolean,
-) => { readonly actor: Actor | null; readonly input: unknown } | undefined;
+) => Promise<{ readonly actor: Actor | null; readonly input: unknown } | undefined>;
 
 export interface ScaleSweepOptions {
   readonly subjects: readonly ScaleSubject[];
@@ -45,6 +46,8 @@ export interface ScaleSweepOptions {
   readonly seed: number;
   readonly room: ExerciseRoom;
   readonly setup: ScaleSetup;
+  /** `defineExercise`'s factories, handed to every sized graph as to the pass's own. */
+  readonly factories?: Readonly<Record<string, SeedFactory>> | undefined;
 }
 
 type Call = { readonly shapes: readonly StatementTally[] } | { readonly failed: string };
@@ -56,9 +59,18 @@ async function callAt(
   options: ScaleSweepOptions,
   self: boolean,
 ): Promise<Call> {
-  const prepared = options.setup(subject, graph, tenant, self);
-  if (prepared === undefined) return { failed: 'no actor its policy permits' };
+  // Before the setup: an override's input binds on the queue this call runs on, so a job it
+  // enqueues is there when the call looks it up by id.
   await using jobs = await testJobs();
+  let prepared: Awaited<ReturnType<ScaleSetup>>;
+  try {
+    prepared = await options.setup(subject, graph, tenant, self);
+  } catch (error) {
+    // An override's input is the app's code, run against this sized graph: its failure is this
+    // call's, never the sweep's.
+    return { failed: `its exercise.ts input threw: ${renderThrowable(error)}` };
+  }
+  if (prepared === undefined) return { failed: 'no actor its policy permits' };
   options.room.begin();
   try {
     const answer = await subject.call(prepared.input, prepared.actor, tenant, jobs);
@@ -76,13 +88,20 @@ export async function scaleSweep(
 ): Promise<ReadonlyMap<string, ScaleProof>> {
   const proofs = new Map<string, ScaleProof>();
   if (options.subjects.length === 0) return proofs;
-  const sizes = [SCALE_SIZES.small, SCALE_SIZES.large].map((perTable, i) =>
+  const sizes: ScaleGraph[] = [];
+  for (const [i, perTable] of [SCALE_SIZES.small, SCALE_SIZES.large].entries()) {
     // Hashed, never `seed + 1`: a later pass on the same database may be seeded with that number.
-    scaleGraph(options.main, options.entities, {
-      perTable,
-      seed: fnv1a(`scale:${options.seed}:${i}`) || 1,
-    }),
-  );
+    // Each beside the one written before it, so no row position — and no value built from one —
+    // repeats across the three graphs in the database.
+    sizes.push(
+      scaleGraph(options.main, options.entities, {
+        perTable,
+        seed: fnv1a(`scale:${options.seed}:${i}`) || 1,
+        factories: options.factories,
+        beside: sizes[i - 1]?.write ?? options.main,
+      }),
+    );
+  }
   try {
     for (const size of sizes) await insertSeedGraph(size.write, options.writer);
   } catch (error) {

@@ -132,8 +132,9 @@ schedules:
     brief_file: .dz/briefs/security-release.md
   # The failures nothing announces: a red `main`, a publish that did not land, npm drift, a stuck
   # Dependabot PR. Bot-authored alarm issues never pass intake, so this is how they reach the bot.
+  # Weekly (owner, 2026-11-06: routine maintenance weekly, CVE daily). Security has its own lanes.
   - name: health
-    days: [mon, tue, wed, thu, fri, sat, sun]
+    days: [mon]
     hours_utc: [7]
     brief_file: .dz/briefs/health.md
   # Leave it measurably better and one step ahead of the next Bun release: at most three small,

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { type PgliteClient, pgliteClient } from '@ultimat3/db';
 import type { ExerciseRecord, TenantFinding } from './exercise-report';
 import { proveOne, resetTenantApp, tenantlessRows, tpFiles } from './tenant-proof-fixture';
+import { tenantProofFindings } from './tenant-proof-report';
 import { overwrittenDocs, proveSql, releaseSql, useSql } from './tenant-proof-sql-fixture';
 import './tenant-proof-holes-fixture';
 import './tenant-proof-sweep-fixture';
@@ -93,6 +94,8 @@ describe(testName('unit', 'tenant proof: every planted hole is crossed'), () => 
     const crossed = findings.find((one) => one.code === 'X_TENANT_WRITE_CROSSED');
     expect(crossed).toMatchObject({ table: 'tp_files' });
     expect(renamed).toContain(String(crossed?.id));
+    // Handed A's id, it is B choosing A's row: never a sweep, whatever the job declares.
+    for (const finding of findings) expect(finding.sweep).toBeUndefined();
   });
 });
 
@@ -132,8 +135,23 @@ describe(testName('unit', 'tenant proof: what must stay green'), () => {
   });
 
   test('the same sweep with no crossTenant() declared is crossed', async () => {
-    const findings = expectCrossed(await proveOne('tpFileSweep'), 'tpFileSweep', 'job');
+    const record = await proveOne('tpFileSweep');
+    const findings = expectCrossed(record, 'tpFileSweep', 'job');
     expect(findings).toContainEqual(expect.objectContaining({ code: 'X_TENANT_LEAK' }));
+    // `tenant: 'none'`, handed nothing of A's: a sweep that declared no scope, so its fix is one.
+    for (const finding of findings) expect(finding.sweep).toBe(true);
+    for (const coded of tenantProofFindings([record])) {
+      expect(coded.fix).toContain("crossTenant('<why tpFileSweep reads every org>'");
+    }
+  });
+
+  test("a tenant: 'none' purge of every org's rows, handed no id, is public: no B chose A's row", async () => {
+    const record = await proveOne('tpFilePurge');
+    expect(record.outcome).toBe('reached');
+    expect(record.tenant).toEqual({
+      verdict: 'public',
+      reason: expect.stringContaining("tenant: 'none'"),
+    });
   });
 
   test('a handler that always throws is unreached and unproven, never proven', async () => {

@@ -27,6 +27,7 @@ const devActor = (
 //
 // Delete it the day sign-in exists, and the fallback line in \`authenticator.ts\` with it.
 import { type Actor, logger, readCookie } from '@ultimat3/core';
+import { seedId } from '@ultimat3/entity';
 import { DEMO_ORG_ID } from '../../shared/demo-org';
 import { roles } from '../../shared/roles';
 
@@ -57,12 +58,19 @@ export const devRoleFrom = (cookieHeader: string | null): string | undefined => 
 };
 
 /**
+ * The viewer's user id for \`role\`: a uuid, as \`ctx.actor.id\` is on every real request (an
+ * \`x_users\` key) — a name here was \`22P02 invalid input syntax for type uuid\` the first time a
+ * handler looked its caller up. \`seedId\`, so a seed's id('user:dev:<role>') is this very user.
+ */
+export const devActorId = (role: string): string => seedId(\`user:dev:\${role}\`);
+
+/**
  * \`roles\`, never a permission list: \`can()\` expands the role map at decision time, so a grant
  * moved between roles reaches this actor without an edit here.
  */
 export const devActorFor = (role: string): Actor => ({
   kind: 'user',
-  id: 'dev-actor',
+  id: devActorId(role),
   // The seed's org, never an invented string: a generated tenant policy compares it with a uuid.
   orgId: DEMO_ORG_ID,
   roles: [role],
@@ -228,6 +236,14 @@ unitTest('a cookie naming an undeclared role is never the default viewer', () =>
   for (const named of ['nobody', 'Admin', 'constructor', '']) {
     expect(devRoleFrom(\`\${DEV_ROLE_COOKIE}=\${named}\`)).toBeUndefined();
   }
+});
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+unitTest('the viewer is a user: a uuid id, one per role', () => {
+  // An app reads \`ctx.actor.id\` as an \`x_users\` key; a name in it fails the uuid cast.
+  for (const role of declaredDevRoles()) expect(devActorFor(role).id).toMatch(UUID);
+  expect(devActorFor('admin').id).not.toBe(devActorFor('member').id);
 });
 
 unitTest('the actor it mints holds what the role map grants it, and nothing else', () => {

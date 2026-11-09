@@ -1,0 +1,202 @@
+# One image for every role; ROLE is the only difference between the workloads.
+image:
+  repository: docs-site
+  tag: ""            # defaults to .Chart.AppVersion; x deploy --image sets this and repository
+  pullPolicy: IfNotPresent
+
+# Non-secret configuration. Secrets come from an existing Secret, never from this file:
+#   kubectl create secret generic docs-site-secrets --from-literal=DATABASE_URL=...
+#
+# APP_URL — the pages' public origin — is what the sync node admits a websocket from. With the
+# ingress below enabled the chart SETS it on the sync role from ingress.host (https when
+# ingress.tls), because an undeclared node behind a TLS ingress also admits the plain-http page.
+# Set it here when the pages are served from another host or port than that (a CDN domain, a
+# SYNC_URL of its own): this value wins, and without it every websocket from those pages is
+# 403 X_SOCKET_ORIGIN_REFUSED.
+env:
+  NODE_ENV: production
+
+existingSecret: docs-site-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, and .env.example's Framework section
+
+# The release-wide Secret above is every role's DEFAULT: `existingSecret` under a role
+# (roles.web.existingSecret, migrate.existingSecret) names that role's own, so the migrate Job's
+# schema-owning DATABASE_URL need not sit on a web pod.
+
+# The /tmp every pod mounts (the root filesystem is read-only), bounded: past this the kubelet
+# evicts the pod that filled it, never its neighbours for node disk pressure.
+tmp:
+  sizeLimit: 512Mi
+
+# One NetworkPolicy per serving role (templates/networkpolicy.yaml): `http` from httpFrom,
+# `metrics` from metricsFrom, nothing else. Inert on a CNI that does not enforce NetworkPolicy.
+#   httpFrom     empty = any source; narrow it to your ingress controller's namespace, e.g.
+#                [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }]
+#   metricsFrom  default: any pod in the cluster and no address outside it
+#   egress       OFF while empty; a list turns on egress filtering with exactly those rules —
+#                the database, NATS, the object store and DNS are your addresses, so list all of them
+networkPolicy:
+  enabled: true
+  httpFrom: []
+  metricsFrom:
+    - namespaceSelector: {}
+  egress: []
+
+# The scrape listener every serving role opens, on its own port and never the app's: the ingress
+# routes / to web, so /metrics beside /healthz on 3000 is /metrics on the internet. This is
+# METRICS_PORT in the container; move one and the other follows.
+metricsPort: 9090
+
+# Prometheus-operator discovery for that port (templates/servicemonitor.yaml) and the alert rules on
+# the series it scrapes (templates/alert-rules.yaml). `enabled` on each:
+#   auto   render when the cluster serves the operator's kind, so a cluster without it still
+#          installs. `helm template` answers from `--api-versions`: an offline render (GitOps) gets
+#          neither unless it passes --api-versions monitoring.coreos.com/v1/ServiceMonitor and
+#          --api-versions monitoring.coreos.com/v1/PrometheusRule
+#   true   always render; `helm install` fails where the CRD is missing
+#   false  never render
+serviceMonitor:
+  enabled: auto
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}         # what your operator's serviceMonitorSelector matches, if it uses one
+
+# Each rule's runbook_url is runbookBase#<alert, lower-cased>. Per rule, under rules.<alert>:
+# threshold, for, severity, enabled — e.g. rules: { UltimateQueueStalled: { threshold: 600 } }.
+alerts:
+  enabled: auto
+  runbookBase: https://github.com/developerz-ai/ultimate/blob/main/docs/ops/06-runbooks.md
+  labels: {}         # what your operator's ruleSelector matches, if it uses one
+  rules: {}
+
+# The image's `bun` user, the same uid as the Dockerfile's USER: move one and the other follows.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile: { type: RuntimeDefault }
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+# The stop sequence: out of the Service, then this preStop sleep (Kubernetes 1.30+ only), then
+# SIGTERM, then the framework's readiness grace and drain. Each Deployment's
+# terminationGracePeriodSeconds is DERIVED from this block per role — never set it by hand.
+#   readinessGraceSeconds  app.config.ts drain.readinessGraceMs / 1000 (web and sync only)
+#   deadlineSeconds        app.config.ts drain.deadlineMs / 1000 — x deploy --method helm sets
+#                          both from app.config.ts, so a raised budget raises the grace with it
+#   workerDeadlineSeconds  app.config.ts drain.workerDeadlineMs / 1000 — the worker's budget in place
+#                          of deadlineSeconds, up to a day; 0 means the worker uses deadlineSeconds
+#   teardownMarginSeconds  the release after the drain, the telemetry flush, the pool close
+drain:
+  preStopSleepSeconds: 5
+  readinessGraceSeconds: 5
+  deadlineSeconds: 25
+  workerDeadlineSeconds: 0
+  teardownMarginSeconds: 10
+
+# How long a new pod must stay Ready before a rollout counts it and stops an old one.
+minReadySeconds: 10
+
+# The release phase. Runs to completion before any serving role starts.
+migrate:
+  enabled: true
+  backoffLimit: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# One entry per role this chart may run. `port` is the port the role LISTENS on, not the value of
+# PORT: they differ for sync, which binds PORT + 1, and the chart derives the env from this number
+# so there is only ever one to move.
+#
+# Autoscaling is off until you wire a metrics adapter — each `metric` below is a series the role
+# exports, and an HPA with no adapter behind it reads <unknown> and holds at minReplicas.
+# `type` is Pods (the default: a per-pod series averaged across pods) or External (one series for
+# the whole role, divided by the replica count).
+roles:
+  web:
+    enabled: true
+    replicas: 2
+    port: 3000
+    resources:
+      requests: { cpu: 200m, memory: 256Mi }
+      limits: { memory: 512Mi }
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 30
+      metric: rps               # requests per second
+      targetAverageValue: "50"
+
+  sync:
+    # OFF by default. A sync pod on a real database hears committed changes only from a replicator
+    # it can reach, and a fresh deploy has none: booted anyway it is refused (X_REALTIME_TOPOLOGY).
+    # To turn live queries and channels on: declare realtime: { enabled: true, transport: 'nats',
+    # urlEnv: 'NATS_URL' } in app.config.ts (a NATS_URL under transport 'memory' is refused, and
+    # 'nats' without it is too); run NATS and set the SAME NATS_URL for web, sync and the
+    # replicator; enable exactly one replicator (below) against a Postgres started with
+    # wal_level=logical (the replicator creates its publication at boot) and a role with REPLICATION on a cluster dedicated to this app; then set this to true.
+    enabled: false
+    replicas: 2
+    port: 3001
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits: { memory: 1Gi }
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 40
+      metric: connections       # concurrent websockets per pod
+      targetAverageValue: "2000"
+
+  worker:
+    enabled: true
+    replicas: 2
+    # The retire, ON: a deploy or a scale-down never cuts a job it could wait out. app.config.ts
+    # drain.workerRetireMs / 1000, set by x deploy, and 0 turns it off. The worker's preStop sends
+    # its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0. An idle worker
+    # exits at once, and a Terminating pod does not hold a rollout back. Added to this role's
+    # terminationGracePeriodSeconds, which the kubelet counts the preStop against.
+    retireSeconds: 3600
+    resources:
+      requests: { cpu: 200m, memory: 256Mi }
+      limits: { memory: 1Gi }
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 50
+      # External: every serving worker publishes the SAME number, so averaged as a Pods metric it
+      # asked for N times the workers the queue needed. Expose it from your adapter deduplicated —
+      # max by (queue) (queue_demand), never sum, which would multiply it by the pod count again.
+      type: External
+      metric: queue_demand      # jobs held by serving workers plus jobs due, per queue
+      # Set it to one pod's jobs.maxInFlight; x deploy --method helm sets it when app.config.ts declares it.
+      targetAverageValue: "100"
+
+  scheduler:
+    enabled: true
+    # Fixed 1, and a second replica is safe but pointless: leadership is an expiring row in
+    # x_scheduler_leader, so the extra pod stands by.
+    replicas: 1
+    # 512Mi, not 256Mi: a scaffolded app measured ~325 MiB at boot as ROLE=scheduler (2026-09-23),
+    # when every role still built the app's islands first; at 256Mi the pod was OOMKilled on every
+    # boot. Only web builds islands now, so the peak is lower but unmeasured, and the limit stays.
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+
+  replicator:
+    enabled: false              # exactly one per database; enable when the change feed is in use
+    replicas: 1
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { memory: 512Mi }
+
+ingress:
+  enabled: false
+  className: nginx
+  host: docs-site.example.com
+  tls: true

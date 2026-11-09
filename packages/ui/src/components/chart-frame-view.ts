@@ -3,6 +3,8 @@
 // no-colour reader get instead of the picture, and how a number becomes text — always in a locale
 // the caller passed, never the runtime's default.
 
+import type { Tone } from './variants';
+
 /** The chart colour roles, `chart-1` … `chart-8` (`--color-chart-N`). */
 export const CHART_SERIES_SLOTS = 8;
 
@@ -144,8 +146,13 @@ export function finiteOrNull(value: number | null | undefined): number | null {
 export interface ChartSeries {
   /** The series' name, already translated: the legend entry and the table's column head. */
   readonly label: string;
-  /** One value per key, in key order; `null` is a gap in the line and an empty table cell. */
+  /** One value per key, in key order; `null` is a gap in the line and `ui.chart.none` in the table. */
   readonly values: readonly (number | null)[];
+  /**
+   * A status colour in place of the slot's — an error rate in `danger`. The dash and marker stay,
+   * so the series is never told apart by colour alone.
+   */
+  readonly tone?: Tone | undefined;
 }
 
 export interface ChartTableRow {
@@ -166,6 +173,8 @@ export interface ChartTableInput {
   readonly keys: readonly string[];
   readonly series: readonly ChartSeries[];
   readonly format: (value: number) => string;
+  /** What a gap's cell says, already translated (`ui.chart.none`) — an empty cell reads as nothing. */
+  readonly none: string;
 }
 
 /** The same numbers the picture draws, as rows a screen reader walks cell by cell. */
@@ -177,7 +186,7 @@ export function chartTable(input: ChartTableInput): ChartTable {
       key,
       cells: input.series.map((series) => {
         const value = finiteOrNull(series.values[index]);
-        return value === null ? '' : input.format(value);
+        return value === null ? input.none : input.format(value);
       }),
     })),
   };
@@ -216,4 +225,26 @@ export function hitEdge(x: number, width: number): 'start' | 'middle' | 'end' {
   if (share < 0.2) return 'start';
   if (share > 0.8) return 'end';
   return 'middle';
+}
+
+/**
+ * A point's stable identity across ticks: its series and its key, so a live window that drops the
+ * oldest key keeps every other point's node — and the focus on it. A repeated key gets `#n`, the
+ * first `n` no earlier id holds: a key may itself read `a#1`, and a duplicate id throws in
+ * `keyedRows`, taking the whole chart with it.
+ */
+export function hitIds(series: number, keys: readonly string[]): readonly string[] {
+  const seen = new Map<string, number>();
+  const used = new Set<string>();
+  return keys.map((key) => {
+    let n = seen.get(key) ?? 0;
+    let id = n === 0 ? `${series}:${key}` : `${series}:${key}#${n}`;
+    while (used.has(id)) {
+      n += 1;
+      id = `${series}:${key}#${n}`;
+    }
+    seen.set(key, n + 1);
+    used.add(id);
+    return id;
+  });
 }

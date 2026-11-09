@@ -135,7 +135,9 @@ export const config = defineRoute({
   // contact-sales island +2,064 B, all of it: every `rpc` method carrying `.stream(input)` (core's
   // `clientStream`, plan 101 slice 41), the typed client's one way to read a stream-declaring
   // action as it is written — raised 30kb → 31.5kb.
-  budget: { js: '31.5kb' },
+  // measured: 32279 B (2026-11-07, sweep 2; x build --target static) — why: the contact-sales island's
+  // typed client decodes the record envelope's `order` (+63 B over the shared transport).
+  budget: { js: '32kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

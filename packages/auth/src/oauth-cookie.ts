@@ -8,6 +8,7 @@
 import type { Clock } from '@ultimat3/core';
 import {
   EnvMissingError,
+  hmac,
   readCookie,
   serializeSetCookie,
   systemClock,
@@ -227,7 +228,7 @@ export function readHandshakeCookie(
 
 /** Keyed SHA-256. Untruncated, unlike a cursor's: a cookie has room and this authorises a login. */
 function sign(body: string, secret: string): string {
-  return new Bun.CryptoHasher('sha256', secret).update(body).digest('hex');
+  return hmac('sha256', secret, body, 'hex');
 }
 
 function parseBody(body: string, provider: OAuthProviderId): unknown {

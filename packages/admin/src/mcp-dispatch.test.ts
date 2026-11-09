@@ -15,7 +15,8 @@ import {
   staticAuthz,
 } from './authz';
 import type { CrudCtx } from './crud';
-import { type AdminToolResult, adminMcp, callAdminTool } from './mcp';
+import { adminMcp } from './mcp';
+import { type AdminToolResult, callAdminTool } from './mcp-dispatch';
 import type { AdminRow } from './registry';
 
 const doc = entity('admin_dispatch_doc', {

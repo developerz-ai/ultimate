@@ -28,6 +28,7 @@ import { iconPlan, iconRenderer } from './icon-assets';
 import type { PwaArtifacts } from './pwa-artifacts';
 import { pwaManifestRoute } from './pwa-artifacts';
 import { revalidatedResponse } from './revalidated-response';
+import { siteAssetVariantRoutes } from './runtime-assets-site';
 import {
   AUTHORIZED_OBJECT_CACHE,
   assertReadableKey,
@@ -36,7 +37,6 @@ import {
   readStorageObject,
   STORAGE_READ_PERMISSION,
 } from './runtime-storage';
-import { siteAssetRoutes } from './site-asset-routes';
 import { siteAssetTable } from './site-assets';
 
 /**
@@ -234,7 +234,7 @@ export interface AssetRoutesOptions {
   /** App root. The source icon is resolved against it; storage keys never are. */
   readonly root: string;
   readonly storage: Storage;
-  /** Replaces `builtinImageDriver` for `/media/*`. Omitted, core's PNG/JPEG/WebP pipeline. */
+  /** Replaces `builtinImageDriver` for `/media/*` and `/assets/*`. Omitted, core's pipeline. */
   readonly images?: ImageTransformDriver;
   /**
    * `manifest.webmanifest`, resolved at boot by `pwa-artifacts.ts`. Absent when the app declares
@@ -295,8 +295,9 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
   routes.push(faviconRoute(options.root));
   // And every other public file of the site: `apps/web/site/assets/**` at the hashed URLs
   // `asset()` mints, immutable. The same table `loadApp` installed for the renderer, so the URL a
-  // document names and the URL this answers are one computation.
-  routes.push(...siteAssetRoutes(siteAssetTable(options.root)));
+  // document names and the URL this answers are one computation. A raster also answers the
+  // `?w=&f=` variants a served `responsiveImage` mints for it, through the same driver as `/media`.
+  routes.push(...siteAssetVariantRoutes(siteAssetTable(options.root), { images: options.images }));
   // Same rule one asset further along: the icons above are the ones this manifest NAMES, so the
   // two belong to one surface and cannot be mounted from two places without drifting apart.
   if (options.pwa !== undefined) routes.push(pwaManifestRoute(options.pwa));

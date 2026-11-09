@@ -65,4 +65,15 @@ describe('unit · the paths a measurement render uses', () => {
     expect(plan.unmeasured.weighable).toBe(false);
     expect(plan.unmeasured.code).toBeUndefined();
   });
+
+  test('an enumeration the build already holds is used, and prerender() is not asked again', async () => {
+    let asked = 0;
+    const entry = entryFor('apps/web/site/posts/[id]/page.tsx', () => {
+      asked += 1;
+      return [{ id: 'p1' }];
+    });
+    const plan = await measurePaths(entry, () => Promise.resolve([{ params: { id: 'held' } }]));
+    expect(asked).toBe(0);
+    expect(plan).toEqual({ paths: [{ path: '/posts/held', params: { id: 'held' } }] });
+  });
 });

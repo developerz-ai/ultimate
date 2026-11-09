@@ -18,7 +18,7 @@ export interface LlmsSite {
   readonly baseUrl: string;
   /** Omitted: `ULTIMATE_ENV`. Anything but `production` answers an empty document. */
   readonly environment?: Environment | undefined;
-  /** `seo.llms` — `false` answers an empty document everywhere. */
+  /** `seo.llms` — `false` answers an empty document; the running role and the export then serve none. */
   readonly enabled?: boolean | undefined;
 }
 

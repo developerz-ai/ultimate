@@ -8,7 +8,7 @@ import type { AdminApp } from '../admin';
 import { jobsAdmin, MANAGER, READER, type Seeded, seedQueue } from './jobs-fixture';
 
 const { adminMcpTools, adminToolCatalog } = await import('../mcp-tools');
-const { callAdminTool } = await import('../mcp');
+const { callAdminTool } = await import('../mcp-dispatch');
 
 let manager: AdminApp;
 beforeAll(() => {

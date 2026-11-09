@@ -91,8 +91,10 @@ const origin = Bun.env.SITE_ORIGIN;
  * from the CDN and from the container.
  *
  * A DYNAMIC route contributes exactly the URLs this build emitted for it, read back off the report:
- * the sitemap then cannot name a page the artifact does not contain. \`prerender()\` is asked again
- * only for what each page says of itself — its \`lastmod\`, the \`locales\` it is listed in.
+ * the sitemap then cannot name a page the artifact does not contain. What each page says of itself —
+ * its \`lastmod\`, the \`locales\` it is listed in — is \`report.entries\`: the build's own
+ * \`prerender()\` answers, so a route that lists its pages off the app's queries is never asked again
+ * once the build has stopped answering them.
  *
  * With \`seo.sitemap.sections\` the answer is an index and its parts: \`/sitemap.xml\` plus
  * \`/sitemaps/<name>-<n>.xml\`, every one written here.
@@ -114,8 +116,10 @@ async function writeSeoFiles(report: PrerenderReport): Promise<readonly string[]
     root,
     pagesFor: (route) =>
       report.pages.filter((page) => page.route === route).map((page) => page.path),
+    entries: report.entries,
+    llmsPages: report.llmsPages,
   });
-  return await writeSiteSeo(out, seo);
+  return await writeSiteSeo(out, seo, { llms: settings.llms });
 }
 
 if (import.meta.main) {

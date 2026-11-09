@@ -191,6 +191,7 @@ test('every island in the app is measured, and each is classified by its own gra
     'apps/web/app/posts/[id]/like.island.tsx',
     'apps/web/app/posts/[id]/likes-badge.island.tsx',
     'apps/web/app/posts/[id]/summary.island.tsx',
+    'apps/web/app/posts/board/board.island.tsx',
     'apps/web/app/runs/run-console.island.tsx',
     'apps/web/app/settings/settings.island.tsx',
     'apps/web/app/update-banner.island.tsx',
@@ -202,15 +203,18 @@ test('every island in the app is measured, and each is classified by its own gra
   // `@ultimat3/time` for the row's date, day only (`formatDate`) — already in the chunk through ui.
   // `@ultimat3/i18n/subset` for the design system's strings the server resolved (`uiCatalog`): the
   // translator alone, never the i18n barrel and the framework catalog it installs.
+  // `@ultimat3/render/client` for the palette's `navigate()`: through the router, never the barrel.
   expect(reachable.get('apps/web/app/feed/feed.island.tsx')).toEqual([
     '@ultimat3/i18n/subset',
     '@ultimat3/realtime',
+    '@ultimat3/render/client',
     '@ultimat3/time',
     '@ultimat3/ui',
   ]);
   expect(reachable.get('apps/web/app/posts/[id]/like.island.tsx')).toEqual(['@ultimat3/realtime']);
   // The run console: the live read, the design system's region and controls, the typed action
-  // client for its four writes, and core's page entry for `isSuperseded`.
+  // client for its four writes, and core's page entry for `isSuperseded`. The runs page's "created
+  // between" filter (`DateRangePicker`'s calendar) is drawn inside it, so it adds no package.
   expect(reachable.get('apps/web/app/runs/run-console.island.tsx')).toEqual([
     '@ultimat3/action',
     CONSTANTS_ONLY,
@@ -223,12 +227,23 @@ test('every island in the app is measured, and each is classified by its own gra
   ]);
   // Both reach the typed action client through `shared/browser-client.ts` (plan 101, slice 16).
   // Settings also subscribes this browser to Web Push: `@ultimat3/pwa/client`, which imports nothing.
+  // The time zone is `@ultimat3/ui`'s SearchableSelect, its strings the server's through
+  // `@ultimat3/i18n/subset` (plan 101, 23-ui-searchable-select).
   expect(reachable.get('apps/web/app/settings/settings.island.tsx')).toEqual([
     '@ultimat3/action',
+    '@ultimat3/i18n/subset',
     '@ultimat3/pwa/client',
+    '@ultimat3/ui',
   ]);
   expect(reachable.get('apps/web/site/pricing/contact-sales.island.tsx')).toEqual([
     '@ultimat3/action',
+  ]);
+  // The posts board: `@ultimat3/ui`'s `Board`, its strings the server's, and `movePostStatus`
+  // through the typed action client (plan 101, 38-ui-drag-layout).
+  expect(reachable.get('apps/web/app/posts/board/board.island.tsx')).toEqual([
+    '@ultimat3/action',
+    '@ultimat3/i18n/subset',
+    '@ultimat3/ui',
   ]);
   // The summary streams `summarize` through the typed client's `.stream()` and nothing else.
   expect(reachable.get('apps/web/app/posts/[id]/summary.island.tsx')).toEqual(['@ultimat3/action']);
@@ -252,8 +267,10 @@ test('every island reaching core keeps its side-effecting module, in both builds
   const expected = reaching((pkg) => pkg !== CONSTANTS_ONLY && pkg !== OWN_TITLES_ONLY);
   // Six until 27.6.0: `like` and `likes-badge` import realtime and nothing else, and realtime no
   // longer brings core's barrel with it (`OWN_TITLES_ONLY`). Five from plan 101 wave 9: `summary`
-  // reaches the typed action client, as `settings` and `contact-sales` do.
-  expect(expected).toHaveLength(5);
+  // reaches the typed action client, as `settings` and `contact-sales` do. Six from plan 101 wave
+  // 10, with the posts board, which reaches the typed action client and ui's registry (the runs
+  // page's date filter, briefly its own island, is drawn inside the run console).
+  expect(expected).toHaveLength(6);
   // The same two faces of the flap, on the module realtime anchors: every island reaching it.
   const realtime = reaching((pkg) => pkg === OWN_TITLES_ONLY);
   expect(realtime).toHaveLength(4);

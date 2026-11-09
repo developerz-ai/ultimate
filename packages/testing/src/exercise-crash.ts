@@ -1,5 +1,5 @@
-// The crash proof, as the exercise pass runs it: a job its control reached is killed at every step
-// boundary with the control's own input and actor (`crashProof`), and the answer is a plain record
+// The crash proof, as the exercise pass runs it: a job its control reached is killed at every
+// distinct step boundary with the control's own input and actor (`crashProof`), and the answer is a plain record
 // `.x/exercise.json` can hold. Run after the control, so its runs meet the rows the control left.
 
 import type { Actor } from '@ultimat3/core';
@@ -18,6 +18,7 @@ const findingOf = (divergence: CrashDivergence): CrashFinding => {
     clean: divergence.clean,
     killed: divergence.killed,
     ...(typeof after === 'string' ? { after } : {}),
+    ...(divergence.inside === undefined ? {} : { inside: divergence.inside }),
   };
 };
 
@@ -33,7 +34,11 @@ export async function proveCrash(
   const worker = ctxOf(actor === null ? { role: 'worker' } : { role: 'worker', actor });
   try {
     const report = await crashProof(handle, input, { context: () => worker });
-    const counted = { boundaries: report.boundaries.length, reruns: report.reruns.length };
+    const counted = {
+      boundaries: report.boundaries.length,
+      crossed: report.crossed,
+      reruns: report.reruns.length,
+    };
     return report.divergences.length === 0
       ? { verdict: 'held', ...counted }
       : { verdict: 'diverged', ...counted, findings: report.divergences.map(findingOf) };

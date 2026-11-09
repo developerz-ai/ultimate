@@ -69,6 +69,22 @@ describe('drillWriteTargets', () => {
     expect((await input['~standard'].validate(drawn)).issues).toBeUndefined();
   });
 
+  test("an 'action:'-qualified entry is the drill's too, over the bare name", async () => {
+    const writes = await drillWriteTargets({
+      actions: [candidate({}), candidate({ name: 'endSession' })],
+      overrides: defineExercise({
+        contactSales: { actor: null, input: (drawn) => ({ ...drawn, message: 'bare' }) },
+        'action:contactSales': { actor: null, input: (drawn) => ({ ...drawn, message: 'own' }) },
+        'action:endSession': { off: 'sets a cookie' },
+      }),
+      sampler: { arbitrary: () => ({ email: 'a@example.test', message: 'drawn' }) },
+    });
+    expect(writes.targets[0]?.draw?.(1)).toEqual({ email: 'a@example.test', message: 'own' });
+    expect(writes.skipped).toEqual([
+      { name: 'endSession', reason: 'exercise.ts turns it off: sets a cookie' },
+    ]);
+  });
+
   test("an anonymous override's input binds into every draw", async () => {
     const writes = await drillWriteTargets({
       actions: [candidate({})],
@@ -78,5 +94,39 @@ describe('drillWriteTargets', () => {
       sampler: { arbitrary: () => ({ email: 'a@example.test', message: 'drawn' }) },
     });
     expect(writes.targets[0]?.draw?.(1)).toEqual({ email: 'a@example.test', message: 'bound' });
+  });
+
+  test('an async override input is left out: it is computed from a pass the load does not run', async () => {
+    const writes = await drillWriteTargets({
+      actions: [candidate({})],
+      overrides: defineExercise({
+        contactSales: { actor: null, input: async (drawn) => ({ ...drawn, message: 'signed' }) },
+      }),
+      sampler: { arbitrary: () => ({ email: 'a@example.test', message: 'drawn' }) },
+    });
+    expect(writes.targets).toEqual([]);
+    expect(writes.skipped[0]?.reason).toContain('async input');
+  });
+
+  // A plain function returning a promise carries no `async` tag: drawn, its body was
+  // `JSON.stringify(promise)` — `{}` — posted on every request. What it RETURNS is the test.
+  test('an override input that returns a promise is left out, as an async one is', async () => {
+    const writes = await drillWriteTargets({
+      actions: [candidate({})],
+      overrides: defineExercise({
+        contactSales: {
+          actor: null,
+          input: (drawn) => Promise.resolve({ ...drawn, message: 'signed' }),
+        },
+      }),
+      sampler: { arbitrary: () => ({ email: 'a@example.test', message: 'drawn' }) },
+    });
+    expect(writes.targets).toEqual([]);
+    expect(writes.skipped).toEqual([
+      {
+        name: 'contactSales',
+        reason: 'exercise.ts computes its input from the pass (an async input); a load has none',
+      },
+    ]);
   });
 });

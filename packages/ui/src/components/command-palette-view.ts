@@ -2,24 +2,65 @@
 // roving selection goes on an arrow key, and what a key means. Pure, so the caller's island and
 // a page test decide the same thing — and so the component owns no rule a caller could get wrong.
 
+import { rankOptions } from './rank-options';
+
 export interface CommandPaletteItem {
   /** Stable across a re-filter — what roving selection and `onRunItem` both key off. */
   readonly id: string;
   readonly label: string;
   /** Secondary text — a target URL, a slug, a key chord. Empty renders nothing. */
   readonly hint: string;
+  /** Already-translated heading the item sits under; items of one group render together. */
+  readonly group?: string | undefined;
+  /** Words a reader may type that the label never shows — matched, never rendered. */
+  readonly keywords?: readonly string[] | undefined;
 }
 
-/** Case-insensitive substring over label and hint; an empty query keeps everything. */
+/** A run of items under one heading; `group` is `undefined` for the ungrouped run. */
+export interface CommandPaletteGroup {
+  readonly group: string | undefined;
+  readonly items: readonly CommandPaletteItem[];
+}
+
+/**
+ * `rankOptions` over label, hint and keywords — the ranker `SearchableSelect` uses, so `cafe`
+ * finds `Café` — then regrouped: a group keeps the place its first item had in the caller's list,
+ * and the rank decides the order inside it. An empty query keeps everything, in order.
+ */
 export function filterItems(
   items: readonly CommandPaletteItem[],
   query: string,
 ): readonly CommandPaletteItem[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === '') return items;
-  return items.filter(
-    (item) => item.label.toLowerCase().includes(needle) || item.hint.toLowerCase().includes(needle),
-  );
+  const ranked = rankOptions(
+    items.map((item) => ({
+      label: item.label,
+      description: item.hint,
+      keywords: item.keywords,
+      item,
+    })),
+    query,
+    items.length,
+  ).matches.map((entry) => entry.item);
+  const order = new Map<string | undefined, number>();
+  for (const item of items) if (!order.has(item.group)) order.set(item.group, order.size);
+  return ranked
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (a, b) =>
+        (order.get(a.item.group) ?? 0) - (order.get(b.item.group) ?? 0) || a.index - b.index,
+    )
+    .map((entry) => entry.item);
+}
+
+/** Consecutive items sharing a `group`, as the palette renders them under one heading each. */
+export function groupItems(items: readonly CommandPaletteItem[]): readonly CommandPaletteGroup[] {
+  const out: { group: string | undefined; items: CommandPaletteItem[] }[] = [];
+  for (const item of items) {
+    const last = out[out.length - 1];
+    if (last !== undefined && last.group === item.group) last.items.push(item);
+    else out.push({ group: item.group, items: [item] });
+  }
+  return out;
 }
 
 /** The active id after a step, wrapping at both ends; the first item when nothing was active. */

@@ -113,6 +113,8 @@ export { renderJobTable } from './jobs-table';
 export { msg } from './messages';
 export { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
 export { parseMigrationSql, readMigrations } from './migrations';
+export type { NewShape } from './new-shapes';
+export { NEW_SHAPES } from './new-shapes';
 export type { CommandResult, Finding, JsonValue } from './output';
 export { exitCodeFor, findingFrom, render, renderFinding, renderHuman } from './output';
 export type { CommandSpec, FlagSpec, ParsedArgs } from './parse';

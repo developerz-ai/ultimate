@@ -39,7 +39,7 @@ import {
  *   | locales / catalogs | `resetCatalogs` | `@ultimat3/i18n` | yes |
  *   | permissions / roles | `restorePermissions` / `restoreRoles` | `@ultimat3/policy` | yes |
  *   | routes | `clearRoutes` | `@ultimat3/render` | **no** |
- *   | jobs | `resetJobs` | `@ultimat3/jobs` | **no** |
+ *   | jobs | `resetJobs` / `restoreJobs` | `@ultimat3/jobs` | **no** — isolated per test |
  *   | tasks | `restoreTasks` | `@ultimat3/jobs` | yes (22.7) |
  *   | measurement actor | `resetMeasurementActor` | `@ultimat3/core` | yes |
  *   | actions | `resetActions` | `@ultimat3/action` | **no** |
@@ -50,7 +50,7 @@ import {
  *
  * Every "no" needs the SAME two halves the two "yes" rows have: a reader and a writer in the owning
  * package (`restorePermissions` was added to `@ultimat3/policy` for exactly this), and one line
- * here. `@ultimat3/jobs`, `@ultimat3/action`, `@ultimat3/query` and `@ultimat3/mail` publish a
+ * here. `@ultimat3/action`, `@ultimat3/query` and `@ultimat3/mail` publish a
  * lister and a reset but no restore, so the change is theirs first and this file's second — and it
  * has to land as ONE change, because the cost of the rest is a second edit of this same shape.
  */

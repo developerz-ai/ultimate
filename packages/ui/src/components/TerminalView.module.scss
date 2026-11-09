@@ -1,0 +1,68 @@
+@use '../tokens' as t;
+
+// Colours are roles (`ansi.ts`): a theme recolours output, and 256/truecolor never reach here.
+.terminal {
+  @include t.focus-ring;
+  border-radius: t.radius(md);
+  background: t.role('bg-soft');
+  color: t.role('fg');
+  font-family: var(--font-mono);
+  font-size: t.text(sm);
+  text-align: start;
+}
+
+// `rows` lines tall, in the box's own line height, never past most of the viewport.
+// VirtualList's frame fills the box, and is a grid whose one row may SHRINK: an auto row grows to
+// every row's height, and the list then measured itself as tall as the log and drew every line.
+.frame {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.box {
+  block-size: min(70vh, calc(var(--terminal-rows, 24) * 1lh));
+}
+
+.line {
+  display: block;
+  padding-inline: t.space(3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fg-muted {
+  color: t.role('fg-muted');
+}
+.fg-strong {
+  color: t.role('fg-strong');
+}
+.fg-danger {
+  color: t.role('danger');
+}
+.fg-success {
+  color: t.role('success');
+}
+.fg-warning {
+  color: t.role('warning');
+}
+.fg-info {
+  color: t.role('info');
+}
+.fg-chart-5 {
+  color: t.role('chart-5');
+}
+.fg-chart-1 {
+  color: t.role('chart-1');
+}
+
+.bold {
+  font-weight: t.weight(bold);
+}
+.dim {
+  color: t.role('fg-muted');
+}
+.italic {
+  font-style: italic;
+}
+.underline {
+  text-decoration: underline;
+}

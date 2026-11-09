@@ -137,7 +137,9 @@ export const destroySession = action({
     // The inbound headers the pipeline put on the context, through the framework's own reader —
     // the same cookie `hooks.authenticate` read one stage earlier, never a second parse of a
     // request object the context does not carry.
-    const revoked = await signOut(readSessionToken(useRequestHeader('cookie')));
+    const revoked = await signOut(
+      readSessionToken(useRequestHeader('cookie'), isSecureRequest(ctx)),
+    );
     // Cleared regardless. The browser forgetting the token is the half this process controls, and
     // the row expires on its own clock — `sessions.expiresAt` is absolute for exactly this reason.
     clearSessionCookie(isSecureRequest(ctx));

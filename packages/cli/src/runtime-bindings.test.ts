@@ -4,11 +4,12 @@
 // the one thing that must never be in that report.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp, no recursive remove and no directory probe.
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'; // why: Bun has no mkdtemp, no recursive remove, no directory probe and no sync write.
 // why: `node:` by necessity: Bun has no temp-directory helper, and `resolveServices` creates `.x/`.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { UltimateError } from '@ultimat3/core';
 import { pgliteDataDir } from '@ultimat3/db';
 import { embeddedLocation, eventsBinding, reportedUrls, resolveServices } from './runtime-bindings';
 import { safeUrlLabel } from './safe-url-label';
@@ -119,6 +120,31 @@ test('in-process events alone create no state directory; an embedded database do
     expect(existsSync(join(root, '.x'))).toBe(false);
     resolveServices(root, { S3_ENDPOINT: 'https://s3.example.test' });
     expect(existsSync(join(root, '.x'))).toBe(true);
+  });
+});
+
+// A read-only root filesystem (the chart's `readOnlyRootFilesystem: true`) with DATABASE_URL set
+// and no S3_ENDPOINT died here on a bare EROFS/EACCES — every role, `ROLE=migrate` included —
+// before `startStorage`'s coded refusal could run. A path under a FILE fails the same way as root.
+test('a state directory that cannot be created is X_STORAGE_UNWRITABLE, naming both ways out', () => {
+  withRoot((root) => {
+    const blocker = join(root, 'not-a-dir');
+    writeFileSync(blocker, '');
+    let refused: unknown;
+    try {
+      resolveServices(root, {
+        DATABASE_URL: 'postgres://db:5432/app',
+        ULTIMATE_STATE_DIR: join(blocker, 'state'),
+      });
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toBeInstanceOf(UltimateError);
+    expect(refused).toMatchObject({ code: 'X_STORAGE_UNWRITABLE' });
+    const { cause, fix } = refused as UltimateError;
+    expect(cause).toContain(join(blocker, 'state'));
+    expect(fix).toContain('ULTIMATE_STATE_DIR');
+    expect(fix).toContain('S3_ENDPOINT');
   });
 });
 

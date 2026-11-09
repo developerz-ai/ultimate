@@ -51,6 +51,46 @@
   border-start-end-radius: t.radius(lg);
 }
 
+// The bottom sheet with a grabber: snapped to half or nearly all of the DYNAMIC viewport, so the
+// browser's own bars never push it off-screen, and clear of the home indicator.
+.side-block-end[data-snap] {
+  @include t.transition(translate, block-size);
+  block-size: 50dvh;
+  max-block-size: calc(100dvh - #{t.safe-area-inset(block-start)} - #{t.space(4)});
+  translate: 0 var(--drawer-drag, 0);
+
+  &[data-snap='full'] {
+    block-size: calc(100dvh - #{t.safe-area-inset(block-start)} - #{t.space(4)});
+  }
+
+  // Following the finger: no easing between moves.
+  &[data-dragging] {
+    transition: none;
+  }
+
+  .body,
+  .footer {
+    @include t.safe-area-padding(block-end, t.space(4));
+  }
+}
+
+.grabber {
+  display: flex;
+  justify-content: center;
+  padding-block: t.space(2);
+  cursor: grab;
+  // This box alone: the body keeps its own scroll.
+  touch-action: none;
+
+  &::before {
+    content: '';
+    inline-size: t.space(10);
+    block-size: t.space(1);
+    border-radius: t.radius(pill);
+    background: t.role('fg-muted');
+  }
+}
+
 .panel {
   display: flex;
   flex-direction: column;

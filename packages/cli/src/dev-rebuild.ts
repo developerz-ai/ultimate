@@ -3,6 +3,7 @@
 // supervisor as a restart. Coalesced, so a tick arriving mid-build is one trailing rebuild.
 
 import type { Manifest } from '@ultimat3/manifest';
+import { beginDeviceSocketGeneration } from '@ultimat3/realtime/server';
 import type { IsrController } from '@ultimat3/render/server';
 import { appManifest } from './app-manifest';
 import type { StalePin } from './app-reload-graph';
@@ -42,17 +43,36 @@ export interface DevRebuildOptions {
   readonly onRestart?: (pins: readonly StalePin[]) => void;
 }
 
-/** The watcher's `onChange`: rebuild `state` for the saved `file`, never rejecting. */
+/**
+ * A save that declared a `deviceSocket()` path the listener did not bind: Bun's websocket paths
+ * are fixed when it starts, so only a new process serves it — `restartFinding`'s code and fix.
+ */
+export function unservedDeviceFinding(path: string, file: string): Finding {
+  return {
+    code: 'X_DEV_RESTART_REQUIRED',
+    cause: `deviceSocket('${path}') was declared after x dev bound its listener, which serves only the device paths it booted with`,
+    fix: 'x stop && x dev   # the listener binds its websocket paths once, at boot',
+    at: file,
+  };
+}
+
+/**
+ * The watcher's `onChange`: rebuild `state` for the saved `file`, never rejecting. `refreshDevices`
+ * is the running roles' (`RunningRoles.refreshDevices`): the rescan is a new device generation, so
+ * a re-evaluated `deviceSocket()` replaces its path's old value instead of colliding with it.
+ */
 export function devRebuilder(
   options: DevRebuildOptions,
   state: DevState,
   isr: IsrController,
+  refreshDevices: () => Promise<readonly string[]>,
 ): ReloadTrigger {
   // One rebuild at a time, and the last save wins: a tick arriving mid-build coalesces into ONE
   // trailing rebuild instead of racing the one in flight for `state.manifest` and `state.islands`.
   return coalesceReloads(
     async (file) => {
       const started = performance.now();
+      beginDeviceSocketGeneration();
       const [{ manifest, findings }, islands] = await Promise.all([
         appManifest(options.root),
         buildIslands(options.root),
@@ -60,14 +80,18 @@ export function devRebuilder(
       state.manifest = manifest;
       state.appFindings = findings;
       state.islands = islands;
+      const unserved = await refreshDevices();
       for (const path of isr.store().paths()) isr.store().delete(path);
       state.reloads += 1;
       // Read on EVERY rebuild, so a pin one save reached is never reported against the next save.
       const pins = takeStalePins();
+      const [device] = unserved;
       state.reloadFinding =
         pins.length > 0 && options.onRestart === undefined
           ? restartFinding(options.root, pins)
-          : undefined;
+          : device === undefined
+            ? undefined
+            : unservedDeviceFinding(device, file);
       if (pins.length > 0 && options.onRestart !== undefined) options.onRestart(pins);
       else options.onReload?.(file, Math.round(performance.now() - started));
     },

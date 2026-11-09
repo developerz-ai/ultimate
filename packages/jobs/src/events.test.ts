@@ -75,11 +75,13 @@ describe('the memory event bus', () => {
     await bus.publish('invoice.paid', 'second', { correlationKey: 'org-1' });
 
     expect(await bus.find('invoice.paid', 'org-1', 0)).toEqual({
+      id: expect.any(String),
       payload: 'first',
       publishedAt: 1_000,
     });
     // A wait that began after the first one skips it: `afterMs` is the step's own cursor.
     expect(await bus.find('invoice.paid', 'org-1', 1_005)).toEqual({
+      id: expect.any(String),
       payload: 'second',
       publishedAt: 1_010,
     });
@@ -92,6 +94,7 @@ describe('the memory event bus', () => {
     expect(await bus.find('invoice.paid', 'org-1', 0)).toBeUndefined();
     // An uncorrelated wait matches anything of that name, which is the documented fallback.
     expect(await bus.find('invoice.paid', undefined, 0)).toEqual({
+      id: expect.any(String),
       payload: 'theirs',
       publishedAt: 1_000,
     });
@@ -116,6 +119,7 @@ describe('the ambient bus', () => {
     expect(event.name).toBe('invoice.paid');
     expect(installed.size()).toBe(1);
     expect(await installed.find('invoice.paid', 'org-1', 0)).toEqual({
+      id: event.id,
       payload: { id: 'in_1' },
       publishedAt: 1_000,
     });

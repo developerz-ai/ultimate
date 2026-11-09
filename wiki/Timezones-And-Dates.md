@@ -59,6 +59,18 @@ The zone rides the ALS request context alongside the locale, so `format*` helper
 
 All of them read locale and zone from the context and pass `timeZone` explicitly to `Intl`. There is no variant that omits it.
 
+### Pickers
+
+`As of 2026-11`. A calendar date the user picks is a `PlainDate` — `DatePicker`, `DateRangePicker`
+and `Calendar` take and post `YYYY-MM-DD` and know no zone. Month and weekday names are
+`Intl.DateTimeFormat` with `timeZone: 'UTC'` on the plain date's UTC midnight, which names the date
+and never shifts it; the week starts on the locale's day (`Intl.Locale#getWeekInfo`). A *window* is
+instants: `timeRangeUrl(url, { presets, default, timeZone, now })` reads a custom `from`/`to` as
+wall-clock time in `timeZone` (a spring-forward gap resolves forward) and `TimeRangePicker` requires
+the same `timeZone` as a prop — omitting it is a type error. "Today" is the caller's: pass `month`
+(or `now`) computed with `plainDateIn(now(), actor.tz)`; with none, `Calendar` opens on today in
+`useUi().timeZone`, the request's zone, never the device's.
+
 ## Common mistakes
 
 | Mistake | What breaks | Fix |

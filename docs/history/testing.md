@@ -409,6 +409,10 @@ is `examples/dummy/apps/web/app/settings/settings.island.test.ts`; `fixture-isla
 this package's own contract against modules written in the idiom `babel-preset-solid` emits, with
 no bundler, because a test here cannot import one.
 
+Moved from the package `CLAUDE.md` 2026-11-08 (the ceiling), verbatim: `fixture-island.ts`,
+`island-dom.ts`, `island-selector.ts` and `island-observers.ts` are on `.` and import
+`@ultimat3/core` and nothing else, so they cost a tier-0 test nothing.
+
 ### An island needs a BUILDER, not an import
 
 | An island needs a BUILDER, not an import | `buildIslands` is `@ultimat3/cli`'s and both packages are tier 5; the one declared edge is `cli → testing`, so the reverse is a `bun run boundaries` failure. |
@@ -477,3 +481,9 @@ holds both sides.
 ### Loose in, strict out
 
 `findIslandStates` resolves `Settings`, `settings`, `settings.island.tsx` and the full path to one manifest, and refuses a name nothing answers to by listing EVERY valid one |
+
+### A11y on raw tabs
+
+`e2e-a11y-tabs.ts` audits every raw tab too: checked after each `goto`/`reload` and at the test's end
+from the preload's `afterEach`. The full AX tree is read only in `cdp-e2e-page.ts` (`FULL_AX_TREE`, a
+convention). Exceptions are `allowA11y([{ role, selector, because }])`, never a switch.

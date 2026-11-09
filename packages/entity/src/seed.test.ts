@@ -205,6 +205,30 @@ describe('defineSeed() · upsert on a natural key', () => {
     expect((stored.rows[0] as { monthly: { minor: number } }).monthly.minor).toBe(3000);
   });
 
+  // Read with `includeDeleted`: without it the stamped row read as absent, the write landed on it
+  // through `on conflict do update` with `deleted_at` spared, the row stayed hidden — and every
+  // replay reported `'inserted'` for a row nobody could see. A soft delete is a decision, and a
+  // seed replayed on every boot does not undo it: the row is skipped, as `insert` skips it.
+  test('a soft-deleted match is skipped and left deleted, never rewritten as inserted', async () => {
+    const NOTE = '00000000-0000-7000-8000-0000000000aa';
+    const note = (body: string) =>
+      defineSeed('seed_test_note', async ({ upsert }) => {
+        await upsert(notes, { by: ['id'] }, { id: NOTE, body });
+      });
+    await note('first').run({ driver });
+    await driver.repo(notes).delete(NOTE);
+
+    expect((await note('second').run({ driver })).metrics).toEqual({
+      inserted: 0,
+      updated: 0,
+      skipped: 1,
+    });
+    const stored = await driver.repo(notes).findMany({ includeDeleted: true });
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0]?.body).toBe('first');
+    expect(stored.rows[0]?.deletedAt).toBeInstanceOf(Date);
+  });
+
   test('an update never resets createdAt — a replay must not move when the row arrived', async () => {
     await driver.repo(plans).insert(
       plans.$parse({

@@ -120,3 +120,33 @@ describe('unit · a generated statements assertion fails when its handler gains 
     }, 60_000);
   }
 });
+
+// The same proof for the cache tag: deleting `invalidates` from a generated action left its own
+// test green (one of 13 scaffold mutants that survived), so a slice's reads could serve stale rows
+// with nothing red. The generated test now names the tag; this runs it both ways.
+describe('unit · a generated action test fails when its cache tag is deleted', () => {
+  test('x g action', async () => {
+    const entity = generate({ kind: 'entity', name: 'invoice', dbModule: dbModule() });
+    const entitySource = String(entity.find((one) => one.path.endsWith('/entity.ts'))?.contents);
+    await land(
+      generate({
+        kind: 'action',
+        name: 'close-invoice',
+        feature: 'invoice',
+        dbModule: dbModule(),
+        sliceEntity: entitySource,
+      }),
+    );
+    const source = 'apps/web/app/invoice/actions/close-invoice.ts';
+    const test = 'apps/web/app/invoice/actions/close-invoice.test.ts';
+    const clean = await suite(test);
+    expect(clean.ok, clean.output).toBe(true);
+
+    await edit(source, '  cache: { invalidates: [invoiceTag] },\n', '');
+    const untagged = await suite(test);
+    expect(untagged.ok).toBe(false);
+    expect(untagged.output).toContain(
+      '(fail) unit · closeInvoice is a declared action that invalidates its slice',
+    );
+  }, 60_000);
+});

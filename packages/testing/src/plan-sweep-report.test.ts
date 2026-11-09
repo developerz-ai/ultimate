@@ -67,6 +67,27 @@ describe('unit · planSweepFindings', () => {
     expect(finding?.fix).not.toContain('scan:');
   });
 
+  test('a read that compares no column offers no empty index: it is a scan to state', () => {
+    const whole: PlanFinding = {
+      ...unindexed,
+      statement: 'select count(*) as count from "posts"',
+      node: 'Index Only Scan',
+      index: [],
+    };
+    const records = [record('postCount', { plans: planned([whole]) })];
+    const [finding] = planSweepFindings(records);
+    expect(finding?.code).toBe('X_QUERY_UNINDEXED');
+    expect(finding?.fix).not.toContain('on: []');
+    expect(finding?.fix).not.toContain('x db gen');
+    expect(finding?.fix).toStartWith('x exercise postCount --json');
+    expect(finding?.fix).toContain("expectedSeqScan('<why it reads every row>', fn)");
+    expect(finding?.fix).toContain('scan: \'<why it stays small>\' in entity("posts")');
+    expect(finding?.cause).toContain('compares no column');
+    expect(planSweepLines(records)).toEqual([
+      'query postCount · X_QUERY_UNINDEXED posts, every row (no column to index)',
+    ]);
+  });
+
   test('a shape that grows is X_QUERY_SCALES_WITH_ROWS, its counts in the cause', () => {
     const grows = record('listPosts', {
       scale: {
@@ -112,5 +133,59 @@ describe('unit · planSweepFindings', () => {
       }),
     ]);
     expect(finding?.fix).toStartWith('x exercise <primitive> --json');
+  });
+
+  test('a sort no index serves offers no index: it says why, and the rewrite or the stated reason', () => {
+    const unserved = (reason: PlanFinding['unserved']): PlanFinding => ({
+      ...unindexed,
+      code: 'X_QUERY_SORT_UNSERVED',
+      node: 'Sort',
+      index: [],
+      ...(reason === undefined ? {} : { unserved: reason }),
+    });
+    const why = {
+      expression: 'an expression',
+      aggregate: 'an aggregate',
+      derived: 'a subquery',
+      tables: 'more than one table',
+      directions: 'different directions',
+    } as const;
+    for (const [reason, phrase] of Object.entries(why)) {
+      const records = [record('feed', { plans: planned([unserved(reason as keyof typeof why)]) })];
+      const [finding] = planSweepFindings(records);
+      expect(finding?.code).toBe('X_QUERY_SORT_UNSERVED');
+      expect(finding?.cause).toContain(phrase);
+      expect(finding?.cause).not.toContain('compares no column');
+      expect(finding?.fix).not.toContain('x db gen');
+      expect(finding?.fix).not.toContain('indexes:');
+      expect(finding?.fix).toStartWith('x exercise feed --json');
+      expect(finding?.fix).toContain('expectedSeqScan(');
+      expect(planSweepLines(records)).toEqual([
+        `query feed · X_QUERY_SORT_UNSERVED posts, no index serves it (${reason})`,
+      ]);
+    }
+  });
+
+  test('an index the entity already declares is never printed as the fix', () => {
+    const [finding] = planSweepFindings([
+      record('authorPosts', {
+        plans: planned([{ ...unindexed, index: [], unserved: 'declared' }]),
+      }),
+    ]);
+    expect(finding?.cause).toContain('already declares');
+    expect(finding?.fix).not.toContain('x db gen');
+    expect(finding?.fix).toContain('expectedSeqScan(');
+  });
+
+  test("an OR's arms are one finding each: one index per arm", () => {
+    const arms = [
+      { ...unindexed, index: ['authorId'] },
+      { ...unindexed, index: ['title'] },
+    ];
+    const findings = planSweepFindings([record('search', { plans: planned(arms) })]);
+    expect(findings.map((one) => one.fix.split('   #')[0])).toEqual([
+      'x db gen posts-authorId-index',
+      'x db gen posts-title-index',
+    ]);
   });
 });

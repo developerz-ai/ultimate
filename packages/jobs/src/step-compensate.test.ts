@@ -15,7 +15,7 @@ import { t } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
 import { memoryJobDriver } from './driver-memory';
-import type { JobExecution } from './execute';
+import type { JobExecution } from './execute-result';
 import type { JobRunArgs } from './job';
 import { job, resetJobs } from './job';
 import { enqueuedAttempts } from './retry';

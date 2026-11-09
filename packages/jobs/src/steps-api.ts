@@ -30,11 +30,20 @@ export interface EventLookup {
    * deciding which answers count. `waitForEvent` stamps a NEW wait with it.
    */
   now(): Promise<number>;
+  /**
+   * The earliest match published at or after `afterMs` — and, given `afterId`, strictly past THAT
+   * event in the bus's own (published, id) order. The id is the cursor a refused event leaves: a
+   * floor of `publishedAt + 1` stepped over every valid event stamped in the same millisecond.
+   * An `afterId` the bus no longer holds narrows nothing: the event it named cannot match again.
+   */
   find(
     event: string,
     correlationKey: string | undefined,
     afterMs: number,
-  ): Promise<{ readonly payload: unknown; readonly publishedAt: number } | undefined>;
+    afterId?: string,
+  ): Promise<
+    { readonly id: string; readonly payload: unknown; readonly publishedAt: number } | undefined
+  >;
 }
 
 export interface WaitForEventOptions<S extends StandardSchemaV1 = StandardSchemaV1> {

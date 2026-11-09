@@ -13,6 +13,7 @@
 // directory is checkout-relative while a caller's scan yields paths relative to its own root.
 import { join, relative } from 'node:path';
 import { singleLine, UltimateError } from '@ultimat3/core';
+import { readUnownedDirs } from './affected-unowned';
 import { BadFlagError } from './errors';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
@@ -99,7 +100,20 @@ export interface AffectedPlan {
    */
   readonly rootWide: readonly string[];
   readonly workspaces: readonly WorkspaceNode[];
+  /**
+   * The root directories no workspace owns (`affected-unowned.ts`) — `scripts/` here — selected
+   * whenever any workspace is: their tests import packages by relative path, declare no
+   * dependency, and so are reached by a change the graph has no edge for. Empty when nothing is
+   * affected, and when the plan is root-wide (which already selects them).
+   */
+  readonly unowned: readonly string[];
 }
+
+/**
+ * The CLI is the tool every test run goes through — `x test`, the gate's steps, the preloads — so a
+ * change to its own source is a change to how every workspace is checked, not to one workspace.
+ */
+export const TOOL_WORKSPACE = '@ultimat3/cli';
 
 const byName = (a: WorkspaceNode, b: WorkspaceNode): number => (a.name > b.name ? 1 : -1);
 
@@ -110,6 +124,7 @@ const byName = (a: WorkspaceNode, b: WorkspaceNode): number => (a.name > b.name 
 export function planAffected(
   graph: readonly WorkspaceNode[],
   changed: readonly string[],
+  unownedDirs: readonly string[] = [],
 ): AffectedPlan {
   const ignored = changed.filter(isDoc);
   const considered = changed.filter((path) => !isDoc(path));
@@ -117,18 +132,20 @@ export function planAffected(
   const seeds = new Set<string>();
   for (const path of considered) {
     const node = owningWorkspace(graph, path);
-    if (node === undefined) rootWide.push(path);
+    if (node === undefined || node.name === TOOL_WORKSPACE) rootWide.push(path);
     else seeds.add(node.name);
   }
   if (rootWide.length > 0) {
-    return { changed, ignored, rootWide, workspaces: [...graph].sort(byName) };
+    return { changed, ignored, rootWide, workspaces: [...graph].sort(byName), unowned: [] };
   }
   const reached = withDependents(graph, seeds);
+  const workspaces = graph.filter((node) => reached.has(node.name)).sort(byName);
   return {
     changed,
     ignored,
     rootWide,
-    workspaces: graph.filter((node) => reached.has(node.name)).sort(byName),
+    workspaces,
+    unowned: workspaces.length === 0 ? [] : [...unownedDirs],
   };
 }
 
@@ -266,8 +283,8 @@ export interface AffectedScope {
 export const scopePrefixes = (plan: AffectedPlan, root: string, cwd: string): readonly string[] =>
   plan.rootWide.length > 0
     ? ['']
-    : plan.workspaces
-        .map((workspace) => relative(cwd, join(root, workspace.dir)).split('\\').join('/'))
+    : [...plan.workspaces.map((workspace) => workspace.dir), ...plan.unowned]
+        .map((dir) => relative(cwd, join(root, dir)).split('\\').join('/'))
         .filter((path) => !path.startsWith('..'));
 
 export const inScope = (path: string, prefixes: readonly string[]): boolean =>
@@ -290,9 +307,11 @@ export interface AffectedScopeOptions {
 export async function affectedScope(options: AffectedScopeOptions): Promise<AffectedScope> {
   const selection = readAffectedSelection(options.args, options.command);
   const root = await gitRoot(options.runner, options.cwd, options.command);
+  const graph = await readWorkspaceGraph(root);
   const plan = planAffected(
-    await readWorkspaceGraph(root),
+    graph,
     await changedFiles(options.runner, { cwd: root, command: options.command, selection }),
+    await readUnownedDirs(root, graph),
   );
   return {
     selection,

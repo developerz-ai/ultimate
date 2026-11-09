@@ -17,7 +17,8 @@
 //
 //   bun run scripts/scaffold-first-run.ts <app dir> [--json]
 
-import { resolve } from 'node:path';
+// why: Bun exposes no path-join or path-resolve primitive.
+import { join, resolve } from 'node:path';
 import { GENERATORS } from '@ultimat3/cli';
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import { parseScriptArgs } from './lib/args';
@@ -140,25 +141,36 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
  * `bun run setup` generates the initial migration BEFORE it migrates — so re-spelling it here
  * tested a path no app takes.
  */
-export const firstRunPlan = (): readonly FirstRunStep[] => [
-  ...GENERATORS.map((kind) => ({
-    name: `g ${kind}`,
-    // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`, and
-    // one chart, named by its `Chart.yaml` — which `x new` wrote holding both monitoring templates,
-    // so this step is the backfill's no-op over a current chart.
-    args:
-      kind === 'sign-in'
-        ? ['g', kind, '--password', '--json']
-        : kind === 'chart-alerts'
-          ? ['g', kind, '--json']
-          : [
-              'g',
-              kind,
-              generatorName(kind),
-              ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
-              '--json',
-            ],
-  })),
+/** Where `x g sign-in` writes its page: an app holding it was signed in at birth (`--shape dashboard`). */
+export const SIGN_IN_PAGE = 'apps/web/app/auth/sign-in/page.tsx';
+
+/**
+ * `signedIn`: the app already has its one sign-in, so `g sign-in` is left out — a second run is
+ * X_GENERATE_CONFLICT on every file, a refusal of the sweep's own making, never the generator's.
+ */
+export const firstRunPlan = (
+  options: { readonly signedIn?: boolean } = {},
+): readonly FirstRunStep[] => [
+  ...GENERATORS.filter((kind) => !(options.signedIn === true && kind === 'sign-in')).map(
+    (kind) => ({
+      name: `g ${kind}`,
+      // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`, and
+      // one chart, named by its `Chart.yaml` — which `x new` wrote holding both monitoring templates,
+      // so this step is the backfill's no-op over a current chart.
+      args:
+        kind === 'sign-in'
+          ? ['g', kind, '--password', '--json']
+          : kind === 'chart-alerts'
+            ? ['g', kind, '--json']
+            : [
+                'g',
+                kind,
+                generatorName(kind),
+                ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
+                '--json',
+              ],
+    }),
+  ),
   ...SECOND_SHAPES,
   { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },
 ];
@@ -279,7 +291,7 @@ if (import.meta.main) {
       args.json,
     );
   }
-  const steps = firstRunPlan();
+  const steps = firstRunPlan({ signedIn: await Bun.file(join(dir, SIGN_IN_PAGE)).exists() });
   await plantHandWrittenSlices(dir);
   const outcomes = await runFirstRun(dir, steps, run);
   const findings = firstRunFindings(dir, outcomes);

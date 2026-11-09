@@ -40,7 +40,11 @@ describe('an index migrations declare, against the one the catalog holds', () =>
   test('an index the migrations declare and the database does not have is drift', () => {
     const report = diffSchema(schema(posts), schema(withIndexes(posts, declared)));
     expect(report.differences[0]?.kind).toBe('missing-index');
-    expect(report.differences[0]?.fix).toBe('x db migrate');
+    // The statement, never `x db migrate`: the ledger holds the migration, so it applies nothing.
+    expect(report.differences[0]?.fix).toBe(
+      `psql "$DATABASE_URL" -c 'create index "posts_org_id_created_at_idx" on "posts" ` +
+        `("org_id", "created_at");'   # then x db migrate, which re-checks`,
+    );
   });
 
   test('uniqueness dropped underneath a declared index is drift', () => {

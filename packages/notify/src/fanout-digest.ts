@@ -87,10 +87,11 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
           ledger: notifyStores().ledger,
           // The window, not the event: a digest is one delivery for many events, so its ledger
           // identity is the slot plus the window it closed. Two different windows for the same
-          // recipient are two deliveries and must not dedupe into one.
+          // recipient are two deliveries and must not dedupe into one. THIS recipient's end, never
+          // the run's maximum: two runs whose maxima coincide would share one key across windows.
           claim: {
             notifier: plan.name,
-            key: `digest:${group}:${String(opened.endsAt)}`,
+            key: `digest:${group}:${String(endsAt)}`,
             recipient: id,
             channel: channel.name,
           },

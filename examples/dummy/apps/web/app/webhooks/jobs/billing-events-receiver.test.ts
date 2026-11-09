@@ -2,6 +2,7 @@
 // What is worth failing on is Postly's half — the secret list, the event read out of the SIGNED
 // body and the code that replaces a parser message — never the framework's route, which
 // `@ultimat3/jobs` pins itself.
+import { hmac } from '@ultimat3/core';
 import { defineHttpConfig, httpPipeline, httpRouter } from '@ultimat3/http';
 import { describe, expect, test, testName } from '@ultimat3/testing';
 import {
@@ -25,7 +26,7 @@ const withSecrets = async (secrets: string, run: () => Promise<void>): Promise<v
 };
 
 const sign = (body: string, secret = SECRET): string =>
-  `sha256=${new Bun.CryptoHasher('sha256', secret).update(body).digest('hex')}`;
+  `sha256=${hmac('sha256', secret, body, 'hex')}`;
 
 const deliver = (body: string, signature: string): Promise<Response> =>
   httpPipeline({

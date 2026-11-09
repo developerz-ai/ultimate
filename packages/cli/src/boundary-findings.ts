@@ -8,6 +8,8 @@ import { appImportGraph, checkImportRules, readAppSources } from './app-boundari
 import { siblingModuleFindings } from './app-layout';
 import { appTransportFindings } from './app-transport';
 import { planBoundaryCuts } from './boundary-cuts';
+import { handRolledSocketFindings } from './hand-rolled-socket';
+import { islandDisposerFindings } from './island-disposer';
 import type { Finding } from './output';
 import { packageBoundaryFindings } from './package-boundaries';
 
@@ -47,6 +49,8 @@ export async function appBoundaryFindings(
     ...withCutEdits(checkImportRules(files), appImportGraph(files)),
     ...(await appTransportFindings(root, files)),
     ...siblingModuleFindings(files),
+    ...islandDisposerFindings(files),
+    ...handRolledSocketFindings(files),
     ...(await packageBoundaryFindings(root)),
   ];
 }

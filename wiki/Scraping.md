@@ -87,7 +87,8 @@ One interface, three drivers, no driver type in it.
 | `values` / `text` / `html` / `count` | reads; `text()` with no argument is the whole document |
 | `evaluate(expression)` | returns `unknown` — parse it |
 | `frame(nameOrSelector)` | re-resolves on every call; nothing hands out a stale handle |
-| `screenshot` / `pdf` | `{ fullPage }` only |
+| `screenshot` | `{ fullPage }` or `{ clip }`, never both |
+| `pdf` | the print layout: `format` (`a4`, `letter`, …) or `widthMm` + `heightMm`, `marginMm`, `printBackground`, `preferCssPageSize`, `headerHtml` / `footerHtml`. Two sizes, half a size or a size beside `preferCssPageSize` is `X_SCRAPE_PDF_OPTIONS_INVALID` (422), before any driver |
 | `download({ timeout })` | whatever the last click produced, or `X_SCRAPE_DOWNLOAD_TIMEOUT` |
 | `cookies` / `session` | the handoff to the HTTP leg, as a value you can inspect |
 | `query(selector)` | every match as a snapshot — tag, attributes, text, **and `visible`**. The one definition of "visible" in the framework; nothing else may compute it |
@@ -450,3 +451,43 @@ Everything else is terminal, including `X_SCRAPE_SELECTOR_MISSING` (the markup c
 | A capture deadline | deleted in 4.0.0; the driver's own default is the bound |
 | CAPTCHA solving, fingerprint evasion, proxy rotation | none of it. `X_SCRAPE_BLOCKED` burns the session and re-raises |
 | A scaffold | `g` has no `scrape` positional; write the declaration by hand |
+
+## Pages as files: PDF and cards
+
+`page.pdf(layout)` is the invoice path, through the browser the app already brings. Who may reach
+the page is the app's policy: print from a route a signed token opens, never from a page a secret
+was typed into (`X_SCRAPE_SECRET_EXPOSED` keeps its rule). The offline drivers answer different
+deterministic bytes per layout, so a dropped margin fails a test. `As of 2026-11`.
+
+```ts
+import { t } from '@ultimat3/jobs';
+import type { CdpLauncherLike } from '@ultimat3/scraping';
+import { localBrowser, scrape } from '@ultimat3/scraping';
+import { disk } from '@ultimat3/storage';
+
+declare const puppeteer: CdpLauncherLike; // the app's own `puppeteer-core`, passed in
+
+export const printInvoice = scrape({
+  name: 'invoices.print',
+  input: t.object({ orgId: t.uuid, invoiceId: t.uuid }),
+  extract: t.object({ key: t.string }),
+  idempotencyKey: ({ invoiceId }) => `invoices.print:${invoiceId}`,
+  tenant: ({ orgId }) => orgId,
+  allowHosts: ['app.example'],
+  driver: localBrowser({ launcher: puppeteer }),
+  async run({ input, page }) {
+    // The app's own print route, behind a token it signs and verifies — its policy, not this one.
+    await page.goto(`https://app.example/invoices/${input.invoiceId}/print`);
+    const pdf = await page.pdf({ format: 'a4', marginMm: { top: 15, bottom: 15 } });
+    const key = `org/${input.orgId}/invoices/${input.invoiceId}.pdf`;
+    await disk().put(key, pdf, { contentType: 'application/pdf' });
+    return [{ key }];
+  },
+});
+```
+
+A social card for a row published at runtime is the same shape: `page.screenshot()` of the row's
+1200 x 630 card page, `disk().put()`, then `og: { image }` — [SEO](SEO#a-card-the-build-photographs-ogcapture)
+covers the cards a static build takes itself. `examples/dummy`'s `runs/jobs/print-statement.ts` is
+the worked example over a recording.
+

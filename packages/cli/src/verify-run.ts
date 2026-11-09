@@ -9,12 +9,14 @@ import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import type { StepDeadline, StepGuard } from './verify-deadline';
 import { guardStep, raceDeadline, stepDeadline } from './verify-deadline';
+import { besideLive, e2eBesideLive } from './verify-e2e-lane';
 import {
   floorRequires,
   readVerifyFloor,
   skippedSuiteFinding,
   vanishedSuiteFinding,
 } from './verify-floor';
+import { inCi, judgeSkips } from './verify-skip-ceiling';
 import { stalledOutput, stepTimeoutFinding } from './verify-stalled';
 import type {
   CoverageNumbers,
@@ -24,6 +26,7 @@ import type {
   VerifyStepName,
 } from './verify-step';
 import { GATE_COMMAND } from './verify-step';
+import { resetTestDiscovery } from './verify-tests';
 
 /**
  * Run every step, never bailing early: an agent fixing three things at once needs all
@@ -38,6 +41,9 @@ export async function runVerify(
   steps: readonly VerifyStep[],
   ctx: VerifyContext,
 ): Promise<CommandResult> {
+  // The file list is one run's: the dev MCP host calls this again in one process, and a suite
+  // written or deleted since the last call must be what this one judges.
+  resetTestDiscovery();
   const floor = await readVerifyFloor(ctx.root);
   const only = onlyList(ctx.only);
   const selected = only === undefined ? steps : steps.filter((step) => only.includes(step.name));
@@ -76,7 +82,14 @@ export async function runVerify(
   // The static steps wait for the serial suites and then run BESIDE them — only when `live` is in
   // the list, so a one-step run (`--only`) and a list with no serial suite keep today's order.
   const overlapping = selected.some((step) => step.name === SERIAL_SUITES[0]);
-  const beside = overlapping ? selected.filter((step) => BESIDE_SERIAL_SUITES.has(step.name)) : [];
+  // The second serial lane (`verify-e2e-lane.ts`): `e2e` beside `live`, its children stripped of
+  // every service URL, in a package monorepo only.
+  const e2eLane = overlapping && e2eBesideLive(ctx);
+  const beside = overlapping
+    ? selected.filter(
+        (step) => BESIDE_SERIAL_SUITES.has(step.name) || (e2eLane && step.name === 'e2e'),
+      )
+    : [];
   let pending: Promise<void> | undefined;
   const join = async (): Promise<void> => {
     await pending;
@@ -93,7 +106,9 @@ export async function runVerify(
   for (const step of selected) {
     if (beside.includes(step)) continue;
     if (step.name === SERIAL_SUITES[0]) {
-      pending = Promise.all(beside.map((other) => run(other, base))).then(() => undefined);
+      pending = Promise.all(
+        beside.map((other) => run(other, other.name === 'e2e' ? besideLive(base) : base)),
+      ).then(() => undefined);
     } else if (!SERIAL_SUITES.includes(step.name)) {
       await join();
     }
@@ -279,20 +294,25 @@ async function runStep(
   // with no files at all — the run just had to finish before it could be seen. Appended to the
   // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
   const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
+  // A mostly skipped suite, judged where the verdict is: CI, and only a whole run (a shard's
+  // share is judged by `x verify merge`, on the sum). A laptop without services stays a dev loop.
+  const skips =
+    outcome.shard === undefined && inCi(ctx.env ?? Bun.env)
+      ? judgeSkips(step.name, tests, floor?.skipCeiling)
+      : { findings: [], warnings: [] };
+  const warnings = [...(outcome.warnings ?? []), ...skips.warnings];
   return {
     result: {
       name: step.name,
-      ok: outcome.ok && vanished.length === 0,
+      ok: outcome.ok && vanished.length === 0 && skips.findings.length === 0,
       durationMs: Math.round(performance.now() - started),
       // Without a floor to require it, a suite that ran nothing is a SKIP and not a pass (#434):
       // the `e2e` step printed `✓ e2e 46ms` over its one skipped test, which is the one thing a
       // step table may never do — a reader cannot tell a lane that ran from a lane that did not.
       skipped: nothingRan && !required,
-      findings: [...outcome.findings, ...vanished],
+      findings: [...outcome.findings, ...vanished, ...skips.findings],
       ...(outcome.output === undefined ? {} : { output: outcome.output }),
-      ...(outcome.warnings === undefined || outcome.warnings.length === 0
-        ? {}
-        : { warnings: outcome.warnings }),
+      ...(warnings.length === 0 ? {} : { warnings }),
       ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
       ...(outcome.widthReason === undefined ? {} : { widthReason: outcome.widthReason }),
       ...(outcome.slowest === undefined || outcome.slowest.length === 0

@@ -79,3 +79,24 @@ export const routeMatches = (
   const named = namedUrl(call.url, call.headers);
   return named !== undefined && urlMatches(route.match, named);
 };
+
+/** A RegExp's literal text: a `.` in a host is `\.` in its source. */
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/**
+ * Whether `route` answers some URL on `hostname` — what makes the sealed resolver answer the name.
+ * A string names its host outright; a RegExp when it matches the host's origin or spells the host
+ * in its source (`/api\.vendor\.example\/v1/`), since no reader can enumerate what a pattern matches.
+ */
+export const routeNamesHost = (route: MockRoute, hostname: string): boolean => {
+  const host = hostname.toLowerCase();
+  if (route.match instanceof RegExp) {
+    const pattern = route.match;
+    const origins = [`https://${host}/`, `http://${host}/`];
+    if (origins.some((origin) => urlMatches(pattern, origin))) return true;
+    const source = pattern.source.toLowerCase();
+    return source.includes(escaped(host)) || source.includes(host);
+  }
+  const literal = route.match.endsWith('*') ? route.match.slice(0, -1) : route.match;
+  return URL.canParse(literal) && new URL(literal).hostname.toLowerCase() === host;
+};

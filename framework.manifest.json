@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "1842e3330341712df5c6b81d618d67eca144dbcb2d2169b3d173070d44214d9d",
+  "buildId": "db93f5d02fe5dd51b6b824ccd4f4793b9ad1b95b6eb06b895e071897b03eada1",
   "tiers": {
     "0": [
       "core",
@@ -48,187 +48,187 @@
   "packages": [
     {
       "name": "@ultimat3/core",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/schema",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/cache",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/db",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/flags",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/i18n",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/money",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/seo",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/storage",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/time",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/auth",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/entity",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/http",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/policy",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/action",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/jobs",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/query",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/realtime",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/ai",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mail",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/manifest",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mcp",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/notify",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/pwa",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/render",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/scraping",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/ui",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/admin",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/cli",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/testing",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "create-ultimate",
-      "version": "29.4.0",
+      "version": "30.9.0",
       "tier": 6,
       "private": false
     }
@@ -361,6 +361,11 @@
     },
     {
       "code": "X_ADMIN_POLICY_MISSING",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_ADMIN_READ_ONLY_WRITE",
       "owner": "admin",
       "at": "packages/admin/src/errors.ts"
     },
@@ -575,6 +580,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_ASSET_VARIANT_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ASYNC_CONTEXT_UNAVAILABLE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -680,6 +690,16 @@
       "at": "scripts/bench-claims.ts"
     },
     {
+      "code": "X_BENCH_RUN_FAILED",
+      "owner": "scripts",
+      "at": "scripts/bench/first-hour.ts"
+    },
+    {
+      "code": "X_BENCH_RUN_TOO_SHORT",
+      "owner": "scripts",
+      "at": "scripts/bench/http-hello.ts"
+    },
+    {
       "code": "X_BENCH_STREAM_CLOSED",
       "owner": "scripts",
       "at": "scripts/bench/restart-bench.ts"
@@ -687,7 +707,7 @@
     {
       "code": "X_BENCH_URL_REQUIRED",
       "owner": "scripts",
-      "at": "scripts/bench/restart-bench-client-worker.ts"
+      "at": "scripts/bench/http-hello.ts"
     },
     {
       "code": "X_BODY_INVALID",
@@ -1027,7 +1047,7 @@
     {
       "code": "X_CLIENT_EDITED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_CLIENT_ERROR",
@@ -1047,17 +1067,17 @@
     {
       "code": "X_CLIENT_SPEC_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_CLIENT_SPEC_UNSUPPORTED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_CLIENT_STALE",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_CLIENT_TRANSPORT_FAILED",
@@ -1535,6 +1555,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_DEVICE_FRAME_TOO_LARGE",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_DEVICE_OFFLINE",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_DEVICE_REQUEST_TIMEOUT",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
       "code": "X_DOC_BOUNDARY_RULES_STALE",
       "owner": "scripts",
       "at": "scripts/boundary-rule-docs.ts"
@@ -1805,6 +1840,11 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_ENTITY_READ_ONLY",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_ENTITY_RETAIN_INVALID",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -1993,6 +2033,31 @@
       "code": "X_EVAL_TOOL_UNDOUBLED",
       "owner": "ai",
       "at": "packages/ai/src/error-codes.ts"
+    },
+    {
+      "code": "X_EXERCISE_ACTOR_USER_UNSEATED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_EXERCISE_FILE_UNEDITABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_EXERCISE_INPUT_THREW",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_EXERCISE_REQUEST_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_EXERCISE_SETUP_UNSEALED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_EXPORT_PART_TOO_LARGE",
@@ -2237,7 +2302,7 @@
     {
       "code": "X_GRAPH_NODE_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_GUARD_FAILED",
@@ -2385,6 +2450,11 @@
       "at": "scripts/image-contract.ts"
     },
     {
+      "code": "X_IMAGE_SOURCE_UNREADABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_IMAGE_TOO_LARGE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -2455,6 +2525,11 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_ISLAND_DISPOSER_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ISLAND_INVALID",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
@@ -2491,6 +2566,11 @@
     },
     {
       "code": "X_JOB_CRASH_DIVERGED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_CRASH_UNBOUNDED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },
@@ -2623,6 +2703,16 @@
       "code": "X_JOB_UNREGISTERED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_KEYED_HASHER",
+      "owner": "scripts",
+      "at": "scripts/keyed-hasher.ts"
+    },
+    {
+      "code": "X_KEYED_HASHER_EXEMPT_STALE",
+      "owner": "scripts",
+      "at": "scripts/keyed-hasher.ts"
     },
     {
       "code": "X_KEYSET_NULL_KEY",
@@ -2885,6 +2975,16 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_CATALOG_TOOL_DUPLICATE",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CATALOG_UNRESOLVED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -2900,12 +3000,27 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_CONFIRMATION_EVIDENCE_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_CONFIRMATION_EXPIRED",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
     {
       "code": "X_MCP_CONFIRMATION_PENDING",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_QUORUM_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_QUORUM_PENDING",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
@@ -2956,6 +3071,11 @@
     },
     {
       "code": "X_MCP_IDEMPOTENCY_KEY_SHADOWED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_INCLUDE_EARLY",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
@@ -3085,6 +3205,21 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_TENANT_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_TENANT_REQUIRED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_TENANT_UNRESOLVED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_TOOL_DUPLICATE",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -3113,6 +3248,16 @@
       "code": "X_MCP_WRONG_TOOL",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_METER_EXCEEDED",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_METER_INVALID",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_METHOD_NOT_ALLOWED",
@@ -3270,6 +3415,21 @@
       "at": "scripts/lib/error-code-plan.ts"
     },
     {
+      "code": "X_NEW_SHAPE_CONFLICT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_NEW_SHAPE_GENERATE_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_NEW_SHAPE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_NO_CONTEXT",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -3346,6 +3506,21 @@
     },
     {
       "code": "X_NOTIFY_FANOUT_TOO_WIDE",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_PUSH_DEVICE_GONE",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_PUSH_MESSAGE_INVALID",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_PUSH_PROVIDER_REFUSED",
       "owner": "notify",
       "at": "packages/notify/src/errors.ts"
     },
@@ -3503,6 +3678,21 @@
       "code": "X_PACKAGE_UNREFERENCED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_PASSKEY_CHALLENGE_EXPIRED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_STEP_UP_REQUIRED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
     },
     {
       "code": "X_PASSWORD_WEAK",
@@ -4117,17 +4307,17 @@
     {
       "code": "X_REPRO_CAPTURE_OFF",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_REPRO_NOT_REPRODUCED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_REPRO_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_ROADMAP_FILE_MISSING",
@@ -4420,6 +4610,11 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_PDF_OPTIONS_INVALID",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SCRAPE_PROFILE_LOCKED",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
@@ -4620,6 +4815,16 @@
       "at": "packages/seo/src/errors.ts"
     },
     {
+      "code": "X_SEO_CARD_BROWSER_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SEO_CARD_ROUTE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_SEO_DUPLICATE_META",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
@@ -4641,6 +4846,11 @@
     },
     {
       "code": "X_SEO_META_TOO_LONG",
+      "owner": "seo",
+      "at": "packages/seo/src/errors.ts"
+    },
+    {
+      "code": "X_SEO_OG_IMAGE_CONFLICT",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
     },
@@ -4808,6 +5018,11 @@
       "code": "X_SOCKET_AUTH_UNAVAILABLE",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_SOCKET_HAND_ROLLED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SOCKET_LIMIT",
@@ -5360,6 +5575,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_MODULE_MOCK_UNRESTORABLE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_NETWORK_OFFLINE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -5716,6 +5936,11 @@
     },
     {
       "code": "X_VERIFY_SHARD_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_SKIPS_OVER_CEILING",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

@@ -1,0 +1,216 @@
+@use '../tokens' as t;
+
+.root {
+  position: relative;
+  display: block;
+  inline-size: 100%;
+}
+
+// The no-script control: `Select`'s look, so the swap moves nothing on screen.
+.native {
+  @include t.control;
+  display: inline-flex;
+  align-items: center;
+
+  &:focus-within {
+    border-color: t.role('accent');
+  }
+}
+
+.select {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.enhanced {
+  @include t.column(t.space(1));
+}
+
+.control {
+  @include t.control;
+  display: flex;
+  align-items: center;
+
+  &:focus-within {
+    border-color: t.role('accent');
+  }
+}
+
+// `md` is the 16px floor: below it a phone zooms the page on focus (`wiki/Interface-Rules.md`).
+.input {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: t.text(md);
+  outline: none;
+}
+
+.clear {
+  @include t.focus-ring;
+  @include t.touch-target(true);
+  flex: none;
+  padding: 0 t.space(1);
+  border: 0;
+  background: none;
+  color: t.role('fg-muted');
+  font: inherit;
+  font-size: t.text(sm);
+  cursor: pointer;
+
+  &:hover {
+    color: t.role('fg');
+  }
+}
+
+.listbox {
+  @include t.surface('surface-raised', 'md');
+  @include t.custom-scrollbar;
+  position: absolute;
+  z-index: t.z(dropdown);
+  inset-block-start: 100%;
+  inset-inline: 0;
+  max-block-size: min(t.rem(320px), 50vh);
+  margin-block-start: t.space(1);
+  padding-block: t.space(1);
+  overflow-y: auto;
+  border: 1px solid t.role('line');
+  border-radius: t.radius(md);
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.group {
+  @include t.label-caps;
+  padding: t.space(2) t.space(3) t.space(1);
+  color: t.role('fg-muted');
+}
+
+.option {
+  @include t.touch-target;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-inline: t.space(3);
+  cursor: pointer;
+
+  &[data-active='true'] {
+    background: t.role('accent-soft');
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: calc(-1 * #{t.stroke(thick)});
+  }
+
+  &[aria-selected='true'] .optionLabel {
+    font-weight: t.weight(medium);
+  }
+
+  &[aria-disabled='true'] {
+    @include t.disabled;
+    cursor: default;
+  }
+}
+
+.optionLabel {
+  color: t.role('fg');
+}
+
+.description {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(1);
+  padding-inline-start: t.space(2);
+  border: 1px solid t.role('line');
+  border-radius: t.radius(pill);
+  background: t.role('surface-raised');
+  font-size: t.text(sm);
+}
+
+.chipLabel {
+  @include t.truncate;
+}
+
+.chipRemove {
+  @include t.focus-ring;
+  @include t.touch-target(true);
+  display: inline-grid;
+  place-items: center;
+  inline-size: t.space(5);
+  block-size: t.space(5);
+  padding: 0;
+  border: 0;
+  border-radius: t.radius(pill);
+  background: none;
+  color: t.role('fg-muted');
+  cursor: pointer;
+
+  &:hover {
+    color: t.role('fg');
+  }
+}
+
+// Two strokes: a cross drawn from tokens, never a glyph from a font.
+.cross {
+  position: relative;
+  inline-size: t.space(3);
+  block-size: t.space(3);
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline: 0;
+    border-block-start: t.stroke(thick) solid currentcolor;
+    transform: rotate(45deg);
+  }
+
+  &::after {
+    transform: rotate(-45deg);
+  }
+}
+
+.status {
+  margin: 0;
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}
+
+.quiet {
+  @include t.visually-hidden;
+}
+
+.size-sm {
+  padding-block: t.space(1);
+}
+
+.size-md {
+  padding-block: t.space(2);
+}
+
+.size-lg {
+  padding-block: t.space(3);
+  font-size: t.text(lg);
+}

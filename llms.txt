@@ -207,18 +207,21 @@ Recommendations, not requirements: the framework depends on none of it (axiom 7,
 - [examples/dummy/app.config.ts](https://raw.githubusercontent.com/developerz-ai/ultimate/main/examples/dummy/app.config.ts): the one config file, every field in context.
 - [examples/dummy/CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/examples/dummy/CLAUDE.md): what a generated app tells its agents — its `AGENTS.md` is a symlink to it.
 - [dummy/social-media-clone](https://raw.githubusercontent.com/developerz-ai/ultimate/main/dummy/social-media-clone/README.md): the deployed demo. Read it with [its own gate pins](https://raw.githubusercontent.com/developerz-ai/ultimate/main/scripts/lib/gated-apps.ts) — each pinned step is a named, deliberate red.
+- [dummy/docs-site](https://raw.githubusercontent.com/developerz-ai/ultimate/main/dummy/docs-site/README.md): the docs site — `wiki/*.md` projected to static pages at 0 KB of script, one page per `X_*` code and per upgrade major, gated by its own `x verify`.
 
 ## Wiki — the reference manual
 
-The single public documentation surface; there is no separate marketing site. Source of truth is `wiki/` in this repo, mirrored to the GitHub wiki on merge. Browsable: https://github.com/developerz-ai/ultimate/wiki
+The single documentation source. Source of truth is `wiki/` in this repo, mirrored to the GitHub wiki on merge and projected to static pages by `dummy/docs-site`. Browsable: https://github.com/developerz-ai/ultimate/wiki
 
 <!-- generated: wiki — bun run llms-txt --write -->
 - [Home](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Home.md): the full wiki index, with a reading path per audience.
 - [Getting started](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Getting-Started.md): zero to a running app, one action, one green `x verify`.
 - [Installation](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Installation.md): prerequisites, `x new`, typed env, editor and MCP client setup.
+- [Shapes](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Shapes.md): `x new --shape api`, `blog` and `dashboard`: what each writes and what it leaves out.
 - [Bare VM](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Bare-VM.md): the four commands a fresh Ubuntu box with bun and git runs, and why no Docker and no service is needed.
 - [Project layout](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Project-Layout.md): the generated monorepo, the four surfaces, feature slices, the hard boundaries.
 - [Migrating an existing app](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Migrating-An-Existing-App.md): strangler fig off Rails/Node/Django, adopting a live schema, identity during cutover, and what does not work yet.
+- [Compared to other stacks](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Compared.md): each stack this gets compared to: when to pick it instead, what you give up here, and the measured figures with the commands that reproduce them.
 - [1 · First app](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-01-First-App.md): a scaffolded app running on `x dev`, green gate, no Docker.
 - [2 · First feature](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-02-First-Feature.md): one `action` projected into five surfaces, with tests.
 - [3 · Auth and admin](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-03-Auth-And-Admin.md): roles, policies, a real login flow, and the admin's detail pages, actions and batches.

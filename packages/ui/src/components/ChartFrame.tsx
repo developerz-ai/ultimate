@@ -5,9 +5,15 @@
 
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
+import type { Accessor } from '../theme/solid-adapter';
+import { solid } from '../theme/solid-adapter';
 import styles from './ChartFrame.module.scss';
 import type { ChartTable, SeriesStyle } from './chart-frame-view';
-import { markerPath } from './chart-frame-view';
+import { cssPercent, markerPath } from './chart-frame-view';
+import type { ReferenceLine } from './chart-reference-view';
+import { keyedRows } from './data-table-rows';
+import { thunk } from './thunk';
+import type { Tone } from './variants';
 
 export interface ChartLegendItem {
   /** The series' name, already translated. */
@@ -22,6 +28,8 @@ export interface ChartLegendItem {
 
 /** One focusable point over the plot: where it sits, and what it reads. */
 export interface ChartHit {
+  /** Stable across ticks (`hitIds`): the node, and the focus on it, follow the id. */
+  readonly id: string;
   /** CSS percentages of the plot box (`cssPercent`). */
   readonly x: string;
   readonly y: string;
@@ -112,10 +120,16 @@ function chartTableNode(table: ChartTable): JSX.Element {
   );
 }
 
-/** A legend key for a line series: its dash, its marker, its colour slot. */
-export function seriesSwatch(style: SeriesStyle): JSX.Element {
+/** A legend key for a line series: its dash, its marker, its colour slot — or its tone. */
+export function seriesSwatch(style: SeriesStyle, tone?: Tone | undefined): JSX.Element {
   return (
-    <svg class={styles['key']} viewBox="0 0 24 12" data-series={style.slot} aria-hidden="true">
+    <svg
+      class={styles['key']}
+      viewBox="0 0 24 12"
+      data-series={style.slot}
+      data-tone={tone}
+      aria-hidden="true"
+    >
       <path class={styles['keyLine']} d="M1,6 L23,6" stroke-dasharray={style.dash} />
       <path class={styles['keyMarker']} d={markerPath(style.marker, 12, 6, 4)} />
     </svg>
@@ -124,32 +138,74 @@ export function seriesSwatch(style: SeriesStyle): JSX.Element {
 
 /**
  * The keyboard layer: one focusable point per datum, over the plot, each reading its own value on
- * `:hover` and `:focus-visible` — CSS only, so a chart that asks for it still ships no JS. DOM
- * order is the tab order, and the caller passes them in reading order.
+ * `:hover`, focus and a tap — CSS only, so a chart that asks for it still ships no JS. DOM order is
+ * the tab order, and the caller passes them in reading order.
+ *
+ * KEYED by `ChartHit.id` (`data-table-rows.ts`'s rule): a live tick that moves a point moves its
+ * node, so a focused point keeps focus and its readout. Rebuilt per tick, focus fell to `<body>`.
  */
-export function chartHits(hits: readonly ChartHit[]): JSX.Element {
+export function ChartHits(props: { hits: readonly ChartHit[] }): JSX.Element {
+  const nodes = keyedRows<ChartHit, JSX.Element>(solid(), (hit) => hit.id, hitNode);
+  return <div class={styles['hits']}>{thunk(() => nodes(props.hits))}</div>;
+}
+
+function hitNode(hit: Accessor<ChartHit>): JSX.Element {
   return (
-    <div class={styles['hits']}>
-      {hits.map((hit) => (
-        // A datum is an image of one value: `img` is the role that names it and nothing more.
-        <span
-          class={styles['hit']}
-          role="img"
-          tabindex={0}
-          aria-label={hit.label}
-          data-hit="true"
-          data-edge={hit.edge}
-          style={{ '--x': hit.x, '--y': hit.y }}
-        >
-          {/* A zero-width anchor that centres the bubble over the point with flex, not a
-              percentage translate: that one lands a whole width off under `dir="rtl"`. */}
-          <span class={styles['readout']} aria-hidden="true">
-            <span class={styles['bubble']} data-readout="true">
-              {hit.label}
-            </span>
-          </span>
+    // A datum is an image of one value: `img` is the role that names it and nothing more.
+    <span
+      class={styles['hit']}
+      role="img"
+      tabindex={0}
+      aria-label={hit().label}
+      data-hit={hit().id}
+      data-edge={hit().edge}
+      style={{ '--x': hit().x, '--y': hit().y }}
+    >
+      {/* A zero-width anchor that centres the bubble over the point with flex, not a
+          percentage translate: that one lands a whole width off under `dir="rtl"`. */}
+      <span class={styles['readout']} aria-hidden="true">
+        <span class={styles['bubble']} data-readout="true">
+          {hit().label}
         </span>
-      ))}
-    </div>
+      </span>
+    </span>
   );
+}
+
+/** Reference rules inside a chart's svg: dashed in every tone, so a rule never reads as a series. */
+export function ReferenceRules(props: {
+  lines: readonly ReferenceLine[];
+  width: number;
+}): JSX.Element {
+  return props.lines.map((line) => (
+    <line
+      class={styles['reference']}
+      data-reference="true"
+      data-tone={line.tone}
+      x1={0}
+      x2={props.width}
+      y1={line.y}
+      y2={line.y}
+    />
+  ));
+}
+
+/**
+ * Each rule's label as HTML over the plot's inline end — text in a viewBox scales to a speck — and
+ * NOT hidden: "Target 120" is a fact the picture states and the table has no row for.
+ */
+export function ReferenceLabels(props: {
+  lines: readonly ReferenceLine[];
+  height: number;
+  format: (value: number) => string;
+}): JSX.Element {
+  return props.lines.map((line) => (
+    <span
+      class={styles['referenceLabel']}
+      data-tone={line.tone}
+      style={{ '--y': cssPercent(line.y, props.height) }}
+    >
+      {`${line.label} ${props.format(line.value)}`}
+    </span>
+  ));
 }

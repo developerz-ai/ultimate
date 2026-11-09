@@ -3,7 +3,7 @@
 // serving, so a backfill that runs flat out is an outage of its own making — the pacer is what
 // makes "one pass over the table" background work rather than a load test.
 
-import type { Clock } from '@ultimat3/core';
+import type { Clock, FrozenClock } from '@ultimat3/core';
 import { assert, systemClock } from '@ultimat3/core';
 import { nowMs } from './clock';
 import { JobAbortedError } from './errors';
@@ -33,10 +33,12 @@ export interface PacerOptions {
   readonly rate: number;
   /** The name a cancellation is reported under — one pacer belongs to exactly one backfill. */
   readonly job: string;
+  /** Overrides the run's clock for every wait. Unset: each wait reads the clock it is handed. */
   readonly clock?: Clock | undefined;
   /**
    * The wait itself, injectable for the same reason the clock is: a test asserts what was ASKED
    * for instead of spending it. Must settle when `signal` aborts rather than waiting the rest out.
+   * Unset: a frozen clock is advanced by the wait, any other is waited out on a real timer.
    */
   readonly sleep?: ((ms: number, signal: AbortSignal) => Promise<void>) | undefined;
 }
@@ -48,7 +50,15 @@ export interface Pacer {
    * Hold the caller until this batch's slot comes round. Rejects with `JobAbortedError` when the
    * attempt was cancelled — before the wait or during it, never after sitting the timer out.
    */
-  wait(args: { readonly signal: AbortSignal; readonly step?: string | undefined }): Promise<void>;
+  wait(args: {
+    readonly signal: AbortSignal;
+    readonly step?: string | undefined;
+    /**
+     * The clock the RUN measures by — `ctx.clock`. The pacer is built once per declaration, so
+     * the run's clock can only reach it here; a pass under a frozen clock is paced on that clock.
+     */
+    readonly clock?: Clock | undefined;
+  }): Promise<void>;
 }
 
 /** Real timers, cleared on abort so a cancelled pass leaves nothing pending behind it. */
@@ -62,6 +72,24 @@ function timerSleep(ms: number, signal: AbortSignal): Promise<void> {
     const timer = setTimeout(done, ms);
     signal.addEventListener('abort', done, { once: true });
   });
+}
+
+/** Structural, as `Clock` itself is: a clock that only moves when told to has `advance`. */
+const isFrozenClock = (clock: Clock): clock is FrozenClock =>
+  typeof (clock as { readonly advance?: unknown }).advance === 'function';
+
+/**
+ * The default wait, on the clock the batches are measured by. A frozen clock never moves on its
+ * own, so a real timer under one spent wall time the pacer could not even see — every batch read
+ * as instant and paid the whole interval for real. Moving the clock IS the wait there: the sweep
+ * finishes at once and the clock shows the time the throttle cost.
+ */
+function clockSleep(clock: Clock): (ms: number, signal: AbortSignal) => Promise<void> {
+  if (!isFrozenClock(clock)) return timerSleep;
+  return (ms) => {
+    clock.advance(ms);
+    return Promise.resolve();
+  };
 }
 
 /**
@@ -79,22 +107,24 @@ export function backfillPacer(options: PacerOptions): Pacer {
     `backfillPacer({ rate: ${String(options.rate)} }) for "${options.job}" — a rate is batches per second, greater than zero`,
     `pass rate: ${DEFAULT_BACKFILL_RATE} — to sweep faster raise the number, there is no unthrottled mode`,
   );
-  const clock = options.clock ?? systemClock;
-  const sleep = options.sleep ?? timerSleep;
   const intervalMs = 1000 / options.rate;
   let lastAt: number | undefined;
 
   return {
     rate: options.rate,
-    async wait({ signal, step }) {
+    async wait({ signal, step, clock: runClock }) {
+      const clock = options.clock ?? runClock ?? systemClock;
+      const sleep = options.sleep ?? clockSleep(clock);
       const aborted = (): JobAbortedError =>
         new JobAbortedError({ job: options.job, ...(step === undefined ? {} : { step }) });
       if (signal.aborted) throw aborted();
 
       const at = nowMs(clock);
       // The batch's own time is interval already paid, so a slow page waits for nothing and only a
-      // fast one is held back. The first batch has no previous one to be spaced from.
-      const remaining = lastAt === undefined ? 0 : intervalMs - (at - lastAt);
+      // fast one is held back. The first batch has no previous one to be spaced from. Capped at one
+      // interval: a clock stepped backwards (NTP, a test clock reset) would otherwise make the wait
+      // the size of the step, which no rate asked for.
+      const remaining = lastAt === undefined ? 0 : Math.min(intervalMs, intervalMs - (at - lastAt));
       if (remaining < RESOLUTION_MS) {
         lastAt = at;
         return;

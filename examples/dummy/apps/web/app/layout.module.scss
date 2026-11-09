@@ -1,8 +1,10 @@
 // Authed shell. Sticky bar, one grid, all colours from tokens so the theme toggle is free.
 
+@use '@ultimat3/ui/tokens' as tokens;
+
 .shell {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto 1fr auto;
   min-block-size: 100dvh;
 }
 
@@ -59,5 +61,17 @@
 
   &:hover {
     color: rgb(var(--color-fg));
+  }
+}
+
+// The phone's bottom bar: in flow and sticky, so the page reserves its height and the last row of
+// `main` is never under it. Hidden from `md`, where the header's nav is in reach.
+.bottomNav {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: var(--z-sticky);
+
+  @include tokens.respond-to(md) {
+    display: none;
   }
 }

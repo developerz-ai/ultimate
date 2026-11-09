@@ -235,7 +235,7 @@ unitTest('the table is the route table: path, surface and render mode per route'
   expect(view.text).toContain(t('app.dashboard.routesCaption'));
   expect(view.meta.title).toBe(t('app.dashboard.title'));
   // The sidebar knows where it is.
-  expect(view.html).toMatch(/<a href="\\/dashboard" aria-current="page"/);
+  expect(view.html).toMatch(/<a [^>]*href="\\/dashboard" aria-current="page"/);
 });
 `;
 

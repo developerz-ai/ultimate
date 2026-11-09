@@ -58,6 +58,27 @@
   opacity: 1;
 }
 
+// A tone or an n-series slot: the frame's `--series` (`ChartFrame.module.scss`) is the colour.
+.bar[data-tone],
+.bar[data-series] {
+  fill: var(--series);
+}
+
+// Below zero, a hatch-free cue that does not lean on colour: the bar's edge is dashed.
+.bar[data-sign='negative'] {
+  stroke: t.role('fg-strong');
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  vector-effect: non-scaling-stroke;
+}
+
+// The real zero line, drawn only when the range crosses it: what a negative bar hangs from.
+.zero {
+  stroke: t.role('fg-muted');
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
 .axis {
   @include t.data-text;
 
@@ -86,6 +107,11 @@
   block-size: t.space(3);
   border-radius: t.radius(sm);
   background: t.role('accent');
+}
+
+.swatch[data-tone],
+.swatch[data-series] {
+  background: var(--series);
 }
 
 .swatchSecondary {

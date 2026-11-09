@@ -244,6 +244,8 @@ export const OFF_SOCKET: Pins = {
     'X_MCP_RECIPE_UNKNOWN',
     'X_MCP_RECIPE_URI_RESERVED',
     'X_MCP_RECIPE_LINK_DANGLING',
+    'X_MCP_TENANT_INVALID',
+    'X_MCP_INCLUDE_EARLY',
   ],
   // tier 4 — the service worker and the PWA manifest: build-time rules, faults raised in the
   // BROWSER, where there is no response to give a status to, and the VAPID pair refused at BOOT,
@@ -308,6 +310,11 @@ export const OFF_SOCKET: Pins = {
   ],
   schema: ['X_SCHEMA_BOUNDS_INVALID', 'X_SCHEMA_SENSITIVE_OUTPUT'],
   seo: ['X_SEO_LLMS_DESCRIPTION_MISSING'],
+  notify: [
+    'X_NOTIFY_PUSH_DEVICE_GONE',
+    'X_NOTIFY_PUSH_PROVIDER_REFUSED',
+    'X_NOTIFY_PUSH_MESSAGE_INVALID',
+  ],
 };
 
 /** Undecided, shrink-only: `scripts/lib/error-map-undecided.ts`, re-exported here. */

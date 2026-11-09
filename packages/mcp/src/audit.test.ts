@@ -103,6 +103,14 @@ describe('outcomeForCode', () => {
     expect(outcomeForCode('X_MCP_CONFIRMATION_PENDING')).toBe('unconfirmed');
     expect(outcomeForCode('X_MCP_CONFIRMATION_EXPIRED')).toBe('unconfirmed');
     expect(outcomeForCode('X_MCP_CONFIRMATION_REJECTED')).toBe('policy-denied');
+    // A quorum short of its count still waits; a vote whose evidence fails is a refusal.
+    expect(outcomeForCode('X_MCP_CONFIRMATION_QUORUM_PENDING')).toBe('unconfirmed');
+    expect(outcomeForCode('X_MCP_CONFIRMATION_EVIDENCE_INVALID')).toBe('policy-denied');
+  });
+
+  test('a call on a tenant server that names no tenant is a client slip, not a denial', () => {
+    expect(outcomeForCode('X_MCP_TENANT_REQUIRED')).toBe('invalid-args');
+    expect(outcomeForCode('X_MCP_TENANT_UNRESOLVED')).toBe('failed');
   });
 
   test('anything else wants a human — including input the JSON Schema already passed', () => {

@@ -77,19 +77,24 @@ export function createStaticMemo(
 /**
  * The key a request's document is kept under, or `undefined` when it must be rendered: a query
  * string is part of what `meta` reads (`data.url`), and a dynamic segment is an unbounded set an
- * anonymous visitor chooses. The origin is in the key because canonical and `og:url` are absolute
- * against the request's own when the app declares none. `url` is `addressedUrl`'s: keyed on the
- * pathname as written, any visitor filled the memo with spellings of one page (`/about//`, …) and
- * every page that arrived after the cap was rendered per request for the life of the process.
+ * anonymous visitor chooses. The request's origin is in the key only when the app declares none,
+ * because canonical and `og:url` are then absolute against it; declared, they are absolute against
+ * `origin` (`runtime-render-document.ts`'s `baseUrl`), the document is one whatever the `Host`, and
+ * keying on the request's let rotated `Host` headers fill the memo. `url` is `addressedUrl`'s:
+ * keyed on the pathname as written, any visitor filled the memo with spellings of one page
+ * (`/about//`, …) and every page that arrived after the cap was rendered per request for the life
+ * of the process.
  */
 export function staticMemoKey(
   entry: Pick<RouteEntry, 'config' | 'pattern'>,
   url: URL,
   locale: string,
+  /** The app's declared origin — the same value the document's head is built against. */
+  origin?: string,
 ): string | undefined {
   if (entry.config.render !== 'static') return undefined;
   if (entry.pattern.keys.length > 0 || url.search !== '') return undefined;
-  return `${locale}\n${url.origin}${url.pathname}`;
+  return `${locale}\n${origin ?? url.origin}${url.pathname}`;
 }
 
 /**

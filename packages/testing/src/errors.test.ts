@@ -8,7 +8,6 @@ import {
   FixtureUnknownError,
   fixtureUnknown,
   hostOf,
-  islandMountMissing,
   NetworkRaceError,
   NetworkSealedError,
   RegistryLeakError,
@@ -18,6 +17,7 @@ import {
   TestJobExpectedError,
   TestSchemaExpectedError,
 } from './errors';
+import { islandMountMissing } from './island-errors';
 import { testName } from './test-types';
 
 describe(testName('unit', 'TESTING_ERROR_TITLES'), () => {

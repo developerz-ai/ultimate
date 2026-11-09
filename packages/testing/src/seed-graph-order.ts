@@ -1,7 +1,7 @@
 // Insert order for a seed graph: every parent before its children, over the foreign keys the
-// entities themselves resolve (`$references()`, the record `relationsOf` is built from). A cycle is
-// broken at a NULLABLE edge — inserted null, set by an update once its target exists; a cycle with
-// no nullable edge is refused, because no insert order can satisfy it.
+// entities themselves resolve (`$references()`). A cycle is broken at a NULLABLE edge — inserted
+// null, set by an update once its target exists — preferring a table that takes updates (never
+// `appendOnly`); a cycle with no nullable edge is refused: no insert order can satisfy it.
 
 import type { ReferenceDescription } from '@ultimat3/entity';
 import { seedGraphUnsatisfied } from './seed-graph-error';
@@ -9,6 +9,8 @@ import { seedGraphUnsatisfied } from './seed-graph-error';
 export interface OrderInput {
   readonly name: string;
   readonly references: readonly ReferenceDescription[];
+  /** False for a table whose rows are never updated (`appendOnly`). Default true. */
+  readonly updatable?: boolean;
 }
 
 export interface InsertOrder {
@@ -44,6 +46,7 @@ const reaches = (
 export function insertOrder(entities: readonly OrderInput[]): InsertOrder {
   const names = new Set(entities.map((entity) => entity.name));
   const edges = new Map(entities.map((entity) => [entity.name, entity.references]));
+  const frozen = new Set(entities.filter((e) => e.updatable === false).map((e) => e.name));
   const deferred = new Set<string>();
   // A self-reference never orders anything: the row's own table is already being written.
   const live = (from: string, reference: ReferenceDescription): boolean =>
@@ -76,9 +79,10 @@ export function insertOrder(entities: readonly OrderInput[]): InsertOrder {
             !placed.has(reference.targetEntity) &&
             reaches(edges, live, reference.targetEntity, name),
         )
-        .map((reference) => edgeKey(name, reference.property)),
+        .map((reference) => [name, edgeKey(name, reference.property)] as const),
     );
-    const edge = breakable[0];
+    // Name order still decides between equals, so the same set always breaks at the same edge.
+    const edge = (breakable.find(([name]) => !frozen.has(name)) ?? breakable[0])?.[1];
     if (edge === undefined) {
       const cyclic = stuck.filter((name) =>
         (edges.get(name) ?? []).some(

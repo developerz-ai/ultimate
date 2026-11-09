@@ -52,10 +52,77 @@ describe(testName('unit', 'tenant proof report'), () => {
     expect(findings[1]?.cause).toContain('files row f-1');
   });
 
+  test('the cause claims no id B chose: an input naming none of A reaches A by an unscoped statement', () => {
+    // A primitive whose input carries no id — `{ occurrenceMs }` — still crosses when B's org runs
+    // a statement no tenant predicate scopes: the cause must name that reading, not only the id one.
+    const [leak, write] = tenantProofFindings([crossed]);
+    for (const finding of [leak, write]) {
+      expect(finding?.cause).not.toContain("with tenant A's ids");
+      expect(finding?.cause).toContain('or by a statement no tenant predicate scopes');
+      expect(finding?.fix).toContain('never by the input id alone, nor by an unscoped statement');
+    }
+    // A write is fixed by writing through the scoped repository, never "read".
+    expect(write?.fix).toContain('then write files row f-1 through the repository scoped');
+    expect(leak?.fix).toContain('then read the row behind output.items[0].url');
+  });
+
   test('a name no shell takes verbatim is a placeholder in the fix, and nothing else is', () => {
     const odd: ExerciseRecord = { ...crossed, name: 'read $(rm -rf)' };
     expect(tenantProofFindings([odd])[0]?.fix).toStartWith('x exercise <primitive> --json');
     expect(tenantProofFindings([proven, unproven])).toEqual([]);
     expect(JSON.stringify(tenantFindingLines([odd, unproven]))).not.toContain(HANDED);
+  });
+
+  test("a tenant: 'none' job's sweep that declared no scope is fixed by crossTenant, never by a scoped repository", () => {
+    const sweep: ExerciseRecord = {
+      ...base,
+      kind: 'job',
+      name: 'expireInvites',
+      tenant: {
+        verdict: 'crossed',
+        findings: [{ code: 'X_TENANT_LEAK', leg: 'before', path: 'output.count', sweep: true }],
+      },
+    };
+    const [finding] = tenantProofFindings([sweep]);
+    expect(finding?.fix).toStartWith('x exercise expireInvites --json');
+    expect(finding?.fix).toContain(
+      "crossTenant('<why expireInvites reads every org>', async () => …)",
+    );
+    expect(finding?.fix).not.toContain('scoped to ctx.actor');
+    // The same leak on a job handed one of A's ids (no `sweep`) is B choosing A's row: scoped.
+    const chosen: ExerciseRecord = {
+      ...sweep,
+      tenant: {
+        verdict: 'crossed',
+        findings: [{ code: 'X_TENANT_LEAK', leg: 'before', path: 'output.count' }],
+      },
+    };
+    expect(tenantProofFindings([chosen])[0]?.fix).toContain('scoped to ctx.actor');
+  });
+
+  test('one leaking leg is one finding naming every field, never one per enqueue per field', () => {
+    const paths = [0, 1, 2].flatMap((i) =>
+      ['orgId', 'userId', 'email'].map((field) => `effect.enqueue[${i}].input.${field}`),
+    );
+    const noisy: ExerciseRecord = {
+      ...base,
+      kind: 'job',
+      name: 'fanOut',
+      tenant: {
+        verdict: 'crossed',
+        findings: (['before', 'after'] as const).flatMap((leg) =>
+          paths.map((path) => ({ code: 'X_TENANT_LEAK' as const, leg, path })),
+        ),
+      },
+    };
+    const findings = tenantProofFindings([noisy]);
+    expect(findings).toHaveLength(2);
+    expect(findings[0]?.cause).toContain(
+      'effect.enqueue[*].input.orgId, effect.enqueue[*].input.userId, effect.enqueue[*].input.email (3 each)',
+    );
+    expect(tenantFindingLines([noisy])).toEqual([
+      'job fanOut · before · X_TENANT_LEAK effect.enqueue[*].input.orgId, effect.enqueue[*].input.userId, effect.enqueue[*].input.email (3 each)',
+      'job fanOut · after · X_TENANT_LEAK effect.enqueue[*].input.orgId, effect.enqueue[*].input.userId, effect.enqueue[*].input.email (3 each)',
+    ]);
   });
 });

@@ -11,6 +11,7 @@ import type { Secret } from '@ultimat3/core';
 import type { ActionabilityState } from './actionability';
 import type { CaptureFraming } from './capture-clip';
 import type { ColorScheme } from './color-scheme';
+import type { PdfRequest } from './pdf-request';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 import type { SessionSnapshot } from './session-state';
 import type { AxNode, ElementSnapshot, ScrapeCookie, ScrapeDownloadFile } from './target';
@@ -127,8 +128,12 @@ export interface ScrapePage extends ScrapeFrame {
   goto(url: string, options?: { readonly timeout?: number | undefined }): Promise<void>;
   /** PNG bytes. REFUSED once a secret has been typed into this page — see `secrets.ts`. */
   screenshot(options?: CaptureRequest): Promise<Uint8Array>;
-  /** PDF bytes. Refused on the same condition, for the same reason. */
-  pdf(options?: CaptureRequest): Promise<Uint8Array>;
+  /**
+   * PDF bytes, laid out as asked: paper (`format`, or `widthMm` + `heightMm`), `marginMm`,
+   * `printBackground`, `headerHtml`/`footerHtml`. Two sizes are `X_SCRAPE_PDF_OPTIONS_INVALID`.
+   * Refused once a secret was typed, for `screenshot()`'s reason.
+   */
+  pdf(options?: PdfRequest): Promise<Uint8Array>;
   /** The file the last click produced, or `X_SCRAPE_DOWNLOAD_TIMEOUT`. */
   download(options?: DownloadRequest): Promise<ScrapeDownloadFile>;
   cookies(): Promise<readonly ScrapeCookie[]>;

@@ -82,7 +82,7 @@ export interface ReferenceOptions {
  * on a bigint, so returning a row with a money column from an action crashed the response, and
  * `t.money` — the schema node that becomes the OpenAPI contract — rejected the framework's own row.
  */
-import type { MoneyValue } from '@ultimat3/schema';
+import type { MoneyValue, StandardSchemaV1 } from '@ultimat3/schema';
 import type { StateMachine, TransitionTable } from './state-machine';
 
 export type { MoneyValue };
@@ -181,6 +181,12 @@ export interface ColumnMeta {
    * database keeps equal to the number of rows pointing there. `counter.ts` reads it.
    */
   readonly countedIn?: () => AnyColumn;
+  /**
+   * `json(schema)`'s schema, beside the `$parse` that validates through it, so a reader that must
+   * PRODUCE a storable value (`@ultimat3/testing`'s seed values) draws from the declaration rather
+   * than guess. Not on `$describe()`: the DDL is `jsonb` whatever it holds, so no hash moves.
+   */
+  readonly schema?: StandardSchemaV1<unknown, unknown>;
 }
 
 /** What `.sealed(options)` declared, resolved. */

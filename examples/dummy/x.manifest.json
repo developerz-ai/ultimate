@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "3cc2cf50e1349522",
+  "buildId": "e4e75cd601a8f3a0",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,13 +495,24 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "179kb"
+        "js": "207kb"
       }
     },
     {
       "url": "/offline",
       "render": "static",
       "offline": "precache",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb"
+      }
+    },
+    {
+      "url": "/og/home",
+      "render": "static",
+      "offline": "network-only",
       "hydrate": "never",
       "revalidateTags": [],
       "surface": "site",
@@ -518,6 +529,17 @@
       "surface": "app",
       "budget": {
         "js": "209.5kb"
+      }
+    },
+    {
+      "url": "/posts/board",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "108kb"
       }
     },
     {
@@ -545,7 +567,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "31.5kb"
+        "js": "32kb"
       }
     },
     {
@@ -556,7 +578,18 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "196.5kb"
+        "js": "242kb"
+      }
+    },
+    {
+      "url": "/runs/health",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "33kb"
       }
     },
     {
@@ -567,7 +600,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "82kb"
+        "js": "106kb"
       }
     }
   ],
@@ -1830,6 +1863,11 @@
                 ]
               }
             }
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
           }
         },
         "required": [
@@ -1887,6 +1925,20 @@
                 ]
               }
             }
+          },
+          "quorum": {
+            "type": "number"
+          },
+          "approvedBy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "signingPayload": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -1895,7 +1947,10 @@
           "status",
           "decidedAt",
           "expiresAt",
-          "arguments"
+          "arguments",
+          "quorum",
+          "approvedBy",
+          "signingPayload"
         ],
         "additionalProperties": false
       },
@@ -2259,6 +2314,16 @@
       "cacheInvalidates": [
         "feed"
       ],
+      "rateLimitPerCall": {
+        "windowMs": 60000
+      },
+      "meter": {
+        "name": "posts",
+        "period": "day",
+        "timeZone": "UTC",
+        "limit": null,
+        "warnAt": 0.8
+      },
       "mcp": {
         "expose": true,
         "description": "Create a draft post in the actor’s organisation"
@@ -2300,6 +2365,43 @@
       "mcp": {
         "expose": false
       }
+    },
+    {
+      "name": "erasureApprovalOptions",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "memberId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "any JSON value, nested at most 256 levels deep"
+      },
+      "policy": "org:administer",
+      "permissions": [
+        "org:administer"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      },
+      "errors": [
+        "X_PASSKEY_STEP_UP_REQUIRED"
+      ]
     },
     {
       "name": "grantAvatarUpload",
@@ -3055,6 +3157,91 @@
       "mutator": true
     },
     {
+      "name": "passkeyRegisterOptions",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "any JSON value, nested at most 256 levels deep"
+      },
+      "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      },
+      "errors": [
+        "X_PASSKEY_INVALID"
+      ]
+    },
+    {
+      "name": "passkeySignIn",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "response": {
+            "description": "any JSON value, nested at most 256 levels deep"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "passkey-sign-in",
+      "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      },
+      "errors": [
+        "X_PASSKEY_CHALLENGE_EXPIRED",
+        "X_PASSKEY_INVALID"
+      ]
+    },
+    {
+      "name": "passkeySignInOptions",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "any JSON value, nested at most 256 levels deep"
+      },
+      "policy": "passkey-sign-in",
+      "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "publishPost",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3192,6 +3379,128 @@
       }
     },
     {
+      "name": "registerDevice",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ios",
+              "android"
+            ]
+          },
+          "token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 4096,
+            "pattern": "^[A-Za-z0-9_:.-]{32,4096}$"
+          },
+          "previousToken": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 4096,
+            "pattern": "^[A-Za-z0-9_:.-]{32,4096}$"
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          },
+          "timeZone": {
+            "type": "string",
+            "format": "iana-time-zone"
+          }
+        },
+        "required": [
+          "platform",
+          "token",
+          "locale",
+          "timeZone"
+        ],
+        "additionalProperties": false,
+        "description": "an ios token is 64 to 200 hex characters, and an android token is an FCM registration token",
+        "x-ultimate-refinements": [
+          {
+            "name": "platform-token",
+            "message": "an ios token is 64 to 200 hex characters, and an android token is an FCM registration token",
+            "path": [
+              "token"
+            ]
+          }
+        ]
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "minLength": 1
+          },
+          "token": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "platform",
+          "token"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
+      "name": "registerPasskey",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "response": {
+            "description": "any JSON value, nested at most 256 levels deep"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "credentialId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "credentialId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      },
+      "errors": [
+        "X_PASSKEY_CHALLENGE_EXPIRED",
+        "X_PASSKEY_INVALID"
+      ]
+    },
+    {
       "name": "removeWebhookEndpoint",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3295,11 +3604,15 @@
           "memberId": {
             "type": "string",
             "format": "uuid"
+          },
+          "approval": {
+            "description": "any JSON value, nested at most 256 levels deep"
           }
         },
         "required": [
           "orgId",
-          "memberId"
+          "memberId",
+          "approval"
         ],
         "additionalProperties": false
       },
@@ -3325,7 +3638,11 @@
       "mcp": {
         "expose": false
       },
-      "errors": []
+      "errors": [
+        "X_PASSKEY_CHALLENGE_EXPIRED",
+        "X_PASSKEY_INVALID",
+        "X_PASSKEY_STEP_UP_REQUIRED"
+      ]
     },
     {
       "name": "requestMemberExport",
@@ -4349,6 +4666,54 @@
       "mutator": true
     },
     {
+      "name": "unregisterDevice",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ios",
+              "android"
+            ]
+          },
+          "token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 4096,
+            "pattern": "^[A-Za-z0-9_:.-]{32,4096}$"
+          }
+        },
+        "required": [
+          "platform",
+          "token"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "unsubscribePush",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5272,6 +5637,39 @@
         },
         "required": [
           "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "run:read",
+      "permissions": [
+        "run:read"
+      ],
+      "live": false,
+      "cacheTags": []
+    },
+    {
+      "name": "runHealth",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "orgId",
+          "since",
+          "until"
         ],
         "additionalProperties": false
       },
@@ -7462,6 +7860,108 @@
       "steps": []
     },
     {
+      "name": "postsQuotaWarning",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "minLength": 1
+          },
+          "meter": {
+            "type": "string",
+            "minLength": 1
+          },
+          "orgId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "used": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "periodStart": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resetsAt": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "action",
+          "meter",
+          "orgId",
+          "actorId",
+          "used",
+          "limit",
+          "periodStart",
+          "resetsAt"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "runs.statement",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "runs.sync",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -7657,6 +8157,34 @@
       "queue": "default",
       "retry": {
         "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "warmAvatar",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "orgId",
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
         "backoff": "exponential"
       },
       "steps": []
@@ -7859,10 +8387,14 @@
       "enforcedIn": [
         "action:grantAvatarUpload",
         "action:memberAvatar",
+        "action:passkeyRegisterOptions",
+        "action:registerDevice",
+        "action:registerPasskey",
         "action:savePreferences",
         "action:setTheme",
         "action:subscribePush",
         "action:toggleDigestOptIn",
+        "action:unregisterDevice",
         "action:unsubscribePush"
       ]
     },
@@ -7882,6 +8414,7 @@
       "permission": "org:administer",
       "enforcedIn": [
         "action:addWebhookEndpoint",
+        "action:erasureApprovalOptions",
         "action:removeWebhookEndpoint",
         "action:requestMemberErasure",
         "action:requestMemberExport",
@@ -7905,6 +8438,13 @@
     {
       "permission": "orgs:write",
       "enforcedIn": []
+    },
+    {
+      "permission": "passkey-sign-in",
+      "enforcedIn": [
+        "action:passkeySignIn",
+        "action:passkeySignInOptions"
+      ]
     },
     {
       "permission": "post:create",
@@ -7996,7 +8536,8 @@
       "permission": "run:read",
       "enforcedIn": [
         "query:liveRunEvents",
-        "query:runConnections"
+        "query:runConnections",
+        "query:runHealth"
       ]
     },
     {
@@ -8065,6 +8606,7 @@
     "orgs:delete",
     "orgs:read",
     "orgs:write",
+    "passkey-sign-in",
     "post:create",
     "post:export",
     "post:like",
@@ -8094,6 +8636,10 @@
   "errorCodes": [
     {
       "code": "X_ACTOR_UNRESOLVED",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_AVATAR_KEY_OUTSIDE_ORG",
       "package": "apps/web"
     },
     {
@@ -8163,6 +8709,10 @@
     {
       "code": "X_ISLAND_WITHOUT_STATES",
       "package": "guards/island-without-states.ts"
+    },
+    {
+      "code": "X_NATIVE_CONFIRM",
+      "package": "guards/native-confirm.ts"
     },
     {
       "code": "X_RAW_BREAKPOINT",

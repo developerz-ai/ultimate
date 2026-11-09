@@ -15,6 +15,11 @@ import {
   McpConfirmationToolUnknownError,
   McpConfirmationUnknownError,
 } from './confirmation-errors';
+import {
+  McpConfirmationEvidenceInvalidError,
+  McpConfirmationQuorumInvalidError,
+  McpConfirmationQuorumPendingError,
+} from './confirmation-quorum-errors';
 import { memoryConfirmationStore } from './confirmation-store';
 import { mcpConfirmations } from './confirmations';
 
@@ -31,6 +36,11 @@ const errors: readonly UltimateError[] = [
   new McpConfirmationToolUnknownError({ unknown: ['x'], known: ['refundOrder'] }),
   new McpConfirmationContestedError('refundOrder'),
   new McpConfirmationArgumentsMismatchError({ ...subject, reason: 'different' }),
+  new McpConfirmationQuorumPendingError({ ...subject, approvals: 1, quorum: 2 }),
+  new McpConfirmationQuorumPendingError({ ...subject, approvals: 1, quorum: 2, repeated: 'u-1' }),
+  new McpConfirmationEvidenceInvalidError({ ...subject, reason: 'missing' }),
+  new McpConfirmationEvidenceInvalidError({ ...subject, reason: 'quorum' }),
+  new McpConfirmationQuorumInvalidError({ tool: 'refundOrder', reason: 'quorum is 0' }),
 ];
 
 const decision = mcpConfirmations({
@@ -56,6 +66,8 @@ const OPTION_KEYS = [
   'clock',
   'audit',
   'sealKeys',
+  'approvers',
+  'evidence',
 ];
 
 describe('every confirmation fix names a call the current API accepts', () => {
@@ -68,6 +80,7 @@ describe('every confirmation fix names a call the current API accepts', () => {
           id: ID,
           decision: call.decision,
           ...(call.keys.includes('arguments') ? { arguments: {} } : {}),
+          ...(call.keys.includes('signature') ? { signature: 'c2lnbmVk' } : {}),
         });
         expect(parsed.issues).toBeUndefined();
         if (call.decision === 'approve') expect(call.keys).toContain('arguments');

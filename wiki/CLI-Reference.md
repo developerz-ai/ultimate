@@ -78,13 +78,14 @@ x version              # CLI version
 ## x new
 
 ```bash
-x new <name> [--dir path] [--no-example] [--no-git] [--dry-run] [--force] [--json]
+x new <name> [--dir path] [--shape api|blog|dashboard] [--no-example] [--no-git] [--dry-run] [--force] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--dir` | string | cwd | parent directory to create the app in |
 | `--example` / `--no-example` | boolean | `true` | include the example feature slice (default: on; `--no-example` for an empty `app/`) |
+| `--shape` | string | none | start from an app shape — `api`, `blog` or `dashboard`, each an overlay over this scaffold ([Shapes](Shapes)). An unknown name is `X_NEW_SHAPE_UNKNOWN`; with `--no-example`, `X_NEW_SHAPE_CONFLICT` (a shape is its own example). Both refuse before a file is written. `dashboard` then runs `x g sign-in --password` in the new app (listed under `data.generate` by `--dry-run`); a refusal there is `X_NEW_SHAPE_GENERATE_FAILED` |
 | `--git` / `--no-git` | boolean | `true` | `git init`, then one commit named `x new`. On by default because three surfaces assume a repository — `x affected`, `x ci` and `x pr`. A git that is absent or fails never fails `x new`: the tree is the verdict, and `data.git` carries `{ initialized, committed, problem }` |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 | `--force` | boolean | `false` | write into a directory that already exists |
@@ -355,7 +356,7 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | the write plan, nothing written: **every file the run would touch** — the ones it creates (a slice module already on disk is skipped, not listed) and, `As of 27.6.2`, the ones it EDITS outside the slice (role map, typed handle, API index, manifests, catalogs, the i18n index), in the order the run lists them. `--json`: `data.files` is that list, `data.edits` the subset that already exists, `data.refreshes` the committed contracts (`x.manifest.json`, `openapi.json`) a real run re-projects. `ok: false` with every finding the real run would report — an existing file, an API-index binding already held, a grant or a handle entry it cannot place |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **37 files** on a dry run in an app scaffolded with its example slice, 39 on the real run after `bun run setup` (`x.manifest.json` and `openapi.json` re-projected; 40 dry with `--admin`) — and `x g resource` in a `--no-example` app, which also gains two `package.json` edits, writes 39 and 41 files (42 and 44 with `--admin`; `--live` is refused — a resource already ships a live query, and the flag belongs to `x g query`: `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>`, then `x db gen "create <table>"`, then `x db migrate`, then `x build --target static && x verify --only budgets` — the four commands the run prints, in that order (`data.next` under `--json`). **The plural route is reachable as written**, `As of 2026-10-01`: its `load` reads the list through the slice's query as the request's actor (no org in the URL), `AsyncRegion` renders ready, empty and refused, the form island is mounted, and the route declares `policy: { permission: '<name>:read' }`. Its `budget.js` is MEASURED on `x new`'s app (58,522 B, Bun 1.4.0) and carries the `measured:` / `why:` comment `bun run budget-raises` reads; an app that charges more to every document — `navigation: { client: [...] }` adds its router — is over it on the printed build, and the raise is that edit. The page sits in `apps/web/shared/shell.tsx` when the app has one. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). **`x g query` and `x g backfill` read a table and never create one**, `As of 2026-11-02`: both name a slice holding an `entity.ts`, by `--feature <slice>` or by a name that is one, and neither finding it is `X_FEATURE_REQUIRED`, zero files written, its fix the closest slice's `--feature` line or `x g resource <name>`. `x g resource` and `x g entity` are what create a table. Every generator produces code that passes `x verify` unmodified, and writes it through the app's own Biome when the app has one: `node_modules/.bin/biome` over the TypeScript files that run created, best effort, never a failed `x g`. A slice whose `entity.ts` declares another table under its name gets no foundation from `x g action`/`x g mutator`, and `x g query` there is `X_QUERY_SLICE_ENTITY`. Errors: `X_GENERATE_CONFLICT`, `X_DB_HANDLE_UNREGISTERED`, `X_FEATURE_UNKNOWN`, `X_FEATURE_REQUIRED`, `X_QUERY_SLICE_ENTITY`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **38 files** on a dry run in an app scaffolded with its example slice, 40 on the real run after `bun run setup` (`x.manifest.json` and `openapi.json` re-projected; 41 dry with `--admin`) — and `x g resource` in a `--no-example` app, which also gains two `package.json` edits, writes 40 and 42 files (43 and 45 with `--admin`; `--live` is refused — a resource already ships a live query, and the flag belongs to `x g query`: `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>`, then `x db gen "create <table>"`, then `x db migrate`, then `x build --target static && x verify --only budgets` — the four commands the run prints, in that order (`data.next` under `--json`). **The plural route is reachable as written**, `As of 2026-10-01`: its `load` reads the list through the slice's query as the request's actor (no org in the URL), `AsyncRegion` renders ready, empty and refused, the form island is mounted, and the route declares `policy: { permission: '<name>:read' }`. Its `budget.js` is MEASURED on `x new`'s app (58,522 B, Bun 1.4.0) and carries the `measured:` / `why:` comment `bun run budget-raises` reads; an app that charges more to every document — `navigation: { client: [...] }` adds its router — is over it on the printed build, and the raise is that edit. The page sits in `apps/web/shared/shell.tsx` when the app has one. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). **`x g query` and `x g backfill` read a table and never create one**, `As of 2026-11-02`: both name a slice holding an `entity.ts`, by `--feature <slice>` or by a name that is one, and neither finding it is `X_FEATURE_REQUIRED`, zero files written, its fix the closest slice's `--feature` line or `x g resource <name>`. `x g resource` and `x g entity` are what create a table. Every generator produces code that passes `x verify` unmodified, and writes it through the app's own Biome when the app has one: `node_modules/.bin/biome` over the TypeScript files that run created, best effort, never a failed `x g`. A slice whose `entity.ts` declares another table under its name gets no foundation from `x g action`/`x g mutator`, and `x g query` there is `X_QUERY_SLICE_ENTITY`. A written contract test reads its exercise from `apps/web/exercise.ts` (`target.contract({ exercise })`), and the same run inserts its entry there — once, the file created from `x new`'s when absent, `As of 2026-11-08`; a file that is not one `export const exercise = defineExercise({ … })` is `X_EXERCISE_FILE_UNEDITABLE`, the entry to paste in its `fix:`. Errors: `X_GENERATE_CONFLICT`, `X_DB_HANDLE_UNREGISTERED`, `X_FEATURE_UNKNOWN`, `X_FEATURE_REQUIRED`, `X_QUERY_SLICE_ENTITY`, `X_EXERCISE_FILE_UNEDITABLE`.
 
 **A name the templates would mangle is `X_CLI_BAD_FLAG` before anything is planned**, each with a `fix:` that runs: a reserved word or a leading digit; a letter outside ASCII (`Über` → `x g entity uber` — it was dropped to `ber`); an already-plural `resource`/`entity` name (`posts` → `x g resource post` — it became `entity('postses')`); and a name whose type spelling an emitted file also uses as a global or local type (`promise`, `omit`, `partial`, `row` → `x g resource promise-resource`).
 
@@ -596,12 +597,13 @@ x verify [--only <step>[,<step>…] [--shard i/n [--timings file]]] [--workers N
 x verify merge <part.json…> [--json]
 ```
 
-**`As of 22.7`** — the width is a memory budget (`min(4 GiB, max(2.75 GiB, 25% of RAM))` at 1.25 GiB a worker,
+**`As of 22.7`** — the width is a memory budget (`max(2.75 GiB, 25% of RAM)` at 1.25 GiB a worker — no fixed 4 GiB cap since 2026-11-07,
 at most one per core, printed on the step line; `ULTIMATE_TEST_MEMORY_BUDGET` /
 `ULTIMATE_TEST_MAX_WORKERS` override, `--workers` wins), shared machine-wide across concurrent runs,
 and test files are NOT isolated unless `--isolate` or `x.verify.json` `"isolate": true` says so →
-[Testing](Testing#memory-width-and-isolation). `--shard i/n` (with `--only unit|contract|job`)
-runs one CI job's deterministic slice, and `x verify merge` folds every job's `--json` part back
+[Testing](Testing#memory-width-and-isolation). `--shard i/n` (with `--only unit|contract|live|job|e2e`)
+runs one CI job's deterministic slice — `live` and `e2e` stay one process inside it, a slice per
+runner, each runner with its own services (`As of 2026-11-07`) — and `x verify merge` folds every job's `--json` part back
 into the gate verdict (`X_VERIFY_SHARD_INVALID`, `X_VERIFY_MERGE_INCOMPLETE`,
 `X_VERIFY_MERGE_INPUT`) → [CI: the gate across parallel jobs](CI-Parallel-Gate). The paragraphs
 below on `--workers` and batching describe 22.6 and earlier where they differ.
@@ -659,8 +661,8 @@ declaration and say so in the output. **`x test live` and `x test e2e` obey the 
 files `x verify` ran one over. `--workers` is accepted there and clamps to 1. That clamp read the
 POSITIONAL, so the bare `x test --workers 8` still widened over the same files until 2026-09; the
 selection is now partitioned by each file's own type. The default width is
-a memory budget, `As of 22.7`: `min(4 GiB, max(2.75 GiB, 25% of RAM))` at 1.25 GiB a worker
-(`WORKER_BYTES`, `GATE_BUDGET_CAP`, `GATE_BUDGET_FLOOR` and `GATE_BUDGET_SHARE` in
+a memory budget, `As of 2026-11-07`: `max(2.75 GiB, 25% of RAM)` (`BUDGET_RULE`) at 1.25 GiB a worker
+(`WORKER_BYTES`, `GATE_BUDGET_FLOOR` and `GATE_BUDGET_SHARE` in
 `packages/cli/src/test-workers.ts`), at most one per core — the paragraph under `x verify` above.
 **No fixed ceiling of 8**: it held a 12-core box with 30 GB free to 8. `--workers` accepts 1 to
 64 on both `x verify` and `x test`; an explicit width is the caller's call and is not held to memory.
@@ -704,7 +706,7 @@ because it was slow ([#342](https://github.com/developerz-ai/ultimate/issues/342
 | `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
 | `contract-diff` | the code vs the **committed** `x.manifest.json`: a breaking change without a major bump |
-| `budgets` | per-route JS bytes, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`). **Builds first** when `.x/build-stats.json` is missing, of an earlier measurement rule, or older than the newest app source: `x build --target static --no-preflight --out .x/verify-static`, under this step's deadline (`stepTimeoutMs.budgets`), never over a deployable `.x/static`. A failed build is the step's verdict, with the build's own findings. `As of 30.0` |
+| `budgets` | per-route JS bytes, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`). **Builds first** when `.x/build-stats.json` is missing, of an earlier measurement rule, or older than the newest app source: `x build --target static --no-preflight --no-capture --out .x/verify-static`, under this step's deadline (`stepTimeoutMs.budgets`), never over a deployable `.x/static`. A failed build is the step's verdict, with the build's own findings. `As of 30.0` |
 | `manifest` | the files an agent reads: `x.manifest.json` **and `openapi.json`** freshness — the one check `x manifest --check` runs (`X_MANIFEST_MISSING` / `X_MANIFEST_DRIFT` / `X_MANIFEST_STALE`) — `.env.example`, a hand-written `AGENTS.md` that exists and is under 12kB, and `x.verify.json` naming only steps the gate runs |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
@@ -753,7 +755,7 @@ Errors: `X_VERIFY_FAILED` (with the failing step names), plus each step's own co
 ## x build
 
 ```bash
-x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--platform bun-target] [--no-preflight] [--json]
+x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--platform bun-target] [--no-preflight] [--no-capture] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
@@ -763,6 +765,7 @@ x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--plat
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets only; relative to the cwd |
 | `--platform` | string | the host | binary target only: `bun-linux-x64`, `bun-linux-arm64`, `bun-windows-x64` or `bun-darwin-arm64`, passed to Bun as `--target` (the list is `BINARY_PLATFORMS` in `packages/cli/src/cmd-build.ts`). A Windows executable — `--platform bun-windows-x64`, or no `--platform` on a Windows host — is written as `<out>.exe`, and `data.artifact` names that file; `data.platform` echoes the flag. Any other value is `X_CLI_BAD_FLAG` before the gate runs, `fix: x build --target binary --platform bun-linux-x64`. For local runs and CI cross-compiles: a Windows host deploys the Linux image under Docker Desktop ([Deployment](Deployment)). `As of 2026-10-05` |
 | `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` has run them, as its `budgets` step does when it builds. Not on `prebuilt`. `As of 22.7` |
+| `--no-capture` | boolean | off | `static` only: stamp every `og.capture` card's `og:image` tags and photograph none, so no browser is needed (`X_SEO_CARD_BROWSER_MISSING` otherwise). `x verify`'s own build and `scripts/reference-app-gate.ts` pass it, and only they do — a deployable build takes the pictures. Reaches the app's `prerender.ts` as `ULTIMATE_BUILD_CAPTURE=off`. `As of 2026-11` |
 
 A flag the chosen target never reads — `--tag` on `binary`/`static`, `--out` on `docker`, `--platform` on anything but `binary`, any of them on `prebuilt` — is `X_CLI_BAD_FLAG` before the gate runs, with `fix: x build --target <target>`.
 
@@ -1483,7 +1486,7 @@ x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empt
 | `--filter` | string | — | only files whose path contains this substring — or ANY of several, comma-separated (`--filter apps/web/app/billing/,apps/web/app/case/`), in one run. An empty item (`a,,b`) is refused: `''` matches every path |
 | `--allow-empty` | boolean | off | a selection that matches no test file exits **0**, spawns nothing, and says so (`no test file matches … — 0 test file(s) ran`, `data.files: 0`, `data.empty: true`) instead of `X_TEST_NO_FILES`. For a runner that computes the selection; a hand-typed typo stays red without it |
 | `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
-| `--workers` | string | `ceil(cpus * 1.5)`, held to 60% of free memory at 1.5 GiB a worker | worker count, 1 to 64; each worker gets its own template-cloned database |
+| `--workers` | string | one per 1.25 GiB of a `max(2.75 GiB, 25% of RAM)` budget, at most one per core (the gate's width) | worker count, 1 to 64; each worker gets its own template-cloned database |
 | `--affected` | boolean | off | narrow the selection to the tests the diff can break: in an app root, by import closure (the files `x affected` reports as `data.tests`); elsewhere, the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
 | `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |
@@ -1495,6 +1498,8 @@ The type rule is `x verify`'s, not a second one — so `x test contract` runs ex
 **In an app root `--affected` narrows by import closure, `As of 2026-11`** — every slice shares the `apps/web` workspace, so the workspace answer ran the whole app. The rule is `x affected`'s `data.tests`, never a second one: a test runs when its imports reach a changed file, transitively; a changed file the import graph cannot speak for (`app.config.ts`, `package.json`, a catalog, anything outside the app) runs every test; a discovered test outside the scanned globs always runs. `data.affected.tests` carries `{ app, all, reason, forcing, files: [{ path, why }] }` — `reason` is `closure: N changed file(s)` or `all: <forcing files>`, `why` is `closure`, `all` or `unmapped`. Outside an app root, `data.affected` has no `tests` and the workspace scope is unchanged.
 
 `--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failure's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to run at all and a rerun without it selects the whole corpus.
+
+**The inner loop in this repository is `bun run test:affected`, `As of 2026-11-07`** — `x test --affected --base origin/main --dirty` from the root: the workspaces the branch and the working tree touch, plus every workspace that depends on one; a changed file no workspace owns (`package.json`, `bun.lock`, `tsconfig*.json`, `biome.json`, `scripts/**`, the test preload) runs everything, and `.md` alone runs nothing. `bun run test` is `x test` over the whole corpus — the same passes and width as the gate's test steps. Neither is the gate: CI and `x verify merge` run full `x verify`.
 
 **A selection that mixes serial files with the rest is more than one run, `As of 2026-09`.** `--parallel=N` is the width of the WHOLE `bun test`, so the bare `x test --workers 8` — which selects every type — ran `live` and `e2e` eight at a time beside the unit corpus, over the very files `x verify` runs one at a time. The files are partitioned by type: one pass at the requested width for everything that may share a pool, then one pass at `--parallel=1` per serial type, each reproducible on its own (`x test live --workers 1`). `--json` carries a `passes` array when there was more than one.
 
@@ -1527,7 +1532,7 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 
 A dry run refuses exactly what the real run would, then stops before step 4. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
 
-`--to`: an exact release in the next major. Over a mixed set every refusal names the aligning version, the newest release at or above the highest pin: `^6` beside `^19` is told `--to 19.x.y`, it is accepted across any distance, and that report names no section.
+`--to`: an exact release in the next major. Over a mixed set a run moves the LOWEST pins one major: `^19` beside `^29` is told `--to 20.x.y`, that hop rewrites only the pins at or below it (a pin above is never moved backwards) and names its walkthrough, `next` names the following hop, and the last one levels the set. A straggler jump straight to the highest major is `X_UPGRADE_HOP_TOO_WIDE`: it skipped every walkthrough between.
 
 | `data` field | Meaning |
 |---|---|

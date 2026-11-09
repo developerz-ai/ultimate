@@ -36,19 +36,6 @@
   padding-block-start: var(--space-8);
 }
 
-.list {
-  display: grid;
-  gap: var(--space-4);
-  list-style: none;
-  padding: 0;
-
-  li {
-    background-color: rgb(var(--color-surface));
-    border-radius: var(--radius-md);
-    padding: var(--space-4);
-  }
-}
-
 .form {
   display: grid;
   gap: var(--space-2);
@@ -69,4 +56,11 @@
 .label {
   color: rgb(var(--color-fg-muted));
   font-size: 0.875rem;
+}
+
+// A stale excerpt, shown against the one the body now gives.
+.excerpt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }

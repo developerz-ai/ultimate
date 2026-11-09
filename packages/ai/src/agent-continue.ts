@@ -20,6 +20,7 @@ import {
   canonicalJson,
   currentSigningSecret,
   fingerprint,
+  hmac,
   isProduction,
   isUltimateError,
   usesDevCursorSecret,
@@ -231,9 +232,7 @@ const toolsMark = (names: readonly string[]): string => fingerprint([...names].s
 
 function signatureOf(fields: Omit<AgentTranscript, 'sig'>): string {
   // The framework's one signing secret (`ULTIMATE_CURSOR_SECRET`), under this file's own label.
-  return new Bun.CryptoHasher('sha256', currentSigningSecret())
-    .update(`${PURPOSE}\n${canonicalJson(fields)}`)
-    .digest('hex');
+  return hmac('sha256', currentSigningSecret(), `${PURPOSE}\n${canonicalJson(fields)}`, 'hex');
 }
 
 /** A handle for `state`, bound and signed. The one place a transcript is written. */

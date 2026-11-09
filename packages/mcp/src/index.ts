@@ -6,6 +6,7 @@ export type { RequestFacts as McpRequestFacts } from '@ultimat3/http';
 /** Re-exported so a `defineAppMcp` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
+export type { McpCatalog, McpRuntimeCatalog } from './app-catalog';
 export type {
   AnyAppToolDefinition,
   AppToolArgs,
@@ -24,6 +25,20 @@ export type {
   McpAuthRefusal,
 } from './audit-hook';
 export { mcpAuditor } from './audit-hook';
+export type { McpCatalogNameSource } from './catalog-errors';
+export {
+  McpCatalogToolDuplicateError,
+  McpCatalogUnresolvedError,
+  McpTenantInvalidError,
+  McpTenantRequiredError,
+  McpTenantUnresolvedError,
+} from './catalog-errors';
+export type {
+  McpApproverSelector,
+  McpApproversCall,
+  McpApproversResolver,
+  McpConfirmationApprovers,
+} from './confirmation-approvers';
 export {
   McpConfirmationArgumentsMismatchError,
   McpConfirmationContestedError,
@@ -34,6 +49,17 @@ export {
   McpConfirmationToolUnknownError,
   McpConfirmationUnknownError,
 } from './confirmation-errors';
+export type {
+  McpConfirmationEvidence,
+  McpConfirmationVerdict,
+  McpEvidenceCheck,
+  VerifyConfirmationOptions,
+} from './confirmation-evidence';
+export {
+  confirmationSigningPayload,
+  MCP_CONFIRMATION_SIGNING_PURPOSE,
+  verifyConfirmationEvidence,
+} from './confirmation-evidence';
 export {
   inputDigest,
   MCP_CONFIRMATION_ARGUMENTS_PURPOSE,
@@ -42,9 +68,16 @@ export {
 } from './confirmation-gate';
 export type { PostgresConfirmationStoreOptions } from './confirmation-postgres';
 export { postgresConfirmationStore } from './confirmation-postgres';
+export type { McpEvidenceFailure } from './confirmation-quorum-errors';
+export {
+  McpConfirmationEvidenceInvalidError,
+  McpConfirmationQuorumInvalidError,
+  McpConfirmationQuorumPendingError,
+} from './confirmation-quorum-errors';
 // The confirmation table's DDL is `@ultimat3/mcp/schema`'s alone — one import path for one statement.
 export type {
   McpConfirmation,
+  McpConfirmationApproval,
   McpConfirmationDraft,
   McpConfirmationStatus,
   McpConfirmationStore,
@@ -135,6 +168,7 @@ export { exposedPrimitives } from './exposed';
 export type { ProjectablePrimitive } from './from-action';
 export { deriveAnnotations, toolFrom, toolsFrom, toolsListed } from './from-action';
 export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
+export { assertIncludeCurrent } from './include-early';
 export type { JobToolAnswer, JobToolDef, JobToolWait } from './job-tool';
 export { JOB_STATUS_TOOL, JOB_TOOL_INLINE_CEILING_MS, jobTool } from './job-tool';
 export { McpJobToolInvalidError } from './job-tool-errors';
@@ -177,7 +211,7 @@ export {
   oneLineParams,
   renderCatalog,
 } from './meta-surface';
-export { McpPathDuplicateError } from './mount-errors';
+export { McpIncludeEarlyError, McpPathDuplicateError } from './mount-errors';
 export type { McpOAuth } from './oauth-metadata';
 export {
   metadataPaths,
@@ -281,13 +315,18 @@ export {
   ResourceRegistry,
   toPrompts,
 } from './resources';
+export type { McpRuntimeTool, RuntimeToolArgs, RuntimeToolDefinition } from './runtime-tool';
+export { runtimeTool } from './runtime-tool';
 export type { McpScopes } from './scopes';
 export { withScopes } from './scopes';
 export type { McpServer, McpServerInput, McpWire } from './server';
 export { mcpServer } from './server';
+export type { McpCatalogSource, McpResolvedCatalog } from './server-catalog';
 export type { McpInstructions, McpServerVoice } from './server-voice';
 export type { McpSurfaceBudget, McpSurfaceSize } from './surface-budget';
 export { assertMcpSurfaceBudget, measureMcpSurface } from './surface-budget';
+export type { McpTenant, McpTenantEntry } from './tenant';
+export { LIST_TENANTS } from './tenant';
 export type {
   McpHttpTransportInput,
   McpProtectedResource,

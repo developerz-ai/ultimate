@@ -138,3 +138,64 @@ describe('markedPoints', () => {
     expect(marked.map((p) => p.index)).toEqual([values.length - 1]);
   });
 });
+
+describe('true x positions', () => {
+  const keys = ['00:00', '00:01', '06:00'];
+  const series = [{ label: 's', values: [1, 2, 3] }];
+  const base = { keys, series, zero: true, maxTicks: 6 };
+
+  test('irregular samples sit at their real distance, not one width apart', () => {
+    // The probe: keyX [8, 300, 592] — six hours and one minute drawn the same width.
+    expect(lineLayout(base).keyX).toEqual([8, 300, 592]);
+    const minute = 60_000;
+    const xs = lineLayout({ ...base, at: [0, minute, 360 * minute] }).keyX;
+    expect(xs[0]).toBe(8);
+    expect(xs[2]).toBe(592);
+    expect((xs[1] ?? 0) - (xs[0] ?? 0)).toBeLessThan(2);
+  });
+});
+
+describe('references widen the axis', () => {
+  test('a target above every value is still on the plot', () => {
+    const layout = lineLayout({
+      keys: ['a', 'b'],
+      series: [{ label: 's', values: [1, 2] }],
+      zero: true,
+      maxTicks: 6,
+      also: [10],
+    });
+    expect(layout.scale.max).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('stacked', () => {
+  const input = {
+    keys: ['a', 'b'],
+    series: [
+      { label: 'low', values: [1, 2] },
+      { label: 'high', values: [3, null] },
+    ],
+    zero: true,
+    maxTicks: 6,
+    stacked: true,
+  };
+
+  test('each series sits on the sum below it; a gap draws nothing and adds nothing', () => {
+    const layout = lineLayout(input);
+    expect(layout.scale.max).toBeGreaterThanOrEqual(4);
+    const top = layout.series[1]?.points[0];
+    // Reads 3, drawn at 1 + 3: the tick for 4 is where it sits.
+    expect(top?.value).toBe(3);
+    expect(top?.y).toBe(layout.ticks.find((tick) => tick.value === 4)?.y ?? -1);
+    expect(layout.series[1]?.points).toHaveLength(1);
+  });
+
+  test('a stacked band closes along the series below it, not down to zero', () => {
+    const layout = lineLayout({
+      ...input,
+      series: [input.series[0] as never, { label: 'h', values: [3, 3] }],
+    });
+    const band = layout.series[1]?.area ?? '';
+    expect(band).not.toContain(`,${layout.baselineY} Z`);
+  });
+});

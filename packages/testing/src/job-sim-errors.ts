@@ -17,18 +17,49 @@ export interface CrashDivergedInput {
   readonly effect: string;
   readonly clean: number;
   readonly killed: number;
-  /** The last step written before the effect, in the clean run. */
+  /** The last step completed before the effect, in the clean run. */
   readonly after?: string;
+  /** The step whose body made the effect, when it was made inside one. */
+  readonly inside?: string;
 }
+
+/**
+ * Where an effect was made, as the crash proof's two reporters phrase it — this error and the CLI's
+ * finding (`@ultimat3/cli`'s `exercise-findings.ts`) — so the two cannot name different places.
+ * `remedy` is prose for a `fix:`'s comment, after the call it pastes.
+ */
+export function crashEffectPlace(where: {
+  readonly after?: string | undefined;
+  readonly inside?: string | undefined;
+}): { readonly place: string; readonly remedy: string } {
+  if (where.inside !== undefined) {
+    const step = renderCauseValue(where.inside);
+    return {
+      place: `it runs inside step ${step}, whose body runs again until the step completes`,
+      remedy: `make the body of step ${step} idempotent: key its external call on \`\${jobId}:${where.inside}\`, or move the effect into a step of its own`,
+    };
+  }
+  const at =
+    where.after === undefined
+      ? 'before the first step'
+      : `after step ${renderCauseValue(where.after)}`;
+  return {
+    place: `it runs outside every step, ${at}`,
+    remedy: `wrap the effect made ${at} in step.run('<name>', async () => …); key an external call on \`\${jobId}:<step>\``,
+  };
+}
+
+const howOften = (killed: number, clean: number): string =>
+  killed > clean ? 'so the retry makes it again' : 'so the crash skipped it';
 
 export class JobCrashDivergedError extends UltimateError {
   constructor(input: CrashDivergedInput) {
-    const where =
-      input.after === undefined ? 'before the first step' : `after step "${input.after}"`;
+    const { place, remedy } = crashEffectPlace(input);
+    const name = input.inside ?? `${input.boundary}-effect`;
     super({
       code: 'X_JOB_CRASH_DIVERGED',
-      cause: `job ${renderCauseValue(input.job)} killed at ${renderCauseValue(input.boundary)} made ${renderCauseValue(input.effect)} ${input.killed}× against ${input.clean}× in a clean run: it runs outside every step, ${where}, so the retry makes it again`,
-      fix: `step.run(${renderFixLiteral(`${input.boundary}-effect`, '<name>')}, async () => …)   # in job(${renderFixLiteral(input.job, '<job>')}): wrap the ${renderFixLiteral(input.effect, '<effect>')} made ${where}; key an external call on \`\${jobId}:<step>\`; then: x test job --filter <the test file>`,
+      cause: `job ${renderCauseValue(input.job)} killed at ${renderCauseValue(input.boundary)} made ${renderCauseValue(input.effect)} ${input.killed}× against ${input.clean}× in a clean run: ${place}, ${howOften(input.killed, input.clean)}`,
+      fix: `step.run(${renderFixLiteral(name, '<name>')}, async () => …)   # in job(${renderFixLiteral(input.job, '<job>')}), for ${renderFixLiteral(input.effect, '<effect>')}: ${remedy}; then: x test job --filter <the test file>`,
       meta: { ...input },
     });
   }
@@ -67,6 +98,30 @@ export class JobSimNondeterministicError extends UltimateError {
       cause: `seed ${input.seed} ran twice and the traces differ at event ${input.at}: ${renderCauseValue(input.first)} then ${renderCauseValue(input.second)} — a body reads the wall clock, real I/O or state an earlier run left`,
       fix: `x test job --seed ${renderFixShellArg(String(input.seed), '<n>')} --filter <the test file>   # read time through Date (frozen) and ids through the job's input`,
       meta: { ...input },
+    });
+  }
+}
+
+export interface CrashUnboundedInput {
+  readonly job: string;
+  /** Kill points the clean run's boundaries asked for, after a loop's rows were taken as one. */
+  readonly points: number;
+  readonly bound: number;
+  /** Boundaries the clean run crossed. */
+  readonly crossed: number;
+  /** The first distinct boundary shapes, in order: where the names that did not collapse are. */
+  readonly shapes: readonly string[];
+}
+
+/** Refused before the first kill: a proof that grows with the rows is one no gate can wait for. */
+export class JobCrashUnboundedError extends UltimateError {
+  constructor(input: CrashUnboundedInput) {
+    const shown = input.shapes.slice(0, 5).join(', ');
+    super({
+      code: 'X_JOB_CRASH_UNBOUNDED',
+      cause: `job ${renderCauseValue(input.job)} crossed ${input.crossed} step boundaries, ${input.points} distinct kill points against a bound of ${input.bound} — its steps are named so a loop's rows do not read as one point (first: ${renderCauseValue(shown)})`,
+      fix: `step.run(\`<name>:\${row.id}\`, async () => …)   # in job(${renderFixLiteral(input.job, '<job>')}): name a per-row step by the row's id, so its loop is one kill point; then: x test job --filter <the test file>`,
+      meta: { ...input, shapes: [...input.shapes] },
     });
   }
 }

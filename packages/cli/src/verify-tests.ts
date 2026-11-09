@@ -185,7 +185,8 @@ export const testStepCommand = (type: TestType, pace?: MachinePace): readonly st
  * "no test files matched", a red gate reporting a suite that by its own rule is not here.
  *
  * Memoized because `runVerify` asks `applies` and then `run`, and a repeated walk of the whole
- * tree per type is the cost this change exists to remove.
+ * tree per type is the cost this change exists to remove. For one run only: `runVerify` clears it
+ * first, since the dev MCP host's `verify` tool runs the gate again in the same process.
  */
 const discovered = new Map<string, readonly TestFile[]>();
 
@@ -198,11 +199,27 @@ const filesFor = async (root: string, type: TestType): Promise<readonly TestFile
   return files;
 };
 
-/** Test seam: a fixture that writes new test files under a root this process already scanned. */
+/** `runVerify` starts every run here; a test that calls a step outside `runVerify` does too. */
 export const resetTestDiscovery = (): void => discovered.clear();
 
-const runSerial = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome> => {
-  const command = testStepCommand(type, ctx.pace);
+/**
+ * `files`, when given, is a `--shard` slice: the same one process and the same per-test deadline,
+ * over an explicit list instead of the type's own globs — `runParallel` hands `bun test` its files
+ * the same way. Serial is a fact about ONE machine (one replication slot, one browser); each CI
+ * runner starts its own services, so a slice per runner shares nothing with another runner's.
+ */
+const runSerial = async (
+  ctx: VerifyContext,
+  type: TestType,
+  files?: readonly string[],
+): Promise<StepOutcome> => {
+  const whole = testStepCommand(type, ctx.pace);
+  const command =
+    files === undefined
+      ? whole
+      : // Its flags kept — the deadline and the ignore list — and its type filters replaced by
+        // the slice: `bun test` reads a positional as a path filter either way.
+        [...whole.filter((arg, at) => at < 2 || arg.startsWith('--')), ...[...files].sort()];
   const envOverrides = { ...testEnvOverrides(ctx.root, ctx.env ?? Bun.env), ...paceEnv(ctx.pace) };
   const exec = (e2e: { command: readonly string[]; env: typeof envOverrides }) =>
     ctx.runner(e2e.command, {
@@ -229,7 +246,7 @@ const runSerial = async (ctx: VerifyContext, type: TestType): Promise<StepOutcom
 };
 
 const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome> => {
-  if (isSerial(type)) return runSerial(ctx, type);
+  if (isSerial(type) && ctx.shard === undefined) return runSerial(ctx, type);
   const discoveredFiles = await filesFor(ctx.root, type);
   // Under `--shard`, this job runs its slice and says which — `x verify merge` checks the slices.
   // An EMPTY slice is a pass with zero tests, never the serial fallback below (which would run
@@ -244,6 +261,9 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
         );
   if (shard !== undefined && shard.files.length === 0) {
     return { ok: true, findings: [], workers: 0, tests: { ran: 0, skipped: 0 }, shard };
+  }
+  if (isSerial(type) && shard !== undefined) {
+    return { ...(await runSerial(ctx, type, shard.files)), shard };
   }
   const files =
     shard === undefined

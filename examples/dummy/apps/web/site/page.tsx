@@ -6,10 +6,11 @@
 
 import { priceDecimalOf } from '@postly/domain';
 import { useT } from '@postly/i18n';
-import { defineRoute } from '@ultimat3/render';
-import { ld } from '@ultimat3/seo';
+import { asset, defineRoute } from '@ultimat3/render';
+import { ld, responsiveImage } from '@ultimat3/seo';
 import { Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
+import { For } from 'solid-js';
 import { currencyFromUrl } from '../shared/currency';
 import styles from './page.module.scss';
 
@@ -30,7 +31,9 @@ export const config = defineRoute({
     return {
       title: t('site.hero.metaTitle'),
       description: t('site.hero.metaDescription'),
-      og: { image: '/og/home.png' },
+      // A page of this site, photographed at 1200 x 630 by `x build --target static` and stamped
+      // as og:image (`og/home/page.tsx`): the card is the brand's own markup, never a stock PNG.
+      og: { capture: '/og/home' },
       ld: [
         ld.SoftwareApplication({
           name: t('common.appName'),
@@ -45,8 +48,18 @@ export const config = defineRoute({
   },
 });
 
+/** The hero's intrinsic size: `assets/hero.png` is 960 x 540. */
+const HERO_SIZE = { width: 960, height: 540 } as const;
+
 export function Page(): JSX.Element {
   const t = useT();
+  const hero = responsiveImage({
+    src: asset('assets/hero.png'),
+    ...HERO_SIZE,
+    alt: t('site.hero.imageAlt'),
+    sizes: '(min-width: 68rem) 960px, 100vw',
+    priority: true,
+  });
 
   return (
     <main class={styles.page}>
@@ -71,13 +84,27 @@ export function Page(): JSX.Element {
           </div>
         </Stack>
         {/*
-          No hero image. `/media/*key` is the STORAGE route — one disk holding every tenant's
-          uploads — so it is `auth: 'required'`, and an anonymous marketing page asking it for
-          `feed-screenshot.png` is a 401 (it was a 404 before, because nothing ever wrote that
-          object). A genuinely public image belongs under `apps/web/site/` as a committed asset, and
-          this app has no static-asset route to serve one from yet, so the honest answer is no image
-          rather than a broken one. See `packages/cli/src/runtime-assets.ts`.
+          A committed asset under `site/assets/`, as a `<picture>`: the static build writes every
+          width in every offered format beside the page (`/_img/…`), so a CDN serving the export
+          answers `image/webp` for the webp candidate. Intrinsic size inlined, so CLS stays 0.
         */}
+        <picture class={styles.heroImage}>
+          <For each={hero.sources}>
+            {(source) => <source type={source.type} srcset={source.srcset} sizes={source.sizes} />}
+          </For>
+          <img
+            src={hero.img.src}
+            srcset={hero.img.srcset}
+            sizes={hero.img.sizes}
+            alt={hero.img.alt}
+            width={hero.img.width}
+            height={hero.img.height}
+            loading={hero.img.loading}
+            decoding={hero.img.decoding}
+            fetchpriority={hero.img.fetchpriority}
+            style={hero.img.style}
+          />
+        </picture>
       </section>
 
       <section class={styles.features}>

@@ -25,6 +25,7 @@ export type {
   CdpKeyboardLike,
   CdpLauncherLike,
   CdpPageLike,
+  CdpPdfOptions,
   CdpRequestLike,
   CdpScreenshotOptions,
   CdpSessionLike,
@@ -145,6 +146,8 @@ export type {
 } from './page';
 export type { PageContext } from './page-over-target';
 export { pageOverTarget } from './page-over-target';
+export type { PdfFormat, PdfLayout, PdfMarginMm, PdfRequest } from './pdf-request';
+export { PDF_FORMATS } from './pdf-request';
 export type { Pacer } from './rate';
 export { scrapePacer } from './rate';
 export type { HttpRecording, PageRecording } from './recording';
@@ -229,6 +232,7 @@ export type {
   ElementSnapshot,
   FrameRef,
   GotoOptions,
+  PdfOptions,
   QueryOptions,
   ScrapeCookie,
   ScrapeDownloadFile,

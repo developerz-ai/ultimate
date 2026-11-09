@@ -35,6 +35,12 @@ export const FETCH_DEADLINE_PINS: Readonly<Record<string, FetchDeadlinePin>> = {
     reason:
       "why: `client-dispatch.ts`'s `browserFetch` forwards `init`, and `clientTransport` always sets the flight's `signal` in it; a browser has no request to outlive.",
   },
+  // why: the seam outbound() calls, not a call of its own.
+  notify: {
+    count: 1,
+    reason:
+      "why: `native-transport.ts`'s `platformFetch` is the `fetch` handed to `outbound()` (`apns.ts`, `fcm.ts`), which passes its own `init.signal` — the push's `deadlineMs` — on every hop; it reads the global per call so a test's sealed network sees it.",
+  },
   realtime: {
     count: 1,
     reason:

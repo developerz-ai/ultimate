@@ -10,6 +10,21 @@
 export const DEPENDENCY_ALLOWLIST_FILE = 'scripts/lib/dependency-allowlist-data.ts';
 
 export const DEPENDENCY_ALLOWLIST: Readonly<Record<string, { readonly reason: string }>> = {
+  'dummy/docs-site/package.json#dependencies#solid-js': {
+    reason: 'The SolidJS runtime the docs pages render with, as x new writes it.',
+  },
+  'dummy/docs-site/package.json#devDependencies#@biomejs/biome': {
+    reason: 'The repository linter and formatter, as x new writes it.',
+  },
+  'dummy/docs-site/package.json#devDependencies#@electric-sql/pglite': {
+    reason: 'The embedded Postgres driver x new writes; the scaffold drift step replays on it.',
+  },
+  'dummy/docs-site/package.json#devDependencies#@types/bun': {
+    reason: 'Bun runtime type declarations for TypeScript, as x new writes them.',
+  },
+  'dummy/docs-site/package.json#devDependencies#typescript': {
+    reason: 'The repository compiler, as x new writes it.',
+  },
   'dummy/social-media-clone/package.json#dependencies#solid-js': {
     reason: 'The SolidJS runtime the UI and app surfaces render with.',
   },

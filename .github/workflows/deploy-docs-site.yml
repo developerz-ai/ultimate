@@ -1,0 +1,133 @@
+name: deploy-docs-site
+
+# Publishes dummy/docs-site — `wiki/*.md` as a static site, built by Ultimate at 0 KB of script
+# (plan 101, 42-adopt-docs-site) — to GitHub Pages: free static hosting from this repository, no
+# process, no database, no credential beyond the run's own token.
+#
+# INERT UNTIL THE OWNER TURNS IT ON. Every job is gated on the repository variable
+# DOCS_SITE_ORIGIN (`https://ultimate.developerz.ai`), which the owner sets in the same step that
+# points the domain's DNS at Pages and enables Pages for the repository — the one outward-facing
+# act this workflow cannot take on its own. Unset, every run of this workflow is a skipped job and
+# nothing is built or published. `scripts/ci-workflow-shape-docs.test.ts` holds that gate on every
+# job, and holds the triggers to the two below.
+#
+# Triggered as deploy-social-demo.yml is: by ci.yml FINISHING green on main, for exactly the
+# commit it judged, or by hand. Never by a push or a pull request of its own.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# One deployment at a time, and never cancel one mid-flight: Pages takes the newest artifact.
+concurrency:
+  group: deploy-docs-site
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # Read-only, to read the app gate's verdict on the commit this run publishes.
+  checks: read
+
+jobs:
+  # No gate run here: ci.yml's `reference-app-verify (dummy/docs-site)` already built and gated
+  # this app on this commit, and a second run is the duplicate path axiom 1 forbids. This job
+  # READS that verdict, then builds the artifact the gate weighed, with the production origin.
+  build:
+    if: >-
+      vars.DOCS_SITE_ORIGIN != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      # Only a commit ON main publishes: a dispatch from a branch builds that branch, and its
+      # pages would replace the manual every visitor reads. Fails closed on an API error.
+      - name: on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          ahead="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${sha}" --jq .ahead_by || echo 1)"
+          if [ "$ahead" != 0 ]; then
+            echo "::error::${sha} is not on main (${ahead} commit(s) main does not have) — not publishing. Dispatch this workflow from main."
+            exit 1
+          fi
+          echo "SHA=${sha}" >> "$GITHUB_ENV"
+
+      # The docs site's own gate on THIS commit — deploy-social-demo.yml's read, for this app's
+      # check: success, or every check under the job name skipped beside a green `tested` (a tree
+      # its pull request already tested; ci.yml's `tested` job is the one cause of that skip).
+      - name: require the app gate's verdict for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK: reference-app-verify (dummy/docs-site)
+          REUSED_BY: tested
+        run: |
+          set -euo pipefail
+          checks="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs" -f per_page=100 \
+            --jq '[.check_runs[] | select(.status == "completed") | {name, conclusion, completed_at}]' \
+            || echo '[]')"
+          verdict() {
+            jq -r --arg name "$1" \
+              '[.[] | select(.name == $name)] | sort_by(.completed_at) | last | .conclusion // ""' <<< "$checks"
+          }
+          conclusion="$(verdict "$CHECK")"
+          if [ "$conclusion" = success ]; then
+            echo "ok: ${CHECK} passed for ${SHA}"
+            exit 0
+          fi
+          reused="$(verdict "$REUSED_BY")"
+          under="$(jq -r --arg job "${CHECK%% (*}" \
+            '[.[] | select(.name | startswith($job)) | .conclusion] | unique | join(",")' <<< "$checks")"
+          if [ "$reused" = success ] && [ "$under" = "skipped" ]; then
+            echo "ok: ${SHA}'s tree was tested green by its pull request; ${CHECK} was reused, not re-run"
+            exit 0
+          fi
+          echo "::error::${CHECK} concluded '${conclusion:-no verdict}' for ${SHA} (${REUSED_BY}: '${reused:-no verdict}') — not publishing."
+          exit 1
+
+      - uses: ./.github/actions/setup
+
+      # `ULTIMATE_ENV=production`: robots.txt and llms.txt fail closed everywhere else, so a build
+      # without it would tell every crawler to skip the site this exists to get indexed. CNAME is
+      # what Pages serves the custom domain from; the host is the origin's.
+      - name: x build --target static, at the production origin
+        working-directory: dummy/docs-site
+        env:
+          SITE_ORIGIN: ${{ vars.DOCS_SITE_ORIGIN }}
+          ULTIMATE_ENV: production
+        run: |
+          set -euo pipefail
+          bunx x build --target static --out "${RUNNER_TEMP}/docs-site" --json > "${RUNNER_TEMP}/build.json"
+          jq -r '.summary // empty' "${RUNNER_TEMP}/build.json"
+          host="${SITE_ORIGIN#*://}"
+          printf '%s\n' "${host%%/*}" > "${RUNNER_TEMP}/docs-site/CNAME"
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/docs-site
+
+  deploy:
+    needs: build
+    if: vars.DOCS_SITE_ORIGIN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

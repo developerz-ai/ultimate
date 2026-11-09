@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "bcebf555a27a56b0",
+  "buildId": "cdd6747267abc427",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -2950,6 +2950,10 @@
     {
       "code": "X_ISLAND_WITHOUT_STATES",
       "package": "guards/island-without-states.ts"
+    },
+    {
+      "code": "X_NATIVE_CONFIRM",
+      "package": "guards/native-confirm.ts"
     },
     {
       "code": "X_RAW_BREAKPOINT",

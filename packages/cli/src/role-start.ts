@@ -26,6 +26,7 @@ import {
   outboxRelay,
   postgresLeaseLeader,
   postgresSchedulerState,
+  registeredJobs,
 } from '@ultimat3/jobs';
 import type { SyncWs } from '@ultimat3/realtime/server';
 import { errorPageHook } from './error-pages';
@@ -38,12 +39,14 @@ import {
 } from './metrics-endpoint';
 import { rolesUnderRealtime } from './role-realtime';
 import { startReplicator } from './role-replicator';
+import { type DeviceMount, hostDeviceSockets } from './role-start-devices';
 import type { RunningRoles, StartRolesOptions } from './role-start-types';
 import { DEV_ROLES } from './role-start-types';
 import { prepareSync, type RunningSync, syncReadsChanges } from './role-sync';
 import { startWorkerWake } from './role-wake';
 import { devHooks } from './runtime-hooks';
 import { workerOptionsFor } from './runtime-jobs';
+import { reportUnservedQueues } from './runtime-jobs-unserved';
 import { startLiveFeed } from './runtime-live-feed';
 import { type RunningServices, releaseOrThrow } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
@@ -160,9 +163,17 @@ function rateLimitStoreFor(options: StartRolesOptions): RateLimitStore | undefin
   return supplied;
 }
 
-/** `mount` is the sync node's socket, served on THIS port as well as its own — why, in `role-sync`.
- * Undefined without the `sync` role, and then this server opens no websocket, as it always did. */
-function startWeb(options: StartRolesOptions, mount?: WebSocketMount<SyncWs>): ServerHandle {
+/**
+ * `mount` is the sync node's socket, served on THIS port as well as its own — why, in `role-sync`;
+ * undefined without the `sync` role. Beside it, a door per declared `deviceSocket()` path: this
+ * listener is where a device dials, and `hostDeviceSockets` made this process their host before it
+ * binds. Neither, and this server opens no websocket, as it always did.
+ */
+function startWeb(
+  options: StartRolesOptions,
+  devices: readonly DeviceMount[],
+  mount?: WebSocketMount<SyncWs>,
+): ServerHandle {
   warnIfUnauthenticatable(options.routes);
   const binding = options.http ?? DEV_BINDING;
   const hops = trustedHopsFromEnv(options.env);
@@ -170,7 +181,7 @@ function startWeb(options: StartRolesOptions, mount?: WebSocketMount<SyncWs>): S
   return httpServer({
     routes: options.routes,
     role: 'web',
-    ...(mount === undefined ? {} : { websocket: mount }),
+    websocket: [...(mount === undefined ? [] : [mount]), ...devices],
     ...(options.drain === undefined ? {} : { drain: options.drain }),
     hooks: devHooks({
       ...(options.devNotices === undefined ? {} : { devNotices: options.devNotices }),
@@ -295,6 +306,11 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // Opened here or adopted from `serve-boot.ts`, this is where the build id is known (#734).
     metrics.announceBuild(options.buildId);
 
+    // Every declared `deviceSocket()` on this process's bus, before any role serves: a job or an
+    // action anywhere may `request()` a device, and the web role holds their sockets.
+    const devices = await hostDeviceSockets(options.runtime.transport, selected);
+    started.push(() => devices.stop());
+
     // BUILT here, BOUND below, the web role between them: `web` serves the node's socket on its
     // own port and a listening server cannot be handed one, while the neighbouring-port refusals
     // are only the right answer once the web port's own has been given.
@@ -306,7 +322,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     let releaseSync = prepared?.stop ?? null;
     let server: ServerHandle | null;
     try {
-      server = selected.includes('web') ? startWeb(options, prepared?.mount) : null;
+      server = selected.includes('web') ? startWeb(options, devices.mounts, prepared?.mount) : null;
     } catch (error) {
       await releaseSync?.().catch(() => undefined);
       throw error;
@@ -321,16 +337,30 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       prepared === null ? null : await prepared.listen(server === null ? null : server.url());
     if (sync !== null) releaseSync = sync.stop;
 
-    const worker = selected.includes('worker')
-      ? jobWorker({
-          driver: options.runtime.jobs,
-          build: options.buildId,
-          context: () => ctxOf({ role: 'worker', buildId: options.buildId }),
-          ...workerOptionsFor(options.runtime.workerConfig),
-        })
+    const workerOptions = selected.includes('worker')
+      ? workerOptionsFor(options.runtime.workerConfig)
       : null;
+    const worker =
+      workerOptions === null
+        ? null
+        : jobWorker({
+            driver: options.runtime.jobs,
+            build: options.buildId,
+            context: () => ctxOf({ role: 'worker', buildId: options.buildId }),
+            ...workerOptions,
+          });
     worker?.start();
     if (worker !== null) started.push(() => worker.stop('x dev stopped'));
+    // An exact worker (`WORKER_QUEUES`) names the registered queues NO live worker serves — after
+    // its start, so the registry holds its own row and the rest of the fleet's. Never rejects.
+    if (workerOptions !== null && options.runtime.workerConfig?.exact === true) {
+      const introspect = options.runtime.jobs.introspect;
+      void reportUnservedQueues({
+        served: workerOptions.queues ?? [],
+        registered: registeredJobs().map((handle) => handle.queue),
+        workers: introspect === undefined ? undefined : () => introspect.workers(),
+      });
+    }
 
     // The half of the transactional outbox that makes a staged row a running job. Without it
     // `handle.enqueue()` inside a transaction writes to `x_outbox` and nothing ever reads it back
@@ -417,6 +447,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       liveFeed: live.feed,
       liveBridge: live.bridge,
       liveRegistry: sync?.registry ?? null,
+      refreshDevices: () => devices.refresh(),
       async stop() {
         // `started` IS the stop list, in boot order: released newest first — the live feed, the
         // replicator (so the slot is released before the bus it published to closes), the

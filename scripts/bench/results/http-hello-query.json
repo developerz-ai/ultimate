@@ -1,0 +1,76 @@
+{
+  "url": "http://localhost:3000/_x/query/post-list?limit=10",
+  "seconds": 30,
+  "concurrency": 16,
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel(R) Core(TM) i7-10610U CPU @ 1.80GHz",
+    "cores": 8,
+    "memoryGb": 31,
+    "bun": "1.4.4",
+    "runner": "local"
+  },
+  "coldStartMs": 6780,
+  "rssMb": 545,
+  "spread": {
+    "rps": {
+      "min": 160.43,
+      "median": 183.2,
+      "n": 3
+    },
+    "p50Ms": {
+      "min": 57.63,
+      "median": 60.36,
+      "n": 3
+    },
+    "p99Ms": {
+      "min": 168.79,
+      "median": 258.26,
+      "n": 3
+    }
+  },
+  "runs": [
+    {
+      "requests": 5508,
+      "ok": 5508,
+      "non2xx": 0,
+      "errors": 0,
+      "statuses": {
+        "200": 5508
+      },
+      "durationMs": 30065.45,
+      "rps": 183.2,
+      "p50Ms": 73.34,
+      "p99Ms": 258.26,
+      "bytes": 2148120
+    },
+    {
+      "requests": 4821,
+      "ok": 4821,
+      "non2xx": 0,
+      "errors": 0,
+      "statuses": {
+        "200": 4821
+      },
+      "durationMs": 30051.05,
+      "rps": 160.43,
+      "p50Ms": 60.36,
+      "p99Ms": 442.24,
+      "bytes": 1880190
+    },
+    {
+      "requests": 7158,
+      "ok": 7158,
+      "non2xx": 0,
+      "errors": 0,
+      "statuses": {
+        "200": 7158
+      },
+      "durationMs": 30097.3,
+      "rps": 237.83,
+      "p50Ms": 57.63,
+      "p99Ms": 168.79,
+      "bytes": 2791620
+    }
+  ]
+}

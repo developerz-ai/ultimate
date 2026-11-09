@@ -30,7 +30,8 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | `mcp.expose` | `boolean` | no (opt-in) | only a literal `true` makes the action a tool; silence exposes nothing. One predicate answers it everywhere — the tool, the LLM tool list, `describe().mcp.expose`, and `openapi.json`'s `x-ultimate.mcpTool` (which is `null` when there is no tool). Listing an un-exposed action in `defineAppMcp` is `X_MCP_TOOL_UNDECLARED` at boot |
 | `mcp.description` | `string` | no | the tool description an agent reads, and the OpenAPI `summary`. Contract text, so it stays outside `t()` — `openapi.json` must not depend on a locale. Write it for a stranger |
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
-| `rateLimit` | `{ limit: number; windowMs: number }` | no | spent **inside `invoke`**, so the HTTP route, the MCP tool, the in-app agent's tool call and `.job()` draw on ONE bucket — the third call to a `limit: 2` action is `X_RATE_LIMITED` whichever surface it came through; a direct in-process call spends nothing. Keyed actor → org → IP; counted in `@ultimat3/http`'s installed store (`installRateLimitStore()`, filled by the boot on every role with the same instance `httpServer({ rateLimitStore })` holds). Over HTTP the refusal is `429` + `Retry-After` and `RateLimit-*`, and the route is not also capped by the `default` bucket; the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. `/mcp` additionally buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) |
+| `rateLimit` | `{ limit: number \| (({ ctx }) => number \| Promise<number>); windowMs: number }` | no | `limit` may be resolved **per call** from `ctx` (the tenant's plan, read by the app), before any bucket is touched; a resolver answering `NaN`, `0`, `Infinity` or a non-number is `X_RATE_LIMIT_INVALID`, never allow-all. A per-call limit publishes as `rateLimit: null` + `rateLimitPerCall: { windowMs }` in `describe()` and `x-ultimate.rateLimit.limit: 'per-call'` in `openapi.json`. Spent **inside `invoke`**, so the HTTP route, the MCP tool, the in-app agent's tool call and `.job()` draw on ONE bucket — the third call to a `limit: 2` action is `X_RATE_LIMITED` whichever surface it came through; a direct in-process call spends nothing. Keyed actor → org → IP; counted in `@ultimat3/http`'s installed store (`installRateLimitStore()`, filled by the boot on every role with the same instance `httpServer({ rateLimitStore })` holds). Over HTTP the refusal is `429` + `Retry-After` and `RateLimit-*`, and the route is not also capped by the `default` bucket; the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. `/mcp` additionally buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) |
+| `meter` | `{ name, period: 'hour' \| 'day' \| 'month', limit, warnAt?, onWarn? }` | no | a durable per-period allowance — see [Usage meters](#usage-meters-meter). Drawn on **every** surface, `server` included, after the policy and before `handle`; spent, `X_METER_EXCEEDED` (429) |
 | `idempotent` | `boolean` | no — **required `true` on a `mutator`** | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument. Inside a transaction the Postgres store settles the record with the write's own `COMMIT`, so a rollback never leaves a `settled` record behind. A field core redacts by name (`apiKey`, `password`, `*Token`…) or a `Secret` is stored as `[redacted]`, and the replay of such an answer is `X_IDEMPOTENT_REPLAY_REDACTED` |
 | `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a caller already holds (`'/api/uploads/signed'`) or a resource-shaped one (`'/orders/:id/refund'`). Lowercase static segments and `:param`s, never `/_x`; each `:param` a REQUIRED `t.string` key of `input:`, else `X_ACTION_HTTP_PATH_INVALID` at registration. The URL's value joins the body before the input is parsed, so the schema, the policy, `row` and the handler read one object; a body naming the key with another value is **400** `X_HTTP_PATH_INPUT_CONFLICT`, never overridden. Under a bearer mount the pin is served at the prefix (`/v1/orders/:id/refund`) — and still at its own path, with the cookie session, as every pin is; the policy decides both. `derivePath(name)` refuses a template; `actionHttpPath(name, { id })` fills it. A `deprecated.replacedBy` naming one is `X_ACTION_DEPRECATION_INVALID`. An inbound webhook is not this door: it is `webhookReceiver()` ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks)) |
 | `http.method` | `'POST'` · `'PUT'` · `'PATCH'` · `'DELETE'` | no — `'POST'` | the verb the pin answers; needs `http.path`. `X_ACTION_PATH_DUPLICATE` keys on method and path, so `PUT /orders/:id` and `DELETE /orders/:id` are two actions. `action.client()` sends it and fills the URL from the input (each value one encoded segment, the key left out of the body); `rpc()` by name cannot see a pin. In `openapi.json`: `{id}`, an `in: path` required parameter, the key gone from the request body, the operation under the declared verb. `x.manifest.json` writes `http: { path, method }` for a pin only; moving it is breaking. `As of 2026-11` |
@@ -58,6 +59,48 @@ A refusal's issue carries `rule` (`string.min`, `enum`, … — `SCHEMA_RULES`) 
 | `ctx.logger` | `Logger` | structured, role-tagged, correlated to the span |
 | `ctx.signal` | `AbortSignal` | client disconnect / drain / the request deadline; pass it to long calls. A write past the deadline rethrows `X_TIMEOUT` and rolls back; an `idempotent` action called with a key runs to its end instead, on a fresh signal with no deadline, so the retry replays success (`runToCompletion`), under a hard ceiling: twice `requestTimeoutMs` by default (60 s), `configureIdempotency({ scope, ceilingMs })` to change it. Past it the handler is aborted and the key replays `X_IDEMPOTENCY_RUN_CEILING` |
 | `ctx.role` / `ctx.buildId` | `Role` / `string` | which runtime role is executing, and which build |
+
+## Usage meters: `meter:`
+
+A meter counts calls per tenant per period, durably, inside `invoke`. Prices, plans and the payment provider stay with the app: the framework resolves a number from `ctx` and counts the draw. `As of 2026-11`.
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { allow } from '@ultimat3/policy';
+
+const PER_DAY = new Map([['org-free', 500]]);
+const quotaWarning = { enqueue: async () => undefined }; // in an app: a job({ input: MeterWarning, … })
+
+export const callTool = action({
+  input: t.object({ prompt: t.string }),
+  output: t.object({ ok: t.boolean }),
+  policy: allow(),
+  rateLimit: { windowMs: 60_000, limit: ({ ctx }) => (ctx.actor.orgId === undefined ? 10 : 60) },
+  meter: {
+    name: 'calls',
+    period: 'day',
+    limit: ({ ctx }) => PER_DAY.get(ctx.actor.orgId ?? '') ?? 0,
+    warnAt: 0.8,
+    onWarn: quotaWarning,
+  },
+  handle: () => ({ ok: true }),
+});
+```
+
+| Rule | What happens |
+|---|---|
+| where | drawn **once per call, inside `invoke`**, on HTTP, MCP, an agent's tool call, `.job()` and an in-process call — after the actor half, the rate limit, the parse and the policy, before `handle`. A call refused by any of those uses none of the allowance |
+| whose counter | the tenant (`ctx.actor.orgId`), else the signed-in actor, else one shared `anonymous` counter — refused together, never unlimited. A job run carries its org (`jobRunActor`) |
+| period | **UTC** boundaries (`hour`, `day`, `month`); the stored key spells the zone (`day@UTC`), so a zone-aware period added later is a new counter, never a reinterpreted one. Two actions naming one meter with one period share the counter |
+| limit | a whole number ≥ 0 (`0` refuses every call), or a function of `{ ctx }`, sync or async, resolved per call — a plan change applies to the next call. Anything else is `X_METER_INVALID` (500), at `action()` for a number, per call for a resolver |
+| atomic | one conditional increment: `insert … on conflict … where used + 1 <= limit` in Postgres, a synchronous check-and-add in memory. N parallel calls at the edge admit exactly the remainder |
+| retries | an idempotent call draws inside its reservation: a replay — of a success or a settled failure — draws nothing; a refusal releases the key, so the same key runs once the period resets. A non-idempotent retry is a new call and draws again |
+| refusal | `X_METER_EXCEEDED`, 429, `meta: { meter, limit, resetsAt, retryAfterSeconds }`; over HTTP `Retry-After` is the seconds to the period's end and the problem document carries `meta: { meter, limit, resetsAt }` — `@ultimat3/http`'s reviewed framework row (`problem-meta-framework.ts`), every other key stays server-side. `retry: 'retry-after'`, so a job waits rather than spending attempts |
+| `warnAt` + `onWarn` | both or neither. Crossing `warnAt × limit` claims the period's warning once per tenant (deduplicated across replicas and restarts), then calls `onWarn.enqueue(warning, { outbox: false, tenantId })` — a `job({ input: MeterWarning, … })` satisfies it. An enqueue that fails is logged, never fails the call, and the claim is released for the next draw |
+| store | `memoryMeterStore()` by default (`scope: 'process'`, bounded); the CLI boot installs `postgresMeterStore({ executor })` over `x_meter`, one row per tenant × meter × period declaration rolled over in place — bounded by tenants, so it ships no purge. No usage history: an app that bills on usage records its own |
+| published | `describe().meter` (`{ name, period, timeZone: 'UTC', limit, warnAt }`, `limit: null` for a resolver), `x-ultimate.meter` in `openapi.json` (absent when undeclared) — with `defineApi({ openapi })`, a 429 naming `X_METER_EXCEEDED` with `Retry-After`, public operation or not — and `actions[].meter` in `x.manifest.json`, the same shape |
+| contract diff | breaking when a call pattern the old meter admitted is refused: a meter introduced, a lower limit, a longer period not covering the old one at full use (100/day → month needs ≥ 3,100), a rename (`meta.meter` is on the wire), a move to or from a per-call limit. A shorter period at the same limit admits MORE (100/day → 100/hour): additive, as are a higher limit and a removed meter. `warnAt` is internal. `As of 2026-11` |
+| tests | the app preload resets the meter store at every file boundary, as it does the rate-limit store: a test file never resets it itself |
 
 ## Streaming: `stream:` and an async generator
 
@@ -101,7 +144,7 @@ Every projection needs the name `registerActions()` stamps on. It names the expo
 | 3 | **Typed client function** | `input` + `output` | one map-wide client, `export const client = rpc<Api['actions']>({ baseUrl })`, then `await client.publishPost({ postId })` in `app/`; or `publishPost.client({ baseUrl })` for a single method. `rpc` is the only name for the map-wide client — no `createClient` alias, no fetch, no codegen step to remember. `x new` writes it as `apps/web/shared/browser-client.ts` (`browserClient`, beside `browserQueries`); it typechecks at any app size (pinned at 300 actions in 100 modules). **`rpc` and `queryClient` do not reach a mount**: under `baseUrl: '…/v1'` they derive `/v1/api/…` and a valid token answers 404. A machine caller uses the mount's OpenAPI document |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
 | 5 | **MCP tool** | `mcp` + `input` + `policy` | `toolFrom(publishPost)` from `@ultimat3/mcp` — one tool named `publishPost` per exposed action, exactly the `tools/list` entry, JSON Schema from `input`, every call through this action's `invoke` (authz unchanged) |
-| 6 | **Test** | `input` + `policy` + `handle` | `publishPost.contract({ exercise: { actor } })` — schema round-trip, a denial test per policy branch, and the handler on generated legal input, generated green, not as a `TODO` |
+| 6 | **Test** | `input` + `policy` + `handle` | `publishPost.contract({ exercise })`, handed `apps/web/exercise.ts`'s export, where `x g` declares its entry — schema round-trip, a denial test per policy branch, and the handler on generated legal input, generated green, not as a `TODO` |
 
 **A client for code that cannot import the app.** `rpc` needs the app's action types, so a customer's TypeScript never had one. `x client customer --out <dir>` compiles the committed `openapi.json` (or a bearer mount's own document, `--mount /v1`) into `index.ts` + `types.ts` with no import beyond the platform: `createClient({ baseUrl, headers })`, one method per `operationId`, a non-2xx as `ProblemError`, and `refusalOf(error, 'publishPost')` narrowing to the codes that operation declares under `errors:`. The calling direction is `x client vendor <name>` — `outbound()` and `t` schemas from a third party's document. One compiler for both, never a second way: [CLI reference](CLI-Reference#x-client). `As of 2026-11`.
 

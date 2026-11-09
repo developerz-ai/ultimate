@@ -21,7 +21,8 @@ import { primitiveFromAction, primitiveFromQuery } from './projectable';
  * reserves the `idempotencyKey` argument and builds the wire schema, so an action no surface
  * serves could refuse the boot (`X_MCP_IDEMPOTENCY_KEY_SHADOWED`) of every tool that is served.
  *
- * Read eagerly, at the moment `defineAppMcp` runs — register the app's primitives first.
+ * Read eagerly, at the moment `defineAppMcp` runs — register the app's primitives first. The mount
+ * asks again after the boot scan (`include-early.ts`), so a catalog built too early is refused.
  */
 export function exposedPrimitives(): readonly ProjectablePrimitive[] {
   return [

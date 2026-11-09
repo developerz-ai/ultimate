@@ -1,0 +1,39 @@
+@use '../tokens' as t;
+
+// One column on a phone; from `md` a grid whose first track is `--split`, written by the
+// component (scripting off: the `defaultValue` it rendered with).
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: t.space(4);
+
+  @include t.respond-to(md) {
+    grid-template-columns: minmax(0, var(--split, 50%)) auto minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+.pane {
+  min-inline-size: 0;
+  overflow: auto;
+}
+
+.separator {
+  display: none;
+
+  @include t.respond-to(md) {
+    @include t.focus-ring;
+    display: block;
+    inline-size: t.space(2);
+    margin-inline: t.space(1);
+    border-radius: t.radius(pill);
+    background: t.role('line');
+    cursor: col-resize;
+    touch-action: none;
+
+    &:hover,
+    &:focus-visible {
+      background: t.role('accent');
+    }
+  }
+}

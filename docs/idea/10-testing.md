@@ -79,7 +79,7 @@ Sealed network is the highest-value rule: it converts "the suite is slow and occ
 
 | Type | Command | Asserts | Runs against |
 |---|---|---|---|
-| **unit** | `x test unit` | pure logic — services, money, policy predicates, matchers | no DB, no I/O |
+| **unit** | `x test unit` | services, money, policy predicates, matchers, and a handler through `.as()` — what runs in process | the in-memory driver, or the migrated database (`migratedDatabase` + `reusableDatabase`, `wiki/Testing.md`) when the code reads Postgres |
 | **contract** | `x test contract` | an action's input/output schema, its policy denials, its emitted OpenAPI + MCP tool shape | cloned DB |
 | **live** | `x test live` | a live query's initial snapshot, incremental patches on write, reconnect delta, and that a policy-failing row is never delivered | cloned DB + in-process replicator + in-process NATS |
 | **job** | `x test job` | step-level replay (a step already run is not re-run), idempotency-key dedupe, retry/backoff, concurrency and rate limits, outbox atomicity on rollback | cloned DB + frozen clock |
@@ -129,7 +129,7 @@ The framework's own vocabulary for "less test code", which is the same bet as [w
 
 ## Generated scaffolds
 
-Every primitive emits a test scaffold that fails until filled in — an untested action is a red build, not a backlog item.
+Every primitive emits test files that RUN and pass as generated — the declaration's shape, the refusals its policy owes, its handler through `.as()` — and that go red when the declaration they pin changes (a deleted `invalidates`, an added loop: `packages/cli/src/templates/emitted-statements.test.ts`). An author extends them; nothing waits to be filled in.
 
 | Primitive | Scaffold |
 |---|---|

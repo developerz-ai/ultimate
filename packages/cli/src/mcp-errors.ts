@@ -374,6 +374,26 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x jobs list --json   # a job id replays with capture off; for requests set failureCapture: { enabled: true } in app.config.ts',
   X_ENTITY_RETAIN_UNSWEPT:
     "add export const retention = purge({ entities: 'declared' }) to a jobs module named in jobs: [...] in apps/web/api/index.ts, then x verify",
+  X_NEW_SHAPE_UNKNOWN: 'bunx @ultimat3/cli help new',
+  X_NEW_SHAPE_CONFLICT: 'bunx @ultimat3/cli new myapp --shape blog',
+  X_SEO_CARD_ROUTE_UNKNOWN:
+    'x routes --json   # list the site/ routes; add apps/web/site/<the capture path>/page.tsx at 1200 x 630 with robots: { index: false }, or correct the og.capture path',
+  X_SEO_CARD_BROWSER_MISSING:
+    'export CHROME_PATH=/usr/bin/google-chrome   # any Chrome, Chromium or Edge binary; or drop og.capture from the route; the gate build passes --no-capture and needs none',
+  X_IMAGE_SOURCE_UNREADABLE:
+    "x build --target static --json   # lists the export; put the file under apps/web/site/assets/ and pass asset('assets/<file>') as src, or give an absolute https:// URL",
+  X_VERIFY_SKIPS_OVER_CEILING:
+    'x test unit --json   # then set what the skipped tests need, or raise skipCeiling in x.verify.json with the reason in the diff',
+  X_ASSET_VARIANT_UNDECLARED:
+    "responsiveImage({ src: asset('assets/hero.png'), width, height, alt })   # no widths/formats override for a site asset; an upload under /media answers any width",
+  X_NEW_SHAPE_GENERATE_FAILED:
+    'bunx x g sign-in --password --json   # in the app x new wrote, reproduces it; then bun test packages/cli/src/templates/shapes',
+  X_ISLAND_DISPOSER_MISSING:
+    'x verify --only boundaries --json   # names the file; end its mount() with return render(() => <Island {...props} />, el)',
+  X_SOCKET_HAND_ROLLED:
+    'x verify --only boundaries --json — names the file and line; delete the upgrade and declare the socket with deviceSocket({ path, resolveToken, onFrame }) from @ultimat3/realtime/server',
+  X_EXERCISE_FILE_UNEDITABLE:
+    'edit apps/web/exercise.ts — paste the entry the finding names into export const exercise = defineExercise({ … })',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -108,12 +108,42 @@ describe('sampleInput', () => {
     expect(sampleInput(foreign)).toEqual({});
   });
 
-  test('a constraint the IR does not carry yields a value the schema rejects, not a throw', () => {
-    // The honest half of "best effort": `pattern` alone cannot be inverted, so the sample fails
-    // its own schema and contractTestsFor turns that into X_CONTRACT_DRIFT naming `input:`.
-    const digits = t.string.pattern(/^\d+$/);
+  test("a pattern past the generator's subset yields a value the schema rejects, not a throw", () => {
+    // The honest half of "best effort": a lookahead cannot be walked, so the sample fails its own
+    // schema and contractTestsFor turns that into X_CONTRACT_DRIFT naming `input:`.
+    const digits = t.string.pattern(/^(?=\d)\d+$/);
     expect(sampleInput(digits)).toBe('sample');
     expect(accepts(digits)).toBe(false);
+  });
+
+  // A real app's inputs, each of which drifted before the walker read its pattern: days, months,
+  // 64/96-hex digests, digit-only tax ids, 43-char base64url tokens.
+  test.each([
+    ['day', /^\d{4}-\d{2}-\d{2}$/],
+    ['month', /^\d{4}-(0[1-9]|1[0-2])$/],
+    ['digest', /^[0-9a-f]{64}$/],
+    ['long digest', /^[0-9a-f]{96}$/],
+    ['tax id', /^\d{9}$/],
+    ['token', /^[A-Za-z0-9_-]{43}$/],
+    ['reference', /^ORD-\d{4}$/],
+  ] as const)('a %s pattern is sampled from the pattern itself, and owes nothing', (_, pattern) => {
+    const schema = t.object({ value: t.string.pattern(pattern) });
+    expect(accepts(schema)).toBe(true);
+    expect(sampleGaps(schema)).toEqual([]);
+  });
+
+  test('a pattern sample is the same on every call', () => {
+    const digest = t.string.pattern(/^[0-9a-f]{64}$/);
+    expect(sampleInput(digest)).toBe(sampleInput(digest) as string);
+  });
+
+  test('a pattern sample stays inside the length bounds declared beside it', () => {
+    const bounded = t.string.min(5).max(6).pattern(/^\d+$/);
+    expect(accepts(bounded)).toBe(true);
+  });
+
+  test('a pattern the default sample already meets keeps the default, byte for byte', () => {
+    expect(sampleInput(t.string.pattern(/^[a-z]+$/))).toBe('sample');
   });
 });
 
@@ -121,11 +151,11 @@ describe('sampleInput', () => {
 // sample is handed to `invoke`. Without this the only report was `X_INPUT_INVALID` surfacing from
 // the action's own parse, which reads as the action being wrong when the action is fine.
 describe('sampleGaps', () => {
-  test('names the dotted path of every field whose pattern the sample cannot satisfy', () => {
+  test('names the dotted path of every field whose pattern no sample can satisfy', () => {
     const schema = t.object({
-      orderRef: t.string.pattern(/^ORD-\d{4}$/),
+      orderRef: t.string.pattern(/^(?!ORD-0)ORD-\d{4}$/),
       note: t.string,
-      nested: t.object({ code: t.string.pattern(/^\d+$/) }),
+      nested: t.object({ code: t.string.pattern(/^\p{N}+$/u) }),
     });
 
     expect(sampleGaps(schema)).toEqual(['orderRef', 'nested.code']);
@@ -138,7 +168,7 @@ describe('sampleGaps', () => {
   });
 
   test('the root itself is nameable when the schema is a bare string', () => {
-    expect(sampleGaps(t.string.pattern(/^\d+$/))).toEqual(['(the input)']);
+    expect(sampleGaps(t.string.pattern(/^\p{N}+$/u))).toEqual(['(the input)']);
   });
 
   test('an optional field is not sampled, so its pattern is not a gap', () => {

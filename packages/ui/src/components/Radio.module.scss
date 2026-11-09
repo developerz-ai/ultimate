@@ -85,3 +85,54 @@
   color: t.role('fg-muted');
   font-size: t.text(xs);
 }
+
+// Segmented: the same native radios as one joined strip. The dot goes; the checked segment fills.
+.appearance-segmented {
+  flex-flow: row wrap;
+  gap: 0;
+
+  .legend {
+    margin-block-end: t.space(2);
+  }
+
+  .row {
+    @include t.padding-inline(t.space(3));
+    align-items: center;
+    min-block-size: t.touch(target);
+    border: 1px solid t.role('line');
+    margin-inline-start: -1px;
+    background: t.role('surface-raised');
+
+    &:first-of-type {
+      margin-inline-start: 0;
+      border-start-start-radius: t.radius(md);
+      border-end-start-radius: t.radius(md);
+    }
+
+    &:last-of-type {
+      border-start-end-radius: t.radius(md);
+      border-end-end-radius: t.radius(md);
+    }
+
+    &:has(.input:checked) {
+      position: relative;
+      border-color: t.role('accent');
+      color: t.role('accent-fg');
+      background: t.role('accent');
+    }
+
+    &:has(.input:focus-visible) {
+      position: relative;
+      outline: t.stroke(thick) solid t.role('accent');
+      outline-offset: t.stroke(thick);
+    }
+  }
+
+  .dot {
+    display: none;
+  }
+
+  .description {
+    color: inherit;
+  }
+}

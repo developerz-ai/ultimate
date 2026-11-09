@@ -111,12 +111,21 @@ export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
 
     /**
      * Earliest matching event at or after `afterMs`, so a resumed step consumes events in
-     * publication order rather than jumping to the newest one.
+     * publication order rather than jumping to the newest one. Ties in one ms go to the earlier
+     * publish (the Map's insertion order), and `afterId` seeks past that event in the same order.
      */
-    find(name, correlationKey, afterMs) {
+    find(name, correlationKey, afterMs, afterId) {
       const at = nowMs(clock);
+      const cursor = afterId === undefined ? undefined : events.get(afterId);
+      // Until the cursor's own event is passed, an event in its millisecond came before it.
+      let passed = cursor === undefined;
       let best: JobEvent | undefined;
       for (const event of events.values()) {
+        if (event === cursor) {
+          passed = true;
+          continue;
+        }
+        if (!passed && event.publishedAt <= (cursor?.publishedAt ?? 0)) continue;
         if (event.name !== name) continue;
         if (event.expiresAt <= at) continue;
         if (event.publishedAt < afterMs) continue;
@@ -124,7 +133,9 @@ export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
         if (best === undefined || event.publishedAt < best.publishedAt) best = event;
       }
       return Promise.resolve(
-        best === undefined ? undefined : { payload: best.payload, publishedAt: best.publishedAt },
+        best === undefined
+          ? undefined
+          : { id: best.id, payload: best.payload, publishedAt: best.publishedAt },
       );
     },
 

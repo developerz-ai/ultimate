@@ -1,0 +1,37 @@
+@use '../../../shared/tokens' as t;
+
+.article {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(6);
+}
+
+.code {
+  @include t.data-text;
+
+  margin: 0;
+  color: t.role('fg-strong');
+  font-size: t.text('2xl');
+  font-weight: t.weight('semibold');
+  overflow-wrap: anywhere;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(3);
+  padding-block-end: t.space(6);
+  border-block-end: 1px solid t.role('line', 0.6);
+}
+
+.label {
+  @include t.label-caps;
+
+  margin: 0;
+  color: t.role('fg-muted');
+}
+
+.listed {
+  margin: 0;
+  font-size: t.text('sm');
+}

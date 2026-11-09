@@ -5,7 +5,7 @@
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
-import { pinVersion, type UpgradePin } from './upgrade-plan';
+import { pinMoves, type UpgradePin } from './upgrade-plan';
 import { workspaceGlobs, workspaceManifestPaths } from './workspace-graph';
 
 const ROOT_MANIFEST = 'package.json';
@@ -18,7 +18,8 @@ export interface WorkspaceManifest {
 
 const PIN_ENTRY = /("(@ultimat3\/[a-z0-9-]+)"\s*:\s*")([^"]*)(")/g;
 
-const parseManifest = (file: string, text: string): unknown => {
+/** A manifest's JSON, or X_UPGRADE_PIN_UNREADABLE naming the file: never a raw SyntaxError. */
+export const parseManifest = (file: string, text: string): unknown => {
   try {
     return JSON.parse(text);
   } catch {
@@ -52,11 +53,12 @@ export function readPins(manifests: readonly WorkspaceManifest[]): readonly Upgr
 }
 
 /**
- * Every pin at the exact version, the rest of the file byte-identical. Exact whatever it was: a
- * caret is how `^19.0.0` beside `^19.4.0` came to be mixed, and a range is a silent upgrade.
- * A spec naming no version never reaches here (`planHop` refused it), and is left as written.
+ * Every pin the hop moves at the exact version, the rest of the file byte-identical. Exact whatever
+ * it was: a caret is how `^19.0.0` beside `^19.4.0` came to be mixed, and a range is a silent
+ * upgrade. A pin above `to` is a workspace a mixed set has further on and stays (`pinMoves`); a
+ * spec naming no version never reaches here (`planHop` refused it), and is left as written.
  */
 export const rewritePins = (text: string, to: string): string =>
   text.replace(PIN_ENTRY, (whole, head: string, _name: string, spec: string, tail: string) =>
-    pinVersion(spec) === undefined ? whole : `${head}${to}${tail}`,
+    pinMoves(spec, to) ? `${head}${to}${tail}` : whole,
   );

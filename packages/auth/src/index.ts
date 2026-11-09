@@ -12,6 +12,11 @@ export type {
   AuthUser,
   AuthVerification,
   CreateUserInput,
+  PasskeyCeremony,
+  PasskeyChallengeRecord,
+  PasskeyCredential,
+  PasskeyEvidence,
+  PasskeyStore,
   SessionPatch,
   SessionStore,
   StoredMfaSecret,
@@ -312,6 +317,25 @@ export {
 } from './oauth-registry';
 export type { AuthRouteDescriptor, OAuthLoginOptions, OAuthLoginRoutes } from './oauth-route';
 export { OAUTH_ROUTE_STATUS, oauthDenied, oauthLogin } from './oauth-route';
+// Passkeys (WebAuthn): sign-in and digest-bound step-up. The browser half is `@ultimat3/auth/client`.
+export type {
+  PasskeyPolicy,
+  PasskeyPolicyInput,
+  PasskeyRelyingParty,
+} from './passkey-config';
+export { DEFAULT_PASSKEY_CHALLENGE_TTL_MS } from './passkey-config';
+export { verifyPasskeyEvidence } from './passkey-evidence';
+export type { PasskeyLogin } from './passkey-login';
+export { passkeyLogin } from './passkey-login';
+export type { PasskeyStepUp, PasskeyStepUpOptions } from './passkey-step-up';
+export { passkeyStepUp } from './passkey-step-up';
+export type {
+  PasskeyAssertionResponse,
+  PasskeyCreationOptions,
+  PasskeyCredentialDescriptor,
+  PasskeyRegistrationResponse,
+  PasskeyRequestOptions,
+} from './passkey-wire';
 export type {
   PasswordParams,
   PasswordPolicy,

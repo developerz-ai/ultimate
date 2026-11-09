@@ -22,10 +22,7 @@ import {
   writeDigest,
 } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
-// `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
-// and `@ultimat3/query` needs the identical conversion while being the same tier as this one — so
-// a copy here would be a second answer to "what does this limit mean" for the read half.
-import { jsonResponse, publishRateLimit, redirect, takeRedirect, toBucket } from '@ultimat3/http';
+import { jsonResponse, publishRateLimit, redirect, takeRedirect } from '@ultimat3/http';
 import { admitsAnonymous, policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { ActionRateLimit, AnyAction } from './action';
 import { withChunkSink } from './action-stream';
@@ -34,6 +31,8 @@ import { ActionDeprecationSuccessorInvalidError } from './errors-http';
 import { actionPathStyle, methodOfHttp, pathParametersOf, servedActionRoute } from './http-path';
 import { EVENT_STREAM, streamAnswer, wantsEventStream } from './http-stream';
 import { actionName, defOf, invoke } from './invoke';
+import type { ActionMeter } from './meter';
+import { meterFact } from './meter';
 import {
   inputSchemaName,
   outputSchemaName,
@@ -42,6 +41,7 @@ import {
   toOperationId,
 } from './naming';
 import { withDeclaredErrors } from './openapi-errors';
+import { assertActionRateLimit, fixedRateLimit } from './rate-limit-gate';
 import { carriesRecords, recordResponse } from './record-wire';
 
 /** The digest a request's idempotency key names its write by; none for a missing or blank one. */
@@ -107,7 +107,7 @@ function projectRoute(
   const sunsetting = deprecationHeadersFor(name, def.deprecated);
   // Same rule, for a limit the limiter could not run on: refused at mount (`X_RATE_LIMIT_INVALID`),
   // never on the first request that tries to spend it.
-  if (def.rateLimit !== undefined) toBucket(name, def.rateLimit);
+  if (def.rateLimit !== undefined) assertActionRateLimit(name, def.rateLimit);
   const enveloped = carriesRecords(target.output);
   const streams = def.stream !== undefined;
 
@@ -303,6 +303,8 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       // exist. Verbatim, and never derived — this is a published contract, not a label.
       mcpTool: isMcpExposed(def.mcp) ? name : null,
       rateLimit: rateLimitMeta(name, def.rateLimit),
+      // Absent, not null, when undeclared: an action without a meter keeps `openapi.json`'s bytes.
+      ...(def.meter === undefined ? {} : { meter: meterMeta(def.meter) }),
       // The dates as data, beside the boolean flag OpenAPI defines: `deprecated: true` says an
       // operation is going away and nothing else, so a client that wants to plan the migration
       // has to read the sunset out of prose. Absent, not null, for the same byte-stability
@@ -351,12 +353,24 @@ function deprecationMetaFor(
 function rateLimitMeta(
   name: string,
   limit: ActionRateLimit | undefined,
-): Record<string, number> | null {
+): Record<string, number | string> | null {
   if (limit === undefined) return null;
   // Validated through the same call the route makes, so the spec cannot publish a pair the
   // limiter would have refused to run on.
-  toBucket(name, limit);
-  return { limit: limit.limit, windowMs: limit.windowMs };
+  assertActionRateLimit(name, limit);
+  // A limit resolved per call has no number to publish; saying so keeps the 429 documented.
+  return fixedRateLimit(limit) ?? { limit: 'per-call', windowMs: limit.windowMs };
+}
+
+/** The meter as spec data: the period and its zone, and the limit when it is a fixed number. */
+function meterMeta(meter: ActionMeter): Record<string, number | string> {
+  const fact = meterFact(meter);
+  return {
+    name: meter.name,
+    period: meter.period,
+    timeZone: 'UTC',
+    limit: fact?.limit ?? 'per-call',
+  };
 }
 
 /** `accept: text/event-stream`: `chunk` frames, then one `done` (the output) or `error` (a problem). */

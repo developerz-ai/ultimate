@@ -183,7 +183,7 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
     return first.answer;
   };
 
-  return [
+  const routes: Route[] = [
     {
       method: 'GET',
       path: ROBOTS_PATH,
@@ -256,4 +256,7 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
       },
     },
   ];
+  // `seo.llms: false` hands the path to the app: an app that writes its own `/llms.txt` (plans,
+  // prices) mounted it beside this one and every boot refused with X_ROUTE_CONFLICT.
+  return options.site?.llms === false ? routes.filter((route) => route.path !== LLMS_PATH) : routes;
 }

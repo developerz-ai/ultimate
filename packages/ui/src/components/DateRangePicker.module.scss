@@ -1,0 +1,54 @@
+@use '../tokens' as t;
+
+.range {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.legend {
+  margin-block-end: t.space(2);
+  color: t.role('fg-strong');
+  font-size: t.text(sm);
+  font-weight: t.weight(medium);
+}
+
+// Two inputs side by side, wrapping onto two lines when the row cannot hold them.
+.ends {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: t.space(3);
+}
+
+.end {
+  display: grid;
+  gap: t.space(1);
+  min-inline-size: 0;
+}
+
+.label {
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+}
+
+.open {
+  @include t.touch-target;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid t.role('line');
+  border-radius: t.radius(md);
+  color: t.role('fg');
+  background: t.role('surface-raised');
+  cursor: pointer;
+
+  &:hover {
+    background: t.role('bg-soft');
+  }
+
+  &:focus-visible {
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: t.stroke(thick);
+  }
+}

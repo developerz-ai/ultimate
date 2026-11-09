@@ -9,17 +9,18 @@ SolidJS, where **the primary developer is an AI agent**. The promise: **reduce t
 problems the author has to worry about** — every decision the framework makes is one an agent does
 not have to.
 
-This repo is the framework: the `@ultimat3/*` packages, the `x` CLI, the docs, the wiki, and two
-tracked apps — the reference app (`examples/dummy`) and the deployed demo
-(`dummy/social-media-clone`), each gated on its own `expectedRed` table. CLI binary `x`, npm scope
+This repo is the framework: the `@ultimat3/*` packages, the `x` CLI, the docs, the wiki, and three
+tracked apps — the reference app (`examples/dummy`), the deployed demo
+(`dummy/social-media-clone`) and the docs site (`dummy/docs-site`), each gated on its own
+`expectedRed` table. CLI binary `x`, npm scope
 `@ultimat3`, imports `@ultimat3/<pkg>`.
 
 **Status:** released, every package in lockstep. Semver covers the primitive shapes, the `x` CLI,
 the tier table and the `X_*` codes; from v30 one major per 90 days (`X_RELEASE_MAJOR_WINDOW`),
 breaks wait on `next` (`X_BREAKING_ON_MAIN`): [`wiki/Stability.md`](wiki/Stability.md).
 
-**This page states no version number, deliberately.** Every fact below is a command — run the
-right-hand column. What each answer means:
+**This page states no version number, deliberately.** Every fact below is a command. What each
+answer means:
 [`PUBLISHING.md`](PUBLISHING.md#facts-as-commands); history:
 [`publishing-and-provenance.md`](docs/history/publishing-and-provenance.md).
 
@@ -70,10 +71,10 @@ Run everything from the repo root.
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
-| test services | `docker compose -f docker/docker-compose.test.yml up -d --wait`, then `set -a; . docker/test-services.env; set +a` — in RAM, silent; unset, live suites skip |
-| test (one name) | `bun test packages/core/src/errors.test.ts -t '<name>'` — **always with a path**: a bare `-t` loads every test file into one process |
+| test services | `docker compose -f docker/docker-compose.test.yml up -d --wait`, then `set -a; . docker/test-services.env; set +a` — in RAM; unset, live suites skip |
+| test (one name) | `bun test packages/core/src/errors.test.ts -t '<name>'` — **always with a path** (a bare `-t` loads every file) |
 | coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
-| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds both apps (`x build --target static`), then verifies. As of 2026-11 both `expectedRed` tables (`scripts/lib/gated-apps.ts`) are empty: every step must pass. `--unpin <app>:<step>` drops a pin |
+| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds the three apps (`x build --target static`), then verifies. As of 2026-11 every `expectedRed` table (`scripts/lib/gated-apps.ts`) are empty: every step must pass. `--unpin <app>:<step>` drops a pin |
 | a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket)` — writes the registration, its `wiki/Error-Codes.md` row and its HTTP status decision together. Tier ≤ 4 takes exactly one of the two flags, tier 5 neither |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |
@@ -89,12 +90,13 @@ Run everything from the repo root.
 packages/       the framework — one package per responsibility, tiered (see below)
 examples/dummy/ the reference app: every primitive, once, idiomatically
 dummy/social-media-clone/  the deployed demo app: production image built on every push to main
+dummy/docs-site/  the wiki as a static site
 docs/idea/      what and why — the design spec
 docs/architecture/  how it's built — internals
 docs/ops/       running an app for real — PaaS → Compose → K8s, secrets, observability, runbooks
 docs/history/   why things are the way they are — decision records moved out of this file
 docs/plans/     dated execution plans; status.yml per plan
-wiki/           the reference manual, the only public documentation surface (synced to the GitHub wiki)
+wiki/           the reference manual, the one documentation source (GitHub wiki + `dummy/docs-site`)
 scripts/        setup, verify, guards, manifest, release, bench
 docker/         Dockerfile + compose + helm
 llms.txt        the machine-readable repo map

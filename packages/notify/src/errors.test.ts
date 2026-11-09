@@ -146,15 +146,23 @@ describe('unit · @ultimat3/notify retry classification', () => {
       'X_NOTIFY_STORE_MISSING',
       'X_NOTIFY_DELIVERY_FAILED',
       'X_NOTIFY_DELIVERY_HELD',
+      'X_NOTIFY_PUSH_PROVIDER_REFUSED',
+      'X_NOTIFY_PUSH_MESSAGE_INVALID',
     ];
+    // Thrown by one device's send and caught by `nativePush()` before a send returns.
+    const contained = ['X_NOTIFY_PUSH_DEVICE_GONE'];
     const declarationTime = [
       'X_NOTIFY_CHANNELS_EMPTY',
       'X_NOTIFY_CHANNEL_DUPLICATE',
       'X_NOTIFY_DIGEST_UNSUPPORTED',
     ];
-    expect([...runtime, ...declarationTime].sort()).toEqual([...NOTIFY_ERROR_CODES].sort());
+    expect([...runtime, ...contained, ...declarationTime].sort()).toEqual(
+      [...NOTIFY_ERROR_CODES].sort(),
+    );
     for (const code of runtime) expect(declaredErrorRetry(code)).toBeDefined();
-    for (const code of declarationTime) expect(declaredErrorRetry(code)).toBeUndefined();
+    for (const code of [...contained, ...declarationTime]) {
+      expect(declaredErrorRetry(code)).toBeUndefined();
+    }
   });
 });
 

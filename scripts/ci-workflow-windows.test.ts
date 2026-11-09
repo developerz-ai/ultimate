@@ -33,9 +33,11 @@ describe('unit · ci.yml · the windows job runs in PowerShell, from a default-a
   const steps = windows.steps ?? [];
   const at = (needle: string): number => steps.findIndex((step) => text(step.run).includes(needle));
   const testArgs = steps.flatMap((step) =>
-    [...text(step.run).matchAll(/^bun test --isolate (.+)$/gm)].flatMap((m) =>
-      (m[1] ?? '').split(' '),
-    ),
+    [
+      ...text(step.run).matchAll(
+        /^bun test --isolate (?:--parallel(?:=\d+)? )?(?:--timeout=\d+ )?(.+)$/gm,
+      ),
+    ].flatMap((m) => (m[1] ?? '').split(' ')),
   );
 
   test('pwsh on every step, inside the 25-minute budget, with no needs', () => {

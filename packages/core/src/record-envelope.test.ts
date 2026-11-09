@@ -25,6 +25,8 @@ describe('decodeRecordEnvelope', () => {
     ['a row that is not an object', { data: 1, records: { post: { p1: 'p1' } } }],
     ['a removed group that is not an array', { data: 1, removed: { post: 'p0' } }],
     ['a removed key that is not a string', { data: 1, removed: { post: [7] } }],
+    ['an order group that is not an array', { data: 1, order: { post: 'p0' } }],
+    ['an order key that is not a string', { data: 1, order: { post: [30] } }],
   ])('refuses %s with X_CLIENT_RECORD_ENVELOPE_INVALID', (_label, body) => {
     const error = refusal(body);
     expect(isUltimateError(error) && error.code).toBe('X_CLIENT_RECORD_ENVELOPE_INVALID');
@@ -66,5 +68,24 @@ describe('decodeRecordEnvelope', () => {
 describe('encodeRecordEnvelope', () => {
   test('omits an empty removed map rather than claiming a deletion', () => {
     expect(encodeRecordEnvelope(1, { post: {} }, {})).toEqual({ data: 1, records: { post: {} } });
+  });
+
+  test("sends a type's order only where an object would lose it, and it survives JSON", () => {
+    const posts = { '30': { id: 30 }, '4': { id: 4 } };
+    const users = { u1: { id: 'u1' }, u2: { id: 'u2' } };
+    const sent = encodeRecordEnvelope(null, { posts, users }, undefined, {
+      posts: ['30', '4'],
+      users: ['u1', 'u2'],
+    });
+    expect(sent.order).toEqual({ posts: ['30', '4'] });
+    const got = decodeRecordEnvelope(JSON.parse(JSON.stringify(sent)));
+    expect(Object.keys(got.records?.['posts'] ?? {})).toEqual(['4', '30']);
+    expect({ ...got.order }).toEqual({ posts: ['30', '4'] });
+  });
+
+  test('an order every object already keeps is not sent: the wire stays byte-identical', () => {
+    const records = { users: { u1: { id: 'u1' }, u2: { id: 'u2' } } };
+    const ordered = encodeRecordEnvelope(1, records, undefined, { users: ['u1', 'u2'] });
+    expect(JSON.stringify(ordered)).toBe(JSON.stringify(encodeRecordEnvelope(1, records)));
   });
 });

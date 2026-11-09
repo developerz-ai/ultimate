@@ -46,6 +46,7 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 | Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal the handle can express | \`guards/repo-raw-sql.ts\` |
 | Vendors | a server \`fetch(\` carries a \`signal\` in its own options — better, it is \`outbound()\` from \`@ultimat3/core/outbound\`: a deadline, the caller's signal, safe-only retry | \`guards/raw-fetch.ts\` |
 | Polling | an island re-reads on a timer with \`visibleInterval(run, ms)\` from \`@ultimat3/core/page\` — no call while the tab is hidden, none after a lost session — never a bare \`setInterval(\`; a \`// why:\` on the line admits a tick that is not a read | \`guards/raw-interval.ts\` |
+| Confirmation | a destructive act asks through \`ConfirmDialog\` from \`@ultimat3/ui\` — Cancel focused, a native post, stays open on a refusal — never \`confirm(\`; a \`// why:\` on the line admits a call that is not that question | \`guards/native-confirm.ts\` |
 | Errors | never \`throw new Error\` — declare each code once, \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core\`, and throw its class; never a handwritten \`UltimateError\` subclass | \`guards/bare-error.ts\`, \`guards/error-declared.ts\` |
 | Money | \`{ minor, currency }\`, never a float — \`money()\` on the column | the type: \`price: 19.99\` is TS2322, \`number\` is not \`MoneyInput\` |
 | Time | store UTC, format with an explicit IANA time zone | \`guards/unzoned-date.ts\` |

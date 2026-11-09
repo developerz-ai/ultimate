@@ -1,16 +1,15 @@
 // `/llms.txt`'s pages, off the route table: every public `site/` page in the default locale by the
 // title and description its own `meta` gives it. A dynamic route (or one with a `load`) is expanded
-// through `prerender()` and its `load`, page by page, exactly as the static export renders it.
+// through `prerender()` and its `load`, page by page, exactly as the static export renders it — or
+// read off what the export already collected inside its API scope (`site-llms-pages.ts`).
 
 import type { Environment } from '@ultimat3/core';
-import { ctxOf, DEFAULT_ENVIRONMENT, runWithContext, tryResolveEnvironment } from '@ultimat3/core';
+import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
 import { unlocalizedPath } from '@ultimat3/i18n';
-import type { PrerenderEntry, RouteEntry } from '@ultimat3/render';
-import { metaContextFor, routeDataFor, routeEntries } from '@ultimat3/render';
-import { enumeratePrerenderEntries, fillPath } from '@ultimat3/render/server';
 import type { RouteRecord } from '@ultimat3/seo';
 import { buildLlmsTxt, disallowMatcher, isDynamic, isIndexable } from '@ultimat3/seo';
-import { readSiteMeta } from './seo-meta';
+import type { Enumerate, LlmsPages } from './site-llms-pages';
+import { llmsRoutes, pageRecords } from './site-llms-pages';
 
 export interface SiteLlmsOptions {
   readonly baseUrl: string;
@@ -23,12 +22,15 @@ export interface SiteLlmsOptions {
   /** The app's default locale: every `meta` runs in it, and its paths are unprefixed. */
   readonly defaultLocale: string;
   /** `siteSeo`'s one enumeration per route, so the sitemap and this file never call `prerender()` twice. */
-  readonly enumerate?: ((entry: RouteEntry) => Promise<readonly PrerenderEntry[]>) | undefined;
+  readonly enumerate?: Enumerate | undefined;
+  /**
+   * What the static export read inside its API scope (`collectLlmsPages`), by declared route path.
+   * A route listed here never runs its `load` again: by the time `llms.txt` is written the build's
+   * scope is gone, and a `load` reading the app's own query failed the export
+   * (`X_CLIENT_TRANSPORT_FAILED`).
+   */
+  readonly pages?: LlmsPages | undefined;
 }
-
-/** A `site/` page anyone may fetch — `site-seo.ts`' own rule. */
-const isPublicSite = (entry: RouteEntry): boolean =>
-  entry.surface === 'site' && entry.config.policy === undefined;
 
 /**
  * Empty outside production and under `seo.llms: false` BEFORE any `prerender()` or `load` runs: a
@@ -38,44 +40,25 @@ export async function siteLlms(options: SiteLlmsOptions): Promise<string> {
   const environment = options.environment ?? tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT;
   if (options.enabled === false || !isIndexable(environment)) return '';
   const disallowed = disallowMatcher(options.disallow ?? []);
-  const entries = routeEntries().filter(isPublicSite);
-  const resolved = (await readSiteMeta(options.defaultLocale)).records;
-  const resolvedPaths = new Set(resolved.map((record) => record.path));
-  const publicPaths = new Set(entries.map((entry) => entry.path));
+  const { resolved, loaded } = await llmsRoutes(options.defaultLocale);
   const expanded: RouteRecord[] = [];
-  for (const entry of entries) {
-    if (resolvedPaths.has(entry.path)) continue;
-    expanded.push(...(await pageRecords(entry, options)));
+  for (const entry of loaded) {
+    const records = options.pages?.get(entry.path) ?? (await pageRecords(entry, options));
+    expanded.push(...emittedOnly(entry.path, records, options));
   }
-  const records = [
-    ...resolved.filter((record) => publicPaths.has(record.path)),
-    ...expanded,
-  ].filter((record) => !disallowed(record.path));
-  return buildLlmsTxt(records, { baseUrl: options.baseUrl, environment });
+  return buildLlmsTxt(
+    [...resolved, ...expanded].filter((record) => !disallowed(record.path)),
+    { baseUrl: options.baseUrl, environment },
+  );
 }
 
-/**
- * One record per page `prerender()` enumerates — of those the export emitted, when it says — with
- * the `meta` its own `load` feeds, run in the default locale with no actor: the prerender's context.
- */
-async function pageRecords(
-  entry: RouteEntry,
+/** A dynamic route's pages, less those the export did not emit — the sitemap's own rule. */
+function emittedOnly(
+  routePath: string,
+  records: readonly RouteRecord[],
   options: SiteLlmsOptions,
-): Promise<readonly RouteRecord[]> {
-  const emitted =
-    options.pagesFor === undefined || !isDynamic(entry.path)
-      ? undefined
-      : new Set(options.pagesFor(entry.path).map((path) => unlocalizedPath(path)));
-  const records: RouteRecord[] = [];
-  for (const page of await (options.enumerate ?? enumeratePrerenderEntries)(entry)) {
-    const path = fillPath(entry.pattern.source, page.params);
-    if (emitted !== undefined && !emitted.has(path)) continue;
-    const ctx = { url: `${options.baseUrl.replace(/\/+$/, '')}${path}`, params: page.params };
-    const meta = await runWithContext(
-      ctxOf({ role: 'web', locale: options.defaultLocale }),
-      async () => entry.config.meta(metaContextFor(ctx, await routeDataFor(entry.config, ctx))),
-    );
-    records.push({ path, file: entry.file, surface: 'site', render: entry.config.render, meta });
-  }
-  return records;
+): readonly RouteRecord[] {
+  if (options.pagesFor === undefined || !isDynamic(routePath)) return records;
+  const emitted = new Set(options.pagesFor(routePath).map((path) => unlocalizedPath(path)));
+  return records.filter((record) => emitted.has(record.path));
 }

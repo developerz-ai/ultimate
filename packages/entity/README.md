@@ -999,9 +999,9 @@ Nothing new to write: the relation is the `references()` the column already decl
 
 | | |
 |---|---|
-| Served to | a lookup with the same scope key, the same client, and no write to that entity since — the preload statement *is* the statement it was widened from |
+| Served to | a lookup with the same scope key, the same client, and no write since — to any entity — the preload statement *is* the statement it was widened from |
 | Scope | the tenant predicate and `deleted_at is null` are in the preload statement, so a page's ids can never resolve rows outside the reader's own scope |
-| A write | drops what was preloaded for that entity, before the statement goes out, so a changed row is re-read and never served from before it |
+| A write | drops everything preloaded, before the statement goes out: a `countedIn` trigger or an `onDelete` action rewrites rows of an entity the statement never named. The next lookup reads its own statement; the one after a write-free stretch preloads again, so a loop that writes every iteration reads each row once, never the rest of the page |
 | Held | the ids, never the rows; keyed by context identity, so it dies with the request |
 | Declines to the old statement | no request in scope, an id no page indexed, a key that resolved to nothing |
 | Switched off | `postgresDriver({ jitPreload: false })`, where the driver is constructed — the one switch. Not an `app.config.ts` key: nothing reads config at the seam that builds a repository |

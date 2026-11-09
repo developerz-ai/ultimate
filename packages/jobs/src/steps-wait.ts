@@ -22,7 +22,7 @@ import {
 
 const DEFAULT_WAIT_MS = 86_400_000;
 
-type Hit = { readonly payload: unknown; readonly publishedAt: number };
+type Hit = { readonly id: string; readonly payload: unknown; readonly publishedAt: number };
 
 export function waitForEventStep(core: RunnerCore) {
   const { runId, jobName } = core;
@@ -79,7 +79,11 @@ export function waitForEventStep(core: RunnerCore) {
       const value = await answer(stored).catch(async (refusal: unknown) => {
         // The original error is what the caller sees; without the floor a retry is refused again.
         await core
-          .put({ ...parked, output: waitFloor(hit.publishedAt + 1), wakeAt: at })
+          .put({
+            ...parked,
+            output: waitFloor({ afterMs: hit.publishedAt, afterId: hit.id }),
+            wakeAt: at,
+          })
           .catch((unwritten: unknown) =>
             logger.warn('jobs.step.floor-unrecorded', {
               job: jobName,
@@ -99,7 +103,12 @@ export function waitForEventStep(core: RunnerCore) {
       return value;
     };
 
-    const hit = await core.events?.find(event, correlationKey, floor ?? startedAt);
+    const hit = await core.events?.find(
+      event,
+      correlationKey,
+      floor?.afterMs ?? startedAt,
+      floor?.afterId,
+    );
     if (hit !== undefined) return consume(hit);
 
     // `deadline` is on the BUS's clock, so the bus calls the timeout: asked only once this runner
@@ -141,7 +150,12 @@ export function waitForEventStep(core: RunnerCore) {
     // `find` and the write above woke nobody. Asked once more: one that commits after THIS read
     // meets a `running` row, which the wake leaves alone, and is the backstop poll's.
     if (core.events?.wakes === true) {
-      const late = await core.events.find(event, correlationKey, floor ?? startedAt);
+      const late = await core.events.find(
+        event,
+        correlationKey,
+        floor?.afterMs ?? startedAt,
+        floor?.afterId,
+      );
       if (late !== undefined) return consume(late);
     }
     throw new StepSuspension({ step: name, resumeAt, reason: 'event' });

@@ -248,7 +248,7 @@ services:
   # WORKER_QUEUES is the EXACT set a worker claims (25.0.0): `integrations` runs on its own
   # service, so the other worker names every remaining queue itself. Unset, a worker claims
   # jobs.queues plus every queue a registered job is enqueued on; set, `jobs.worker.queue-unserved`
-  # at boot names the registered queues this one leaves to another.
+  # names the registered queues it leaves that NO live worker serves — none, once `integrations` is up.
   worker:     { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: 'myapp-default,default' },
                 deploy: { replicas: 4 } }
   worker-integrations: { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: integrations },

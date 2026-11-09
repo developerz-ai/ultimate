@@ -14,7 +14,7 @@ import {
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, SettleBy } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
-import type { JobExecution, JobOutcome } from './execute';
+import type { JobExecution, JobOutcome } from './execute-result';
 import type { AnyJobHandle } from './job';
 import { backoffDelayMs, isFinalUnwindAttempt } from './retry';
 import type { JobStopReason } from './retry-classification';
@@ -50,7 +50,13 @@ export interface UnwindSettleOptions {
   readonly drained: () => boolean;
 }
 
-type Ending = Pick<JobExecution, 'error' | 'resumeAt' | 'stopReason'>;
+type Ending = Pick<JobExecution, 'error' | 'code' | 'resumeAt' | 'stopReason'>;
+
+/** The execution's `code`, when the thrown value carried one. */
+const codeOf = (thrown: unknown): Pick<JobExecution, 'code'> => {
+  const code = settledCode(thrown);
+  return code === undefined ? {} : { code };
+};
 
 /** The execution this attempt answers, and `onSettled` after a settle that landed. */
 function endings(options: UnwindSettleOptions) {
@@ -154,7 +160,7 @@ export async function unwindAndSettle(
       scope: { operation: handle.name, extra: { jobId: claimed.id, runId: claimed.runId } },
     });
     if (settled) await announce(settledAs, recorded, settledCode(thrown));
-    return finish(settledAs, { error: message, stopReason: 'terminal' });
+    return finish(settledAs, { error: message, ...codeOf(thrown), stopReason: 'terminal' });
   }
 
   const stack = failure === undefined ? undefined : failureStack(failure.thrown);
@@ -186,6 +192,7 @@ export async function unwindAndSettle(
   if (settled) await announce(settledAs, original, settledCode(failure?.thrown));
   return finish(settledAs, {
     error: original,
+    ...codeOf(failure?.thrown),
     stopReason: failure?.stop ?? 'attempts-exhausted',
   });
 }

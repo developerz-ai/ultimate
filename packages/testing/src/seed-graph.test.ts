@@ -188,6 +188,52 @@ describe(testName('unit', 'seedGraph cycles'), () => {
     expect(written).toEqual([...graph.inserts, ...graph.updates]);
   });
 
+  test('a cycle breaks at a table that takes updates, never an appendOnly one', () => {
+    // `sg_a_ledger` sorts first, so name order alone broke the cycle at it — whose trigger refuses
+    // every UPDATE, so the deferred key could never be set.
+    const ledger = entity('sg_a_ledger', {
+      columns: {
+        id: uuid().primaryKey(),
+        accountId: uuid()
+          .references((): AnyColumn => accounts.id)
+          .nullable(),
+      },
+      appendOnly: true,
+    });
+    const accounts = entity('sg_b_accounts', {
+      columns: {
+        id: uuid().primaryKey(),
+        lastEntryId: uuid()
+          .references((): AnyColumn => ledger.id)
+          .nullable(),
+      },
+    });
+    const graph = seedGraph({ ledger, accounts }, { perTable: 2 });
+    expect(graph.order).toEqual(['sg_b_accounts', 'sg_a_ledger']);
+    expect(graph.updates.map((update) => update.entity)).toEqual([
+      'sg_b_accounts',
+      'sg_b_accounts',
+    ]);
+  });
+
+  test('a cycle breakable only at an appendOnly table leaves that key null, no update', () => {
+    const ledger = entity('sg_c_ledger', {
+      columns: {
+        id: uuid().primaryKey(),
+        accountId: uuid()
+          .references((): AnyColumn => accounts.id)
+          .nullable(),
+      },
+      appendOnly: true,
+    });
+    const accounts = entity('sg_d_accounts', {
+      columns: { id: uuid().primaryKey(), firstId: uuid().references((): AnyColumn => ledger.id) },
+    });
+    const graph = seedGraph({ ledger, accounts }, { perTable: 2 });
+    expect(graph.order).toEqual(['sg_c_ledger', 'sg_d_accounts']);
+    expect(graph.updates).toEqual([]);
+  });
+
   test('a cycle with no nullable key refuses, naming the factory to write', () => {
     const eggs = entity('sg_eggs', {
       columns: { id: uuid().primaryKey(), henId: uuid().references((): AnyColumn => hens.id) },
@@ -207,7 +253,8 @@ describe(testName('unit', 'seedGraph cycles'), () => {
 describe(testName('unit', 'seedGraph refusals'), () => {
   const codes = entity('sg_codes', {
     columns: { id: uuid().primaryKey(), code: text({ max: 12 }) },
-    invariants: (c) => [invariant('sg_code_shape', c.code.matches(/^ZZ[0-9]{9}Q$/))],
+    // A lookahead is outside the pattern sampler's subset: no generated value meets the rule.
+    invariants: (c) => [invariant('sg_code_shape', c.code.matches(/^(?=ZZ)ZZ[0-9]{9}Q$/))],
   });
 
   test('a CHECK no generated value meets refuses, naming the column the factory must fill', () => {
@@ -280,5 +327,130 @@ describe(testName('unit', 'seedGraph refusals'), () => {
     expect(() => seedGraph(schema, { perTable: 0 })).toThrow(/perTable/);
     expect(() => seedGraph(schema, { tenants: 1.5 })).toThrow(/tenants/);
     expect(() => seedGraph(schema, { seed: Number.NaN })).toThrow(/seed/);
+  });
+});
+
+describe(testName('unit', 'seedGraph partial uniques'), () => {
+  // An org table with one staff org and any number of customer ones.
+  const orgs = entity('sg_kind_orgs', {
+    columns: { id: uuid().primaryKey(), kind: enumerated(['customer', 'staff']) },
+    indexes: [{ on: ['kind'], unique: true, where: (c) => c.kind.eq('staff') }],
+  });
+  const notes = entity('sg_kind_notes', {
+    columns: {
+      id: uuid().primaryKey(),
+      orgId: uuid()
+        .references(() => orgs.id)
+        .tenant(),
+      body: text({ max: 40 }),
+    },
+  });
+
+  test('a factory building every column of a partial unique leaves it to the database', () => {
+    const customer = defineFactory<{ kind: 'customer' | 'staff' }>(orgs, {
+      defaults: () => ({ kind: 'customer' }),
+    });
+    const graph = seedGraph(
+      { orgs, notes },
+      { tenants: 6, seed: 1, factories: { sg_kind_orgs: customer } },
+    );
+    const kinds = graph.inserts
+      .filter((i) => i.entity === 'sg_kind_orgs')
+      .map((i) => i.row['kind']);
+    expect(kinds.length).toBe(6);
+    expect(new Set(kinds)).toEqual(new Set(['customer']));
+  });
+
+  test('with no factory it is held as total, never looser than the table', () => {
+    let caught: unknown;
+    try {
+      seedGraph({ orgs, notes }, { tenants: 6, seed: 1 });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: 'X_SEED_GRAPH_UNSATISFIED' });
+  });
+});
+
+describe(testName('unit', 'seedGraph derive'), () => {
+  // A template table whose `scopeKey` spells the owner the graph picked.
+  const owners = entity('sg_owner_orgs', { columns: { id: uuid().primaryKey() } });
+  const scopeMatches = (ownerOrgId: string, scopeKey: string): boolean =>
+    scopeKey === `org:${ownerOrgId}`;
+  const templates = entity('sg_scoped_templates', {
+    columns: {
+      id: uuid().primaryKey(),
+      ownerOrgId: uuid().references(() => owners.id),
+      scopeKey: text({ max: 64 }),
+    },
+    invariants: (c) => [
+      invariant('sg_scope_key_matches', c.satisfies(scopeMatches, ['ownerOrgId', 'scopeKey'])),
+    ],
+  });
+
+  test('derive builds a column from the reference the graph chose', () => {
+    const graph = seedGraph(
+      { owners, templates },
+      {
+        seed: 3,
+        factories: {
+          sg_scoped_templates: {
+            build: () => ({}),
+            reset: () => undefined,
+            derive: (row) => ({ scopeKey: `org:${String(row['ownerOrgId'])}` }),
+          },
+        },
+      },
+    );
+    const rows = graph.inserts.filter((i) => i.entity === 'sg_scoped_templates');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const { row } of rows) expect(row['scopeKey']).toBe(`org:${String(row['ownerOrgId'])}`);
+  });
+
+  test('without it no generated scopeKey names the owner', () => {
+    expect(() => seedGraph({ owners, templates }, { seed: 3 })).toThrow(/sg_scope_key_matches/);
+  });
+});
+
+describe(testName('unit', 'seedGraph · a readOnly table'), () => {
+  const archive = entity('sg_archive', {
+    columns: { id: uuid().primaryKey(), note: text({ max: 40 }) },
+    readOnly: 'pre-2024 history: a trigger refuses every insert',
+  });
+  const optionalRef = entity('sg_archive_notes', {
+    columns: {
+      id: uuid().primaryKey(),
+      archiveId: uuid()
+        .references(() => archive.id)
+        .nullable(),
+    },
+    shared: 'test rows of no tenant',
+  });
+  const requiredRef = entity('sg_archive_links', {
+    columns: { id: uuid().primaryKey(), archiveId: uuid().references(() => archive.id) },
+    shared: 'test rows of no tenant',
+  });
+
+  test('is seeded no row, and a nullable reference into it is null', () => {
+    const graph = seedGraph({ archive, optionalRef }, { seed: 4 });
+    expect(graph.inserts.some((row) => row.entity === 'sg_archive')).toBe(false);
+    const notes = graph.inserts.filter((row) => row.entity === 'sg_archive_notes');
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes.every((row) => row.row['archiveId'] === null)).toBe(true);
+  });
+
+  test('a required reference into it is refused, naming the table, its reason and the declaration', () => {
+    let caught: unknown;
+    try {
+      seedGraph({ archive, requiredRef }, { seed: 4 });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeUltimateError('X_SEED_GRAPH_UNSATISFIED');
+    const { cause, fix } = caught as { cause: string; fix: string };
+    expect(cause).toContain('archiveId references sg_archive, which is readOnly');
+    expect(cause).toContain('pre-2024 history');
+    expect(fix).toStartWith("entity('sg_archive_links', { readOnly: ");
+    expect(fix).toContain('x db gen "sg_archive_links archiveId nullable"');
   });
 });

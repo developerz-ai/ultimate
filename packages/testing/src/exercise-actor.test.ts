@@ -57,3 +57,27 @@ describe(testName('unit', 'asSeededRow'), () => {
     expect(asSeededRow(null, 't1', rows)).toBeNull();
   });
 });
+
+describe(testName('unit', 'asSeededRow · a user column'), () => {
+  test("with `column`, the actor's id is the row's user, not the row's own key", () => {
+    const rows = {
+      entity: { $name: 'memberships', $primaryKey: ['id'] },
+      column: 'userId',
+      rows: [
+        { tenant: 't1', row: { id: 'ms-1', userId: 'u-member', role: 'member' } },
+        { tenant: 't1', row: { id: 'ms-2', userId: 'u-owner', role: 'owner' } },
+      ],
+    };
+    const owner = userActor({ id: 'owner', roles: ['owner'] });
+    expect(asSeededRow(owner, 't1', rows)?.id).toBe('u-owner');
+  });
+
+  test('a composite key with a user column still binds', () => {
+    const rows = {
+      entity: { $name: 'members', $primaryKey: ['orgId', 'userId'] },
+      column: 'userId',
+      rows: [{ tenant: 't1', row: { orgId: 't1', userId: 'u-1' } }],
+    };
+    expect(asSeededRow(userActor({ id: 'x' }), 't1', rows)?.id).toBe('u-1');
+  });
+});

@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { action, registerActions, t } from '@ultimat3/action';
-import { isUltimateError, UltimateError } from '@ultimat3/core';
+import { isUltimateError, UltimateError, useContext } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
@@ -14,6 +14,7 @@ import { from, query, registerQueries } from '@ultimat3/query';
 import { defineExercise } from './define-exercise';
 import { runExercisePass } from './exercise';
 import type { ExerciseRecord } from './exercise-report';
+import { defineFactory } from './factories';
 import type { SeedWriter } from './seed-graph-plan';
 import { testName } from './test-types';
 
@@ -129,7 +130,20 @@ const expScaleDeclared = action({
   policy: can('exp-note:read'),
   handle: () => expectedQueryLoop('one lookup per note, each on its primary key', readEach),
 });
+/** A one-time token the server issued to ONE actor: the draw cannot forge it, the pass's state can. */
+const issued = new Map<string, string>();
+const expPassIssued = action({
+  input: t.object({ token: t.string.max(64) }),
+  output: Ok,
+  policy: can('exp-note:write'),
+  handle: ({ input, ctx }) => {
+    const mine = issued.get(ctx.actor.id);
+    issued.delete(ctx.actor.id);
+    return mine !== undefined && mine === input.token ? { ok: true } : refuse();
+  },
+});
 registerActions({
+  expPassIssued,
   expScaleDeclared,
   expScaleFlat,
   expScaleLoop,
@@ -178,6 +192,29 @@ const noteJob = (name: string, wrapped: boolean) =>
   });
 noteJob('expPassLeaky', false);
 noteJob('expPassWrapped', true);
+
+/** Each run's org and the org its input names: the binder must make the two the same. */
+const workspaceRuns: { readonly org: string | undefined; readonly named: string }[] = [];
+job({
+  name: 'expPassWorkspace',
+  // A field no id stem names (`workspace` is no entity): only reading `tenant` finds it.
+  tenant: (input) => input.scope.workspace,
+  input: t.object({ scope: t.object({ workspace: t.uuid }), expNoteId: t.uuid }),
+  idempotencyKey: (input) => input.expNoteId,
+  retry: { ...DEFAULT_RETRY, attempts: 1 },
+  run: async ({ input }) => {
+    workspaceRuns.push({ org: useContext().actor.orgId, named: input.scope.workspace });
+    if ((await driver.repo(notes).findById(input.expNoteId)) === null) refuse();
+  },
+});
+job({
+  name: 'expPassPlatform',
+  tenant: () => '7d0c4f1e-0000-4000-8000-00000000c0de',
+  input: t.object({}),
+  idempotencyKey: () => 'platform',
+  retry: { ...DEFAULT_RETRY, attempts: 1 },
+  run: async () => undefined,
+});
 
 const one = async (
   only: string,
@@ -257,6 +294,25 @@ describe(testName('unit', 'runExercisePass'), () => {
     expect(record.outcome).toBe('reached');
   });
 
+  test('an async input is awaited, as the actor the call runs as: state the draw cannot forge', async () => {
+    expect((await one('expPassIssued')).outcome).toBe('unreached');
+    const issue = async (drawn: Readonly<Record<string, unknown>>) => {
+      // The seated actor, read where a handler reads it: the hook runs inside the call's request.
+      const { id } = useContext().actor;
+      await Promise.resolve();
+      const token = crypto.randomUUID();
+      issued.set(id, token);
+      return { ...drawn, token };
+    };
+    const writerActor = testActor('writer', { permissions: ['exp-note:write'] }).actor;
+    const record = await one('expPassIssued', {
+      expPassIssued: { actor: writerActor, input: issue },
+    });
+    expect(record.outcome).toBe('reached');
+    // The scale sweep computes it again, per call, at both sizes.
+    expect(record.scale?.verdict).toBe('flat');
+  });
+
   test('off with a reason is recorded off; a blank reason refuses at declaration', async () => {
     expect(await one('expPassThrows', { expPassThrows: { off: 'calls a bank' } })).toMatchObject({
       outcome: 'off',
@@ -286,9 +342,65 @@ describe(testName('unit', 'runExercisePass'), () => {
     expect(isUltimateError(unknownOnly) && unknownOnly.code).toBe('X_DECLARATION_UNKNOWN');
   });
 
+  test("defineExercise's factories reach the pass's graph", async () => {
+    const titled = (index: number): string => `titled-${index}`;
+    const seen: string[] = [];
+    const recording: SeedWriter = {
+      ...writer,
+      insert: async (row) => {
+        if (row.entity === 'exp_notes') seen.push(String(row.row['title']));
+        await writer.insert(row);
+      },
+    };
+    const factory = defineFactory<{ title: string }>(notes, {
+      defaults: (index) => ({ title: titled(index) }),
+    });
+    await runExercisePass({
+      entities: [orgs, notes],
+      writer: recording,
+      roles,
+      only: 'expPassCreate',
+      overrides: defineExercise({}, { factories: { exp_notes: factory } }),
+    });
+    // The factory's rows, beside the tenant proof's own generated canaries.
+    expect(seen.filter((title) => /^titled-\d+$/.test(title)).length).toBeGreaterThan(0);
+    const typo = await runExercisePass({
+      entities: [orgs, notes],
+      writer,
+      roles,
+      only: 'expPassCreate',
+      overrides: defineExercise({}, { factories: { exp_note: factory } }),
+    }).catch((error: unknown) => error);
+    expect(isUltimateError(typo) && typo.code).toBe('X_DECLARATION_UNKNOWN');
+  });
+
   test('a query runs as an allowed reader; a job drains, its id bound to a seeded note', async () => {
     expect(await one('expPassNotes')).toMatchObject({ kind: 'query', outcome: 'reached' });
     expect(await one('expPassJob')).toMatchObject({ kind: 'job', outcome: 'reached' });
+  });
+
+  test("a job runs in the seated tenant whatever field its tenant(input) reads; B's in B's", async () => {
+    workspaceRuns.length = 0;
+    const record = await one('expPassWorkspace');
+    expect(record).toMatchObject({ kind: 'job', outcome: 'reached' });
+    expect(record.tenant?.verdict).toBe('proven');
+    expect(workspaceRuns.length).toBeGreaterThan(0);
+    for (const run of workspaceRuns) expect(run.org).toBe(run.named);
+    // A's control, B's legs, the scale sweep's two sized tenants: four orgs, each run in its own.
+    expect(new Set(workspaceRuns.map((run) => run.org)).size).toBe(4);
+  });
+
+  test('a job whose tenant is one fixed org is unreached with the declaration as its fix', async () => {
+    const record = await one('expPassPlatform');
+    expect(record).toMatchObject({
+      outcome: 'unreached',
+      code: 'X_JOB_TENANT_MISMATCH',
+      statements: 0,
+      tenant: { verdict: 'unproven' },
+    });
+    expect(record.reason).toContain('7d0c4f1e-0000-4000-8000-00000000c0de');
+    expect(record.fix).toStartWith('tenant: (input) => input.orgId');
+    expect(record.fix).toContain('x exercise expPassPlatform --json');
   });
 
   test('a reached job is killed at each step boundary: an effect outside a step diverges', async () => {

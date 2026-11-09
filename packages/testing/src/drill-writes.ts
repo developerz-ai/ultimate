@@ -6,9 +6,11 @@
 import { bindDrawn } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ExerciseOverrides } from './define-exercise';
+import { overrideFor } from './define-exercise';
 import type { DrillTarget } from './drill-load';
 import type { Sampler } from './exercise-input';
 import { loadSampler } from './exercise-input';
+import { isAsyncInput } from './exercise-override-input';
 
 /** The seed every drill draws under: one run's inputs are the same on every machine. */
 export const DRILL_DRAW_SEED = 40;
@@ -36,6 +38,9 @@ export interface DrillWrites {
   readonly skipped: readonly { readonly name: string; readonly reason: string }[];
 }
 
+const ASYNC_INPUT =
+  'exercise.ts computes its input from the pass (an async input); a load has none';
+
 type Verdict =
   | { readonly reason: string }
   | { readonly bind: ((drawn: unknown) => unknown) | undefined };
@@ -49,11 +54,41 @@ function verdictOf(
   if (/[:*]/.test(candidate.path))
     return { reason: 'its path takes a parameter the load cannot bind' };
   if (!candidate.anonymous) return { reason: 'its policy refuses an anonymous caller' };
-  const override = overrides?.entries.get(candidate.name);
+  // Kind-aware, as the pass: an `'action:<name>'` entry wins over a bare one a job may share.
+  const override = overrideFor(overrides, 'action', candidate.name);
   if (override === undefined) return { bind: undefined };
   if ('off' in override) return { reason: `exercise.ts turns it off: ${override.off.trim()}` };
   if (override.actor !== null) return { reason: 'exercise.ts runs it as a signed-in actor' };
+  if (isAsyncInput(override)) {
+    return {
+      reason: 'exercise.ts computes its input from the pass (an async input); a load has none',
+    };
+  }
   return { bind: bindDrawn(override.input) };
+}
+
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  (typeof value === 'object' || typeof value === 'function') &&
+  value !== null &&
+  typeof (value as { then?: unknown }).then === 'function';
+
+/**
+ * The first request's input, drawn ahead of the load. A thenable's rejection is handled: its
+ * outcome is discarded — the action is skipped either way — and unhandled it would end the drill.
+ * A throw answers `undefined`: the load's own draw throws it again on every request, as before.
+ */
+function probe(
+  bind: (drawn: unknown) => unknown,
+  sampler: Pick<Sampler, 'arbitrary'>,
+  candidate: DrillWriteCandidate,
+): unknown {
+  try {
+    const first = bind(sampler.arbitrary(candidate.input, { seed: DRILL_DRAW_SEED, run: 1 }));
+    if (isThenable(first)) Promise.resolve(first).catch(() => undefined);
+    return first;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The write targets of an anonymous load, and every action it leaves out. */
@@ -68,6 +103,13 @@ export async function drillWriteTargets(options: DrillWritesOptions): Promise<Dr
       continue;
     }
     const { bind } = verdict;
+    // `isAsyncInput` reads the function's tag, and a plain function returning a promise has none:
+    // drawn, its body was `JSON.stringify(promise)` — `{}`. So the first request's input is drawn
+    // here, and one that is a thenable is the same skip.
+    if (bind !== undefined && isThenable(probe(bind, sampler, candidate))) {
+      skipped.push({ name: candidate.name, reason: ASYNC_INPUT });
+      continue;
+    }
     targets.push({
       method: 'POST',
       path: candidate.path,

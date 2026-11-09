@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/auth",
-  "version": "29.4.0",
+  "version": "30.9.0",
   "description": "Sessions, passwords, OAuth, MFA and api keys — resolved to one Actor",
   "keywords": [
     "ultimate",
@@ -10,7 +10,9 @@
     "sessions",
     "oauth",
     "mfa",
-    "api-keys"
+    "api-keys",
+    "passkeys",
+    "webauthn"
   ],
   "homepage": "https://github.com/developerz-ai/ultimate/wiki/Auth",
   "license": "MIT",
@@ -25,7 +27,9 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./soft-authenticator": "./src/soft-authenticator.ts"
   },
   "files": [
     "src",
@@ -43,8 +47,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "29.4.0",
-    "@ultimat3/db": "29.4.0",
-    "@ultimat3/schema": "29.4.0"
+    "@ultimat3/core": "30.9.0",
+    "@ultimat3/db": "30.9.0",
+    "@ultimat3/schema": "30.9.0"
   }
 }

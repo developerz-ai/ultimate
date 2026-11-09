@@ -85,6 +85,7 @@ const THEME_TOGGLE_UI_MODULES: readonly string[] = [
   'error-registry.ts',
   'errors.ts',
   'i18n-keys.ts',
+  'ui-keys.ts',
   'index.ts',
   'components/IconButton.tsx',
   'components/Select.tsx',
@@ -299,5 +300,172 @@ describe('the @ultimat3/ui barrel', () => {
     expect(`@ultimat3/ui modules outside the theme-toggle list: ${unexpected.join(', ')}`).toBe(
       '@ultimat3/ui modules outside the theme-toggle list: ',
     );
+  }, 30_000);
+
+  /**
+   * A static list owes a long list's machinery nothing: `Timeline` and `DescriptionList` are
+   * markup, so an island drawing them carries no `ResizeObserver` wiring, no range arithmetic and
+   * no keyed-row cache. `VirtualList` is the positive control — it retains all three — so the
+   * absence below cannot pass because the paths were spelled wrong.
+   */
+  test('Timeline and DescriptionList retain no virtual-list module; VirtualList does', async () => {
+    const machinery = [
+      'components/virtual-list-observer.ts',
+      'components/virtual-list-view.ts',
+      'components/data-table-rows.ts',
+    ].map((module) => resolve(UI_SRC, module));
+    const held = (names: string): string =>
+      [
+        `import { ${names} } from '${specifier('index')}';`,
+        `export const held = [${names}];`,
+        '',
+      ].join('\n');
+    const [lists, virtual] = await Promise.all([
+      chunkOf('timeline', held('setSolidRuntime, Timeline, DescriptionList')),
+      chunkOf('virtual-list', held('setSolidRuntime, VirtualList')),
+    ]);
+    expect(lists.modules).toContain(resolve(UI_SRC, 'components/Timeline.tsx'));
+    expect(lists.modules.filter((path) => machinery.includes(path))).toEqual([]);
+    expect(machinery.filter((path) => !virtual.modules.includes(path))).toEqual([]);
+  }, 30_000);
+
+  /**
+   * `Select` is the short closed list and stays native: an island holding one owes the searchable
+   * listbox nothing, so its bytes cannot move when `SearchableSelect` grows. `SearchableSelect`
+   * itself is the positive control, and `rankOptions` is a leaf a palette can take without it.
+   */
+  test('Select and rankOptions retain no searchable-select module; SearchableSelect does', async () => {
+    const listbox = [
+      'components/SearchableSelect.tsx',
+      'components/SearchableSelectChips.tsx',
+      'components/searchable-select-view.ts',
+      'components/searchable-select-keys.ts',
+    ].map((module) => resolve(UI_SRC, module));
+    const held = (names: string): string =>
+      [
+        `import { ${names} } from '${specifier('index')}';`,
+        `export const held = [${names}];`,
+        '',
+      ].join('\n');
+    const [select, ranker, searchable] = await Promise.all([
+      chunkOf('select', held('setSolidRuntime, Select')),
+      chunkOf('rank-options', held('rankOptions')),
+      chunkOf('searchable-select', held('setSolidRuntime, SearchableSelect')),
+    ]);
+    expect(select.modules).toContain(resolve(UI_SRC, 'components/Select.tsx'));
+    expect(select.modules.filter((path) => path.includes('rank-options'))).toEqual([]);
+    expect(select.modules.filter((path) => listbox.includes(path))).toEqual([]);
+    expect(ranker.modules.filter((path) => listbox.includes(path))).toEqual([]);
+    expect(listbox.filter((path) => !searchable.modules.includes(path))).toEqual([]);
+  }, 30_000);
+
+  /**
+   * The keyboard layer is paid for by the island that asks for it. `CommandPalette` stays the
+   * presentational list and `Dialog` the general modal: neither retains the page's hotkey slot,
+   * the palette shell or the sheet. `useCommandPalette` is the positive control — and it takes the
+   * ranker, never the searchable select's listbox.
+   */
+  test('CommandPalette and Dialog retain no hotkey module; useCommandPalette does', async () => {
+    const keyboard = [
+      'use-hotkeys.ts',
+      'hotkeys-view.ts',
+      'components/use-command-palette.ts',
+      'components/ShortcutSheet.tsx',
+    ].map((module) => resolve(UI_SRC, module));
+    const held = (names: string): string =>
+      [
+        `import { ${names} } from '${specifier('index')}';`,
+        `export const held = [${names}];`,
+        '',
+      ].join('\n');
+    const [palette, dialog, shell] = await Promise.all([
+      chunkOf('command-palette', held('setSolidRuntime, CommandPalette')),
+      chunkOf('dialog', held('setSolidRuntime, Dialog')),
+      chunkOf('use-command-palette', held('setSolidRuntime, useCommandPalette')),
+    ]);
+    expect(palette.modules.filter((path) => keyboard.includes(path))).toEqual([]);
+    expect(dialog.modules.filter((path) => keyboard.includes(path))).toEqual([]);
+    expect(shell.modules).toContain(resolve(UI_SRC, 'use-hotkeys.ts'));
+    expect(shell.modules).toContain(resolve(UI_SRC, 'components/rank-options.ts'));
+    expect(shell.modules.filter((path) => path.includes('searchable-select'))).toEqual([]);
+  }, 30_000);
+
+  /**
+   * The chart kit's live pieces carry no chart: `liveWindow` is a trim, and `HeatStrip` and
+   * `LiveIndicator` are HTML. A dashboard island holding them pays for no plot geometry —
+   * `LineChart` and `BarChart` are the positive control.
+   */
+  test('HeatStrip, LiveIndicator and liveWindow retain no chart geometry; the xy charts do', async () => {
+    const geometry = [
+      'components/line-chart-view.ts',
+      'components/bar-chart-view.ts',
+      'components/chart-frame-view.ts',
+      'components/chart-ticks-view.ts',
+    ].map((module) => resolve(UI_SRC, module));
+    const held = (names: string): string =>
+      [
+        `import { ${names} } from '${specifier('index')}';`,
+        `export const held = [${names}];`,
+        '',
+      ].join('\n');
+    const [window, status, line] = await Promise.all([
+      chunkOf('live-window', held('liveWindow')),
+      chunkOf('heat-strip', held('setSolidRuntime, HeatStrip, LiveIndicator')),
+      chunkOf('xy-charts', held('setSolidRuntime, LineChart, BarChart')),
+    ]);
+    const own = (modules: readonly string[]): string[] =>
+      modules
+        .filter((path) => path.startsWith(packageDir('ui')))
+        .map((path) => relative(UI_SRC, path));
+    expect(own(window.modules)).toEqual(['live-window.ts']);
+    expect(status.modules).toContain(resolve(UI_SRC, 'components/HeatStrip.tsx'));
+    expect(status.modules).toContain(resolve(UI_SRC, 'components/LiveIndicator.tsx'));
+    expect(status.modules.filter((path) => geometry.includes(path))).toEqual([]);
+    expect(geometry.filter((path) => !line.modules.includes(path))).toEqual([]);
+  }, 30_000);
+});
+
+/** A component-only island entry: the names imported from the barrel, held so nothing shakes. */
+const islandOf = (name: string, names: readonly string[]): Promise<Chunk> =>
+  chunkOf(
+    name,
+    [
+      `import { ${names.join(', ')} } from '${specifier('index')}';`,
+      `export const held = [${names.join(', ')}];`,
+      '',
+    ].join('\n'),
+  );
+
+const under = (chunk: Chunk, dir: string): string[] =>
+  chunk.modules.filter((path) => path.startsWith(resolve(UI_SRC, dir)));
+
+describe('the drag and viewer modules stay out of islands that do not use them', () => {
+  test('Button retains nothing from content/ or drag/', async () => {
+    const chunk = await islandOf('button-only', ['Button']);
+    expect(chunk.modules).toContain(resolve(UI_SRC, 'components/Button.tsx'));
+    expect(under(chunk, 'content/')).toEqual([]);
+    expect(under(chunk, 'drag/')).toEqual([]);
+  }, 30_000);
+
+  test('Dropzone, a file drop, retains no drag/ module', async () => {
+    const chunk = await islandOf('dropzone-only', ['Dropzone']);
+    expect(chunk.modules).toContain(resolve(UI_SRC, 'components/Dropzone.tsx'));
+    expect(under(chunk, 'drag/')).toEqual([]);
+  }, 30_000);
+
+  test('SplitPane takes the gesture and nothing of reordering', async () => {
+    const chunk = await islandOf('split-pane-only', ['SplitPane']);
+    expect(chunk.modules).toContain(resolve(UI_SRC, 'drag/pointer-drag.ts'));
+    expect(chunk.modules).not.toContain(resolve(UI_SRC, 'drag/sort-view.ts'));
+    expect(chunk.modules).not.toContain(resolve(UI_SRC, 'drag/sort-controller.ts'));
+  }, 30_000);
+
+  test('Markdown with no language retains no language; one passed retains one', async () => {
+    const bare = await islandOf('markdown-bare', ['Markdown']);
+    expect(bare.modules).toContain(resolve(UI_SRC, 'content/markdown-parse.ts'));
+    expect(under(bare, 'content/languages/')).toEqual([]);
+
+    const one = await islandOf('markdown-ts', ['Markdown', 'tsLanguage']);
+    expect(under(one, 'content/languages/')).toEqual([resolve(UI_SRC, 'content/languages/ts.ts')]);
   }, 30_000);
 });

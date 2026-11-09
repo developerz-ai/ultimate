@@ -46,25 +46,32 @@ describe('unit · --shard refusals', () => {
     expect(thrownBy(() => assertShardable(undefined, root)).fix).toBe(
       'bun run verify --only unit --shard 1/4 --json',
     );
-    expect(thrownBy(() => assertShardable(['unit', 'live'], root)).fix).toBe(
+    expect(thrownBy(() => assertShardable(['unit', 'lint'], root)).fix).toBe(
       'bun run verify --only unit --shard 1/4 --json',
     );
-    expect(thrownBy(() => assertShardable(['live'], root)).fix).toBe(
-      'bun run verify --only live --json',
+    expect(thrownBy(() => assertShardable(['lint'], root)).fix).toBe(
+      'bun run verify --only lint --json',
     );
     // And an app, which passes nothing, still reads `x verify`.
     expect(thrownBy(() => parseShard('x')).fix).toBe('x verify --only unit --shard 1/4 --json');
-    expect(thrownBy(() => assertShardable(['live'])).fix).toBe('x verify --only live --json');
+    expect(thrownBy(() => assertShardable(['lint'])).fix).toBe('x verify --only lint --json');
   });
 
-  test('a shard without --only, or over a serial step, is refused naming the step', () => {
+  test('a shard without --only, or over a step that runs no test files, is refused naming it', () => {
     expect(thrownBy(() => assertShardable(undefined)).code).toBe('X_VERIFY_SHARD_INVALID');
-    const serial = thrownBy(() => assertShardable(['unit', 'live']));
-    expect(serial.code).toBe('X_VERIFY_SHARD_INVALID');
-    expect(serial.cause).toContain('live cannot be split');
-    expect(serial.fix).toBe('x verify --only unit --shard 1/4 --json');
-    expect(thrownBy(() => assertShardable(['e2e'])).fix).toBe('x verify --only e2e --json');
+    const static_ = thrownBy(() => assertShardable(['unit', 'lint']));
+    expect(static_.code).toBe('X_VERIFY_SHARD_INVALID');
+    expect(static_.cause).toContain('lint cannot be split');
+    expect(static_.fix).toBe('x verify --only unit --shard 1/4 --json');
+    expect(thrownBy(() => assertShardable(['drift'])).fix).toBe('x verify --only drift --json');
     expect(() => assertShardable(['unit', 'contract', 'job'])).not.toThrow();
+  });
+
+  // Serial within a runner, splittable across runners: each CI runner starts its own services,
+  // so one runner's replication slot and browser are never another's.
+  test('live and e2e split by file like the parallel suites', () => {
+    expect(() => assertShardable(['live'])).not.toThrow();
+    expect(() => assertShardable(['e2e'])).not.toThrow();
   });
 
   test('the command refuses before anything runs: --timings alone, --shard without --only', async () => {

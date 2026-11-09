@@ -8,6 +8,7 @@
  */
 import { tagKeys } from '@ultimat3/cache';
 import type { Ctx } from '@ultimat3/core';
+import { appVersion } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Patch } from './matcher';
 import { assertMatchable } from './matcher';
@@ -119,9 +120,9 @@ export function spendQueryLimit(
   return spendReadLimit(queryName(target), target.rateLimit, { ...caller, surface: 'live' });
 }
 
-/** Changing the build changes the epoch, which forces reconnects to refetch. */
+/** Changing the build changes the epoch, which forces reconnects to refetch: core's `APP_VERSION`. */
 export function liveEpoch(): string {
-  return Bun.env['X_BUILD_ID'] ?? 'dev';
+  return appVersion();
 }
 
 export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends object>(

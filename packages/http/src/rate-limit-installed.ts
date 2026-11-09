@@ -77,3 +77,24 @@ export const assertInstalledRateLimitScope = (config: RateLimitConfig): void => 
   if (config.scope !== 'shared') return;
   if (current().scope !== 'shared') throw rateLimitNotShared('installed');
 };
+
+/**
+ * `fn` spending from a fresh store of its own, the installed one left exactly as it was — the
+ * contract exercise's runs (`@ultimat3/action`, `@ultimat3/query`): a test-time loop that must not
+ * leave the same file's next call a 429. It answers for the installed store's scope, so a
+ * `'shared'` declaration is still judged against what the app installed, not the scratch.
+ */
+export async function withScratchRateLimitStore<T>(fn: () => Promise<T>): Promise<T> {
+  const scratch = memoryRateLimitStore();
+  const release = adoptRateLimitStore({
+    scope: current().scope,
+    take: (key, bucket, cost, nowMs) => scratch.take(key, bucket, cost, nowMs),
+    peek: (key, bucket, nowMs) => scratch.peek(key, bucket, nowMs),
+    reset: (key) => scratch.reset(key),
+  });
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}

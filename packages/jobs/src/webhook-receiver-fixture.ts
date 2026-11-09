@@ -2,7 +2,7 @@
 // in `x-vendor-signature`) mounted in the REAL `httpPipeline`, a worker over whichever driver the
 // suite installs, and a record of what `verify` and `handle` were handed. Test-only.
 
-import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
+import { type Ctx, ctxOf, frozenClock, hmac } from '@ultimat3/core';
 import type { Pipeline } from '@ultimat3/http';
 import { defineHttpConfig, httpPipeline, httpRouter, verifyBodyHmac } from '@ultimat3/http';
 import type { JsonValue } from '@ultimat3/schema';
@@ -16,7 +16,7 @@ export const VENDOR_SECRET = 'whsec_vendor_never_leaks';
 export const SIGNATURE_HEADER = 'x-vendor-signature';
 
 export const sign = (bytes: Uint8Array | string): string =>
-  new Bun.CryptoHasher('sha256', VENDOR_SECRET).update(bytes).digest('hex');
+  hmac('sha256', VENDOR_SECRET, bytes, 'hex');
 
 export interface Seen {
   readonly verified: { bytes: Uint8Array; params: Readonly<Record<string, string>> }[];

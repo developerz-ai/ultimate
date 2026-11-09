@@ -31,9 +31,14 @@ const cookie = (header: string | null, name: string): string | null => {
   return value === '' ? null : value;
 };
 
-/** Both names are read, because the same browser may hold a cookie set before TLS was in front. */
-export const readSessionToken = (header: string | null): string | null =>
-  cookie(header, SESSION_COOKIE_SECURE) ?? cookie(header, SESSION_COOKIE_PLAIN);
+/**
+ * The ONE name `writeSessionCookie` would have used, from the same `secure` fact. Over https the
+ * plain name is never read: a sibling subdomain or a first-visit http MITM can plant
+ * `smc_session`, never a `__Host-` cookie, and reading it signed the visitor into the planter's
+ * account. A browser holding only a pre-TLS cookie signs in again, once.
+ */
+export const readSessionToken = (header: string | null, secure: boolean): string | null =>
+  cookie(header, sessionCookieName(secure));
 
 /** `https` in production only. The same fact picks the cookie name and the `Secure` attribute. */
 export const isSecureRequest = (ctx: unknown): boolean =>

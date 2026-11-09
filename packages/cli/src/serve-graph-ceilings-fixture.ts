@@ -1,6 +1,6 @@
-// The serve graph's module count per role, each raise stated with its number and reason.
-// `serve-graph.test.ts` holds a build to them; the file is the ledger, kept out of that test at the
-// file ceiling.
+// The serve graph's module count for `ROLE=migrate` and the serving roles, each raise stated with
+// its number and reason. `serve-graph.test.ts` holds a build to them; the web role's ledger is
+// `serve-graph-web-ceiling-fixture.ts`, split off at the file ceiling.
 
 /**
  * measured: 558 modules (`Bun.build` metafile, static edges from `serve-entry.ts`, 2026-10-01) —
@@ -118,20 +118,12 @@
  * raised 738 → 740, measured 740 (2026-11-03, plan 101 wave 4b): `core/src/config-assets.ts`
  * (`assets.retain`) and `core/src/config-client-errors.ts` (`clientErrors`) — two `app.config.ts`
  * sections, validated where every config section is, through the core barrel. Nothing else moved.
- * raised 740 → 741, measured 741 (2026-11-03, plan 101 wave 4c): `entity/src/test-driver.ts`
- * (`testDriver()`, which a scaffolded `packages/db/src/client.ts` names) through the entity barrel.
- * `dbDiagnostics()`'s five modules were 746 on the db barrel; they moved to
- * `@ultimat3/db/diagnostics` (one caller, `x db diagnostics`) and `NEVER_AT_BOOT` holds them out.
- * Measured against a copy of HEAD with its own workspace links.
- * raised 741 → 745, measured 745 (2026-11-05, plan 101 wave 5a): `errors:`'s rule on `invoke`'s path
- * (`core/src/declared-errors.ts`, `action/src/declared-errors.ts`) and a `:param` pin's URL merged
- * into the input before `invoke` (`core/src/route-path-template.ts`, `route-path-merge.ts`), all
- * through the action and core barrels. No existing module newly reached.
- * raised 745 → 747, measured 747 (2026-11-05, plan 101 wave 5b): `jwtBearerResolver()`
- * (`auth/src/jwt-bearer-resolver.ts`) through the auth barrel, and the server-stamped path pins
- * (`core/src/client-paths-pins.ts`) through the core barrel. No existing module newly reached.
- * raised 747 → 748, measured 748 (2026-11-05, plan 101 wave 6a): `entity/src/memory-journal.ts`, the
- * memory store's ambient transaction, which the memory repo and transactor now read. Nothing else.
+ * raised 740 → 741, measured 741 (2026-11-03, wave 4c): `entity/src/test-driver.ts`; `dbDiagnostics()`'s
+ * five modules moved to `@ultimat3/db/diagnostics`, held out by `NEVER_AT_BOOT`.
+ * raised 741 → 745, measured 745 (2026-11-05, wave 5a): `{core,action}/src/declared-errors.ts`,
+ * `core/src/route-path-{template,merge}.ts`. → 747 (wave 5b): `auth/src/jwt-bearer-resolver.ts`,
+ * `core/src/client-paths-pins.ts`. → 748 (wave 6a): `entity/src/memory-journal.ts`. No existing
+ * module newly reached by any of the three.
  * raised 748 → 804, measured 804 (2026-11-06, plan 101 wave 7): 54 new files and 2 existing modules
  * newly reached — one is `http/src/set-cookie.ts`, the one `setCookie` the replica position cookie
  * now writes through. `authorizationServer()` (21, `auth/src/{authorization-server*,grant-*,
@@ -144,24 +136,27 @@
  * saga and event-wake modules (14: `consumer*`, `errors-saga`, `steps-{unwind,wait}`,
  * `execute-{ctx,unwind}`, `driver-pg-event-wake-sql`, `step-resolve`, `backfill-{source,reader}`)
  * through the jobs barrel; `cli/src/runtime-replica-position.ts`.
- * raised 804 → 822, measured 822 (2026-11-06, plan 101 wave 8): 18 new files, no existing module
- * newly reached — time series and views (`entity/src/{time-bucket,read-aggregates,
- * series-unsupported,pg-aggregates,memory-aggregates,entity-parse,view-entity,view-repo}.ts`,
- * `db/src/generate-view.ts`, `jobs/src/{rollup,rollup-errors,refresh-view}.ts`), `db/src/keyset.ts`,
- * the Redis client and its deadline (`core/src/redis-client.ts`, `cache/src/redis-deadline.ts`),
- * the limiter's store deadline (`http/src/rate-limit-store-deadline.ts`), `core/src/
- * error-reporter-chain.ts` and `admin/src/error-groups-schema.ts` (the framework table's DDL).
- * raised 822 → 852, measured 852 (2026-11-06, plan 101 wave 9): 30 new files, no existing module
- * newly reached — failure capture (`core/src/{failure-capture,failure-capture-flush,
- * failure-capture-mask,config-failure-capture}.ts`, `db/src/failure-store-pg.ts`,
- * `entity/src/read-capture.ts`), `core/src/config-time.ts`, entity lifecycle
- * (`entity/src/{retain,history,history-actor,counter,lifecycle,memory-lifecycle}.ts`,
- * `db/src/{generate-history,generate-counter,generate-triggers,drift-triggers,lifecycle-errors}.ts`,
- * `jobs/src/purge-entities.ts`), subject data (`jobs/src/subject{,-errors,-jobs,-plan,-select,
- * -erase-pass,-export-pass}.ts`, `auth/src/subject-target.ts`), `jobs/src/failure-row.ts`, and
- * streaming (`action/src/{action-stream,http-stream}.ts`) — each through its package's barrel.
+ * raised 804 → 822, measured 822 (2026-11-06, wave 8): 18 new files (time series and views,
+ * `db/src/keyset.ts`, the Redis client and deadlines, `error-reporter-chain`, `error-groups-schema`).
+ * raised 822 → 852, measured 852 (2026-11-06, wave 9): 30 new files (failure capture, `config-time`,
+ * entity lifecycle, subject data, `failure-row`, action streaming), each through its barrel.
+ * raised 852 → 853, measured 853 (2026-11-07, plan 101 wave 10): `core/src/hmac.ts`, the one keyed
+ * hash every HMAC site now calls (a Bun keyed-hasher bug). No existing module newly reached.
+ * raised 853 → 878, measured 878 (2026-11-07, #990–#999), 25 new files through their barrels:
+ * `auth/src/{passkey-*,webauthn-data,cbor,cose-key,base64url}.ts` (14), `action/src/{meter*,
+ * errors-meter}.ts` (7), `http/src/{problem-meta-framework,server-websocket,websocket-mounts}.ts`,
+ * `notify/src/push-device-pg.ts`. No existing module newly reached.
+ * raised 878 → 879, measured 879 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
+ * raised 879 → 880, measured 880 (2026-11-07, fix/exercise-tenancy): `entity/src/read-only.ts`,
+ * `entity({ readOnly })`'s refusal, which every repository returns through. No module newly reached.
+ * raised 880 → 883, measured 883 (2026-11-07, sweep 3): the mount's after-scan `exposedPrimitives()`
+ * keeps the barrels' `core/src/{mcp-exposure,tool-description}.ts`, `action/src/tool-gate.ts`.
+ * raised 883 → 884, measured 884 (2026-11-07, fix/exercise-fidelity): `jobs/src/step-scope.ts`,
+ * `currentStep()` — the step body in flight, which the crash proof names. No module newly reached.
+ * raised 884 → 885, measured 885 (2026-11-08, fix/followups): `entity/src/json-null.ts`, the one
+ * rule the parsers, the pg binder/decoder and the memory matcher read for a JSON `null`. No module newly reached.
  */
-export const MIGRATE_CEILING = 852;
+export const MIGRATE_CEILING = 885;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -329,161 +324,17 @@ export const MIGRATE_CEILING = 852;
  * raised 1221 → 1223, measured 1223 (2026-11-06, plan 101 wave 9): `storage/src/driver-local.ts`
  * split at its line ceiling into `driver-local-{list,remove}.ts`, which every role reaches through
  * the storage barrel.
+ * raised 1223 → 1225, measured 1225 (2026-11-07, plan 101 wave 10): `seo/src/static-export.ts` (the
+ * static build's image and card hook) and `storage/src/image-warm.ts` (`warmVariants`), each through
+ * its package's barrel. No existing module newly reached.
+ * raised 1225 → 1226, measured 1226 (2026-11-07, plan 101 wave 10): `MIGRATE_CEILING`'s `core/src/hmac.ts`.
+ * raised 1226 → 1253, measured 1253 (2026-11-07, #990–#999): `MIGRATE_CEILING`'s 25, plus
+ * `realtime/src/device-socket.ts` and `cli/src/role-start-devices.ts` (every role's device sockets).
+ * raised 1253 → 1254, measured 1254 (2026-11-07, sweep 2): `db/src/drift-missing.ts`, split off drift-findings.
+ * raised 1254 → 1255, measured 1255 (2026-11-07, fix/exercise-tenancy): `entity/src/read-only.ts`.
+ * raised 1255 → 1259, measured 1259 (2026-11-07, sweep 3): `MIGRATE_CEILING`'s three and
+ * `cli/src/runtime-jobs-unserved.ts` (a split worker reads the registry before it warns).
+ * raised 1259 → 1260, measured 1260 (2026-11-07, fix/exercise-fidelity): `MIGRATE_CEILING`'s 1.
+ * raised 1260 → 1261, measured 1261 (2026-11-08, fix/followups): `MIGRATE_CEILING`'s 1.
  */
-export const SERVING_ROLE_CEILING = 1223;
-
-/**
- * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
- * raised 975 → 980, measured 980 (2026-10-05, plan 101 sweep 1c): the same five modules named on
- * `SERVING_ROLE_CEILING`, which every role carries.
- * raised 980 → 982, measured 982 (2026-10-05, plan 101 sweep 2): the same two modules named on
- * `SERVING_ROLE_CEILING` for sweep 2.
- * raised 982 → 984, measured 984 (2026-10-05, plan 101 sweep 7): `core/src/metrics.ts` hit the
- * 500-line ceiling and split by responsibility into `metric-errors.ts`, `metric-registry.ts` and
- * `metric-series.ts` (+3), and `storage/src/driver-s3-absent.ts` left `driver-s3.ts` (+1); the
- * action and query `deprecation.ts` copies collapsed into one `core/src/deprecation.ts` (−1 net).
- * raised 984 → 987, measured 987 (2026-10-05, plan 101 sweep 8b, native Windows): the two modules
- * named on `SERVING_ROLE_CEILING` for sweep 8b, and `cli/src/island-package-dedupe.ts` — the island
- * build resolves every `@ultimat3/*` import to the app's one copy, which a Windows `file:` install
- * without symlinks had bundled twice (+15 KB on `/posts`).
- * raised 987 → 992, measured 992 (2026-10-05, plan 101 sweep 8c): the five modules named on
- * `SERVING_ROLE_CEILING` for sweep 8c.
- * raised 992 → 994, measured 994 (2026-10-05, plan 101 sweep 9): `render/src/island-hold.ts` (named on
- * `SERVING_ROLE_CEILING`, #506) and `cli/src/island-runtime.ts` (#505: the page runtime built once
- * per page instead of inlined into every realtime island; split out so `island-bundle.ts` stays
- * under the ceiling).
- * raised 994 → 998, measured 998 (2026-10-05, plan 101 sweep 9b): `cli/src/theme-brand.ts` (the one
- * reader of an app's `apps/web/shared/theme.ts` brand, inlined with its CSP hash), and the island
- * build's duplicate-module guard — `island-duplicates.ts` (detection), `island-duplicate-refusal.ts`
- * (refuse a framework duplicate, warn on a third-party one) and `island-entry-missing.ts` (the
- * refusals moved out so `island-bundle.ts` stays under the 500-line ceiling).
- * raised 998 → 1004, measured 1004 (2026-10-06, plan 101 sweep 10a): the six modules named on
- * `SERVING_ROLE_CEILING` for sweep 10a.
- * raised 1004 → 1011, measured 1011 (2026-10-06, plan 101 sweep 10b): the seven modules named on
- * `SERVING_ROLE_CEILING` for sweep 10b.
- * raised 1011 → 1024, measured 1024 (2026-10-06, plan 101 sweep 10c): the five named on
- * `SERVING_ROLE_CEILING` for 10c, MCP human confirmation and its audit hook on the web role —
- * `mcp/src/confirmations.ts`, `confirmation-gate.ts`, `confirmation-store.ts`,
- * `confirmation-postgres.ts`, `confirmation-errors.ts`, `audit-hook.ts`, `confirmation-decide.ts` (an approval
- * must carry back the exact arguments `view` showed, compared by keyed digest) — and
- * `mcp/src/errors-transport.ts`, the transport error classes split out so `errors.ts` stays under
- * the 500-line ceiling once the eight confirmation codes are registered.
- * raised 1024 → 1026, measured 1026 (2026-10-06, plan 101 sweep 10d): the two modules named on
- * `SERVING_ROLE_CEILING` for 10d (`admin/src/mcp-scopes.ts` is behind the admin mount's lazy import).
- * raised 1026 → 1029, measured 1029 (2026-10-06, plan 101 sweep 11): the three modules named on
- * `SERVING_ROLE_CEILING` for 11.
- * raised 1029 → 1030, measured 1030 (2026-10-06, plan 101 sweep 11b): `realtime/src/nats-subscriptions.ts`,
- * named on `SERVING_ROLE_CEILING` for 11b.
- * raised 1030 → 1032, measured 1032 (2026-10-07, plan 101 sweep 12c): the two modules named on
- * `SERVING_ROLE_CEILING` for 12c.
- * raised 1032 → 1035, measured 1035 (2026-10-07, sweep 13a): the three modules named on
- * `MIGRATE_CEILING` for 13a — the web role reaches every module the serving roles do.
- * raised 1035 → 1036, measured 1036 (2026-10-07, sweep 13b): `jobs/src/errors-tenant.ts` — the terminal
- * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
- * raised 1036 → 1037, measured 1037 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
- * columns a transition's policy read, pinned into its compare-and-set (#702).
- * raised 1037 → 1038, measured 1038 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
- * the supported log tee, reached through `logger.ts` by every module that logs.
- * raised 1038 → 1039, measured 1039 (2026-10-08, 26.1.0): the module named on
- * `SERVING_ROLE_CEILING` for route-presented modals.
- * raised 1039 → 1053, measured 1053 (2026-10-08, Web Push): the two modules named on
- * `SERVING_ROLE_CEILING`, and the twelve the `@ultimat3/pwa` barrel the web role already loads now
- * carries — RFC 8291 encryption and its receiving half, the RFC 8292 signer and its key pair, the
- * sender, the runtime, the two stores, the subscribe actions and the client's meta name
- * (`installedVapid()` feeds `sw.js`'s push handler and `<meta name="x-push-key">`).
- * raised 1053 → 1054, measured 1054 (2026-10-08, 26.1.0 browser entry): `pwa/src/skew.ts` —
- * `detectSkew` and `AppUpdateAvailable`, split from `version-skew.ts` so `@ultimat3/pwa/client`
- * carries them without the error table; the web role reaches it through the pwa barrel.
- * raised 1054 → 1055, measured 1055 (2026-10-08, 26.1.0): `pwa/src/push-hosts.ts` — the push
- * services the sender may dial, checked at subscribe and at send (an endpoint from a request body
- * resolves wherever its owner points it), reached through `push-send.ts`.
- * raised 1055 → 1056, measured 1056 (2026-10-09, 27.2.0): `storage/src/errors-promote.ts`, the
- * module named on `SERVING_ROLE_CEILING` for 27.2.0.
- * raised 1056 → 1058, measured 1058 (2026-10-09, #738): the two core modules named on `MIGRATE_CEILING`.
- * raised 1058 → 1060, measured 1060 (2026-10-09, #710): the two modules named on
- * `MIGRATE_CEILING` for #710.
- * raised 1060 → 1061, measured 1061 (2026-10-09, #710 row 9): `auth/src/login-identity.ts`, the
- * module named on `MIGRATE_CEILING`.
- * raised 1061 → 1062, measured 1062 (2026-10-10, channel events from app code): the module named
- * on `SERVING_ROLE_CEILING`, which every role carries.
- * raised 1062 → 1063, measured 1063 (2026-10-10, events-only islands are never held):
- * `cli/src/island-realtime-state.ts` — which realtime islands read the record store or the outbox
- * (held, #506) and which only follow a channel, read off the names each imports from the barrel.
- * raised 1063 → 1065, measured 1065 (2026-10-10, #752): the two entity modules named on
- * `MIGRATE_CEILING` for #752.
- * raised 1065 → 1066, measured 1066 (2026-10-10, the bus is not a boot dependency of a publisher):
- * `cli/src/runtime-bus.ts`, the module named on `SERVING_ROLE_CEILING`, which every role carries.
- * raised 1066 → 1067, measured 1067 (2026-10-10, PR #755 review): `realtime/src/nats-dial-wait.ts`,
- * the module named on `SERVING_ROLE_CEILING`.
- * raised 1067 → 1072, measured 1072 (2026-10-10, isr purge + keyed query): the five render
- * modules named on `SERVING_ROLE_CEILING`, which every role carries.
- * raised 1072 → 1073, measured 1073 (2026-10-11, PR #757 review): `cli/src/isr-query-guard.ts` —
- * the `query` a page is handed; outside production it says once when an `isr` page reads a
- * parameter its `revalidate.query` does not list (one stored document for every value of it).
- * raised 1073 → 1078, measured 1078 (2026-10-11, a channel recovers after a bus outage): the five
- * modules named on `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
- * raised 1078 → 1080, measured 1080 (2026-10-11, an isr page is one entry however its URL is
- * spelled): the module named on `MIGRATE_CEILING`, and `cli/src/runtime-address.ts` — the URL a
- * `static` or `isr` document is rendered at and kept under, the address the router matched.
- * raised 1080 → 1085, measured 1085 (2026-10-11, sitemap sections): the five modules named on
- * `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
- * raised 1085 → 1086, measured 1086 (2026-10-14, #773): the module named on `MIGRATE_CEILING`.
- * raised 1086 → 1087, measured 1087 (2026-10-17, a DB blip degrades the limiter): the module named
- * on `MIGRATE_CEILING`.
- * raised 1087 → 1091, measured 1091 (2026-10-17, #790): the four modules named on
- * `SERVING_ROLE_CEILING` for #790.
- * raised 1091 → 1094, measured 1094 (2026-10-18, F13 `surface: 'meta-split'`): `mcp/src/meta-split.ts`
- * (the three dispatchers and the effect boot check), `meta-split-call.ts` (their dispatch: wrong tool,
- * preview, `confirmed_by_user`) and `meta-host.ts` (the server half both meta doors call, moved out of
- * `meta-call.ts` so neither imports the other).
- * raised 1094 → 1095, measured 1095 (2026-10-20, an unknown predicate operator is refused): the one
- * module named on `MIGRATE_CEILING` for that change, `entity/src/operator.ts`.
- * raised 1095 → 1097, measured 1097 (2026-10-22, Bun idle timeout + `seo.robots.groups`): the
- * two modules named on `MIGRATE_CEILING` for that change.
- * raised 1097 → 1098, measured 1098 (2026-10-26, a filtered update judged as ONE batch): the one
- * module named on `MIGRATE_CEILING` for that change — the web role reaches every module the
- * serving roles do.
- * raised 1098 → 1100, measured 1100 (2026-10-28, `jobWorker({ maxInFlight })`): the two modules
- * named on `MIGRATE_CEILING` for that change.
- * raised 1100 → 1101, measured 1101 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
- * the one module named on `SERVING_ROLE_CEILING` for that change.
- * raised 1101 → 1121 (2026-10-31): `indexes: [{ concurrently: true }]` (+6) and `query({ download })`
- * with ranged reads (+14) — the modules named on `SERVING_ROLE_CEILING` for each.
- * raised 1121 → 1149, measured 1149 (2026-11-02, plan 101 wave 1): the modules named on
- * `SERVING_ROLE_CEILING` for it and `cli/src/runtime-render-document.ts`, the document split out of
- * `runtime-render.ts` for the web role, less what earlier raises left as slack.
- * raised 1149 → 1179, measured 1179 (2026-11-03, plan 101 wave 2): the 29 named on
- * `SERVING_ROLE_CEILING` for it and `cli/src/stream-hole-scope.ts`, a `<Hole>`'s request scope.
- * raised 1179 → 1200, measured 1200 (2026-11-03, plan 101 wave 3): the 21 named on
- * `SERVING_ROLE_CEILING` for it; the web role adds no new module of its own.
- * raised 1200 → 1213, measured 1213 (2026-11-03, plan 101 wave 4a): `SERVING_ROLE_CEILING`'s 12,
- * and `cli/src/plain-routes.ts` — `runtime.routes` plus every declared `webhookReceiver()`'s, the
- * one list both boots mount and `x routes` prints.
- * raised 1213 → 1222, measured 1222 (2026-11-03, plan 101 wave 4b): `SERVING_ROLE_CEILING`'s 2;
- * browser error reporting, `cli/src/client-errors-{routes,script}.ts` (mounted when
- * `clientErrors.enabled`); and `assets.retain`, `cli/src/retained-assets{,-boot,-layout,-read,
- * -sweep}.ts` — the publish before `/readyz` and the reader every asset route's 404 asks. Measured
- * against a copy of HEAD with its own workspace links: no existing module newly reached.
- * raised 1222 → 1226, measured 1226 (2026-11-03, plan 101 wave 4c): `SERVING_ROLE_CEILING`'s 1,
- * and MCP's dual era — `mcp/src/protocol-era.ts` (the era per request, `server/discover`, the
- * mirrored-header check), plus `server-resources.ts` and `transport-http-answers.ts`, split out
- * of `server.ts` and `transport-http.ts` at their line ceilings. No existing module newly reached.
- * raised 1226 → 1232, measured 1232 (2026-11-05, plan 101 wave 5a): the same six as
- * `SERVING_ROLE_CEILING`'s row; the web role adds nothing of its own.
- * raised 1232 → 1236, measured 1236 (2026-11-05, plan 101 wave 5b): `SERVING_ROLE_CEILING`'s 3,
- * plus `cli/src/page-pins.ts`, which collects the pins a rendered document stamps.
- * raised 1236 → 1237, measured 1237 (2026-11-05, plan 101 wave 6a): `MIGRATE_CEILING`'s 1.
- * raised 1237 → 1296, measured 1296 (2026-11-06, plan 101 wave 7): `SERVING_ROLE_CEILING`'s 58,
- * plus `mcp/src/oauth-server.ts` (`mcpAuthorizationServer`), through the MCP barrel the web role
- * mounts.
- * raised 1296 → 1321, measured 1321 (2026-11-06, plan 101 wave 8): `SERVING_ROLE_CEILING`'s 23,
- * plus `cli/src/client-vitals-{route,script}.ts`, the page-vitals beacon and its script.
- * raised 1321 → 1390, measured 1390 (2026-11-06, plan 101 wave 9): `SERVING_ROLE_CEILING`'s 47,
- * plus `cli/src/{site-llms,zone-boot}.ts` and the MCP barrel's new modules the web role mounts —
- * `mcp/src/{job-tool,job-tool-errors,job-status-tool,recipes,recipes-tool,recipes-surface,
- * recipe-errors,recipe-links,recipe-markdown,recipe-replay,recipe-search,remote-client,
- * remote-errors,remote-listen,remote-lock,remote-oauth,remote-schema,remote-tools,remote-wire,
- * dev-graph-tool}.ts`. No existing module newly reached.
- * raised 1390 → 1392, measured 1392 (2026-11-06, plan 101 wave 9): `SERVING_ROLE_CEILING`'s 2.
- */
-export const WEB_ROLE_CEILING = 1392;
+export const SERVING_ROLE_CEILING = 1261;

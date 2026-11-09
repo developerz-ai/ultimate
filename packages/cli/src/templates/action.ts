@@ -3,6 +3,7 @@
 // job handle, an MCP tool and these tests; the generator writes the declaration and the tests.
 
 import { SlicePolicyIncompleteError } from '../generate-slice-policy';
+import { actionExerciseEntry, exerciseImportLine } from './action-exercise';
 import { actionContractTest, actionUnitTest } from './action-tests';
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
@@ -194,6 +195,8 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
       : grantOf(target.slicePolicy, `can${feature.pascal}Write`);
   const org =
     !singleTenant || (target.slicePolicy !== undefined && policyReadsOrg(target.slicePolicy));
+  // The org rule the contract can rely on: the one this generator's own policy writes.
+  const orgRule = target.slicePolicy === undefined && !singleTenant;
   // Before a file is planned: a generated action that does not compile is refused, never written.
   assertPolicyExports(target, feature, isMutator);
   const lookup =
@@ -247,10 +250,12 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
         feature,
         isMutator,
         target.slicePolicy === undefined,
-        target.slicePolicy === undefined && !singleTenant,
-        // A hand-written policy's one literal grant: its exercise runs as an actor holding it.
-        grant,
+        orgRule,
+        exerciseImportLine(dir),
       ),
+      // Who its handler runs as, declared once in apps/web/exercise.ts — the file this test reads
+      // and `x exercise` reads. A hand-written policy's one literal grant: an actor holding it.
+      exercise: actionExerciseEntry(name.camel, grant, orgRule, target.feature),
     },
   ];
 }

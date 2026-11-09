@@ -17,3 +17,12 @@ export const OrgNotFound = defineError<string>({
     'sign out and back in so the session carries a live org; ' +
     'in a test, take the org from seed("dev") in scripts/test-setup.ts',
 });
+
+export const AvatarKeyOutsideOrg = defineError<string>({
+  code: 'X_AVATAR_KEY_OUTSIDE_ORG',
+  title: 'the avatar key is not inside the org the job runs for',
+  status: 422,
+  cause: (key) =>
+    `warmAvatar was queued with ${JSON.stringify(key)}, which is not under the org its input names, so it would decode another tenant's upload`,
+  fix: 'enqueue warmAvatar with the key grantUpload answered for that org: warmAvatar.enqueue({ orgId, key: grant.key })',
+});

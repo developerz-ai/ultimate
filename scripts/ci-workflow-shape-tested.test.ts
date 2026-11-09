@@ -19,27 +19,27 @@ const record = (value: unknown): Readonly<Record<string, unknown>> =>
 /**
  * Every job a green PR run of the same tree already answered. `compose-deploy` and `macos` are in
  * it: both run on a pull request too, on the same bytes, and neither asks anything of `main`.
+ * `PATH_SKIPPED` are reused the same way, and skipped too when `changes` proved the diff prose.
  */
-const REUSED = [
-  'gate',
-  'reference-app-verify',
+const REUSED = ['gate', 'reference-app-verify', 'packages'] as const;
+const PATH_SKIPPED = [
   'fault-drills',
   'scaffold-smoke',
   'container',
   'compose-deploy',
-  'packages',
   'windows',
   'macos',
 ] as const;
 
-/** Never reused: `deploy-proof` keeps its own due rule, and `tested` is the question itself. */
-const OWN_RULE = ['tested', 'deploy-proof', 'verify'] as const;
+/** Never reused: `deploy-proof` keeps its own due rule; `tested` and `changes` are questions. */
+const OWN_RULE = ['tested', 'changes', 'deploy-proof', 'verify'] as const;
 
 const REUSE_IF = "needs.tested.outputs.tested != 'true'";
+const PATH_IF = "needs.changes.outputs.heavy != 'false'";
 
 describe('unit · ci.yml · a push a green PR run already tested', () => {
   test('every job is either reused through tested, or named here with its own rule', () => {
-    const named: readonly string[] = [...REUSED, ...OWN_RULE];
+    const named: readonly string[] = [...REUSED, ...PATH_SKIPPED, ...OWN_RULE];
     expect(Object.keys(ci.jobs ?? {}).filter((name) => !named.includes(name))).toEqual([]);
     expect(named.filter((name) => ci.jobs?.[name] === undefined)).toEqual([]);
   });
@@ -48,10 +48,16 @@ describe('unit · ci.yml · a push a green PR run already tested', () => {
   // ONE cause: `tested` said true. A red, timed-out or cancelled `tested` must widen the gate, so
   // the condition opens with `!cancelled()` — a bare `needs.…` expression carries an implicit
   // `success()`, and every job below a red `tested` was skipped, not run.
-  test('each reused job needs tested alone, and its one if is the answer', () => {
+  test('each reused job needs tested (and changes, if prose can skip it), and its one if is the answer', () => {
     for (const name of REUSED) {
       expect({ [name]: needsOf(job(name)) }).toEqual({ [name]: ['tested'] });
       expect({ [name]: job(name).if }).toEqual({ [name]: expr(`!cancelled() && ${REUSE_IF}`) });
+    }
+    for (const name of PATH_SKIPPED) {
+      expect({ [name]: needsOf(job(name)) }).toEqual({ [name]: ['tested', 'changes'] });
+      expect({ [name]: job(name).if }).toEqual({
+        [name]: expr(`!cancelled() && ${REUSE_IF} && ${PATH_IF}`),
+      });
     }
   });
 
@@ -63,7 +69,7 @@ describe('unit · ci.yml · a push a green PR run already tested', () => {
   test('a red or cancelled tested job runs everything: the reuse condition is evaluated past it', () => {
     // GitHub's job status functions: `success()` is implied unless the `if` names one, and
     // `!cancelled()` is the one that admits a failed `needs` and refuses a cancelled workflow.
-    for (const name of [...REUSED, 'verify'] as const) {
+    for (const name of [...REUSED, ...PATH_SKIPPED, 'verify'] as const) {
       const condition = text(job(name).if);
       expect({ [name]: condition.startsWith(expr('!cancelled() &&').slice(0, -3)) }).toEqual({
         [name]: true,

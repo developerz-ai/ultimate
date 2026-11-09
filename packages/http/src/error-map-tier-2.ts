@@ -129,4 +129,12 @@ export const TIER_2_ERROR_STATUS = {
   X_ENTITY_SERIES_INVALID: 422,
   // @ultimat3/entity — a view entity was asked to write a row
   X_ENTITY_VIEW_READ_ONLY: 500,
+  // @ultimat3/auth — a passkey ceremony response failed its signature, origin, rp id, flag or counter check
+  X_PASSKEY_INVALID: 401,
+  // @ultimat3/auth — a passkey ceremony named a challenge that is unknown, already used or past its ttl
+  X_PASSKEY_CHALLENGE_EXPIRED: 401,
+  // @ultimat3/auth — a sensitive action ran without a fresh user-verified passkey proof for its digest
+  X_PASSKEY_STEP_UP_REQUIRED: 401,
+  // @ultimat3/entity — a read-only entity was asked to write a row
+  X_ENTITY_READ_ONLY: 500,
 } satisfies Readonly<Record<string, number>>;

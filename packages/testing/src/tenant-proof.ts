@@ -79,6 +79,12 @@ export interface TenantAttack {
    * half is skipped. An action or a query answers B directly, so a declared scope excuses nothing.
    */
   readonly sweep: boolean;
+  /**
+   * A job declaring `tenant: 'none'` (`bindJobTenant`'s `none`): no org reaches its run. Handed
+   * nothing of A's, B's run is A's run — what it writes to A's rows it writes for every enqueuer,
+   * so the write half's premise, B choosing A's row, cannot hold: skipped (`tenantlessReason`).
+   */
+  readonly tenantless: boolean;
   attack(leg: TenantLeg): Promise<LegAnswer>;
   /** A's positive control: today's exercise of the primitive, and what A's last answer was. */
   control(): Promise<{ readonly record: ExerciseRecord; readonly output: unknown }>;
@@ -112,6 +118,8 @@ export function leaksIn(
   return paths.map((path): TenantFinding => ({ code: 'X_TENANT_LEAK', leg, path }));
 }
 
+const asSweep = (finding: TenantFinding): TenantFinding => ({ ...finding, sweep: true });
+
 /**
  * The reason a leg's read half is skipped as a declared sweep, or `undefined`: a job, a scope the
  * leg opened, and an input carrying nothing of A's — so no id B chose pointed at A, and what came
@@ -129,11 +137,25 @@ export function sweepReason(
   return `crossTenant(${JSON.stringify(reason)}) declares this job reads across tenants, and B's input named nothing of A's: read half skipped, write half kept`;
 }
 
+/**
+ * The reason the write half is skipped, or `undefined`: a `tenant: 'none'` job whose input carries
+ * none of A's marks — no org and no id of B's choosing reaches the run. Handed one of A's ids, B
+ * chose A's row and the write half stands. An action or a query runs as B's actor, so B's org
+ * reaches it: a write to A's row with no id handed is an unscoped statement, crossed as ever.
+ */
+export function tenantlessReason(
+  plan: Pick<TenantAttack, 'tenantless' | 'taint'>,
+  hunted: readonly string[],
+): string | undefined {
+  if (!plan.tenantless || hunted.length !== plan.taint.marks.length) return undefined;
+  return "tenant: 'none' runs this job under no org, and B's input named nothing of A's: B's run is A's run, so what it writes it writes for every enqueuer — write half skipped, read half kept";
+}
+
 const verdictOf = (
   plan: TenantAttack,
   control: { readonly record: ExerciseRecord; readonly output: unknown },
   findings: readonly TenantFinding[],
-  swept: string | undefined,
+  skipped: readonly string[],
 ): TenantProof => {
   const { record } = control;
   if (findings.length > 0) return { verdict: 'crossed', findings };
@@ -144,7 +166,7 @@ const verdictOf = (
     };
   }
   if (plan.public !== undefined) return { verdict: 'public', reason: plan.public };
-  if (swept !== undefined) return { verdict: 'public', reason: swept };
+  if (skipped.length > 0) return { verdict: 'public', reason: skipped.join('; ') };
   // Every mark of A's, handed ones included: A was handed its own ids, and reading them is the point.
   if (plan.read && findTaint(control.output, 'output', plan.taint.marks).length === 0) {
     return {
@@ -159,19 +181,30 @@ const verdictOf = (
 export async function proveTenant(plan: TenantAttack): Promise<ExerciseRecord> {
   const marks = huntedMarks(plan.taint, plan.input);
   const findings: TenantFinding[] = [];
+  const unwritten = tenantlessReason(plan, marks);
   let swept: string | undefined;
-  const leg = async (name: TenantLeg): Promise<void> => {
+  // What `sweepReason` would credit, had the leg opened a scope: the leak's fix is that scope.
+  const undeclared = plan.sweep && plan.tenantless && marks.length === plan.taint.marks.length;
+  /** B's call, between two snapshots unless the write half is skipped: then none is read. */
+  const watched = async (name: TenantLeg): Promise<LegAnswer> => {
+    if (unwritten !== undefined) return plan.attack(name);
     const before = await plan.snapshot(plan.taint.rows);
     const answer = await plan.attack(name);
     const after = await plan.snapshot(plan.taint.rows);
     findings.push(...crossedWrites(name, plan.taint, before, after));
+    return answer;
+  };
+  const leg = async (name: TenantLeg): Promise<void> => {
+    const answer = await watched(name);
     if (plan.public !== undefined) return;
     const sweep = sweepReason(plan, answer, marks);
-    if (sweep === undefined) findings.push(...leaksIn(name, answer, marks));
-    else swept = sweep;
+    if (sweep !== undefined) swept = sweep;
+    else if (undeclared) findings.push(...leaksIn(name, answer, marks).map(asSweep));
+    else findings.push(...leaksIn(name, answer, marks));
   };
   await leg('before');
   const control = await plan.control();
   await leg('after');
-  return { ...control.record, tenant: verdictOf(plan, control, findings, swept) };
+  const skipped = [swept, unwritten].filter((reason) => reason !== undefined);
+  return { ...control.record, tenant: verdictOf(plan, control, findings, skipped) };
 }

@@ -29,12 +29,14 @@ function recorder(rows: readonly unknown[] = []) {
 describe('the pg event bus', () => {
   test('a step on ANOTHER process finds an event this one published', async () => {
     // One table, so the pod that publishes and the pod that resumes are never the same heap.
-    const { executor } = recorder([{ payload: { invoice: 'in_1' }, published_at: '1000000' }]);
+    const { executor } = recorder([
+      { id: 'ev-1', payload: { invoice: 'in_1' }, published_at: '1000000' },
+    ]);
     const bus = postgresEventBus({ executor });
 
     const hit = await bus.find('invoice.paid', 'org-1', 0);
 
-    expect(hit).toEqual({ payload: { invoice: 'in_1' }, publishedAt: 1_000_000 });
+    expect(hit).toEqual({ id: 'ev-1', payload: { invoice: 'in_1' }, publishedAt: 1_000_000 });
   });
 
   test('publish sends a TTL and no instant: the database stamps the row, and its stamps come back', async () => {
@@ -86,7 +88,7 @@ describe('the pg event bus', () => {
   test('the lookup honours order, expiry and the correlation key', () => {
     // Same three rules the memory bus follows, so a step behaves identically on either bus:
     // earliest match at or after the wait began, never an expired one, never another run's.
-    expect(SQL_EVENT_FIND).toContain('order by published_at');
+    expect(SQL_EVENT_FIND).toContain('order by e.published_at, e.id');
     expect(SQL_EVENT_FIND).toContain('expires_at > statement_timestamp()');
     expect(SQL_EVENT_FIND).toContain('published_at >= to_timestamp($3 / 1000.0)');
     expect(SQL_EVENT_FIND).toContain('($2::text is null or correlation_key = $2)');

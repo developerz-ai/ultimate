@@ -2,6 +2,7 @@
 // own query, and a stuck job that is reclaimed meanwhile is not reported stuck.
 
 import { describe, expect, test } from 'bun:test';
+import { pgliteClient, sql } from '@ultimat3/db';
 import type { DrillSql } from './drill-jobs';
 import { DOUBLED_SQL, drillJobCounts, RAN_SQL, STUCK_SQL } from './drill-jobs';
 import { probeStatus, sampleStatus } from './drill-probe';
@@ -52,9 +53,37 @@ describe('drillJobCounts', () => {
     expect(counts.stuck).toBe(3);
   });
 
-  test('the doubled query groups completed runs by job, tenant and key', () => {
-    expect(DOUBLED_SQL).toContain("state = 'done'");
-    expect(DOUBLED_SQL).toContain("group by name, coalesce(tenant_id, ''), idempotency_key");
+  test('the doubled query counts a key run twice at once, never one enqueued again after it settled', async () => {
+    // The live-row dedupe holds while the first row is live; a load that sends the same key after
+    // it finished gets a new job by design. Counting that read a timing-dependent red in CI.
+    const client = pgliteClient();
+    try {
+      await client.execute(
+        sql`create table x_jobs (id text primary key, name text, tenant_id text, idempotency_key text, state text, created_at timestamptz, updated_at timestamptz, run_at timestamptz default now())`,
+      );
+      const at = (s: number) => new Date(Date.UTC(2026, 10, 7, 12, 0, s)).toISOString();
+      const rows: readonly (readonly string[])[] = [
+        // `overlap`: the second row was created while the first was still live — a real double.
+        ['a1', 'mail', 'overlap', 'done', at(0), at(10)],
+        ['a2', 'mail', 'overlap', 'done', at(5), at(12)],
+        // `again`: enqueued again after the first settled — two jobs, no double.
+        ['b1', 'mail', 'again', 'done', at(0), at(2)],
+        ['b2', 'mail', 'again', 'done', at(3), at(4)],
+      ];
+      for (const [id, name, key, state, created, updated] of rows) {
+        await client.execute(
+          sql`insert into x_jobs values (${id}, ${name}, null, ${key}, ${state}, ${created}, ${updated})`,
+        );
+      }
+      const drill = {
+        rows: (text: string, params: readonly unknown[]) =>
+          client.query<Record<string, unknown>>({ text, values: params }),
+      };
+      const counts = await drillJobCounts({ sql: drill, since: new Date(at(0)), settleMs: 0 });
+      expect(counts.doubled).toBe(1);
+    } finally {
+      await client.close();
+    }
   });
 });
 

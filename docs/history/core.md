@@ -719,3 +719,35 @@ never copied (`X_HELPER_COPY`). `deprecation` holds `successorLink` and `success
 ### `intl-cache.ts` (the row's note)
 
 The cause quotes at most `MAX_LOCALE_EXCERPT` (35) code points; the whole tag rides in `meta.locale`
+
+## `hmac.ts`, the one keyed hash (`As of 2026-11-06`)
+
+- **The bug.** Bun 1.4.4: after a WebCrypto EC import fails anywhere in the process —
+  `crypto.subtle.importKey('jwk', …)` with a point off the curve, which is what `@ultimat3/pwa`'s
+  `importVapidKeys({ privateKey: 'AAAA' })` and a bad JWKS key do — the NEXT keyed
+  `new Bun.CryptoHasher(alg, key).update()` throws that stale OpenSSL error
+  (`POINT_IS_NOT_ON_CURVE`), once. Unkeyed hashing, `crypto.subtle` HMAC and `node:crypto`'s
+  `createHmac` are unaffected. Found because `packages/jobs/src/webhook.test.ts` failed only when
+  `packages/pwa/src/vapid.test.ts` ran first in the same process; in production one bad key made
+  the next webhook signature, OAuth cookie, TOTP code, cursor or keyed fingerprint throw.
+- **The fix.** `hmac(algorithm, key, data, encoding?)` in `hmac.ts`, on `createHmac`; the nine
+  shipped sites (`webhook-signature.ts`, `cursor.ts`, `keyed-fingerprint.ts` ×2, auth's
+  `oauth-cookie.ts`, `mfa.ts`, `client-scope.ts`, http's `webhook-hmac.ts`, ai's
+  `agent-continue.ts`) and every test oracle moved onto it, byte for byte (each site's public
+  function answered the same bytes for a fixed input before and after). A `data` LIST is the MAC over
+  the parts' concatenation, so `webhookMac`'s canonical prefix and raw body are never joined through
+  a decoder.
+- **Not a hand-rolled RFC 2104 over unkeyed `Bun.CryptoHasher`** (also unaffected, and it would
+  carry no polyfill): a second HMAC implementation is one more thing to keep correct, and
+  `createHmac` is the runtime's own. Revisit if a browser graph ever needs `hmac()`.
+- **The browser cost is real and currently unpaid.** Bun's `--target browser` polyfills
+  `node:crypto` (~530 KB minified). Tree-shaking drops it from every graph that does not CALL a
+  module importing `hmac.ts` — measured: an entry taking `timingSafeEqual`/`fingerprint` from the
+  core barrel is 10,510 B with or without it, one taking `encodeCursor` went 9,613 → 540,306 B.
+  None of the nine is browser code; a route or island budget is what would catch one that became so.
+- **The guard.** `bun run keyed-hasher` (`X_KEYED_HASHER`), on the `boundaries` host check and its
+  own `scripts/keyed-hasher.test.ts`: a `CryptoHasher(` with two or more top-level arguments
+  anywhere outside `hmac.ts` — tests and both tracked apps included, because a test oracle hit the
+  same bug. `KEYED_HASHER_EXEMPT` holds one row, the bug pin in `hmac.test.ts`, which asserts the
+  raw hasher STILL throws; when Bun fixes it that test goes red — delete the test, the row
+  (`X_KEYED_HASHER_EXEMPT_STALE` otherwise) and the `why:`. The helper stays.

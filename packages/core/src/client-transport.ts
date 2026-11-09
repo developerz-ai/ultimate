@@ -72,14 +72,28 @@ export async function clientTransport<T = unknown>(req: TransportRequest): Promi
   // `rawBody` return, so the overload's `Promise<string>` holds for a raw upload read as text too.
   if (req.responseType === 'text') return answer.text as T;
   if (req.rawBody !== undefined) return undefined as T;
+  return settleAnswer(answer, req, read, issued) as T;
+}
+
+/**
+ * A 2xx JSON answer as its caller's value: the records envelope unwrapped and adopted, the
+ * instants revived. Exported for `clientStream`'s JSON answer, so `stream()` and `call()` of one
+ * action can never hand back two different values.
+ */
+export function settleAnswer(
+  answer: Answer,
+  req: Pick<TransportRequest, 'url' | 'adopt' | 'onEnvelope'>,
+  read: boolean,
+  issued: number,
+): unknown {
   const envelope = unwrap(answer, req.url, read);
   // A write that crossed a rescope HAS landed, so its caller is told — but its rows are the
   // previous principal's, and the new scope's store never sees them.
-  if (current === issued) {
+  if (pageClient().scope.epoch === issued) {
     if (req.adopt !== false) adopt(envelope);
     if (answer.enveloped) req.onEnvelope?.(envelope);
   }
-  return envelope.data as T;
+  return envelope.data;
 }
 
 function unwrap(answer: Answer, url: string, read: boolean): RecordEnvelope {

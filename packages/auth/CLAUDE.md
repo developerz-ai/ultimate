@@ -195,6 +195,11 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   whose steps are all below the drift floor are forgotten first; past `DEFAULT_MAX_TOTP_SUBJECTS`,
   evict by newest spent step ascending, least-recently-seen tie-break. `maxSubjects` is normalised
   first (`boundedSubjects`): anything not a positive finite integer takes the default.
+- **Passkeys are verified by hand** (`passkey-*.ts`, `cbor.ts`, `cose-key.ts`, `webauthn-data.ts`):
+  UV required, origin exact, the key's alg (never the assertion's), counter non-regression by
+  compare-and-set, challenges single-use in `x_passkey_challenges` (never a process map). A step-up
+  challenge is DERIVED (`stepUpChallenge`), never supplied. Browser half: `./client`, two modules
+  (`client-bundle.test.ts`); never import the barrel there. `docs/history/auth.md`.
 - SAML is out of scope permanently (XML-DSig canonicalisation has no Bun native). Put an
   OIDC-speaking bridge in front and register that.
 
@@ -240,6 +245,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
 | `sign-out.ts` | `signOutHeaders({ session? })` — the expired session cookie plus `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), never `"cookies"`. Secure contexts only |
 | `subject-target.ts` | `authSubjectTarget({ executor, user })`: the identity tables as a `defineSubject({ targets })` entry, structural (`@ultimat3/jobs` imports nothing from here). Export = `AUTH_SUBJECT_COLUMNS` (never `password_hash`, `mfa_secret`, a recovery digest); erase = api keys, pending verifications, then the user (sessions, accounts cascade). Three idempotent statements, no transaction of its own |
+| `passkey-login.ts` / `passkey-step-up.ts` / `passkey-evidence.ts` | the factories; the offline re-check. `passkey-verify.ts` + `passkey-assertion.ts` are every check; `*-postgres`/`*-memory` the store; `soft-authenticator.ts` (`./soft-authenticator`) the WebCrypto authenticator tests sign with |
 | `client-scope.ts` | `clientScopeOf(actor)`, the OPAQUE id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`, else a per-process key and one warning) over kind, id, impersonator; `''` anonymous |
 
 ```bash

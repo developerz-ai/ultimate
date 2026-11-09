@@ -43,6 +43,7 @@ import { findingFrom } from './output';
 import { retainUnsweptFindings } from './retain-sweep';
 import { checkMigrationDrift } from './schema-drift';
 import { checkSchemaDump } from './schema-dump-drift';
+import { cardRouteFindings } from './seo-cards';
 import { scanSiteMeta } from './seo-meta';
 import { quoteArg } from './shell-quote';
 import { loadSiteSettings } from './site-config';
@@ -51,6 +52,7 @@ import { unknownToolGateFindings } from './tool-gate-names';
 import { measureIfStale } from './verify-budgets-build';
 import { exerciseStep } from './verify-exercise';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
+import { mcpMountFindings } from './verify-mcp-mount';
 import { roleLoadFindings } from './verify-role-load';
 import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
@@ -325,9 +327,11 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // The scan filled the route table, so the advice costs no second load. Rides here because
       // this is the step about public, shared-cache pages; it never fails it.
       const warnings = await isrQueryAdvice(ctx.root);
+      // A declared `og.capture` that names no site/ route: the card convention's build error.
+      const cards = cardRouteFindings(scan.records);
       return {
-        ok: scan.findings.length === 0 && report.ok && llms.length === 0,
-        findings: [...scan.findings, ...[...report.issues, ...llms].map(seoFinding)],
+        ok: scan.findings.length === 0 && report.ok && llms.length === 0 && cards.length === 0,
+        findings: [...scan.findings, ...[...report.issues, ...llms].map(seoFinding), ...cards],
         ...(warnings.length === 0 ? {} : { warnings }),
       };
     },
@@ -397,6 +401,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
               ...(await unregisteredJobFindings(ctx.root)),
               ...(await retainUnsweptFindings(ctx.root)),
               ...(await readJobBudgetFindings(ctx.root)),
+              // `ai.mcp.expose: true` and no mounted `POST /mcp`: what every boot only logged.
+              ...(await mcpMountFindings(ctx.root)),
               ...(await unknownToolGateFindings(ctx.root)),
               ...remote.findings,
             ]

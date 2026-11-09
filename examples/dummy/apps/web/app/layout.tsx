@@ -15,6 +15,11 @@
 import { useT } from '@postly/i18n';
 import { derivePath } from '@ultimat3/action';
 import { type IslandComponent, island } from '@ultimat3/render';
+import { BottomNav, Icon } from '@ultimat3/ui';
+import { iconActivity } from '@ultimat3/ui/icons/activity';
+import { iconKanban } from '@ultimat3/ui/icons/kanban';
+import { iconNewspaper } from '@ultimat3/ui/icons/newspaper';
+import { iconSettings } from '@ultimat3/ui/icons/settings';
 import type { JSX } from 'solid-js';
 import type { Api } from '../api';
 import { useActor } from '../shared/actor';
@@ -43,6 +48,11 @@ export function Layout(props: {
   readonly children: JSX.Element;
   /** This page's `updateBannerIsland(...)`. */
   readonly banner: UpdateBannerIsland;
+  /**
+   * The page's own path, so the phone's bottom bar marks where the reader is (`currentOf`: the
+   * longest destination covering it — `/posts/new` marks nothing, `/runs` marks Runs).
+   */
+  readonly here: string;
 }): JSX.Element {
   const t = useT();
   const actor = useActor();
@@ -64,6 +74,7 @@ export function Layout(props: {
           */}
           <nav class={styles.nav} aria-label={t('app.nav.org')}>
             <a href="/feed">{t('app.nav.feed')}</a>
+            <a href="/posts/board">{t('app.nav.board')}</a>
             <a href="/runs">{t('app.nav.runs')}</a>
             <a href="/settings">{t('app.nav.settings')}</a>
           </nav>
@@ -78,6 +89,29 @@ export function Layout(props: {
         <props.banner label={t('errors.updateAvailable')} action={t('errors.updateAction')} />
 
         <main class={styles.main}>{props.children}</main>
+
+        {/* Below `md` only: the same four destinations in thumb reach, clear of the home
+            indicator. Links, no script; the header's nav stays for every other width. */}
+        <div class={styles.bottomNav}>
+          <BottomNav
+            label={t('app.nav.org')}
+            currentHref={props.here}
+            items={[
+              { label: t('app.nav.feed'), href: '/feed', icon: <Icon glyph={iconNewspaper} /> },
+              {
+                label: t('app.nav.board'),
+                href: '/posts/board',
+                icon: <Icon glyph={iconKanban} />,
+              },
+              { label: t('app.nav.runs'), href: '/runs', icon: <Icon glyph={iconActivity} /> },
+              {
+                label: t('app.nav.settings'),
+                href: '/settings',
+                icon: <Icon glyph={iconSettings} />,
+              },
+            ]}
+          />
+        </div>
       </div>
     </ViewerProvider>
   );

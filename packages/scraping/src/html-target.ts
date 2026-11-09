@@ -15,6 +15,7 @@ import { markupRequests } from './html-requests';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
 import { parseKeyChord } from './key-chord';
+import { pdfLayoutText } from './pdf-request';
 import type { PageRecording } from './recording';
 import { splitDownload } from './recording';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
@@ -27,6 +28,7 @@ import type {
   ElementSnapshot,
   FrameRef,
   GotoOptions,
+  PdfOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
   ScrapeTarget,
@@ -63,6 +65,18 @@ const framedPng = (clip: CaptureClip | undefined, scheme: ColorScheme | null): U
   return out;
 };
 const FAKE_PDF = new TextEncoder().encode('%PDF-1.4 offline');
+
+/**
+ * The PDF rule `framedPng` keeps for pictures: different deterministic bytes per layout, so a
+ * driver that dropped `format` or a margin fails a test instead of passing every one. No layout
+ * asked for is the old constant, so every digest asserted before this existed still holds.
+ */
+const laidOutPdf = (options: PdfOptions): Uint8Array => {
+  // The framing is not layout: a PDF has no clip (refused upstream) and is always the document.
+  const { fullPage: _fullPage, clip: _clip, ...layout } = options;
+  const notes = pdfLayoutText(layout);
+  return notes === '' ? FAKE_PDF : new TextEncoder().encode(`%PDF-1.4 offline ${notes}`);
+};
 
 export type RecordingLookup = (url: string) => Promise<PageRecording | undefined>;
 
@@ -421,7 +435,7 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     },
     screenshot: (options: CaptureOptions): Promise<Uint8Array> =>
       Promise.resolve(framedPng(options.clip, colorScheme)),
-    pdf: (_options: CaptureOptions): Promise<Uint8Array> => Promise.resolve(FAKE_PDF),
+    pdf: (options: PdfOptions): Promise<Uint8Array> => Promise.resolve(laidOutPdf(options)),
     cookies: (): Promise<readonly ScrapeCookie[]> => Promise.resolve(session.cookies),
     session: (): Promise<SessionSnapshot> => Promise.resolve(session),
     restore: (next: SessionSnapshot): Promise<void> => {

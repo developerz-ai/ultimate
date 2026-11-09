@@ -104,4 +104,6 @@ export const TIER_1_ERROR_STATUS = {
   X_STORAGE_PARTS_INVALID: 422,
   // @ultimat3/money — a typed amount could not be read in this locale
   X_MONEY_INPUT_INVALID: 422,
+  // @ultimat3/seo — a route meta og declares both image and capture
+  X_SEO_OG_IMAGE_CONFLICT: 500,
 } satisfies Readonly<Record<string, number>>;

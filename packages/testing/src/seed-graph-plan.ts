@@ -6,6 +6,13 @@
 export interface SeedFactory {
   build(): object;
   reset(): void;
+  /**
+   * Columns that follow from what the GRAPH chose — its keys and references, which no factory
+   * builds: `memorial_templates.scopeKey` from `ownerOrgId`. Called on each candidate row before
+   * its rules are judged; what it answers wins. A `defineFactory` with it:
+   * `{ build: () => f.build(), reset: () => f.reset(), derive: (row) => ({ … }) }`.
+   */
+  derive?(row: Readonly<Record<string, unknown>>): object;
 }
 
 export interface SeedGraphOptions {
@@ -16,6 +23,12 @@ export interface SeedGraphOptions {
   readonly seed?: number;
   /** By entity name. A column the factory builds takes its value; keys stay the graph's. */
   readonly factories?: Readonly<Record<string, SeedFactory>>;
+  /**
+   * A graph already written to the same database. Each table's row positions — the ordinal a
+   * generated value is built from, a factory's `index` — continue past its `next`, so a value built
+   * from a position (`code: \`c${index}\``) never repeats one of its rows on a unique column.
+   */
+  readonly beside?: SeedGraph;
 }
 
 export interface SeedRow {
@@ -60,11 +73,22 @@ export interface SeedGraph {
   readonly updates: readonly SeedUpdate[];
   /** One per insert, in the same order: `canaries[i]` is `inserts[i]`'s. */
   readonly canaries: readonly SeedCanary[];
+  /**
+   * Per table, the row position a graph written `beside` this one starts at: its own `beside`'s
+   * plus every row this graph built. Absent on a hand-written graph: positions then start at 0.
+   */
+  readonly next?: Readonly<Record<string, number>>;
 }
 
 /** Where `insertSeedGraph` writes. One insert per row, in order, then one update per deferred key. */
 export interface SeedWriter {
   insert(row: SeedRow): Promise<void>;
+  /**
+   * Rows of ONE entity, in plan order, as one write — `insertAll`. Optional: a writer without it
+   * takes `insert` per row. With it, a graph costs one statement per table, not one per row: a
+   * pass seeding a fresh tenant pair per primitive writes primitives × tables rows.
+   */
+  insertMany?(rows: readonly SeedRow[]): Promise<void>;
   update(update: SeedUpdate): Promise<void>;
   /**
    * Each row read back by its primary key, as one digest per row in the order given — `null` for
@@ -74,8 +98,24 @@ export interface SeedWriter {
   snapshot(rows: readonly SeedRow[]): Promise<readonly (string | null)[]>;
 }
 
+/**
+ * Each run of consecutive rows of one entity. The plan writes table by table, so a run is a table's
+ * rows — and a parent table's run always lands before its children's.
+ */
+export function entityRuns(rows: readonly SeedRow[]): readonly (readonly SeedRow[])[] {
+  const runs: SeedRow[][] = [];
+  for (const row of rows) {
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last[0]?.entity === row.entity) last.push(row);
+    else runs.push([row]);
+  }
+  return runs;
+}
+
 /** Writes the plan in order: every insert, then every deferred key. Sequential, so it replays. */
 export async function insertSeedGraph(graph: SeedGraph, writer: SeedWriter): Promise<void> {
-  for (const row of graph.inserts) await writer.insert(row);
+  const { insertMany } = writer;
+  if (insertMany === undefined) for (const row of graph.inserts) await writer.insert(row);
+  else for (const run of entityRuns(graph.inserts)) await insertMany.call(writer, run);
   for (const update of graph.updates) await writer.update(update);
 }

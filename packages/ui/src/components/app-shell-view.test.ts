@@ -24,6 +24,16 @@ describe('shellIds', () => {
 });
 
 describe('shellLandmarks', () => {
+  test('a bottom bar is a navigation landmark after contentinfo', () => {
+    expect(shellLandmarks({ header: true, sidebar: true, footer: true, bottomNav: true })).toEqual([
+      'banner',
+      'navigation',
+      'main',
+      'contentinfo',
+      'navigation',
+    ]);
+  });
+
   test('emits every filled region in screen-reader order', () => {
     expect(shellLandmarks({ header: true, sidebar: true, footer: true })).toEqual([
       'banner',

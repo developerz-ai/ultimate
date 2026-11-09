@@ -13,6 +13,9 @@
 //       tag: `post:${event.params.postId}`,
 //     }),
 //   })
+//
+// `nativePush()` (this package) satisfies it too, for iOS and Android, and adds the data-only
+// form: `pushChannel({ pusher: nativePush({ devices, apns, fcm }), data: ({ event }) => ({ id }) })`.
 
 import type { DeliveryArgs, NotifyChannel } from './channel';
 import { deliveryChannel } from './channel';
@@ -57,6 +60,21 @@ export interface Pusher {
   }): Promise<void> | void;
 }
 
+/**
+ * A pusher that can send a DATA-ONLY push — ids that wake the app and show nothing, on the lock
+ * screen or anywhere. `@ultimat3/notify`'s `nativePush()` is one; `webPush()` is not and cannot be
+ * (a browser push must show a notification), so handing it to `pushChannel({ data })` is a type
+ * error rather than a push that renders `undefined`.
+ */
+export interface DataPusher {
+  sendData(push: {
+    readonly to: string;
+    /** String ids only; screened by the transport (`X_NOTIFY_PUSH_MESSAGE_INVALID`). */
+    readonly data: Readonly<Record<string, string>>;
+    readonly signal: AbortSignal;
+  }): Promise<void> | void;
+}
+
 export const PUSH_CHANNEL = 'push';
 
 export interface PushChannelOptions<Params> {
@@ -69,19 +87,40 @@ export interface PushChannelOptions<Params> {
   readonly name?: string | undefined;
 }
 
+export interface DataPushChannelOptions<Params> {
+  readonly pusher: DataPusher;
+  /**
+   * The ids this push carries — and nothing a person would read: it crosses the provider and
+   * reaches the device unshown, and the app fetches the content over its own authenticated API.
+   */
+  readonly data: (args: DeliveryArgs<Params>) => Readonly<Record<string, string>>;
+  readonly name?: string | undefined;
+}
+
 /**
  * One delivery per recipient, to every device they subscribed. A recipient with no subscription is
  * NOT a failure — the pusher sends to nobody and the delivery settles, exactly as `mailChannel`
  * settles an addressless recipient: a retry would find the same empty list.
+ *
+ * With `data` instead of `message`, the push is data-only (`contentAvailable`): see `DataPusher`.
  */
 export function pushChannel<Params = unknown>(
   options: PushChannelOptions<Params>,
+): NotifyChannel<Params>;
+export function pushChannel<Params = unknown>(
+  options: DataPushChannelOptions<Params>,
+): NotifyChannel<Params>;
+export function pushChannel<Params = unknown>(
+  options: PushChannelOptions<Params> | DataPushChannelOptions<Params>,
 ): NotifyChannel<Params> {
-  return deliveryChannel<Params>(options.name ?? PUSH_CHANNEL, async (args) => {
-    await options.pusher.send({
-      to: args.recipient.id,
-      message: options.message(args),
-      signal: args.signal,
+  if ('data' in options) {
+    const { pusher, data } = options;
+    return deliveryChannel<Params>(options.name ?? PUSH_CHANNEL, async (args) => {
+      await pusher.sendData({ to: args.recipient.id, data: data(args), signal: args.signal });
     });
+  }
+  const { pusher, message } = options;
+  return deliveryChannel<Params>(options.name ?? PUSH_CHANNEL, async (args) => {
+    await pusher.send({ to: args.recipient.id, message: message(args), signal: args.signal });
   });
 }

@@ -7,26 +7,27 @@
   // `minmax(0, …)`, never the implicit `auto`: an auto track is at least its content's min-content
   // width, so a header that did not shrink laid a 390px phone out 429px wide.
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'header' 'sidebar' 'main' 'footer';
-  grid-template-rows: auto auto 1fr auto;
+  // `bottom` is the phone's bar, last; an empty row is zero high.
+  grid-template-areas: 'header' 'sidebar' 'main' 'footer' 'bottom';
+  grid-template-rows: auto auto 1fr auto auto;
   min-block-size: 100dvh;
   background: t.role('bg');
   color: t.role('fg');
 
   @include t.respond-to(md) {
     grid-template-columns: var(--shell-sidebar, 16rem) minmax(0, 1fr);
-    grid-template-areas: 'header header' 'sidebar main' 'footer footer';
-    grid-template-rows: auto 1fr auto;
+    grid-template-areas: 'header header' 'sidebar main' 'footer footer' 'bottom bottom';
+    grid-template-rows: auto 1fr auto auto;
   }
 }
 
 .no-sidebar {
-  grid-template-areas: 'header' 'main' 'footer';
-  grid-template-rows: auto 1fr auto;
+  grid-template-areas: 'header' 'main' 'footer' 'bottom';
+  grid-template-rows: auto 1fr auto auto;
 
   @include t.respond-to(md) {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'header' 'main' 'footer';
+    grid-template-areas: 'header' 'main' 'footer' 'bottom';
   }
 }
 
@@ -162,6 +163,21 @@
 
   @include t.respond-to(md) {
     padding-inline: t.space(6);
+  }
+}
+
+// The phone's bottom bar: the last row, sticky to the bottom edge. In flow, never `fixed`, so the
+// page's height already includes it and the last row of `main` scrolls clear above it.
+.bottomNav {
+  position: sticky;
+  z-index: t.z(sticky);
+  inset-block-end: 0;
+  // A named area, never auto-placed: below `md` the hidden sidebar leaves an empty cell ABOVE
+  // `main`, and an auto-placed bar filled it — pinned to the top of the page, not the bottom.
+  grid-area: bottom;
+
+  @include t.respond-to(md) {
+    display: none;
   }
 }
 

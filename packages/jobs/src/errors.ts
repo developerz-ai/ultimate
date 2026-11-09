@@ -129,14 +129,20 @@ export class JobTimeoutError extends UltimateError {
  * the work inside it stops with.
  */
 export class JobAbortedError extends UltimateError {
-  constructor(input: { job: string; step?: string }) {
+  /** `ended`: the attempt FINISHED — it was not cancelled — and a step it never awaited came late. */
+  constructor(input: { job: string; step?: string; ended?: boolean }) {
     super({
       code: 'X_ABORTED',
       cause:
         input.step === undefined
           ? `job "${input.job}" was cancelled — this attempt no longer owns the run`
-          : `job "${input.job}" was cancelled before step "${input.step}" could be recorded`,
-      fix: 'add throwIfAborted(ctx) before expensive work, or pass fetch(url, { signal: ctx.signal }) — the queue re-runs the job, so stop at the deadline instead of running past it',
+          : input.ended === true
+            ? `job "${input.job}"'s attempt had already ended when step "${input.step}" finished — run() returned without awaiting it`
+            : `job "${input.job}" was cancelled before step "${input.step}" could be recorded`,
+      fix:
+        input.ended === true
+          ? `await step.run('${input.step ?? '<name>'}', fn) inside run(); work meant to outlive the attempt (a flush, a deferred enqueue): runToCompletion(() => work) from @ultimat3/core`
+          : 'add throwIfAborted(ctx) before expensive work, or pass fetch(url, { signal: ctx.signal }) — the queue re-runs the job, so stop at the deadline instead of running past it; work meant to outlive the attempt: runToCompletion(() => work) from @ultimat3/core',
     });
   }
 }

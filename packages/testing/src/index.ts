@@ -200,18 +200,22 @@ export {
 export type { ExercisePassOptions } from './exercise';
 export { runExercisePass } from './exercise';
 export type { ActorChoice, RoleGrants } from './exercise-actor';
+export type { ExerciseDefect } from './exercise-defect';
 export type {
   CrashFinding,
   CrashProof,
   EffectPayload,
   ExerciseEffect,
   ExerciseOutcome,
+  ExercisePhaseMs,
   ExerciseRecord,
+  ProofMs,
   TenantFinding,
   TenantLeg,
   TenantProof,
 } from './exercise-report';
 export { overrideLine } from './exercise-report';
+export type { ExerciseSetup, ExerciseSetupHandle } from './exercise-setup';
 export type {
   Association,
   AssociationMap,
@@ -364,6 +368,7 @@ export {
   normalizeIslandName,
 } from './island-states-resolve';
 export { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
+export { CRASH_POINT_BOUND } from './job-crash-points';
 export type {
   CrashBoundary,
   CrashDivergence,
@@ -375,7 +380,9 @@ export { crashProof } from './job-crash-proof';
 export { jobDriverConformance } from './job-driver-conformance';
 export type { SimEffect } from './job-sim-effects';
 export {
+  crashEffectPlace,
   JobCrashDivergedError,
+  JobCrashUnboundedError,
   JobSimInvariantError,
   JobSimNondeterministicError,
 } from './job-sim-errors';
@@ -443,6 +450,7 @@ export {
   allowHost,
   captureNetwork,
   isNetworkSealed,
+  MOCKED_HOST_ADDRESS,
   mockFetch,
   mockJson,
   networkState,

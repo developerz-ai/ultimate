@@ -282,3 +282,11 @@ Compared before the design was fixed, read only (never run): sst/opencode at
 | Result size | timeouts per phase | 20 KiB, middle cut (Codex's format) | `maxResultChars` (20,000), middle cut, inside an `<untrusted source=…>` fence the remote cannot close |
 | Tool naming | server-prefixed | `mcp__<server>__<tool>`, hashed past 64 | `<server>_<tool>`, `[A-Za-z0-9_]`, 64 — an action name, the model's tool name |
 | OAuth to the upstream | full client flow, stored tokens | auth provider | not in the framework: `auth: () => headers` per call; the app owns the token store |
+
+## Moved out 2026-11-07 — `include-early.ts` (sweep 3, the `CLAUDE.md` ceiling)
+
+- `include-early.ts` keeps what `include: 'exposed'` saw — a `WeakMap` keyed by the `AppMcp` — and
+  `assertIncludeCurrent(endpoint, file)`, the mount's check after the boot scan. A catalog projected
+  at the top level of a module under `apps/<app>/app/` is built before the scan reaches another app
+  directory's actions; the mount refuses it with `X_MCP_INCLUDE_EARLY`, naming the primitives the
+  too-early catalog lacks and the `apps/<app>/mcp.ts` to build it in, instead of serving it short.

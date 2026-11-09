@@ -97,6 +97,39 @@ export const config = defineRoute({
 });
 ```
 
+### A card the build photographs: `og.capture`
+
+`og: { capture: '/og/home' }` names a `site/` page — one you write, laid out at exactly 1200 x 630,
+`robots: { index: false }` — and `x build --target static` photographs it into `/_og/og/home.png` and
+stamps `og:image`, `og:image:width` and `og:image:height` on every exported document that declares
+it. `image` and `capture` are one or the other; both together is a type error. `As of 2026-11`.
+
+| Fact | Rule |
+|---|---|
+| the path | a concrete page path. A dynamic card (`/og/post/[slug]`) lists its pages in its own `prerender()` |
+| no such page | `X_SEO_CARD_ROUTE_UNKNOWN` — from `x verify`'s `seo` step, and again from the build for a path only a dynamic route resolves |
+| the browser | the CLI's own CDP driver: `CHROME_PATH`, `PUPPETEER_EXECUTABLE_PATH` or `SCRAPE_CDP_URL`. None: `X_SEO_CARD_BROWSER_MISSING` |
+| `x build --no-capture` | stamps the same tags, takes no picture, needs no browser. `x verify`'s own build and the reference-app gate pass it, and only they do |
+| a served document | carries no `og:image` for a capture, on purpose: the PNG exists only in the export, the container holds no browser to take one (axiom 7), and an `og:image` naming a file nothing serves is a broken preview a crawler caches. Deploy `site/` as the static export, or set `og.image` — `twitter:card` falls back to `summary` |
+
+```ts
+import { defineRoute } from '@ultimat3/render';
+
+export const config = defineRoute({
+  render: 'static',
+  offline: 'network-only',
+  meta: () => ({
+    title: 'Postly',
+    description: 'A team blog that behaves itself.',
+    og: { capture: '/og/home' },
+  }),
+});
+```
+
+A card for a ROW published at runtime is the app's job, not the build's: `scrape()` over the row's
+card page, `page.screenshot()`, `disk.put()`, then `og: { image }` with the stored object's URL —
+[Scraping](Scraping#pages-as-files-pdf-and-cards).
+
 ## The pieces
 
 | Call | Answers |
@@ -107,6 +140,7 @@ export const config = defineRoute({
 | `buildFeed()` | RSS 2.0, Atom and JSON Feed from one item list. The channel's `author`, `copyright` and `icon` reach Atom as `<author>`, `<rights>` and `<icon>`; an item's `author` is `<author>` in Atom and, in RSS, `<author>` with an email or `<dc:creator>` without one; an item's `image` is an Atom enclosure link and an RSS `<media:content>`. An item date must be ISO-8601 with an offset or `Z`; one that is not is treated as absent (and an offsetless one is logged as `seo.feed.date_offsetless`), never read through the server's zone |
 | `builtinImageDriver({ read })` | resize and blur placeholder over core's pipeline — decodes `png`, `jpeg`, `webp`, `gif`; encodes `png`, `jpeg`, `webp`. `avif` needs a CDN driver (`X_IMAGE_UNSUPPORTED`), so `responsiveImage()` offers `webp` only unless given `formats`, and no width past 8192 (`MAX_IMAGE_WIDTH`). `As of 2026-10` |
 | `parseImageQuery()` | the one reader of the `?w=&f=&q=` a responsive image URL carries (`X_IMAGE_QUERY_INVALID`) |
+| `setStaticExport()` | the static build's seam: while it renders, `responsiveImage()` names `/_img/<source hash>-<width>.<ext>` files and `og.capture` names `/_og/<path>.png`. Unset in a served process — [Static assets](Static-Assets#responsive-images-in-a-static-export) |
 
 Every `X_SEO_*` and image code is in [Error codes](Error-Codes).
 
@@ -231,7 +265,7 @@ description, in path order, under the home page's title and description:
 | served | `GET /llms.txt` from the web role (`text/markdown`, the sitemap's hour of cache); the static export writes the same bytes (`writeSiteSeo`) |
 | listed | public, indexable `site/` pages, in the default locale, less `seo.robots.disallow`. A dynamic route (or one with a `load`) is expanded through `prerender()` page by page, each line the title and description that page's own `meta` gives it through its `load` — the export lists only the pages it emitted, as the sitemap does; a page whose `meta` says `robots: { index: false }` is left out. `prerender()` runs once per answer for the sitemap and this file together |
 | outside production | an empty document, for `robots.txt`'s reason |
-| opt out | `seo: { llms: false }` in `app.config.ts`: an empty document everywhere |
+| opt out | `seo: { llms: false }` in `app.config.ts`: the framework mounts no `GET /llms.txt` and the static export writes none — the path is the app's own route to serve, or a 404 |
 | build error | while on, a listed page with no `meta.description` is `X_SEO_LLMS_DESCRIPTION_MISSING` in the `seo` step. The step reads `meta` without a database, so it checks the pages whose `meta` needs no `load`; an expanded page with no description is listed by its title alone |
 
 The repository's own `llms.txt` is a separate, hand-kept file and is not this.

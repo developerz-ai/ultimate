@@ -314,7 +314,9 @@ describe('the scope a preloaded row may be served to', () => {
     expect(after?.name).toBe('U-20');
   });
 
-  test('a write to another entity leaves this one preloaded', async () => {
+  // Any write, not only one to `jit_test_users`: a `countedIn` trigger or an `onDelete` action
+  // rewrites rows of an entity the statement never named (`jit-preload-db-writes.test.ts`).
+  test('a write to another entity drops this one too', async () => {
     aPageOfThree();
     client.on('insert into "jit_test_posts"', { rows: [postRow(idAt(13), idAt(20))] });
     await inRequest(async () => {
@@ -332,7 +334,35 @@ describe('the scope a preloaded row may be served to', () => {
       await userRepo().findById(idAt(21), { orgId: ORG });
     });
 
-    expect(client.statements).toHaveLength(3);
+    // page, preload, insert, and the lookup the insert forced to read its own statement.
+    expect(client.statements).toHaveLength(4);
+    expect(client.statements[3]?.values).toEqual([idAt(21), ORG, 1]);
+  });
+
+  test('a loop that writes every iteration reads each row once, never the rest of the page', async () => {
+    aPageOfThree();
+    client.on('insert into "jit_test_posts"', { rows: [postRow(idAt(13), idAt(20))] });
+    await inRequest(async () => {
+      const page = await postRepo().findMany({ orgId: ORG });
+      for (const [index, post] of page.rows.entries()) {
+        await userRepo().findById(post.authorId, { orgId: ORG });
+        await postRepo().insert({
+          id: idAt(40 + index),
+          orgId: ORG,
+          authorId: post.authorId,
+          reviewerId: null,
+          title: 'P',
+        });
+      }
+    });
+
+    // page; the first lookup preloads all three; after a write each lookup is its own one id.
+    const reads = client.statements.filter((s) => s.text.includes('from "jit_test_users"'));
+    expect(reads.map((s) => s.values)).toEqual([
+      [idAt(20), idAt(21), idAt(22), ORG, 3],
+      [idAt(21), ORG, 1],
+      [idAt(22), ORG, 1],
+    ]);
   });
 });
 

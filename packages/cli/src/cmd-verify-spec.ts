@@ -2,7 +2,7 @@
 // read it without loading `cmd-verify.ts`, which `registry.ts` imports only when the command runs.
 
 import type { CommandSpec } from './parse';
-import { WORKER_BYTES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
+import { BUDGET_RULE, WORKER_BYTES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 
 /** `run` is the gate (and what a bare `x verify` means); `merge` folds CI parts into its verdict. */
 export const VERIFY_SUBCOMMANDS = ['run', 'merge'] as const;
@@ -24,7 +24,7 @@ export const verifySpec: CommandSpec = {
       name: 'workers',
       type: 'string',
       subcommands: ['run'],
-      summary: `test processes per parallel step (default: one per ${WORKER_BYTES / 2 ** 30} GiB of a min(4 GiB, max(2.75 GiB, 25% of RAM)) budget, at most one per core; ULTIMATE_TEST_MEMORY_BUDGET and ULTIMATE_TEST_MAX_WORKERS override; min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
+      summary: `test processes per parallel step (default: one per ${WORKER_BYTES / 2 ** 30} GiB of a ${BUDGET_RULE} budget, at most one per core; ULTIMATE_TEST_MEMORY_BUDGET and ULTIMATE_TEST_MAX_WORKERS override; min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
     },
     {
       name: 'only',
@@ -38,7 +38,7 @@ export const verifySpec: CommandSpec = {
       type: 'string',
       subcommands: ['run'],
       summary:
-        'with --only unit|contract|job: run shard i of an n-way split of each step’s sorted file list (round-robin), for one CI job; `x verify merge` checks all n',
+        'with --only unit|contract|job|live|e2e: run shard i of an n-way split of each step’s sorted file list (round-robin), for one CI job; `x verify merge` checks all n',
     },
     {
       name: 'timings',

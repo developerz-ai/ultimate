@@ -8,7 +8,8 @@ import { ctxOf, finiteOption, runWithContext, serviceActor } from '@ultimat3/cor
 import type { Subject, SubjectPlan } from '@ultimat3/jobs';
 import { memoryStepStore, planSubject, stepRunner, subjectEraseTables } from '@ultimat3/jobs';
 import { seedGraph } from './seed-graph';
-import type { SeedGraph, SeedWriter } from './seed-graph-plan';
+import { deferredMayStayNull } from './seed-graph-pass';
+import type { SeedFactory, SeedGraph, SeedWriter } from './seed-graph-plan';
 import { insertSeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 import { SubjectEraseIncompleteError } from './subject-proof-error';
@@ -22,6 +23,13 @@ export interface SubjectProofOptions {
   /** Every stored row of one table, as the database holds it, unscoped. */
   readonly read: (entity: SeedEntity) => Promise<readonly Stored[]>;
   readonly seed?: number;
+  /** `defineExercise`'s factories: a table only they satisfy is built by them for the proof too. */
+  readonly factories?: Readonly<Record<string, SeedFactory>> | undefined;
+  /**
+   * The graph already written to this database — the previous subject's `graph`. Row positions
+   * continue past it, so a factory value built from the index never repeats one on a unique column.
+   */
+  readonly beside?: SeedGraph | undefined;
 }
 
 export interface SubjectProofResult {
@@ -29,6 +37,8 @@ export interface SubjectProofResult {
   /** The person erased, by key; absent when the plan refused before a row was seeded. */
   readonly key?: string;
   readonly problems: readonly UltimateError[];
+  /** What it wrote: the next proof on the same database is seeded `beside` it. */
+  readonly graph?: SeedGraph;
 }
 
 interface Reached {
@@ -107,14 +117,19 @@ export async function subjectProof<I>(
   const graph = seedGraph(Object.fromEntries(entities), {
     seed: finiteOption('subjectProof', 'seed', options.seed ?? 1),
     tenants: 2,
+    ...(options.factories === undefined ? {} : { factories: options.factories }),
+    ...(options.beside === undefined ? {} : { beside: options.beside }),
   });
-  await insertSeedGraph(graph, options.writer);
+  // The pass's rule: a nullable cycle key the database refuses to set stays null.
+  await insertSeedGraph(graph, deferredMayStayNull(options.writer));
   const tenant = graph.tenants[0] ?? null;
   const person = graph.inserts.find(
     (i) => i.entity === subject.entity && (i.tenant === tenant || i.tenant === null),
   );
   const root = entities.get(subject.entity);
-  if (person === undefined || root === undefined) return { subject: subject.entity, problems: [] };
+  if (person === undefined || root === undefined) {
+    return { subject: subject.entity, problems: [], graph };
+  }
   const key = String(person.row[plan.key]);
   const reached = reachedRows(graph, plan, entities, person.row);
 
@@ -176,5 +191,5 @@ export async function subjectProof<I>(
       }
     }
   }
-  return { subject: subject.entity, key, problems: found };
+  return { subject: subject.entity, key, problems: found, graph };
 }

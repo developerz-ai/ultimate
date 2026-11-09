@@ -33,17 +33,21 @@ const got = (value: unknown): string => `got ${describeValue(value)}`;
  * the server parse the characters, so neither half may be changed without the other.
  */
 export const json = <T>(schema: StandardSchemaV1<unknown, T>): Column<T> =>
-  column<T>('jsonb', (value) => {
-    const result = validate(schema, value);
-    if (result.issues === undefined) return result.value;
-    // The ISSUES, never the value: `formatIssues` renders path + message, and a column rejection
-    // reaches the caller and the log line where a value has no key left to redact.
-    return refuseColumn(
-      'json',
-      `does not match the column's schema — ${formatIssues(result.issues).join('; ')}`,
-      'correct the key the cause names, or widen the schema this column was declared with — json(t.object({ seats: t.number })) validates on the way in and on the way back',
-    );
-  });
+  column<T>(
+    'jsonb',
+    (value) => {
+      const result = validate(schema, value);
+      if (result.issues === undefined) return result.value;
+      // The ISSUES, never the value: `formatIssues` renders path + message, and a column rejection
+      // reaches the caller and the log line where a value has no key left to redact.
+      return refuseColumn(
+        'json',
+        `does not match the column's schema — ${formatIssues(result.issues).join('; ')}`,
+        'correct the key the cause names, or widen the schema this column was declared with — json(t.object({ seats: t.number })) validates on the way in and on the way back',
+      );
+    },
+    { schema },
+  );
 
 const DIGITS = /^-?\d+$/;
 

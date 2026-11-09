@@ -71,3 +71,10 @@
     margin: 0;
   }
 }
+
+// The hero image: full width of the column, its own aspect ratio inlined by `responsiveImage`.
+.heroImage img {
+  block-size: auto;
+  border-radius: var(--radius-md);
+  inline-size: 100%;
+}

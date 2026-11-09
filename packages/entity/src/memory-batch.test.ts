@@ -19,6 +19,9 @@ const items = entity('mo_items', {
   columns: { id: text().primaryKey(), code: text().unique(), slug: text().unique() },
 });
 const plain = entity('mo_plain', { columns: { id: text().primaryKey(), label: text() } });
+const optional = entity('mo_optional', {
+  columns: { id: text().primaryKey(), handle: text().nullable().unique() },
+});
 
 const codeOf = (call: Promise<unknown>): Promise<string> =>
   call.then(
@@ -78,6 +81,42 @@ describe('memory upsertAll is all or nothing', () => {
     await memoryRepo(plain).insertAll(rows);
     expect(performance.now() - started).toBeLessThan(5_000);
   }, 30_000);
+
+  test('the batch index refuses a stored key and an earlier row, and NULLs never collide', async () => {
+    const repo = memoryRepo(items);
+    await repo.insert({ id: 'x', code: 'x', slug: 'sx' });
+    expect(await codeOf(repo.insertAll([{ id: 'n', code: 'x', slug: 'sn' }]))).toBe(
+      'X_DB_UNIQUE_VIOLATION',
+    );
+    const pair = [
+      { id: 'a', code: 'a', slug: 'same' },
+      { id: 'b', code: 'b', slug: 'same' },
+    ];
+    expect(await codeOf(repo.insertAll(pair))).toBe('X_DB_UNIQUE_VIOLATION');
+    expect((await repo.findMany({})).rows.map((row) => row.id)).toEqual(['x']);
+    const nulls = memoryRepo(optional);
+    await nulls.insertAll([
+      { id: 'p', handle: null },
+      { id: 'q', handle: null },
+    ]);
+    expect((await nulls.findMany({})).rows).toHaveLength(2);
+  });
+
+  // Two uniques: every row's keys judged once, against an index — a scan of every stored and
+  // earlier row per row, done twice (batch, then per-row write), took 168 s here at 4,000.
+  test('a clean 4,000-row batch with two uniques declared takes under two seconds', async () => {
+    const rows = Array.from({ length: 4_000 }, (_, index) => ({
+      id: `r${index}`,
+      code: `c${index}`,
+      slug: `s${index}`,
+    }));
+    const repo = memoryRepo(items);
+    await repo.insert({ id: 'first', code: 'first', slug: 'first' });
+    const started = performance.now();
+    await repo.insertAll(rows);
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect((await repo.findMany({ limit: 10_000 })).rows).toHaveLength(4_001);
+  }, 60_000);
 });
 
 // The one undo scope the memory driver has: a batch's and a lock's savepoint.

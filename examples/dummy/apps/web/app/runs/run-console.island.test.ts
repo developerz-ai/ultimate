@@ -9,7 +9,13 @@
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import type { Frame } from '@ultimat3/realtime';
-import { decode, encode, installRealtime, PROTOCOL_VERSION } from '@ultimat3/realtime';
+import {
+  decode,
+  encode,
+  installRealtime,
+  PROTOCOL_VERSION,
+  resetPageRealtime,
+} from '@ultimat3/realtime';
 import {
   afterAll,
   beforeAll,
@@ -27,9 +33,6 @@ import { runConsoleStates } from './run-console.island.states';
 const APP_ROOT = join(import.meta.dir, '..', '..', '..', '..');
 const SYNC_URL = 'ws://localhost:3001';
 const RUN = { runId: '00000000-0000-4000-8000-0000000000b7', jobId: 'job-7' };
-
-/** The page state every island bundle on a page shares — `globalThis`, by its registered symbol. */
-const PAGE = Symbol.for('ultimate.realtime');
 
 /** One turn of the event loop: the transport's answer and the socket's dial are awaits deep. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -117,7 +120,7 @@ beforeAll(() => {
 
 afterAll(() => {
   // The page state is process-global: left behind it would be the next file's page.
-  Reflect.deleteProperty(globalThis, PAGE);
+  resetPageRealtime();
 });
 
 describe('the run console island, with a connection and no run', () => {
@@ -126,6 +129,13 @@ describe('the run console island, with a connection and no run', () => {
     await settle();
   }, 60_000);
   afterAll(dispose);
+
+  test('mount draws the "created between" GET form the server drew, in the same island', () => {
+    // One island for the page: the filter rides in the console's chunk, never a second Solid.
+    expect(mounted.find('form[data-role="created-filter"]')?.getAttribute('action')).toBe('/runs');
+    expect(mounted.find('input[name="from"]')).not.toBeNull();
+    expect(mounted.find('input[name="to"]')).not.toBeNull();
+  });
 
   test('mount replaces the shell with the picker, and opens no socket for no run', () => {
     expect(mounted.find('[data-role="shell"]')).toBeNull();
@@ -183,7 +193,7 @@ describe('the run console island, with a connection and no run', () => {
     });
     await settle();
 
-    expect(mounted.all('li')).toHaveLength(1);
+    expect(mounted.all('[data-role="run-events"] li')).toHaveLength(1);
     expect(mounted.text('[data-role="run-state"]')).toBe('Waiting for your code');
     expect(mounted.find('[data-role="prompt"]')).not.toBeNull();
   });
@@ -222,13 +232,9 @@ describe('the run console island, finished', () => {
   afterAll(dispose);
 
   test('every event is a row in seq order, and the run says how many accounts it read', () => {
-    expect(mounted.all('li').map((row) => row.getAttribute('data-seq'))).toEqual([
-      '1',
-      '2',
-      '3',
-      '4',
-      '5',
-    ]);
+    expect(
+      mounted.all('[data-role="run-events"] li').map((row) => row.getAttribute('data-key')),
+    ).toEqual(['1', '2', '3', '4', '5']);
     expect(mounted.text('[data-role="run-state"]')).toBe('Finished');
     expect(mounted.text('[data-role="run-summary"]')).toBe('2 accounts read');
     // What it used is its own block, never a step of the run.
@@ -264,6 +270,7 @@ describe('every declared state of the run console', () => {
     expect(runConsoleStates.states.map((state) => state.id)).toEqual([
       'no-connection',
       'idle',
+      'filtered',
       'pending',
       'streaming',
       'awaiting-input',
@@ -271,6 +278,16 @@ describe('every declared state of the run console', () => {
       'refused',
       'done',
     ]);
+  });
+
+  test('filtered draws the "created between" form at the head, holding the URL range', async () => {
+    const drawn = await html('filtered');
+    expect(drawn).toContain('data-role="created-filter"');
+    expect(drawn).toContain('value="2026-03-02"');
+    expect(drawn).toContain('value="2026-03-09"');
+    expect(drawn.indexOf('data-role="created-filter"')).toBeLessThan(
+      drawn.indexOf('id="run-start"'),
+    );
   });
 
   test('no-connection draws the connect form and no picker', async () => {

@@ -12,13 +12,17 @@ import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
 import { AppNameEmptyError, AppNameIsPathError, MissingPositionalError } from './errors';
 import type { Runner } from './exec';
+import { withDeclaredExercises } from './generate-exercise';
 import { reproducedFlags } from './invocation-flags';
 import { msg } from './messages';
+import { type NewShape, readShape } from './new-shapes';
+import { runShapeGenerators } from './new-shapes-generate';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
 import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 import { appFiles, names, repoFiles, resourceFiles } from './templates';
+import { applyOverlay, SHAPE_OVERLAYS } from './templates/shapes';
 import { loadVersion } from './version-loader';
 import { writeGenerated } from './write-generated';
 
@@ -26,6 +30,8 @@ export interface NewAppOptions {
   readonly name: string;
   /** The example feature slice. `--no-example` gives the same shape with an empty app/. */
   readonly example: boolean;
+  /** `--shape`: an overlay over the scaffold below (`templates/shapes/`); absent is the default. */
+  readonly shape?: NewShape | undefined;
 }
 
 /** `--no-git`'s `problem`, matched rather than re-spelled where the report decides on a line. */
@@ -127,8 +133,18 @@ const displayPath = (cwd: string, path: string): string => {
 /** The `cd` operand of the next-steps line: the target as typed from `cwd`, pasteable verbatim. */
 const cdTarget = (cwd: string, target: string): string => quoteArg(displayPath(cwd, target));
 
+/** The `x g` lines a shape runs once its files are written, as a reader would type them. */
+const shapeGenerateLines = (shape: NewShape): readonly string[] =>
+  (SHAPE_OVERLAYS[shape].generate ?? []).map((argv) => ['x', 'g', ...argv].join(' '));
+
 /** Pure: the complete file list for a new app, so `--dry-run` and the test see the same thing. */
 export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
+  if (options.shape !== undefined) {
+    const overlay = SHAPE_OVERLAYS[options.shape];
+    const base = planNewApp({ name: options.name, example: overlay.example });
+    // Merge-aware, as below: a shape's catalog keys land in the one catalog the base wrote.
+    return withDeclaredExercises(dedupe(applyOverlay(base, overlay, names(options.name))));
+  }
   const app = names(options.name);
   const files: GeneratedFile[] = [
     ...repoFiles(app, loadVersion(), options.example),
@@ -154,7 +170,8 @@ export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
   // `repoFiles`' own catalog entry and the example resource's both target the same flat catalog
   // file, so this has to be the merge-aware dedupe — the one `cmd-generate.ts` uses for `x g` —
   // or the second contributor's keys would silently vanish instead of landing in the one file.
-  return dedupe(files);
+  // And each contract test's entry in `apps/web/exercise.ts`, the one file it reads it from.
+  return withDeclaredExercises(dedupe(files));
 }
 
 export interface WrittenApp {
@@ -248,7 +265,13 @@ export const newCommand: CliCommand = {
       });
     }
     const target = resolve(parentDir(ctx.cwd, flagString(ctx.args, 'dir')), app.kebab);
-    const options: NewAppOptions = { name: raw, example: ctx.args.flags.get('example') !== false };
+    // Before the target is touched: a refused shape writes nothing, `--dry-run` included.
+    const shape = readShape(ctx.args, invocationOf(ctx, 'new'), app.kebab);
+    const options: NewAppOptions = {
+      name: raw,
+      example: ctx.args.flags.get('example') !== false,
+      shape,
+    };
 
     if (flagBool(ctx.args, 'dry-run')) {
       const files = planNewApp(options);
@@ -260,7 +283,13 @@ export const newCommand: CliCommand = {
           dir: target,
           cd: cdTarget(ctx.cwd, target),
         }),
-        data: { dir: target, files: files.map((file) => file.path), dryRun: true },
+        data: {
+          dir: target,
+          files: files.map((file) => file.path),
+          // What a real run then runs in the app, so a dry run names the files it cannot plan.
+          ...(shape === undefined ? {} : { generate: shapeGenerateLines(shape) }),
+          dryRun: true,
+        },
         // Where each file WOULD land, as the caller would reach it: relative to the cwd, `--dir`
         // included — `${app.kebab}/…` named the wrong place whenever `--dir` was set.
         lines: files.map((file) =>
@@ -290,13 +319,19 @@ export const newCommand: CliCommand = {
     // `git add -A && git commit` them — they are the user's, and `x new` did not write them.
     const existed = existsSync(target);
     const written = await writeNewApp(target, options);
+    // Before the first commit, so the repository starts with what the shape's generators wrote.
+    const generated =
+      shape === undefined
+        ? []
+        : await runShapeGenerators(ctx, shape, target, SHAPE_OVERLAYS[shape].generate ?? []);
     const git =
       ctx.args.flags.get('git') === false
         ? NO_GIT
         : existed
           ? PRE_EXISTING
           : await initRepository(ctx.runner, target);
-    const lines = [msg('cli.new.wrote', { count: written.files.length, dir: target })];
+    const files = [...new Set([...written.files, ...generated])];
+    const lines = [msg('cli.new.wrote', { count: files.length, dir: target })];
     if (git.problem !== null && git.problem !== SKIPPED && git !== PRE_EXISTING) {
       lines.push(
         msg(git.initialized ? 'cli.new.uncommitted' : 'cli.new.noRepository', {
@@ -311,7 +346,7 @@ export const newCommand: CliCommand = {
       ok: true,
       command: 'new',
       summary: msg('cli.new.done', { name: app.kebab, cd: cdTarget(ctx.cwd, target) }),
-      data: { dir: written.dir, files: written.files, git },
+      data: { dir: written.dir, files, git },
       lines,
     };
   },

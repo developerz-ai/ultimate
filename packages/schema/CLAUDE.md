@@ -64,7 +64,11 @@ overlay already holds the raw body. `describe-value.test.ts` is the enforcement.
 
 `t.array(items, { min, max })` (`array-schema.ts`) carries its bounds as `minItems`/`maxItems` ON
 the node — JSON Schema's names — and `json-schema.ts` and `wire-schema.ts` publish both;
-`sample.ts`'s walker samples `minItems` items. A bound no count meets is
+`sample.ts`'s walker samples `minItems` items.
+A `pattern` is sampled by walking it (`sample-pattern.ts`, `patternSamples`): the ONE regex
+generator, also what `@ultimat3/testing` seeds `matches()` columns with. Past its subset
+(lookaround, backreference, `\b`, `\p{…}`) it yields nothing and `sampleGaps` names the field.
+`sample-random.ts` (mulberry32) is the leaf both it and `sample-seeded.ts` draw from. A bound no count meets is
 `X_SCHEMA_BOUNDS_INVALID` where it is declared, the same rule as the discriminant below.
 
 `X_SCHEMA_DISCRIMINANT_INVALID` is thrown where a `discriminatedUnion` is BUILT, not where a value

@@ -432,6 +432,9 @@ part URLs carry `x-upload`/`x-part` inside the HMAC and land through `acceptSign
 browser, `uploadFile({ file, grant, multipart })` switches at `partThresholdBytes` (64 MiB): four
 parts in flight, each retried with core's `retry`, `resume: grant` sends only what `listParts`
 lacks. `completeUpload` reads the etags on the server, so no bucket CORS exposes `ETag`.
+`signPart` and `completeUpload` REQUIRE the grant's `policy`: a part no object under `maxBytes`
+holds, or an assembled total past it, is `X_STORAGE_TOO_LARGE`. The declared `size` is the
+client's claim and the server keeps no grant, so the policy is the bound.
 
 | Code | When |
 |---|---|
@@ -534,6 +537,12 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 `variantKey()`, `srcsetDescriptors()`, `fitDimensions()` are pure — `@ultimat3/seo` builds
 `srcset` from them without decoding a byte.
+
+`warmVariants({ disk, key, widths, formats })` (`image-warm.ts`) writes every width x format of a
+stored image under the key `/media` reads — `variantKey(key, { width, format, revision })`, the
+revision off the etag of the bytes it read — so the job an upload enqueues pays the decode and no
+visitor does. Answers `{ written, failed, skipped }`: a width above the source's is skipped, a coded
+failure (an `avif`) is one entry and the rest are still written. `As of 2026-11`.
 
 A variant key is the WHOLE source key plus the transform: `photos/hero.png` at width 640 is
 `photos/hero.png@w640.webp`. The source extension stays in, so `hero.png` and `hero.jpg` are two

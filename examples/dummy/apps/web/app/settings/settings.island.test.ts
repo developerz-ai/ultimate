@@ -36,7 +36,10 @@ const PROPS = {
   theme: 'system',
   digestOptIn: true,
   locales: ['en', 'es'].map(option),
-  timezones: ['UTC', 'Asia/Tokyo'].map(option),
+  timezones: [
+    { value: 'UTC', label: 'UTC' },
+    { value: 'Asia/Tokyo', label: 'Tokyo', group: 'Asia', description: 'Asia/Tokyo' },
+  ],
   themes: ['system', 'light', 'dark'].map(option),
   labels: {
     locale: 'Language',
@@ -54,6 +57,7 @@ const PROPS = {
     pushDenied: 'Blocked',
     pushUnavailable: 'Unavailable',
   },
+  ui: { locale: 'en', catalog: { 'ui.select.none': 'Nothing chosen' } },
 } as const;
 
 /** What the island must produce for a zone — computed here rather than pasted, so the assertion
@@ -77,7 +81,7 @@ let ok = true;
 
 let mounted: MountedIsland;
 
-/** `<select>`s in document order: language, timezone, theme. */
+/** `<select>`s in document order: language alone — the zone is the searchable combobox, the theme a segmented radio group. */
 const selectAt = (index: number): FakeElement => mounted.all('select')[index] as FakeElement;
 
 /**
@@ -90,6 +94,32 @@ const choose = (select: FakeElement, value: string): void => {
   select.value = value;
   mounted.fire(select, 'change');
 };
+
+/** The theme radio for `value` — read off the PROPERTY, which is what Solid assigns. */
+const themeRadio = (value: string): FakeElement | undefined =>
+  (mounted.all('input[name="theme"]') as FakeElement[]).find((radio) => radio.value === value);
+
+/** A tap on one theme radio: the platform checks it, then fires `change` on it. */
+const pickTheme = (value: string): void => {
+  const radio = themeRadio(value) ?? expect.unreachable(`no theme radio for ${value}`);
+  radio.checked = true;
+  mounted.fire(radio, 'change');
+};
+
+const zoneField = (): FakeElement | null => mounted.find('[role="combobox"]');
+const press = (key: string): boolean =>
+  mounted.fire(zoneField(), 'keydown', { key, preventDefault: (): void => {} });
+
+/** Type into the zone picker and take the best match with Enter — what a keyboard reader does. */
+const pickZone = (typed: string): void => {
+  const field = zoneField() as FakeElement;
+  field.value = typed;
+  mounted.fire(field, 'input');
+  press('Enter');
+};
+
+/** What the zone picker would post: its hidden input, never the text in the field. */
+const postedZone = (): string | undefined => mounted.find('input[type="hidden"][name="tz"]')?.value;
 
 /** Build the real chunk once — Babel plus a browser bundle is seconds, and every case shares it. */
 beforeAll(async () => {
@@ -144,7 +174,13 @@ afterAll(() => {
 describe('the settings island', () => {
   test('mount replaces the server shell with the editor', () => {
     expect(mounted.find('dl')).toBeNull();
-    expect(mounted.all('select')).toHaveLength(3);
+    // The language select; the zone's native select was swapped for the combobox, the theme's for
+    // a segmented strip of native radios (plan 101, 38-ui-pickers).
+    expect(mounted.all('select')).toHaveLength(1);
+    expect(mounted.all('input[type="radio"][name="theme"]')).toHaveLength(3);
+    expect(themeRadio('system')?.checked).toBe(true);
+    expect(zoneField()).not.toBeNull();
+    expect(postedZone()).toBe('UTC');
     // Save, and Web Push for this browser.
     expect(mounted.all('button')).toHaveLength(2);
     // Solid compiles to real DOM calls; a chunk falling back to the classic React factory names a
@@ -155,27 +191,36 @@ describe('the settings island', () => {
   test('the preview re-renders in the zone the member just picked', () => {
     expect(mounted.text('[data-role="preview"]')).toBe(expectedPreview('en', 'UTC'));
 
-    choose(selectAt(1), 'Asia/Tokyo');
+    pickZone('tok');
 
     // The one assertion that a compile-time reactivity contract either honours or silently drops:
     // an eager JSX factory hands the formatter an evaluated string once and never runs it again.
     expect(mounted.text('[data-role="preview"]')).toBe(expectedPreview('en', 'Asia/Tokyo'));
     expect(mounted.text('[data-role="preview"]')).not.toBe(expectedPreview('en', 'UTC'));
+    expect(postedZone()).toBe('Asia/Tokyo');
+  });
+
+  test('a typed name that is no zone never reaches the value — blur keeps the last pick', () => {
+    const field = zoneField() as FakeElement;
+    field.value = 'Atlantis';
+    mounted.fire(field, 'input');
+    mounted.fire(field, 'blur');
+    expect(postedZone()).toBe('Asia/Tokyo');
   });
 
   test('the locale reaches the same preview, so both signals are tracked', () => {
     // The zone the case above left selected, read rather than pasted: a literal here would be this
     // case asserting a sibling's outcome as its own premise.
-    const zone = selectAt(1).value;
+    const zone = postedZone() ?? 'no zone posted';
     choose(selectAt(0), 'es');
     expect(mounted.text('[data-role="preview"]')).toBe(expectedPreview('es', zone));
   });
 
   test("theme writes <html data-theme> at once, and 'system' takes it back off", () => {
-    choose(selectAt(2), 'dark');
+    pickTheme('dark');
     expect(mounted.documentElement.dataset['theme']).toBe('dark');
 
-    choose(selectAt(2), 'system');
+    pickTheme('system');
     // Removed, never set to '': `system` means the inline head script and the OS decide again,
     // and an empty attribute is still an attribute the CSS selector matches.
     expect('theme' in mounted.documentElement.dataset).toBe(false);

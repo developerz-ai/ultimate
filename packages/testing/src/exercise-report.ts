@@ -12,7 +12,9 @@ import {
 } from '@ultimat3/db';
 import type { RowObserver } from '@ultimat3/entity';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
+import type { ExerciseDefect } from './exercise-defect';
 import { testMail } from './fixture-mail';
+import { routeMatches } from './mock-route';
 import type { PlanProof, SentStatement } from './plan-sweep';
 import type { ScaleProof, StatementTally } from './scale-sweep';
 import {
@@ -50,6 +52,11 @@ export interface TenantFinding {
   /** WRITE_CROSSED: the table and the primary key of A's changed row */
   readonly table?: string;
   readonly id?: string;
+  /**
+   * LEAK from a `tenant: 'none'` job handed nothing of A's: a read across every org that opened no
+   * `crossTenant()` scope — its fix is that scope, never a repository scoped to an actor it lacks.
+   */
+  readonly sweep?: true;
 }
 
 /** The tenant proof's verdict on one primitive: B attacked A's rows twice, around A's own call. */
@@ -71,16 +78,27 @@ export interface CrashFinding {
   readonly effect: string;
   readonly clean: number;
   readonly killed: number;
-  /** The last step the clean run had written before the effect; absent, before the first. */
+  /** The last step the clean run had completed before the effect; absent, before the first. */
   readonly after?: string;
+  /** The step whose body made the effect, when it was made inside one: it runs again on a retry. */
+  readonly inside?: string;
 }
 
-/** The crash proof's verdict on a reached job: killed at every step boundary (`crashProof`). */
+/**
+ * The crash proof's verdict on a reached job: killed at every distinct step boundary, a loop's rows
+ * as one (`crashProof`). `boundaries` is the kills, `crossed` the boundaries they stand for.
+ */
 export type CrashProof =
-  | { readonly verdict: 'held'; readonly boundaries: number; readonly reruns: number }
+  | {
+      readonly verdict: 'held';
+      readonly boundaries: number;
+      readonly crossed?: number;
+      readonly reruns: number;
+    }
   | {
       readonly verdict: 'diverged';
       readonly boundaries: number;
+      readonly crossed?: number;
       /** Lost answers that reran a step: at-least-once, counted, never red. */
       readonly reruns: number;
       readonly findings: readonly CrashFinding[];
@@ -94,11 +112,18 @@ export interface ExerciseRecord {
   readonly outcome: ExerciseOutcome;
   readonly code?: string;
   readonly reason?: string;
+  /** On an `unreached` one that answered a 5xx: its cause, statement and fields, values masked. */
+  readonly defect?: ExerciseDefect;
   readonly statements: number;
   readonly effects: readonly ExerciseEffect[];
   readonly ms: number;
   /** For an `unreached` one: the line to paste into `defineExercise({ … })`. */
   readonly override?: string;
+  /**
+   * For an `unreached` one no override reaches: the edit that does, in place of the paste — a job
+   * whose `tenant(input)` names one fixed org (`exercise-subjects.ts`'s `fixedTenant`).
+   */
+  readonly fix?: string;
   /** On every record that ran — absent only on `off` and `refused`. The fields above are A's. */
   readonly tenant?: TenantProof;
   /** On a reached job only: its control's input, killed at every step boundary. */
@@ -107,6 +132,33 @@ export interface ExerciseRecord {
   readonly plans?: PlanProof;
   /** On a reached primitive: its statement shapes at 2 and at 8 rows a table (`scale-sweep.ts`). */
   readonly scale?: ScaleProof;
+  /** Wall time of each proof that ran on it; `ms` above is the control's own call. */
+  readonly proofMs?: ProofMs;
+}
+
+/**
+ * Milliseconds per proof of one record. No `plans`: one statement is planned once for every
+ * primitive that sent it, so its time is the pass's (`ExercisePhaseMs.plans`), never one record's.
+ */
+export interface ProofMs {
+  /** B's two legs and the snapshots around them, the control's own call excepted. */
+  readonly tenant?: number;
+  /** Every run the crash proof made. */
+  readonly crash?: number;
+  /** Its calls at both sizes; seeding the sized graphs is the pass's (`ExercisePhaseMs.scale`). */
+  readonly scale?: number;
+}
+
+/** Milliseconds per phase of one pass, so a slow pass names its slow part. */
+export interface ExercisePhaseMs {
+  /** The pass's one seed graph, written. */
+  readonly seed: number;
+  /** Every primitive's control and its tenant and crash proofs. */
+  readonly primitives: number;
+  /** The scale sweep: its two sized graphs written, every reached primitive called in each. */
+  readonly scale: number;
+  /** The plan sweep: every distinct statement the pass sent, planned. */
+  readonly plans: number;
 }
 
 /** What an effect carried, for the tenant proof's read half: searched, never reported as is. */
@@ -223,6 +275,10 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
     },
     end: (): Observed => {
       const calls = requestLog().slice(logFrom);
+      // A call a route answered never left the process: the app's `setup` installed it.
+      const { mocks } = captureNetwork();
+      const refused = (call: (typeof calls)[number]): boolean =>
+        !local(call.url) && !mocks.some((route) => routeMatches(route, call));
       const effects: ExerciseEffect[] = [
         ...[...tally(rows)].map(([key, count]): ExerciseEffect => {
           const [entity = '', op = ''] = key.split('\u0000');
@@ -236,11 +292,11 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
             kind: 'network',
             method: call.method,
             host: hostOf(call.url),
-            refused: !local(call.url),
+            refused: refused(call),
           }),
         ),
       ];
-      const refusedHosts = calls.filter((call) => !local(call.url)).map((c) => hostOf(c.url));
+      const refusedHosts = calls.filter(refused).map((c) => hostOf(c.url));
       const payloads: EffectPayload[] = [
         ...mail.outbox().map(({ message }, i) => ({
           path: `effect.mail[${i}]`,

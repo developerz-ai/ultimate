@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
 import { boolean, entity, integer, text, uuid } from '@ultimat3/entity';
 import type { SeedRow, SeedWriter } from '@ultimat3/testing';
+import { seedGraph } from '@ultimat3/testing';
 import { dbSpec } from './cmd-db-spec';
 import {
   GENERATED_SEED,
@@ -33,6 +34,12 @@ const schema = { orgs, notes };
 const noteCounts = entity('dsg_note_counts', {
   view: { sql: 'select org_id, count(*)::integer as notes from dsg_notes group by org_id' },
   columns: { orgId: uuid().primaryKey(), notes: integer() },
+});
+
+/** Closed to the app's writes: still in the set, so the graph can say why it seeds none of it. */
+const archive = entity('dsg_archive', {
+  readOnly: 'legacy notes, a trigger refuses every insert',
+  columns: { id: uuid().primaryKey(), body: text() },
 });
 
 const refusal = (run: () => void): string => {
@@ -130,5 +137,12 @@ describe('unit · x db seed --generate', () => {
     const seedable = Object.keys(registeredEntityCores());
     expect(seedable).toContain(notes.$name);
     expect(seedable).not.toContain(noteCounts.$name);
+  });
+
+  test('a readOnly table stays in the set, and the graph seeds no row of it', () => {
+    const cores = registeredEntityCores();
+    expect(Object.keys(cores)).toContain(archive.$name);
+    const graph = seedGraph(cores, { tenants: 1, seed: 2 });
+    expect(graph.inserts.some((row) => row.entity === archive.$name)).toBe(false);
   });
 });

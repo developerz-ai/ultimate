@@ -188,6 +188,7 @@ export {
   installedRateLimitStore,
   installRateLimitStore,
   resetRateLimitStore,
+  withScratchRateLimitStore,
 } from './rate-limit-installed';
 export type { RateLimitPeek } from './rate-limit-peek';
 export { rateLimitPeek, refilledTokens } from './rate-limit-peek';
@@ -200,6 +201,8 @@ export { RATE_LIMIT_STORE_DEADLINE_MS } from './rate-limit-store-deadline';
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
 export { UltimateRequest } from './request';
+export type { ExerciseRequest, ExerciseRequestOption } from './request-as';
+export { withRequestAs } from './request-as';
 export type { RequestFacts, RequestFactsInput } from './request-facts';
 export { requestFacts } from './request-facts';
 export type { CacheHint, RedirectIntent, RedirectStatus } from './response';
@@ -244,6 +247,7 @@ export type {
   WebSocketMount,
 } from './server';
 export { httpServer } from './server';
+export type { WebSocketOption } from './server-websocket';
 export type { DeleteCookieOptions } from './set-cookie';
 export { deleteCookie, setCookie } from './set-cookie';
 // The stage vocabulary comes from its declaration site, beside the fifteen implementations it
@@ -259,3 +263,4 @@ export {
   DEFAULT_WEBHOOK_TOLERANCE_MS,
   verifyWebhookSignature,
 } from './webhook-verify';
+export { type JoinedWebSocketMounts, joinWebSocketMounts } from './websocket-mounts';

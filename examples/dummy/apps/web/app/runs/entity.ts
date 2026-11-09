@@ -14,6 +14,7 @@ import {
   CONNECTION_EXIT_MAX,
   CONNECTION_LABEL_MAX,
   connections,
+  runs,
 } from '@postly/db';
 import { type Infer, t } from '@ultimat3/schema';
 
@@ -22,6 +23,19 @@ export const CONNECTION_PAGE = 50;
 
 export const ConnectionView = connections.$view(['id', 'label', 'createdAt']);
 export type ConnectionView = typeof ConnectionView.$row;
+
+/** How many of the newest runs `/runs/health` reads: enough for a strip and a trend, one page. */
+export const RUN_HEALTH_PAGE = 60;
+
+/** A run as the health page draws it: no job id, no code — what happened and when. */
+export const RunHealthView = runs.$view([
+  'id',
+  'connectionId',
+  'status',
+  'startedAt',
+  'eventCount',
+]);
+export type RunHealthView = typeof RunHealthView.$row;
 
 /**
  * What a caller supplies to connect a site. `id`, `orgId` and `createdAt` are the server's.

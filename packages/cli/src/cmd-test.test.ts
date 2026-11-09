@@ -18,7 +18,13 @@ import type { Runner } from './exec';
 import { parseArgs } from './parse';
 import { discoverTests } from './test-select';
 import { filesIn } from './test-shards';
-import { defaultWorkers, SERIAL_TYPES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
+import {
+  BUDGET_RULE,
+  defaultWorkers,
+  SERIAL_TYPES,
+  WORKER_CEILING,
+  WORKER_FLOOR,
+} from './test-workers';
 import type { TestType } from './verify-tests';
 
 interface Recorder {
@@ -183,7 +189,8 @@ describe('unit · x test --workers is bounded by the ceiling it documents', () =
     const summary = (testCommand.spec.flags ?? []).find((flag) => flag.name === 'workers')?.summary;
     expect(summary).not.toContain('CPUs - 1');
     expect(summary).toContain(`max ${WORKER_CEILING}`);
-    expect(summary).toContain('min(4 GiB, max(2.75 GiB, 25% of RAM)) budget, at most one per core');
+    expect(summary).toContain(`of a ${BUDGET_RULE} budget, at most one per core`);
+    expect(summary).not.toContain('min(4 GiB');
     const plenty = { ULTIMATE_TEST_MEMORY_BUDGET: '1024g' };
     expect(defaultWorkers(4, 1, plenty)).toBe(4);
     expect(defaultWorkers(1, 1, plenty)).toBe(WORKER_FLOOR);

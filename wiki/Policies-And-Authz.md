@@ -168,14 +168,15 @@ gate's `exercise` step, around each primitive's own call: B, then A, then B agai
 
 ```
 X_TENANT_LEAK: another tenant's row reached a call's output or effect
-  cause: action readAttachment, called by tenant B with tenant A's ids before A ran, handed back A's seeded data at output.url: …
-  fix:   x exercise readAttachment --json — then read the row behind output.url through the repository scoped to ctx.actor, never by the input id alone
+  cause: action readAttachment, called by tenant B with A's own input before A ran, handed back A's seeded data at output.url: …
+  fix:   x exercise readAttachment --json — then read the row behind output.url through the repository scoped to ctx.actor, never by the input id alone, nor by an unscoped statement
 ```
 
 | Not a failure | Why |
 |---|---|
 | `public` | the policy admits an anonymous caller: what it returns, anyone may read. The read half is skipped; a crossed **write** is still red |
 | `public`, as a declared sweep | a job that reads every org on purpose says so with `crossTenant(reason, fn)`, and its input names no org's rows. The proof sees the scope and quotes the reason; the read half is skipped, a crossed **write** is still red. The same scope in an action or a query, or in a job handed A's id, is still `X_TENANT_LEAK` |
+| `public`, as a tenantless job | a job declaring `tenant: 'none'` whose input names none of A's rows — a nightly cleanup across every org, input `{ occurrenceMs }`. No org and no id of B's choosing reaches its run, so B's run is A's run: what it writes it writes for every enqueuer. The **write** half is skipped, the read half kept. Handed one of A's ids it is crossed as ever; an action or a query handed no id still crosses, since B's org runs it |
 | `unproven` | A's own call was not reached (that record is already red as `X_CONTRACT_EXERCISE_UNREACHED`), or a query answered A none of A's rows — B's empty answer then proves nothing |
 
 B holds the role A held, minus `tenancy:cross`. **Not checked**: a `route` `load` and a `task`

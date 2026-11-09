@@ -48,6 +48,8 @@ Those facts are repeated on several pages because the wiki is plain markdown wit
 | [Bare VM](Bare-VM) | the four commands a fresh Ubuntu box with bun and git runs, and why no Docker and no service is needed |
 | [Project layout](Project-Layout) | the generated monorepo, the four surfaces, feature slices, the hard boundaries |
 | [Migrating an existing app](Migrating-An-Existing-App) | strangler fig off Rails/Node/Django, adopting a live schema, identity during cutover, and what does not work yet |
+| [Compared](Compared) | each stack this gets compared to: when to pick it instead, what you give up here, and the measured figures with the commands that reproduce them |
+| [Shapes](Shapes) | `x new --shape api`, `blog` and `dashboard`: what each writes and what it leaves out |
 
 ## Tutorials
 

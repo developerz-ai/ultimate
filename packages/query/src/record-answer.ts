@@ -25,8 +25,8 @@ export type RecordAnswer = (answer: readonly object[] | Page<object>) => Respons
 export function recordAnswerFor(rows: StandardSchemaV1 | undefined): RecordAnswer {
   if (!answersRecords(rows)) return (answer) => jsonResponse(answer, datesOf(answer));
   return (answer) => {
-    const records = collect(rows, isPage(answer) ? answer.rows : answer);
-    return jsonResponse(encodeRecordEnvelope(answer, records), {
+    const { records, order } = collect(rows, isPage(answer) ? answer.rows : answer);
+    return jsonResponse(encodeRecordEnvelope(answer, records, undefined, order), {
       headers: { [RECORDS_HEADER]: '1', ...datesOf(answer).headers },
     });
   };
@@ -49,10 +49,12 @@ function datesOf(data: unknown): { readonly headers: Record<string, string> } {
  */
 export function recordRowAnswerFor(rows: StandardSchemaV1 | undefined): (row: object) => Response {
   if (!answersRecords(rows)) return (row) => jsonResponse(row, datesOf(row));
-  return (row) =>
-    jsonResponse(encodeRecordEnvelope(row, collect(rows, [row])), {
+  return (row) => {
+    const { records, order } = collect(rows, [row]);
+    return jsonResponse(encodeRecordEnvelope(row, records, undefined, order), {
       headers: { [RECORDS_HEADER]: '1', ...datesOf(row).headers },
     });
+  };
 }
 
 /** The one predicate the route and the OpenAPI projection both ask: can this read answer records? */
@@ -69,11 +71,18 @@ function isPage(answer: readonly object[] | Page<object>): answer is Page<object
  * Every entity row across the answer's rows: record type -> record key -> row. First sighting wins,
  * `rowsOf`'s own rule — one record shown twice is one record. Built in `Map`s and handed out as
  * null-prototype objects: a record type and a record key are data, and `__proto__` must stay a key.
+ *
+ * `order` is each type's keys as the answer met them. An integer-like key is an array index to
+ * every object, so the records object re-sorts it; `encodeRecordEnvelope` sends the order only for
+ * a type whose object lost it, so a uuid-keyed answer's body is what it always was.
  */
 function collect(
   schema: StandardSchemaV1,
   list: readonly object[],
-): Readonly<Record<string, RecordRows>> {
+): {
+  readonly records: Readonly<Record<string, RecordRows>>;
+  readonly order: Readonly<Record<string, readonly string[]>>;
+} {
   const out = new Map<string, Map<string, Row>>();
   for (const row of list) {
     for (const [type, byKey] of Object.entries(rowsOf(schema, row))) {
@@ -83,7 +92,10 @@ function collect(
         if (!bucket.has(key)) bucket.set(key, found);
     }
   }
-  return nullProto([...out].map(([type, bucket]) => [type, nullProto(bucket)] as const));
+  return {
+    records: nullProto([...out].map(([type, bucket]) => [type, nullProto(bucket)] as const)),
+    order: nullProto([...out].map(([type, bucket]) => [type, [...bucket.keys()]] as const)),
+  };
 }
 
 function nullProto<V>(entries: Iterable<readonly [string, V]>): Readonly<Record<string, V>> {

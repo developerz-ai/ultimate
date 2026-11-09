@@ -224,6 +224,11 @@ export class FakeElement extends FakeNode {
   /** Properties, not attributes: Solid assigns both of these straight onto the node. */
   value = '';
   checked = false;
+  /** The constraint API's message: `@ultimat3/ui`'s SearchableSelect refuses a required submit. */
+  validationMessage = '';
+  setCustomValidity(message: string): void {
+    this.validationMessage = String(message);
+  }
   constructor(readonly tagName: string) {
     super();
   }

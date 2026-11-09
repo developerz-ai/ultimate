@@ -1,5 +1,6 @@
 /**
- * The run console, in the browser: the one module of `/runs` a browser downloads.
+ * The run console, in the browser: the one module of `/runs` a browser downloads, the "created
+ * between" filter at its head included (`created-filter.tsx`, the calendar on a fine pointer).
  *
  * `useQuery(LIVE_RUN_EVENTS, { orgId, runId })` — the one read hook. The query is declared `live`,
  * so a row the job writes arrives over the page's one socket and the list re-renders without a
@@ -16,7 +17,16 @@
 import type { CatalogSubset } from '@ultimat3/i18n/subset';
 import { subsetTranslator } from '@ultimat3/i18n/subset';
 import { useQuery } from '@ultimat3/realtime';
-import { AsyncRegion, Button, Input, setSolidRuntime, UiProvider } from '@ultimat3/ui';
+import {
+  AsyncRegion,
+  Button,
+  Input,
+  type LogLine,
+  LogViewer,
+  SplitPane,
+  setSolidRuntime,
+  UiProvider,
+} from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import {
   createContext,
@@ -31,6 +41,7 @@ import {
 } from 'solid-js';
 import { render } from 'solid-js/web';
 import { browserClient } from '../../shared/browser-client';
+import { CreatedFilter, type CreatedFilterProps } from './created-filter';
 import styles from './run-console.module.scss';
 import type { ConnectionOption, ConsoleFault, ConsoleModel, RunHandle } from './run-console-model';
 import { createConsole } from './run-console-model';
@@ -53,6 +64,9 @@ export type RunConsoleLabels = RunLabels & {
   readonly promptSubmit: string;
   /** One sentence per write that can fail — the console says which did not happen. */
   readonly faults: Readonly<Record<ConsoleFault, string>>;
+  /** Names the event log, and the separator between it and the run. */
+  readonly log: string;
+  readonly resize: string;
 };
 
 export interface RunConsoleProps {
@@ -63,6 +77,12 @@ export interface RunConsoleProps {
   readonly labels: RunConsoleLabels;
   /** The design system's `ui.*` strings, resolved on the server (`uiCatalog(t)`): a `t` cannot travel. */
   readonly ui: CatalogSubset;
+  /**
+   * The "created between" filter, drawn at the console's head. HERE rather than its own island:
+   * a second island on the page carried its own Solid and `UiProvider`, 58,159 B, where the
+   * calendar inside this one costs 16,758 (measured 2026-11-06, `x build --target static`).
+   */
+  readonly filter: CreatedFilterProps;
   readonly run?: RunHandle;
   /** Events to draw instead of subscribing. The states file's, never the page's. */
   readonly preview?: readonly RunEventRow[];
@@ -72,6 +92,51 @@ interface RunBodyProps {
   readonly events: readonly RunEventRow[];
   readonly model: ConsoleModel;
   readonly console: RunConsoleProps;
+}
+
+/**
+ * The run's events as a log a reader can filter and follow: one line per step, a stop as an error.
+ * `usage` is said once, as its block in the timeline, never as a line.
+ */
+export function eventLog(events: readonly RunEventRow[], labels: RunConsoleLabels): LogLine[] {
+  return events.flatMap((event) =>
+    event.kind === 'usage'
+      ? []
+      : [
+          {
+            id: event.id,
+            at: event.at,
+            level: event.kind === 'failed' ? ('error' as const) : ('info' as const),
+            text:
+              event.message === ''
+                ? labels.kinds[event.kind]
+                : `${labels.kinds[event.kind]} · ${event.message}`,
+          },
+        ],
+  );
+}
+
+/**
+ * The log beside the run: `SplitPane` puts the filterable event log at the start and the timeline
+ * with its controls at the end, one column on a phone. The split lives for the page: storage is
+ * this app's to choose, and a console has nothing worth keeping across visits.
+ */
+function RunPanes(props: RunBodyProps): JSX.Element {
+  return (
+    <SplitPane
+      defaultValue={40}
+      min={25}
+      max={75}
+      label={props.console.labels.resize}
+      start={
+        <LogViewer
+          lines={eventLog(props.events, props.console.labels)}
+          label={props.console.labels.log}
+        />
+      }
+      end={<RunBody events={props.events} model={props.model} console={props.console} />}
+    />
+  );
 }
 
 /** The timeline, and the two controls a run in flight has: answer its prompt, or cancel it. */
@@ -133,7 +198,7 @@ function RunStream(props: Omit<RunBodyProps, 'events'> & { readonly run: RunHand
   );
   onCleanup(() => events.release());
   const body = (rows: readonly RunEventRow[]): JSX.Element => (
-    <RunBody events={orderedEvents(rows)} model={props.model} console={props.console} />
+    <RunPanes events={orderedEvents(rows)} model={props.model} console={props.console} />
   );
 
   return (
@@ -190,6 +255,7 @@ export function RunConsole(props: RunConsoleProps): JSX.Element {
 
   return (
     <div class={styles.console}>
+      <CreatedFilter {...props.filter} />
       <Show
         when={model.connections().length > 0}
         fallback={<ConnectForm model={model} labels={props.labels} />}
@@ -232,7 +298,7 @@ export function RunConsole(props: RunConsoleProps): JSX.Element {
           props.preview === undefined ? (
             <RunStream run={run} model={model} console={props} />
           ) : (
-            <RunBody events={orderedEvents(props.preview)} model={model} console={props} />
+            <RunPanes events={orderedEvents(props.preview)} model={model} console={props} />
           )
         }
       </Show>
@@ -244,7 +310,7 @@ export function RunConsole(props: RunConsoleProps): JSX.Element {
  * The one export the hydration runtime calls. Solid's `render` APPENDS when the container already
  * has children, so the server's shell goes first — `settings.island.tsx`'s rule, verbatim.
  */
-export function mount(el: HTMLElement, props: RunConsoleProps): void {
+export function mount(el: HTMLElement, props: RunConsoleProps): () => void {
   // The design system's reactive seam, from THIS bundle's solid-js — named, never `import *`.
   setSolidRuntime({
     createContext,
@@ -256,7 +322,9 @@ export function mount(el: HTMLElement, props: RunConsoleProps): void {
     createRoot,
   });
   el.textContent = '';
-  render(
+  // Returned: the router calls it when it swaps this page out, so every effect this island
+  // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
+  return render(
     () => (
       <UiProvider locale={props.locale} timeZone={props.zone} t={subsetTranslator(props.ui)}>
         <RunConsole {...props} />

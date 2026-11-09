@@ -7,6 +7,7 @@ import type { ReferenceDescription } from '@ultimat3/entity';
 import { DEFAULT_SEED, seededUuid } from './determinism';
 import { seedGraphUnsatisfied } from './seed-graph-error';
 import { edgeKey, insertOrder } from './seed-graph-order';
+import { declaredPatterns } from './seed-graph-patterns';
 import type {
   SeedCanary,
   SeedGraph,
@@ -62,6 +63,33 @@ function ownedByTenant(
   return owned;
 }
 
+/**
+ * Every untenanted entity (`shared`, or of no tenant) a tenant-owned table points at through a key
+ * unique across the TABLE — a unique set holding the reference and not the tenant column. Each
+ * tenant's children then take parent rows no other tenant may reuse, so the parent seeds
+ * `perTable` rows per tenant: `perTable` alone ran out before tenant 2 (`X_SEED_GRAPH_UNSATISFIED`).
+ */
+function fannedOut(
+  shapes: ReadonlyMap<string, EntityShape>,
+  scoped: (name: string) => boolean,
+): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const shape of shapes.values()) {
+    if (!scoped(shape.name)) continue;
+    const tenantColumn = shape.entity.$tenantColumn;
+    const tableWide = [...shape.uniques, ...shape.partialUniques].filter(
+      (set) => tenantColumn === null || !set.includes(tenantColumn),
+    );
+    for (const reference of shape.references.values()) {
+      if (scoped(reference.targetEntity) || reference.targetEntity === shape.name) continue;
+      if (tableWide.some((set) => set.includes(reference.property))) {
+        out.add(reference.targetEntity);
+      }
+    }
+  }
+  return out;
+}
+
 export function seedGraph(
   entities: Readonly<Record<string, SeedEntity>>,
   options: SeedGraphOptions = {},
@@ -72,15 +100,26 @@ export function seedGraph(
   // A view entity is a relation Postgres derives: no row is ever written to it, so it is no part of
   // the graph (`X_ENTITY_VIEW_READ_ONLY` otherwise) — the tables it reads from carry the rows. A
   // history table is the same from this side: its trigger writes every row, from the parent's.
+  // A `readOnly` table is the app's own statement that it writes no row there (a trigger refuses
+  // every INSERT): seeded like a view, never — a reference into one is null or refused below.
+  const closed = new Map(
+    Object.values(entities).flatMap((entity) => {
+      const reason = entity.$describe().readOnly;
+      return reason === undefined ? [] : [[entity.$name, reason] as const];
+    }),
+  );
   const tables = Object.values(entities).filter((entity) => {
     const described = entity.$describe();
-    return described.view === undefined && described.historyOf === undefined;
+    return (
+      described.view === undefined && described.historyOf === undefined && !closed.has(entity.$name)
+    );
   });
   const shapes = new Map(tables.map((entity) => [entity.$name, shapeOf(entity)]));
   const { order, deferred } = insertOrder(
     [...shapes.values()].map((shape) => ({
       name: shape.name,
       references: [...shape.references.values()],
+      updatable: shape.entity.$describe().appendOnly !== true,
     })),
   );
   const tenantStream = seededUuid(streamSeed(seed, '$tenants'));
@@ -96,24 +135,40 @@ export function seedGraph(
   }
   const owned = ownedByTenant(shapes, roots);
   const scoped = (name: string): boolean => owned.has(name);
+  const fanned = fannedOut(shapes, scoped);
   for (const factory of Object.values(options.factories ?? {})) factory.reset();
+  const besideNext = options.beside?.next ?? {};
+  const next: Record<string, number> = { ...besideNext };
 
   const placed = new Map<string, Placed[]>();
+  // The same rows by tenant: a pool read per row was a filter of the whole parent table, so a pass
+  // seeding a tenant pair per primitive planned in primitives² time.
+  const placedIn = new Map<string, Map<string | null, Placed[]>>();
   const parentValues = (
     reference: ReferenceDescription,
     tenant: string | null,
     index: number,
   ): unknown[] => {
     if (!shapes.has(reference.targetEntity)) return reference.nullable ? [null] : [];
-    const pool = (placed.get(reference.targetEntity) ?? []).filter(
-      (parent) => tenant === null || !scoped(reference.targetEntity) || parent.tenant === tenant,
-    );
+    const pool =
+      tenant === null || !scoped(reference.targetEntity)
+        ? (placed.get(reference.targetEntity) ?? [])
+        : (placedIn.get(reference.targetEntity)?.get(tenant) ?? []);
     const values =
       pool.length === 0 ? [] : rotate(pool, index).map((p) => p.row[reference.targetProperty]);
     return reference.nullable ? [...values, null] : values;
   };
   const refuseEmpty = (shape: EntityShape, property: string, tenant: string | null): never => {
     const reference = shape.references.get(property);
+    const reason = reference === undefined ? undefined : closed.get(reference.targetEntity);
+    if (reference !== undefined && reason !== undefined) {
+      throw seedGraphUnsatisfied({
+        entity: shape.name,
+        what: `${property} references ${reference.targetEntity}, which is readOnly (${reason}): no row of it is seeded and ${property} is not nullable, so no ${shape.name} row can be written`,
+        columns: [property],
+        fix: `entity('${shape.name}', { readOnly: '<why the app never writes it>' })   # when the app never writes ${shape.name} either — else ${property}: <its column>.nullable(), then x db gen "${shape.entity.$table} ${property} nullable"`,
+      });
+    }
     throw seedGraphUnsatisfied({
       entity: shape.name,
       what:
@@ -135,14 +190,25 @@ export function seedGraph(
     const factory = options.factories?.[name];
     const rows: Placed[] = [];
     placed.set(name, rows);
-    const taken = shape.uniques.map(() => new Set<string>());
+    const byTenant = new Map<string | null, Placed[]>();
+    placedIn.set(name, byTenant);
+    const allUniques = [...shape.uniques, ...shape.partialUniques];
+    const taken = allUniques.map(() => new Set<string>());
     const rootProperty = roots.get(name);
+    // Read once per table: each `matches(/…/)` an invariant holds a column to, sampled from.
+    const patterns = declaredPatterns(entity);
     const buckets: readonly (string | null)[] = scoped(name) ? tenants : [null];
-    let ordinal = 0;
+    // Positions continue past the graph written before this one: a reset factory rebuilt that
+    // graph's first values, and a unique column refused the second copy.
+    const start = besideNext[name] ?? 0;
+    for (let skipped = 0; factory !== undefined && skipped < start; skipped += 1) factory.build();
+    let ordinal = start;
     for (const [bucket, tenant] of buckets.entries()) {
-      const size = rootProperty === undefined ? perTable : 1;
+      const size =
+        rootProperty !== undefined ? 1 : fanned.has(name) ? perTable * tenantCount : perTable;
       for (let index = 0; index < size; index += 1) {
         ordinal += 1;
+        next[name] = ordinal;
         const canary = stream().replace(/-/g, '').slice(0, 10);
         const built: Readonly<Record<string, unknown>> =
           factory === undefined ? {} : { ...factory.build() };
@@ -169,6 +235,7 @@ export function seedGraph(
                           ordinal,
                           canary,
                           position,
+                          patterns: patterns.get(property),
                           uuid: stream,
                         });
           return [
@@ -176,11 +243,19 @@ export function seedGraph(
             candidates.length === 0 ? refuseEmpty(shape, property, tenant) : candidates,
           ] as const;
         });
+        // A partial unique whose every column the factory built is the database's to judge.
+        const held = allUniques
+          .map((set, i) => [set, taken[i] as Set<string>] as const)
+          .filter(
+            ([set], i) =>
+              i < shape.uniques.length || !set.every((property) => Object.hasOwn(built, property)),
+          );
         const problem: RowProblem = {
           columns,
           checks: shape.checks,
-          uniques: shape.uniques,
-          taken,
+          uniques: held.map(([set]) => set),
+          taken: held.map(([, set]) => set),
+          derive: factory?.derive?.bind(factory),
         };
         const solved = solveRow(problem);
         if (!solved.ok) {
@@ -197,11 +272,15 @@ export function seedGraph(
           });
         }
         const row = { ...solved.row };
-        shape.uniques.forEach((set, i) => {
+        allUniques.forEach((set, i) => {
           const key = uniqueKey(row, set);
           if (key !== undefined) taken[i]?.add(key);
         });
-        rows.push({ tenant, row, index });
+        const one = { tenant, row, index };
+        rows.push(one);
+        const bucketRows = byTenant.get(tenant);
+        if (bucketRows === undefined) byTenant.set(tenant, [one]);
+        else bucketRows.push(one);
         inserts.push({ entity: name, table: entity.$table, tenant, row: { ...row } });
         canaries.push({
           entity: name,
@@ -219,6 +298,8 @@ export function seedGraph(
   const updates: SeedUpdate[] = [];
   for (const name of order) {
     const shape = shapes.get(name) as EntityShape;
+    // An appendOnly row is never updated (its trigger refuses): a key deferred there stays null.
+    if (shape.entity.$describe().appendOnly === true) continue;
     const later = shape.columns.filter(([property]) => deferred.has(edgeKey(name, property)));
     if (later.length === 0) continue;
     for (const { tenant, row, index } of placed.get(name) ?? []) {
@@ -246,5 +327,5 @@ export function seedGraph(
       updates.push({ entity: name, tenant, key: keyOf(shape.entity, row), patch });
     }
   }
-  return { seed, tenants, order, inserts, updates, canaries };
+  return { seed, tenants, order, inserts, updates, canaries, next };
 }

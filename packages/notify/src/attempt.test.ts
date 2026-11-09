@@ -6,6 +6,7 @@ import { isUltimateError, logger } from '@ultimat3/core';
 import { nextRetryForError } from '@ultimat3/jobs';
 import { type AttemptInput, attemptDelivery } from './attempt';
 import { memoryDeliveryLedger } from './ledger';
+import { NotifyPushProviderRefusedError } from './push-errors';
 
 const NOW = new Date('2026-08-24T09:00:00Z');
 const claim = { notifier: 'post.liked', key: 'k1', recipient: 'ana', channel: 'email' };
@@ -120,6 +121,41 @@ describe('unit · one delivery attempt', () => {
 
     expect((await app.ledger.find(claim))?.status).toBe('sent');
     expect(warned.mock.calls.filter(([line]) => line === 'notify.settle_fenced')).toHaveLength(1);
+  });
+
+  test('a refusal classified terminal stays terminal through the wrapper, and the row re-claimable', async () => {
+    const app = rig();
+    const refused = new NotifyPushProviderRefusedError({
+      provider: 'apns',
+      status: 403,
+      reason: 'x',
+    });
+    const failure = await attempt(
+      app.input('refused', () => {
+        throw refused;
+      }),
+    ).catch((error: unknown) => error);
+
+    if (!isUltimateError(failure)) return expect.unreachable('a throwing channel raises');
+    expect(failure.code).toBe('X_NOTIFY_DELIVERY_FAILED');
+    const policy = { attempts: 5, delay: 1, backoff: 'fixed', jitter: false } as const;
+    expect(nextRetryForError(policy, 1, failure)).toMatchObject({
+      retry: false,
+      stoppedBy: 'terminal',
+    });
+    expect((await app.ledger.find(claim))?.status).toBe('failed');
+  });
+
+  test('a channel blip stays retryable through the wrapper', async () => {
+    const app = rig();
+    const blip = new TypeError('provider 503'); // the channel's input, not this test's verdict
+    const failure = await attempt(
+      app.input('blip', () => {
+        throw blip;
+      }),
+    ).catch((error: unknown) => error);
+    const policy = { attempts: 5, delay: 1, backoff: 'fixed', jitter: false } as const;
+    expect(nextRetryForError(policy, 1, failure)).toMatchObject({ retry: true });
   });
 
   test('an attempt that owns its row settles it with no warning', async () => {

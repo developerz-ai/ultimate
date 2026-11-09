@@ -5,6 +5,7 @@
 
 import { canEncode, finiteCount } from '@ultimat3/core';
 import { imageQueryInvalid } from './errors';
+import { currentStaticExport, isExportableSrc } from './static-export';
 import { attributes, escapeXml } from './xml';
 
 /** Ordered widest-first is wrong for `srcset`; browsers want ascending. */
@@ -96,6 +97,18 @@ function defaultUrlFor(src: string, width: number, format?: string): string {
   const widthParam = `${IMAGE_QUERY_KEYS.width}=${width}`;
   const formatParam = format === undefined ? '' : `&${IMAGE_QUERY_KEYS.format}=${format}`;
   return `${src}${separator}${widthParam}${formatParam}`;
+}
+
+/**
+ * The variant URL while a static export renders: a FILE path the export writes, because a dumb
+ * file server ignores `?w=&f=` and hands back the full original under a `<source type="image/webp">`.
+ * `undefined` in a served process (no export installed) and for a remote `src`, which keep the
+ * query URLs the media route — or a CDN — answers. A caller's own `urlFor` always wins.
+ */
+function exportUrlFor(src: string): ResponsiveImageOptions['urlFor'] {
+  const exported = currentStaticExport();
+  if (exported === undefined || !isExportableSrc(src)) return undefined;
+  return (from, width, format) => exported.imageUrl({ src: from, width, format });
 }
 
 export interface ImageQuery {
@@ -220,7 +233,7 @@ export function responsiveImage(
   input: ImageInput,
   options: ResponsiveImageOptions = {},
 ): ResponsiveImage {
-  const urlFor = options.urlFor ?? defaultUrlFor;
+  const urlFor = options.urlFor ?? exportUrlFor(input.src) ?? defaultUrlFor;
   const widths = usableWidths(input.width, options.widths ?? DEFAULT_WIDTHS);
   const sizes = input.sizes ?? '100vw';
   const formats = options.formats ?? DEFAULT_FORMATS;

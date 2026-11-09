@@ -89,6 +89,18 @@ describe('the interval', () => {
     expect(pacer.asked).toEqual([]);
   });
 
+  test('a clock stepped backwards waits one interval at most, never the size of the step', async () => {
+    // An NTP step back, or a frozen test clock reset between runs: `at - lastAt` goes negative,
+    // and the wait it implies is the step itself — 30 s here — which no rate ever asked for.
+    const pacer = paced(5);
+    await pacer.wait();
+
+    pacer.batchTook(-30_000);
+    await pacer.wait();
+
+    expect(pacer.asked).toEqual([200]);
+  });
+
   test('a fractional rate is a rate: one batch every two seconds', async () => {
     const pacer = paced(0.5);
 
@@ -155,6 +167,35 @@ describe('cancellation', () => {
 
     expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_ABORTED');
     expect(elapsed).toBeLessThan(1_000);
+  });
+});
+
+describe('the run clock', () => {
+  test('a frozen run clock is the wait: it moves by the interval and no timer is armed', async () => {
+    // No sleeper injected — the shipped default. A real timer under a clock that never moves made
+    // every batch read as instant and pay the full interval in wall time. At 0.001 batches/sec
+    // the interval is 1,000 s: a real timer here would outlive the test runner's own timeout.
+    const clock = frozenClock('2026-08-14T00:00:00.000Z');
+    const pacer = backfillPacer({ rate: 0.001, job: 'rewrite-titles' });
+
+    await pacer.wait({ signal: NEVER_ABORTED, clock });
+    await pacer.wait({ signal: NEVER_ABORTED, clock });
+
+    expect(clock.now().toISOString()).toBe('2026-08-14T00:16:40.000Z');
+  });
+
+  test("a clock injected into the pacer outranks the run's", async () => {
+    // `exportRows()`/`importRows()` build their pacer with their own clock; a run clock handed to
+    // `wait` must not silently replace it.
+    const own = frozenClock('2026-08-14T00:00:00.000Z');
+    const run = frozenClock('2026-08-14T00:00:00.000Z');
+    const pacer = backfillPacer({ rate: 5, job: 'rewrite-titles', clock: own });
+
+    await pacer.wait({ signal: NEVER_ABORTED, clock: run });
+    await pacer.wait({ signal: NEVER_ABORTED, clock: run });
+
+    expect(own.now().toISOString()).toBe('2026-08-14T00:00:00.200Z');
+    expect(run.now().toISOString()).toBe('2026-08-14T00:00:00.000Z');
   });
 });
 

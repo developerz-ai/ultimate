@@ -90,11 +90,17 @@ describe('unit · every generated route is one the framework will register', () 
    * emitted per island DIRECTIVE, so a page with none ships `''` whatever it declared. If that ever
    * stops holding, every scaffolded app pays for an island it does not have, on its first page.
    */
+  // One exception, by rule and not by taste: a page with a PARAM (`--shape dashboard`'s
+  // `posts/[id]`) is `ssr`. `stream` may not declare `prerender()` (`X_ROUTE_MODE_INVALID`) and
+  // with none a budget there is `X_BUDGET_PARAMS_UNDECLARED`; `ssr` is the per-request mode the
+  // build reports as unweighable — the reference app's own `posts/[id]` (#1001).
   test('app/ generates the surface default: the mode with holes, private by construction', () => {
     const app = emittedRoutes().filter((route) => route.surface === 'app');
     expect(app.length).toBeGreaterThan(0);
-    for (const route of app)
-      expect(`${route.path}: ${declared(route.source, 'render')}`).toBe(`${route.path}: stream`);
+    for (const route of app) {
+      const mode = route.path.includes('/[') ? 'ssr' : 'stream';
+      expect(`${route.path}: ${declared(route.source, 'render')}`).toBe(`${route.path}: ${mode}`);
+    }
   });
 
   test('a generated hydrate strategy on an island-free page costs no bytes', () => {

@@ -21,6 +21,7 @@ import {
   UNWINDING_STEP,
 } from './errors-saga';
 import { createRunSignal } from './run-signal';
+import { inStep } from './step-scope';
 import type { EventLookup, StepApi, StepRunOptions } from './steps-api';
 import { DEFAULT_EVENT_POLL_MS, WAKING_EVENT_POLL_MS } from './steps-api';
 import type { RunnerCore } from './steps-core';
@@ -209,7 +210,9 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
     return occurrence === 1 ? base : `${base}#${occurrence}`;
   };
 
-  const cancelled = (): boolean => runSignal.aborted;
+  // The run cancelled, or this attempt over — `ended` also covers one that COMPLETED, whose
+  // `ctx.signal` stays un-aborted on purpose (`execute.ts`).
+  const cancelled = (): boolean => runSignal.aborted || options.ended?.aborted === true;
 
   /**
    * A cancelled run whose step result is still this attempt's to record: the worker's drain cut
@@ -247,7 +250,11 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
    */
   const put = async (record: StepRecord): Promise<void> => {
     if (cancelled() && !writesThrough()) {
-      throw new JobAbortedError({ job: jobName, step: record.name });
+      throw new JobAbortedError({
+        job: jobName,
+        step: record.name,
+        ...(runSignal.aborted ? {} : { ended: true }),
+      });
     }
     await persist(record);
     remember(record);
@@ -291,7 +298,7 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
     const signal = composed?.signal ?? runSignal;
     try {
       const output = await withStepTimeout(
-        fn(signal),
+        inStep(name, () => fn(signal)),
         stepTimeoutMs,
         deadline,
         () =>

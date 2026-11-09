@@ -5,7 +5,7 @@
 // holding a connection — so the trace this returns is keyed by step name and counts executions.
 // Nothing here polls or sleeps: a job becomes due only because `clock.advance()` said so.
 
-import type { Actor, Ctx } from '@ultimat3/core';
+import type { Actor, Ctx, FrozenClock } from '@ultimat3/core';
 import { assert, ctxOf } from '@ultimat3/core';
 import type {
   AnyJobHandle,
@@ -16,7 +16,7 @@ import type {
   JobRecord,
   StepStatus,
 } from '@ultimat3/jobs';
-import { frozenNow } from './determinism';
+import { advanceClock, frozenNow, setFrozenClock } from './determinism';
 import { frozenScheduler } from './frozen-scheduler';
 
 export interface StepTally {
@@ -69,6 +69,11 @@ export interface RunJobs extends AsyncDisposable {
   enqueue<I>(handle: JobHandle<I>, input: I, options?: JobEnqueueAs): Promise<EnqueueResult>;
   /** Claim and execute everything due at the current instant, until nothing is. */
   drain(options?: JobDrainAs): Promise<JobRunTrace>;
+  /**
+   * ONE worker pass: what is due now runs, and what those runs enqueue waits for the next pass —
+   * "it queued one child per row" asserted without running a child.
+   */
+  tick(options?: JobDrainAs): Promise<JobRunTrace>;
   /** Live jobs — ready, delayed, running or suspended — optionally for one job only. */
   depth(handle?: AnyJobHandle): Promise<number>;
   /** Live jobs claimable right now. `clock.advance()` is what turns delayed into due. */
@@ -87,6 +92,23 @@ const CLAIM_LIMIT = 64;
  * reads the same clock, so a renewal can never report a lease lost that `clock.advance()` did not.
  */
 const RENEW_MS = 1;
+/**
+ * The clock a body runs on: the preload's frozen instant, as a `FrozenClock`. `systemClock` read
+ * the frozen `Date` too, but had no `advance` — so a `backfill()` pacer saw every batch as instant
+ * and slept its whole `rate` interval in WALL time. Moving the instant is the wait now, and it is
+ * a move the frozen scheduler hears, so the renewals see exactly the time the throttle spent.
+ */
+const PRELOAD_CLOCK: FrozenClock = Object.freeze({
+  now: frozenNow,
+  monotonic: () => frozenNow().getTime(),
+  advance: (ms: number): void => {
+    advanceClock(ms);
+  },
+  set: (at: Date | number | string): void => {
+    setFrozenClock(at instanceof Date ? at.getTime() : at);
+  },
+});
+
 /** A drain that has not settled in this many rounds is a runaway, not a slow queue. */
 const MAX_ROUNDS = 100;
 const LIVE_STATES: ReadonlySet<string> = new Set(['ready', 'delayed', 'running', 'suspended']);
@@ -120,7 +142,7 @@ export async function testJobs(): Promise<RunJobs> {
   // the process's own handed back with the driver.
   const previousBus = jobs.eventBus();
   jobs.setEventBus(jobs.memoryEventBus());
-  const anonymousWorker = ctxOf({ role: 'worker' });
+  const anonymousWorker = ctxOf({ role: 'worker', clock: PRELOAD_CLOCK });
   const renewals = frozenScheduler();
 
   const introspect = (): NonNullable<JobDriver['introspect']> => {
@@ -194,14 +216,22 @@ export async function testJobs(): Promise<RunJobs> {
   /** Every execution this fixture has driven, because the trace is cumulative. */
   const history: JobExecution[] = [];
 
+  const ctxFor = (options: JobDrainAs): Ctx =>
+    options.actor === undefined
+      ? anonymousWorker
+      : ctxOf({ role: 'worker', actor: options.actor, clock: PRELOAD_CLOCK });
+  const traced = (): JobRunTrace => ({ executions: [...history], steps: tallyOf(history) });
+
+  const tick = async (options: JobDrainAs = {}): Promise<JobRunTrace> => {
+    history.push(...(await round(ctxFor(options))));
+    return traced();
+  };
+
   const drain = async (options: JobDrainAs = {}): Promise<JobRunTrace> => {
-    const ctx =
-      options.actor === undefined
-        ? anonymousWorker
-        : ctxOf({ role: 'worker', actor: options.actor });
+    const ctx = ctxFor(options);
     for (let rounds = 0; rounds < MAX_ROUNDS; rounds += 1) {
       const batch = await round(ctx);
-      if (batch.length === 0) return { executions: [...history], steps: tallyOf(history) };
+      if (batch.length === 0) return traced();
       history.push(...batch);
     }
     assert(
@@ -239,6 +269,7 @@ export async function testJobs(): Promise<RunJobs> {
   return Object.assign(enqueueThenDrain, {
     enqueue,
     drain,
+    tick,
     depth: async (handle?: AnyJobHandle) => (await live(handle?.name)).length,
     due: async () =>
       (await live()).filter(

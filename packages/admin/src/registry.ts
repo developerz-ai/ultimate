@@ -42,6 +42,8 @@ export interface AdminColumnMeta {
    * server. Present means the admin derives NO readable field for it — see `entity-columns.ts`.
    */
   readonly sealed?: { readonly lookup: boolean };
+  /** `json(schema)`'s schema: what a `json()` column's MCP argument is typed by (`entity-columns.ts`). */
+  readonly schema?: unknown;
 }
 
 /** One column of a registered entity. An `@ultimat3/entity` `Column` satisfies this. */
@@ -86,6 +88,8 @@ export interface AdminEntity {
    * hand-built fixture has none; a view offers reads alone (`resource-operations.ts`).
    */
   readonly $viewQuery?: { readonly materialized: boolean } | null;
+  /** `entity({ readOnly })`'s reason, `null` on a table the app writes: reads alone, as a view. */
+  readonly $readOnly?: string | null;
   /** Resolves foreign-key targets. See `entity-columns.ts` for what the admin takes from it. */
   $describe(): AdminEntityDescription;
 }

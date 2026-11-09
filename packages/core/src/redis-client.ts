@@ -30,21 +30,34 @@ export const REDIS_CLIENT_OPTIONS: Readonly<
 /** One client per process per URL: a second one is a second socket and a second reconnect loop. */
 const clients = new Map<string, RedisClient>();
 
+type RedisEnv = Readonly<Record<string, string | undefined>>;
+
+/** The variable that supplied a Redis URL, and the URL. */
+export interface RedisUrlSource {
+  readonly key: 'REDIS_URL' | 'VALKEY_URL';
+  readonly url: string;
+}
+
 /**
  * `REDIS_URL`, the variable the CLI's tier selection reads; then `VALKEY_URL`, which `Bun.redis`
- * also honours; then the local default. An empty or blank value is unset.
+ * also honours. An empty or blank value is unset; `undefined` when neither is set — the one
+ * precedence, for a caller that must tell an unset Redis from the local default.
  */
-export function redisUrl(
-  env: Readonly<Record<string, string | undefined>> = process.env as Record<
-    string,
-    string | undefined
-  >,
-): string {
-  for (const key of ['REDIS_URL', 'VALKEY_URL']) {
-    const value = env[key]?.trim();
-    if (value !== undefined && value !== '') return value;
+export function redisUrlSource(
+  env: RedisEnv = process.env as Record<string, string | undefined>,
+): RedisUrlSource | undefined {
+  for (const key of ['REDIS_URL', 'VALKEY_URL'] as const) {
+    const url = env[key]?.trim();
+    if (url !== undefined && url !== '') return { key, url };
   }
-  return LOCAL_REDIS_URL;
+  return undefined;
+}
+
+/** `redisUrlSource`'s URL, else the local default. */
+export function redisUrl(
+  env: RedisEnv = process.env as Record<string, string | undefined>,
+): string {
+  return redisUrlSource(env)?.url ?? LOCAL_REDIS_URL;
 }
 
 /**

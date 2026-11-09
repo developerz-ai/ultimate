@@ -4,7 +4,7 @@
 // and single-use, so a database dump is not a permanent MFA bypass; consuming one is the
 // adapter's (`consumeRecoveryCode`), because single-use has to be one atomic step.
 
-import { finiteCount, timingSafeEqual } from '@ultimat3/core';
+import { finiteCount, hmac, timingSafeEqual } from '@ultimat3/core';
 import type { Auth } from './auth';
 import { mfaSecretInvalid } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
@@ -135,9 +135,7 @@ export function totpCode(secret: string, step: number, digits: number = TOTP_DIG
   // code every other unreadable secret answers too. There is no code an unreadable secret is
   // entitled to, so this returns none.
   if (key.length === 0) throw mfaSecretInvalid('totpCode');
-  const mac = Uint8Array.from(
-    new Bun.CryptoHasher('sha1', key).update(counterBytes(step)).digest(),
-  );
+  const mac = hmac('sha1', key, counterBytes(step));
   const offset = (mac[mac.length - 1] ?? 0) & 0x0f;
   const binary =
     (((mac[offset] ?? 0) & 0x7f) << 24) |

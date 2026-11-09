@@ -86,7 +86,7 @@ class — stay on `.`.
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
 | the node | `./server` | `syncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
-| hooks | `.` | `useQuery` (and `pollEvery` for its `poll`), `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useRecordChanges`, `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
+| hooks | `.` | `useQuery` (and `pollEvery` for its `poll`), `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useRecordChanges`, `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime`, `resetPageRealtime` (tests) |
 | channel records, no replicator | `./server` | `recordPublisher` — an app's committed rows as channel `records`, sequenced per producer ([below](#channel-records-with-no-replicator)) |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
 | first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`, for an island that reads the store or the outbox: the boot's restore and the open outbox, capped (#506). An island taking only `useChannel` / `usePresence` / `useConnection` never awaits it and is never hidden, nor is one taking `useQuery` / `useRecord` in an app that declares no `persist: true` entity |
@@ -285,6 +285,8 @@ same type `@ultimat3/ui` renders.
 |---|---|
 | A query ref is `{ name, live?, entity? }`, never the query VALUE | importing a `query()` drags its read path into the island (698,801 B measured) |
 | Lists hold keys; rows are the store's | a record updated by any answer or frame re-renders every list showing it, with no refetch |
+| A `useQuery` list is in ANSWER order | the envelope's `order[type]` where the server sent one — an object enumerates integer-like keys ascending, so an `integer()` keyed newest-first feed rendered oldest-first from `records[type]` alone — else `records[type]`'s key order |
+| A live `refetch` re-asks a REFUSED subscription | a refusal with no `retryAfterSeconds` stays `failed` on an open socket until it reconnects; `refetch` calls `LiveHandle.retry()` and settles on the node's next answer, so a pull-to-refresh does something in exactly that state. Any other live state settles at once: the socket is its refresh |
 | A list that must GROW with the store is `useRecords(type, { where?, order? })` | a `useQuery` list holds its own answer's keys and `useRecords(type, keys)` the keys it was given, so a record a channel's `records` frame adopts reaches neither. The whole-type form is the channel-records counterpart of a live window: `ready` from its first read, every record of the type the store holds (optimistic ones included), default order by key, and none evicted while it is held — a row it alone kept goes when the last reader of the type lets go (#680) |
 | An answer is the SAME object until what it shows moved | `useQuery`, `useRecord` and both `useRecords` forms hand back the previous answer — and its `data` array — while the status and every row object match: a refetch or poll that found the same rows, or a re-read after an unrelated change, re-runs nothing derived from it (Solid's `===`). A whole-type reader with `where` is not even TOLD of a record it neither shows nor would show: on a run page the viewer's alerts list stopped hearing the fleet's runs (180 of 200 frames, 0 its own) |
 | A busy feed is throttled by the reader, `useRecords(type, { throttleMs })` | the first change is told at once, a burst as ONE notification at the end of the period, the last always lands; `release()` drops what is owed. A live board on a phone took ten records a second, each a whole-board redraw: `throttleMs: 1000` tells it 21 times in 20 s instead of 200. Absent or `0`: every change, as before. A non-finite or fractional value is `X_INVARIANT`; `schedule` injects the timer in a test |
@@ -301,6 +303,11 @@ same type `@ultimat3/ui` renders.
 state; a `useMutation` call refuses with `X_LIVE_SERVER_RENDER`. With a DOM and no install, every
 hook is `X_REALTIME_UNINSTALLED`. `hasPageSocket()` is the guard a component with a static fallback
 asks.
+
+**Between island tests**, `resetPageRealtime()` (`.`) is the one reset: it closes the page socket —
+whichever bundle's copy built it, through the page object — and drops the page object, the outbox
+and the boot's promise. A mounted chunk carries its own copy of this package, so a test never reaches
+into `Symbol.for('ultimate.realtime')` itself. Tests only; a page's state ends with its tab.
 
 ## Who a socket is
 
@@ -389,7 +396,7 @@ wire.
 | Ceiling | Default | Option | Refused with |
 |---|---|---|---|
 | concurrent sockets on this node | 250,000 | `syncNode({ maxConnections })` | `503` + `retry-after-ms`, the same shed as the accept budget |
-| inbound bytes per frame | 256 KiB | `syncNode({ maxFrameBytes })` | the socket, by `Bun.serve`'s `maxPayloadLength` |
+| inbound bytes per frame | 256 KiB | `syncNode({ maxFrameBytes })` | a `1009` close, by `Bun.serve`'s `maxPayloadLength` and by the node itself — a listener shared with a `deviceSocket()` takes the widest mount's limit |
 | inbound frames per socket | 64/s, burst 256 | `syncNode({ maxFramesPerSecond, frameBurst })` | `X_FRAME_RATE_LIMIT` |
 | live subscriptions per socket | 128 | `new LiveQueryRegistry({ maxPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
 | live subscriptions per actor (anonymous: per resolved client address), across its sockets | 1,000 (`DEFAULT_MAX_PER_ACTOR`) | `new LiveQueryRegistry({ maxPerActor })`; the boot passes `realtime.maxSubscriptionsPerActor` | `X_SUBSCRIPTION_LIMIT` |
@@ -891,6 +898,26 @@ principal.
   (`maxRowsPerType` / `maxRowsByType`, least recently written first). An eviction is a change like any other: the
   persister deletes the row from disk with it. Persisting it (IndexedDB) is plan 101 slice 12.
 
+## Device sockets
+
+`deviceSocket({ path, resolveToken, onFrame, maxSocketsPerActor?, heartbeatMs?, allowedOrigins? })`
+— a declared socket for a non-browser client, from `./server`. A factory over `route`: the value is
+a websocket mount plus `request(ctx, deviceId, frame, { deadlineMs })`, which reaches one connected
+device from any process over the bus, scoped to `ctx.actor.orgId`. `deviceAgent({ url, token,
+onRequest })` is the Bun client. Every rule (credential, caps, frame limit, beat, drain, codes):
+[wiki/Realtime.md#device-sockets](../../wiki/Realtime.md#device-sockets).
+
+| File | Job |
+|---|---|
+| `device-socket.ts` | the declaration, its screen, the registry, `request()` and `attach()` |
+| `device-upgrade.ts` | the upgrade decision: origin, bearer token under a deadline, expiry, cap |
+| `device-host.ts` | the sockets one node holds: frames, the lane, the sweep, the drain |
+| `device-bus.ts` | where a device is and how a request reaches it and comes back |
+| `device-wire.ts` | both hops' frames and the frame limit |
+| `device-agent.ts` | the device's half, on Bun |
+| `device-errors.ts` | its refusals |
+| `device-declarer.ts` | the file that called `deviceSocket()`, so `x dev` refuses another module taking a path |
+
 ## Errors
 
 `X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_SUBSCRIPTION_ID_TAKEN` ·
@@ -900,7 +927,8 @@ principal.
 `X_REALTIME_UNINSTALLED` · `X_SYNC_UNCONFIGURED` · `X_RECORD_REJECTED` ·
 `X_LIVE_SERVER_RENDER` · `X_LIVE_QUERY_UNKNOWN` ·
 `X_LIVE_REPLICA_IDENTITY` ·
-`X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` · `X_NOT_IMPLEMENTED` ·
+`X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` ·
+`X_DEVICE_OFFLINE` · `X_DEVICE_REQUEST_TIMEOUT` · `X_DEVICE_FRAME_TOO_LARGE` · `X_NOT_IMPLEMENTED` ·
 `X_TIMEOUT`
 
 `X_NOT_IMPLEMENTED` and `X_TIMEOUT` are **borrowed** from `@ultimat3/core`, which owns and titles

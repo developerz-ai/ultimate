@@ -131,7 +131,9 @@ Tier 1. Tagged caching + THE invalidation graph.
 - **Redis down is a slow miss, never a hang** (`redis-deadline.ts`). Every value-path command gets
   `commandTimeoutMs` (150 ms); one miss parks the value path `REDIS_PARK_MS` (5 s) — commands refuse
   unsent, one clock read, no state machine. A bust NEVER parks and gets 1,000 ms: a skipped bust is
-  stale rows until TTL. A miss or a park is `X_CACHE_DRIVER_UNAVAILABLE`, which `bestEffort` records.
+  stale rows until TTL. A miss or a park is `X_CACHE_DRIVER_UNAVAILABLE`, which `bestEffort` records;
+  so is a STOPPED store (Bun's `ERR_REDIS_CONNECTION_CLOSED`, typed in `withinDeadline`, a bust's
+  included). A server's own error reply passes through (`redis-outage.test.ts`).
   The client is core's `redisClient()` (no offline queue, endless reconnect); never `Bun.redis`.
 - **Cross-instance invalidation is a SEAM, never a transport.** `registerInvalidationBroadcast` /
   `receiveInvalidationBroadcast`; `cli` owns the bus. The inbound half cannot re-emit (only it passes

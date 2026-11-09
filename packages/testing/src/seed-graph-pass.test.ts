@@ -4,9 +4,23 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
-import { entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { seedPass, TENANTS_PER_PRIMITIVE, tenantPair } from './seed-graph-pass';
-import type { SeedRow, SeedWriter } from './seed-graph-plan';
+import {
+  type AnyColumn,
+  entity,
+  integer,
+  invariant,
+  memoryDriver,
+  text,
+  uuid,
+} from '@ultimat3/entity';
+import { defineFactory } from './factories';
+import {
+  deferredMayStayNull,
+  seedPass,
+  TENANTS_PER_PRIMITIVE,
+  tenantPair,
+} from './seed-graph-pass';
+import type { SeedRow, SeedUpdate, SeedWriter } from './seed-graph-plan';
 import { entitySeedWriter } from './seed-writer';
 import { testName } from './test-types';
 
@@ -103,5 +117,123 @@ describe(testName('unit', 'seedPass'), () => {
     };
     const failure = await failureOf(() => seedPass(entities, writer, { primitives: 1, seed: 1 }));
     expect(failure).toBe(missing);
+  });
+
+  test('a cross-column invariant no generated row meets is satisfied by an app factory', async () => {
+    // A label that spells its own size: no generated pair of a text and an integer meets it.
+    const spelled = (label: string, size: number): boolean => label === `size-${size}`;
+    const labelled = entity('sgp_labelled', {
+      columns: { id: uuid().primaryKey(), label: text({ max: 40 }), size: integer() },
+      invariants: (c) => [
+        invariant('sgp_label_spells_size', c.satisfies(spelled, ['label', 'size'])),
+      ],
+    });
+    // The app's write path runs the JS rule (`$assert`); a refusal there is the pass's red.
+    const rows: SeedRow[] = [];
+    const labelledWriter = (): SeedWriter => ({
+      insert: async (row) => {
+        labelled.$assert(labelled.$parse(row.row));
+        rows.push(row);
+      },
+      update: async () => undefined,
+      snapshot: async (asked) => asked.map(() => null),
+    });
+    const bare = await failureOf(() =>
+      seedPass([labelled], labelledWriter(), { primitives: 1, seed: 2 }),
+    );
+    expect(isUltimateError(bare) && bare.code).toBe('X_SEED_GRAPH_UNSATISFIED');
+    expect(isUltimateError(bare) && bare.fix).toContain('defineExercise({}, { factories:');
+
+    const factory = defineFactory<{ label: string; size: number }>(labelled, {
+      defaults: (index) => ({ label: `size-${index}`, size: index }),
+    });
+    const writer = labelledWriter();
+    await seedPass([labelled], writer, {
+      primitives: 1,
+      seed: 2,
+      factories: { sgp_labelled: factory },
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const { row } of rows) expect(row['label']).toBe(`size-${row['size']}`);
+  });
+
+  test('a factory keyed by a name no seeded entity has is refused, naming what is seeded', async () => {
+    const factory = defineFactory<{ title: string }>(plans, { defaults: () => ({ title: 'x' }) });
+    const failure = await failureOf(() =>
+      seedPass(entities, collecting().writer, {
+        primitives: 1,
+        seed: 1,
+        factories: { sgp_plan: factory },
+      }),
+    );
+    expect(isUltimateError(failure) && failure.code).toBe('X_DECLARATION_UNKNOWN');
+    expect(isUltimateError(failure) && failure.cause).toContain('sgp_plans');
+  });
+
+  // `sgp_a_teams` sorts first, so the cycle breaks at its nullable captain — and the app's own
+  // trigger (no declaration says so) refuses every UPDATE of it.
+  const teams = entity('sgp_a_teams', {
+    columns: {
+      id: uuid().primaryKey(),
+      captainId: uuid()
+        .references((): AnyColumn => players.id)
+        .nullable(),
+    },
+  });
+  const players = entity('sgp_b_players', {
+    columns: { id: uuid().primaryKey(), teamId: uuid().references((): AnyColumn => teams.id) },
+  });
+  const updateRefusing = (refusal: unknown): { writer: SeedWriter; tried: SeedUpdate[] } => {
+    const tried: SeedUpdate[] = [];
+    return {
+      tried,
+      writer: {
+        insert: async () => undefined,
+        update: (update) => {
+          tried.push(update);
+          return Promise.reject(refusal);
+        },
+        snapshot: async (asked) => asked.map(() => null),
+      },
+    };
+  };
+  const triggerSaidNo = new UltimateError({
+    code: 'X_DB_STATEMENT_FAILED',
+    cause: 'sgp_a_teams rows are never updated',
+    fix: 'see the trigger',
+  });
+
+  test('a deferred key the database refuses to set stays null: the pass goes on', async () => {
+    const { writer, tried } = updateRefusing(triggerSaidNo);
+    const graph = await seedPass([teams, players], writer, { primitives: 1, seed: 4 });
+    expect(tried.length).toBeGreaterThan(0);
+    // The graph says what was written: no update the database refused.
+    expect(graph.updates).toEqual([]);
+    for (const insert of graph.inserts.filter((row) => row.entity === 'sgp_a_teams')) {
+      expect(insert.row['captainId']).toBeNull();
+    }
+  });
+
+  test('an environment failure on a deferred update keeps its own code', async () => {
+    const down = new UltimateError({
+      code: 'X_DB_UNAVAILABLE',
+      cause: 'down',
+      fix: 'x doctor --json',
+    });
+    const failure = await failureOf(() =>
+      seedPass([teams, players], updateRefusing(down).writer, { primitives: 1, seed: 4 }),
+    );
+    expect(failure).toBe(down);
+  });
+
+  test('deferredMayStayNull leaves an insert refusal to its caller', async () => {
+    const writer = deferredMayStayNull({
+      ...updateRefusing(triggerSaidNo).writer,
+      insert: () => Promise.reject(triggerSaidNo),
+    });
+    await writer.update({ entity: 'sgp_a_teams', tenant: null, key: { id: 1 }, patch: {} });
+    expect(
+      await failureOf(() => writer.insert({ entity: 'x', table: 'x', tenant: null, row: {} })),
+    ).toBe(triggerSaidNo);
   });
 });

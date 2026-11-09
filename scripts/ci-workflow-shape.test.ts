@@ -4,6 +4,7 @@
 // matrix would otherwise unmake, and `x verify merge` would only notice after a push.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { NEW_SHAPES } from '../packages/cli/src/new-shapes';
 import { BESIDE_SERIAL_SUITES } from '../packages/cli/src/verify-run';
 import { SHARDABLE_STEPS } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
@@ -334,6 +335,15 @@ describe('unit · ci.yml · scaffold-smoke opens the app it scaffolded', () => {
     expect(at('scripts/scaffold-gate.ts').at(-1)).toBeLessThan(walk ?? -1);
     expect(at('scripts/scaffold-gate.ts')).toHaveLength(2);
   });
+
+  // A shape `x new` accepts is one a stranger can pick, so it gates on a runner of its own: a
+  // name in `NEW_SHAPES` with no row here is a scaffold nothing has ever run `bun run verify` on.
+  test('the matrix is the default, --no-example, and one row per x new --shape', () => {
+    const rows = listOf(job('scaffold-smoke').strategy?.matrix?.['include']).map((row) =>
+      text(record(row)['flags']),
+    );
+    expect(rows).toEqual(['', '--no-example', ...NEW_SHAPES.map((shape) => `--shape ${shape}`)]);
+  });
 });
 
 describe('unit · ci.yml · what a red part prints', () => {
@@ -389,19 +399,25 @@ describe('unit · ci.yml · what the split may not change', () => {
     expect(optional).toEqual([]);
   });
 
-  // `tested` is the one job they wait on: a few seconds that decide whether they run at all.
-  test('no job in the gate waits on a job outside it, except the tested question', () => {
+  // `tested` is the one job they wait on: a few seconds that decide whether they run at all. The
+  // jobs no prose can reach wait on `changes` too (`scripts/ci-workflow-changes.test.ts`); the gate,
+  // `packages` and the app gates never do — the doc guards read exactly what `changes` skips for.
+  test('no job in the gate waits on a job outside it, except the tested and changes questions', () => {
+    for (const name of ['gate', 'reference-app-verify', 'packages']) {
+      expect(job(name).needs, `${name} must wait on tested alone`).toBe('tested');
+    }
     for (const name of [
-      'gate',
-      'reference-app-verify',
       'scaffold-smoke',
       'container',
       'compose-deploy',
-      'packages',
       'windows',
       'macos',
+      'fault-drills',
     ]) {
-      expect(job(name).needs, `${name} must wait on tested alone`).toBe('tested');
+      expect(job(name).needs, `${name} must wait on tested and changes alone`).toEqual([
+        'tested',
+        'changes',
+      ]);
     }
   });
 });

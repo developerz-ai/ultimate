@@ -37,7 +37,7 @@ const server = () => {
       calls.grant += 1;
       return grantMultipart({ disk, orgId, request, policy });
     },
-    signPart: (input) => signPart({ disk, orgId, ...input }),
+    signPart: (input) => signPart({ disk, orgId, ...input, policy }),
     listParts: (input) => {
       calls.listParts += 1;
       return listParts({ disk, orgId, ...input });

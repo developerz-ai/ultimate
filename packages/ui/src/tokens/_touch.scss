@@ -1,6 +1,8 @@
 // The touch target: the smallest box a finger can hit reliably. WCAG 2.5.5's 44 CSS px, as rem
 // so a reader's larger text grows the target with it. One rung, in a map so it emits and reads
-// back like every other scale.
+// back like every other scale. `safe-area-inset()` below is the device's unsafe edge, as a length.
+
+@use 'sass:string';
 
 $touch: (
   target: 2.75rem,
@@ -35,5 +37,32 @@ $touch: (
   } @else {
     min-block-size: touch(target);
     min-inline-size: touch(target);
+  }
+}
+
+/// The device's unsafe edge — the home indicator, a notch, a rounded corner — as a length, `0rem`
+/// where there is none or the page did not opt in (`viewport-fit=cover`). Logical names: the
+/// block edges map to `env()`'s top and bottom; `inline` is the larger side inset, applied to both
+/// inline edges, since `env()` is physical and a notch can sit on either side.
+@function safe-area-inset($edge) {
+  @if $edge == block-start {
+    @return env(safe-area-inset-top, 0rem);
+  }
+  @if $edge == block-end {
+    @return env(safe-area-inset-bottom, 0rem);
+  }
+  @if $edge == inline {
+    @return max(env(safe-area-inset-left, 0rem), env(safe-area-inset-right, 0rem));
+  }
+  @error string.unquote('X_UI_INVALID_VALUE: safe-area-inset("#{$edge}") is not an edge. fix: write safe-area-inset(block-end), safe-area-inset(block-start) or safe-area-inset(inline)');
+}
+
+/// Padding that clears the unsafe edge on top of `$base`: a bottom bar keeps its own padding AND
+/// sits above the home indicator. `$edge` is `block-start`, `block-end` or `inline`.
+@mixin safe-area-padding($edge, $base: 0rem) {
+  @if $edge == inline {
+    padding-inline: calc(#{$base} + #{safe-area-inset(inline)});
+  } @else {
+    padding-#{$edge}: calc(#{$base} + #{safe-area-inset($edge)});
   }
 }

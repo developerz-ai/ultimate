@@ -8,6 +8,7 @@
 import type { Auth, AuthAdapter, OAuthLoginOptions, OAuthLoginRoutes } from '@ultimat3/auth';
 import { defineAuth, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';
 import type { Clock } from '@ultimat3/core';
+import { appOrigin } from '../../shared/app-origin';
 
 /**
  * Where a signed-in member lands. A fixed path and never a `?next=` off the callback: the one
@@ -23,7 +24,22 @@ export interface PostlyAuthSeams {
    */
   readonly adapter?: AuthAdapter | undefined;
   readonly clock?: Clock | undefined;
+  /** The origin passkeys are verified against; `APP_URL` by default. */
+  readonly origin?: string | undefined;
 }
+
+/**
+ * Postly's passkey relying party: the ONE origin it serves, and that origin's host as the rp id —
+ * derived from `APP_URL`, so a passkey made on `localhost:3000` is never accepted anywhere else.
+ * A LOOPBACK IP (`x drill` serves on `127.0.0.1`) can hold no passkey — a browser refuses an IP
+ * rp id — and is this machine, so it names `localhost` on the same port: the app boots, and a
+ * ceremony from the IP origin is refused as the wrong origin. Any other IP stays refused at boot.
+ */
+export const postlyRelyingParty = (origin: string = appOrigin()) => {
+  const url = new URL(origin);
+  if (/^127(?:\.\d+){3}$|^\[::1\]$/.test(url.hostname)) url.hostname = 'localhost';
+  return { rpId: url.hostname, origins: [url.origin] };
+};
 
 export function postlyAuth(seams: PostlyAuthSeams = {}): Auth {
   return defineAuth({
@@ -34,6 +50,7 @@ export function postlyAuth(seams: PostlyAuthSeams = {}): Auth {
     // The default, spelled out because it is Postly's to keep: a provider identity joins an
     // existing member only when the provider AND that member both proved the address.
     link: 'verified-email',
+    passkeys: postlyRelyingParty(seams.origin),
     ...(seams.clock === undefined ? {} : { clock: seams.clock }),
   });
 }

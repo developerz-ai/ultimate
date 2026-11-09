@@ -15,9 +15,10 @@
 // The public-cause predicate and both of its tables are `@ultimat3/core`'s (`public-cause.ts`): the
 // MCP error data and the agent `tool_result` ask the question this package's problem document
 // does. This file only WRITES the app half — a reader imports `hasPublicCause` from core.
-import { registerPublicCause, resetPublicCauses } from '@ultimat3/core';
+import { registerPublicCause, renderCauseValue, resetPublicCauses } from '@ultimat3/core';
 import { ERROR_STATUS } from './error-map';
 import { problemMetaInvalid } from './errors';
+import { FRAMEWORK_PROBLEM_META } from './problem-meta-framework';
 
 /** What a problem document's `meta` member holds — JSON, and nothing JSON cannot carry. */
 export type ProblemMetaValue =
@@ -48,6 +49,18 @@ export const MAX_PROBLEM_META_BYTES = 4096;
 const KEY = /^[A-Za-z_$][\w$]*$/;
 const RESERVED_KEYS: ReadonlySet<string> = new Set(['issues', '__proto__']);
 
+/**
+ * Why `key` may not ride a document, or `undefined` when it may. The one rule for both halves: an
+ * app's `registerProblemMeta` throws on it, and the framework's table is held to it by a test.
+ */
+export function metaKeyRefusal(key: unknown): string | undefined {
+  if (typeof key !== 'string' || !KEY.test(key))
+    return `${renderCauseValue(key)} is not a meta key`;
+  if (key === 'issues') return '`issues` already rides at the top level of the document';
+  if (RESERVED_KEYS.has(key)) return `\`${key}\` is not a key a document may carry`;
+  return undefined;
+}
+
 /** Per app-owned code, the `meta` keys its documents carry. A `Map`, for `APP_ERROR_STATUS`'s reason. */
 const DECLARED = new Map<string, readonly string[]>();
 
@@ -73,7 +86,8 @@ const sameKeys = (left: readonly string[], right: readonly string[]): boolean =>
  *
  * Framework-owned codes are refused, exactly as `registerErrorStatus` refuses them: their `meta`
  * is where the framework keeps what a caller must not be handed, and an app that could declare
- * `X_RATE_LIMITED: ['key']` would publish the limiter's internal key on every 429.
+ * `X_RATE_LIMITED: ['key']` would publish the limiter's internal key on every 429. The framework's
+ * own public keys are `problem-meta-framework.ts`'s one reviewed table, never an app's call.
  */
 export const registerProblemMeta = (
   declarations: Readonly<Record<string, ProblemMetaDeclaration>>,
@@ -95,17 +109,8 @@ export const registerProblemMeta = (
       throw problemMetaInvalid(code, 'the key list is empty — omit the code instead');
     }
     for (const key of keys) {
-      if (typeof key !== 'string' || !KEY.test(key)) {
-        throw problemMetaInvalid(code, `${JSON.stringify(key)} is not a meta key`);
-      }
-      if (RESERVED_KEYS.has(key)) {
-        throw problemMetaInvalid(
-          code,
-          key === 'issues'
-            ? '`issues` already rides at the top level of the document'
-            : `\`${key}\` is not a key a document may carry`,
-        );
-      }
+      const refusal = metaKeyRefusal(key);
+      if (refusal !== undefined) throw problemMetaInvalid(code, refusal);
     }
     const existing = DECLARED.get(code);
     if (existing !== undefined && !sameKeys(existing, keys)) {
@@ -122,9 +127,12 @@ export const resetProblemMeta = (): void => {
   resetPublicCauses();
 };
 
-/** The keys declared for a code, or `undefined` when nothing was — which is every framework code. */
+/**
+ * The keys declared for a code, or `undefined` when nothing was: the framework's reviewed rows
+ * (`problem-meta-framework.ts`) first, then the app's. Every other framework code answers nothing.
+ */
 export const problemMetaKeysFor = (code: string): readonly string[] | undefined =>
-  DECLARED.get(code);
+  FRAMEWORK_PROBLEM_META.get(code) ?? DECLARED.get(code);
 
 /**
  * A code this package's table maps is the framework's. A `Set` of the table's own keys, for the

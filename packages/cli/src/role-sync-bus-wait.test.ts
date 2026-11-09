@@ -121,6 +121,27 @@ describe('the sync role with the bus away', () => {
     }
   });
 
+  // The stop `listen()` returns is the one `x dev` keeps, and it never cancelled the wait: the
+  // bus's reconnect subscription outlived the node and started it after the role had stopped.
+  test('x dev: a LISTENING node stopped while it still waits starts nothing afterwards', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined);
+    try {
+      const broker = new FakeNatsBroker();
+      broker.offline = true;
+      const prepared = await boot(broker, true);
+      const running = await prepared.listen(null);
+      await running.stop();
+      broker.offline = false;
+      // As long as the bus took to start the node in the first test, and then some.
+      await waitFor(() => prepared.node.ready, 15);
+      expect(prepared.node.ready).toBe(false);
+    } finally {
+      warn.mockRestore();
+      info.mockRestore();
+    }
+  });
+
   test('a container keeps the hard refusal: the boot fails, coded, inside its wait', async () => {
     const broker = new FakeNatsBroker();
     broker.offline = true;

@@ -55,3 +55,21 @@ describe('a view entity lists read-only', () => {
     expect(adminResource(totals, { operations: ['list'] }).operations).toEqual(['list']);
   });
 });
+
+const archive = entity('admin_ro_archive', {
+  readOnly: 'legacy orders, a trigger refuses every insert',
+  columns: { id: uuid().primaryKey(), total: integer() },
+});
+
+describe('a readOnly entity lists read-only, as a view does', () => {
+  test('its operations are the reads; an override offering a write is X_ADMIN_READ_ONLY_WRITE', () => {
+    expect(adminResource(archive).operations).toEqual(['list', 'detail', 'search']);
+    expect(() => adminResource(archive, { operations: ['list', 'create'] })).toThrow(
+      expect.objectContaining({
+        code: 'X_ADMIN_READ_ONLY_WRITE',
+        cause: expect.stringContaining('legacy orders, a trigger refuses every insert'),
+      }),
+    );
+    expect(adminResource(archive, { operations: ['list'] }).operations).toEqual(['list']);
+  });
+});

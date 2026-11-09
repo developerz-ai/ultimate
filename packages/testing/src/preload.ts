@@ -13,6 +13,7 @@ import './matchers';
 import { installTabA11yAudit } from './e2e-a11y-tabs';
 import { onFileBoundary } from './file-boundary';
 import { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
+import { installModuleMockBoundary } from './module-mock-boundary';
 import { installPerTestReset } from './per-test-reset';
 import { installRegistryLeakGuard } from './registry-leak-guard';
 import { sealNetwork } from './sealed-network';
@@ -52,6 +53,10 @@ installRegistryLeakGuard();
 // resumed the next test's waiting run (`per-test-reset.ts`).
 installPerTestReset();
 
+// And every `mock.module`: Bun keeps one past `mock.restore()` and past the file, so the next file
+// on a shared worker read the fake. Put back at the boundary (`module-mock-boundary.ts`).
+installModuleMockBoundary();
+
 // And every browser tab a suite drives itself is audited like an `e2eTest`'s page: its findings
 // fail the test from this one `afterEach`, so no suite has a line to forget (`e2e-a11y-tabs.ts`).
 installTabA11yAudit();
@@ -65,13 +70,18 @@ installTabA11yAudit();
 // was red whenever another file calling that action ran first. Each file starts with full buckets,
 // the store back to one process' memory, as a file run alone would have it.
 //
+// And the METER store, for the same reason one period longer: a file that drew a seeded org's
+// daily allowance left it drawn, so the next file's "the 101st draft is refused" test was red or
+// green by file order (`meter-file-boundary.test.ts`).
+//
 // And the LIFECYCLE, which is one process' too: a drain is terminal, so a file that drained the
 // process — or that emitted a real SIGINT at it, as a signal test does — left every later file on
 // the worker answering 503 X_DRAINING for a reason nothing in that file explains. Each file starts
 // from a live lifecycle, as a file run alone would have it.
 if (Bun.env[ISOLATED_ENV] !== '1') {
-  const { forgetHandedOutActionPaths } = await import('@ultimat3/action');
+  const { forgetHandedOutActionPaths, resetMeterStore } = await import('@ultimat3/action');
   onFileBoundary(forgetHandedOutActionPaths);
+  onFileBoundary(resetMeterStore);
   const { resetRateLimitStore } = await import('@ultimat3/http');
   onFileBoundary(resetRateLimitStore);
   const { resetLifecycle } = await import('@ultimat3/core');

@@ -63,8 +63,9 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   it declines rather than guesses; past `MAX_IDS_PER_STATEMENT` it is several statements; no caller is
   ever left unsettled (`coalesce.test.ts` races a deadline).
 - **A page batches the loop it causes** (`jit-preload.ts`): a preloaded row is served only under the
-  SAME `scopeKey` (a security boundary), same client, dropped by any write (`forgetPreloaded` in
-  `writing()`), keyed by id, bounded (`MAX_SIBLING_KEYS`, oldest page first). One switch:
+  SAME `scopeKey` (a security boundary), same client, dropped by any write to ANY entity — triggers
+  and FK actions rewrite rows a statement never named (`forgetPreloaded` in `writing()`;
+  `jit-preload-db-writes.test.ts`), keyed by id, bounded (`MAX_SIBLING_KEYS`, oldest page first). One switch:
   `postgresDriver({ jitPreload: false })` — never an `app.config.ts` key. Shared pieces live in
   `batch-read.ts`.
 - **`preload(name, { max })` shares `batch-read.ts`, keeps no request cache and is BOUNDED**
@@ -196,7 +197,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   (`X_ENTITY_TENANT_UNDECLARED`), over `EntityDescription.shared`.
 - **`scan: '<why>'`**: a table read whole (`assertScan`).
 - **A seed is replayable**: `SeedContext.insert` is one `upsertAll(…, { onMatch: 'nothing' })` per
-  call; a generated PK the row does not name is refused. **A dry run is the real run rolled back**
+  call; a generated PK the row does not name is refused; `upsert` reads with `includeDeleted` and
+  SKIPS a soft-deleted match. **A dry run is the real run rolled back**
   (`Driver.transactor()`, REQUIRED). Full rule: `docs/history/entity.md`.
 - **`setRowObserver` reports committed row changes above the driver** — one per process (returns the
   replaced one), applied by `database()`, one comparison per write when unset, `before` only when the PK
@@ -214,8 +216,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | Declaration | Here | The rule |
 |---|---|---|
 | `retain: { after, on }` | `retain.ts` | no default window; `on` a `timestamp()` some index STARTS with (`X_ENTITY_RETAIN_UNINDEXED`); refused beside `appendOnly` (`X_ENTITY_RETAIN_INVALID`). The sweep is `@ultimat3/jobs`' `retainTarget` |
-| `history: true` | `history.ts`, `history-actor.ts` | `<table>_history` is a REAL registered entity (`$historyOf`), tenant column copied without its key. Written by `@ultimat3/db`'s trigger; `stampHistoryActor` sets `x.actor`/`x.request` once per transaction, never on a pinned repository — no transaction records `null` |
-| `countedIn` on a key | `counter.ts` | the target is an `integer()` of the entity the key points at, by its single primary key (`X_ENTITY_COUNTS_INVALID`); resolved at describe time, memoised on `registryGeneration()` |
+| `history: true` | `history.ts`, `history-actor.ts` | `<table>_history` is a REAL registered entity (`$historyOf`), tenant column copied without its key. Written by `@ultimat3/db`'s trigger; `stampHistoryActor` sets `x.actor`/`x.request` once per transaction, never on a pinned repository — no transaction records `null`. `bigint`/`decimal`/`timestamp` columns ride `text`/`instants`: the image is the memory driver's strings (`history-values.test.ts`) |
+| `countedIn` on a key | `counter.ts` | the target is a NOT NULL `integer()` of the entity the key points at (Postgres' `NULL + 1` stays NULL), by its single primary key (`X_ENTITY_COUNTS_INVALID`); resolved at describe time, memoised on `registryGeneration()` |
 | all three, described | `lifecycle.ts` | each `$describe()` key ABSENT unless declared, so no other entity's hash moves |
 | the memory driver | `memory-lifecycle.ts` | mirrors both triggers through the table's raw store, so a unit test answers what Postgres answers |
 

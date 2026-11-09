@@ -55,8 +55,22 @@ export interface RowFacts {
   readonly runId?: string;
 }
 
-const optional = (options: EnqueueOptions, trace: string | undefined) => ({
-  ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
+/**
+ * The org the row is queued for: the one stated, else the one the payload names. Without the
+ * default a plain `enqueue(input)` queued for nobody, so org B's `invoice:1` deduped onto org A's
+ * job (the namespace is `(name, tenant, key)`) and `perTenant` counted every such row as no org's.
+ * The facade's `refuseEnqueueTenant` has already refused the two disagreeing.
+ */
+function queuedFor<I>(handle: JobHandle<I>, input: I, options: EnqueueOptions): string | undefined {
+  return options.tenantId ?? handle.tenantFor(input);
+}
+
+const optional = (
+  tenantId: string | undefined,
+  options: EnqueueOptions,
+  trace: string | undefined,
+) => ({
+  ...(tenantId === undefined ? {} : { tenantId }),
   ...(trace === undefined ? {} : { traceparent: trace }),
   ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
 });
@@ -80,7 +94,7 @@ export function stagedRecord<I>(
     stagedAt: facts.at,
     // Stamped at STAGE time and not at publish time: the relay runs after commit, in its own
     // timer, with no request span in scope — a trace read there would be nobody's.
-    ...optional(options, facts.trace),
+    ...optional(queuedFor(handle, input, options), options, facts.trace),
   };
 }
 
@@ -100,7 +114,7 @@ export function directRequest<I>(
     maxAttempts: enqueuedAttempts(handle.retry, handle.compensates),
     runAt: options.runAt ?? facts.at,
     ...(facts.runId === undefined ? {} : { runId: facts.runId }),
-    ...optional(options, facts.trace),
+    ...optional(queuedFor(handle, input, options), options, facts.trace),
   };
 }
 

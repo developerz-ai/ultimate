@@ -160,13 +160,7 @@ Primary user: **an AI agent** — one correct way per task, machine-readable err
 
 ### How is this different from Rails, Next.js, Meteor, or Phoenix?
 
-| Compared to | Difference |
-|---|---|
-| **Rails** | same philosophy — conventions, generators, one blessed path — on Bun + Postgres + Solid, with types end to end and an agent as the primary reader |
-| **Next.js** | render modes are borrowed; jobs, realtime, authz, mail, storage, admin, and MCP are in-box, and there are no platform primitives |
-| **Meteor** | realtime by default is borrowed; **one** authz system that live queries reuse per delivered row is the part Meteor's generation got wrong |
-| **Phoenix** | server-authoritative realtime is borrowed; different runtime, and durable step workflows are a first-class primitive rather than a library choice |
-| **Inngest / Zero** | their shapes appear as `job` steps and `mutator`s — assembled into one runtime with one authz system, which is the actual bet |
+Rails, Next.js, Meteor, Phoenix and Inngest / Zero each get a section on [Compared](Compared): when to pick that stack instead, first, then when to pick this one, and what you give up here.
 
 Nothing here is novel in isolation. See [Home](Home) for the full "steal explicitly" table.
 

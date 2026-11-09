@@ -18,6 +18,18 @@
       --series: #{t.role('chart-#{$slot}')};
     }
   }
+
+  // A `tone` replaces the slot's colour — after the slots, so it wins on the same element. The
+  // series keeps its dash and marker: the tone is a meaning, never the only cue.
+  [data-tone='neutral'] {
+    --series: #{t.role('fg-strong')};
+  }
+
+  @each $tone in (accent, success, warning, danger, info) {
+    [data-tone='#{$tone}'] {
+      --series: #{t.role($tone)};
+    }
+  }
 }
 
 .caption {
@@ -109,6 +121,27 @@
   fill: var(--series);
 }
 
+// --- Reference rules ---------------------------------------------------------
+.reference {
+  stroke: var(--series, #{t.role('fg-strong')});
+  stroke-width: 1.5;
+  stroke-dasharray: 6 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.referenceLabel {
+  @include t.data-text;
+  position: absolute;
+  inset-block-start: var(--y);
+  inset-inline-end: 0;
+  translate: 0 -100%;
+  padding-inline: t.space(1);
+  color: var(--series, #{t.role('fg-strong')});
+  font-size: t.text(xs);
+  line-height: t.leading(tight);
+  pointer-events: none;
+}
+
 // --- The keyboard layer ------------------------------------------------------
 // Over the plot box, which every chart sheet makes `position: relative`. The layer lets the
 // pointer through to nothing in particular; only the points themselves are targets.
@@ -155,21 +188,25 @@
   opacity: 0;
   transition: opacity t.duration(fast) t.easing(out);
 
+  // `:focus`, not only `:focus-visible`: a tap focuses the point without a visible-focus match,
+  // and on a phone the tap is the only way to ask for a reading.
   .hit:hover > &,
-  .hit:focus-visible > & {
+  .hit:focus > & {
     visibility: visible;
     opacity: 1;
   }
 
   // A point at the edge of the plot opens its readout inward, so it never leaves the box.
+  // Anchored at the point's CENTRE, not the hit's edge: an outermost point sits `pad` inside the
+  // plot, and the hit box around it reaches past the plot's edge, so a readout from the box's edge
+  // started outside the plot (measured at 390px: 4px).
   .hit[data-edge='start'] > & {
-    inset-inline-start: 0;
     justify-content: flex-start;
   }
 
   .hit[data-edge='end'] > & {
     inset-inline-start: auto;
-    inset-inline-end: 0;
+    inset-inline-end: 50%;
     justify-content: flex-end;
   }
 }

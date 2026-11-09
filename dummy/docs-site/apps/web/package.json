@@ -1,0 +1,17 @@
+{
+  "name": "@docs-site/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./*.ts",
+    "./*.tsx": "./*.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@docs-site/docs-source": "0.0.0",
+    "@docs-site/i18n": "0.0.0"
+  }
+}

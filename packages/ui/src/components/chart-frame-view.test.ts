@@ -7,6 +7,7 @@ import {
   cssPercent,
   finiteOrNull,
   hitEdge,
+  hitIds,
   markerPath,
   pointLabel,
   seriesStyle,
@@ -80,13 +81,14 @@ describe('chartTable', () => {
         { label: 'app', values: [3, null] },
       ],
       format,
+      none: 'No data',
     });
     expect(table.caption).toBe('Signups');
     expect(table.head).toEqual(['Day', 'web', 'app']);
     expect(table.rows).toEqual([
       { key: 'mon', cells: ['#1', '#3'] },
-      // A gap is an empty cell — never a 0 the chart did not draw.
-      { key: 'tue', cells: ['#2', ''] },
+      // A gap says so — never a 0 the chart did not draw, never an empty cell that reads as nothing.
+      { key: 'tue', cells: ['#2', 'No data'] },
     ]);
   });
 
@@ -97,9 +99,36 @@ describe('chartTable', () => {
       keys: ['a', 'b', 'c'],
       series: [{ label: 's', values: [5] }],
       format,
+      none: '—',
     });
     expect(table.head).toEqual(['', 's']);
-    expect(table.rows.map((row) => row.cells)).toEqual([['#5'], [''], ['']]);
+    expect(table.rows.map((row) => row.cells)).toEqual([['#5'], ['—'], ['—']]);
+  });
+});
+
+describe('hitIds', () => {
+  test('series and key, so a shifted window keeps every surviving point’s id', () => {
+    const before = hitIds(0, ['10:00', '10:01', '10:02']);
+    const after = hitIds(0, ['10:01', '10:02', '10:03']);
+    expect(after.slice(0, 2)).toEqual(before.slice(1));
+    expect(hitIds(1, ['a'])).not.toEqual(hitIds(0, ['a']));
+  });
+
+  test('a repeated key still gets its own id', () => {
+    expect(new Set(hitIds(0, ['a', 'a', 'b'])).size).toBe(3);
+  });
+
+  test('a key that looks like a suffixed repeat never collides with one', () => {
+    // keyedRows refuses a duplicate id (X_UI_INVALID_VALUE): one collision and the chart is gone.
+    for (const keys of [
+      ['a', 'a', 'a#1'],
+      ['a#1', 'a', 'a'],
+      ['a', 'a#1', 'a', 'a#1#1', 'a#1'],
+    ]) {
+      const ids = hitIds(0, keys);
+      expect(new Set(ids).size).toBe(keys.length);
+    }
+    expect(hitIds(0, ['a', 'b'])).toEqual(['0:a', '0:b']);
   });
 });
 

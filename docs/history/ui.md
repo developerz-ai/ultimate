@@ -100,3 +100,32 @@ Eight rules shortened in `packages/ui/CLAUDE.md` to the rule itself; the reasoni
 
 - `src/components/data-table-rows.ts`: DataTable's keyed rows, one `createRoot` per `rowKey`, so a live update keeps an unchanged row's node. DataTable calls it from its body, and the table chrome is a memo over the branch KIND (failed / empty / table), so a live update never detaches a kept row.
 - `createRoot` joined `SolidRuntime` for keyed rows (v30), making the runtime seven functions.
+
+## Commands and navigation
+
+As of 2026-11 (plan 101, 38-ui-commands, 38-ui-navigation).
+
+- **One current link per list, by `currentOf`** (`nav-list-view.ts`): the longest href covering the page, first on a tie. `NavList` and `BottomNav` both ask it; `AppShell bottomNav` sits in the named grid area `bottom` — auto-placed, it filled the hidden sidebar's cell and pinned the bar to the TOP (`ui-mobile-frame.e2e.test.ts`).
+- **The page has ONE hotkey listener and ONE merged table**, on `document` under `Symbol.for('ultimate.hotkeys')` (`use-hotkeys.ts`), because every island bundles its own copy of this package. `ShortcutSheet` lists that table and `useCommandPalette` registers `mod+k` into it, so `?` shows exactly the bindings that work. A duplicate binding across islands is `X_UI_INVALID_VALUE` at registration.
+- **`ConfirmDialog` is not `Dialog`**: invoker command to open, `formmethod="dialog"` Cancel with `autofocus`, no backdrop handler at all, `Dialog.module.scss` for the look. `Dialog` opens from an effect and closes from a script button; a confirmation must work with scripting off.
+
+## Moved out for plan 101's wave 10 (`As of 2026-11-06`)
+
+Verbatim, for the 24 KB ceiling; the one-line rule stays in `packages/ui/CLAUDE.md`.
+
+- **Server-rendered first, an island second.** Components run in islands (`examples/dummy`'s settings and feed islands render them), but every one must still be correct server-rendered and usable with scripting off — `<details>` for disclosure, `<input list>`+`<datalist>` for suggestions, a real `rel="next"` link for paging — with listeners and observers as additive extras. A component that renders nothing until JS runs does not ship. In an island the body runs ONCE: a branch decided there (an early `return <ErrorState>`) is decided for the island's life, so branches live inside the returned JSX (`AsyncRegion`, `DataTable`). A server-only spelling is gated on `typeof document` (`Textarea`'s parser newline). Ids minted in an island carry a per-copy scope (`a11y.ts`), because each island bundles its own counter.
+- **`UiProvider` is client-only and throws on the server** (`providerNeedsRuntimeError`, the same `X_UI_RUNTIME_MISSING`). A Provider in an inert tree reaches no descendant — the tree is built before the renderer walks it, so consumers are walked outside every owner and read the context default even with a real Solid runtime registered. Rendering the children anyway would drop its locale, zone, currency and translator silently. Making it work needs the *renderer* to scope a context around the walk; until then it refuses.
+- **`solid()` always answers off-DOM.** No registered runtime and no DOM is a *server render*, and it gets `INERT_SOLID_RUNTIME` (`src/theme/inert-runtime.ts`) — signals hold, memos recompute on read, effects never run, `useContext` returns the default. No DOM means no reactivity to lose; a **DOM** with no runtime is still `X_UI_RUNTIME_MISSING`, because that one is the theme toggle that does nothing. Never widen this to "no runtime, never throw": that is the silent degradation the split exists to prevent.
+- **A form binds to an action; it never decides for one.** `useForm` (`src/form/`) is a binding over an existing `action`, not a ninth primitive and not a component — `submit` is REQUIRED and is the only producer of a `succeeded` state, and the client-side parse's **value** is discarded so that only its issues are read. A binding that submitted the locally-parsed value would let a browser choose what the server was asked to store.
+- **The framework ships the mapping and no copy table.** `FormIssue.message` is a schema's diagnostic text and is never user-facing; `messageFor` is required and is the app's; it keys on `FormIssue.rule` and `params` (`issueRuleFacts`, the same from a local parse and a server rejection). There is deliberately no `ui.form.*` key: a built-in wording would be one app's convention shipped to every other. A `messageFor` that answers `''` or throws falls back to the diagnostic text.
+- **`inert-render.test.ts` must not assume which factory its `.tsx` compiled to.** `@ultimat3/render` installs a process-global `.tsx` `onLoad` plugin at import, so in one `bun test` process a component may compile to render's `h`. The walker recognises both (`Symbol.for('ultimate.render.jsx')`), and the first test asserts a recognised node — otherwise the file renders `"[object Object]"` and passes by shard packing.
+
+## The rejection line parser
+
+`As of 2026-08-24`, the wire carries no structured issue list. `InputInvalidError` renders the
+issues into `cause` and puts nothing in `meta`, and `toProblem` has no `issues` member, so
+`issuesFromRejection` reads `meta.issues` where there is one and parses the cause line where there
+is not. It binds a fragment to a field only when the fragment's head is a DECLARED path, so a
+mis-split degrades to a form-level error rather than to a wrong control. Delete the line parser the
+day the wire carries the list. (Moved out of `packages/ui/CLAUDE.md` by plan 101 slice 38, for the
+24 KB ceiling.)

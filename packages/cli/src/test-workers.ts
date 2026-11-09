@@ -52,12 +52,18 @@ export function availableCpus(): number {
  *   registry per file. Without isolation (the default since 22.7, below) a worker is CPU-bound,
  *   and oversubscribing only multiplies memory.
  *
- * So: `min(GATE_BUDGET_CAP, max(GATE_BUDGET_FLOOR, GATE_BUDGET_SHARE x TOTAL memory))` — total, never free, so the plan
+ * So: `max(GATE_BUDGET_FLOOR, GATE_BUDGET_SHARE x TOTAL memory)` — total, never free, so the plan
  * is the same on every run of the same machine — divided by `WORKER_BYTES`, clamped to 1..cpus.
  * `ULTIMATE_TEST_MEMORY_BUDGET` (e.g. `3g`) replaces the budget, `ULTIMATE_TEST_MAX_WORKERS` caps
  * the width, and an explicit `--workers` wins over both.
+ *
+ * Until 2026-11-07 the budget was also capped at a fixed 4 GiB, which held a 16-core 62 GB box to
+ * the 3 workers a 16 GB laptop gets: the framework's unit step took 374 s there at 3 workers and
+ * 149 s at 12. The cap is gone because the guard it stood for is elsewhere now — every run on a
+ * machine leases its workers from ONE pool sized by this plan (`test-slots.ts`), so a second gate
+ * shares the quarter rather than doubling it. A 16 GB runner's quarter is exactly the old cap, so
+ * CI plans what it always planned.
  */
-export const GATE_BUDGET_CAP = 4 * 1024 * 1024 * 1024;
 
 /** A quarter of the machine: an editor, a language server and another agent's gate need the rest. */
 export const GATE_BUDGET_SHARE = 0.25;
@@ -167,7 +173,10 @@ export interface WorkerPlan {
 
 const gb = (bytes: number): string => (bytes / 1024 ** 3).toFixed(1);
 
-/** The budget a default run plans on: the env override, or `min(4 GiB, max(2.75 GiB, 25% of RAM))`. */
+/** `memoryBudget`'s default, as every help line and page prints it — derived, never restated. */
+export const BUDGET_RULE = `max(${String(GATE_BUDGET_FLOOR / 1024 ** 3)} GiB, ${String(GATE_BUDGET_SHARE * 100)}% of RAM)`;
+
+/** The budget a default run plans on: the env override, or `BUDGET_RULE`. */
 export function memoryBudget(total: number = totalMemory(), env: Env = Bun.env): number {
   const raw = env[MEMORY_BUDGET_ENV];
   if (raw !== undefined && raw.trim() !== '') {
@@ -175,10 +184,7 @@ export function memoryBudget(total: number = totalMemory(), env: Env = Bun.env):
     if (bytes === undefined) throw new TestBudgetInvalidError(MEMORY_BUDGET_ENV, raw);
     return bytes;
   }
-  return Math.min(
-    GATE_BUDGET_CAP,
-    Math.max(GATE_BUDGET_FLOOR, Math.floor(Math.max(0, total) * GATE_BUDGET_SHARE)),
-  );
+  return Math.max(GATE_BUDGET_FLOOR, Math.floor(Math.max(0, total) * GATE_BUDGET_SHARE));
 }
 
 const maxWorkersOf = (env: Env): number | undefined => {

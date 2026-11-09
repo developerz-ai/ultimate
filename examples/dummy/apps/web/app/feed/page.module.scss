@@ -31,6 +31,11 @@
   padding: var(--space-3);
 }
 
+// The feed's scroll box: the list scrolls inside it, so only the rows on screen are mounted.
+.posts {
+  block-size: min(70dvh, 48rem);
+}
+
 .list {
   list-style: none;
   margin: 0;

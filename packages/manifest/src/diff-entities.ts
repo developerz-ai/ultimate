@@ -37,6 +37,7 @@ export function diffEntities(
     changes.push(...diffReason('shared', `${path}.shared`, entity.shared, next.shared));
     changes.push(...diffReason('scan', `${path}.scan`, entity.scan, next.scan));
     changes.push(...diffView(`${path}.view`, entity.view, next.view));
+    changes.push(...diffReadOnly(`${path}.readOnly`, entity.readOnly, next.readOnly));
   }
   for (const entity of after) {
     if (!beforeByName.has(entity.name)) {
@@ -122,6 +123,24 @@ function diffView(
       detail: after.materialized ? 'view became materialized' : 'view is no longer materialized',
     },
   ];
+}
+
+/** `diffView`'s axis: closing a table refuses every write that worked; opening one widens. */
+function diffReadOnly(
+  path: string,
+  before: string | undefined,
+  after: string | undefined,
+): readonly ManifestChange[] {
+  if (before === after) return [];
+  if (before === undefined) {
+    return [
+      { kind: 'breaking', path, detail: `became readOnly (${after}); every write is refused` },
+    ];
+  }
+  if (after === undefined) {
+    return [{ kind: 'additive', path, detail: 'no longer readOnly; writes are accepted' }];
+  }
+  return [{ kind: 'internal', path, detail: `readOnly reason ${before} -> ${after}` }];
 }
 
 function diffColumns(

@@ -77,6 +77,13 @@ describe('firstRunPlan', () => {
     expect(step?.args).toEqual(['g', 'sign-in', '--password', '--json']);
   });
 
+  // `--shape dashboard` is born signed in; a second sign-in is a conflict on every file it writes.
+  test('an app that already has its sign-in is swept without one, and nothing else is dropped', () => {
+    const names = (signedIn: boolean) => firstRunPlan({ signedIn }).map((step) => step.name);
+    expect(names(true)).not.toContain('g sign-in');
+    expect(names(false).filter((name) => name !== 'g sign-in')).toEqual(names(true));
+  });
+
   // One chart per app, named by its Chart.yaml: a `<name>` is X_CLI_BAD_FLAG, like sign-in's.
   test('chart-alerts runs with no name', () => {
     const step = firstRunPlan().find((one) => one.name === 'g chart-alerts');

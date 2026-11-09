@@ -8,6 +8,7 @@ import {
   entity,
   enumerated,
   integer,
+  invariant,
   json,
   money,
   t,
@@ -77,9 +78,21 @@ describe(testName('unit', 'defaultFor'), () => {
     ).toThrow(expect.objectContaining({ code: 'X_SEED_GRAPH_UNSATISFIED' }));
   });
 
-  test('a column that refuses every generated value refuses', () => {
-    const shaped = entity('fr_shaped', {
+  test('a json(schema) column is built from its schema', () => {
+    const shaped = entity('fr_usage', {
       columns: { id: uuid().primaryKey(), usage: json(t.object({ ms: t.number })) },
+    });
+    const target = { table: 'fr_usage', property: 'usage', column: shaped.$columns.usage };
+    expect(defaultFor({ ...target, position: 1 }, 1, ids)).toEqual({ ms: expect.any(Number) });
+  });
+
+  test('a column that refuses every generated value refuses', () => {
+    // A lookahead is past the sampler's pattern subset, so neither its draw nor {} / [] is stored.
+    const shaped = entity('fr_shaped', {
+      columns: {
+        id: uuid().primaryKey(),
+        usage: json(t.object({ ref: t.string.pattern(/^(?=\d)\d{3}$/) })),
+      },
     });
     const target = { table: 'fr_shaped', property: 'usage', column: shaped.$columns.usage };
     expect(() => defaultFor({ ...target, position: 1 }, 1, ids)).toThrow(
@@ -111,6 +124,19 @@ describe(testName('unit', 'factoriesFor'), () => {
     // right when the caller wants a run to match an older recording.
     const factories = factoriesFor(registry, 5);
     expect(factories.orgs.build()['id']).toBe(factories.posts.build()['id']);
+  });
+
+  test('a matches() pattern no fixed text shape meets is built from the pattern', () => {
+    const orders = entity('fr_orders', {
+      columns: { id: uuid().primaryKey(), ref: text({ max: 8 }) },
+      invariants: (c) => [invariant('fr_order_ref_shape', c.ref.matches(/^ORD-\d{4}$/))],
+    });
+    const row = factoriesFor({ orders }).orders.build();
+    expect(row['ref']).toMatch(/^ORD-\d{4}$/);
+    // `build()` answers the registry's loose row; the rule reads the entity's own row type.
+    expect(
+      orders.$invariants.every((rule) => rule.holds(row as Parameters<typeof rule.holds>[0])),
+    ).toBe(true);
   });
 
   test('a registry factory declares no traits', () => {

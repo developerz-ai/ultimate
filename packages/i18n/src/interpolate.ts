@@ -147,13 +147,20 @@ export function selectMessageKey(
 ): string {
   const count = vars?.['count'];
   const counted = typeof count === 'number' && Number.isFinite(count);
-  for (const stem of familyStems(key, vars, locale)) {
-    const candidates = counted ? pluralKeyCandidates(stem, count, locale) : [stem];
-    const found = candidates.find(has);
-    if (found !== undefined) return found;
-  }
-  if (counted) return selectPluralKey(key, count, locale, has);
-  return key;
+  const first = (stems: readonly string[]): string | undefined => {
+    for (const stem of stems) {
+      const found = (counted ? pluralKeyCandidates(stem, count, locale) : [stem]).find(has);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  const family = first(familyStems(key, vars, locale));
+  if (family !== undefined) return family;
+  const own = counted ? selectPluralKey(key, count, locale, has) : key;
+  if (has(own)) return own;
+  // `Translator.has()` is true on `_select_other`/`_ordinal_other` alone, so a guarded `t(key)`
+  // without (or with an unusable) family var reaches them last — never a ⟦key⟧ after the guard.
+  return first([`${key}_select_other`, `${key}_ordinal_other`]) ?? own;
 }
 
 /** All suffixed variants of `key` a locale could legitimately define. */

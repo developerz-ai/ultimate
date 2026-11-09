@@ -1,0 +1,8 @@
+@use '../shared/tokens' as t;
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(4);
+  line-height: t.leading('normal');
+}

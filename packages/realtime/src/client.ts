@@ -300,6 +300,7 @@ export class LiveClient {
       state: (): LiveState => registration.state,
       cursor: (): LiveCursor | null => registration.cursor,
       error: (): unknown => registration.error,
+      retry: () => this.#retryNow(registration),
       onChange: (listener) => {
         listeners.add(listener);
         return () => {
@@ -363,21 +364,28 @@ export class LiveClient {
 
   /**
    * Ask again once the node's stated delay has passed — a rate-limited subscribe, whose bucket
-   * refills. Only while the registration is still held, still refused and the socket still up:
-   * anything else and the reopen's replay, or the unsubscribe, already decided its fate.
+   * refills. `#retryNow` holds it to a registration still held and refused on an open socket.
    */
   #retryLater(registration: Registration, afterMs: number): void {
     this.#retries.get(registration.sid)?.();
     const cancel = (this.#options.scheduler ?? timeoutScheduler)(() => {
       this.#retries.delete(registration.sid);
-      if (this.#registrations.get(registration.sid) !== registration) return;
-      if (!this.#connected || registration.state !== 'failed') return;
-      registration.state = 'loading';
-      registration.error = undefined;
-      registration.notify();
-      this.#sendSubscribe(registration);
+      this.#retryNow(registration);
     }, afterMs);
     this.#retries.set(registration.sid, cancel);
+  }
+
+  /** The re-subscribe itself, timed or asked for (`LiveHandle.retry`). Cancels a pending timer. */
+  #retryNow(registration: Registration): boolean {
+    const held = this.#registrations.get(registration.sid) === registration;
+    if (!held || !this.#connected || registration.state !== 'failed') return false;
+    this.#retries.get(registration.sid)?.();
+    this.#retries.delete(registration.sid);
+    registration.state = 'loading';
+    registration.error = undefined;
+    registration.notify();
+    this.#sendSubscribe(registration);
+    return true;
   }
 
   /** The opening frame, and the heartbeat's. One shape, because it makes one claim: I am here. */

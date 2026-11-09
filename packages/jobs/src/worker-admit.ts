@@ -7,7 +7,7 @@ import type { Clock, Ctx } from '@ultimat3/core';
 import { logger } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
 import { claimOf } from './driver';
-import type { JobExecution } from './execute';
+import type { JobExecution } from './execute-result';
 import type { Lease, Limiter } from './limits';
 import type { FleetSlots, SlotGrant } from './worker-fleet-slots';
 import { handBack } from './worker-hand-back';

@@ -139,8 +139,9 @@ async function bootRoles(boot: {
   // shipped chart and nothing read it, so every deployment that configured a collector got an empty
   // dashboard. `x dev` keeps its own recorder — the `/_x` timeline is a different sink with a
   // different lifetime — so this is the production boot's alone (axiom 6).
-  const stopOtlp = startOtlpExport(options.env);
-  acquired.push(stopOtlp);
+  // At the FRONT of the unwind list, so the stop and a failed boot's rollback alike release it
+  // last: the drain's own spans and the final counter snapshot still have somewhere to go.
+  acquired.unshift(startOtlpExport(options.env));
   // The image's compiled stylesheets, before the first page is imported — importing one IS
   // compiling its sheet — and the count of what this boot compiles anyway.
   adoptPrebuiltStyles(options.root);
@@ -234,18 +235,12 @@ async function bootRoles(boot: {
     running,
     runtime,
     async stop() {
-      // Every step runs and the first failure is rethrown (`releaseOrThrow`): a refused role stop
-      // used to leave the services, the PGlite lock and the exporter behind it. Listed in boot
-      // order, released newest first — the roles; then the web surface, after the server drained
-      // (a bust landing mid-drain still marks the pages it is serving); then the services; LAST
-      // the exporter, so the drain's own spans and the final counter snapshot still have
-      // somewhere to go.
-      await releaseOrThrow([
-        stopOtlp,
-        () => runtime.stop(),
-        () => web?.release(),
-        () => running.stop(),
-      ]);
+      // The boot's own unwind list, whole (as `x dev`'s is): every step runs and the first failure
+      // is rethrown (`releaseOrThrow`), newest first — the roles; the web surface, after the server
+      // drained; the failure-capture store, settled while the pool is still open; the row-security
+      // client; the services; the exporter last. A hand-listed copy dropped the two in the middle,
+      // so a bundle in flight at drain was lost and the next boot in the process inherited them.
+      await releaseOrThrow([...acquired]);
     },
   };
 }

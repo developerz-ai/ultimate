@@ -31,8 +31,13 @@ export interface QueryRef {
 
 /** A callable `AsyncState` over the list, plus the two things a caller does to it. */
 export type QueryAccessor<R extends object = Row> = (() => AsyncState<readonly R[]>) & {
-  /** Read again from the first page, keeping the current rows on screen (`refreshing`). */
-  refetch(): void;
+  /**
+   * Read again from the first page, keeping the current rows on screen (`refreshing`). Settles
+   * once the answer is on screen or refused — never rejects, so a pull or a button awaits it. A
+   * live read settles at once — its socket is its refresh — unless its subscription was refused:
+   * that one is asked again, and settles on the node's next answer.
+   */
+  refetch(): Promise<void>;
   /**
    * The next page, appended — from the cursor the server's last page answered with. A no-op on a
    * live read, on a read with no `first`, and once the server said there is no next page.
@@ -46,6 +51,7 @@ export type QueryAccessor<R extends object = Row> = (() => AsyncState<readonly R
 
 const PENDING: AsyncState<never> = Object.freeze({ status: 'pending' });
 const nothing = (): void => undefined;
+const settled = (): Promise<void> => Promise.resolve();
 
 /**
  * `input` is read ONCE, at call time: there is no reactive runtime here to re-run it, and a
@@ -89,7 +95,7 @@ export function useQuery<R extends object = Row>(
   const signal = signalFor('useQuery');
   if (isServerRender()) {
     return Object.assign((): AsyncState<readonly R[]> => PENDING, {
-      refetch: nothing,
+      refetch: settled,
       more: nothing,
       hasMore: () => false,
       release: nothing,
@@ -111,10 +117,6 @@ function liveAccessor<R extends object>(
 ): QueryAccessor<R> {
   // Seen once a snapshot landed — read or not — so a drop after it keeps the rows on screen.
   let seen = handle.state() === 'live';
-  const off = handle.onChange(() => {
-    if (handle.state() === 'live') seen = true;
-    bump();
-  });
   /** The last answer handed out: the same rows back keep its `data` array (`keptAnswer`). */
   let answer: AsyncState<readonly R[]> | null = null;
   const read = (): AsyncState<readonly R[]> => {
@@ -127,12 +129,32 @@ function liveAccessor<R extends object>(
     answer = keptAnswer(answer, state === 'live' ? 'ready' : 'refreshing', handle.rows());
     return answer;
   };
+  /** Settled by the next move after a retry — the snapshot, or a second refusal. */
+  let waiting: (() => void)[] = [];
+  const settle = (): void => {
+    const done = waiting;
+    waiting = [];
+    for (const resolve of done) resolve();
+  };
+  const off = handle.onChange(() => {
+    if (handle.state() === 'live') seen = true;
+    bump();
+    if (handle.state() !== 'loading') settle();
+  });
+  // The socket is a live read's refresh — except for a refused subscription on an open socket,
+  // which stays refused until the socket reconnects: that one is asked again, here. A second pull
+  // while the retry is out waits on the same answer.
+  const refetch = (): Promise<void> =>
+    waiting.length > 0 || (handle.state() === 'failed' && handle.retry())
+      ? new Promise((resolve) => waiting.push(resolve))
+      : settled();
   const release = (): void => {
     off();
+    settle();
     handle.unsubscribe();
   };
   return Object.assign(read, {
-    refetch: nothing,
+    refetch,
     more: nothing,
     hasMore: () => false,
     release,
@@ -185,7 +207,8 @@ function readAccessor<R extends object>(
 
   /**
    * One answer: its rows, and — when the server sent the records envelope — the KEYS of this
-   * read's records in answer order (`records[type]`, which `rowsOf` fills first-seen = data order).
+   * read's records in answer order: `order[type]` where the server sent one, because an object
+   * enumerates integer-like keys ascending; `records[type]`'s own key order where it did not.
    * The browser never derives a key: an answer with no records envelope holds its rows itself.
    */
   const fetch = (
@@ -193,8 +216,9 @@ function readAccessor<R extends object>(
   ): Promise<{ rows: readonly Row[]; keys: string[] | null; next?: string | null }> => {
     let keysOf: string[] | null = null;
     const onEnvelope = (envelope: RecordEnvelope): void => {
-      const records = type === undefined ? undefined : envelope.records?.[type];
-      keysOf = records === undefined ? null : Object.keys(records);
+      if (type === undefined) return;
+      const records = envelope.records?.[type];
+      keysOf = records === undefined ? null : [...(envelope.order?.[type] ?? Object.keys(records))];
     };
     const answered = (rows: readonly Row[]) => ({ rows, keys: keysOf });
     if (options.first === undefined) {
@@ -286,7 +310,6 @@ function readAccessor<R extends object>(
     keys = [];
   };
   return Object.assign(read, {
-    // Its promise is the poll's; a caller of the `void` member ignores it.
     refetch,
     more: () => {
       if (after !== null && state.status === 'ready') void load(true);

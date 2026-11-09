@@ -278,7 +278,6 @@ export const SOURCE_HEADER_PINS: Readonly<Record<string, SourceHeaderPin>> = {
   'packages/ui/src/theme/ambient.ts': { count: 1, reason: TOO_LONG },
   'packages/ui/src/theme/ambient-slot.ts': { count: 1, reason: TOO_LONG },
   'packages/ui/src/components/AppShell.tsx': { count: 1, reason: TOO_LONG },
-  'packages/ui/src/components/BarChart.tsx': { count: 1, reason: TOO_LONG },
   'packages/ui/src/components/Dropzone.tsx': { count: 1, reason: TOO_LONG },
   'packages/ui/src/components/link-target.ts': { count: 1, reason: TOO_LONG },
   'packages/ui/src/components/Toast.tsx': { count: 1, reason: TOO_LONG },

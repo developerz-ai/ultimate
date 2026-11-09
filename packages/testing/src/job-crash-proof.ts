@@ -1,6 +1,6 @@
-// `crashProof(handle, input)`: one clean run, then one run killed at each boundary the clean run
-// crossed — every step write landing, every settle — and one more where that write's answer is
-// lost. Judged by the effect log: a killed run that makes an effect more often than the clean one
+// `crashProof(handle, input)`: one clean run, then one run killed at each distinct boundary the
+// clean run crossed — a step write landing, a settle; a loop's rows one point (`job-crash-points.ts`)
+// — and one more where that write's answer is lost. Judged by the effect log: a killed run that makes an effect more often than the clean one
 // is `X_JOB_CRASH_DIVERGED`; a lost answer rerunning a step is at-least-once, reported, never red.
 
 import type { Ctx } from '@ultimat3/core';
@@ -8,11 +8,12 @@ import { finiteCount } from '@ultimat3/core';
 import type { JobHandle } from '@ultimat3/jobs';
 import { COMPENSATE_PREFIX, UNWINDING_STEP } from '@ultimat3/jobs';
 import { advanceClock, frozenNow } from './determinism';
+import { boundaryShapes, CRASH_POINT_BOUND, crashPoints } from './job-crash-points';
 import type { SimDecision, SimOp } from './job-sim-driver';
 import { SEND_AND_ANSWER } from './job-sim-driver';
 import type { SimEffect } from './job-sim-effects';
 import { effectCounts } from './job-sim-effects';
-import { JobCrashDivergedError } from './job-sim-errors';
+import { JobCrashDivergedError, JobCrashUnboundedError } from './job-sim-errors';
 import type { SimWorld } from './job-sim-world';
 import { openSimWorld } from './job-sim-world';
 
@@ -33,6 +34,8 @@ export interface CrashDivergence {
   readonly effect: string;
   readonly clean: number;
   readonly killed: number;
+  /** The step whose body made the effect, when every occurrence was made inside that one step. */
+  readonly inside?: string;
   readonly error: JobCrashDivergedError;
 }
 
@@ -45,7 +48,10 @@ export interface CrashRerun {
 }
 
 export interface CrashReport {
+  /** The boundaries killed at: each distinct one the clean run crossed, a loop's rows as one. */
   readonly boundaries: readonly CrashBoundary[];
+  /** Every boundary the clean run crossed, the forced-fail run's included: what the kills stand for. */
+  readonly crossed: number;
   readonly divergences: readonly CrashDivergence[];
   readonly reruns: readonly CrashRerun[];
 }
@@ -132,7 +138,10 @@ async function runOnce<I>(
     if (op.step.startsWith(COMPENSATE_PREFIX)) compensated.push(op.step);
     else if (op.step !== UNWINDING_STEP) forward.add(op.step);
   };
+  // Alone: a child the job queues is its enqueue effect, never run — the clean run that ran it
+  // first wrote its rows, and every killed run after found them there (0× against 6×).
   await using world = await openSimWorld({
+    alone: true,
     seed: finiteCount('crashProof', 'seed', options.seed ?? 1),
     decide,
     landed,
@@ -155,8 +164,22 @@ async function runOnce<I>(
 }
 
 /**
- * Effects the killed run made more often than the reference — or less often, when both ended alike
- * and neither unwound. An unwound run is also held to the reference's compensators: each once, last
+ * The one step whose body made every occurrence of `key` in both runs, or `undefined` when any
+ * occurrence was made between steps (or in two different steps).
+ */
+function insideOf(key: string, runs: readonly Ran[]): string | undefined {
+  const steps = new Set(
+    runs.flatMap((run) => run.effects.filter((one) => one.key === key).map((one) => one.inside)),
+  );
+  const [only] = steps;
+  return steps.size === 1 ? only : undefined;
+}
+
+/**
+ * Effects the killed run made more often than the reference — or less often, when both ended alike,
+ * neither unwound and the effect is made between steps. Inside a step body that did not complete,
+ * fewer is a kill that spent one of the step's attempts (the queue's lease accounting), not a call
+ * the crash skipped. An unwound run is also held to the reference's compensators: each once, last
  * in first out, for exactly the forward steps that completed in it.
  */
 function compare(reference: Ran, killed: Ran): readonly [string, number, number][] {
@@ -169,7 +192,9 @@ function compare(reference: Ran, killed: Ran): readonly [string, number, number]
   for (const key of keys) {
     const c = before.get(key) ?? 0;
     const k = after.get(key) ?? 0;
-    if (k > c || (k < c && alike)) out.push([key, c, k]);
+    if (k > c || (k < c && alike && insideOf(key, [reference, killed]) === undefined)) {
+      out.push([key, c, k]);
+    }
   }
   if (unwound) {
     const expected = reference.compensated.filter((name) =>
@@ -191,6 +216,7 @@ export async function crashProof<I>(
   const boundaries: CrashBoundary[] = [];
   const divergences: CrashDivergence[] = [];
   const reruns: CrashRerun[] = [];
+  let crossed = 0;
   const modes: readonly CrashBoundary['mode'][] = handle.compensates
     ? ['clean', 'forced-fail']
     : ['clean'];
@@ -207,7 +233,19 @@ export async function crashProof<I>(
         : await runOnce(handle, input, { forceFail }, options);
     const afterOf = (key: string): string | undefined =>
       clean.effects.find((effect) => effect.key === key)?.after;
-    for (let at = 1; at <= clean.boundaries.length; at += 1) {
+    // Judged before the first kill: a proof past its bound costs one clean run, then refuses.
+    const points = crashPoints(clean.boundaries);
+    crossed += clean.boundaries.length;
+    if (points.length > CRASH_POINT_BOUND) {
+      throw new JobCrashUnboundedError({
+        job: handle.name,
+        points: points.length,
+        bound: CRASH_POINT_BOUND,
+        crossed: clean.boundaries.length,
+        shapes: boundaryShapes(clean.boundaries),
+      });
+    }
+    for (const at of points) {
       const label = clean.boundaries[at - 1] ?? '?';
       const killed = await runOnce(handle, input, { at, fault: 'kill', forceFail }, options);
       boundaries.push({
@@ -222,19 +260,25 @@ export async function crashProof<I>(
           : clean;
       for (const [effect, c, k] of compare(reference, killed)) {
         const after = afterOf(effect);
+        const inside = insideOf(effect, [reference, killed]);
+        const where = {
+          ...(after === undefined ? {} : { after }),
+          ...(inside === undefined ? {} : { inside }),
+        };
         divergences.push({
           boundary: label,
           mode,
           effect,
           clean: c,
           killed: k,
+          ...(inside === undefined ? {} : { inside }),
           error: new JobCrashDivergedError({
             job: handle.name,
             boundary: label,
             effect,
             clean: c,
             killed: k,
-            ...(after === undefined ? {} : { after }),
+            ...where,
           }),
         });
       }
@@ -245,5 +289,5 @@ export async function crashProof<I>(
       }
     }
   }
-  return { boundaries, divergences, reruns };
+  return { boundaries, crossed, divergences, reruns };
 }

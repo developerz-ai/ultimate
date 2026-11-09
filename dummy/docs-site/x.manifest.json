@@ -1,0 +1,1087 @@
+{
+  "manifestVersion": 1,
+  "buildId": "e14ec6f96f5aa4f1",
+  "app": {
+    "name": "docs-site",
+    "version": "0.1.0"
+  },
+  "routes": [
+    {
+      "url": "/",
+      "render": "static",
+      "offline": "precache",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb"
+      }
+    },
+    {
+      "url": "/:page",
+      "render": "static",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb"
+      }
+    },
+    {
+      "url": "/admin",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/audit",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/queues",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/queues/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/queues/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/runs",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/runs/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/runs/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/tasks",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/tasks/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/tasks/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/workers",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/workers/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/workers/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/search",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/dashboard",
+      "render": "stream",
+      "offline": "runtime",
+      "hydrate": "visible",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "60kb"
+      }
+    },
+    {
+      "url": "/errors/:code",
+      "render": "static",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb"
+      }
+    },
+    {
+      "url": "/offline",
+      "render": "static",
+      "offline": "precache",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb"
+      }
+    },
+    {
+      "url": "/search",
+      "render": "static",
+      "offline": "precache",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "18kb"
+      }
+    },
+    {
+      "url": "/upgrading/:major",
+      "render": "static",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb"
+      }
+    }
+  ],
+  "entities": [],
+  "actions": [
+    {
+      "name": "health",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ok",
+          "role"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "public",
+      "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Readiness of this process"
+      }
+    }
+  ],
+  "queries": [],
+  "channels": [],
+  "admin": [
+    {
+      "basePath": "/admin",
+      "audit": "memory",
+      "resources": [
+        {
+          "entity": "x_job_queues",
+          "path": "/jobs/queues",
+          "filters": [
+            "name",
+            "paused"
+          ],
+          "sorts": [
+            "name",
+            "ready",
+            "delayed",
+            "running",
+            "suspended",
+            "failed",
+            "dead",
+            "oldestReadyMs",
+            "pausedAt"
+          ],
+          "scopes": [],
+          "rowScoped": true,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "name",
+                "ready",
+                "delayed",
+                "running",
+                "suspended",
+                "failed",
+                "dead",
+                "oldestReadyMs",
+                "paused",
+                "pausedAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "ready",
+                "delayed",
+                "running",
+                "suspended",
+                "failed",
+                "dead",
+                "oldestReadyMs",
+                "paused",
+                "pausedAt"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "job.queue.pause",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null,
+              "readonly": false,
+              "matching": false
+            },
+            {
+              "name": "job.queue.resume",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null,
+              "readonly": false,
+              "matching": false
+            }
+          ]
+        },
+        {
+          "entity": "x_job_tasks",
+          "path": "/jobs/tasks",
+          "filters": [
+            "name",
+            "paused"
+          ],
+          "sorts": [
+            "name",
+            "lastFireAt",
+            "nextFireAt"
+          ],
+          "scopes": [],
+          "rowScoped": true,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "name",
+                "cron",
+                "tz",
+                "catchUp",
+                "enqueues",
+                "lastFireAt",
+                "nextFireAt",
+                "paused"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "cron",
+                "tz",
+                "catchUp",
+                "enqueues",
+                "lastFireAt",
+                "nextFireAt",
+                "paused"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "job.task.pause",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null,
+              "readonly": false,
+              "matching": false
+            },
+            {
+              "name": "job.task.resume",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null,
+              "readonly": false,
+              "matching": false
+            },
+            {
+              "name": "job.task.run-now",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": false,
+              "batch": false,
+              "threshold": null,
+              "readonly": false,
+              "matching": false
+            }
+          ]
+        },
+        {
+          "entity": "x_job_workers",
+          "path": "/jobs/workers",
+          "filters": [
+            "id"
+          ],
+          "sorts": [
+            "id",
+            "concurrency",
+            "inFlight",
+            "startedAt",
+            "heartbeatAt"
+          ],
+          "scopes": [],
+          "rowScoped": true,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "host",
+                "queues",
+                "concurrency",
+                "inFlight",
+                "startedAt",
+                "heartbeatAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "host",
+                "queues",
+                "concurrency",
+                "inFlight",
+                "startedAt",
+                "heartbeatAt"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": []
+        },
+        {
+          "entity": "x_jobs",
+          "path": "/jobs/runs",
+          "filters": [
+            "id",
+            "name",
+            "queue",
+            "state",
+            "createdAt",
+            "tenantId"
+          ],
+          "sorts": [
+            "createdAt"
+          ],
+          "scopes": [
+            {
+              "name": "all",
+              "default": true,
+              "count": false
+            },
+            {
+              "name": "ready",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "delayed",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "running",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "suspended",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "done",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "failed",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "dead",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "cancelled",
+              "default": false,
+              "count": false
+            }
+          ],
+          "rowScoped": true,
+          "sections": [
+            {
+              "title": "admin.jobs.section.run",
+              "fields": [
+                "name",
+                "queue",
+                "state",
+                "attempt",
+                "maxAttempts",
+                "runAt",
+                "createdAt"
+              ]
+            },
+            {
+              "title": "admin.jobs.section.failure",
+              "fields": [
+                "lastError",
+                "lastErrorStack"
+              ]
+            },
+            {
+              "title": "admin.jobs.section.work",
+              "fields": [
+                "input",
+                "progress",
+                "steps"
+              ]
+            },
+            {
+              "title": "admin.jobs.section.trace",
+              "fields": [
+                "tenantId",
+                "traceparent",
+                "enqueuedBy",
+                "claimedBy",
+                "updatedAt"
+              ]
+            },
+            {
+              "title": "admin.section.other",
+              "fields": [
+                "id"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "name",
+                "queue",
+                "state",
+                "attempt",
+                "maxAttempts",
+                "runAt",
+                "createdAt",
+                "updatedAt",
+                "tenantId",
+                "lastError",
+                "lastErrorStack",
+                "progress",
+                "input",
+                "steps",
+                "traceparent",
+                "enqueuedBy",
+                "claimedBy"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "job.retry",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": true,
+              "threshold": null,
+              "readonly": false,
+              "matching": true
+            },
+            {
+              "name": "job.retry-from-step",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": true,
+              "when": true,
+              "batch": false,
+              "threshold": null,
+              "readonly": false,
+              "matching": false
+            },
+            {
+              "name": "job.run-now",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": true,
+              "threshold": null,
+              "readonly": false,
+              "matching": true
+            },
+            {
+              "name": "job.cancel",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null,
+              "readonly": false,
+              "matching": false
+            },
+            {
+              "name": "job.remove",
+              "permission": "job:manage",
+              "destructive": true,
+              "input": false,
+              "when": true,
+              "batch": true,
+              "threshold": null,
+              "readonly": false,
+              "matching": true
+            }
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "url": "/admin",
+          "view": "dashboard",
+          "entity": null,
+          "permissions": [
+            "admin:read"
+          ]
+        },
+        {
+          "url": "/admin/audit",
+          "view": "audit",
+          "entity": null,
+          "permissions": [
+            "admin:read",
+            "audit:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs",
+          "view": "jobs",
+          "entity": null,
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/queues",
+          "view": "list",
+          "entity": "x_job_queues",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/queues/:id",
+          "view": "detail",
+          "entity": "x_job_queues",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/queues/lookup",
+          "view": "lookup",
+          "entity": "x_job_queues",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/runs",
+          "view": "list",
+          "entity": "x_jobs",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/runs/:id",
+          "view": "detail",
+          "entity": "x_jobs",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/runs/lookup",
+          "view": "lookup",
+          "entity": "x_jobs",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/tasks",
+          "view": "list",
+          "entity": "x_job_tasks",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/tasks/:id",
+          "view": "detail",
+          "entity": "x_job_tasks",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/tasks/lookup",
+          "view": "lookup",
+          "entity": "x_job_tasks",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/workers",
+          "view": "list",
+          "entity": "x_job_workers",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/workers/:id",
+          "view": "detail",
+          "entity": "x_job_workers",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/workers/lookup",
+          "view": "lookup",
+          "entity": "x_job_workers",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/search",
+          "view": "search",
+          "entity": null,
+          "permissions": [
+            "admin:read"
+          ]
+        }
+      ]
+    }
+  ],
+  "jobs": [
+    {
+      "name": "mail.send",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mailId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
+            }
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "html": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          },
+          "tz": {
+            "type": "string",
+            "format": "iana-time-zone"
+          },
+          "replyTo": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+            "x-ultimate-refinements": [
+              {
+                "name": "mail-address",
+                "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+              }
+            ]
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
+            }
+          },
+          "unsubscribeUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "unsubscribeOneClick": {
+            "type": "boolean"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "mailId",
+          "to",
+          "subject",
+          "html",
+          "text",
+          "locale",
+          "tz"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    }
+  ],
+  "tasks": [],
+  "policies": [
+    {
+      "permission": "admin:destroy",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:impersonate",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "audit:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "dashboard:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "job:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "job:manage",
+      "enforcedIn": []
+    },
+    {
+      "permission": "job:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "job:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "public",
+      "enforcedIn": [
+        "action:health"
+      ]
+    }
+  ],
+  "permissions": [
+    "admin:destroy",
+    "admin:impersonate",
+    "admin:read",
+    "admin:write",
+    "audit:read",
+    "dashboard:read",
+    "job:delete",
+    "job:manage",
+    "job:read",
+    "job:write",
+    "public"
+  ],
+  "locales": [
+    "en"
+  ],
+  "errorCodes": [
+    {
+      "code": "X_ANIMATED_LAYOUT_PROPERTY",
+      "package": "guards/animated-layout-property.ts"
+    },
+    {
+      "code": "X_BARE_ERROR",
+      "package": "guards/bare-error.ts"
+    },
+    {
+      "code": "X_ERROR_DECLARED",
+      "package": "guards/error-declared.ts"
+    },
+    {
+      "code": "X_FOCUS_VISIBLE",
+      "package": "guards/focus-visible.ts"
+    },
+    {
+      "code": "X_IMAGE_DIMENSIONS",
+      "package": "guards/image-dimensions.ts"
+    },
+    {
+      "code": "X_ISLAND_WITHOUT_STATES",
+      "package": "guards/island-without-states.ts"
+    },
+    {
+      "code": "X_RAW_BREAKPOINT",
+      "package": "guards/raw-breakpoint.ts"
+    },
+    {
+      "code": "X_RAW_COLOUR",
+      "package": "guards/raw-colour.ts"
+    },
+    {
+      "code": "X_RAW_FETCH",
+      "package": "guards/raw-fetch.ts"
+    },
+    {
+      "code": "X_RAW_INTERVAL",
+      "package": "guards/raw-interval.ts"
+    },
+    {
+      "code": "X_RAW_LENGTH",
+      "package": "guards/raw-length.ts"
+    },
+    {
+      "code": "X_RAW_MOTION",
+      "package": "guards/raw-motion.ts"
+    },
+    {
+      "code": "X_RAW_SHADOW",
+      "package": "guards/raw-shadow.ts"
+    },
+    {
+      "code": "X_RAW_Z_INDEX",
+      "package": "guards/raw-z-index.ts"
+    },
+    {
+      "code": "X_REPO_RAW_SQL",
+      "package": "guards/repo-raw-sql.ts"
+    },
+    {
+      "code": "X_SEMANTIC_INTERACTIVE",
+      "package": "guards/semantic-interactive.ts"
+    },
+    {
+      "code": "X_UNDECLARED_CUSTOM_PROPERTY",
+      "package": "guards/undeclared-custom-property.ts"
+    },
+    {
+      "code": "X_UNDEFINED_STYLE_CLASS",
+      "package": "guards/undefined-style-class.ts"
+    },
+    {
+      "code": "X_UNTRANSLATED_STRING",
+      "package": "guards/untranslated-string.ts"
+    },
+    {
+      "code": "X_UNZONED_DATE",
+      "package": "guards/unzoned-date.ts"
+    },
+    {
+      "code": "X_DOCS_CODE_PAGE_MISSING",
+      "package": "packages/docs-source"
+    },
+    {
+      "code": "X_DOCS_LEAD_EMPTY",
+      "package": "packages/docs-source"
+    },
+    {
+      "code": "X_DOCS_LINK_DEAD",
+      "package": "packages/docs-source"
+    },
+    {
+      "code": "X_DOCS_PIECE_OVERSIZE",
+      "package": "packages/docs-source"
+    },
+    {
+      "code": "X_DOCS_SECOND_TITLE",
+      "package": "packages/docs-source"
+    },
+    {
+      "code": "X_DOCS_SITE_CURRENCY_MISMATCH",
+      "package": "packages/domain"
+    }
+  ]
+}

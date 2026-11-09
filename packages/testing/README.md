@@ -26,7 +26,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `sealed-sockets.ts` | the `WebSocket` and `Bun.connect` patches, behind `sealed-network.ts`'s one gate |
 | `factories.ts` | `defineFactory` — seeded rows, traits, associations, `build` vs `create` |
 | `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, each value read off its column's declaration (default, enum, kind, money, nullability) through `$parse`, never off its name |
-| `seed-graph.ts` | `seedGraph(entities, { tenants, perTable, seed, factories })` — rows for every table with no factory written: parents first, same-tenant keys, every declared rule kept. Pure, same seed same bytes |
+| `seed-graph.ts` | `seedGraph(entities, { tenants, perTable, seed, factories, beside })` — rows for every table with no factory written: parents first, same-tenant keys, every declared rule kept. Pure, same seed same bytes |
 | `repro.ts` | `reproduce(bundle, { driver })` and `reproJob(runJobs, failure)` — what a test `x repro --write` generated calls: captured reads seeded, clock frozen at the failure, the same actor and input (masked fields stood in from the schema); a dead job's completed steps replayed from storage |
 | `seed-graph-plan.ts` | the plan's types and `insertSeedGraph(graph, writer)` — every insert, then every deferred key, sequentially |
 | `seed-graph-values.ts` | one column's candidate values, off its declaration, kept only where `$parse` accepts them — `factoriesFor`'s source too |
@@ -34,7 +34,8 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `seed-graph-error.ts` | `X_SEED_GRAPH_UNSATISFIED`, its fix naming the `defineFactory` to write; `X_SEED_GRAPH_ENTITY_UNKNOWN`, a plan and a writer built from two entity sets |
 | `seed-writer.ts` | `entitySeedWriter({ entities, client })` or `({ entities, driver? })` — the `SeedWriter` that writes a graph through each entity's own repository: Postgres or PGlite through a client, or a driver. `@ultimat3/entity` loads on the first write. `snapshot(rows)`, required on every `SeedWriter`, reads rows back as one digest each (`md5(t::text)` over a client), `null` for a row gone |
 | `exercise.ts` | `runExercisePass({ entities, writer, roles, seed?, overrides?, only? })` — every registered action, query and job once, each on its own committed tenant pair, one `ExerciseRecord` per primitive, the tenant proof's verdict on its `tenant`. What `x exercise` runs |
-| `define-exercise.ts` | `defineExercise({ <name>: { actor, input?, runs? } \| { off: '<why>' } }, { actor?: <entity> })` — an app's overrides (the second argument names the entity whose rows are the actors), `apps/web/exercise.ts`'s one export; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED`, an unknown name `X_DECLARATION_UNKNOWN` when the pass runs |
+| `define-exercise.ts` | `defineExercise({ <name>: { actor, input?, runs? } \| { off: '<why>' } }, { actor?: <entity>, factories?: { <entity name>: defineFactory(…) }, setup?: () => mockFetch(…) \| cassette(…) })` — an app's overrides (the second argument names the entity whose rows are the actors, and the factories that build a table no generated row satisfies — a cross-column `satisfies` — keyed by entity name, unknown ones `X_DECLARATION_UNKNOWN`), `apps/web/exercise.ts`'s one export; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED`, an unknown name `X_DECLARATION_UNKNOWN` when the pass runs |
+| `exercise-setup.ts` | `withExerciseSetup(room, setup)`: the app's `setup` run inside the sealed room before the first row, its handle disposed before the room restores the network; an `allowHost` in it is `X_EXERCISE_SETUP_UNSEALED`. Types `ExerciseSetup`, `ExerciseSetupHandle` |
 | `exercise-actor.ts` · `exercise-input.ts` · `exercise-report.ts` | the first `x policy explain` actor the policy allows, minted in the primitive's tenant · the input: override, then a seeded id by field stem, then the minimal draw (`@ultimat3/schema/sample`, loaded dynamically) · the room one run executes in (network sealed, mail captured, clock frozen) and its record, `overrideLine` the entry to paste |
 | `tenant-proof.ts` | internal (`CROSS_TENANT_SCOPE` is `@ultimat3/entity`'s): `proveTenant` — B with A's ids, A's own call, B again; each B leg between two snapshots of A's rows. `withoutCrossTenant` strips `tenancy:cross` (`CROSS_TENANT_SCOPE`) from B; `publicReason` decides `public` |
 | `tenant-canary.ts` | internal: `tenantTaint` — one tenant's rows, ids and marks (row canaries, key parts of `MIN_TAINT_ID_LENGTH` 8 or more no other tenant shares); `findTaint` — every path holding one |
@@ -317,6 +318,13 @@ the writer over the app's own repositories. Rules and options:
 an actor its policy allows, on rows it did not have to write. `x exercise` and the gate's `exercise`
 step drive it; an app only writes `apps/web/exercise.ts`'s `defineExercise({ … })` for what the pass
 cannot guess. [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-exercise-pass).
+
+An override's `input` is awaited, and runs inside the request its call runs in, so
+`useContext().actor` is the seated actor that call acts as. That is the one way to hand the pass an
+input no draw can forge — a challenge issued to THIS actor, signed by `softAuthenticator` — computed
+from the pass's own state, per call, the scale sweep's included. Declare it `async`: `x drill`'s load
+has no pass behind it, so it leaves an `async` input out and says why (`drill-writes.ts`). Postly's
+passkey entries are the worked example (`examples/dummy/apps/web/exercise.ts`).
 
 Around each call the pass runs the tenant proof: the pair's second tenant (B, same role, no
 `tenancy:cross`) sends A's own input before A's call and again after it. A canary or unhanded id of
@@ -661,6 +669,44 @@ unitTest('the provider registers from its own discovery document', async () => {
 Each tamper is refused by `@ultimat3/auth`'s real `verifyIdToken` with the code a real provider's
 broken token gets (`packages/testing/src/fake-identity-provider.test.ts`). An unknown `sub` and an
 empty `users` are `X_INVARIANT`.
+
+## Testing a passkey ceremony
+
+`As of 2026-11`. `softAuthenticator({ origin, algorithm?, counter? })` is a passkey on no device:
+a real ES256 (default) or RS256 key pair on WebCrypto, `create(options)` answering what
+`newPasskey` would and `get(options)` what `getPasskey` would — so the test runs
+`@ultimat3/auth`'s real verifier. One implementation and one import path, `@ultimat3/auth/soft-authenticator`, which `@ultimat3/auth`'s own suites use too (auth cannot import this package).
+
+```ts
+import { defineAuth, memoryAuthAdapter, passkeyLogin } from '@ultimat3/auth';
+import { softAuthenticator } from '@ultimat3/auth/soft-authenticator';
+import { expect, unitTest } from '@ultimat3/testing';
+
+unitTest('a member signs in with the passkey they registered', async () => {
+  const adapter = memoryAuthAdapter();
+  const ada = await adapter.createUser({
+    id: '00000000-0000-7000-8000-00000000ada1',
+    email: 'ada@example.test',
+    passwordHash: null,
+    orgId: null,
+    roles: [],
+    createdAt: new Date(),
+  });
+  const origin = 'http://localhost:3000';
+  const auth = defineAuth({ adapter, passkeys: { rpId: 'localhost', origins: [origin] } });
+  const passkeys = passkeyLogin(auth);
+  const device = await softAuthenticator({ origin });
+  const created = await device.create(await passkeys.registerOptions({ userId: ada.id }));
+  await passkeys.register({ userId: ada.id, response: created });
+  const asserted = await device.get(await passkeys.loginOptions());
+  const signedIn = await passkeys.login({ response: asserted });
+  expect(signedIn.actor.id).toBe(ada.id);
+});
+```
+
+The second argument of `create` / `get` breaks exactly one check — `{ origin, type, rpId, flags,
+signCount, challenge, userHandle, crossOrigin }` — so a refusal test is one line. The step-up is the
+same `get` over `passkeyStepUp(…).options(…)` (`soft-authenticator.test.ts`).
 
 ## Running a mutator's local half
 
@@ -1087,3 +1133,18 @@ registered, and this guard reports additions only, so the damage lands on an inn
 nothing pointing back. A leak fails a one-file run exactly as it fails the suite —
 each file is judged against its own baseline — which is what makes the `bun test <file>` in the fix
 line reproduce it.
+
+### A module mock ends with its file
+
+Bun keeps a `mock.module` (and its aliases `vi.mock`, `jest.mock`) for the life of the process,
+past `mock.restore()` and past the file. The preload wraps the call: a file's first mock of a
+module snapshots the real namespace, and the file boundary mocks it back, so the next file on a
+shared worker reads the real module. A mock made in a preload is every file's environment and is
+left alone. The cost: the real module is LOADED for its snapshot, so its top-level code runs. One
+that throws on load cannot be put back; the next file's first test fails with the file named:
+
+```text
+X_TEST_MODULE_MOCK_UNRESTORABLE: a mocked module could not be put back at the file boundary —
+"/app/a.test.ts" mocked "/app/vendor.ts", whose real module failed to load (…)
+  fix: x test unit --isolate   # or hand the mocked dependency to the code under test as a parameter
+```

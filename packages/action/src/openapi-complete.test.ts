@@ -40,6 +40,21 @@ beforeEach(() => {
         input: t.object({ orgId: t.string }),
         output: Out,
         policy: can('credits:grant'),
+        meter: { name: 'grants', period: 'month', limit: 10 },
+        handle: () => ({ ok: true }),
+      }),
+      askAssistant: action({
+        input: t.object({ question: t.string }),
+        output: Out,
+        policy: allow('assistant:ask'),
+        meter: { name: 'questions', period: 'day', limit: () => 50 },
+        handle: () => ({ ok: true }),
+      }),
+      searchCases: action({
+        input: t.object({ q: t.string }),
+        output: Out,
+        policy: allow('cases:search'),
+        rateLimit: { limit: () => 30, windowMs: 60_000 },
         handle: () => ({ ok: true }),
       }),
     },
@@ -102,6 +117,39 @@ describe('completeOpenApi', () => {
       'Retry-After',
     ]);
     expect(Object.keys(signIn.responses['200']?.headers ?? {})).toContain('RateLimit-Remaining');
+  });
+
+  test('a metered operation documents its 429 with Retry-After, public or not', () => {
+    const asked = op(complete(), '/api/ask-assistant');
+    expect(asked.responses['401']).toBeUndefined();
+    expect(asked.responses['429']).toMatchObject({
+      description: expect.stringContaining('X_METER_EXCEEDED'),
+    });
+    // A meter's refusal states its delay and nothing else: no bucket, so no `RateLimit-*`.
+    expect(Object.keys(asked.responses['429']?.headers ?? {})).toEqual(['Retry-After']);
+    expect(asked.responses['200']?.headers).toBeUndefined();
+
+    const granted = op(complete(), '/api/grant-credits');
+    expect(granted.responses['429']).toMatchObject({
+      description: expect.stringContaining('X_METER_EXCEEDED'),
+    });
+    expect(Object.keys(granted.responses['429']?.headers ?? {})).toEqual(['Retry-After']);
+  });
+
+  test('an operation with no meter never names the meter refusal', () => {
+    const created = op(complete(), '/api/create-case');
+    expect(JSON.stringify(created.responses['429'])).not.toContain('X_METER_EXCEEDED');
+  });
+
+  test('a per-call limit documents its 429 exactly as a fixed one does', () => {
+    const searched = op(complete(), '/api/search-cases');
+    expect(Object.keys(searched.responses['429']?.headers ?? {}).sort()).toEqual([
+      'RateLimit-Limit',
+      'RateLimit-Remaining',
+      'RateLimit-Reset',
+      'Retry-After',
+    ]);
+    expect(Object.keys(searched.responses['200']?.headers ?? {})).toContain('RateLimit-Remaining');
   });
 });
 

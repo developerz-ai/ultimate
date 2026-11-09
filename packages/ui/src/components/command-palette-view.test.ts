@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { filterItems, keyAction, settleActive, stepActive } from './command-palette-view';
+import {
+  filterItems,
+  groupItems,
+  keyAction,
+  settleActive,
+  stepActive,
+} from './command-palette-view';
 
 const items = [
   { id: 'new', label: 'New link', hint: 'N' },
@@ -13,6 +19,30 @@ describe('filterItems', () => {
     expect(filterItems(items, 'SET').map((i) => i.id)).toEqual(['settings']);
     expect(filterItems(items, 'docs').map((i) => i.id)).toEqual(['link:abc']);
     expect(filterItems(items, 'zzz')).toEqual([]);
+  });
+});
+
+describe('filterItems — groups, keywords, accents', () => {
+  const grouped = [
+    { id: 'feed', label: 'Feed', hint: '/feed', group: 'Go to' },
+    { id: 'café', label: 'Café menu', hint: '', group: 'Go to' },
+    { id: 'new', label: 'New post', hint: '', group: 'Create', keywords: ['write', 'compose'] },
+    { id: 'cafe-new', label: 'New café', hint: '', group: 'Create' },
+  ];
+
+  test('cafe finds Café — accents fold through the one ranker', () => {
+    expect(filterItems(grouped, 'cafe').map((i) => i.id)).toEqual(['café', 'cafe-new']);
+  });
+
+  test('a keyword matches and is never the label', () => {
+    expect(filterItems(grouped, 'compose').map((i) => i.id)).toEqual(['new']);
+  });
+
+  test('groups keep the caller order after a filter, even when a later group ranks higher', () => {
+    // `n` is a label prefix in Create (rank 0) and only a substring of "Café menu" (rank 2): the
+    // ranker alone would put Create first, and the palette's headings would jump on each key.
+    expect(filterItems(grouped, 'n').map((i) => i.id)).toEqual(['café', 'new', 'cafe-new']);
+    expect(groupItems(filterItems(grouped, 'n')).map((g) => g.group)).toEqual(['Go to', 'Create']);
   });
 });
 

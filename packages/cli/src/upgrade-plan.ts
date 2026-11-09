@@ -63,13 +63,22 @@ export function releaseOf(version: string): Triple | undefined {
 
 const tripleOf = (version: string): Triple => releaseOf(version) ?? [0, 0, 0];
 
-const compare = (a: string, b: string): number => {
+const compareVersions = (a: string, b: string): number => {
   const left = tripleOf(a);
   const right = tripleOf(b);
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
 };
 
 const majorOf = (version: string): number => tripleOf(version)[0];
+
+/**
+ * Whether a hop to `to` rewrites this pin. One at or below it moves; one above it — a workspace a
+ * mixed set already has further on — stays, since rewriting it would move it backwards.
+ */
+export const pinMoves = (spec: string, to: string): boolean => {
+  const version = pinVersion(spec);
+  return version !== undefined && compareVersions(version, to) <= 0;
+};
 
 /** The walkthrough that gets an app into `major`, built from the heading rule. */
 export function sectionFor(major: number): UpgradeSection {
@@ -97,7 +106,7 @@ const bareTarget = (from: string, released: readonly string[]): string | undefin
   const next = nextMajorNewest(from, released);
   if (next !== undefined) return next;
   const newest = newestOfMajor(majorOf(from), released);
-  return newest !== undefined && compare(newest, from) > 0 ? newest : undefined;
+  return newest !== undefined && compareVersions(newest, from) > 0 ? newest : undefined;
 };
 
 const unreadablePin = (cause: string, file: string): UltimateError =>
@@ -133,8 +142,19 @@ function readVersions(pins: readonly UpgradePin[]): readonly string[] {
  */
 const aligningVersion = (high: string, released: readonly string[]): string => {
   const newest = newestOfMajor(majorOf(high), released);
-  if (newest !== undefined && compare(newest, high) >= 0) return newest;
+  if (newest !== undefined && compareVersions(newest, high) >= 0) return newest;
   return nextMajorNewest(high, released) ?? high;
+};
+
+/**
+ * The one hop out of a mixed set: its lowest pins' next major, one walkthrough at a time, until that
+ * major reaches the highest pin's — where the hop that brings the set level is the next one.
+ */
+const lowestHop = (low: string, high: string, released: readonly string[]): string => {
+  const next = nextMajorNewest(low, released);
+  return next !== undefined && majorOf(next) < majorOf(high)
+    ? next
+    : aligningVersion(high, released);
 };
 
 const tooWide = (cause: string, target: string | undefined): UltimateError =>
@@ -159,16 +179,18 @@ function checkTarget(input: {
       fix: 'bun pm view @ultimat3/cli versions --json   # then: x upgrade --to <one of them> --json',
     });
   }
-  // A mixed set has one way out, so every refusal over it names that way: a fix aimed at the next
-  // major of the lowest pin would itself be refused, for sitting below the highest.
-  const aligning = aligningVersion(high, released);
-  const way = low === high ? bareTarget(low, released) : aligning;
-  if (compare(to, high) < 0) {
+  // A mixed set has one way out, so every refusal over it names that way: its lowest pins, one
+  // major further. Never the highest pin's version: that skipped every walkthrough between.
+  const mixed = low !== high;
+  const step = mixed ? lowestHop(low, high, released) : (nextMajorNewest(low, released) ?? low);
+  const way = mixed ? step : bareTarget(low, released);
+  if (mixed && compareVersions(to, low) <= 0) {
+    throw tooWide(`--to ${to} moves none of the lowest pins, at ${low}`, way);
+  }
+  if (!mixed && compareVersions(to, high) < 0) {
     throw tooWide(`--to ${to} is below the ${high} this app already pins`, way);
   }
-  // The second operand is what makes the mixed refusal's own fix runnable: `^6` beside `^19` is told
-  // `--to <19.x>`, which brings the straggler level and crosses nothing the rest of the app has not.
-  const widest = Math.max(majorOf(nextMajorNewest(low, released) ?? low), majorOf(aligning));
+  const widest = majorOf(step);
   if (majorOf(to) > widest) {
     throw tooWide(
       `--to ${to} skips a major: from ${low} a run reaches ${String(widest)}.x at most, so each hop's gate attributes its red to that hop`,
@@ -184,11 +206,11 @@ export function planHop(input: {
   readonly to?: string;
 }): UpgradeHop {
   const { pins, to } = input;
-  const distinct = [...new Set(readVersions(pins))].sort(compare);
+  const distinct = [...new Set(readVersions(pins))].sort(compareVersions);
   const low = distinct[0] ?? '0.0.0';
   const high = distinct.at(-1) ?? low;
   const released = input.versions.filter((version) => releaseOf(version) !== undefined);
-  released.sort(compare);
+  released.sort(compareVersions);
 
   if (to === undefined && distinct.length > 1) {
     // The stragglers, not the first few: `^19.4.0` nineteen times says nothing about the one `^19.3.1`.
@@ -196,19 +218,24 @@ export function planHop(input: {
     const held = stragglers.map((pin) => `${pin.file}: ${pin.name} ${pin.spec}`);
     throw new UltimateError({
       code: 'X_UPGRADE_MIXED_PINS',
-      cause: `the workspaces pin ${distinct.join(', ')}, and the framework only moves in lockstep. ${String(held.length)} of ${String(pins.length)} below ${high}: ${held.slice(0, 6).join('; ')}`,
-      fix: `x upgrade --to ${quoteArg(aligningVersion(high, released))} --json`,
+      cause: `the workspaces pin ${distinct.join(', ')}, and the framework only moves in lockstep, so a run moves the lowest pins one major until the set is level. ${String(held.length)} of ${String(pins.length)} below ${high}: ${held.slice(0, 6).join('; ')}`,
+      fix: `x upgrade --to ${quoteArg(lowestHop(low, high, released))} --json`,
     });
   }
   if (to !== undefined) checkTarget({ to, low, high, released });
 
   const target = to ?? bareTarget(low, released) ?? low;
-  const after = bareTarget(target, released) ?? null;
+  // Still below the highest pin, the set stays mixed: the next run is the lowest pins' next hop.
+  const after =
+    compareVersions(target, high) < 0
+      ? lowestHop(target, high, released)
+      : (bareTarget(target, released) ?? null);
   return {
     from: low,
     to: target,
     next: after,
     atTarget: distinct.length === 1 && target === low,
-    section: majorOf(target) > majorOf(high) ? sectionFor(majorOf(target)) : null,
+    // The lowest pins are the ones that cross: theirs is the walkthrough this hop needs.
+    section: majorOf(target) > majorOf(low) ? sectionFor(majorOf(target)) : null,
   };
 }

@@ -44,7 +44,7 @@ export interface RedisTierOptions {
   readonly defaultTtlMs?: number;
   /**
    * Injected in tests and for a second server; production takes `redisClient()` from
-   * `@ultimat3/core/redis` (`REDIS_URL`). A client handed in keeps its own reconnect behaviour and
+   * `@ultimat3/core/redis` (`REDIS_URL`, else `VALKEY_URL`; the CLI boot hands in a lazy one). A client handed in keeps its own reconnect behaviour and
    * still gets the deadline.
    */
   readonly client?: RedisLike;

@@ -13,6 +13,7 @@ import {
   catalogKeyGaps,
   checkCarriedKeys,
   deriveCarriers,
+  namespaceTableKeys,
 } from './catalog-keys';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -140,5 +141,30 @@ describe('the real tree', () => {
       expect(keys).toContain(key);
     }
     expect(await catalogKeyGaps(repoRoot())).toEqual([]);
+  });
+});
+
+describe('a key table imported as a namespace', () => {
+  test('each export of the module it names is a member, read where it is declared', () => {
+    const files = [
+      {
+        path: 'packages/ui/src/i18n-keys.ts',
+        text: "import * as UI_KEYS from './ui-keys';\nexport { UI_KEYS };",
+      },
+      { path: 'packages/ui/src/ui-keys.ts', text: "export const close = 'ui.close';\n" },
+      { path: 'packages/ui/src/Dialog.tsx', text: 'ui.t(UI_KEYS.close);' },
+    ];
+    const carriers = deriveCarriers(files);
+    expect(namespaceTableKeys(files, carriers)).toEqual([
+      { path: 'packages/ui/src/ui-keys.ts', line: 1, key: 'ui.close', via: 'UI_KEYS.close' },
+    ]);
+  });
+
+  test('a namespace nobody passes to t() carries nothing', () => {
+    const files = [
+      { path: 'a/b.ts', text: "import * as LABELS from './labels';" },
+      { path: 'a/labels.ts', text: "export const x = 'ui.x';" },
+    ];
+    expect(namespaceTableKeys(files, deriveCarriers(files))).toEqual([]);
   });
 });

@@ -19,9 +19,26 @@ export const ACTOR_SETTING = 'x.actor';
 export const REQUEST_SETTING = 'x.request';
 export const PURGE_SETTING = 'x.purge';
 
+/** A JSON number's own digits, as text: `->>` spells a jsonb numeric exactly, scale included. */
+const DIGITS = { type: 'number', text: '{image} ->> k' };
+/** The instant `to_jsonb` spelled with the session's offset, re-spelled in UTC as `toISOString`. */
+const INSTANT = {
+  type: 'string',
+  text: `to_char(({image} ->> k)::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+};
+
+/** One image's key `k` replaced by its text, when it holds the JSON type `to_jsonb` gave it. */
+const exact = (image: string, how: { readonly type: string; readonly text: string }): string =>
+  `if jsonb_typeof(${image} -> k) = '${how.type}' then ${image} := jsonb_set(${image}, array[k], ` +
+  `coalesce(to_jsonb(${how.text.replaceAll('{image}', image)}), ${image} -> k)); end if;`;
+
 /**
  * One function for every history table: the trigger's arguments name the table, the key, the tenant
- * column and the columns whose change alone records nothing (the counters the database keeps).
+ * column, the columns whose change alone records nothing (the counters the database keeps), and the
+ * columns `to_jsonb` spells otherwise than the row: an `int8`/`numeric` stored as its digits (a JSON
+ * number is a float to every reader past 2^53 and drops a scale's zeros), a `timestamptz` as UTC ISO
+ * to the millisecond (`to_jsonb` writes the SESSION zone's offset) — what the memory driver keeps.
+ * An argument a trigger installed before it existed reads NULL, and NULL is the empty list.
  *
  * `jsonb_populate_record` builds the history row, so every value lands in its column's own type —
  * a uuid tenant from a jsonb text, with no cast spliced per table. A statement that changes nothing
@@ -34,7 +51,14 @@ export const HISTORY_FUNCTION_SQL =
   "source jsonb := case when tg_op = 'DELETE' then to_jsonb(old) else to_jsonb(new) end; " +
   "prior jsonb := case when tg_op = 'INSERT' then null else to_jsonb(old) end; " +
   'ignored text[] := tg_argv[3]::text[]; ' +
+  "digits text[] := coalesce(tg_argv[4], '{}')::text[]; " +
+  "instants text[] := coalesce(tg_argv[5], '{}')::text[]; " +
+  'k text; ' +
   "begin if tg_op = 'UPDATE' and (prior - ignored) = (source - ignored) then return null; end if; " +
+  'foreach k in array digits loop ' +
+  `${exact('source', DIGITS)} ${exact('prior', DIGITS)} end loop; ` +
+  'foreach k in array instants loop ' +
+  `${exact('source', INSTANT)} ${exact('prior', INSTANT)} end loop; ` +
   "execute format('insert into %I select * from jsonb_populate_record(null::%I, $1)', " +
   'tg_argv[0], tg_argv[0]) using jsonb_build_object(' +
   "'id', gen_random_uuid(), 'row_id', source ->> tg_argv[1], 'op', lower(tg_op), 'at', now(), " +
@@ -90,6 +114,8 @@ export function historyTriggers(
     literal(history.key).text,
     literal(history.tenant ?? '').text,
     nameArray(history.ignore),
+    nameArray(history.text ?? []),
+    nameArray(history.instants ?? []),
   ].join(', ');
   return [
     [

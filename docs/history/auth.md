@@ -699,3 +699,26 @@ No plaintext fallback, ever —
 Its second argument (`OAuthGrantContext`, `oauth-grant-context.ts`, #670) is the token set, the
   whole verified id-token payload and a LAZY, once-per-login, `sub`-checked `userinfo()` — read
   through `oauth-profile.ts`'s `userinfoBody`, never a second userinfo reader.
+
+## Passkeys, 2026-11-06 (issue #990)
+
+**Built, not wrapped.** `docs/idea/18-build-vs-wrap.md` points the other way for a wire protocol,
+so the verdict is stated: WebAuthn verification here is a fixed, small parse (the CBOR subset of an
+attestation object and a COSE key, DER `r || s`, authenticator data's 37-byte header) feeding
+WebCrypto, which IS the cryptography — there is no reconnect state machine or framing to harden.
+`@simplewebauthn/server` would add a dependency tree whose own CBOR/ASN.1 libraries do the same
+parse, and its API (its own option bags, its own errors) would become vocabulary a caller writes
+against, which the criterion forbids. What it hardens beyond this — attestation-statement formats
+(packed, TPM, Android) — is deliberately not used: registration asks `attestation: 'none'`.
+
+| Decision | Why |
+|---|---|
+| UV required, never `preferred` | a step-up proves "a person approved", and a sign-in mints an MFA-satisfied session; presence alone proves neither |
+| challenges in `x_passkey_challenges`, sha256-keyed, `DELETE … RETURNING` | single-use across replicas; the hash means a table read cannot answer a live ceremony; a take leaves nothing to sweep, and `putPasskeyChallenge` drops expired rows so the table stays bounded without a job |
+| the step-up challenge derived, `SHA-256(tag ‖ nonce ‖ len ‖ digest ‖ userId)` | a caller can never choose what is signed; the user id in the hash makes the evidence row's `userId` part of the signed bytes |
+| evidence keeps its own public key | `verifyPasskeyEvidence` runs in another process with the row alone, and deleting a passkey does not un-prove what it approved |
+| `PasskeyStore` on `AuthAdapter`, not a separate seam | every member of the seam is required; a second store to wire would be a second way to configure persistence (BREAKING for an out-of-tree adapter) |
+| functions, not actions | tier 2 cannot construct an `action`; the app wraps them, as it wraps `login` and `completeMfa` |
+| the digest option is `digest`, not the issue's `challenge` | `challenge` invited an app to hand WebAuthn its own challenge, which drops the nonce and single use |
+| the software authenticator is `@ultimat3/auth/soft-authenticator`, not re-exported by `@ultimat3/testing` | auth's own tests cannot import tier 5, so the one implementation sits at tier 2; a re-export from testing was a second import path for one value, refused by `flight-copies` (`X_HELPER_COPY`) |
+| the browser half is `newPasskey` / `getPasskey` | `createPasskey` was refused by the factory-names rule (`X_FACTORY_NAME_SPELLING`) before it shipped |

@@ -244,14 +244,8 @@ export {
   scopeNamed,
 } from './list-scope';
 export { AdminScopeTabs, type AdminScopeTabsProps } from './list-scope-tabs';
-export {
-  type AdminMcpActor,
-  type AdminMcpOptions,
-  type AdminToolResult,
-  adminMcp,
-  callAdminTool,
-  type McpInput,
-} from './mcp';
+export { type AdminMcpActor, type AdminMcpOptions, adminMcp } from './mcp';
+export { type AdminToolResult, callAdminTool, type McpInput } from './mcp-dispatch';
 export { adminTokenScopes, adminToolScopes } from './mcp-scopes';
 export {
   type AdminMcpTool,

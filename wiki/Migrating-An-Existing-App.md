@@ -7,6 +7,8 @@
 | You want | Page |
 |---|---|
 | move an app **from another framework** to Ultimate | this page |
+| what each Rails, Django, Laravel or Node/Drizzle term becomes | [From Rails](Migrating-From-Rails) · [From Django](Migrating-From-Django) · [From Laravel](Migrating-From-Laravel) · [From Node and Drizzle](Migrating-From-Node-Drizzle) |
+| how it compares, and when to pick another stack instead | [Compared](Compared) |
 | move an app **from `@ultimat3/*` 1.x or 2.x to the current major** | [Upgrading](Upgrading) |
 | what is unfinished in the release being adopted | [Known gaps](Known-Gaps) |
 | every `X_*` code named below | [Error codes](Error-Codes) |
@@ -304,7 +306,7 @@ A separate Postgres **schema** is still not a third path `As of 2026-08`, for on
 
 **The `search_path` itself now works.** `connectionUrl` **merges** the operator's libpq `options` instead of assigning over them, on every role, so a `DATABASE_URL` carrying `?options=-c search_path=app` survives everywhere. The framework wins only on the setting it names — the role's `statement_timeout` bound — and every other `-c` an operator wrote is theirs.
 
-**The drift check does not follow it.** `introspectSchema()` defaults `schema` to `'public'`, `checkDrift()` forwards a `schema` option only when it is given one, and `runMigrations` calls `checkDrift({ migrations })` with none. So the post-migrate check reads `public` whatever the session's `search_path` is: it finds none of the app's tables, and reports **every declared table as `missing-table`** whose `fix:` is `x db migrate` — the command that just ran. There is no `--schema` flag on `x db` to close it with.
+**The drift check does not follow it.** `introspectSchema()` defaults `schema` to `'public'`, `checkDrift()` forwards a `schema` option only when it is given one, and `runMigrations` calls `checkDrift({ migrations })` with none. So the post-migrate check reads `public` whatever the session's `search_path` is: it finds none of the app's tables, and reports **every declared table as `missing-table`**, each with a `create table` repair — unqualified, so under that `search_path` it lands in the app's own schema, where the table already exists, and fails with `42P07` rather than creating copies in `public`. There is no `--schema` flag on `x db` to close it with.
 
 ### Branch table
 

@@ -4,8 +4,8 @@
 // `/blog/:slug` with an empty `slug` failed the page's own input schema (`X_INPUT_INVALID`), and
 // that was filed as "could not be weighed", a failure of the app dressed as a gap in the build.
 
-import type { RouteEntry } from '@ultimat3/render';
-import { enumeratePrerender } from '@ultimat3/render/server';
+import type { PrerenderEntry, RouteEntry } from '@ultimat3/render';
+import { enumeratePrerenderEntries } from '@ultimat3/render/server';
 import { quoteArg } from './shell-quote';
 import type { UnmeasuredRoute } from './static-report';
 
@@ -62,11 +62,19 @@ export const perRequestParams = (entry: RouteEntry): UnmeasuredRoute => ({
   weighable: false,
 });
 
-export async function measurePaths(entry: RouteEntry): Promise<MeasurePlan> {
+/**
+ * `enumerate` is where a dynamic route's pages come from: the build passes the one enumeration it
+ * shares with `siteSeo`'s entries, so a budgeted route's `prerender()` runs once per build, not once
+ * to weigh and again to list. Omitted, `prerender()` is asked here.
+ */
+export async function measurePaths(
+  entry: RouteEntry,
+  enumerate: (entry: RouteEntry) => Promise<readonly PrerenderEntry[]> = enumeratePrerenderEntries,
+): Promise<MeasurePlan> {
   if (entry.pattern.keys.length === 0) return { paths: [{ path: entry.path, params: {} }] };
   if (entry.config.render === 'ssr') return { unmeasured: perRequestParams(entry) };
   if (entry.config.prerender === undefined) return { unmeasured: paramsUndeclared(entry, false) };
-  const sets = await enumeratePrerender(entry);
+  const sets = (await enumerate(entry)).map((page) => page.params);
   if (sets.length === 0) return { unmeasured: paramsUndeclared(entry, true) };
   return {
     paths: sets.map((params) => ({ path: fillPath(entry.pattern.source, params), params })),

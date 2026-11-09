@@ -53,6 +53,8 @@ export const cancelRun = action({
 bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 ```
 
+Something narrower than the default dashboard? Start from a shape: `--shape api`, `blog` or `dashboard`, one flag, same gate → [Shapes](wiki/Shapes.md).
+
 Or look first: **[the live demo](https://social-media.ultimate.demo.developerz.ai)**, a social network built on Ultimate, deployed from `main` on every green push. Fabricated data, every row decided by a policy. Source: [`dummy/social-media-clone/`](dummy/social-media-clone/).
 
 No Docker, no env hunt: embedded Postgres, in-process NATS, storage in a local directory, a seeded database and a dev dashboard at `/_x`. `bun run setup` is required: `x new` installs nothing, and the app's own README names the six steps. → [Getting started](wiki/Getting-Started.md)
@@ -83,7 +85,7 @@ A number written into a file goes stale on the next commit; the command does not
 
 | Claim | Check it yourself |
 |---|---|
-| `x new` writes 220 files you never edit (187 with `--no-example`), asks 0 questions | `bun run scripts/generator-counts.ts --json` |
+| `x new` writes 224 files you never edit (191 with `--no-example`), asks 0 questions | `bun run scripts/generator-counts.ts --json` |
 | the gate's steps, in order, each with a verdict | `bun run x -- verify --json` |
 | a fresh scaffold is green on its first gate run, every push | the `scaffold-smoke` job in [`ci.yml`](.github/workflows/ci.yml) |
 | a rolling restart on Kubernetes drops no request (0 of 9,028, `As of 2026-09-24`) | the `deploy-proof` job in [`ci.yml`](.github/workflows/ci.yml), `docker/deploy-proof/run.sh` |

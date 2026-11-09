@@ -32,11 +32,13 @@ export const SPAWN_TIMEOUT_PINS: Readonly<Record<string, SpawnTimeoutPin>> = {
     reason:
       "why: `e2e-spawn.ts` starts the app under test, which serves until `stop()` kills it; readiness is bounded by `DEFAULT_READY_TIMEOUT_MS`. `cdp-launch-attempt.ts` starts Chrome, which exits when its command pipe (fd 3) closes, and the launch is bounded by the attempt's own deadline. `drill-fleet.ts`'s `spawnRole` starts each role of a drill's fleet, which serves until the fleet's `stop()` SIGKILLs every child it holds (on a failed start too); readiness and the `ROLE=migrate` run are bounded by `readyTimeoutMs`, a drain by `exitWithin`.",
   },
-  // why: three children killed by the script that started them, and one bounded by test timeouts.
+  // why: four children killed by the script that started them, and one bounded by test timeouts.
   // `lib/run.ts` left this row in #780: its own deadline (`DEFAULT_RUN_TIMEOUT_MS`) now ends a child.
+  // Raised 4→5 by `bench/http-hello.ts`'s `coldStart`: a server the bench measures, which must
+  // outlive any fixed timeout, ended by the `stop()` that signals its process group.
   scripts: {
-    count: 4,
+    count: 5,
     reason:
-      "why: `coverage-gate.ts` runs one `bun test --coverage` per unit, bounded by each test's own timeout and the CI job's; SUSPECT, the one row a hang could still outlast locally. `scaffold-admin.ts` boots `x dev` and kills it in its `finally`; `bench/restart-bench.ts` starts a server and its client shards and kills both when the run ends.",
+      "why: `coverage-gate.ts` runs one `bun test --coverage` per unit, bounded by each test's own timeout and the CI job's; SUSPECT, the one row a hang could still outlast locally. `scaffold-admin.ts` boots `x dev` and kills it in its `finally`; `bench/restart-bench.ts` starts a server and its client shards and kills both when the run ends; `bench/http-hello.ts`'s `coldStart` boots the server under measurement and `stop()` SIGTERMs its process group, on a failed start too.",
   },
 };

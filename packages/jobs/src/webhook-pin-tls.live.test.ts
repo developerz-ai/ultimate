@@ -4,63 +4,33 @@
 // the request it builds; only a listener can show Bun's `fetch` honours both halves — a runtime
 // that ignored `serverName` would either refuse every pinned delivery or verify nothing at all.
 //
-// Opt-in (`.live.`): it mints a throwaway certificate with `openssl`, and skips where there is none.
+// The certificate is minted in-process by `@ultimat3/core`'s `tls-cert-fixture.ts` (WebCrypto + a
+// hand-written X.509), so no host `openssl` is needed and nothing skips: both halves always run.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// why: Bun has no temp-directory helper; the key and certificate live there for this run only.
-import { mkdtempSync, rmSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
-// why: Bun exposes no path-join primitive.
-import { join } from 'node:path';
 import { ctxOf, frozenClock, markListening } from '@ultimat3/core';
+// A test-only fixture core does not export: one minter for every TLS test, not a copy per package.
+import { selfSignedCert } from '../../core/src/tls-cert-fixture';
 import { resetJobs } from './job';
 import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 import { webhook } from './webhook';
 import { memoryWebhookLedger } from './webhook-ledger';
 
-const hasOpenssl = Bun.which('openssl') !== null;
 const NAME = 'hooks.partner.test';
 
-let dir = '';
 let cert = '';
 let server: ReturnType<typeof Bun.serve> | undefined;
 let unannounce = (): void => undefined;
 const hosts: string[] = [];
 
 beforeAll(async () => {
-  if (!hasOpenssl) return;
-  dir = mkdtempSync(join(tmpdir(), 'x-webhook-tls-'));
-  const minted = Bun.spawnSync(
-    [
-      'openssl',
-      'req',
-      '-x509',
-      '-newkey',
-      'ec',
-      '-pkeyopt',
-      'ec_paramgen_curve:prime256v1',
-      '-nodes',
-      '-days',
-      '1',
-      '-subj',
-      `/CN=${NAME}`,
-      '-addext',
-      `subjectAltName=DNS:${NAME}`,
-      '-keyout',
-      join(dir, 'key.pem'),
-      '-out',
-      join(dir, 'cert.pem'),
-    ],
-    { timeout: 30_000 },
-  );
-  expect(minted.exitCode).toBe(0);
-  cert = await Bun.file(join(dir, 'cert.pem')).text();
+  const minted = await selfSignedCert(NAME);
+  cert = minted.cert;
   server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
-    tls: { key: Bun.file(join(dir, 'key.pem')), cert },
+    tls: { key: minted.key, cert },
     fetch: (request) => {
       hosts.push(request.headers.get('host') ?? '');
       return new Response('ok');
@@ -74,7 +44,6 @@ afterAll(() => {
   unannounce();
   server?.stop(true);
   resetJobs();
-  if (dir !== '') rmSync(dir, { recursive: true, force: true });
 });
 
 let sequence = 0;
@@ -118,7 +87,7 @@ async function deliver(host: string): Promise<unknown> {
   }
 }
 
-describe.skipIf(!hasOpenssl)('live · webhook · a pinned delivery over real TLS', () => {
+describe('live · webhook · a pinned delivery over real TLS', () => {
   test('reaches the approved address and verifies the certificate against the NAME', async () => {
     expect(await deliver(NAME)).toBe('delivered');
     expect(hosts.at(-1)).toBe(`${NAME}:${server?.port ?? 0}`);

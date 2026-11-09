@@ -666,7 +666,7 @@ is the shape a table already has, `As of 2026-08`.
 | `enumerated(v)` · `tz(zones)` · `locale(tags)` | `text` + CHECK | the union of the declared values |
 | `timestamp()` | `timestamptz` | `Date` — an instant, stored UTC |
 | `money()` | `<n>_minor bigint` + `<n>_currency char(3)` + `<n>_scale integer null` | `MoneyValue` |
-| `json(schema)` | `jsonb` | whatever the schema infers. The schema is **required** — a `json()` returning `unknown` is an `any` hole, and the value arrives from the database as often as from a caller |
+| `json(schema)` | `jsonb` | whatever the schema infers. The schema is **required** — a `json()` returning `unknown` is an `any` hole, and the value arrives from the database as often as from a caller. `null` in a NOT NULL `json()` column is the JSON value — the schema judges it (`t.nullable(…)` admits it) and it is stored as `'null'::jsonb`; in a `.nullable()` column `null` is SQL NULL, the clear `is-null` matches |
 | `decimal({ precision, scale })` | `numeric(p, s)` | `string`, the exact digits. A value with more decimal places than the column stores is refused, not rounded |
 | `date()` | `date` | `PlainDate` — a calendar date, no time, no zone |
 | `bigint()` | `bigint` | `string`. A JS `bigint` is what `JSON.stringify` throws on and a `number` loses digits past 2^53, which is where a legacy `int8` key lives |
@@ -968,6 +968,22 @@ export const postTotals = entity('post_totals', {
 | Admin, MCP | listed read-only: `list`, `detail`, `search`, and no create/edit/delete route, button or admin MCP tool. An `operations` override naming a write is `X_ADMIN_VIEW_WRITE` ([Admin dashboard](Admin-Dashboard)) |
 | Manifest | the entity's fact carries `view: { materialized }`; a table becoming a view is a **breaking** change, a view becoming a table additive |
 
+## Read-only tables
+
+`entity(name, { readOnly: '<why>', columns })` declares a table the app reads and never writes —
+legacy history a trigger closed to INSERTs, a table another system owns. The reason is required. As
+of 2026-11:
+
+| Rule | |
+|---|---|
+| Writes | `insert`, `insertAll`, `upsertAll`, `update`, `delete`, `updateWhere`, `deleteWhere`, `lock`: `X_ENTITY_READ_ONLY`, in both drivers, before a statement exists, the reason in the cause |
+| Refused at declaration | a blank reason, `view` (already read-only), `appendOnly` (it admits the inserts this refuses): `X_INVARIANT_VIOLATED` |
+| Seeds | `x db seed --generate` and `x exercise` seed no row of it. A nullable reference into it is seeded null; a NOT NULL one is `X_SEED_GRAPH_UNSATISFIED` naming the table, its reason, and the fix: `readOnly` on the referencing table too, or `.nullable()` then `x db gen` |
+| Subjects | `defineSubject`'s `'delete'` or `anonymize` on it is `X_SUBJECT_TREATMENT_INVALID`; `retain` is the one treatment that holds |
+| Admin, MCP | listed read-only, as a view; an `operations` override naming a write is `X_ADMIN_READ_ONLY_WRITE` |
+| Projection, manifest | `$describe().readOnly` and the manifest's entity fact carry the reason, absent when undeclared; becoming readOnly is **breaking**, ceasing to be additive |
+| DDL | none: `x db gen` emits nothing for it. The trigger, grant or ownership that closes the table is yours |
+
 ## Migration workflow
 
 | Step | Command | Behavior |
@@ -1032,6 +1048,8 @@ reverse, is `changed-primary-key`.
 | `changed-index` | the index is there and one of **four** facts about it differs: its column list, its uniqueness, its **direction**, or whether it is **partial**. The last two are new `As of 2026-08-19` — a `desc` index rebuilt ascending served a feed's newest page off the wrong end, and a partial index recreated as a total one silently widened the constraint, and both read `ok: true`. `asc` is normalised to `null` first, because Postgres stores an ascending index as not-descending. The predicate's **text** is deliberately never compared → [Known gaps](Known-Gaps) |
 | `missing-foreign-key` | no key points those columns at that table. Matched on **where the key points**, never on its name: a hand-written `constraint fk_posts_org` is the same constraint as a generated `posts_org_id_fkey` |
 | `changed-foreign-key` | new `As of 2026-08-19`. The key points where it was declared to point and one side's `on delete` rule is not the other's. Reported apart from `missing-foreign-key` because it is a different repair — the constraint is there, and what changed is what happens to the child rows. Its `fix:` is the **pair** as one `psql "$DATABASE_URL" -c '…'` command, not `x db migrate`: a rule cannot be altered in place, `add constraint` alone is `42710` on a name already taken, and no `x db gen` diff emits either statement. Both sides go through one normalisation, so the catalog's `c` and a snapshot's `cascade` agree, and Postgres' `a` (`no action`) on every undeclared key reads as no rule |
+
+As of 2026-11-07 the `missing-column`, `missing-table`, `missing-index`, `changed-index` and `missing-foreign-key` findings carry one `psql "$DATABASE_URL" -c '…'` repair built from the snapshot (a `psql` session when no name can be written), never `x db migrate`: the migration declaring it is already in the ledger, so re-running the migrator applies nothing. Run the repair, then `x db migrate` re-checks.
 
 There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s 21 steps — the list, in order, is in [Testing](Testing).
 

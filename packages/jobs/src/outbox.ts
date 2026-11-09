@@ -259,7 +259,13 @@ export interface OutboxDeps {
   readonly mode?: 'default' | 'required';
 }
 
-/** Stage a job inside `tx`. Returns the row that the relay will publish after commit. */
+/**
+ * Stage a job inside `tx`. Returns the row that the relay will publish after commit.
+ *
+ * The facade's staged arm, and NOT in `index.ts`: the refusals (`refuseAbandoned`, the concurrency
+ * key, `refuseEnqueueTenant`) are the facade's and precede this call, so a public spelling of it
+ * was a second enqueue path that staged rows the facade refuses. Exported for this package's tests.
+ */
 export async function enqueueInTx<I>(
   deps: OutboxDeps,
   tx: Tx,

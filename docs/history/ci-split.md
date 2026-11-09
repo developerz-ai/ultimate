@@ -66,13 +66,14 @@ servers a `services:` block cannot start.
 |---|---|---|
 | `gate` | 5 | one part of the framework gate: `unit`, `contract` and `job` in three shards against one Postgres, `live` (every suite that needs more than one server, with the six static steps beside it), `e2e` (the compiler, then a browser) — as of 2026-11-05, below |
 | `verify` | 1 | `x verify merge` over the five parts — the framework gate's verdict. `release.yml` reads the whole run's conclusion, which includes it (2026-10-03) |
-| `reference-app-verify` | 2 | one tracked app: build, gate, ratchet |
-| `scaffold-smoke` | 2 | one scaffold shape: default, `--no-example` |
+| `reference-app-verify` | 3 | one tracked app: build, gate, ratchet — the docs site the third since 2026-11-06 (plan 101, 42-adopt-docs-site) |
+| `scaffold-smoke` | 5 | one scaffold per runner: default, `--no-example`, and one per `x new --shape` (`api`, `blog`, `dashboard` since 2026-11-06), held to `NEW_SHAPES` by `scripts/ci-workflow-shape.test.ts` |
 | `packages` | 2 | each unit tested and covered alone; `cli` in one shard, every other unit in the other (2026-11-05, below) |
 | `container` | 1 | unchanged |
 | `deploy-proof` | 1 | unchanged, `main` only |
 | `fault-drills` | 1 | `x drill` on `examples/dummy` against one Postgres: `pg-blackhole`, `worker-sigkill`, `web-sigterm` — added 2026-11-06, below |
 | `windows` | 1 | native Windows in PowerShell: lint, typecheck, a path-heavy unit subset, a scaffold smoke — added 2026-10-05, below |
+| `changes` | 1 | can this diff reach the six jobs that read no prose? — added 2026-11-07, below |
 
 The pattern is the one `wiki/CI-Parallel-Gate.md` documents for an app: a matrix of parts, every
 part uploading its `--json` document, one job merging them.
@@ -164,6 +165,37 @@ Local, not CI: one box, 8 cores, pinned to four with `taskset -c 0-3`, shared wi
 
 The critical path moves from ~400 s to 250–290 s here. Not yet a CI number: the runner may be slower than this box, so `packages (1/2)` can still sit at the five-minute target. What is left is `cli`'s own tests — the `x upgrade` hop (30–72 s) and the scaffold `tsc` runs — not the gate.
 
+## Measured, and what moved, 2026-11-07
+
+Run 42323662996 (a green PR, 22 jobs, wall 389 s), per job and per step from the Actions API. Fixed
+cost is small: checkout 3–5 s, setup 6–17 s (Windows 29 s), services ready 3–12 s. The time is the
+work, and the work is single-pole:
+
+| Job | Wall | Where it goes |
+|---|---|---|
+| `packages (1/2)` | 378 s | `cli` alone, 364.2 s on 4 workers (`ceil(664 files / 200)`): the run's end |
+| `gate (live)` | 334 s | `live` 302 s, one serial `bun test`, with the six static steps beside it for their first 95 s (`errors` 95, `manifest` 97, `filesize` 61, `package-shape` 59, `boundaries` 57, `lint` 36) |
+| `gate (e2e)` | 275 s | `typecheck` 20 s, `e2e` 229 s, serial |
+| `windows` | 274 s | setup 29 s, lint 24, typecheck 23, seven unit steps ~105 s one process each, scaffold setup + verify 68 s |
+| `reference-app-verify (examples/dummy)` | 261 s | the ratchet script, 242 s |
+| `gate (unit-1/2/3)` | 256 / 223 / 179 s | `unit` 200 / 153 / 117 s: round-robin by file, not by time |
+| six prose-blind jobs | ~1,120 runner-s | `windows`, `macos`, five `scaffold-smoke`, `fault-drills`, `container`, `compose-deploy` |
+
+| Change | Why |
+|---|---|
+| `changes` job, beside `tested`: `scripts/ci-changes.ts` classifies `git diff --no-renames`; `heavy=false` only when every path is `wiki/**.md`, `docs/**.md` or root `*.md` | a prose-only diff re-proved ~19 runner-minutes of bytes it never touched. The six jobs skip on an explicit `false` only, so a red, cancelled or silent `changes` is a full run (`scripts/ci-workflow-changes.test.ts`) |
+| the gate, `verify`, `packages` and every `reference-app-verify` never read it | `x verify merge` is red for a step no part reported, and `errors`, `manifest` and the citation tests read exactly these files; the docs site builds the wiki |
+| not a workflow `paths:` filter | that leaves every check of the workflow pending forever; a skipped job concludes |
+| `windows`: the seven unit steps are one `bun test --isolate --parallel` | ~105 s on one core of four; `x verify`'s unit step already runs `--parallel` green on the same runner |
+| the bun install cache keyed on `bun.lock` alone, no `restore-keys` (`.github/actions/setup/action.yml`, held by `scripts/ci-workflow-cache.test.ts`) | the fallback restored the previous lock's cache and saved it again with the new packages on top, so the entry only grew: 34 MB (2026-10-01) → 168 MB → 287 MB, restored in every job. A lock change now costs one cold install per job of that run |
+
+Not done here, each with the measurement that decides it:
+
+| What | Where | Expected |
+|---|---|---|
+| split `cli`'s files across two `packages` runners and fold their lcov | `scripts/coverage-gate.ts` | **blocked on Bun's lcov, measured 2026-11-07**: it carries `FNF`/`FNH` counts and no `FN:` records, so lines union exactly across runners and functions only as a per-file max, a lower bound. `db` whole against two halves folded: lines 8180/8428 both ways; functions 1197 → 1182 (−1.19 points) split by name, 1189 (−0.63) with each subject's tests kept together. `cli` clears the 95% bar on functions by 0.43, so a split reads red over unchanged coverage, or needs a lower bar. Reopens when Bun writes `FN:`/`FNDA:` |
+| `live` and `e2e` shardable across runners (`SHARDABLE_STEPS`), and a merge that can read a step skipped by path | `packages/cli/src/verify-shard.ts`, `verify-tests.ts`, `verify-merge.ts` | `gate (live)` 334 s → ~170 s on two; a prose-only PR could then skip `live` and `e2e` too |
+
 ## Fault drills, 2026-11-06
 
 `fault-drills` asks one question no other job can: does the reference app keep the framework's
@@ -204,5 +236,7 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `release.yml` | that dispatch or a **published** Release → npm via OIDC, after `check` |
 | `registry-audit.yml` | daily → a `registry-drift` issue on disagreement |
 | `deploy-social-demo.yml` | green `ci` on `main` → the demo image |
+| `deploy-docs-site.yml` | green `ci` on `main` → `dummy/docs-site`'s static build on GitHub Pages; **inert** — every job skipped — until the owner sets the `DOCS_SITE_ORIGIN` repository variable (`scripts/ci-workflow-shape-docs.test.ts`) |
 | `wiki.yml` | push to `main` → the wiki |
 | `tutorial-run.yml` | push to `main` touching a tutorial or a generator → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never on a PR, never in `ci` |
+| `bench.yml` | weekly + release → re-measured first-hour/http-hello JSON as a PR; never in `ci` |

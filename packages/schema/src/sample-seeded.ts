@@ -10,9 +10,11 @@ import {
   minimalNumber,
   minimalString,
   owedItems,
+  patternString,
   SAMPLE_ITEMS_MAX,
   satisfiesPattern,
 } from './sample-draw';
+import { mulberry32 } from './sample-random';
 
 /** Runs below this one are boundaries, not draws. */
 export const BOUNDARY_RUNS = 4;
@@ -52,18 +54,6 @@ const INTEGER_HIGH = 2 ** 31 - 1;
 /** An array draws at most this many items past what `minItems` owes. */
 const ITEMS_SPAN = 4;
 
-/** mulberry32: 32 bits of state, a uniform float in [0, 1) per call. */
-function generator(state: number): () => number {
-  let s = state >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let x = s;
-    x = Math.imul(x ^ (x >>> 15), x | 1);
-    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
-    return ((x ^ (x >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
-
 /** Which side of every bound a boundary run takes, and whether it reaches for the optional parts. */
 interface Boundary {
   readonly high: boolean;
@@ -99,7 +89,7 @@ function lengthRange(node: SchemaNode): readonly [number, number] {
  * `@ultimat3/query` hand it `fnv1a(<name>)`, which this tier cannot import.
  */
 export function seededDraw(seed: number, run: number): Draw {
-  const next = generator((seed ^ Math.imul(run + 1, 0x9e3779b1)) >>> 0);
+  const next = mulberry32((seed ^ Math.imul(run + 1, 0x9e3779b1)) >>> 0);
   const between = (low: number, high: number): number =>
     low + Math.floor(next() * (high - low + 1));
   const edge = run >= 0 && run < BOUNDARY_RUNS ? BOUNDARIES[run] : undefined;
@@ -109,9 +99,11 @@ export function seededDraw(seed: number, run: number): Draw {
     const length = edge === undefined ? between(low, high) : edge.high ? high : low;
     const chars = Array.from({ length }, () => ALPHABET[between(0, ALPHABET.length - 1)] ?? 'a');
     const value = chars.join('');
-    // A regex cannot be inverted: a drawn value that misses it would test only the validator, so
-    // the one value the walk can build for it stands in (and `sampleGaps` reports when it cannot).
-    return satisfiesPattern(node, value) ? value : minimalString(node);
+    // A drawn value that misses the pattern would test only the validator, so a value walked from
+    // the pattern on this run's stream stands in; past the subset, the minimal one (a `sampleGaps`
+    // gap when it misses too).
+    if (satisfiesPattern(node, value)) return value;
+    return patternString(node, Math.floor(next() * 4_294_967_296)) ?? minimalString(node);
   };
 
   const number = (node: SchemaNode): number => {

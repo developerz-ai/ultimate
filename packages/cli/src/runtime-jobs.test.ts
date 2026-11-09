@@ -251,7 +251,8 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
     });
   });
 
-  test('an exact worker claims only its queues, and says which registered ones it leaves', () => {
+  // What it leaves is said after the start, against the live registry (`runtime-jobs-unserved.ts`).
+  test('an exact worker claims only its queues, and the options read logs nothing', () => {
     probeJob('exact-short-probe', 'banks');
     probeJob('exact-long-probe', 'banks-long');
     probeJob('exact-default-probe', 'default');
@@ -266,23 +267,6 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
       });
     });
     expect(options?.queues).toEqual(['banks']);
-    const unserved = lines.find((line) => line['msg'] === 'jobs.worker.queue-unserved');
-    expect(unserved?.['queues']).toEqual(['banks-long', 'default']);
-    expect(unserved?.['served']).toEqual(['banks']);
-    expect(String(unserved?.['fix'])).toContain('WORKER_QUEUES');
-  });
-
-  test('an exact worker that serves every registered queue says nothing', () => {
-    probeJob('exact-served-probe', 'banks');
-    const lines = logged(() => {
-      workerOptionsFor({
-        queues: ['banks'],
-        exact: true,
-        configured: [],
-        concurrency: undefined,
-        visibilityTimeoutMs: undefined,
-      });
-    });
     expect(lines.some((line) => line['msg'] === 'jobs.worker.queue-unserved')).toBe(false);
   });
 

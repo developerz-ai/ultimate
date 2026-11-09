@@ -8,7 +8,7 @@ export const buildSpec: CommandSpec = {
   summary:
     'build a container image, a single binary, a prerendered static site, or the store an image boots from',
   usage:
-    'x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--platform bun-target] [--no-preflight] [--json]',
+    'x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--platform bun-target] [--no-preflight] [--no-capture] [--json]',
   requiresApp: true,
   flags: [
     {
@@ -31,6 +31,12 @@ export const buildSpec: CommandSpec = {
       type: 'boolean',
       summary:
         '--no-preflight skips the six static gate steps (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as in `x build --no-preflight && x verify`',
+    },
+    {
+      name: 'capture',
+      type: 'boolean',
+      summary:
+        "static target only: --no-capture stamps every og.capture card's og:image tags and photographs none, so no browser is needed — what `x verify`'s own build passes; a deployable build takes the pictures",
     },
   ],
 };

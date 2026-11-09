@@ -82,6 +82,15 @@ describe('unit · pins', () => {
     expect(rewritePins(once, '20.1.0')).toBe(once);
   });
 
+  // A hop that moves the lowest pins of a mixed set one major leaves the higher ones where they
+  // are: rewriting them to the hop's version would move them backwards.
+  test('a pin above the hop is never moved backwards', () => {
+    const text = '{ "dependencies": { "@ultimat3/core": "29.1.0", "@ultimat3/cli": "^19.4.0" } }';
+    expect(rewritePins(text, '20.1.0')).toBe(
+      '{ "dependencies": { "@ultimat3/core": "29.1.0", "@ultimat3/cli": "20.1.0" } }',
+    );
+  });
+
   test('a spec naming no version is never overwritten', () => {
     const text = '{ "dependencies": { "@ultimat3/core": "workspace:*" } }';
     expect(rewritePins(text, '20.1.0')).toBe(text);

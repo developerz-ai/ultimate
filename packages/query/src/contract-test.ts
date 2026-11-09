@@ -7,8 +7,9 @@
 import type { Ctx } from '@ultimat3/core';
 import { admitsAnonymous } from '@ultimat3/policy';
 import { declaredErrorsContract } from './declared-errors-contract';
-import type { QueryExerciseOptions } from './exercise';
 import { exerciseQuery, queryExerciseTestName, queryExerciseUndeclared } from './exercise';
+import type { QueryContractExercise } from './exercise-declarations';
+import { isQueryExerciseDeclarations, resolveQueryExercise } from './exercise-declarations';
 import type { AnyQuery } from './query';
 import { queryName } from './read';
 
@@ -20,10 +21,12 @@ export interface QueryContractTest {
 
 export interface QueryContractTestOptions {
   /**
-   * Who the generated runs read as — required unless the policy admits an anonymous reader — or
-   * `{ off: '<reason>' }`, which skips the runs out loud: the reason is in the test's name.
+   * Who the generated runs read as. In an app, the `exercise` export of `apps/web/exercise.ts` —
+   * the `defineExercise()` value `x exercise` reads — and this query's entry in it is the one
+   * used: one declaration, both runners. One entry inline (`{ actor }`, `{ off: '<reason>' }`) is
+   * for a test binding rows of its own world. Required unless the policy admits an anonymous reader.
    */
-  readonly exercise?: QueryExerciseOptions;
+  readonly exercise?: QueryContractExercise;
   /** The context each run starts from; the actor is swapped in, the rest kept. */
   readonly ctx?: Ctx;
 }
@@ -37,7 +40,7 @@ export function queryContractTestsFor(
 
 function exerciseContract(target: AnyQuery, options: QueryContractTestOptions): QueryContractTest {
   const name = queryName(target);
-  const exercise = options.exercise;
+  const exercise = resolveQueryExercise(name, options.exercise);
   if (exercise !== undefined && 'off' in exercise) {
     const reason = exercise.off.trim();
     if (reason.length > 0) {
@@ -45,14 +48,21 @@ function exerciseContract(target: AnyQuery, options: QueryContractTestOptions): 
     }
     return {
       name: queryExerciseTestName(name),
-      run: () => Promise.reject(queryExerciseUndeclared(name, true)),
+      run: () => Promise.reject(queryExerciseUndeclared(name, 'blank')),
     };
   }
   const chosen = exercise ?? (admitsAnonymous(target.policy) ? { actor: null } : undefined);
   return {
     name: queryExerciseTestName(name),
     run: async () => {
-      if (chosen === undefined) throw queryExerciseUndeclared(name, false);
+      if (chosen === undefined) {
+        const declared = options.exercise;
+        const why =
+          declared !== undefined && isQueryExerciseDeclarations(declared)
+            ? 'no-entry'
+            : 'undeclared';
+        throw queryExerciseUndeclared(name, why);
+      }
       await exerciseQuery(target, chosen, options.ctx);
     },
   };

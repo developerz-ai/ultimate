@@ -56,12 +56,18 @@ describe('unit · the scaffolded test stack is fast and silent', () => {
       'logging_collector=off',
       'log_min_messages=fatal',
       'log_statement=none',
+      // Throughput for millisecond queries, and a WAL kept small because it is RAM.
+      'jit=off',
+      'autovacuum=off',
+      'min_wal_size=32MB',
     ]) {
       expect(initdb).toContain(setting);
     }
+    // The stock 100 runs out under a laptop's worth of parallel test processes.
+    expect(Number(/max_connections=(\d+)/.exec(initdb)?.[1] ?? '100')).toBeGreaterThanOrEqual(400);
   });
 
-  test('Redis keeps no snapshot and no append-only file', () => {
+  test('Redis keeps no snapshot and no append-only file, and logs nothing', () => {
     expect(services()['redis']?.command).toEqual([
       'redis-server',
       '--save',
@@ -69,7 +75,7 @@ describe('unit · the scaffolded test stack is fast and silent', () => {
       '--appendonly',
       'no',
       '--loglevel',
-      'warning',
+      'nothing',
     ]);
   });
 

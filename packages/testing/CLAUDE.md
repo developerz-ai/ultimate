@@ -2,8 +2,8 @@
 
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
-Deps (16): `core` `schema`; `cache` `db` `i18n` `time`; `entity` `http` `policy`; `action` `jobs`
-`query` `realtime`; `mail` `pwa` `render`. Static in `.`: `cache`
+Deps (16): `core` `schema`; `cache` `db` `i18n` `time`; `entity` `http` `policy`; `action`
+`jobs` `query` `realtime`; `mail` `pwa` `render`. Static in `.`: `cache`
 (`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
 (`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
 `action`, `http`, `mail`, `pwa`, `query`, `render`, `schema` (`exercise-input.ts:16`), `time` — no `mail` destructure, no mail
@@ -16,7 +16,7 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | No mocks of the DB | clone a template database; `template-db.ts` is the only DB path |
 | No wall clock | `withFrozenClock` / `advanceClock`; `Date.now()` is frozen by the preload |
 | Frozen ≠ different | `globalThis.Date` becomes a subclass; `FrozenDate[Symbol.hasInstance]` brands on the `[[DateValue]]` slot (`Date.prototype.getTime.call(value)` throws or not) |
-| No unmocked egress | `sealed-network.ts` seals `fetch`; `sealed-sockets.ts` `WebSocket`, `Bun.connect` (not loopback); a miss is `X_TEST_NETWORK_SEALED` |
+| No unmocked egress | `sealed-network.ts` seals `fetch`; `sealed-sockets.ts` `WebSocket`, `Bun.connect`, `node:*`, UDP (not loopback); `sealed-dns*.ts` every resolver, named imports too (wiki `Testing.md`); a miss is `X_TEST_NETWORK_SEALED` |
 | One `mockFetch`, and it grows | a verb in the match, ordered answers, a pinned dial's name (`mock-route.ts`) and `requestLog` (`request-log.ts`). A stream bound for a real server logs `null` (teeing drains it). `original(input, init)` goes as handed: `tls`, `unix`, `proxy` are in no `Request`. `cassette()`: below |
 | Self is not egress | a port core's `markListening()` announced passes through — a socket test never unseals |
 | Offline is a state, not a mock | `network.offline()` / `.drop()` fail every dial, loopback too, as `X_TEST_NETWORK_OFFLINE` before any mock: the app's offline path runs |
@@ -35,26 +35,29 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | Every message thunk needs a test that PROVOKES it | a thunk is a function, so an unread message is an UNCOVERED function and `bun run scripts/coverage-gate.ts --package testing` is what says so |
 | Test names | the filename picks the step; a typed helper prefixes its own name. `testName(type, name)` is for an outer `describe` only — never on the inner `test` too, the prefix would print twice |
 | One body shape, five registrars | `test` (= `fixtureTest`), `unitTest`, `contractTest`, `liveTest`, `jobTest` all take `FixtureBody` + `{ timeoutMs }`: `unitTest('…', async ({ runJobs }) => …)`. Never `describe(testName('unit', …))` + `test` to get a fixture |
-| `runJobs` says who and what | `{ actor }` is the WORKER's identity (the org stays the job's declared tenant), `{ tenantId }` the enqueuer's row; `executions[n].result` is the body's return. A fresh event bus per fixture |
+| `runJobs` says who and what | `{ actor }` is the WORKER's identity (the org stays the job's declared tenant), `{ tenantId }` the enqueuer's row; `executions[n].result` is the body's return. A fresh event bus per fixture. Bodies run on the preload's frozen clock (`ctx.clock`), so a `backfill()` throttle moves `Date.now()` instead of sleeping |
 | A `runJobs` pass is a real worker's `tick()` | `fixture-jobs.ts` builds an unstarted `jobWorker` per pass, so admission runs: `concurrency` waits and `whenBusy: 'fail'` refuses (`X_JOB_KEY_BUSY`) exactly as in a fleet. Full rule: `docs/history/testing.md` |
 | Per-test state is `per-test-reset.ts` | the app preload's `beforeEach` resets the jobs event bus — only when `@ultimat3/jobs` is already loaded, so the reset never loads it |
+| A `mock.module` ends with its file | `module-mock-boundary.ts` wraps it (and `vi.mock`/`jest.mock`): the real namespace is snapshotted on a file's first mock, so its top-level code RUNS, and mocked back at the boundary. A preload's mock is left. A real one that throws on load: the next file fails `X_TEST_MODULE_MOCK_UNRESTORABLE` |
 | **The frozen clock is reset at every file boundary** | `preload.ts`, `clock-file-boundary.test.ts`: `advanceClock` / `setFrozenClock` move one process-wide instant, and a file that left it moved handed the next file on its worker a different `Date.now()` |
 | An island test is `describeIslandState` | one block per declared state: mounted in `beforeAll` (60 s), disposed in `afterAll`, one build per file. `mountIslandState` + `using` for one test's own mount; an undeclared id is `X_TEST_ISLAND_STATE_UNKNOWN` |
 | An authenticator is tested with `authRequest()` | the hook's own two arguments, real — never `as unknown as Parameters<…>` |
 | `LOG_LEVEL` above `info` filters the TERMINAL | `quiet-logs.ts` pins the logger at `info` while core loads, so a collecting `setLogSink` still sees `warn` under `LOG_LEVEL=error`. It stays the preload's FIRST import |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
 | Fixtures | the preload registers the framework bag — an app registers only what it alone knows (`seed`, `actorFor`) |
-| Every `e2eTest` is audited | `e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (per-test run, `allow`, dedupe), `ax-node.ts` (the one AX reader); the full tree is read only in `cdp-e2e-page.ts` (`FULL_AX_TREE`, a convention). No switch; `allow` needs a non-blank `because`. And every raw tab: `e2e-a11y-tabs.ts`, checked after each `goto`/`reload` and at the test's end from the preload's `afterEach`; exceptions are `allowA11y([{ role, selector, because }])` |
-| The exercise pass runs what is registered | `exercise.ts` (`runExercisePass`): every action, query and job once, its own tenant pair off one `seedGraph`, an actor `exercise-actor.ts` picks, 39's `runExercise` as the verdict. Rows COMMITTED. Overrides only via `defineExercise` (blank `off` refused) |
-| A reached job is crash-proven | `exercise-crash.ts`: `crashProof` with the control's input and actor, after the tenant proof; only `diverged` is red (`X_JOB_CRASH_DIVERGED`). Committed: job bodies escape transactions |
+| Every `e2eTest` is audited | `e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (per-test run, `allow`, dedupe), `ax-node.ts` (the one AX reader); full tree only in `cdp-e2e-page.ts`. No switch; `allow` needs a `because`. Raw tabs: `e2e-a11y-tabs.ts` ([history](../../docs/history/testing.md#a11y-on-raw-tabs)) |
+| The exercise pass runs what is registered | `exercise.ts` (`runExercisePass`): every action, query and job once, its own tenant pair off one `seedGraph`, an actor `exercise-actor.ts` picks, 39's `runExercise` as the verdict. Rows COMMITTED. Overrides only via `defineExercise` (blank `off` refused). A job runs ALONE (`exercise-job-run.ts`): a fresh queue, one `tick()`, what it queued left on the caller's queue unrun — never a `drain()` |
+| An override `input` is awaited, as the call's actor | `exercise-override-input.ts`: run inside the call's own request, so `useContext().actor` is the seated actor; the one way to a signed input. `async` ones are left out of `x drill`'s load |
+| A passkey test signs for real | `softAuthenticator` is `@ultimat3/auth/soft-authenticator`'s, never re-exported here (one value, one path: `flight-copies`) and never a second one (auth's own suites need it, and auth cannot import testing) |
+| A reached job is crash-proven | `exercise-crash.ts`: `crashProof` with the control's input and actor, after the tenant proof; only `diverged` is red (`X_JOB_CRASH_DIVERGED`), its place `crashEffectPlace` (`inside` a step via jobs' `currentStep()`, or `after` one). Its world is `alone`: only the job's own row is claimed, a child is an `enqueue:` effect, never run. Committed: job bodies escape transactions |
 | The tenant proof is taint only | `tenant-proof.ts`: B, A, B; B is A's role minus `tenancy:cross`. Leak = seeded canary or unhanded id (`tenant-canary.ts`); write = moved digest. Only `crossed` is red |
-| Every statement the pass sent is planned | `plan-sweep.ts` (`sweepPlans`): first relation an app table, `PREPARE` in a READ-ONLY transaction with seq/bitmap scans and sorts off, judged by `plan-oracle.ts`; red = `X_QUERY_UNINDEXED` / `X_QUERY_SORT_UNSERVED` with the `indexes:` entry (`plan-sweep-fix.ts`). `scan:` or `expectedSeqScan` is exempt, listed; no generic plan is `X_QUERY_PLAN_UNAVAILABLE`, never a pass |
+| Every statement the pass sent is planned | `plan-sweep.ts` (`sweepPlans`): first relation an app table, `PREPARE` in a READ-ONLY transaction with seq/bitmap scans off (sorts too, re-planned, for a limited read's sort), judged by `plan-oracle.ts` (keys: `plan-sort-key.ts`, conditions: `plan-conditions.ts`); red = `X_QUERY_UNINDEXED` / `X_QUERY_SORT_UNSERVED` with the `indexes:` entry (`plan-sweep-fix.ts`). `scan:` or `expectedSeqScan` is exempt, listed; credited: a partial unique whose predicate the statement states, equality-then-range index under a limit, every `or` arm a declared index leads, a whole read a keyed join side probes by a declared index (`plan-probes.ts`); no generic plan is `X_QUERY_PLAN_UNAVAILABLE`, never a pass |
 | A shape that grows with the rows is red | `scale-sweep-run.ts`: two more tenants at `SCALE_SIZES` (2, 8 rows a table), every reached primitive once in each; `judgeScale` (pure) reds `X_QUERY_SCALES_WITH_ROWS`. Under `expectedQueryLoop` it is listed with its reason |
 | An erase is PROVED, not asserted | `subject-proof.ts` (`subjectProof`, run by cli's `exercise-subject.ts`): canaries in every table, one person erased, every stored row searched; a survivor outside `retain` is `X_SUBJECT_ERASE_INCOMPLETE`, naming table and column, never the value |
 | A captured failure replays as a test | `repro.ts`: `reproduce(bundle, { driver })` seeds the rows it read, freezes the clock at its instant, invokes as its actor; masked fields are stood in (`repro-stand-in.ts`). An unregistered name ANSWERS as the failure. `reproJob(runJobs, failure)` for a dead job. What `x repro --write` emits |
 | A vendor's answers are a cassette | `cassette.ts`: replay = one `mockFetch` route per recorded URL, seal kept (`X_CASSETTE_MISSING`, `X_CASSETTE_UNUSED`). Record = `ULTIMATE_CASSETTE=record` + `record.hosts`, refused under `CI` (`X_CASSETTE_RECORD_REFUSED`), headers allow-listed, credential keys masked, bytes scanned before disk (`X_CASSETTE_SECRET`). The request side is never written |
 | One seed writer | `entitySeedWriter({ entities, client \| driver })` (`seed-writer.ts`) writes through each entity's own repository; `snapshot` is required; `entity` loads on the first write, so the barrel stays entity-free |
-| Factory values are DECLARED | `factoriesFor` and `seedGraph` share `seed-graph-values.ts`: default, enum, kind, through `$parse`, never the name. `seed-graph*.ts` type-import `entity` only |
+| Factory values are DECLARED | `factoriesFor` and `seedGraph` share `seed-graph-values.ts`: default, enum, kind, a `matches()` pattern (schema's `patternSamples`; CHECK read by `seed-graph-patterns.ts`), `$meta.schema` (sampler `require`d on first use), through `$parse`, never the name. `seed-graph*.ts` type-import `entity` only |
 | e2e without a driver | `e2eTest` becomes `test.skip`; the gate reports the step SKIPPED (or `X_VERIFY_SUITE_VANISHED` when `x.verify.json` requires it), never passed |
 | The seam has an inverse | `resetE2eDriver()`: `useE2eDriver` writes MODULE scope, so a file that installs a browser undoes it |
 | Built vs declared | `clock` `mail` `network` `runJobs` `statements` `subscribe` are built in-process; `page` `budget` `signIn` `deploy` are declared and wait for a driver (`X_TEST_FIXTURE_UNAVAILABLE`). |
@@ -118,9 +121,7 @@ Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 Entry points: `.` (the API), `./preload` (side effects for bunfig) and `./registry-isolation`
 (`isolateEntityRegistry()`, kept off `.` because it loads `@ultimat3/entity`).
 
-`fixture-island.ts`, `island-dom.ts`, `island-selector.ts` and `island-observers.ts` are on `.` and
-import `@ultimat3/core` and nothing else, so they cost a tier-0 test nothing. The whole-chain proof is
-`examples/dummy/apps/web/app/settings/settings.island.test.ts`. Full rule: `docs/history/testing.md`.
+The island fixture's cost and its whole-chain proof: `docs/history/testing.md`.
 
 ## The browser-backed e2e driver (moved here from `@ultimat3/cli` in 22.0.0)
 
@@ -147,9 +148,7 @@ Raw CDP: `@ultimat3/core` and Bun, nothing else; `cli` imports it over `cli -> t
 | `packages/cli/src/verify-e2e.ts` | `withE2eApp` (cli's): in an app on a machine with Chrome, the `e2e` step runs the suite with that preload; otherwise exactly as before |
 | `cdp-errors.ts` | one constructor per way the browser half refuses |
 
-**Absent by default.** Nothing here runs until `installE2eDriver` is called, so `hasE2eDriver()`
-answers `false` and the gate's `e2e` step refuses rather than passing over a browser it lacks.
-GitHub-hosted `ubuntu-latest` ships Chrome at `/usr/bin/google-chrome`.
+**Absent by default** until `installE2eDriver`: [`docs/history/testing.md`](../../docs/history/testing.md#the-browser-backed-e2e-driver-moved-here-from-ultimat3cli-in-2200).
 
 How the raw-CDP driver behaves — the pipe, the load event, deadlines, the lossy `evaluate`, the
 refusing `update()` — is [`docs/history/testing.md`](../../docs/history/testing.md#the-e2e-driver-in-brief-moved-2026-10-01).

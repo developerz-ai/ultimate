@@ -9,7 +9,7 @@ import { useT } from '@postly/i18n';
 import { derivePath } from '@ultimat3/action';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute } from '@ultimat3/render';
-import { Button, Stack, Text } from '@ultimat3/ui';
+import { Button, Stack, Stepper, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import type { Api } from '../../../api';
 import { Layout, updateBannerIsland } from '../../layout';
@@ -118,10 +118,20 @@ export function Page(): JSX.Element {
   const t = useT();
 
   return (
-    <Layout banner={Banner}>
+    <Layout banner={Banner} here="/posts/new">
       <form class={styles.form} method="post" action={CREATE_ENDPOINT}>
         <Stack gap={4}>
           <h1>{t('posts.create')}</h1>
+          {/* Where this draft is on its way out: written here, reviewed, then published from its
+              own page. Static — the current step is this page's, by position. */}
+          <Stepper
+            label={t('app.post.stepsLabel')}
+            steps={[
+              { id: 'write', label: t('app.post.stepWrite'), state: 'current' },
+              { id: 'review', label: t('app.post.stepReview'), state: 'upcoming' },
+              { id: 'publish', label: t('app.post.stepPublish'), state: 'upcoming' },
+            ]}
+          />
           <Text tone="muted">{t('app.post.draftNotice')}</Text>
 
           <label class={styles.label} for="post-title">

@@ -3,7 +3,7 @@
 // because the set — anonymous plus one per declared role — is `@ultimat3/cli`'s `devActors()`,
 // and a second "every role" builder here would drift from the one the policy panel shows.
 
-import type { Actor } from '@ultimat3/core';
+import type { Actor, ActorFactMap } from '@ultimat3/core';
 import type { NamedActor, Policy } from '@ultimat3/policy';
 import { policyMatrix, rolesGranting } from '@ultimat3/policy';
 import type { ExerciseOverride } from './define-exercise';
@@ -21,10 +21,49 @@ export type ActorChoice =
 
 /**
  * An override's actor, moved into the primitive's tenant: every primitive gets a fresh pair of
- * tenants, so an actor declared once in `exercise.ts` cannot know the org it will act in.
+ * tenants, so an actor declared once in `exercise.ts` cannot know the org it will act in. A fact
+ * naming the org it was declared in moves too, as the input's `orgId` does
+ * (`exercise-override-input.ts`): else `memberOrgIds.includes(input.orgId)` denies every run.
  */
-export const inTenant = (actor: Actor | null, tenant: string): Actor | null =>
-  actor === null ? null : Object.freeze({ ...actor, orgId: tenant });
+export const inTenant = (actor: Actor | null, tenant: string): Actor | null => {
+  if (actor === null) return null;
+  const facts = rehomedFacts(actor.facts, actor.orgId, tenant);
+  return Object.freeze({ ...actor, orgId: tenant, ...(facts === undefined ? {} : { facts }) });
+};
+
+/** Each top-level fact equal to `from` — or an array holding it — with `to` in its place. */
+function rehomedFacts(
+  facts: ActorFactMap | undefined,
+  from: string | undefined,
+  to: string,
+): ActorFactMap | undefined {
+  if (facts === undefined || from === undefined || from === to) return facts;
+  const moved: Record<string, unknown> = {};
+  // An app augments `ActorFacts`, so its value types say nothing here: each is read as unknown.
+  const entries: [string, unknown][] = Object.entries(facts);
+  for (const [key, value] of entries) {
+    if (value === from) moved[key] = to;
+    else if (Array.isArray(value) && value.includes(from)) {
+      moved[key] = value.map((one: unknown) => (one === from ? to : one));
+    }
+  }
+  return Object.keys(moved).length === 0 ? facts : Object.freeze({ ...facts, ...moved });
+}
+
+/**
+ * A role's actor id in one tenant: a uuid, as `ctx.actor.id` always is in production (an
+ * `x_users` key), and the same one every time for that role in that tenant — so a rerun on a seed
+ * replays byte for byte, and A's actor is never B's. Name-based (SHA-1, version 5 bits), never
+ * random: nothing about it may depend on the order the pass asks.
+ */
+export function exerciseActorId(role: string, tenant: string): string {
+  const digest = new Bun.CryptoHasher('sha1').update(`x-exercise-actor\0${role}\0${tenant}`);
+  const bytes = digest.digest().subarray(0, 16);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = bytes.toHex();
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 type Verdict = 'allowed' | 'denied' | 'undecidable';
 
@@ -64,7 +103,8 @@ export function chooseActor(
   tenant: string,
   override: ExerciseOverride | undefined,
 ): ActorChoice {
-  if (override !== undefined && 'actor' in override) {
+  // An input-only entry (`{ input }`, no `actor`) keeps the pick below: only a DECLARED actor wins.
+  if (override !== undefined && !('off' in override) && override.actor !== undefined) {
     return { kind: 'actor', actor: inTenant(override.actor, tenant), name: 'override' };
   }
   const candidates = grants(tenant);
@@ -92,12 +132,23 @@ export function chooseActor(
           : `none of ${ordered.map((c) => c.name).join(', ')} is allowed by ${policy.label} or holds ${permissions.join(', ') || 'its grant'}`,
     };
   }
-  return { kind: 'actor', actor: pick[0].actor, name: pick[0].name };
+  const [{ actor, name }] = pick;
+  return { kind: 'actor', actor: asRoleUser(actor, name, tenant), name };
 }
+
+/** A role's actor with the id a production actor has: `exerciseActorId(role, tenant)`. */
+const asRoleUser = (actor: Actor | null, name: string, tenant: string): Actor | null =>
+  actor === null ? null : Object.freeze({ ...actor, id: exerciseActorId(name, tenant) });
 
 /** The seeded rows an actor can be one of: the pass's graph, read for one entity. */
 export interface ActorRows {
   readonly entity: { readonly $name: string; readonly $primaryKey: readonly string[] };
+  /**
+   * The column whose value IS the user (`memberships.userId`); omitted, the row's own key. A
+   * membership's id is not a user's id, and a handler that reads `ctx.actor.id` as `x_users`'s
+   * must find the membership by the column that holds it.
+   */
+  readonly column?: string;
   readonly rows: readonly {
     readonly tenant: string | null;
     readonly row: Readonly<Record<string, unknown>>;
@@ -106,13 +157,15 @@ export interface ActorRows {
 
 /**
  * The actor as a ROW of the entity the app named (`defineExercise(…, { actor: members })`): its
- * id becomes the key of a seeded row in its tenant, the one carrying one of its roles when any
- * does. Without it an actor's id is a role name, and every handler that writes `ctx.actor.id`
- * into a foreign key — `authorId` — is refused by the database.
+ * id becomes the key — or the named `column` — of a seeded row in its tenant, the one carrying
+ * one of its roles when any does. Without it an actor's id is `exerciseActorId(role, tenant)`, a
+ * user no table of the app's holds, so a handler writing `ctx.actor.id` into a foreign key —
+ * `authorId` — is refused by the database.
  */
 export function asSeededRow(actor: Actor | null, tenant: string, rows: ActorRows): Actor | null {
-  const key = rows.entity.$primaryKey[0];
-  if (actor === null || key === undefined || rows.entity.$primaryKey.length !== 1) return actor;
+  const key =
+    rows.column ?? (rows.entity.$primaryKey.length === 1 ? rows.entity.$primaryKey[0] : undefined);
+  if (actor === null || key === undefined) return actor;
   const own = rows.rows.filter((row) => row.tenant === tenant || row.tenant === null);
   const roles = actor.roles ?? [];
   const row =

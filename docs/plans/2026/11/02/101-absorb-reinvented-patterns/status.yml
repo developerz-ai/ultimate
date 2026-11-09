@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 87
-current_focus: "wave 9: subject data, repro (capture, x repro; the dummy e2e proves the chain on a database fault, reproduced:false), query plans and scale sweeps in x exercise, entity lifecycle (retain, history, trigger counters; no counts where, no $history(id), recount in one transaction), agent wire and MCP (remote OAuth client, markdown recipes, docs search, job tool callerFix, graph.query), AI prompt cache, cassettes, API clients and the app graph, resumable uploads, locale and content. Next: wave 10 — page capture, adopt shapes and proof, perf gate (30), ops CI (33), docs site, test-file boundary and false greens, the UI slices (23, 38)."
+percent: 99
+current_focus: "wave 10 (final): UI chart kit, searchable select, commands, navigation, lists, pickers, drag, viewers; page capture; app shapes api/blog/dashboard (saas and agent wait on an invite+billing seam and an env-only model choice); comparison benches; the docs site (live once the owner sets DOCS_SITE_ORIGIN and DNS); ops CI (measured in CI after merge); the module-mock boundary; island disposers enforced. Open after the plan: repro reproduced end to end in the app, entity lifecycle counts where + history(id) + paced recount, x.verify.json isolate:false after measuring cli without isolation, touch-drag proofs (the CDP page needs real pointer/touch/viewport)."
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -265,8 +265,8 @@ slices:
   - file: 30-perf-gate.md
     tier: 0
     sweep: "14"
-    status: in_progress
-    percent: 50
+    status: complete
+    percent: 100
     note: "the errors step is done (masks memoised: 31.6-35.1 s user CPU to 16.5-16.9 s). Coverage slicing is not shipped: Bun's lcov counts functions unnamed, so a union of slices under-reads function coverage by 2-4 points"
   - file: 20-cli-db-diagnostics.md
     tier: 1
@@ -277,7 +277,7 @@ slices:
     tier: 5
     sweep: "15"
     status: in_progress
-    percent: 85
+    percent: 90
     note: "x ci tested and the four flakes done. Wave 6a: parallel coverage gate (units weighted by measured core-seconds, cli alone on shard 1/2, scripts/lib/coverage-schedule.ts) and contract/job moved to the unit shards (ci.yml). Local packages critical path ~400 s -> 249-286 s (four cores, 2026-11-05); the CI number is due. cli's own slow tests (x upgrade hop, scaffold tsc) are what is left"
   - file: 28-assets-deploy-skew.md
     tier: 0
@@ -527,8 +527,8 @@ slices:
   - file: 41-add-page-capture.md
     tier: 1
     sweep: "28"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 40-next-app-graph.md
     tier: 4
     sweep: "28"
@@ -537,68 +537,68 @@ slices:
   - file: 42-adopt-shapes.md
     tier: 5
     sweep: "28"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 70
   - file: 23-ui-chart-kit.md
     tier: 4
     sweep: "29"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 23-ui-searchable-select.md
     tier: 4
     sweep: "29"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 38-ui-commands.md
     tier: 4
     sweep: "30"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 38-ui-navigation.md
     tier: 4
     sweep: "30"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 38-ui-lists.md
     tier: 4
     sweep: "31"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 38-ui-pickers.md
     tier: 1
     sweep: "31"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 38-ui-drag-layout.md
     tier: 4
     sweep: "32"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 95
   - file: 38-ui-viewers.md
     tier: 4
     sweep: "32"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 42-adopt-docs-site.md
     tier: 5
     sweep: "33"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
   - file: 31-test-file-boundary.md
     tier: 5
     sweep: "35"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 31-test-false-green.md
     tier: 0
     sweep: "35"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 95
   - file: 42-adopt-proof.md
     tier: 5
     sweep: "35"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
 evidence: []
 notes: "Slices stay numbered by area; execution order is by sweep. 90-deferred.md is not a slice and has no row."
 last_updated: 2026-11-05

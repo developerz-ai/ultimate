@@ -1,0 +1,64 @@
+@use '../tokens' as t;
+
+.json {
+  padding: t.space(3);
+  border-radius: t.radius(md);
+  background: t.role('bg-soft');
+  font-family: var(--font-mono);
+  font-size: t.text(sm);
+  color: t.role('fg');
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.summary {
+  @include t.focus-ring;
+  cursor: pointer;
+  min-block-size: t.touch(target);
+}
+
+.entries {
+  margin: 0;
+  padding-inline-start: t.space(4);
+  list-style: none;
+}
+
+.key {
+  margin-inline-end: t.space(2);
+  color: t.role('info');
+
+  &::after {
+    content: ':';
+    color: t.role('fg-muted');
+  }
+}
+
+.count,
+.more {
+  color: t.role('fg-muted');
+}
+
+.value-string {
+  color: t.role('success');
+  white-space: pre-wrap;
+}
+
+.value-number {
+  color: t.role('warning');
+}
+
+.value-boolean,
+.value-null {
+  color: t.role('accent-strong');
+}
+
+.value-other,
+.value-deep,
+.value-circular {
+  color: t.role('fg-muted');
+}
+
+.branch,
+.leaf {
+  display: block;
+}

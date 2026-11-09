@@ -156,6 +156,8 @@ export {
   variantRevision,
   variantSourceOf,
 } from './image';
+export type { WarmFailure, WarmVariantsInput, WarmVariantsResult } from './image-warm';
+export { warmVariants } from './image-warm';
 export type {
   CompletedPart,
   MultipartCapability,

@@ -4,7 +4,7 @@
 // the HTML is cacheable by a browser and readable by every script on the page.
 
 import type { Actor } from '@ultimat3/core';
-import { logger } from '@ultimat3/core';
+import { hmac, logger } from '@ultimat3/core';
 import { AuthError } from './errors';
 
 /** 128 bits: a scope only has to differ between principals, never to authenticate anyone. */
@@ -35,10 +35,7 @@ export function clientScopeOf(actor: Actor, options: ClientScopeOptions = {}): s
     actor.onBehalfOf?.actorKind ?? null,
     actor.onBehalfOf?.actorId ?? null,
   ]);
-  return new Bun.CryptoHasher('sha256', scopeKey(options))
-    .update(material)
-    .digest('hex')
-    .slice(0, SCOPE_HEX_CHARS);
+  return hmac('sha256', scopeKey(options), material, 'hex').slice(0, SCOPE_HEX_CHARS);
 }
 
 function scopeKey(options: ClientScopeOptions): string {

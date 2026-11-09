@@ -8,6 +8,300 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.9.0 - 2026-11-09
+
+### Highlights
+
+- The test network seal is whole: every DNS resolver, `node:net`/`tls`/`http(s)`/`http2` and UDP are refused unless loopback, mocked or allowed — a test that reached the internet through one of them now fails, and `allowHost('<host>')` is the fix it prints.
+- JSON `null` round-trips in a NOT NULL `json()` column on every driver; the admin's MCP tools type `json()` and nullable arguments by the column.
+- A backfill's throttle runs on the test's frozen clock, and both tracked apps mount the admin MCP surface the way `x new` writes it.
+
+### Added
+
+- **Both tracked apps mount the admin's MCP surface at `POST /admin/mcp`**, the way `x new` writes it: `apps/admin/mcp.ts` exports `adminMcp({ app: admin, path: '/admin/mcp', include: 'exposed', actor })` beside the web's `/mcp`, behind the scaffold's `resolveAgentToken` — an issued API key held to its `admin:*` scopes, or under `x dev` from this machine alone `Bearer dev-agent.<role>`. `examples/dummy` gains `apps/web/app/auth/agent-token.ts` (ported from the template; its key half is the app's existing `resolveOrgKey` store) and drops `adminAgents`, a second, unmounted `adminMcp` built under `apps/admin/app/` that defaulted to `/mcp` and ignored the token. The gate's `manifest` step now loads both endpoints, so a path collision (`X_MCP_PATH_DUPLICATE`) or a catalog built too early (`X_MCP_INCLUDE_EARLY`) turns either app red.
+
+### Changed
+
+- `@ultimat3/testing`: the sealed network seals **every** name-resolution path, not only `lookup`. Every `Bun.dns` resolver (`lookup`, `resolve`, `resolve*`, `reverse`, `lookupService`, `prefetch`) is patched, and Bun's `node:dns` / `node:dns/promises` functions call those at call time, so a named import bound before the seal (`import { resolve4 } from 'node:dns'`) is sealed too. Both `Resolver` classes are sealed on their prototypes. A host a `mockFetch` route names answers an address query (`lookup`, `A`, `ANY`) with `MOCKED_HOST_ADDRESS`; any other record type (`MX`, `TXT`, …) is `X_TEST_NETWORK_SEALED`, because a mock declares an endpoint, not a zone. A `reverse`/`lookupService` of a public address is sealed (it sends a query); a `lookup` of an address literal still resolves locally. An unmocked `Bun.dns.prefetch` throws the refusal. **Behaviour change:** a test that called `dns.resolve*` / `reverse` and reached real DNS under the preload now fails `X_TEST_NETWORK_SEALED`; `allowHost('<name>')` restores the real query.
+- `@ultimat3/testing`: the sealed network now covers `node:net`, `node:tls`, `node:http`, `node:https` and `node:http2` connections. Bun dials all of them through `net.Socket#connect`, not `Bun.connect` or `fetch`, so a connection to an address literal (and, through the DNS seal's `MOCKED_HOST_ADDRESS`, to a mocked host) reached the real network. Same gate as `Bun.connect`: loopback, a unix socket and `allowHost('host:port')` pass; offline refuses every dial (`X_TEST_NETWORK_OFFLINE`); anything else is `X_TEST_NETWORK_SEALED`, delivered as the socket's `error` event the way a failed real dial is. **Behaviour change:** a `node:http` request to a host only a `mockFetch` route names is now refused instead of dialled to `11.11.11.11` — `mockFetch` answers `fetch`, not `node:http`; inject the client or `allowHost` it.
+- `@ultimat3/testing`: the sealed network now covers UDP. A `Bun.udpSocket` `send`/`sendMany` — and `node:dgram`, which sends through it — asks the socket gate per datagram (a connected socket's peer included, however it was connected): loopback and `allowHost('host:port')` pass, offline refuses every send (`X_TEST_NETWORK_OFFLINE`), anything else is `X_TEST_NETWORK_SEALED`. A refusal throws from `send` as Bun's own UDP failures do, a refused `connect:` option rejects `Bun.udpSocket(…)`, and a `dgram` send hands it to its callback or, with none, emits it as `error` (Bun's `dgram` otherwise drops a failed send without a callback). A `sendMany` batch is judged whole before any datagram leaves.
+- **testing:** `runJobs` runs every body on the preload's frozen clock (`ctx.clock` is a `FrozenClock` over `frozenNow`/`advanceClock`/`setFrozenClock`, where it was `systemClock`). A backfill drained through the fixture finishes without wall time and moves the frozen instant by `(batches − 1) / rate` seconds; the frozen scheduler's lease renewals hear each move.
+
+### Fixed
+
+- **entity:** the JSON value `null` in a NOT NULL `json()` column is stored as `'null'::jsonb` and read back as `null`, judged by the column's schema (`json(t.nullable(…))` admits it). It used to be refused before the driver (`X_INVARIANT_VIOLATED … is required`) or, past that, bound as SQL NULL and refused `23502` by Postgres. A `.nullable()` `json()` column keeps `null` as SQL NULL — the clear, matched by `is-null` in both drivers. `is-null`/`eq null` never match a NOT NULL `jsonb` column, and `contains null` matches the stored literal, in memory as in Postgres.
+- **admin:** a `json()` / `arrayOf()` field's MCP tool argument is typed by the column's own schema — `json(t.array(…))` takes an array, `json(t.nullable(…))` takes `null`, a `.nullable()` column takes `null` beside its shape, an object schema still says `object` — and is left untyped (`{}`) where the schema cannot be described (`X_SCHEMA_UNSUPPORTED`). It was `type: 'object'` for every one, so the MCP server refused an array column and every JSON `null` before the entity's schema was asked. New: `AdminColumnFacts.valueSchema`, `AdminToolField.schema`. The admin create/edit form already stores a JSON `null` in a NOT NULL `json()` column (it validates through the entity's schema).
+- **admin:** a nullable column's MCP tool argument admits `null` (`anyOf [type, null]`) — text, integer, money, every kind — so an agent clears a column the way the form's empty box does; the server's argument check used to refuse it before the entity was asked. A NOT NULL column's argument still refuses `null`. New: `AdminToolField.nullable`.
+- `@ultimat3/testing`: a sealed DNS refusal that no mock can lift — a record query (`MX`, `TXT`, `SRV`, …) or a `reverse`/`lookupService` — now opens its `X_TEST_NETWORK_SEALED` fix with `allowHost('<name>')` (transport `dns-record`) instead of a `mockFetch(…)` line that would not have answered it. The code is unchanged.
+- **jobs:** a `backfill()` pass waits on the run's clock (`ctx.clock`). Under a `frozenClock()` the `rate` throttle advances that clock by each interval instead of sleeping a real timer, so a test of a 1,000-batch backfill no longer takes `1000 / rate` real seconds. `Pacer.wait()` takes an optional `clock`; a clock injected through `backfillPacer({ clock })` still wins (`exportRows()`/`importRows()` unchanged).
+- **The pinned-webhook TLS test no longer needs a host `openssl`.** `webhook-pin-tls.live.test.ts` minted its certificate by shelling out to `openssl` and silently skipped both cases where there was none — so on a runner without it, the DNS-rebinding defence of `webhook()` over a real TLS socket was never exercised. It now mints the certificate in-process with `@ultimat3/core`'s `tls-cert-fixture.ts` (WebCrypto P-256 + hand-written X.509, the minter `outbound-pin.test.ts` already uses), drops its temp directory and `node:fs`/`node:os`/`node:path` imports, and never skips.
+- **admin (internal):** `callAdminTool`'s dispatch moved from `mcp.ts` to `mcp-dispatch.ts`; `@ultimat3/admin` exports the same names.
+- **testing:** the plan sweep judges a read's access path with sorts allowed. It used to plan every statement with `enable_sort` off, so an `order by` with no `limit` made the planner walk, whole, whatever index held that order (a unique `(provider_id, serial)`) instead of the one the join keys (`(subject_type, subject_id)`), and `X_QUERY_UNINDEXED` named an index that changed no plan. Only a sort under a `Limit` is judged, so only a limited statement is planned a second time with sorts off, for its `X_QUERY_SORT_UNSERVED` alone. An unindexed filter is still red, with or without an `order by`.
+- **testing:** an exercise entry's `input` binds on the job queue of the call it feeds (the control's and the scale sweep's), so a job it enqueues is still there when the call looks it up by id (a cancel or requeue no longer stops on `X_ADMIN_JOB_NOT_FOUND`). Only rows a call adds count as the primitive's `enqueue` effect — the input's never do.
+
+### Commits
+
+- fix: whole test network seal, json null, backfill clock, admin MCP mounted (#1026)
+- chore: release 30.8.0 (#1025)
+
+## 30.8.0 - 2026-11-08
+
+### Highlights
+
+- Every primitive of a real app can be reached by `x exercise`: an entry can carry its call's cookies and headers, a job and an action of one name get separate entries, and a throwing entry is that primitive's record instead of the end of the pass.
+- The scale sweep, the subject proof, the tenant proof and the plan sweep stop reporting what is not the app's fault — repeated seed values, the input's own SQL, a keyed join on empty tables — and say the right fix when it is.
+
+### Added
+
+- **testing:** `defineExercise` accepts kind-qualified keys (`'job:eraseAccount'`, `'action:…'`, `'query:…'`), each that kind's alone and winning over the bare name, so an action and a job sharing a name no longer share one entry (the action's input fed the job → `X_CONTRACT_DRIFT`). A shared name's records, statements and sweep proofs are kept apart too, and its paste line prints the qualified key. Read alike by `x exercise`, the contract step (`.contract({ exercise })` reads `action:<name>` / `query:<name>` first) and `x drill`. Additive: a bare key still applies to every kind of that name.
+- **testing:** `defineExercise(…, { setup })` takes an array — run in order, disposed in reverse; one that throws disposes those that already ran.
+- **testing, action, query, http:** an exercise entry can say what its call's request carries in — `defineExercise({ finishSignIn: { request: { cookies: { pending: '…' }, headers: { … } } } })`, or `request: async (actor) => ({ … })`, awaited before each call as that call's actor — so an action or a read that finishes a cookie-held step (a second factor, an OAuth return, "revoke other sessions") is reachable instead of turned `off`. Read by `x exercise` and by the contract step (`.contract({ exercise })` runs each generated run inside that request). One build of the request: `withRequestAs(name, actor, request, fn)` and the types `ExerciseRequest`, `ExerciseRequestOption`, new on `@ultimat3/http`. A cookie as a `Cookie` header, a non-token cookie name or a header `Headers` refuses is `X_EXERCISE_REQUEST_INVALID` (new, http). Additive: an entry without `request` runs exactly as before.
+
+### Fixed
+
+- **testing:** an exercise entry's `input` that throws is that primitive's record — `unreached` under the throw's own code, or the new `X_EXERCISE_INPUT_THREW` for an uncoded one, with a `fix` naming the entry — never an `X_CLI_UNEXPECTED` that ended `x exercise` with no records.
+- **testing:** what an override's `input` sends (a select, a row, a mail) is no longer counted as the primitive's: the control records each call alone, so the plan sweep stops reporting the input's own SQL (`X_QUERY_UNINDEXED` "at action …") as the primitive's.
+- **testing:** `x exercise`'s scale sweep no longer collides with the pass's own rows. Its sized seeds reset the app's factories and restarted every generated ordinal, so a value built from the row index (`code: \`c${index}\``, a generated integer) repeated the pass's first rows. That hit a duplicate key on a unique column, and every primitive's scale proof came back `unproven`. A new option, `seedGraph(entities, { beside: earlier })`, continues each table's row positions past `earlier.next`. The new `SeedGraph.next` field is cumulative, so the small graph is written beside the pass's graph and the large one beside the small. Additive.
+- **testing:** `X_TENANT_LEAK` on a `tenant: 'none'` job handed nothing of A's (a read across every org that opened no scope) now says to wrap the read in `crossTenant('<why <name> reads every org>', async () => …)`, the one declaration the proof credits. It no longer points at "the repository scoped to ctx.actor", which a job with no org cannot use. The finding carries the new `TenantFinding.sweep: true` field.
+- **testing:** the tenant proof's report gives one finding per leg and code, listing each place once. Places that differ only by a list index collapse into one entry (`effect.enqueue[*].input.orgId, … (3 each)`). One leaking statement across three enqueues used to print 18 findings; it now prints 2. `record.tenant.findings` keeps every path.
+- **cli/testing:** `x exercise`'s subject proof no longer fails every subject after the first with `X_DB_UNIQUE_VIOLATION`. Each subject's seed reset the factories on one scratch database, so a value built from the row index on a unique column repeated the previous subject's rows. `subjectProof` now takes `beside` and returns the `graph` it wrote, and `exercise-subject.ts` seeds each subject beside the one before. Additive.
+- **testing:** the plan sweep no longer reds a join whose keyed path exists. On empty tables a partial index the statement implies (`where status = 'approved'` against an index `where status = 'approved'`) looks like one row, so the planner walked all of it beside the join instead of probing it per row, and `X_QUERY_UNINDEXED` fired with an empty `indexes:` entry. A whole read whose join column leads a declared index, joined to a side bound by its own key, is now credited (`plan-probes.ts`); with no index on the join column it stays red, and the entry names that column. The join key now reaches a scan held under a `Materialize` or `Memoize` too, so a red read under one names its key instead of `on: []`.
+- **testing:** a declared exercise actor's `facts` naming the org it was declared in (a string, or an array holding it) are re-homed into the primitive's tenant with its `orgId`, as the input's `orgId` already was — a `memberOrgIds.includes(input.orgId)` policy now passes.
+- **testing:** an override's `input` gets a job queue of its own on every call it feeds (tenant proof, control, scale sweep): app code that enqueues no longer throws `X_DRIVER_UNAVAILABLE`, and what it queued is not counted as the primitive's enqueue.
+
+### Commits
+
+- fix(exercise): every primitive of a real app reachable (#1024)
+- chore: release 30.7.0 (#1023)
+
+## 30.7.0 - 2026-11-08
+
+### Highlights
+
+- `x exercise` runs at the size of a real app. A crash proof costs the same over 1,500 seeded rows as over 3: one job's proof cost a 504-primitive app most of a 172-minute pass. Every record and the report now say where the time went.
+- One declaration of a primitive's exercise: `apps/web/exercise.ts`, read by `x exercise` and by `.contract({ exercise })` alike; `x g` writes it there.
+- Generated input meets string patterns, actors are uuid users with their `x_users` row, and the plan sweep prints only fixes that change the plan.
+
+### Added
+
+- **testing / cli:** `x exercise` says where its time went. Every record carries `proofMs: { tenant, crash, scale }` beside `ms`; the report carries `phases: { seed, primitives, scale, plans, subject }`; the table gains `tenant ms` / `crash ms` / `scale ms` columns, followed by a phase line naming the slowest phase and the five slowest proofs by record. `runExercisePass` takes `onPhases(ms)`. On `examples/dummy`: 78.9 s → 46.4 s wall.
+- **testing:** where the pass database has `x_users` (always: the framework schema), every actor the pass acts as — A, the tenant proof's B, each scale-sweep tenant's — gets its `x_users` row first (`<id>@exercise.invalid`, tenant, roles, permissions, scopes), so `auth.adapter.findUserById(ctx.actor.id)` finds it. A refused insert is the new `X_EXERCISE_ACTOR_USER_UNSEATED`.
+- **schema:** the input sampler walks a `t.string.pattern(/…/)` it cannot otherwise meet: `sampleInput`, `arbitrary` (`@ultimat3/schema/sample`) now yield days, months, hex digests, digit-only ids and base64url tokens from the pattern itself, inside `minLength`/`maxLength`, deterministic per seed. A pattern `'sample'` already meets keeps `'sample'`. Past the subset (lookaround, backreference, `\b`, `\p{…}`) the field is still a `sampleGaps` gap and `X_CONTRACT_DRIFT` names it. New export: `patternSamples(pattern, seed, count?)`.
+
+### Changed
+
+- **action, query, testing:** a primitive's exercise is declared once, in `apps/web/exercise.ts`.
+  `.contract({ exercise })` now also takes the whole `defineExercise()` value and reads the entry
+  named for the action or query: the same entry `x exercise` reads, so a contract test and the pass
+  cannot disagree on who acts. Missing entry for a guarded primitive is
+  `X_CONTRACT_EXERCISE_UNDECLARED`, its cause naming `apps/web/exercise.ts`. The inline
+  `{ actor, input }` / `{ off }` form keeps working, for a test that binds rows it seeded itself.
+  New types: `ExerciseDeclarations`, `ContractExercise` (`@ultimat3/action`),
+  `QueryExerciseDeclarations`, `QueryContractExercise` (`@ultimat3/query`).
+- **action, query:** the `fix:` of `X_CONTRACT_EXERCISE_UNDECLARED` and
+  `X_CONTRACT_EXERCISE_UNREACHED` is now the `defineExercise({ <name>: { actor } })` line to paste
+  in `apps/web/exercise.ts`. Before, it pointed at `.contract({ exercise })`, so an entry got
+  declared only in a test, where `x exercise` never sees it (one app had 168 primitives that
+  `x exercise` reported unreached for this reason). Codes unchanged.
+- **cli:** `x g action`, `x g mutator`, `x g resource` and `x new` generate the exercise one way.
+  The contract test calls `target.contract({ exercise })` with `apps/web/exercise.ts`'s export, and
+  the run inserts the primitive's entry into that file: `userActor({ id: 'member', orgId,
+  permissions: [grant] })`, with the draw's `orgId` bound under a tenancy rule. The file is created
+  from `x new`'s shape when absent, a second run adds nothing, and the `userActor` import lands in
+  Biome's order. `x g sign-in`'s entries go through the same editor. A file that is not one
+  `export const exercise = defineExercise({ … })` is the new `X_EXERCISE_FILE_UNEDITABLE`; its
+  `fix:` carries the entry to paste. `x g resource` now touches one more file (38 on a dry run, 41
+  with `--admin`).
+- **core:** an out-of-range `runs` now has the `defineExercise({ <name>: { actor, runs: 16 } })`
+  entry as its fix.
+
+### Fixed
+
+- **testing:** the crash proof kills a job at each *distinct* step boundary, not at every one: a loop's steps named by row id (a uuid, a digit run, an 8+ character token with a digit) are one point, killed at the loop's first and last row. A sweep over 1,500 seeded rows costs the runs one over 3 rows does (it cost 3,025 killed runs and most of a 172-minute pass). More than `CRASH_POINT_BOUND` (32) kill points per mode throws the new `X_JOB_CRASH_UNBOUNDED` after one clean run; `x exercise` reports it `unproven` with that reason, never `held`. `CrashReport` and `CrashProof` gain `crossed`, the boundaries the kills stand for. `CRASH_POINT_BOUND` and `JobCrashUnboundedError` are exported.
+- **testing:** `x exercise` no longer reports `X_TENANT_WRITE_CROSSED` on a `tenant: 'none'` job whose input names none of tenant A's rows (a nightly cleanup across every org, input `{ occurrenceMs }`). No org and no id the caller chose reaches the run, so tenant B's run is tenant A's run. The tenant proof skips its write half for such a job and takes no snapshots; the verdict is `public` with the reason. The read half is kept. Handed one of A's ids, the job is still crossed. An action or a query handed no id is still crossed, because B's actor runs it.
+- **testing:** the `X_TENANT_LEAK` / `X_TENANT_WRITE_CROSSED` cause no longer says "with tenant A's ids … by an id the caller chose" when the input carried none. It names both readings: an id B chose, or a statement no tenant predicate scopes. A write's `fix:` now says "write" instead of "read".
+- **testing:** `x exercise` actors have a user's id — a uuid per role × tenant (`exerciseActorId`), deterministic per seed — never the role's name. A handler reading `ctx.actor.id` as an `x_users` key was `22P02 invalid input syntax for type uuid: "owner"`.
+- **cli:** the scaffolded development viewer (`apps/web/app/auth/dev-actor.ts`, `x new`) has a uuid id, `seedId(\`user:dev:<role>\`)`, not `'dev-actor'`: same 22P02 under `x dev`. Its emitted test asserts the shape.
+- **action, query, testing:** an exercise entry's `actor` is optional (`ExerciseActorOptions`, `QueryExerciseActorOptions`), as `x exercise` already read it. An `{ input }`-only entry keeps the pass's pick AND has its `input` bound (it was dropped) and its `runs` honoured; in a contract test it runs signed out where the policy admits it, else `X_CONTRACT_EXERCISE_UNDECLARED` ("names no actor").
+- **action, query, testing:** `X_CONTRACT_DRIFT` names the field no draw can fill — `digest (must match …)` in the cause, `defineExercise({ name: { input: (drawn) => ({ ...drawn, digest: "<must match …>" }) } })` in the fix, and the same `input:` in an `x exercise` record's `override`. One renderer, core's `renderDrawnInput` / `sampleGapBinding`.
+- **testing:** one regex generator. `seed-pattern-sample.ts` is gone; `matches()` columns are seeded by schema's `patternSamples`, same bytes per seed as before.
+- **testing:** `seedGraph` seeds a `shared` (or tenantless) table that a tenant-owned table points at through a table-wide UNIQUE key with `perTable` rows per tenant. Before, it seeded `perTable` rows in total, and `x exercise` failed with `X_SEED_GRAPH_UNSATISFIED … unique (<fk>) runs out of values before tenant 2`.
+- `backfill()`'s pacer waits at most one interval when the clock steps backwards (an NTP step, a reset test clock); it waited the size of the step — 30 s per run under `x exercise`'s crash proof.
+- **`x exercise` plan sweep: a fix it prints changes the plan.** `X_QUERY_SORT_UNSERVED` named whichever app table the plan scanned first under the `Sort`. Over a join that is often the other side, so the advice was an index on the wrong table, and sometimes one the entity already declares. The sort now belongs to the table its key names (`plan-oracle.ts`). Proved live on PGlite and Postgres 17: create the printed index and the sort is gone.
+- **A sort no declarable index can serve gets no index advice.** A key that is an expression (`date_trunc(…)`, `lower(…)`; `entity()` declares no expression index), a value an aggregate or window computes (`order by min(x)`), a value a subquery derives, columns of more than one table, or columns in mixed directions stays red. The fix it prints is now the rewrite (plain columns of one table, all one direction) or `expectedSeqScan('<why the rows stay few>', fn)`. `PlanFinding.unserved` says which reason applies; the table line reads `… <table>, no index serves it (<reason>)`.
+- **An index the entity already declares is never printed as the fix.** The plan is taken with every declared index in place, so naming one again changes nothing. The finding stays red with `unserved: 'declared'` and says the statement as written cannot use that index.
+- **An `OR` is answered one index per arm.** `where a = $1 or b = $2` used to suggest one composite `[a, b]`, which does not serve an OR. Now each arm with no index of its own gets one finding with a single-arm index. When the entity declares an index for every arm, the read is credited: under a `LIMIT` the sweep's settings still pick a Seq Scan, but Postgres plans a BitmapOr. An OR beside an equality is bounded by that equality, as before.
+- **An index walk over a join takes its own table's order only.** The order part of the suggested index is now the leading plain columns of the walked table, in one direction, from the outermost `order by`. A column of a joined table, or one that changes direction, ends it there, and Postgres finishes with an incremental sort.
+- A sort keyed on a table the sweep does not judge (a declared `scan:`, a framework table) is no longer charged to an app table. A sort finding is never again printed as "reads <table> whole … `on: []`".
+
+### Commits
+
+- fix(exercise): x exercise at the size of a real app (#1022)
+
+## 30.6.0 - 2026-11-08
+
+### Highlights
+
+- `x exercise` counts a job's own statements: never the jobs it queued, never jobs it found queued. A job that queues one child per row is no longer `X_QUERY_SCALES_WITH_ROWS`.
+
+### Added
+
+- `@ultimat3/testing`: `runJobs.tick()` — one worker pass: what is due now runs, and what those runs enqueue waits, unrun, for the next.
+
+### Fixed
+
+- `@ultimat3/testing`: `x exercise` drained the whole queue to run a job, so every child it enqueued (one per event, one per row) ran in its room and was counted as its statements, effects and verdict — the scale sweep saw a 2-row and an 8-row count and reported `X_QUERY_SCALES_WITH_ROWS` on a job that is flat on its own — and a job some earlier call had left queued was drained and counted too. A job now runs alone, on a queue holding nothing else, for one worker pass; what it enqueues is left queued, as an action's is: an `enqueue` effect, searched by the tenant proof, judged as its own primitive. The crash proof holds the same line: its simulated world claims only the job's own row, so a job that only arms a child (the child seeding rows once) no longer diverges `X_JOB_CRASH_DIVERGED` on the child's rows — 0× in a killed run because the clean run had written them.
+
+### Commits
+
+- fix(testing): x exercise counts a job's own statements, never the jobs it queued or found queued (#1020)
+
+## 30.5.0 - 2026-11-08
+
+### Highlights
+
+- `x exercise` reports what a 5xx said, seeds a NOT NULL `json(t.json())` column, resolves mocked hosts under the sealed network, and names the step a crash-proof effect ran inside.
+
+### Added
+
+- `@ultimat3/testing`: the sealed network seals name resolution. `Bun.dns.lookup`, `dns.lookup` and `dns.promises.lookup` resolve a host a `mockFetch` route names to `MOCKED_HOST_ADDRESS` (`11.11.11.11`, a `public` address, so an SSRF screen passes it and the dial it pins meets the mock through its `Host`), hand this machine, an address literal and an `allowHost` name to the real resolver, refuse every name offline (`X_TEST_NETWORK_OFFLINE`) and any other as `X_TEST_NETWORK_SEALED`. A named ESM `import { lookup } from 'node:dns'` binds before the seal and is not covered, nor is `dns.resolve*`.
+- `@ultimat3/testing`: `ExerciseRecord.defect` — on a primitive that answered a 5xx, `{ cause, statement?, fields? }`: the coded error's cause, the SQL a database refusal names, the paths a validation failure names. A value the call's input held under a credential key or a `.sensitive()` field is `[redacted]` in it. Type `ExerciseDefect`.
+- `@ultimat3/testing`: `crashEffectPlace(where)` — the one phrase for where a crash-proof effect ran, used by `X_JOB_CRASH_DIVERGED` and the CLI's finding. A divergence and a `CrashFinding` carry `inside`, the step whose body made the effect.
+- `@ultimat3/jobs`: `currentStep()` — the name of the durable step whose body is running here, ambient across its awaits; `undefined` between steps.
+
+### Fixed
+
+- `@ultimat3/testing`: a NOT NULL `json(t.json())` column is never seeded with JSON `null`. `t.json()` accepts it and the sampler draws it, and the driver binds a JSON `null` as SQL NULL, so the seed insert failed; a NOT NULL column is now offered no value any driver stores as SQL NULL. A nullable one still is.
+- `@ultimat3/testing`: an app's SSRF guard that resolves a host no longer fails `x exercise` and every test under the seal: the resolver was unsealed, so a mocked vendor's name went to real DNS.
+- `@ultimat3/testing`: the crash proof attributed a step body's effect to "outside every step, before the first step". It now says it runs inside that step, whose body runs again until the step completes, and the fix keys the call on `${jobId}:<step>`. A failing step's effect made fewer times by a kill that spent one of its attempts (the queue's lease accounting) is no longer `X_JOB_CRASH_DIVERGED`. `after` counts only completed steps, never a `failed` or `started` record.
+- `@ultimat3/testing`, `@ultimat3/cli`: an `x exercise` 5xx (`X_DB_STATEMENT_FAILED`, a 500 `X_VALIDATION_FAILED`) carries its cause, statement and fields into the record and the `X_CONTRACT_EXERCISE_UNREACHED` finding, where only the code was, so each had to be reproduced by hand.
+
+### Commits
+
+- fix(testing): x exercise fidelity — NOT NULL json seeds, sealed DNS, 5xx causes, unique ids under the frozen clock (#1018)
+
+## 30.4.0 - 2026-11-07
+
+### Highlights
+
+- `x exercise` runs vendor-calling handlers for real under the sealed network: `defineExercise(overrides, { setup })` installs an app's `mockFetch` routes or `cassette()` for the pass.
+- `x exercise` no longer fails an app whose cycle table refuses UPDATE, seats a scoped backfill in its tenant, judges a job's coded refusal as an action's, and its index advice is a line `x db gen` accepts — never `on: []`, never a primary-key-led index, never a finding on the framework's own `one()`.
+- Generated seed and factory values satisfy a column's `matches()` pattern and a `json(schema)` column's schema.
+- An admin surface serves the app's own MCP tools: `adminMcp({ include: 'exposed' })`, scaffolded by `x new` as `apps/admin/mcp.ts`.
+- `x upgrade` walks pins majors apart one major per run, lowest first; a realtime island no longer bundles its own `clientTransport`.
+
+### Added
+
+- `@ultimat3/testing`: `defineExercise(overrides, { setup })` — the app's hook, run once in the `x exercise` process after the network is sealed and before the first row, its returned `Disposable`/`AsyncDisposable` (a `cassette()`) disposed after the pass. A call a setup's `mockFetch` route answers is `reached`, its effect `refused: false`; a vendor-calling handler runs for real under the seal. An `allowHost` in a setup is `X_EXERCISE_SETUP_UNSEALED`. Types `ExerciseSetup`, `ExerciseSetupHandle`.
+- `@ultimat3/testing`: generated seed values read a column's `matches(/…/)` patterns. `declaredPatterns(entity)` reads each pattern back from its invariant's own CHECK, and `patternSamples` builds strings from the pattern itself: literals, classes, `.`, groups, alternation, quantifiers and anchors. Lookaround, backreferences, `\b` and `\p{…}` are past the subset and yield nothing, never a guess. Samples are seeded by the row, and a value that keeps every pattern is offered first. `seedGraph` and `factoriesFor` both use them, so `factoriesFor({ orders })` builds a `ref` like `'ORD-5697'` for `matches(/^ORD-\d{4}$/)`.
+- `@ultimat3/testing`: a `json(schema)` column is seeded with values its schema accepts, through `@ultimat3/schema/sample`'s seeded `arbitrary`, instead of only `{}`/`[]`. The sampler loads on the first such column, never at import.
+- `@ultimat3/entity`: `json(schema)` keeps its schema on `$meta.schema` (`ColumnMeta.schema`), so a reader that must produce a storable value draws it from the declaration. The schema is not part of `$describe()`: the DDL is still `jsonb` and no drift hash moves.
+- `@ultimat3/http`: `withScratchRateLimitStore(fn)` — `fn` spends from a fresh store of its own, answering for the installed store's scope; the installed one is left as it was, on a throw too.
+- `@ultimat3/jobs`: a failed `JobExecution` carries `code` — the stable `X_*` code its error carried, beside the `error` message (every failed settle: interrupted, rate-limited, retried, dead-lettered, dropped, unwound). Absent on an uncoded throw.
+- `@ultimat3/jobs`: `restoreJobs(handles)` — the job registry put back to exactly `handles`, `restoreTasks`' twin, for a test whose premise is "only these jobs".
+- `@ultimat3/admin`: `adminMcp({ path, include: 'exposed' })` — an admin surface serves the app's own MCP tools beside its catalog, at its own path. `include: 'exposed'` is `defineAppMcp`'s projection (opt-in, `mcp: { expose: true }`), each tool under its kind's admin scope: a query `admin:read`, an action `admin:write`, so a read-only staff token stays read-only on them. `actor({ token, facts })` now hears how the request arrived, so the app's one agent-token resolver (development token included) serves both endpoints.
+- `@ultimat3/cli`: `x new` writes `apps/admin/mcp.ts` and its test: `adminMcp({ app: admin, path: '/admin/mcp', include: 'exposed', actor })` over the web surface's `resolveAgentToken`, mounted and refusing (401 with no token). A key issued with scopes is held to its `admin:*` ones; a key with none is as strong as its actor.
+- `@ultimat3/mcp`: `X_MCP_INCLUDE_EARLY`, thrown at the mount — an endpoint whose `include: 'exposed'` was projected before the boot scan registered every exposed primitive (built at the top level of a module under `apps/<app>/app/`, which the scan reaches before another app directory's actions). Names the tools it lacks and the `apps/<app>/mcp.ts` to build it in, instead of serving a short catalog. `assertIncludeCurrent(endpoint, file)` is the check.
+- `@ultimat3/realtime`: `resetPageRealtime()` — the one test reset of a page's realtime state. It closes the page socket whichever bundle's copy built it (through the page object's new `closeSocket`), drops the page object, the outbox and the boot's promise, and unseats core's page-client store and socket, so an app's island test no longer reaches into `Symbol.for('ultimate.realtime')`, which left the chunk's socket open. `examples/dummy`'s four realtime island tests use it.
+- `@ultimat3/realtime`: `runtimeSend()` from `@ultimat3/realtime/page-runtime-wait` — core's transport as the page runtime installed it, `X_REALTIME_UNINSTALLED` on a page with none.
+
+### Fixed
+
+- `@ultimat3/cli`: a split worker (`WORKER_QUEUES`) no longer warns `jobs.worker.queue-unserved` at every boot about queues another Deployment serves: after its start it reads the worker registry and warns only for a registered queue no live, non-draining worker serves. A driver with no registry, or a failed read, says it at `info`.
+- `@ultimat3/cli`: `x verify`'s `manifest` step is red, `X_MCP_APP_UNMOUNTED`, for an app whose `app.config.ts` says `ai: { mcp: { expose: true } }` and that mounts no `POST /mcp` — decided by the boot's own `appMcpMount`, where every boot only logged it while `POST /mcp` answered 404. The deployed demo and the reference app now mount theirs: the demo over an issued API key or `dev-agent.<role>` under `x dev` (`apps/web/mcp.ts`, `app/auth/agent-token.ts`), the reference app over its org API keys.
+- `@ultimat3/jobs`: a job attempt that completed, and whose `ack` landed, no longer aborts `ctx.signal`. Every finished attempt used to abort it with `X_ABORTED` ("was cancelled — this attempt no longer owns the run"), so a timer the body armed — a log sink's flush, an `end()` timeout, a deferred `enqueue` — had its writes refused: ~360 lost log writes an hour on one 30.2 app. A failed, suspended or unwound attempt, or one whose ack did not land, still aborts; a step the body never awaited is still refused, now as "had already ended". The refusal's `fix:` names `runToCompletion(() => work)`, the one way to outlive any attempt.
+- `@ultimat3/testing`: a seed-graph cycle breaks at a table that takes updates — never an `appendOnly` one, whose trigger refuses every UPDATE — where name order alone picked the alphabetically first table. A cycle breakable only at an `appendOnly` table leaves that key `null` and plans no update.
+- `@ultimat3/testing`: `x exercise` leaves a deferred cycle key `null` when the database refuses its UPDATE (a trigger no declaration carries) instead of failing the pass; the returned graph lists only the updates written. An environment failure keeps its own code. The sized graphs of the scale sweep and `subjectProof`'s seed do the same.
+- `@ultimat3/testing`: a job whose `tenant` reads under a parent the minimal draw left out — a scoped backfill's `payload.input.orgId` — is seated in its tenant; it was `fixed`, `X_JOB_TENANT_MISMATCH`.
+- `@ultimat3/testing`: `x exercise` judges a job's failure by the rule an action's meets — a coded refusal under 500 (an app's 409) is `unreached` under its own code, no longer `X_CONTRACT_DEFECT`; an uncoded throw or a coded 5xx still is a defect.
+- `@ultimat3/action`, `@ultimat3/query`: the contract exercise (`.contract({ exercise })`) counts its runs in a scratch rate-limit store, so the same file's next HTTP call is no longer a 429 the exercise left spent.
+- `@ultimat3/testing`: `x exercise`'s plan sweep no longer advises `indexes: [{ on: [] }]` for a read that compares no column (a whole-table `count(*)`): `X_QUERY_UNINDEXED` stays red and its fix is `expectedSeqScan('<why>', fn)` around the read or `scan:` on the entity — a line `x db gen` accepts.
+- `@ultimat3/testing`: a limited read filtered by a range under an order an index already serves (`where score < $1 order by id limit 20`) is advised the index that bounds it — equality columns, then the range column — never a primary-key-led one; a declared index of that shape is credited, since a generic plan with sorts off still walks the key.
+- `@ultimat3/testing`: the plan oracle reads `column IS NULL` as an equality, not a range: `where archived_at is null order by id limit 20` is advised `on: ['archivedAt', 'id']`, an index that serves the order after it.
+- `@ultimat3/testing`: a partial unique rule pins one row when the statement states its predicate — the framework's own `one()` on a soft-deleted entity (`… and "deleted_at" is null order by "id" limit 1`), or `where org_id = $1 and name = $2 and project_id is null` under `unique (org_id, name) where project_id is null` — so it is no `X_QUERY_UNINDEXED` finding, walked in key order or sorted under a limit.
+- `@ultimat3/entity`: the memory driver keeps each table's unique index as rows move instead of rebuilding it over every stored row on each single `insert`/`update`, so N single writes cost N, not N² (4,000 inserts under one unique: 30.4 s → 26 ms). Deletes, soft deletes, rollbacks, trigger writes and `reset()` move the keys with the row; refusals unchanged (the first clashing constraint in declaration order, NULLs never equal, partial uniques unchecked). `updateWhere` judges its batch over one index instead of one per matched row.
+- `@ultimat3/cli`: a realtime island no longer bundles its own `clientTransport`: in a build whose every entry is a realtime island (the default one-build-per-island mode), core's `client-transport.ts` is swapped for one that sends through the page runtime's copy, which the island awaited before its module body ran. `examples/dummy`'s run console 130,515 → 128,878 B. A plain island loads no runtime and keeps its own; a split build mixing both keeps the real module.
+- `@ultimat3/cli`: `x upgrade` walks a mixed set one major per run. Pins majors apart (`19.x` beside `29.x`) were refused `X_UPGRADE_MIXED_PINS` with a fix that jumped the stragglers straight to the highest major, and `--to` the next major was `X_UPGRADE_HOP_TOO_WIDE` for sitting below the highest pin. The refusal now names the lowest pins' next major (`x upgrade --to 20.x.y --json`); that hop rewrites only the pins at or below it — a pin above is never moved backwards — and names its walkthrough; `next` names the following hop, and the last one levels the set. A straggler jump to the highest major is `X_UPGRADE_HOP_TOO_WIDE`: it skipped every walkthrough between.
+- `@ultimat3/cli`: `X_BOUNDARY_PACKAGE_TO_APP` accepts an entity in a nested slice. `packages/db/src/` importing `apps/web/app/runs/canary/entity.ts` was refused; the generated-handle exemption read only `<surface>/<feature>/entity(-<name>).ts`. Any slice depth is the same exception; its `repo.ts` still is not.
+- `@ultimat3/cli`: the `client.test.ts` `x new` writes can fail. "the handle is built over the driver this module exports" asserted `typeof db === 'object'`, true over any driver; it now reads every table on `db` under an installed recording client, as a `testActor`, and fails when the handle is built without `{ driver }`.
+- `@ultimat3/cli`: `x dev` and the web role mount EVERY `apps/<app>/mcp.ts`, `apps/web/mcp.ts` first (its first endpoint stays the default), the rest sorted. The first sorted file used to mount alone, so an admin surface's `apps/admin/mcp.ts` silently took the app's `/mcp` away. Two app directories claiming one route are `X_MCP_PATH_DUPLICATE`, naming both files.
+- `@ultimat3/core`: the pinned-dial TLS test mints its certificate in-process (`tls-cert-fixture.ts`, WebCrypto P-256, ~5 ms) instead of shelling out to `openssl`, whose mint outlasted 30 s on a loaded Windows runner. No longer opt-in: `outbound-pin.live.test.ts` is now `outbound-pin.test.ts`.
+- `@ultimat3/core`: the compiled-binary e2e removes its temp directory through `removeTempDir` (bounded EBUSY/EPERM wait, ~3.5 s): Windows still held the just-exited binary and the bare `rmSync` failed the file after both tests passed.
+- `@ultimat3/cli`: the `x upgrade, one real hop` e2e's cleanup hook carries a measured bound: removing ~49k entries took 5.46 s on the ubuntu runner under coverage, past bun's 5 s hook default.
+- `wiki/Upgrading.md` says what the tools write: `x new` declares `^<version>`, `x upgrade` rewrites every pin it moves exact, on purpose.
+
+### Commits
+
+- fix: sweep 3 — x exercise mechanics, attempt signal on success, MCP mounts, x upgrade from mixed pins, flakes (#1016)
+
+## 30.3.0 - 2026-11-07
+
+### Highlights
+
+- `x exercise` seats a job in the tenant it is enqueued under, whatever field its `tenant(input)` reads: no more `X_JOB_TENANT_MISMATCH` (and `X_TENANCY_ACTOR_MISMATCH` inside) on a job whose org field the id binder did not recognise.
+- `x exercise` costs statements per table, not per primitive × table: 499 primitives over the reference app's 16 tables went from 300.8 s (34,053 seed writes, ~32,000 snapshot reads) to 34.4 s (39 seed writes, 1,996 snapshot reads), on PGlite — the gate's `exercise` step deadline is 300 s.
+- `x exercise` no longer floods `TimeoutOverflowWarning` (59,759 lines on the reference app): the embedded Postgres armed a timer on the real clock and re-armed it, every millisecond, against the frozen one.
+
+### Added
+
+- `@ultimat3/entity`: `entity(name, { readOnly: '<why>', columns })` — a table the app reads and never writes (legacy history a trigger closed, a table another system owns). Every write is `X_ENTITY_READ_ONLY` in both drivers before a statement exists; a blank reason, or beside `view` or `appendOnly`, is `X_INVARIANT_VIOLATED`. `$readOnly` and `$describe().readOnly` carry the reason. `x exercise` and `x db seed --generate` seed no row of it, a nullable key into it null and a NOT NULL one refused naming the table and the fix; `defineSubject`'s `delete`/`anonymize` on it is `X_SUBJECT_TREATMENT_INVALID`; the admin lists it read-only (`X_ADMIN_READ_ONLY_WRITE` for an override naming a write); the manifest's entity fact carries `readOnly`, becoming readOnly is breaking.
+- `@ultimat3/testing`: an exercise record may carry `fix` — the edit that reaches an `unreached` primitive when no `defineExercise` override can; `x exercise`'s finding prints it in place of the paste.
+- `@ultimat3/testing`: `SeedWriter.insertMany(rows)`, optional — one entity's rows as one write. `entitySeedWriter` implements it with `insertAll`; `insertSeedGraph` uses it when present.
+
+### Fixed
+
+- `@ultimat3/testing`: a job's input is seated in the tenant it is enqueued under — the fields its `tenant(input)` reads (any name, nested, or absent from the minimal draw) found by reading them, set, and kept only if they move the answer. The tenant proof's B leg enqueues B's own job carrying A's ids, where it was refused at the enqueue and proved nothing. A job whose `tenant` names one fixed org is `unreached`, `X_JOB_TENANT_MISMATCH`, with `tenant: (input) => input.orgId` as its fix.
+- `@ultimat3/testing`: the pass's seed graph is written one `insertAll` per table; each tenant-proof snapshot is one statement over every table, its key compared in the column's own type so the primary key serves it; each primitive reads only its own tenant pair's rows of the graph; the planner indexes parent rows by tenant. Same rows, same seed, same guarantees: a fresh pair per primitive, B/A/B.
+- `@ultimat3/cli`: `x exercise` freezes the clock before the app loads and the scratch database boots, as `bun test`'s preload does. PGlite's Postgres armed its 10 s idle-stats timer on the real clock; the pass's room froze the clock at 2026-01-01 under it, and every re-arm was (real now − frozen now) ≈ 2^34 ms, clamped to 1 ms.
+- `@ultimat3/entity`: the memory driver's `insertAll` judges unique keys against one index built once per batch, and does not judge them again per row: 4,000 rows with two uniques took 168 s, now under 1 s. Same refusals, same first clash, NULLs still distinct, partial uniques still unchecked.
+
+### Commits
+
+- fix(testing): x exercise binds a job's tenant, seeds per primitive, arms timers off one clock; entity readOnly tables, linear memory insertAll (#1014)
+
+## 30.2.0 - 2026-11-07
+
+### Highlights
+
+- `seo: { llms: false }` hands `/llms.txt` to the app: an app serving its own no longer fails to boot with `X_ROUTE_CONFLICT`.
+- `x exercise`'s app factories now seed every graph the pass builds, the scale sweep's and the subject proof's too, may derive a column from a reference, and may build a partial unique's columns.
+
+### Added
+
+- `@ultimat3/testing`: a seed factory may `derive(row)` — columns that follow from the keys and references the graph chose (`scopeKey` from `ownerOrgId`), applied before the row's rules are judged. `defineExercise({}, { factories: { t: { build: () => f.build(), reset: () => f.reset(), derive: (row) => ({ … }) } } })`.
+
+### Fixed
+
+- `@ultimat3/testing`: a partial unique (`unique` with a `where`) whose every column a factory builds is left to the database. It was held as total, so `orgs: unique(kind) where kind = 'staff'` with a factory building `kind: 'customer'` ran out of values (`X_SEED_GRAPH_UNSATISFIED`). With no factory it is still held as total.
+- `@ultimat3/cli`: with `seo.llms: false` the web role and `x dev` mount no `GET /llms.txt`, and the static export writes no `llms.txt`. Both mounted an empty one, so an app with its own `/llms.txt` route refused every boot with `X_ROUTE_CONFLICT` — no Upgrading row covered it. `writeSiteSeo(out, seo, { llms })` takes the setting; a scaffold from `x new` passes it.
+- `@ultimat3/testing`: `defineExercise`'s `factories` reach the scale sweep's sized graphs and the subject proof's graph, not only the pass's first one — `x exercise` still refused a cross-column `satisfies` table with `X_SEED_GRAPH_UNSATISFIED` on 30.1.0, from `scaleGraph`.
+
+### Commits
+
+- feat: exercise factories reach every graph, derive, partial uniques; fix: seo.llms false hands /llms.txt to the app (#1012)
+
+## 30.1.0 - 2026-11-07
+
+### Highlights
+
+- `x exercise` seeds a table with your own `defineFactory`, so an entity whose rows no generated value satisfies — a cross-column `satisfies`, a JSON column with required keys — runs the gate's `exercise` step.
+
+### Added
+
+- `@ultimat3/testing`: `defineExercise(overrides, { factories })` — the exercise pass seeds a table with the app's `defineFactory`, keyed by entity name, so an entity with a cross-column `c.satisfies(…)` invariant no generated row meets can run `x exercise`. Before, `X_SEED_GRAPH_UNSATISFIED`'s fix named `seedGraph(entities, { factories })`, which the pass gave no way to reach; the fix now names `defineExercise` too. An unknown factory name is `X_DECLARATION_UNKNOWN`.
+
+### Fixed
+
+- `@ultimat3/jobs`: `StepOutput<T>` answers a `T` that is already JSON as itself, so a step returning `JsonValue`, or an object holding one, compiles; it was TS2589 ("type instantiation is excessively deep").
+
+### Commits
+
+- feat(testing): x exercise takes app factories; fix(jobs): StepOutput<JsonValue> compiles (#1010)
+
+## 30.0.0 - 2026-11-07
+
 ### Highlights
 
 - One major for the whole of plan 101: every breaking change below lands here once, each with its edit in [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading).
@@ -19,6 +313,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 ### Security
 
 - Breaking entries (#6), (#7), (#8), (#16), (#17), (#23), (#26), (#27), (#28), (#29), (#36), (#72) and (#74) are security fixes; each is stated under Changed, where its migration key is.
+- `@ultimat3/jobs`: a plain `handle.enqueue(input)` / `enqueueMany` stamps the row with the tenant the payload names. Org B's enqueue of a key org A held (`invoice:1`) deduped onto A's job and returned A's id, and `perTenant` / `ratePerTenant` counted every plain enqueue as tenantless.
+- `@ultimat3/auth`: client-id metadata-document fetches on `/oauth/{token,revoke,introspect,device}` are metered per caller address (429 `temporarily_unavailable` past the limit), and the metadata cache evicts oldest-first instead of clearing at 1,000. An unauthenticated caller cycling URL paths made one outbound fetch per request.
+- `@ultimat3/admin`: `adminCreate` / `adminUpdate` (and so `callAdminTool`) drop `readOnly` and `hidden` fields from direct input, as the form and the MCP schema already did. The deployed demo reads only its `__Host-` session cookie over https.
+- `mcpConfirmations`: an approval no longer crosses orgs. The open confirmation is keyed by actor, org, tool and input digest in both stores, and the gate refuses a row of another org (`X_MCP_CONFIRMATION_EVIDENCE_INVALID`, `reason: 'org'`, a new member of `McpEvidenceFailure`). An actor id shared across orgs ran a call in one org that only another had approved. The framework schema replaces `x_mcp_confirmations_open_idx` with `x_mcp_confirmations_open_org_idx`.
+- `x build --target static` reads `sitemap.xml` routes' `prerender()` and `llms.txt` pages' `load` through an in-process API that authenticates nobody. They ran as the measurement actor, so a public file could carry rows only that actor reads.
+- `pushRegister()` keeps at most `PUSH_DEVICES_PER_ACTOR` (20) devices per person, evicting the oldest, so one account cannot make every notification it receives a fan-out of thousands of provider requests.
 - `auth`: a spent TOTP code stays spent across replicas. A framework boot installs the new `postgresTotpReplayGuard` over `x_totp_steps`. Before, the same six digits signed in once per replica, and a guard answering asynchronously refused every right code.
 - **A foreign `Host` cannot name itself in a stored `isr` page.** With no declared origin the store key carries the request's origin (`isrKey(url, locale, origin?)`, the reserved `__x_origin` parameter), so each host sees its own canonical and `og:url`. With a declared http or https origin `load` is now handed `url` at that origin. With none, a process stores pages for 16 request origins and answers any other `Host` uncached, evicting nothing. Entries re-render once.
 - `@ultimat3/realtime`: with `allowedOrigins` or `APP_URL` declared, a websocket upgrade from an unlisted origin is refused whatever `sec-fetch-site` it carries. `same-origin` and `none` were admitted beside the declared list, so a sibling host pointed at the node passed with a `Domain=` cookie riding. `x dev`'s `admitReachedOrigin` is unchanged.
@@ -244,6 +544,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **BREAKING — (#116) `@ultimat3/mcp`: `DevCapabilities` requires `queryGraph(question)`,** the `graph.query` dev tool's answer. A custom `DevHost` implements it; `x mcp serve`'s host answers it from `@ultimat3/manifest`'s graph.
 - **BREAKING — (#117) `@ultimat3/admin/dev`: `DevSources` requires `mailTemplates()`,** the `/_x` mail panel's declared templates. `defaultDevSources()` fills it (`facts.mailTemplates`, empty when unwired); a hand-built `DevSources` adds `mailTemplates: async () => []`.
 - **BREAKING — (#118) `x exercise` and the `exercise` step plan every statement the pass sent, and run every reached primitive again at 2 and at 8 rows a table.** A statement no index serves is `X_QUERY_UNINDEXED`, a limited read that sorts its rows is `X_QUERY_SORT_UNSERVED`, and a statement shape sent more often at 8 rows than at 2 is `X_QUERY_SCALES_WITH_ROWS`: all red. The plan runs on the migrated database with sequential scans, bitmap scans and sorts disabled and a generic plan forced, read-only; a lookup pinning a unique key passes. A server that cannot answer a generic plan (below Postgres 12) is `X_QUERY_PLAN_UNAVAILABLE`, never a pass. Each finding prints the `indexes: [{ on: [...] }]` line to paste and the `x db gen` to run; `entity({ scan: '<why>' })`, `expectedSeqScan('<why>', fn)` and `expectedQueryLoop('<why>', fn)` declare a deliberate scan or loop, reported with the reason. A backfill's page and count reads run under `expectedSeqScan`.
+- **BREAKING — (#119) `@ultimat3/seo`: `OpenGraph` is a type, no longer an interface: `{ image? } | { capture }`,** so a card is a hosted `image` or a `site/` page the static build photographs, never both. `interface … extends OpenGraph` is TS2312, and `{ ...og, image }` over an `OpenGraph` is TS2375 under `exactOptionalPropertyTypes`, since the spread may carry a `capture`. A literal `og: { image, … }` is unchanged.
+- **BREAKING — (#120) `@ultimat3/auth`: `postgresAuthAdapter()` with no client reads the ambient `db()` on every call,** where it kept the client current when it was built. It follows a later `setDbClient`, joins an open `withTransaction`, and can be built before the boot installs a client. `postgresAuthAdapter(client)` still pins one.
+- **BREAKING — (#121) `@ultimat3/realtime`: `QueryAccessor.refetch()` returns `Promise<void>`, was `void`.** It settles once the answer is on screen or refused and never rejects; a live read and a server render resolve at once. A hand-built accessor whose `refetch` returns nothing is TS2322, and where Biome's `noFloatingPromises` is on, a bare `x.refetch();` is a lint error.
+- **BREAKING — (#122) `@ultimat3/ui`: `UI_KEYS` gains 48 keys, so `UiKey` widens and a `Record<UiKey, string>` needs each:** `ui.chart.none`; `ui.code.region`, `ui.code.terminal`, `ui.code.wrap`; `ui.date.open`, `ui.date.previousMonth`, `ui.date.nextMonth`; `ui.diff.region`, `ui.diff.added`, `ui.diff.removed`, `ui.diff.next`, `ui.diff.folded`; `ui.list.toEnd`; `ui.live.live`, `ui.live.offline`, `ui.live.paused`, `ui.live.reconnecting`; `ui.log.region`, `ui.log.filter`, `ui.log.level`, `ui.log.all`, `ui.log.follow`, `ui.log.capped`; `ui.pane.resize`; `ui.range.open`, `ui.range.from`, `ui.range.to`, `ui.range.apply`, `ui.range.custom`, `ui.range.invalid`; `ui.refresh.pull`, `ui.refresh.release`, `ui.refresh.busy`; `ui.select.clear`, `ui.select.more`, `ui.select.none`, `ui.select.remove`; `ui.shortcuts`; `ui.sort.handle`, `ui.sort.target`, `ui.sort.lift`, `ui.sort.moved`, `ui.sort.dropped`, `ui.sort.cancelled`, `ui.sort.up`, `ui.sort.down`; `ui.step`; `ui.tree.loading`. `UI_KEYS` is now a module namespace over `ui-keys.ts`, one export per key: `UI_KEYS.close` reads the same, `Object.keys(UI_KEYS)` answers in alphabetical order, and an island keeps only the keys its components read (`x g resource`'s form island −2,118 B, `i18n-keys-shake.test.ts`). The framework catalog (`packages/i18n/src/catalogs/en.json`) carries every new key's English.
+- **BREAKING — (#123) `@ultimat3/ui`: the chart types say "unknown".** `ChartPoint.value` is `number | null` (`null`: no bar, and the table says so), `barRects()` answers `(BarRect | null)[]`, `BarChartProps` is `BarChartPointsProps | BarChartSeriesProps` (so `interface … extends BarChartProps` is TS2312 and `BarChartProps['points']` is `| undefined`), and `chartTable()`'s `ChartTableInput` requires `none`, the gap cell's already-translated text.
+- **BREAKING — (#124) `@ultimat3/ui`: the charts draw what they are given.** A negative value on a `BarChart` or a `Sparkline` hangs below a zero line, where it was clamped to zero. A gap's cell in the hidden data table reads `ui.chart.none`, was empty. A `LineChart`, `AreaChart` or `BarChart` series whose `values` length differs from `keys` is `X_UI_INVALID_VALUE`, where it drew. `deltaOf(current, 0)` answers the signed difference (`+5`), was `undefined`.
+- **BREAKING — (#125) `@ultimat3/ui`: `TabsProps` is `TabsButtonProps | TabsLinkProps`.** Link mode (`hrefFor` and `label`, no `onChange`) renders a `<nav>` of server-rendered links with `aria-current`, never `role="tab"`. `interface … extends TabsProps` is TS2312 and `TabsProps['onChange']` is `| undefined`; a button-mode `<Tabs items value onChange>` is unchanged.
+- **BREAKING — (#126) `@ultimat3/ui`: `CommandPalette` and `filterItems` rank, where they filtered.** Through `rankOptions`, `SearchableSelect`'s ranker: case and accents folded (`cafe` finds `Café`), a label prefix first, then a word prefix of label, hint or `keywords`, then a substring; items sharing a `group` render together. It was a case-insensitive substring over label and hint, in the caller's order.
+- **BREAKING — (#127) `@ultimat3/ui`: `CONTRAST_PAIRS` holds `chart-1` and `chart-5` at 4.5:1 on `bg-soft`,** `TerminalView`'s ANSI text on the code surface, and `fg-strong`, `accent` and each status role at 3:1 on every surface, as a toned chart mark. `defineTheme()` refuses a brand that set one below it: `X_UI_CONTRAST_INSUFFICIENT` names the pair and the measured ratio.
+- **BREAKING — (#128) `@ultimat3/testing`: the preload puts every `mock.module` back at the file boundary** (`vi.mock` and `jest.mock` too). A file's first mock of a module snapshots the real namespace, and the next file on the worker reads it again, so a test that passed by reading another file's fake goes red. A module whose real source does not resolve or throws on load cannot be put back: the next file's first test fails `X_TEST_MODULE_MOCK_UNRESTORABLE`. A mock made in a preload is every file's, and is left alone.
+- **BREAKING — (#129) `x build --target static` writes image variants as files.** `responsiveImage()` over a site-path `src` names `/_img/<source hash>-<width>.<ext>`, where it named `?w=&f=`, which a file server ignores and answers with the original under every `<source>`. A remote or `data:` `src` and a caller's own `urlFor` keep their URLs; a served document is unchanged. A variant of a `src` the export does not hold is `X_IMAGE_SOURCE_UNREADABLE`, and one in a format the pipeline cannot encode (`avif`) is `X_IMAGE_UNSUPPORTED`: both fail the build.
+- **BREAKING — (#130) a served `/assets/*` raster answers `?w=` and `?f=` with the declared variant,** resized through `assetRoutes({ images })`, the driver `/media` uses, and cached `immutable`: a width `usableWidths` takes from `DEFAULT_WIDTHS` for that source, a format from `DEFAULT_FORMATS`. Any other width or format, any `?q=`, or a transform query on a non-raster asset is 404 `X_ASSET_VARIANT_UNDECLARED`, where every query got the original. A URL with no transform query, and a stale hash, keep the plain answer.
+- **BREAKING — (#131) `x verify`'s `boundaries` step refuses an `.island.tsx` whose `mount` returns no disposer** (`@ultimat3/cli`, `X_ISLAND_DISPOSER_MISSING`): typed `void`, `undefined` or `Promise<void>`, or unannotated with no `return` of its own. The client router disposes an island by calling what `mount` returned, so such an island's listeners, hotkeys and live reads stayed registered after every navigation. The scaffold's theme toggle and `x g resource`'s form island now return theirs.
+- **BREAKING — (#132) `@ultimat3/auth`: `AuthAdapter` carries passkey storage** (`PasskeyStore`, nine required methods: credentials, single-use challenges, step-up evidence; #990). The built-in Postgres and memory adapters implement them and the boot applies `x_passkeys`, `x_passkey_challenges` and `x_passkey_evidence`. An out-of-tree adapter is a compile error until it implements them (`passkey-postgres.ts` is the reference).
+- **BREAKING — (#133) `@ultimat3/action`: `ActionDescriptor.rateLimit` is `ActionRateLimitFact | null` for a fixed limit only,** beside the new `rateLimitPerCall` and `meter` (#996). `rateLimit.limit` may be `({ ctx }) => number | Promise<number>`, resolved per call; a bad answer is `X_RATE_LIMIT_INVALID`. A reader of `descriptor.rateLimit.limit` that met a function now reads `rateLimitPerCall`.
+- **BREAKING — (#134) `@ultimat3/mcp`: `McpConfirmationStore.decide` takes the approver's signature as a fifth argument, and `McpConfirmation` requires `quorum`, `approvers` and `approvals`** (#994). `mcpConfirmations({ approvers, evidence })` holds a call until N distinct approvers sign it, the requester never counting; stored evidence is verified again before the call. `x_mcp_confirmations` gains three columns, added at boot. A custom store supplies the fields and records the signature.
+- **BREAKING — (#135) `@ultimat3/manifest`: `x.manifest.json` writes `actions[].meter`, and the contract diff classes a meter** (#996): introduced, lowered, renamed, switched to per-call or moved to a longer period is `breaking`; raised, removed, or a shorter period at the same limit is `additive`; `warnAt` is internal. Regenerating adds the field; tightening a meter needs a major.
+- **BREAKING — (#136) `x verify`'s `boundaries` step refuses a websocket an app upgrades itself** (`@ultimat3/cli`, `X_SOCKET_HAND_ROLLED`): `server.upgrade` or a `Bun.serve({ websocket })` outside `deviceSocket()` (#995). Declare it with `deviceSocket({ path, resolveToken, onFrame })`, which the web role serves beside `/_x/sync` with bearer auth, caps, heartbeat and drain.
+- **BREAKING — (#137) `@ultimat3/notify`: `PushDeviceStore` requires `noteBadToken(platform, token)` and `clearBadToken(platform, token)`, and `TokenCache.invalidate(stale)` takes the refused token.** An APNs `BadDeviceToken` or an FCM `INVALID_ARGUMENT` on `message.token` deletes the device after `PUSH_BAD_TOKEN_LIMIT` (3) answers in a row, a delivery resets the count, and `invalidate` clears only the token that was refused, so a straggler's late 403 keeps a fresh one. `x_push_devices` gains `bad_tokens`, added at boot. A custom store implements the two methods.
+- **BREAKING — (#138) `@ultimat3/db`: on Postgres a `history: true` image stores `bigint()` and `decimal()` columns as their exact digit strings and `timestamp()` columns as UTC ISO to the millisecond**, whatever the session zone, as the memory driver does. They were JSON numbers, which lose precision past 2^53 and drop a scale's trailing zeros, and timestamps carried the session's offset. Rows already written keep the old spelling. `x db gen "history exact images"` reinstalls the trigger.
+- **BREAKING — (#139) `@ultimat3/storage`: `signPart` and `completeUpload` require `policy`** (none is `X_INVARIANT`). `signPart` refuses with `X_STORAGE_TOO_LARGE` a part no object under `policy.maxBytes` could hold, and `completeUpload` always holds the assembled total to `maxBytes`. A multipart session's parts and object were bounded by nothing when no policy was passed (security, the #36 class).
+- **BREAKING — (#140) `@ultimat3/realtime`: `LiveHandle` gains a required `retry(): boolean`.** A live `useQuery` `refetch` on a refused subscription re-subscribes and resolves on the node's next answer, so pull-to-refresh works in exactly the state a reader presses it in. A hand-written `LiveHandle` adds `retry`.
+- **BREAKING — (#141) `@ultimat3/http`: `CsrfCheckInput.hasAuthorizationHeader: boolean` is `authorization: string | null`, and only `Authorization: Bearer` exempts a write from the CSRF check.** A browser-cached Basic, Digest or Negotiate credential is ambient and is judged like the cookie (security).
+- **BREAKING — (#142) `@ultimat3/jobs`: `enqueueInTx` is gone from the barrel.** `jobsFacade().enqueue` / `handle.enqueue` join the ambient transaction and run the tenant and concurrency refusals first; `enqueueInTx` skipped all three.
+- **BREAKING — (#143) `@ultimat3/jobs`: `EventLookup.find(event, key, afterMs, afterId?)` returns `{ id, payload, publishedAt }`.** `step.waitForEvent` seeks past a refused event by `(publishedAt, id)`, so a valid event in the same millisecond is no longer skipped. A custom bus returns the event id and honours `afterId`.
+- `x g resource`'s page budget is 66kb (67,584 B), was 64kb: measured 64,167 B (the form island 63,312 + the runtime 855) through `x build --target static` on Bun 1.4.4, 2026-11-06. The new `@ultimat3/ui` components carried the form island to 66,285 B while `UI_KEYS` was an object literal; the namespace (#122) took 2,118 B back.
+- `x new`'s app shell draws its destinations once, as `NavList` in the sidebar and `BottomNav` along a phone's bottom edge, each marking the current page by its href with no script. The unit test `x g action` writes (not `x g mutator`'s) asserts that the action's `invalidates` holds its slice's tag.
+- Reference app: `/runs` is one island with a `TimeRangePicker` on `/runs/health`, settings picks the theme with a segmented `Radio`, `/posts/board` is a `Board` in the nav, and every island's `mount` returns its disposer, so a client navigation no longer leaks its hotkeys and live reads.
 - `@ultimat3/action`: a typed client's `.stream` costs every island that imports `rpc` +1,746 B, measured on the reference app: 29,291 B now, against 27,545 B for the same island before `.stream` landed. Budgets in `examples/dummy` were raised by that measurement.
 - `fillTemplate` refuses a `.` or `..` param value, which walked the URL path (`/posts/../edit` resolves to `/edit`), and returns a `reason`; a pinned action's or query's refusal says why.
 - `onSessionLost` fires only for a 401 from the page's own origin, and `visibleInterval` polls again after the next signed-in `rescope`.
@@ -253,6 +581,25 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- `@ultimat3/auth`: passkeys (#990) — `defineAuth({ passkeys })`, `passkeyLogin`, `passkeyStepUp` (bound to a digest the server derives), `verifyPasskeyEvidence`, and the browser entry `@ultimat3/auth/client` (`newPasskey`, `getPasskey`, `passkeysSupported`). WebAuthn verified on WebCrypto, user verification required, no dependency. `X_PASSKEY_INVALID`, `X_PASSKEY_CHALLENGE_EXPIRED`, `X_PASSKEY_STEP_UP_REQUIRED` (401).
+- `@ultimat3/auth/soft-authenticator`: `softAuthenticator({ origin, algorithm?, counter? })`, a passkey with real WebCrypto keys for tests; `@ultimat3/testing`: `x exercise` awaits an override's `async` `input` inside the call's request, as its actor; `x drill` skips an `async` input and says why.
+- `@ultimat3/mcp`: `defineAppMcp({ catalog })` with `runtimeTool()` — tools resolved per caller, per request (#993; `X_MCP_CATALOG_TOOL_DUPLICATE`, `X_MCP_CATALOG_UNRESOLVED`); `defineAppMcp({ tenant })` with `list_tenants` — one token across tenants, the tenant named per call (#999; `X_MCP_TENANT_REQUIRED`, `X_MCP_TENANT_UNRESOLVED`, `X_MCP_TENANT_INVALID`); confirmation quorum codes `X_MCP_CONFIRMATION_QUORUM_PENDING` (409), `X_MCP_CONFIRMATION_EVIDENCE_INVALID` (403), `X_MCP_CONFIRMATION_QUORUM_INVALID`, and `verifyConfirmationEvidence`.
+- `@ultimat3/action`: `meter: { name, period, limit, warnAt?, onWarn? }` (#996) — durable per-tenant counters over UTC hours, days or months, drawn once inside `invoke` on every surface with one conditional increment, never on an idempotent replay. `X_METER_EXCEEDED` (429, `retry-after`, problem `meta: { meter, limit, resetsAt }`), `X_METER_INVALID`; `memoryMeterStore`, `postgresMeterStore` over `x_meter`, installed at boot. The complete OpenAPI document gives a metered operation its 429.
+- `@ultimat3/realtime`: `deviceSocket()` (#995) — a long-lived socket for a non-browser device: bearer auth at the upgrade, per-actor caps, heartbeat, a 256 KiB frame limit, drain with jittered reconnect; `request(ctx, deviceId, frame, { deadlineMs })` from any node and `deviceAgent()`. `X_DEVICE_OFFLINE` (503), `X_DEVICE_REQUEST_TIMEOUT` (504), `X_DEVICE_FRAME_TOO_LARGE` (413). `@ultimat3/http`'s `websocket` takes a list of mounts, each upgrade routed by its path. `x dev` serves a saved device module's new handler and tells open sockets to redial.
+- `@ultimat3/notify`: `nativePush({ devices, apns, fcm })` (#997) — APNs over HTTP/2 with an ES256 token and FCM HTTP v1, no SDK, keys from `ULTIMATE_APNS_PRIVATE_KEY` / `ULTIMATE_FCM_PRIVATE_KEY`; the `pushRegister` / `pushUnregister` action factories over `x_push_devices` (`memoryPushDeviceStore`, `postgresPushDeviceStore`); data-only push through `pushChannel({ pusher, data })`. `X_NOTIFY_PUSH_DEVICE_GONE`, `X_NOTIFY_PUSH_PROVIDER_REFUSED`, `X_NOTIFY_PUSH_MESSAGE_INVALID`.
+- Reference app: passkey sign-in and a passkey-approved member erasure; `x exercise` reaches all five passkey primitives (60 reached, 0 unreached).
+- `@ultimat3/ui`, commands and navigation: `ConfirmDialog`, `useHotkeys` / `registerHotkeys` with `ShortcutSheet`, `useCommandPalette` (palette items take `group` and `keywords`), `NavList`, `BottomNav`, `Stepper`, `PullToRefresh`, `AppShell({ bottomNav })`, a bottom-sheet `Drawer` (`grabber`, `snap`), and the `safe-area-inset()` function and `safe-area-padding` mixin in the touch tokens. `native-confirm` is the 21st guard `x new` ships: no `window.confirm(` in app code; `x doctor` names it where missing, `x g guard native-confirm` adds it.
+- `@ultimat3/ui`, charts and selection: `SearchableSelect` (one or many) over `rankOptions`, `HeatStrip`, `LiveIndicator`, `liveWindow`, `deltaMood` and `StatTile({ goodWhen })`, `deltaOf(current, baseline, { absoluteBelow, format })`; `LineChart` / `AreaChart` take `at`, `stacked` and `references`, `BarChart` `series` and `references`, a series a status `tone`, `Gauge` `thresholds` and `target`, `Meter` `target`. A non-ascending `at` or `thresholds` is `X_UI_INVALID_VALUE`, as are two `SearchableSelect` options sharing a value, a group split across its list, and a selected value no option holds.
+- `@ultimat3/ui`, lists and pickers: `VirtualList`, `Tree` (`TREE_ITEM_SELECTOR`), `Timeline`, `DescriptionList`, `Calendar`, `DatePicker`, `DateRangePicker`, `TimeRangePicker` with `timeRangeUrl()`, `Slider`, and `Radio({ appearance: 'segmented' })`.
+- `@ultimat3/ui`, drag and viewers: `SortableList`, `Board`, `SplitPane`, `Markdown({ headingIds })` over `parseMarkdown` (`headingSlug`, `headingIds`, `MARKDOWN_MAX_CHARS`), `CodeBlock` with `defineLanguage()` and seven languages (`allLanguages`), `JsonView`, `DiffView`, `LogViewer` and `TerminalView`.
+- `og: { capture: '/og/<page>' }`: `x build --target static` photographs that `site/` page at 1200 x 630 into `/_og/<path>.png` and stamps it as `og:image`; a served document emits no `og:image` for a capture, since nothing serves the file. `x build --no-capture` stamps the tags and photographs nothing, as the gate's own build does. A capture no `site/` route answers is `X_SEO_CARD_ROUTE_UNKNOWN` on the `seo` step; a build with no Chrome to photograph with is `X_SEO_CARD_BROWSER_MISSING`. `@ultimat3/seo`: `setStaticExport`, `currentStaticExport`, `isExportableSrc`, `StaticExport`, `StaticImageRequest`.
+- `@ultimat3/storage`: `warmVariants({ disk, key, widths, formats })` writes every width x format of a stored image under the key `/media` reads, so the job an upload enqueues pays the decode and no visitor does; it answers `{ written, failed, skipped }`.
+- `@ultimat3/scraping`: `page.pdf({ format | widthMm + heightMm, marginMm, printBackground, preferCssPageSize, headerHtml, footerHtml })` and `PDF_FORMATS`. Two sizes, one of `widthMm` / `heightMm` alone, or a measure that is not a finite number of millimetres is `X_SCRAPE_PDF_OPTIONS_INVALID`, before any driver.
+- `@ultimat3/manifest/docs-search`: the docs ranker alone (`searchDocs`, `nearestTopics`, `DocEntry`, `DocHit`) for a browser island, with no scanner and no `node:fs`.
+- `x new <name> --shape api|blog|dashboard` starts from a shape, an overlay over the default scaffold that waives no guard and no gate step ([Shapes](https://github.com/developerz-ai/ultimate/wiki/Shapes)). `X_NEW_SHAPE_UNKNOWN`, `X_NEW_SHAPE_CONFLICT` (with `--no-example`), and `X_NEW_SHAPE_GENERATE_FAILED` for a generator the shape runs in the new app. CI's `scaffold-smoke` gates each shape.
+- `skipCeiling` in `x.verify.json` (`{ "<step>": n }`): a step that skipped more tests than its ceiling is `X_VERIFY_SKIPS_OVER_CEILING`, judged by `x verify merge` and by a whole `x verify` under `CI`. Absent, there is no ceiling, and a CI run warns with the number to write.
+- `dummy/docs-site`, the third tracked app: `wiki/*.md` as static pages at 0 KB of script, gated on its own empty `expectedRed` table, with one search island over `@ultimat3/manifest/docs-search`. `deploy-docs-site.yml` publishes it, inert until `DOCS_SITE_ORIGIN` is set.
+- `scripts/bench/first-hour.ts` (a stranger's first hour from the published `create-ultimate`) and `scripts/bench/http-hello.ts` (requests per second against that scaffold), run weekly and on each release by `bench.yml`, which opens a pull request with the new JSON; `X_BENCH_RUN_TOO_SHORT`, `X_BENCH_RUN_FAILED`. Wiki pages `Shapes`, `Compared`, and four `Migrating-From-*` maps.
 - `@ultimat3/action`: `action({ stream })` with an `async *handle`: a caller sending `accept: text/event-stream` gets each yielded chunk as it lands, and the generator's return value is the output (`X_ACTION_STREAM_INVALID`). The typed client's method for such an action carries `.stream(input)` (`StreamClientMethod`), over `@ultimat3/core`'s new `clientStream()` — a `POST`, never `EventSource`. New exports: `StreamAction`, `StreamActionDef`, `chunksRead`, `EVENT_STREAM`, `ActionStreamInvalidError`, `StreamRequest`.
 - `@ultimat3/core`: `clientStream` dispatches through `client-dispatch.ts` (`dispatchStream`), the one browser `fetch` — a stream's 401 marks the session lost like every other client call, and the caller's signal ends it.
 - `@ultimat3/jobs`: a `backfill()` page is handled inside `expectedQueryLoop`, so the exercise pass's scale sweep reads a backfill's per-row writes as the work they are, with the reason, instead of failing `x g backfill`'s own scaffold as an unnamed loop.
@@ -489,6 +836,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- `@ultimat3/entity`: a row `jitPreload` preloaded is no longer served after a database-side write rewrote it (`countedIn` trigger, `onDelete` cascade / set null): any repository write drops every preloaded row for the request, and the first lookup after a write reads its own statement. `seed.upsert` reports a soft-deleted stored row `'skipped'` and leaves it deleted (it wrote onto the hidden row and reported `'inserted'` on every replay).
+- `@ultimat3/db`: the `missing-column`, `missing-table`, `missing-index`, `changed-index` and `missing-foreign-key` drift findings carry one `psql "$DATABASE_URL" -c '…'` repair built from the snapshot instead of `x db migrate`, which applied nothing; `diffSchema` takes an optional `schema`.
+- `@ultimat3/query` / `@ultimat3/realtime`: a read's record envelope carries `order` where integer-like record keys would re-sort, so a non-live `useQuery` keeps a newest-first list newest-first. Additive; uuid-keyed bodies are byte-identical.
+- `@ultimat3/notify`: a digest's ledger claim is keyed by the recipient's own window end, so two runs whose latest window ends coincide no longer drop a window's events.
+- `@ultimat3/storage`: s3 `listUploads` (so `abortStaleUploads`) no longer drops a session whose escaped key passes 512 characters, nor stops paging at a long `NextKeyMarker`.
+- `serveApp`'s `stop()` releases everything its boot acquired, failure captures in flight included; a container with a read-only root filesystem and no `S3_ENDPOINT` refuses with `X_STORAGE_UNWRITABLE` naming `ULTIMATE_STATE_DIR` instead of a bare `EROFS`; two `x dev` processes clearing one stale `dev.lock` no longer both start; the static-page memo keys on the declared origin, so forged `Host` headers cannot fill it; `x dev`'s watcher, sync node and replicator standby each release what they hold on stop.
+- `x verify`: test discovery is cached for one run, so the dev MCP `verify` tool sees test files added since its last call. `x upgrade` stops its root search at any `.git` (a submodule's file too), reads a malformed parent `package.json` as `X_UPGRADE_PIN_UNREADABLE`, and raises a two-part `engines.bun` range (`>=1.4`). `x g sign-in --password` keeps `?next=` through the second factor.
+- `@ultimat3/ui`: `SearchableSelect` multiple keeps the highlight on the option just picked from a filtered list, and chart hit ids no longer collide (`['a','a','a#1']` threw `X_UI_INVALID_VALUE`). `@ultimat3/pwa`: a push notification action button opens its own `url` (same origin only); every button opened `PushPayload.url`.
+- `@ultimat3/notify`: a channel error classified `terminal` (`X_NOTIFY_PUSH_PROVIDER_REFUSED`, `X_NOTIFY_PUSH_MESSAGE_INVALID`, a mail provider's permanent refusal) stays terminal through `X_NOTIFY_DELIVERY_FAILED`; every retry re-sent the visible push. `nativePush()`: a 401/403, or Google refusing the service-account assertion, stops that provider's fan-out on its first device instead of re-signing a provider token per device.
+- `@ultimat3/http`: websocket mounts joined on one listener pass Bun's `drain` to the mount that owns the socket, so a sync node sharing the web port with a `deviceSocket()` repairs gapped sockets after backpressure. `@ultimat3/realtime`: the sync node enforces `maxFrameBytes` itself (close `1009`); a shared listener had raised it to the widest mount's.
+- `@ultimat3/realtime`: `deviceAgent().close()` while `token()` is pending no longer dials and leaks a socket; under `x dev` a different module declaring a `deviceSocket()` path an earlier scan holds is `X_CONFIG_INVALID` naming both files; `DeviceBus.start()` releases its node subscription when the claim subscribe fails; the `X_DEVICE_REQUEST_TIMEOUT` fix never suggests a `deadlineMs` above 600000.
+- `x exercise` reports `X_ENTITY_TENANT_UNDECLARED` for an entity that references the tenant root and has no tenant column. `x drill` skips an override `input` that returns a promise without being declared `async` (it posted `{}`).
+- A `redis` entry in `cache.tiers` accepts `VALKEY_URL`, and its client dials the URL of the boot's environment (`redisUrlSource(env)`, `@ultimat3/core/redis`). A stopped Redis rejects cache reads and busts with `X_CACHE_DRIVER_UNAVAILABLE` instead of Bun's bare `ERR_REDIS_CONNECTION_CLOSED`.
+- `@ultimat3/entity`: `countedIn` refuses a nullable counting column (`X_ENTITY_COUNTS_INVALID`): Postgres' `NULL + 1` stays NULL while memory counted from 0. `@ultimat3/query`: a live query's epoch is `APP_VERSION`, so a deploy makes reconnecting clients refetch (it read `X_BUILD_ID`, which nothing sets).
+- `x.manifest.json` records a per-call rate limit as `rateLimitPerCall: { windowMs }`, and the contract diff calls a move to or from one breaking; it read as no rate limit. `@ultimat3/action`: a `meter:` drawn in a tenantless anonymous job run counts under `job:unattributed`, apart from anonymous visitors, as the limiter does; the memory meter store evicts a counter whose period ended before a live one; a non-string meter name or problem-meta key is `X_METER_INVALID` / `X_PROBLEM_META_INVALID`, not a `TypeError`. The memory passkey store's challenge sweep is O(1) per put.
+- `@ultimat3/core`: `clientStream` decodes a mid-stream `error` frame at the problem's own status (it was 500, so a 409 read retryable), and `stream()`'s JSON answer is unwrapped like `call()`'s — records adopted, `x-ultimate-dates` revived, a non-JSON body `X_CLIENT_TRANSPORT_FAILED`. The `rpc` island entry grows +155 B for it. `defineEnv` refuses a blank or `0x`/`0b`/`0o` `number`, `integer` or `port`, and a `g`/`y` `pattern` no longer refuses a valid value on a second check.
+- `@ultimat3/i18n`: `t(key)` renders `<key>_select_other` / `<key>_ordinal_other` when the `select` / `ordinal` var is missing or invalid, as `has(key)` promised. `@ultimat3/time`: `isoInZone` round-trips through `fromIso` to the second for historic offsets that are not whole minutes.
+- `@ultimat3/ui`: `SortableList` / `Board` — a second Alt+Arrow before the echo steps from the held move, and the first answer no longer snaps a later move's preview back; `VirtualList` drops heights of rows that left the list (`LogViewer` following a run no longer grows without bound); markdown keeps a two-space hard break on a paragraph's first line; clearing `useCommandPalette`'s query cancels the pending search and turns `loading` off; a `PullToRefresh` `onRefresh` that throws synchronously returns to idle. `@ultimat3/render`: a throwing island disposer goes to the browser's `reportError`, not an unhandled rejection.
+- `@ultimat3/seo`: `meta.og` naming both `image` and `capture` past the type is `X_SEO_OG_IMAGE_CONFLICT` at render and in `validateMeta`; the export published the capture and a served page no `og:image`.
+- `X_MCP_CATALOG_UNRESOLVED` and `X_MCP_TENANT_UNRESOLVED` no longer cite the unshipped `x logs`.
+- `@ultimat3/core`: after a failed WebCrypto EC import anywhere in the process (one bad JWKS or VAPID key), the next webhook signature, cursor, OAuth handshake cookie, TOTP code, client scope or keyed fingerprint threw a stale `POINT_IS_NOT_ON_CURVE` once — a Bun 1.4.4 keyed `Bun.CryptoHasher` bug. Every HMAC now goes through `hmac()` (on `node:crypto`, the same bytes), and `bun run keyed-hasher` (`X_KEYED_HASHER`, on the `boundaries` step) refuses a keyed `new Bun.CryptoHasher(alg, key)` anywhere else.
+- `x build --target static` runs `apps/web/prerender.ts` with the render loader preloaded (`bun run --preload` of the CLI's `prerender-preload.ts`), so a prerender script whose imports reach a `.tsx` — a module importing `@ultimat3/ui` — builds. It failed with `Export named 'jsxDEV' not found`.
+- The static export asks each route's `prerender()` once per build (`measurePaths(entry, enumerate)`), and the sitemap and `/llms.txt` reuse what the build read inside its API scope: `PrerenderReport.entries` and `PrerenderReport.llmsPages`, handed to `siteSeo({ entries, llmsPages })`, as a new app's `apps/web/prerender.ts` now does. A `site/` route whose `prerender()` or `load` reads the app's own query failed the export with `X_CLIENT_TRANSPORT_FAILED`, the scope being gone by then.
+- `@ultimat3/ui`: a `Popover` hands focus back to its trigger on close. The trigger was rebuilt on every open and close, so focus landed on `<body>`.
 - `@ultimat3/db`: `x db gen`'s own lifecycle trigger statements — an `appendOnly` table's trigger, and the new history and counter triggers with the recount's `set_config(…, true)` and `update` — no longer read as hand-written SQL on the ungeneratable rail (`X_MIGRATION_UNGENERATABLE`). An unquoted hand-written trigger or function is still counted.
 - `@ultimat3/http`: `?tz=` is read. It was documented as a zone source for share links and never read, as `?locale=` was.
 - `@ultimat3/entity`: `decodeRow` builds its column plan once per entity: a 100-row list costs 26–70% less CPU per run pair (median about 48%), decoding alone about 80% less.
@@ -613,6 +984,53 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `@ultimat3/testing`: `seedGraph` refuses (`X_SEED_GRAPH_UNSATISFIED`) a key — the tenant column included — whose target entity is not in the set seeded, and a table-wide unique that runs out of values before every tenant holds a row. The first pointed at a parent that was never written; the second left a tenant whose children had no parent.
 - `@ultimat3/testing`: a soft-deleting table's seeded rows are live — `deletedAt` is `null` unless a factory builds it. A generated instant made every seeded row deleted, so a read found none.
 - `@ultimat3/action`: `exerciseAction`'s doc states what a run rolls back: the cache bust on either store, and the outbox stage only when a SQL transaction is open. With none (the memory store), a job enqueue goes straight to the job driver and stays.
+
+### Commits
+
+- docs(upgrading): 30.0.0 section final
+- fix(testing): x drill's jobs-once counts a key run twice at once, not one enqueued again after it settled
+- fix!: sweep 2 — cross-tenant job dedupe, multipart size bound, OAuth metadata fetch metering, and ~30 more (#1008)
+- ci: resource-efficient CI, faster local loop, RAM-only test services; fix red main (#1007)
+- chore(dz): health checkup weekly, not daily (#1006)
+- feat!: issues #990 #993-#997 #999 and sweep 1: passkeys, MCP catalog + tenant + quorum, device sockets, meters, native push, 35 audit fixes (#1005)
+- feat!: plan 101 wave 10: UI kit, page capture, app shapes, docs site, mock boundary, island disposers (#1004)
+- feat!: plan 101 wave 9: subject data, repro, query plans, entity lifecycle, agent wire, MCP, AI cache, cassettes, API clients, app graph, uploads, locale (#1002)
+- feat!: plan 101 wave 8: time series, crash proof, fault drills, redis outage, operations, chart alerts (#1001)
+- feat!: plan 101 wave 7: tenant proof, reads, row security, identity, sagas, consumers, partitions, wedge, agents (#1000)
+- feat!: plan 101 wave 6b (2/2): x exercise, the 21st gate step, both apps unpinned (#989)
+- feat!: plan 101 wave 6b (1/2): exercise runner, one seed graph, memory commit scope, entity shared, raw-tab a11y (#988)
+- feat!: plan 101 wave 6a: exercise memory rollback, seed graph, e2e accessibility audit, /v1 publish, CI split (#987)
+- feat!: plan 101 wave 5b: pinned paths, session/refresh fixes, sign-in, one exercise loop (#986)
+- feat!: plan 101 wave 5a: live refresh, client reads, data table, contract tests, declared errors, mount paths (#985)
+- docs: fix range document link to README navigation (#984)
+- docs: fix SEO idea link to Configuration heading (#983)
+- fix(mail): go deaf on raw socket events after STARTTLS upgrade (#982)
+- feat(guard): compare cross-manifest dependency ranges with the root (#980)
+- feat!: plan 101 wave 4c: testDriver, x db diagnostics, scripted AI, agent evals, MCP 2026-07-28 (#976)
+- feat!: plan 101 wave 4b: client errors, deploy skew, audit trail, CI reuse, deploy proof (#973)
+- feat!: plan 101 wave 4a: jobs: enqueueMany, relay batches, inbound webhooks, importRows (#972)
+- chore: AGENTS.md is a symlink to CLAUDE.md, in this repo and in every new app (#971)
+- fix(ci): private-names is required only where the secret is passed (#970)
+- feat!: plan 101 wave 3: errors, outbound, stability, first hour, agents, docs (#969)
+- feat!: plan 101 wave 2: outages, deploys, streaming, wire, DX, storage (#967)
+- test(services): assert every suite's service URL has a CI part (#966)
+- fix(db): object-drift live suite no longer skips on a missing psql (#965)
+- feat!: plan 101 wave 1: security, tenancy, corruption, concurrency, x upgrade (#963)
+- docs(plans): one new major, v30, carries the whole plan (#962)
+- docs(plans): make every decision and expand the plan for the world (#961)
+- docs(plans): end-to-end improvement plan for Ultimate (#960)
+- fix(scripts): close the bare-Error ratchet's source gap (#957)
+- docs: clarify retained unpin command for empty app ratchets (#959)
+- fix(ci): resolve Dependabot updates from the Bun workspace root (#958)
+- fix(deps): cover workspace manifests and enforce Dependabot policy (#956)
+- docs: correct tracked-app gate status in README (#955)
+- docs(dz): the release judgement reads everything merged since the last release (#954)
+- chore(dz): the bot judges weekly whether a release is needed (#953)
+- chore(deps): Bump lefthook from 2.2.1 to 2.2.2 in the dev-tooling group (#951)
+- chore(deps): Bump sass from 1.105.1 to 1.105.2 in the runtime group (#952)
+- chore(docker): one S3 gateway pin for the scaffold, moved by Dependabot with docker/ (#950)
+- chore(docker): Bump distroless/cc-debian13 in /docker (#948)
+- chore(dz): monthly improve checkup; stop two scripts hiding failures (#946)
 
 ## 29.4.0 - 2026-10-31
 

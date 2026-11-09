@@ -17,8 +17,8 @@ import { describeSampleGap, sampleGaps, sampleInput } from '@ultimat3/schema/sam
 import type { AnyAction } from './action';
 import { declaredErrorsContract } from './declared-errors-contract';
 import { ActionDeniedError, ContractDriftError } from './errors';
-import type { ExerciseOptions } from './exercise';
 import { exerciseContract } from './exercise';
+import type { ContractExercise } from './exercise-declarations';
 import { toOpenApiOperation } from './http';
 import { methodOfHttp, servedActionRoute } from './http-path';
 import { actionName, defOf, invoke } from './invoke';
@@ -44,10 +44,12 @@ export interface ContractTestOptions {
   readonly ctx?: Ctx;
   /**
    * The fourth assertion: the handler, called with generated input its schema accepts, inside a
-   * rolled-back transaction. `{ actor }` says who acts (required unless the policy admits an
-   * anonymous caller); `{ off: '<reason>' }` skips it out loud.
+   * rolled-back transaction. In an app, the `exercise` export of `apps/web/exercise.ts` — the
+   * `defineExercise()` value `x exercise` reads — and this action's entry in it is the one used:
+   * one declaration, both runners. One entry inline (`{ actor }`, `{ off: '<reason>' }`) is for a
+   * test binding rows of its own world. Required unless the policy admits an anonymous caller.
    */
-  readonly exercise?: ExerciseOptions;
+  readonly exercise?: ContractExercise;
 }
 
 /** A context whose actor is core's anonymous actor — what a signed-out caller has. */
@@ -176,8 +178,8 @@ import { ${name} } from './actions';
 // Fill in: arrange a foreign actor, expect the policy to deny.
 // The contract tests below are framework-generated and always included. Pass
 // \`{ input }\` if the synthesized one cannot satisfy this action's schema or row loader.
-// A guarded action also needs \`{ exercise: { actor } }\` — who its handler runs as for the
-// generated-input runs — or \`{ exercise: { off: '<reason>' } }\`.
+// A guarded action also needs who its handler runs as for the generated-input runs: its entry in
+// apps/web/exercise.ts (\`{ actor }\` or \`{ off: '<reason>' }\`), handed in as \`{ exercise }\`.
 for (const contract of contractTestsFor(${name})) {
   test(contract.name, async () => {
     await contract.run();

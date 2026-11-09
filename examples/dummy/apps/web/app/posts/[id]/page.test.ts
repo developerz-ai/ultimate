@@ -59,3 +59,51 @@ unitTest('a Spanish reader gets the one ordinal form Spanish has', () => {
   );
   expect(label).toBe('2.º comentario');
 });
+
+// The body is markdown, rendered as elements from a tree: a member's `<script>`, a `javascript:`
+// link and a remote image all arrive as text or a plain link, never as markup.
+unitTest('a hostile body renders inert', async () => {
+  const body =
+    '<script>alert(1)</script>\n\n[x](javascript:alert(1)) ![pixel](https://tracker.test/p.gif)';
+  const hostile = {
+    ...page,
+    config: { ...page.config, load: () => Promise.resolve({ ...POST_ROW, body }) },
+  };
+  const html = (
+    await renderRoute(hostile, {
+      url: `https://example.test/posts/${POST}`,
+      actor: demoActorFor('ada'),
+    })
+  ).html;
+  expect(html).not.toContain('<script>alert(1)');
+  expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+  expect(html).not.toMatch(/href="\s*javascript:/i);
+  expect(html).not.toContain('<img src="https://tracker.test');
+  expect(html).toContain('href="https://tracker.test/p.gif"');
+});
+
+unitTest('a draft whose body moved on shows its stale excerpt as a diff', async () => {
+  const draft = {
+    ...page,
+    config: {
+      ...page.config,
+      load: () =>
+        Promise.resolve({
+          ...POST_ROW,
+          status: 'draft' as const,
+          publishedAt: null,
+          excerpt: 'old words',
+          body: 'new words',
+        }),
+    },
+  };
+  const html = (
+    await renderRoute(draft, {
+      url: `https://example.test/posts/${POST}`,
+      actor: demoActorFor('ada'),
+    })
+  ).html;
+  expect(html).toContain('<mark');
+  expect(html).toContain('Removed');
+  expect(html).toContain('Added');
+});
