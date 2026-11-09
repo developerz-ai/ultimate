@@ -18,7 +18,7 @@
     "db:seed": "x db seed"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
+    "@biomejs/biome": "2.6.3",
     "@electric-sql/pglite": "^0.5.11",
     "@types/bun": "^1.4.0",
     "@ultimat3/testing": "30.9.0",
