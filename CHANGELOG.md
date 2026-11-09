@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 30.9.0 - 2026-11-09
+
 ### Highlights
 
 - The test network seal is whole: every DNS resolver, `node:net`/`tls`/`http(s)`/`http2` and UDP are refused unless loopback, mocked or allowed â€” a test that reached the internet through one of them now fails, and `allowHost('<host>')` is the fix it prints.
@@ -36,6 +40,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **admin (internal):** `callAdminTool`'s dispatch moved from `mcp.ts` to `mcp-dispatch.ts`; `@ultimat3/admin` exports the same names.
 - **testing:** the plan sweep judges a read's access path with sorts allowed. It used to plan every statement with `enable_sort` off, so an `order by` with no `limit` made the planner walk, whole, whatever index held that order (a unique `(provider_id, serial)`) instead of the one the join keys (`(subject_type, subject_id)`), and `X_QUERY_UNINDEXED` named an index that changed no plan. Only a sort under a `Limit` is judged, so only a limited statement is planned a second time with sorts off, for its `X_QUERY_SORT_UNSERVED` alone. An unindexed filter is still red, with or without an `order by`.
 - **testing:** an exercise entry's `input` binds on the job queue of the call it feeds (the control's and the scale sweep's), so a job it enqueues is still there when the call looks it up by id (a cancel or requeue no longer stops on `X_ADMIN_JOB_NOT_FOUND`). Only rows a call adds count as the primitive's `enqueue` effect â€” the input's never do.
+
+### Commits
+
+- fix: whole test network seal, json null, backfill clock, admin MCP mounted (#1026)
+- chore: release 30.8.0 (#1025)
 
 ## 30.8.0 - 2026-11-08
 
