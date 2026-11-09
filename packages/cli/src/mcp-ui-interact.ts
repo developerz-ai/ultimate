@@ -270,6 +270,9 @@ export async function interactRoute(
     timeoutMs: DEFAULT_PAGE_TIMEOUT_MS,
     fullPage: input.fullPage,
     colorScheme: input.colorScheme,
+    // The same clock `runSteps` below runs on: without it the settle window is a real 2000 ms of
+    // wall time per call, whatever `deps.sleep` says — the cost that made this suite time out.
+    sleep,
     act: async (page, settle) => {
       ran.landedOn = page.url();
       ran.run = await runSteps(page, steps, settle, origin, sleep);

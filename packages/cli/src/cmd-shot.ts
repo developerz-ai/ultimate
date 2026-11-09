@@ -232,6 +232,14 @@ export interface ShotRun {
   readonly act?:
     | ((page: ShotPage, settle: () => Promise<IslandCount | null>) => Promise<void>)
     | undefined;
+  /**
+   * The clock the settle window runs on — the same seam `SettleOptions.sleep` and
+   * `InteractDeps.sleep` take, and the reason they had none on this path: `settleMs` was a
+   * `Bun.sleep` here, so a caller that injected a sleep everywhere else still paid the real
+   * 2000 ms window in wall time once per `runShot`, and a test doing it twice raced its own
+   * per-test timeout on a slower box. Absent is `Bun.sleep`: production waits for real.
+   */
+  readonly sleep?: ((ms: number) => Promise<void>) | undefined;
 }
 
 /** Nothing here may replace the failure that caused it, so a teardown throw is swallowed. */
@@ -247,6 +255,7 @@ const quietly = async (stop: () => Promise<void>): Promise<void> => {
  */
 export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
   const server = await options.boot();
+  const sleep = options.sleep ?? ((ms: number): Promise<void> => Bun.sleep(ms));
   let session: ShotSession | undefined;
   try {
     const requestedUrl = new URL(options.route, server.url).toString();
@@ -276,7 +285,7 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
     // Read NOW as well as at capture: the network ring is bounded, and a page that fires a few
     // hundred requests while it settles evicts the document entry the verdict needs.
     const landedStatus = documentStatus(page.network(), page.url());
-    if (options.settleMs > 0) await Bun.sleep(options.settleMs);
+    if (options.settleMs > 0) await sleep(options.settleMs);
     // The probe may legitimately answer nothing — a page that refuses evaluation, a driver with no
     // JS engine. `null` says so; a `0` would read as "the route renders no islands", which is a
     // different and much more alarming claim.
@@ -289,7 +298,7 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
     // runtime CALLS `import()`, so a mount gets exactly as long to settle as the runtime got to
     // start it — and `--settle 0`, which asks for no wait, still gets none.
     const settle = (): Promise<IslandCount | null> =>
-      settleIslands(probe, { windowMs: options.settleMs, pollMs: SETTLE_POLL_MS });
+      settleIslands(probe, { windowMs: options.settleMs, pollMs: SETTLE_POLL_MS, sleep });
     let islands = await settle();
     if (options.act !== undefined) {
       await options.act(page, async () => {

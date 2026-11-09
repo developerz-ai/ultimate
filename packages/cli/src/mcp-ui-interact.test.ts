@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
 import type { UiInteractInput } from '@ultimat3/mcp';
+import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver, ShotPage } from './browser-launcher-port';
 import { uiCapabilities } from './mcp-ui';
@@ -121,6 +122,20 @@ describe('unit · ui.interact drives the route, then photographs it', () => {
         ['wait', false],
       ]);
       expect(result.finalUrl).toBe(`${SERVER_URL}/dash`);
+    });
+  });
+
+  test('the settle window is paid on the injected clock, never the real one', async () => {
+    await withRoot(async (root) => {
+      const sleeps: number[] = [];
+      // The hydration deadline has to reach the injected sleep: paid by `Bun.sleep` instead it is
+      // 2 s of wall time per capture, which is how this suite's 5 s per-test budget ran out.
+      const result = await interactRoute(
+        { root, boot, driver: async () => site(), sleep: async (ms) => void sleeps.push(ms) },
+        { ...INPUT, steps: [] },
+      );
+      expect(result.ok).toBe(true);
+      expect(sleeps.filter((ms) => ms === IDLE_HYDRATE_TIMEOUT_MS)).toHaveLength(1);
     });
   });
 
