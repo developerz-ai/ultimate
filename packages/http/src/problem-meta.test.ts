@@ -41,8 +41,9 @@ describe('registerProblemMeta', () => {
     expect(problemMetaKeysFor('toString')).toEqual(['x']);
   });
 
-  test('`issues` and `__proto__` are refused by name; so is an empty list', () => {
+  test('`issues`, `issuesTruncated` and `__proto__` are refused by name; so is an empty list', () => {
     expect(() => registerProblemMeta({ X_APP: ['issues'] })).toThrow('top level');
+    expect(() => registerProblemMeta({ X_APP: ['issuesTruncated'] })).toThrow('top level');
     expect(() => registerProblemMeta({ X_APP: ['__proto__'] })).toThrow('X_PROBLEM_META_INVALID');
     expect(() => registerProblemMeta({ X_APP: [] })).toThrow('empty');
     expect(() => registerProblemMeta({ X_APP: ['not a key'] })).toThrow('is not a meta key');

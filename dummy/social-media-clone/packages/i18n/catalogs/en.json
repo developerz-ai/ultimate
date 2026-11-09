@@ -292,6 +292,22 @@
       "description": "This page will refresh itself when the connection returns.",
       "title": "You are offline",
       "help": "Every app/ route declares its own offline strategy, and the service worker is generated from those declarations rather than hand-written."
+    },
+    "oauth": {
+      "consent": {
+        "title": "Connect an assistant",
+        "description": "An app is asking to act on your account through this site's MCP endpoint.",
+        "asking": "{client} would be able to:",
+        "scope": {
+          "mcp": "use every tool this site offers assistants, as you, with your permissions"
+        },
+        "clientHost": "Published by {host}.",
+        "redirectHost": "After you answer, you are sent to {host}.",
+        "revocable": "It acts as you until you disconnect it. It never sees your password.",
+        "approve": "Connect",
+        "deny": "Cancel",
+        "refused": "This connection request cannot be answered. Start again from the app that sent you here."
+      }
     }
   },
   "site": {

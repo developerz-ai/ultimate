@@ -354,7 +354,7 @@ describe('a paged read over the route', () => {
   test('the widest `_first` the wire accepts cannot widen a declared limit', async () => {
     const response = await read(
       serve(feed({ count: 0 }), reader('u1')),
-      `?orgId=${ORG}&first=1&_first=10000`,
+      `?orgId=${ORG}&first=1&_first=500`,
     );
     const page = (await response.json()) as PageBody;
     expect(page.rows.map((row) => row.id)).toEqual(['a']);
@@ -373,13 +373,28 @@ describe('a paged read over the route', () => {
 
   test('a page size outside the bound is the read’s own X_INPUT_INVALID, never a 500', async () => {
     const server = serve(feed({ count: 0 }), reader('u1'));
-    for (const size of ['0', '10001', '1.5', '1e3', 'many', '']) {
+    for (const size of ['0', '501', '10001', '1.5', '1e3', 'many', '']) {
       const response = await read(server, `?orgId=${ORG}&_first=${size}`);
       const body = (await response.json()) as { code?: string; cause?: string };
       expect(response.status).toBe(400);
       expect(body.code).toBe('X_INPUT_INVALID');
       expect(body.cause).toContain('_first');
     }
+  });
+
+  test('a read that declares maxPage serves a page past the wire cap, and no further', async () => {
+    const wide = query({
+      input: Input,
+      policy: allow(),
+      maxPage: 2000,
+      sql: ({ orgId }) => from<Post>('posts', posts).where({ orgId }).orderBy('rank'),
+    }).named('orgFeed');
+    const server = serve(wide, reader('u1'));
+
+    expect((await read(server, `?orgId=${ORG}&_first=2000`)).status).toBe(200);
+    const over = await read(server, `?orgId=${ORG}&_first=2001`);
+    expect(over.status).toBe(400);
+    expect(((await over.json()) as { cause?: string }).cause).toContain('between 1 and 2000');
   });
 
   test('`_after` alone, or a control sent twice, is refused at the wire', async () => {

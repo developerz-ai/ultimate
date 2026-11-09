@@ -156,4 +156,26 @@ describe.skipIf(!hasPostgres)('live · postgres · two sweeps over one run', () 
     expect(orphans).toContain('Index Only Scan using x_jobs_run_idx on x_jobs j');
     expect(orphans).toContain('Index Scan using x_job_steps_pkey on x_job_steps s');
   }, 60_000);
+
+  // The production shape: a `dead` row is kept 90 days and a `done` one 14, so every batch's walk
+  // in `updated_at` order over all four terminal states stepped over the young dead rows sitting
+  // between the done ones — 32–40 ms a batch in production. Each window now seeks its own index.
+  test('done rows are found through x_jobs_done_idx, never by walking the dead rows kept longer', async () => {
+    await executor.query('truncate x_jobs, x_job_steps', []);
+    await executor.query(
+      `insert into x_jobs (id, name, input, idempotency_key, run_id, state, updated_at)
+       select gen_random_uuid(), 'mail.send', '{}'::jsonb, 'k' || g, gen_random_uuid(),
+              case when g % 3 = 0 then 'done' else 'dead' end,
+              now() - (g % 60) * interval '1 day'
+         from generate_series(1, 63000) g`,
+      [],
+    );
+    await executor.query('analyze x_jobs', []);
+    const rows = await executor.query<Record<string, unknown>>(
+      `explain ${SQL_JOBS_RETENTION_BATCH}`,
+      [14 * DAY_MS, 90 * DAY_MS, 1000],
+    );
+    const plan = rows.map((row) => Object.values(row).join('')).join('\n');
+    expect(plan).toContain('Index Scan using x_jobs_done_idx on x_jobs');
+  }, 60_000);
 });

@@ -286,6 +286,13 @@ export interface ProblemDocument {
    */
   readonly issues?: readonly ValidationIssue[] | undefined;
   /**
+   * `true` when validation stopped at `MAX_ISSUES` and `issues` is a prefix — off the error's
+   * `meta.issuesTruncated`, which action's and query's `X_INPUT_INVALID` both set. ABSENT unless
+   * `issues` is carried AND the mark is literally `true`: it qualifies a list, so it never rides
+   * without one, and a client that renders `issues` instead of `cause` must not call a prefix whole.
+   */
+  readonly issuesTruncated?: true | undefined;
+  /**
    * The keys of the error's `meta` that `registerProblemMeta` declared for its code, JSON-safe
    * and bounded — and nothing else off `meta`, which is the operator-only bag the rest of this
    * package keeps OUT of the document (`HttpError`'s doc comment says why). ABSENT when the code
@@ -350,6 +357,7 @@ export const toProblem = (
   // withhold — it names the fields and the expectations of something the caller was never meant to
   // see the inside of. `X_INPUT_INVALID` is a declared 4xx, so it is never opaque.
   const issues = hidden ? undefined : issuesOf(error);
+  const truncated = issues !== undefined && issuesTruncatedOf(error);
   // The same condition, for the same reason: a code nobody classified cannot have declared any
   // key either, so this is the belt on `registerProblemMeta`'s "both registrations are needed".
   const carried = opaque ? undefined : metaOf(error, facts.code);
@@ -376,9 +384,22 @@ export const toProblem = (
     retry: retryOf(error),
     requestId: meta.requestId,
     ...(issues === undefined ? {} : { issues }),
+    ...(truncated ? { issuesTruncated: true as const } : {}),
     ...(carried === undefined ? {} : { meta: carried }),
   };
 };
+
+/** `meta.issuesTruncated === true`, read totally — `issuesOf`'s reason: a value http did not build. */
+function issuesTruncatedOf(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  try {
+    const meta: unknown = (error as Record<string, unknown>)['meta'];
+    if (typeof meta !== 'object' || meta === null) return false;
+    return (meta as Record<string, unknown>)['issuesTruncated'] === true;
+  } catch {
+    return false;
+  }
+}
 
 /** The exact three lines the terminal prints, reused by the overlay and `--json`. */
 export const renderErrorLines = (error: unknown): string => {

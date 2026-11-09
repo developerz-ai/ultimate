@@ -4,6 +4,7 @@ import { afterAll, afterEach, expect, test } from 'bun:test';
 import { recordingClient, setDbClient } from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { database } from './database';
+import { clearDriverStores, driverStores } from './driver-registry';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
 import { testDriver } from './test-driver';
@@ -132,4 +133,13 @@ test('the refusal is a rejection, never a synchronous throw', async () => {
   });
   expect(thrown).toBeUndefined();
   await expect(pending).rejects.toMatchObject({ code: 'X_TEST_DRIVER_CLIENT_CHANGED' });
+});
+
+// `x verify`'s drift step skips only when no SQL store was ever built; a Postgres app (and every
+// test driver, which builds one) must say so as it is constructed (`driver-registry.ts`).
+test('building the test driver notes a Postgres store', () => {
+  clearDriverStores();
+  testDriver();
+  expect(driverStores().sql).toEqual(['postgres']);
+  clearDriverStores();
 });

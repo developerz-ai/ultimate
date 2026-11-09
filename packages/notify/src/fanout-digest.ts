@@ -9,6 +9,7 @@ import { attemptDelivery } from './attempt';
 import type { NotifyChannel } from './channel';
 import type { DigestSlot } from './digest';
 import type { Walk } from './fanout-walk';
+import { chunksOf } from './fanout-walk';
 import type { NotifyEvent, Recipient } from './notification';
 import type { ResolvedDelivery } from './plan';
 import { notifyStores, requireDigest } from './stores';
@@ -34,7 +35,8 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
   });
 
   // ONE STEP PER APPEND, and the step store is the fence: a completed append is never redone, so
-  // the same event never lands in a digest twice. One step for the whole pass re-ran every append
+  // the same event never lands in a digest twice. NOT chunked (`NOTIFY_CHUNK_SIZE`) for that reason:
+  // a chunk step re-runs whole. One step for the whole pass re-ran every append
   // when any one failed, and the window a re-run append had joined may already have been drained
   // and deleted by its owner — nothing in the store remembered it, so the event went out again in
   // a second digest. The appender id is the store's own defence behind the step: an append whose
@@ -68,45 +70,67 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
   if (remaining > 0) await step.sleep(`digest-wait:${channel.name}`, remaining);
 
   const byId = new Map(allowed.map((recipient) => [recipient.id, recipient]));
-  for (const { id, endsAt } of opened.owned) {
-    const recipient = byId.get(id);
-    if (recipient === undefined) continue;
-    // Drain and send are TWO steps on purpose. The drain's result is checkpointed, so an ordinary
-    // retry of the send replays the batch from the step store rather than from a window that is
-    // now empty. What it does not close is a process killed between the drain and its checkpoint;
-    // `DigestStore.drain` says so in its own words, and a durable store can do better.
-    const batch = await step.run(`digest-drain:${channel.name}:${id}`, () =>
-      digest.drain(slotFor(id), endsAt),
-    );
-    if (batch.length === 0) continue;
-    const events = rehydrate(batch, plan.parseParams);
-    const newest = events[events.length - 1] ?? event;
-    const sent = await step.run(`digest-send:${channel.name}:${id}`, (signal) =>
-      attemptDelivery(
-        {
-          ledger: notifyStores().ledger,
-          // The window, not the event: a digest is one delivery for many events, so its ledger
-          // identity is the slot plus the window it closed. Two different windows for the same
-          // recipient are two deliveries and must not dedupe into one. THIS recipient's end, never
-          // the run's maximum: two runs whose maxima coincide would share one key across windows.
-          claim: {
+  let index = 0;
+  for (const chunk of chunksOf(opened.owned)) {
+    // Drain stays ONE STEP PER WINDOW: a drain empties its window, and a process killed between a
+    // drain and its checkpoint loses that batch (`DigestStore.drain`'s seam). A chunked drain would
+    // widen that loss from one batch to five hundred. Its result is checkpointed, so a retry of
+    // the send below replays each batch from the step store rather than from an emptied window.
+    const drained: {
+      readonly recipient: Recipient;
+      readonly endsAt: number;
+      readonly batch: StepOutput<readonly NotifyEvent<unknown>[]>;
+    }[] = [];
+    for (const { id, endsAt } of chunk) {
+      const recipient = byId.get(id);
+      if (recipient === undefined) continue;
+      const batch = await step.run(`digest-drain:${channel.name}:${id}`, () =>
+        digest.drain(slotFor(id), endsAt),
+      );
+      if (batch.length > 0) drained.push({ recipient, endsAt, batch });
+    }
+    // Named by the chunk's place in `opened.owned`, which the append steps' checkpointed answers
+    // decide — stable across a replay.
+    const name = `digest-send:${channel.name}:chunk-${String(index)}`;
+    index += 1;
+    if (drained.length === 0) continue;
+    // ONE send step per chunk. Safe where a chunked APPEND is not: a re-run send is fenced per
+    // recipient by the ledger claim below, so a chunk that failed part-way re-sends nobody it
+    // already reached (counted `replayed`), exactly as `deliver:<channel>:chunk-<n>`.
+    const counts = await step.run(name, async (signal) => {
+      const answer = { delivered: 0, replayed: 0 };
+      for (const { recipient, endsAt, batch } of drained) {
+        const events = rehydrate(batch, plan.parseParams);
+        const newest = events[events.length - 1] ?? event;
+        const sent = await attemptDelivery(
+          {
+            ledger: notifyStores().ledger,
+            // The window, not the event: a digest is one delivery for many events, so its ledger
+            // identity is the slot plus the window it closed. Two different windows for the same
+            // recipient are two deliveries and must not dedupe into one. THIS recipient's end,
+            // never the run's maximum: two runs whose maxima coincide would share one key.
+            claim: {
+              notifier: plan.name,
+              key: `digest:${group}:${String(endsAt)}`,
+              recipient: recipient.id,
+              channel: channel.name,
+            },
             notifier: plan.name,
-            key: `digest:${group}:${String(endsAt)}`,
-            recipient: id,
             channel: channel.name,
+            recipients: 1,
+            ctx,
+            send: (abort) =>
+              channel.deliver({ ctx, recipient, event: newest, batch: events, signal: abort }),
           },
-          notifier: plan.name,
-          channel: channel.name,
-          recipients: 1,
-          ctx,
-          send: (abort) =>
-            channel.deliver({ ctx, recipient, event: newest, batch: events, signal: abort }),
-        },
-        signal,
-      ),
-    );
-    if (sent) tally.delivered += 1;
-    else tally.replayed += 1;
+          signal,
+        );
+        if (sent) answer.delivered += 1;
+        else answer.replayed += 1;
+      }
+      return answer;
+    });
+    tally.delivered += counts.delivered;
+    tally.replayed += counts.replayed;
   }
 }
 

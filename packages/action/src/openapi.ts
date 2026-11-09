@@ -145,6 +145,8 @@ const PROBLEM_SCHEMA: JsonSchemaObject = {
         },
       },
     },
+    // Present, and only ever `true`, when validation stopped at `MAX_ISSUES`: `issues` is a prefix.
+    issuesTruncated: { type: 'boolean', enum: [true] },
     // Only the keys the code declared through `registerProblemMeta`; its shape is per code.
     meta: { type: 'object' },
   },

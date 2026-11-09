@@ -188,6 +188,10 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
     // The loop's next wait, decided by the pass itself so `tick()` and the timer agree: the floor
     // while rows are moving, doubling to the ceiling while there are none.
     delayMs = backoff.next(batch.length > 0);
+    // A FULL batch, all of it published, says there is more behind it: the next pass now, as the
+    // worker's `again`. At the floor a 500-row batch every 200 ms capped the relay at 2,500 rows a
+    // second, a 100k backlog at 40 s. A batch that stopped at a failing row keeps the floor.
+    if (batch.length === batchSize && published === batchSize) delayMs = 0;
     return published;
   };
 

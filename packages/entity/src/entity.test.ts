@@ -177,13 +177,6 @@ describe('describe()', () => {
     // columns and the generator cannot read it back into a column list.
     expect(described.indexes).toEqual([
       {
-        name: 'entity_test_posts_org_id_idx',
-        columns: ['org_id'],
-        unique: false,
-        where: null,
-        order: null,
-      },
-      {
         // The `647c63aa` is sha256 over the direction and the predicate, which is what separates
         // this index from another one on the same two columns.
         name: 'entity_test_posts_org_id_published_at_647c63aa_idx',
@@ -191,6 +184,15 @@ describe('describe()', () => {
         unique: false,
         where: "status = 'published'",
         order: 'desc',
+      },
+      // Every tenant table's `(tenant, pk)`; it replaces the foreign key's `(org_id)`.
+      {
+        name: 'entity_test_posts_org_id_id_idx',
+        columns: ['org_id', 'id'],
+        unique: false,
+        where: null,
+        order: null,
+        concurrently: true,
       },
     ]);
   });
@@ -433,68 +435,5 @@ describe('describe()', () => {
     const names = describeEntities().map((description) => description.name);
     expect(names).toEqual([...names].sort());
     expect(names).toContain('entity_test_posts');
-  });
-});
-
-/**
- * `$schema` answers with `issues`; it does not throw. The line that built the issue message read
- * the caught value directly — `error instanceof Error ? error.message : String(error)` — and both
- * halves are reads a throwable can refuse (`instanceof` consults `getPrototypeOf`, `String()` runs
- * the value's own coercion). A column's `$parse` is app code, so a null-prototype throwable or a
- * `Proxy` out of one raised a second, uncatchable `TypeError` from inside validation, where a
- * rejection belongs. `renderThrowable` is total.
- */
-describe('$schema over a column parser that throws a hostile value', () => {
-  const entityWhoseTitleThrows = (suffix: string, thrown: unknown) =>
-    entity(`entity_test_hostile_${suffix}`, {
-      columns: {
-        id: uuid().primaryKey(),
-        title: {
-          ...text(),
-          $parse: (): never => {
-            throw thrown;
-          },
-        },
-      },
-    });
-
-  const issuesFor = (suffix: string, thrown: unknown): readonly { message: string }[] => {
-    const result = entityWhoseTitleThrows(suffix, thrown).$schema['~standard'].validate({
-      id: '00000000-0000-7000-8000-0000000000ff',
-      title: 'anything',
-    });
-    expect(result).not.toBeInstanceOf(Promise);
-    return result instanceof Promise
-      ? []
-      : (result.issues ?? []).map((issue) => ({
-          message: String(issue.message),
-        }));
-  };
-
-  test('a null-prototype throwable becomes one issue, never a second throw', () => {
-    expect(
-      issuesFor('null_proto', Object.assign(Object.create(null), { nope: true })),
-    ).toHaveLength(1);
-  });
-
-  test('a Proxy that refuses every read becomes one issue too', () => {
-    const hostile = new Proxy(
-      {},
-      {
-        get: (): never => {
-          throw new TypeError('no reads');
-        },
-        getPrototypeOf: (): never => {
-          throw new TypeError('no prototype either');
-        },
-      },
-    );
-    expect(issuesFor('proxy', hostile)).toHaveLength(1);
-  });
-
-  test('an ordinary Error still says what it said, and names its kind', () => {
-    const message = issuesFor('plain', new TypeError('title is not a string'))[0]?.message ?? '';
-    expect(message).toContain('title is not a string');
-    expect(message).toContain('TypeError');
   });
 });

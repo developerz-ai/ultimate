@@ -1460,6 +1460,12 @@
             },
             "type": "array"
           },
+          "issuesTruncated": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
           "meta": {
             "type": "object"
           },
@@ -3037,12 +3043,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -3180,12 +3186,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -3330,12 +3336,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -3637,12 +3643,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -3981,12 +3987,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -4221,12 +4227,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -4360,12 +4366,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -4722,12 +4728,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -4852,12 +4858,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -4975,12 +4981,12 @@
         "operationId": "publicPostSlugs",
         "parameters": [
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -5109,12 +5115,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -5241,12 +5247,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }
@@ -5389,12 +5395,12 @@
             }
           },
           {
-            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
             "in": "query",
             "name": "_first",
             "required": false,
             "schema": {
-              "maximum": 10000,
+              "maximum": 500,
               "minimum": 1,
               "type": "integer"
             }

@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { MAX_PAGE_SIZE } from '@ultimat3/entity';
-import { pageControlsOf } from './page-controls';
+import { assertMaxPage, MAX_WIRE_PAGE_SIZE, pageControlsOf } from './page-controls';
 
 const refusal = (values: Parameters<typeof pageControlsOf>[1]): string => {
   try {
@@ -29,12 +29,38 @@ describe('pageControlsOf', () => {
     expect(split.page).toEqual({ first: 2, after: 'c' });
   });
 
-  test('the bound is the one paginate() asserts, checked here as a 400', () => {
-    expect(pageControlsOf('orgFeed', { _first: String(MAX_PAGE_SIZE) }).page).toEqual({
-      first: MAX_PAGE_SIZE,
-    });
-    expect(refusal({ _first: String(MAX_PAGE_SIZE + 1) })).toContain('X_INPUT_INVALID');
+  // `_first=10000` over the wire, times the per-IP budget, is a full-table read per request: the
+  // wire's bound is MAX_WIRE_PAGE_SIZE, and only a read that declares `maxPage` raises it.
+  test('the wire bound is MAX_WIRE_PAGE_SIZE (500), checked here as a 400', () => {
+    expect(MAX_WIRE_PAGE_SIZE).toBe(500);
+    expect(pageControlsOf('orgFeed', { _first: '500' }).page).toEqual({ first: 500 });
+    expect(refusal({ _first: '501' })).toContain('X_INPUT_INVALID');
+    expect(refusal({ _first: '501' })).toContain('between 1 and 500');
     expect(refusal({ _first: '0' })).toContain('X_INPUT_INVALID');
+  });
+
+  test('a declared maxPage raises the wire bound, up to the one paginate() asserts', () => {
+    expect(pageControlsOf('orgFeed', { _first: '2000' }, 2000).page).toEqual({ first: 2000 });
+    expect(() => pageControlsOf('orgFeed', { _first: '2001' }, 2000)).toThrow('between 1 and 2000');
+    expect(
+      pageControlsOf('orgFeed', { _first: String(MAX_PAGE_SIZE) }, MAX_PAGE_SIZE).page,
+    ).toEqual({ first: MAX_PAGE_SIZE });
+  });
+
+  test('a maxPage no page can hold is X_QUERY_MAX_PAGE_INVALID where it is declared', () => {
+    for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, MAX_PAGE_SIZE + 1, '9']) {
+      try {
+        assertMaxPage(bad);
+        expect.unreachable(`maxPage ${String(bad)} was accepted`);
+      } catch (error) {
+        expect(isUltimateError(error) ? error.code : String(error)).toBe(
+          'X_QUERY_MAX_PAGE_INVALID',
+        );
+      }
+    }
+    expect(() => assertMaxPage(undefined)).not.toThrow();
+    expect(() => assertMaxPage(1)).not.toThrow();
+    expect(() => assertMaxPage(MAX_PAGE_SIZE)).not.toThrow();
   });
 
   test('a lenient parse is not a page size', () => {

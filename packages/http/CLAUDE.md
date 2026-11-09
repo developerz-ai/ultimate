@@ -148,9 +148,9 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `registerProblemMeta({ CODE: { publicCause: true } })`). `toProblem(error, { dev })` defaults `dev`
   to false. An unclassified 5xx carries nothing off the throwable. **A hidden cause hides the `fix`
   too**: `callerFix`, else `x errors explain <CODE> --json` — never `facts.fix` outside dev.
-- **The document carries the ISSUE LIST** as a top-level `issues` member: `issuesOf` is total,
-  all-or-nothing, absent (never `[]`) when none, dropped past `MAX_PROBLEM_ISSUES` (100), dropped under
-  the opacity condition; `received` forced to `''`, entries rebuilt member by member.
+- **The document carries the ISSUE LIST** (`issues`): `issuesOf` is total, all-or-nothing,
+  absent when none, past 100 or opaque; `received` is `''`. `issuesTruncated: true` rides only
+  with a carried list and `meta.issuesTruncated === true`. Both are reserved meta keys.
 - **`meta` reaches the document only by declaration** (`registerProblemMeta({ CODE: [keys] })`, app
   codes only; not `issues`, not `__proto__`): `wireMeta` copies declared keys through
   `Object.defineProperty`, bounded by `MAX_PROBLEM_META_BYTES`, dropped when opaque.

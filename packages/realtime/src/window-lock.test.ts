@@ -91,4 +91,21 @@ describe('WindowLock', () => {
     await expect(thrown).rejects.toThrow('synchronous');
     await expect(lock.run(async () => 'still here')).resolves.toBe('still here');
   });
+
+  test('depth counts every task queued or running, and falls as each one settles', async () => {
+    const lock = new WindowLock();
+    const gate = held();
+    expect(lock.depth).toBe(0);
+    const first = lock.run(async () => {
+      await gate.promise;
+    });
+    // Handed to the lane as its task's rejection: input, never this test's verdict.
+    const rejection = new TypeError('a rejection settles its slot too');
+    const second = lock.run(() => Promise.reject(rejection));
+    expect(lock.depth).toBe(2);
+    gate.release();
+    await first;
+    await expect(second).rejects.toThrow('settles');
+    expect(lock.depth).toBe(0);
+  });
 });

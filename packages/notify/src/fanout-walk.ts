@@ -33,3 +33,17 @@ export const countSend = (tally: Tally, sent: boolean): void => {
   if (sent) tally.delivered += 1;
   else tally.replayed += 1;
 };
+
+/**
+ * Recipients per preference read and per delivery step. 10k recipients was 20k+ preference round
+ * trips and 10k `x_job_steps` rows for two channels; chunked, it is 20 reads and 20 rows a channel.
+ * 500 is `DEFAULT_MAX_RECIPIENTS`: a default notifier is one chunk, exactly one read and one step.
+ */
+export const NOTIFY_CHUNK_SIZE = 500;
+
+/** `items` in `NOTIFY_CHUNK_SIZE` slices, in order — for the audience, the order `open` checkpointed. */
+export function* chunksOf<T>(items: readonly T[]): Generator<readonly T[]> {
+  for (let start = 0; start < items.length; start += NOTIFY_CHUNK_SIZE) {
+    yield items.slice(start, start + NOTIFY_CHUNK_SIZE);
+  }
+}

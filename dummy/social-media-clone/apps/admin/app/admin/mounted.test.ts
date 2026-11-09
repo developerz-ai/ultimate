@@ -12,6 +12,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // `packages/*/src/**` — but a test file reaches the admin directly and has to say so.
 import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
+import { MCP_SCOPE, mcpOAuth } from '@social-media-clone/web/app/oauth/server';
 import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
 import { memoryJobDriver, setJobDriver } from '@ultimat3/jobs';
@@ -148,6 +149,24 @@ test('the ops board and the jobs screen are served by the same mount, behind the
   expect(html).toContain('href="/admin/jobs"');
 });
 
+/** A consented grant for `subject`, as `/oauth/consent`'s approve leaves one. */
+async function connectAgent(subject: string): Promise<void> {
+  const redirect = 'http://127.0.0.1:33418/callback';
+  const { client } = await mcpOAuth.registerClient({ name: 'Desktop', redirectUris: [redirect] });
+  const read = await mcpOAuth.readRequest(
+    `http://localhost/oauth/consent?${new URLSearchParams({
+      response_type: 'code',
+      client_id: client.clientId,
+      redirect_uri: redirect,
+      code_challenge: 'c'.repeat(43),
+      code_challenge_method: 'S256',
+      scope: MCP_SCOPE,
+    })}`,
+  );
+  if (!read.ok) return expect.unreachable(read.description);
+  await mcpOAuth.approve({ subject, request: read.request });
+}
+
 test('the suspend form, posted: refused for the read-only operator, run for one who holds the grant', async () => {
   const mara = seedId('user:mara');
   const form = { _operation: 'action', name: 'user.suspend' };
@@ -161,10 +180,15 @@ test('the suspend form, posted: refused for the read-only operator, run for one 
   expect(refused.html).toContain('admin:write');
   expect(await suspended()).toBe(false);
 
+  // She connected an MCP client before: a live OAuth grant the suspension must end.
+  await connectAgent(mara);
+
   // Half two: the same POST from an operator runs the handler and lands back on the row.
   const ran = await ask(['operator'], `/admin/users/${mara}`, { form });
   expect(ran.status).toBe(`/admin/users/${mara}`);
   expect(await suspended()).toBe(true);
+  // Revoked, not merely refused while suspended: lifting the suspension must not revive them.
+  expect(await mcpOAuth.revoke({ subject: mara })).toBe(0);
 
   // Half three: suspended now, so `when` hides the button on her row — and the server asks the
   // same rule again, so the forged second POST is X_ADMIN_ACTION_NOT_APPLICABLE, not a re-run.

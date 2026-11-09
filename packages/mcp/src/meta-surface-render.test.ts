@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { agentActor } from '@ultimat3/core';
+import { oneLineParams, renderCatalog } from './meta-catalog-render';
 import type { MetaAction, MetaResource } from './meta-surface';
-import { oneLineParams, renderCatalog } from './meta-surface';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
 import { mcpServer } from './server';

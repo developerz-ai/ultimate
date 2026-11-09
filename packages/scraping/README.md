@@ -399,6 +399,7 @@ on a machine with no browser — the case CI is.
 | `driver-cdp.ts` / `cdp-*.ts` | the real browser, over a structural CDP port |
 | `driver-fake.ts` / `driver-recorded.ts` / `html-*.ts` | the offline drivers, on Bun's `HTMLRewriter` |
 | `http.ts` / `http-recorded.ts` | the second transport, live and replayed |
+| `intercept.ts` / `pinned-host.ts` / `browser-dial.ts` | `allowHosts`: one name verdict for every driver, then the DNS half for a host a wildcard admitted — resolved and pinned on the HTTP leg and robots read, resolved before release on the browser leg (a private or unresolvable answer is a `refused: 'host'` ring entry). An exact rule and a proxied session are not resolved |
 | `auth.ts` / `session-state.ts` | acquire → persist → reuse → validate → burn. The session key encodes each part (`<sanitised>.<digest>`), so two account names that differ only outside `[a-zA-Z0-9._-]` are two sessions. A stored session is sealed. `burnSession(plan, seen)` takes `recordVersion(record)` of the record the run used, so a record another run saved since is not burned |
 | `event-prompt.ts` | `eventPrompt()` and `answerPrompt()`: a prompt answered from another process, over the job event bus, with the browser open |
 | `cdp-resolver.ts` | a browser rented per session: acquired once, released once |

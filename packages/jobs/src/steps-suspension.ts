@@ -43,11 +43,22 @@ export function isWaitTimedOut(output: unknown): boolean {
 
 const WAIT_FLOOR_KEY = '~ultimate.waitFloor';
 const WAIT_FLOOR_ID_KEY = '~ultimate.waitFloorId';
+const WAIT_HORIZON_KEY = '~ultimate.waitHorizon';
+const WAIT_SINCE_HORIZON_KEY = '~ultimate.waitSinceHorizon';
+const WAIT_REFUSED_KEY = '~ultimate.waitRefused';
 
-/** Where a wait's next search starts: at `afterMs`, and past the event `afterId` names. */
+/**
+ * Where a wait's next search starts: at `afterMs`, past the event `afterId` names — and, given a
+ * `horizon` (`EventLookup.mark`), at every event that horizon could not see, whatever its stamp.
+ */
 export interface WaitFloor {
   readonly afterMs: number;
   readonly afterId?: string;
+  readonly horizon?: string;
+  /** The MARK's horizon: the wait's own line, kept by every refusal (`EventSince`). */
+  readonly sinceHorizon?: string;
+  /** Events refused BEHIND the cursor, excluded by id (`EventSince.refused`). */
+  readonly refused?: readonly string[];
 }
 
 /**
@@ -56,10 +67,19 @@ export interface WaitFloor {
  * event, so without this a repaired publisher's event sat behind the refused one until its TTL.
  * The refused event's id rides with its instant: a floor of `publishedAt + 1` skipped every valid
  * event stamped in the same millisecond. A record written before the id has `afterMs` alone.
+ * Over a bus that marks (`EventLookup.mark`), every parked wait holds one from its first park: the
+ * horizon rides here, since a re-poll must search under the line its wait began at.
  */
-export const waitFloor = (floor: WaitFloor): Record<string, number | string> => ({
+export const waitFloor = (
+  floor: WaitFloor,
+): Record<string, number | string | readonly string[]> => ({
   [WAIT_FLOOR_KEY]: floor.afterMs,
   ...(floor.afterId === undefined ? {} : { [WAIT_FLOOR_ID_KEY]: floor.afterId }),
+  ...(floor.horizon === undefined ? {} : { [WAIT_HORIZON_KEY]: floor.horizon }),
+  ...(floor.sinceHorizon === undefined ? {} : { [WAIT_SINCE_HORIZON_KEY]: floor.sinceHorizon }),
+  ...(floor.refused === undefined || floor.refused.length === 0
+    ? {}
+    : { [WAIT_REFUSED_KEY]: floor.refused }),
 });
 
 export function waitFloorOf(output: unknown): WaitFloor | undefined {
@@ -68,7 +88,18 @@ export function waitFloorOf(output: unknown): WaitFloor | undefined {
   const afterMs = record[WAIT_FLOOR_KEY];
   if (typeof afterMs !== 'number') return undefined;
   const afterId = record[WAIT_FLOOR_ID_KEY];
-  return typeof afterId === 'string' ? { afterMs, afterId } : { afterMs };
+  const horizon = record[WAIT_HORIZON_KEY];
+  const sinceHorizon = record[WAIT_SINCE_HORIZON_KEY];
+  const refused = record[WAIT_REFUSED_KEY];
+  return {
+    afterMs,
+    ...(typeof afterId === 'string' ? { afterId } : {}),
+    ...(typeof horizon === 'string' ? { horizon } : {}),
+    ...(typeof sinceHorizon === 'string' ? { sinceHorizon } : {}),
+    ...(Array.isArray(refused)
+      ? { refused: refused.filter((id): id is string => typeof id === 'string') }
+      : {}),
+  };
 }
 
 /**

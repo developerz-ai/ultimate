@@ -71,10 +71,10 @@ describe.each(['purge', 'stale'] as const)(
       const served = await controller.serve(isrKeyIn(spelling), () => '<p>the article</p>');
       expect(served.entry.ttlMs).toBe(600_000);
       expect(served.result.headers['surrogate-key']).toBe('post e:post');
-      expect(controller.store().paths()).toEqual([KEY]);
+      expect(await controller.store().paths()).toEqual([KEY]);
 
-      expect(controller.revalidateByTags([postTag])).toEqual([KEY]);
-      const held = controller.store().get(KEY);
+      expect(await controller.revalidateByTags([postTag])).toEqual([KEY]);
+      const held = await controller.store().get(KEY);
       if (onInvalidate === 'purge') expect(held).toBeUndefined();
       else expect(held?.stale).toBe(true);
     });
@@ -100,14 +100,14 @@ describe('unit · a key no route owns is never stored', () => {
       expect(served.result.headers['surrogate-key']).toBeUndefined();
     }
     expect(renders).toBe(3);
-    expect(controller.store().paths()).toEqual([]);
+    expect(await controller.store().paths()).toEqual([]);
     expect(controller.inflight()).toBe(0);
   });
 
   test('regenerate() does not store it either', async () => {
     const controller = isrController({ routes: describePages });
     await controller.regenerate(UNOWNED, () => '<p>x</p>');
-    expect(controller.store().paths()).toEqual([]);
+    expect(await controller.store().paths()).toEqual([]);
   });
 
   test('a copy an earlier release left under such a key is dropped, not served', async () => {

@@ -53,7 +53,13 @@ export function h(
   // The overloads above are where a call is checked; a node carries the pair erased, which is all
   // `render-html.ts` ever reads — it hands `props` back to the `type` it arrived with.
   const erased = type as string | JsxComponent;
-  const base = (props ?? {}) as JsxProps;
+  if (props === null) {
+    // No props to copy: the spread below cloned an empty object for every bare `<td>` on the page.
+    if (children.length === 0) return { [JSX_NODE]: true, type: erased, props: {} };
+    const only = children.length === 1 ? children[0] : children;
+    return { [JSX_NODE]: true, type: erased, props: { children: only } };
+  }
+  const base = props as JsxProps;
   if (children.length === 0) return { [JSX_NODE]: true, type: erased, props: base };
   return {
     [JSX_NODE]: true,

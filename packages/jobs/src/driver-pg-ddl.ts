@@ -194,6 +194,14 @@ create table if not exists x_job_events (
 create index if not exists x_job_events_lookup_idx
   on x_job_events (name, published_at);
 
+-- The transaction that published the event. A wait records what it could see when it began and
+-- also matches every event that snapshot could not, since a publish is stamped at insert and seen
+-- at commit. Null on a row from before the column, which is matched by its stamp alone. Added by
+-- alter because x_job_events shipped without it.
+alter table x_job_events add column if not exists xact xid8;
+
+create index if not exists x_job_events_xact_idx on x_job_events (name, xact);
+
 -- The steps parked on an event, which is what a waking publish reads. Partial, so it holds only
 -- the open waits: without it each publish is a scan of every step ever written.
 create index if not exists x_job_steps_waiting_idx
@@ -221,6 +229,12 @@ create index if not exists x_jobs_created_idx on x_jobs (created_at desc, id des
 create index if not exists x_jobs_finished_idx
   on x_jobs (updated_at)
   where state in ('done', 'failed', 'dead', 'cancelled');
+
+-- The done half of the retention sweep, on its own. Done rows are kept a shorter window than
+-- failed, dead and cancelled ones, so a walk of the index above in updated_at order stepped over
+-- every younger dead row between the old done ones on every batch. Partial over the one state, so
+-- the sweep seeks to its cutoff and every row it reads is a row it deletes.
+create index if not exists x_jobs_done_idx on x_jobs (updated_at) where state = 'done';
 
 -- What the queue depth read (SQL_STATS) reads, every 15 seconds from every worker. Partial over
 -- the six states it counts, so the read is a range over the counted rows and never a pass over the

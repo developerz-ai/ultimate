@@ -557,7 +557,9 @@ side effect. Anything that loads an app's source — `x dev`, `x build`, `server
 `@ultimat3/render/client` is the **browser** entry — what an island or a page script calls:
 `navigate`, `refresh`, `openModal`, `closeModal`, `NavigateToOptions`,
 `NavigationModalPathInvalidError`, `NAVIGATE_EVENT`, `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`,
-`disposeIslands`, `scheduleRefresh`.
+`NAVIGATION_MODAL_ATTRIBUTE` (the `data-x-modal` the router marks its `<dialog>` with — style
+`dialog[data-x-modal]` off the constant, never a restated string), `disposeIslands`,
+`scheduleRefresh`.
 The barrel bundles for the browser but its `sideEffects` keeps `errors.ts` — render's code table,
 and core's and schema's titles tables behind it — in every chunk that reaches it; this entry's
 graph is the navigation helpers plus `@ultimat3/core/page` (`client-bundle.test.ts`). `As of
@@ -658,8 +660,16 @@ a job boundary the class is gone and the `code` is what survives — match on th
   pages by hand, so nobody forgets one. `controller.attach()` installs it as the
   framework's `Revalidator`, and the function it returns releases **both** halves — the
   dependents and the revalidator slot, the latter only while it is still this controller's.
-  The default store (`memoryIsrStore`) is capped at `DEFAULT_ISR_MAX_ENTRIES` (1,000) pages,
-  least recently generated evicted first. One regeneration holds its page for at most
+  The default store (`memoryIsrStore`) is capped at `DEFAULT_ISR_MAX_ENTRIES` (1,000) pages
+  AND `DEFAULT_ISR_MAX_BYTES` (256 MiB of `html.length`; `memoryIsrStore({ maxEntries, maxBytes })`),
+  least recently USED evicted first — a hit moves a page to the back, a stale mark does not, and a
+  page larger than the whole byte cap is not kept.
+  `storageIsrStore({ disk, maxEntries?, maxBytes?, sweepEvery?, prefix? })` is the SHARED store:
+  pages and tag-fence tokens as objects on any disk with `put`/`get`/`delete`/`list` (`IsrDisk` —
+  `@ultimat3/storage`'s `StorageDriver` as it is), so every replica reads one copy. A write is
+  checked, written and checked again (a disk has no compare-and-put); eviction is oldest write
+  first. Every `IsrStore` method may answer a promise (`IsrAnswer<T>`); the controller awaits each,
+  and `revalidateByTags` / `markStale` are async. One regeneration holds its page for at most
   `DEFAULT_ISR_REGENERATE_DEADLINE_MS` (30 s; `isrController({ regenerateDeadlineMs })`),
   so a render that never settles no longer pins the page for the life of the process. A stored
   path takes its TTL and tags from the most specific matching route (static > `:param` >

@@ -2,6 +2,6 @@
 
 CREATE INDEX likes_member_id_idx ON public.likes USING btree (member_id);
 
-CREATE INDEX likes_org_id_idx ON public.likes USING btree (org_id);
+CREATE INDEX likes_org_id_post_id_member_id_idx ON public.likes USING btree (org_id, post_id, member_id);
 
 CREATE INDEX likes_post_id_idx ON public.likes USING btree (post_id);

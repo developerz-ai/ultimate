@@ -3,11 +3,12 @@
 // `server.ts` for the size ceiling only — it holds no gate of its own: every call it runs goes back
 // through the server's `resolve` → `dispatch`, the flat path.
 
+import { renderCatalog } from './meta-catalog-render';
 import { META_UNKNOWN_FIX } from './meta-errors';
 import type { MetaHost } from './meta-host';
 import { resolveAddressed } from './meta-host';
 import { splitCall } from './meta-split-call';
-import { DESCRIBE_RESOURCE, LIST_RESOURCES, MetaSurface, renderCatalog } from './meta-surface';
+import { DESCRIBE_RESOURCE, LIST_RESOURCES, MetaSurface } from './meta-surface';
 import type { McpCaller } from './registry';
 import { jsonResult, textResult } from './registry';
 import { validateArgs } from './validate-args';
@@ -41,7 +42,10 @@ export async function metaCall(
   }
   if (name === LIST_RESOURCES) {
     host.audit.toolCall({ tool: name, outcome: 'ok', caller });
-    return resultResponse(id, textResult(renderCatalog(meta.listResources(caller), surface)));
+    return resultResponse(
+      id,
+      textResult(renderCatalog(meta.listResources(caller), surface, host.catalogDetail)),
+    );
   }
   if (name === DESCRIBE_RESOURCE) {
     const described = meta.describe(args.value['resources'] as readonly string[], caller);

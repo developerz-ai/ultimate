@@ -36,6 +36,12 @@ export interface IdbTransactionLike {
 
 export interface IdbDatabaseLike {
   readonly objectStoreNames: { contains(name: string): boolean };
+  /**
+   * Another tab asked for a NEWER version. Until every open connection closes, that tab's open is
+   * `blocked` — so a connection that ignores this holds every later schema off this origin.
+   */
+  onversionchange: (() => void) | null;
+  close(): void;
   createObjectStore(name: string): unknown;
   transaction(
     names: string | readonly string[],

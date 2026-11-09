@@ -6,15 +6,25 @@
 import { type Clock, finiteOption, logger, renderThrowable, systemClock } from '@ultimat3/core';
 import type { ChangeEvent, ChangeOp, PostgresChangeFeedOptions } from './changefeed';
 import { ReplicationProtocolError } from './errors';
-import { ByteReader, ByteWriter, epochMsToPgTimestamp, printLsn } from './pg-bytes';
-import { PgConnection } from './pg-connection';
+import { ByteReader } from './pg-bytes';
+import type { PgConnection } from './pg-connection';
 import { assertIdentifier } from './pg-identifier';
-import { paramsChannelTables } from './pg-identity-tables';
-import { preflight } from './pg-preflight';
+import { dialReplication, type SlotGap } from './pg-replication-dial';
+import {
+  type ConfirmAttempt,
+  StreamLiveness,
+  silenceReason,
+  unsettledReason,
+} from './pg-replication-liveness';
+import { changeLsn, standbyStatus } from './pg-replication-position';
 import { replicatedImages, tenantOf } from './pg-replication-row';
-import { bunPgStream, parsePgUrl } from './pg-socket';
+import type { ReplicationStreamStats } from './pg-replication-stats';
 import type { PhysicalRow } from './pg-values';
 import { keyedWrite, PgOutputDecoder, type PgOutputMessage, type PgRelation } from './pgoutput';
+
+// Moved next door; their importers (`server.ts`, `changefeed.ts`, the tests) keep this path.
+export { changeLsn, commitPositionOf } from './pg-replication-position';
+export type { ReplicationStreamStats } from './pg-replication-stats';
 
 const DEFAULT_STATUS_INTERVAL_MS = 10_000;
 
@@ -28,34 +38,6 @@ const DEFAULT_STATUS_INTERVAL_MS = 10_000;
  */
 const MAX_CONFIRM_FAILURES = 3;
 
-/** `r` — the standby status update, the only frontend message a walsender listens for. */
-const STANDBY_STATUS = 0x72;
-
-export interface ReplicationStreamStats {
-  readonly delivered: number;
-  /** Rows for a table outside the entity list — the publication is wider than the app is. */
-  readonly skipped: number;
-  /** Rows replayed from before the resume position, dropped so `onChange` sees each one once. */
-  readonly replayed: number;
-  /**
-   * Changes delivered from a relation whose replica identity is not FULL — so the `before` row is
-   * the key columns alone (or absent), and the live matcher's "did this row leave the result set"
-   * is decided on a partial row. `X_LIVE_REPLICA_IDENTITY` warns about the CONFIGURATION once at
-   * preflight; this counts the decisions it actually cost, which is the half a running node can
-   * be alerted on. Inserts never count: there is no `before` to be partial.
-   */
-  readonly partialBefore: number;
-  /**
-   * Standby-status writes that have failed in a row without one landing in between. It is the half
-   * of a broken stream the delivery count cannot show: the read side goes on delivering while
-   * `confirmed_flush_lsn` stops advancing, so WAL accumulates on the primary with nothing else
-   * reporting it. Reset by the first confirm that lands.
-   */
-  readonly confirmFailures: number;
-  /** Why the pump stopped, or `null` while live. Recorded here and ANNOUNCED through `onEnd`. */
-  readonly failure: string | null;
-}
-
 interface Transaction {
   readonly commitLsn: bigint;
   readonly commitAt: number;
@@ -66,27 +48,13 @@ interface Transaction {
   write?: string | undefined;
 }
 
-/**
- * `<commit lsn><position in transaction>`, both zero-padded hex, so string order is stream order.
- *
- * The commit lsn alone is not enough: every row of one transaction shares it, and the replicator
- * drops anything that does not strictly increase — a five-row insert would deliver one row. The
- * per-record WAL position is not enough either: logical decoding emits *transactions* in commit
- * order, so a later-committing transaction can carry lower record positions than an earlier one.
- * The pair is monotonic in the order changes are delivered and identical on replay, which is what
- * makes an at-least-once redelivery deduplicate instead of duplicating.
- */
-export const changeLsn = (commitLsn: bigint, sequence: number): string =>
-  commitLsn.toString(16).padStart(16, '0') + sequence.toString(16).padStart(8, '0');
-
-/** The commit position inside a change lsn — where a resume asks the server to restart. */
-export const commitPositionOf = (lsn: string): bigint => BigInt(`0x${lsn.slice(0, 16) || '0'}`);
-
 export interface ReplicationStreamHandlers {
   readonly from?: string | undefined;
   onChange(event: ChangeEvent): void | Promise<void>;
   /** Called once when the pump dies on its own; never for a `stop()`. */
   readonly onEnd?: ((reason: string) => void) | undefined;
+  /** The stream is continuous no more — its slot was recreated under `from` — so re-read all. */
+  readonly onResync?: ((reason: string) => void) | undefined;
 }
 
 /**
@@ -114,6 +82,10 @@ export class PgReplicationStream {
   #partialBefore = 0;
   #confirmFailures = 0;
   #failure: string | null = null;
+  readonly #liveness = new StreamLiveness();
+  /** A slot created under `from` by a dial that has not yet got through (`SlotGap`). */
+  readonly #slotGap: SlotGap = { createdUnder: null };
+  #intervalMs = DEFAULT_STATUS_INTERVAL_MS;
   #onEnd: ((reason: string) => void) | undefined;
 
   constructor(options: PostgresChangeFeedOptions) {
@@ -145,63 +117,38 @@ export class PgReplicationStream {
   /** Resolves once the stream is live. Delivery continues on the pump until `stop()`. */
   async start(handlers: ReplicationStreamHandlers): Promise<void> {
     if (this.#running) return;
-    // `#pump` is the previous run's *terminal cleanup*, not just its read loop: `#drain` awaits
-    // `#die`, and `#die` awaits `connection.close()`. `#die` clears `#running` and nulls
-    // `#connection` before that close settles, so a restart that dialled here would replace
-    // `#pump` with its own and leave the old walsender holding the slot — the next `stop()` would
-    // await only the new pump and report a released slot to a supervisor whose next process then
-    // collides with one that is still `active`. Waiting for it is waiting for the prior teardown.
+    // `#pump` is the previous run's TERMINAL CLEANUP (`#die` awaits `close()`): dialling before it
+    // settles leaves the old walsender holding the slot while `stop()` reports it released. A
+    // destroyed run has no cleanup left to wait for (`#letPumpGo`).
     const previous = this.#pump;
     this.#pump = null;
     if (previous !== null) await previous;
-    const slot = this.#slot;
-    const publication = this.#publication;
-    const target = parsePgUrl(this.#options.url);
-    const stream = await (this.#options.stream ?? bunPgStream)(target);
-    const connection = await PgConnection.open({
-      stream,
-      user: target.user,
-      password: target.password,
-      database: target.database,
-      replication: 'database',
-      applicationName: `ultimate-replicator:${slot}`,
-      rng: this.#options.rng,
-      ssl: target.ssl,
-    });
+    const names = { slot: this.#slot, publication: this.#publication, entities: this.#entities };
+    const dialed = await dialReplication(this.#options, names, handlers.from, this.#slotGap);
+    const connection = dialed.connection;
     this.#connection = connection;
-    try {
-      const full = this.#options.fullIdentityTables ?? paramsChannelTables();
-      await preflight(connection, slot, publication, this.#entities, new Set(full));
-      const from = handlers.from;
-      this.#confirmed = from === undefined ? 0n : commitPositionOf(from);
-      await connection.startCopyBoth(
-        `START_REPLICATION SLOT ${slot} LOGICAL ${printLsn(this.#confirmed)} ` +
-          `(proto_version '1', publication_names '${publication}', messages 'true')`,
-      );
-    } catch (failure) {
-      // The dial failure is the one that explains the boot, so a teardown that also failed must
-      // not replace it — `stop()` has released everything either way by the time it rethrows.
-      await this.stop().catch(() => undefined);
-      throw failure;
-    }
+    this.#confirmed = dialed.confirmed;
     this.#running = true;
     // A restart that kept the last death in `stats()` would report a live stream as failed.
     this.#failure = null;
     this.#confirmFailures = 0;
     this.#onEnd = handlers.onEnd;
-    this.#timer = setInterval(
-      () => {
-        void this.#confirmOnTimer();
-      },
-      finiteOption(
-        'the replication stream',
-        'statusIntervalMs',
-        this.#options.statusIntervalMs ?? DEFAULT_STATUS_INTERVAL_MS,
-      ),
+    this.#liveness.reset();
+    // A confirm the last run parked on a dead socket never settles: queued behind it, every
+    // confirm of this run would park too, and the slot would never be confirmed again.
+    this.#writing = Promise.resolve();
+    this.#intervalMs = finiteOption(
+      'the replication stream',
+      'statusIntervalMs',
+      this.#options.statusIntervalMs ?? DEFAULT_STATUS_INTERVAL_MS,
     );
+    this.#timer = setInterval(() => this.#tick(), this.#intervalMs);
     // A pending timer must not be what keeps `x dev` alive after the app is done with it.
     this.#timer.unref?.();
-    this.#pump = this.#drain(connection, handlers);
+    this.#pump = this.#drain(connection, { ...handlers, from: dialed.from });
+    // Before the first change of the new slot can reach anyone: every reader re-reads NOW, rather
+    // than a quiet table staying stale until its next write.
+    if (dialed.resync !== null) handlers.onResync?.(dialed.resync);
   }
 
   /**
@@ -255,6 +202,15 @@ export class PgReplicationStream {
     const connection = this.#connection;
     this.#connection = null;
     connection?.destroy();
+    this.#letPumpGo();
+  }
+
+  /**
+   * After a DESTROY the teardown is done, but the pump may be parked on a read a half-open socket
+   * never ends. Nothing waits on it; `#drain`'s connection fence keeps it off the next run.
+   */
+  #letPumpGo(): void {
+    this.#pump = null;
   }
 
   /**
@@ -265,7 +221,7 @@ export class PgReplicationStream {
    * and a `#connection` the next `start()` overwrites instead of releasing. A `stop()` that got
    * here first owns the connection, and its exit is an orderly one, not a failure.
    */
-  async #die(reason: string): Promise<void> {
+  async #die(reason: string, goodbye: 'close' | 'destroy' = 'close'): Promise<void> {
     if (!this.#running) return;
     this.#running = false;
     this.#failure = reason;
@@ -274,8 +230,14 @@ export class PgReplicationStream {
     this.#connection = null;
     // The loop records, reports and ends rather than throwing into a promise nothing awaits.
     logger.error('replication stream ended', { slot: this.#options.slot, error: reason });
+    // A liveness death DESTROYS: the far end is not answering, and a `Terminate` written into it
+    // is a write nothing settles — `#die` would park there and never reach `onEnd`.
+    if (goodbye === 'destroy') {
+      connection?.destroy();
+      this.#letPumpGo();
+    }
     try {
-      await connection?.close();
+      if (goodbye === 'close') await connection?.close();
     } catch {
       // The socket is already unusable and `failure` above is the report that matters — a
       // goodbye that throws must not become the rejection `#drain` promised never to produce.
@@ -300,7 +262,12 @@ export class PgReplicationStream {
   async #drain(connection: PgConnection, handlers: ReplicationStreamHandlers): Promise<void> {
     try {
       for (;;) {
+        this.#liveness.awaitingRead();
         const payload = await connection.nextCopyData();
+        // A run that was let go — `stop()`, `abandon()`, a liveness death — ends here: nothing it
+        // reads afterwards is this stream's, and its `#die` would end the NEXT run.
+        if (this.#connection !== connection) return;
+        this.#liveness.heard();
         if (payload === undefined) {
           // The walsender ended the copy. However politely it said so, nothing reads the slot
           // again until something restarts this — which is a failure, not a shutdown.
@@ -330,6 +297,7 @@ export class PgReplicationStream {
         }
       }
     } catch (failure) {
+      if (this.#connection !== connection) return;
       await this.#die(renderThrowable(failure));
     }
   }
@@ -430,25 +398,45 @@ export class PgReplicationStream {
     this.#delivered += 1;
   }
 
+  /** One status interval: the read deadline, then the confirm (`pg-replication-liveness.ts`). */
+  #tick(): void {
+    // Silence first: a half-open socket accepts every write, so no confirm ever fails on one.
+    if (this.#liveness.silentTooLong()) {
+      void this.#die(silenceReason(this.#intervalMs), 'destroy');
+      return;
+    }
+    void this.#confirmOnTimer();
+  }
+
   /**
-   * The TIMER's confirm, and the one call that may not reject. `void this.#confirm()` handed the
-   * rejection to nobody: `#confirm` awaits `#writing`, which rejects the moment the socket is gone,
-   * and no package in this repo installs an `unhandledRejection` handler, so Bun ends the process —
-   * an uncoded `TypeError` reaching the operator with no code and no `fix:`, and exit code 1 on an
-   * otherwise clean shutdown.
-   *
-   * Worse than the crash was the silence before it: `stats().failure` stayed `null`, so `/readyz`
-   * reported the replicator live while `confirmed_flush_lsn` stopped advancing and WAL piled up on
-   * the primary. A run of failures is now a death, the same way `#drain`'s catch is — the four
-   * things `#die` owns go together or not at all.
+   * The TIMER's confirm, and the one call that may not reject: nothing awaits it, and an unhandled
+   * rejection ends the Bun process uncoded. A run of failures — rejected, or still unsettled at the
+   * next interval — is a death instead, so `stats().failure` and `/readyz` see a slot that is not
+   * being confirmed while WAL piles up on the primary.
    */
   async #confirmOnTimer(): Promise<void> {
+    const connection = this.#connection;
+    if (connection === null) return;
+    const attempt: ConfirmAttempt | null = this.#liveness.begin();
+    if (attempt === null) {
+      // The last interval's write is still on the wire: that is this interval's failure.
+      this.#confirmFailures += 1;
+      const unsettled = this.#confirmFailures;
+      logger.warn('replication confirm unsettled', { slot: this.#options.slot, unsettled });
+      if (unsettled >= MAX_CONFIRM_FAILURES) {
+        await this.#die(unsettledReason(unsettled, this.#intervalMs), 'destroy');
+      }
+      return;
+    }
     try {
-      await this.#confirm();
+      await this.#confirm(connection, true);
+      if (this.#connection !== connection) return;
       // Consecutive, not cumulative: one confirm that lands means the walsender is being told
       // where we are, and a lifetime count would eventually kill a healthy stream.
       this.#confirmFailures = 0;
     } catch (failure) {
+      // A write from a run that already ended is not this run's failure.
+      if (this.#connection !== connection) return;
       this.#confirmFailures += 1;
       logger.warn('replication confirm failed', {
         slot: this.#options.slot,
@@ -456,12 +444,13 @@ export class PgReplicationStream {
         error: renderThrowable(failure),
       });
       const consecutive = this.#confirmFailures;
-      if (consecutive >= MAX_CONFIRM_FAILURES) {
+      if (consecutive >= MAX_CONFIRM_FAILURES)
         await this.#die(
           `${consecutive} standby status updates failed in a row — ` +
             `the slot is not being confirmed: ${renderThrowable(failure)}`,
         );
-      }
+    } finally {
+      this.#liveness.settle(attempt);
     }
   }
 
@@ -472,23 +461,15 @@ export class PgReplicationStream {
    * It still RAISES: `stop()` and the keepalive reply both await it and both need the answer. Only
    * the timer, which awaits nothing, goes through `#confirmOnTimer` above.
    */
-  async #confirm(connection: PgConnection | null = this.#connection): Promise<void> {
+  async #confirm(
+    connection: PgConnection | null = this.#connection,
+    requestReply = false,
+  ): Promise<void> {
     if (connection === null || !connection.inCopyBoth) return;
-    const position = this.#confirmed;
-    const at = epochMsToPgTimestamp(this.#clock.now().getTime());
-    const payload = new ByteWriter(34)
-      .uint8(STANDBY_STATUS)
-      .int64(position)
-      .int64(position)
-      .int64(position)
-      .int64(at)
-      .uint8(0)
-      .finish();
-    // The chain SERIALIZES writes; it does not decide them. Putting the rejection handler on the
-    // chain itself meant the confirm after a failed one resolved without writing anything —
-    // `.then(send, () => undefined)` runs the second handler and hands back its `undefined`, so
-    // every other standby status update after the first failure was a no-op that reported success.
-    // A run of failures could then never be seen, because the run never got past one.
+    const payload = standbyStatus(this.#confirmed, this.#clock.now().getTime(), requestReply);
+    // The chain SERIALIZES writes; it does not decide them. A rejection handler on the chain itself
+    // (`.then(send, () => undefined)`) made every update after a failed one a no-op reporting
+    // success, so a run of failures could never be seen.
     const attempt = this.#writing.then(() => connection.sendCopyData(payload));
     // What the NEXT caller queues behind is this attempt settled either way; what THIS caller
     // awaits is the attempt itself, because it is the only one entitled to its outcome.

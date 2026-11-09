@@ -34,7 +34,18 @@ export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
   readonly readDeadlineMs?: number;
   /** Injected so that deadline is provable without waiting for one. Production uses `setTimeout`. */
   readonly schedule?: Scheduler;
+  /**
+   * Changes one window's lane may hold queued. Defaults to `DEFAULT_MAX_LANE_DEPTH`. Past it a
+   * change is SHED for that window: the window is marked stale, so the next change queued re-reads
+   * it and re-snapshots every subscriber — the documented gap recovery — and the shed is counted
+   * (`changesShed`). Without it one slow row policy queued a closure per change, unbounded.
+   * Floored at 2: the count includes the running task, and a shed needs one queued behind it.
+   */
+  readonly maxLaneDepth?: number;
 }
+
+/** Changes one window's lane holds before shedding to a re-read. */
+export const DEFAULT_MAX_LANE_DEPTH = 1_024;
 
 /**
  * Live `(query, input)` pairs one node holds. Reached, the next NEW pair is refused with

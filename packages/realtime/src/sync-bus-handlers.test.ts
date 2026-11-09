@@ -13,6 +13,7 @@ import { clearChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { OPEN_POLICY } from './policy-fake-fixture';
+import { encodeResync } from './replication-resync';
 import { SeqGapDetector } from './replicator-envelope';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { changeHandler, ProducerKinds, reconnectHandler, type SyncBus } from './sync-bus-handlers';
@@ -141,6 +142,20 @@ describe('a hole in the change stream (#681)', () => {
     reconnectHandler(bus)();
     expect(ws.of('replay-gap')).toHaveLength(1);
     expect(registry.invalidated).toBe(1);
+    warn.mockRestore();
+  });
+
+  // A slot recreated under a resume position (plan 101 R3): the changes in between were never
+  // streamed, and the replicator says so on the bus — answered here at once, as a reconnect is.
+  test('a resync the replicator said re-reads every window and channel, at once', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined);
+    changeHandler(bus)(encodeResync({ producer: 'r9', reason: 'slot recreated' }));
+    expect(ws.of('replay-gap')).toHaveLength(1);
+    expect(registry.invalidated).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      'live.replication_resync',
+      expect.objectContaining({ reason: 'slot recreated', producer: 'r9' }),
+    );
     warn.mockRestore();
   });
 });

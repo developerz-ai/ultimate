@@ -160,8 +160,14 @@
  * error-reporter-sentry-hooks}.ts`, `schema/src/issue-cap.ts`, `db/src/statement-cancel.ts`,
  * `cache/src/redis-buckets.ts`, `http/src/{body-ceiling,rate-limit-config}.ts`,
  * `policy/src/{denial-parts,guard-primitive}.ts`. No existing module newly reached.
+ * raised 894 → 902, measured 902 (2026-11-09, plan 101 v31 wave B): seven NEW modules —
+ * `entity/src/{declared-index,tenant-index}.ts` (the derived `(tenant, pk)` index), the entity
+ * driver kit's `entity/src/{driver-errors,driver-registry,driver-rows,row-key}.ts`, and
+ * `jobs/src/events-cursor.ts` (an event never missed between INSERT and COMMIT) — and one existing
+ * module newly reached: `core/src/page.ts`, which `action/src/errors*.ts` now import instead of
+ * core's barrel (slice 11, K6) so the browser client carries no titles table.
  */
-export const MIGRATE_CEILING = 894;
+export const MIGRATE_CEILING = 902;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -346,5 +352,12 @@ export const MIGRATE_CEILING = 894;
  * driver-s3-copy-parts,driver-s3-stream,driver-local-open}.ts`) and `cli/src/runtime-storage-boot.ts`
  * (every role's storage boot, out of `runtime-services.ts`, `servedRequestCeiling` with it). No
  * existing module newly reached: `cli/src/runtime-storage-upload.ts` stays the web role's.
+ * raised 1276 → 1293, measured 1293 (2026-11-09, plan 101 v31 wave B): `MIGRATE_CEILING`'s seven
+ * new modules (`core/src/page.ts` was already reached here, through `query/src/search-string.ts`),
+ * plus `query/src/validate.ts`, realtime's fan-out and replication splits
+ * (`realtime/src/{live-entries,live-patch-encode,pg-replication-dial,pg-replication-liveness,
+ * pg-replication-position,replication-resync,replicator-resync,replicator-subject}.ts`) and
+ * `render/src/render-walk.ts` (the synchronous SSR walker, out of `render-html.ts`). No existing
+ * module newly reached.
  */
-export const SERVING_ROLE_CEILING = 1276;
+export const SERVING_ROLE_CEILING = 1293;

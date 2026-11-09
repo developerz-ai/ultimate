@@ -133,7 +133,12 @@ What a compromised pod can reach, bounded by the chart's defaults (`helm/values.
 |---|---|---|
 | `existingSecret`, `roles.<role>.existingSecret`, `migrate.existingSecret` | one release-wide Secret | a role reads its own Secret when you name one — the migrate Job's schema-owning `DATABASE_URL` off the web pods |
 | `tmp.sizeLimit` | `512Mi` | `/tmp` is an `emptyDir`; past the limit the kubelet evicts that pod, never its neighbours |
-| `networkPolicy` | on, ingress only | one NetworkPolicy per role: `http` from `httpFrom` (any source until you name your ingress controller's namespace), `metrics` from inside the cluster only; `egress` rules turn on egress filtering |
+| `networkPolicy` | on, ingress **and egress** | one NetworkPolicy per role: `http` from `httpFrom` (any source until you name your ingress controller's namespace), `metrics` from inside the cluster only. Egress: DNS, every cluster pod and every routable address, private ranges included — never `169.254.0.0/16` (cloud metadata, link-local), `fe80::/10`, `fd00:ec2::254`, `64:ff9b::a9fe:a9fe`. Closing private ranges too is the recommended hardening in `values.yaml`; a list you set replaces the default whole (`egress: []` = off) |
+
+Compose has no egress policy: on a cloud VM every container reaches the metadata endpoint unless the
+host blocks it. On AWS require IMDSv2 with a hop limit of 1 —
+`aws ec2 modify-instance-metadata-options --instance-id <id> --http-tokens required --http-put-response-hop-limit 1` —
+so a container's extra network hop cannot fetch the instance's credentials.
 
 ## Why per-role autoscaling
 

@@ -30,7 +30,36 @@ export type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } fro
 
 import type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } from './job-types';
 
-const registry = new Map<string, AnyJobHandle>();
+/**
+ * The registry, and its name-sorted list cached until the next write. Every claim reads the list
+ * (`dropExhausted`), and a sort per claim bought nothing: the registry changes at boot. Every
+ * write goes through these three, so no path can change the map and keep a stale list.
+ */
+class JobRegistry extends Map<string, AnyJobHandle> {
+  #sorted: readonly AnyJobHandle[] | undefined;
+
+  override set(name: string, handle: AnyJobHandle): this {
+    this.#sorted = undefined;
+    return super.set(name, handle);
+  }
+
+  override delete(name: string): boolean {
+    this.#sorted = undefined;
+    return super.delete(name);
+  }
+
+  override clear(): void {
+    this.#sorted = undefined;
+    super.clear();
+  }
+
+  sorted(): readonly AnyJobHandle[] {
+    this.#sorted ??= Object.freeze([...this.values()].sort((a, b) => byName(a.name, b.name)));
+    return this.#sorted;
+  }
+}
+
+const registry = new JobRegistry();
 /** Process-monotonic — `resetJobs()` deliberately leaves it alone. */
 let anonymous = 0;
 
@@ -267,7 +296,7 @@ export function getJob(name: string): AnyJobHandle | undefined {
 const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 export function registeredJobs(): readonly AnyJobHandle[] {
-  return [...registry.values()].sort((a, b) => byName(a.name, b.name));
+  return registry.sorted();
 }
 
 /**

@@ -163,6 +163,14 @@ export const url = (): Column<string> =>
  * it is wrong twice a year on top of being unformattable.
  */
 export const tz = <const Z extends readonly string[]>(zones: Z): Column<Z[number]> => {
+  // An empty set renders `x in ()`, which `x db migrate` dies on with 42601 — refused here instead.
+  if (zones.length === 0) {
+    refuseColumn(
+      'iana-tz',
+      'the set of allowed values is empty — no row could ever hold this column',
+      "tz(['Europe/Bucharest']) — declare at least one IANA zone; Intl.supportedValuesOf('timeZone') lists them",
+    );
+  }
   for (const zone of zones) {
     if (!isValidTimeZone(zone)) {
       refuseColumn(
@@ -190,6 +198,13 @@ export const tz = <const Z extends readonly string[]>(zones: Z): Column<Z[number
 const BCP47 = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 export const locale = <const L extends readonly string[]>(locales: L): Column<L[number]> => {
+  if (locales.length === 0) {
+    refuseColumn(
+      'bcp-47',
+      'the set of allowed values is empty — no row could ever hold this column',
+      "locale(['en']) — declare at least one BCP-47 tag",
+    );
+  }
   for (const tag of locales) {
     if (!BCP47.test(tag)) {
       refuseColumn(

@@ -899,7 +899,8 @@ jobs:
       #     schema owner's credential and a worker the signing secrets;
       #   - `/tmp` an `emptyDir` with no `sizeLimit` — node disk, so one pod filling it evicted its
       #     neighbours;
-      #   - no NetworkPolicy, so every port of every role answered any pod in the cluster.
+      #   - no NetworkPolicy, so every port of every role answered any pod in the cluster;
+      #   - no egress filter, so every pod reached 169.254.169.254 and the node's cloud credentials.
       - name: the chart scopes each role's Secret, bounds /tmp and fences every role's ports
         run: |
           set -euo pipefail
@@ -943,9 +944,19 @@ jobs:
           case "$(doc_with /tmp/netpol.yaml 'name: app-ultimate-worker')" in *"port: http"*)
             fail "worker NetworkPolicy" "the worker role's policy admits an http port it never opens. fix: gate the http rule on \$cfg.port in docker/helm/templates/networkpolicy.yaml." ;;
           esac
-          if grep -q -- '- Egress' /tmp/netpol.yaml; then
-            fail "egress filtered by default" "the default render filters egress, and the chart cannot know the database, NATS or object-store addresses. fix: render Egress only when networkPolicy.egress lists rules."
+          # Egress, by default: filtered on every role, the metadata range excepted, private ranges
+          # ADMITTED — the chart cannot know the database, NATS or object-store addresses, and a
+          # managed database lives on one (RDS on 10.x).
+          egress_types="$(grep -c -- '- Egress' /tmp/netpol.yaml || true)"
+          [ "$egress_types" = "$policies" ] \
+            || fail "egress not filtered by default" "${egress_types} of ${policies} default NetworkPolicies filter egress, so a pod reaches 169.254.169.254 and the node's cloud credentials. fix: restore the default networkPolicy.egress list in docker/helm/values.yaml (bun test scripts/helm-template.test.ts)."
+          [ "$(grep -c -- '- 169.254.0.0/16' /tmp/netpol.yaml || true)" = "$policies" ] \
+            || fail "metadata reachable by default" "a default NetworkPolicy's 0.0.0.0/0 rule does not except 169.254.0.0/16, the cloud metadata endpoint. fix: except 169.254.0.0/16 in networkPolicy.egress in docker/helm/values.yaml."
+          if grep -qE -- '- (10\.0\.0\.0/8|172\.16\.0\.0/12|192\.168\.0\.0/16)$' /tmp/netpol.yaml; then
+            fail "private ranges closed by default" "the default egress excepts a private range, so a database on a VPC address (RDS on 10.x) is unreachable after an upgrade. fix: keep private ranges out of the default except list in docker/helm/values.yaml; closing them is the operator's hardening, documented there."
           fi
+          [ "$(helm template app docker/helm --show-only templates/networkpolicy.yaml --set-json 'networkPolicy.egress=[]' | grep -c -- '- Egress' || true)" = 0 ] \
+            || fail "egress: [] still filters" "networkPolicy.egress=[] must turn egress filtering off. fix: see docker/helm/templates/networkpolicy.yaml."
           helm template app docker/helm --show-only templates/networkpolicy.yaml \
             --set-json 'networkPolicy.egress=[{"to":[{"ipBlock":{"cidr":"10.0.0.0/8"}}]}]' > /tmp/netpol-egress.yaml
           # Both halves: the type without the rules is deny-all egress, the rules without the type
@@ -955,7 +966,7 @@ jobs:
           fi
           [ "$(helm template app docker/helm --set networkPolicy.enabled=false | grep -c '^kind: NetworkPolicy$' || true)" = 0 ] \
             || fail "networkPolicy.enabled ignored" "networkPolicy.enabled=false still rendered a NetworkPolicy. fix: see docker/helm/templates/networkpolicy.yaml."
-          echo "ok: per-role Secret, bounded /tmp, one NetworkPolicy per role with only its own ports"
+          echo "ok: per-role Secret, bounded /tmp, one NetworkPolicy per role with only its own ports, egress filtered with metadata excepted"
 
       # Does every workload name an image a registry can serve, and can the replicator roll? (plan
       # 101, sweep 2 D8/D10/D11). Three holes, each once shipped:

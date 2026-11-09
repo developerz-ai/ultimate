@@ -41,4 +41,8 @@ describe('@ultimat3/notify public surface', () => {
     expect(barrel.PUSH_DEVICES_PER_ACTOR).toBe(20);
     expect(barrel.PUSH_BAD_TOKEN_LIMIT).toBe(3);
   });
+
+  test('the fan-out chunk equals the default audience cap: a default notifier is one chunk', () => {
+    expect(barrel.NOTIFY_CHUNK_SIZE).toBe(barrel.DEFAULT_MAX_RECIPIENTS);
+  });
 });

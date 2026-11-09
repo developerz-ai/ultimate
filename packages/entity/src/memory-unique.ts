@@ -3,21 +3,21 @@
 // duplicate key and ignored `unique()` entirely, so a signup race that is a 409 in production was
 // a quiet overwrite under `x dev` and in every app test.
 
-import { driverError } from '@ultimat3/db';
 import { keyOf } from './batch-read';
 import { columnName } from './column';
+import { entityUniqueViolation } from './driver-errors';
 import type { EntityCore } from './entity';
 import { bindValues } from './pg-row';
 import type { RowPatch } from './types';
 import { uniqueConstraints } from './unique-constraints';
 
-/** The refusal Postgres answers `23505` with, in the shape `driverError` gives it there. */
+/**
+ * The refusal Postgres answers `23505` with: `X_DB_UNIQUE_VIOLATION`, the same code, through
+ * `driver-errors.ts` — the one builder every non-Postgres store raises it with. No SQLSTATE is
+ * faked: no server said `23505`, so `sqlState()` answers `undefined` here.
+ */
 export const uniqueViolation = (entity: EntityCore, constraint: string): Error =>
-  driverError(`memory write into ${entity.$table}`, {
-    code: '23505',
-    constraint,
-    message: `duplicate key value violates unique constraint "${constraint}"`,
-  });
+  entityUniqueViolation(entity, constraint);
 
 /** A number's kinds: `'2.5'` and `'2.50'` are one key to Postgres, and so are `7` and `'7'`. */
 const BY_VALUE: ReadonlySet<string> = new Set(['integer', 'bigint', 'numeric']);

@@ -35,17 +35,26 @@ export interface AuthorizationServer {
   readonly routes: readonly AuthServerRoute[];
   /** The RFC 8414 document the metadata route serves. */
   readonly metadata: Readonly<Record<string, unknown>>;
-  /** The consent page's read of its own URL: what to show, or the refusal to show instead. */
-  readRequest(url: string | URL): Promise<ReadRequestResult>;
+  /**
+   * The consent page's read of its own URL: what to show, or the refusal to show instead.
+   * `callerKey` (the request's address) meters a metadata-document fetch per caller, as the token
+   * route does — a page load naming `https://<anyone>/<path>` is otherwise one outbound GET each.
+   */
+  readRequest(url: string | URL, options?: ReadRequestOptions): Promise<ReadRequestResult>;
   /** The consent action's approval: the redirect URL carrying `code`, `state` and `iss`. */
   approve(input: {
     readonly subject: string;
+    /** The deciding request's address, for the re-read's metadata fetch — see `readRequest`. */
+    readonly callerKey?: string | undefined;
     readonly request: AuthorizationRequest;
     /** What the person granted — the request's scopes or fewer. Defaults to all of them. */
     readonly scopes?: readonly string[] | undefined;
   }): Promise<string>;
   /** The redirect URL carrying `error=access_denied`. */
-  deny(input: { readonly request: AuthorizationRequest }): Promise<string>;
+  deny(input: {
+    readonly request: AuthorizationRequest;
+    readonly callerKey?: string | undefined;
+  }): Promise<string>;
   /** `key` is the caller's bucket for user-code guesses: their address or session id. */
   readDevice(input: { readonly userCode: string; readonly key: string }): Promise<DeviceReading>;
   approveDevice(input: {
@@ -68,6 +77,11 @@ export interface AuthorizationServer {
   purge(input: { readonly before: Date }): Promise<number>;
 }
 
+export interface ReadRequestOptions {
+  /** The caller's address: the limiter key for a metadata-document fetch. */
+  readonly callerKey?: string | undefined;
+}
+
 /** The request as the query a client would have sent — what `approve` screens a second time. */
 function requestParams(request: AuthorizationRequest): URLSearchParams {
   const params = new URLSearchParams({
@@ -86,14 +100,20 @@ function requestParams(request: AuthorizationRequest): URLSearchParams {
 export function authorizationServer(options: AuthorizationServerOptions): AuthorizationServer {
   const config = resolveAuthServerConfig(options);
   const directory = clientDirectory(config);
-  const read = async (params: URLSearchParams): Promise<ReadRequestResult> => {
+  const read = async (
+    params: URLSearchParams,
+    callerKey: string | undefined,
+  ): Promise<ReadRequestResult> => {
     const clientId = params.get('client_id');
-    const client = clientId === null ? null : await directory.find(clientId);
+    const client = clientId === null ? null : await directory.find(clientId, callerKey);
     return screenAuthorization(config, client, params);
   };
   /** The request handed back is re-screened against the store: a forged object proves nothing. */
-  const rescreen = async (request: AuthorizationRequest): Promise<AuthorizationRequest> => {
-    const again = await read(requestParams(request));
+  const rescreen = async (
+    request: AuthorizationRequest,
+    callerKey: string | undefined,
+  ): Promise<AuthorizationRequest> => {
+    const again = await read(requestParams(request), callerKey);
     if (!again.ok) throw consentInvalid(again.description);
     return again.request;
   };
@@ -105,10 +125,10 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
     issuer: config.issuer,
     routes: authServerRoutes(config, directory),
     metadata: authServerMetadata(config),
-    readRequest: (url) => read(new URL(url).searchParams),
+    readRequest: (url, options) => read(new URL(url).searchParams, options?.callerKey),
     async approve(input) {
       const subject = subjectOf(input.subject);
-      const request = await rescreen(input.request);
+      const request = await rescreen(input.request, input.callerKey);
       const scopes = [...new Set(input.scopes ?? request.scopes)];
       if (scopes.length === 0 || !scopes.every((scope) => request.scopes.includes(scope))) {
         throw consentInvalid('the approved scopes are empty or not a subset of the requested ones');
@@ -146,7 +166,7 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
       });
     },
     async deny(input) {
-      const request = await rescreen(input.request);
+      const request = await rescreen(input.request, input.callerKey);
       return redirectWith(request.redirectUri, {
         error: 'access_denied',
         iss: config.issuer,

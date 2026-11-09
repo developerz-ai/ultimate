@@ -17,7 +17,7 @@
 
 import { navigationCache } from './navigation-cache';
 import { withinDeadline } from './navigation-deadline';
-import { anchorOf, announcer, handOver, intentUrl, linkFacts, submitFacts } from './navigation-dom';
+import { announcer, handOver } from './navigation-dom';
 import {
   type Answer,
   fetchDocument,
@@ -25,13 +25,8 @@ import {
   metaOf,
   responseFactsOf,
 } from './navigation-fetch';
-import {
-  type EntryState,
-  entryOf,
-  STATE_KEY,
-  scrollAfter,
-  withoutFragment,
-} from './navigation-history';
+import { recordEntry, scrollAfter, withoutFragment } from './navigation-history';
+import { interceptNavigation } from './navigation-intercept';
 import { modalController } from './navigation-modal';
 import { addressOf, modalAddress, modalHistory } from './navigation-modal-rules';
 import { pressTracker } from './navigation-press';
@@ -45,15 +40,12 @@ import {
 } from './navigation-refresh';
 import {
   answerMovesTab,
-  formVerdict,
-  linkVerdict,
   NAVIGATE_EVENT,
   NAVIGATED_EVENT,
   NAVIGATING_ATTRIBUTE,
   NAVIGATION_ERROR_EVENT,
   NAVIGATION_MAX_HOPS,
   NAVIGATION_META,
-  NAVIGATION_PREFETCH_DELAY_MS,
   NAVIGATION_PROGRESS_DELAY_MS,
   responseVerdict,
 } from './navigation-rules';
@@ -120,8 +112,6 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   /** The URL a navigation in flight is fetching: a prefetch never asks for it a second time. */
   let navigatingTo: string | undefined;
   const press = pressTracker(doc);
-  /** The pending prefetch of a hover, cancelled by anything that navigates. */
-  let intent: number | undefined;
   let untrusted = false;
   let backing = false; // a Back this router started is traversing: the URL is still the one left
   let inflight: AbortController | undefined;
@@ -200,7 +190,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     const mine = new AbortController();
     inflight = mine;
     modal.release();
-    win.clearTimeout(intent);
+    cancelIntent();
     navigatingTo = withoutFragment(url);
     // A route the document names a modal opens NOW, in the click's own task; the answer fills it.
     if (method === 'GET' && navigatingTo !== rendered) modal.loading(url);
@@ -298,12 +288,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
             if (hold === undefined) live.textContent = '';
             swapped.body.append(live);
             rendered = withoutFragment(landed);
-            if (history !== 'none') {
-              const same = landed === win.location.href || history === 'replace';
-              const state = { [STATE_KEY]: { scroll: [0, 0], doc: rendered } satisfies EntryState };
-              if (same) win.history.replaceState(state, '', landed);
-              else win.history.pushState(state, '', landed);
-            }
+            recordEntry(win, landed, rendered, history);
             // Inside the swap, so a view transition's "after" frame is already where the page lands.
             scrollAfter(win, doc, landed, history);
           },
@@ -343,87 +328,6 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     }
   };
 
-  const onPress = (): void => {
-    press.onPress();
-    // A press is not a hover: the click it becomes navigates, and a guess on its heels is a
-    // second request for the same page.
-    win.clearTimeout(intent);
-  };
-
-  const onClick = (event: MouseEvent): void => {
-    win.clearTimeout(intent);
-    if (press.overlayClick(event)) return;
-    const anchor = anchorOf(event.target);
-    if (anchor === null) return;
-    const verdict = linkVerdict(linkFacts(win, anchor, event));
-    if (verdict.kind !== 'soft') return;
-    event.preventDefault();
-    // A link to the page beneath an open modal (its Cancel) closes the modal: nothing is fetched.
-    if (modal.address !== undefined && withoutFragment(verdict.url) === rendered) modal.close();
-    else void navigate(verdict.url);
-  };
-
-  const onSubmit = (event: SubmitEvent): void => {
-    const form = event.target;
-    // An untrusted tab (`answerMovesTab`) leaves every form to the browser.
-    if (!(form instanceof HTMLFormElement) || untrusted) return;
-    const { facts, fields } = submitFacts(win, form, event.submitter, event.defaultPrevented);
-    const verdict = formVerdict(facts);
-    if (verdict.kind === 'native') return;
-    event.preventDefault();
-    if (verdict.kind === 'get') {
-      void navigate(verdict.url);
-      return;
-    }
-    const body =
-      verdict.encoding === 'multipart'
-        ? fields
-        : new URLSearchParams(facts.fields.map(([name, value]) => [name, value]));
-    void navigate(verdict.url, { method: 'POST', body });
-  };
-
-  const onIntent = (event: Event): void => {
-    // The focus a press gives a link: its click is a moment away, and it navigates.
-    if (event.type === 'focusin' && press.pressed()) return;
-    const url = intentUrl(win, event.target);
-    if (url === undefined) return;
-    win.clearTimeout(intent);
-    const delay = event.type === 'pointerover' ? NAVIGATION_PREFETCH_DELAY_MS : 0;
-    intent = win.setTimeout(() => prefetch(url), delay);
-  };
-  const onLeave = (): void => win.clearTimeout(intent);
-
-  /**
-   * Back/forward. The router's own entries name the document they show; any other entry (an app's
-   * own `pushState`) shows the document of its PATH. Either way, when that is not the document on
-   * screen it is fetched; when it is, only the scroll moves — the app keeps its own history.
-   */
-  const onPop = (event: PopStateEvent): void => {
-    scroll.cancel();
-    backing = false;
-    // The page is the PATH: a modal's hash is the modal's (`reconcile`), never the page's fragment.
-    const at = win.location.href;
-    const url = modalAddress(new URL(at).hash, at) === null ? at : withoutFragment(at);
-    const entry = entryOf(event.state);
-    const wanted = entry?.doc ?? withoutFragment(url);
-    const same =
-      entry !== undefined
-        ? wanted === rendered
-        : new URL(url).pathname === new URL(rendered).pathname;
-    if (!same) {
-      void navigate(url, { history: 'none' });
-      return;
-    }
-    if (entry !== undefined) {
-      win.scrollTo({
-        left: entry.scroll[0],
-        top: entry.scroll[1],
-        behavior: 'instant' as ScrollBehavior,
-      });
-    }
-    reconcile();
-  };
-
   /**
    * The modal follows the URL's hash, once the page on screen is the URL's: opened (fetched, as a
    * hash address, so a stale one degrades), kept, or dismissed. On start, on Back/Forward, on a
@@ -441,26 +345,20 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     }
   }
 
-  // `window`, bubble phase: after every handler on the page — Solid delegates to `document` — has
-  // had its chance to `preventDefault`, which the rules then honour.
-  const passive = { passive: true };
-  const pressing = { capture: true, passive: true };
-  const listeners: readonly (readonly [EventTarget, string, EventListener, object?])[] = [
-    [win, 'click', onClick as EventListener],
-    [win, 'submit', onSubmit as EventListener],
-    [doc, 'pointerover', onIntent, passive],
-    [doc, 'pointerout', onLeave, passive],
-    [doc, 'focusin', onIntent],
-    [doc, 'touchstart', onIntent, passive],
-    [win, 'popstate', onPop as EventListener],
-    [win, 'hashchange', reconcile],
-    [doc, 'pointerdown', onPress, pressing],
-    [doc, 'pointerup', press.onRelease, pressing],
-    [doc, 'pointercancel', press.onRelease, pressing],
-  ];
-  for (const [target, type, listener, options] of listeners) {
-    target.addEventListener(type, listener, options);
-  }
+  const [cancelIntent, stopListening] = interceptNavigation(
+    win,
+    press,
+    modal,
+    scroll,
+    () => rendered,
+    () => untrusted,
+    navigate,
+    prefetch,
+    () => {
+      backing = false;
+    },
+    reconcile,
+  );
 
   const router: NavigationRouter = {
     navigate,
@@ -485,9 +383,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     },
     closeModal: () => modal.close(),
     stop() {
-      for (const [target, type, listener, options] of listeners) {
-        target.removeEventListener(type, listener, options);
-      }
+      stopListening();
       modal.dismiss();
       scroll.stop();
       tabs.stop();

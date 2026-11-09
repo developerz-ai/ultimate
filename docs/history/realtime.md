@@ -1534,3 +1534,29 @@ Verbatim from [`packages/realtime/CLAUDE.md`](../../packages/realtime/CLAUDE.md)
 ## Moved out for plan 101's wave 5a (`As of 2026-11-05`)
 
 - **A timed re-read is `useQuery`'s `poll: pollEvery(ms)`** (`query-poll.ts`), non-live only (refused by type on a live ref, `LiveQueryOptions`), through core's `visibleInterval`, never a `setInterval` in this package. A value and not a number on purpose: `use-query.ts` never imports the timer, so an island that does not poll does not carry it. `load()` returns its settle promise so the poll never overlaps a read, and a read that ended `failed` rejects for the poll alone, so `maxMs` backs it off.
+
+## 2026-11-09 — a change is work for the windows that read it (plan 101 v31, R1/R5/R6)
+
+- **Moved out of `CLAUDE.md`, whole:** `desynced` is a mark with a reader: the next delivery serves a fresh snapshot out of the shared window and only then clears it. `result.refill` is checked BEFORE the mark — a guessed window never clears a mark (`live-fanout.test.ts`). A quiet query has three more readers (`sync-drain.test.ts`): Bun's `drain` (`registry.repair`, which waits out a read in flight), a read that lands, and the node's sweep (`registry.repairMarked`, on the idle interval), which also re-reads a stale window that owes one, once a pass. Never out of a window stale or with a read not settled.
+- **The index.** `deliver` entered the lane of every window on the node for every change, whatever it read: 10k windows on other tables was 34.6 ms a change (29/s). `LiveEntries` owns the entry table and a `shape.entities` index together, so an add or a forget cannot reach one and miss the other; `targets(table)` is the table's readers plus every window that owes a read (`stale`, or no read landed yet) — those keep the behaviour they had. 0.23 ms a change (4,430/s), `scripts/bench/realtime-fanout.bench.ts`. Two visible differences: `staleChanges` no longer counts a redelivered change against windows that do not read its table, and a window staled by a change queued ahead of it is repaired by its next change or the sweep, not by an unrelated table's change.
+- **The lane cap.** A lane is a closure per change; one slow row policy queued every change behind it, unbounded. Past `maxLaneDepth` the change is shed for that window: `stale` is set (outside the lane, as `invalidate()` sets it) and the next queued change re-reads — a read begun after the shed change reached the registry, so it holds it. Not desynced directly: the re-read's own path marks every subscriber.
+- **One encoding per change.** A patch list the gate let through whole (element-identical; `filterPatches` always returns a new array) is stringified once and spliced into each subscriber's frame (`live-patch-encode.ts`), byte-equal to `encode(patchFrame(…))`. The window index is built only when a subscriber reaches its gate.
+
+## 2026-11-09 — a replicator that notices death, and a slot that says it was lost (plan 101 v31, R2–R4)
+
+- **Moved out of `CLAUDE.md`, whole:** **The pump has one way out, `#die`**: failure recorded, timer stopped, connection closed, then `onEnd(reason)`. `start()` awaits the previous pump. **`stop()` releases everything first.**
+- **Moved out of `CLAUDE.md`, whole:** **A stream that ENDS is restarted**: feed then lock ABANDONED (synchronous, never asked); `stop()` bounds both goodbyes by `STOP_DEADLINE_MS`; redial on `retryDelayMs` (injected `schedule`) from `lastLsn` until `stop()`. The delay resets only when a change is PUBLISHED. A rejected `publish` is one such end, and so is a LOST lock (`AdvisoryLock.onLost`), mid-dial included. `running` = pumping AND no refused change owed; `onChange` is fenced per run and REFUSES, never drops.
+- **Liveness (R2).** Dead was only a write that REJECTED. A half-open socket (failover moving the
+  IP, NAT drop) accepts every write: ~15 min of nothing (`tcp_retries2`), `failure` null, `/readyz`
+  green. Every timer confirm now sets `replyRequested = 1`; silence is counted in status intervals
+  (the injected clock is frozen under test) and only while the pump is parked on a read, so a slow
+  `onChange` is no silence. A confirm still in flight at the next interval is a failure — a write
+  parked on a `drain` that never fires never rejects. A liveness death DESTROYS (a `Terminate` into
+  the black hole parked `#die` before `onEnd`), and its pump is never awaited (`end()` on a half-open
+  socket waits on a FIN nobody sends); the connection fence keeps its late read off the next run. A
+  restart resets the confirm chain: a parked one blocked every confirm of the run after it.
+- **Keepalives (R4).** The lock session idled with OS keepalives (~2 h 11 m): a vanished holder kept
+  the lock and no standby took over. One startup `options` line, both sessions.
+- **The slot (R3).** A missing slot was recreated silently (the changes between the old confirm and
+  the new slot lost, quiet tables stale until their next write); an invalidated one failed every
+  restart generically. `from` is dropped on recreation: after a failover it is another server's WAL.

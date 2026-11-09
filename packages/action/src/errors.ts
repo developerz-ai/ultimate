@@ -13,7 +13,7 @@ import {
   UltimateError,
   withRequestId,
   withStatedDelay,
-} from '@ultimat3/core';
+} from '@ultimat3/core/page';
 import type { PrimitiveDenial, SurfaceDenial } from '@ultimat3/policy';
 import type { ValidationIssue } from '@ultimat3/schema';
 // The titles are `error-titles.ts`, imported bare: this module is then side-effect-free and the
@@ -237,6 +237,8 @@ export interface RemoteFailure {
    * refuses to read, and in both cases `cause` still holds every rejection.
    */
   readonly issues?: readonly ValidationIssue[] | undefined;
+  /** The server cut `issues` at its cap (`MAX_ISSUES`): the list is a prefix. Only ever `true`. */
+  readonly issuesTruncated?: true | undefined;
   /**
    * The document's `meta` member — the keys the server's `registerProblemMeta` declared for the
    * code, already read as a plain JSON object by `client.ts`. Carried onto the error's own `meta`
@@ -323,6 +325,7 @@ export class RemoteActionError extends UltimateError {
             // Absent rather than `undefined`: `meta` is rendered into `--json` and the error
             // reporter, and a null member reads as "the server sent an empty list".
             ...(failure.issues === undefined ? {} : { issues: failure.issues }),
+            ...(failure.issuesTruncated === true ? { issuesTruncated: true } : {}),
           },
           failure.requestId,
         ),

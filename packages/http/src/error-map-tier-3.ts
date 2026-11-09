@@ -127,4 +127,6 @@ export const TIER_3_ERROR_STATUS = {
   X_METER_EXCEEDED: 429,
   // @ultimat3/action — an action's meter cannot be counted against
   X_METER_INVALID: 500,
+  // @ultimat3/realtime — a channel's catch-up read decides with another policy
+  X_CHANNEL_CATCHUP_POLICY_MISMATCH: 500,
 } satisfies Readonly<Record<string, number>>;

@@ -17,6 +17,9 @@ const ROUTE_SWITCHES = new Set([
   'no-proxy-server',
 ]);
 
+/** Removes Chrome's implicit loopback bypass, so loopback goes through the exit like any host. */
+const PROXY_LOOPBACK_TOO = '--proxy-bypass-list=<-loopback>';
+
 const switchName = (arg: string): string | undefined => {
   const match = /^--?([^=]+)/.exec(arg);
   return match?.[1]?.toLowerCase();
@@ -46,6 +49,12 @@ export function launchArgs(
     }
   }
   const args = [...((callerArgs as readonly string[] | undefined) ?? [])];
-  if (proxyArg !== undefined) args.push(`--proxy-server=${proxyArg}`);
+  // `<-loopback>` beside every exit: Chrome ≥ 72 sends localhost, `*.localhost` and loopback
+  // literals around `--proxy-server` by default, so a page reached the worker's own loopback
+  // services DIRECT while the session reported an exit — and the browser leg's DNS screen stands
+  // down for a proxied session. Subtracting the implicit rule sends them through the exit too.
+  if (proxyArg !== undefined) {
+    args.push(`--proxy-server=${proxyArg}`, PROXY_LOOPBACK_TOO);
+  }
   return args.length === 0 ? undefined : args;
 }

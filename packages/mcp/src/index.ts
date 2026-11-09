@@ -174,6 +174,8 @@ export { JOB_STATUS_TOOL, JOB_TOOL_INLINE_CEILING_MS, jobTool } from './job-tool
 export { McpJobToolInvalidError } from './job-tool-errors';
 export type { ListFilterOp, McpListParams } from './list-params';
 export { DEFAULT_LIST_MAX_LIMIT, listParamsSchema } from './list-params';
+export type { McpCatalogDetail } from './meta-catalog-render';
+export { oneLineParams, renderCatalog } from './meta-catalog-render';
 export {
   McpEffectConflictError,
   McpEffectUndeclaredError,
@@ -208,8 +210,6 @@ export {
   LIST_RESOURCES,
   MANAGE_RESOURCE,
   META_TOOL_NAMES,
-  oneLineParams,
-  renderCatalog,
 } from './meta-surface';
 export { McpIncludeEarlyError, McpPathDuplicateError } from './mount-errors';
 export type { McpOAuth } from './oauth-metadata';

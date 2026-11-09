@@ -78,6 +78,13 @@ describe('what reaching the barrel costs an island that only follows a channel',
     // measured: 8,726 B (2026-11-09, Bun 1.4.4), 8,513 without this change. why: +213 B, core's
     // `boundedCause` in `UltimateError`'s constructor — a cause is cut at 4 KiB in the browser too,
     // so a decoded problem `detail` is bounded (plan 101 slice 02, K2). The ceiling moves by it.
-    expect(bytes).toBeLessThan(8_813);
+    // measured: 8,816 B (2026-11-09, Bun 1.4.4), 8,726 without this change. why: +90 B, realtime's
+    // plan 101 wave B — the `X_CHANNEL_CATCHUP_POLICY_MISMATCH` title (`error-titles.ts`, in every
+    // chunk) and `channel-ref.ts` holding each ref's catch-up read. Core's `./page` additions of the
+    // same wave add 0 B here (built against the previous `page.ts`: 8,816 either way).
+    // measured: 9,001 B (2026-11-09, Bun 1.4.4), 8,816 without this change. why: +185 B, three
+    // titles in `error-titles.ts` (every chunk): `X_REPLICATION_SLOT_INVALIDATED`,
+    // `X_REPLICATION_SLOT_RECREATED` (plan 101 R3) and `X_OFFLINE_QUEUE_FULL` (R7).
+    expect(bytes).toBeLessThan(9_088);
   }, 60_000);
 });

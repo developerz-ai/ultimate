@@ -37,6 +37,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `cursor-value.ts` | what a sort value becomes inside a cursor, and back |
 | `input-shape.ts` | what a read's `input:` may be, given that its route is a query STRING |
 | `sql.ts` | `explainQuery()` / `describeSql()` |
+| `validate.ts` | the input parse — `X_INPUT_INVALID` with `issues` + `issuesTruncated` on `meta`, as action's twin |
 | `cache.ts` | the read path: the request memo, and the fill through `@ultimat3/cache`'s registered tiers |
 | `search.ts` | `search()` — the query FACTORY over an entity's `.searchable()` columns |
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
@@ -205,7 +206,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - The matcher patches from `QueryShape`, never from SQL text.
 - `paginate` has no `offset` and never grows one; it is reachable only as
   `query.page(input, { first, after })`. **A page is bounded**: `first` is 1…`MAX_PAGE_SIZE`
-  (10,000 — `@ultimat3/entity`'s, imported; this package never re-publishes it).
+  (10,000 — `@ultimat3/entity`'s, imported; this package never re-publishes it). **The wire's
+  bound is `MAX_WIRE_PAGE_SIZE` (500)**, raised per read by `maxPage` (`assertMaxPage` at
+  `query()`, `X_QUERY_MAX_PAGE_INVALID`); the route and `openapi.ts` both read `target.maxPage`.
 - **A declared `.limit()` bounds the LISTING, on every page**: the window is
   `min(rowsLeft, first + 1)`, and a limited read's cursor carries the rows served so far at the
   tail of its key (after the typed id). A cursor without it is `X_CURSOR_INVALID` on a limited
@@ -256,6 +259,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A cache key carries the read's AUTHORITY**: `readAuthority(actor, scope)` is its one producer and
   `cacheKeyFor`'s fourth argument is required. `scope` defaults to `'actor'`; `'tenant'` with no
   `orgId` (`undefined`, `''` or `null` — `orgless()`) narrows to the actor. The authority is JSON.
+  **`'actor'` carries the grant set** (sorted roles, scopes, permissions, `onBehalfOf`): one id is
+  not one grant set (`cache-authority.test.ts`).
 - **`cache.ttlMs` is judged at `query()`** (`X_QUERY_CACHE_TTL_INVALID`). A `cache:` read always
   expires: `def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS` (60 s); an unset TTL is OMITTED so the tier
   defaults.

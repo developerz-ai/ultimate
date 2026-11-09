@@ -3,7 +3,7 @@
  * declaration or a call-time limit that cannot be counted against (`X_METER_INVALID`, the app's).
  * Codes and titles stay in `error-titles.ts`'s one registration; imported bare for that reason.
  */
-import { renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core';
+import { renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core/page';
 import './error-titles';
 
 export interface MeterExceededInput {

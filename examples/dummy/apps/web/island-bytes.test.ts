@@ -132,6 +132,13 @@ const CONSTANTS_ONLY = '@ultimat3/core/page';
  */
 const OWN_TITLES_ONLY = '@ultimat3/realtime';
 
+/**
+ * The typed action client reaches core through `@ultimat3/core/page` only (plan 101 slice 11, K6:
+ * `client.ts` imported core's barrel), so an island whose only framework import is the action
+ * client carries neither of core's anchored tables — `summary` and `contact-sales` paid both.
+ */
+const LEAN_ACTION_CLIENT = '@ultimat3/action';
+
 /** Whether realtime's anchored titles module reached this chunk: every title, as for core's. */
 const carriesRealtimeTitles = (chunk: IslandChunk): boolean =>
   Object.values(REALTIME_ERROR_TITLES).every((title) => chunk.code.includes(title));
@@ -264,13 +271,17 @@ test('every island reaching core keeps its side-effecting module, in both builds
   // derived from each island's graph, so an import change moves an island loudly.
   const reaching = (through: (pkg: string) => boolean): string[] =>
     [...first.keys()].filter((file) => (reachable.get(file) ?? []).some(through)).sort();
-  const expected = reaching((pkg) => pkg !== CONSTANTS_ONLY && pkg !== OWN_TITLES_ONLY);
+  const expected = reaching(
+    (pkg) => pkg !== CONSTANTS_ONLY && pkg !== OWN_TITLES_ONLY && pkg !== LEAN_ACTION_CLIENT,
+  );
   // Six until 27.6.0: `like` and `likes-badge` import realtime and nothing else, and realtime no
   // longer brings core's barrel with it (`OWN_TITLES_ONLY`). Five from plan 101 wave 9: `summary`
   // reaches the typed action client, as `settings` and `contact-sales` do. Six from plan 101 wave
   // 10, with the posts board, which reaches the typed action client and ui's registry (the runs
   // page's date filter, briefly its own island, is drawn inside the run console).
-  expect(expected).toHaveLength(6);
+  // Four from plan 101 slice 11 (K6): `summary` and `contact-sales` reach only the action client,
+  // which no longer brings core's barrel (`LEAN_ACTION_CLIENT`).
+  expect(expected).toHaveLength(4);
   // The same two faces of the flap, on the module realtime anchors: every island reaching it.
   const realtime = reaching((pkg) => pkg === OWN_TITLES_ONLY);
   expect(realtime).toHaveLength(4);

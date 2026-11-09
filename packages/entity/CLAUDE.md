@@ -27,9 +27,9 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `invariant-parity.test.ts` asks the app, the driver and the raw CHECK the same question.
 - **`min`/`max` over a `timestamptz` crosses as epoch ms** (`aggregate-time-parity.test.ts`). A whole
   row read under a non-UTC session still fails on PGlite — recorded, not fixed.
-- **Text ordering: byte (`C`) order is the parity target** — a linguistic production collation is a
-  known divergence; never `collate "C"` in generated SQL (defeats the index). Create the database with
-  `LC_COLLATE=C` when byte order must hold.
+- **Text ordering: byte (`C`) order is the parity target** (memory: `byCodePoint`) — a linguistic
+  production collation is a known divergence; never `collate "C"` in generated SQL (defeats the
+  index). Create the database with `LC_COLLATE=C` when byte order must hold.
 - **Money's write shape is wider than its row shape** (`MoneyInput` takes a `bigint`; `MoneyValue`
   holds a `number`); `RowWrite<Row>` types `insert`/`insertAll`/`upsertAll`; `narrowRow` (`columns.ts`)
   narrows at each write method's ENTRY, before `$assert`/`upsertPlan`. `pg-money-write.live.test.ts`,
@@ -192,6 +192,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **`memoryTransactor().run` is ambient** (`memory-journal.ts`): a write naming no `tx` joins it; a nested
   commit hands its undos and effects up; a write after the root ended is `X_DB_TRANSACTION_CLOSED`; a
   row lock taken with no tx is held to the root. `memory-journal.test.ts`, `memory-transactor.test.ts`.
+- **Every tenant table is indexed `(tenant, pk)`** (`tenant-index.ts`, `concurrently`), inferred or
+  declared; it replaces the tenant column's own index; none when the PK, an index, a unique or a
+  same-tenant key already starts with it.
+- **Custom stores: `defineDriver` from `@ultimat3/entity/adapter` only** — scoped plan in, rows
+  re-checked, `X_DRIVER_UNSUPPORTED` per capability; the store owns its schema, `x db`/drift are
+  Postgres-only. README "Custom drivers". **One row identity: `rowKey`** (`row-key.ts`).
 - **`shared: '<why>'` is the one way an untenanted child of a tenant-owned table says so**
   (`assertShared`, `describe.ts`); the reach check is the CLI's `exercise-static.ts`
   (`X_ENTITY_TENANT_UNDECLARED`), over `EntityDescription.shared`.

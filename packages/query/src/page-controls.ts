@@ -11,6 +11,7 @@
 // the framework's own namespace mark — the route lives under `/_x/` for the same reason — and
 // `input-shape.ts` refuses a declaration that reaches for it, so the two names can never collide.
 
+import { renderCauseValue, UltimateError } from '@ultimat3/core';
 import { MAX_PAGE_SIZE } from '@ultimat3/entity';
 import { QueryInputInvalidError } from './errors';
 import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-keys';
@@ -20,8 +21,35 @@ export const PAGE_CONTROL_KEYS: readonly string[] = [PAGE_FIRST_KEY, PAGE_AFTER_
 
 // The largest page a read will serve is `@ultimat3/entity`'s `MAX_PAGE_SIZE`, imported — a batch
 // and a page are one memory bound, and this package already depends on entity. `first` reaches
-// `paginate` straight from a route parameter, so the route judges it against that bound BEFORE
-// `paginate` runs (`pageControlsOf`), and one request can never ask for five million rows.
+// `paginate` straight from a route parameter, so the route judges it BEFORE `paginate` runs
+// (`pageControlsOf`), and one request can never ask for five million rows.
+//
+// The WIRE's bound is tighter: `MAX_WIRE_PAGE_SIZE`. 10,000 rows per request times a per-address
+// budget (the demo's: 120/s) is a table dump a second from one caller, so a remote page stops at
+// 500 unless the read declares `maxPage` — a written statement, in the file that owns the rows.
+// A server call (`read.page()`) keeps `MAX_PAGE_SIZE`: the caller is the app's own code.
+
+/** The largest `_first` the route serves for a read that declares no `maxPage`. */
+export const MAX_WIRE_PAGE_SIZE = 500;
+
+export class QueryMaxPageInvalidError extends UltimateError {
+  constructor(value: unknown) {
+    super({
+      code: 'X_QUERY_MAX_PAGE_INVALID',
+      cause: `query({ maxPage: ${renderCauseValue(value)} }) — not a whole number of rows from 1 to ${MAX_PAGE_SIZE}`,
+      fix: `query({ maxPage: 2000 })  # a whole number from 1 to ${MAX_PAGE_SIZE} — or drop maxPage for the ${MAX_WIRE_PAGE_SIZE}-row wire cap`,
+    });
+  }
+}
+
+/** Judged at `query()`, where the file that wrote it fails — never on every read forever. */
+export function assertMaxPage(value: unknown): void {
+  if (value === undefined) return;
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1) {
+    if (value <= MAX_PAGE_SIZE) return;
+  }
+  throw new QueryMaxPageInvalidError(value);
+}
 
 /** What the route hands `query.page()` — `PaginateArgs` minus the server-side options. */
 export interface PageControls {
@@ -55,7 +83,11 @@ const WHOLE_NUMBER = /^\d+$/;
  * 400 — and a second reader of the codec's envelope would be a second opinion about what a cursor
  * is. Only its shape as a search value is checked: one string, non-empty.
  */
-export function pageControlsOf(name: string, values: SearchValues): SplitSearch {
+export function pageControlsOf(
+  name: string,
+  values: SearchValues,
+  maxPage: number = MAX_WIRE_PAGE_SIZE,
+): SplitSearch {
   // `Object.create(null)`, never `{}`, and the same rule `@ultimat3/http`'s `collectFields`
   // follows: a repeated `?__proto__=a&__proto__=b` arrives as an ARRAY, which is exactly what
   // `Object.prototype.__proto__`'s setter accepts — one assignment and this object's prototype IS
@@ -75,10 +107,10 @@ export function pageControlsOf(name: string, values: SearchValues): SplitSearch 
     );
   }
   const size = single(name, PAGE_FIRST_KEY, first);
-  if (!WHOLE_NUMBER.test(size) || Number(size) < 1 || Number(size) > MAX_PAGE_SIZE) {
+  if (!WHOLE_NUMBER.test(size) || Number(size) < 1 || Number(size) > maxPage) {
     throw new QueryInputInvalidError(
       name,
-      `${PAGE_FIRST_KEY} must be a whole number of rows between 1 and ${MAX_PAGE_SIZE}, got "${size}"`,
+      `${PAGE_FIRST_KEY} must be a whole number of rows between 1 and ${maxPage}, got "${size}"`,
     );
   }
   if (after === undefined) return { input, page: { first: Number(size) } };

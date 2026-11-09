@@ -128,6 +128,11 @@ export interface AgentDef<
    */
   readonly maxRepeatedToolCalls?: number;
   /**
+   * Tool calls of ONE turn in flight at once; the rest wait for a slot, and results keep the order
+   * the model emitted them. Default 8 (`DEFAULT_TOOL_CONCURRENCY`); `1` runs a turn's tools serially.
+   */
+  readonly maxToolConcurrency?: number;
+  /**
    * Wall-clock ceiling for the whole run, in milliseconds. Passing it aborts the model call in
    * flight and is `X_AGENT_DEADLINE`. No default: a timeout nobody declared is a lost answer.
    */

@@ -8,11 +8,17 @@ import type { ChangeEvent } from './changefeed';
 import { advance, type LiveCursor, makeCursor, type ResumeSource } from './cursor';
 import type { Row, RowPatch } from './json';
 import type { LiveSubscription } from './live-contract';
+import { encodePatchFrame, samePatches } from './live-patch-encode';
 import { applyToWindow, bridgeChange, type Projection, projectionOf } from './matcher-bridge';
 import { type QueryEntry, refillWindowInLane } from './query-window';
-import { type Subscriber, type SubscriberGate, windowIndex } from './subscriber-gate';
+import {
+  type Subscriber,
+  type SubscriberGate,
+  type WindowIndex,
+  windowIndex,
+} from './subscriber-gate';
 import { subscriptionKey } from './subscription-book';
-import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import { encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 import { FRAME_LIMITS } from './wire-version';
 
 export interface FanoutDeps {
@@ -101,8 +107,11 @@ export async function fanoutChange(
   else deps.source.floorAt?.(entry.qid, change.lsn, { exclusive: true });
 
   let sent = 0;
-  // Indexed once for every subscriber below, never searched per subscriber per patch.
-  const index = windowIndex(entry.rows);
+  // Indexed once for every subscriber below, never searched per subscriber per patch — and only
+  // once a subscriber reaches its gate: a change every subscriber is desynced for builds none.
+  let index: WindowIndex | null = null;
+  // The patch list as text, once per change for every subscriber the gate let see all of it.
+  let shared: string | null = null;
   for (const subscription of entry.subscribers.values()) {
     if (guessed) {
       // The window lost its tail: guessing is how a sync engine silently diverges. Checked BEFORE
@@ -126,6 +135,7 @@ export async function fanoutChange(
     }
     const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
     let allowed: readonly RowPatch[];
+    index ??= windowIndex(entry.rows);
     try {
       allowed = await deps.gate.filterPatches(
         entry,
@@ -143,8 +153,14 @@ export async function fanoutChange(
       continue;
     }
     if (allowed.length === 0) continue;
-    const frame = patchFrame(subscription.sid, allowed, change.lsn, writes);
-    if (subscription.socket.send(frame)) {
+    let text: string;
+    if (samePatches(allowed, result.patches)) {
+      shared ??= JSON.stringify(result.patches);
+      text = encodePatchFrame(subscription.sid, shared, change.lsn, writes);
+    } else {
+      text = encode(patchFrame(subscription.sid, allowed, change.lsn, writes));
+    }
+    if (subscription.socket.sendEncoded(text)) {
       subscription.cursor = advance(subscription.cursor, allowed, change.lsn, change.at);
       sent += 1;
     } else {

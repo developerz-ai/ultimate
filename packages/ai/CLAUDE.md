@@ -32,10 +32,10 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `openai-provider.ts` | `openAiProvider()` — the socket, the credential and the errors for any endpoint speaking the OpenAI chat-completions FORMAT |
 | `openai-messages.ts` | the format mapping's request half: `AiMessage` blocks → OpenAI messages, `LlmTool` → functions, `tool_choice` |
 | `openai-body.ts` | one chat-completions body, and the per-model reasoning mapping |
-| `openai-wire.ts` | its response half: one completion, and `ChatCompletionStream` (fragmented tool calls, trailing usage, `[DONE]`) |
+| `openai-wire.ts` / `openai-wire-stream.ts` | its response half: one completion and the field readers; `ChatCompletionStream` (fragmented tool calls, trailing usage, `[DONE]`) |
 | `gateway.ts` | routing, cache, budget wiring |
 | `gateway-providers.ts` | the retry loop across providers, `backoffMs`, `isRetryable`, the breakers |
-| `budget.ts` | token ledgers per request/actor/org, ALS carrier |
+| `budget.ts` / `budget-store.ts` | token ledgers per request/actor/org, ALS carrier; the `BudgetStore` contract and `memoryBudgetStore()` |
 | `prompt.ts` | `definePrompt`, `promptHash`, version registry |
 | `prompt-fence.ts` | a template's data fences: which tag pairs enclose each slot (`promptFences`), and the closer-breaking `render` applies inside one |
 | `embeddings.ts` | `Embedder`, `hashEmbedder()`, cosine helpers |
@@ -57,10 +57,10 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `tool-arguments.ts` / `answer-errors.ts` | one argument-string reader for both wires and what an unreadable one means (`assertToolArguments`); `X_LLM_TRUNCATED` + `X_LLM_TOOL_ARGUMENTS_INVALID` |
 | `billed.ts` / `run-meter.ts` | `meta.billed` + `billedOf`; the meter every `llm()`/`agent()` provider call goes through, and `meteredRun`, its one public total (`RunMeter` stays internal) |
 | `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged, never its message or cause |
-| `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
+| `llm.ts` / `llm-answer.ts` | `llm()` — the model call, declared as an `action`; one answered turn's span, `onCall`, fit, and what a streamed answer must satisfy |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
-| `agent.ts` | `agent()` — the tool loop, declared as an `action` |
+| `agent.ts` / `agent-tools.ts` | `agent()` — the tool loop, declared as an `action`; one turn's bounded tool fan-out |
 | `agent-def.ts` / `agent-declared.ts` / `agent-system.ts` / `agent-usage.ts` | the declaration's types; its defaults, bound screen, limits and fact row; the system one run sends; its running usage |
 | `llm-def.ts` / `cost.ts` | `llm()`'s declaration types and `LlmCall`; the money arithmetic (`costOf`, `exactCostOf`) |
 | `agent-guards.ts` / `agent-errors.ts` | the repeated-turn detector and the run deadline; their two classes |
@@ -69,7 +69,7 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `agent-per-run.ts` / `agent-run-limits.ts` | one run's `offerTools()`/`model()`/`limits()`, narrow only; `costPerRun` |
 | `agent-compact{,-def,-measure,-request,-text}.ts` | trigger, cut; `compact`'s option and event; the token ratio; the summary request, as text when too long |
 | `agent-send.ts` / `context-overflow.ts` / `agent-checkpoint.ts` | a turn sent, an overflow compacted once; `X_AI_CONTEXT_OVERFLOW`'s phrases; `onCheckpoint` |
-| `agent-continue.ts` / `agent-turn.ts` | `.run()` / `.continue()`, the transcript handle and its screen; one turn's report and refusals |
+| `agent-continue.ts` / `agent-session.ts` / `agent-turn.ts` | the transcript handle and its screen; `.run()` / `.continue()` and their session; one turn's report and refusals |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
 | `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish (its consumer has to be `cli`, tier 5) |
 | `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
@@ -194,7 +194,7 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 - **`embedBatched` enforces the `Embedder` arity per batch** (`X_AI_EMBEDDER_INVALID` with both
   counts). Full rule: `docs/history/ai.md`.
 - **A caught value is read with `renderThrowable`** (`remote-embedder.ts`, `wire.ts`,
-  `openai-wire.ts`) — `scripts/error-render.ts` cannot see `catch` bindings.
+  `openai-wire-stream.ts`) — `scripts/error-render.ts` cannot see `catch` bindings.
 - **A caller's string is never an object KEY**: the wire tables are `Map`s; `prompt.render` and
   `echoProvider()`'s `replies` use `Object.hasOwn`.
 
@@ -207,12 +207,14 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   - `tools` takes a real `action()` (`AgentTool = AnyAction | ProjectableAction`,
     `asProjectableAction`); projection happens on the FIRST RUN, memoised. An agent can be another
     agent's tool.
-  - A tool is an exposed action or an `inProcessTool()` (`isOfferedTool`); anything else is
+  - A tool is an action core's `isAgentOffered` admits (exposed, or `agents: true`) or an
+    `inProcessTool()` (`isOfferedTool`); anything else is
     `X_AGENT_TOOL_UNEXPOSED` at DECLARATION. An in-process tool is never an action, never projected
     to MCP, has no policy (the agent's decides) and parses its own input.
   - `ctx.signal` is read at the top of every turn, before every tool batch, and forwarded to
     `fetch`; `X_ABORTED` is core's.
-  - One turn's tools run concurrently, results paired by index; no tool STARTS after an abort.
+  - One turn's tools run concurrently, at most `maxToolConcurrency` (default 8, `agent-tools.ts`),
+    results paired by index; no tool STARTS after an abort or the deadline.
   - **`mcpConfirmations({ tools })` holds a tool here**, one pass each however it arrives
     (`tools-gate.ts`). Proof: `scripts/ai-tool-confirmation.test.ts`.
   - `onTurn` reports facts only (also an `agent.turn` span event); a throw from it fails the run.

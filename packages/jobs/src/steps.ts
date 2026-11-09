@@ -36,6 +36,7 @@ import { waitForEventStep } from './steps-wait';
 export type {
   CompensateContext,
   EventLookup,
+  EventSince,
   StepApi,
   StepRunOptions,
   WaitForEventOptions,

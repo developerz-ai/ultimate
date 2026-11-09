@@ -94,8 +94,24 @@ export function readAuthority(actor: Actor, scope: QueryCacheScope): string {
   }
 }
 
+/**
+ * The actor AND its grant set. One id is not one grant set — a role revoked inside a `ttlMs`, or a
+ * shared dev identity holding two role sets — and `sql(input, ctx)` may read `ctx.actor.roles`, so
+ * keying on the id alone served the narrower grant the wider grant's rows. Sorted copies: a set,
+ * so two orderings of one grant are one entry.
+ */
 const actorAuthority = (actor: Actor): string =>
-  JSON.stringify([actor.kind, actor.id, actor.orgId ?? null]);
+  JSON.stringify([
+    actor.kind,
+    actor.id,
+    actor.orgId ?? null,
+    grantSet(actor.roles),
+    grantSet(actor.scopes),
+    grantSet(actor.permissions),
+    actor.onBehalfOf === undefined ? null : [actor.onBehalfOf.actorKind, actor.onBehalfOf.actorId],
+  ]);
+
+const grantSet = (values: readonly string[]): readonly string[] => [...new Set(values)].sort();
 
 /**
  * Deterministic: same query + same input + same tags + same authority => same key.

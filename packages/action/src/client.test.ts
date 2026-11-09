@@ -248,6 +248,19 @@ describe('a rejection’s per-field issues, off the wire', () => {
     expect(Object.keys((failure as RemoteActionError).meta ?? {})).not.toContain('issues');
   });
 
+  test('a capped list says so: issuesTruncated rides onto meta, only as the literal true', async () => {
+    const issue = { path: 'postId', expected: 'a uuid', received: '', message: 'expected a uuid' };
+    const capped = await failWith({
+      status: 422,
+      body: { ...problem([issue]), issuesTruncated: true },
+    });
+    expect((capped as RemoteActionError).meta?.['issuesTruncated']).toBe(true);
+    for (const issuesTruncated of [false, 'true', 1]) {
+      const loose = await failWith({ status: 422, body: { ...problem([issue]), issuesTruncated } });
+      expect((loose as RemoteActionError).meta).not.toHaveProperty('issuesTruncated');
+    }
+  });
+
   test('a foreign member never rides along — the list is rebuilt, never copied', async () => {
     const failure = await failWith({
       status: 422,

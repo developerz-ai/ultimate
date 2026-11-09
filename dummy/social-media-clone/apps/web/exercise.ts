@@ -4,9 +4,31 @@
 
 import { schema } from '@social-media-clone/db';
 import { defineExercise } from '@ultimat3/testing';
+import { MCP_SCOPE, mcpOAuth } from './app/oauth/server';
+
+/**
+ * A live authorization request for a client registered just now, as the consent form posts it back:
+ * the draw's `request` is no query any client sent, so without one both decisions stop at
+ * `X_OAUTH_REQUEST_INVALID` before their handler's body.
+ */
+const consentRequest = async (): Promise<{ request: string }> => {
+  const redirect = 'http://127.0.0.1:33418/callback';
+  const { client } = await mcpOAuth.registerClient({ name: 'Exercise', redirectUris: [redirect] });
+  const request = new URLSearchParams({
+    response_type: 'code',
+    client_id: client.clientId,
+    redirect_uri: redirect,
+    code_challenge: 'c'.repeat(43),
+    code_challenge_method: 'S256',
+    scope: MCP_SCOPE,
+  });
+  return { request: request.toString() };
+};
 
 export const exercise = defineExercise(
   {
+    approveConnection: { input: consentRequest },
+    denyConnection: { input: consentRequest },
     // `instant` is a bare string (`tasks/instant.ts`): the draw's `sample` is no instant at all.
     sweepOrphanMedia: { actor: null, input: () => ({ before: '2026-01-01T00:00:00.000Z' }) },
 

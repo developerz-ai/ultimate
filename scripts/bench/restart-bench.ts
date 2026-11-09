@@ -111,12 +111,19 @@ async function readLine(
 // options keeps narrowing the handles. Annotating a process as the bare `ReturnType<typeof
 // Bun.spawn>` widens `stdin` back to `number | FileSink | undefined` and `stdout` to a union that
 // no longer includes a readable stream — the writes and reads below then only typecheck by accident.
+/**
+ * The longest a bench child may live. Every child is killed by the run itself; this ends one the
+ * run never reached — the 50k run's ramp, restart and window fit inside it several times.
+ */
+const CHILD_DEADLINE_MS = 60 * 60_000;
+
 const spawnServerProcess = (port: number) =>
   Bun.spawn({
     cmd: ['bun', 'run', 'scripts/bench/restart-bench-server.ts', '--port', String(port)],
     stdout: 'pipe',
     stderr: 'inherit',
     cwd: process.cwd(),
+    timeout: CHILD_DEADLINE_MS,
   });
 
 const spawnShardProcess = (url: string, count: number, offset: number) =>
@@ -136,6 +143,7 @@ const spawnShardProcess = (url: string, count: number, offset: number) =>
     stdout: 'pipe',
     stderr: 'inherit',
     cwd: process.cwd(),
+    timeout: CHILD_DEADLINE_MS,
   });
 
 async function spawnServer(

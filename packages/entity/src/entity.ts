@@ -7,6 +7,7 @@ import type { IndexMethod } from '@ultimat3/db';
 import type { Schema } from '@ultimat3/schema';
 import { assertAppendOnlyColumns } from './append-only';
 import { assertTableName, bindColumn, columnName, moneyColumns } from './column';
+import { declaredIndexOf } from './declared-index';
 import {
   assertNotRetired,
   assertScan,
@@ -38,6 +39,7 @@ import { sealedInView } from './sealed-errors';
 import type { SearchInit, SearchSource, SearchVector } from './search';
 import { searchVectorOf } from './search';
 import { resolveTenantColumn } from './tenancy';
+import { coveredByTenantIndex, tenantIndexOf, withoutDerivedDuplicate } from './tenant-index';
 import type { AnyColumn, ColumnMap, IndexDef, RowOf, WireRow } from './types';
 import type { EntityView } from './view';
 import { viewFor } from './view';
@@ -307,6 +309,7 @@ export const entity = <const C extends ColumnMap>(
       const physical = [
         meta.kind === 'money' ? moneyColumns(property, meta).minor : columnName(property, meta),
       ];
+      if (coveredByTenantIndex(physical[0] ?? '', tenant, meta.unique)) return [];
       return [
         {
           name: indexName(name, table, physical, meta.unique),
@@ -315,58 +318,9 @@ export const entity = <const C extends ColumnMap>(
         },
       ];
     }),
-    ...(init.indexes ?? []).map((index) => {
-      const columns = index.on.map((property) => resolve([property]));
-      const unique = index.unique === true;
-      // `on: []` is type-legal and names nothing: the generated DDL would be `on "posts" ()`, a
-      // syntax error one migration later. Refused where it was written instead.
-      if (columns.length === 0) {
-        throw invariantViolated(name, 'index', 'an index must name at least one column');
-      }
-      const where = index.where?.(columnsExpr).toSql(resolve) ?? null;
-      if (index.where !== undefined && where === null) {
-        throw invariantViolated(
-          name,
-          'index',
-          'a partial index predicate must be expressible in SQL; a JS predicate cannot be one',
-        );
-      }
-      // Two rules Postgres has that a declaration can break, refused where the author wrote it.
-      // `@ultimat3/db` refuses both again at `createIndex` — that is not a duplicate, it is the
-      // guard for a description nobody built here — but its refusal lands at `x db gen` or, if a
-      // migration was already written, inside `ROLE=migrate` as the server's own syntax error with
-      // none of the entity's words in it.
-      if (index.using !== undefined && index.using !== 'btree') {
-        if (unique) {
-          throw invariantViolated(
-            name,
-            'index',
-            `the index on (${columns.join(', ')}) is unique and ${index.using}; ` +
-              `Postgres has no unique ${index.using} index — drop unique, or drop using`,
-          );
-        }
-        if (index.order !== undefined) {
-          throw invariantViolated(
-            name,
-            'index',
-            `the index on (${columns.join(', ')}) is ${index.using} and ${index.order}; ` +
-              'only a btree orders its keys — drop order, or drop using',
-          );
-        }
-      }
-      return {
-        name: indexName(name, table, columns, unique, index.order, where, index.using),
-        columns,
-        unique,
-        ...(index.order === undefined ? {} : { order: index.order }),
-        ...(where === null ? {} : { where }),
-        // Absent stays absent: `btree` written out would be a field every existing snapshot lacks,
-        // and `indexMethodOf` reads the two the same way precisely so nothing regenerates.
-        ...(index.using === undefined || index.using === 'btree' ? {} : { using: index.using }),
-        // How it is BUILT, so not part of the name: `true` or absent, like `appendOnly`.
-        ...(index.concurrently === true ? { concurrently: true as const } : {}),
-      };
-    }),
+    ...(init.indexes ?? []).map((index) =>
+      declaredIndexOf(index, { name, table, resolve, columns: columnsExpr }),
+    ),
     // The one index nobody declared and every search needs. Through the SAME `IndexInit` path a
     // hand-written `using: 'gin'` takes — `indexName` gives it the method discriminator, so it can
     // never collide with a btree an author declares on the same column.
@@ -381,8 +335,23 @@ export const entity = <const C extends ColumnMap>(
           },
         ]),
   ];
+  // After every other index, so one that already starts with `(tenant, pk)` is seen (`tenant-index.ts`).
+  const physicalKey = primaryKey.map((property) => resolve([property]));
+  const [tenantIndex] = tenantIndexOf({
+    entityName: name,
+    table,
+    tenant,
+    primaryKey: physicalKey,
+    plainView: init.view != null && init.view.materialized !== true,
+    covering: [
+      ...declared.filter((index) => index.where == null && index.using === undefined),
+      ...invariants.filter((inv) => inv.kind === 'unique' && inv.where == null),
+    ].map((each) => each.columns),
+  });
   // A foreign key's own index named again in `indexes` is one index, not two (`index-identity.ts`).
-  const indexes = distinctIndexes(declared);
+  const indexes = distinctIndexes(
+    tenantIndex === undefined ? declared : [...declared, tenantIndex],
+  );
 
   const retain = retainOf(name, init.retain, entries, indexes, appendOnly);
   const sealed = sealedFields({ $name: name, $table: table, $columns: init.columns });
@@ -411,7 +380,7 @@ export const entity = <const C extends ColumnMap>(
       columns: entries,
       primaryKey,
       invariants,
-      indexes,
+      indexes: withoutDerivedDuplicate(table, physicalKey, tenantIndex, indexes),
       tags,
       cacheTag,
       softDelete,

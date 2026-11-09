@@ -32,22 +32,39 @@ import {
  * to that one — so each statement alone would keep the steps forever. `SQL_JOBS_RETENTION_STEPS`
  * settles a held run after this commits.
  *
+ * Each window is its OWN branch, seeking its own index in `updated_at` order and stopping at its
+ * cutoff: one walk over all four states with a window per state stepped, every batch, over each
+ * `dead` row inside its 90 days that sat between the `done` rows past their 14 — 32–40 ms a batch
+ * in production. The two answers are merged, oldest first, to one batch; a row a branch locked
+ * past the batch's `limit` is released at commit, untouched.
+ *
  * `held` is a LATERAL probe with a `limit`, not an `exists`: the planner flattens an `exists` into
  * a semi-join and, at a 1,000-row batch, hashes the whole of `x_jobs` for it; the lateral form is one
  * `x_jobs_run_idx` lookup per deleted run (EXPLAIN, 63,000 rows, 2026-10-17).
  */
 export const SQL_JOBS_RETENTION_BATCH = `
-with doomed as (
-  select j.id, j.run_id from x_jobs j
-   where ((j.state = 'done'
-           and j.updated_at < statement_timestamp() - ($1::bigint * interval '1 millisecond'))
-       or (j.state in ('failed', 'dead', 'cancelled')
-           and j.updated_at < statement_timestamp() - ($2::bigint * interval '1 millisecond')))
+with done_rows as (
+  select j.id, j.run_id, j.updated_at from x_jobs j
+   where j.state = 'done'
+     and j.updated_at < statement_timestamp() - ($1::bigint * interval '1 millisecond')
      and not exists (select 1 from x_outbox o where o.id = j.id and o.published_at is null)
      and not exists (select 1 from x_backfills b where b.run_id = j.run_id and b.status = 'running')
    order by j.updated_at
    limit $3
      for update of j skip locked
+), ended_rows as (
+  select j.id, j.run_id, j.updated_at from x_jobs j
+   where j.state in ('failed', 'dead', 'cancelled')
+     and j.updated_at < statement_timestamp() - ($2::bigint * interval '1 millisecond')
+     and not exists (select 1 from x_outbox o where o.id = j.id and o.published_at is null)
+     and not exists (select 1 from x_backfills b where b.run_id = j.run_id and b.status = 'running')
+   order by j.updated_at
+   limit $3
+     for update of j skip locked
+), doomed as (
+  select id, run_id from (select * from done_rows union all select * from ended_rows) d
+   order by updated_at
+   limit $3
 ), gone as (
   delete from x_jobs where id in (select id from doomed) returning run_id
 ), held as (

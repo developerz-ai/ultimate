@@ -8,7 +8,7 @@ import { can } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
 import { queryOpenApiPaths, toQueryOpenApiOperation } from './openapi';
-import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
+import { MAX_WIRE_PAGE_SIZE, PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import type { AnyQuery } from './query';
 import { query } from './query';
 import { from } from './source';
@@ -62,10 +62,22 @@ describe('the read half of openapi.json', () => {
   test('the two page controls are on every read, with the bound the route checks', () => {
     const operation = toQueryOpenApiOperation(slugs) as Operation;
     const first = operation.parameters.find((p) => p.name === PAGE_FIRST_KEY);
-    expect(first?.schema).toEqual({ type: 'integer', minimum: 1, maximum: MAX_PAGE_SIZE });
+    expect(first?.schema).toEqual({ type: 'integer', minimum: 1, maximum: MAX_WIRE_PAGE_SIZE });
     expect(operation.parameters.find((p) => p.name === PAGE_AFTER_KEY)?.schema).toEqual({
       type: 'string',
     });
+  });
+
+  test("a declared maxPage is the document's bound, as it is the route's", () => {
+    const wide = query({
+      input: t.object({}),
+      policy: can('post:read'),
+      maxPage: MAX_PAGE_SIZE,
+      sql: () => from<Row>('posts', []).orderBy('id'),
+    }).named('postSlugsWide');
+    const operation = toQueryOpenApiOperation(wide) as Operation;
+    const first = operation.parameters.find((p) => p.name === PAGE_FIRST_KEY);
+    expect(first?.schema).toEqual({ type: 'integer', minimum: 1, maximum: MAX_PAGE_SIZE });
   });
 
   test('200 is the bare rows OR the page envelope, and both refusals point at Problem', () => {

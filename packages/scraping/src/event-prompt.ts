@@ -54,7 +54,7 @@ export interface EventPromptOptions {
  * Only an answer published AFTER the prompt was asked is consumed. The run id is the same on
  * every attempt, so a code left over from attempt 1 would otherwise be typed into the site by
  * attempt 2 — and a stale code is a refused login. "After" is decided on ONE clock, the bus's
- * (`bus.now()`); the timeout and the poll stay on the run's own.
+ * (`bus.mark()`, or `bus.now()`); the timeout and the poll stay on the run's own.
  */
 export function eventPrompt(options: EventPromptOptions): PromptHandler {
   // Floors of 1, both: a zero timeout is a prompt that can never be answered and a zero interval
@@ -80,11 +80,17 @@ export function eventPrompt(options: EventPromptOptions): PromptHandler {
     // The BUS's clock, read once: an answer's `publishedAt` is stamped by it — the database, for
     // the stored bus — and `request.clock` is this worker's. Comparing the two let a few seconds
     // of skew between pods decide that an answer given after the ask had come before it.
-    const askedAt = await bus.now();
+    // Read with the bus's MARK where it has one, in the same statement: an answer stamped at
+    // INSERT and committed after this instant carries a stamp before it, and only a search under
+    // the mark's horizon still sees it (`EventLookup.mark`).
+    const mark: { readonly at: number; readonly horizon?: string } = (await bus.mark?.()) ?? {
+      at: await bus.now(),
+    };
+    const askedAt = mark.at;
     const budget = deadline(request.clock, timeoutMs, 'eventPrompt');
     for (;;) {
       request.signal?.throwIfAborted();
-      const found = await bus.find(event, undefined, askedAt);
+      const found = await bus.find(event, undefined, askedAt, undefined, mark.horizon, mark);
       if (found !== undefined) {
         if (!isSealed(found.payload)) {
           throw promptAnswerInvalid({ scrape: request.scrape, label: request.label, event });

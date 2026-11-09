@@ -20,7 +20,8 @@ import {
   useFixtureModels,
 } from './model-fixture';
 import { openAiProvider } from './openai-provider';
-import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
+import { parseChatCompletion } from './openai-wire';
+import { ChatCompletionStream } from './openai-wire-stream';
 import { anthropicProvider, parseMessage } from './provider';
 import { remoteEmbedder } from './remote-embedder';
 import type { SseFrame } from './sse';

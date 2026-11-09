@@ -53,14 +53,14 @@ describe('unit · a 5xx render is never stored', () => {
     expect(failed.result.headers['cache-control']).toBe('private, no-store');
     expect(failed.result.headers['surrogate-key']).toBeUndefined();
     expect(failed.result.headers['etag']).toBeUndefined();
-    expect(controller.store().get(key)).toBeUndefined();
+    expect(await controller.store().get(key)).toBeUndefined();
 
     const recovered = await controller.serve(key, () => '<p>post</p>');
     expect({ state: recovered.state, status: recovered.result.status }).toEqual({
       state: 'miss',
       status: 200,
     });
-    expect(controller.store().get(key)?.html).toBe('<p>post</p>');
+    expect((await controller.store().get(key))?.html).toBe('<p>post</p>');
   });
 
   test('it never replaces a good entry: the last good page is served stale, and it is logged', async () => {
@@ -78,7 +78,7 @@ describe('unit · a 5xx render is never stored', () => {
       await controller.regenerate(key, down);
     });
     expect(messages).toContain('isr.render.unstored');
-    expect(controller.store().get(key)?.html).toBe('<p>good</p>');
+    expect((await controller.store().get(key))?.html).toBe('<p>good</p>');
 
     // Still the last good page while the read stays down, and the fresh one once it is back.
     expect((await controller.serve(key, down)).result.body).toBe('<p>good</p>');
@@ -106,12 +106,12 @@ describe('unit · a 5xx render is never stored', () => {
       expect(answered.result.headers['cache-control']).toBe('private, no-store');
     }
     expect(renders).toBe(1);
-    expect(controller.store().paths()).toEqual([]);
+    expect(await controller.store().paths()).toEqual([]);
 
     // Past the cooldown the next request renders again — and a page that recovered is stored.
     clock = 1_000;
     expect((await controller.serve(key, () => '<p>post</p>')).result.status).toBe(200);
-    expect(controller.store().get(key)?.html).toBe('<p>post</p>');
+    expect((await controller.store().get(key))?.html).toBe('<p>post</p>');
   });
 
   test('a stale page whose refresh just failed is not refreshed again on every request', async () => {
@@ -157,7 +157,7 @@ describe('unit · a render that says noStore', () => {
     }));
     expect(served.result.body).toBe('<p>preview</p>');
     expect(served.result.headers['cache-control']).toBe('private, no-store');
-    expect(controller.store().paths()).toEqual([]);
+    expect(await controller.store().paths()).toEqual([]);
   });
 
   test('drops the copy it was regenerating: that page is no longer the answer', async () => {
@@ -171,7 +171,7 @@ describe('unit · a render that says noStore', () => {
       status: 200,
       noStore: true,
     }));
-    expect(controller.store().get(key)).toBeUndefined();
+    expect(await controller.store().get(key)).toBeUndefined();
   });
 });
 
@@ -182,7 +182,7 @@ describe('unit · a render that throws', () => {
     const controller = isrController({ routes: describePages });
     const key = isrKeyIn('/blog/a');
     await expect(controller.serve(key, broken)).rejects.toThrow('the driver went away');
-    expect(controller.store().paths()).toEqual([]);
+    expect(await controller.store().paths()).toEqual([]);
     expect(controller.inflight()).toBe(0);
   });
 

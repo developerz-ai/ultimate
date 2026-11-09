@@ -14,6 +14,18 @@ export const DEFAULT_EVENT_POLL_MS = 30_000;
  */
 export const WAKING_EVENT_POLL_MS = 900_000;
 
+/**
+ * Where a wait begins — its stamp, and what the bus could see then (`EventLookup.mark`) — and the
+ * events it refused BEHIND its cursor: one owed through the horizon sorts before the cursor, so
+ * the cursor stays and its id is excluded by name. Moving the cursor back to it re-opened every
+ * event between the two, the one refused before it included.
+ */
+export interface EventSince {
+  readonly at: number;
+  readonly horizon?: string | undefined;
+  readonly refused?: readonly string[] | undefined;
+}
+
 /** The slice of the event bus a waiting step needs. Implemented by `events.ts`. */
 export interface EventLookup {
   /**
@@ -31,18 +43,45 @@ export interface EventLookup {
    */
   now(): Promise<number>;
   /**
-   * The earliest match published at or after `afterMs` — and, given `afterId`, strictly past THAT
-   * event in the bus's own (published, id) order. The id is the cursor a refused event leaves: a
-   * floor of `publishedAt + 1` stepped over every valid event stamped in the same millisecond.
-   * An `afterId` the bus no longer holds narrows nothing: the event it named cannot match again.
+   * A NEW wait's starting line, read in ONE statement: the bus's `now()`, and the `horizon` — what
+   * the bus could see at that instant. Over a database an event is stamped at INSERT and visible
+   * at COMMIT, so a publish whose transaction was still open when the wait began carries a stamp
+   * BEFORE it: by `afterMs` alone every later search skips it and the wait runs to its timeout.
+   * `find` given the horizon also matches every event the horizon could not see. Absent on a bus
+   * with no transactions (the memory one): there every publish is visible as it is stamped.
+   */
+  mark?(): Promise<{ readonly at: number; readonly horizon?: string }>;
+  /**
+   * The earliest match past the cursor in the bus's own `(published, id)` order
+   * (`events-cursor.ts`): published at or after `afterMs` — and, given `afterId`, strictly past
+   * `(afterMs, afterId)`. The id is the cursor a refused event leaves: a floor of
+   * `publishedAt + 1` stepped over every valid event stamped in the same millisecond. Compared,
+   * never looked up, so a cursor whose event was purged still excludes what it excluded.
+   *
+   * Given a `horizon` (from `mark`, or a hit's own), ALSO every event that horizon could not see,
+   * whatever its stamp. A hit answers the horizon of the search that found it, which is the one a
+   * refusal's cursor must carry: anything that search could not see is still owed to the wait.
+   *
+   * `since` is the WAIT's own line, which a refusal's cursor never moves: only an event stamped at
+   * or after `since.at`, or unseen by `since.horizon` (the mark's), is the wait's at all. Absent,
+   * it is `{ at: afterMs, horizon }` — right for a search that never refused anything. A cursor
+   * alone let an event committed BEFORE the wait sort past a refused one and be handed out.
    */
   find(
     event: string,
     correlationKey: string | undefined,
     afterMs: number,
     afterId?: string,
+    horizon?: string,
+    since?: EventSince,
   ): Promise<
-    { readonly id: string; readonly payload: unknown; readonly publishedAt: number } | undefined
+    | {
+        readonly id: string;
+        readonly payload: unknown;
+        readonly publishedAt: number;
+        readonly horizon?: string;
+      }
+    | undefined
   >;
 }
 

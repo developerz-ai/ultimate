@@ -258,19 +258,21 @@ export class RecordStore implements RecordSink {
           if (carried === undefined || carried.has(rk)) this.#resolve(entry, rk);
       }
       const heard = this.#wait.takeHeard(key);
-      const missing =
+      // A Set: the split below asks it once per touched row, and an array made that O(t²).
+      const missing = new Set(
         carried === undefined
           ? []
-          : [...touched].filter((rk) => !carried.has(rk) && heard?.has(rk) !== true);
-      if (missing.length > 0) {
+          : [...touched].filter((rk) => !carried.has(rk) && heard?.has(rk) !== true),
+      );
+      if (missing.size > 0) {
         // What the server did answer holds this write already: the twin stays on the rest only.
-        const answered = [...touched].filter((rk) => !missing.includes(rk));
+        const answered = [...touched].filter((rk) => !missing.has(rk));
         if (answered.length > 0) {
           const confirmed = new Set([...(entry.confirmed ?? []), ...answered]);
           this.#overlays.set(key, { ...entry, confirmed });
           this.#replay();
         }
-        this.#wait.start(key, new Set(missing), () => this.drop(key));
+        this.#wait.start(key, missing, () => this.drop(key));
         return;
       }
       this.#forget(key);

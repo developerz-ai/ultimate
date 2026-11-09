@@ -8,6 +8,7 @@ import type { ClientScope, UltimateError } from '@ultimat3/core/page';
 import {
   classifyThrown,
   clientTransport,
+  finiteCount,
   OUTBOX_DRAIN_MESSAGE,
   onRescope,
   pageClient,
@@ -74,6 +75,11 @@ export interface OutboxOptions {
   readonly tabs?: ((heard: (scope: string | null) => void) => OutboxTabs) | undefined;
   /** Where a disk that refused the queue is said, by code. Default `console.warn`. */
   readonly warn?: ((error: UltimateError) => void) | undefined;
+  /**
+   * The most writes queued at once, on every queue this outbox opens. Past it a NEW write is
+   * refused (`X_OFFLINE_QUEUE_FULL`) and nothing queued is dropped. Absent: no ceiling.
+   */
+  readonly maxQueued?: number | undefined;
 }
 
 const EMPTY: DrainReport = { sent: 0, collapsed: 0, remaining: 0, stoppedAt: null };
@@ -88,6 +94,12 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
   const principal =
     options.principal ?? ((): ClientScope['principal'] => pageClient().scope.principal);
   const send = options.send ?? sendOverHttp;
+  // Refused HERE, where the outbox is built: inside `open` a bad ceiling would read as a refused
+  // disk, and the memory fallback would throw it again with nobody to catch it.
+  const ceiling =
+    options.maxQueued === undefined
+      ? {}
+      : { maxQueued: finiteCount('localOutbox', 'maxQueued', options.maxQueued, 1) };
   const overlays =
     options.overlays ?? ((): OutboxOverlays | undefined => peekPageRealtime()?.store);
   /**
@@ -142,10 +154,10 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
     const scope = scopeKey(principal());
     let queue: OfflineQueue;
     try {
-      queue = await OfflineQueue.open(queueStore(await options.local, scope));
+      queue = await OfflineQueue.open(queueStore(await options.local, scope), ceiling);
     } catch (error) {
       unavailable('the outbox could not be opened', error);
-      queue = await OfflineQueue.open(memoryQueueStore());
+      queue = await OfflineQueue.open(memoryQueueStore(), ceiling);
     }
     // The principal left while the disk was being read: this queue is the one that left with it,
     // and the handler that saw the change has already chained the next open.
@@ -390,7 +402,9 @@ async function sendOverHttp(entry: OutboxEntry, carried: Set<string>): Promise<u
  * The page's outbox, created once per tab. In a browser it replays on open, on `online`, and on the
  * service worker's drain message; with no `document` it is a memory queue that listens for nothing.
  */
-export function pageOutbox(options: Pick<OutboxOptions, 'beforeEnqueue'> = {}): PageOutbox {
+export function pageOutbox(
+  options: Pick<OutboxOptions, 'beforeEnqueue' | 'maxQueued'> = {},
+): PageOutbox {
   const host = globalThis as OutboxHost;
   const existing = host[OUTBOX_KEY];
   // Only this function writes the slot, so what it holds is always a `PageOutbox`.
@@ -399,6 +413,7 @@ export function pageOutbox(options: Pick<OutboxOptions, 'beforeEnqueue'> = {}): 
   const outbox = localOutbox({
     local: pageLocalStore(),
     beforeEnqueue: options.beforeEnqueue,
+    maxQueued: options.maxQueued,
     // Every tab of this user shares the durable queue; each re-reads it when another changes it.
     ...(browser ? { tabs: (heard) => outboxTabs(globalThis as OutboxTabsWindow, heard) } : {}),
   });

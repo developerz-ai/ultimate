@@ -27,7 +27,7 @@ import {
 import { withStatementTimeout } from '@ultimat3/db';
 import { statusFor } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { formatPath, maskSensitive, validateAsync } from '@ultimat3/schema';
+import { maskSensitive } from '@ultimat3/schema';
 import type { ReadAudit, ReadTrace } from './audit-gate';
 import { audited, auditedBuild, readAuditFor } from './audit-gate';
 import {
@@ -39,11 +39,12 @@ import {
   readThrough,
 } from './cache';
 import { judgedRead, judgedSql } from './declared-errors';
-import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
+import { QueryForeignError, QueryUnregisteredError } from './errors';
 import { guardQuery, guardQueryBeforeInput } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
 import { spendReadLimit } from './rate-limit-gate';
 import type { SqlSource } from './source';
+import { parsedOrNothing, parseQueryInput } from './validate';
 
 /**
  * Private on purpose. `@ultimat3/query` exports no way to read this back, which is
@@ -378,7 +379,7 @@ async function admit(
       nowMs: ctx.now().getTime(),
     });
   }
-  const input = await validate(def.input, raw, name);
+  const input = await parseQueryInput(def.input, raw, name);
   if (failureCaptureActive()) recordFailureInput(maskSensitive(def.input, input, REDACTED));
   // The audit record's copy, masked by THIS read's own schema — never a key table (`action`'s rule).
   if (trace !== null) trace.input = maskSensitive(def.input, input, REDACTED);
@@ -403,24 +404,4 @@ async function admit(
     logger.debug('query.policy.unenforced', { query: name, reason: unenforced });
   }
   return input;
-}
-
-/** The parse without the refusal — only for the record of a read already refused on other grounds. */
-async function parsedOrNothing(schema: StandardSchemaV1, raw: unknown): Promise<unknown> {
-  const result = await validateAsync(schema, raw);
-  return result.issues === undefined ? result.value : undefined;
-}
-
-async function validate(schema: StandardSchemaV1, raw: unknown, name: string): Promise<unknown> {
-  const result = await validateAsync(schema, raw);
-  if (result.issues !== undefined) {
-    const detail = result.issues
-      .map((issue) => {
-        const path = formatPath(issue.path);
-        return path === '' ? issue.message : `${path}: ${issue.message}`;
-      })
-      .join('; ');
-    throw new QueryInputInvalidError(name, detail);
-  }
-  return result.value;
 }

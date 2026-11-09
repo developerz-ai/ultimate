@@ -7,13 +7,15 @@
 // resumes at 12:00:30 must still see an event published at 12:00:10.
 
 import type { PgExecutor } from '@ultimat3/core';
-import { finiteOption, logger, uuidV7 } from '@ultimat3/core';
+import { finiteOption, logger, renderThrowable, uuidV7 } from '@ultimat3/core';
+import { currentTx, outsideTransaction } from '@ultimat3/db';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
-import { SQL_EVENT_PUBLISH_WAKE } from './driver-pg-event-wake-sql';
+import { SQL_EVENT_COMMIT_WAKE, SQL_EVENT_PUBLISH_WAKE } from './driver-pg-event-wake-sql';
 import {
   SQL_EVENT_FIND,
   SQL_EVENT_LIST,
+  SQL_EVENT_MARK,
   SQL_EVENT_NOW,
   SQL_EVENT_PUBLISH,
   SQL_EVENT_PURGE_COUNTED,
@@ -69,12 +71,38 @@ export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
     return Number(rows[0]?.removed ?? 0);
   };
 
+  /**
+   * Published inside an open transaction: wake again once it COMMITS. The publish's own wake read
+   * the waiters parked before its statement, and a run parking while the transaction stayed open
+   * met an event it could not see — it woke nobody and sat out the 15 min backstop. Off the
+   * committed transaction (`outsideTransaction`), so the executor reads the pool. Best-effort:
+   * the poll stays the guarantee, so a failed wake is a warning.
+   */
+  const wakeOnCommit = (name: string, correlationKey: string | null): void => {
+    currentTx()?.onCommit(() => {
+      void outsideTransaction(() =>
+        exec.query(SQL_EVENT_COMMIT_WAKE, [name, correlationKey]),
+      ).catch((error: unknown) =>
+        logger.warn('jobs.event.commit-wake-failed', {
+          event: name,
+          error: renderThrowable(error),
+        }),
+      );
+    });
+  };
+
   return {
     stored: true,
     wakes,
     async now() {
       const rows = await exec.query<{ now: number | string }>(SQL_EVENT_NOW, []);
       return Number(rows[0]?.now);
+    },
+
+    async mark() {
+      const rows = await exec.query<{ now: number | string; horizon: string }>(SQL_EVENT_MARK, []);
+      // One row always: a select with no `from`. Read as `now()` reads its own.
+      return { at: Number(rows[0]?.now), horizon: String(rows[0]?.horizon) };
     },
 
     async publish(name, payload, publishOptions = {}) {
@@ -97,6 +125,7 @@ export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
         event: name,
         correlationKey: publishOptions.correlationKey ?? null,
       });
+      if (wakes) wakeOnCommit(name, publishOptions.correlationKey ?? null);
       // The stamps the statement wrote, read back: what a consumer will compare against.
       return {
         id,
@@ -110,17 +139,34 @@ export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
       };
     },
 
-    /** Earliest match at or after `afterMs` and past `afterId`, so a step consumes in order. */
-    async find(name, correlationKey, afterMs, afterId) {
+    /** Earliest match past the cursor, or unseen by `horizon`, so a step consumes in order. */
+    async find(name, correlationKey, afterMs, afterId, horizon, since) {
       const rows = await exec.query<{
         id: string;
         payload: unknown;
         published_at: number | string;
-      }>(SQL_EVENT_FIND, [name, correlationKey ?? null, afterMs, afterId ?? null]);
+        horizon: string;
+      }>(SQL_EVENT_FIND, [
+        name,
+        correlationKey ?? null,
+        afterMs,
+        afterId ?? null,
+        horizon ?? null,
+        since?.at ?? afterMs,
+        (since === undefined ? horizon : since.horizon) ?? null,
+        since?.refused === undefined || since.refused.length === 0
+          ? null
+          : JSON.stringify(since.refused),
+      ]);
       const row = rows[0];
       return row === undefined
         ? undefined
-        : { id: row.id, payload: row.payload, publishedAt: Number(row.published_at) };
+        : {
+            id: row.id,
+            payload: row.payload,
+            publishedAt: Number(row.published_at),
+            horizon: row.horizon,
+          };
     },
 
     async list(name) {

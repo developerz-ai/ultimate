@@ -141,10 +141,12 @@ export { assertMatchable, match, positionFor } from './matcher';
  */
 export { queryOpenApiPaths, toQueryOpenApiOperation } from './openapi';
 /**
- * The shape the typed client's `.page()` takes. The bound both ends check is `@ultimat3/entity`'s
- * `MAX_PAGE_SIZE` — imported from there, never re-published here.
+ * The shape the typed client's `.page()` takes. A server page is bounded by `@ultimat3/entity`'s
+ * `MAX_PAGE_SIZE` — imported from there, never re-published here; the route's `_first` by
+ * `MAX_WIRE_PAGE_SIZE`, or the read's declared `maxPage`.
  */
 export type { PageControls } from './page-controls';
+export { MAX_WIRE_PAGE_SIZE, QueryMaxPageInvalidError } from './page-controls';
 /**
  * The shapes `query.page(input, { first, after })` takes and answers with. `paginate` itself is
  * deliberately unexported: a page is the read's own answer, and a second, importable way to ask

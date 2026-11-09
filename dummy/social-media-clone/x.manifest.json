@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "cdd6747267abc427",
+  "buildId": "6dda46293b25dde7",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -332,6 +332,17 @@
       "url": "/notifications",
       "render": "ssr",
       "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb"
+      }
+    },
+    {
+      "url": "/oauth/consent",
+      "render": "ssr",
+      "offline": "network-only",
       "hydrate": "never",
       "revalidateTags": [],
       "surface": "app",
@@ -964,6 +975,46 @@
   ],
   "actions": [
     {
+      "name": "approveConnection",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "next": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "next"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "oauth:consent",
+      "permissions": [
+        "oauth:consent"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "blockUser",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1145,6 +1196,46 @@
       },
       "policy": "public",
       "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
+      "name": "denyConnection",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "next": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "next"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "oauth:consent",
+      "permissions": [
+        "oauth:consent"
+      ],
       "cacheInvalidates": [],
       "mcp": {
         "expose": false
@@ -2792,6 +2883,13 @@
       ]
     },
     {
+      "permission": "oauth:consent",
+      "enforcedIn": [
+        "action:approveConnection",
+        "action:denyConnection"
+      ]
+    },
+    {
       "permission": "post:comment",
       "enforcedIn": []
     },
@@ -2873,6 +2971,7 @@
     "message:send",
     "notification:mark-read",
     "notification:read",
+    "oauth:consent",
     "post:comment",
     "post:create",
     "post:delete",
@@ -2925,6 +3024,10 @@
     },
     {
       "code": "X_NOT_A_PARTICIPANT",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_OAUTH_REQUEST_INVALID",
       "package": "apps/web"
     },
     {

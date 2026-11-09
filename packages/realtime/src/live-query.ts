@@ -13,7 +13,8 @@ import { type LiveCursor, makeCursor } from './cursor';
 import { LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
-import { deliverChange } from './live-deliver';
+import { DeliveryCounts, deliverChange } from './live-deliver';
+import { LiveEntries } from './live-entries';
 import { type FanoutDeps, repairSubscriber, repairWindow, snapshotFrame } from './live-fanout';
 import { floorAfterRead } from './live-floor';
 import { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
@@ -27,11 +28,16 @@ import { type Subscriber, SubscriberGate } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
 import type { Frame } from './sync-protocol';
 
-export { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
+export {
+  DEFAULT_MAX_ENTRIES,
+  DEFAULT_MAX_LANE_DEPTH,
+  type LiveQueryRegistryOptions,
+} from './live-query-options';
 
 export class LiveQueryRegistry {
   readonly #definitions = new Map<string, LiveQueryDefinition>();
-  readonly #entries = new Map<string, QueryEntry>();
+  /** Indexed by the relations each window reads (`live-entries.ts`): a change is work for few. */
+  readonly #entries = new LiveEntries();
   /** Keyed by `(socket, sid)`, never by `sid` alone — `subscription-book.ts` owns why. */
   readonly #book: SubscriptionBook;
   readonly #options: LiveQueryRegistryOptions;
@@ -46,7 +52,7 @@ export class LiveQueryRegistry {
    * `!` sorts below every hex digit, so every real change is above it.
    */
   readonly #origin = `!${uuidV7()}`;
-  #staleChanges = 0;
+  readonly #counts: DeliveryCounts;
 
   constructor(options: LiveQueryRegistryOptions) {
     this.#options = options;
@@ -60,6 +66,7 @@ export class LiveQueryRegistry {
     // The book owns the caps because it is the only thing that can answer them in O(1).
     this.#book = new SubscriptionBook(options);
     this.#fanout = { gate: this.#gate, source: options.source, clock: this.#clock };
+    this.#counts = new DeliveryCounts(options.maxLaneDepth);
   }
 
   /** `live.rows_denied` for this node: rows a subscriber's policy refused since boot. */
@@ -74,7 +81,12 @@ export class LiveQueryRegistry {
 
   /** `live.changes_stale`: changes at or below a window's own lsn, refused rather than folded. */
   get staleChanges(): number {
-    return this.#staleChanges;
+    return this.#counts.staleChanges;
+  }
+
+  /** `live.changes_shed`: window deliveries a full lane refused, each repaired by a re-read. */
+  get changesShed(): number {
+    return this.#counts.changesShed;
   }
 
   /**
@@ -93,8 +105,8 @@ export class LiveQueryRegistry {
    */
   invalidate(entity?: string): number {
     let marked = 0;
-    for (const entry of this.#entries.values()) {
-      if (entity !== undefined && !entry.shape.entities.includes(entity)) continue;
+    const entries = entity === undefined ? this.#entries.values() : this.#entries.readersOf(entity);
+    for (const entry of entries) {
       entry.stale = true;
       for (const subscription of entry.subscribers.values()) {
         subscription.socket.markDesynced(subscription.sid);
@@ -333,9 +345,12 @@ export class LiveQueryRegistry {
   /** Fan one change out, every query id in its own lane — `live-deliver.ts` owns why. */
   async deliver(change: ChangeEvent): Promise<number> {
     if (change.lsn > this.#lastLsn) this.#lastLsn = change.lsn;
-    return await deliverChange(this.#entries.values(), this.#fanout, change, (stale) => {
-      this.#staleChanges += stale;
-    });
+    return await deliverChange(
+      this.#entries.targets(change.table),
+      this.#fanout,
+      change,
+      this.#counts,
+    );
   }
 
   /**
@@ -436,7 +451,7 @@ export class LiveQueryRegistry {
       schedule: this.#options.schedule,
       tenant,
     });
-    this.#entries.set(qid, created);
+    this.#entries.add(created);
     return created;
   }
 

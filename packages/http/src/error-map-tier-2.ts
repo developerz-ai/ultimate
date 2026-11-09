@@ -137,4 +137,8 @@ export const TIER_2_ERROR_STATUS = {
   X_PASSKEY_STEP_UP_REQUIRED: 401,
   // @ultimat3/entity — a read-only entity was asked to write a row
   X_ENTITY_READ_ONLY: 500,
+  // @ultimat3/entity — a custom driver was asked for a capability it does not declare
+  X_DRIVER_UNSUPPORTED: 501,
+  // @ultimat3/entity — a custom driver returned a row outside the plan it was given
+  X_DRIVER_ROW_OUT_OF_SCOPE: 500,
 } satisfies Readonly<Record<string, number>>;

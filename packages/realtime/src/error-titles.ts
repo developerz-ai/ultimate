@@ -49,6 +49,10 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_DEVICE_OFFLINE',
   'X_DEVICE_REQUEST_TIMEOUT',
   'X_DEVICE_FRAME_TOO_LARGE',
+  'X_CHANNEL_CATCHUP_POLICY_MISMATCH',
+  'X_REPLICATION_SLOT_INVALIDATED',
+  'X_REPLICATION_SLOT_RECREATED',
+  'X_OFFLINE_QUEUE_FULL',
 ] as const;
 
 export type RealtimeOwnedErrorCode = (typeof REALTIME_OWNED_ERROR_CODES)[number];
@@ -91,6 +95,10 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_DEVICE_OFFLINE: 'no socket is open for the device a request addressed',
   X_DEVICE_REQUEST_TIMEOUT: 'a device did not answer a request before its deadline',
   X_DEVICE_FRAME_TOO_LARGE: 'a device socket frame is over the framework frame limit',
+  X_CHANNEL_CATCHUP_POLICY_MISMATCH: "a channel's catch-up read decides with another policy",
+  X_REPLICATION_SLOT_INVALIDATED: 'the replication slot was invalidated',
+  X_REPLICATION_SLOT_RECREATED: 'the replication slot was recreated',
+  X_OFFLINE_QUEUE_FULL: 'the offline queue is full',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws

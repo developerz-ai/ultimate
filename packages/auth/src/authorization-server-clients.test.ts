@@ -3,6 +3,7 @@
 // `registration: 'dynamic'`, never for `client_credentials`, and counted per address.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import type { OutboundFetch } from '@ultimat3/core/outbound';
 import {
   authorizeUrl,
@@ -12,6 +13,7 @@ import {
   REDIRECT,
   serverFixture,
 } from './authorization-server-fixture';
+import { memoryAuthLimiter } from './rate-limit';
 
 const DOC_ID = 'https://client.example/oauth/client.json';
 const publicDns = async () => ['93.184.216.34'];
@@ -58,6 +60,67 @@ describe('metadata-document clients', () => {
       );
       expect(read.ok && read.request.client.name).toBe('Doc client');
     }
+    expect(calls).toHaveLength(1);
+  });
+
+  test('the consent page read meters metadata fetches per caller when it names one', async () => {
+    const keys: string[] = [];
+    const counted = memoryAuthLimiter(frozenClock(0), {
+      maxAttempts: 10,
+      windowMs: 60_000,
+      lockoutMs: 60_000,
+      scope: 'process',
+    });
+    const { server } = await serverFixture({
+      fetch: serving({ client_id: DOC_ID, redirect_uris: [REDIRECT] }),
+      resolveHost: publicDns,
+      limiter: {
+        policy: counted.policy,
+        reserve: (key) => {
+          keys.push(key);
+          return counted.reserve(key);
+        },
+        refund: (reservation) => counted.refund(reservation),
+        recordSuccess: (key) => counted.recordSuccess(key),
+        lockedUntil: (key) => counted.lockedUntil(key),
+        reset: () => counted.reset(),
+      },
+    });
+    await server.readRequest(authorizeUrl(DOC_ID, pkce().challenge), { callerKey: '203.0.113.9' });
+    expect(keys).toEqual(['oauth-client-metadata:203.0.113.9']);
+  });
+
+  test('a failing metadata document is asked for once — no vendor retry', async () => {
+    const calls: string[] = [];
+    const failing: OutboundFetch = async (url) => {
+      calls.push(url);
+      return new Response('busy', { status: 503 });
+    };
+    const { server } = await serverFixture({ fetch: failing, resolveHost: publicDns });
+    const read = await server.readRequest(authorizeUrl(DOC_ID, pkce().challenge));
+    expect(read.ok).toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('concurrent misses for one client id share one fetch', async () => {
+    const calls: string[] = [];
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow: OutboundFetch = async (url) => {
+      calls.push(url);
+      await gate;
+      return Response.json({ client_id: DOC_ID, redirect_uris: [REDIRECT] });
+    };
+    const { server } = await serverFixture({ fetch: slow, resolveHost: publicDns });
+    const reads = Array.from({ length: 5 }, () =>
+      server.readRequest(authorizeUrl(DOC_ID, pkce().challenge, { scope: 'read' })),
+    );
+    // Every read joined the first fetch synchronously; the gate only holds that fetch open.
+    release();
+    const answers = await Promise.all(reads);
+    expect(answers.every((one) => one.ok)).toBe(true);
     expect(calls).toHaveLength(1);
   });
 

@@ -3,7 +3,7 @@
  * and for tests, and refused at registration under a `shared` declaration — its `scope` says so.
  * Shaped after `@ultimat3/http`'s `memoryRateLimitStore`, including the deliberate eviction order.
  */
-import { finiteCount, uuidV7 } from '@ultimat3/core';
+import { finiteCount, logger, uuidV7 } from '@ultimat3/core';
 import { IdempotencyReservationLostError } from './errors-idempotency';
 import type {
   IdempotencyFailure,
@@ -161,6 +161,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     const tx = liveTransaction();
     if (tx === undefined) {
       if (existing !== undefined) this.#records.set(key, settled(existing));
+      else fenced(key, reservationId, 'settle');
       return Promise.resolve();
     }
     // Inside a transaction the record is settled BY the commit, as the Postgres store's is: a
@@ -188,6 +189,8 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     const existing = this.#owned(key, reservationId);
     if (existing !== undefined) {
       this.#records.set(key, { ...existing, status: 'failed', value: undefined, failure });
+    } else {
+      fenced(key, reservationId, 'fail');
     }
     return Promise.resolve();
   }
@@ -243,6 +246,15 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     // bounded by in-flight concurrency, not by the write rate — and every one of those records
     // becomes sweepable the moment it ages past the window.
   }
+}
+
+/**
+ * Logged, never thrown — the Postgres store's line, word for word (`idempotency-postgres.ts`), so
+ * an operator's alert does not depend on which store is installed. A fenced settlement means the
+ * value this attempt produced is stored nowhere; throwing would turn a done write into an error.
+ */
+function fenced(key: string, reservationId: string, statement: 'settle' | 'fail'): void {
+  logger.warn('action.idempotency.settlement-fenced', { key, reservationId, statement });
 }
 
 /**

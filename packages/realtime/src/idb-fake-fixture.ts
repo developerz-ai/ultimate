@@ -17,10 +17,17 @@ interface Disk {
   readonly durable: Tables;
 }
 
+/** One connection `open` handed out, and whether its holder closed it. */
+export type FakeIdbConnection = IdbDatabaseLike & { readonly closed: boolean };
+
 /** The factory, plus the disk a reload at this instant would find. */
 export interface FakeIdb extends IdbFactoryLike {
   /** A NEW factory over a copy of every committed transaction — what a page reloaded now opens. */
   reloaded(): FakeIdb;
+  /** Every connection opened, in order — closed ones included. */
+  readonly connections: readonly FakeIdbConnection[];
+  /** Another tab opening a newer version: `versionchange` on every connection still open. */
+  versionChange(): void;
 }
 
 export interface FakeIdbOptions {
@@ -31,6 +38,11 @@ export interface FakeIdbOptions {
    * no `complete`, no transaction `error` event. Read at write time, so a test can flip it.
    */
   quotaExceeded?: boolean;
+  /**
+   * The open's upgrade is held off by another tab's connection: `blocked` fires first, and the
+   * upgrade and `success` follow only once this resolves — the other tab closing.
+   */
+  readonly blockedUntil?: Promise<void>;
 }
 
 /** A fresh, empty database server. Share one instance to simulate a reload over the same disk. */
@@ -39,7 +51,24 @@ export function fakeIndexedDb(options: FakeIdbOptions = {}): FakeIdb {
 }
 
 function factoryOver(databases: Map<string, Disk>, options: FakeIdbOptions): FakeIdb {
+  const connections: FakeIdbConnection[] = [];
+  const opened = (name: string, version: number, request: PendingRequest<IdbDatabaseLike>) => {
+    const known = databases.get(name) ?? { version: 0, tables: new Map(), durable: new Map() };
+    databases.set(name, known);
+    const db = database(known, options);
+    connections.push(db);
+    request.result = db;
+    if (known.version < version) {
+      known.version = version;
+      request.onupgradeneeded?.();
+    }
+    request.onsuccess?.();
+  };
   return {
+    connections,
+    versionChange(): void {
+      for (const db of connections) if (!db.closed) db.onversionchange?.();
+    },
     open(name: string, version: number): IdbRequestLike<IdbDatabaseLike> {
       const request = pendingRequest<IdbDatabaseLike>();
       queueMicrotask(() => {
@@ -47,15 +76,10 @@ function factoryOver(databases: Map<string, Disk>, options: FakeIdbOptions): Fak
           request.fail(new DOMException('The operation is insecure.', 'SecurityError'));
           return;
         }
-        const known = databases.get(name) ?? { version: 0, tables: new Map(), durable: new Map() };
-        databases.set(name, known);
-        const db = database(known, options);
-        request.result = db;
-        if (known.version < version) {
-          known.version = version;
-          request.onupgradeneeded?.();
-        }
-        request.onsuccess?.();
+        const holder = options.blockedUntil;
+        if (holder === undefined) return opened(name, version, request);
+        request.onblocked?.();
+        void holder.then(() => opened(name, version, request));
       });
       return request;
     },
@@ -70,9 +94,17 @@ function factoryOver(databases: Map<string, Disk>, options: FakeIdbOptions): Fak
   };
 }
 
-function database(disk: Disk, options: FakeIdbOptions): IdbDatabaseLike {
+function database(disk: Disk, options: FakeIdbOptions): FakeIdbConnection {
   const tables = disk.tables;
+  let closed = false;
   return {
+    onversionchange: null,
+    get closed(): boolean {
+      return closed;
+    },
+    close: (): void => {
+      closed = true;
+    },
     objectStoreNames: { contains: (name: string): boolean => tables.has(name) },
     // An upgrade's version change commits with the open itself.
     createObjectStore: (name: string): void => {

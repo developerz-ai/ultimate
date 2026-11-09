@@ -38,7 +38,7 @@ await commentPosted.enqueue({ params: { postId, orgId, author } });
 | Store | Default | Postgres |
 |---|---|---|
 | `ledger` — the delivery claim | in-memory (one process is genuinely deduped) | `postgresDeliveryLedger({ executor, windowMs })` — `windowMs` never shorter than your idempotency window |
-| `preferences` — the gate | allow all | yours: **the gate ships, what it reads never does** — your taxonomy, your quiet hours |
+| `preferences` — the gate | allow all | yours: **the gate ships, what it reads never does** — your taxonomy, your quiet hours. One method, `allowsMany({ recipients, notifier, channel, event, ctx })`, asked once per chunk of at most `NOTIFY_CHUNK_SIZE` (500) recipients per channel: answer the ids that may be reached. An omitted id is suppressed on that channel only |
 | `inbox` | none — `X_NOTIFY_STORE_MISSING` | `postgresInboxStore({ executor })` |
 | `digest` | none — `X_NOTIFY_STORE_MISSING` | `postgresDigestStore({ executor })` — one window per slot across replicas; `memoryDigestStore()` for one process |
 
@@ -56,8 +56,11 @@ message disappears is your decision ([Configuration](Configuration)).
   are two facts, and the unread count is derived, never stored.
 - A recipient id named twice in the audience is one recipient: the list is deduplicated by `id`,
   first entry kept, before any channel runs.
-- A replay does not send twice: the step checkpoint per channel and recipient, and the ledger's
-  atomic claim on `(notifier, key, channel, recipient)` taken before the send.
+- A replay does not send twice: the step checkpoint per channel and chunk of 500 recipients
+  (`deliver:<channel>:chunk-<n>`), and the ledger's atomic claim on `(notifier, key, channel,
+  recipient)` taken before each send — a chunk that failed part-way re-sends nobody it reached.
+  10k recipients on two channels is 40 preference reads and 40 delivery steps. A digest's append
+  and drain stay one step per recipient; its send is one step per chunk.
 - Two attempts at once: one sends. The other raises `X_NOTIFY_DELIVERY_HELD` and retries past the
   holder's `reclaimAfterMs` (5 minutes by default), so a crashed attempt's recipient is still sent to
   and a late `settle` moves nothing.

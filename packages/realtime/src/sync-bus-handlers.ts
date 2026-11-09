@@ -8,6 +8,7 @@ import type { ChannelHub } from './channel';
 import { detach } from './detach';
 import type { LiveQueryRegistry } from './live-query';
 import { RealtimeError } from './realtime-error';
+import { parseResync } from './replication-resync';
 import {
   type ChangeEnvelope,
   type EnvelopeSource,
@@ -83,6 +84,16 @@ export class ProducerKinds {
 /** The handler a node subscribes to `CHANGE_SUBJECT_ALL` with. */
 export function changeHandler(bus: SyncBus): (payload: string) => void {
   return (payload) => {
+    // The replicator's own word that the stream has a hole no sequence shows (its slot was
+    // recreated): answered as a reconnect is, because it is the same fact — changes never seen.
+    const resync = parseResync(payload);
+    if (resync !== null) {
+      resyncAll(bus, 'live.replication_resync', {
+        reason: resync.reason,
+        producer: resync.producer,
+      });
+      return;
+    }
     const envelope = parseEnvelope(payload);
     if (!envelope) return;
     // Before the gap detector: a dropped producer's sequence is no stream this node follows.
@@ -127,9 +138,14 @@ export function changeHandler(bus: SyncBus): (payload: string) => void {
 export function reconnectHandler(bus: SyncBus): () => void {
   return () => {
     bus.outage?.answered();
-    bus.gaps.forget();
-    const marked = bus.registry.invalidate();
-    const channelGaps = bus.hub.invalidate();
-    logger.warn('live.bus_reconnected', { desynced: marked, channelGaps });
+    resyncAll(bus, 'live.bus_reconnected', {});
   };
+}
+
+/** Every window and every records topic re-read, the producer history forgotten, said once. */
+function resyncAll(bus: SyncBus, event: string, fields: Record<string, string>): void {
+  bus.gaps.forget();
+  const marked = bus.registry.invalidate();
+  const channelGaps = bus.hub.invalidate();
+  logger.warn(event, { ...fields, desynced: marked, channelGaps });
 }

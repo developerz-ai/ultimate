@@ -174,7 +174,7 @@ export function jobWorker(options: WorkerOptions): Worker {
       for (const [index, job] of claimed.entries()) {
         const queue = job.queue;
         // Both caps, and what becomes of a job that passes neither — `worker-admit.ts`.
-        const admission = await admit(job, queue, claimed.slice(index + 1));
+        const admission = await admit(job, queue, () => claimed.slice(index + 1));
         if (admission.kind === 'waiting') continue;
         if (admission.kind === 'refused') {
           // Settled without a body: counted and returned with the pass, the one job this loop

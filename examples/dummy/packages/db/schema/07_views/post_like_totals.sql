@@ -7,6 +7,6 @@ SELECT org_id,
    FROM likes
   GROUP BY org_id, post_id;
 
-CREATE INDEX post_like_totals_org_id_idx ON public.post_like_totals USING btree (org_id);
+CREATE INDEX post_like_totals_org_id_post_id_idx ON public.post_like_totals USING btree (org_id, post_id);
 
 CREATE UNIQUE INDEX post_like_totals_post_id_key ON public.post_like_totals USING btree (post_id);

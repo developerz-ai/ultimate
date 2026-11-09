@@ -21,6 +21,7 @@ const BUILD_TIME_MODULES = [
   'render-ssr',
   'render-static',
   'render-stream',
+  'render-walk',
 ] as const;
 
 const scanner = new Bun.Transpiler({ loader: 'ts' });

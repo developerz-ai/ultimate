@@ -98,14 +98,45 @@ tmp:
 #   httpFrom     empty = any source; narrow it to your ingress controller's namespace, e.g.
 #                [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }]
 #   metricsFrom  default: any pod in the cluster and no address outside it
-#   egress       OFF while empty; a list turns on egress filtering with exactly those rules —
-#                the database, NATS, the object store and DNS are your addresses, so list all of them
+#   egress       FILTERED by default, and closed only where it is dangerous: DNS, every pod in the
+#                cluster, and every routable address — private ranges INCLUDED, so a database on a
+#                VPC address (RDS on 10.x) keeps working — but never 169.254.0.0/16 (the cloud
+#                metadata endpoint, which hands any pod the node's credentials, and link-local),
+#                fe80::/10, AWS's fd00:ec2::254 or its NAT64 spelling 64:ff9b::a9fe:a9fe.
+#                A list you set REPLACES it whole; \`egress: []\` turns filtering OFF.
+#                Recommended hardening, once you know your backends' addresses: replace the
+#                cluster-pods rule with \`- to: [{ podSelector: {} }]\` (this namespace only), add
+#                10.0.0.0/8, 100.64.0.0/10, 172.16.0.0/12, 192.168.0.0/16 to the IPv4 except and
+#                fc00::/7, 64:ff9b::/96 to the IPv6 one, then one rule per backend, e.g.
+#                  - to: [{ ipBlock: { cidr: 10.0.12.0/24 } }]
+#                    ports: [{ port: 5432, protocol: TCP }]
+#                An IPv6 cluster whose pods hold GLOBAL addresses must narrow ::/0 itself: no
+#                except list knows another tenant's global prefix.
 networkPolicy:
   enabled: true
   httpFrom: []
   metricsFrom:
     - namespaceSelector: {}
-  egress: []
+  egress:
+    # Port 53 to cluster pods (CoreDNS behind kube-dns) and NodeLocal DNSCache's 169.254.20.10.
+    - to:
+        - namespaceSelector: {}
+        - ipBlock: { cidr: 169.254.20.10/32 }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    # Every pod in the cluster, on every port: an in-cluster Postgres, NATS, Redis or collector in
+    # any namespace — named by selector, because some CNIs never match a pod by its ipBlock.
+    - to:
+        - namespaceSelector: {}
+    # Every routable address, private ranges included; never metadata or link-local.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.0.0/16]
+        - ipBlock:
+            cidr: ::/0
+            except: [fe80::/10, fd00:ec2::254/128, 64:ff9b::a9fe:a9fe/128]
 
 # The scrape listener every serving role opens, on its own port and never the app's: the ingress
 # routes / to web, so /metrics beside /healthz on 3000 is /metrics on the internet. This is

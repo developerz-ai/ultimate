@@ -19,7 +19,7 @@ change to every package.
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from `async-context.ts`, in **every** package — never `new AsyncLocalStorage` |
-| Exports | explicit in `src/index.ts`; no `export *`. FIVE public subpaths (`./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one INTERNAL (`./internal/error-status`); nothing that constructs an error joins `./page` (`page-bundle.test.ts`, 1.5 kB). Full rule: `docs/history/core.md` |
+| Exports | explicit in `src/index.ts`; no `export *`. FIVE public subpaths (`./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one INTERNAL (`./internal/error-status`); nothing that constructs an error joins `./page` (`page-bundle.test.ts`, 1.5 kB). `./page` is what a browser client imports — `@ultimat3/action`'s `client.ts` and error modules read it, never the barrel; the barrel itself must build for a browser with no warning (no static `node:` import a polyfill lacks — `image/png-pixels.ts` resolves `node:zlib` at the call). Full rule: `docs/history/core.md` |
 | Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
 | Type claims | `type-pins.ts`, never a `.test.ts` — `tsconfig.json` excludes tests |
 
@@ -54,16 +54,17 @@ top-level `UltimateError` use in `error-codes.ts`.
   It imports `secret.ts` one way only: `secret.ts` owns `REDACTED`, `logger.ts` re-exports it.
 - **`ActorFacts` is the app's extension point on `Actor`** (module augmentation). Core never declares
   a fact; every fact reads `T | undefined` through `actorFact()` so an unresolved fact denies.
-  `type-pins.ts` pins the shape against a local sample.
+  `type-pins.ts` pins the shape.
 
 | Concept | Owner | Note |
 |---|---|---|
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never a second env var |
-| one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`). Full rule: `docs/history/core.md` |
-| the ONE keyed hash | `hmac.ts` (`hmac(alg, key, data, encoding?)`) | `node:crypto`'s `createHmac`: a keyed `Bun.CryptoHasher` throws a stale failed-EC-import error (Bun 1.4.4). `bun run keyed-hasher` (`X_KEYED_HASHER`). Full rule: `docs/history/core.md` |
-| what this process does | `roles.ts` (`ROLE`) | |
+| one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`). Rows here: `docs/history/core.md` |
+| the ONE keyed hash | `hmac.ts` (`hmac(alg, key, data, encoding?)`) | `node:crypto`'s `createHmac`: a keyed `Bun.CryptoHasher` throws a stale failed-EC-import error (Bun 1.4.4). `bun run keyed-hasher` (`X_KEYED_HASHER`) |
+| this process's job | `roles.ts` (`ROLE`) | |
+| `allowHosts` | `host-rules.ts` | a wildcard admits no inward literal, no `localhost`/`*.localhost`; exact rules do |
 | how a route renders, caches offline and hydrates | `route-vocabulary.ts` (`RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it |
-| which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments. Full rule: `docs/history/core.md` |
+| which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments |
 | an `http.path` template (`/orders/:id`) | `route-path-template.ts` (pure, also on `./page`) + `route-path-merge.ts` (`mergePathParams`, `X_HTTP_PATH_INPUT_CONFLICT`) | `action` and `query` both pin one and share a tier; never a copy in either |
 | `errors:` | `declared-errors.ts`, `-openapi.ts`, `-scan.ts` | ONE copy for `action` and `query`. The HTTP status is passed in (`ErrorStatusOf`): http is above core. The scan is test-time only |
 | a session's loss, an island's poll | `session-lost.ts` (`noteRefusal`, called by `client-dispatch.ts`; a cell on the page handle, cleared by `rescope()`), `visible-interval.ts` (the ONE poll an island takes) | both on `./page`, pinned by `page-bundle.test.ts` |
@@ -128,7 +129,7 @@ top-level `UltimateError` use in `error-codes.ts`.
   package screen carries `Finite` in its name.
 - **`mcp-exposure.ts`'s `isMcpExposed` is the ONE answer to "did this opt into MCP?"**, read by
   `action`, `query`, `mcp`, `ai`, `manifest`. `@ultimat3/cli`'s `mcp-exposure-pin.test.ts` checks
-  it; `@ultimat3/admin`'s own catalog is the one opt-OUT exception (`mcp-tools.ts`).
+  it; `isAgentOffered` adds `agents: true`; `@ultimat3/admin`'s own catalog is the one opt-OUT exception (`mcp-tools.ts`).
 
 ## Metrics, tracing, reporting
 

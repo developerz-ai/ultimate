@@ -10,72 +10,22 @@
 //      `ack`/`fail` frame settles it, or a lost connection returns it to the queue.
 
 import type { ActionPin } from '@ultimat3/core/page';
-import { renderThrowable, stringField } from '@ultimat3/core/page';
+import { finiteCount, renderThrowable, stringField } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
-import { OfflineQueueAbandonedError } from './page-errors';
+import type { MutationStatus, QueuedMutation, QueueState, QueueStore } from './offline-queue-store';
+import { OfflineQueueAbandonedError, OfflineQueueFullError } from './page-errors';
 import type { WireError } from './sync-protocol';
 
-export type MutationStatus = 'pending' | 'inflight' | 'acked' | 'failed';
-
-export interface QueuedMutation {
-  /** Idempotency key. Supplied by the mutator, stable across retries and reloads. */
-  readonly key: string;
-  /** Monotonic per client. Never renumbered — rebase replays in this order. */
-  readonly seq: number;
-  readonly name: string;
-  readonly input: JsonValue;
-  /** The action's `http` pin, when the write was made against one (`pinned-wire.ts`). */
-  readonly http?: ActionPin | undefined;
-  readonly enqueuedAt: number;
-  attempts: number;
-  status: MutationStatus;
-  error: WireError | null;
-}
-
-export interface QueueState {
-  readonly mutations: readonly QueuedMutation[];
-  readonly nextSeq: number;
-}
-
-/**
- * One change to the durable queue: these entries written BY KEY, these keys deleted, and the
- * sequence floor. Never the whole queue — two tabs of one user share the store, and a whole-queue
- * save let the last tab to save erase the other's queued write.
- */
-export interface QueueChange {
-  readonly puts: readonly QueuedMutation[];
-  readonly deletes: readonly string[];
-  readonly nextSeq: number;
-}
-
-/** Durability seam: IndexedDB in the browser (`page-outbox.ts`), memory in tests. */
-export interface QueueStore {
-  load(): Promise<QueueState>;
-  write(change: QueueChange): Promise<void>;
-}
-
-export class MemoryQueueStore implements QueueStore {
-  readonly #mutations = new Map<string, QueuedMutation>();
-  #nextSeq = 1;
-
-  async load(): Promise<QueueState> {
-    return {
-      mutations: [...this.#mutations.values()].map((m) => ({ ...m })),
-      nextSeq: this.#nextSeq,
-    };
-  }
-
-  async write(change: QueueChange): Promise<void> {
-    for (const key of change.deletes) this.#mutations.delete(key);
-    for (const mutation of change.puts) this.#mutations.set(mutation.key, { ...mutation });
-    this.#nextSeq = Math.max(this.#nextSeq, change.nextSeq);
-  }
-}
-
-/** The one way to build the in-process queue store; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
-export function memoryQueueStore(): MemoryQueueStore {
-  return new MemoryQueueStore();
-}
+// The shapes and the memory store moved next door; their importers keep this path.
+export {
+  MemoryQueueStore,
+  type MutationStatus,
+  memoryQueueStore,
+  type QueueChange,
+  type QueuedMutation,
+  type QueueState,
+  type QueueStore,
+} from './offline-queue-store';
 
 export interface DrainReport {
   readonly sent: number;
@@ -87,9 +37,25 @@ export interface DrainReport {
 
 export type MutationSender = (mutation: QueuedMutation) => Promise<void>;
 
+export interface OfflineQueueOptions {
+  /**
+   * The most writes held at once. Past it a NEW key is refused (`X_OFFLINE_QUEUE_FULL`); a key
+   * already held still collapses, and nothing queued is ever dropped. Absent: no ceiling.
+   */
+  readonly maxQueued?: number | undefined;
+}
+
 export class OfflineQueue {
   readonly #store: QueueStore;
-  #mutations: QueuedMutation[] = [];
+  readonly #maxQueued: number | undefined;
+  /**
+   * By key, HELD in sequence order: a key is a lookup and the queue reads in seq order with no sort.
+   * A scan per enqueue and ack plus a sort per `pending()` made a long offline session quadratic.
+   * Written through `#seat` and `#append` only, which are what keep the order true.
+   */
+  #mutations = new Map<string, QueuedMutation>();
+  /** The highest seq held: an append above it keeps the order without a sort. */
+  #tailSeq = 0;
   #nextSeq = 1;
   #collapsed = 0;
   /** The drain lane: one pass at a time, in call order. See `drain`. */
@@ -106,9 +72,12 @@ export class OfflineQueue {
   #writing = 0;
   #written = 0;
 
-  private constructor(store: QueueStore, state: QueueState) {
+  private constructor(store: QueueStore, state: QueueState, options: OfflineQueueOptions) {
     this.#store = store;
-    this.#mutations = state.mutations.map((mutation) => ({ ...mutation }));
+    const max = options.maxQueued;
+    this.#maxQueued =
+      max === undefined ? undefined : finiteCount('OfflineQueue', 'maxQueued', max, 1);
+    this.#seat(state.mutations.map((mutation) => ({ ...mutation })));
     this.#nextSeq = state.nextSeq;
   }
 
@@ -122,8 +91,8 @@ export class OfflineQueue {
    * write the old page did get through is answered from the action's idempotency store and is
    * never applied twice. That requirement is what makes this resend safe, not the key alone.
    */
-  static async open(store: QueueStore): Promise<OfflineQueue> {
-    const queue = new OfflineQueue(store, await store.load());
+  static async open(store: QueueStore, options: OfflineQueueOptions = {}): Promise<OfflineQueue> {
+    const queue = new OfflineQueue(store, await store.load(), options);
     await queue.#reclaimInflight();
     return queue;
   }
@@ -137,7 +106,7 @@ export class OfflineQueue {
   async reload(): Promise<void> {
     if (this.#abandoned) return;
     const state = await this.#store.load();
-    this.#mutations = state.mutations.map((mutation) => ({ ...mutation }));
+    this.#seat(state.mutations.map((mutation) => ({ ...mutation })));
     this.#nextSeq = Math.max(this.#nextSeq, state.nextSeq);
     await this.#reclaimInflight();
   }
@@ -162,7 +131,7 @@ export class OfflineQueue {
   #adopt(state: QueueState): void {
     const onDisk = new Map(state.mutations.map((mutation) => [mutation.key, mutation]));
     const kept: QueuedMutation[] = [];
-    for (const mutation of this.#mutations) {
+    for (const mutation of this.#mutations.values()) {
       const disk = onDisk.get(mutation.key);
       onDisk.delete(mutation.key);
       // Gone from the disk: another tab's pass settled it. One on THIS tab's wire stays its own.
@@ -174,18 +143,42 @@ export class OfflineQueue {
       kept.push(mutation);
     }
     for (const disk of onDisk.values()) kept.push({ ...disk });
-    this.#mutations = kept;
+    this.#seat(kept);
     this.#nextSeq = Math.max(this.#nextSeq, state.nextSeq);
   }
 
+  /** The whole queue replaced — a load, a reload, a refresh: sorted ONCE here, never on a read. */
+  #seat(mutations: readonly QueuedMutation[]): void {
+    const ordered = [...mutations].sort((a, b) => a.seq - b.seq);
+    this.#mutations = new Map(ordered.map((mutation) => [mutation.key, mutation]));
+    this.#tailSeq = ordered.at(-1)?.seq ?? 0;
+  }
+
+  /** One new entry. Its seq is the queue's newest in every path today; one that is not re-seats. */
+  #append(mutation: QueuedMutation): void {
+    if (mutation.seq > this.#tailSeq) {
+      this.#mutations.set(mutation.key, mutation);
+      this.#tailSeq = mutation.seq;
+      return;
+    }
+    this.#seat([...this.#mutations.values(), mutation]);
+  }
+
+  /** Is this the entry the queue holds for its key? Identity: a re-issued key is another entry. */
+  #holds(mutation: QueuedMutation): boolean {
+    return this.#mutations.get(mutation.key) === mutation;
+  }
+
   async #reclaimInflight(): Promise<void> {
-    const reclaimed = this.#mutations.filter((mutation) => mutation.status === 'inflight');
+    const reclaimed = [...this.#mutations.values()].filter(
+      (mutation) => mutation.status === 'inflight',
+    );
     for (const mutation of reclaimed) mutation.status = 'pending';
     if (reclaimed.length > 0) await this.#persist(reclaimed);
   }
 
   get size(): number {
-    return this.#mutations.length;
+    return this.#mutations.size;
   }
 
   get collapsed(): number {
@@ -197,7 +190,7 @@ export class OfflineQueue {
   }
 
   find(key: string): QueuedMutation | undefined {
-    return this.#mutations.find((mutation) => mutation.key === key);
+    return this.#mutations.get(key);
   }
 
   /**
@@ -205,13 +198,13 @@ export class OfflineQueue {
    * anything downstream is allowed to use, and the count a UI renders as "unsynced".
    */
   pending(): readonly QueuedMutation[] {
-    return this.#mutations
-      .filter((mutation) => mutation.status === 'pending' || mutation.status === 'inflight')
-      .sort((a, b) => a.seq - b.seq);
+    return [...this.#mutations.values()].filter(
+      (mutation) => mutation.status === 'pending' || mutation.status === 'inflight',
+    );
   }
 
   all(): readonly QueuedMutation[] {
-    return [...this.#mutations].sort((a, b) => a.seq - b.seq);
+    return [...this.#mutations.values()];
   }
 
   async enqueue(args: {
@@ -237,12 +230,21 @@ export class OfflineQueue {
       this.#collapsed += 1;
       return existing;
     }
+    // After the collapse, never before it: a held key — even a failed one re-issued in place — is
+    // no new write. Refused, never made room for: a dropped entry is an intent the user saw saved.
+    // Counted as `pending()` counts — still to send: a refused entry kept for the UI never drains,
+    // and counting it filled the queue for good, across reloads. Walked only once at the size.
+    const max = this.#maxQueued;
+    const full = max !== undefined && this.#mutations.size >= max && this.pending().length >= max;
+    if (existing === undefined && full) {
+      throw new OfflineQueueFullError({ name: args.name, maxQueued: max });
+    }
     // A terminally failed entry is a decision the server already made about this key, kept for the
     // UI — collapsing onto it makes an explicit idempotency key unusable for the rest of the
     // session, because nothing ever retries a denial. Re-issuing one is a NEW intent, so the old
     // entry is dropped and this one takes a new sequence at the back of the queue.
     // By identity: `existing` IS the entry for this key, found above — no second key comparison.
-    if (existing) this.#mutations = this.#mutations.filter((entry) => entry !== existing);
+    if (existing) this.#mutations.delete(existing.key);
     const mutation: QueuedMutation = {
       key: args.key,
       seq: this.#nextSeq,
@@ -255,7 +257,7 @@ export class OfflineQueue {
       error: null,
     };
     this.#nextSeq += 1;
-    this.#mutations.push(mutation);
+    this.#append(mutation);
     await this.#persist([mutation]);
     return mutation;
   }
@@ -302,7 +304,7 @@ export class OfflineQueue {
     this.#epoch += 1;
     let returned = 0;
     const back: QueuedMutation[] = [];
-    for (const mutation of this.#mutations) {
+    for (const mutation of this.#mutations.values()) {
       if (mutation.status !== 'inflight') continue;
       mutation.status = 'pending';
       returned += 1;
@@ -333,8 +335,7 @@ export class OfflineQueue {
     const mutation = this.find(key);
     if (!mutation) return;
     mutation.status = 'acked';
-    // By identity: `find` already matched it, and a second comparison of the key is the same question.
-    this.#mutations = this.#mutations.filter((entry) => entry !== mutation);
+    this.#mutations.delete(key);
     await this.#persist([], [key]);
   }
 
@@ -361,14 +362,12 @@ export class OfflineQueue {
    * nothing at all.
    */
   #stillSendable(mutation: QueuedMutation): boolean {
-    return mutation.status === 'pending' && this.#mutations.includes(mutation);
+    return mutation.status === 'pending' && this.#holds(mutation);
   }
 
   /** Never sent on this connection. `inflight` is excluded: it is already on a socket. */
   #sendable(): readonly QueuedMutation[] {
-    return this.#mutations
-      .filter((mutation) => mutation.status === 'pending')
-      .sort((a, b) => a.seq - b.seq);
+    return [...this.#mutations.values()].filter((mutation) => mutation.status === 'pending');
   }
 
   /** One drain pass. Never called concurrently with itself — `drain` owns that. */
@@ -417,7 +416,7 @@ export class OfflineQueue {
       } catch (error) {
         // Settled inside `send` before it threw (the page outbox acks or fails it, then a merge may
         // raise): writing it back as `pending` would replay what the server already decided.
-        if (this.#mutations.includes(mutation) && statusOf(mutation) !== 'failed') {
+        if (this.#holds(mutation) && statusOf(mutation) !== 'failed') {
           mutation.status = 'pending';
           mutation.error = toQueueError(error);
           await this.#persist([mutation]);
@@ -432,7 +431,7 @@ export class OfflineQueue {
     }
     // Only what this pass touched AND the queue still holds: an entry the server settled during the
     // pass was already deleted by `ack`, and writing it back would resurrect it.
-    await this.#persist(touched.filter((mutation) => this.#mutations.includes(mutation)));
+    await this.#persist(touched.filter((mutation) => this.#holds(mutation)));
     return {
       sent,
       collapsed: this.#collapsed,
@@ -442,8 +441,9 @@ export class OfflineQueue {
   }
 
   async clear(): Promise<void> {
-    const keys = this.#mutations.map((mutation) => mutation.key);
-    this.#mutations = [];
+    const keys = [...this.#mutations.keys()];
+    this.#mutations = new Map();
+    this.#tailSeq = 0;
     await this.#persist([], keys);
   }
 

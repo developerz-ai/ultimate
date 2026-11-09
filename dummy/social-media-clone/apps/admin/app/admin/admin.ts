@@ -8,6 +8,7 @@
 // `/admin/jobs` and its runs, queues, tasks and workers — is every admin's, declared by nothing.
 
 import { db, schema } from '@social-media-clone/db';
+import { mcpOAuth } from '@social-media-clone/web/app/oauth/server';
 import {
   type AdminApp,
   adminRepoFor,
@@ -77,6 +78,9 @@ export const admin: AdminApp = defineAdmin({
         // Through the admin's own adapter, so the id off the URL is PARSED by the key column
         // before it reaches the driver — never cast.
         const row = await adminRepoFor(schema.users, db.users).update(id, { suspended: true });
+        // Every OAuth grant she consented to dies with it — revoked, not merely refused while the
+        // flag is set (`oauthActor` does that too), so lifting the suspension revives no agent.
+        await mcpOAuth.revoke({ subject: id });
         return { id, suspended: row.suspended === true };
       },
     },

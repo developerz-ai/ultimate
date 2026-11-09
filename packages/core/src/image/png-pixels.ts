@@ -3,13 +3,6 @@
 // safe zone `@ultimat3/pwa` promises is a composite. So this file exists for exactly that one hop:
 // Bun re-encodes to PNG, this reads the pixels back, `canvas.ts` blits, this writes them again.
 
-// why: `Bun.inflateSync` takes no output bound — measured, it ignores `maxOutputLength` and
-// returns the whole stream — and `DecompressionStream` is async where this seam is synchronous.
-// `node:zlib` is the one inflate here that can be told when to stop. A NAMESPACE import, never a
-// named one: the browser polyfill of this module has no `inflateRawSync`, and a named import of a
-// missing export fails the BUNDLE of every browser graph that reaches the barrel
-// (`async-context.test.ts` builds one) — for a function no browser ever calls.
-import * as zlib from 'node:zlib';
 import { stringField } from '../error-render';
 import { imageDecodeFailed, imageUnsupported } from './errors';
 import {
@@ -114,6 +107,19 @@ function readHeader(bytes: Uint8Array): PngHeader {
 }
 
 /**
+ * why: `Bun.inflateSync` takes no output bound — measured, it ignores `maxOutputLength` and returns
+ * the whole stream — and `DecompressionStream` is async where this seam is synchronous. `node:zlib`
+ * is the one inflate here that can be told when to stop. Resolved at the CALL, never imported: a
+ * static import puts `node:zlib` in every browser graph that parses core's barrel, and Bun's
+ * polyfill has no `inflateRawSync`, so each such build warned (`@ultimat3/action`'s
+ * `client-bundle.test.ts`) — for a function no browser ever calls.
+ */
+function serverZlib(): typeof import('node:zlib') {
+  // why: Bun's inflate has no output bound, and a static import warns in every browser build.
+  return process.getBuiltinModule('node:zlib');
+}
+
+/**
  * Every IDAT concatenated — a PNG may split its stream across any number of them — and inflated
  * to AT MOST `limit` bytes, which is what the header says the pixels need. Inflating first and
  * measuring after is the decompression bomb: deflate packs zeros ~1000:1, so a file of a few
@@ -136,7 +142,7 @@ function idatStream(bytes: Uint8Array, limit: number): Uint8Array {
   try {
     // The 2-byte zlib header and the 4-byte Adler-32 trailer are PNG's envelope, stripped here
     // so the payload inflates as RAW deflate — see the encoder above for the mirror image.
-    return zlib.inflateRawSync(unshared(stream.subarray(2, stream.length - 4)), {
+    return serverZlib().inflateRawSync(unshared(stream.subarray(2, stream.length - 4)), {
       maxOutputLength: limit,
     });
   } catch (error) {
