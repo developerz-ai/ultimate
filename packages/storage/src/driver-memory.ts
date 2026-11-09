@@ -31,6 +31,7 @@ import {
   type StorageListEntry,
   type StorageObject,
   type StorageRead,
+  type StreamOptions,
   sha256Base64,
   signedByteBound,
   toBytes,
@@ -40,6 +41,7 @@ import { keyInTheWay } from './driver-memory-conflict';
 import { memoryPartStore } from './driver-memory-multipart';
 import { checksumMismatch, getTooLarge, keyConflict, objectNotFound, putFailed } from './errors';
 import { objectChanged } from './errors-promote';
+import { revisionChanged } from './errors-stream';
 import { withStagedMultipart } from './multipart-staged';
 import {
   assertObjectLockOptions,
@@ -58,6 +60,7 @@ import {
   servedRange,
   streamedRange,
 } from './range';
+import { assertWithinRequestCeiling, screenRequestCeiling } from './request-ceiling';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import { resolveSigningSecret } from './signing-secret';
@@ -110,6 +113,7 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
     1,
   );
   const clock = options.clock ?? systemClock;
+  const maxRequestBytes = screenRequestCeiling(DRIVER_NAME, options.maxRequestBytes);
   let baseUrl = options.baseUrl ?? signedUrlBaseFor(DRIVER_NAME);
   const secret = resolveSigningSecret(DRIVER_NAME, options);
   const stored = new Map<string, Stored>();
@@ -136,8 +140,16 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
     if (blocking !== undefined) throw keyConflict(registered, key, blocking);
   };
 
-  /** Both writes end here, with no await between the checks and the write. */
-  const commit = (safe: string, bytes: Uint8Array, putOptions?: PutOptions): StorageObject => {
+  /**
+   * Both writes end here, with no await between the checks and the write. `owned` is a buffer this
+   * disk built itself (`putStream`'s one concatenation), kept as is rather than copied a third time.
+   */
+  const commit = (
+    safe: string,
+    bytes: Uint8Array,
+    putOptions?: PutOptions,
+    owned = false,
+  ): StorageObject => {
     const object: StorageObject = {
       key: safe,
       size: bytes.byteLength,
@@ -152,7 +164,7 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
     refuseOverwrite(safe, 'overwrite');
     // A copy in, as a file write is: the caller's buffer and metadata are the caller's to reuse.
     stored.set(safe, {
-      bytes: bytes.slice(),
+      bytes: owned ? bytes : bytes.slice(),
       object: snapshot(object),
       lock: requestedLock(putOptions),
     });
@@ -162,6 +174,14 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
   const found = (key: string): Stored => {
     const hit = stored.get(key);
     if (hit === undefined) throw objectNotFound(registered, key);
+    return hit;
+  };
+  /** `found`, held to the revision a streamed read was pinned to. */
+  const pinned = (key: string, options: StreamOptions | undefined): Stored => {
+    const hit = found(key);
+    const etag = options?.etag;
+    if (etag !== undefined && hit.object.etag !== etag)
+      throw revisionChanged(registered, key, etag);
     return hit;
   };
 
@@ -230,7 +250,10 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
             'await disk.putStream(key, stream, { maxBytes })   # with a fresh stream',
           );
         });
-        return commit(safe, new Uint8Array(Bun.concatArrayBuffers(chunks)), streamOptions);
+        // The chunks are dropped once concatenated: one copy of the body, owned by the map.
+        const bytes = new Uint8Array(Bun.concatArrayBuffers(chunks));
+        chunks.length = 0;
+        return commit(safe, bytes, streamOptions, true);
       },
 
       async stat(key: string): Promise<StorageObject | undefined> {
@@ -255,15 +278,20 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
         return { object: snapshot(hit.object), bytes: hit.bytes.slice() };
       },
 
-      async stream(key: string): Promise<ReadableStream<Uint8Array>> {
-        const hit = found(assertSafeKey(key));
+      async stream(key: string, options?: StreamOptions): Promise<ReadableStream<Uint8Array>> {
+        const safe = assertSafeKey(key);
+        const hit = pinned(safe, options);
         return new Blob([hit.bytes.slice()]).stream();
       },
 
-      async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
+      async streamRange(
+        key: string,
+        range: ByteRange,
+        options?: StreamOptions,
+      ): Promise<ReadableStream<Uint8Array>> {
         const safe = assertSafeKey(key);
         assertStreamRange(DRIVER_NAME, range);
-        const hit = found(safe);
+        const hit = pinned(safe, options);
         const [first, last] = streamedRange(DRIVER_NAME, safe, range, hit.bytes.byteLength);
         return new Blob([hit.bytes.slice(first, last + 1)]).stream();
       },
@@ -323,12 +351,14 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
       },
 
       async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
+        const bound = signedByteBound(DRIVER_NAME, urlOptions);
+        assertWithinRequestCeiling(DRIVER_NAME, maxRequestBytes(), { ...urlOptions, bound });
         return buildSignedUrl({
           secret,
           key: assertSafeKey(key),
           method: urlOptions?.method,
           expiresInMs: urlOptions?.expiresInMs,
-          maxBytes: signedByteBound(DRIVER_NAME, urlOptions),
+          maxBytes: bound,
           contentType: urlOptions?.contentType,
           part: urlOptions?.part,
           baseUrl,

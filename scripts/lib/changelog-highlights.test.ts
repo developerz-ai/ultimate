@@ -1,5 +1,5 @@
 // The two changelog rules wiki/Stability.md adds: from 30.0.0 every release section opens with
-// `### Highlights` (at most five bullets), and once v30 has shipped a `BREAKING —` entry may not
+// `### Highlights` (at most five bullets), and once v31 has shipped a `BREAKING —` entry may not
 // reach `main` while the major window is closed. Fixtures only; the real file is pinned last.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
@@ -18,6 +18,8 @@ const log = (unreleased: string, ...sections: readonly string[]): string =>
   ['# Changelog', '', '## [Unreleased]', '', unreleased, '', ...sections].join('\n');
 const HIGHLIGHTED =
   '## 30.0.0 - 2026-11-10\n\n### Highlights\n\n- one\n- two\n\n### Added\n\n- x\n';
+// The window opens at v31 (wiki/Stability.md, the 2026-11-09 ruling): v30 starts no clock.
+const V31 = '## 31.0.0 - 2026-11-10\n\n### Highlights\n\n- one\n\n### Removed\n\n- x\n';
 
 describe('unit · changelog-highlights · every release from 30.0.0 opens with Highlights', () => {
   test('a highlighted section passes; a section below 30 is exempt; [Unreleased] is exempt', () => {
@@ -55,9 +57,9 @@ describe('unit · changelog-highlights · every release from 30.0.0 opens with H
 describe('unit · changelog-highlights · a break never reaches main inside the window', () => {
   const breaking = '### Changed\n\n- **BREAKING — (#1) a thing goes.** detail';
 
-  test('a PR to main with a BREAKING entry, after v30, inside the window, is refused', () => {
+  test('a PR to main with a BREAKING entry, after v31, inside the window, is refused', () => {
     const findings = breakingOnMainFindings({
-      changelog: log(breaking, HIGHLIGHTED),
+      changelog: log(breaking, V31, HIGHLIGHTED),
       target: 'main',
       today: '2026-11-20',
     });
@@ -65,8 +67,18 @@ describe('unit · changelog-highlights · a break never reaches main inside the 
     expect(findings[0]?.fix).toStartWith('git rebase --onto next main');
   });
 
-  test('the same entry passes on next, before v30, once the window opens, or with an advisory', () => {
-    const changelog = log(breaking, HIGHLIGHTED);
+  test('a break reaches main while the newest major is v30: v31 is where the breaks land', () => {
+    expect(
+      breakingOnMainFindings({
+        changelog: log(breaking, HIGHLIGHTED),
+        target: 'main',
+        today: '2026-11-20',
+      }),
+    ).toEqual([]);
+  });
+
+  test('the same entry passes on next, before v31, once the window opens, or with an advisory', () => {
+    const changelog = log(breaking, V31, HIGHLIGHTED);
     expect(breakingOnMainFindings({ changelog, target: 'next', today: '2026-11-20' })).toEqual([]);
     expect(breakingOnMainFindings({ changelog, target: undefined, today: '2026-11-20' })).toEqual(
       [],
@@ -81,10 +93,7 @@ describe('unit · changelog-highlights · a break never reaches main inside the 
     ).toEqual([]);
     expect(
       breakingOnMainFindings({
-        changelog: log(
-          `> **Security exception:** \`CVE-2026-1234\` — why\n\n${breaking}`,
-          HIGHLIGHTED,
-        ),
+        changelog: log(`> **Security exception:** \`CVE-2026-1234\` — why\n\n${breaking}`, V31),
         target: 'main',
         today: '2026-11-20',
       }),

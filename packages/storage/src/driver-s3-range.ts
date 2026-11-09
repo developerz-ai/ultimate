@@ -3,6 +3,7 @@
 // slice and its description come from one response about one version. A HEAD beside it could not
 // promise that: a write between the two, or an A → B → A overwrite of one length, slips past both.
 
+import { renderThrowable } from '@ultimat3/core';
 import type { StorageObject, StorageRead } from './driver';
 import { DEFAULT_CONTENT_TYPE } from './driver';
 import { type S3Refusal, type S3WireOptions, sendSigned } from './driver-s3-signed';
@@ -28,9 +29,6 @@ const CONTENT_RANGE = /^bytes (\d+)-(\d+)\/(\d+)$/;
  * object's size is not known until the answer — so at most the ceiling crosses the wire, and an
  * answer that shows the object went on past the cap is refused before its body is read.
  */
-const errorMessage = (thrown: unknown): string =>
-  thrown instanceof Error ? thrown.message : String(thrown);
-
 export async function readS3Range(
   wire: S3WireOptions,
   key: string,
@@ -74,7 +72,7 @@ export async function readS3Range(
     bytes = new Uint8Array(await response.arrayBuffer());
   } catch (thrown) {
     // The headers came, the body broke (a reset connection): the disk's coded read failure.
-    return deps.unreadable(key, `the ranged body broke mid-read: ${errorMessage(thrown)}`);
+    return deps.unreadable(key, `the ranged body broke mid-read: ${renderThrowable(thrown)}`);
   }
   if (bytes.byteLength !== served[1] - served[0] + 1) {
     return deps.unreadable(

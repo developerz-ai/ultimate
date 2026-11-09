@@ -284,6 +284,16 @@ describe('signAwsRequest — the payload and the rules around the vectors', () =
     expect(query).toBe('q=%28x%29');
   });
 
+  test("a space URLSearchParams wrote as `+` is signed and sent as %20 — S3's listing pages by it", async () => {
+    const url = new URL('https://examplebucket.s3.amazonaws.com/');
+    url.searchParams.set('prefix', 'my file/');
+    url.searchParams.set('key-marker', 'a+b c');
+    const signed = await signAwsRequest({ ...S3, method: 'GET', url });
+    const query = signed.canonicalRequest.split('\n')[2];
+    expect(query).toBe('key-marker=a%2Bb%20c&prefix=my%20file%2F');
+    expect(signed.url).toBe(`https://examplebucket.s3.amazonaws.com/?${query}`);
+  });
+
   test('a caller cannot pre-empt the date or the authorization', async () => {
     const signed = await signAwsRequest({
       ...SUITE,

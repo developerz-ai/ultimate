@@ -154,8 +154,8 @@ export async function pollDevice(
   if (deviceCode === undefined) return refused('invalid_request', 'device_code is required');
   const now = config.clock.now();
   const hash = sha256Hex(deviceCode);
-  const device = await config.store.pollDevice(hash, now);
-  if (device === null || device.clientId !== client.clientId) {
+  const device = await config.store.pollDevice(hash, client.clientId, now);
+  if (device === null) {
     return refused('invalid_grant', 'the device code is unknown');
   }
   if (device.expiresAt.getTime() <= now.getTime()) {

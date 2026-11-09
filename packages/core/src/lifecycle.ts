@@ -69,6 +69,11 @@ let inflight = 0;
 let lifetime = 0;
 let registrations: Registration[] = [];
 let drainPromise: Promise<void> | undefined;
+/**
+ * Set when a drain gave up on work: at the deadline (`X_SHUTDOWN_TIMEOUT`), or when the drain itself
+ * threw and skipped the phases after it. A hook that THREW is not this: it ended, and said so.
+ */
+let abandoned = false;
 let idleWaiters: (() => void)[] = [];
 
 export function configureLifecycle(options: LifecycleOptions): void {
@@ -299,6 +304,7 @@ async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<v
       // SIGKILL this process — the every-deploy duplicate that draining exists to prevent — so
       // the drain moves on and the hook is left running with nobody reading it. The cost of that
       // choice is real and named in the cause: a write it had in flight may be half done.
+      abandoned = true;
       report('warn', 'X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
         cause: `the "${registration.name}" shutdown hook (phase: ${phase}) was still running at the ${deadlineMs}ms drain deadline and has been ABANDONED — the process exits without it, so anything it had in flight may be incomplete`,
@@ -331,6 +337,7 @@ async function runDrain(signal: string): Promise<void> {
     const remaining = Math.max(0, reason.deadlineAt - systemClock.monotonic());
     const idle = await waitForIdle(remaining);
     if (!idle) {
+      abandoned = true;
       report('warn', 'X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
         cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
@@ -345,6 +352,8 @@ async function runDrain(signal: string): Promise<void> {
     // goes through `report`. If something does, the drain still ENDS: a rejected `drainPromise`
     // is a memo that re-rejects for every later caller and an unhandled rejection that kills the
     // process mid-drain, which is strictly worse than a drain that finished badly and said so.
+    // The phases after the throw never ran, so their work is abandoned as surely as a timeout's.
+    abandoned = true;
     report('error', 'drain failed', { signal, error: thrown });
   } finally {
     state = 'stopped';
@@ -423,6 +432,23 @@ export function readyzPayload(options: { readonly deep?: boolean } = {}): Health
   return { ok: body.ready, status: body.ready ? 200 : 503, body };
 }
 
+/**
+ * `EX_SOFTWARE` (sysexits.h): the drain ended, but work was abandoned at the deadline. Distinct from
+ * 0 so the platform's exit record, a crash-loop alert and a `docker ps` reader see what the warn
+ * line said; distinct from 1 so it is never mistaken for a boot that crashed.
+ */
+export const DRAIN_TIMEOUT_EXIT_CODE = 70;
+
+/**
+ * What a process should exit with once `drain()` has settled: `DRAIN_TIMEOUT_EXIT_CODE` when any
+ * hook or in-flight operation was abandoned at the deadline (`X_SHUTDOWN_TIMEOUT`), or the drain
+ * threw before its last phase, else 0. The
+ * one answer for every exit after a drain — `installSignalHandlers` and the CLI's hold both read it.
+ */
+export function drainExitCode(): 0 | typeof DRAIN_TIMEOUT_EXIT_CODE {
+  return abandoned ? DRAIN_TIMEOUT_EXIT_CODE : 0;
+}
+
 /** Test-only: forget all hooks and return to `starting`. */
 export function resetLifecycle(): void {
   deadlineMs = DEFAULT_DEADLINE_MS;
@@ -437,6 +463,7 @@ export function resetLifecycle(): void {
   lifetime += 1;
   registrations = [];
   drainPromise = undefined;
+  abandoned = false;
   idleWaiters = [];
   clearReadinessChecks();
 }

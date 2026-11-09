@@ -183,6 +183,30 @@ describe('unit · dev assets · pwa icons', () => {
   });
 });
 
+describe('unit · dev assets · /media serves one revision', () => {
+  // `/media/<key>` with no transform is `readStorageObject`: its headers come from a stat, so the
+  // bytes must be that stat's revision — an overwrite in between is refused, never served.
+  test('an overwrite between the stat and the read is X_STORAGE_OBJECT_CHANGED', async () => {
+    const inner = storage.disk();
+    resetStorage();
+    storage = defineStorage({
+      disks: {
+        local: {
+          ...inner,
+          async stream(key: string, options?: { readonly etag?: string | undefined }) {
+            await inner.put(key, png(10, 10), { contentType: 'image/png' });
+            return inner.stream(key, options);
+          },
+        },
+      },
+      shared: { local: ['covers/'] },
+    });
+    await expect(
+      call(assetRoutes({ root, storage }), `${MEDIA_BASE_PATH}/${SOURCE_KEY}`),
+    ).rejects.toBeUltimateError('X_STORAGE_OBJECT_CHANGED');
+  });
+});
+
 describe('unit · dev assets · responsive variants', () => {
   test('no transform query serves the stored object untouched', async () => {
     const routes = assetRoutes({ root, storage });

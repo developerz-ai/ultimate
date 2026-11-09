@@ -155,8 +155,13 @@
  * `currentStep()` — the step body in flight, which the crash proof names. No module newly reached.
  * raised 884 → 885, measured 885 (2026-11-08, fix/followups): `entity/src/json-null.ts`, the one
  * rule the parsers, the pg binder/decoder and the memory matcher read for a JSON `null`. No module newly reached.
+ * raised 885 → 894, measured 894 (2026-11-09, plan 101 v31 wave A): nine NEW modules, each a split
+ * or a new rule reached through its package's barrel — `core/src/{gate-shapes,
+ * error-reporter-sentry-hooks}.ts`, `schema/src/issue-cap.ts`, `db/src/statement-cancel.ts`,
+ * `cache/src/redis-buckets.ts`, `http/src/{body-ceiling,rate-limit-config}.ts`,
+ * `policy/src/{denial-parts,guard-primitive}.ts`. No existing module newly reached.
  */
-export const MIGRATE_CEILING = 885;
+export const MIGRATE_CEILING = 894;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -336,5 +341,10 @@ export const MIGRATE_CEILING = 885;
  * `cli/src/runtime-jobs-unserved.ts` (a split worker reads the registry before it warns).
  * raised 1259 → 1260, measured 1260 (2026-11-07, fix/exercise-fidelity): `MIGRATE_CEILING`'s 1.
  * raised 1260 → 1261, measured 1261 (2026-11-08, fix/followups): `MIGRATE_CEILING`'s 1.
+ * raised 1261 → 1276, measured 1276 (2026-11-09, plan 101 v31 wave A): `MIGRATE_CEILING`'s 9, plus
+ * the storage request ceiling and streaming split (`storage/src/{accept-stream,request-ceiling,
+ * driver-s3-copy-parts,driver-s3-stream,driver-local-open}.ts`) and `cli/src/runtime-storage-boot.ts`
+ * (every role's storage boot, out of `runtime-services.ts`, `servedRequestCeiling` with it). No
+ * existing module newly reached: `cli/src/runtime-storage-upload.ts` stays the web role's.
  */
-export const SERVING_ROLE_CEILING = 1261;
+export const SERVING_ROLE_CEILING = 1276;

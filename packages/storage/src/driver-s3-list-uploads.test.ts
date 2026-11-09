@@ -49,4 +49,28 @@ describe('listS3Uploads', () => {
     expect(asked.length).toBe(2);
     expect(new URL(asked[1] ?? '').searchParams.get('key-marker')).toBe(LONG_KEY);
   });
+
+  test('a prefix and a marker with a space travel as %20, never %2B — a different key to S3', async () => {
+    const asked: string[] = [];
+    const fetch: S3FetchLike = async (url) => {
+      asked.push(url);
+      const marker = new URL(url).searchParams.get('key-marker');
+      const body =
+        marker === null
+          ? page('my file/a b.bin', 'u-1', 'my file/a b.bin')
+          : page('my file/c.bin', 'u-2', undefined);
+      return new Response(body, { status: 200 });
+    };
+    const refused = (refusal: S3Refusal): never => {
+      throw expect.unreachable(`refused: ${refusal.code}`);
+    };
+    const sessions = await listS3Uploads(
+      { wire: { bucket: 'b', env: FAKE_ENV, fetch }, refused },
+      'my file/',
+    );
+    expect(sessions.map((session) => session.key)).toEqual(['my file/a b.bin', 'my file/c.bin']);
+    expect(asked[0]).toContain('prefix=my%20file%2F');
+    expect(asked[1]).toContain('key-marker=my%20file%2Fa%20b.bin');
+    expect(asked.join(' ')).not.toContain('%2B');
+  });
 });

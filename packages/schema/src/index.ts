@@ -40,6 +40,7 @@ export {
   BoundsInvalidError,
   DefaultInvalidError,
   DiscriminantInvalidError,
+  IssueCapInvalidError,
   isSchemaError,
   SchemaError,
   SchemaUnsupportedError,
@@ -48,6 +49,9 @@ export {
 } from './errors';
 // Exported for `@ultimat3/time`'s `fromIso`: one ISO-shape rule, whichever door a date comes in by.
 export { isIsoDateTime } from './iso-date';
+export type { IssueCapOptions } from './issue-cap';
+// The cap every validation stops at, and the bound `@ultimat3/action`'s `issuesFromWire` reads to.
+export { MAX_ISSUES } from './issue-cap';
 export type {
   JsonSchema,
   JsonSchemaDialect,

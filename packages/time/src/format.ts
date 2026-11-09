@@ -140,10 +140,11 @@ const CALENDAR_UNITS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
 export function formatRelative(at: Instant, options: FormatRelativeOptions): string {
   const zone = zoneOf(options);
   const delta = differenceMs(options.now, at);
-  const formatter = new Intl.RelativeTimeFormat(assertLocale(options.locale), {
-    numeric: options.numeric ?? 'auto',
-    style: options.style ?? 'long',
-  });
+  const formatter = relativeFormatterFor(
+    options.locale,
+    options.numeric ?? 'auto',
+    options.style ?? 'long',
+  );
   const magnitude = Math.abs(delta);
   // `days === 0` a full day apart is 24 real hours inside one 25-hour local day: no midnight was
   // crossed, so it is hours — "today" would be the calendar's answer to a question about elapsed
@@ -156,6 +157,25 @@ export function formatRelative(at: Instant, options: FormatRelativeOptions): str
     if (magnitude >= ms) return formatter.format(Math.trunc(delta / ms), unit);
   }
   return formatter.format(0, 'second');
+}
+
+const relativeCache = new Map<string, Intl.RelativeTimeFormat>();
+
+/**
+ * `formatterFor`'s rule for the relative formatter: one per canonical locale and options, through
+ * core's bounded cache. Built per call it was most of what a 10k-row activity feed cost to render.
+ */
+function relativeFormatterFor(
+  locale: string,
+  numeric: 'always' | 'auto',
+  style: 'long' | 'short' | 'narrow',
+): Intl.RelativeTimeFormat {
+  const tag = assertLocale(locale);
+  return cachedFormatter(
+    relativeCache,
+    `${tag}|${numeric}|${style}`,
+    () => new Intl.RelativeTimeFormat(tag, { numeric, style }),
+  );
 }
 
 /** `14–16 Mar 2026` — one call, so the locale decides how to collapse the range. */
@@ -173,6 +193,9 @@ export function formatRange(from: Instant, to: Instant, options: FormatDateTimeO
   if (typeof formatter.formatRange === 'function') return formatter.formatRange(from, to);
   return `${formatter.format(from)} – ${formatter.format(to)}`;
 }
+
+/** One English ordinal rule set for the process: it takes no locale, so it has no key. */
+let ordinalRules: Intl.PluralRules | undefined;
 
 const ORDINAL_SUFFIX: Record<Intl.LDMLPluralRule, string> = {
   one: 'st',
@@ -195,7 +218,8 @@ const ORDINAL_SUFFIX: Record<Intl.LDMLPluralRule, string> = {
  * rendered page. **Breaking: the `locale` parameter is gone.**
  */
 export function ordinal(value: number): string {
-  const category = new Intl.PluralRules('en', { type: 'ordinal' }).select(value);
+  ordinalRules ??= new Intl.PluralRules('en', { type: 'ordinal' });
+  const category = ordinalRules.select(value);
   return `${value}${ORDINAL_SUFFIX[category]}`;
 }
 

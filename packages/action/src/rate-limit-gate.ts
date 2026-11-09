@@ -5,7 +5,14 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
-import { asyncContext, isAnonymous } from '@ultimat3/core';
+import {
+  asyncContext,
+  fixedRateLimitOf,
+  rateLimitScopeOf,
+  rateLimitSpendsOn,
+  rateLimitSubjectOf,
+  resolvedRateLimitOf,
+} from '@ultimat3/core';
 import type { RateLimitDecision } from '@ultimat3/http';
 // The bucket maths, the subject precedence and the refusal are all `@ultimat3/http`'s (tier 2):
 // a copy here would be a second answer to "what does this limit mean" and "whose bucket is it".
@@ -56,13 +63,6 @@ export function inJobFrame(): boolean {
   return callerFrame.get()?.job === true;
 }
 
-/**
- * Namespaced, never the bare action name: the HTTP pipeline still spends its `default` bucket
- * under `<route name>|<subject>`, and one key taken against two bucket shapes in one store would
- * corrupt both counters.
- */
-const ACTION_SCOPE = 'action';
-
 export interface RateLimitSpendOptions {
   readonly surface: Surface;
   /** The connection address — the only subject an anonymous caller has. */
@@ -86,20 +86,20 @@ export async function spendActionLimit(
   ctx: Ctx,
   options: RateLimitSpendOptions,
 ): Promise<void> {
-  if (limit === undefined || options.surface === 'server') return;
+  if (limit === undefined || !rateLimitSpendsOn(options.surface)) return;
   const frame = callerFrame.get();
   // A job run, or any call nested inside one (an `agent()` run as a job calling its tools as
   // `'mcp'`): never a visitor's address, and the unattributed bucket rather than `ip:unknown`.
   const inJob = options.surface === 'job' || inJobFrame();
   const spends = rateLimitSpends(
     {
-      actorId: isAnonymous(ctx.actor) ? null : ctx.actor.id,
-      // Read off an anonymous actor too: a job run IS the worker's anonymous identity carrying the
-      // job's org (`jobRunActor`), and that org is who the run is — charging every tenant's runs
-      // to one `ip:unknown` key let one tenant's backlog refuse everyone's.
-      orgId: ctx.actor.orgId ?? null,
-      ip: options.clientAddress ?? (inJob ? null : (frame?.address ?? null)),
-      routeName: `${ACTION_SCOPE}:${name}`,
+      // Core's one subject rule — the org is read off an anonymous actor too (a job run).
+      ...rateLimitSubjectOf(
+        ctx.actor,
+        options.clientAddress ?? (inJob ? null : (frame?.address ?? null)),
+      ),
+      // Namespaced, never the bare name: the HTTP pipeline spends `<route name>|<subject>`.
+      routeName: rateLimitScopeOf('action', name),
       ...(inJob ? { unattributed: UNATTRIBUTED_JOB } : {}),
     },
     // The tenant allowance is the HTTP pipeline's (it spends it for every route, a handler-limited
@@ -109,7 +109,7 @@ export async function spendActionLimit(
   // Resolved once per call, BEFORE any bucket is touched, and through `toBucket`'s own screen: a
   // resolver answering `NaN`, `0` or `Infinity` is `X_RATE_LIMIT_INVALID`, never allow-all.
   const bucket = toBucket(name, {
-    limit: await resolvedRateLimit(limit, ctx),
+    limit: await resolvedRateLimitOf(limit, { ctx }),
     windowMs: limit.windowMs,
   });
   for (const spend of spends) {
@@ -122,16 +122,6 @@ export async function spendActionLimit(
     options.onRateLimit?.(decision);
     if (!decision.allowed) throw rateLimited(spend.key, decision.retryAfterSeconds);
   }
-}
-
-/**
- * The number a call is held to: the declared one, or what the resolver answers from `ctx` — the
- * tenant's plan, read by the app. A non-number becomes `NaN`, so `toBucket` refuses it by name.
- */
-async function resolvedRateLimit(limit: ActionRateLimit, ctx: Ctx): Promise<number> {
-  const resolved: unknown =
-    typeof limit.limit === 'function' ? await limit.limit({ ctx }) : limit.limit;
-  return typeof resolved === 'number' ? resolved : Number.NaN;
 }
 
 /**
@@ -149,6 +139,5 @@ export function assertActionRateLimit(name: string, limit: ActionRateLimit): voi
 export function fixedRateLimit(
   limit: ActionRateLimit | undefined,
 ): { readonly limit: number; readonly windowMs: number } | null {
-  if (limit === undefined || typeof limit.limit === 'function') return null;
-  return { limit: limit.limit, windowMs: limit.windowMs };
+  return fixedRateLimitOf(limit);
 }

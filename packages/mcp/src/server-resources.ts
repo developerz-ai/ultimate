@@ -2,6 +2,7 @@
 // one audited, and every provider call inside a `try`. Split from `server.ts` for the size ceiling;
 // the server passes what it owns, so this stays a function and never a second dispatcher.
 
+import { asCallerContext } from '@ultimat3/action';
 import type { ErrorAudience } from '@ultimat3/core';
 import { fixFor } from '@ultimat3/core';
 import type { McpAuditor } from './audit-hook';
@@ -93,8 +94,12 @@ export async function resourcesRead(
   // `toolsCall` uses above, for the same reason.
   try {
     // The resource the resolver admitted, read AS that caller: a per-caller source's resource is
-    // in no fixed map, and a body may vary by who asked.
-    const contents = await readResource(resolved.resource, caller);
+    // in no fixed map, and a body may vary by who asked. `ctx.actor` too, as a tool's `handle`
+    // gets it: a reader asking `useContext()` saw the HTTP request's actor (a cookie session's
+    // user), not the token's.
+    const contents = await asCallerContext(caller.actor, () =>
+      readResource(resolved.resource, caller),
+    );
     on.audit.resourceRead({ uri, outcome: 'ok', caller });
     return resultResponse(id, { contents: [contents] });
   } catch (error) {

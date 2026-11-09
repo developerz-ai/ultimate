@@ -12,6 +12,12 @@ import { assertTimeZone, type TimeZone, UTC } from './zones';
 export const TIMEZONE_HEADER = 'x-timezone';
 
 /**
+ * Cookie a zone picker writes: the visitor's CHOICE, ranked above the header. Published so the
+ * picker and `@ultimat3/http`'s default reader name one constant — each spelled its own literal.
+ */
+export const TIMEZONE_COOKIE = 'x_timezone';
+
+/**
  * Cookie `@ultimat3/render`'s zone script writes from the same `Intl` call, on `app/` documents: a
  * document navigation sends no header, so without it a new visitor's first pages render in UTC.
  * Never the chosen cookie — a guess written there would erase the visitor's own pick.

@@ -206,11 +206,22 @@ jobs:
   #            + contract, job           function of the sorted file list, so 2/3 is the same files
   #                                      on every runner and reproduces locally with the same flags.
   #                                      `contract` and `job` are split the same way, a third each
-  #   live     72 s, the static steps    every suite that needs more than one Postgres. The six
-  #            BESIDE it, at no wall     static steps run BESIDE the serial suites whenever `live`
-  #            time of their own         is in the list — the runner's own rule — so they cost this
-  #                                      part nothing: the slowest (`errors`, 32 s) fits inside it.
-  #                                      Two runners of their own cost 4 billed minutes to save none.
+  #   live-N   ~150 s per shard          every suite that needs more than one Postgres, split in
+  #                                      two (`--shard i/2`, every service in both: which shard a
+  #                                      suite lands on is the sorted file list's, so
+  #                                      `scripts/lib/test-service-coverage.ts` holds EVERY part
+  #                                      running `live` to the whole service set). One part was
+  #                                      313-347 s on main 2026-11-08/09 (runs 42447766689,
+  #                                      42480668181, 42540901591: `live` 280-302 s, serial by
+  #                                      design) — the gate's critical path, over the 5-min target.
+  #   static   ~100 s, the six static    a shard may name no other step (`X_VERIFY_SHARD_INVALID`),
+  #            steps BESIDE `eval`       so the static steps left `live` for a part of their own.
+  #                                      They run BESIDE the first serial suite listed — the
+  #                                      runner's own rule (`verify-run.ts`) — and `eval` is that
+  #                                      suite here: one concurrent group, the slowest of them
+  #                                      (`manifest` 99 s, `errors` 96 s on run 42540901591) and
+  #                                      not their 400 s sum. Drop `eval` from this row and they go
+  #                                      serial. No service: no step here reads one.
   #   e2e      typecheck, then e2e       the compiler, then a browser: `tsc -b` writes, so it runs
   #                                      alone and first. Measured on main 2026-11-05 (runs
   #                                      42032367633, 41965364111): typecheck 11-14 s, contract
@@ -220,7 +231,7 @@ jobs:
   #                                      two that can moved to the unit shards: ~50-60 s off this
   #                                      part, ~17-20 s onto each unit shard (112-197 s today).
   #
-  # `exercise` rides in `live`: at this root it is skipped (no `app.config.ts`, nothing registered),
+  # `exercise` rides in `static`: at this root it is skipped (no `app.config.ts`, nothing registered),
   # so it costs the part a file probe; the tracked apps run it in `reference-app-verify`.
   #
   # `contract` and `job` moved out of `live` on 2026-10-03, when `live` was the slowest part, and
@@ -278,10 +289,18 @@ jobs:
             shard: 3/3
             services: postgres
             urls: TEST_DATABASE_URL
-          - part: live
-            only: lint,boundaries,filesize,package-shape,errors,live,exercise,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
+          - part: live-1
+            only: live
+            shard: 1/2
             services: postgres postgres-standby postgres-tls pooler redis nats s3
             urls: TEST_DATABASE_URL|TEST_STANDBY_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
+          - part: live-2
+            only: live
+            shard: 2/2
+            services: postgres postgres-standby postgres-tls pooler redis nats s3
+            urls: TEST_DATABASE_URL|TEST_STANDBY_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
+          - part: static
+            only: lint,boundaries,filesize,package-shape,errors,exercise,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
           - part: e2e
             only: typecheck,e2e
             services: postgres
@@ -494,7 +513,8 @@ jobs:
         id: pglite
         run: echo "version=$(grep -om1 '"@electric-sql/pglite@[0-9][^"]*"' bun.lock | tr -dc '0-9.')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
+        # Not a poisoning path: a snapshot is read only through its checksum (the comment above).
+        with: # zizmor: ignore[cache-poisoning]
           path: ${{ matrix.app }}/.x/cache/pglite-*.snapshot
           key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
       - name: x build + x verify, against the ratchet
@@ -586,7 +606,8 @@ jobs:
         id: pglite
         run: echo "version=$(grep -om1 '"@electric-sql/pglite@[0-9][^"]*"' bun.lock | tr -dc '0-9.')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
+        # Not a poisoning path: a snapshot is read only through its checksum (the comment above).
+        with: # zizmor: ignore[cache-poisoning]
           path: ${{ runner.temp }}/${{ matrix.app }}/.x/cache/pglite-*.snapshot
           key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
       # THE CONTRACT, and the only step in this repo that runs it. `bun run setup` installs, generates
@@ -1248,7 +1269,7 @@ jobs:
       #   W3: a CRLF migration must hash to the checksum its LF twin wrote (`./packages/db/...`).
       - name: unit · the path-heavy subset, every core
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate --parallel --timeout=30000 ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/testing/src/cdp-launch.test.ts ./packages/testing/src/cdp-launch-wire.test.ts ./packages/testing/src/cdp-launch-reap.test.ts
+        run: bun test --isolate --parallel --timeout=30000 ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/testing/src/cdp-launch.test.ts ./packages/testing/src/cdp-launch-wire.test.ts ./packages/testing/src/cdp-launch-reap.test.ts ./packages/testing/src/cdp-launch-probe.test.ts
       - name: x new winapp
         id: new
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}

@@ -121,10 +121,13 @@ describe('the compress stage, in the lifecycle', () => {
     expect(answer.headers.get('content-encoding')).toBeNull();
   });
 
-  test('a shared stream with no declared length is identity', async () => {
+  // v31: coded as a stream rather than left identity — no length is claimed, every byte arrives.
+  test('a shared stream with no declared length is gzip, whole, with no length', async () => {
     const answer = await get(pipelineFor(null), '/stream');
-    expect(answer.headers.get('content-encoding')).toBeNull();
-    expect(await answer.text()).toBe(MARKUP);
+    expect(answer.headers.get('content-encoding')).toBe('gzip');
+    expect(answer.headers.has('content-length')).toBe(false);
+    const bytes = new Uint8Array(await answer.arrayBuffer());
+    expect(new TextDecoder().decode(Bun.gunzipSync(bytes))).toBe(MARKUP);
   });
 
   test('a type off the list is identity, whatever its size', async () => {

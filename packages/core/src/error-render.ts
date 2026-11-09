@@ -38,6 +38,32 @@ const boundedJson = (value: unknown): string | undefined => {
 };
 
 /**
+ * The cap on a WHOLE cause, in UTF-16 units — 4 KiB of ASCII. `MAX_RENDERED_LENGTH` bounds one
+ * value inside a cause; this bounds the sentence a call site assembles from many, which no value
+ * cap can: a 10k-issue validation joined into one cause was 3.6 MiB, copied into the error's
+ * `message`, its log line, the span's `error.message` and the problem document's `detail`.
+ */
+export const MAX_CAUSE_LENGTH = 4096;
+
+/**
+ * A cause cut to `MAX_CAUSE_LENGTH`, saying how much was dropped. Applied once, by the error
+ * CONSTRUCTOR (`UltimateError`, and `@ultimat3/schema`'s `SchemaError` copy, pinned by
+ * `single-line-pin.test.ts`), so every reader of `cause` and `message` gets the same bounded text.
+ * The cut never lands inside a surrogate pair: a lone surrogate is text Postgres refuses to store.
+ * The marker is ASCII so a cut ASCII cause is exactly 4 KiB of UTF-8, not three bytes over.
+ */
+export function boundedCause(text: string): string {
+  if (text.length <= MAX_CAUSE_LENGTH) return text;
+  // The marker's width is decided off the total, which has at least as many digits as the
+  // dropped count, so `keep` never leaves the result above the cap.
+  const reserve = `... (${text.length} more characters)`.length;
+  let keep = MAX_CAUSE_LENGTH - reserve;
+  const last = text.charCodeAt(keep - 1);
+  if (last >= 0xd800 && last <= 0xdbff) keep -= 1;
+  return `${text.slice(0, keep)}... (${text.length - keep} more characters)`;
+}
+
+/**
  * A value from an app, rendered for a `cause`. `JSON.stringify` raises a `TypeError` on a bigint
  * and on a cyclic structure, RUNS any `toJSON` the value carries and reads every enumerable
  * getter — so building the message can raise INSTEAD of the refusal. The caller then catches a

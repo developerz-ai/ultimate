@@ -149,7 +149,7 @@ describe('auth rate limiting', () => {
     test('a rotating-address spray cannot grow the table past its cap', async () => {
       const limiter = memoryAuthLimiter(frozenClock(0), policy({ maxKeys: 10 }));
       for (let index = 0; index < 500; index += 1) {
-        await limiter.reserve(ipKey(`2001:db8::${index.toString(16)}`));
+        await limiter.reserve(ipKey(`2001:db8:${index.toString(16)}::1`));
         expect(limiter.size).toBeLessThanOrEqual(10);
       }
     });
@@ -161,7 +161,7 @@ describe('auth rate limiting', () => {
       expect(await limiter.lockedUntil(victim)).not.toBeNull();
 
       for (let index = 0; index < 200; index += 1) {
-        await limiter.reserve(ipKey(`2001:db8::${index.toString(16)}`));
+        await limiter.reserve(ipKey(`2001:db8:${index.toString(16)}::1`));
       }
 
       expect(limiter.size).toBeLessThanOrEqual(4);
@@ -342,6 +342,32 @@ describe('auth rate limiting', () => {
       login(auth, { email: 'victim-6@example.test', password: 'x', ip: '198.51.100.9' }),
     );
     expect(locked.code).toBe('X_ACCOUNT_LOCKED');
+  });
+});
+
+describe('ipKey counts a network, not a host', () => {
+  test('two addresses in one IPv6 /64 share a bucket; the next /64 does not', () => {
+    expect(ipKey('2001:db8:1:2::1')).toBe(ipKey('2001:db8:1:2:ffff:ffff:ffff:ffff'));
+    expect(ipKey('[2001:DB8:1:2::abcd]')).toBe(ipKey('2001:db8:1:2::1'));
+    expect(ipKey('2001:db8:1:3::1')).not.toBe(ipKey('2001:db8:1:2::1'));
+  });
+
+  test('IPv4 stays whole and an IPv4-mapped IPv6 is that IPv4', () => {
+    expect(ipKey('203.0.113.7')).toBe('ip:203.0.113.7');
+    expect(ipKey('::ffff:203.0.113.7')).toBe('ip:203.0.113.7');
+    expect(ipKey('203.0.113.8')).not.toBe(ipKey('203.0.113.7'));
+  });
+
+  test('a rotating /64 spray locks the network out, not one host', async () => {
+    const limiter = memoryAuthLimiter(frozenClock(0), {
+      ...DEFAULT_AUTH_RATE_LIMIT,
+      maxAttempts: 3,
+      lockoutMs: 60_000,
+    });
+    for (let host = 1; host <= 3; host += 1) {
+      await limiter.reserve(ipKey(`2001:db8:1:2::${host.toString(16)}`));
+    }
+    expect(await limiter.lockedUntil(ipKey('2001:db8:1:2::ffff'))).not.toBeNull();
   });
 });
 

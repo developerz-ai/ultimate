@@ -5,15 +5,13 @@ import {
   assertRateLimitScope,
   type Bucket,
   DEFAULT_MAX_RATE_LIMIT_KEYS,
-  DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
   type RateLimitConfig,
   rateLimiter,
   rateLimitSpends,
-  resolveRateLimitConfig,
   TENANT_SCOPE,
-  toBucket,
 } from './rate-limit';
+import { DEFAULT_RATE_LIMIT } from './rate-limit-config';
 
 const limiterAt = (clock: FrozenClock, capacity: number, refillPerSecond: number) =>
   rateLimiter({
@@ -320,6 +318,28 @@ describe('keys', () => {
     ]);
   });
 
+  // v31: an IPv6 caller is its /64 — the block one subscriber holds — never the full address,
+  // which minted a fresh bucket per request for anyone rotating the host half.
+  test('two addresses in one IPv6 /64 spend one bucket; the next /64 another', () => {
+    const anon = (ip: string): readonly string[] =>
+      keys({ actorId: null, orgId: null, ip, routeName: 'r' });
+    expect(anon('2001:db8:1:2::1')).toEqual(['r|ip:2001:db8:1:2::/64']);
+    expect(anon('2001:db8:1:2:dead:beef:0:7')).toEqual(anon('2001:db8:1:2::1'));
+    expect(anon('2001:db8:1:3::1')).not.toEqual(anon('2001:db8:1:2::1'));
+    expect(anon('::ffff:1.2.3.4')).toEqual(['r|ip:1.2.3.4']);
+    // One /64 however it is spelled: expanded, upper-case, zone-suffixed, dotted tail.
+    for (const spelling of [
+      '2001:0DB8:0001:0002:0:0:0:9',
+      '2001:db8:1:2::abcd%eth0',
+      '2001:db8:1:2:0:0:1.2.3.4',
+    ]) {
+      expect(anon(spelling)).toEqual(anon('2001:db8:1:2::1'));
+    }
+    // IPv4 stays one address each, and a value that is no address is kept whole.
+    expect(anon('203.0.113.8')).not.toEqual(anon('203.0.113.7'));
+    expect(anon('not-an-ip')).toEqual(['r|ip:not-an-ip']);
+  });
+
   // The finding this function was rewritten for: precedence used to be EXCLUSIVE, so an
   // authenticated request never touched an org bucket and a tenant's seats were only ever limited
   // one at a time. Two actors, one org, one shared key.
@@ -361,88 +381,6 @@ describe('keys', () => {
   });
 });
 
-describe('resolveRateLimitConfig', () => {
-  // `scope` used to DEFAULT to `'process'`, so "we did not ask" and "the app said one replica"
-  // were the same value — and `docker/helm/values.yaml` runs `roles.web.replicas: 3`, so every
-  // configured number was enforced three times over with a green `x verify`. The boot check that
-  // exists for this only fires on a `'shared'` declaration, i.e. never in the silent case.
-  test('refuses a config that never declared where the counters live', () => {
-    expect(() => resolveRateLimitConfig(undefined)).toThrow(/X_RATE_LIMIT_SCOPE_UNSET/);
-    expect(() => resolveRateLimitConfig({ buckets: {} })).toThrow(/X_RATE_LIMIT_SCOPE_UNSET/);
-  });
-
-  test('names both answers, and the store that makes the second one true', () => {
-    const error = (() => {
-      try {
-        resolveRateLimitConfig(undefined);
-        return null;
-      } catch (thrown) {
-        return thrown as HttpError;
-      }
-    })();
-    expect(error?.fix).toContain("scope: 'process'");
-    expect(error?.fix).toContain('rateLimitStore');
-  });
-
-  test("'process' is still a legal answer — it is no longer an assumed one", () => {
-    expect(resolveRateLimitConfig({ scope: 'process' }).scope).toBe('process');
-    expect(resolveRateLimitConfig({ scope: 'shared' }).scope).toBe('shared');
-  });
-
-  // A limiter that is switched off has nothing to be wrong about, so it owes no declaration.
-  test('a disabled limiter needs no declaration', () => {
-    expect(resolveRateLimitConfig({ enabled: false }).scope).toBe('process');
-  });
-
-  test('the defaults it merges over are the shipped buckets', () => {
-    const resolved = resolveRateLimitConfig({ scope: 'process' });
-    expect(resolved.buckets['default']).toEqual({ capacity: 120, refillPerSecond: 2 });
-    expect(resolved.buckets['auth']).toEqual({ capacity: 10, refillPerSecond: 0.2 });
-  });
-});
-
-describe('toBucket', () => {
-  // It lives here rather than in `@ultimat3/action` because `action` and `query` are the same
-  // tier and can never import each other — a query could not declare a rate limit at all while
-  // the only conversion sat in its sibling.
-  test('a declaration becomes the capacity and the refill the limiter runs on', () => {
-    expect(toBucket('contactSales', { limit: 5, windowMs: 600_000 })).toEqual({
-      capacity: 5,
-      refillPerSecond: 5 / 600,
-    });
-  });
-
-  test('a limit under one request is a closed endpoint, not a limited one', () => {
-    expect(() => toBucket('x', { limit: 0, windowMs: 1_000 })).toThrow(/X_RATE_LIMIT_INVALID/);
-  });
-
-  test('a window of zero is a limit that enforces nothing', () => {
-    expect(() => toBucket('x', { limit: 5, windowMs: 0 })).toThrow(/X_RATE_LIMIT_INVALID/);
-  });
-
-  // The COMPUTED rate, not just the two declared halves: both of these read fine and neither is
-  // a bucket the limiter can run on.
-  test('a pair that computes to an infinite refill is refused', () => {
-    expect(() => toBucket('x', { limit: Number.MAX_VALUE, windowMs: 1 })).toThrow(
-      /X_RATE_LIMIT_INVALID/,
-    );
-  });
-
-  test('the cause names the owner and both declared numbers', () => {
-    const error = (() => {
-      try {
-        toBucket('contactSales', { limit: 5, windowMs: 0 });
-        return null;
-      } catch (thrown) {
-        return thrown as HttpError;
-      }
-    })();
-    expect(error?.cause).toContain('contactSales');
-    expect(error?.cause).toContain('windowMs: 0');
-    expect(error?.fix).toContain('{ limit: 5, windowMs: 600_000 }');
-  });
-});
-
 describe('the bucket table is indexed, never walked up the prototype chain', () => {
   const limiterOver = (buckets: Record<string, Bucket>, defaultBucket = 'default') =>
     rateLimiter({
@@ -471,3 +409,7 @@ describe('the bucket table is indexed, never walked up the prototype chain', () 
     );
   });
 });
+
+// A configured bucket gets the rule a declared one gets from `toBucket`: a refill of 0 is a bucket
+// that never forgets, which on a shared store is a key held forever per caller — and a caller
+// rotating its IPv6 /64s mints them without bound.

@@ -33,7 +33,7 @@ async function pendingEtag(root: string, key: string): Promise<string | undefine
  * that is simply gone — deleted between the `exists()` and the read — is "not found", as it
  * would have been one call earlier.
  */
-const refusedRead =
+export const refusedRead =
   (root: string, key: string, disk: string) =>
   (error: unknown): never => {
     if (isStorageError(error)) throw error;

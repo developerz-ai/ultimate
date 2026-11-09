@@ -203,9 +203,9 @@ Free runners only: `ubuntu-latest`, `windows-latest`, `macos-latest` (free, publ
 - `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
 - `fault-drills` — `x drill` on the reference app: three faults, real Postgres.
 
-`ci.yml` runs on pushes to `main`, `next` and `release/*`. Other workflows: `release-tag.yml`,
-`release.yml`, `registry-audit.yml`, `deploy-social-demo.yml`, `wiki.yml`, `tutorial-run.yml` —
-what triggers each: [`ci-split.md`](docs/history/ci-split.md#the-other-workflows).
+`ci.yml` runs on pushes to `main`, `next` and `release/*`. Every other workflow (release, deploy,
+`workflow-lint.yml`'s zizmor, …) and what triggers it:
+[`ci-split.md`](docs/history/ci-split.md#the-other-workflows).
 
 ## How to work
 

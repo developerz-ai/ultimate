@@ -20,6 +20,7 @@ export {
   configureTime,
   currentTimeZone,
   resolveTimeZone,
+  TIMEZONE_COOKIE,
   TIMEZONE_DETECTED_COOKIE,
   TIMEZONE_HEADER,
   type TimeConfig,

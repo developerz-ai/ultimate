@@ -19,6 +19,8 @@
 | `cron-describe.ts` | `describeCron` — `Intl` names, phrases injected. `CronPhrases` is required. |
 | `schedule.ts` | `nextLocalSlot` — "09:00 local tomorrow" |
 | `business.ts` | weekends as config, holidays as local dates |
+| `business-span.ts` | business-day arithmetic on epoch days: weekday by `mod 7`, whole weeks multiplied, holidays binary-searched — no zone, no `Intl` |
+| `zone-skipped-days.ts` | `localDayAt` and `skippedDays` — the dates a zone never had at a wall time, found by sampling offsets |
 | `context.ts` | request timezone: which source wins, and reading core's `Ctx.tz` back off the ALS |
 | `plain-date.ts` | `PlainDate` — a calendar date with no time and no zone, and the two conversions to an instant |
 | `plain-date-range.ts` | `plainDateRange` — the bounded, frozen list of dates between two `PlainDate`s |
@@ -160,9 +162,20 @@
   match", not "is this an occurrence".
 - **`addBusinessDays` builds every candidate from the calendar date + the ORIGINAL wall time.**
   Chained through `addDaysInZone`, a 02:30 that crossed a spring-forward Sunday became 03:30 and
-  stayed 03:30 on Monday. `businessDaysBetween` walks the same dates (`localDay`): a chain steps
+  stayed 03:30 on Monday. `businessDaysBetween` reads the same dates (`localDayAt`): a chain steps
   OVER a date the zone never had (Samoa, 2011-12-30) and so counted the day `to` excludes. A date
   that does not exist is not a day of either kind.
+- **Business days are counted arithmetically, never walked, `As of 2026-11`.** The walk asked
+  `Intl` 2–3 times per DAY: 30 years of `businessDaysBetween` was ~830 ms, `addBusinessDays(…, 5000)`
+  ~500 ms. Now whole weeks multiply (`business-span.ts`), holidays are a sorted binary search, and
+  `Intl` is asked only for offset samples (`zone-skipped-days.ts`, one per 28 days) plus the dates
+  near a transition that could remove one. The 28-day stride rests on a MEASUREMENT (every zone,
+  1900–2050): transitions under 28 days apart are all 1-hour shifts, which move a date only for a
+  wall time from 23:00 — where the stride drops to 6 days (closest pair: 7.0). After a tzdata
+  change that adds a short-lived rule, re-measure: sample every zone's offset twice a day and list
+  consecutive transitions under 28 days apart.
+  `business-linear.test.ts` keeps the old walk as the ORACLE over random zones, walls, weekends and
+  holidays; never delete it to make a change pass.
 - **`formatRelative` takes `zone`, and from a day apart counts CALENDAR days** (`daysBetween`).
   `trunc(47h / 24h)` called two midnights away "tomorrow". Under a day it is elapsed time; a full
   day apart with no midnight crossed (a 25-hour day) is hours, not "today". **Breaking.**

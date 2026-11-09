@@ -1,0 +1,48 @@
+name: workflow-lint
+
+# Is every workflow and composite action free of a known supply-chain hole — an expression spliced
+# into shell, a cache restored into a publishing job, a trigger that hands a fork's code a token, an
+# action SHA that is not on its repository (impostor commit) or a version with an advisory? zizmor
+# answers it; `scripts/workflow-pins.test.ts` already holds the pins' SHAPE, and this asks what is
+# behind them (plan 101, 24-ci-gate.md G6).
+#
+# Its own workflow, never a `ci` job: it reads `.github/` alone, so a push touching none of it
+# starts nothing — a path filter a `ci` job cannot have without the `changes` job deciding for it.
+# `--min-severity medium`: the `low` audits are style (`self-repository`), not holes. A finding
+# that is deliberate is suppressed IN PLACE with `# zizmor: ignore[<audit>]` and the reason on the
+# line above it, never in a config file a reader of the workflow does not open.
+
+on:
+  push:
+    branches: [main, next, 'release/*']
+    paths:
+      - '.github/**'
+  pull_request:
+    paths:
+      - '.github/**'
+  workflow_dispatch:
+
+concurrency:
+  group: workflow-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Annotations, not SARIF: the security tab needs `security-events: write`, and the verdict
+      # here is the job's exit code. The version is exact, so a new audit cannot red an unchanged
+      # tree — a bump is a diff, read like any other.
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          version: 1.32.0
+          min-severity: medium
+          advanced-security: false
+          annotations: true

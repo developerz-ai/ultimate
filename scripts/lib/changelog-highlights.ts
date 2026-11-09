@@ -1,14 +1,19 @@
 // Two CHANGELOG.md rules from wiki/Stability.md: every release section from 30.0.0 opens with a
-// `### Highlights` of at most five bullets (the Release body), and once v30 has shipped a
-// `BREAKING —` entry may not reach `main` while the major window is closed — it waits on `next`.
+// `### Highlights` of at most five bullets (the Release body), and once the major that opens the
+// window has shipped a `BREAKING —` entry may not reach `main` while it is closed — it waits on `next`.
 
 import { CHANGELOG_PATH } from './changelog-format';
 import { parseChangelog, UNRELEASED } from './changelog-sections';
 import type { Finding } from './log';
-import { nextMajorWindow, recordedException, WINDOW_OPENS_AT_MAJOR } from './major-window';
+import { nextMajorWindow, recordedException } from './major-window';
 
 export const HIGHLIGHTS_HEADING = '### Highlights';
 export const MAX_HIGHLIGHTS = 5;
+/**
+ * The first major whose sections open with Highlights. Not the window's opener: the window moved
+ * to v31 (2026-11-09 ruling) while every 30.x section already carries its Highlights.
+ */
+export const HIGHLIGHTS_FROM_MAJOR = 30;
 
 /** The section's `### Highlights` bullets when it opens with them, else undefined. */
 function openingHighlights(body: string): readonly string[] | undefined {
@@ -21,7 +26,7 @@ function openingHighlights(body: string): readonly string[] | undefined {
 }
 
 const highlighted = (version: string): boolean =>
-  /^\d+\.\d+\.\d+$/.test(version) && Number.parseInt(version, 10) >= WINDOW_OPENS_AT_MAJOR;
+  /^\d+\.\d+\.\d+$/.test(version) && Number.parseInt(version, 10) >= HIGHLIGHTS_FROM_MAJOR;
 
 /** Every released section from 30.0.0 that does not open with 1–5 highlight bullets. */
 export function highlightFindings(changelog: string): readonly Finding[] {
@@ -64,8 +69,9 @@ export function targetBranch(
 }
 
 /**
- * After v30, `main` ships minors and patches only while the window is closed: a `BREAKING —`
- * entry under [Unreleased] there is a break that skipped `next`. Once the window opens, `next`
+ * Once the window's opening major (`WINDOW_OPENS_AT_MAJOR`) ships, `main` ships minors and
+ * patches only while the window is closed: a `BREAKING —` entry under [Unreleased] there is a
+ * break that skipped `next`. Once the window opens, `next`
  * merging into `main` IS the major, so the rule lets it through; an advisory recorded under
  * [Unreleased] is the security exception. No target (a local run) reads nothing.
  */

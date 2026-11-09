@@ -1,10 +1,10 @@
 // Single responsibility: bounding how many argon2 hashes this process runs at once.
 //
 // WHY it is not covered by the limiters that already exist: `rate-limit.ts`'s `ipKey(ip)` and
-// `@ultimat3/http`'s `auth` bucket are both keyed by SOURCE, so an attacker rotating an IPv6 /64
-// mints a fresh key per attempt and is never throttled by either; and both cap ATTEMPTS, while
-// what argon2id costs is MEMORY — 19 MiB per hash at the OWASP floor. The only remaining backstop
-// was `http.maxInflight` (1000), i.e. roughly 19 GB of arenas queued on one box.
+// `@ultimat3/http`'s `auth` bucket are keyed by SOURCE NETWORK (an IPv6 /64 is one key), so a
+// botnet of many networks still mints a fresh key per attempt; and both cap ATTEMPTS, while what
+// argon2id costs is MEMORY — 19 MiB per hash at the OWASP floor. The only remaining backstop was
+// `http.maxInflight` (1000), i.e. roughly 19 GB of arenas queued on one box.
 
 import { flightGate } from '@ultimat3/core';
 import { kdfOverloaded } from './errors';

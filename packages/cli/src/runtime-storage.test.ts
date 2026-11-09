@@ -210,6 +210,41 @@ describe('unit · dev storage · the served object', () => {
     expect(windows).toHaveLength(1);
   });
 
+  test('an overwrite between the stat and the read is refused, never served under the old ETag', async () => {
+    const inner = storage.disk();
+    let writes = 0;
+    const overwrite = (key: string) => {
+      writes += 1;
+      return inner.put(key, new Uint8Array(32).fill(writes), { contentType: 'image/png' });
+    };
+    resetStorage();
+    const racing = defineStorage({
+      disks: {
+        local: {
+          ...inner,
+          // The write lands after the route described the object, before it opened the bytes.
+          async stream(key: string, options?: { readonly etag?: string | undefined }) {
+            await overwrite(key);
+            return inner.stream(key, options);
+          },
+          async streamRange(
+            key: string,
+            range: readonly [number, number],
+            options?: { readonly etag?: string | undefined },
+          ) {
+            await overwrite(key);
+            return inner.streamRange(key, range, options);
+          },
+        },
+      },
+    });
+    const routes = storageRoutes({ storage: racing });
+    await expect(call(routes)).rejects.toBeUltimateError('X_STORAGE_OBJECT_CHANGED');
+    await expect(call(routes, { headers: { range: 'bytes=0-3' } })).rejects.toBeUltimateError(
+      'X_STORAGE_OBJECT_CHANGED',
+    );
+  });
+
   test('a Range past the end is 416, never a silent full body', async () => {
     const response = await call(storageRoutes({ storage }), { headers: { range: 'bytes=99-' } });
     expect(response.status).toBe(416);

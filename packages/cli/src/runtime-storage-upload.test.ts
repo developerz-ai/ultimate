@@ -36,7 +36,7 @@ let root = '';
 let storage: Storage;
 
 interface PutInit {
-  readonly body: Uint8Array;
+  readonly body: Uint8Array | ReadableStream<Uint8Array>;
   readonly contentType?: string;
   readonly orgId?: string | undefined;
 }
@@ -67,7 +67,11 @@ async function put(grant: UploadGrant, init: PutInit): Promise<Response> {
     ...(orgId === undefined ? {} : { orgId }),
   });
   const request = new UltimateRequest(
-    new Request(url, { method: 'PUT', headers, body: new Uint8Array(init.body) }),
+    new Request(url, {
+      method: 'PUT',
+      headers,
+      body: init.body instanceof Uint8Array ? new Uint8Array(init.body) : init.body,
+    }),
     ctx,
   );
   return uploadRoute().handler(request, ctx);
@@ -161,6 +165,57 @@ describe('unit · /_storage PUT · the signed upload (#523)', () => {
       { body: PNG },
     );
     await expect(response).rejects.toBeUltimateError('X_STORAGE_NOT_FOUND');
+  });
+});
+
+describe('a large upload streams to the disk', () => {
+  const MiB = 1024 * 1024;
+  /** `total` bytes of a PDF, a MiB per chunk, every chunk a view of ONE buffer: no garbage. */
+  const pdfStream = (total: number, onPull?: () => void): ReadableStream<Uint8Array> => {
+    const chunk = new Uint8Array(MiB);
+    chunk.set(PDF);
+    const tail = new Uint8Array(MiB);
+    let sent = 0;
+    return new ReadableStream<Uint8Array>({
+      pull(controller) {
+        onPull?.();
+        if (sent >= total) return controller.close();
+        controller.enqueue(sent === 0 ? chunk : tail);
+        sent += MiB;
+      },
+    });
+  };
+
+  test('200 MiB through the route grows the heap by far less than the body', async () => {
+    const size = 200 * MiB;
+    const grant = await grantFor('application/pdf', size);
+    Bun.gc(true);
+    const before = process.memoryUsage().rss;
+    let peak = before;
+    // Sampled at every chunk the route pulls: the moment a buffering route would hold the most.
+    const sample = (): void => {
+      peak = Math.max(peak, process.memoryUsage().rss);
+    };
+    expect((await put(grant, { body: pdfStream(size, sample) })).status).toBe(201);
+    peak = Math.max(peak, process.memoryUsage().rss);
+    expect(peak - before).toBeLessThan(64 * MiB);
+    expect((await storage.disk('uploads').stat(grant.key))?.size).toBe(size);
+  }, 60_000);
+
+  test('a streamed body past the signed ceiling stores nothing', async () => {
+    const grant = await grantFor('application/pdf', 4 * MiB);
+    await expect(put(grant, { body: pdfStream(8 * MiB) })).rejects.toBeUltimateError(
+      'X_STORAGE_TOO_LARGE',
+    );
+    expect(await storage.disk('uploads').exists(grant.key)).toBe(false);
+  });
+
+  test('a streamed body whose head is not the signed type stores nothing', async () => {
+    const grant = await grantFor('image/png', 4 * MiB);
+    await expect(put(grant, { body: pdfStream(2 * MiB) })).rejects.toBeUltimateError(
+      'X_STORAGE_TYPE_REJECTED',
+    );
+    expect(await storage.disk('uploads').exists(grant.key)).toBe(false);
   });
 });
 

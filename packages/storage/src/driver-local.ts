@@ -25,12 +25,14 @@ import {
   type StorageListEntry,
   type StorageObject,
   type StorageRead,
+  type StreamOptions,
   sha256Base64,
   signedByteBound,
   toBytes,
 } from './driver';
 import { listLocalPage } from './driver-local-list';
 import { localPartStore } from './driver-local-multipart';
+import { streamPinned } from './driver-local-open';
 import {
   etagOfFile,
   headObject,
@@ -60,7 +62,8 @@ import {
   ObjectLockedError,
   requestedLock,
 } from './object-lock';
-import { assertSafeKey } from './path';
+import { assertLocalKey, assertSafeKey } from './path';
+
 import { assertPutStream, type PutStreamOptions } from './put-stream';
 import {
   assertGetOptions,
@@ -70,12 +73,20 @@ import {
   servedRange,
   streamedRange,
 } from './range';
+import {
+  assertWithinRequestCeiling,
+  type RequestCeiling,
+  screenRequestCeiling,
+} from './request-ceiling';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import { resolveSigningSecret } from './signing-secret';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 'local';
+
+/** Every key this disk touches: the shared rule, then Windows' own (`assertLocalKey`). */
+const safeKey = (key: string): string => assertLocalKey(assertSafeKey(key));
 
 export interface LocalDriverOptions {
   /** Directory the disk owns outright. Created on first write. */
@@ -113,6 +124,14 @@ export interface LocalDriverOptions {
    */
   readonly maxGetBytes?: number | undefined;
   /**
+   * The most ONE request to this server carries — the app's `http.maxRequestBodyBytes`, which this
+   * package cannot import. A signed PUT lands on this process, so a single-request grant past it is
+   * refused at signing (`X_STORAGE_TOO_LARGE`, naming `grantMultipart`). Unset, nothing is refused
+   * here and the route's own `X_BODY_TOO_LARGE` answers the upload. A function is read at each
+   * signing: the CLI's disk is built before the app's `configureHttp` runs.
+   */
+  readonly maxRequestBytes?: RequestCeiling | undefined;
+  /**
    * The per-key queue every read and write of this disk waits in. Defaults to the disk's own
    * `keyedQueue()`; a test passes one it also holds, to park a key deterministically.
    */
@@ -136,6 +155,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     1,
   );
   const clock = options.clock ?? systemClock;
+  const maxRequestBytes = screenRequestCeiling('local', options.maxRequestBytes);
   const oneAtATime = options.queue ?? keyedQueue();
   // What `defineStorage` registered this driver as — the name a refusal's `disk('…')` must use.
   let registered = DRIVER_NAME;
@@ -189,7 +209,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       },
 
       async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
-        const safe = assertSafeKey(key);
+        const safe = safeKey(key);
         refuseUnsupportedPut(putOptions);
         assertPutOptions(DRIVER_NAME, putOptions);
         assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
@@ -233,7 +253,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         body: ReadableStream<Uint8Array>,
         streamOptions: PutStreamOptions,
       ): Promise<StorageObject> {
-        const safe = assertSafeKey(key);
+        const safe = safeKey(key);
         const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
         const input = { root, key: safe, disk: registered, body, maxBytes, clock };
         return putLocalStream(input, streamOptions, (then) =>
@@ -245,12 +265,12 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       },
 
       async stat(key: string): Promise<StorageObject | undefined> {
-        const entry = await measured(assertSafeKey(key));
+        const entry = await measured(safeKey(key));
         return entry && { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
       },
 
       async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
-        const safe = assertSafeKey(key);
+        const safe = safeKey(key);
         assertGetOptions(DRIVER_NAME, getOptions);
         const range = getOptions?.range;
         // Queued behind this key's writers: an object is two files, and a read between a put()'s
@@ -281,16 +301,26 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         });
       },
 
-      async stream(key: string): Promise<ReadableStream<Uint8Array>> {
-        const safe = assertSafeKey(key);
+      async stream(key: string, options?: StreamOptions): Promise<ReadableStream<Uint8Array>> {
+        const safe = safeKey(key);
+        const etag = options?.etag;
+        if (etag !== undefined) return streamPinned({ root, key: safe, disk: registered, etag });
         const file = Bun.file(filePath(safe));
         if (!(await file.exists())) throw objectNotFound(registered, safe);
         return file.stream();
       },
 
-      async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
-        const safe = assertSafeKey(key);
+      async streamRange(
+        key: string,
+        range: ByteRange,
+        options?: StreamOptions,
+      ): Promise<ReadableStream<Uint8Array>> {
+        const safe = safeKey(key);
         assertStreamRange(DRIVER_NAME, range);
+        const etag = options?.etag;
+        if (etag !== undefined) {
+          return streamPinned({ root, key: safe, disk: registered, etag, range });
+        }
         const file = Bun.file(filePath(safe));
         if (!(await file.exists())) throw objectNotFound(registered, safe);
         const [first, last] = streamedRange(DRIVER_NAME, safe, range, file.size);
@@ -299,8 +329,8 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
       /** A real file copy — `Bun.write` from a `BunFile` never routes the bytes through the heap. */
       async copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject> {
-        const source = assertSafeKey(from);
-        const destination = assertSafeKey(to);
+        const source = safeKey(from);
+        const destination = safeKey(to);
         // Measured AND read in one turn on both keys. Measured in the source's turn and read in the
         // destination's, a put() of the source in between committed its NEW bytes under the OLD
         // etag and type — a pair no marker flags, so every later `get()` of the copy trusted it.
@@ -338,7 +368,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       },
 
       async delete(key: string): Promise<void> {
-        const safe = assertSafeKey(key);
+        const safe = safeKey(key);
         // Idempotent by contract: a missing key is already in the desired state. A REFUSED unlink
         // is not — a read-only mount or a root this process cannot write reports the bytes gone
         // when they are still on disk, which is the one lie an erasure sweep must never repeat.
@@ -360,12 +390,12 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       },
 
       async exists(key: string): Promise<boolean> {
-        return Bun.file(filePath(assertSafeKey(key))).exists();
+        return Bun.file(filePath(safeKey(key))).exists();
       },
 
       /** From the sidecar, as recorded — a lapsed retention is still reported, as S3 reports it. */
       async retentionOf(key: string): Promise<ObjectLock> {
-        const safe = assertSafeKey(key);
+        const safe = safeKey(key);
         return oneAtATime(safe, async () => {
           if (!(await Bun.file(filePath(safe)).exists())) throw objectNotFound(registered, safe);
           return lockOfSidecar(await readSidecar(root, safe));
@@ -384,12 +414,14 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       },
 
       async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
+        const bound = signedByteBound(DRIVER_NAME, urlOptions);
+        assertWithinRequestCeiling(DRIVER_NAME, maxRequestBytes(), { ...urlOptions, bound });
         return buildSignedUrl({
           secret,
-          key: assertSafeKey(key),
+          key: safeKey(key),
           method: urlOptions?.method,
           expiresInMs: urlOptions?.expiresInMs,
-          maxBytes: signedByteBound(DRIVER_NAME, urlOptions),
+          maxBytes: bound,
           contentType: urlOptions?.contentType,
           part: urlOptions?.part,
           baseUrl,

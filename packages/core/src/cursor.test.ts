@@ -151,3 +151,13 @@ describe('the one cursor codec', () => {
     );
   });
 });
+
+describe('the signature comparison', () => {
+  // A security primitive with two copies drifts: `timing-safe-equal.ts` is the one constant-time
+  // comparison, and a private twin here is the second path axiom 1 forbids.
+  test('goes through the shared timingSafeEqual, never a private copy', async () => {
+    const source = await Bun.file(new URL('./cursor.ts', import.meta.url)).text();
+    expect(source).toContain("from './timing-safe-equal'");
+    expect(source).not.toMatch(/charCodeAt\(index\) \^/);
+  });
+});

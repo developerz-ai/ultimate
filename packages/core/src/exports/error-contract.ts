@@ -27,9 +27,11 @@ export {
   resetErrorCodes,
 } from '../error-codes';
 export {
+  boundedCause,
   describeValue,
   isFixShellSafe,
   isThrownError,
+  MAX_CAUSE_LENGTH,
   MAX_RENDERED_LENGTH,
   renderCauseValue,
   renderFixLiteral,

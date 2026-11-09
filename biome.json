@@ -92,7 +92,16 @@
     {
       "includes": ["**/*.scss"],
       "formatter": { "enabled": false },
-      "linter": { "rules": { "correctness": { "noUnknownUnit": "off" } } }
+      "linter": {
+        "rules": {
+          "correctness": { "noUnknownUnit": "off" },
+          "style": { "noDescendingSpecificity": "off" }
+        }
+      }
+    },
+    {
+      "includes": ["packages/ui/src/tokens/reset.scss", "packages/ui/src/global.scss"],
+      "linter": { "rules": { "complexity": { "noImportantStyles": "off" } } }
     }
   ],
   "assist": {

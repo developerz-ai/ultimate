@@ -189,6 +189,48 @@ describe('assertCorsConfig()', () => {
   });
 });
 
+describe('an origin the browser could never send', () => {
+  // `originListed` compares bytes. A browser's `Origin` is always the serialised origin, so a
+  // listed entry in any other spelling matches nothing: no CORS headers, a 403 preflight and every
+  // write refused, with a config that reads as correct. Refused where it is written instead.
+  const refusal = (origin: string): HttpError => {
+    try {
+      assertCorsConfig({ ...DEFAULT_CORS, origins: [origin] });
+    } catch (error) {
+      if (error instanceof HttpError) return error;
+    }
+    return expect.unreachable(`${origin} was accepted`);
+  };
+
+  test.each([
+    ['https://app.com/', 'https://app.com'],
+    ['https://App.com', 'https://app.com'],
+    ['https://app.com:443', 'https://app.com'],
+    ['http://app.com:80/x?y', 'http://app.com'],
+  ])('%s is refused, with %s in the fix', (written, canonical) => {
+    const error = refusal(written);
+    expect(error.code).toBe('X_CORS_CONFIG_INVALID');
+    expect(error.fix).toContain(`'${canonical}'`);
+  });
+
+  test('a bare host is refused, with the scheme to add in the fix', () => {
+    const error = refusal('app.com');
+    expect(error.code).toBe('X_CORS_CONFIG_INVALID');
+    expect(error.fix).toContain("'https://app.com'");
+  });
+
+  test('every canonical spelling, and the wildcard, still pass', () => {
+    for (const origins of [
+      ['https://app.com', 'http://localhost:3000', 'https://a.test:8443', 'http://[::1]:3000'],
+      ['*'],
+    ]) {
+      expect(() =>
+        assertCorsConfig({ ...DEFAULT_CORS, origins, credentials: false }),
+      ).not.toThrow();
+    }
+  });
+});
+
 describe('preflight()', () => {
   const config = { ...DEFAULT_CORS, origins: ['https://a.test'] };
 

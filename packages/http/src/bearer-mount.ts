@@ -19,7 +19,8 @@ import {
 import type { RequestContext } from './context';
 import { bearerMountInvalid, routeNotFound } from './errors';
 import type { RateLimitDecision, RateLimitStore } from './rate-limit';
-import { memoryRateLimitStore, toBucket } from './rate-limit';
+import { memoryRateLimitStore } from './rate-limit';
+import { toBucket } from './rate-limit-config';
 import { rateLimited } from './rate-limit-errors';
 import { rateLimitHeaders } from './rate-limit-headers';
 import type { UltimateRequest } from './request';

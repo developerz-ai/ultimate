@@ -23,6 +23,7 @@ import {
   hmac,
   isProduction,
   isUltimateError,
+  timingSafeEqual,
   usesDevCursorSecret,
 } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
@@ -321,7 +322,7 @@ export function screenTranscript(binding: TranscriptBinding, raw: unknown): Agen
   } catch {
     return refuse('it is not JSON');
   }
-  if (typeof sig !== 'string' || !sameText(sig, expected)) {
+  if (typeof sig !== 'string' || !timingSafeEqual(sig, expected)) {
     refuse('its signature does not match — it was edited, or the signing secret rotated');
   }
   if (handle['agent'] !== agent) refuse(`it was written by agent "${String(handle['agent'])}"`);
@@ -391,14 +392,6 @@ export function screenTranscript(binding: TranscriptBinding, raw: unknown): Agen
     ...(compacted === undefined ? {} : { compacted: compacted as number }),
     sig: sig as string,
   };
-}
-
-/** Constant-time over equal lengths: a signature check must not say how much of it matched. */
-function sameText(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
 }
 
 function recordOf(value: unknown): Record<string, unknown> | undefined {

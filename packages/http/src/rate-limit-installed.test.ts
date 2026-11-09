@@ -3,7 +3,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { RateLimitConfig, RateLimitStore } from './rate-limit';
-import { DEFAULT_RATE_LIMIT, memoryRateLimitStore } from './rate-limit';
+import { memoryRateLimitStore } from './rate-limit';
+import { DEFAULT_RATE_LIMIT } from './rate-limit-config';
 import {
   adoptRateLimitStore,
   assertInstalledRateLimitScope,

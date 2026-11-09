@@ -1,9 +1,8 @@
 // Starting the services `runtime-bindings.ts` resolved. Resolution answers "which database"; this
 // answers "it is running, and every ambient accessor in the framework now points at it" — so
 // `db()`, `jobDriver()`, `mailDriver()` and the realtime transport are the objects a production
-// boot installs, only backed by embedded drivers.
+// boot installs, only backed by embedded drivers. The storage disk is `runtime-storage-boot.ts`.
 
-import { mkdirSync } from 'node:fs';
 import {
   configureAuthLimiters,
   configureTotpReplay,
@@ -15,12 +14,9 @@ import {
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
 import {
-  isLocal,
   type RealtimeConfig,
   type Role,
   registerReadinessCheck,
-  renderThrowable,
-  resolveEnvironment,
   systemClock,
 } from '@ultimat3/core';
 import { dbExecutor } from '@ultimat3/db';
@@ -36,9 +32,7 @@ import {
 } from '@ultimat3/mail';
 import type { BusUse, Transport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
-import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
 import { loadAppConfig } from './app-config-load';
-import { LocalDiskUnsafeError, StorageUnwritableError } from './errors';
 import { msg } from './messages';
 import type { DevServices, Env } from './runtime-bindings';
 import { selectBus } from './runtime-bus';
@@ -52,8 +46,8 @@ import { installRetentionSweep } from './runtime-purge';
 import { installAppWebPush, selectWebPush } from './runtime-push';
 import { type DevDbClient, type SchemaMode, startQueue } from './runtime-queue';
 import { realtimeConfigOf } from './runtime-realtime';
-import { s3PathStyleOf } from './runtime-s3-path-style';
 import { reportStatementBound } from './runtime-statement-bound';
+import { startStorage } from './runtime-storage-boot';
 
 export interface RunningServices {
   readonly services: DevServices;
@@ -164,88 +158,6 @@ export function cdnLabel(runtime: RunningServices): string {
   return isNoopPurgeDriver(runtime.purge)
     ? msg('cli.dev.cdn.none')
     : msg('cli.dev.cdn.external', { driver: runtime.purge.name, detail: runtime.purgeDetail });
-}
-
-const FILE_SCHEME = 'file://';
-
-/**
- * The storage disk this process will use.
- *
- * An `external` binding now reaches `s3Driver`. It used to fall through to a LOCAL directory —
- * `S3_ENDPOINT` selected a different root and nothing else, so every deployment that configured
- * object storage silently wrote to a container-local disk, and every upload was destroyed by the
- * next restart while the configured bucket stayed empty. Nothing failed; the files just went
- * nowhere.
- *
- * The embedded branch is also where a hardened container died. `mkdirSync` on a
- * `readOnlyRootFilesystem` throws a bare `EROFS` from inside Bun's fs, with no code, no fix and no
- * mention of storage — the demo CrashLooped 22 times on it. A read-only filesystem is a normal way
- * to run a container, so this reports what to do instead of what went wrong.
- */
-export function startStorage(services: DevServices, env: Env, override?: Storage): Storage {
-  // First arm, not a branch beside the two below: a host that handed the boot a `Storage` has
-  // already answered "which disk", and re-deriving one from `S3_ENDPOINT` would be a second answer.
-  if (override !== undefined) return override;
-  const binding = services.storage;
-
-  if (binding.mode === 'external') {
-    const bucket = env['S3_BUCKET'] ?? '';
-    if (bucket === '') {
-      throw new StorageUnwritableError(
-        `S3_ENDPOINT is set to ${binding.url} but S3_BUCKET is empty, so there is no disk to write to`,
-        'set S3_BUCKET to the bucket name, or unset S3_ENDPOINT to use the embedded disk',
-      );
-    }
-    return defineStorage({
-      disks: {
-        object: s3Driver({
-          bucket,
-          endpoint: binding.url,
-          ...(env['S3_REGION'] === undefined ? {} : { region: env['S3_REGION'] }),
-          forcePathStyle: s3PathStyleOf(env),
-        }),
-      },
-      default: 'object',
-    });
-  }
-
-  const root = binding.url.slice(FILE_SCHEME.length);
-  // The embedded disk is what this branch falls back to whenever `S3_ENDPOINT`/`S3_BUCKET` are
-  // unset — including in `production` and `staging`, where an unset `STORAGE_SIGNING_SECRET` means
-  // every signed upload grant is minted with the string published in this repo, and
-  // `acceptSignedUpload` trusts a signed constraint over the app's own `uploadPolicy`.
-  //
-  // `localDriver` refuses that at construction on its own (`X_ENV_MISSING`). Pre-empted here so
-  // the message names the STORAGE CHOICE and both ways out, rather than arriving as "a secret is
-  // missing" from a helper the operator never configured. Not an outright ban on the local disk in
-  // production: a single-node Compose deploy on a mounted volume WITH a real secret is a rung on
-  // the scale ladder, and refusing it would be a deploy-shape decision, not a security fix.
-  // `{ env }` on ALL THREE, never the ambient `process.env`: this function is HANDED the boot's
-  // environment and reads `S3_BUCKET` off it one branch above, so a guard asking a second source
-  // could answer `development` for a process booting as `production` — or, with
-  // `usesDevStorageSecret({ env })` left bare, refuse a boot whose own env carries a real
-  // `STORAGE_SIGNING_SECRET` because the PROCESS does not. Which environment, whether a secret
-  // exists, and the name the message prints are one question about one table.
-  // `fallback: 'production'` on both, the reading `localDriver` itself takes: a boot that names no
-  // environment is not a development one, and this message beats the driver's to it.
-  if (!isLocal({ env, fallback: 'production' }) && usesDevStorageSecret({ env })) {
-    throw new LocalDiskUnsafeError({
-      environment: resolveEnvironment({ env, fallback: 'production' }),
-      root,
-    });
-  }
-  try {
-    mkdirSync(root, { recursive: true });
-  } catch (cause) {
-    const detail = renderThrowable(cause);
-    throw new StorageUnwritableError(
-      `the embedded storage disk needs ${root} and it could not be created: ${detail}`,
-      `mount a writable volume at ${root}, or set S3_ENDPOINT and S3_BUCKET to use object storage instead`,
-    );
-  }
-  // The guard three lines up reads `env`; so must the disk it guards. Otherwise the boot's
-  // environment decides whether signing is allowed and the process's decides what key is used.
-  return defineStorage({ disks: { local: localDriver({ root, env }) }, default: 'local' });
 }
 
 /**

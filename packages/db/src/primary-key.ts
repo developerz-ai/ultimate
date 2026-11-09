@@ -9,9 +9,8 @@ import type { EntityDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
 import { isGenerated } from './generated-column';
 import type { SchemaDescription, TableDescription } from './introspect';
-import { MAX_IDENTIFIER_BYTES } from './invariant-ddl';
 import { migrationIrreversible } from './migration-errors';
-import { identifier } from './sql';
+import { identifier, MAX_IDENTIFIER_BYTES } from './sql';
 
 /**
  * Inside shell double quotes a `$`, a backtick and a `!` still run; everything else — a quote, a

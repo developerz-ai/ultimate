@@ -1,4 +1,4 @@
-// The major window (wiki/Stability.md): from v30, at most one major per 90 days, read from the
+// The major window (wiki/Stability.md): from v31, at most one major per 90 days, read from the
 // dated section headings CHANGELOG.md already carries. Pure — the changelog and today are the
 // caller's — so `release.ts --bump`, `release.ts --check` and the gate all ask one function.
 
@@ -7,8 +7,11 @@ import type { Finding } from './log';
 import { report } from './log';
 
 export const MAJOR_WINDOW_DAYS = 90;
-/** The major that starts the clock. It is never refused itself: the plan's breaks land in it. */
-export const WINDOW_OPENS_AT_MAJOR = 30;
+/**
+ * The major that starts the clock. It is never refused itself: the plan's breaks land in it. v31
+ * since the 2026-11-09 ruling (plan 101-final-hardening-before-v31): v30 opens no window.
+ */
+export const WINDOW_OPENS_AT_MAJOR = 31;
 export const STABILITY_PAGE = 'https://github.com/developerz-ai/ultimate/wiki/Stability';
 
 /** A GitHub advisory (`GHSA-xxxx-xxxx-xxxx`, its own alphabet) or a CVE id: nothing looser. */
@@ -79,7 +82,7 @@ export const recordedException = (changelog: string, version: string): string | 
   return section === undefined ? undefined : RECORDED.exec(section.body)?.[1];
 };
 
-/** The newest major from v30 on, and the day the next one may ship. Undefined before v30. */
+/** The newest major from the opener on, and the day the next one may ship. Undefined before it. */
 export function nextMajorWindow(
   changelog: string,
 ): { readonly after: string; readonly on: string; readonly opensOn: string } | undefined {

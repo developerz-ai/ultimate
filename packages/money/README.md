@@ -136,6 +136,12 @@ already carries its own precision. `convertWith` on a same-currency pair stamps 
 injected `Clock` (`{ clock }`, default `systemClock`) or from an explicit `{ at }`, never from
 the epoch: `ExchangeRate.at` is the audit trail.
 
+| Export | Does |
+|---|---|
+| `convert(amount, to, rate, { rounding? })` | exact conversion with the rate given; a rate for another pair is `X_RATE_MISSING` |
+| `convertWith(provider, amount, to, { at?, clock?, rounding? })` | asks a `RateProvider`, then `convert`s; a pair it does not answer is `X_RATE_MISSING`, never parity |
+| `rateUnusable(from, to, field)` | the `X_RATE_MISSING` a rate earns when its `rate`, `at` or `ratio` cannot be used — the cause names the field |
+
 ## Errors
 
 | Code | When |
@@ -145,7 +151,8 @@ the epoch: `ExchangeRate.at` is the audit trail.
 | `X_CURRENCY_UNKNOWN` | a code neither shipped nor registered by this process — `currencyCodes()` is the list |
 | `X_CURRENCY_MISMATCH` | arithmetic across two currencies |
 | `X_ALLOCATION_INVALID` | bad part count, empty/negative/all-zero ratios, percentages ≠ 100 |
-| `X_RATE_MISSING` | no rate for the pair — never assumes parity |
+| `X_MONEY_NOT_DECIMAL` | `fromDecimal` handed a non-string or a string that is not a plain decimal |
+| `X_RATE_MISSING` | no rate for the pair — never assumes parity — or one whose `rate`, `at` or `ratio` is unusable (`rateUnusable`) |
 
 ### Error classes
 

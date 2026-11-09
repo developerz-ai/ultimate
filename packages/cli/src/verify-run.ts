@@ -79,17 +79,19 @@ export async function runVerify(
     }
   };
   const began = performance.now();
-  // The static steps wait for the serial suites and then run BESIDE them — only when `live` is in
-  // the list, so a one-step run (`--only`) and a list with no serial suite keep today's order.
-  const overlapping = selected.some((step) => step.name === SERIAL_SUITES[0]);
+  // The static steps wait for the serial suites and then run BESIDE the first one listed: `live`
+  // in a whole gate, `eval` in CI's static part (the `live` shards may name no other step). A list
+  // with no serial suite — a one-step `--only` among them — keeps declared order.
   // The second serial lane (`verify-e2e-lane.ts`): `e2e` beside `live`, its children stripped of
-  // every service URL, in a package monorepo only.
-  const e2eLane = overlapping && e2eBesideLive(ctx);
-  const beside = overlapping
-    ? selected.filter(
-        (step) => BESIDE_SERIAL_SUITES.has(step.name) || (e2eLane && step.name === 'e2e'),
-      )
-    : [];
+  // every service URL, in a package monorepo only — so only when `live` is listed.
+  const e2eLane = selected.some((step) => step.name === SERIAL_SUITES[0]) && e2eBesideLive(ctx);
+  const grouped = selected.filter(
+    (step) => BESIDE_SERIAL_SUITES.has(step.name) || (e2eLane && step.name === 'e2e'),
+  );
+  const anchor = selected.find(
+    (step) => SERIAL_SUITES.includes(step.name) && !grouped.includes(step),
+  );
+  const beside = anchor === undefined ? [] : grouped;
   let pending: Promise<void> | undefined;
   const join = async (): Promise<void> => {
     await pending;
@@ -105,7 +107,7 @@ export async function runVerify(
   const shared: VerifyContext = base;
   for (const step of selected) {
     if (beside.includes(step)) continue;
-    if (step.name === SERIAL_SUITES[0]) {
+    if (step === anchor) {
       pending = Promise.all(
         beside.map((other) => run(other, other.name === 'e2e' ? besideLive(base) : base)),
       ).then(() => undefined);

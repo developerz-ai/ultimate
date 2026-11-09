@@ -398,3 +398,32 @@ a current fact: the rules that still hold are in that file, and where the two di
   collection bust, `a` on any. One counter per entity would decline every row fill while any
   other row of the entity was being written — a write-heavy entity would never cache in Redis.
 
+
+## Plan 101 (2026-11-09), slice 05 — bounded tag buckets
+
+Supersedes the bucket bullets above (`SISMEMBER`/`saysAbsent`, one script call per tag, the
+`SADD` lease script). `As of 2026-11-09`.
+
+- **The lease bounded an idle bucket, never a written one.** Every `set` extended it, and only a
+  bust `SREM`ed. An entity written constantly and never invalidated kept every key it ever wrote;
+  its first bust `SMEMBERS`ed millions — the outage the lease was added to prevent. Buckets are now
+  sorted sets scored `expiry + TAG_GRACE_MS`, and every join prunes `-inf (now`.
+- **The grace is for clock skew, not for safety margin.** Scores come from the writer's clock and
+  the prune from the next writer's. A pod running ahead would forget a member whose value key
+  still lives — stale with no tag left to reach it. Server `TIME` inside a script would avoid that,
+  but the fake cannot run Lua, so the bound would be a claim only CI could test.
+- **New segment, no migration.** `t2:`/`e2:` never collide with a v30 pod's `t:`/`e:` plain sets
+  (`WRONGTYPE`), which expire on their own lease. The cost: with `buildId: null`, a mixed fleet
+  does not see the other version's buckets for one rollout (Upgrading 30 → 31, row 6).
+- **A bust has no script.** `ZSCAN … COUNT 1000`, then `UNLINK` per key and `ZREM` of what died,
+  8 in flight. ~3,000 sequential round trips for 100k members became 25 for 10k. The first cut
+  paged `ZRANGEBYSCORE … LIMIT` on a `(score, offset)` cursor; a concurrency audit broke it twice
+  before it shipped — a write's prune removing a read page of TIED dead members, and a re-write
+  re-scoring a read tie member, each shifted the offset past live keys. `ZSCAN` guarantees every
+  member present for the whole scan, which is the property a bust needs; the fake's `ZSCAN` keeps
+  exactly that guarantee (an append-only log as the cursor) and nothing stronger. One key per command made the `CROSSSLOT` reasoning moot.
+- **The shared tier gained the LRU's value cap**: `maxValueBytes`, 1 MiB of encoded UTF-8,
+  `X_CACHE_TOO_LARGE`. The code's old `fix:` sent the reader to an `app.config.ts` key under
+  `cache` that never existed; it now names the constructor option.
+- **The fake holds sorted sets as state.** Plain commands, not Lua — so `tag-parity` and
+  `tier-parity` compare Redis survivors directly instead of which buckets a bust read.

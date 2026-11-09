@@ -139,9 +139,10 @@ describe('a registry kept as frozen declarations, not titles', () => {
     // package lacks is `new-error-code-status.test.ts`'s `time` case.
     const backlog = await read(dir, STATUS_BACKLOG);
     const offSocket = backlog.slice(backlog.indexOf('export const OFF_SOCKET'));
-    expect(offSocket.slice(0, offSocket.indexOf('\n};\n'))).toContain(
-      "  schema: ['X_SCHEMA_BOUNDS_INVALID', 'X_SCHEMA_SENSITIVE_OUTPUT', 'X_SCHEMA_PROBE'],\n",
-    );
+    // Read off the group, never a copy of the real row: the row grows with every schema code, and
+    // Biome writes it on one line or one code per line depending on its width.
+    const group = offSocket.slice(0, offSocket.indexOf('\n};\n'));
+    expect(group).toMatch(/\n {2}schema: \[[^\]]*'X_SCHEMA_PROBE',?\s*\],\n/);
   });
 
   test('a title past 100 columns wraps the way Biome writes the entry', async () => {

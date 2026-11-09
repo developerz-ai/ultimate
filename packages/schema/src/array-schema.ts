@@ -14,6 +14,7 @@ import {
 } from './builder';
 import { describeValue, expected } from './describe-value';
 import { BoundsInvalidError } from './errors';
+import { stopCollecting } from './issue-cap';
 import type { SchemaNode } from './node';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
 
@@ -84,7 +85,11 @@ export function arraySchema<S extends AnySchema>(
     for (const [index, member] of value.entries()) {
       const result = itemCheck(member, [...path, index]);
       if (result.ok) out.push(result.value);
-      else issues.push(...result.issues);
+      else {
+        issues.push(...result.issues);
+        // At the issue cap the rest is not read: 10k bad items cost a hundred checks, not 10k.
+        if (stopCollecting(issues.length, index < value.length - 1)) break;
+      }
     }
     if (issues.length > 0) return failWith(issues);
     return pass(out as InferOutput<S>[]);

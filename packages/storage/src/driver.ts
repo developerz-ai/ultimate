@@ -4,7 +4,7 @@
 // and never unbounded, which is the same failure with the sender choosing the size.
 
 import type { Clock, Page } from '@ultimat3/core';
-import { assert } from '@ultimat3/core';
+import { assert, describeValue } from '@ultimat3/core';
 import { pumpBounded } from './byte-pump';
 import { putTooLarge } from './errors';
 import type { MultipartCapability } from './multipart';
@@ -172,14 +172,22 @@ export interface StorageDriver {
    * the range's length: s3 sends `Range:`, the local disk slices the file, memory slices its copy.
    */
   get(key: string, options?: GetOptions): Promise<StorageRead>;
-  /** Bytes without buffering — the only safe path for anything over a few MB. */
-  stream(key: string): Promise<ReadableStream<Uint8Array>>;
+  /**
+   * Bytes without buffering — the only safe path for anything over a few MB. `etag` pins the read
+   * to the revision a `stat()` described: another is `X_STORAGE_OBJECT_CHANGED`, never its bytes
+   * under the old validator.
+   */
+  stream(key: string, options?: StreamOptions): Promise<ReadableStream<Uint8Array>>;
   /**
    * The bytes `[first, last]` (inclusive, clamped, as `get`'s range) with none before them read, so
    * a seek late in a film costs its window. `X_STORAGE_RANGE_UNSATISFIABLE` past the end. A method and
    * not an option on `stream`, which a third-party driver would ignore and serve the wrong bytes.
    */
-  streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>>;
+  streamRange(
+    key: string,
+    range: ByteRange,
+    options?: StreamOptions,
+  ): Promise<ReadableStream<Uint8Array>>;
   /**
    * Bytes from one key to another without them passing through this process. Idempotent in the
    * destination and non-destructive in the source: the caller deletes the source afterwards if
@@ -273,13 +281,30 @@ const isStringRecord = (value: unknown): boolean =>
  * `metadata: { n: 1n }` reached `JSON.stringify` on the local disk as a bare `TypeError`, and the
  * memory disk stored it — against the `Record<string, string>` every reader is typed on.
  */
+/** A streamed read's options: the revision it may serve. */
+export interface StreamOptions {
+  /** The etag a `stat()` answered; any other revision is refused rather than served. */
+  readonly etag?: string | undefined;
+}
+
+/** Printable ASCII: what one HTTP header value may carry, on the way in and on the way out. */
+export const HEADER_VALUE = /^[\x20-\x7e]*$/;
+
 export function assertPutOptions(driver: string, options: PutOptions | undefined): void {
   if (options === undefined) return;
   for (const name of ['contentType', 'cacheControl'] as const) {
+    const value = options[name];
     assert(
-      options[name] === undefined || typeof options[name] === 'string',
+      value === undefined || typeof value === 'string',
       `put() on the ${driver} disk was given a ${name} that is not a string`,
       `put(key, body, { ${name}: 'a string' }) — or omit ${name}`,
+    );
+    // Served back as a header on every disk and SENT as one on s3: a line break is a second
+    // header, and on the signed wire a refused one read as a lost answer.
+    assert(
+      value === undefined || HEADER_VALUE.test(value),
+      `put() on the ${driver} disk was given a ${name} that cannot travel as a header (${describeValue(value)})`,
+      `put(key, body, { ${name}: 'text/plain' }) — printable ASCII, no line breaks`,
     );
   }
   assert(

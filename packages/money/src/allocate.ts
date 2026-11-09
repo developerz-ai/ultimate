@@ -40,6 +40,10 @@ export function allocate(amount: Money, parts: number): Money[] {
  * `[1, 1, 1]` over 100 → 34, 33, 33. Weights need not sum to anything in particular.
  */
 export function allocateByRatios(amount: Money, ratios: readonly number[]): Money[] {
+  // `Money` is a type, not a check: a hand-built `{ minor: 12.5 }` reached `BigInt()` below and left
+  // as a bare `RangeError`. The constructor is the one place a value is judged.
+  fromMinor(amount.minor, amount.currency, amount.scale);
+  if (!Array.isArray(ratios)) throw allocationInvalid('ratios must be a list of numbers');
   if (ratios.length === 0) throw allocationInvalid('ratios must not be empty');
   const weights = weigh(ratios);
   let total = 0n;
@@ -104,6 +108,7 @@ function weigh(ratios: readonly number[]): bigint[] {
  * where a mis-typed percentage should be an error, not a silent re-normalization.
  */
 export function allocateByPercentages(amount: Money, percentages: readonly number[]): Money[] {
+  if (!Array.isArray(percentages)) throw allocationInvalid('percentages must be a list of numbers');
   const total = percentages.reduce((sum, percentage) => sum + percentage, 0);
   if (Math.abs(total - 100) > 1e-9) {
     throw allocationInvalid(`percentages must sum to 100, got ${String(total)}`);

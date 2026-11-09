@@ -39,6 +39,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_BEARER_MOUNT_INVALID',
   'X_RATE_LIMIT_STORE_TIMEOUT',
   'X_EXERCISE_REQUEST_INVALID',
+  'X_BODY_TOO_LARGE',
 ] as const;
 
 export type HttpOwnedErrorCode = (typeof HTTP_OWNED_ERROR_CODES)[number];
@@ -75,6 +76,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_BEARER_MOUNT_INVALID: 'a bearer mount declaration cannot be served as written',
   X_RATE_LIMIT_STORE_TIMEOUT: 'the shared rate-limit store did not answer inside its own deadline',
   X_EXERCISE_REQUEST_INVALID: "an exercise entry's request is not one a browser could send",
+  X_BODY_TOO_LARGE: 'request body over the transport ceiling',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title

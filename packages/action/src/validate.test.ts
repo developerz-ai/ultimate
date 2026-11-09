@@ -129,3 +129,25 @@ describe('validateOutput', () => {
     expect((failure as OutputInvalidError).cause).toContain('postId');
   });
 });
+
+/**
+ * A capped list must SAY it is capped. Validation stops at `MAX_ISSUES` (`@ultimat3/schema`); a
+ * client that rendered the 100 it got as the whole answer would show a form "fixed" that is not.
+ */
+describe('parseActionInput on a body past the issue cap', () => {
+  test('carries issuesTruncated on the error and in meta', async () => {
+    const failure = await refusalOf(
+      { items: Array.from({ length: 500 }, () => ({ price: 'free' })) },
+      Nested,
+    );
+    expect(failure.issues).toHaveLength(100);
+    expect(failure.issuesTruncated).toBe(true);
+    expect(failure.meta?.['issuesTruncated']).toBe(true);
+  });
+
+  test('a list under the cap is not marked', async () => {
+    const failure = await refusalOf({ postId: 'not-a-uuid', title: '' });
+    expect(failure.issuesTruncated).toBe(false);
+    expect(failure.meta?.['issuesTruncated']).toBeUndefined();
+  });
+});

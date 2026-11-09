@@ -9,6 +9,7 @@
 
 import { UltimateError } from './errors';
 import { hmac } from './hmac';
+import { timingSafeEqual } from './timing-safe-equal';
 
 export interface CursorPayload {
   /** What this cursor belongs to: one read plus its arguments. A cursor is not portable. */
@@ -118,7 +119,8 @@ export function decodeCursor(cursor: string, scope: string): CursorPayload {
   const dot = cursor.lastIndexOf('.');
   if (dot <= 0) throw new CursorInvalidError('not a signed cursor');
   const body = cursor.slice(0, dot);
-  if (!sameSignature(sign(body), cursor.slice(dot + 1))) {
+  // Constant time: the comparison must not leak how much of a forged signature was right.
+  if (!timingSafeEqual(sign(body), cursor.slice(dot + 1))) {
     throw new CursorInvalidError('signature does not match — tampered with, or the secret rotated');
   }
 
@@ -137,16 +139,6 @@ export function decodeCursor(cursor: string, scope: string): CursorPayload {
 /** Truncated HMAC-SHA256. 128 bits is far past forging a page position. */
 function sign(body: string): string {
   return hmac('sha256', currentSecret(), body, 'hex').slice(0, 32);
-}
-
-/** Constant time: the comparison must not leak how much of a forged signature was right. */
-function sameSignature(expected: string, actual: string): boolean {
-  if (expected.length !== actual.length) return false;
-  let difference = 0;
-  for (let index = 0; index < expected.length; index += 1) {
-    difference |= expected.charCodeAt(index) ^ actual.charCodeAt(index);
-  }
-  return difference === 0;
 }
 
 // A cursor travels in a query string and carries row values, so the encoding has to survive

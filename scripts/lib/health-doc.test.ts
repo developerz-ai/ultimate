@@ -170,7 +170,7 @@ describe('unit · health-doc · the brief matches the ordered machine definition
   });
 
   test.each([
-    ['deleted', (row: string) => ''],
+    ['deleted', (_row: string) => ''],
     ['duplicated', (row: string) => `${row}\n${row}`],
     ['inserted unknown', (row: string) => `${row}\n| new signal | \`new command\` | healthy |`],
     ['renamed', (row: string) => row.replace('tag runs ended well', 'tag runs went well')],

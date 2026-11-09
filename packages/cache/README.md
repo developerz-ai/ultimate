@@ -29,7 +29,7 @@ Reads walk down until a hit, then populate every tier they walked past. Writes p
 |---|---|---|---|---|
 | 0 | `request-memo` | ALS context (`WeakMap`) | dies with the request | never |
 | 1 | `lru` | in-process, byte-budgeted | tag index | never |
-| 2 | `redis` | `redisClient()` (`@ultimat3/core/redis`) | tag→keys set, one `EVAL` **per tag** + slot-local `DEL`s | single node |
+| 2 | `redis` | `redisClient()` (`@ultimat3/core/redis`) | tag→keys sorted sets, paged reads + slot-local `UNLINK`s | single node |
 | 3 | `cdn` | headers + purge driver | surrogate keys | no CDN |
 
 A tier is a `CacheTier` (`get`/`set`/`del`/`invalidateTags`, plus an optional `fence` for a tier
@@ -193,47 +193,51 @@ fixture entity therefore turns validation on for every later file in the same `b
 | Key | Holds |
 |---|---|
 | `<prefix>:<buildId>:c:<key>` | the value, `SET … PX` |
-| `<prefix>:<buildId>:t:{<entity>}` | members carrying the **collection tag** — `tag('post')` |
-| `<prefix>:<buildId>:t:{<entity>}:<id>` | members carrying **that row's tag** — `tag('post', '1')` |
-| `<prefix>:<buildId>:e:{<entity>}` | members carrying **any** tag of the entity — the index |
+| `<prefix>:<buildId>:t2:{<entity>}` | members carrying the **collection tag** — `tag('post')` |
+| `<prefix>:<buildId>:t2:{<entity>}:<id>` | members carrying **that row's tag** — `tag('post', '1')` |
+| `<prefix>:<buildId>:e2:{<entity>}` | members carrying **any** tag of the entity — the index |
 
-Four keys, three jobs, and the fourth is why: `t:` buckets are the tags a caller declared and `e:`
-is the entity index. A **collection bust** reads the index, so it clears the rows too; a **row
-bust** reads that row's bucket and the collection tag's, so `post:2` survives a bust of `post:1`.
-That is `tagMatches` — the same predicate the LRU answers through its two indexes and the request
-memo answers through `tagsIntersect` — and the shared tier is the rung that did not, because `t:`
-served as the index as well: `invalidateTags([tag('post', '1')])` came back with every post-tagged
-key in the store and deleted them, so one row write emptied the shared tier for that entity while
-the in-process tier one rung closer kept exactly the row that had changed.
-`tier-parity.test.ts` compares all three rungs and `redis.live.test.ts` runs the same two busts
-against a real server.
+Every bucket is a **sorted set**, scored by when its member may be forgotten: the value's expiry
+plus `TAG_GRACE_MS` (60 s), on the writer's clock. Layout and commands: `redis-buckets.ts`.
 
-`{<entity>}` is a **Redis Cluster hash tag**, not decoration: it is what makes a row's bucket, its
-collection's bucket and the index hash to one slot, so a script may take them in one `KEYS`.
-Invalidation issues
-**one script call per tag** for that reason — the batched form carried every tag's buckets in one
-`EVAL` and was rejected with `CROSSSLOT` before the script ran, landing in `report.errors` as a
-partial bust while stale rows served until TTL. Value keys are still deleted client-side, one `DEL`
-each, which is slot-local under every topology.
+`t2:` buckets are the tags a caller declared and `e2:` is the entity index. A **collection bust**
+reads the index, so it clears the rows too; a **row bust** reads that row's bucket and the
+collection tag's, so `post:2` survives a bust of `post:1`. That is `tagMatches` — the predicate the
+LRU answers through its two indexes and the request memo through `tagsIntersect`.
+`tag-parity.test.ts` and `tier-parity.test.ts` compare the rungs; `redis.live.test.ts` runs the
+same busts against a real server. The `2` marks the sorted-set layout: a v30 pod's `t:`/`e:` plain
+sets never collide with these on a shared server, and expire on their own lease.
 
-The script **deletes nothing at all** — not the value keys, and not the buckets either. The tier
-`SREM`s exactly the members whose `DEL` succeeded, from every bucket that member joined —
-including, for a row bust, the entity index it deliberately never *reads*. Reading `e:{entity}` for
-a row bust would return every key of the entity; removing from it cannot over-reach, and a member
-left there is a corpse in a set every later write renews the lease on. A refused delete keeps its
-membership and the retry the error asks for still finds it; dropping the bucket inside the script
-made that failure permanent. A `set` mirrors it: buckets are joined **before** the value is written and membership is
-re-checked after, because a bust that landed in between would otherwise leave a row nothing can
-reach by tag, serving until its own lease ran out.
+**A bucket holds live keys only.** Every write `ZADD`s its member, `ZREMRANGEBYSCORE`s everything
+already past its score, and grows the bucket's lease (`REDIS_TAG_LEASE_SCRIPT`: `EXPIRE … GT`
+alone leaves a fresh key immortal) — three single-key commands, one pipelined round trip. Before
+this only a bust removed members, so an entity written constantly and never invalidated collected
+every key it ever wrote, and its first bust read millions in one reply. The grace is what keeps a
+pod whose clock runs ahead from pruning a member whose value key still lives.
+`redis-tag-bound.test.ts`.
 
-**Every tag set carries a lease**, renewed on each write to the member's own TTL plus 60s, raised
-only when the new lease is longer — a 60s member must not shorten a bucket a 1h member is in.
-Without it a tag set grew forever: value keys died after five minutes, their membership never did,
-and after a month `SMEMBERS` on a multi-million-member set blocked the server for hundreds of
-milliseconds and answered with a list the client then `DEL`'d in batches. One publish became a
-Redis outage. The renewal is a script (`REDIS_TAG_MEMBER_SCRIPT`, one key in `KEYS`) rather than
-`EXPIRE … GT`, because `GT` treats a key with no TTL as infinite and would leave a **fresh** bucket
-immortal — which is the bug being fixed.
+**A bust is paged and pipelined**, on the post-commit path:
+
+| Step | Commands | Bound |
+|---|---|---|
+| fence | `SET` per generation key (`redis-fence.ts`) | one round trip |
+| read | `ZSCAN … COUNT 1000` (`BUST_PAGE_SIZE`), buckets concurrently | a page per round trip; returns every member present for the whole scan, so a concurrent prune or re-score skips nothing — a score/offset cursor did |
+| delete | `UNLINK` per value key, 1,024 per burst | `UNLINK` frees off the server's main thread |
+| sweep | `ZREM` of exactly what died, 1,000 members per command, 8 in flight | — |
+
+10k members clear in 25 sequential round trips (≤ 100 is the test). Every command names **one
+key**, so a bust is slot-local on Redis Cluster and Dragonfly whatever tags it carries;
+`{<entity>}` is still a **Redis Cluster hash tag**, so a row's bucket, its collection's and the
+index share a slot. A refused `UNLINK` keeps its membership — the bust `ZREM`s only what it
+deleted, including from the index a row bust never *reads* — so the retry the error asks for still
+finds it. A `set` mirrors it: buckets are joined **before** the value is written and membership is
+re-checked (`ZSCORE`) after, because a bust that landed in between would otherwise leave a row
+nothing can reach by tag. A collection bust leaves its members in the ROW buckets it never read;
+the prune and the lease bound them, and a later bust's `UNLINK` of a dead key is a no-op.
+
+**A value is capped too**: `redisTier({ maxValueBytes })`, default `DEFAULT_REDIS_MAX_VALUE_BYTES`
+(1 MiB) of encoded UTF-8, refused with `X_CACHE_TOO_LARGE` before any bucket is joined — the LRU's
+`maxBytes` answer, on the rung every replica shares.
 
 **`buildId` defaults to `appVersion()`** (`APP_VERSION`, else `dev`), so two builds sharing one
 Redis cannot read each other's payloads. Rename `PostView.author` to `PostView.authorId` and

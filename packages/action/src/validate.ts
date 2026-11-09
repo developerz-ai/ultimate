@@ -26,7 +26,15 @@ export async function parseActionInput<S extends StandardSchemaV1>(
   const result = await validateAsync(schema, raw);
   if (result.issues !== undefined) {
     const issues = toValidationIssues(result.issues);
-    throw new InputInvalidError(actionName, formatIssues(issues).join('; '), issues);
+    // `issuesTruncated`: validation stopped at `MAX_ISSUES`, and the refusal must say the list is
+    // a prefix rather than let a client render 100 rejections as the whole answer.
+    throw new InputInvalidError(
+      actionName,
+      formatIssues(issues).join('; '),
+      issues,
+      'action',
+      result.issuesTruncated === true,
+    );
   }
   return result.value;
 }

@@ -13,6 +13,7 @@ import {
   type Schema,
 } from './builder';
 import { expected } from './describe-value';
+import { stopCollecting } from './issue-cap';
 import type { SchemaNode } from './node';
 import { isPrototypeKey, PROTOTYPE_KEYS } from './prototype-keys';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
@@ -30,7 +31,10 @@ export function recordSchema<S extends AnySchema>(
         return mistyped(path, expected('an object', value), value, 'record');
       const issues: StandardIssue[] = [];
       const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-      for (const [index, [key, entry]] of Object.entries(value).entries()) {
+      const entries = Object.entries(value);
+      for (const [index, [key, entry]] of entries.entries()) {
+        // At the issue cap the rest is not read (`issue-cap.ts`): a 10k-key body is a hundred.
+        if (stopCollecting(issues.length, true)) break;
         // The entry's POSITION, never its key. `describe-value.ts`'s absolute is stated about the
         // rejected value, and a record's KEY is the caller's data just as much: the path travels
         // `formatIssue` -> `bodyInvalid`'s `cause` -> the problem document AND the log line, and

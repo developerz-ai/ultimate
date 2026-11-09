@@ -125,7 +125,28 @@ describe('the postgres rate-limit store', () => {
 
   test('the install statement is idempotent, because the boot runs it on every start', () => {
     expect(SQL_RATE_LIMIT_TABLE).toContain('create table if not exists x_rate_limit');
-    expect(SQL_RATE_LIMIT_TABLE).toContain('create index if not exists');
+  });
+
+  // v31: the purge reads `last_ms`, so an index on `updated_at` was never scanned (idx_scan = 0
+  // across 34 days in production) — pure write cost on the hottest write table. The boot drops it
+  // where an earlier version created it, and never creates an index of its own here.
+  // The boot (`framework-schema.ts`) splits the DDL on `;` and sends each piece alone, so a `;`
+  // inside a comment cuts a statement in half: `idempotent, like the rest…` reached Postgres as SQL.
+  test('every `;`-split piece is a whole statement, as the boot sends it', () => {
+    const pieces = SQL_RATE_LIMIT_TABLE.split(';').filter((piece) => piece.trim().length > 0);
+    for (const piece of pieces) {
+      const code = piece
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n')
+        .trim();
+      expect(code).toMatch(/^(create|drop) /);
+    }
+  });
+
+  test('no secondary index is created, and the dead updated_at one is dropped', () => {
+    expect(SQL_RATE_LIMIT_TABLE).not.toContain('create index');
+    expect(SQL_RATE_LIMIT_TABLE).toContain('drop index if exists x_rate_limit_updated_at_idx');
   });
 
   // The repetition is load-bearing: only a direct column reference inside `do update` reads the

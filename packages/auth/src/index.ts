@@ -37,6 +37,7 @@ export type {
 } from './api-keys';
 export {
   API_KEY_NAMESPACE,
+  API_KEY_TOUCH_MS,
   apiKeyActor,
   describeApiKey,
   directGrants,

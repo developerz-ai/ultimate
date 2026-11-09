@@ -2,13 +2,21 @@
 // out before which, which keys travel together, which slot they hash to, and which lease each
 // join asks for. Every failure pinned here is one a report of `errors: []` cannot see — the tier
 // answers correctly to its caller and leaves the store in a state no later bust can repair.
-// The fake is a recorder (`redis-fake-fixture.ts`); what a script DOES is `redis.live.test.ts`'s
-// subject.
+// The fake holds plain commands as state and never runs Lua (`redis-fake-fixture.ts`); what the
+// lease script DOES is `redis.live.test.ts`'s subject.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import type { RedisLike } from './redis';
-import { REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT } from './redis';
-import { fakeRedis, keysOf, slotTokenOf, tierFor } from './redis-fake-fixture';
+import { REDIS_TAG_LEASE_SCRIPT, TAG_GRACE_MS } from './redis-buckets';
+import {
+  bucketsJoined,
+  bucketsRead,
+  fakeRedis,
+  keysOf,
+  slotTokenOf,
+  tierFor,
+} from './redis-fake-fixture';
 import { tag } from './tags';
 
 // Both halves of the shared tier's write and both halves of its bust are ORDERED, and the order
@@ -22,8 +30,8 @@ describe('a bust racing a write, on the wire', () => {
     const client = fakeRedis();
     await tierFor(client).set('feed', 'v', { ttlMs: 60_000, tags: [tag('post', '1')] });
 
-    const wire = client.sent.map((entry) => (entry[0] === 'EVAL' ? 'JOIN' : entry[0]));
-    expect(wire.indexOf('SET')).toBeGreaterThan(wire.lastIndexOf('JOIN'));
+    const wire = client.sent.map((entry) => entry[0]);
+    expect(wire.indexOf('SET')).toBeGreaterThan(wire.lastIndexOf('ZADD'));
   });
 
   test('a bust that landed mid-write takes the value with it, rather than orphaning it', async () => {
@@ -36,8 +44,8 @@ describe('a bust racing a write, on the wire', () => {
       set: () => Promise.resolve('OK'),
       send(command, args) {
         sent.push([command, ...args]);
-        // 0 = "not a member": the bust ran between the join and the write.
-        return Promise.resolve(command === 'SISMEMBER' ? 0 : 1);
+        // nil = "not a member": the bust ran between the join and the write.
+        return Promise.resolve(command === 'ZSCORE' ? null : 1);
       },
     };
 
@@ -64,56 +72,50 @@ describe('a bust racing a write, on the wire', () => {
     const tier = tierFor(client);
     await tier.set('gone', 'a', { ttlMs: 60_000, tags: [tag('post', '1')] });
     await tier.set('stuck', 'b', { ttlMs: 60_000, tags: [tag('post', '1')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['x:c:gone', 'x:c:stuck']);
     client.refuseDel('x:c:stuck');
     client.sent.length = 0;
 
-    await expect(tier.invalidateTags([tag('post', '1')])).rejects.toThrow('redis refused DEL');
+    await expect(tier.invalidateTags([tag('post', '1')])).rejects.toThrow('redis refused UNLINK');
 
     const removed = client.sent
-      .filter((entry) => entry[0] === 'SREM')
+      .filter((entry) => entry[0] === 'ZREM')
       .map((entry) => entry.slice(2));
     // Only what actually died leaves the bucket. `x:c:stuck` is still a member, still tagged,
     // and the retry the error asks for — `invalidateTags([tag('post', '1')])` — reaches it.
     // Three buckets: the row's, the collection's, and the entity index the row bust never reads.
     expect(removed).toEqual([['x:c:gone'], ['x:c:gone'], ['x:c:gone']]);
+    expect(client.members('x:t2:{post}:1')).toEqual(['x:c:stuck']);
+    expect(client.members('x:e2:{post}')).toEqual(['x:c:stuck']);
   });
 
   test('a bust that succeeded empties the buckets it read, member by member', async () => {
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('feed', 'a', { ttlMs: 60_000, tags: [tag('post', '1')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['x:c:feed']);
     client.sent.length = 0;
 
     await tier.invalidateTags([tag('post', '1')]);
 
-    expect(client.sent.filter((entry) => entry[0] === 'SREM')).toEqual([
-      ['SREM', 'x:t:{post}:1', 'x:c:feed'],
-      ['SREM', 'x:t:{post}', 'x:c:feed'],
-      ['SREM', 'x:e:{post}', 'x:c:feed'],
+    expect(client.sent.filter((entry) => entry[0] === 'ZREM')).toEqual([
+      ['ZREM', 'x:t2:{post}:1', 'x:c:feed'],
+      ['ZREM', 'x:t2:{post}', 'x:c:feed'],
+      ['ZREM', 'x:e2:{post}', 'x:c:feed'],
     ]);
   });
 
   test('a ROW bust leaves the entity index, which it never reads, with no corpse in it', async () => {
-    // Asymmetric on purpose. READING `x:e:{post}` for a row bust returns every post-tagged key
+    // Asymmetric on purpose. READING `x:e2:{post}` for a row bust returns every post-tagged key
     // in the store and would delete them all — the over-reach the second bucket exists to stop.
-    // SREMing from it cannot over-reach: only the members this bust actually deleted leave. Left
-    // alone, the deleted value key kept its membership there for ever while `TAG_MEMBER_SCRIPT`
-    // renewed the index's lease on every write — the unbounded `SMEMBERS` the lease was added to
-    // prevent, rebuilt out of dead keys.
+    // ZREMing from it cannot over-reach: only the members this bust actually deleted leave.
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('feed', 'a', { ttlMs: 60_000, tags: [tag('post', '1')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['x:c:feed']);
     client.sent.length = 0;
 
     await tier.invalidateTags([tag('post', '1')]);
 
-    const read = client.sent.filter((entry) => entry[0] === 'EVAL').flatMap(keysOf);
-    expect(read).not.toContain('x:e:{post}');
-    const swept = client.sent.filter((entry) => entry[0] === 'SREM').map((entry) => entry[1]);
-    expect(swept).toContain('x:e:{post}');
+    expect(bucketsRead(client.sent)).not.toContain('x:e2:{post}');
+    expect(client.members('x:e2:{post}')).toEqual([]);
   });
 
   test('a key that expires between GET and PTTL is a miss, not a full-lease promotion', async () => {
@@ -132,39 +134,38 @@ describe('a bust racing a write, on the wire', () => {
 
 describe('invalidation is slot-local on Redis Cluster', () => {
   test('no single command is ever handed keys from two different tags', async () => {
-    // The failure this pins: one EVAL carrying every tag-set key is rejected with CROSSSLOT
-    // before the script runs, because `x:t:post` and `x:t:user` hash to different slots. It
-    // lands in report.errors as a partial bust, and stale rows serve until TTL.
+    // The failure this pins: one command carrying every tag-set key is rejected with CROSSSLOT,
+    // because `x:t2:{post}` and `x:t2:{user}` hash to different slots. It lands in report.errors
+    // as a partial bust, and stale rows serve until TTL.
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
     await tier.set('inbox', ['b'], { tags: [tag('user', '9')] });
     await tier.set('teams', ['c'], { tags: [tag('team')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, []);
     client.sent.length = 0;
 
     await tier.invalidateTags([tag('post', '1'), tag('user', '9'), tag('team')]);
 
-    for (const command of client.sent) {
-      const slots = new Set(keysOf(command).map(slotTokenOf));
-      expect(slots.size).toBeLessThanOrEqual(1);
-    }
-    // One script call per tag, not one for the batch.
-    expect(client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT)).toHaveLength(3);
+    for (const command of client.sent) expect(keysOf(command)).toHaveLength(1);
+    expect(bucketsRead(client.sent).map(slotTokenOf)).toEqual([
+      'post',
+      'post',
+      'user',
+      'user',
+      'team',
+    ]);
   });
 
-  test("a row tag's two buckets share one slot, so they may travel in one call", async () => {
+  test("a row tag's two buckets share one slot", async () => {
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, []);
     client.sent.length = 0;
 
     await tier.invalidateTags([tag('post', '1')]);
 
-    const evals = client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT);
-    expect(keysOf(evals[0] ?? [])).toEqual(['x:t:{post}:1', 'x:t:{post}']);
-    expect(new Set(keysOf(evals[0] ?? []).map(slotTokenOf))).toEqual(new Set(['post']));
+    expect(bucketsRead(client.sent)).toEqual(['x:t2:{post}:1', 'x:t2:{post}']);
+    expect(new Set(bucketsRead(client.sent).map(slotTokenOf))).toEqual(new Set(['post']));
   });
 
   test('every tag-set key carries a hash tag; value keys never need one', async () => {
@@ -172,30 +173,35 @@ describe('invalidation is slot-local on Redis Cluster', () => {
     const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1'), tag('user')] });
 
-    const buckets = client.sent
-      .filter((entry) => entry[1] === REDIS_TAG_MEMBER_SCRIPT)
-      .map((entry) => String(entry[3]));
-    expect(buckets).toEqual(['x:t:{post}:1', 'x:e:{post}', 'x:t:{user}', 'x:e:{user}']);
+    const buckets = bucketsJoined(client.sent);
+    expect(buckets).toEqual(['x:t2:{post}:1', 'x:e2:{post}', 'x:t2:{user}', 'x:e2:{user}']);
     for (const bucket of buckets) expect(bucket).toMatch(/\{[^}]+\}/);
   });
 });
 
-// The lease a join ASKS for is wire traffic and belongs here. Whether the server then grants it,
-// keeps the longer of two, and gives a fresh bucket one at all is `TAG_MEMBER_SCRIPT`'s own
-// semantics — three claims a fake can only restate, so they live in `redis.live.test.ts`.
+// What a join ASKS for is wire traffic and belongs here: the score, the prune bound and the lease.
+// Whether the server grants the lease, keeps the longer of two, and gives a fresh bucket one at all
+// is `REDIS_TAG_LEASE_SCRIPT`'s own semantics — claims a fake can only restate, so they live in
+// `redis.live.test.ts`. That the prune actually bounds a bucket is `redis-tag-bound.test.ts`.
 describe('tag sets are bounded', () => {
-  test('every join asks for a lease longer than the member it added', async () => {
-    // Without this a tag set grows forever: value keys expire after five minutes, their
-    // membership never does, and one publish becomes a multi-million-member SMEMBERS.
+  test('every join scores its member past its expiry, prunes the dead, and leases the bucket', async () => {
     const client = fakeRedis();
-    const tier = tierFor(client);
+    const now = 1_700_000_000_000;
+    const tier = tierFor(client, { clock: frozenClock(now) });
     await tier.set('feed', ['a'], { ttlMs: 60_000, tags: [tag('post', '1')] });
 
-    const joins = client.sent.filter((entry) => entry[1] === REDIS_TAG_MEMBER_SCRIPT);
-    expect(joins).toHaveLength(2);
-    for (const join of joins) {
+    for (const bucket of ['x:t2:{post}:1', 'x:e2:{post}']) {
+      const mine = client.sent.filter((entry) => entry[1] === bucket || entry[3] === bucket);
+      expect(mine.filter((entry) => entry[0] === 'ZADD')).toEqual([
+        ['ZADD', bucket, String(now + 60_000 + TAG_GRACE_MS), 'x:c:feed'],
+      ]);
+      expect(mine.filter((entry) => entry[0] === 'ZREMRANGEBYSCORE')).toEqual([
+        ['ZREMRANGEBYSCORE', bucket, '-inf', `(${String(now)}`],
+      ]);
       // 60s member + the 60s grace: the bucket must outlive what it points at.
-      expect(Number(join[5])).toBe(120);
+      expect(mine.filter((entry) => entry[0] === 'EVAL')).toEqual([
+        ['EVAL', REDIS_TAG_LEASE_SCRIPT, '1', bucket, '120'],
+      ]);
     }
   });
 });

@@ -3,7 +3,7 @@
 // many accounts) and per account (stops a spray against one) — because either alone is
 // bypassable. `loginFailed()` lives here so the throttle and the message can never drift apart.
 
-import type { Clock } from '@ultimat3/core';
+import { addressNetwork, type Clock } from '@ultimat3/core';
 import { normaliseEmail } from './email';
 import {
   AuthError,
@@ -127,7 +127,12 @@ export interface MemoryAuthLimiter extends AuthLimiter {
  */
 export const accountKey = (email: string): string => `account:${normaliseEmail(email)}`;
 
-export const ipKey = (ip: string): string => `ip:${ip}`;
+/**
+ * The bucket counts a NETWORK, by core's `addressNetwork`: IPv4 whole, an IPv4-mapped IPv6 as that
+ * IPv4, any other IPv6 as its /64. One subscriber is handed a /64, so keying on the full address
+ * gave every holder 2^64 fresh budgets. Text that is no address literal stays as it is.
+ */
+export const ipKey = (ip: string): string => `ip:${addressNetwork(ip)}`;
 
 /**
  * The tenant bucket's key shape, declared here even though the general noisy-neighbour case lives

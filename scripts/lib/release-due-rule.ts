@@ -107,7 +107,7 @@ export interface DueInput {
    * read on a `due` decision. */
   readonly openPrTitles?: readonly string[];
   /** `YYYY-MM-DD`: the day the next major may ship (`nextMajorWindow`, wiki/Stability.md).
-   * Absent before v30, when no window is open yet. */
+   * Absent before v31 (`WINDOW_OPENS_AT_MAJOR`), when no window is open yet. */
   readonly majorWindowOpensOn?: string;
 }
 

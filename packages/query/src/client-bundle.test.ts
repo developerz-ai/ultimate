@@ -75,8 +75,11 @@ describe('@ultimat3/query/client in a browser', () => {
   // `Retry-After` reader (`client-retry-after.ts`) and the `retry-after` rule in `retryForStatus`,
   // so a read refused with a 429 waits the delay the server named, and the problem body's `title`
   // for a code this realm never registered (`remoteTitleOf`). The next whole kilobyte above it.
-  test('stays under 15.5 kB minified (15,628 B as of 2026-11-05)', async () => {
+  // measured: 15,997 B (2026-11-09, Bun 1.4.4), 15,784 without this change. why: +213 B, core's
+  // `boundedCause` in `UltimateError`'s constructor — every cause, a decoded problem's included, is
+  // cut at 4 KiB (plan 101 slice 02, K2). The ceiling moves by the measured growth: 15,872 + 213.
+  test('stays under 16.1 kB minified (15,997 B as of 2026-11-09)', async () => {
     const { bytes } = await build(true);
-    expect(bytes).toBeLessThan(15_872);
+    expect(bytes).toBeLessThan(16_085);
   }, 60_000);
 });

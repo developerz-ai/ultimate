@@ -75,8 +75,36 @@ export function ddlSql(target: PgVectorTable): string {
   ].join('\n');
 }
 
-const indexName = (table: string, column: string): string =>
-  identifier(`${table}_${column}_idx`).text;
+/** `NAMEDATALEN - 1`, in bytes: past it Postgres truncates an identifier and says nothing. */
+const MAX_NAME_BYTES = 63;
+/** `_<8 hex>_idx`: what a shortened name keeps of its whole spelling. */
+const HASHED_TAIL_BYTES = 13;
+
+/** The longest prefix of `text` within `bytes` UTF-8 bytes, never splitting a character. */
+const clip = (text: string, bytes: number): string => {
+  const encoder = new TextEncoder();
+  let kept = '';
+  for (const char of text) {
+    if (encoder.encode(kept + char).length > bytes) break;
+    kept += char;
+  }
+  return kept;
+};
+
+/**
+ * `<table>_<column>_idx`, as always, while it fits in 63 bytes. Past that the server truncated it,
+ * and a long table's three names collapsed into one: every `create index if not exists` after the
+ * first skipped silently. A longer one keeps its head and a hash of the whole spelling instead —
+ * distinct per column, and the same name on every run.
+ */
+const indexName = (table: string, column: string): string => {
+  const full = `${table}_${column}`;
+  if (new TextEncoder().encode(`${full}_idx`).length <= MAX_NAME_BYTES) {
+    return identifier(`${full}_idx`).text;
+  }
+  const hash = new Bun.CryptoHasher('sha256').update(full).digest('hex').slice(0, 8);
+  return identifier(`${clip(full, MAX_NAME_BYTES - HASHED_TAIL_BYTES)}_${hash}_idx`).text;
+};
 
 export interface PgVectorRowInput {
   readonly id: string;

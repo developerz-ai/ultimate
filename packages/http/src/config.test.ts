@@ -8,7 +8,7 @@ import { type AppHttpConfig, configureHttp } from './app-config';
 import { defineHttpConfig, type HttpConfigInput, stripBasePath } from './config';
 import { DEFAULT_CORS } from './cors';
 import { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG } from './locale';
-import { DEFAULT_RATE_LIMIT } from './rate-limit';
+import { DEFAULT_RATE_LIMIT } from './rate-limit-config';
 import { DEFAULT_SECURITY } from './security-headers';
 
 describe('stripBasePath', () => {

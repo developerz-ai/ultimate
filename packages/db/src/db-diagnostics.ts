@@ -51,6 +51,12 @@ export interface DbDiagnosticsOptions {
   readonly limit?: number | undefined;
   /** Arms both client-side deadlines. A seam for tests; default an unref'd `setTimeout`. */
   readonly schedule?: Scheduler | undefined;
+  /**
+   * The whole command's budget, the connect probe included — a whole number of ms ≥ 1. Default:
+   * the probe waits `DIAGNOSTICS_SECTION_DEADLINE_MS` and the command `DIAGNOSTICS_DEADLINE_MS`.
+   * Passed, the probe may spend all of it: on a cold embedded database the probe IS the boot.
+   */
+  readonly deadlineMs?: number | undefined;
 }
 
 /** A section answered, or why it could not be and what would make it answer. Never a throw. */
@@ -100,24 +106,29 @@ export async function dbDiagnostics(options: DbDiagnosticsOptions = {}): Promise
   const read = { client: options.client, timeoutMs: DIAGNOSTICS_TIMEOUT_MS } as const;
   const schedule = options.schedule ?? unrefSchedule;
   const sectionMs = DIAGNOSTICS_SECTION_DEADLINE_MS;
+  const commandMs =
+    options.deadlineMs === undefined
+      ? DIAGNOSTICS_DEADLINE_MS
+      : finiteCount('dbDiagnostics', 'deadlineMs', options.deadlineMs, 1);
+  const probeMs = options.deadlineMs === undefined ? sectionMs : commandMs;
   try {
-    const probe = await within(readOnlyQuery('select 1', read), sectionMs, schedule);
+    const probe = await within(readOnlyQuery('select 1', read), probeMs, schedule);
     if (probe === EXPIRED) {
-      throw dbUnavailable(`x db diagnostics had no answer to select 1 within ${sectionMs}ms`);
+      throw dbUnavailable(`x db diagnostics had no answer to select 1 within ${probeMs}ms`);
     }
   } catch (error) {
     throw isUltimateError(error)
       ? error
       : dbUnavailable('x db diagnostics could not open a connection', error);
   }
-  const deadline = commandDeadline(DIAGNOSTICS_DEADLINE_MS, schedule);
+  const deadline = commandDeadline(commandMs, schedule);
   const section = async <Row>(
     statement: string,
     toRow: (raw: Readonly<Record<string, unknown>>) => Row,
     fixFor?: (code: string, reason: string) => string | undefined,
   ): Promise<DiagnosticSection<Row>> => {
     if (deadline.passed()) {
-      const reason = `not sent: x db diagnostics passed its ${DIAGNOSTICS_DEADLINE_MS}ms deadline first`;
+      const reason = `not sent: x db diagnostics passed its ${commandMs}ms deadline first`;
       return { available: false, code: TIMED_OUT, reason, fix: GENERIC_FIX };
     }
     try {

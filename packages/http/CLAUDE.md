@@ -23,8 +23,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   from `HttpConfigInput`.
 - **No drain deadline here**: `drain.deadlineMs` is the one budget (core, per role); the deleted
   key and `ServerOptions.drain`: `docs/history/http.md#no-drain-deadline`.
-- **`cors.origins: ['*']` with `credentials: true`, or `'null'` in the list, is `X_CORS_CONFIG_INVALID`.** A refused origin
-  still gets `vary: origin`.
+- **`X_CORS_CONFIG_INVALID`: `cors.origins: ['*']` with `credentials: true`, `'null'`, or any entry
+  but `'*'` whose `URL.origin` is not itself** (fix names the canonical form). A refused origin still gets `vary: origin`.
 - **`DEFAULT_CORS` is what `clientTransport` sends and reads**, off core's constants; `cors.test.ts` observes the transport's real traffic, so a new header fails it. `date` alone stays hidden: this server writes delta-seconds. An app's list replaces the default whole.
 - **A `security.csp.extend` entry must emit only the directive it names**
   (`X_CSP_DIRECTIVE_INVALID`); `buildCsp` builds through a `Map`.
@@ -58,7 +58,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A route may
   REPLACE it with `meta.authenticate` (never run beside it): `bearerMount` sets it so a session
   cookie authenticates nothing on `/v1/*`.
-- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage, outside the scopes is `X_ROUTE_NOT_FOUND`, the prefix is opaque. The token allowance is spent once, in the authenticator, for every resolved token in scope or not (a 422 or 403 before the handler pays). A declared `rateLimit` REPLACES `default` on the mount's routes (`rateLimitedBy: 'handler'`); a route's own `meta.rateLimit` and the tenant allowance stay. A successor `Link` is rewritten in a `finally` to the mounted path when in the cut under a scope the token holds, else removed (`bearer-mount-wire.test.ts`). Full rule: `docs/history/http.md`.
+- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage, outside the scopes is `X_ROUTE_NOT_FOUND`, the prefix is opaque. The token allowance is spent once, in the authenticator, for every resolved token. A declared `rateLimit` REPLACES `default` on the mount's routes; a route's own `meta.rateLimit` and the tenant allowance stay. A successor `Link` is rewritten to the mounted path when in the cut, else removed (`bearer-mount-wire.test.ts`). Full rule: `docs/history/http.md`.
 - **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
 - **A dev 4xx asks `hooks.errorPage` first; a 5xx is always the overlay** (#492): the app's file
   when it has one, else the overlay. Production asks for every status (`stages-error-page.test.ts`).
@@ -94,6 +94,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `hooks.authorize`; `'handler'` stands the `authz` stage down.
 - **A 403's `fix:` names the POLICY** (`route.meta.policy`), degrading to `x routes --json` for a
   composite.
+- **`maxRequestBodyBytes` (128 MiB, ≥ `bodyLimitBytes`) is the transport ceiling**; Bun's is off.
+  A declared length past it (`admit`) or a streamed one (`server.ts`) is `X_BODY_TOO_LARGE` (413).
 - **The body cap is enforced while reading** (`UltimateRequest.#read`'s counting reader, cancelling
   past `bodyLimitBytes`); multipart goes through the same capped bytes. **Bytes with no
   `content-type` are `X_BODY_INVALID`** from `bodyRaw()`, never "no body"; `bodyBytes()` reads them.
@@ -131,7 +133,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `markReady()`, `drain()`, the payloads) — never a private state or in-flight counter.
 - **`stop()` hands its two hooks back ABOVE its early return** (`packages/http/e2e/server.e2e.test.ts`
   reads `shutdownHookCount()`).
-- **`compress` is the last stage and has no option** (`compress.ts`, its counted read `compress-read.ts`). A signed-in answer is coded only when `immutable` (`compressResponse(..., { anonymous })`, declared, never defaulted). The ceiling is 256 KiB, measured. A response that fails the rule is the SAME object with its body unread. `cache-control` with `private`, `no-store`, `no-cache` or `no-transform` is identity (BREACH); `vary: accept-encoding` goes on every answer past the type and cache conditions, coded or not. `content-length` is the bound: `html`, `textResponse`, `jsonResponse` declare it, `stream` never. A read that overruns, fails or passes `ctx.signal`, and a `gzipSync` throw, log `http.compress_failed` and answer identity, whole: never a request failure.
+- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`). A signed-in answer is coded only when `immutable` (`{ anonymous }`, declared, never defaulted). 1–256 KiB declared is `gzipSync`ed; past 256 KiB, or undeclared once 1 KiB is read, `CompressionStream` with no length. An undeclared NDJSON feed never is. A refused response is the SAME object. `private`, `no-store`, `no-cache` or `no-transform` is identity (BREACH); `vary: accept-encoding` goes on every answer past the type and cache conditions. A counted read that overruns, fails or passes `ctx.signal`, or a `gzipSync` throw, logs `http.compress_failed`: identity, whole.
 
 ## Rules — errors and the problem document
 
@@ -155,7 +157,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A rejected value is a log FIELD, never the message** — the `error-map` line's message is the code alone.
 - **A rejected BODY names only what the framework chose**: `bodyInvalid`'s `issues` are a fixed
   vocabulary; what the caller sent rides in `meta`; the parser's message goes through `renderThrowable`.
-- **A browser failing `auth: 'required'` is redirected; an agent gets the problem document** (`auth-redirect.ts`, in `error-map` before the overlay). Full rule: `docs/history/http.md`.
+- **A browser failing `auth: 'required'` is redirected; an agent gets the problem document** (`auth-redirect.ts`, in `error-map` before the overlay), in the routed locale. Full rule: `docs/history/http.md`.
 - **A pathname in a `fix:` goes through `renderFixShellArg`** (`routeNotFound`). **A `code` is gated by
   core's `FRAMEWORK_CODE`** before `x errors explain <code>`, else `x errors list --json`. **A supplied
   `fix:` is taken only from a branded error** (`isUltimateError`).
@@ -167,6 +169,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Rules — rate limiting
 
+- **An address key is core's `addressNetwork(ip)`**: IPv4 whole, IPv6 its `/64` (v31).
 - **One request spends a LIST of keys**: the caller's and, when `rateLimit.tenantBucket` is declared,
   `tenant|org:<id>` (not route-scoped); stop at the first refusal; an undeclared name is
   `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN`. Headers report the bucket closest to refusing.
@@ -177,6 +180,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `X_RATE_LIMIT_SCOPE_UNSET`; `assertRateLimitScope` (in `httpPipeline`) refuses `'shared'` over a
   per-process store (`X_RATE_LIMIT_NOT_SHARED`). Install through `httpServer({ rateLimitStore })`.
 - **A failed `auth: 'required'` is metered in the `auth` stage**. Full rule: `docs/history/http.md`.
+- **`redisRateLimitStore({ client })`**: one Lua bucket, tokens as a string, expires at full; degrades as Postgres does (+ `ERR_REDIS_CONNECTION_CLOSED`). `rate-limit-redis.live.test.ts`.
 - **`postgresRateLimitStore({ executor })` is the shared store**, over `@ultimat3/core`'s structural
   `PgExecutor` (re-exported here). The
   refill expression is repeated inside `on conflict do update` on purpose; `spent` is a stored column;
@@ -206,10 +210,10 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `pipeline.ts` | the ORDER the stages run in — the framework's guarantee — and the one loop that drives a request through them |
 | `stages.ts` | what each stage DOES, one entry per `StageName`, plus the stage vocabulary the other two import |
 | `finalize.ts` | the tail of that lifecycle, guarded: a throw after the handler degrades, never rejects |
-| `router.ts` | trie, static > param > wildcard, `path-invalid` for a segment that will not decode. A request segment is decoded ONCE; a static child is looked up raw, then decoded. A wildcard takes an EMPTY rest after the node's own routes (`/docs` → `/docs/*path`, `path: ''`). Segments, decoding and `canonicalPath` are `route-path.ts`'s: `ctx.routePath` is the match's one spelling, `requestAddress(ctx)` what render keys `isr` on |
-| `navigation.ts` | the client router's server half: the gate `context` runs after the match (a prefetch to a route whose `meta.navigation` did not opt in → `204`; a soft GET to anything but a page of the router's `<app>:<surface>` → `204` + `x-ultimate-location`, before auth or app code) and the `response` stage's rewrite of a 3xx to a router request into the same hand-over, cookies kept |
+| `router.ts` | trie, static > param > wildcard; a segment decoded ONCE (static looked up raw, then decoded), `path-invalid` if it will not. A wildcard takes an EMPTY rest (`/docs` → `/docs/*path`). `route-path.ts` owns segments and `canonicalPath`: `ctx.routePath` is the match's one spelling, `requestAddress(ctx)` what render keys `isr` on |
+| `navigation.ts` | the client router's server half: `context`'s gate after the match (an un-opted prefetch, or a soft GET off the router's `<app>:<surface>` → `204` [+ `x-ultimate-location`], before auth) and `response`'s rewrite of a 3xx to that hand-over, cookies kept |
 | `error-map.ts` | the code → status table, closed: COMPOSES the slices and holds no row of its own |
-| `error-map-http.ts`, `error-map-tier-<0-4>.ts` | the rows, one slice per owning tier (this package's own apart). `bun run new-error-code` appends to the slice its `--package` maps to; a code in two slices is refused there and by `error-map.test.ts` |
+| `error-map-http.ts`, `error-map-tier-<0-4>.ts` | the rows, one slice per owning tier. `bun run new-error-code` appends to its `--package`'s slice; a code in two is refused by `error-map.test.ts` |
 | `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document (including the issue list and the opacity rule over it), the three terminal lines |
 | `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices`, `errorPage`, `explainMiss` (asked ONLY on a `not-found` match, synchronously, with the request line alone; its error replaces `X_ROUTE_NOT_FOUND`) + the app's `configureAuthenticator()` |
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |
@@ -222,12 +226,15 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `stored-object-headers.ts` | inline only for raster images, audio, video; else `attachment` + `sandbox` (private) |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor — and the review of a declared one (`reviewedHint`) |
-| `error-log-level.ts` | the level of the `error-map` stage's one line: `error` for 5xx, `warn` for 401/403/429, `info` for the rest |
+| `error-log-level.ts` | the `error-map` line's level: `error` 5xx, `warn` 401/403/429, `info` the rest and a `routineRefusal` (`unauthenticated()`) |
 | `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `httpRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
-| `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver and `toBucket` |
+| `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver |
+| `rate-limit-config.ts` | the bucket table, its resolver and `toBucket` |
 | `rate-limit-postgres.ts` | the SHARED store: one table, one `insert … on conflict` per take, over a structural `PgExecutor` |
-| `rate-limit-errors.ts` | every refusal a rate limit produces — the 429 and the six declaration faults. Split off `errors.ts` at the ceiling |
-| `error-titles.ts` | the owned codes, their titles and the two `retry-after` classes, registered at import — the one module `sideEffects` lists, imported bare by the barrel and `errors.ts`. Server realm only: a browser reads an http refusal's title off the body and its delay off `Retry-After` (core's decoders), so no http module rides into an island |
+| `rate-limit-redis.ts` | the other shared store: one Lua token bucket per take |
+| `body-ceiling.ts` | the transport ceiling and `X_BODY_TOO_LARGE` |
+| `rate-limit-errors.ts` | every refusal a rate limit produces — the 429 and the declaration faults |
+| `error-titles.ts` | the owned codes, titles and `retry-after` classes, registered at import — the one `sideEffects` module. Server realm only: a browser reads title and delay off the body and `Retry-After` |
 | `correlation.ts` | the inbound request id and trace, read before the context and the span exist |
 | `forwarded.ts` | one hop-indexed reader for every header a trusted proxy writes |
 | `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |
@@ -238,7 +245,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only. It negotiates nothing; the cookie is read by core's `readCookie`, imported, never re-exported |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 | `rate-limit-stage.ts` | what the pipeline spends and when: the `rate-limit` stage's list of keys, and the address-keyed allowance the `auth` stage spends for a failed credential |
-| `health-disclosure.ts` | WHO the web role's `/healthz` and `/readyz` tell the detail to: the `healthDetailPeers` config key, its screen, and the trusted-proxy half. The body rule and the peer match are core's (`health-disclosure.ts` there), shared with the sync node |
+| `health-disclosure.ts` | WHO `/healthz` and `/readyz` tell the detail to: `healthDetailPeers`, its screen, the trusted-proxy half. Body rule and peer match are core's |
 | `bearer-mount.ts` | a second door onto existing routes: `Authorization: Bearer` on a prefix, the scope cut, the per-token allowance |
 | `request-facts.ts` | `RequestFacts`, any token resolver's frozen 2nd arg; address = `ctx.ip` |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |

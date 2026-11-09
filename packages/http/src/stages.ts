@@ -14,6 +14,7 @@ import {
   reportError,
 } from '@ultimat3/core';
 import { signInRedirect } from './auth-redirect';
+import { assertDeclaredBody } from './body-ceiling';
 import { finalizeCacheHeaders } from './cache-stage';
 import { compressResponse } from './compress';
 import { type HttpConfig, stripBasePath } from './config';
@@ -143,7 +144,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       return undefined;
     },
 
-    admit: (_request, ctx) => {
+    admit: (request, ctx) => {
       // Before the trace, the route match, auth, the body — everything. A refusal that costs as
       // much as a served request is not load shedding, and this is the stage that makes
       // "reject 40% fast, serve 60% at p99" expressible at all.
@@ -156,6 +157,8 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         throw draining();
       }
       if (isDraining()) ctx.headers.set('connection', 'close');
+      // A declared body over the transport ceiling is refused before anything reads it.
+      assertDeclaredBody(request.raw, ctx.url.pathname, config.maxRequestBodyBytes);
       const ceiling = config.maxInflight;
       // `beginWork()` in `server.ts` counted THIS request before the pipeline was entered, so the
       // ceiling is compared against a number that already includes it.
@@ -350,7 +353,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // The other half of this is `@ultimat3/schema`'s, and it is the load-bearing one: an issue
       // message must stop echoing the rejected value at all. This change makes the value
       // redactable; it does not make it absent.
-      ctx.logger[errorLogLevel(facts.status)](facts.code, {
+      ctx.logger[errorLogLevel(facts.status, error)](facts.code, {
         cause: facts.cause,
         status: facts.status,
       });

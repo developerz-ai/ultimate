@@ -6,7 +6,7 @@
 
 import { type Clock, systemClock } from '@ultimat3/core';
 import { assertCurrency, exponentOf } from './currency';
-import { rateMissing } from './errors';
+import { rateMissing, rateUnusable } from './errors';
 import { type Fraction, factorFraction } from './factor';
 import { fromMinor, type Money } from './money';
 import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
@@ -58,14 +58,21 @@ export function convert(
   options: ConvertOptions = {},
 ): ConvertedMoney {
   const target = assertCurrency(to);
+  // `Money` is a type, not a check: a hand-built `{ minor: 1.5 }` reached `BigInt()` below and left
+  // as a bare `RangeError`. The constructor is the one place a value is judged.
+  fromMinor(amount.minor, amount.currency, amount.scale);
   if (rate.from !== amount.currency || rate.to !== target) {
     throw rateMissing(amount.currency, target);
   }
   if (!Number.isFinite(rate.rate) || rate.rate <= 0) {
-    throw rateMissing(amount.currency, target);
+    throw rateUnusable(amount.currency, target, 'rate');
   }
-  if (rate.ratio !== undefined && (rate.ratio.numerator <= 0n || rate.ratio.denominator <= 0n)) {
-    throw rateMissing(amount.currency, target);
+  // `at` is the audit trail: an Invalid Date threw a bare `RangeError` out of `toISOString`.
+  if (!(rate.at instanceof Date) || Number.isNaN(rate.at.getTime())) {
+    throw rateUnusable(amount.currency, target, 'at');
+  }
+  if (rate.ratio !== undefined && !isPositiveFraction(rate.ratio)) {
+    throw rateUnusable(amount.currency, target, 'ratio');
   }
 
   // Exact, not a float product: `minor * rate * scale` shows the rounding mode a value IEEE-754
@@ -91,6 +98,17 @@ export function convert(
     at: rate.at.toISOString(),
     ...(rate.source === undefined ? {} : { provider: rate.source }),
   };
+}
+
+/** Both terms positive BIGINTS — a provider's `{ numerator: 23 }` mixed a number into bigint maths. */
+function isPositiveFraction(ratio: Fraction): boolean {
+  const { numerator, denominator } = ratio as { numerator: unknown; denominator: unknown };
+  return (
+    typeof numerator === 'bigint' &&
+    typeof denominator === 'bigint' &&
+    numerator > 0n &&
+    denominator > 0n
+  );
 }
 
 /** Rate lookup. Implemented by the app — the framework ships no live provider. */

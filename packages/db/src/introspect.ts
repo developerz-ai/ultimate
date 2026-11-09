@@ -233,19 +233,19 @@ export async function introspectSchema(
 ): Promise<SchemaDescription> {
   const client = options.client ?? db();
   const schema = options.schema ?? 'public';
-  // Asked first, and unconditionally: everything below reads `information_schema`, which admits a
+  // Asked unconditionally: everything below reads `information_schema`, which admits a
   // view and an extension's own tables alongside the app's. Merged into `excluded` rather than
   // filtered afterwards so one deny list feeds the whole fold.
-  const excluded = [
-    ...(options.exclude ?? ['x_migrations']),
-    ...(await nonAppRelations(client, schema)),
-  ];
+  //
+  // Every read below is SENT before any is awaited: none depends on another's answer, and eight
+  // round trips one after another were what every CLI command and boot drift check paid.
+  const nonApp = nonAppRelations(client, schema);
 
   // The type is `format_type`, as `catalog-relations.ts` reads it: `information_schema.data_type`
   // answers `numeric` for `numeric(12,2)`, `ARRAY` for `text[]` and `USER-DEFINED` for an enum, and
   // `ColumnDescription.dataType` has always been documented as the first of each pair. Still FROM
   // the view, which decides which columns this role may see.
-  const columns = await client.query<ColumnRow>(sql`
+  const columns = client.query<ColumnRow>(sql`
     select
       c.table_name,
       c.column_name,
@@ -280,7 +280,7 @@ export async function introspectSchema(
   // inner join dropped it and `(id, lower(title))` read back as `(id)` — an index rebuilt by hand
   // with an extra expression key compared equal to the declared one. It is kept in its position
   // and MARKED by its parentheses, which no declared column name carries.
-  const indexes = await client.query<IndexRow>(sql`
+  const indexes = client.query<IndexRow>(sql`
     select
       t.relname as table_name,
       i.relname as index_name,
@@ -314,7 +314,7 @@ export async function introspectSchema(
   // same reason `indkey` orders the index query: `references t (y, x)` is not `references t (x, y)`.
   // `conparentid = 0`: a key into a partitioned table makes Postgres add one clone per partition
   // (`notes_event_fkey_1`, `_2`, …), each a fact of the partitioning and never of a migration.
-  const foreignKeys = await client.query<ForeignKeyRow>(sql`
+  const foreignKeys = client.query<ForeignKeyRow>(sql`
     select
       src.relname as table_name,
       c.conname as constraint_name,
@@ -341,7 +341,7 @@ export async function introspectSchema(
   // which no generated spelling can ever equal, so reading it would make every drift check report
   // a correct database as wrong. `contype = 'c'` is the CHECK constraints alone — Postgres 17
   // onwards records a NOT NULL as `'n'`, and a domain's as `'c'` on the domain rather than here.
-  const checks = await client.query<CheckRow>(sql`
+  const checks = client.query<CheckRow>(sql`
     select src.relname as table_name, c.conname as constraint_name, c.convalidated as validated
     from pg_constraint c
     join pg_class src on src.oid = c.conrelid
@@ -352,7 +352,7 @@ export async function introspectSchema(
 
   // Names only, as `checks` above: an append-only table is judged by whether its trigger is THERE
   // and firing, never by `pg_get_triggerdef`'s text. `tgisinternal` is a foreign key's own.
-  const triggers = await client.query<TriggerNameRow>(sql`
+  const triggers = client.query<TriggerNameRow>(sql`
     select src.relname as table_name, t.tgname as trigger_name
     from pg_trigger t
     join pg_class src on src.oid = t.tgrelid
@@ -362,12 +362,11 @@ export async function introspectSchema(
     order by src.relname, t.tgname
   `);
 
-  const partitioned = await partitionedTables(client, schema);
-  const policies = await policyNameRows(client, schema);
+  const partitioned = partitionedTables(client, schema);
+  const policies = policyNameRows(client, schema);
 
-  return buildSchema(
-    schema,
-    excluded,
+  const [nonAppNames, ...rows] = await Promise.all([
+    nonApp,
     columns,
     indexes,
     foreignKeys,
@@ -375,7 +374,8 @@ export async function introspectSchema(
     triggers,
     partitioned,
     policies,
-  );
+  ]);
+  return buildSchema(schema, [...(options.exclude ?? ['x_migrations']), ...nonAppNames], ...rows);
 }
 
 /** Pure, so the row -> description mapping is testable without a database. */

@@ -95,6 +95,17 @@ describe('this repository', () => {
     expect(codes(file('packages/x/src/escape.ts', copy))).toEqual(['X_HELPER_COPY']);
   });
 
+  // `cursor.ts` carried a private twin of `timingSafeEqual` (plan 101 slice 02, K4): a security
+  // primitive with two copies is one that drifts, so the XOR-of-char-codes accumulator is the shape.
+  test('and refuses a second constant-time comparison, through the same entry', () => {
+    const copy =
+      'function same(a: string, b: string) {\n  let d = 0;\n' +
+      '  for (let i = 0; i < a.length; i += 1) d |= a.charCodeAt(i) ^ b.charCodeAt(i);\n' +
+      '  return d === 0;\n}\n';
+    expect(codes(file('packages/x/src/sig.ts', copy))).toEqual(['X_HELPER_COPY']);
+    expect(codes(file('packages/core/src/timing-safe-equal.ts', copy))).toEqual([]);
+  });
+
   test("and refuses another package's value re-exported, through the same entry", () => {
     const copy = "export { formatIssues } from '@ultimat3/schema';\n";
     expect(codes(file('packages/x/src/index.ts', copy))).toEqual(['X_HELPER_COPY']);

@@ -211,12 +211,15 @@ postgres itself — the app emits no series for it.
 A drain hook — a handler, a job step, a socket teardown — was still running at the drain deadline
 (`drain.deadlineMs` in `app.config.ts`, 25 s by default; on `ROLE=worker`, `drain.workerDeadlineMs` when declared) and was **abandoned**: the process exited without it.
 
+The process then **exits 70** (`DRAIN_TIMEOUT_EXIT_CODE`, `EX_SOFTWARE`), never 0: a pod or container whose last state is `Completed (70)` / `Exited (70)` drained but abandoned work — a write may be half done. As of 2026-11, 70 is also the exit when the drain itself threw before its last phase, or when the role's own teardown (`app.stop()`) overran its budget. A clean drain exits 0. An alert on a non-zero exit after SIGTERM is this runbook.
+
 | Situation | Do |
 |---|---|
 | A long request is expected | raise `drain: { deadlineMs }` in `app.config.ts` (1–3600000, every role). On Kubernetes `x deploy --method helm` carries it into the chart, which derives each role's `terminationGracePeriodSeconds` from it; on Compose raise `stop_grace_period` by hand to at least readiness grace + that deadline + 10 s |
 | A long job step is expected on the worker | declare `drain: { workerDeadlineMs }` (1–86400000, `ROLE=worker` only, in place of `deadlineMs` there — which stays capped at an hour). `x deploy --method helm` passes it as `drain.workerDeadlineSeconds` and the chart sizes the worker's grace from it; on Compose raise the worker service's `stop_grace_period` to at least that budget + 10 s. A job that must never be cut off at all: the worker's retire ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |
 | A job holds its pod through a rollout | nothing to do: the worker's retire (`drain.workerRetireMs`, an hour by default) waits it out and the pod shows Terminating meanwhile. `X_JOB_OUTLASTS_DRAIN` in `x verify` names a job whose `timeout` is over that budget |
 | It is not expected | the log line names the hook (`the "<name>" shutdown hook`): make it return once it stops accepting work, not once all work is done |
+| Exit code 70 after a SIGTERM | the same finding, read off the platform: `kubectl get pod <pod> -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}'` or `docker inspect -f '{{.State.ExitCode}}' <container>`. Find the `X_SHUTDOWN_TIMEOUT` line in that process's last logs and take the row above it that fits |
 
 ## Redis is down or stalled
 

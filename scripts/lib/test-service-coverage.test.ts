@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: the fixtures below are SOURCE TEXT — a
+// `${…}` in one is the code under test, never an interpolation that went missing.
 // The rule that decides whether a CI part supplies a suite's service, over fixture worlds — the
 // real tree is `scripts/test-services-shape.test.ts`'s, and this file never reads it.
 
@@ -114,6 +116,33 @@ describe('unit · the gap a suite leaves when no part supplies its service', () 
     );
 
     expect(gaps).toEqual([{ suite: REDIS_SUITE, url: 'TEST_REDIS_URL' }]);
+  });
+});
+
+// `live` is split across runners (`--shard i/n`): a suite lands on ONE shard by its place in the
+// sorted file list, which this rule does not compute. So every part running the step must supply
+// it — a shard that skipped Redis would leave whichever Redis suite it was dealt unsupplied.
+describe('unit · a step split across parts needs every part to supply the service', () => {
+  const shard = (part: string, from: ServicePart): ServicePart => ({ ...from, part });
+
+  test('one shard without the server leaves the suite unsupplied, though the other starts it', () => {
+    const gaps = serviceCoverageGaps(
+      [suite(REDIS_SUITE, 'live', ['TEST_REDIS_URL'])],
+      [shard('live-1', WITH_REDIS), shard('live-2', LIVE)],
+      SERVES,
+    );
+
+    expect(gaps).toEqual([{ suite: REDIS_SUITE, url: 'TEST_REDIS_URL' }]);
+  });
+
+  test('every shard supplying it, and a part running another step, leave no gap', () => {
+    const gaps = serviceCoverageGaps(
+      [suite(REDIS_SUITE, 'live', ['TEST_REDIS_URL'])],
+      [shard('live-1', WITH_REDIS), shard('live-2', WITH_REDIS), { ...LIVE, only: ['e2e'] }],
+      SERVES,
+    );
+
+    expect(gaps).toEqual([]);
   });
 });
 

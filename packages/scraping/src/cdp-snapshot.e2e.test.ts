@@ -1,7 +1,7 @@
 // `snapshotExpression` in a real Chrome: `elementFromPoint` answers null off-screen, so an element
 // below the fold read as "covered" and every act on it waited out its timeout. Driven over
 // `--dump-dom` — the expression runs in the page and writes its answer into it — because this
-// package may not import `@ultimat3/testing`'s launcher (same tier). Skips with no Chrome, and
+// package may not import `@ultimat3/testing`'s launcher (tier 4 → 5, upward). Skips with no Chrome, and
 // refuses to skip under `E2E_BROWSER_REQUIRED=1`.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no temp-directory or path-join primitive; the profile and page are files.
@@ -26,7 +26,9 @@ const PROBE_MS = 15_000;
  * ships `/usr/bin/chromium-browser` as a wrapper around `snap`: present and executable on every
  * install, and it exits 1 having started nothing where no snap cgroup exists (measured 2026-11). By
  * existence alone this file picked it, and all three tests below reported a dump failure where the
- * header promises a SKIP. TOTAL: an unspawnable, failing, silent or non-browser candidate is `false`.
+ * header promises a SKIP. TOTAL: an unspawnable, failing, hung or non-browser candidate is `false`.
+ * A restatement of `@ultimat3/testing`'s `startsChrome` (`cdp-launch-probe.ts`), which this tier
+ * may not import; Linux paths only, so the Windows case that one skips never reaches this.
  */
 async function startsChrome(candidate: string): Promise<boolean> {
   let child: ReturnType<typeof Bun.spawn>;
@@ -35,6 +37,8 @@ async function startsChrome(candidate: string): Promise<boolean> {
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'ignore',
+      // Bun's own kill at the deadline: a probe the race below stopped waiting on is not left running.
+      timeout: PROBE_MS,
     });
   } catch {
     return false;
@@ -43,10 +47,13 @@ async function startsChrome(candidate: string): Promise<boolean> {
   try {
     // Chrome's own `--version` is this child's time, not the test's — the deadline is the only way
     // to tell a hung snap wrapper from a slow one.
+    // One deadline over the exit AND the banner: a grandchild holding stdout outlives the exit.
+    const answered = child.exited.then(async (code) =>
+      code === 0 ? (await banner).trim() : undefined,
+    );
     // real-clock: awaits a spawned Chrome process, not a timer this test arms.
-    const exited = await Promise.race([child.exited, Bun.sleep(PROBE_MS).then(() => undefined)]);
-    if (exited === undefined || exited !== 0) return false;
-    const printed = (await banner).trim();
+    const printed = await Promise.race([answered, Bun.sleep(PROBE_MS).then(() => undefined)]);
+    if (printed === undefined) return false;
     // Silence is accepted: Windows' `chrome.exe` prints no console banner even when it starts.
     return printed === '' || BROWSER_BANNER.test(printed);
   } finally {

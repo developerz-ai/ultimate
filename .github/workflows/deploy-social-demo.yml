@@ -18,7 +18,9 @@ name: deploy-social-demo
 # trades a rebuild on a docs-only push (layer-cached) for never shipping a stale framework: the
 # demo links every package through workspace symlinks, and the old filter had to list them all.
 on:
-  workflow_run:
+  # Not the insecure shape: every job is gated on `workflow_run.event == 'push'`
+  # from this repository, so no fork's pull request reaches it.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [ci]
     types: [completed]
     branches: [main]

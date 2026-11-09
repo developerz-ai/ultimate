@@ -14,6 +14,28 @@ import {
   textOf,
 } from './driver-s3-fixture';
 
+describe('copy without ifMatch', () => {
+  test('is one signed CopyObject, so cacheControl and x-amz-meta-* travel — as on local and memory', async () => {
+    const fake = new FakeS3Client();
+    const driver = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV });
+    await driver.put('org/o/a.txt', bytesOf('hello'), {
+      contentType: 'text/plain',
+      cacheControl: 'max-age=60',
+      metadata: { owner: 'u-1' },
+    });
+    const copied = await driver.copy('org/o/a.txt', 'org/o/c.txt');
+    const call = fake.signedCalls.at(-1);
+    expect(call?.headers['x-amz-copy-source']).toBe('/b/org/o/a.txt');
+    expect(call?.headers['x-amz-copy-source-if-match']).toBeUndefined();
+    // S3's default directive is COPY: the provider carries the source's headers itself.
+    expect(call?.headers['x-amz-metadata-directive']).toBeUndefined();
+    expect(fake.headersOf.get('org/o/c.txt')?.['cache-control']).toBe('max-age=60');
+    expect(fake.headersOf.get('org/o/c.txt')?.['x-amz-meta-owner']).toBe('u-1');
+    expect(copied.contentType).toBe('text/plain');
+    expect(textOf((await driver.get('org/o/c.txt')).bytes)).toBe('hello');
+  });
+});
+
 describe('copy with ifMatch', () => {
   const wired = () => {
     const fake = new FakeS3Client();

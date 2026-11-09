@@ -24,6 +24,7 @@ import { charCount } from './char-count';
 import { expected } from './describe-value';
 import { discriminatedUnionSchema } from './discriminated-union';
 import { isIsoDateTime, isZonelessDateTime } from './iso-date';
+import { issuesStopped, restoreIssuesStopped, stopCollecting } from './issue-cap';
 import { type JsonValue, jsonSchema } from './json-value';
 import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
@@ -216,6 +217,7 @@ export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
     // back off a value nobody sent.
     const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     for (const [key, memberCheck] of checks) {
+      if (stopCollecting(issues.length, true)) break;
       // `Object.hasOwn`, never a raw index — the guard `coerce.ts` already applies to the same
       // read. `value['toString']` answered the INHERITED function for an input that carried no
       // such key, so a field named after a prototype member was unsatisfiable for every input,
@@ -292,11 +294,18 @@ export function unionSchema<S extends readonly [AnySchema, ...AnySchema[]]>(
   const node: SchemaNode = { kind: 'union', anyOf: members.map((member) => member.node) };
   return makeSchema<InferInput<S[number]>, InferOutput<S[number]>>(node, (value, path) => {
     const reasons: string[] = [];
+    // A member's issues are DISCARDED here, so a member that stopped at the cap must not mark the
+    // result a prefix: the union answers one issue of its own, which is the whole of it.
+    const stoppedBefore = issuesStopped();
     for (const memberCheck of checks) {
       const result = memberCheck(value, path);
-      if (result.ok) return pass(result.value as InferOutput<S[number]>);
+      if (result.ok) {
+        restoreIssuesStopped(stoppedBefore);
+        return pass(result.value as InferOutput<S[number]>);
+      }
       reasons.push(result.issues.map((issue) => issue.message).join(', '));
     }
+    restoreIssuesStopped(stoppedBefore);
     return rejected(path, `no union member matched (${reasons.join(' | ')})`, 'union');
   });
 }

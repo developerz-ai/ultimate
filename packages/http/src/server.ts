@@ -19,6 +19,7 @@ import {
   systemClock,
 } from '@ultimat3/core';
 import type { Server } from 'bun';
+import { BUN_MAX_REQUEST_BODY_SIZE, capStreamedBody } from './body-ceiling';
 import { defineHttpConfig, type HttpConfig } from './config';
 import { HttpError, serverNotStarted } from './errors';
 import { disclosesHealthDetail } from './health-disclosure';
@@ -254,9 +255,11 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
     // in-flight work it does not know about.
     const done = beginWork();
     try {
-      return await pipeline.handle(request, {
+      // The address off the socket's own Request, before the body is wrapped: `requestIP` keys on it.
+      const ip = socket?.requestIP(request)?.address ?? null;
+      return await pipeline.handle(capStreamedBody(request, config.maxRequestBodyBytes), {
         role,
-        ip: socket?.requestIP(request)?.address ?? null,
+        ip,
       });
     } finally {
       done();
@@ -338,6 +341,10 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
         development: config.dev,
         // Unset, Bun cuts a silent socket at 10 s whatever `requestTimeoutMs` promised.
         idleTimeout: socketIdleTimeoutSeconds(config.requestTimeoutMs),
+        // Off: Bun's own cap answered an empty, uncoded 413 before this process saw the request,
+        // and its 128 MiB default refused every larger signed upload. `maxRequestBodyBytes` is
+        // the ceiling, enforced coded in `admit` and on the stream (`body-ceiling.ts`).
+        maxRequestBodySize: BUN_MAX_REQUEST_BODY_SIZE,
         routes: {
           ...nativeRoutes(),
           // Health endpoints answer outside the pipeline on purpose: a draining or

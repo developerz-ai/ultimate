@@ -17,7 +17,7 @@ import type {
 import { indexMethodOf } from './index-method';
 import type { CheckDescription } from './introspect';
 import { constraintNameUnsafe } from './invariant-errors';
-import { identifier } from './sql';
+import { identifier, MAX_IDENTIFIER_BYTES } from './sql';
 
 /**
  * `NAMEDATALEN - 1`. Postgres truncates a longer identifier and says nothing, so two constraints
@@ -26,10 +26,8 @@ import { identifier } from './sql';
  * the index names it mints for the same reason; this bound is Postgres', not a convention, so
  * stating it on both sides of the tier seam is one fact written twice rather than two rules.
  *
- * Exported so `check-ddl.ts` bounds a column's constraint name against the same number: two copies
- * of NAMEDATALEN in one package is two rules that can drift, which is the thing it exists against.
+ * One copy of NAMEDATALEN in this package, `sql.ts`'s: `identifier()` refuses past it too.
  */
-export const MAX_IDENTIFIER_BYTES = 63;
 
 /**
  * The convention alone, with nothing validated and nothing refused. One copy, so `constraintNameFor`
@@ -71,19 +69,22 @@ export function namesConstraint(
  */
 export function constraintNameFor(table: string, invariant: InvariantDescriptionLike): string {
   const name = spellConstraintName(table, invariant);
-  // Through the package's one identifier rule, never a second regex: an invariant name is
-  // validated by nobody at declaration, so this is where a name that closes the quote is stopped.
-  if (!isIdentifier(invariant.name) || !isIdentifier(table)) {
-    throw constraintNameUnsafe(table, invariant.name);
-  }
   // Bytes and not characters: 63 is what the server counts, and `.length` stops seeing the
   // truncation the moment a name is not ASCII.
   const bytes = new TextEncoder().encode(name).length;
+  // Asked before the character screen below, so the name reaching this `fix:` is screened here.
+  const head = invariant.name.slice(0, 20);
   assert(
     bytes <= MAX_IDENTIFIER_BYTES,
     `constraint name "${name}" is ${bytes} bytes; Postgres truncates at ${MAX_IDENTIFIER_BYTES} and says nothing`,
-    `invariant('${invariant.name.slice(0, 20)}…', …)   # shorten the invariant name, then x db gen`,
+    `invariant('${isIdentifier(head) ? head : '<name>'}…', …)   # shorten the invariant name, then x db gen`,
   );
+  // Through the package's one identifier rule, never a second regex: an invariant name is
+  // validated by nobody at declaration, so this is where a name that closes the quote is stopped.
+  // After the length, which `identifier()` also refuses: the byte count is the more exact answer.
+  if (!isIdentifier(invariant.name) || !isIdentifier(table)) {
+    throw constraintNameUnsafe(table, invariant.name);
+  }
   return name;
 }
 

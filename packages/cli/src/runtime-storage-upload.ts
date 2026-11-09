@@ -9,7 +9,7 @@ import { jsonResponse, NO_STORE } from '@ultimat3/http';
 import type { Storage } from '@ultimat3/storage';
 import {
   acceptSignedPart,
-  acceptSignedUpload,
+  acceptSignedUploadStream,
   DEFAULT_MAX_UPLOAD_BYTES,
   DEFAULT_SIGNED_URL_BASE,
   objectNotFound,
@@ -59,22 +59,24 @@ async function acceptUpload(
     constraints.maxBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : constraints.maxBytes,
     1,
   );
-  const read = await readWithinLimit(request.raw.body, ceiling);
-  if ('over' in read) throw tooLarge(constraints.key, read.over, ceiling);
-
   // A part URL (`signPart` on a local disk) writes one part into its open session — never the
   // object, which `completeUpload` assembles. The signature says which, so the one PUT route
-  // serves both: a second route on the same path could only shadow this one.
+  // serves both: a second route on the same path could only shadow this one. A part is bounded by
+  // its own signed size, so it is read whole.
   if (constraints.part !== undefined) {
+    const read = await readWithinLimit(request.raw.body, ceiling);
+    if ('over' in read) throw tooLarge(constraints.key, read.over, ceiling);
     const part = await acceptSignedPart({ url, disk, orgId, bytes: read.bytes });
     return jsonResponse(part, { status: 200 });
   }
 
-  const stored = await acceptSignedUpload({
+  // STREAMED to the disk: memory per upload is the sniff window, never the body. A 2 GB grant
+  // used to be 2 GB of this process's heap before the first byte reached the disk.
+  const stored = await acceptSignedUploadStream({
     url,
     disk,
     orgId,
-    bytes: read.bytes,
+    body: request.raw.body,
     declaredContentType: request.header('content-type') ?? undefined,
     policy: uploadPolicy({
       maxBytes: ceiling,

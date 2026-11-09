@@ -162,3 +162,22 @@ describe('shellInertIdentifier', () => {
     expect(shellInertIdentifier("o'brien")).toBe(`"o'brien"`);
   });
 });
+
+// Postgres truncates an identifier past 63 BYTES with a NOTICE and nothing else, so two long names
+// sharing their first 63 bytes address one object; and a NUL cannot cross the wire protocol at all.
+// `@ultimat3/entity` screens its own names, a raw `identifier()` caller had nothing.
+describe('identifier · what the server would silently rewrite', () => {
+  test('63 bytes is accepted, 64 is refused', () => {
+    expect(identifier('a'.repeat(63)).text).toBe(`"${'a'.repeat(63)}"`);
+    expect(() => identifier('a'.repeat(64))).toThrow('X_SQL_UNSAFE');
+  });
+
+  test('bytes, not characters: 32 two-byte letters are 64 bytes', () => {
+    expect(identifier('é'.repeat(31)).text).toBe(`"${'é'.repeat(31)}"`);
+    expect(() => identifier('é'.repeat(32))).toThrow('X_SQL_UNSAFE');
+  });
+
+  test('a NUL is refused', () => {
+    expect(() => identifier('posts\u0000')).toThrow('X_SQL_UNSAFE');
+  });
+});

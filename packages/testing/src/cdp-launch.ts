@@ -8,6 +8,7 @@ import { CdpBrowserMissingError, CdpLaunchFailedError } from './cdp-errors';
 import type { LaunchedBrowser } from './cdp-launch-attempt';
 import { LAUNCH_REAP_MS, launchAttempt } from './cdp-launch-attempt';
 import { chromeCandidates } from './cdp-launch-candidates';
+import { startsChrome } from './cdp-launch-probe';
 import type { CdpWire } from './cdp-launch-wire';
 import { defaultWire, wireFlag } from './cdp-launch-wire';
 
@@ -28,70 +29,9 @@ export const CHROME_PATH_ENV = 'CHROME_PATH';
 export const CHROME_CANDIDATES: readonly string[] = chromeCandidates(process.platform, process.env);
 
 /**
- * The longest a candidate gets to answer `--version`. A warm Chrome answers in ~40 ms; a cold binary
- * on a loaded runner is the slow case, and one that has not answered by then is not a browser this
- * run can drive. Its own number, never the launch deadline: this is spent BEFORE one.
- */
-const CHROME_PROBE_TIMEOUT_MS = 15_000;
-
-/**
- * A browser banner: a product this launcher can drive, then a dotted version.
- *
- * Read only when the candidate PRINTED something. `--version` is not a browser's alone — `bun
- * --version` exits 0 and prints `1.4.4` — so output that names no browser is output from something
- * that is not one. Silence is the other case, and it is accepted: Windows' `chrome.exe` is a GUI
- * binary whose console banner is empty even when it starts perfectly, and treating silence as "not a
- * browser" would silently skip every browser-backed test on that runner instead of running it.
- */
-const BROWSER_BANNER = /(?:chrome|chromium|edge)[^\n]*?\d+\.\d+/i;
-
-/**
- * Whether `candidate` is a browser this machine can actually START — not merely a file that exists.
- *
- * The two are not the same, and the difference is a whole red gate: Ubuntu 24.04 ships
- * `/usr/bin/chromium-browser` as a shell wrapper around `snap`, which is present and executable on
- * every install and which exits 1 having started nothing where no snap cgroup exists (`is not a snap
- * cgroup for tag snap.chromium.chromium`, measured 2026-11). Answering it on `exists()` alone
- * launched it, failed both starts, and reported `X_CDP_LAUNCH_FAILED` for every browser-backed
- * suite in the run — where those suites' own headers promise a SKIP when the machine has no browser.
- * A candidate that cannot start is an ABSENT candidate.
- *
- * TOTAL: a candidate that cannot be spawned, dies, misses the deadline, or PRINTS something that
- * names no browser is `false`, never a throw — the same synchronous spawn throw `launchAttempt`
- * classifies as `why: 'spawn'` is caught here. Silence is accepted: see `BROWSER_BANNER`.
- */
-async function startsChrome(candidate: string): Promise<boolean> {
-  let child: ReturnType<typeof Bun.spawn>;
-  try {
-    child = Bun.spawn([candidate, '--version'], {
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'ignore',
-    });
-  } catch {
-    return false;
-  }
-  const banner = new Response(child.stdout as ReadableStream<Uint8Array>).text().catch(() => '');
-  try {
-    const exited = await Promise.race([
-      child.exited,
-      Bun.sleep(CHROME_PROBE_TIMEOUT_MS).then(() => undefined),
-    ]);
-    // `undefined` is the deadline: waiting past it here would spend the launch's own budget.
-    if (exited === undefined || exited !== 0) return false;
-    const printed = (await banner).trim();
-    // Started and stopped cleanly, saying nothing: a browser whose banner this platform keeps to
-    // itself (Windows `chrome.exe`). Judges nothing it was not told.
-    return printed === '' || BROWSER_BANNER.test(printed);
-  } finally {
-    // A probe that timed out is still a live process; one that exited ignores this.
-    child.kill();
-  }
-}
-
-/**
  * The first candidate that is a browser this machine can start, or `undefined`. An absent browser is
- * a SKIP, never a failure — and so is one that is installed but cannot start (`startsChrome`).
+ * a SKIP, never a failure — and so is one that is installed but cannot start (`startsChrome`,
+ * `cdp-launch-probe.ts`; on `win32` existence alone, since `chrome.exe --version` never exits).
  * `platform` is a parameter so the Windows and macOS lists are asserted on a Linux runner too.
  *
  * `CHROME_PATH` is answered as given, and never probed: it is the operator's answer, the only one
@@ -108,7 +48,7 @@ export async function findChrome(
   }
   for (const candidate of chromeCandidates(platform, env)) {
     if (!(await Bun.file(candidate).exists())) continue;
-    if (await startsChrome(candidate)) return candidate;
+    if (await startsChrome(candidate, platform)) return candidate;
   }
   return undefined;
 }

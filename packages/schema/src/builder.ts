@@ -8,6 +8,7 @@ import {
   ValidationFailedError,
   type ValidationIssue,
 } from './errors';
+import { cappedFailure, MAX_ISSUES, withIssueCap } from './issue-cap';
 import type { SchemaNode, SchemaRefinement } from './node';
 import { issueRuleFacts, type SchemaIssueParams, type SchemaRule } from './schema-rules';
 import {
@@ -230,8 +231,8 @@ function withoutDefault(node: SchemaNode): SchemaNode {
   return rest;
 }
 
-function toIssues(result: CheckErr): readonly ValidationIssue[] {
-  return result.issues.map((issue) => ({
+function toIssues(issues: readonly StandardIssue[]): readonly ValidationIssue[] {
+  return issues.map((issue) => ({
     path: formatPath(issue.path),
     expected: issue.message,
     received: '',
@@ -240,25 +241,37 @@ function toIssues(result: CheckErr): readonly ValidationIssue[] {
   }));
 }
 
+/**
+ * One whole validation: the check under the issue cap (`issue-cap.ts`), its failure held to it.
+ * Every door into a builtin schema goes through here, so none of them is unbounded — a nested
+ * call (a composite reading a member through `checkOf`) joins its caller's cap.
+ */
+function capped<Out>(check: Check<Out>, value: unknown): StandardResult<Out> {
+  const run = withIssueCap(MAX_ISSUES, () => check(value, []));
+  return run.value.ok
+    ? { value: run.value.value }
+    : cappedFailure(run.value.issues, run.cap, run.stopped);
+}
+
 export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema<In, Out> {
   const schema: Schema<In, Out> = {
     '~standard': {
       version: 1,
       vendor: VENDOR,
-      validate: (value: unknown): StandardResult<Out> => {
-        const result = check(value, []);
-        return result.ok ? { value: result.value } : { issues: result.issues };
-      },
+      validate: (value: unknown): StandardResult<Out> => capped(check, value),
     },
     node,
     parse(value: unknown, root = 'value'): Out {
-      const result = check(value, []);
-      if (result.ok) return result.value;
-      throw new ValidationFailedError(toIssues(result), root);
+      const result = capped(check, value);
+      if (result.issues === undefined) return result.value;
+      throw new ValidationFailedError(
+        toIssues(result.issues),
+        root,
+        result.issuesTruncated === true,
+      );
     },
     safeParse(value: unknown): StandardResult<Out> {
-      const result = check(value, []);
-      return result.ok ? { value: result.value } : { issues: result.issues };
+      return capped(check, value);
     },
     optional(): Schema<In | undefined, Out | undefined> {
       return makeSchema<In | undefined, Out | undefined>(

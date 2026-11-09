@@ -31,7 +31,10 @@ create table if not exists x_rate_limit (
   updated_at        timestamptz      not null default now()
 );
 
-create index if not exists x_rate_limit_updated_at_idx on x_rate_limit (updated_at);
+-- v31: never scanned (the purge reads last_ms) and paid on every take. Dropped where an earlier
+-- boot created it, idempotent like the rest. Never a semicolon in a comment here: the boot splits
+-- this text on it.
+drop index if exists x_rate_limit_updated_at_idx;
 `;
 
 /**
@@ -140,7 +143,7 @@ export interface PostgresRateLimitStore extends RateLimitStore {
   /**
    * Delete every bucket that has refilled to capacity, and answer how many. The table is the one
    * part of this store that does not bound itself — Postgres forgets nothing on its own, and the
-   * key falls back to the connection address, so a scan rotating through an IPv6 /64 mints a row
+   * key falls back to the connection address, so a scan rotating through IPv6 /64s mints a row
    * per request. An app runs this from a `task` on whatever cadence its traffic deserves.
    *
    * `nowMs` is required and comes from the SAME clock the takes use — `ctx.now().getTime()` in a

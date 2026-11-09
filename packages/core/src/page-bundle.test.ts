@@ -152,9 +152,14 @@ describe('the browser path to the page seam', () => {
   // the measured growth and keeps the headroom it had: 4,096 + 307. The map is ONE table for the
   // server and the browser, so the browser carries rows for codes it never throws — the 85 B are
   // function on a worker and none in an island, and splitting the table is `error-retry.ts`'s to do.
-  test('the handle, the fence and UltimateError stay under 4,403 B minified (4,096 B as of 2026-10-01)', async () => {
+  //
+  // measured: 4,437 B (2026-11-09, Bun 1.4.4), 4,228 before. why: +209 B, `boundedCause` in the
+  // constructor (`error-render.ts`): a cause is cut at 4 KiB, so a problem body's `detail` decoded
+  // in the browser — a 3.6 MiB validation cause before plan 101's slice 02 — is bounded there too.
+  // The ceiling moves by the measured growth: 4,403 + 209.
+  test('the handle, the fence and UltimateError stay under 4,612 B minified (4,437 B as of 2026-11-09)', async () => {
     const { bytes } = await build('throws-min', '', true, THROWING_PAGE);
-    expect(bytes).toBeLessThan(4_403);
+    expect(bytes).toBeLessThan(4_612);
   }, 60_000);
 
   // `clientTransport` alone: what an island that sends one request pays. An app measured its theme
@@ -223,12 +228,29 @@ describe('the browser path to the page seam', () => {
   // (`client-paths-pins.ts`): a pinned action or query reached by NAME from the browser goes where
   // the server's `<meta name="ultimate-pins">` says, so no island ref restates a pin it could drift
   // from. The next whole kilobyte above the measurement.
-  test('the whole entry reaches no titles table and stays under 22 kB (22,355 B as of 2026-11-05)', async () => {
+  //
+  // measured: 22,728 B (2026-11-09, Bun 1.4.4), 22,514 without this change. why: +214 B,
+  // `boundedCause` in `UltimateError`'s constructor — every cause, the browser's included, is cut
+  // at 4 KiB (plan 101 slice 02, K2). The next whole kilobyte above the measurement.
+  test('the whole entry reaches no titles table and stays under 23 kB (22,728 B as of 2026-11-09)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(22_528);
+    expect(bytes).toBeLessThan(23_552);
+  }, 60_000);
+
+  // The barrel PARSES every module it names before shaking, so a browser build of it warns about
+  // `node:zlib` (`image/png-pixels.ts`) whatever the island used. The page entry must never reach a
+  // server module at all: no warning, no `image/` module retained.
+  test('the whole entry reaches no server module and builds without a warning', async () => {
+    const source = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
+    const entry = join(FIXTURE_DIR, 'whole-quiet.ts');
+    await Bun.write(entry, source);
+    const built = await Bun.build({ entrypoints: [entry], target: 'browser', format: 'esm' });
+    expect(built.logs.map(String)).toEqual([]);
+    const { modules } = await build('whole-modules', '', false, source);
+    expect(modules.filter((module) => module.includes('/image/'))).toEqual([]);
   }, 60_000);
 
   test('the barrel still drags both titles tables — the reason the subpath exists', async () => {

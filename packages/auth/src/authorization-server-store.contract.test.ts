@@ -95,6 +95,14 @@ function contract(name: string, fresh: () => Promise<AuthServerStore>): void {
       expect(await store.takeCode('none', at(2))).toBeNull();
     });
 
+    test('reading a code spends nothing: a take after it is still fresh', async () => {
+      await store.putCode(code('peek'));
+      expect(await store.getCode('peek')).toMatchObject({ clientId: 'c1', usedAt: null });
+      expect(await store.getCode('none')).toBeNull();
+      expect((await store.takeCode('peek', at(1)))?.fresh).toBe(true);
+      expect((await store.getCode('peek'))?.usedAt?.getTime()).toBe(at(1).getTime());
+    });
+
     test('racing takes of one code spend it exactly once', async () => {
       await store.putCode(code('race'));
       const takes = await Promise.all(
@@ -135,8 +143,12 @@ function contract(name: string, fresh: () => Promise<AuthServerStore>): void {
 
     test('a device code is decided once and consumed once', async () => {
       await store.putDevice(device);
-      expect((await store.pollDevice('d1', at(1)))?.lastPolledAt).toBeNull();
-      expect((await store.pollDevice('d1', at(6)))?.lastPolledAt?.getTime()).toBe(at(1).getTime());
+      expect((await store.pollDevice('d1', 'c1', at(1)))?.lastPolledAt).toBeNull();
+      // Another client's poll answers nothing and stamps nothing.
+      expect(await store.pollDevice('d1', 'c2', at(4))).toBeNull();
+      expect((await store.pollDevice('d1', 'c1', at(6)))?.lastPolledAt?.getTime()).toBe(
+        at(1).getTime(),
+      );
       const decided = await store.decideDevice(
         'u-code',
         { status: 'approved', subject: 'u1', scopes: ['read'] },

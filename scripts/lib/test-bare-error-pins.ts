@@ -42,7 +42,7 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   admin: 11, // why: 10 -> 11, sweep 11 reads a thrown string: action-gate.test.ts:267 is the stub under test (input)
   ai: 18,
   auth: 11, // why: 4 -> 11, the K19 class list; the new sites are stubs (input)
-  cache: 6, // why: 3 -> 6, the K19 class list; the new sites are stubs (input)
+  cache: 5, // why: 3 -> 6, the K19 class list; the new sites are stubs (input). 6 -> 5: the duplicate redis fake in invalidate.test.ts is gone
   cli: 29, // why: 9 -> 29, the K19 class list; the new sites are stubs (input)
   core: 43, // why: 30 -> 43, the K19 class list; the new sites are stubs (input)
   db: 34, // why: 24 -> 34, the K19 class list; the new sites are stubs (input)

@@ -95,6 +95,29 @@ describe('device authorization grant', () => {
     );
   });
 
+  test('another client polling the device code neither spends nor slows the real one', async () => {
+    const { fixture, started, poll, userCode: shown } = await start();
+    const { client: other } = await fixture.server.registerClient({
+      name: 'Other app',
+      redirectUris: ['https://other.test/cb'],
+      grantTypes: [DEVICE_GRANT],
+      scopes: ['read'],
+    });
+    await fixture.server.approveDevice({
+      subject: 'u',
+      userCode: shown,
+      key: 'k',
+      scopes: ['read'],
+    });
+    const stolen = await post(fixture.server, '/oauth/token', {
+      grant_type: DEVICE_GRANT,
+      device_code: String(started.body['device_code']),
+      client_id: other.clientId,
+    });
+    expect(stolen.body['error']).toBe('invalid_grant');
+    expect((await poll()).status).toBe(200);
+  });
+
   test('the alphabet and the normalisation', () => {
     for (let i = 0; i < 50; i += 1) {
       const code = userCode();

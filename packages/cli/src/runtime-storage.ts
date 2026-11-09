@@ -192,10 +192,16 @@ export async function readStorageObject(
   await assertVariantCurrent(driver, input.disk, key);
   const object = await driver.stat(key);
   if (object === undefined) throw objectNotFound(input.disk, key);
+  // Pinned to the revision the headers are built from: an overwrite between the stat and the read
+  // is `X_STORAGE_OBJECT_CHANGED`, never new bytes under the old ETag and length. An object whose
+  // disk knows no etag is read unpinned — there is nothing to pin it to.
+  const pin = object.etag === '' ? undefined : { etag: object.etag };
   return {
     object,
     open: async (range) =>
-      range === undefined ? driver.stream(key) : driver.streamRange(key, [range.start, range.end]),
+      range === undefined
+        ? driver.stream(key, pin)
+        : driver.streamRange(key, [range.start, range.end], pin),
   };
 }
 

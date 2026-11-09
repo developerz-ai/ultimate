@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { isStorageError } from './errors';
-import { assertSafeKey, isTenantScoped, isWithinOrg, joinKey, META_DIR, scopedKey } from './path';
+import {
+  assertLocalKey,
+  assertSafeKey,
+  isTenantScoped,
+  isWithinOrg,
+  joinKey,
+  META_DIR,
+  scopedKey,
+} from './path';
 
 /** The code, or a description of why there wasn't one — a failing assert then reads clearly. */
 function codeOf(fn: () => unknown): string {
@@ -26,6 +34,13 @@ describe('assertSafeKey', () => {
     ['trailing slash', 'org/o1/'],
     ['empty key', ''],
     ['NUL byte', 'a\u0000.png'],
+    // Win32 drops a trailing dot, so `.meta.` IS the reserved sidecar dir on NTFS.
+    ['a trailing-dot reserved segment', '.meta./a.txt.json'],
+    ['a trailing dot', 'org/o1/a.'],
+    ['a device name', 'CON'],
+    ['a device name, lower case, with an extension', 'org/o1/nul.txt'],
+    ['a numbered device', 'logs/com1.log'],
+    ['a device name before a padded extension', 'lpt9 .txt'],
   ];
 
   for (const [label, key] of cases) {
@@ -36,6 +51,29 @@ describe('assertSafeKey', () => {
 
   test('accepts an ordinary nested key unchanged', () => {
     expect(assertSafeKey('org/org-1/avatars/a.png')).toBe('org/org-1/avatars/a.png');
+  });
+
+  test('accepts a ":" — an ISO timestamp is a real key on s3 and on POSIX', () => {
+    expect(assertSafeKey('org/o1/2026-11-09T12:00:00Z.json')).toBe(
+      'org/o1/2026-11-09T12:00:00Z.json',
+    );
+  });
+
+  test('the local disk on win32 refuses a ":" (an NTFS stream), naming the key to use', () => {
+    expect(assertLocalKey('a:b', 'linux')).toBe('a:b');
+    let fix = '';
+    try {
+      assertLocalKey('org/o1/12:00.json', 'win32');
+    } catch (error) {
+      fix = isStorageError(error) && error.code === UNSAFE ? error.fix : 'wrong error';
+    }
+    expect(fix).toContain('"org/o1/12-00.json"');
+  });
+
+  test('accepts a segment that only begins like a device name', () => {
+    expect(assertSafeKey('org/o1/console.txt')).toBe('org/o1/console.txt');
+    expect(assertSafeKey('org/o1/com10.txt')).toBe('org/o1/com10.txt');
+    expect(assertSafeKey('org/o1/nul-report.pdf')).toBe('org/o1/nul-report.pdf');
   });
 
   test('accepts a dot inside a segment', () => {

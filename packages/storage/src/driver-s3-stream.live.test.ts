@@ -78,7 +78,8 @@ describe.skipIf(target === undefined)('live · s3 · large objects', () => {
     });
     expect(object.size).toBe(12 * MIB);
     expect(object.contentType).toBe('video/mp4');
-    expect(object.etag).toEndWith('-3"');
+    // Two parts: 8 MiB (`STREAM_PART_BYTES`) and the 4 MiB rest.
+    expect(object.etag).toEndWith('-2"');
     const tail = new Uint8Array(
       await new Response(
         await disk.streamRange(at('big.bin'), [12 * MIB - 4, 12 * MIB + 100]),

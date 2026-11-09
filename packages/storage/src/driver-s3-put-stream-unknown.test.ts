@@ -91,7 +91,7 @@ describe('a multipart Complete whose answer never arrives', () => {
   test('a Complete the provider REFUSED is still the plain refusal: it answered', async () => {
     fake.failCompleteWith = s3Error('InternalError', 200, KEY);
     const refused = await catchError(() =>
-      disk.putStream(KEY, chunksOf(6, MIB), { maxBytes: 64 * MIB }),
+      disk.putStream(KEY, chunksOf(10, MIB), { maxBytes: 64 * MIB }),
     );
     expect(anyCode(refused)).toBe('X_STORAGE_PUT_FAILED');
   });

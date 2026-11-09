@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: the fixtures below are SOURCE TEXT — a
+// `${…}` in one is the code under test, never an interpolation that went missing.
 // The floor under `x verify`'s errors step: the three shapes that shipped must be reported, a value
 // already routed through a total renderer must not be, and the mask must survive an escaped
 // delimiter — a template whose end is read wrong is a `${…}` nobody checks. A false positive here

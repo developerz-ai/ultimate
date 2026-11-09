@@ -143,18 +143,16 @@ Gotchas:
   version per key. A pair in doubt never unlocks. `NoSuchObjectLockConfiguration` is a 404.
 - **A live suite signs on a wall clock** (`performance`): `Date` is frozen → `RequestTimeTooSkewed`.
 - **A grant binds its size on every disk** (`As of 2026-11-02`). `grantUpload` requires `request.size` and passes `contentLength`; `s3Driver` signs `content-length` through core's `presignAwsUrl`, because Bun's presign signs `host` alone, so any other length is a 403 (`driver-s3.live.test.ts`). Local and memory hold it as the `x-max` ceiling, so a shorter body passes there: `driver-parity.test.ts` pins it. `maxBytes` with no `contentLength` on s3 is `X_STORAGE_UPLOAD_SIZE_UNDECLARED`. The content type stays unsigned.
-- **`putStream` on s3 is signed multipart, never `S3File.writer()`.** Measured on Bun 1.4.4: `end(error)` COMPLETES the upload, so an overrun would replace the object, and the writer cannot send `x-amz-meta-*`. One part at a time; every exit but the Complete aborts; a Complete can fail with 200 and an `<Error>` body.
+- **`putStream` on s3 is signed multipart, never `S3File.writer()`** (Bun 1.4.4: `end(error)` COMPLETES). 8 MiB parts, ≤ `STREAM_PART_BUFFERS` held; parts settle before the abort; a Complete can fail with 200 + `<Error>`.
+- **s3 `copy()` is a signed CopyObject**, past 5 GiB `UploadPartCopy`: Bun's `write(S3File)` dropped `cacheControl`/metadata.
+- **`stream(key, { etag })` never serves another revision**: local re-checks the etag at the first pull, never the inode (ext4 reuses it; `highWaterMark: 0`: an unread body holds no fd); s3 sends `If-Match`.
+- **The upload route streams** (`accept-stream.ts`). Keys refuse `:`, a trailing `.`, Win32 device names; `contentType`/`cacheControl` are `HEADER_VALUE` on every disk.
 - **`promoteAttachment` sniffs a head window** (`validateStoredHead`, 64 KiB), then ties it to the
   copy: `ifMatch`, then size and etag. Never refuse on etag alone: SSE-KMS mints one per copy.
 - **`/media`'s variant key names its source's revision and format.** No `revision`: the old key.
-- **`delete()` is idempotent for an ABSENT key and for nothing else.** Both drivers used to end in
-  `.catch(() => undefined)`, so a denied `s3:DeleteObject`, a `SlowDown`, an expired credential and
-  a read-only mount all resolved as success — and `sweepOrphans` returned them as deleted, which
-  is a GDPR erasure report certifying data that is still in the bucket. The s3 driver classifies
-  structurally (`code` in `NoSuchKey`/`NotFound`/`ENOENT`, or a 404 `statusCode`/`status`; an
-  `S3Error` is a plain `Error` with those fields and every read of one can throw), the local
-  driver on `ENOENT`. Everything else is `X_STORAGE_DELETE_FAILED`, whose `fix` the DRIVER
-  supplies — the command that reproduces the refusal differs per disk.
+- **`delete()` is idempotent for an ABSENT key and for nothing else** — a swallowed refusal made
+  `sweepOrphans` certify an erasure that never happened. s3 classifies structurally (`NoSuchKey`/
+  `NotFound`/`ENOENT` or a 404), local on `ENOENT`; else `X_STORAGE_DELETE_FAILED`, fix per driver.
 - **`toBytes` takes a `ByteLimit`, and there is no unbounded variant.** `put()` buffers, so the
   ceiling is what keeps a route piping a 4GB body into `disk.put()` from being an OOM kill rather
   than a refusal. `Uint8Array`/`Blob` are refused on their declared length; a `ReadableStream` is

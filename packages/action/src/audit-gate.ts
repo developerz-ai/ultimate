@@ -4,7 +4,13 @@
  * an attempt that already failed do not want the same answer.
  */
 
-import { getAuditSink, isUltimateError, logger } from '@ultimat3/core';
+import {
+  AUDIT_SINK_FAILED_EVENT,
+  auditFailureOf,
+  auditOutcomeOf,
+  getAuditSink,
+  logger,
+} from '@ultimat3/core';
 import type { AuditFailure, AuditOutcome, AuditRecord, AuditSink } from './audit';
 import { ActionDeniedError, AuditSinkFailedError, AuditSinkMissingError } from './errors';
 
@@ -31,15 +37,11 @@ export function auditSinkFor(action: string): AuditSink {
  * examined is not evidence of a policy denial, so it fails closed to `failed`.
  */
 export function auditOutcomeFor(error: unknown): AuditOutcome {
-  try {
-    return error instanceof ActionDeniedError ? 'denied' : 'failed';
-  } catch {
-    return 'failed';
-  }
+  return auditOutcomeOf(error, (thrown) => thrown instanceof ActionDeniedError);
 }
 
 export function auditFailureFor(error: unknown): AuditFailure {
-  return { code: isUltimateError(error) ? error.code : null, error };
+  return auditFailureOf(error);
 }
 
 /**
@@ -82,7 +84,7 @@ export async function auditThrew(sink: AuditSink, record: AuditRecord): Promise<
     // Core's logger, not `ctx.logger`: an HTTP `Ctx` is a cast request context that carries none,
     // the same reason `cache-gate.ts` gives. Never the record — rendering an input the sink just
     // choked on is the second throw this branch exists to prevent.
-    logger.error('audit.sink.failed', {
+    logger.error(AUDIT_SINK_FAILED_EVENT, {
       action: record.name,
       outcome: record.outcome,
       error,

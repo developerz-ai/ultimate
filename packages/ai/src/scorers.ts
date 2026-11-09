@@ -52,7 +52,7 @@ export interface Scorer {
  * `"score": null` for a `NaN`, which `parseBaseline` then refuses as `X_EVAL_BASELINE_INVALID`.
  */
 export const clampScore = (n: number): number =>
-  Number.isFinite(n) ? (n < 0 ? 0 : n > 1 ? 1 : n) : n > 0 ? 1 : 0;
+  Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : n > 0 ? 1 : 0;
 
 /** Exact match after trimming. The strictest and cheapest scorer; prefer it when it fits. */
 export const exact: Scorer = {

@@ -5,7 +5,13 @@
  */
 
 import type { AuditOutcome, AuditRecord, AuditSink, Ctx } from '@ultimat3/core';
-import { getAuditSink, isUltimateError, logger } from '@ultimat3/core';
+import {
+  AUDIT_SINK_FAILED_EVENT,
+  auditFailureOf,
+  auditOutcomeOf,
+  getAuditSink,
+  logger,
+} from '@ultimat3/core';
 import { QueryAuditSinkFailedError, QueryAuditSinkMissingError } from './audit-errors';
 import { QueryDeniedError } from './errors';
 import type { QuerySurface } from './policy-gate';
@@ -126,11 +132,7 @@ export function auditedSource<TRow>(source: SqlSource<TRow>, audit: ReadAudit): 
  * this `catch` would replace the caller's error with its own.
  */
 export function readOutcomeFor(error: unknown): AuditOutcome {
-  try {
-    return error instanceof QueryDeniedError ? 'denied' : 'failed';
-  } catch {
-    return 'failed';
-  }
+  return auditOutcomeOf(error, (thrown) => thrown instanceof QueryDeniedError);
 }
 
 function recordOf(audit: ReadAudit, at: Date, outcome: AuditOutcome, error: unknown): AuditRecord {
@@ -148,8 +150,7 @@ function recordOf(audit: ReadAudit, at: Date, outcome: AuditOutcome, error: unkn
     idempotencyKey: null,
     replayed: audit.trace.replayed,
     outcome,
-    failure:
-      outcome === 'allowed' ? null : { code: isUltimateError(error) ? error.code : null, error },
+    failure: outcome === 'allowed' ? null : auditFailureOf(error),
   };
 }
 
@@ -168,7 +169,7 @@ async function recordThrew(sink: AuditSink, record: AuditRecord): Promise<void> 
     // The same line `@ultimat3/action` writes, so `audit.sink.failed` is one alert rule over every
     // audited primitive. Never the record: rendering an input the sink just choked on is the
     // second throw this branch exists to prevent.
-    logger.error('audit.sink.failed', {
+    logger.error(AUDIT_SINK_FAILED_EVENT, {
       query: record.name,
       outcome: record.outcome,
       error,

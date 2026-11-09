@@ -51,7 +51,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `idempotency-memory.ts` | the process default: bounded, swept, `scope: 'process'` |
 | `idempotency-redact.ts` | `restingAnswer` — the copy of an answer a store may keep: core's `isRedactedKey` + `isSecret`, the SAME reference when nothing is redacted |
 | `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
-| `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
+| `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `PrimitiveDenial` and `SurfaceDenial` as types, which erases) |
 | `cache-gate.ts` | the post-COMMIT bust — **the only** file that calls `invalidateTags` |
 | `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust), `liveTransaction` (the settle), `completeTransaction`, and `inRolledBackScope`, the exercise's always-rolled-back scope and the memory transaction it opens always |
 | `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent (a `limit` resolved per call from `ctx`, through `toBucket`) |

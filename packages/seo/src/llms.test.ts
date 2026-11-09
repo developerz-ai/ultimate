@@ -56,3 +56,12 @@ describe('llmsDescriptionIssues', () => {
     expect(issues[0]?.fix).toContain('apps/web/site/about/page.tsx');
   });
 });
+
+describe('a link destination stays one link', () => {
+  // Markdown ends a destination at a space or an unbalanced `)`: `/a b(c)` linked to `/a`, and the
+  // rest of the URL became prose. Percent-encoding those three never double-encodes a path.
+  test('a space or a parenthesis in a path is percent-encoded', () => {
+    const routes = [route('/', { title: 'Home' }), route('/a b(c)', { title: 'Odd' })];
+    expect(buildLlmsTxt(routes, SITE)).toContain('- [Odd](https://postly.example/a%20b%28c%29)');
+  });
+});

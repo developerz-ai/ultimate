@@ -2,6 +2,7 @@
 // has a caller, and the one allowance the `auth` stage spends for a request that failed to have
 // one. Split out of `stages.ts` at the size ceiling; the bucket maths stays in `rate-limit.ts`.
 
+import { addressNetwork } from '@ultimat3/core';
 import { actorView, type RequestContext } from './context';
 import {
   type RateLimitConfig,
@@ -85,9 +86,9 @@ const routeBucketOf = (ctx: RequestContext, config: RateLimitConfig): string | n
   return meta?.rateLimit ?? config.defaultBucket;
 };
 
-/** The one key failed credentials are counted under: the address alone, never the route. */
+/** The one key failed credentials are counted under: the address alone (an IPv6 /64), never the route. */
 const unauthenticatedKey = (ip: string | null): string =>
-  `${UNAUTHENTICATED_SCOPE}|ip:${ip ?? 'unknown'}`;
+  `${UNAUTHENTICATED_SCOPE}|ip:${ip === null ? 'unknown' : addressNetwork(ip)}`;
 
 /**
  * The `auth` stage's GATE, before `authenticate()` on a required route: an address whose failure

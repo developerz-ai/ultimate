@@ -147,6 +147,39 @@ it inherits `Object.prototype` — `enforce('valueOf' as Surface, …)` used to 
 `Object.prototype.valueOf` with the table as its receiver and return a truthy value, so an authz
 dispatch failed **closed with a `SurfaceDenial` no caller could read**.
 
+## One guard for action and query
+
+`guardPrimitive(kind, policy, subject, surface)` is the gate `@ultimat3/action` and
+`@ultimat3/query` both run — siblings at tier 3 that cannot share a file, so it lives here.
+
+```ts
+import type { Actor } from '@ultimat3/core';
+import { can, guardPrimitive } from '@ultimat3/policy';
+
+declare const actor: Actor | null;
+const refused = guardPrimitive(
+  'query',
+  can('post:read'),
+  { stage: 'actor', name: 'postFeed', actor },
+  'mcp',
+);
+// `@ultimat3/query` throws its own class from the answer: `new QueryDeniedError(refused)`.
+if (refused !== undefined) console.log(refused.code, refused.reason);
+```
+
+| Field | Meaning |
+|---|---|
+| `kind` | `'action'` or `'query'` — picks the surface table |
+| `subject.stage` | `'actor'`: before the input parse, only `can()`/`allow()`/`deny()` decide, undecided passes · `'input'`: the full evaluation, with `input` and the loaded `row` |
+| `surface` | where the primitive ran: action `server · http · mcp · job`, query `server · http · mcp · live` |
+| returns | `undefined` to proceed, or `{ kind, name, surface, code, reason, denial }` |
+
+`PRIMITIVE_POLICY_SURFACES` is the surface rule as data: `server` is judged as `job`, `mcp` as
+`mcp` for **both** primitives (a read was judged as `job` until v31). A surface the primitive does
+not run on is `X_POLICY_SURFACE_UNKNOWN`, never a decision. `denialCode(denial)` /
+`denialReason(denial)` read any `SurfaceDenial` back as one code and one reason — the MCP text
+without its `<code>: ` prefix.
+
 ## Permissions and roles
 
 `definePermissions(['post:publish', ...])` gives a typed set; augmenting

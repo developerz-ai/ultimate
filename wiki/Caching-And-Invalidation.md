@@ -80,7 +80,7 @@ export const publishPost = action({
 |---|---|---|
 | Tier 1 request memo | drop entries carrying the tag | immediate, same request |
 | Tier 2 in-process LRU (**all instances**) | tag-invalidation message on NATS | ~ms, best-effort; a missed message costs a stale read until TTL, never a wrong write |
-| Tier 3 Redis | `SREM`/`DEL` over the tag's key set | immediate, inside the fan-out |
+| Tier 3 Redis | paged `ZSCAN` over the tag's sorted set, `UNLINK` per value key, `ZREM` of what died | immediate, inside the fan-out; 10k keys in 25 round trips |
 | ISR pages | routes whose `revalidate.tags` include the tag are marked stale → regenerated in background | next request serves stale, regen enqueued as a job |
 | CDN | purge by surrogate key through the configured `PurgeDriver` — a row bust purges `post:1` and `post`, a collection bust `e:post` and `post` | seconds; `stale-while-revalidate` covers the gap |
 | Live queries | the same commit already flows through logical replication | **independent path** — realtime does not depend on cache invalidation |
@@ -88,6 +88,8 @@ export const publishPost = action({
 Fan-out runs **after the handler resolves, in the same call** — `bustAfterCommit` awaits `invalidateTags()` directly (`packages/action/src/cache-gate.ts`), never through the outbox `As of 2026-08`. A handler that throws never reaches it, so a rolled-back write never purges; a process that dies between the commit and the fan-out leaves those entries until their TTL. An action invoked **inside `withTransaction`** — an app's own unit of work, or another action's — hands the fan-out to the root transaction's `onCommit` instead `As of 2026-10-02`: it runs once the root `COMMIT` is answered and never for a rollback, so a concurrent read cannot refill an entry from rows that are not yet durable.
 
 > **Tier 3 invalidation is slot-local as of 2.0.0, and was not through 1.2.0.** The Lua script `DEL`ed keys it never declared in `KEYS`, which single-node Redis tolerates and **Dragonfly and Redis Cluster reject** — a cluster cannot route a key it was not told about. The script now returns the member list and the tier deletes the value keys client-side, one key per `DEL`, so every delete is slot-local. On 1.2.0 and earlier: use single-node Redis, or drop the shared tier → [Known gaps](Known-Gaps).
+>
+> **As of 31.0.0 a bust runs no script at all**, and every command names one key. Tag buckets are sorted sets (`t2:`/`e2:`) scored by the member's expiry plus 60 s; every write prunes members past their score, so a bucket holds live keys only. Before, only a bust removed members: an entity written constantly and never invalidated collected every key it ever wrote, and its first bust read millions in one reply. A value over `redisTier({ maxValueBytes })` (1 MiB) is refused with `X_CACHE_TOO_LARGE`.
 
 There is exactly one fan-out entry point in the implementation (`invalidateTags()`); no caller reaches a tier directly. Tier failures are collected into an invalidation report — **a cache tier may never fail a business write.**
 
@@ -123,7 +125,7 @@ still live fails its joiners too.
 
 A missed deadline or a park is `X_CACHE_DRIVER_UNAVAILABLE` in `recentTierFailures()`; a stopped server's refusal is recorded with Bun's `ERR_REDIS_CONNECTION_CLOSED` message and no `code`. While the store is gone each pod still collapses its own concurrent misses to one `load()`; across pods, Postgres takes one load per pod per key — the rung's known cost. The jobs queue on the same client refuses an enqueue with `X_DRIVER_UNAVAILABLE` instead of waiting ([Jobs](Jobs-And-Workflows)).
 
-The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
+The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU or the Redis tier (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
 
 ## Failure modes removed
 
@@ -237,7 +239,7 @@ Today: `x dev` then the `/_x` cache panel, and `invalidateTags([...])` from `@ul
 |---|---|---|
 | `X_CACHE_UNTAGGED_QUERY` | **reserved, nothing raises it** `As of 2026-08` — a query's tables are covered by no tag, so it could never be invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) | declare the entity tag, then `x manifest` |
 | `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `x manifest` |
-| `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `raise cache.<tier>.maxBytes in app.config.ts, or cache a projection instead of the row` |
+| `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `lruTier({ maxBytes: <n> })` / `redisTier({ maxValueBytes: <n> })` where the tier is built, or cache a projection instead of the row |
 | `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — a Redis command missed its deadline, or the tier is parked after one; or a purge driver built without its token | the error carries the exact config or command to fix |
 | `X_CACHE_PURGE_FAILED` | `<driver> refused the purge (HTTP <status>)` — a wrong token, a zone without tag purge, a throttle, or a key a CDN would split | `meta.retryable === true` → the identical purge can land again; otherwise set the env key the `fix` names |
 

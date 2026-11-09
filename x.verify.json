@@ -1,6 +1,9 @@
 {
   "agentsMdMaxBytes": 16384,
   "isolate": true,
+  "skipCeiling": {
+    "live": 3
+  },
   "steps": [
     "typecheck",
     "lint",

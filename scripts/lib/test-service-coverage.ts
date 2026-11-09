@@ -126,6 +126,10 @@ export function requiredServiceUrls(source: string): readonly string[] {
  * A part applies when it runs the suite's step, and supplies when it exports the URL AND starts
  * the service behind it: a part that runs another step leaves the suite unrun, and a part that
  * exports a URL whose server it never started hands the suite a dead address.
+ *
+ * EVERY applicable part must supply, never one of them: several parts running one step are the
+ * shards of it (`--shard i/n`, `x verify merge` refuses anything else), and which shard a suite is
+ * dealt depends on the whole sorted file list — a shard without the server skips whatever it got.
  */
 export function serviceCoverageGaps(
   suites: readonly ServiceSuite[],
@@ -136,13 +140,13 @@ export function serviceCoverageGaps(
   for (const suite of suites) {
     for (const url of suite.required) {
       const service = serves.get(url);
-      const supplied = parts.some(
-        (part) =>
-          part.only.includes(suite.step) &&
-          part.urls.includes(url) &&
-          service !== undefined &&
-          part.services.includes(service),
-      );
+      const applicable = parts.filter((part) => part.only.includes(suite.step));
+      const supplied =
+        applicable.length > 0 &&
+        applicable.every(
+          (part) =>
+            part.urls.includes(url) && service !== undefined && part.services.includes(service),
+        );
       if (!supplied) gaps.push({ suite: suite.path, url });
     }
   }

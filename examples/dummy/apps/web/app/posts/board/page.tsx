@@ -56,8 +56,11 @@ export const config = defineRoute({
    * measured: 110333 B (2026-11-07, sweep 1; x build --target static) — why: the board island
    * 76,086 → 76,703, `SortableList` stepping a second Alt+Arrow from the held move and releasing
    * only its own hold, and the router +122 B — raised 107.5kb → 108kb.
+   * measured: 110687 B (2026-11-09, plan 101 sweep 1; x build --target static) — why: the board
+   * island 76,843 → 77,057 (+214 B), core's `boundedCause` in `UltimateError`'s constructor: every
+   * cause, a decoded problem's included, is cut at 4 KiB. Raised 108kb → 108.25kb.
    */
-  budget: { js: '108kb' },
+  budget: { js: '108.25kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

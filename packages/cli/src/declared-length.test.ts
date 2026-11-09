@@ -1,7 +1,8 @@
 // Every public framework route that answers a type the `compress` stage codes must DECLARE its
-// length: the stage reads nothing undeclared, so a missing header is a stylesheet or a sitemap that
-// silently leaves uncompressed. The route sets are the ones `serve.ts` and `x dev` mount, and a
-// public GET route added to one without a URL below fails the coverage test, never passes quietly.
+// length: an undeclared body is coded as a stream, so a stylesheet or a sitemap missing the header
+// leaves with no `content-length` at all instead of one coded whole. The route sets are the ones
+// `serve.ts` and `x dev` mount, and a public GET route added to one without a URL below fails the
+// coverage test, never passes quietly.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { defineHttpConfig, httpServer, isCompressibleType, type Route } from '@ultimat3/http';

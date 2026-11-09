@@ -147,5 +147,5 @@ export function cosine(a: Float32Array, b: Float32Array): number {
     normB += y * y;
   }
   const similarity = dot / Math.sqrt(normA * normB);
-  return similarity > 1 ? 1 : similarity < -1 ? -1 : similarity;
+  return Math.min(1, Math.max(-1, similarity));
 }

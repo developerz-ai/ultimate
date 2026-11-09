@@ -11,6 +11,7 @@
 import { ULTIMATE_ERROR_BRAND } from '@ultimat3/schema';
 import { describeErrorCode, hasErrorCode } from './error-codes';
 import {
+  boundedCause,
   isThrownError,
   renderCauseValue,
   renderMetaRecord,
@@ -121,7 +122,8 @@ export class UltimateError extends Error {
     const code = singleLine(init.code);
     const remote = init.remoteTitle !== undefined && !hasErrorCode(init.code);
     const title = singleLine(remote ? (init.remoteTitle ?? described.title) : described.title);
-    const cause = singleLine(init.cause);
+    // Bounded after escaping: the cap is on what is WRITTEN, and an escape only ever grows it.
+    const cause = boundedCause(singleLine(init.cause));
     // `message` carries the cause because it is the ONLY field a runtime prints when an
     // error escapes uncaught — a worker log, a CI transcript, a stack trace. A message of
     // just `code: title` tells an operator which rule fired but not which row, column or

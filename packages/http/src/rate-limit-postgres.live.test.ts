@@ -39,7 +39,13 @@ beforeAll(async () => {
   if (url === undefined) return;
   sql = new Bun.SQL(url, { max: 8 });
   await sql.unsafe('drop table if exists x_rate_limit', []);
-  await sql.unsafe(SQL_RATE_LIMIT_TABLE, []);
+  // One piece at a time, exactly as the boot's `framework-schema.ts` sends the DDL — and twice,
+  // because every boot runs it again over the table it made.
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const piece of SQL_RATE_LIMIT_TABLE.split(';')) {
+      if (piece.trim().length > 0) await sql.unsafe(piece, []);
+    }
+  }
   const executor: PgExecutor = {
     query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
       (await sql.unsafe(text, [...values])) as readonly R[],

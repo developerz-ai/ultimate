@@ -388,6 +388,22 @@ them as the tenant actor, and the call is authoritative:
 A role or a runtime tool an agent must discover per tenant belongs on the person's actor, or in a
 tool the agent reads after `list_tenants` (`docs`, `list_resources`).
 
+**What carries into a tenant, and what `resolve` decides** (ruling, 2026-11-09):
+
+| on the call's caller | where it comes from | narrowed per tenant by |
+|---|---|---|
+| `scopes`, MCP `role` | the TOKEN, unchanged in every tenant — one token, one grant | nothing: a scope the token lacks is `X_MCP_SCOPE_DENIED` in every tenant |
+| `actor` — `roles`, `orgId`, everything the policy reads | `resolve`'s answer, which REPLACES the person's: nothing of the person's actor is merged in | `resolve`: answer fewer roles and the policy refuses (`X_FORBIDDEN`) |
+
+So the app's `resolve` may narrow, and is the one place that does. Held by
+`tenant-semantics.test.ts`.
+
+**Only `tools/call` names a tenant.** `resources/read`, `resources/list`, `prompts/*` and
+`tools/list` run as the PERSON: a `tenant.arg` sent in their params is ignored, `resolve` is never
+asked, and a reader sees `caller.tenant === undefined` and no `orgId`. A resource that reads tenant
+data therefore fails closed at the entity tenancy guard (`X_TENANCY_ACTOR_ORG_REQUIRED`). Tenant
+data an agent must read belongs in a tool, which names its tenant.
+
 ```ts
 import { agentActor } from '@ultimat3/core';
 import { defineAppMcp } from '@ultimat3/mcp';

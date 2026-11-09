@@ -97,6 +97,17 @@ describe('a required route refuses an exhausted address before authenticate()', 
     expect((await ask(pipeline, 'right', '203.0.113.9', '/public')).status).toBe(200);
   });
 
+  // v31: the failure allowance is per IPv6 /64. Keyed by the full address, a guesser rotating the
+  // host half of its own /64 had a fresh allowance for every guess.
+  test('an exhausted IPv6 /64 is refused from any address inside it, not from the next one', async () => {
+    const { pipeline } = metered();
+    for (let index = 0; index < 3; index += 1) {
+      await ask(pipeline, 'wrong', `2001:db8:1:2::${index + 1}`);
+    }
+    expect((await ask(pipeline, 'right', '2001:db8:1:2::ff')).status).toBe(429);
+    expect((await ask(pipeline, 'right', '2001:db8:1:3::1')).status).toBe(200);
+  });
+
   test('with no address there is no key to refuse on, so a valid credential is served', async () => {
     const { pipeline } = metered();
     for (let index = 0; index < 4; index += 1) await ask(pipeline, 'wrong', null);

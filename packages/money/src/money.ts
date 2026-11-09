@@ -69,6 +69,9 @@ export function fromDecimal(
   options: FromDecimalOptions = {},
 ): Money {
   const code = assertCurrency(currency);
+  // The signature says `string`; a JSON body does not read it. `12.99` arriving as a number was a
+  // bare TypeError from `.trim()` — a 500 for a caller mistake.
+  if (typeof value !== 'string') throw decimalNotNumeric(value, code);
   const match = DECIMAL.exec(value.trim());
   const integerPart = match?.[2];
   if (match === null || integerPart === undefined) {

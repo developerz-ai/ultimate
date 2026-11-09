@@ -80,10 +80,26 @@ describe('fromDecimal', () => {
     expect(tooDeep).toContain('rounding');
   });
 
-  test('rejects formatted input instead of guessing', () => {
-    expect(codeOf(() => fromDecimal('1,299.00', 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
-    expect(codeOf(() => fromDecimal('€12.99', 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
-    expect(codeOf(() => fromDecimal('1e3', 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
+  test('rejects formatted input instead of guessing, as a parse failure', () => {
+    expect(codeOf(() => fromDecimal('1,299.00', 'EUR'))).toBe('X_MONEY_NOT_DECIMAL');
+    expect(codeOf(() => fromDecimal('€12.99', 'EUR'))).toBe('X_MONEY_NOT_DECIMAL');
+    expect(codeOf(() => fromDecimal('1e3', 'EUR'))).toBe('X_MONEY_NOT_DECIMAL');
+  });
+
+  test('refuses a value that is not a string with a code, never a bare TypeError', () => {
+    // A JSON body carrying `12.99` reaches here as a number; `.trim()` on it was a 500.
+    for (const value of [12.99, undefined, null, {}, 12n]) {
+      expect(codeOf(() => fromDecimal(value as unknown as string, 'USD'))).toBe(
+        'X_MONEY_NOT_DECIMAL',
+      );
+    }
+  });
+
+  test('bounds the refused input it quotes in the cause', () => {
+    const cause = causeOf(() => fromDecimal('9'.repeat(100_000).concat('x'), 'USD'));
+    // The quoted value is cut at 512 characters; the sentence around it is under 100.
+    expect(cause.length).toBeLessThan(640);
+    expect(causeOf(() => fromDecimal('two\nlines', 'USD'))).not.toContain('\n');
   });
 });
 
@@ -177,6 +193,15 @@ describe('currencyOf', () => {
     expect(currencyOf(fromMinor(2, 'USD', 6))).toBe('USD');
   });
 });
+
+function causeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { cause?: unknown }).cause);
+  }
+  return 'no-throw';
+}
 
 function fixOf(run: () => unknown): string {
   try {

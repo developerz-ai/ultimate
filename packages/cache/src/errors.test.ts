@@ -98,6 +98,22 @@ describe('CacheTooLargeError', () => {
     expect(err.cause).toContain('1000');
     expect(EVERY_CODE).toContain(err.code);
   });
+
+  test('the fix is the constructor option that holds the cap — app.config.ts has no such key', () => {
+    // `cache.lru.maxBytes` is not a config field (wiki/Configuration.md): a fix naming it sent the
+    // reader to write a key the boot refuses with X_CONFIG_INVALID.
+    const lru = new CacheTooLargeError({ key: 'k', bytes: 5_000, tier: 'lru', maxBytes: 1_000 });
+    const redis = new CacheTooLargeError({
+      key: 'k',
+      bytes: 5_000,
+      tier: 'redis',
+      maxBytes: 1_000,
+    });
+
+    expect(lru.fix).toContain('lruTier({ maxBytes: 5000 })');
+    expect(redis.fix).toContain('redisTier({ maxValueBytes: 5000 })');
+    for (const err of [lru, redis]) expect(err.fix).not.toContain('app.config.ts');
+  });
 });
 
 describe('CacheJitterInvalidError', () => {

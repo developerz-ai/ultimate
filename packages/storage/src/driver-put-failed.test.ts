@@ -14,7 +14,7 @@ import { localDriver } from './driver-local';
 import { commitObject } from './driver-local-write';
 import { memoryStorageDriver } from './driver-memory';
 import { s3Driver } from './driver-s3';
-import { bytesOf, catchError, FakeS3Client, s3Error, textOf } from './driver-s3-fixture';
+import { bytesOf, catchError, FAKE_ENV, FakeS3Client, s3Error, textOf } from './driver-s3-fixture';
 
 const anyCodeOf = (caught: unknown): string =>
   isUltimateError(caught) ? caught.code : `not-a-coded-error: ${String(caught)}`;
@@ -30,7 +30,7 @@ beforeEach(async () => {
   fake = new FakeS3Client();
   local = localDriver({ root, signingSecret: 'test-secret' });
   memory = memoryStorageDriver({ signingSecret: 'test-secret' });
-  s3 = s3Driver({ bucket: 'b', client: fake });
+  s3 = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV });
 });
 
 afterEach(async () => {

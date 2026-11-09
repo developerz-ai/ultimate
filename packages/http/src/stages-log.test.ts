@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { structuredLogger, UltimateError } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { requestContext } from './context';
-import { bodyInvalid } from './errors';
+import { bodyInvalid, unauthenticated } from './errors';
 import { UltimateRequest } from './request';
 import { httpRouter } from './router';
 import { stageRunners } from './stages';
@@ -98,5 +98,27 @@ describe('the level follows the status', () => {
   ])('%s logs at %s', async (code, level) => {
     const [line] = await runErrorMap(coded(code));
     expect(line?.['level']).toBe(level);
+  });
+});
+
+// An anonymous visit to a signed-in page is the pipeline's own refusal, and in production it is
+// mostly scanners: at warn it buried the refusals worth a look. A credential a checker REJECTED
+// (`X_UNAUTHENTICATED` from `@ultimat3/auth`, a bad token) stays warn — only the no-actor wall drops.
+describe('the anonymous login wall is routine', () => {
+  test("the auth stage's no-actor refusal logs at info", async () => {
+    const [line] = await runErrorMap(unauthenticated('/account'));
+    expect(line?.['msg']).toBe('X_UNAUTHENTICATED');
+    expect(line?.['status']).toBe(401);
+    expect(line?.['level']).toBe('info');
+  });
+
+  test('the same code from anywhere else is still a refused credential, at warn', async () => {
+    const rejected = new UltimateError({
+      code: 'X_UNAUTHENTICATED',
+      cause: 'wrong password',
+      fix: 'x routes list',
+    });
+    const [line] = await runErrorMap(rejected);
+    expect(line?.['level']).toBe('warn');
   });
 });

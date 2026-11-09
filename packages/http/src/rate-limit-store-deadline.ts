@@ -26,11 +26,24 @@ export interface StoreDeadline {
   bound<T>(statement: 'take' | 'peek', sending: Promise<T>): Promise<T>;
 }
 
-export const rateLimitStoreTimeout = (statement: string, deadlineMs: number): HttpError =>
+/** Which store's factory a refusal names — the one the author raises `deadlineMs` on. */
+export type SharedStoreOwner = 'postgresRateLimitStore' | 'redisRateLimitStore';
+
+/** The command that checks the store a timeout names: no table indexed by a value. */
+const fixFor = (owner: SharedStoreOwner): string =>
+  owner === 'redisRateLimitStore'
+    ? 'redis-cli -u "$REDIS_URL" --latency   # a Redis that is slow rather than gone takes redisRateLimitStore({ client, deadlineMs }) raised in the boot that builds it'
+    : 'x doctor --json   # names the database binding this pod cannot reach; a database that is slow rather than gone takes postgresRateLimitStore({ executor, deadlineMs }) raised in the boot that builds it';
+
+export const rateLimitStoreTimeout = (
+  statement: string,
+  deadlineMs: number,
+  owner: SharedStoreOwner = 'postgresRateLimitStore',
+): HttpError =>
   new HttpError({
     code: 'X_RATE_LIMIT_STORE_TIMEOUT',
     cause: `the shared rate-limit store's ${statement} statement did not answer within ${String(deadlineMs)} ms, so this decision was taken from this pod's memory`,
-    fix: 'x doctor --json   # names the database binding this pod cannot reach; a database that is slow rather than gone takes postgresRateLimitStore({ executor, deadlineMs }) raised in the boot that builds it',
+    fix: fixFor(owner),
     meta: { statement, deadlineMs },
   });
 
@@ -41,18 +54,23 @@ export const rateLimitStoreTimeout = (statement: string, deadlineMs: number): Ht
 export function storeDeadline(
   deadlineMs: number = RATE_LIMIT_STORE_DEADLINE_MS,
   schedule: Scheduler = unrefSchedule,
+  owner: SharedStoreOwner = 'postgresRateLimitStore',
 ): StoreDeadline {
-  finiteCount('postgresRateLimitStore', 'deadlineMs', deadlineMs, 1);
+  finiteCount(owner, 'deadlineMs', deadlineMs, 1);
+  const handle = owner === 'postgresRateLimitStore' ? 'executor' : 'client';
   assert(
     deadlineMs <= MAX_TIMER_MS,
-    `postgresRateLimitStore deadlineMs is ${String(deadlineMs)}, past the longest delay a timer holds, so it would fire at once`,
-    `postgresRateLimitStore({ executor, deadlineMs: ${String(RATE_LIMIT_STORE_DEADLINE_MS)} })   # or any whole number of ms up to ${String(MAX_TIMER_MS)}`,
+    `${owner} deadlineMs is ${String(deadlineMs)}, past the longest delay a timer holds, so it would fire at once`,
+    `${owner}({ ${handle}, deadlineMs: ${String(RATE_LIMIT_STORE_DEADLINE_MS)} })   # or any whole number of ms up to ${String(MAX_TIMER_MS)}`,
   );
   return {
     bound<T>(statement: 'take' | 'peek', sending: Promise<T>): Promise<T> {
       let cancel: () => void = () => undefined;
       const late = new Promise<never>((_, reject) => {
-        cancel = schedule(() => reject(rateLimitStoreTimeout(statement, deadlineMs)), deadlineMs);
+        cancel = schedule(
+          () => reject(rateLimitStoreTimeout(statement, deadlineMs, owner)),
+          deadlineMs,
+        );
       });
       return Promise.race([sending, late]).finally(() => cancel());
     },

@@ -3,6 +3,7 @@
 // file exists because the two answer different questions about the same error.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL, UltimateError } from '@ultimat3/core';
+import { MAX_ISSUES } from '@ultimat3/schema';
 import { factsOf, renderErrorLines, toProblem } from './error-facts';
 import { registerErrorStatus, resetErrorStatus } from './error-status';
 import { bodyInvalid, forbidden, routeNotFound } from './errors';
@@ -255,10 +256,11 @@ describe('toProblem carries the issue list', () => {
   });
 
   test('a list too long to be a form drops whole, rather than crossing and being refused', () => {
-    // The typed client bounds it at `MAX_WIRE_ISSUES` (`packages/action/src/wire-issues.ts`) and
+    // The typed client bounds it at schema's `MAX_ISSUES` (`packages/action/src/wire-issues.ts`) and
     // drops anything longer, so an oversized list is a body that costs the wire and answers
     // nothing. Refused HERE, where the response is this package's business.
-    const many = Array.from({ length: 101 }, (_, at) => ({
+    // Schema's own cap, never a restated number: validation stops at it, the document carries it.
+    const many = Array.from({ length: MAX_ISSUES + 1 }, (_, at) => ({
       path: `f${at}`,
       expected: 'string',
       received: '',
@@ -266,8 +268,10 @@ describe('toProblem carries the issue list', () => {
     }));
     expect('issues' in toProblem(withMeta('X_BODY_INVALID', { issues: many }))).toBe(false);
     // The bound itself is inclusive: a hundred is a plausible form.
-    const hundred = many.slice(0, 100);
-    expect(toProblem(withMeta('X_BODY_INVALID', { issues: hundred })).issues).toHaveLength(100);
+    const hundred = many.slice(0, MAX_ISSUES);
+    expect(toProblem(withMeta('X_BODY_INVALID', { issues: hundred })).issues).toHaveLength(
+      MAX_ISSUES,
+    );
   });
 
   test('one unreadable entry drops the WHOLE list, never a silent subset', () => {

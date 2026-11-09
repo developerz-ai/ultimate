@@ -133,13 +133,21 @@ export async function signedUploadConstraints(
   return constraintsFor(input, 'PUT');
 }
 
+/** What a verified object PUT may store: the key, the type the grant signed, its ceiling. */
+export interface SignedObjectPut {
+  readonly key: string;
+  readonly contentType: string;
+  readonly maxBytes: number | undefined;
+}
+
 /**
- * Take a presigned PUT and write it, or refuse. Four gates the client cannot move because all
- * four are inside the signature or inside the bytes: the signature itself, the expiry, the byte
- * count against the signed ceiling, and the declared type against both the signature and the
- * magic bytes. `validateUpload` runs last because it is the only one that reads the whole body.
+ * Every gate a PUT passes before its body is read: the signature, the expiry, the tenant, the
+ * method, an OBJECT url (never a part's), and the declared type against the signed one. Shared by
+ * `acceptSignedUpload` and the streamed `acceptSignedUploadStream`, so the two are one rule.
  */
-export async function acceptSignedUpload(input: AcceptSignedUploadInput): Promise<StorageObject> {
+export async function signedObjectPut(
+  input: SignedRequestInput & { readonly declaredContentType?: string | undefined },
+): Promise<SignedObjectPut> {
   const constraints = await constraintsFor(input, 'PUT');
   const key = constraints.key;
   // A part URL writes one part of an open upload, never the object: `acceptSignedPart` takes it.
@@ -169,9 +177,19 @@ export async function acceptSignedUpload(input: AcceptSignedUploadInput): Promis
     );
   }
 
+  return { key, contentType: signed, maxBytes: constraints.maxBytes };
+}
+
+/**
+ * Take a presigned PUT and write it, or refuse. Four gates the client cannot move because all
+ * four are inside the signature or inside the bytes: the signature itself, the expiry, the byte
+ * count against the signed ceiling, and the declared type against both the signature and the
+ * magic bytes. `validateUpload` runs last because it is the only one that reads the whole body.
+ */
+export async function acceptSignedUpload(input: AcceptSignedUploadInput): Promise<StorageObject> {
+  const { key, contentType: signed, maxBytes } = await signedObjectPut(input);
   // The signed ceiling, checked before the policy's: the two can differ once a policy is edited
   // between the grant and the upload, and the narrower one is the one that was granted.
-  const maxBytes = constraints.maxBytes;
   const size = input.bytes.byteLength;
   if (maxBytes !== undefined && size > maxBytes) throw tooLarge(key, size, maxBytes);
 

@@ -12,6 +12,7 @@ import {
   type Schema,
 } from './builder';
 import { expected } from './describe-value';
+import { stopCollecting } from './issue-cap';
 import type { SchemaNode } from './node';
 import type { StandardIssue } from './standard';
 import { unstorable } from './unstorable-text';
@@ -132,6 +133,8 @@ function walkArray(
   // An index loop, never `entries()` on a sparse array alone: a hole reads `undefined` and is
   // refused at its index, where `JSON.stringify` would have written `null` in silence.
   for (let index = 0; index < items.length; index += 1) {
+    // At the issue cap the rest is not walked (`issue-cap.ts`); issues already exist, so this fails.
+    if (stopCollecting(state.issues.length, true)) return null;
     const step = walk(items[index], { parent: at, segment: index }, depth + 1, state);
     if (step === null) ok = false;
     else {
@@ -156,6 +159,7 @@ function walkObject(
   // The entry's POSITION is its path segment, never its key — the rule `recordSchema` states:
   // a key is caller data, and an issue path reaches the problem document and the log line.
   for (const [index, key] of Object.keys(source).entries()) {
+    if (stopCollecting(state.issues.length, true)) return null;
     const link: At = { parent: at, segment: index };
     const reason = unstorable(key);
     if (reason !== undefined) {

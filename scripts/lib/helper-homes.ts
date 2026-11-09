@@ -135,6 +135,15 @@ export const HELPER_HOMES: readonly HelperHome[] = [
     find: ({ stripped }) => offsets(stripped, /(['"`])x-ultimate-build\1/g),
   },
   {
+    helper: 'timingSafeEqual',
+    home: 'packages/core/src/timing-safe-equal.ts',
+    // `masked`: the accumulator is code, never a string. XOR of two strings' char codes is the
+    // constant-time compare and nothing else; `cursor.ts` carried a private twin of it (plan 101
+    // slice 02, K4), and a security primitive with two copies is one that drifts.
+    find: ({ masked }) =>
+      offsets(masked, /\.charCodeAt\s*\([^()]*\)\s*\^\s*[\w$.]+\.charCodeAt\s*\(/g),
+  },
+  {
     helper: 'grantCovers',
     home: 'packages/core/src/actor.ts',
     // `stripped`: the `':*'` is string contents. Three copies — policy's matcher, its grant index

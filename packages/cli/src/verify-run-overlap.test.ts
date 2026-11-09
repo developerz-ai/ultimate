@@ -111,6 +111,49 @@ describe('unit · the static steps overlap the serial suites', () => {
   });
 });
 
+// CI splits `live` across runners (`--shard i/n`, `.github/workflows/ci.yml`), and a shard may name
+// no other step — so the static steps sit in a part of their own, with `eval`. Serial there they
+// were the sum of six whole-tree scans (~400 s on a runner); beside `eval`, the slowest of them.
+describe('unit · without live, the static steps overlap the first serial suite listed', () => {
+  const STATIC = ['lint', 'boundaries', 'filesize', 'package-shape', 'errors', 'manifest'] as const;
+
+  test('beside the first serial suite listed, when live is not', async () => {
+    const log: string[] = [];
+    await runVerify(recordingSteps(log), {
+      root: '/nonexistent',
+      runner,
+      only: [...STATIC, 'eval', 'drift'],
+    });
+    expect(log.indexOf('start manifest')).toBeGreaterThan(-1);
+    expect(log.indexOf('start manifest')).toBeLessThan(log.indexOf('end lint'));
+    expect(log.indexOf('start lint')).toBeGreaterThan(-1);
+    expect(log.indexOf('start lint')).toBeLessThan(log.indexOf('end eval'));
+    // Joined before a step after the serial suites reads the app, as with live.
+    expect(log.indexOf('end manifest')).toBeGreaterThan(-1);
+    expect(log.indexOf('end manifest')).toBeLessThan(log.indexOf('start drift'));
+  });
+
+  test('a list with no serial suite keeps declared order', async () => {
+    const log: string[] = [];
+    await runVerify(recordingSteps(log), {
+      root: '/nonexistent',
+      runner,
+      only: ['lint', 'errors'],
+    });
+    expect(log).toEqual(['start lint', 'end lint', 'start errors', 'end errors']);
+  });
+
+  test('typecheck stays alone and first, and e2e without live still runs after it', async () => {
+    const log: string[] = [];
+    await runVerify(recordingSteps(log), {
+      root: '/nonexistent',
+      runner,
+      only: ['typecheck', 'e2e'],
+    });
+    expect(log).toEqual(['start typecheck', 'end typecheck', 'start e2e', 'end e2e']);
+  });
+});
+
 // Row n: a throwing `applies` escaped `runStep`'s catch and took the whole gate down with it.
 describe('unit · a step whose applies() throws fails that step, and the gate runs on', () => {
   test("the throw is the step's finding, and the next step still runs", async () => {

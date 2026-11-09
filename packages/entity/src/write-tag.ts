@@ -5,7 +5,7 @@
 // tells the page that wrote it that this is its own echo. The in-process row observer reads the
 // same fact off the request scope and needs none of this.
 
-import { currentWriteOrigin, WRITE_ORIGIN_WAL_PREFIX } from '@ultimat3/core';
+import { currentWriteOrigin, runToCompletion, WRITE_ORIGIN_WAL_PREFIX } from '@ultimat3/core';
 import { currentTx, type DbClient, type DbTx, db, sql, withTransaction } from '@ultimat3/db';
 
 /** Transactions this process already opened with the message: one per transaction is enough. */
@@ -28,7 +28,11 @@ const CAN_EMIT = sql`select exists (select 1 from pg_catalog.pg_proc where prona
 
 function canEmit(client: DbClient): Promise<boolean> {
   if (emits === undefined) {
-    const asked = client.one<{ ok: unknown }>(CAN_EMIT).then((row) => row?.ok === true);
+    // Outside the asking request's abort: the answer is every concurrent caller's, and the pool
+    // cancels a read whose scope hangs up — which answered `false` to all of them, untagged.
+    const asked = runToCompletion(() => client.one<{ ok: unknown }>(CAN_EMIT)).then(
+      (row) => row?.ok === true,
+    );
     emits = asked;
     // A probe that FAILED answered nothing: the next write asks again.
     asked.catch(() => {

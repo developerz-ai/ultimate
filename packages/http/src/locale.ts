@@ -4,7 +4,7 @@
 // lived here and all three disagreed with their owner about the same request.
 
 import { LOCALE_COOKIE } from '@ultimat3/i18n';
-import { TIMEZONE_DETECTED_COOKIE, TIMEZONE_HEADER } from '@ultimat3/time';
+import { TIMEZONE_COOKIE, TIMEZONE_DETECTED_COOKIE, TIMEZONE_HEADER } from '@ultimat3/time';
 
 export interface LocaleConfig {
   /** Cookie the client sets when the user picks a locale explicitly. */
@@ -32,6 +32,6 @@ export const DEFAULT_LOCALE_CONFIG: LocaleConfig = {
 /** The default zone is `configureTime({ defaultZone })`'s, so a process has one answer, not two. */
 export const DEFAULT_TZ_CONFIG: TimeZoneConfig = {
   header: TIMEZONE_HEADER,
-  cookie: 'x_timezone',
+  cookie: TIMEZONE_COOKIE,
   detectedCookie: TIMEZONE_DETECTED_COOKIE,
 };

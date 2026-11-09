@@ -243,3 +243,23 @@ export const surfaceUnknown = (surface: unknown, known: readonly string[]): Poli
     cause: `enforce() was handed surface ${renderCauseValue(surface)}, which no policy adapter answers to`,
     fix: `pass one of ${known.join(', ')} — e.g. enforce('${known[0] ?? 'http'}', policy, args)`,
   });
+
+/**
+ * `guardPrimitive()` was handed a surface its primitive does not run on — an action on `live`, a
+ * query on `job` — or a kind that is neither. The same code as `surfaceUnknown`, because it is the
+ * same fault one layer up: no adapter answers. Both values are rendered, never interpolated: the
+ * call site this exists for is a JS host or a config table no type reached.
+ */
+export const primitiveSurfaceUnknown = (
+  kind: unknown,
+  surface: unknown,
+  known: readonly string[],
+): PolicyError =>
+  new PolicyError({
+    code: 'X_POLICY_SURFACE_UNKNOWN',
+    cause: `guardPrimitive() was handed surface ${renderCauseValue(surface)} for kind ${renderCauseValue(kind)}, which that primitive does not run on`,
+    fix:
+      known.length === 0
+        ? "guardPrimitive('action', policy, subject, 'server')   # the kind is 'action' or 'query'"
+        : `guardPrimitive(kind, policy, subject, '${known[0]}')   # the surface is one of ${known.map((name) => `'${name}'`).join(', ')}`,
+  });

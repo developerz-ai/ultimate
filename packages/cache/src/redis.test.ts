@@ -2,13 +2,14 @@
 // namespace it spends it in. The tag -> keys bookkeeping is invisible from the outside — a bucket
 // written wrong leaves keys no tag can ever reach again — so a fake Redis records every command
 // and the wire traffic is the assertion. Its ORDERING guarantees are `redis-ordering.test.ts`'s
-// subject, and what a Lua script actually does is `redis.live.test.ts`'s.
+// subject, the bucket bound `redis-tag-bound.test.ts`'s, and what the lease script actually does
+// is `redis.live.test.ts`'s.
 
 import { describe, expect, test } from 'bun:test';
 import { appVersion, frozenClock } from '@ultimat3/core';
 import { lruTier } from './lru';
-import { namespaceFor, REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT, redisTier } from './redis';
-import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
+import { namespaceFor, redisTier } from './redis';
+import { bucketsJoined, bucketsRead, fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import { tag } from './tags';
 import { cacheStack } from './tiers';
 import { CACHE_CODEC_MARK } from './value-codec';
@@ -39,34 +40,29 @@ describe('redisTier', () => {
   });
 
   test("set with tags joins the tag's own bucket and the entity index", async () => {
-    // Two buckets with two different jobs. `x:t:{post}:1` is the tag, and a bust of exactly that
-    // tag reads it; `x:e:{post}` is `LruCache`'s `entityIndex`, and only a COLLECTION bust reads
-    // it. Joining `x:t:{post}` here instead — one key doing both jobs — is what made a bust of
+    // Two buckets with two different jobs. `x:t2:{post}:1` is the tag, and a bust of exactly that
+    // tag reads it; `x:e2:{post}` is `LruCache`'s `entityIndex`, and only a COLLECTION bust reads
+    // it. Joining `x:t2:{post}` here instead — one key doing both jobs — is what made a bust of
     // `tag('post','1')` return every post-tagged key in the store. See `tier-parity.test.ts`.
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('post-1', { title: 'hi' }, { tags: [tag('post', '1')] });
 
-    const joins = client.sent.filter(
-      (entry) => entry[0] === 'EVAL' && entry[1] === REDIS_TAG_MEMBER_SCRIPT,
-    );
-    expect(joins.map((entry) => [entry[3], entry[4]])).toEqual([
-      ['x:t:{post}:1', 'x:c:post-1'],
-      ['x:e:{post}', 'x:c:post-1'],
+    const joins = client.sent.filter((entry) => entry[0] === 'ZADD');
+    expect(joins.map((entry) => [entry[1], entry[3]])).toEqual([
+      ['x:t2:{post}:1', 'x:c:post-1'],
+      ['x:e2:{post}', 'x:c:post-1'],
     ]);
   });
 
   test('set with an id-less tag joins the collection tag AND the entity index', async () => {
-    // The bare collection tag needs both too: `x:t:{user}` is what a ROW bust of that entity
-    // reads (a row bust must still kill the lists), `x:e:{user}` is what a collection bust reads.
+    // The bare collection tag needs both too: `x:t2:{user}` is what a ROW bust of that entity
+    // reads (a row bust must still kill the lists), `x:e2:{user}` is what a collection bust reads.
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('users', ['u'], { tags: [tag('user')] });
 
-    const joins = client.sent.filter(
-      (entry) => entry[0] === 'EVAL' && entry[1] === REDIS_TAG_MEMBER_SCRIPT,
-    );
-    expect(joins.map((entry) => entry[3])).toEqual(['x:t:{user}', 'x:e:{user}']);
+    expect(bucketsJoined(client.sent)).toEqual(['x:t2:{user}', 'x:e2:{user}']);
   });
 
   // The lease is spent in MILLISECONDS, exactly as the LRU tier holds it. `EX` with a `Math.ceil`
@@ -129,24 +125,23 @@ describe('redisTier', () => {
     expect(client.sent).toEqual([['DEL', 'x:c:k']]);
   });
 
-  test('invalidateTags([]) short-circuits without running the invalidation script', async () => {
+  test('invalidateTags([]) short-circuits without a single command', async () => {
     const client = fakeRedis();
     const tier = tierFor(client);
 
     const result = await tier.invalidateTags([]);
 
     expect(result).toEqual({ tier: 'redis', keys: [] });
-    expect(client.sent.some((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT)).toBe(false);
+    expect(client.sent).toEqual([]);
   });
 
   test('invalidateTags removes the value and returns the unprefixed key', async () => {
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
-    // 'feed' joined both the row bucket (x:t:{post}:1) and the collection bucket (x:t:{post}) at
-    // set time and the script walks every bucket it was handed, so a real server returns it twice
-    // — `redis.live.test.ts` is where that is measured rather than stated.
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['x:c:feed', 'x:c:feed']);
+    // A row bust reads the row's bucket and the collection's; give 'feed' a seat in both so the
+    // two reads return it twice.
+    await tier.set('feed', ['a'], { tags: [tag('post', '1'), tag('post')] });
 
     const result = await tier.invalidateTags([tag('post', '1')]);
 
@@ -156,47 +151,37 @@ describe('redisTier', () => {
     expect(await tier.get('feed')).toBeUndefined();
   });
 
-  test('the script declares every key it touches: value keys are deleted client-side', async () => {
-    // A Lua script may only reach keys handed to it in KEYS. DELing a SMEMBERS result from
-    // inside it is a cross-slot access — "attempted to access a non-local key in a cluster
-    // node" on Redis Cluster and in Dragonfly's strict mode, swallowed into report.errors so a
-    // failed bust read as partial and stale rows served until TTL.
+  test('every value key leaves as its own single-key UNLINK, never a blocking DEL', async () => {
+    // One key per command is slot-local on Redis Cluster and Dragonfly whatever the member's hash
+    // slot; `UNLINK` frees the value off the server's main thread.
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['x:c:feed']);
     client.sent.length = 0;
 
     await tier.invalidateTags([tag('post', '1')]);
 
-    const evals = client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT);
-    expect(evals).toHaveLength(1);
-    const [, script = '', numkeys = '0', ...keys] = evals[0] ?? [];
-    // The script's own body must not delete anything but the tag buckets it was handed.
-    expect(script).not.toContain("redis.call('DEL', key)");
-    expect(keys).toHaveLength(Number(numkeys));
-    // Every value key leaves as its own single-key DEL, which is always slot-local.
-    const deletes = client.sent.filter((entry) => entry[0] === 'DEL');
-    expect(deletes).toEqual([['DEL', 'x:c:feed']]);
+    for (const command of client.sent) expect(keysOf(command)).toHaveLength(1);
+    expect(client.sent.filter((entry) => entry[0] === 'UNLINK')).toEqual([['UNLINK', 'x:c:feed']]);
+    expect(client.sent.some((entry) => entry[0] === 'DEL' || entry[0] === 'EVAL')).toBe(false);
   });
 
   test('invalidateTags drops a bucket an earlier tag already claimed', async () => {
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, []);
     client.sent.length = 0;
 
-    await tier.invalidateTags([tag('post', '1'), tag('post')]);
+    await tier.invalidateTags([tag('post', '1'), tag('post', '2')]);
 
-    const evals = client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT);
-    // buckets for tag('post','1') = [{post}:1, {post}]; tag('post') = [e:{post}, {post}], and
-    // `{post}` is already claimed, so its call carries the index alone rather than re-reading it.
-    expect(evals).toHaveLength(2);
-    expect(evals.map((entry) => keysOf(entry))).toEqual([
-      ['x:t:{post}:1', 'x:t:{post}'],
-      ['x:e:{post}'],
+    // Both rows read the collection tag's bucket; the second does not read it again.
+    const reads = client.sent.filter((entry) => entry[0] === 'ZSCAN');
+    expect(reads.map((entry) => entry[1])).toEqual([
+      'x:t2:{post}:1',
+      'x:t2:{post}',
+      'x:t2:{post}:2',
     ]);
+    expect(bucketsRead(client.sent)).toHaveLength(reads.length);
   });
 
   test('get reports the remaining lease as expiresAt, read from PTTL', async () => {
@@ -269,7 +254,6 @@ describe('the shared tier is namespaced per build', () => {
     const client = fakeRedis();
     const tier = redisTier({ client, buildId: 'v1', prefix: 'app', rng: () => 0 });
     await tier.set('feed', ['a'], { tags: [tag('post')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['app:v1:c:feed']);
 
     expect((await tier.invalidateTags([tag('post')])).keys).toEqual(['feed']);
   });

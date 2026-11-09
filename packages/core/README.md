@@ -92,7 +92,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
 | the drain budget's default and domain (`drain.deadlineMs`, 25 s, 1–3600000 ms; the worker's optional `drain.workerDeadlineMs`, 1–86400000 ms; its `drain.workerRetireMs`, an hour, 0–86400000 ms) — `DRAIN_DEADLINE_DEFAULT_MS`, `DRAIN_DEADLINE_MAX_MS`, `WORKER_DRAIN_DEADLINE_MAX_MS`, `WORKER_RETIRE_DEFAULT_MS` | `drain-deadline.ts` |
 | `jobs.concurrency`'s default and domain — one slot count for every queue a worker serves, or a table per queue (`{ banks: 4, 'banks-long': 2 }`; a queue the table does not name runs at the default). `JOBS_CONCURRENCY_DEFAULT` (8), `type JobsConcurrency` | `config-jobs.ts` |
-| SIGTERM/SIGINT → the one drain; on Windows also SIGHUP (console close) and SIGBREAK (Ctrl-Break) — `drainSignals(platform)` | `lifecycle-signals.ts` |
+| SIGTERM/SIGINT → the one drain; on Windows also SIGHUP (console close) and SIGBREAK (Ctrl-Break) — `drainSignals(platform)`. With `exit: true` the process exits `drainExitCode()`: `0`, or `DRAIN_TIMEOUT_EXIT_CODE` (70, `EX_SOFTWARE`) when work was abandoned at the deadline (`X_SHUTDOWN_TIMEOUT`) | `lifecycle-signals.ts` |
 | is this directory inside a `bun build --compile` binary? `isCompiledBundle(import.meta.dir)` — `/$bunfs/` and Windows' `B:\~BUN\` | `bunfs.ts` |
 | which network an IP literal belongs to — `classifyAddress`, for SSRF screens; `peerAddressClass`, for a check that trusts a caller or a local name | `address-class.ts` |
 | the network a caller's address keys a per-caller budget on — `addressNetwork`: IPv4 exact, IPv4-mapped as IPv4, IPv6 as its /64 | `address-class.ts` |
@@ -223,6 +223,7 @@ throw new UltimateError({
 | Helper | For | Degrades to |
 |---|---|---|
 | `renderCauseValue(value)` | a `cause`, which only has to describe | `a object that cannot be rendered` |
+| `boundedCause(text)` | a whole cause, cut at `MAX_CAUSE_LENGTH` (4096) with `... (N more characters)`. The `UltimateError` constructor applies it — you never call it for one | the first 4 KiB |
 | `renderFixLiteral(value, placeholder)` | a `fix`, which has to parse and run | the placeholder you name |
 | `renderThrowable(value)` | a caught value: an `Error`'s own words, anything else rendered | `renderCauseValue(value)` |
 | `isThrownError(value)` | `value instanceof Error` where the test itself may throw | `false` |
@@ -661,9 +662,10 @@ reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'P
 | `ErrorScope` | `requestId` `traceId` `spanId` `role` `operation` `actorId` `extra`. `operation` is a route **pattern** or a job name, never a concrete path or a row id |
 | `ErrorReport` | `code` `title` `cause` `fix` `docs` + `meta` `stack` `resource` `environment` `release` `scope`, and the thrown value under `error` |
 | `configureErrorReporting({ reporter, clock, release, environment, enabled })` | the one install point; `resetErrorReporting()` puts the no-op back |
-| Reporters | `noopErrorReporter` (default), `memoryErrorReporter()` (`.events`, `.reset()`), `sentryErrorReporter({ dsn, fetch?, clientName? })` |
+| Reporters | `noopErrorReporter` (default), `memoryErrorReporter()` (`.events`, `.reset()`), `sentryErrorReporter({ dsn, fetch?, clientName?, beforeSend?, ignore?, fingerprint?, sampleRate? })` |
+| Sentry hooks | `beforeSend(event)` → the event (rewritten or not) or `null` to drop — scrub by value here; a hook that throws drops the event. `ignore(code)` → `true` drops before the event is built. `fingerprint(report)` → the grouping, replacing `errorFingerprint`'s. `sampleRate` 0..1 (`X_CONFIG_INVALID` outside it). A throwing `ignore`/`fingerprint` falls back to the default |
 | Several at once | `chainErrorReporters(...reporters)` — one reporter handing each report to every member in order; a member that throws is logged and costs only itself; chains flatten, a member listed twice reports once, none is the no-op. `errorReportersOf(reporter)` reads the members back; `installedErrorReporter()` the one installed now. The container chains its `SENTRY_DSN` transport after what the app installed (`As of 2026-11`) |
-| Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEnvelope(report, { dsn, eventId })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |
+| Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEvent(report, { dsn, eventId, fingerprint? })` → the event, `sentryEnvelope(report, { dsn, eventId, fingerprint? })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |
 | `errorReport(error, options)` | the normalisation on its own, for a transport's test or a surface that enriches before sending |
 | `errorFingerprint(report)` | 16 hex, which reports are one fault: `code`, `source`, `scope.operation`, and for `X_INTERNAL` the top application frame (function and root-relative path, no line). Never `cause`, `meta`, an id or `release`. Total; the Sentry envelope sends it as `fingerprint` |
 | `setFailureStore(store)` / `withFailureCapture(primitive, name, statusOf, run)` / `recordFailureFact(fact)` | the 5xx bundle `x repro` replays (`failureCapture` in `app.config.ts`). No store, no buffer. A 5xx is held on the thrown value and stored at `reportError` under its `errorFingerprint`; masked input listed in `masked` |
