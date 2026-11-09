@@ -15,7 +15,7 @@ import {
 } from './catalog-errors';
 import { McpToolDuplicateError } from './errors';
 import type { AnyMcpTool, McpCaller, ToolListEntry } from './registry';
-import { jsonResult } from './registry';
+import { jsonResult, withoutKey } from './registry';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
@@ -157,7 +157,7 @@ export async function tenantStep(
   return {
     kind: 'ok',
     caller: { ...caller, actor, tenant: value },
-    args: without(args, tenant.arg),
+    args: withoutKey(args, tenant.arg),
   };
 }
 
@@ -168,21 +168,6 @@ function unresolved(cause: string, thrown?: unknown): TenantStep {
   });
   logger.error('mcp.tenant.unresolved', { surface: 'mcp', code: error.code, cause: error.cause });
   return { kind: 'refused', error };
-}
-
-/** A copy without `key`, every other key landed through `defineProperty` (`__proto__` included). */
-function without(args: Readonly<Record<string, unknown>>, key: string): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [name, value] of Object.entries(args)) {
-    if (name === key) continue;
-    Object.defineProperty(out, name, {
-      value,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
-  }
-  return out;
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
