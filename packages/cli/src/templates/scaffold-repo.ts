@@ -27,10 +27,10 @@ import { uiPackageFiles } from './scaffold-ui-package';
 /**
  * Spelled once and pinned EXACTLY, because two places named it and a caret let them disagree:
  * `"^2.4.15"` beside a `$schema` of `2.4.15` installed 2.5.8, whose own parser then reported the
- * config as out of date on every `bun run lint`. A formatter is a build input — a range that floats
+ * config as out of date on every `bun run lint`. A formatter is a build input: a floating range
  * is a `lint` step whose verdict depends on the day the app was installed.
  */
-const BIOME_VERSION = '2.5.15';
+const BIOME_VERSION = '2.6.3';
 
 /**
  * The checker a scaffolded app typechecks with, and it must not lag the one the FRAMEWORK is built
@@ -58,10 +58,9 @@ const SOLID_VERSION = '1.9.17';
 // floor admitting a runtime the app's own first command refuses. Interpolated, the two cannot
 // disagree; `scripts/bun-pin.test.ts` reads the emitted string as one more pin site, and
 // `github/ci.yml.ts` pins the workflow's Bun to the same constant.
-//
-// `version` is not decoration: the manifest's app version IS the contract's compatibility gate,
-// and the manifest never fabricates one — so an app scaffolded without it failed `x manifest`,
-// the `manifest` verify step and every production boot with X_APP_PACKAGE_INVALID.
+// `version` is not decoration: the manifest's app version IS the contract's compatibility gate, and
+// the manifest never fabricates one, so an app scaffolded without it failed `x manifest` and every
+// production boot with X_APP_PACKAGE_INVALID.
 const rootPackage = (app: NameSet, version: string): string => `{
   "name": "${app.kebab}",
   "version": "0.1.0",
@@ -127,11 +126,11 @@ const rootPackage = (app: NameSet, version: string): string => `{
  * `references`). `-b` decides "up to date?" by MTIME, and Bun installs a dependency as hardlinks
  * carrying its cache's old mtimes: upgrading to a version already in the cache left every input
  * older than the buildinfo, so `-b` skipped the program and reported green while a cold CI was
- * red. `-p` with `incremental` compares content hashes. `-b` also wanted an emitted
- * `app.config.js` that `noEmit` never writes, which is why this line was first needed.
+ * red. `-p` with `incremental` compares content hashes, and `-b` also wanted an emitted
+ * `app.config.js` that `noEmit` never writes — which is why this line was first needed.
  *
- * The note lives HERE and not in the emitted file, for the reason `biome.json` below gives: an
- * app author has no use for eight lines of framework archaeology in their own tsconfig, and
+ * The note lives HERE and not in the emitted file, for the reason `biome.json` below gives: an app
+ * author has no use for eight lines of framework archaeology in their own tsconfig, and
  * `*.tsbuildinfo` is already in the scaffold's `.gitignore`.
  */
 const rootTsconfig = (app: NameSet): string => `{
@@ -252,30 +251,23 @@ defineMeasurementActor(async () => {
 `;
 
 // `biome.json` is strict JSON — Biome's own parser rejects a `//` comment in it, which made every
-// scaffolded app fail its first `x verify` on the config rather than on the code. The note that
-// used to be a comment lives here, where it is read by the person who would have changed the line:
-// x.manifest.json and openapi.json are emitted byte-for-byte by `x manifest`, so a formatter
-// rewriting them puts `x manifest` and `x verify` in a loop neither can win. `**/migrations` is the
-// same rule for the same reason and the same glob this repo's own biome.json carries: `x db gen`
-// writes the `.sql` and its `.snapshot.json` sidecar, and an app that narrows `lineWidth` would
-// otherwise fail `lint` on a file no author typed and `x db gen` would rewrite anyway.
-// `preset`, not `recommended`: the older key is deprecated from 2.5 on and every `bun run lint`
-// in the scaffolded app printed the migration notice for a config the app never wrote by hand.
-//
-// `!**/.x` is the one that makes the app's fix chain terminate. `x build` writes MINIFIED island
-// bundles to `.x/static/islands/<name>-<contenthash>.js`; without the exclusion `lint` reported
-// ~175 `noCommaOperator`/`noAssignInExpressions` errors in Bun's own output, and the `fix:` for
-// that step — `biome check --write .` — still exits 1, so `x verify` was red forever on a pristine
-// scaffold the moment `x build` ran (which the `budgets` step's own `fix:` tells the author to do).
-// `--unsafe` was worse: it REWROTE a content-hashed chunk in place, 55,499 → 83,605 bytes, so the
-// name no longer matched the bytes and `.x/build-stats.json` no longer matched the artifact.
-// `--no-example` hid it, because an app with no island has nothing under `.x/static/islands`.
-//
-// `vcs.useIgnoreFile` is the second half and not a duplicate of the first: it makes every future
-// generated directory the app adds to `.gitignore` excluded by the act of ignoring it, rather than
-// by an edit to this file nobody will remember to make. It needs `.gitignore` to EXIST — Biome
-// exits 1 with `couldn't find an ignore file` when it does not — which `x new` writes, and which
-// is why the two are declared together rather than one of them alone.
+// scaffolded app fail its first `x verify` on the config rather than on the code. The note lives
+// here, where whoever would change the line reads it: x.manifest.json and openapi.json are
+// emitted byte-for-byte by `x manifest`, so a formatter rewriting them puts `x manifest` and
+// `x verify` in a loop neither can win; `**/migrations` is the same rule and the same glob this
+// repo's own biome.json carries, because `x db gen` writes the `.sql` and its sidecar. `preset`,
+// not `recommended`: the older key is deprecated from 2.5 on and printed a migration notice.
+// `!**/.x` makes the app's fix chain terminate: `x build` writes MINIFIED island bundles there, and
+// without it `lint` reported ~175 `noCommaOperator`/`noAssignInExpressions` errors in Bun's own
+// output whose `fix:` still exits 1, so `x verify` was red forever once `x build` ran. `--unsafe` was
+// worse — it REWROTE a content-hashed chunk in place, so the name no longer matched the bytes.
+// `vcs.useIgnoreFile` excludes every future generated directory the app adds to `.gitignore`, and
+// needs that file to EXIST else Biome exits 1 — `x new` writes it. `markdown`/`yaml` formatters are
+// OFF and `**/helm/templates` leaves the file list: 2.6 is the first Biome that reads either, and
+// Go-templated manifests are a parse ERROR, not a format miss. `css.quoteStyle` is `single` and SCSS
+// turns `noUnknownUnit` off: 2.6 begins PARSING SCSS too, its default is double, and a token call
+// reads as a dimension (`tokens.text('lg')` → unit `lg`), so both misfire on the framework's own
+// idiom.
 const biome = (): string => `{
   "$schema": "https://biomejs.dev/schemas/${BIOME_VERSION}/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
@@ -286,11 +278,13 @@ const biome = (): string => `{
       "!**/dist",
       "!**/.output",
       "!**/migrations",
+      "!**/helm/templates",
       "!x.manifest.json",
       "!openapi.json"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "css": { "formatter": { "quoteStyle": "single" } },
   "linter": {
     "rules": {
       "preset": "recommended",
@@ -301,7 +295,15 @@ const biome = (): string => `{
   },
   "javascript": {
     "formatter": { "quoteStyle": "single", "semicolons": "always", "trailingCommas": "all" }
-  }
+  },
+  "markdown": { "formatter": { "enabled": false } },
+  "yaml": { "formatter": { "enabled": false } },
+  "overrides": [
+    {
+      "includes": ["**/*.scss"],
+      "linter": { "rules": { "correctness": { "noUnknownUnit": "off" } } }
+    }
+  ]
 }
 `;
 
