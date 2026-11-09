@@ -3,6 +3,8 @@
 ## Goal
 **The bar: the best full-stack framework in the world — that is what the name claims.** Every slice is judged against it: would a serious team anywhere, inspecting this with or without an AI, find a reason to pick something else? If yes, the slice is not done.
 
+**Best for AI agents building web apps, too.** An agent never reinvents a wheel the framework ships: what most web apps need is built in ([`23`](23-feature-gaps.md)), and an adopter re-implementing framework code is a framework defect (the adopter slices 40–48 delete each one). When a use case needs something different, the agent extends or modifies it without forking: swap an adapter ([`21`](21-adapter-wiring.md), proven by a conformance suite, [`19`](19-conformance-suites.md)), wrap a primitive, or subscribe to an event ([`20`](20-observability.md)). Each path is one documented page an agent can follow, and each mistake is a coded error with the exact fix.
+
 Make Ultimate production-ready for big apps, big data and horizontal scale: every known bug, security hole and race fixed, every backend swappable through an adapter with a conformance suite, one instrumentation bus feeding OpenTelemetry, trust signals a human or an AI can verify — then cut **v31, the final major**, and move every adopter onto it. After v31 the 90-day major window holds and no big change is planned.
 
 ## Context
