@@ -74,6 +74,24 @@ export function resolveApprovers(
   return Object.freeze({ quorum, from: Object.freeze([...new Set(from)]) });
 }
 
+/**
+ * The stored selectors that can still add a vote: an `actor:<id>` who has not voted and is not the
+ * requester, and every `role:<name>` as stored (who holds a role is only known at decision time, so
+ * it is named, never expanded). `from: null` names nobody — "any decider the policy admits" has no
+ * list to owe. The pending answer carries this so the agent knows whom to ask.
+ */
+export function outstandingApprovers(
+  from: readonly string[] | null,
+  voted: readonly string[],
+  requester: string,
+): string[] {
+  if (from === null) return [];
+  const counted = new Set([...voted, requester]);
+  return from.filter(
+    (selector) => !(selector.startsWith('actor:') && counted.has(selector.slice(6))),
+  );
+}
+
 /** Does `actor` match one of a row's stored selectors? `null` selectors admit every decider. */
 export function matchesApprover(actor: Actor, from: readonly string[] | null): boolean {
   if (from === null) return true;

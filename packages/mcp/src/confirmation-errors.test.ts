@@ -38,6 +38,12 @@ const errors: readonly UltimateError[] = [
   new McpConfirmationArgumentsMismatchError({ ...subject, reason: 'different' }),
   new McpConfirmationQuorumPendingError({ ...subject, approvals: 1, quorum: 2 }),
   new McpConfirmationQuorumPendingError({ ...subject, approvals: 1, quorum: 2, repeated: 'u-1' }),
+  new McpConfirmationQuorumPendingError({
+    ...subject,
+    approvals: 1,
+    quorum: 2,
+    outstanding: ['actor:u-ben', 'role:finance'],
+  }),
   new McpConfirmationEvidenceInvalidError({ ...subject, reason: 'missing' }),
   new McpConfirmationEvidenceInvalidError({ ...subject, reason: 'quorum' }),
   new McpConfirmationQuorumInvalidError({ tool: 'refundOrder', reason: 'quorum is 0' }),
@@ -100,6 +106,29 @@ describe('every confirmation fix names a call the current API accepts', () => {
     const fix = errors[0]?.fix ?? '';
     expect(fix.startsWith("confirmations({ id, decision: 'view' })")).toBe(true);
     expect(fix).toContain("confirmations({ id, decision: 'approve', arguments })");
+  });
+
+  test('QUORUM_PENDING names the outstanding approvers in meta, cause and callerFix', () => {
+    const named = errors[errors.length - 4];
+    expect(named?.code).toBe('X_MCP_CONFIRMATION_QUORUM_PENDING');
+    expect(named?.meta?.['outstanding']).toEqual(['actor:u-ben', 'role:finance']);
+    expect(named?.cause).toContain('actor:u-ben, role:finance');
+    expect(named?.callerFix).toContain('(actor:u-ben, role:finance)');
+    expect(named?.fix.startsWith("confirmations({ id, decision: 'view' })")).toBe(true);
+    // Without any, the key is still there and empty: a reader never branches on its absence.
+    expect(errors[9]?.meta?.['outstanding']).toEqual([]);
+  });
+
+  test('QUORUM_PENDING keeps a hostile selector on one line', () => {
+    const hostile = new McpConfirmationQuorumPendingError({
+      ...subject,
+      approvals: 1,
+      quorum: 2,
+      outstanding: ['actor:a\nb'],
+    });
+    expect(hostile.cause).not.toContain('\n');
+    expect(hostile.callerFix).not.toContain('\n');
+    expect(hostile.meta?.['outstanding']).toEqual(['actor:a\\nb']);
   });
 
   test('REJECTED never sends its reader to approve the call that was rejected', () => {

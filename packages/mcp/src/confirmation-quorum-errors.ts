@@ -3,7 +3,7 @@
 // an `approvers` declaration no approver set could ever meet. Split from `confirmation-errors.ts`
 // for its ceiling; each `cause` names the confirmation id, the one fact every reader needs.
 
-import { UltimateError } from '@ultimat3/core';
+import { singleLine, UltimateError } from '@ultimat3/core';
 
 interface Subject {
   readonly id: string;
@@ -21,23 +21,28 @@ export class McpConfirmationQuorumPendingError extends UltimateError {
       readonly quorum: number;
       /** Set when THIS approver had already counted: a second vote is never a second approver. */
       readonly repeated?: string | undefined;
+      /** The stored selectors still able to vote (`outstandingApprovers`); empty names nobody. */
+      readonly outstanding?: readonly string[] | undefined;
     },
   ) {
+    const outstanding = (subject.outstanding ?? []).map(singleLine);
+    const owed = outstanding.length === 0 ? '' : ` (${outstanding.join(', ')})`;
     const already =
       subject.repeated === undefined
         ? ''
         : `; ${subject.repeated} has already approved it, and one approver counts once`;
     super({
       code: 'X_MCP_CONFIRMATION_QUORUM_PENDING',
-      cause: `confirmation ${subject.id} for ${subject.tool} has ${subject.approvals} of the ${subject.quorum} distinct approvals it needs${already}; it stays open until ${until(subject)}`,
+      cause: `confirmation ${subject.id} for ${subject.tool} has ${subject.approvals} of the ${subject.quorum} distinct approvals it needs${already}${outstanding.length === 0 ? '' : `; still able to approve: ${outstanding.join(', ')}`}; it stays open until ${until(subject)}`,
       fix: `confirmations({ id, decision: 'view' })   # as ANOTHER approver the quorum names, with id ${subject.id}; then confirmations({ id, decision: 'approve', arguments }) with exactly what view returned, and the agent repeats the same tools/call before ${until(subject)}`,
-      callerFix: `ask ${subject.quorum - subject.approvals} more person(s) who may approve it to view confirmation ${subject.id} and approve it, then call ${subject.tool} again with exactly the same arguments before ${until(subject)}`,
+      callerFix: `ask ${subject.quorum - subject.approvals} more person(s) who may approve it${owed} to view confirmation ${subject.id} and approve it, then call ${subject.tool} again with exactly the same arguments before ${until(subject)}`,
       meta: {
         confirmation: subject.id,
         tool: subject.tool,
         expiresAt: until(subject),
         approvals: subject.approvals,
         quorum: subject.quorum,
+        outstanding,
       },
     });
   }

@@ -6,6 +6,7 @@
 import type { Clock, SealKeySource, UltimateError } from '@ultimat3/core';
 import { compareFingerprint, openText } from '@ultimat3/core';
 import type { JsonValue } from '@ultimat3/schema';
+import { outstandingApprovers } from './confirmation-approvers';
 import {
   McpConfirmationArgumentsMismatchError,
   McpConfirmationDecidedError,
@@ -97,6 +98,11 @@ function repeatRefusal(row: McpConfirmation, deciderId: string): UltimateError |
     approvals: row.approvals.length,
     quorum: row.quorum,
     repeated: deciderId,
+    outstanding: outstandingApprovers(
+      row.approvers,
+      row.approvals.map((vote) => vote.approver),
+      row.actorId,
+    ),
   });
 }
 
